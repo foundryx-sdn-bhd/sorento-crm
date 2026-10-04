@@ -6,7 +6,7 @@ labels are filled, a label staff typed is never touched. The regex is copied fro
 `sales_agent_service.derive_person_label` because a migration must not import app services.
 
 Revision ID: sa_person_label_0001
-Revises: dev_login_0001
+Revises: cbs_0001_contact_brand_ids
 """
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "sa_person_label_0001"
-down_revision = "dev_login_0001"
+down_revision = "cbs_0001_contact_brand_ids"
 branch_labels = None
 depends_on = None
 
