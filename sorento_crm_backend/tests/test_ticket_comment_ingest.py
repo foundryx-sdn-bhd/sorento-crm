@@ -25,8 +25,8 @@ from app.models.ticket_comment import ConversationTicketComment
 from tests._external_auth import external_permissions_granted
 from tests._pg_fixture import blank_session
 
-RESPOND_IO_ID = "437264483"
-PHONE = "+60166753328"
+RESPOND_IO_ID = "900000008"
+PHONE = "+60160000509"
 URL = "/api/v1/external/chat-history/comments"
 
 

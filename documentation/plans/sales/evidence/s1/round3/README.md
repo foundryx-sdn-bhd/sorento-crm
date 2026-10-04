@@ -14,7 +14,7 @@ so without this step the whole Sales menu group is invisible.
 
 Seeded via direct SQLAlchemy insert (user + sales agents) then the real `/api/v1/sales/*`
 endpoints (team, target, figures): company SRT (pre-existing default tenant), superadmin login
-`round3.superadmin@sorentocrm.dev`, agents ALI, MEI, CIN (Cindy Lee), RAJ, a sales team "North"
+`round3.superadmin@sorentocrm.dev`, agents ALI, MEI, CIN (CONTACT W), RAJ, a sales team "North"
 (ALI, MEI, CIN), and a TEAM target "2026 Q4 Target" (TGT-000001, all products, Amount/Ordered,
 1 Oct to 31 Dec 2026, split every 1 month) with agent figures ALI 600 and CIN 400 (MEI left
 without a figure, as asked). No sales orders were seeded, so Achieved reads 0 / "-" throughout
@@ -76,7 +76,7 @@ after each navigation.
 | 05-commission-empty-1280 | Commission tab, no tiers: "No commission" + "Add tier" button (F2) |
 | 06-commission-edit-1280 / -375 | Edit mode, two tiers typed (0% / rate 2, 100% / rate 4 / bonus 500) - the 375 shot was retaken after the `relative` fix landed (see "Defect found, then fixed" above) and shows only the table's own internal scrollbar, no page-level one |
 | 07-commission-read-1280 / -375 | Read mode after Save: tiers as read-only rows |
-| 08-agent-record-header-1280 / -375 | CIN's agent target (opened from the team's Agents grid): header reads "2026 Q4 Target / For CIN - Cindy Lee / Agent target, part of 2026 Q4 Target" with a link |
+| 08-agent-record-header-1280 / -375 | CIN's agent target (opened from the team's Agents grid): header reads "2026 Q4 Target / For CIN - CONTACT W / Agent target, part of 2026 Q4 Target" with a link |
 | 09-agent-team-target-tab-1280 / -375 | CIN's Team target tab: parent's name/number, measure, counts, applies to, dates, split, periods (with the post-save figures) and "Open team target" |
 | 10-agent-details-edit-readonly-1280 | CIN's Details tab in Edit mode: Name is an input, but What counts and Dates stay read-only with exactly one line, "Set on the team target" (only under What counts - Dates has no such line and simply shows the inherited values, so there is exactly one such note in the whole tab, never two, and never "Set on 2026 Q4 Target") |
 | 11-agent-periods-edit-1280 / -375 | CIN's Periods tab in Edit mode: a number input per period; typed 500/450/600 |

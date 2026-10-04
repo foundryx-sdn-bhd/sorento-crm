@@ -97,6 +97,11 @@ class TurnContext:
     access_levels: list[str] = field(default_factory=list)
     contains_flyer: bool = False
     ideation: Any = None
+    # CHAT-LANGUAGE: the `label_catalog.Localizer` for this turn's reply language, read by
+    # `turn/compose.py::compose`, and the language itself, which `tail.session_payload`
+    # carries to the next turn as `reply_language`.
+    localizer: Any = None
+    reply_language: str | None = None
     # SRTSC07 (prod transcript, 22 Sep 2026): this turn's own `routing.suggested_agent`,
     # read by `turn/compose.py::compose` so a freshly minted `team_pick` offer can carry
     # the agent half beside the team it already carries - `answer_bridge`'s own mint
@@ -2698,6 +2703,8 @@ def make_tool_runner(
     resolved_kinds: dict[str, dict[str, int]] | None = None,
     policy: Any = None,
     customer_scope: dict[str, Any] | None = None,
+    localizer: Any = None,
+    unplaced_suggestions: dict[str, list[dict[str, Any]]] | None = None,
 ) -> Callable[[str, FetchSpec], dict[str, Any]]:
     """The ONE seam that reaches a tool: `run_fetch` calls it once per `FetchSpec`.
 
@@ -2805,6 +2812,8 @@ def make_tool_runner(
             # The contact's customer scope (`engine._customer_scope_gate`), read by
             # `lanes.business.run_fetch`; a lane-only key, never on the engine's own ctx.
             "customer_scope": customer_scope,
+            # CHAT-LANGUAGE: read by `output_structurer` (render-only).
+            "localizer": localizer,
         }
         if page_predicate is not None:
             entities = [
@@ -2917,7 +2926,7 @@ def make_tool_runner(
             and all(_entity_is_unplaced(e, unplaced) for e in entities)
         )
         # Hotfix 22 Sep 2026 (PLAN-chatbot-stock-no-subject-hotfix-22sep.md, live
-        # contact 423729104 turns 59-60): the guard above needs `bool(unplaced)`, and
+        # contact 900000081 turns 59-60): the guard above needs `bool(unplaced)`, and
         # the whole-book read that got through carried NOTHING unplaced. Turn 59's
         # "Srtwc8608-p-rl" resolved only as a `product_set` - a kind
         # `ALLOWED["inventory"]` does not take - so the carry was parked on
@@ -3114,6 +3123,7 @@ def make_tool_runner(
             ),
             ran_with=lane_out,
             unplaced=envelope_unplaced,
+            suggestions=unplaced_suggestions,
             raw_fragment=fragment,
             brand_names=brand_names,
             attachment_types=(
@@ -4074,6 +4084,24 @@ def _lane_text_without_withheld_header(
     return text
 
 
+def _suggestions_by_typed_word(
+    unplaced: dict[str, str] | None, suggestions: dict[str, list[dict[str, Any]]] | None
+) -> dict[str, dict[str, Any]]:
+    """`suggestions` (keyed by the resolver's token) under the unplaced word the customer
+    typed for the same token key, with the sentence that opens its list; a token with
+    none is left out."""
+    if not unplaced or not suggestions:
+        return {}
+    from app.services.chatbot.lanes.business.answer import did_you_mean_head
+
+    by_key = {_token_key(token): rows for token, rows in suggestions.items() if rows}
+    return {
+        raw: {"head": did_you_mean_head(raw), "rows": list(by_key[key])}
+        for key, raw in unplaced.items()
+        if key in by_key
+    }
+
+
 def envelope_of(
     fragment: dict[str, Any],
     spec: FetchSpec,
@@ -4086,6 +4114,7 @@ def envelope_of(
     raw_fragment: dict[str, Any] | None = None,
     brand_names: list[str] | None = None,
     attachment_types: list[dict[str, Any]] | None = None,
+    suggestions: dict[str, list[dict[str, Any]]] | None = None,
 ) -> dict[str, Any]:
     """The kept lane's fetch fragment as the composer's envelope (AC-1530, AC-1531).
 
@@ -4138,6 +4167,10 @@ def envelope_of(
         # wc287 wc2867 7445"). Turn-wide rather than per-entity: they are the tokens no
         # fetch could be about, which is why none of them is in `entities`.
         "unresolved": list(unplaced.values()) if unplaced else [],
+        # MULTI-CODE-DYM: each of those tokens' did-you-mean (`answer.did_you_mean_by_token`,
+        # keyed by the resolver's echo), re-keyed by the word the customer typed, so the
+        # composer offers a missing code beside found ones what it offers when asked alone.
+        "unresolved_suggestions": _suggestions_by_typed_word(unplaced, suggestions),
         # The TOOL's own verdict, before the rows test above: a report or a refusal
         # renders as `lane_text` with no figures yet DID find something, and the
         # composer's miss rule (an offer to escalate) must not read it as a miss.

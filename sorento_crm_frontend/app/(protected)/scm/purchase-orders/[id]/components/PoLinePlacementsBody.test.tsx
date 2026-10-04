@@ -123,7 +123,7 @@ describe('PoLinePlacementsBody', () => {
               inquiry_no: 'OI-000001',
               so_number: 'SO416191',
               customer: 'YOTU BUILDER SDN BHD',
-              agent: 'JUSTIN',
+              agent: 'CONTACT N',
               qty: 6,
               needed_at: 'BRW',
               location_differs: true,

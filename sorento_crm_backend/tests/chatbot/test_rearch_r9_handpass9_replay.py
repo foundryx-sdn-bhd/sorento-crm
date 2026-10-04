@@ -1,5 +1,5 @@
 """R9 RED tests, PR #952 chatbot turn engine re-architecture - hand pass 9 (owner
-console, 20 Sep 2026 21:55-22:42 MYT, contact 437264483, clone DB
+console, 20 Sep 2026 21:55-22:42 MYT, contact 900000008, clone DB
 `sorento_ai_automation_rearch`, :8081 @ 19d5f7789 v39). Written by tester 42 BEFORE the
 coder's next pass, per the captain's brief. Every scenario replays a RECORDED parser
 verdict pulled from `chatbot.turns` by id (psql SELECT against the clone, read-only) -

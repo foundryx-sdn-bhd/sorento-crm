@@ -74,7 +74,7 @@ const TAN = {
   customer_name: 'Tan Home Living',
   customer_code: 'THL',
   contact_name: 'Mr. Tan',
-  contact_phone: '+60198877001',
+  contact_phone: '+60190000520',
   last_message_at: '2026-09-29T09:05:00',
   last_message_snippet: 'Your price tag request PT-202609-0031 is ready.',
   last_message_direction: 'outgoing' as const,

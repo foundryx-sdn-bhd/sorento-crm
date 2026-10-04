@@ -38,8 +38,8 @@ from app.schemas.sla import ConversationSLATrackingCreate, ConversationSLATracki
 from app.services.sla_service import ConversationSLATrackingService
 from tests._pg_fixture import blank_session
 
-PHONE = "+60123456704"
-OTHER_PHONE = "+60123456705"
+PHONE = "+60100000067"
+OTHER_PHONE = "+60100000068"
 URL = "/api/v1/external/conversation-sla-tracking/agent-replied"
 
 

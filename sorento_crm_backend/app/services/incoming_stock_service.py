@@ -55,6 +55,7 @@ from app.services.field_access import GATED_FIELDS, NON_CLEARANCE_KEYS
 CLEARANCE_KEYS = tuple(k for k in GATED_FIELDS["incoming_stock"] if k not in NON_CLEARANCE_KEYS)
 from app.services.identifier_resolver import resolve_identifier
 from app.services.company_scope import stamp_lookup_companies
+from app.services.contact_brand_scope import product_in_scope_clauses
 from app.services.fuzzy_resolver import resolve_via_embedding_then_ilike
 # Header OR any line: a container filled by two factories has no header supplier,
 # so the header alone would hide it from both of them.
@@ -212,6 +213,7 @@ def earliest_packing_list_shipment(
             _not_draft_shipment_filter(),
             _region_filter(regions),
             _still_incoming_filter(),
+            *product_in_scope_clauses(db, InboundShipmentLine.product_id),
             InboundShipment.attachment_id.isnot(None),
             InboundShipment.estimated_arrival_date.isnot(None),
         )
@@ -618,7 +620,7 @@ class IncomingStockService:
                 func.count(func.distinct(InboundShipmentLine.product_id)).label("distinct_products"),
                 func.sum(_remaining_expr()).label("total_remaining"),
             )
-            .filter(_still_incoming_filter())
+            .filter(_still_incoming_filter(), *product_in_scope_clauses(self.db, InboundShipmentLine.product_id))
             .group_by(InboundShipmentLine.shipment_id)
             .subquery()
         )
@@ -742,7 +744,7 @@ class IncomingStockService:
                 "pagination": {"total": 0, "page": page, "limit": limit},
             }
 
-        line_filters = [_still_incoming_filter()]
+        line_filters = [_still_incoming_filter(), *product_in_scope_clauses(self.db, InboundShipmentLine.product_id)]
         if resolved_pids:
             line_filters.append(InboundShipmentLine.product_id.in_(resolved_pids))
 

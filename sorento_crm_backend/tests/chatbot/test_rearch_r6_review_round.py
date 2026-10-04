@@ -46,6 +46,7 @@ from app.services.chatbot.turn.policy import default_policy
 from app.services.chatbot.turn.state import Focus, Profile
 from app.services.company_scope import DEFAULT_COMPANY_ID
 from tests._pg_fixture import unique_code
+from tests.chatbot._turn_helpers import do_window
 from tests.chatbot.test_engine import (
     CONTACT_ID,
     _envelope,
@@ -1066,6 +1067,8 @@ class TestScopeBlockAskScopedAxesAndBestEffortWrapper:
         _seed_product(session_factory, company_id=DEFAULT_COMPANY_ID, code=code)
         qf = _parser_output(
             domain_hint="order", intent_hint="check_order",
+            # Dated: a dateless DO list ask asks which period first (DO-ASK-SIMPLIFY, owner 4 Oct 2026).
+            **do_window(),
             entities=[
                 {"raw": code, "hint": "product", "canonical_code": None, "current_message": True, "confident": True}
             ],

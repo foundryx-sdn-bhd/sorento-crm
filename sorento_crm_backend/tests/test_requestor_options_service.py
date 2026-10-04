@@ -43,7 +43,7 @@ def _contact(db, *, name, segments=()) -> str:
 
 def test_zero_flagged_segments_returns_empty_directory(db):
     _segment(db, code="RETAIL", is_requestor_selectable=False)
-    eric = _contact(db, name="Eric Ng", segments=["RETAIL"])
+    contact_y = _contact(db, name="CONTACT Y", segments=["RETAIL"])
 
     items, has_more = list_requestor_options(db)
     assert items == []
@@ -52,16 +52,16 @@ def test_zero_flagged_segments_returns_empty_directory(db):
 
 def test_eligible_segment_contact_is_returned(db):
     _segment(db, code="PROJECT", is_requestor_selectable=True)
-    eric = _contact(db, name="Eric Ng", segments=["PROJECT"])
+    contact_y = _contact(db, name="CONTACT Y", segments=["PROJECT"])
 
     items, has_more = list_requestor_options(db)
-    assert [i["id"] for i in items] == [eric]
-    assert items[0]["name"] == "Eric Ng"
+    assert [i["id"] for i in items] == [contact_y]
+    assert items[0]["name"] == "CONTACT Y"
 
 
 def test_inactive_segment_excludes_its_contacts(db):
     _segment(db, code="PROJECT", is_requestor_selectable=True, is_active=False)
-    _contact(db, name="Eric Ng", segments=["PROJECT"])
+    _contact(db, name="CONTACT Y", segments=["PROJECT"])
 
     items, _ = list_requestor_options(db)
     assert items == []
@@ -77,11 +77,11 @@ def test_segment_not_flagged_selectable_excludes_its_contacts(db):
 
 def test_q_filters_case_insensitive_substring(db):
     _segment(db, code="PROJECT", is_requestor_selectable=True)
-    eric = _contact(db, name="Eric Ng", segments=["PROJECT"])
+    contact_y = _contact(db, name="CONTACT Y", segments=["PROJECT"])
     _contact(db, name="Farah Lim", segments=["PROJECT"])
 
-    items, _ = list_requestor_options(db, q="eric")
-    assert [i["id"] for i in items] == [eric]
+    items, _ = list_requestor_options(db, q="contact y")
+    assert [i["id"] for i in items] == [contact_y]
 
     items_none, _ = list_requestor_options(db, q="zzz-no-match")
     assert items_none == []
@@ -90,25 +90,25 @@ def test_q_filters_case_insensitive_substring(db):
 def test_include_ids_bypasses_both_q_and_eligibility(db):
     """D6: the submitting contact + the currently-saved requestor are always
     options, even with no flagged segment and even when `q` would exclude them."""
-    darren = _contact(db, name="Darren Submitter")  # no segments at all
+    contact_x = _contact(db, name="CONTACT X Submitter")  # no segments at all
 
-    items, _ = list_requestor_options(db, q="nonsense-query-that-matches-nobody", include_ids=[darren])
-    assert [i["id"] for i in items] == [darren]
+    items, _ = list_requestor_options(db, q="nonsense-query-that-matches-nobody", include_ids=[contact_x])
+    assert [i["id"] for i in items] == [contact_x]
 
 
 def test_include_ids_union_with_eligible_set_dedupes_by_id(db):
     _segment(db, code="PROJECT", is_requestor_selectable=True)
-    eric = _contact(db, name="Eric Ng", segments=["PROJECT"])
+    contact_y = _contact(db, name="CONTACT Y", segments=["PROJECT"])
 
     # include_ids repeats the already-eligible id -> no duplicate row.
-    items, _ = list_requestor_options(db, include_ids=[eric])
+    items, _ = list_requestor_options(db, include_ids=[contact_y])
     assert len(items) == 1
-    assert items[0]["id"] == eric
+    assert items[0]["id"] == contact_y
 
 
 def test_names_only_no_phone_email_respond_io_id_keys_leak(db):
     _segment(db, code="PROJECT", is_requestor_selectable=True)
-    _contact(db, name="Eric Ng", segments=["PROJECT"])
+    _contact(db, name="CONTACT Y", segments=["PROJECT"])
 
     items, _ = list_requestor_options(db)
     assert len(items) == 1

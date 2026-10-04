@@ -851,7 +851,7 @@ contact inside the synchronous request. Different contacts run in parallel.
   the shared `running` key and the stall grace are gone. Each ticket has its own heartbeat key
   (`chatbot:alive:{contact}:{ticket}`, 15 s TTL), `done` only moves over finished or dead
   tickets, and a wait past `CHATBOT_QUEUE_WAIT_SECONDS` RUNS the turn (recorded `timed_out`
-  on `queued`) instead of failing it. Prod incident: contact 423729104, 1 Oct.
+  on `queued`) instead of failing it. Prod incident: contact 900000081, 1 Oct.
 - AC-715 `[BE][T]` (added 5 Sep 2026, S7 mode) Given S7 mode is on and a turn routes to a
   lane the CRM does not complete (not in `CRM_COMPLETED_BRANCH_KINDS`, or not in
   `system_settings.chatbot_completed_lanes`), when the head finishes routing, then the turn

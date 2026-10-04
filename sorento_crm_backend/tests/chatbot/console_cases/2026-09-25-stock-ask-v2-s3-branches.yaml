@@ -7,7 +7,7 @@
 # and B4. B3 (the incoming/packing-list branch, run twice - toggle on and off) is
 # `2026-09-25-stock-ask-v2-s3-incoming-packing-list.yaml`.
 #
-# NOT collected by pytest. Requires the S3 seed data (contact respond_io_id 437264483 on
+# NOT collected by pytest. Requires the S3 seed data (contact respond_io_id 900000008 on
 # an "Availability only" stock visibility policy, products SA318A/SA318B/SA318C/SA318E,
 # categories SA318CAP (chatbot_max_qty=200, chatbot_eta_offset_days=7) and SA318UNCAP
 # (both NULL) - see the evidence file for the seed script and its exact rows) already
@@ -37,7 +37,7 @@
 # an already-open task, `if not tasks: return TaskOutcome(...)`), so a genuinely fresh ask
 # is always at least two turns even when the dealer states everything in one sentence.
 
-contact: "437264483"
+contact: "900000008"
 
 cases:
   - name: "B1 via Q>X and B1 via unset X, one multi-product turn (R14 sample g)"

@@ -1,4 +1,4 @@
-"""CHATBOT-EMPTY-ROUTE-PICK (owner repro, 30 Sep 2026, Chatbot Console, contact Fanny Ng,
+"""CHATBOT-EMPTY-ROUTE-PICK (owner repro, 30 Sep 2026, Chatbot Console, contact CONTACT Z,
 parser v37): "Zhin heng delivered on 23/9" inside an open DO list answered with
 
     Customer: Zhin heng / Product: all products / Dates: 23/09/2026
@@ -22,6 +22,12 @@ Two defects, one file:
   `Open question:` line is built by `turn/question.open_question(pending, tasks)` off
   `State.pending` and the stock task, and when that is None every reader must see the
   null answer and no positions - a hallucinated pick must never influence the turn.
+
+Owner ruling 4 Oct 2026 (PICKER-ESCALATION): "any no answer should get the escalation
+question, that's the gist". An empty list inside an open list is a no-answer, so R6 no
+longer touches it: the escalate offer and its routing picker stay, whole, as on a first
+ask. R6 still takes the picker out of a list that answered, and nothing of its frame may
+stay there either.
 """
 
 from __future__ import annotations
@@ -32,7 +38,6 @@ from typing import Any
 import pytest
 
 from app.services.chatbot import order_list
-from app.services.chatbot.order_list import EMPTY_LIST_LINE
 from app.services.chatbot.turn import pending as pending_mod
 from app.services.chatbot.turn import question as question_mod
 from app.services.chatbot.turn.compose import Answer
@@ -160,7 +165,7 @@ class TestPhantomAnswerIsDropped:
 
 def test_the_first_one_answers_the_top_selling_who_question(session_factory, monkeypatch, cat) -> None:
     """Reviewer B1 on this lane: "the first one" under "Do you mean customer SAMPLE -
-    FANNY NG or sales agent ...? Reply 1 for the customer, 2 for the sales agent." arrives
+    CONTACT Z or sales agent ...? Reply 1 for the customer, 2 for the sales agent." arrives
     as `reference_positions: [1]` (and, on a newer prompt, as a declared pick). That
     question is `focus.top_selling.asked`, not an `Open question:` object, so the drop
     must leave the positions to `turn/apply.py`'s `top_selling_who_is_the_customer`."""
@@ -171,7 +176,7 @@ def test_the_first_one_answers_the_top_selling_who_question(session_factory, mon
         session_factory, monkeypatch, _position(1, open_question_answer=dict(PHANTOM_PICK)), "the first one"
     )
     (args,) = _calls(captured)
-    assert args["customer_ids"] == [cat.customers["SAMPLE - FANNY NG"]], (text, args)
+    assert args["customer_ids"] == [cat.customers["SAMPLE - CONTACTZ X"]], (text, args)
     assert "sales_agent_ids" not in args, args
 
 
@@ -200,39 +205,39 @@ OWNER_MISS_TEXT = (
 
 
 class TestListReplyDropsTheWholePicker:
-    def _reply(self, text: str, options: list[dict[str, Any]], *, missed: bool = True) -> Answer:
+    def _reply(self, text: str, options: list[dict[str, Any]], *, missed: bool = False) -> Any:
         answer = Answer(text=text, question=_member_offer(options))
-        envelope = {"has_result": not missed, "answers": [] if missed else [{"x": 1}]}
+        envelope = {"has_result": False} if missed else {"has_result": True, "figures": [{"x": 1}]}
         return order_list.list_reply(
             answer, was_open=True, fetch_plan=_Plan(), envelopes=[envelope], order_status="delivered"
         )
 
-    def test_the_owner_reply_is_the_header_and_one_line(self) -> None:
+    def test_a_miss_inside_the_list_keeps_its_offer_and_picker(self) -> None:
+        """Owner ruling 4 Oct 2026: a no-answer keeps the escalation question."""
         options = [
             {"position": 1, "label": "Maryam Ariffin", "entity_type": "member"},
             {"position": 2, "label": "Ah Chong", "entity_type": "member"},
         ]
-        out = self._reply(OWNER_MISS_TEXT, options)
-        assert out.question is None
-        assert out.text == (
-            "Customer: Zhin heng / Product: all products / Dates: 23/09/2026\n"
-            f"{EMPTY_LIST_LINE}"
-        ), out.text
+        answer = Answer(text=OWNER_MISS_TEXT, question=_member_offer(options))
+        out = order_list.list_reply(
+            answer, was_open=True, fetch_plan=_Plan(), envelopes=[{"has_result": False}], order_status="delivered"
+        )
+        assert out is answer
 
     def test_the_frame_goes_even_when_no_row_label_matched(self) -> None:
         """The defect's exact shape: the rows were taken out (or were never there) and
         the header and the close stood over nothing."""
         text = (
-            "Customer: Zhin heng / Product: all products / Dates: 23/09/2026\n\n"
-            f"{PICKER_HEADER}\n\n{PICKER_CLOSE}\n"
-            f"{EMPTY_LIST_LINE}"
+            "Customer: Zhin heng / Product: all products / Dates: 23/09/2026\n"
+            "1. 202609-2571 (Sorento)\n\n"
+            f"{PICKER_HEADER}\n\n{PICKER_CLOSE}"
         )
         out = self._reply(text, [{"position": 1, "label": "Someone Else", "entity_type": "member"}])
         assert PICKER_HEADER not in out.text and "reply 'yes'" not in out.text, out.text
         lines = out.text.splitlines()
         assert [line for line in lines if line.strip()] == [
             "Customer: Zhin heng / Product: all products / Dates: 23/09/2026",
-            EMPTY_LIST_LINE,
+            "1. 202609-2571 (Sorento)",
         ], out.text
         assert "\n\n\n" not in out.text, out.text
 
@@ -246,7 +251,7 @@ class TestListReplyDropsTheWholePicker:
             "Would you like me to escalate to *Mocha* customer service team?\n\n"
             f"{PICKER_HEADER}\n2. Maryam Ariffin\n\n{PICKER_CLOSE}"
         )
-        out = self._reply(text, [{"position": 2, "label": "Maryam Ariffin", "entity_type": "member"}], missed=False)
+        out = self._reply(text, [{"position": 2, "label": "Maryam Ariffin", "entity_type": "member"}])
         assert out.text == "Customer: Cheng Huat / Product: all products\n1. 202609-2571 (Sorento)", out.text
 
     def test_the_combined_roster_wording_goes_too(self) -> None:
@@ -254,40 +259,40 @@ class TestListReplyDropsTheWholePicker:
         frame ("To escalate, choose who to route to. Reply the number or name:" ...
         "Or just reply 'yes' and we'll assign automatically.")."""
         text = (
-            "Customer: Zhin heng / Product: all products\n\n"
-            "Here's what you want: delivery orders for Zhin heng\n"
-            "• Zhin heng: not found\n\n"
-            "But no order matched these. Would you like me to escalate to customer service team?\n\n"
+            "Customer: Cheng Huat / Product: all products\n"
+            "1. 202609-2571 (Sorento)\n\n"
+            "Would you like me to escalate to customer service team?\n\n"
             "To escalate, choose who to route to. Reply the number or name:\n"
-            "1. Maryam Ariffin (Sorento / Mocha)\n"
+            "2. Maryam Ariffin (Sorento / Mocha)\n"
             "[ Mocha: no customer-service members are configured - omitted. ]\n\n"
             "Or just reply 'yes' and we'll assign automatically."
         )
-        out = self._reply(text, [{"position": 1, "label": "Maryam Ariffin", "entity_type": "member"}])
-        assert out.text == f"Customer: Zhin heng / Product: all products\n{EMPTY_LIST_LINE}", out.text
+        out = self._reply(text, [{"position": 2, "label": "Maryam Ariffin", "entity_type": "member"}])
+        assert out.text == "Customer: Cheng Huat / Product: all products\n1. 202609-2571 (Sorento)", out.text
 
     def test_a_group_header_that_is_a_data_field_stays(self) -> None:
         """`lanes/business/fetch.py` renders a field as `*Label:* value`, and an empty
         value leaves exactly `*Label:*` - only the dropped question's own company group
         headers go (reviewer N3)."""
         text = (
-            "Customer: Zhin heng / Product: all products\n"
-            "*Remarks:*\n\n"
-            "Here's what you want: delivery orders for Zhin heng\n\n"
-            "But no order matched these. Would you like me to escalate to customer service team?\n\n"
-            f"{PICKER_HEADER}\n*Sorento:*\n1. Maryam Ariffin\n*Mocha:*\n2. Ah Chong\n\n{PICKER_CLOSE}"
+            "Customer: Cheng Huat / Product: all products\n"
+            "*Remarks:*\n"
+            "1. 202609-2571 (Sorento)\n\n"
+            "Would you like me to escalate to customer service team?\n\n"
+            f"{PICKER_HEADER}\n*Sorento:*\n2. Maryam Ariffin\n*Mocha:*\n3. Ah Chong\n\n{PICKER_CLOSE}"
         )
         question = pending_mod.ask(
             "member_offer",
-            [{"position": 1, "label": "Maryam Ariffin"}, {"position": 2, "label": "Ah Chong"}],
+            [{"position": 2, "label": "Maryam Ariffin"}, {"position": 3, "label": "Ah Chong"}],
             team="customer_service", asked_at_turn=1,
             payload={"roster_plan": [{"company_name": "Sorento"}, {"company_name": "Mocha"}]},
         )
         answer = Answer(text=text, question=question)
         out = order_list.list_reply(
-            answer, was_open=True, fetch_plan=_Plan(), envelopes=[{"has_result": False}], order_status="delivered"
+            answer, was_open=True, fetch_plan=_Plan(), envelopes=[{"has_result": True, "figures": [{"x": 1}]}],
+            order_status="delivered",
         )
-        assert out.text == f"Customer: Zhin heng / Product: all products\n*Remarks:*\n{EMPTY_LIST_LINE}", out.text
+        assert out.text == "Customer: Cheng Huat / Product: all products\n*Remarks:*\n1. 202609-2571 (Sorento)", out.text
 
     def test_a_first_ask_is_untouched(self) -> None:
         answer = Answer(text=OWNER_MISS_TEXT, question=_member_offer([{"position": 1, "label": "Maryam Ariffin"}]))
@@ -464,28 +469,28 @@ def test_owner_turn_inside_the_open_list_asks_which_customer(owner_chat, one_cs_
     assert dropped[0].get("reference_positions") == [1], dropped
 
 
-def test_an_empty_list_inside_the_open_list_has_no_picker_frame(owner_chat, one_cs_member) -> None:
-    """The empty-picker half of the owner's reply, on the harness's own words: a miss
-    inside the open list, with a customer service roster to offer. R6 takes the
-    routing picker out; nothing of its frame may stay."""
+def test_an_empty_list_inside_the_open_list_keeps_the_offer_and_picker(owner_chat, one_cs_member) -> None:
+    """A miss inside the open list, with a customer service roster to offer. Owner
+    ruling 4 Oct 2026 (PICKER-ESCALATION, "any no answer should get the escalation
+    question"): the escalate offer and its routing picker stay, rows and frame, as on a
+    first ask."""
     chat = owner_chat
     chat.turn(OWNER_TURNS[5][0], OWNER_TURNS[5][1])
     reply, calls, _ = chat.turn(
         "what about 2019",
         _parser_output(
             domain_hint="order", intent_hint="check_order", entities=[], domain_in_message=False,
-            date_mode="range", date_filter_start="2019-01-01", date_filter_end="2019-12-31",
+            # January only: a whole year is over the 31-day cap and would be refused, not listed
+            # (DO-ASK-SIMPLIFY, owner 4 Oct 2026); this test needs an empty list.
+            date_mode="range", date_filter_start="2019-01-01", date_filter_end="2019-01-31",
             routing={"suggested_team": "customer_service", "suggested_agent": "order_enquiries", "team_source": None},
         ),
     )
     assert [a for n, a in calls if n == ORDERS_LIST], calls
     assert chat.kind() == "business_query", reply
-    lines = reply.strip().splitlines()
-    assert lines[-1] == EMPTY_LIST_LINE, reply
-    assert PICKER_HEADER not in reply and "reply 'yes'" not in reply, reply
-    assert "escalate" not in reply.casefold(), reply
-    assert all(line.strip() for line in lines), f"no blank line stands where a picker was: {reply!r}"
-    assert _open_question(chat) in (None, {}), "no routing picker is left open"
+    assert "escalate" in reply.casefold(), reply
+    assert f"{PICKER_HEADER}\n1. Maryam Ariffin\n\n{PICKER_CLOSE}" in reply, reply
+    assert (_open_question(chat) or {}).get("kind") == "member_offer", _open_question(chat)
 
 
 def test_owner_turn_as_a_first_ask_answers_the_ask_not_the_pick(owner_chat, one_cs_member) -> None:

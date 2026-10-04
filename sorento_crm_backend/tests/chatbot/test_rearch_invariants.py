@@ -20,7 +20,7 @@ def test_a_new_ask_that_fetches_clears_the_stale_pending():
     """(a) After a NEW_ASK decision whose fetch ran, `pending` is None unless the
     answer itself armed one.
 
-    Pins hand pass 5 turns 38/42/43 (owner console, contact 437264483, 2026-09-17
+    Pins hand pass 5 turns 38/42/43 (owner console, contact 900000008, 2026-09-17
     05:27-05:30 +09): 'Incoming and stock CB2805A' left an incoming-stock roster on
     the wire; 'any markeitng forms?' is a fresh business ask that fetched a forms
     roster of its own (a NEW_ASK by `decide()`'s own rule - it names no entity, but

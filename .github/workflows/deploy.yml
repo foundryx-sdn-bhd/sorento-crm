@@ -168,6 +168,40 @@ jobs:
               )
           PY
 
+  # The repo is public: fail on a real Malaysian mobile number or lorry plate,
+  # or a tracked raw capture (.playwright-mcp/, *.har, *.rdb), in any tracked
+  # file. Stdlib only, a few seconds. Fake values to use instead are listed in
+  # scripts/pii_guard.py. Same `if` as the alembic gate, so it runs on docs-only
+  # changes too (docs are where evidence captures land).
+  pii-guard:
+    name: PII guard (fast gate)
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.label.name == 'ci'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: No personal data in tracked files
+        run: python3 scripts/pii_guard.py
+
+  # Secret scan over the PR's commits (the action's default on pull_request),
+  # rules in .gitleaks.toml. Runs on push and on a ci-labelled PR; never on
+  # merge_group or workflow_dispatch (the release).
+  gitleaks:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.label.name == 'ci')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Scan commits for secrets
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7  # v2.3.9
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml
+          GITLEAKS_VERSION: 8.30.1
+
   # Which areas a change touches, so the multi-minute jobs below only run
   # when the code they test can have changed. Before this, every job ran on
   # every PR regardless of what it changed, which is the main reason CI
@@ -414,8 +448,12 @@ jobs:
             echo "${why:-$EVENT is not a pull_request}: every area counts as changed"
             exit 0
           fi
+          # A here-string, not `printf | grep -q`: grep -q exits on its first
+          # match, and a printf still writing the rest of the list then dies
+          # of SIGPIPE, which pipefail turns into a false flag (scm=false on
+          # run 37140058013, CI-SCM-FILTER-RACE).
           flag() {
-            if printf '%s\n' "$files" | grep -Eq "$2"; then echo "$1=true"; else echo "$1=false"; fi
+            if grep -Eq "$2" <<< "$files"; then echo "$1=true"; else echo "$1=false"; fi
           }
           # SCM_RE: what makes the SCM shards run on a PR. The scm API,
           # service, module, model and schema files, the SCM tests, an scm
@@ -1181,7 +1219,8 @@ jobs:
             rel="${path#sorento_crm_backend/}"
             if [ ! -f "$path" ]; then
               dropped="$dropped  $rel (not in the checkout: deleted or renamed away)"$'\n'
-            elif printf '%s\n' "$excluded" | grep -qxF "$rel"; then
+            # Here-string, not a pipe: see flag() in job `changes`.
+            elif grep -qxF "$rel" <<< "$excluded"; then
               dropped="$dropped  $rel (listed in tests/ci_excluded.txt)"$'\n'
             else
               run="$run $rel"

@@ -4,7 +4,7 @@ Status: PR #1391 open, small fix track (no migration, no auth change, no new ing
 Lane: CHATBOT-EMPTY-ROUTE-PICK, branch `claude/chatbot-empty-route-pick-x5e9ad`, base `origin/main`
 UAC: `chatbot-empty-route-pick-acceptance-criteria.md` (alongside)
 
-## Owner repro (30 Sep 2026, Chatbot Console, contact Fanny Ng, prompt v37)
+## Owner repro (30 Sep 2026, Chatbot Console, contact CONTACT Z, prompt v37)
 
 User: "Zhin heng delivered on 23/9". Bot:
 

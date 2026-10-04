@@ -683,7 +683,7 @@ def test_closed_window_send_fills_button_suffix_and_strips_body_url(db, workspac
     ):
         result = svc.send_text_or_template(
             db, identifier="id:1", text=text, use_case="complaint",
-            context_vars={"contact_name": "Johnson"},
+            context_vars={"contact_name": "CONTACT A"},
         )
     assert result["sent_as"] == "template"
     kwargs = client.send_template_message.call_args.kwargs
@@ -717,12 +717,12 @@ def test_in_window_complaint_button_template_renders_structured_body(db, workspa
     ):
         result = svc.send_text_or_template(
             db, identifier="id:1", text="ignored fallback", use_case="complaint",
-            context_vars={"contact_name": "Johnson", "update": "Status changed to approved.", "portal_url": link},
+            context_vars={"contact_name": "CONTACT A", "update": "Status changed to approved.", "portal_url": link},
         )
     assert result["sent_as"] == "text"  # in-window is always a free-text send
     sent_text = client.send_message.call_args.args[1]
     # Filled structured body, then the link appended inline.
-    assert sent_text == f"Hi Johnson, update: Status changed to approved.\n\n{link}"
+    assert sent_text == f"Hi CONTACT A, update: Status changed to approved.\n\n{link}"
     client.send_template_message.assert_not_called()
 
 
@@ -747,7 +747,7 @@ def test_in_window_noncomplaint_button_template_sends_raw_text(db, workspace):
     ):
         result = svc.send_text_or_template(
             db, identifier="id:1", text=rich, use_case="stock_inquiry",
-            context_vars={"contact_name": "Johnson"},
+            context_vars={"contact_name": "CONTACT A"},
         )
     assert result["sent_as"] == "text"
     sent_text = client.send_message.call_args.args[1]
@@ -789,7 +789,7 @@ def test_send_template_message_payload_includes_button_component():
             template_name="update_with_button",
             language_code="en",
             body_text="Hi {{1}}, update: {{2}}",
-            parameters=["Johnson", "leak fixed"],
+            parameters=["CONTACT A", "leak fixed"],
             button={
                 "text": "View complaint",
                 "url": "https://fe-sorento.foundryx.my/{{1}}",

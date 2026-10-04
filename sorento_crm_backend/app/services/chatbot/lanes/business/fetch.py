@@ -54,6 +54,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from app.services.chatbot import jsc
+from app.services.chatbot.label_catalog import IDENTITY, Localizer
 from app.services.chatbot.contracts import (
     SALES_REPORT_GROUP_BYS,
     UNDOMAINED_CHATBOT_TOOLS,
@@ -1547,13 +1548,14 @@ def _fmt_ts(iso: Any) -> str | None:
     return f"{date} {hour}:{minute}:{second}"
 
 
-def _footer_line(iso: Any) -> str:
+def _footer_line(iso: Any, loc: Localizer | None = None) -> str:
     """`_Updated dd/mm/yyyy HH:MM_` (WA-CONCISE AC-6): `_fmt_ts` less its seconds, the only
-    reformatting this lane allows. "" when there is no stamp."""
+    reformatting this lane allows, worded by the turn localizer. "" when there is no stamp."""
     ts = _fmt_ts(iso)
     if not ts:
         return ""
-    return f"_Updated {ts[:-3] if len(ts) > 10 else ts}_"
+    text = f"Updated {ts[:-3] if len(ts) > 10 else ts}"
+    return f"_{(loc or IDENTITY).text(text)}_"
 
 
 # The JS renders an empty value and an object joiner with an EM DASH, and the access note
@@ -1570,7 +1572,10 @@ def _fmt_value(v: Any) -> str:
     if isinstance(v, bool):
         return "Yes" if v else "No"
     if isinstance(v, str):
-        return (_fmt_ts(v) or v) if _ISO_RE.match(v) else v
+        # DO-ASK-SIMPLIFY tester pass 2: a value's own '*' (a product code "*REPLACE")
+        # would pair with the next label's bold marker and leave a stray '*' in WhatsApp.
+        # It prints as the look-alike U+2217, which WhatsApp does not read as formatting.
+        return ((_fmt_ts(v) or v) if _ISO_RE.match(v) else v).replace("*", "\u2217")
     if isinstance(v, (int, float)):
         return jsc.js_string(v)
     if isinstance(v, list):
@@ -2273,7 +2278,9 @@ def _outstanding_report_output(result: Any, ctx: dict[str, Any]) -> dict[str, An
         # ever stripped, AC-S1-3's own narrow fix) - a bare, non-envelope string is
         # NEVER a rendered report, so it must never reach `response` either, the
         # same "never treated as a result" rule `has_result` already states above.
-        "response": text if "response" in envelope else "",
+        # CHAT-LANGUAGE slice 3: the offer above was parsed from the ENGLISH text; only what is
+        # printed is localized, last (the stored offer text stays English).
+        "response": (ctx.get("localizer") or IDENTITY).lines(text) if "response" in envelope else "",
         "response_intro": None,
         "answers": [],
         "attachments": [],
@@ -2568,7 +2575,9 @@ def _top_selling_output(result: Any, ctx: dict[str, Any]) -> dict[str, Any]:
         else None
     )
     return {
-        "response": text,
+        # CHAT-LANGUAGE slice 3: the roster above came from the English envelope; the notes and
+        # the ranking are localized last, line by line.
+        "response": (ctx.get("localizer") or IDENTITY).lines(text),
         "response_intro": None,
         "answers": [],
         "attachments": [],
@@ -2697,6 +2706,26 @@ def merge_stock_rows(items: list[Any]) -> list[Any]:
         merged.append({**grp[0], "fields": fields + lines, "flags": flags})
     return merged
 
+_LOCALIZED_TOOLS = frozenset(
+    {
+        "crm_inventory_stock_balance_list",
+        "crm_order_management_orders_list",
+        "crm_order_management_orders_by_product_list",
+        "crm_procurement_po_placed_list",
+        "crm_procurement_spo_allocations_last_receipt_list",
+        "crm_procurement_po_last_cost_list",
+        "crm_incoming_stock_list",
+        "crm_incoming_stock_by_product",
+        "crm_incoming_stock_shipments",
+    }
+)
+
+
+def _field_label(loc: Localizer, f: Any) -> str:
+    """The printed label of a field: translated when the localizer knows it, else as sent."""
+    label = jsc.js_string(jsc.get(f, "label", jsc.UNDEFINED))
+    return loc.label(f) if isinstance(f, dict) and "label" in f else label
+
 
 def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]:
     """The MCP render envelope becomes a WhatsApp message. Deterministic, no LLM (H7).
@@ -2723,6 +2752,10 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
             "own_header": True,
         }
     e = _extract_envelope(result)
+    # CHAT-LANGUAGE: render-only. The envelope, the items and `answers` stay English; the
+    # localizer only rewrites the strings printed below (absent = identity, byte-identical).
+    # The stock, incoming and PO / SO / SPO / orders tools; the rest keep English.
+    loc = (ctx.get("localizer") or IDENTITY) if ctx.get("tool") in _LOCALIZED_TOOLS else IDENTITY
     # Read once, for both the restricted-field drop below and the spec-visibility
     # drop (PLAN-spec-visibility-policy.md "Chatbot seam") - one contact, one
     # `ctx.access`, two consumers.
@@ -3058,7 +3091,7 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
     msg = (
         ""
         if plain_lines
-        else jsc.js_string(e.get("intro") or "Here are the results.").strip() + "\n\n"
+        else loc.text(jsc.js_string(e.get("intro") or "Here are the results.").strip()) + "\n\n"
     )
     # WA-CONCISE AC-5: five openers go when at least one block prints (cut at the row loop).
     opener = msg
@@ -3085,7 +3118,7 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
             summary_lines = "\n".join(
                 # `${f.label}` on an absent key renders the WORD `undefined`, not "None"
                 # - and this string is sent to a customer.
-                f"*{jsc.js_string(f.get('label', jsc.UNDEFINED))}:* {_fmt_value(f.get('value'))}"
+                f"*{_field_label(loc, f)}:* {_fmt_value(f.get('value'))}"
                 for f in si["fields"]
                 if isinstance(f, dict)
             )
@@ -3113,7 +3146,7 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
 
     def _item_line(position: int, it: Any, *, numbered: bool = True) -> str:
         field_lines = "\n".join(
-            f"*{jsc.js_string(jsc.get(f, 'label', jsc.UNDEFINED))}:* "
+            f"*{_field_label(loc, f)}:* "
             f"{_fmt_value(jsc.get(f, 'value'))}"
             for f in (jsc.get(it, "fields") or [])
         )
@@ -3123,20 +3156,20 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
         # `availability` item's title carries the whole verdict sentence (ported from
         # PR #1118 for chatbot-stock-ask-v2 S3, review round 3, Observation B).
         if not field_lines:
-            field_lines = jsc.nullish_str(jsc.get(it, "title")).strip()
+            field_lines = loc.tail(jsc.nullish_str(jsc.get(it, "title")).strip())
         # Chatbot stock ask v2 S3 fix round 1, Blocking 1 (R14/AC-SA312): an answered
         # `availability` item's title already starts "<code> x <Q>:", so it is not
         # numbered (plan sample (g) shows plain lines, not a numbered list).
         line = field_lines if not numbered else f"{position}. {field_lines}"
         flags = jsc.get(it, "flags")
         if jsc.truthy(flags) and jsc.truthy(jsc.get(flags, "discontinued")):
-            line += "\n⚠️  *(PRODUCT DISCONTINUED)*"
+            line += f"\n⚠️  *({loc.text('PRODUCT DISCONTINUED')})*"
         if jsc.truthy(flags) and jsc.truthy(jsc.get(flags, "expired")):
-            line += "\n⚠️  *(EXPIRED)*"
+            line += f"\n⚠️  *({loc.text('EXPIRED')})*"
         if jsc.truthy(flags) and jsc.truthy(jsc.get(flags, "unallocated")):
-            line += "\n\U0001f6a9  *(PENDING ALLOCATION)*"
+            line += f"\n\U0001f6a9  *({loc.text('PENDING ALLOCATION')})*"
         elif jsc.truthy(flags) and jsc.truthy(jsc.get(flags, "partially_allocated")):
-            line += "\n\U0001f6a9  *(PARTIAL ALLOCATION)*"
+            line += f"\n\U0001f6a9  *({loc.text('PARTIAL ALLOCATION')})*"
         return line
 
     # A3 (AC-905/AC-906): grouped sections, ONE generic branch for every tool - the
@@ -3291,7 +3324,7 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
     # quantity question ("How many units do you need?") is an availability reply too,
     # and it printed the timestamp on T1, T3, T8, T13 and T16.
     stock_availability_reply = jsc.js_string(e.get("result_type") or "") == "stock_availability"
-    footer = "" if stock_availability_reply else _footer_line(e.get("last_updated_at"))
+    footer = "" if stock_availability_reply else _footer_line(e.get("last_updated_at"), loc)
     if footer:
         msg += footer
 

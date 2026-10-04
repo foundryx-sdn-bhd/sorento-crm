@@ -32,6 +32,7 @@ from app.services.chatbot.turn.policy import default_policy
 from app.services.chatbot.turn.state import Focus, focus_to_wire
 from app.services.company_scope import DEFAULT_COMPANY_ID
 from tests._pg_fixture import unique_code
+from tests.chatbot._turn_helpers import do_window
 from tests.chatbot.test_engine import _parser_output
 from tests.chatbot.test_engine_company_scope import _seed_product
 from tests.chatbot.test_outstanding_lane import (
@@ -126,7 +127,7 @@ def _seed_real_attachment_type(session_factory: Any, type_name: str) -> str:
 class TestMissNounIsTheResolvedAttachmentLabel:
     """Captain ruling, 20 Sep 2026: the miss noun is the RESOLVED attachment type label in
     both cases (AC-1702, matching the owner's hand pass 8 production reply), superseding the
-    older prompt v11 capture `prod_sample/out-of-scope-438930735...` that printed the
+    older prompt v11 capture `prod_sample/out-of-scope-900000052...` that printed the
     customer's own word."""
 
     def test_type_named_this_turn_uses_the_resolved_label_not_the_raw_word(
@@ -651,6 +652,8 @@ class TestMultiDomainPickFetchesEveryNamedDomain:
                     {"raw": "hanlim", "hint": "customer", "canonical_code": None,
                      "current_message": True, "confident": True},
                 ],
+                # Dated: a dateless DO list ask asks which period first (DO-ASK-SIMPLIFY, owner 4 Oct 2026).
+                **do_window(),
                 asks=[{"domain": "order"}, {"domain": "incoming"}],
             ),
             text_body="orders and incoming for hanlim",

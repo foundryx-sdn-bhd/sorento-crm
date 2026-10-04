@@ -166,6 +166,15 @@ else
   ok "dash-guard"
 fi
 
+# --- e2. PII guard (the repo is public; same check as CI's pii-guard job) ---
+if python3 "$REPO_ROOT/scripts/pii_guard.py" >/tmp/pii-guard.$$ 2>&1; then
+  ok "pii-guard"
+else
+  fail "pii-guard"
+  sed 's/^/pre-push:   /' /tmp/pii-guard.$$
+fi
+rm -f /tmp/pii-guard.$$
+
 # --- f. oversized PNG guard ------------------------------------------------
 PNG_MAX_BYTES=204800
 PNG_HITS=""

@@ -423,19 +423,34 @@ def _orders_list(rows: list[dict], b: _Builder) -> None:
             o.get("order_number"),
             [
                 ("company_name", "Company", o.get("company_name")),
-                ("Order Number", o.get("order_number")),
-                ("Customer", o.get("debtor_name")),
-                ("Order Date", o.get("order_date")),
-                ("Actual Delivery Date", o.get("actual_delivery_date")),
-                ("Status", o.get("order_status")),
-                ("Pickup Time", o.get("pickup_time")),
-                ("Transporter", o.get("transporter")),
-                ("Driver", o.get("driver_name")),
-                ("Lorry Plate", o.get("lorry_plate")),
-                ("Warehouse", wh),
-                ("Products", prods),
+                ("order_number", "Order Number", o.get("order_number")),
+                ("debtor_name", "Customer", o.get("debtor_name")),
+                ("order_date", "Order Date", o.get("order_date")),
+                ("actual_delivery_date", "Actual Delivery Date", o.get("actual_delivery_date")),
+                ("order_status", "Status", o.get("order_status")),
+                ("pickup_time", "Pickup Time", o.get("pickup_time")),
+                ("transporter", "Transporter", o.get("transporter")),
+                ("driver_name", "Driver", o.get("driver_name")),
+                ("lorry_plate", "Lorry Plate", o.get("lorry_plate")),
+                ("warehouse", "Warehouse", wh),
+                ("products", "Products", prods),
             ],
         )
+    # DO-ASK-SIMPLIFY rule 2 (owner, 2 Oct 2026; every printed field since the 3 Oct hand
+    # test): each DO field is a per-contact reveal, hidden from a contact without the grant.
+    # The MCP stays unfiltered; the chatbot's `output_structurer` is the gate. The Company
+    # line (multi-company installs only) is not a DO field and is never gated.
+    b.restrict("order_number", "delivery_orders.order_number")
+    b.restrict("debtor_name", "delivery_orders.customer")
+    b.restrict("order_date", "delivery_orders.order_date")
+    b.restrict("actual_delivery_date", "delivery_orders.delivery_date")
+    b.restrict("order_status", "delivery_orders.status")
+    b.restrict("pickup_time", "delivery_orders.pickup_time")
+    b.restrict("transporter", "delivery_orders.transporter")
+    b.restrict("driver_name", "delivery_orders.driver")
+    b.restrict("lorry_plate", "delivery_orders.lorry_plate")
+    b.restrict("warehouse", "delivery_orders.warehouse")
+    b.restrict("products", "delivery_orders.products")
 
 
 def _orders_so_outstanding(rows: list[dict], b: _Builder) -> None:
@@ -613,22 +628,31 @@ def _po_last_cost(rows: list[dict], b: _Builder) -> None:
 
 def _orders_by_product(rows: list[dict], b: _Builder) -> None:
     for o in rows:
-        prods = ", ".join(
-            f"{m.get('product_code')} ({_qty(m.get('quantity'))})"
-            + (f" @ {m.get('warehouse_code')}" if _filled(m.get("warehouse_code")) else "")
-            for m in (o.get("matched_products") or [])
+        matched = o.get("matched_products") or []
+        prods = ", ".join(f"{m.get('product_code')} ({_qty(m.get('quantity'))})" for m in matched)
+        # DO-ASK-SIMPLIFY (owner hand test 3 Oct 2026): the warehouse is its own switched
+        # field, never folded into Products ("X (1) @ BRW"), so the Warehouse reveal hides it.
+        whs = ", ".join(
+            dict.fromkeys(str(m.get("warehouse_code")) for m in matched if _filled(m.get("warehouse_code")))
         )
         b.item(
             o.get("order_number"),
             [
                 ("company_name", "Company", o.get("company_name")),
-                ("Order Number", o.get("order_number")),
-                ("Customer", o.get("debtor_name")),
-                ("Order Date", o.get("order_date")),
-                ("Actual Delivery Date", o.get("actual_delivery_date")),
-                ("Products", prods),
+                ("order_number", "Order Number", o.get("order_number")),
+                ("debtor_name", "Customer", o.get("debtor_name")),
+                ("order_date", "Order Date", o.get("order_date")),
+                ("actual_delivery_date", "Actual Delivery Date", o.get("actual_delivery_date")),
+                ("warehouse", "Warehouse", whs),
+                ("products", "Products", prods),
             ],
         )
+    b.restrict("order_number", "delivery_orders.order_number")
+    b.restrict("debtor_name", "delivery_orders.customer")
+    b.restrict("order_date", "delivery_orders.order_date")
+    b.restrict("actual_delivery_date", "delivery_orders.delivery_date")
+    b.restrict("warehouse", "delivery_orders.warehouse")
+    b.restrict("products", "delivery_orders.products")
 
 
 # ---------------------------------------------------------------------------

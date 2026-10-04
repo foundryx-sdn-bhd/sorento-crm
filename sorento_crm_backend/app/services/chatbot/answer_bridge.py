@@ -91,6 +91,7 @@ import logging
 import re
 from typing import Any, Mapping
 
+from app.services.chatbot import label_catalog
 from app.services.chatbot.block_numbering import is_block, renumber
 from app.services.chatbot.lanes.business import answer as answer_mod
 from app.services.chatbot.lanes.business import miss_suggest as miss_mod
@@ -1571,7 +1572,8 @@ def _fold_blocks(primary: str, xd_text: str) -> tuple[str, str]:
         if hit is not None:
             merged = merged or "*Container:*" in paras[hit]
             xd_paras[i] = _merge_block(paras.pop(hit), x)
-    footers = [p for p in paras if p.startswith("_Updated ")]
+    footer_starts = tuple("_" + lead for lead in label_catalog.footer_leads())
+    footers = [p for p in paras if p.startswith(footer_starts)]
     paras = [p for p in paras if p not in footers]
     if merged or any(is_block(p) for p in paras):
         xd_paras += footers  # the footer closes the whole body, after the last block
@@ -1885,7 +1887,12 @@ def answer_for(
     if miss_gate is None:
         miss_gate = _breakdown_gate(gate, raw_fragment)
     not_found = answer_mod.not_found_error_message(
-        full_payload, parser=parser, resolved=resolved, gate=miss_gate, profile=profile
+        full_payload,
+        parser=parser,
+        resolved=resolved,
+        gate=miss_gate,
+        profile=profile,
+        granted_keys=((ctx.get("access") or {}).get("attributes") if isinstance(ctx, Mapping) else None),
     )
     offer = miss_mod.run_miss_lane(
         not_found,

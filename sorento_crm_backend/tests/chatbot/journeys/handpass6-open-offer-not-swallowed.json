@@ -1,6 +1,6 @@
 {
   "name": "handpass6-open-offer-not-swallowed",
-  "source": "hand pass 6 owner console turns 13:57:04-13:58:45 (contact_respond_id 437264483, 17 Sep 2026). An open escalate offer ('Would you like me to escalate?') must not swallow the NEXT plain data ask as an implicit decline/accept - 'how about SO?' is a business query, not a yes/no. Measured pre-fix: 13:58:06 'how about SO?' came back branch_kind out_of_scope with a null reply_text (the offer ate it). 'good' after a second offer must not re-print the whole outstanding report AND must not escalate either - measured pre-fix (13:58:45): the reply was byte-identical to 13:58:35's, re-printing the full report plus the offer again.",
+  "source": "hand pass 6 owner console turns 13:57:04-13:58:45 (contact_respond_id 900000008, 17 Sep 2026). An open escalate offer ('Would you like me to escalate?') must not swallow the NEXT plain data ask as an implicit decline/accept - 'how about SO?' is a business query, not a yes/no. Measured pre-fix: 13:58:06 'how about SO?' came back branch_kind out_of_scope with a null reply_text (the offer ate it). 'good' after a second offer must not re-print the whole outstanding report AND must not escalate either - measured pre-fix (13:58:45): the reply was byte-identical to 13:58:35's, re-printing the full report plus the offer again.",
   "cases": [
     {
       "name": "a-data-ask-under-an-open-offer-answers-the-data-ask-not-the-offer",

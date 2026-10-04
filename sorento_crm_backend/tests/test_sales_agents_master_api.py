@@ -564,7 +564,7 @@ def _seed_contact(db, *, name: str) -> RespondContact:
 
 def test_annotation_links_a_portal_contact_and_answers_with_the_name(client, db):
     agent = _seed(db, sales_agent="ZZT LINKME")
-    contact = _seed_contact(db, name="ZZT Johnson")
+    contact = _seed_contact(db, name="ZZT CONTACT AA")
 
     res = client.patch(f"{BASE}/{agent.id}/annotation", json={"contact_id": contact.id})
     assert res.status_code == 200, res.text
@@ -572,7 +572,7 @@ def test_annotation_links_a_portal_contact_and_answers_with_the_name(client, db)
     body = res.json()
     assert body["contact_id"] == contact.id
     # Never an id on the screen: the modal re-opens on the person, not a uuid.
-    assert body["contact_name"] == "ZZT Johnson"
+    assert body["contact_name"] == "ZZT CONTACT AA"
     assert set(body) == RESPONSE_KEYS
 
     db.expire_all()

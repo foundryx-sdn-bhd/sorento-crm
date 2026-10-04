@@ -257,7 +257,7 @@ class TestAC1699DatedOrderMissScopeBlockAndMemberPicker:
         )
         text = composed["text"] or ""
         assert "Here's what you want:" in text, text
-        assert "Reply 'all dates' to search without the date filter" in text, text
+        assert "Reply with another month or dates (e.g. August, or 15 Sep to 10 Oct)" in text, text
         assert "Ah Chong" in text, (
             "AC-1699's own CS member picker must ride under the dated miss: "
             f"{text}"

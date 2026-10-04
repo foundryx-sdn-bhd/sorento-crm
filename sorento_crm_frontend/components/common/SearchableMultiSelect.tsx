@@ -88,6 +88,12 @@ export type SearchableMultiSelectProps = {
     open: boolean;
     disabled: boolean;
   }) => React.ReactNode;
+  /**
+   * Show a clear-all X in the trigger while something is chosen (parity with
+   * `SearchableSelect.clearable`). Opt-in: the chips' own X and the list's "Clear all"
+   * already empty it, so existing callers are untouched.
+   */
+  clearable?: boolean;
   /** Notified whenever the search text changes, in both modes. */
   onSearchChange?: (query: string) => void;
   /**
@@ -128,6 +134,7 @@ export function SearchableMultiSelect({
   renderTriggerLabel,
   renderOption,
   renderTrigger,
+  clearable = false,
   onSearchChange,
   createOption,
 }: SearchableMultiSelectProps) {
@@ -371,7 +378,23 @@ export function SearchableMultiSelect({
               ))}
             </span>
           )}
-          <ChevronDown className="mt-0.5 size-4 shrink-0 self-start opacity-60 -me-0.5" />
+          {clearable && value.length > 0 && !isDisabled ? (
+            <span
+              role="button"
+              tabIndex={-1}
+              aria-label="Clear selection"
+              className="mt-0.5 shrink-0 self-start rounded-sm opacity-60 hover:opacity-100"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onChange([]);
+              }}
+            >
+              <X className="size-4" />
+            </span>
+          ) : (
+            <ChevronDown className="mt-0.5 size-4 shrink-0 self-start opacity-60 -me-0.5" />
+          )}
         </button>
         )}
       </PopoverTrigger>

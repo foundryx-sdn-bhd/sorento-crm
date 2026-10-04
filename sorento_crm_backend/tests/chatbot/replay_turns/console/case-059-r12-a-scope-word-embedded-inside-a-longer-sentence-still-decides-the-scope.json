@@ -37,22 +37,22 @@
               "value": "true"
             }
           ],
-          "firstName": "ZZT-437264483",
-          "id": 437264483,
+          "firstName": "ZZT-900000008",
+          "id": 900000008,
           "lastName": "",
-          "phone": "+60437264483"
+          "phone": "+60900000008"
         },
         "ingress": "console",
         "is_test": true,
         "media": null,
         "message": {
           "contact": {
-            "id": 437264483
+            "id": 900000008
           },
           "event_type": "message.received",
           "message": {
             "channelId": 453209,
-            "contactId": 437264483,
+            "contactId": 900000008,
             "message": {
               "text": "Srtwc8518-SH dealer delivery order outstanding how many at BRW?",
               "type": "text"
@@ -143,7 +143,7 @@
             "access_levels": [
               "dealer"
             ],
-            "contact_id": "437264483",
+            "contact_id": "900000008",
             "date_mode": null,
             "is_active": null,
             "location_token": "BRW",

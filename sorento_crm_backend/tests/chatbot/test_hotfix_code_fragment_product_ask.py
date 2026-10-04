@@ -232,7 +232,7 @@ def _assert_every_product_with_figures(text: str) -> None:
 def test_a_code_fragment_stock_ask_lists_every_matching_product_with_figures(
     session_factory, monkeypatch, stub_access, message
 ):
-    console = StockConsole(session_factory, monkeypatch, stub_access, phone="+60000078201")
+    console = StockConsole(session_factory, monkeypatch, stub_access, phone="+60900000056")
     text = console.say(message, _code_fragment_stock())
 
     _assert_every_product_with_figures(text)
@@ -249,7 +249,7 @@ def test_a_described_set_with_no_code_still_takes_the_counted_set_path(
     class word and no code, so the resolver still counts the set over the stock leg."""
     import app.services.product_predicate_service as pps
 
-    console = StockConsole(session_factory, monkeypatch, stub_access, phone="+60000078202")
+    console = StockConsole(session_factory, monkeypatch, stub_access, phone="+60900000057")
     seen: list[dict[str, Any]] = []
     real_set = pps.resolve_product_set
 

@@ -33,7 +33,7 @@ import re
 from functools import cmp_to_key
 from typing import Any, Literal
 
-from app.services.chatbot import jsc
+from app.services.chatbot import jsc, label_catalog
 from app.services.chatbot.lanes.business.fetch import (
     DATE_PARAMS,
     compact_stock_block,
@@ -409,7 +409,7 @@ _ON_HAND_WITH_OUTSTANDING = re.compile(r"^\s*(-?\d+(?:\.\d+)?)\s*\(O/S:")
 def _on_hand_number(value: Any) -> Any:
     """The ON-HAND part of a compact Total that already carries its outstanding suffix.
 
-    MEASURED, hand pass 11 defect 1 (live turn cfee5933, contact 437264483 on the
+    MEASURED, hand pass 11 defect 1 (live turn cfee5933, contact 900000008 on the
     0921 clone): `_stock_compact` (sorento_crm_mcp/presenters.py) publishes the
     compact per-product total as `{"key": "total_on_hand", "value": 0,
     "granted_value": "0 (O/S: 0)"}` and restricts it behind `inventory.sellable`, and
@@ -1575,7 +1575,15 @@ def run_crossdomain(
 # --------------------------------------------------------------------------- #
 
 _PROMO_ISO_DATE_RE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}")
-_DATA_LAST_UPDATED_RE = re.compile(r"_Updated [0-9]{2}/[0-9]{2}/[0-9]{4}[^\n]*_")
+
+
+def _data_last_updated_re(localizer: Any = None) -> re.Pattern[str]:
+    """The freshness footer in any language, plus the turn localizer's own wording."""
+    leads = "|".join(re.escape(lead) for lead in label_catalog.footer_leads(localizer))
+    return re.compile("_(?:" + leads + r")[^\n]*_")
+
+
+_DATA_LAST_UPDATED_RE = _data_last_updated_re()
 _NON_ALNUM_RE = re.compile(r"[^a-z0-9]")
 _LEADING_NEWLINES_RE = re.compile(r"^\n+")
 
@@ -1671,6 +1679,7 @@ def promo_picker(
     parser: dict[str, Any] | None,
     resolved: dict[str, Any] | None,
     gate: dict[str, Any] | None = None,
+    localizer: Any = None,
 ) -> dict[str, Any]:
     """`promo-picker`: the promotion answer's ordering, pick, roster and strict miss.
 
@@ -2111,7 +2120,7 @@ def promo_picker(
         # the customer actually uses.
         # D11-reproduced: `promo-picker.js:468`'s own `_tail` match, over the response
         # THIS turn built (never the customer's words).
-        tail_match = _DATA_LAST_UPDATED_RE.search(jsc.js_string(env.get("response") or ""))
+        tail_match = _data_last_updated_re(localizer).search(jsc.js_string(env.get("response") or ""))
         tail = tail_match.group(0) if tail_match else None
         swapped = (
             None
@@ -2366,6 +2375,9 @@ _DISPLAY_NAME_KEYS: tuple[str, ...] = (
 
 # Which axes are active comes from the GATE (`compatible_entities`), never from the parser's
 # hints: a bare code is often hinted `order` and matched by the resolver as a product.
+#: `axis_words`' answer for an axis that prints no header line this turn.
+_NO_LINE = object()
+
 _AXES: tuple[dict[str, Any], ...] = (
     {"label": "Customer", "types": ["customer"], "hints": ["customer"], "always": True, "allText": "all customers"},
     {"label": "Product", "types": ["product"], "hints": ["product"], "always": True, "allText": "all products"},
@@ -3013,8 +3025,14 @@ def not_found_error_message(
     gate: dict[str, Any] | None,
     entitlement_levels: Any = None,
     profile: Any = None,
+    granted_keys: Any = None,
 ) -> dict[str, Any]:
     """`not-found-error-message`: the miss reply, its search-scope header and its bullets.
+
+    `granted_keys` (DO-ASK-SIMPLIFY security B1): the contact's `contact_field_reveals`
+    grants (`ctx["access"]["attributes"]`). The "hasn't been delivered yet" line names the
+    order's current status only with `delivery_orders.status`; None is the empty set, so a
+    caller that passes nothing never leaks it.
 
     `profile` (#1262 slice 11, F8 follow-up): the SAME staff-audience gate `turn/
     compose.py` and `answer_bridge.py`'s cross-domain ladder already apply -
@@ -3629,6 +3647,17 @@ def not_found_error_message(
             ]
             if not rows:
                 return None  # axis never put in scope
+            if axis["label"] == "Customer":
+                # DO-ASK-SIMPLIFY tester pass 1 (`tail/scope_block._axis_words`): the
+                # forced links of an order NUMBER ask print no Customer line, and the
+                # grouped name wins over the typed word when the DB has named every row.
+                if all(jsc.truthy(jsc.get(row, "scope")) for row in rows) and any(
+                    jsc.truthy(e) and _nf_norm_raw(jsc.get(e, "entity_type")) in _ORDER_TYPES for e in compat
+                ):
+                    return _NO_LINE
+                named = [jsc.nullish_str(jsc.get(row, "display_name")).strip() for row in rows]
+                if all(named):
+                    return customer_header_words([(n, customer_group_of(n)) for n in named])
             words: list[str] = []
             for res in jsc.array(jsc.get(r, "resolutions")):  # 1. the customer's own token
                 matches = jsc.get(res, "matches")
@@ -3697,6 +3726,8 @@ def not_found_error_message(
                 head: list[str] = []
                 for axis in _AXES:
                     words = axis_words(axis)
+                    if words is _NO_LINE:
+                        continue
                     if axis.get("always"):
                         head.append(f"{axis['label']}: {words or axis['allText']}")
                     elif words:
@@ -3723,9 +3754,10 @@ def not_found_error_message(
             if nf:
                 parts.append(f"Couldn't find: {', '.join(nf)}.")
             # A WINDOWED MISS NAMES ITS DATES THE WAY THE HEADER DOES, AND OFFERS THE WIDEN.
-            # The invite names 'all dates' because that exact phrase is what the parser's
-            # deterministic widen arm detects; the frozen escalate contract is preserved by
-            # landing the invite BEFORE the would-clause.
+            # A DO list needs a range of at most 31 days for every contact (owner, 4 Oct 2026,
+            # `do_ask.range_reply`), so the invite asks for another month or dates rather
+            # than 'all dates'; the frozen escalate contract is preserved by landing the
+            # invite BEFORE the would-clause.
             miss_window = (
                 f" from {_fmt_date(date_start)} to {_fmt_date(date_end)}"
                 if (is_order_scope and jsc.truthy(date_start) and jsc.truthy(date_end))
@@ -3740,15 +3772,13 @@ def not_found_error_message(
             # trailing sentence - `_esc_offer`'s own phrasing covers every OTHER site.
             windowed = is_order_scope and (jsc.truthy(date_start) or jsc.truthy(date_end))
             if windowed:
+                widen = "Reply with another month or dates (e.g. August, or 15 Sep to 10 Oct)."
                 esc_ask = (
-                    refer.after("Reply 'all dates' to search without the date filter.", sep=" ")
+                    refer.after(widen, sep=" ")
                     if barred
-                    else "Reply 'all dates' to search without the date filter."
+                    else widen
                     if is_staff
-                    else (
-                        f"Reply 'all dates' to search without the date filter, or would you like me "
-                        f"to escalate to {team} team?"
-                    )
+                    else f"{widen[:-1]}, or would you like me to escalate to {team} team?"
                 )
             else:
                 esc_ask = _esc_offer()
@@ -4127,8 +4157,11 @@ def not_found_error_message(
                         )
                         if order_status == "delivered":
                             status = jsc.get(display, "status")
+                            status_shown = jsc.truthy(status) and "delivery_orders.status" in (
+                                granted_keys if isinstance(granted_keys, (list, tuple, set, frozenset)) else ()
+                            )
                             status_text = (
-                                f" - current status: {jsc.js_string(status)}" if jsc.truthy(status) else ""
+                                f" - current status: {jsc.js_string(status)}" if status_shown else ""
                             )
                             # Owner ruling (10 Sep 2026, reverses the 6 Sep 2026 ruling):
                             # `orders.estimated_delivery_date` is not a real promise - the
@@ -4343,6 +4376,15 @@ _D2_NOUN = {
 }
 
 
+def _unsuggested_line(tokens: list[str]) -> str:
+    """MULTI-CODE-DYM: "\n\nI could not find X." for the missed codes a did-you-mean reply
+    has no suggestion for, "" when there are none (the compose miss line's own words)."""
+    if not tokens:
+        return ""
+    names = tokens[0] if len(tokens) == 1 else ", ".join(tokens[:-1]) + " or " + tokens[-1]
+    return f"\n\nI could not find {names}."
+
+
 def _bso_human_list(codes: list) -> str:
     """`build-suggest-offer`'s own `humanList` - no filter and no empty case, unlike the
     miss renderer's copy. Kept separate because the two really do differ."""
@@ -4367,6 +4409,97 @@ def _is_code_shaped(value: Any) -> bool:
 def _quick_reply(values: list) -> str:
     """Comma-stripped so a label cannot split into extra respond.io buttons."""
     return ",".join(jsc.js_string(v).replace(",", "") for v in values)
+
+
+def miss_token_candidates(res: Any, allowed_types: list | None) -> list:
+    """D1's own candidate set: PER TOKEN, GENUINE-MISS ONLY.
+
+    Never aggregate across tokens - a dead code once borrowed a sibling token's candidate
+    in a multi-item order. Customer rows arrive multiply coded (the same account as debtor
+    NAME, debtor CODE and a hash canonical code), so code-keyed dedup rendered one
+    customer as three "codes"; they key on the display name instead, and the resolver's
+    similarity order keeps the name-coded row first.
+    """
+    acc: list = []
+    matches = jsc.get(res, "matches")
+    if isinstance(matches, list):
+        acc.extend(matches)
+    alternatives = jsc.get(res, "alternatives")
+    if isinstance(alternatives, list):
+        acc.extend(alternatives)
+
+    def cust_key(match: Any) -> str:
+        display = jsc.get(match, "display")
+        display = display if jsc.truthy(display) else {}
+        name = (
+            jsc.get(display, "debtor_name")
+            or jsc.get(display, "customer_name")
+            or jsc.get(match, "canonical_code")
+            or ""
+        )
+        return "cust:" + jsc.js_string(name).strip().lower()
+
+    seen: list = []
+    keep: list = []
+    for match in acc:
+        code = jsc.get(match, "canonical_code")
+        if not jsc.truthy(code):
+            continue
+        if _ms_is_exact(match):
+            continue  # exact would have resolved
+        entity_type = jsc.get(match, "entity_type")
+        if allowed_types is not None and jsc.truthy(entity_type) and entity_type not in allowed_types:
+            continue
+        key = (
+            cust_key(match)
+            if jsc.js_string(entity_type or "").lower() == "customer"
+            else code
+        )
+        if key in seen:
+            continue
+        seen.append(key)
+        keep.append(match)
+    return keep
+
+
+def did_you_mean_head(typed: str) -> str:
+    """MULTI-CODE-DYM: the single-code numbered did-you-mean's own opening sentence, for
+    one missed product code beside others (`turn/compose.py` prints it; the `turn`
+    package owns no did-you-mean wording of its own, AC-1680)."""
+    return f'Couldn\'t find "{typed}" (product). Did you mean:'
+
+
+def did_you_mean_by_token(resolved: Any, gate: Any) -> dict[str, list[dict[str, Any]]]:
+    """MULTI-CODE-DYM: each missed product token's did-you-mean, keyed by the token as the
+    resolver echoed it (`turn.state.token_key` folds it for a join).
+
+    The SAME candidates `build_suggest_offer`'s D1 arm offers when that token is asked on
+    its own (owner, 4 Oct 2026: "treat each product code individually"): the genuine-miss
+    resolutions (`miss_resolutions`), each token's own non-exact matches plus the
+    resolver's trigram `alternatives` (`miss_token_candidates`), the first three
+    (`_cap3`), a row with no human label dropped. Product rows only: a partial answer
+    offers a code to fetch in place of the one that missed, and only a product is that.
+    """
+    g = gate if isinstance(gate, dict) else {}
+    allowed_lookup = jsc.get(jsc.get(g, "gate_debug"), "allowed_lookup")
+    allowed_types = allowed_lookup if isinstance(allowed_lookup, list) else None
+    out: dict[str, list[dict[str, Any]]] = {}
+    for res in _ms_miss_resolutions(resolved, gate=g):
+        token = jsc.nullish_str(jsc.get(res, "token")).strip()
+        if not token or token in out:
+            continue
+        rows: list[dict[str, Any]] = []
+        for match in _cap3(miss_token_candidates(res, allowed_types)):
+            if jsc.js_string(jsc.get(match, "entity_type") or "").lower() != "product":
+                continue
+            label = _ms_human_label(match)
+            uuid = jsc.get(match, "uuid")
+            if not jsc.truthy(label) or not jsc.truthy(uuid):
+                continue
+            rows.append({"code": jsc.js_string(label), "uuid": jsc.js_string(uuid), "entity_type": "product"})
+        if rows:
+            out[token] = rows
+    return out
 
 
 def build_suggest_offer(
@@ -4568,56 +4701,6 @@ def build_suggest_offer(
         raw = jsc.get(at, "raw") if jsc.truthy(at) else None
         return raw if jsc.truthy(raw) else "document"
 
-    def token_candidates(res: Any) -> list:
-        """D1's own candidate set: PER TOKEN, GENUINE-MISS ONLY.
-
-        Never aggregate across tokens - a dead code once borrowed a sibling token's candidate
-        in a multi-item order. Customer rows arrive multiply coded (the same account as debtor
-        NAME, debtor CODE and a hash canonical code), so code-keyed dedup rendered one
-        customer as three "codes"; they key on the display name instead, and the resolver's
-        similarity order keeps the name-coded row first.
-        """
-        acc: list = []
-        matches = jsc.get(res, "matches")
-        if isinstance(matches, list):
-            acc.extend(matches)
-        alternatives = jsc.get(res, "alternatives")
-        if isinstance(alternatives, list):
-            acc.extend(alternatives)
-
-        def cust_key(match: Any) -> str:
-            display = jsc.get(match, "display")
-            display = display if jsc.truthy(display) else {}
-            name = (
-                jsc.get(display, "debtor_name")
-                or jsc.get(display, "customer_name")
-                or jsc.get(match, "canonical_code")
-                or ""
-            )
-            return "cust:" + jsc.js_string(name).strip().lower()
-
-        seen: list = []
-        keep: list = []
-        for match in acc:
-            code = jsc.get(match, "canonical_code")
-            if not jsc.truthy(code):
-                continue
-            if _ms_is_exact(match):
-                continue  # exact would have resolved
-            entity_type = jsc.get(match, "entity_type")
-            if allowed_types is not None and jsc.truthy(entity_type) and entity_type not in allowed_types:
-                continue
-            key = (
-                cust_key(match)
-                if jsc.js_string(entity_type or "").lower() == "customer"
-                else code
-            )
-            if key in seen:
-                continue
-            seen.append(key)
-            keep.append(match)
-        return keep
-
     misses = _ms_miss_resolutions(r, gate=g)
     # Reviewer B2 on PR #833: a described set that qualifies nothing names its own miss
     # (`not_found_error_message`'s set branches: the honest zero of AC-1319 with the
@@ -4637,7 +4720,7 @@ def build_suggest_offer(
         for res in misses:
             if zero_set and not _CODE_RE.fullmatch(jsc.nullish_str(jsc.get(res, "token")).strip()):
                 continue
-            cands = token_candidates(res)
+            cands = miss_token_candidates(res, allowed_types)
             if cands:
                 token = jsc.get(res, "token")
                 if not jsc.truthy(token):
@@ -4865,6 +4948,20 @@ def build_suggest_offer(
     # single-token block; more than 1 takes the numbered multi-block.
     d1 = survivors[0]["block"] if len(survivors) == 1 else None
 
+    # MULTI-CODE-DYM Q5 (owner, 4 Oct 2026): beside a did-you-mean, a missed PRODUCT code
+    # with nothing to suggest is still named, never dropped.
+    survived = {_type_norm(s["block"]["token"]) for s in survivors}
+    unsuggested: list[str] = []
+    for res in misses if survivors else []:
+        tok = jsc.get(res, "token")
+        if not jsc.truthy(tok) or _type_norm(tok) in survived:
+            continue
+        if jsc.js_string(jsc.get(ent_of_tok(tok), "hint") or "").lower() != "product":
+            continue
+        raw = jsc.js_string(raw_of_tok(tok))
+        if raw not in unsuggested:
+            unsuggested.append(raw)
+
     if len(survivors) > 1:
         # D1 (multi-token): one labelled sub-list per surviving token, global CONTIGUOUS idx.
         # Numbered mode subsumes the code / uuid split, so there is no uuid branching here.
@@ -4895,7 +4992,7 @@ def build_suggest_offer(
                 sfx = ""
                 if key is not None:
                     sfx = _stamp(key)
-                cand_lines.append(f"  {idx}. {jsc.js_string(pick['label'])}{sfx}")
+                cand_lines.append(f"{idx}. {jsc.js_string(pick['label'])}{sfx}")
                 out["suggest_last_result_set"].append(
                     {
                         "idx": idx,
@@ -4926,17 +5023,19 @@ def build_suggest_offer(
                 )
             # QUOTE THE CUSTOMER'S SPELLING. `for_raw` above stays the RESOLVER token, because
             # the pick round trip matches on it; only the rendered text changes.
+            # MULTI-CODE-DYM Q5 (owner, 4 Oct 2026): each token reads as it would asked
+            # alone (the single-token arm's own sentence), numbers running on across them.
             blocks.append(
-                f'"{jsc.js_string(raw_of_tok(token))}"{type_sfx} - did you mean:\n'
+                f'Couldn\'t find "{jsc.js_string(raw_of_tok(token))}"{type_sfx}. Did you mean:\n'
                 + "\n".join(cand_lines)
             )
         out["suggest_offer"] = True
         out["suggest_selection_context"] = "suggest_offer"
         out["suggest_response"] = (
-            "Couldn't find some items:\n\n"
-            + "\n".join(blocks)
-            + "\n\n"
-            + _cont("Reply a number to pick", f", or 'yes' to escalate to {team}.")
+            "\n\n".join(blocks)
+            + _unsuggested_line(unsuggested)
+            + "\n"
+            + _cont("Reply with a code to continue", f", or would you like me to escalate to {team} team?")
         )
         out["suggest_quick_reply"] = _quick_reply([_YES, _NO])
         out["dym_offer"] = mk_offer(out["dym_candidates"])
@@ -5081,6 +5180,14 @@ def build_suggest_offer(
                     for p in picks
                 ]
                 out["dym_offer"] = mk_offer(out["dym_candidates"])
+            if unsuggested:
+                # MULTI-CODE-DYM Q5: the codes with no suggestion go above the closing line.
+                resp = jsc.js_string(out.get("suggest_response") or "")
+                at = resp.find("Reply with a")
+                if at > 0:
+                    out["suggest_response"] = (
+                        resp[:at].rstrip() + _unsuggested_line(unsuggested) + "\n" + resp[at:]
+                    )
             return out
         # All candidates dropped (a bare uuid with no display name): `suggest_offer` stays
         # false and we fall through to D2 / escalate-only. Never emit an invented label.

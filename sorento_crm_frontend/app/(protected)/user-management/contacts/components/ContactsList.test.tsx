@@ -48,7 +48,7 @@ vi.mock('next/navigation', () => ({
 const CONTACTS = [
   {
     id: 'contact-aisyah',
-    phone_number: '+60123456701',
+    phone_number: '+60100000004',
     name: 'Aisyah Rahman',
     first_name: 'Aisyah',
     last_name: 'Rahman',
@@ -61,7 +61,7 @@ const CONTACTS = [
   },
   {
     id: 'contact-farah',
-    phone_number: '+60123456702',
+    phone_number: '+60100000003',
     name: 'Farah Idris',
     first_name: 'Farah',
     last_name: 'Idris',

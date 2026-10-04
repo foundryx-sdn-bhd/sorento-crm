@@ -46,7 +46,7 @@ def db():
         yield session
 
 
-PHONE = "+60177001100"
+PHONE = "+60170000542"
 
 
 def _seed(db) -> dict:
