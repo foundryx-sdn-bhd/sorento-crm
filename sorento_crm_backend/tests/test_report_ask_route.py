@@ -3,11 +3,13 @@
 `documentation/plans/chatbot/PLAN-report-engine.md` section 0 and section 10 (the binding
 contract) and `report-engine-acceptance-criteria.md` AC-RE-1 to AC-RE-17 and AC-RE-20.
 
-Written BEFORE the route, `app/services/reports/ask.py` or the ask datasets exist: every test
-must fail on the missing route (404) and never on a seed error. Postgres only
-(`tests/_pg_fixture.py`), every row seeded here (CI's database has none).
+Postgres only (`tests/_pg_fixture.py`), every row seeded here (CI's database has none).
 
-Figures are AutoCount DOs (`source_book="db1"`), so a line's amount is its own total.
+Owner direction 4 Oct 2026: EVERY basis (delivered, ordered, outstanding) ranks from SALES ORDER
+lines with the SO's own sales agent; delivery orders and the DO-to-SO link are not used. A
+"sale" in this file is one SO with one fully delivered line (`tests/_report_ask_so_seed.py`), so
+a line's delivered amount is its `line_total`. The per-line figures and the line's date
+(`coalesce(required_date, order_date)`) are top selling's own (`sales_report_service`).
 
 Ambiguities the tester did NOT resolve by guessing (flagged to the captain):
 * a dealer naming another customer: PLAN section 10 lists the customer filter among the
@@ -31,21 +33,18 @@ from app.models.product import Brand, ProductCategory
 from app.services.company_scope import DEFAULT_COMPANY_ID
 
 from tests._mc_lookup_seed import seed_mocha
+from tests._report_ask_so_seed import seed_so_line
 from tests._sales_report_do_seed import (  # noqa: F401  (client / db are fixtures)
     _as_contact,
     _contact,
     _link,
     client,
     db,
-    line,
     money,
     product,
     seed_agent,
     seed_customer,
-    seed_do,
     seed_policy,
-    seed_segment,
-    seed_so,
     warehouse,
 )
 from tests.test_top_selling_report import _access
@@ -117,12 +116,9 @@ def _prod(db, code, *, brand=None, category=None):
     return row
 
 
-def _sale(db, *, cust, wh, agent, prod, qty, total, when=SEP, so=True):
-    """One AutoCount DO with one line, linked to a fresh SO of `agent` (None = SO with no agent;
-    `so=False` = a DO with no sales order at all)."""
-    so_id = seed_so(db, customer_id=cust.id, agent_id=agent.id if agent else None).id if so else None
-    return seed_do(db, customer_id=cust.id, order_date=when, sales_order_id=so_id, source_book="db1",
-                   lines=[line(prod.id, wh.id, qty, price=D("1"), total=D(str(total)))])
+def _sale(db, *, cust, wh, agent, prod, qty, total, when=SEP):
+    """One SO of `agent` (None = an SO with no agent) with one fully delivered line."""
+    return seed_so_line(db, cust=cust, prod=prod, qty=qty, total=total, agent=agent, wh=wh, order_date=when)
 
 
 def _ranking_world(db):
@@ -157,21 +153,6 @@ def _ranking_world(db):
     _sale(db, agent=w.a4, prod=w.p1, qty=7, total="777.00", when=AUG, **kw)
     db.commit()
     return w
-
-
-def _ordered(db, *, cust, agent, prod, qty, total, order_date, so_status="open", line_status="open",
-             required_date=None, demand_class=None, delivered=0):
-    so = SalesOrder(id=str(uuid.uuid4()), so_number=unique_code("SO"), customer_id=cust.id,
-                    sales_agent_id=agent.id if agent else None, order_date=order_date,
-                    status=so_status, demand_class=demand_class, company_id=DEFAULT_COMPANY_ID)
-    db.add(so)
-    db.flush()
-    db.add(SalesOrderLine(id=str(uuid.uuid4()), sales_order_id=so.id, product_id=prod.id,
-                          qty_ordered=qty, qty_delivered=delivered, line_total=D(str(total)),
-                          line_status=line_status, required_date=required_date,
-                          company_id=DEFAULT_COMPANY_ID))
-    db.flush()
-    return so
 
 
 # ================================================================ AC-RE-1 / 2 / 3: the filters
@@ -222,7 +203,7 @@ def test_ac_re_4_top_n_cuts_rows_but_the_total_is_the_whole_set(client, db):
 
 
 def test_ac_re_5_sort_asc_ranks_lowest_first_and_skips_agents_without_a_sale(client, db):
-    """AC-RE-5: asc = A2 700, A1 1500, A3 3050; A4 (only an August DO) is not listed."""
+    """AC-RE-5: asc = A2 700, A1 1500, A3 3050; A4 (only an August SO) is not listed."""
     _ranking_world(db)
     body = _ok(client, _full(db), group_by="sales_agent", top_n=10, sort="asc")
     assert [r["name"] for r in body["rows"]] == ["ZZT-AG-2", "ZZT-AG-1", "ZZT-AG-3"], body["rows"]
@@ -244,14 +225,14 @@ def test_ac_re_6_measure_qty_ranks_by_quantity(client, db):
 
 
 def test_ac_re_7_no_agent_is_one_row_and_the_rows_sum_to_the_total(client, db):
-    """AC-RE-7: a DO with no sales order and a DO whose SO has no agent are ONE "(no agent)" row."""
+    """AC-RE-7: two SOs with no sales agent are ONE "(no agent)" row."""
     cust = seed_customer(db, name=unique_code("Cust"))
     wh = warehouse(db, company_id=DEFAULT_COMPANY_ID)
     prod = _prod(db, "ZZTNOAG-1")
     agent = seed_agent(db, code="ZZT-AG-N")
     _sale(db, cust=cust, wh=wh, agent=agent, prod=prod, qty=1, total="10.00")
-    _sale(db, cust=cust, wh=wh, agent=None, prod=prod, qty=2, total="20.00")  # SO without agent
-    _sale(db, cust=cust, wh=wh, agent=None, prod=prod, qty=3, total="30.00", so=False)  # no SO
+    _sale(db, cust=cust, wh=wh, agent=None, prod=prod, qty=2, total="20.00")
+    _sale(db, cust=cust, wh=wh, agent=None, prod=prod, qty=3, total="30.00")
     db.commit()
     body = _ok(client, _full(db), group_by="sales_agent", top_n=10)
     assert _rows(body) == [("(no agent)", 5, D("50.00")), ("ZZT-AG-N", 1, D("10.00"))], body["rows"]
@@ -262,28 +243,31 @@ def test_ac_re_7_no_agent_is_one_row_and_the_rows_sum_to_the_total(client, db):
 # ================================================================ AC-RE-8: basis and echo
 
 
-def test_ac_re_8_ordered_basis_ranks_so_lines_filed_by_so_date(client, db):
-    """AC-RE-8: ordered value by SO date. A2's Aug SO (required date in Sep) is out, a cancelled
-    SO and a cancelled line are out. A1 1000/10, A2 300/5, A3 200/2."""
+def test_ac_re_8_ordered_basis_ranks_so_lines_filed_by_the_lines_required_date(client, db):
+    """AC-RE-8 (owner direction 4 Oct): ordered = `qty_ordered` / `line_total`, a line dated by
+    `coalesce(required_date, order_date)`. A2's Aug SO with a Sep required date is IN (a line
+    filed by its SO date alone would drop it), a Sep SO whose line is required in Oct is OUT, a
+    cancelled SO and a cancelled line are out. A2 5+50 / 300+9999, A1 10 / 1000, A3 2 / 200."""
     cust = seed_customer(db, name=unique_code("Cust"))
     prod = _prod(db, "ZZTORD-1")
-    a1, a2, a3 = (seed_agent(db, code=f"ZZT-OA-{n}") for n in ("1", "2", "3"))
-    kw = dict(cust=cust, prod=prod)
-    _ordered(db, agent=a1, qty=10, total="1000.00", order_date=SEP, **kw)
-    _ordered(db, agent=a2, qty=5, total="300.00", order_date=SEP, **kw)
-    _ordered(db, agent=a2, qty=50, total="9999.00", order_date=AUG, required_date=date(2026, 9, 5), **kw)
-    _ordered(db, agent=a3, qty=7, total="700.00", order_date=SEP, so_status="cancelled", **kw)
-    _ordered(db, agent=a3, qty=8, total="800.00", order_date=SEP, line_status="cancelled", **kw)
-    _ordered(db, agent=a3, qty=2, total="200.00", order_date=SEP, **kw)
+    a1, a2, a3, a4 = (seed_agent(db, code=f"ZZT-OA-{n}") for n in ("1", "2", "3", "4"))
+    kw = dict(cust=cust, prod=prod, delivered=0)
+    seed_so_line(db, agent=a1, qty=10, total="1000.00", order_date=SEP, **kw)
+    seed_so_line(db, agent=a2, qty=5, total="300.00", order_date=SEP, **kw)
+    seed_so_line(db, agent=a2, qty=50, total="9999.00", order_date=AUG, required_date=date(2026, 9, 5), **kw)
+    seed_so_line(db, agent=a4, qty=70, total="7000.00", order_date=SEP, required_date=date(2026, 10, 5), **kw)
+    seed_so_line(db, agent=a3, qty=7, total="700.00", order_date=SEP, so_status="cancelled", **kw)
+    seed_so_line(db, agent=a3, qty=8, total="800.00", order_date=SEP, line_status="cancelled", **kw)
+    seed_so_line(db, agent=a3, qty=2, total="200.00", order_date=SEP, **kw)
     db.commit()
     contact = _full(db)
     body = _ok(client, contact, group_by="sales_agent", top_n=10, basis="ordered")
     assert body["basis"] == "ordered" and body["basis_label"] == "ordered sales", body
-    assert _rows(body) == [("ZZT-OA-1", 10, D("1000.00")), ("ZZT-OA-2", 5, D("300.00")),
+    assert _rows(body) == [("ZZT-OA-2", 55, D("10299.00")), ("ZZT-OA-1", 10, D("1000.00")),
                            ("ZZT-OA-3", 2, D("200.00"))], body["rows"]
-    assert money(body["total"]["amount"]) == D("1500.00") and body["total"]["qty"] == 17, body["total"]
-    # No DOs exist here: the default (delivered) basis finds nothing on the same data.
-    delivered = _ok(client, contact, group_by="sales_agent", top_n=10)
+    assert money(body["total"]["amount"]) == D("11499.00") and body["total"]["qty"] == 67, body["total"]
+    # Nothing was delivered on any of these lines: the delivered basis finds nothing on the same data.
+    delivered = _ok(client, contact, group_by="sales_agent", top_n=10, basis="delivered")
     assert delivered["basis"] == "delivered" and delivered["basis_label"] == "delivered sales", delivered
     assert delivered["rows"] == [] and delivered["total_count"] == 0, delivered
 
@@ -361,19 +345,17 @@ def test_ac_re_9_group_by_product(client, db):
 
 
 def test_ac_re_9_group_by_channel(client, db):
-    seed_segment(db, code="ZZT-RETAIL")
-    seed_segment(db, code="ZZT-PROJECT-X")
+    """The channel is the SO's own demand class (`retail` reads Dealer, `project` Project team)."""
     wh = warehouse(db, company_id=DEFAULT_COMPANY_ID)
     prod = _prod(db, "ZZTCH-1")
-    retail = seed_customer(db, name="ZZT CH RETAIL", segment_code="ZZT-RETAIL")
-    project = seed_customer(db, name="ZZT CH PROJECT", segment_code="ZZT-PROJECT-X")
-    _sale(db, cust=retail, wh=wh, agent=None, prod=prod, qty=1, total="100.00")
-    _sale(db, cust=project, wh=wh, agent=None, prod=prod, qty=3, total="300.00")
+    cust = seed_customer(db, name="ZZT CH CUSTOMER")
+    seed_so_line(db, cust=cust, prod=prod, wh=wh, qty=1, total="100.00", demand_class="retail")
+    seed_so_line(db, cust=cust, prod=prod, wh=wh, qty=3, total="300.00", demand_class="project")
     db.commit()
     body = _ok(client, _full(db), group_by="channel", top_n=5)
     assert body["group_by"] == "channel", body
     assert [(r["qty"], money(r["amount"])) for r in body["rows"]] == [(3, D("300.00")), (1, D("100.00"))], body
-    # Captain ruling (PLAN section 10): channel rows read Dealer / Project team on both bases.
+    # Captain ruling (PLAN section 10): channel rows read Dealer / Project team on every basis.
     assert [r["name"] for r in body["rows"]] == ["Project team", "Dealer"], body
 
 
@@ -533,7 +515,7 @@ def test_ac_re_15_an_office_contact_linked_to_a_customer_is_not_a_dealer(client,
 # ================================================================ AC-RE-16: company scope
 
 
-def test_ac_re_16_another_companys_dos_are_not_counted(client, db):
+def test_ac_re_16_another_companys_so_lines_are_not_counted(client, db):
     mocha = seed_mocha(db)
     shared = unique_code("ZZTCO", alpha=True)
     cust = seed_customer(db, name=unique_code("Cust"))
@@ -542,10 +524,8 @@ def test_ac_re_16_another_companys_dos_are_not_counted(client, db):
     prod_b = product(db, company_id=mocha.id, code=shared)
     wh_a = warehouse(db, company_id=DEFAULT_COMPANY_ID)
     wh_b = warehouse(db, company_id=mocha.id)
-    seed_do(db, customer_id=cust.id, order_date=SEP, source_book="db1",
-            lines=[line(prod_a.id, wh_a.id, 10, price=D("1"), total=D("100.00"))])
-    seed_do(db, customer_id=mocha_cust.id, order_date=SEP, source_book="db1", company_id=mocha.id,
-            lines=[line(prod_b.id, wh_b.id, 500, price=D("1"), total=D("5000.00"))])
+    seed_so_line(db, cust=cust, prod=prod_a, wh=wh_a, qty=10, total="100.00")
+    seed_so_line(db, cust=mocha_cust, prod=prod_b, wh=wh_b, qty=500, total="5000.00", company_id=mocha.id)
     db.commit()
     body = _ok(client, _full(db), product_code=shared)
     assert body["total"]["qty"] == 10 and money(body["total"]["amount"]) == D("100.00"), body["total"]
@@ -582,52 +562,309 @@ def test_a_named_location_outside_the_policy_is_refused(client, db):
     assert w is not None
 
 
-# ================================================================ AC-RE-20: parity with sales-report
+# ================================================================ AC-RE-20: parity with top selling
+# Owner direction 4 Oct 2026: report-ask ranks from SO lines with top selling's own per-line figures
+# and date, so `group_by=product` is top selling's item ranking, number for number and in order. The
+# DO-based sales-report route stays on DOs and is no longer the reference.
+
+WIN = {"date_from": "2026-09-01", "date_to": "2026-09-30"}
+AUG20 = date(2026, 8, 20)
 
 
 def _parity_world(db):
-    c1, c2 = seed_customer(db, name="ZZT PAR ONE"), seed_customer(db, name="ZZT PAR TWO")
-    wh = warehouse(db, company_id=DEFAULT_COMPANY_ID)
-    pa, pb, pc = (_prod(db, f"ZZTPAR-{n}") for n in "ABC")
-    a1, a2 = seed_agent(db, code="ZZT-PAR-AG1"), seed_agent(db, code="ZZT-PAR-AG2")
-    # Legacy DO: the DOC total 1000.01 is repeated on every line and must count once, split.
-    so1 = seed_so(db, customer_id=c1.id, agent_id=a1.id)
-    seed_do(db, customer_id=c1.id, order_date=SEP, source_book=None, sales_order_id=so1.id,
-            lines=[line(pa.id, wh.id, 1, price=D("10"), total=D("1000.01")),
-                   line(pb.id, wh.id, 2, price=D("10"), total=D("1000.01")),
-                   line(pc.id, wh.id, 3, price=D("10"), total=D("1000.01"))])
-    # AutoCount DO of another customer and agent.
-    so2 = seed_so(db, customer_id=c2.id, agent_id=a2.id)
-    seed_do(db, customer_id=c2.id, order_date=SEP, source_book="db1", sales_order_id=so2.id,
-            lines=[line(pa.id, wh.id, 4, price=D("10"), total=D("250.50")),
-                   line(pb.id, wh.id, 5, price=D("10"), total=D("100.25"))])
-    # A DO with no sales order.
-    seed_do(db, customer_id=c2.id, order_date=SEP, source_book="db1",
-            lines=[line(pc.id, wh.id, 6, price=D("10"), total=D("33.33"))])
+    """Five products in two categories, two agents, one chain of partial deliveries.
+
+        line  product  agent  SO date  required  status        ordered  delivered  total
+        L1    PA       AG1    Sep 10   -         open/open     10       10         1000.00
+        L2    PA       AG2    Sep 11   -         open/open     20       8          600.00
+        L3    PB       AG1    Sep 12   -         closed/closed 10       4          500.00   (short, closed)
+        L4    PC       AG2    Sep 13   -         open/cancel   99       99         9999.00  (cancelled line)
+        L5    PB       AG2    Aug 20   Sep 12    open/open     6        6          120.00   (required date in Sep)
+        L6    PB       AG1    Sep 14   Oct 5     open/open     50       50         5000.00  (required date in Oct)
+        L7    PD       AG1    Sep 15   -         open/open     5        5          333.33   (second category)
+        L8    PC       AG2    Sep 16   -         open/open     3        0          90.00    (nothing delivered)
+        L9    PC       AG1    Sep 17   -         open/open     4        4          0.00     (real qty, zero value)
+    """
+    w = SimpleNamespace()
+    w.cust = seed_customer(db, name=unique_code("Cust"))
+    w.wh = warehouse(db, company_id=DEFAULT_COMPANY_ID)
+    w.cat1, w.cat2 = _category(db, "ZZT-PAR-CAT1"), _category(db, "ZZT-PAR-CAT2")
+    w.pa, w.pb, w.pc = (_prod(db, f"ZZTPAR-{n}", category=w.cat1) for n in "ABC")
+    w.pd = _prod(db, "ZZTPAR-D", category=w.cat2)
+    w.ag1, w.ag2 = seed_agent(db, code="ZZT-PAR-AG1"), seed_agent(db, code="ZZT-PAR-AG2")
+    kw = dict(cust=w.cust, wh=w.wh)
+    seed_so_line(db, prod=w.pa, agent=w.ag1, qty=10, total="1000.00", order_date=date(2026, 9, 10), **kw)
+    seed_so_line(db, prod=w.pa, agent=w.ag2, qty=20, delivered=8, total="600.00", order_date=date(2026, 9, 11), **kw)
+    seed_so_line(db, prod=w.pb, agent=w.ag1, qty=10, delivered=4, total="500.00", order_date=date(2026, 9, 12),
+                 so_status="closed", line_status="closed", **kw)
+    seed_so_line(db, prod=w.pc, agent=w.ag2, qty=99, total="9999.00", order_date=date(2026, 9, 13),
+                 line_status="cancelled", **kw)
+    seed_so_line(db, prod=w.pb, agent=w.ag2, qty=6, total="120.00", order_date=AUG20,
+                 required_date=date(2026, 9, 12), **kw)
+    seed_so_line(db, prod=w.pb, agent=w.ag1, qty=50, total="5000.00", order_date=date(2026, 9, 14),
+                 required_date=date(2026, 10, 5), **kw)
+    seed_so_line(db, prod=w.pd, agent=w.ag1, qty=5, total="333.33", order_date=date(2026, 9, 15), **kw)
+    seed_so_line(db, prod=w.pc, agent=w.ag2, qty=3, delivered=0, total="90.00", order_date=date(2026, 9, 16), **kw)
+    seed_so_line(db, prod=w.pc, agent=w.ag1, qty=4, total="0.00", order_date=date(2026, 9, 17), **kw)
     db.commit()
+    return w
 
 
-@pytest.mark.parametrize("group_by", ["customer", "product", "sales_agent"])
-def test_ac_re_20_report_ask_equals_the_sales_report_to_the_sen(client, db, group_by):
+def _top_selling_rows(db, *, rank_by, basis, **extra):
+    from app.models.base import set_company_scope
+    from app.services.sales_report_service import top_selling
+
+    set_company_scope(db, frozenset({DEFAULT_COMPANY_ID}))
+    out = top_selling(db, rank_by=rank_by, basis=basis, group="item", date_from=date(2026, 9, 1),
+                      date_to=date(2026, 9, 30), **extra)
+    return [(r["code"], r["quantity"], money(r["amount"])) for r in out["rows"]], out
+
+
+@pytest.mark.parametrize("basis", ["delivered", "ordered"])
+@pytest.mark.parametrize("measure, rank_by", [("amount", "amount"), ("qty", "quantity")])
+def test_ac_re_20_group_by_product_is_top_sellings_item_ranking(client, db, basis, measure, rank_by):
+    """Same per-product numbers AND the same order as `top_selling`, on both bases and both measures."""
+    _parity_world(db)
+    ask = _ok(client, _full(db), group_by="product", top_n=100, basis=basis, measure=measure)
+    expected, out = _top_selling_rows(db, rank_by=rank_by, basis=basis)
+    assert len(expected) >= 3, expected  # the world ranks several products
+    assert _rows(ask) == expected, (basis, measure, _rows(ask), expected)
+    assert ask["total_count"] == out["total_count"], (ask["total_count"], out["total_count"])
+    assert ask["total"]["qty"] == out["totals"]["quantity"], (ask["total"], out["totals"])
+    assert money(ask["total"]["amount"]) == money(out["totals"]["amount"]), (ask["total"], out["totals"])
+
+
+def test_ac_re_20_the_world_pins_the_numbers_not_only_the_parity(client, db):
+    """Hand-computed, so two wrong-in-the-same-way implementations cannot agree. Delivered, by amount:
+    PA 10+8 / 1000+240, PB 4+6 / 200+120, PD 5 / 333.33, PC 4 / 0.00 (qty, no value). The cancelled
+    line, the Oct-required line and the undelivered PC line are out or zero."""
     _parity_world(db)
     contact = _full(db)
-    ask = _ok(client, contact, group_by=group_by, top_n=100, product_code="ZZTPAR")
-    resp = client.get(SALES_REPORT, params={"product_code": "ZZTPAR", "group_by": group_by,
-                                            "date_from": "2026-09-01", "date_to": "2026-09-30"})
-    assert resp.status_code == 200, resp.text
-    old = resp.json()
-    assert len(old["rows"]) <= 10, old["rows"]
-    assert {r["name"]: (r["qty"], money(r["amount"])) for r in ask["rows"]} == {
-        r["name"]: (r["qty"], money(r["amount"])) for r in old["rows"]}, (ask["rows"], old["rows"])
-    assert ask["total"]["qty"] == old["total"]["qty"], (ask["total"], old["total"])
-    assert money(ask["total"]["amount"]) == money(old["total"]["amount"]), (ask["total"], old["total"])
+    delivered = _ok(client, contact, group_by="product", top_n=100, basis="delivered")
+    assert _rows(delivered) == [("ZZTPAR-A", 18, D("1240.00")), ("ZZTPAR-D", 5, D("333.33")),
+                                ("ZZTPAR-B", 10, D("320.00")), ("ZZTPAR-C", 4, D("0.00"))], delivered["rows"]
+    ordered = _ok(client, contact, group_by="product", top_n=100, basis="ordered")
+    # PA 30 / 1600, PB 10+6 / 500+120, PD 5 / 333.33, PC 3+4 / 90
+    assert _rows(ordered) == [("ZZTPAR-A", 30, D("1600.00")), ("ZZTPAR-B", 16, D("620.00")),
+                              ("ZZTPAR-D", 5, D("333.33")), ("ZZTPAR-C", 7, D("90.00"))], ordered["rows"]
+
+
+@pytest.mark.parametrize("basis", ["delivered", "ordered"])
+@pytest.mark.parametrize("measure, rank_by", [("amount", "amount"), ("qty", "quantity")])
+def test_ac_re_20_with_a_category_filter_it_still_equals_top_selling(client, db, basis, measure, rank_by):
+    w = _parity_world(db)
+    ask = _ok(client, _full(db), group_by="product", top_n=100, basis=basis, measure=measure,
+              category_ids=[w.cat1.id])
+    expected, out = _top_selling_rows(db, rank_by=rank_by, basis=basis, category_ids=[w.cat1.id])
+    assert "ZZTPAR-D" not in [name for name, _q, _a in expected], expected  # the other category is out
+    assert _rows(ask) == expected, (basis, measure, _rows(ask), expected)
+    assert ask["total"]["qty"] == out["totals"]["quantity"], (ask["total"], out["totals"])
+    assert money(ask["total"]["amount"]) == money(out["totals"]["amount"]), (ask["total"], out["totals"])
+
+
+def test_ac_re_20_group_by_category_equals_top_sellings_category_ranking(client, db):
+    from app.models.base import set_company_scope
+    from app.services.sales_report_service import top_selling
+
+    _parity_world(db)
+    ask = _ok(client, _full(db), group_by="category", top_n=100, basis="delivered")
+    set_company_scope(db, frozenset({DEFAULT_COMPANY_ID}))
+    out = top_selling(db, rank_by="amount", basis="delivered", group="category",
+                      date_from=date(2026, 9, 1), date_to=date(2026, 9, 30))
+    # top selling names a category by its code, report-ask by its name; compare the figures in order.
+    assert [(r["qty"], money(r["amount"])) for r in ask["rows"]] == [
+        (r["quantity"], money(r["amount"])) for r in out["rows"]], (ask["rows"], out["rows"])
+
+
+# ================================================================ REPORT-ENGINE: every basis is SO lines
+
+
+def test_every_basis_ranks_the_sales_agent_of_the_so_not_of_any_delivery(client, db):
+    """No DO exists anywhere in this chain: the delivered basis still ranks, by the SO's own agent."""
+    w = _parity_world(db)
+    body = _ok(client, _full(db), group_by="sales_agent", top_n=10, basis="delivered")
+    # AG1: L1 10/1000 + L3 4/200 + L7 5/333.33 + L9 4/0 ; AG2: L2 8/240 + L5 6/120 (L8 delivered nothing)
+    assert _rows(body) == [("ZZT-PAR-AG1", 23, D("1533.33")), ("ZZT-PAR-AG2", 14, D("360.00"))], body["rows"]
+    assert w.ag1.sales_agent == "ZZT-PAR-AG1"
+
+
+def test_the_delivered_basis_dates_a_line_by_its_required_date(client, db):
+    """`group_by=month` is bucketed by `coalesce(required_date, order_date)`: L5 (Aug SO, required
+    Sep 12) is September; the Oct-required L6 is outside a September window and absent."""
+    _parity_world(db)
+    body = _ok(client, _full(db), group_by="month", top_n=12, date_from="2026-08-01", date_to="2026-09-30")
+    assert [r["name"] for r in body["rows"]] == ["2026-09"], body["rows"]
+    assert body["rows"][0]["qty"] == 37, body["rows"]
+    assert money(body["rows"][0]["amount"]) == D("1893.33"), body["rows"]
+    wide = _ok(client, _full(db), group_by="month", top_n=12, date_from="2026-08-01", date_to="2026-10-31")
+    assert sorted(r["name"] for r in wide["rows"]) == ["2026-09", "2026-10"], wide["rows"]
+
+
+def test_a_cancelled_so_and_a_cancelled_line_are_out_of_every_basis(client, db):
+    cust = seed_customer(db, name=unique_code("Cust"))
+    prod = _prod(db, "ZZTCAN-1")
+    keep, gone = seed_agent(db, code="ZZT-CAN-KEEP"), seed_agent(db, code="ZZT-CAN-GONE")
+    seed_so_line(db, cust=cust, prod=prod, agent=keep, qty=1, total="10.00")
+    seed_so_line(db, cust=cust, prod=prod, agent=gone, qty=5, total="50.00", so_status="cancelled")
+    seed_so_line(db, cust=cust, prod=prod, agent=gone, qty=6, total="60.00", line_status="cancelled")
+    db.commit()
+    contact = _full(db)
+    for basis in ("delivered", "ordered", "outstanding"):
+        body = _ok(client, contact, group_by="sales_agent", top_n=10, basis=basis)
+        assert "ZZT-CAN-GONE" not in [r["name"] for r in body["rows"]], (basis, body["rows"])
+
+
+def test_an_agent_with_nothing_delivered_is_not_ranked_on_the_delivered_basis(client, db):
+    """Top selling's zero-group rule: qty AND amount both 0 on the basis means no row."""
+    cust = seed_customer(db, name=unique_code("Cust"))
+    prod = _prod(db, "ZZTZERO-1")
+    sold, waiting = seed_agent(db, code="ZZT-ZERO-SOLD"), seed_agent(db, code="ZZT-ZERO-WAIT")
+    seed_so_line(db, cust=cust, prod=prod, agent=sold, qty=2, total="20.00")
+    seed_so_line(db, cust=cust, prod=prod, agent=waiting, qty=9, total="90.00", delivered=0)
+    db.commit()
+    contact = _full(db)
+    delivered = _ok(client, contact, group_by="sales_agent", top_n=10, basis="delivered")
+    assert [r["name"] for r in delivered["rows"]] == ["ZZT-ZERO-SOLD"], delivered["rows"]
+    ordered = _ok(client, contact, group_by="sales_agent", top_n=10, basis="ordered")
+    assert [r["name"] for r in ordered["rows"]] == ["ZZT-ZERO-WAIT", "ZZT-ZERO-SOLD"], ordered["rows"]
+
+
+# ================================================================ REPORT-ENGINE: the outstanding basis
+
+
+def _outstanding_world(db):
+    """Per agent, the lines and what is still owed (open SO AND open line only).
+
+        agent  line                                         outstanding qty / value
+        O1     ordered 10 delivered 4 total 1000.00, open   6 / 600.00 (1000.00 less 400.00 delivered)
+        O1     ordered 5 delivered 0 total 50.00, open      5 / 50.00                  -> O1 11 / 650.00
+        O2     SO closed, line closed, 10 ordered, 2 sent   0 (closed: nothing owed)   -> not ranked
+        O3     fully delivered, open                        0                          -> not ranked
+        O4     SO open, LINE closed, 8 ordered, 0 sent      0                          -> not ranked
+        O5     SO cancelled                                 out
+        O6     ordered 3, delivered 5 (over delivered)      0                          -> not ranked
+        O7     ordered 20 delivered 0 total 200.00, open    20 / 200.00
+        O8     Aug SO, required Sep 12, 1 ordered, open     1 / 10.00 (dated by its required date)
+        O9     Sep SO, required Oct 5, open                 out of a September window
+    """
+    cust = seed_customer(db, name=unique_code("Cust"))
+    prod = _prod(db, "ZZTOUT-1")
+    ag = {n: seed_agent(db, code=f"ZZT-OUT-{n}") for n in range(1, 10)}
+    kw = dict(cust=cust, prod=prod)
+    seed_so_line(db, agent=ag[1], qty=10, delivered=4, total="1000.00", **kw)
+    seed_so_line(db, agent=ag[1], qty=5, delivered=0, total="50.00", **kw)
+    seed_so_line(db, agent=ag[2], qty=10, delivered=2, total="100.00", so_status="closed", line_status="closed", **kw)
+    seed_so_line(db, agent=ag[3], qty=7, total="70.00", **kw)
+    seed_so_line(db, agent=ag[4], qty=8, delivered=0, total="80.00", line_status="closed", **kw)
+    seed_so_line(db, agent=ag[5], qty=9, delivered=0, total="90.00", so_status="cancelled", **kw)
+    seed_so_line(db, agent=ag[6], qty=3, delivered=5, total="30.00", **kw)
+    seed_so_line(db, agent=ag[7], qty=20, delivered=0, total="200.00", **kw)
+    seed_so_line(db, agent=ag[8], qty=1, delivered=0, total="10.00", order_date=AUG, required_date=date(2026, 9, 12), **kw)
+    seed_so_line(db, agent=ag[9], qty=40, delivered=0, total="400.00", required_date=date(2026, 10, 5), **kw)
+    db.commit()
+    return ag
+
+
+def test_outstanding_basis_ranks_what_is_still_owed_on_open_orders(client, db):
+    _outstanding_world(db)
+    body = _ok(client, _full(db), group_by="sales_agent", top_n=10, basis="outstanding")
+    assert body["basis"] == "outstanding", body
+    assert _rows(body) == [("ZZT-OUT-1", 11, D("650.00")), ("ZZT-OUT-7", 20, D("200.00")),
+                           ("ZZT-OUT-8", 1, D("10.00"))], body["rows"]
+    assert body["total_count"] == 3 and body["more"] == 0, body
+    assert body["total"]["qty"] == 32 and money(body["total"]["amount"]) == D("860.00"), body["total"]
+
+
+def test_outstanding_basis_measure_qty_ranks_by_quantity(client, db):
+    _outstanding_world(db)
+    body = _ok(client, _full(db), group_by="sales_agent", top_n=10, basis="outstanding", measure="qty")
+    assert [(r["name"], r["qty"]) for r in body["rows"]] == [
+        ("ZZT-OUT-7", 20), ("ZZT-OUT-1", 11), ("ZZT-OUT-8", 1)], body["rows"]
+
+
+def test_an_agent_whose_lines_are_all_delivered_is_not_in_an_outstanding_ranking(client, db):
+    ag = _outstanding_world(db)
+    body = _ok(client, _full(db), group_by="sales_agent", top_n=10, basis="outstanding")
+    names = {r["name"] for r in body["rows"]}
+    for n in (2, 3, 4, 5, 6, 9):
+        assert ag[n].sales_agent not in names, (n, names)
+    assert body["total_count"] == 3, body
+
+
+def test_the_outstanding_header_label_reads_outstanding_orders(client, db):
+    _outstanding_world(db)
+    body = _ok(client, _full(db), group_by="sales_agent", top_n=3, basis="outstanding")
+    assert body["basis_label"] == "outstanding orders", body["basis_label"]
+    # The other two labels are untouched.
+    assert _ok(client, _full(db), basis="delivered")["basis_label"] == "delivered sales"
+    assert _ok(client, _full(db), basis="ordered")["basis_label"] == "ordered sales"
+
+
+def test_the_outstanding_header_reads_top_n_sales_agents_by_outstanding_orders(client, db):
+    """The MCP presenter prints the route's `basis_label`; the whole header is pinned here so a
+    renamed label cannot slip past both repositories."""
+    _outstanding_world(db)
+    body = _ok(client, _full(db), group_by="sales_agent", top_n=3, basis="outstanding")
+    from sorento_crm_mcp.presenters import _report_ask
+
+    first = _report_ask(body).split("\n")[0]
+    assert first.startswith("Top 3 sales agents by outstanding orders, "), first
+
+
+def test_outstanding_works_with_a_total_and_a_filter(client, db):
+    ag = _outstanding_world(db)
+    body = _ok(client, _full(db), basis="outstanding", sales_agent_ids=[ag[1].id])
+    assert body["group_by"] is None and body["rows"] == [], body
+    assert body["total"]["qty"] == 11 and money(body["total"]["amount"]) == D("650.00"), body["total"]
+
+
+def test_outstanding_is_an_allowed_basis_in_the_unknown_basis_detail(client, db):
+    resp = _ask(client, _full(db), group_by="product", top_n=3, basis="invoiced")
+    assert resp.status_code == 422 and _code(resp) == "unknown_basis", resp.text
+    assert "outstanding" in str(resp.json().get("detail")), resp.text
+
+
+def test_a_dealer_may_ask_the_outstanding_basis_for_its_own_customer_only(client, db):
+    w = _ranking_world(db)
+    other = seed_customer(db, name=unique_code("Other"))
+    seed_so_line(db, cust=other, prod=w.p1, agent=w.a1, qty=500, total="50000.00", delivered=0)
+    seed_so_line(db, cust=w.cust, prod=w.p1, agent=w.a1, qty=3, total="30.00", delivered=0)
+    db.commit()
+    body = _ok(client, _dealer(db, w), group_by="product", top_n=10, basis="outstanding")
+    assert body["total"]["qty"] == 3 and money(body["total"]["amount"]) == D("30.00"), body["total"]
+
+
+def test_top_selling_does_not_accept_outstanding_as_its_basis(client, db):
+    """Guard: `outstanding` is report-ask's basis only. Top selling keeps delivered | ordered."""
+    resp = client.get("/api/v1/order-management/top-selling",
+                      params={**PERIOD, "rank_by": "quantity", "basis": "outstanding"})
+    assert resp.status_code == 422, resp.text
+    assert resp.json().get("code") == "invalid_basis", resp.text
+
+
+# ================================================================ REPORT-ENGINE: the default basis
+
+
+def test_the_default_basis_is_delivered_when_basis_is_omitted(client, db):
+    """PENDING OWNER DECISION: the default is one constant and this pins today's value. A change
+    of default is a one-line edit here and in the route's single constant, nowhere else."""
+    _ranking_world(db)
+    body = _ok(client, _full(db), group_by="sales_agent", top_n=3)
+    assert body["basis"] == "delivered" and body["basis_label"] == "delivered sales", body
+
+
+def test_the_routes_declared_default_basis_is_delivered(client, db):
+    spec = client.get("/openapi.json").json()
+    params = spec["paths"][ROUTE]["get"]["parameters"]
+    (basis,) = [p for p in params if p["name"] == "basis"]
+    assert basis["schema"].get("default") == "delivered", basis
 
 
 # ================================================================ fix round 1 (REPORT-ENGINE)
 
 
 def _tie_world(db, specs):
-    """One agent per (code, qty, total), one AutoCount DO each, all on one product."""
+    """One agent per (code, qty, total), one fully delivered SO each, all on one product."""
     cust = seed_customer(db, name=unique_code("Cust"))
     wh = warehouse(db, company_id=DEFAULT_COMPANY_ID)
     prod = _prod(db, unique_code("ZZTTIE", alpha=True))
@@ -743,7 +980,7 @@ def _only_company(db, contact, company_id):
 
 
 def test_s1_the_company_grant_comes_from_the_contact_not_the_session_scope(client, db):
-    """Security S1/I3: a contact whose only company is the second one sees that company's DOs and
+    """Security S1/I3: a contact whose only company is the second one sees that company's SO lines and
     none of the default company's, though the client session scope is the default company."""
     mocha = seed_mocha(db)
     cust = seed_customer(db, name=unique_code("Cust"))
@@ -751,10 +988,8 @@ def test_s1_the_company_grant_comes_from_the_contact_not_the_session_scope(clien
     prod = _prod(db, unique_code("ZZTGR", alpha=True))
     prod_m = product(db, company_id=mocha.id, code=unique_code("ZZTGM", alpha=True))
     wh, wh_m = warehouse(db, company_id=DEFAULT_COMPANY_ID), warehouse(db, company_id=mocha.id)
-    seed_do(db, customer_id=cust.id, order_date=SEP, source_book="db1",
-            lines=[line(prod.id, wh.id, 99, price=D("1"), total=D("999.00"))])
-    seed_do(db, customer_id=mocha_cust.id, order_date=SEP, source_book="db1", company_id=mocha.id,
-            lines=[line(prod_m.id, wh_m.id, 10, price=D("1"), total=D("100.00"))])
+    seed_so_line(db, cust=cust, prod=prod, wh=wh, qty=99, total="999.00")
+    seed_so_line(db, cust=mocha_cust, prod=prod_m, wh=wh_m, qty=10, total="100.00", company_id=mocha.id)
     contact = _contact(db)
     _only_company(db, contact, mocha.id)
     body = _ok(client, contact)
@@ -869,8 +1104,7 @@ def test_product_code_is_matched_inside_the_contacts_companies(client, db):
     code = unique_code("ZZTPM", alpha=True)
     prod_m = product(db, company_id=mocha.id, code=code)
     wh_m = warehouse(db, company_id=mocha.id)
-    seed_do(db, customer_id=mocha_cust.id, order_date=SEP, source_book="db1", company_id=mocha.id,
-            lines=[line(prod_m.id, wh_m.id, 7, price=D("1"), total=D("70.00"))])
+    seed_so_line(db, cust=mocha_cust, prod=prod_m, wh=wh_m, qty=7, total="70.00", company_id=mocha.id)
     contact = _contact(db)
     _only_company(db, contact, mocha.id)
     body = _ok(client, contact, product_code=code)
@@ -974,9 +1208,9 @@ BULK_PRODUCTS = 5001  # one more than the 5000-cell cap
 
 
 def _bulk_world(db):
-    """5001 products with one 1.00 DO line each (codes `ZZT-BULK-00000`...), plus `ZZZ-TOP` at 500.00
+    """5001 products with one 1.00 SO line each (codes `ZZT-BULK-00000`...), plus `ZZZ-TOP` at 500.00
     whose code sorts LAST under any natural ordering. Core inserts, so it stays fast."""
-    from app.models.order import Order, OrderLine
+    from app.models.order import SalesOrder, SalesOrderLine
     from app.models.product import Product
 
     cust = seed_customer(db, name=unique_code("Cust"))
@@ -992,13 +1226,21 @@ def _bulk_world(db):
            "category_id": seed.category_id, "base_uom_id": seed.base_uom_id, "list_price": 0, "is_active": True,
            "company_id": DEFAULT_COMPANY_ID}
     db.execute(Product.__table__.insert(), [*products, top])
-    do = seed_do(db, customer_id=cust.id, order_date=SEP, source_book="db1",
-                 lines=[line(top["id"], wh.id, 5, price=D("1"), total=D("500.00"))])
+    so_id = str(uuid.uuid4())
     db.execute(
-        OrderLine.__table__.insert(),
-        [{"id": str(uuid.uuid4()), "order_id": do.id, "line_sequence": 2 + n, "product_id": p["id"],
-          "warehouse_id": wh.id, "quantity": 1, "unit_price": D("1"), "discount": 0, "total": D("1.00"),
-          "company_id": DEFAULT_COMPANY_ID} for n, p in enumerate(products)],
+        SalesOrder.__table__.insert(),
+        [{"id": so_id, "so_number": unique_code("SO"), "customer_id": cust.id, "order_date": SEP,
+          "status": "open", "company_id": DEFAULT_COMPANY_ID}],
+    )
+
+    def _line(product_id, qty, total):
+        return {"id": str(uuid.uuid4()), "sales_order_id": so_id, "product_id": product_id,
+                "warehouse_id": wh.id, "qty_ordered": qty, "qty_delivered": qty, "line_total": total,
+                "line_status": "open", "company_id": DEFAULT_COMPANY_ID}
+
+    db.execute(
+        SalesOrderLine.__table__.insert(),
+        [_line(top["id"], 5, D("500.00")), *[_line(p["id"], 1, D("1.00")) for p in products]],
     )
     db.commit()
     return top

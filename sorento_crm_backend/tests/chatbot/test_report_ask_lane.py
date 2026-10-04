@@ -1454,3 +1454,259 @@ def test_s10_guard_a_staff_contact_with_the_same_verdict_gets_the_catalogue_line
     text, calls = console.say(_plain_total(), "how much did we sell last month")
     assert calls == [], calls
     assert text.strip() == CATALOGUE_LINE, text
+
+
+# --------------------------------------------------------------------------- #
+# REPORT-ENGINE, owner direction 4 Oct 2026
+#   C. a category word resolves through `_top_selling_category_ids`, the ONE function top selling
+#      calls (`resolve_category_token`, then the class vocabulary `resolve_category_class`)
+#   D. the lane passes the basis `outstanding` through, fresh and on a refine
+#   E. top selling never takes `outstanding` as its basis
+# --------------------------------------------------------------------------- #
+
+
+def _seed_class_categories(console, *codes_and_labels: tuple[str, str]) -> dict[str, str]:
+    """Categories named by CODE only (name = code, the live shape) carrying a class label."""
+    from app.models.product import ProductCategory
+
+    db = console.session_factory()
+    try:
+        out: dict[str, str] = {}
+        for code, label in codes_and_labels:
+            row = ProductCategory(
+                id=str(uuid.uuid4()), category_code=code, category_name=code, class_label=label,
+                company_id=DEFAULT_COMPANY_ID,
+            )
+            db.add(row)
+            db.flush()
+            out[code] = str(row.id)
+        db.commit()
+        return out
+    finally:
+        db.close()
+
+
+def _top_selling_ids(console, words: list[str]) -> tuple[Any, ...]:
+    """What top selling's own function says for these category words (the reference answer)."""
+    from app.models.base import set_company_scope
+    from app.services.chatbot.lanes import business as business_pkg
+
+    db = console.session_factory()
+    try:
+        set_company_scope(db, frozenset({DEFAULT_COMPANY_ID}))
+        return business_pkg._top_selling_category_ids({"category_words": words}, db=db)
+    finally:
+        db.close()
+
+
+def test_c_water_closet_resolves_to_every_category_of_the_class(console) -> None:
+    """Two categories named by code only, one class label: "water closet" names BOTH ids."""
+    ids = _seed_class_categories(console, ("SRT-WC", "Water Closet"), ("CB-WC", "Water Closet"))
+    text, calls = console.say(
+        _rank(_e("water closet", "category"), group_by="sales_agent", **THIS_YEAR), "top 3 salesman for water closet"
+    )
+    assert "I don't know" not in text, text
+    (args,) = calls
+    assert sorted(args["category_ids"]) == sorted(ids.values()), args
+
+
+def test_c_the_lane_gets_exactly_the_ids_top_selling_gets(console) -> None:
+    _seed_class_categories(console, ("SRT-WC", "Water Closet"), ("CB-WC", "Water Closet"))
+    reference_ids, named, ambiguous, unknown = _top_selling_ids(console, ["water closet"])
+    assert named and not ambiguous and not unknown and len(reference_ids) >= 2, (reference_ids, ambiguous, unknown)
+    text, calls = console.say(
+        _rank(_e("water closet", "category"), group_by="product", **THIS_YEAR), "top 5 products for water closet"
+    )
+    assert calls, text
+    (args,) = calls
+    assert sorted(args["category_ids"]) == sorted(reference_ids), (args, reference_ids)
+
+
+def test_c_kill_the_lane_calls_top_sellings_function_not_a_copy(console, monkeypatch) -> None:
+    """The lane's category words go through `business._top_selling_category_ids`: whatever it says
+    is what the ask is sent with, and it is asked about the typed word."""
+    from app.services.chatbot.lanes import business as business_pkg
+
+    seen: list[Any] = []
+
+    def _stub(slot, *, db):
+        seen.append((dict(slot), db))
+        return [console.ids["category"]], True, [], []
+
+    monkeypatch.setattr(business_pkg, "_top_selling_category_ids", _stub)
+    _text, calls = console.say(
+        _rank(_e("zzt unheard word", "category"), group_by="sales_agent", **THIS_YEAR), "top 3 salesman for it"
+    )
+    assert seen, "the lane never called _top_selling_category_ids"
+    assert any("zzt unheard word" in " ".join(slot.get("category_words") or []) for slot, _db in seen), seen
+    (args,) = calls
+    assert args["category_ids"] == [console.ids["category"]], args
+
+
+def test_c_kill_an_ambiguous_answer_of_top_sellings_function_is_the_several_line(console, monkeypatch) -> None:
+    from app.services.chatbot.lanes import business as business_pkg
+
+    monkeypatch.setattr(
+        business_pkg, "_top_selling_category_ids", lambda slot, *, db: ([], True, ["CAT ONE", "CAT TWO"], [])
+    )
+    text, calls = console.say(_rank(_e("cat", "category"), group_by="product"), "top 3 products for cat")
+    assert calls == []
+    assert text.strip() == "'cat' matches several categories: CAT ONE, CAT TWO. Ask again naming one.", text
+
+
+def test_c_kill_an_unknown_answer_of_top_sellings_function_is_the_unknown_line(console, monkeypatch) -> None:
+    from app.services.chatbot.lanes import business as business_pkg
+
+    monkeypatch.setattr(business_pkg, "_top_selling_category_ids", lambda slot, *, db: ([], True, [], ["zzword"]))
+    text, calls = console.say(_rank(_e("zzword", "category"), group_by="product"), "top 3 products for zzword")
+    assert calls == []
+    assert text.strip() == "I don't know 'zzword' as a category.", text
+
+
+def test_c_one_word_matching_several_class_labels_is_the_several_line(console) -> None:
+    """"basin tap" holds the whole-word runs of two class labels (Basin, Tap): never a silent
+    widening, the lane asks. The reference (top selling's own function) says the same."""
+    _seed_class_categories(console, ("SRT-BA", "Basin"), ("SRT-TP", "Tap"))
+    _ids, named, ambiguous, _unknown = _top_selling_ids(console, ["basin tap"])
+    assert named and sorted(ambiguous) == ["Basin", "Tap"], ambiguous
+    text, calls = console.say(_rank(_e("basin tap", "category"), group_by="product"), "top 3 products for basin tap")
+    assert calls == [], calls
+    assert text.strip() == "'basin tap' matches several categories: Basin, Tap. Ask again naming one.", text
+
+
+def test_c_an_unknown_category_word_still_says_it_does_not_know_it(console) -> None:
+    _seed_class_categories(console, ("SRT-WC", "Water Closet"))
+    text, calls = console.say(_rank(_e("zzzunheard", "category"), group_by="product"), "top 3 products for zzzunheard")
+    assert calls == []
+    assert text.strip() == "I don't know 'zzzunheard' as a category.", text
+
+
+def test_c_a_category_named_by_its_own_name_still_resolves_alone(console) -> None:
+    """No regression: the exact name wins through `resolve_category_token`, the class is not consulted."""
+    _text, calls = console.say(_rank(_e("ZZT CATEGORY", "category"), group_by="month"), "sales by month for ZZT CATEGORY")
+    (args,) = calls
+    assert args["category_ids"] == [console.ids["category"]], args
+
+
+# D ----------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    "parser_basis, route_basis",
+    [
+        ("outstanding", "outstanding"),
+        ("ordered", "ordered"),
+        ("delivered", "delivered"),
+        ("unclear", "delivered"),
+        (None, "delivered"),
+        ("invoiced", "delivered"),
+    ],
+)
+def test_d_the_parsers_basis_maps_onto_the_routes(console, parser_basis, route_basis) -> None:
+    _text, calls = console.say(
+        _rank(_e("Sorento", "brand"), basis=parser_basis, **THIS_YEAR), "top 3 salesman for sorento by outstanding"
+    )
+    (args,) = calls
+    assert args["basis"] == route_basis, (parser_basis, args)
+    assert args["group_by"] == "sales_agent" and args["brand_ids"] == [console.ids["brand"]], args
+
+
+def test_d_a_basis_refine_to_outstanding_reruns_the_held_ranking(console) -> None:
+    _t1(console)
+    _text, calls = console.say(_refine(basis="outstanding"), "by outstanding")
+    (args,) = calls
+    assert args["basis"] == "outstanding", args
+    assert args["group_by"] == "sales_agent" and args["top_n"] == 3, args
+    assert args["brand_ids"] == [console.cabana], args
+    assert args["date_from"] == "2026-09-01" and args["date_to"] == "2026-09-30", args
+    assert args["measure"] == "amount", args
+
+
+def test_d_a_refine_that_names_no_basis_keeps_the_held_outstanding_basis(console) -> None:
+    console.cabana = _seed_cabana(console)
+    console.say(_rank(_e("Cabana", "brand"), basis="outstanding", top_n=3, **SEP_RANGE), CABANA_MSG)
+    _text, calls = console.say(_refine(top_n=5), "top 5")
+    (args,) = calls
+    assert args["basis"] == "outstanding" and args["top_n"] == 5, args
+
+
+def test_d_an_unknown_basis_on_a_refine_leaves_the_held_basis(console) -> None:
+    _t1(console)
+    _text, calls = console.say(_refine(basis="invoiced", top_n=5), "invoiced top 5")
+    (args,) = calls
+    assert args["basis"] == "delivered" and args["top_n"] == 5, args
+
+
+# E ----------------------------------------------------------------------- #
+
+
+def test_e_a_top_selling_verdict_with_basis_outstanding_is_not_an_outstanding_top_selling(
+    console, monkeypatch
+) -> None:
+    """Top selling has two bases (delivered, ordered). A parser slip of `outstanding` on a
+    top_selling verdict neither reroutes to the ranking lane nor reaches the top selling route."""
+    text, log = _say_all(
+        console, monkeypatch, _old(_hit("sorento", "brand"), basis="outstanding"), "top 3 selling items outstanding"
+    )
+    assert TOOL not in _names(log), (_names(log), text)
+    for name, args in log:
+        if name == "crm_top_selling_report":
+            assert args.get("basis") in (None, "delivered", "ordered"), args
+            assert args.get("basis") != "outstanding", args
+
+
+def test_e_the_schema_lets_a_sales_ranking_emit_outstanding() -> None:
+    from app.services.chatbot.head.parser import PARSE_OUTPUT_JSON_SCHEMA
+
+    enum = PARSE_OUTPUT_JSON_SCHEMA["properties"]["basis"]["enum"]
+    assert "outstanding" in enum, enum
+    assert {"delivered", "ordered", "unclear", None} <= set(enum), enum
+
+
+def test_e_a_sales_ranking_basis_outstanding_validates_against_the_schema() -> None:
+    """The provider's strict schema is the only enum check: `outstanding` on a sales ranking must pass it."""
+    jsonschema = pytest.importorskip("jsonschema")
+    from app.services.chatbot.head.parser import PARSE_OUTPUT_JSON_SCHEMA
+
+    emission = _rank(_e("Sorento", "brand"), basis="outstanding", measure="amount", **THIS_YEAR)
+    assert emission["order_status"] == "sales_ranking" and emission["basis"] == "outstanding"
+    only_basis = {"type": "object", "properties": {"basis": PARSE_OUTPUT_JSON_SCHEMA["properties"]["basis"]}}
+    jsonschema.validate({"basis": emission["basis"]}, only_basis)
+
+
+def test_e_parse_returns_basis_outstanding_untouched(monkeypatch) -> None:
+    """`parse` keeps what the provider emitted: an `outstanding` basis reaches the engine as sent."""
+    from types import SimpleNamespace
+
+    from app.services.chatbot import llm_call
+    from app.services.chatbot.head import parser as parser_mod
+
+    emission = _rank(_e("Sorento", "brand"), basis="outstanding", **THIS_YEAR)
+    emission = {k: emission.get(k) for k in parser_mod.DECLARED_KEYS}
+    monkeypatch.setattr(
+        llm_call, "chat",
+        lambda *a, **k: SimpleNamespace(content=json.dumps(emission), prompt_tokens=1, completion_tokens=1, total_tokens=2),
+    )
+    config = parser_mod.ParserConfig(
+        system_prompt="stub", prompt_version=39, provider="openai", model="gpt-test", api_key="sk-test"
+    )
+    parsed = parser_mod.parse(config, "top 3 salesman for sorento by outstanding")
+    assert parsed["basis"] == "outstanding", parsed
+    assert parsed["order_status"] == "sales_ranking", parsed
+
+
+def test_e_the_prompt_teaches_outstanding_as_a_sales_ranking_basis() -> None:
+    from app.services.chatbot_parser_prompt import REPORT_ASK_ADDENDUM, SEMANTIC_PARSER_PROMPT
+
+    assert REPORT_ASK_ADDENDUM in SEMANTIC_PARSER_PROMPT
+    lowered = " ".join(REPORT_ASK_ADDENDUM.lower().split())
+    assert 'basis "outstanding"' in lowered, 'REPORT_ASK_ADDENDUM never maps a phrase to basis "outstanding"'
+    for phrase in ("by outstanding", "not yet delivered"):
+        assert phrase in lowered, phrase
+
+
+def test_e_the_top_selling_addendum_does_not_teach_outstanding_as_its_basis() -> None:
+    from app.services.chatbot_parser_prompt import TOP_SELLING_ADDENDUM
+
+    basis_section = TOP_SELLING_ADDENDUM.split("== BASIS: which sale is counted ==", 1)[1].split("== RANK_GROUP", 1)[0]
+    assert "outstanding" not in basis_section.lower(), basis_section
