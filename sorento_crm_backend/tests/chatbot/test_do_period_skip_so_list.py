@@ -93,3 +93,22 @@ def test_ac14_the_so_grant_refusal_still_comes_first_with_the_switch_on(session_
     reply, captured = _turn(session_factory, SkipSwitchMonkeypatch(monkeypatch, True), _list_ask(), attributes=())
     assert reply.strip() == SO_NOT_ENABLED, reply
     assert captured == [], captured
+
+
+# --- round 2 (D2): a start with no end ---------------------------------------------------- #
+
+
+def test_d2_on_and_a_start_only_with_no_rows_never_says_none(session_factory, monkeypatch):
+    _seed_contact(session_factory, variables={})
+    _link_customers(session_factory, H1)
+    reply, _ = _turn(session_factory, SkipSwitchMonkeypatch(monkeypatch, True), _list_ask("2026-01-01", None))
+    assert "None" not in reply, reply
+    assert reply.startswith(f"No sales orders for {GROUP}"), reply
+
+
+def test_d2_on_and_a_start_only_lists_rows_from_that_start_to_today(session_factory, monkeypatch):
+    cid = _seed_25(session_factory)
+    _seed_so(session_factory, "SO600100", customer_id=cid, lines=[(1, 0)], debtor_name=None, order_date="2025-12-20")
+    reply, _ = _turn(session_factory, SkipSwitchMonkeypatch(monkeypatch, True), _list_ask("2026-09-10", None))
+    assert "None" not in reply, reply
+    assert _numbers(reply) == [f"SO{600000 + d}" for d in range(25, 9, -1)], reply
