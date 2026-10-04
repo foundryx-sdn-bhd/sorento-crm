@@ -48,7 +48,7 @@ const sentRequest = (): SupplierNotice => ({
   notice_type: 'container_request',
   channel: 'email',
   recipient: 'sales@foshan.test',
-  recipients: ['sales@foshan.test', 'ms.tee@sorento.com.my'],
+  recipients: ['sales@foshan.test', 'person27@example.com'],
   opened_at: null,
   last_opened_at: null,
   open_count: 0,
@@ -191,7 +191,7 @@ describe('SentRequestsPanel - requests already sent', () => {
 
     expect(
       within(screen.getByTestId('requests-sent')).getByText(
-        'sales@foshan.test, ms.tee@sorento.com.my',
+        'sales@foshan.test, person27@example.com',
       ),
     ).toBeInTheDocument();
   });

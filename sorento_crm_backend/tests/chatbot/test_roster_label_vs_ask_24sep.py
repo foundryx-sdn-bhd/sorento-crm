@@ -1,7 +1,7 @@
 """A message that names its own domain is an ask, never a roster pick by label
 (PLAN-chatbot-roster-label-vs-ask-24sep.md, owner ruling 24 Sep 2026).
 
-Evidence: prod turns 336-342, contact 487555417, 23 Sep 2026 19:48-19:50 MYT. Turns
+Evidence: prod turns 336-342, contact 900000039, 23 Sep 2026 19:48-19:50 MYT. Turns
 339 ("Photo srt446-RG") and 342 ("Srt446-RG list price") were misread as a roster
 LABEL PICK (`turn/decide.py::picked_positions` -> `_positions_by_label`) even though
 the parser itself said `domain_in_message: true` - the message named its own

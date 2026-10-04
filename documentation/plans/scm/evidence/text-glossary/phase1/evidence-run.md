@@ -1,7 +1,7 @@
 # Text glossary S2 (Phase 1) - agent-browser evidence run, 10 Sep 2026
 
 Lane `feat/text-glossary`, FE dev server `PORT=3081`, backend the shared primary at `:8000`
-(DB `sorento_ai_automation_0907`). Logged in as `tehjayson@gmail.com` (role `admin`).
+(DB `sorento_ai_automation_0907`). Logged in as `person38@example.com` (role `admin`).
 
 ## Golden path: Lines tab inline translate (AC-E2, AC-E3)
 

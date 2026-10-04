@@ -4,7 +4,7 @@
  * ---------------------------------------------------------------------------
  * API CONTRACT (as implemented) - app/api/v1/system/translations.py
  * ---------------------------------------------------------------------------
- * GET    /api/v1/system/translations?page&limit&query&sort&dir
+ * GET    /api/v1/system/translations?page&limit&query&sort&dir&target_lang
  *   -> { data: Translation[], pagination: {total,page,limit}, empty }
  *   Needs `system.translations.view`.
  *
@@ -32,6 +32,8 @@ export interface TranslationListQuery {
   pageSize: number;
   searchQuery?: string;
   sorting?: SortingState;
+  /** The language a row translates INTO: `en` supplier memory, `ms` / `zh` chatbot wording. */
+  targetLang?: string;
 }
 
 export interface TranslationPage {
@@ -46,7 +48,7 @@ export async function listTranslations(q: TranslationListQuery): Promise<Transla
     pageSize: q.pageSize,
     sorting: q.sorting ?? [],
     searchQuery: q.searchQuery ?? '',
-  });
+  }, { target_lang: q.targetLang || undefined });
   const response = await apiFetch(`${BASE}?${params.toString()}`);
   if (!response.ok) {
     throw new Error(await extractApiError(response, 'Failed to load translations'));

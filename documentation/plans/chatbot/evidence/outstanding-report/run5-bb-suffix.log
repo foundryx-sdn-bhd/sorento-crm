@@ -1,7 +1,7 @@
 lane switches before: enabled=True lanes=['access_denied', 'escalate_offer', 'out_of_scope', 'ideate', 'offer_hold', 'escalation_declined', 'check_promotion', 'low_signal', 'clarify_menu', 'not_supported', 'stock_denied', 'demand_qty', 'business_query']
 lane switches for the run: enabled=True lanes=13
 
---- turn 1  contact 437264483 ---
+--- turn 1  contact 900000008 ---
 > SRTWT7445 outstanding for BB
   branch_kind: business_query
   reply.text: Product: SRTWT7445
@@ -16,7 +16,7 @@ Outstanding for which document?
 3. Both
   trace: no tool call
 
---- turn 2  contact 437264483 ---
+--- turn 2  contact 900000008 ---
 > 2
   branch_kind: business_query
   reply.text: Product: SRTWT7445

@@ -3,7 +3,7 @@
 Status: implemented, awaiting review. Track: small fix. Owner ask 22 Sep 2026 ("can we hotfix this?").
 UAC: `chatbot-stock-no-subject-hotfix-22sep-acceptance-criteria.md`.
 
-## Evidence (prod, 22 Sep 2026 12:52, contact 423729104, turns 59-60)
+## Evidence (prod, 22 Sep 2026 12:52, contact 900000081, turns 59-60)
 
 - Turn 59 "Srtwc8608-p-rl": miss + did-you-mean roster (SRTWC8601-P-RL, SRTWC8601-RL,
   SRTWC8602-RL). The token resolved only as a `product_set` (incompatible with

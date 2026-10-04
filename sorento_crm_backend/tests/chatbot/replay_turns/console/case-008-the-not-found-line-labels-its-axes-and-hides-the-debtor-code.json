@@ -37,22 +37,22 @@
               "value": "true"
             }
           ],
-          "firstName": "ZZT-437264483",
-          "id": 437264483,
+          "firstName": "ZZT-900000008",
+          "id": 900000008,
           "lastName": "",
-          "phone": "+60437264483"
+          "phone": "+60900000008"
         },
         "ingress": "console",
         "is_test": true,
         "media": null,
         "message": {
           "contact": {
-            "id": 437264483
+            "id": 900000008
           },
           "event_type": "message.received",
           "message": {
             "channelId": 453209,
-            "contactId": 437264483,
+            "contactId": 900000008,
             "message": {
               "text": "delivery to hanlim customer, product rpacc",
               "type": "text"
@@ -90,7 +90,7 @@
         ],
         "focus_after": null,
         "pending": null,
-        "text": "Customer: hanlim\nProduct: rpacc\nDates: all dates\n\nHere are the orders I found.\n\n1. *Company:* Sorento\n*Order Number:* REP202608-0440\n*Customer:* HANLIM TRADING SDN BHD [A/C I]\n*Order Date:* 20/08/2026\n*Actual Delivery Date:* 21/08/2026\n*Status:* Picked Up / In Transit\n*Pickup Time:* 09:02:00\n*Transporter:* SORENTO\n*Driver:* hafiz\n*Lorry Plate:* VQP1678\n*Warehouse:* BRW\n*Products:* RPACC (1)\n\n2. *Company:* Sorento\n*Order Number:* 202607-4804\n*Customer:* HANLIM TRADING SDN BHD [A/C III]\n*Order Date:* 29/07/2026\n*Actual Delivery Date:* 30/07/2026\n*Status:* Picked Up / In Transit\n*Pickup Time:* 09:34:00\n*Transporter:* SORENTO\n*Driver:* AZHAR\n*Lorry Plate:* VQP1678\n*Warehouse:* BRW\n*Products:* RPACC (1)\n\n3. *Company:* Sorento\n*Order Number:* REP202607-0401\n*Customer:* HANLIM TRADING SDN BHD [A/C III]\n*Order Date:* 20/07/2026\n*Actual Delivery Date:* 20/07/2026\n*Status:* Picked Up / In Transit\n*Pickup Time:* 14:26:00\n*Transporter:* DOCUMENTATION\n*Driver:* Documentation\n*Lorry Plate:* Documentation\n*Warehouse:* BRW\n*Products:* RPACC (1), RPACC (1)\n\n4. *Company:* Sorento\n*Order Number:* REP202605-0187\n*Customer:* HANLIM TRADING SDN BHD [A/C I]\n*Order Date:* 13/05/2026\n*Actual Delivery Date:* 14/05/2026\n*Status:* Picked Up / In Transit\n*Pickup Time:* 09:25:00\n*Transporter:* SORENTO\n*Driver:* AZHAR\n*Lorry Plate:* VQP1678\n*Warehouse:* BRW\n*Products:* RPACC (2)\n\n5. *Company:* Sorento\n*Order Number:* REP202606-0168\n*Customer:* HANLIM TRADING SDN BHD [A/C I]\n*Order Date:* 11/06/2026\n*Status:* New Order\n*Warehouse:* SPARE/P\n*Products:* RPACC (2)\n\n*Mocha:* no orders records found for customer HANLIM TRADING SDN BHD, product RPACC.\n\n_Data last updated: 07/09/2026 10:27:40_\n\nWould you like me to escalate to *Mocha* customer service team?",
+        "text": "Customer: hanlim\nProduct: rpacc\nDates: all dates\n\nHere are the orders I found.\n\n1. *Company:* Sorento\n*Order Number:* REP202608-0440\n*Customer:* HANLIM TRADING SDN BHD [A/C I]\n*Order Date:* 20/08/2026\n*Actual Delivery Date:* 21/08/2026\n*Status:* Picked Up / In Transit\n*Pickup Time:* 09:02:00\n*Transporter:* SORENTO\n*Driver:* DRIVER HI\n*Lorry Plate:* PLATE-34\n*Warehouse:* BRW\n*Products:* RPACC (1)\n\n2. *Company:* Sorento\n*Order Number:* 202607-4804\n*Customer:* HANLIM TRADING SDN BHD [A/C III]\n*Order Date:* 29/07/2026\n*Actual Delivery Date:* 30/07/2026\n*Status:* Picked Up / In Transit\n*Pickup Time:* 09:34:00\n*Transporter:* SORENTO\n*Driver:* DRIVER B\n*Lorry Plate:* PLATE-34\n*Warehouse:* BRW\n*Products:* RPACC (1)\n\n3. *Company:* Sorento\n*Order Number:* REP202607-0401\n*Customer:* HANLIM TRADING SDN BHD [A/C III]\n*Order Date:* 20/07/2026\n*Actual Delivery Date:* 20/07/2026\n*Status:* Picked Up / In Transit\n*Pickup Time:* 14:26:00\n*Transporter:* DOCUMENTATION\n*Driver:* Documentation\n*Lorry Plate:* Documentation\n*Warehouse:* BRW\n*Products:* RPACC (1), RPACC (1)\n\n4. *Company:* Sorento\n*Order Number:* REP202605-0187\n*Customer:* HANLIM TRADING SDN BHD [A/C I]\n*Order Date:* 13/05/2026\n*Actual Delivery Date:* 14/05/2026\n*Status:* Picked Up / In Transit\n*Pickup Time:* 09:25:00\n*Transporter:* SORENTO\n*Driver:* DRIVER B\n*Lorry Plate:* PLATE-34\n*Warehouse:* BRW\n*Products:* RPACC (2)\n\n5. *Company:* Sorento\n*Order Number:* REP202606-0168\n*Customer:* HANLIM TRADING SDN BHD [A/C I]\n*Order Date:* 11/06/2026\n*Status:* New Order\n*Warehouse:* SPARE/P\n*Products:* RPACC (2)\n\n*Mocha:* no orders records found for customer HANLIM TRADING SDN BHD, product RPACC.\n\n_Data last updated: 07/09/2026 10:27:40_\n\nWould you like me to escalate to *Mocha* customer service team?",
         "tools": [
           {
             "args_keys": [
@@ -157,7 +157,7 @@
               "unmapped_types": []
             },
             "access_levels": [],
-            "contact_id": "437264483",
+            "contact_id": "900000008",
             "customer_ids": [
               "6f5a419b-840a-4e4d-8107-291971dd3bb8",
               "c2f38bdf-767a-4b04-b92d-1c0d56cfd4d3",
@@ -219,11 +219,11 @@
                   },
                   {
                     "label": "Driver",
-                    "value": "hafiz"
+                    "value": "DRIVER HI"
                   },
                   {
                     "label": "Lorry Plate",
-                    "value": "VQP1678"
+                    "value": "PLATE-34"
                   },
                   {
                     "label": "Warehouse",
@@ -280,11 +280,11 @@
                   },
                   {
                     "label": "Driver",
-                    "value": "AZHAR"
+                    "value": "DRIVER B"
                   },
                   {
                     "label": "Lorry Plate",
-                    "value": "VQP1678"
+                    "value": "PLATE-34"
                   },
                   {
                     "label": "Warehouse",
@@ -402,11 +402,11 @@
                   },
                   {
                     "label": "Driver",
-                    "value": "AZHAR"
+                    "value": "DRIVER B"
                   },
                   {
                     "label": "Lorry Plate",
-                    "value": "VQP1678"
+                    "value": "PLATE-34"
                   },
                   {
                     "label": "Warehouse",

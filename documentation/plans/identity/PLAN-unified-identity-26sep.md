@@ -487,8 +487,8 @@ already has (section 3.2).
   number input needs to use a proper phone number input ... default to malaysia so all phone
   number is cleansed"): a flag + dial-code country picker (the standard `SearchableSelect`),
   Malaysia (+60) by default, the number in national format as it is typed, placeholder
-  "012-345 6789", then the full-width "Continue" button. "0166753328", "60166753328" and
-  "+60 16-675 3328" all become `+60166753328`; the FE sends that E.164 value, and an incomplete
+  "012-345 6789", then the full-width "Continue" button. "0160000509", "60160000509" and
+  "+60 16-000 0509" all become `+60160000509`; the FE sends that E.164 value, and an incomplete
   number stops at the field's error state ("Enter a complete phone number.") without a request.
   The backend still normalises what it receives with `normalize_msisdn` (the second line). No
   Remember me: a phone sign-in is always the 30-day rolling session (Q15).

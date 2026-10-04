@@ -299,7 +299,7 @@ symptom instead of assuming the daemon itself is broken.
 - On `marketing_product`: clicked `Add tier` (scrolled into view first) -> new row appended
   (Tier `-`, Team `Complaint` default, Brand `All brands`, clearable). Opened the Brand dropdown
   (screenshot `14-brand-click2.png`): options are `All brands` (checked), then the active
-  company's brands - `MOCHA`, `BRAVAT`, `CABANA`, `ELLECI`, `IBORN`, `INFINITY`, `JOHNSON
+  company's brands - `MOCHA`, `BRAVAT`, `CABANA`, `ELLECI`, `IBORN`, `INFINITY`, `CONTACT AA
   SUISSE`, `NO LOGO`, ... - confirming AC-F1's "brands of the active company + All brands".
   Selected `MOCHA` (`15-mocha-selected.png`).
 - Opened the Tier dropdown while Brand was still `All brands`: options `1`/`2`/`3` were all
@@ -664,8 +664,8 @@ separate rows on the page, unrelated to this evidence run's scope).
 
   ```
   Team Members (in round-robin order):
-  1. Tay Zhi Yang (zhiyang.sorento@gmail.com) [icon]   Serves all   All brands   [Next in line]
-  2. NOOR HASNI HUSIN (hasni@sorento.com.my) [icon]     Serves all   All brands   [Last assigned]
+  1. Tay Zhi Yang (person41@example.com) [icon]   Serves all   All brands   [Next in line]
+  2. NOOR HASNI HUSIN (person15@example.com) [icon]     Serves all   All brands   [Last assigned]
   ```
 
   Each member row carries an **"Edit market segments"** control ("Serves all" chip) immediately
@@ -759,7 +759,7 @@ always returning the whole team. `next-assignee` was not called, per the brief.
 
 - `set viewport 375 812` (member-row disclosure state carried over from 1280px - still expanded).
   Scrolled it into view. Screenshot `23-redo-mobile-untagged.png`: the member row now **stacks**
- - "Tay Zhi Yang" on its own line (fully readable, not clipped), "(zhiyang.sorento@gmail...)"
+ - "Tay Zhi Yang" on its own line (fully readable, not clipped), "(staff@example...)"
   truncated with an ellipsis (not collapsed to 0px) on the line below, respond-status icon to the
   right, then "Serves all" / "All brands" chips on their own line, then the "Next in line" /
   "Last assigned" position badge on its own line below that. No horizontal clipping, no cut-off

@@ -49,7 +49,7 @@ def _master_workbook(rows: list[list]) -> bytes:
         master.append(r)
     tracking = wb.create_sheet("Overall Tracking")
     tracking.append(["Doc Number", "Date", "Transporter", "Driver Name", "Lorry Plate"])
-    tracking.append([rows[0][0], date(2026, 9, 29), "ZZ TRANS", "Ali", "WXX 1"])
+    tracking.append([rows[0][0], date(2026, 9, 29), "ZZ TRANS", "Ali", "PLATE-40"])
     buf = BytesIO()
     wb.save(buf)
     return buf.getvalue()
@@ -82,7 +82,7 @@ def test_master_sheet_keeps_autocount_columns(db):
     assert order.customer_id is None
     # Upload-owned columns still land on the AutoCount-owned row.
     assert order.remarks_cs == "cs note"
-    assert order.transporter == "ZZ TRANS" and order.lorry_plate == "WXX 1"
+    assert order.transporter == "ZZ TRANS" and order.lorry_plate == "PLATE-40"
     # A row AutoCount does not own is written as before.
     db.refresh(plain)
     assert plain.debtor_code == "999-SHEET" and plain.order_date == date(2026, 9, 1)

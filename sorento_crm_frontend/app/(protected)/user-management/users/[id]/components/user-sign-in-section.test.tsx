@@ -215,7 +215,7 @@ describe('UserSignInSection - Needs attention', () => {
     renderSection(
       baseUser({
         phoneDiffersFromContact: true,
-        linkedContact: { id: 'c-1', name: 'Aisyah', phone_number: '+60129990000' },
+        linkedContact: { id: 'c-1', name: 'Aisyah', phone_number: '+60120000000' },
       }),
     );
     expect(
@@ -228,12 +228,12 @@ describe('UserSignInSection - Needs attention', () => {
     renderSection(
       baseUser({
         phoneDiffersFromContact: true,
-        linkedContact: { id: 'c-1', name: 'Aisyah', phone_number: '+60129990000' },
+        linkedContact: { id: 'c-1', name: 'Aisyah', phone_number: '+60120000000' },
       }),
     );
     fireEvent.click(screen.getByRole('button', { name: 'Use new number' }));
     await waitFor(() =>
-      expect(useNewNumberMock).toHaveBeenCalledWith('user-1', '+60129990000'),
+      expect(useNewNumberMock).toHaveBeenCalledWith('user-1', '+60120000000'),
     );
   });
 
@@ -242,7 +242,7 @@ describe('UserSignInSection - Needs attention', () => {
     renderSection(
       baseUser({
         phoneDiffersFromContact: true,
-        linkedContact: { id: 'c-1', name: 'Aisyah', phone_number: '+60129990000' },
+        linkedContact: { id: 'c-1', name: 'Aisyah', phone_number: '+60120000000' },
       }),
     );
     expect(screen.queryByRole('button', { name: 'Use new number' })).not.toBeInTheDocument();
@@ -259,7 +259,7 @@ describe('UserSignInSection - Needs attention', () => {
 describe('UserSignInSection - Unlink', () => {
   it('is visible only when a contact is linked and the viewer can edit', () => {
     renderSection(
-      baseUser({ linkedContact: { id: 'c-1', name: 'Aisyah', phone_number: '+60129990000' } }),
+      baseUser({ linkedContact: { id: 'c-1', name: 'Aisyah', phone_number: '+60120000000' } }),
     );
     expect(screen.getByRole('button', { name: 'Unlink WhatsApp contact' })).toBeInTheDocument();
   });
@@ -272,14 +272,14 @@ describe('UserSignInSection - Unlink', () => {
   it('is absent without edit permission, even when linked', () => {
     canEditRef.current = false;
     renderSection(
-      baseUser({ linkedContact: { id: 'c-1', name: 'Aisyah', phone_number: '+60129990000' } }),
+      baseUser({ linkedContact: { id: 'c-1', name: 'Aisyah', phone_number: '+60120000000' } }),
     );
     expect(screen.queryByRole('button', { name: 'Unlink WhatsApp contact' })).not.toBeInTheDocument();
   });
 
   it('parks the deferred action against the right key and entity', () => {
     renderSection(
-      baseUser({ linkedContact: { id: 'c-1', name: 'Aisyah', phone_number: '+60129990000' } }),
+      baseUser({ linkedContact: { id: 'c-1', name: 'Aisyah', phone_number: '+60120000000' } }),
     );
     expect(deferredActionInput).toHaveBeenCalledWith(
       expect.objectContaining({ actionKey: 'user.unlink_contact', entityType: 'user', entityId: 'user-1' }),

@@ -53,7 +53,7 @@ const asMock = (fn: unknown) => fn as ReturnType<typeof vi.fn>;
 const CONTACT: PortalContact = {
   contact_id: 'contact-1',
   space_id: 'space-1',
-  name: 'Darren Lee',
+  name: 'CONTACT X Lee',
   phone_number: '60123456789',
   expires_at: '2026-08-01T00:00:00Z',
 };
@@ -244,7 +244,7 @@ describe('SubmissionForm - sponsorship unit price required on revise (#1232 bloc
       project_title: 'Community Fun Run',
       purpose: 'Sponsorship',
       requested_by_contact_id: 'contact-1',
-      requested_by: 'Darren Lee',
+      requested_by: 'CONTACT X Lee',
       products: [{ item_code: 'ITEM-A', quantity: '2', unit_price: '10' }],
     });
     asMock(fetchSubmissionNeighbours).mockResolvedValue({

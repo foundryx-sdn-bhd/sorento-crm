@@ -204,7 +204,7 @@ def test_portal_delete_requires_a_valid_token(client):
 
 def test_portal_upload_stamps_contact_attribution(client):
     c, db = client
-    contact = _contact(db, name="Darren Salesman")
+    contact = _contact(db, name="CONTACT X Salesman")
     token = _token(db, contact, "space-1")
     inquiry = _inquiry(db, contact, "space-1")
 
@@ -227,7 +227,7 @@ def test_attachment_list_shows_uploader_attribution_and_can_unlink(client):
     c, db = client
     from app.models.user import User
 
-    contact = _contact(db, name="Darren Salesman")
+    contact = _contact(db, name="CONTACT X Salesman")
     token = _token(db, contact, "space-1")
     inquiry = _inquiry(db, contact, "space-1")
 
@@ -260,7 +260,7 @@ def test_attachment_list_shows_uploader_attribution_and_can_unlink(client):
 
     assert items[own]["uploader_kind"] == "contact"
     assert items[own]["can_unlink"] is True
-    assert items[own]["uploaded_by_name"] == "Darren Salesman"
+    assert items[own]["uploaded_by_name"] == "CONTACT X Salesman"
     assert items[own]["uploaded_by_role"] == "contact"
 
     # Legacy row with NULL uploader_kind: no-regression, still renders and is

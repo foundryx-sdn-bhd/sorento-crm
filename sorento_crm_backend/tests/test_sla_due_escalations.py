@@ -85,7 +85,7 @@ def test_list_due_escalations_maps_tracking_and_contact_fields():
     tracking = _tracking_mock(current_tier=1)
     tracking.due_at = datetime(2026, 6, 6, 2, 0, 0)  # naive UTC, as stored
     contact = MagicMock()
-    contact.phone_number = "+60166753328"
+    contact.phone_number = "+60160000509"
     contact.respond_io_id = "rio-99"
     contact.name = "Ali"
 
@@ -101,7 +101,7 @@ def test_list_due_escalations_maps_tracking_and_contact_fields():
     assert item["respond_contact_id"] == "contact-1"
     assert item["policy_id"] == "policy-1"
     assert item["current_tier"] == 1
-    assert item["phone_number"] == "+60166753328"
+    assert item["phone_number"] == "+60160000509"
     assert item["respond_io_id"] == "rio-99"
     assert item["assigned_to_id"] == "user-1"
     assert item["assigned_to_respond_user_id"] == "777"
@@ -335,7 +335,7 @@ def test_due_escalations_route_returns_work_list(mock_service_cls, client):
             "team_set_code": "set_a",
             "assigned_to_id": "user-1",
             "assigned_to_respond_user_id": "777",
-            "phone_number": "+60166753328",
+            "phone_number": "+60160000509",
             "respond_io_id": "rio-99",
             "contact_name": "Ali",
         }
@@ -350,7 +350,7 @@ def test_due_escalations_route_returns_work_list(mock_service_cls, client):
     assert data["status"] == "success"
     assert data["count"] == 1
     assert data["items"][0]["respond_contact_id"] == "contact-1"
-    assert data["items"][0]["phone_number"] == "+60166753328"
+    assert data["items"][0]["phone_number"] == "+60160000509"
 
 
 @patch("app.api.v1.sla.sla_tracking.ConversationSLATrackingService")

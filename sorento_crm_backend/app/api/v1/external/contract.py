@@ -80,7 +80,7 @@ router = APIRouter()
 # it names" note here was wrong and has been removed.
 FIELDS_ADDED: dict[str, list[str]] = {
     "products": ["is_discontinued", "remark", "brand_code", "item_type_code"],
-    "customers": ["market_segment_code", "region"],
+    "customers": ["market_segment_code", "region", "sales_agent_code"],
     "sales_orders": ["customer_segment", "customer_region"],
     "purchase_orders": [
         "is_shipping_order",

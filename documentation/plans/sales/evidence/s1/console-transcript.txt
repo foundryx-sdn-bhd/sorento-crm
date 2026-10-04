@@ -1,4 +1,4 @@
-=== contact 437264483 | says: compare dealer sales 2025 vs 2026 by month
+=== contact 900000008 | says: compare dealer sales 2025 vs 2026 by month
 *Sales, Sorento*
 Channel: Dealer
 Basis: Delivered (transferred to DO)
@@ -23,7 +23,7 @@ Total: 4,792,155.33 | 3,569,990.08 | 56,363.81
 The Excel follows here.
 actions: ['send_message']
 
-=== contact 437264483 | says: total project sales this year
+=== contact 900000008 | says: total project sales this year
 *Sales, Sorento*
 Channel: Project team
 Basis: Delivered (transferred to DO)

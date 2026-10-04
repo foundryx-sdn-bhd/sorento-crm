@@ -1066,7 +1066,7 @@ class TestSendIsAddressedByRespondIoId:
         from app.models.integration import IntegrationLog
         from app.services import price_tag_notify
 
-        RESPOND_ID = "437264483"
+        RESPOND_ID = "900000008"
         contact = _seed_contact_with_respond_id(db_only, respond_io_id=RESPOND_ID)
         product = seed.seed_product(db_only)
         request = seed.seed_request(
@@ -1112,7 +1112,7 @@ class TestSendIsAddressedByRespondIoId:
         from app.models.integration import IntegrationLog
         from app.services import price_tag_notify
 
-        RESPOND_ID = "437264483"
+        RESPOND_ID = "900000008"
         contact = _seed_contact_with_respond_id(db_only, respond_io_id=RESPOND_ID)
         product = seed.seed_product(db_only)
         request = seed.seed_request(
@@ -1174,7 +1174,7 @@ class TestSendIsAddressedByRespondIoId:
     ):
         from app.services import price_tag_notify
 
-        RESPOND_ID = "437264483"
+        RESPOND_ID = "900000008"
         contact = _seed_contact_with_respond_id(db_only, respond_io_id=RESPOND_ID)
         product = seed.seed_product(db_only)
         request = seed.seed_request(

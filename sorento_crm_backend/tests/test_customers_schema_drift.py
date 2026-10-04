@@ -10,7 +10,7 @@ session rather than a review comment:
 2. and 3. Three column widths. The model declared `phone_number` String(50), `industry`
    String(120) and `website` String(500); the database held `varchar(20)`, `varchar(100)` and
    `varchar(255)`. A real 4,196-row AutoCount export carries 58 phone numbers longer than 20
-   characters (`016-978 5508 (MR.CHAEH)`), so the importer's over-length pre-check - which read
+   characters (`016-000 0503 (MR.CHAEH)`), so the importer's over-length pre-check - which read
    the MODEL - passed every one of them, promised 0 failures, and Postgres then refused all 58
    with `StringDataRightTruncation`. Migration 355 widened the columns.
 

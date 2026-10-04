@@ -94,7 +94,7 @@ type Row = {
 
 const UNLINKED_ROW: Row = {
   id: 'contact-aisyah',
-  phone_number: '+60123456701',
+  phone_number: '+60100000004',
   name: 'Aisyah Rahman',
   first_name: 'Aisyah',
   last_name: 'Rahman',
@@ -111,7 +111,7 @@ const UNLINKED_ROW: Row = {
 const LINKED_USER_ID = 'a8888888-8888-4888-8888-888888888888';
 const LINKED_ROW: Row = {
   id: 'contact-priya',
-  phone_number: '+60123456702',
+  phone_number: '+60100000003',
   name: 'Priya Nair',
   first_name: 'Priya',
   last_name: 'Nair',

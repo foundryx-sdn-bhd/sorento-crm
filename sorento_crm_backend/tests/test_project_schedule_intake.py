@@ -254,7 +254,7 @@ def seeded():
     with blank_session() as db:
         company_id = _sorento(db)
         project_seed_service.run(db, company_id=company_id)
-        owner = _user(db, f"{MARKER} Yana")
+        owner = _user(db, f"{MARKER} CONTACT AH")
         yield db, company_id, owner
 
 
@@ -1663,7 +1663,7 @@ def test_a_dismissed_column_stops_blocking_the_confirm(scenario):
     assert column["reconciled"] is True
     assert column["dismissed"] is True
     assert column["dismissed_reason"] == "Customer confirmed 195 by email on 4 March"
-    assert column["dismissed_by_name"] == f"{MARKER} Yana"
+    assert column["dismissed_by_name"] == f"{MARKER} CONTACT AH"
     # The verdict is overruled, not withdrawn: the screen still shows what it found.
     assert column["reason"]
     assert detail["reconciliation"] == {"reconciled_columns": 2, "total_columns": 2}

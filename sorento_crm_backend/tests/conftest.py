@@ -331,7 +331,7 @@ def _reset_global_state():
         pass
     try:
         # The 24h-window lookup keeps a short per-identifier TTL cache. Tests
-        # reuse identifiers ("id:123", "437264483") across files with different
+        # reuse identifiers ("id:123", "900000008") across files with different
         # mocked message lists, so a surviving entry would answer the next test
         # with the previous one's window.
         from app.services.respond_messaging_service import reset_window_cache

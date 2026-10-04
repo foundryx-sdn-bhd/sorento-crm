@@ -1,6 +1,6 @@
 {
   "name": "outstanding-so-granted",
-  "source": "sibling of outstanding-hanlim-detail-so-switch.json, item 3 ruling - the SAME chain, but for a contact that HOLDS the sales-order grant, so step 2's detail offer has TWO options (SO list, DO list) and 'Sales order' at step 3 answers with real SO figures instead of the denial + DO-summary fallback. Justin (440987225) does not hold this grant (measured, browser-pass-7 row 4 run 2 and this lane's own journey runs); no other contact holding it has been supplied yet.",
+  "source": "sibling of outstanding-hanlim-detail-so-switch.json, item 3 ruling - the SAME chain, but for a contact that HOLDS the sales-order grant, so step 2's detail offer has TWO options (SO list, DO list) and 'Sales order' at step 3 answers with real SO figures instead of the denial + DO-summary fallback. CONTACT N (900000010) does not hold this grant (measured, browser-pass-7 row 4 run 2 and this lane's own journey runs); no other contact holding it has been supplied yet.",
   "cases": [
     {
       "name": "hanlim-outstanding-detail-then-so-switch-granted",

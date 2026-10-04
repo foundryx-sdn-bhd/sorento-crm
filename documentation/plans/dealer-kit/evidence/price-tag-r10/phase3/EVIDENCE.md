@@ -304,7 +304,7 @@ Restored SRTBF11701's list price back to 1241.00 at the end (confirmed on its de
 ## S11 check (HEAD ceda4f7d1)
 
 Scope: AC-S4-3 (amended), AC-S4-10 to AC-S4-14, plus a 375px usability check. Session `ptr10s11`,
-logged in as `tehjayson@gmail.com`, navigated by sidebar clicks from `/` throughout (Master Data
+logged in as `person38@example.com`, navigated by sidebar clicks from `/` throughout (Master Data
 Management > Products > All Products, then Dealer Kit > Room Designer > Price Tag Requests).
 
 - **AC-S4-3 (amended): PASS.** Product SRTWT1212-SS-GM-DIY, Overview detail tabpanel text dump

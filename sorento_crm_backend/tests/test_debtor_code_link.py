@@ -231,7 +231,7 @@ class TestFirstRowByDebtorCode:
 
         _result, rec = _push(
             db,
-            {"source_ref": f"SS:{code}", "code": code, "name": "NAME-SHARED", "phone_number": "0199999914"},
+            {"source_ref": f"SS:{code}", "code": code, "name": "NAME-SHARED", "phone_number": "0190000014"},
         )
 
         assert rec.outcome is IngestOutcome.UPDATED, rec.errors
@@ -239,7 +239,7 @@ class TestFirstRowByDebtorCode:
         assert _cols(db, target, "customer_code", "customer_name", "phone_number") == (
             code,
             "NAME-OTHER",
-            "0199999914",
+            "0190000014",
         )
         assert _cols(db, other, "customer_code", "customer_name", "phone_number") == (
             other_code,
@@ -376,14 +376,14 @@ class TestDryRunAndUnchangedBehaviour:
         _scope(db)
         code = _code("T12")
         a = _seed(db, code, "NAME-A", OLD, phone_number="0100000012")
-        b = _seed(db, code, "NAME-B", NEW, phone_number="0122222212")
+        b = _seed(db, code, "NAME-B", NEW, phone_number="0120000012")
         # commit releases the test savepoint, so the dry run's own rollback
         # discards only the ingest work and not the seeded rows
         db.commit()
 
         result = _svc(db).ingest(
             "customers",
-            [{"source_ref": f"SS:{code}", "code": code, "name": "NAME-NEW", "phone_number": "0199999912"}],
+            [{"source_ref": f"SS:{code}", "code": code, "name": "NAME-NEW", "phone_number": "0190000012"}],
             dry_run=True,
         )
         rec = result.records[0]
@@ -394,7 +394,7 @@ class TestDryRunAndUnchangedBehaviour:
         assert rec.diff is not None and "phone_number" in rec.diff
         assert "customer_name" not in rec.diff, "the master feed never renames an existing row"
         assert _cols(db, a, "customer_name", "phone_number") == ("NAME-A", "0100000012")
-        assert _cols(db, b, "phone_number") == ("0122222212",)
+        assert _cols(db, b, "phone_number") == ("0120000012",)
         assert _refs_of(db, a) == []
 
     def test_t13_absent_field_stays_untouched_on_the_first_row(self, db):
@@ -441,3 +441,49 @@ class TestReviewRound1:
         assert rec.outcome is IngestOutcome.UPDATED, rec.errors
         assert rec.warnings == [WARN_REF_MISMATCH]
         assert _cols(db, a, "phone_number") == ("0100000016",)
+
+
+class TestAgentFanOutOnTheCodePath:
+    def test_t17_agent_reaches_every_same_code_row_while_the_oldest_keeps_its_name(self, db):
+        """#1468 x DEBTOR-CODE-LINK: the agent fan-out runs from the one code-first path, on
+        the update branch, keyed by the pushed code even though the code is not rewritten."""
+        from app.models.sales_agent import SalesAgent
+
+        _scope(db)
+        code = _code("T17")
+        agent = SalesAgent(sales_agent=_code("AGT").upper(), company_id=None)
+        db.add(agent)
+        db.flush()
+        a = _seed(db, code, "NAME-A", OLD)
+        b = _seed(db, code, "NAME-B (DO ROW)", NEW)
+
+        _result, rec = _push(
+            db,
+            {"source_ref": f"SS:{code}", "code": code.lower(), "name": "NAME-OTHER",
+             "sales_agent_code": agent.sales_agent.lower()},
+        )
+
+        assert rec.outcome is IngestOutcome.UPDATED, rec.errors
+        assert rec.entity_id == a
+        assert _cols(db, a, "customer_name", "customer_code", "sales_agent_id::text") == (
+            "NAME-A", code, str(agent.id),
+        )
+        assert _cols(db, b, "customer_name", "sales_agent_id::text") == ("NAME-B (DO ROW)", str(agent.id))
+
+    def test_t18_agent_reaches_same_code_rows_on_the_create_branch(self, db):
+        from app.models.sales_agent import SalesAgent
+
+        _scope(db)
+        code = _code("T18")
+        agent = SalesAgent(sales_agent=_code("AGT").upper(), company_id=None)
+        db.add(agent)
+        db.flush()
+
+        _result, rec = _push(
+            db,
+            {"source_ref": f"SS:{code}", "code": code, "name": "NAME-NEW",
+             "sales_agent_code": agent.sales_agent},
+        )
+
+        assert rec.outcome is IngestOutcome.CREATED, rec.errors
+        assert _cols(db, rec.entity_id, "sales_agent_id::text") == (str(agent.id),)

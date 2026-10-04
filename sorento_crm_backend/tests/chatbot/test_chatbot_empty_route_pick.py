@@ -1,4 +1,4 @@
-"""CHATBOT-EMPTY-ROUTE-PICK (owner repro, 30 Sep 2026, Chatbot Console, contact Fanny Ng,
+"""CHATBOT-EMPTY-ROUTE-PICK (owner repro, 30 Sep 2026, Chatbot Console, contact CONTACT Z,
 parser v37): "Zhin heng delivered on 23/9" inside an open DO list answered with
 
     Customer: Zhin heng / Product: all products / Dates: 23/09/2026
@@ -165,7 +165,7 @@ class TestPhantomAnswerIsDropped:
 
 def test_the_first_one_answers_the_top_selling_who_question(session_factory, monkeypatch, cat) -> None:
     """Reviewer B1 on this lane: "the first one" under "Do you mean customer SAMPLE -
-    FANNY NG or sales agent ...? Reply 1 for the customer, 2 for the sales agent." arrives
+    CONTACT Z or sales agent ...? Reply 1 for the customer, 2 for the sales agent." arrives
     as `reference_positions: [1]` (and, on a newer prompt, as a declared pick). That
     question is `focus.top_selling.asked`, not an `Open question:` object, so the drop
     must leave the positions to `turn/apply.py`'s `top_selling_who_is_the_customer`."""
@@ -176,7 +176,7 @@ def test_the_first_one_answers_the_top_selling_who_question(session_factory, mon
         session_factory, monkeypatch, _position(1, open_question_answer=dict(PHANTOM_PICK)), "the first one"
     )
     (args,) = _calls(captured)
-    assert args["customer_ids"] == [cat.customers["SAMPLE - FANNY NG"]], (text, args)
+    assert args["customer_ids"] == [cat.customers["SAMPLE - CONTACTZ X"]], (text, args)
     assert "sales_agent_ids" not in args, args
 
 

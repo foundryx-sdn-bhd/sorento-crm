@@ -137,7 +137,7 @@ row, now under the new `order_inquiry_id`. `sorento_oioh_mig` dropped after this
 `sorento_oioh_stack` (below) is the one left in place.
 
 `sorento_oioh_stack` is left in place as the browser-verification DB (Phase 3). Its two
-`email_outbox` rows in `pending` (both real prod addresses, `purchase02@mocha.com.my`,
+`email_outbox` rows in `pending` (both real prod addresses, `person34@example.com`,
 subjects naming SO314595 - a different, unrelated SO on the same copy) were set to
 `status = 'cancelled', cancel_reason = 'lane copy, never send'`. One further row was
 already sitting in `sending` from 7 Sep (a `ticket_comment_mention` to a real Gmail

@@ -649,7 +649,7 @@ class TestResolveBodyContactIdIsAString:
 
         ValidationError: 1 validation error for ResolveReferenceRequest
         contact_id  Input should be a valid string
-        [type=string_type, input_value=437264483, input_type=int]
+        [type=string_type, input_value=900000008, input_type=int]
 
     Every sibling read of the same id in `resolve_gate.py` already wraps it in
     `jsc.js_string(...)` (the access-types call, the semantic-input builder);
@@ -663,7 +663,7 @@ class TestResolveBodyContactIdIsAString:
         from `TestEntityPinsBody._ctx` in
         `tests/chatbot/test_s6a_gate_dry_run_and_seams.py`."""
         return {
-            "contact": {"id": 437264483},
+            "contact": {"id": 900000008},
             "text": {"message": {"message": {"text": "ZZT-1"}}},
             "access": {"hidden_spec_keys": ["thickness"]},
             "parse": {
@@ -687,10 +687,10 @@ class TestResolveBodyContactIdIsAString:
 
         body = resolve_entity_body(self._ctx_with_int_contact_id(), space_id="364817")
 
-        assert body["contact_id"] == "437264483"
+        assert body["contact_id"] == "900000008"
         # The body the lane hands `services.resolve_entity` must survive the
         # route's own validation - this is the exact call that threw in prod.
-        assert ResolveReferenceRequest(**body).contact_id == "437264483"
+        assert ResolveReferenceRequest(**body).contact_id == "900000008"
 
     def test_resolve_request_coerces_an_integer_contact_id_and_leaves_the_rest(self) -> None:
         """The schema pin: any caller sending the Respond.io id as a number (n8n
@@ -698,7 +698,7 @@ class TestResolveBodyContactIdIsAString:
         string id and an absent id are untouched."""
         from app.api.v1.system.references import ResolveReferenceRequest
 
-        assert ResolveReferenceRequest(query="x", contact_id=437264483).contact_id == "437264483"
+        assert ResolveReferenceRequest(query="x", contact_id=900000008).contact_id == "900000008"
         assert ResolveReferenceRequest(query="x", contact_id=None).contact_id is None
         assert ResolveReferenceRequest(query="x", contact_id="abc").contact_id == "abc"
         assert ResolveReferenceRequest(query="x").contact_id is None

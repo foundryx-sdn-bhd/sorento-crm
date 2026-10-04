@@ -189,7 +189,7 @@ def test_ticket_row_carries_the_same_shape_my_pending_emits(db):
     _member(db, team, peer)
     c = RespondContact(
         id=str(uuid.uuid4()),
-        phone_number="+60123999001",
+        phone_number="+60120000551",
         name="Aisyah",
         respond_io_id="10099001",
         session_vars={},
@@ -217,7 +217,7 @@ def test_ticket_row_carries_the_same_shape_my_pending_emits(db):
     row = out["data"][0]
     assert row["is_intervention_ticket"] is True
     assert row["contact_name"] == "Aisyah"
-    assert row["contact_phone"] == "+60123999001"
+    assert row["contact_phone"] == "+60120000551"
     assert row["enquiry_snippet"] == "Please help with my order."
     assert row["respond_io_id"] == "10099001"
     # Team-only fields still there, unaffected by the shared row builder.
@@ -237,7 +237,7 @@ def test_non_ticket_conversation_row_still_carries_respond_io_id(db):
     _member(db, team, peer)
     c = RespondContact(
         id=str(uuid.uuid4()),
-        phone_number="+60123999002",
+        phone_number="+60120000552",
         name="Legacy Contact",
         respond_io_id="10099002",
         session_vars={},

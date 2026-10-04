@@ -20,7 +20,7 @@ const EMAIL = process.env.REQUEST_BATCH_E2E_EMAIL;
 const PASSWORD = process.env.REQUEST_BATCH_E2E_PASSWORD;
 const SLUG = process.env.E2E_CONTACT_SLUG || '';
 const CONTACT = 'E2E Form Submitter';
-const PHONE = '+60111222333';
+const PHONE = '+60110000526';
 
 test.skip(!EMAIL || !PASSWORD || !SLUG, 'Set REQUEST_BATCH_E2E_* and E2E_CONTACT_SLUG.');
 

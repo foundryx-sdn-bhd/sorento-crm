@@ -9,7 +9,7 @@ customer stays NULL, and a second run changes nothing.
 Downgrade is a no-op: a backfilled name cannot be told apart from one AutoCount sent.
 
 Revision ID: sdn_0002_so_debtor_backfill
-Revises: dev_login_0001
+Revises: sa_person_label_0001
 Create Date: 2026-10-04
 """
 from __future__ import annotations
@@ -18,7 +18,7 @@ from alembic import op
 from sqlalchemy import text
 
 revision = "sdn_0002_so_debtor_backfill"
-down_revision = "dev_login_0001"
+down_revision = "sa_person_label_0001"
 branch_labels = None
 depends_on = None
 

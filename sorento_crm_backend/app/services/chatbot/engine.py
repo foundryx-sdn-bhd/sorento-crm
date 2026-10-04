@@ -35,7 +35,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.models.base import set_company_scope
+from app.models.base import set_brand_scope, set_company_scope
 from app.models.chatbot_turn import ChatbotTurn
 from app.services.chatbot import dispatch, jsc, llm_call, media_intake, send_order, trace as trace_mod
 from app.services.chatbot.contracts import (
@@ -61,7 +61,7 @@ from app.services.chatbot.usage import record_parser_usage
 # Stages C to G (PLAN-chatbot-turn-rearch.md "Turn order"). `turn/` is the pure core -
 # APPLY, the narrower, the plan, the router, the composer, the tail - and `turn_runtime`
 # is everything that has to touch a database or a tool on its behalf.
-from app.services.chatbot import session_state, turn_runtime
+from app.services.chatbot import label_catalog, language as language_mod, session_state, turn_runtime
 from app.services.chatbot.turn import pending as turn_pending
 from app.services.chatbot.turn import question as turn_question
 from app.services.chatbot.turn import state as turn_state
@@ -854,8 +854,33 @@ def _contact_company_scope(factory: SessionFactory, contact_respond_id: str) -> 
         db.close()
 
 
-def _scoped_factory(factory: SessionFactory, scope: frozenset) -> SessionFactory:
-    """`factory`, wrapped so every session it opens is stamped with `scope`.
+def _contact_brand_scope(factory: SessionFactory, contact_respond_id: str) -> frozenset | None:
+    """The contact's accessible brands (CONTACT-BRAND-SCOPE), resolved once per turn on a
+    session of its own, the way `_contact_company_scope` resolves its companies.
+
+    None = unscoped (every brand). Fail-closed: a lookup that raised returns a scope no
+    brand matches, so the turn sees no product rather than every product."""
+    from app.services.contact_brand_scope import NO_BRAND_ID, contact_brand_scope
+
+    db = factory()
+    try:
+        return contact_brand_scope(db, contact_respond_id, default_space_id(db))
+    except Exception:  # noqa: BLE001 - a scope lookup must never fail the turn
+        logger.warning(
+            "chatbot: brand scope lookup failed for contact %s, failing closed",
+            contact_respond_id,
+            exc_info=True,
+        )
+        return frozenset({NO_BRAND_ID})
+    finally:
+        db.close()
+
+
+def _scoped_factory(
+    factory: SessionFactory, scope: frozenset, brand_scope: frozenset | None = None
+) -> SessionFactory:
+    """`factory`, wrapped so every session it opens is stamped with `scope` (and, for a
+    brand-scoped contact, `brand_scope`: the session criterion that hides other brands).
 
     The FACTORY is wrapped rather than each of the engine's ~15 `_session` call sites
     changed, because the factory is also what the lanes get (`answer_services_for`
@@ -866,6 +891,7 @@ def _scoped_factory(factory: SessionFactory, scope: frozenset) -> SessionFactory
     def open_scoped_session() -> Session:
         db = factory()
         set_company_scope(db, scope)
+        set_brand_scope(db, brand_scope)
         return db
 
     return open_scoped_session
@@ -1049,7 +1075,7 @@ def _inject_harness_session(
     trace showed the contact's real memory while the lane ran on injected memory would be
     the worst kind of unreadable.
 
-    Fix 3 (console defect, contact 437264483, 23 Sep 2026): `session_state.five_keys`
+    Fix 3 (console defect, contact 900000008, 23 Sep 2026): `session_state.five_keys`
     returns the STORED top-level five keys whenever ANY of them is present on
     `session_vars`, and only falls through to the `variables` nest when none is - so
     writing the harness value into `variables` alone, leaving the stored row's own
@@ -1587,6 +1613,11 @@ def _answer_earlier_messages(
                 exc_info=True,
             )
             continue
+        try:
+            # An answered-ahead message keeps the language its OWN turn chose.
+            _localize_result(result, session_factory, False)
+        except Exception:  # noqa: BLE001 - best effort, as everything here
+            logger.warning("chatbot: the final reply pass did not run for an earlier message", exc_info=True)
         out.extend(result.actions or [])
     return out, {
         "earlier_answered_ahead": answered,
@@ -2657,8 +2688,66 @@ def _top_selling_verdict(
     return out, state, "top_selling_split_token"
 
 
-@_refer_tracked
 def run_turn(
+    envelope: Envelope, *, session_factory: SessionFactory, offload: bool | None = None
+) -> TurnResult:
+    """One turn, then the final reply pass (`_localize_result`, called by `_run_turn` at its
+    one exit, just before the messages answered ahead are put in front of the actions)."""
+    return _run_turn(envelope, session_factory=session_factory, offload=offload)
+
+
+def _localize_result(result: TurnResult, session_factory: SessionFactory, dry_run: bool) -> None:
+    """CHAT-LANGUAGE slice 4, the send point. Every arm has finished its own composers, offer
+    strippers, part markers and company inserts by the time it returns, so this is the one
+    place that sees the turn's final reply text and every `send_message` text. The reply is
+    localized once, with the language THIS item chose, and the turn row and its `sent` /
+    `replied` trace records are brought in line (the way `_repersist_media_prefixed_reply`
+    does) so the parser reads next turn the reply the customer was sent. An item with no
+    language, or an English one, is left exactly as composed."""
+    lang = result.item.get("reply_language") if isinstance(result.item, dict) else None
+    if lang in (None, "en") or result.duplicate or not isinstance(result.reply, dict):
+        return
+    with _session(session_factory) as db:
+        localizer = label_catalog.resolve(db, lang, dry_run=dry_run)
+        if localizer is label_catalog.IDENTITY:
+            return
+        reply = dict(result.reply)
+        if isinstance(reply.get("text"), str):
+            reply["text"] = localizer.reply(reply["text"])
+        actions = [
+            {**a, "text": localizer.reply(a["text"])}
+            if isinstance(a, dict) and a.get("kind") == "send_message" and isinstance(a.get("text"), str)
+            else a
+            for a in (result.actions or [])
+        ]
+        if reply == result.reply and actions == (result.actions or []):
+            return
+        row = db.query(ChatbotTurn).filter(ChatbotTurn.id == result.turn_id).first()
+        if row is not None and isinstance(row.response, dict):
+            stored = row.response
+            row.response = {
+                **stored,
+                **({"reply": {**(stored.get("reply") or {}), **reply}} if "reply" in stored else {}),
+                **({"actions": actions} if "actions" in stored else {}),
+            }
+            trace = [dict(r) if isinstance(r, dict) else r for r in (row.trace or [])]
+            for record in trace:
+                if not isinstance(record, dict) or record.get("stage") not in ("sent", "replied"):
+                    continue
+                raw = record.get("raw")
+                if not isinstance(raw, dict):
+                    continue
+                if isinstance(raw.get("reply"), dict):
+                    record["raw"] = raw = {**raw, "reply": {**raw["reply"], "text": reply.get("text")}}
+                if isinstance(raw.get("actions"), list):
+                    record["raw"] = {**raw, "actions": actions}
+            row.trace = trace
+            db.commit()
+        result.reply, result.actions = reply, actions
+
+
+@_refer_tracked
+def _run_turn(
     envelope: Envelope, *, session_factory: SessionFactory, offload: bool | None = None
 ) -> TurnResult:
     """Run the head of one turn. NEVER raises for a business failure; records it.
@@ -2685,7 +2774,9 @@ def run_turn(
     # Resolved once, on a session of its own, from the same rule the X-API-Key
     # dependency uses. An unknown contact fails closed to zero rows.
     contact_scope = _contact_company_scope(session_factory, contact_respond_id)
-    session_factory = _scoped_factory(session_factory, contact_scope)
+    session_factory = _scoped_factory(
+        session_factory, contact_scope, _contact_brand_scope(session_factory, contact_respond_id)
+    )
 
     if offload is None:
         offload = bool(getattr(settings, "chatbot_turn_on_worker", False))
@@ -2922,6 +3013,10 @@ def run_turn(
             # offload above rebuilds its result from a job that came through here, so it is
             # stamped too, and a duplicate reads `is_test` off the row it replays.
             result.is_test = dry_run
+            try:
+                _localize_result(result, session_factory, dry_run)
+            except Exception:  # noqa: BLE001 - a language pass never fails a turn that answered
+                logger.warning("chatbot: the final reply pass did not run", exc_info=True)
             if earlier_actions:
                 result.actions = [*earlier_actions, *(result.actions or [])]
             return result
@@ -4925,6 +5020,10 @@ def _run_stages_body(  # noqa: PLR0915
             except Exception:  # noqa: BLE001 - the lane's own handover stands
                 logger.warning("chatbot: the handover context did not build", exc_info=True)
         item = _stamp_item(access, branch_kind, {})
+        # CHAT-LANGUAGE: this turn's reply language, from the message's own words first. Pure,
+        # so every arm has it (`run_tail` carries `item["reply_language"]` to the next turn);
+        # the business lane below recomputes it once its codes and names are known.
+        item["reply_language"] = _turn_language(latest_user_message, remembered_before, profile)
 
         # Owner ruling, hand pass 10 (21 Sep 2026, `test_rearch_r10_handpass10_
         # replay.py::TestHandPass10PromotionAskRepeatsAfterATierPick`): a fresh
@@ -5130,6 +5229,7 @@ def _run_stages_body(  # noqa: PLR0915
         #    standing (R6 deletes the now-shadowed `narrow` arms) but never reaches
         #    `turn_compose.compose_question` while `answer` is already set here.
         answer: Any = None
+        localizer: Any = None  # CHAT-LANGUAGE: set when the business lane resolves one
         # Set the moment the bridge itself answers (either arm) - the FETCH section
         # below always assigns `answer` too (even `turn_compose.compose([])`'s own
         # empty Answer, for a plan with nothing to fetch), so `answer is None` alone
@@ -5282,6 +5382,21 @@ def _run_stages_body(  # noqa: PLR0915
             and not customer_scope_refused
         ):
             stage[0] = "looked_up"
+            # CHAT-LANGUAGE: the words of this turn that are data (codes, customer names) must
+            # not decide the language, and the catalog is read once, here, with the db open.
+            reply_language = _turn_language(
+                latest_user_message,
+                remembered_before,
+                state_out.profile,
+                strip=[
+                    str(e[k])
+                    for e in compatible_entities
+                    for k in ("raw", "canonical_code", "display_name")
+                    if isinstance(e, dict) and e.get(k)
+                ],
+            )
+            item["reply_language"] = reply_language
+            localizer = label_catalog.resolve(db, reply_language, dry_run=dry_run)
             turn_ctx = turn_runtime.TurnContext(
                 db=db,
                 contact_respond_id=contact_respond_id,
@@ -5321,7 +5436,10 @@ def _run_stages_body(  # noqa: PLR0915
                     # per-domain fetch context gets the same domain-aware fill this
                     # turn's own `ctx.parse.output` already got above.
                     policy=policy,
+                    localizer=localizer,
                 ),
+                localizer=localizer,
+                reply_language=reply_language,
                 granted_reveals=access.get("attributes"),
                 access_levels=list(verdict.get("access_levels") or []),
                 contains_flyer=bool(verdict.get("contains_flyer")),
@@ -5871,7 +5989,9 @@ def _run_stages_body(  # noqa: PLR0915
                     state_out,
                     focus=dataclasses_replace(state_out.focus, customers=focus_customers_named),
                 )
-            answer = turn_compose.compose_question(plan.ask, subject_state)
+            answer = turn_compose.compose_question(
+                plan.ask, subject_state, _ask_localizer(plan.ask, db, item, dry_run=dry_run)
+            )
 
         # -- the REFUSAL: a denied stock check is an answer, not silence ------- #
         # `stock_denied` is one of the three business branch kinds, so it is outside
@@ -5917,7 +6037,7 @@ def _run_stages_body(  # noqa: PLR0915
             # reply, a dealer is referred to their salesman, never offered a team.
             # PR #1329 (ETA policy): a dealer's incoming reply is the same, so an
             # incoming miss no longer offers the purchasing team.
-            answer = _dealer_refers_to_salesman(answer)
+            answer = _dealer_refers_to_salesman(answer, localizer)
             if _dealer_incoming_ask(state_out, plan):
                 answer = _dealer_names_the_miss(answer, envelopes)
         elif in_ranking_conversation:
@@ -6238,7 +6358,7 @@ def _without_escalation_offer(answer: Any) -> Any:
     return dataclasses_replace(answer, text=text, question=question, offer=None)
 
 
-def _dealer_refers_to_salesman(answer: Any) -> Any:
+def _dealer_refers_to_salesman(answer: Any, localizer: Any = None) -> Any:
     from app.services.chatbot import dealer_stock as dealer_mod
 
     if getattr(answer, "question", None) is not None and (
@@ -6246,7 +6366,7 @@ def _dealer_refers_to_salesman(answer: Any) -> Any:
     ):
         return answer
     text, question = dealer_mod.without_escalation(
-        getattr(answer, "text", "") or "", getattr(answer, "question", None)
+        getattr(answer, "text", "") or "", getattr(answer, "question", None), localizer=localizer
     )
     if text == (getattr(answer, "text", "") or "") and question is getattr(answer, "question", None):
         return answer
@@ -6482,6 +6602,7 @@ def _run_answer(
             access_levels=list(verdict.get("access_levels") or []),
             contains_flyer=bool(verdict.get("contains_flyer")),
             ideation=remembered_before.get("ideation"),
+            reply_language=item.get("reply_language") or remembered_before.get("reply_language"),
         )
         # ONE payload for both kinds of turn: a live turn writes it, a dry run hands it
         # back as `session_patch` and writes nothing (D14). Same rule `run_tail` applies
@@ -6785,7 +6906,11 @@ def _run_entities_only_arm(
     )
 
     text = turn_compose.entities_only_reply(
-        placed, unplaced, from_photo=from_photo, media_prefixed=media_prefixed
+        placed,
+        unplaced,
+        from_photo=from_photo,
+        media_prefixed=media_prefixed,
+        localizer=label_catalog.resolve(db, item.get("reply_language") or "en", dry_run=dry_run),
     )
     answer = turn_compose.Answer(text=text)
     # `_run_answer` opens and commits its OWN session for the tail (persist, close);
@@ -7227,12 +7352,7 @@ def _run_casual_lane(
             answer_shape = said.shape
             text = said.text
             if fallback is not None and (said.shape == "ack" or fallback.kind == "history"):
-                noted_language = next(
-                    (s.get("value") for s in fallback.noted if s.get("key") == "language"), None
-                )
-                reply_language = fallback_mod.pick_language(
-                    fallback.saved_language, noted_language, said.language
-                )
+                reply_language = _fallback_language(ctx, fallback, remembered_before, said.language)
                 ack = said.text.strip()
                 # AC-MEM081: an ack stating a figure, code, price or date its own
                 # input never had is replaced by the canned one for the language.
@@ -7253,7 +7373,7 @@ def _run_casual_lane(
             text = GENERIC_ERROR_REPLY
     if failed is not None and fallback is not None and fallback.kind == "history" and fallback.copy is not None:
         # The history list needs no model: behind the canned ack it still answers.
-        reply_language = fallback_mod.pick_language(fallback.saved_language)
+        reply_language = _fallback_language(ctx, fallback, remembered_before, None)
         text = fallback_mod.compose(
             fallback.copy.render_in("fallback_ack", reply_language), fallback, fallback.copy, reply_language
         )
@@ -7364,8 +7484,13 @@ def _run_casual_lane(
     # `response` for a kind it has no case for, and wins the ladder - the reply comes out
     # blank. The turn ROW keeps `low_signal` either way; `branch_kind` is read off the row.
     central = {"response": text}
+    if reply_language:
+        # What was replied is what the next turn inherits (`complete_turn` runs the tail on
+        # THIS item, not the engine's own).
+        item["reply_language"] = reply_language
     answer = {
         **central,
+        **({"reply_language": item["reply_language"]} if item.get("reply_language") else {}),
         "outcome_fragment": {
             "central-exchange": central,
             "build-miss-member-offer": None,
@@ -8159,6 +8284,41 @@ def _stock_ask_answered_entries(envelopes: list[dict[str, Any]]) -> list[dict[st
     return entries
 
 
+def _ask_localizer(ask: Any, db: Session, item: Mapping[str, Any], *, dry_run: bool) -> Any:
+    """CHAT-LANGUAGE: the localizer a question prints with: its stored offer text and its short
+    header read in the turn's language (the stored text stays English). English reads nothing."""
+    return label_catalog.resolve(db, item.get("reply_language") or "en", dry_run=dry_run)
+
+
+def _fallback_language(
+    ctx: Any, fallback: Any, remembered_before: Mapping[str, Any] | None, said_language: str | None
+) -> str:
+    """The fallback reply's language: one the contact STATED this turn, then the message's own
+    words, the clarifier's reading, the conversation's last language, the saved fact."""
+    stated = next((s.get("value") for s in fallback.noted if s.get("key") == "language"), None)
+    return fallback_mod.pick_language(
+        stated,
+        language_mod.detect(_ctx_message_text(ctx).split("\n")[0]),
+        said_language,
+        (remembered_before or {}).get("reply_language"),
+        fallback.saved_language,
+    )
+
+
+def _turn_language(
+    latest_user_message: str,
+    remembered_before: Mapping[str, Any],
+    profile: Any,
+    *,
+    strip: Any = (),
+) -> str:
+    """`language.for_turn` on the typed line (the quoted `reply to:` line is not the customer's
+    words), against a copy so `remembered_before` stays the state the turn started with."""
+    carried = {"reply_language": remembered_before.get("reply_language")}
+    first_line = (latest_user_message or "").split("\n")[0]
+    return language_mod.for_turn(first_line, carried, getattr(profile, "language", None), strip=strip)
+
+
 def _ctx_message_text(ctx: Any) -> str:
     """What the customer typed this turn (`ctx.text.message.message.text`)."""
     inner = jsc.get(jsc.get(jsc.get(ctx, "text"), "message"), "message")
@@ -8583,6 +8743,8 @@ def run_tail(
         "ideation": item.get("ideation") if "ideation" in item else before.get("ideation"),
         "access_levels": list(before.get("access_levels") or []),
         "contains_flyer": bool(before.get("contains_flyer")),
+        # CHAT-LANGUAGE: this turn's language, else the one the conversation already had.
+        "reply_language": item.get("reply_language") or before.get("reply_language"),
     }
     SessionVars(**payload)
     reply_ladder.sanitize_em_dash(payload)
@@ -9043,6 +9205,7 @@ def complete_turn(  # noqa: PLR0915 - one linear pipeline, and the order IS the 
         set_company_scope(
             db, _contact_company_scope(session_factory, str(contact_respond_id or ""))
         )
+        set_brand_scope(db, _contact_brand_scope(session_factory, str(contact_respond_id or "")))
         dry_run = bool(row.is_test)
         stored_response = row.response if isinstance(row.response, dict) else {}
         ctx = fragments.get("ctx") or stored_response.get("ctx") or {}
