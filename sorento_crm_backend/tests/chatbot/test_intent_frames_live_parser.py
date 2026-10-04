@@ -6,7 +6,7 @@ The real provider reads each message with the prompt this branch publishes
 resolver, the lanes and the presenters are real; only the tool reads are stubbed
 (`_r9_engine_console.EngineConsole`).
 
-Opt-in, never in CI: `INTENT_FRAMES_LIVE_PARSER=1` (model `LOW_STOCK_LIVE_MODEL`, default
+Opt-in, never in CI: `INTENT_FRAMES_LIVE_PARSER=1 CHATBOT_LIVE_LLM=1` (model `LOW_STOCK_LIVE_MODEL`, default
 `gpt-5.4-mini`, the production parser model; key `OPENAI_API_KEY`, or a placeholder where an
 egress proxy injects it).
 """
@@ -23,7 +23,11 @@ from tests.chatbot._r9_engine_console import EngineConsole
 from tests.chatbot.test_engine import stub_access  # noqa: F401 - a pytest fixture
 
 LIVE = os.environ.get("INTENT_FRAMES_LIVE_PARSER") == "1"
-pytestmark = pytest.mark.skipif(not LIVE, reason="live parser run: set INTENT_FRAMES_LIVE_PARSER=1")
+pytestmark = [
+    pytest.mark.skipif(not LIVE, reason="live parser run: set INTENT_FRAMES_LIVE_PARSER=1"),
+    # NO-LIVE-LLM-TESTS (#1456): a real provider call needs the marker and CHATBOT_LIVE_LLM=1 too.
+    pytest.mark.live_external,
+]
 
 ASK = "How many units"
 A, B = "SRTWC286-SH-150", "SRTWC286-SH-200"
