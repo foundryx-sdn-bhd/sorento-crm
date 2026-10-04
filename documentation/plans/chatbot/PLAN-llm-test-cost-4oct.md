@@ -142,12 +142,24 @@ version) it was recorded on.
 `LLM_BASE_URL` reaches the OpenAI client constructor, and `LLM_MODEL_OVERRIDE` replaces the model on
 the wire. Each applies only when set.
 
-## Not covered
+## Direct-HTTP calls outside the provider seam
 
-Raw-httpx embedding paths (`embedding_worker._embed_text_chunks`, `api/v1/external/rag.py`) and
-Whisper (`media_extract/transcribe.py`) do not go through `OpenAIProvider`, so cassettes do not
-cover them. One of them IS reachable from a turn: the entity resolver's Tier-3 fallback embeds the
-query token (`entity_resolver.py`, `_memo_embedding(token, _embed_text_chunks)`). That is one small
-embedding call (memoised), not a parse, so left live on purpose. Routing it through the cassette
-would also make the background indexer miss on every new row in a replay harness. Trigger to
-revisit: embedding spend showing up on the test keys.
+Raw-httpx embeddings (`embedding_worker._embed_text_chunks`, `api/v1/external/rag.py`), Whisper
+(`media_extract/transcribe.py`) and the SCM market-research Anthropic call do not go through
+`OpenAIProvider`, so nothing records them. In replay each one refuses (`refuse_uncovered`)
+instead of spending (security review round 1, S3). The cost of that: in a replay run the
+entity resolver's Tier-3 fallback (`entity_resolver.py`, `_memo_embedding`) skips (it already
+catches and returns no match), and background indexing of new rows fails. Run `--live` when a
+pass depends on either.
+
+## Security review round 1 (applied)
+
+- B1: the console check read an inline trace the `/turn` body never carries; it now reads the
+  stored row (`_row_trace`).
+- S1: a cassette dir inside ANY git checkout (another clone, a worktree's primary) is refused.
+- S2: `LLM_CASSETTE_MODE` other than `off` raises when `ENVIRONMENT=production`.
+- S3: the direct-HTTP calls above refuse in replay.
+- S4: `LLM_BASE_URL` must be https (http only on localhost), since the key travels there.
+- N1: an existing cassette dir must be owned by this user with mode 0700.
+- N2 (retention): a cassette is good for one day, so clear old ones with
+  `find "${LLM_CASSETTE_DIR:-$HOME/.cache/sorento-llm-cassettes}" -name '*.json' -mtime +7 -delete`.

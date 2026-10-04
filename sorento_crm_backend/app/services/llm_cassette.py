@@ -11,7 +11,9 @@ run answer from a recording instead:
 
 The seam is `llm_provider.OpenAIProvider` (`chat` and `embed`), so every caller of
 `get_provider` is covered without knowing this module exists. Anthropic and Gemini are not
-recorded: in replay mode they refuse (`CassetteError`) rather than spend.
+recorded: in replay mode they refuse (`CassetteError`) rather than spend, and so do the
+direct-HTTP calls that bypass the provider (embeddings, transcription, market research),
+each through `refuse_uncovered`.
 
 **Key.** sha256 over the request's model, messages, response format (the strict schema)
 and tools - what decides the answer. Temperature and the token ceiling do not change the
@@ -19,7 +21,7 @@ key. The system prompt carries the date (`{{current_date}}`), so a recording is 
 the day it was made and the prompt version it was made with; a new day re-records.
 
 **Storage.** `LLM_CASSETTE_DIR`, default `~/.cache/sorento-llm-cassettes`, and a directory
-inside this repository is refused: a recording holds the model's answer to a real
+inside any git checkout is refused: a recording holds the model's answer to a real
 message, which is customer data, and the repository is public. Files are written 0600 in
 a 0700 directory, hold only the RESPONSE (never the request text), and a response that
 contains the API key is not written at all.
@@ -47,16 +49,6 @@ DEFAULT_DIR = Path.home() / ".cache" / "sorento-llm-cassettes"
 _CHAT_KEY_FIELDS = ("model", "messages", "response_format", "tools")
 
 
-def _find_repo_root() -> Path | None:
-    """The git checkout this file sits in, or None (a deployed image carries no `.git`)."""
-    for parent in Path(__file__).resolve().parents:
-        if (parent / ".git").exists():
-            return parent
-    return None
-
-
-_REPO_ROOT = _find_repo_root()
-
 T = TypeVar("T")
 
 
@@ -69,10 +61,19 @@ class CassetteMiss(CassetteError):
 
 
 def mode() -> str:
-    """The current mode, read per call so a test or a runner can switch it."""
+    """The current mode, read per call so a test or a runner can switch it.
+
+    Production refuses anything but `off`: `record` there would write the model's answers
+    to real customers into an unmanaged file, and `replay` would fail every turn.
+    """
     value = (os.environ.get(MODE_ENV) or "off").strip().lower()
     if value not in MODES:
         raise ValueError(f"{MODE_ENV}={value!r} is not one of {', '.join(MODES)}")
+    if value != "off":
+        from app.config import settings
+
+        if (settings.environment or "").strip().lower() == "production":
+            raise CassetteError(f"{MODE_ENV}={value} is refused in production")
     return value
 
 
@@ -103,12 +104,26 @@ def cassette_dir() -> Path:
     raw = os.environ.get(DIR_ENV)
     path = Path(raw).expanduser() if raw else DEFAULT_DIR
     resolved = path.resolve()
-    if _REPO_ROOT is not None and (resolved == _REPO_ROOT or _REPO_ROOT in resolved.parents):
-        raise CassetteError(
-            f"{DIR_ENV}={path} is inside the repository ({_REPO_ROOT}); recordings hold "
-            "customer data and must live outside git"
-        )
+    # ANY git checkout, not just this one: a worktree's primary checkout or a second clone
+    # of the same public repository is one `git add -A` away from publishing a recording.
+    for directory in (resolved, *resolved.parents):
+        if (directory / ".git").exists():
+            raise CassetteError(
+                f"{DIR_ENV}={path} is inside the repository at {directory}; recordings "
+                "hold customer data and must live outside git"
+            )
     return resolved
+
+
+def _require_private(directory: Path) -> None:
+    """Ours and closed to others, or refused: anyone who can write here can plant a
+    replayed answer, and anyone who can read here can read customer data."""
+    info = directory.stat()
+    if info.st_uid != os.geteuid() or info.st_mode & 0o077:
+        raise CassetteError(
+            f"cassette directory {directory} must be owned by this user and mode 0700 "
+            f"(found uid {info.st_uid}, mode {oct(info.st_mode & 0o777)})"
+        )
 
 
 def _digest(payload: dict[str, Any]) -> str:
@@ -146,6 +161,7 @@ def _write(key: str, kind: str, model: str, response: Any, secret: str) -> None:
     # Created 0700 at every level this code creates; an existing directory keeps its mode.
     for directory in (cassette_dir(), path.parent):
         directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        _require_private(directory)
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".tmp-", suffix=".json")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
@@ -160,6 +176,8 @@ def _write(key: str, kind: str, model: str, response: Any, secret: str) -> None:
 
 def _read(key: str, kind: str, model: str) -> Any:
     path = _path(key)
+    if path.parent.is_dir():
+        _require_private(path.parent)
     if not path.is_file():
         raise CassetteMiss(
             f"LLM cassette miss: no {kind} recording for key {key} (model {model}) in "

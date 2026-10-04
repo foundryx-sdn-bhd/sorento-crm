@@ -384,6 +384,7 @@ class OpenAIProvider:
 
         base_url = os.environ.get("LLM_BASE_URL")
         if base_url:
+            _require_safe_base_url(base_url)
             overrides = {"base_url": base_url, **overrides}
         return OpenAI(api_key=self.api_key, **overrides)
 
@@ -546,6 +547,16 @@ class OpenAIProvider:
             rows.append((created, ProviderModel(value=model_id, label=model_id)))
         rows.sort(key=lambda row: (row[0], row[1].value), reverse=True)
         return [model for _, model in rows]
+
+
+def _require_safe_base_url(base_url: str) -> None:
+    """The API key travels to `LLM_BASE_URL`, so never in clear text off this machine."""
+    from urllib.parse import urlparse
+
+    parsed = urlparse(base_url)
+    local = parsed.hostname in {"localhost", "127.0.0.1", "::1"}
+    if parsed.scheme != "https" and not (parsed.scheme == "http" and local):
+        raise ValueError(f"LLM_BASE_URL must be https (or http on localhost), got {base_url!r}")
 
 
 def _chat_completion_from_json(data: Any) -> Any:

@@ -242,10 +242,50 @@ def _post_with_pacing(
 def _cassette_refusal(body: dict[str, Any], live: bool) -> str | None:
     """Why this run must stop, or None. LLM-TEST-COST: a scripted run answers from
     recorded parses (the backend in `LLM_CASSETTE_MODE=replay`) unless `--live` says to
-    spend. The backend's mode is read off the turn's own `understood` facts, so at most
-    ONE live turn is paid before the run stops."""
-    if live:
+    spend. The backend's mode is read off the turn's own `understood` facts - the 200
+    body carries no trace, so off the stored row - and at most ONE live turn is paid
+    before the run stops."""
+    if live or "_http_error" in body:
         return None
+    for record in _row_trace(body.get("turn_id")):
+        if not (isinstance(record, dict) and record.get("stage") == "understood"):
+            continue
+        facts = record.get("facts") or {}
+        if facts.get("parser_bypassed"):
+            return None
+        mode = facts.get("llm_cassette")
+        if mode == "replay":
+            return None
+        return (
+            f"stopped: the backend parsed this turn live (LLM_CASSETTE_MODE="
+            f"{mode or 'unset, backend predates LLM-TEST-COST'}), which spends real "
+            "OpenAI tokens. Start the backend in replay (LLM_CASSETTE_MODE=replay, or a "
+            "harness launcher with no flag), or pass --live to spend on purpose (a "
+            "--record backend needs --live too)."
+        )
+    return None
+
+
+def _row_trace(turn_id: str | None) -> list[Any]:
+    """`chatbot.turns.trace` for one turn, as a list (empty when there is none)."""
+    if not turn_id:
+        return []
+    from sqlalchemy import text
+
+    db = _script_session()
+    try:
+        row = db.execute(
+            text("SELECT trace FROM chatbot.turns WHERE id = :id"), {"id": turn_id}
+        ).fetchone()
+    finally:
+        db.close()
+    trace = (row[0] if row is not None else None) or []
+    if isinstance(trace, str):
+        try:
+            trace = json.loads(trace)
+        except ValueError:
+            return []
+    return trace if isinstance(trace, list) else []
     for record in body.get("trace") or []:
         if not (isinstance(record, dict) and record.get("stage") == "understood"):
             continue

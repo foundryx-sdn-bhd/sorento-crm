@@ -604,6 +604,9 @@ def _canonical_for_source(db: Session, source_type: str, source_id: str, payload
 
 
 def _embed_text_chunks(chunks: list[str]) -> list[list[float]]:
+    from app.services import llm_cassette
+
+    llm_cassette.refuse_uncovered("embeddings")
     if not settings.openai_api_key:
         raise ValueError("OPENAI_API_KEY is required for embedding worker")
     if not chunks:

@@ -419,10 +419,10 @@ class TestOverrides:
         assert built[0]["api_key"] == SECRET
 
     def test_base_url_reaches_the_client_when_set(self, monkeypatch):
-        monkeypatch.setenv("LLM_BASE_URL", "http://cheap-model.invalid/v1")
+        monkeypatch.setenv("LLM_BASE_URL", "https://cheap-model.invalid/v1")
         built = self._capture_ctor(monkeypatch)
         OpenAIProvider(SECRET, default_model="gpt-fake").chat(MESSAGES)
-        assert built[0]["base_url"] == "http://cheap-model.invalid/v1"
+        assert built[0]["base_url"] == "https://cheap-model.invalid/v1"
 
     def test_model_override_replaces_the_model_on_the_wire(self, monkeypatch):
         monkeypatch.setenv("LLM_MODEL_OVERRIDE", "cheap-model-1")
@@ -472,30 +472,99 @@ def _console_check():
     return module
 
 
-def _body(**facts: Any) -> dict:
-    return {"trace": [{"stage": "received"}, {"stage": "understood", "facts": facts}]}
+def _body() -> dict:
+    """A `TurnResponse`-shaped 200 body: a turn id, no inline trace."""
+    return {"turn_id": "t-1", "branch_kind": "business", "reply": {"text": "x"}}
+
+
+def _check_with_row(facts: dict | None):
+    """The console check with its row read stubbed: the turn's stored trace."""
+    check = _console_check()
+    trace = [{"stage": "received"}] + ([{"stage": "understood", "facts": facts}] if facts is not None else [])
+    check._row_trace = lambda turn_id: trace if turn_id == "t-1" else []
+    return check
 
 
 class TestConsoleCheckRefusal:
     def test_a_live_parse_stops_the_run_without_live(self):
-        check = _console_check()
-        refusal = check._cassette_refusal(_body(llm_cassette="off"), live=False)
+        check = _check_with_row({"llm_cassette": "off"})
+        refusal = check._cassette_refusal(_body(), live=False)
         assert refusal and "--live" in refusal
 
     def test_a_backend_without_the_fact_counts_as_live(self):
-        check = _console_check()
-        assert check._cassette_refusal(_body(), live=False)
+        assert _check_with_row({})._cassette_refusal(_body(), live=False)
 
     def test_replay_bypass_and_live_flag_pass(self):
-        check = _console_check()
-        assert check._cassette_refusal(_body(llm_cassette="replay"), live=False) is None
-        assert check._cassette_refusal(_body(parser_bypassed=True), live=False) is None
-        assert check._cassette_refusal(_body(llm_cassette="off"), live=True) is None
-        assert check._cassette_refusal({"_http_error": "HTTP 500"}, live=False) is None
+        assert _check_with_row({"llm_cassette": "replay"})._cassette_refusal(_body(), live=False) is None
+        assert _check_with_row({"parser_bypassed": True})._cassette_refusal(_body(), live=False) is None
+        assert _check_with_row({"llm_cassette": "off"})._cassette_refusal(_body(), live=True) is None
+        assert _check_with_row({"llm_cassette": "off"})._cassette_refusal({"_http_error": "HTTP 500"}, live=False) is None
+        # A turn that failed before the parse has no `understood` stage: nothing was spent.
+        assert _check_with_row(None)._cassette_refusal(_body(), live=False) is None
 
     def test_post_with_pacing_raises_system_exit(self, monkeypatch):
-        check = _console_check()
-        monkeypatch.setattr(check, "_post", lambda *a, **k: _body(llm_cassette="off"))
+        check = _check_with_row({"llm_cassette": "off"})
+        monkeypatch.setattr(check, "_post", lambda *a, **k: _body())
         with pytest.raises(SystemExit):
             check._post_with_pacing(None, "u", "k", {}, 1.0, live=False)
         assert check._post_with_pacing(None, "u", "k", {}, 1.0, live=True)
+
+
+class TestHardening:
+    """Security review round 1 (S1-S4, N1)."""
+
+    def test_a_dir_inside_any_git_checkout_is_refused(self, monkeypatch, tmp_path):
+        other_clone = tmp_path / "another-clone"
+        (other_clone / ".git").mkdir(parents=True)
+        monkeypatch.setenv("LLM_CASSETTE_DIR", str(other_clone / "cassettes"))
+        with pytest.raises(llm_cassette.CassetteError, match="inside the repository"):
+            llm_cassette.cassette_dir()
+
+    def test_a_worktree_git_file_counts(self, monkeypatch, tmp_path):
+        worktree = tmp_path / "wt"
+        worktree.mkdir()
+        (worktree / ".git").write_text("gitdir: /elsewhere\n")
+        monkeypatch.setenv("LLM_CASSETTE_DIR", str(worktree / "c"))
+        with pytest.raises(llm_cassette.CassetteError):
+            llm_cassette.cassette_dir()
+
+    def test_production_refuses_any_mode_but_off(self, monkeypatch):
+        from app.config import settings
+
+        monkeypatch.setattr(settings, "environment", "production")
+        monkeypatch.setenv("LLM_CASSETTE_MODE", "off")
+        assert llm_cassette.mode() == "off"
+        for value in ("record", "replay"):
+            monkeypatch.setenv("LLM_CASSETTE_MODE", value)
+            with pytest.raises(llm_cassette.CassetteError, match="production"):
+                llm_cassette.mode()
+
+    def test_an_existing_dir_open_to_others_is_refused(self, monkeypatch, cassette_dir):
+        cassette_dir.mkdir(mode=0o777)
+        cassette_dir.chmod(0o777)
+        monkeypatch.setenv("LLM_CASSETTE_MODE", "record")
+        with pytest.raises(llm_cassette.CassetteError, match="0700"):
+            _chat(_provider(monkeypatch, _Client()))
+
+    def test_plain_http_base_url_is_refused_off_localhost(self, monkeypatch):
+        monkeypatch.setenv("LLM_BASE_URL", "http://cheap-model.invalid/v1")
+        with pytest.raises(ValueError, match="https"):
+            OpenAIProvider(SECRET)._client()
+        monkeypatch.setenv("LLM_BASE_URL", "http://localhost:11434/v1")
+        TestOverrides()._capture_ctor(monkeypatch)
+        OpenAIProvider(SECRET)._client()
+
+    def test_direct_http_calls_refuse_in_replay(self, monkeypatch):
+        from app.api.v1.external import rag
+        from app.services import embedding_worker
+        from app.services.media_extract import transcribe
+
+        monkeypatch.setenv("LLM_CASSETTE_MODE", "replay")
+        with pytest.raises(llm_cassette.CassetteError):
+            rag._embed_query("x")
+        with pytest.raises(llm_cassette.CassetteError):
+            embedding_worker._embed_text_chunks(["x"])
+        with pytest.raises(llm_cassette.CassetteError):
+            transcribe._post_transcription(
+                b"", filename="f.ogg", mime_type="audio/ogg", fields={}, api_key="k", timeout=1.0
+            )

@@ -22,6 +22,9 @@ router = APIRouter()
 
 
 def _embed_query(query: str) -> list[float]:
+    from app.services import llm_cassette
+
+    llm_cassette.refuse_uncovered("embeddings")
     if not settings.openai_api_key:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Embedding provider not configured")
     headers = {"Authorization": f"Bearer {settings.openai_api_key}", "Content-Type": "application/json"}
