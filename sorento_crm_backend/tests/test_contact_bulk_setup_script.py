@@ -1138,3 +1138,27 @@ def test_auto_cli_mode_exists_and_requires_out_and_actor(tmp_path, capsys):
         cbs.main([*base, "--out", str(tmp_path), "--apply"])  # no --actor-email
     assert exc.value.code == 2
     assert "--actor-email" in capsys.readouterr().err
+
+
+def test_auto_counts_rows_blocks_ledgers_and_pairs_in_result_and_stdout(db, tmp_path, w, monkeypatch, capsys):
+    import re
+
+    _contact(db, 1), _contact(db, 2)
+    _customer(db, w.a, "ZZT ALPHA [A/C I]", "ZZT-C1")
+    _customer(db, w.a, "ZZT ALPHA [A/C II]", "ZZT-C2")
+    path = _auto_book(tmp_path, company="ZZT ALPHA Sdn Bhd")
+    res, _ = _auto(db, w, path, tmp_path)
+    assert len(res["auto"]) == 2  # per (block, ledger) list; the counts below are the honest numbers
+    assert res["counts"] == {
+        "auto_rows": 1, "auto_blocks": 1, "auto_ledgers": 2, "auto_pairs": 4,
+        "already_linked": 0, "needs_human": 0,
+    }
+    monkeypatch.setattr(cbs, "_session", lambda url: db)
+    monkeypatch.setattr(cbs, "RULES", w.rules)
+    out = tmp_path / "cli-out"
+    code = cbs.main(["--auto-links", "--excel", str(path), "--db-url", "postgresql://example.invalid/none", "--out", str(out)])
+    stdout = capsys.readouterr().out
+    assert code == 0
+    for label, n in (("auto rows", 1), ("auto blocks", 1), ("auto ledgers", 2), ("auto pairs", 4),
+                     ("already linked", 0), ("needs human", 0)):
+        assert re.search(rf"^{label}\s*: {n}$", stdout, re.M), (label, stdout)
