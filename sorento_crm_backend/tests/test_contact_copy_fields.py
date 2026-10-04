@@ -300,3 +300,55 @@ def test_c1_copy_writes_an_audit_row_carrying_the_new_facets(client, db, full, w
         .one()
     )
     assert row.new_values["stock_check_mode"] == "compact"
+
+
+# ---------------------------------------------------------------- review round 1
+
+
+def _differs(client, source, query):
+    resp = client.get(
+        "/api/v1/user-management/contacts/", params={"query": query, "access_differs_from": source.id, "limit": 100}
+    )
+    assert resp.status_code == 200, resp.text
+    return {row["id"] for row in resp.json()["data"]}
+
+
+def test_list_filter_ignores_facets_the_viewer_cannot_copy(client, db, full, roles):
+    """'Access differs from' lists exactly what this user's copy would change (UAC A2.5 holds)."""
+    a = _company(db, "a")
+    tag = unique_code("F", alpha=True)
+    source, target = _contact(db, f"{tag} src"), _contact(db, f"{tag} tgt")
+    _grant(db, source, a)
+    assert _differs(client, source, tag) == {target.id}  # superadmin: companies count
+    roles["slugs"] = set()
+    assert _differs(client, source, tag) == set()  # cannot copy companies: not a difference
+    (row,) = _post(client, source, [target], dry_run=True).json()["results"]
+    assert row["status"] == "unchanged"
+
+
+def test_stock_facets_left_out_when_inventory_module_is_off_under_strict_guard(client, db, full, roles, monkeypatch):
+    """Same as the direct editor: under MODULE_GUARD_STRICT a disabled inventory module blocks a
+    non-admin's stock write even when they hold inventory.stock.edit."""
+    from app.config import settings
+    from app.modules.runtime import installer
+
+    roles["slugs"] = set()
+    monkeypatch.setattr(settings, "module_guard_strict", True, raising=False)
+    monkeypatch.setattr(installer, "tenant_has_any_module_row", lambda db_, tenant: True)
+    monkeypatch.setattr(installer, "is_module_enabled", lambda db_, tenant, mod: mod != "inventory")
+    source, target = _contact(db, "src"), _contact(db, "tgt")
+    _policy(db, source, "compact")
+    body = _post(client, source, [target], dry_run=False).json()
+    assert body["results"][0]["status"] == "unchanged"
+    assert _stock(db, target.id) is None
+    assert "Stock check mode" in body["source"]["not_copied"]
+
+
+def test_a_location_that_no_longer_exists_shows_no_uuid(client, db, full, wh):
+    gone = str(uuid.uuid4())
+    source, target = _contact(db, "src"), _contact(db, "tgt")
+    _policy(db, source, "compact", include=[wh[0].id, gone])
+    body = _post(client, source, [target], dry_run=True).json()
+    assert gone not in str(body)
+    loc = _changes(body["results"][0])["stock_locations"]
+    assert loc["after"] == f"Only {wh[0].warehouse_code}, removed location"

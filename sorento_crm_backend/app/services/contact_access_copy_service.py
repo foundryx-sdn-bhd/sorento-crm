@@ -54,6 +54,8 @@ SWITCHES: tuple[tuple[str, str], ...] = (
     ("escalation_allowed", "Escalation"),
 )
 
+REMOVED_LOCATION = "removed location"
+REMOVED_COMPANY = "removed company"
 STOCK_MODE_LABELS = {"detailed": "Detailed", "compact": "Compact", "availability": "Availability only"}
 
 #: Facets an actor may only copy when they could set them directly; the route names the ones to
@@ -61,21 +63,6 @@ STOCK_MODE_LABELS = {"detailed": "Detailed", "compact": "Compact", "availability
 #: mode + locations: `inventory.stock.edit` (`PUT /inventory/stock-visibility/contacts/{id}`).
 STOCK_FACETS = frozenset({"stock_check_mode", "stock_locations"})
 COMPANIES_FACET = "companies"
-
-
-
-def facets_to_skip(db: Session, user_id: str) -> frozenset[str]:
-    """The facets `user_id` could not set directly, so the copy must not set them either."""
-    from app.api.v1.system.companies import _is_superadmin
-    from app.services.user_service import UserPermissionService
-
-    skip: set[str] = set()
-    if not _is_superadmin(db, user_id):
-        skip.add(COMPANIES_FACET)
-    if not UserPermissionService(db).check_user_has_permission(user_id, "inventory.stock.edit"):
-        skip |= STOCK_FACETS
-    return frozenset(skip)
-
 
 #: Always named under "Not copied" in the dialog; a skipped facet's label is added to it.
 NOT_COPIED = ("Linked customers", "CS routing", "Media limits", "Memory")
@@ -85,6 +72,35 @@ FACET_LABELS = {
     "companies": "Companies",
     "market_segments": "Market segments",
 }
+
+
+def facets_to_skip(db: Session, user_id: str) -> frozenset[str]:
+    """The facets `user_id` could not set directly, so the copy must not set them either."""
+    from app.api.v1.system.companies import _is_superadmin
+    from app.services.user_service import UserPermissionService
+
+    skip: set[str] = set()
+    is_admin = _is_superadmin(db, user_id)
+    if not is_admin:
+        skip.add(COMPANIES_FACET)
+    if not UserPermissionService(db).check_user_has_permission(user_id, "inventory.stock.edit"):
+        skip |= STOCK_FACETS
+    elif not is_admin and _inventory_module_off(db):
+        # `require_permission` on the direct editor also refuses a non-admin when the strict
+        # module guard is on and the inventory module is disabled; the copy refuses with it.
+        skip |= STOCK_FACETS
+    return frozenset(skip)
+
+
+def _inventory_module_off(db: Session) -> bool:
+    from app.config import settings
+    from app.modules.runtime import installer
+
+    if not getattr(settings, "module_guard_strict", False):
+        return False
+    tenant = installer.DEFAULT_TENANT_ID
+    return installer.tenant_has_any_module_row(db, tenant) and not installer.is_module_enabled(db, tenant, "inventory")
+
 
 SKIPPED_SOURCE = "This is the source contact."
 NOT_FOUND = "Contact not found."
@@ -308,7 +324,8 @@ def locations_text(stock: Optional[StockOverride], names: Names) -> Optional[str
         return None
 
     def codes(ids: tuple[str, ...]) -> str:
-        return ", ".join(sorted(names.warehouses.get(w, w) for w in ids))
+        # A deleted warehouse has no code (the array has no FK); never show its id.
+        return ", ".join(sorted(names.warehouses.get(w, REMOVED_LOCATION) for w in ids))
 
     if stock.exclude is not None:
         text_ = f"All except {codes(stock.exclude)}" if stock.exclude else "All locations"
@@ -418,8 +435,8 @@ def diff(
                 COMPANIES_FACET,
                 target.companies,
                 source.companies,
-                lambda c: names.companies.get(c, (c, c))[1],
-                lambda c: names.companies.get(c, (c, c))[0],
+                lambda c: names.companies.get(c, (REMOVED_COMPANY, REMOVED_COMPANY))[1],
+                lambda c: names.companies.get(c, (REMOVED_COMPANY, REMOVED_COMPANY))[0],
             )
         )
     if "market_segments" not in skip and source.segments != target.segments:
@@ -458,7 +475,9 @@ def summary(source: AccessSnapshot, names: Names, skip: frozenset[str] = frozens
     extra = {
         "stock_check_mode": STOCK_MODE_LABELS.get(source.stock.mode, source.stock.mode) if source.stock else "Inherited",
         "stock_locations": locations_text(source.stock, names) or "Inherited",
-        "companies": ", ".join(sorted(names.companies.get(c, (c, c))[1] for c in source.companies)),
+        "companies": ", ".join(
+            sorted(names.companies.get(c, (REMOVED_COMPANY, REMOVED_COMPANY))[1] for c in source.companies)
+        ),
         "market_segments": ", ".join(names.segments.get(c, c) for c in source.segments),
     }
     lines.extend({"label": FACET_LABELS[f], "value": v} for f, v in extra.items() if f not in skip)
@@ -698,9 +717,15 @@ def _result(contact_id: str, label: Optional[str], status: str, changes: list[di
     return {"contact_id": contact_id, "label": label, "status": status, "changes": changes, "error": error}
 
 
-def contacts_differing_from(db: Session, source: RespondContact, candidates: list[RespondContact]) -> list[str]:
-    """Ids among `candidates` (never the source) a copy from `source` would change (UAC A2.5)."""
+def contacts_differing_from(
+    db: Session,
+    source: RespondContact,
+    candidates: list[RespondContact],
+    skip: frozenset[str] = frozenset(),
+) -> list[str]:
+    """Ids among `candidates` (never the source) a copy from `source` would change (UAC A2.5).
+    `skip` is the viewer's `facets_to_skip`, so the list matches what their copy would do."""
     others = [c for c in candidates if str(c.id) != str(source.id)]
     snaps = snapshots(db, [source, *others])
     src = snaps[str(source.id)]
-    return [str(c.id) for c in others if diff(src, snaps[str(c.id)], Names())]
+    return [str(c.id) for c in others if diff(src, snaps[str(c.id)], Names(), skip)]

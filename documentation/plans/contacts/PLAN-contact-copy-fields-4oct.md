@@ -45,7 +45,7 @@ written, and named in `source.not_copied`. The preview stays equal to the apply.
 
 ## Test list (red first)
 
-`tests/test_contact_bulk_copy_access.py`, per new facet, single and bulk target:
+`tests/test_contact_copy_fields.py` (reuses the fixtures of `tests/test_contact_bulk_copy_access.py`), per new facet, single and bulk target:
 1. stock check mode + locations copied (override row created / replaced / deleted when source inherits)
 2. companies copied, replace semantics (extra company removed) for a superadmin
 3. market segments copied, replace semantics
@@ -53,3 +53,10 @@ written, and named in `source.not_copied`. The preview stays equal to the apply.
 5. user without inventory.stock.edit: stock facets untouched
 6. preview == apply rows for the new facets
 FE vitest: summary renders the new lines and the server's not_copied list.
+
+Review round 1 (reviewer + security-reviewer, no blockers):
+7. "Access differs from" passes the viewer's `facets_to_skip`, so the filter lists exactly what that
+   viewer's copy would change (UAC A2.5 holds for restricted users; no equal/not-equal leak of companies).
+8. Stock facets also skipped for a non-admin when the strict module guard is on and `inventory` is off
+   (same as `require_permission` on the direct editor).
+9. A location or company id that no longer resolves shows as "removed location" / "removed company".

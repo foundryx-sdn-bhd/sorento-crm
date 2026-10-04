@@ -111,6 +111,8 @@ async def get_contacts(
     db: Session = Depends(get_db)
 ):
     """Get all respond contacts with pagination and filtering."""
+    from app.services import contact_access_copy_service
+
     try:
         service = ContactService(db)
         can_view_users = UserPermissionService(db).check_user_has_permission(
@@ -134,6 +136,12 @@ async def get_contacts(
                 "stock": stock,
                 "customer_id": str(customer_id) if customer_id else None,
                 "access_differs_from": access_differs_from,
+                # What this viewer's copy would leave alone is not a difference to them.
+                "access_differs_skip": (
+                    contact_access_copy_service.facets_to_skip(db, current_user["id"])
+                    if access_differs_from
+                    else frozenset()
+                ),
             },
         )
         return result

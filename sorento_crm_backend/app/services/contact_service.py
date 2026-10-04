@@ -287,7 +287,9 @@ class ContactService:
                     f"'Access differs from' compares at most {MAX_DIFF_CANDIDATES} contacts; "
                     "narrow the list with another filter or a search first."
                 )
-            ids = contacts_differing_from(self.db, source, q.all())
+            ids = contacts_differing_from(
+                self.db, source, q.all(), f.get("access_differs_skip") or frozenset()
+            )
             q = q.filter(RespondContact.id.in_(ids))
         return q
 
