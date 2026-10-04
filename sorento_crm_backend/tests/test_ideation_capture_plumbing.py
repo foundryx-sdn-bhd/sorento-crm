@@ -1,6 +1,6 @@
 """IDEATION-CAPTURE slice: CRM plumbing for "my ideas" (red tests, written before the code).
 
-Plan: documentation/plans/ideation/PLAN-ideation-capture-02oct.md (sections 1 and 2).
+Plan: documentation/plans/_archive/ideation/PLAN-ideation-capture-02oct.md (sections 1 and 2).
 
 CONTRACT:
 

@@ -1,10 +1,9 @@
 # PLAN: Ideation capture from one message (IDEATION-CAPTURE)
 
-Status: Hand test (Phase 3 done: review + security review fixed and re-reviewed, kill tests
-killed). Q1-Q5 answered, built on the final SS-IDEATION-OWN contract (ss#111). H1 (#1445 helper
-wired into the ideate lane) done and reviewed, kill test killed. Hand-test script:
-`laneboard/scripts/1444.md`. Open owner asks: verified phone for chatbot senders; ss to also match
-the raw message for similar ideas. Track: full (L). Base `main` (PR #1438 merged).
+Status: Merged (PR #1444, 4 Oct 2026; owner hand test PASS). Q1-Q5 answered, built on the final
+SS-IDEATION-OWN contract (ss#111, which must deploy first). Hand-test script:
+`laneboard/scripts/1444.md`. Follow-ups outside this plan: verified phone for chatbot senders; ss
+to also match the raw message for similar ideas. Track: full (L).
 Lane branch `claude/ideation-capture-0hctm7` (the sandbox only pushes this name).
 
 ## 0. Owner intent (2 Oct 2026, verbatim summary)

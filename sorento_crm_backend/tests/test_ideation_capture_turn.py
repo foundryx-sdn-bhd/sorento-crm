@@ -1,6 +1,6 @@
 """Slice C1 red tests - the one-message ideation capture turn.
 
-Contract: documentation/plans/ideation/PLAN-ideation-capture-02oct.md sections 2.1-2.4, 3, 4a.
+Contract: documentation/plans/_archive/ideation/PLAN-ideation-capture-02oct.md sections 2.1-2.4, 3, 4a.
 
 ``app.services.ideation_capture_service.handle_capture_turn`` replaces the multi-turn draft
 flow: access gate (linked active CRM user holding ``ideation.board.view``), a held

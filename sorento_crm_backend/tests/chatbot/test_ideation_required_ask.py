@@ -1,6 +1,6 @@
 """IDEATION-CAPTURE slice H1: the ideate lane asks for the idea through the shared helper.
 
-`documentation/plans/ideation/PLAN-ideation-capture-02oct.md`, section 4a step 4 ("Helper
+`documentation/plans/_archive/ideation/PLAN-ideation-capture-02oct.md`, section 4a step 4 ("Helper
 relayed 2 Oct", "Crew answers 2 Oct", "Vague reply never loops silently"):
 
 * the lane registers `AskType("ideation")` in `required_fields.ASKS` at import: one required
