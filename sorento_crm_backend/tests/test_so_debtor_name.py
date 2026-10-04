@@ -161,6 +161,69 @@ class TestSoIngestStoresTheOrderName:
         assert env.header("sales_orders", ref)["debtor_name"] == "Beta"
 
 
+    def test_a_push_without_a_name_freezes_the_master_name_on_a_new_order(self, env):
+        """DEBTOR-CODE-LINK: every SO carries the name it was issued under from the start, so
+        a later rename of the customer (master push) never rewrites it on old orders."""
+        code = unique_code(MARKER)
+        master = _customer(env.db, env.company_a, code=code, name="NAME-AT-ISSUE")
+        ref = f"{MARKER}-SO-{uuid.uuid4().hex[:8]}"
+
+        res = env.post(INGEST_SO, [_so_record(env, ref=ref, customer_code=code)])
+        assert res.status_code == 200, res.text
+        env.db.execute(
+            text("UPDATE customers SET customer_name = 'NAME-RENAMED' WHERE id = :i"),
+            {"i": str(master.id)},
+        )
+
+        assert env.header("sales_orders", ref)["debtor_name"] == "NAME-AT-ISSUE"
+
+    def test_a_push_without_a_name_fills_a_missing_order_name_from_the_master(self, env):
+        code = unique_code(MARKER)
+        _customer(env.db, env.company_a, code=code, name="NAME-MASTER")
+        ref = f"{MARKER}-SO-{uuid.uuid4().hex[:8]}"
+        env.post(INGEST_SO, [_so_record(env, ref=ref, customer_code=code, customer_name="Issued")])
+        env.db.execute(
+            text("UPDATE sales_orders SET debtor_name = NULL WHERE source_ref = :r"), {"r": ref}
+        )
+
+        env.post(INGEST_SO, [_so_record(env, ref=ref, customer_code=code)])
+
+        assert env.header("sales_orders", ref)["debtor_name"] == "NAME-MASTER"
+
+
+class TestManualSoCreateStoresTheOrderName:
+    def test_a_manual_so_carries_the_customer_name_it_was_created_under(self, monkeypatch):
+        from types import SimpleNamespace
+
+        from app.services.numbering_service import NumberingService
+        from app.services.scm.sales_order_service import SalesOrderService
+
+        register_company_scope_listeners()
+        with blank_session() as session:
+            set_company_scope(session, frozenset({DEFAULT_COMPANY_ID}))
+            code = unique_code(MARKER)
+            master = _customer(session, DEFAULT_COMPANY_ID, code=code, name="NAME-MANUAL")
+            monkeypatch.setattr(
+                NumberingService, "get_next_number", lambda self, *a, **k: unique_code("SO")
+            )
+            data = SimpleNamespace(
+                customer_code=code,
+                sales_agent_id=None,
+                requested_delivery_date=None,
+                order_type="stock",
+                priority="normal",
+                lines=[],
+            )
+
+            created = SalesOrderService(session).create(data, user_id=None)
+
+            stored = session.execute(
+                text("SELECT debtor_name FROM sales_orders WHERE id = :i"), {"i": str(created["id"])}
+            ).scalar()
+            assert stored == "NAME-MANUAL"
+            assert _master_name(session, str(master.id)) == "NAME-MANUAL"
+
+
 # ============================================================ screens (AC-03..05)
 @pytest.fixture()
 def db():
@@ -319,3 +382,62 @@ class TestSoScreensShowTheOrderName:
 
         rows = so_outstanding_rows(db, customer_ids=[str(master.id)])
         assert sorted(r["customer"] for r in rows) == ["MASTER NAME", "ORDER NAME"]
+
+
+class TestReviewRound1SoCustomerChange:
+    def test_a_manual_customer_change_takes_the_new_customers_name(self, monkeypatch):
+        """Review M2: every SO now carries a name, so moving it to another customer by hand must
+        move the name too; an edit that keeps the customer leaves the name alone."""
+        from types import SimpleNamespace
+
+        from app.services.numbering_service import NumberingService
+        from app.services.scm.sales_order_service import SalesOrderService
+
+        register_company_scope_listeners()
+        with blank_session() as session:
+            set_company_scope(session, frozenset({DEFAULT_COMPANY_ID}))
+            first, second = unique_code(MARKER), unique_code(MARKER)
+            _customer(session, DEFAULT_COMPANY_ID, code=first, name="NAME-FIRST")
+            _customer(session, DEFAULT_COMPANY_ID, code=second, name="NAME-SECOND")
+            monkeypatch.setattr(
+                NumberingService, "get_next_number", lambda self, *a, **k: unique_code("SO")
+            )
+            svc = SalesOrderService(session)
+            created = svc.create(
+                SimpleNamespace(
+                    customer_code=first, sales_agent_id=None, requested_delivery_date=None,
+                    order_type="stock", priority="normal", lines=[],
+                ),
+                user_id=None,
+            )
+            so_id = str(created["id"])
+            session.execute(
+                text("UPDATE sales_orders SET debtor_name = 'NAME-AS-ISSUED' WHERE id = :i"), {"i": so_id}
+            )
+
+            def edit(code):
+                from app.schemas.scm_orders import SalesOrderUpdate
+
+                svc.update(so_id, SalesOrderUpdate(customer_code=code), user_id=None)
+
+            def name():
+                return session.execute(
+                    text("SELECT debtor_name FROM sales_orders WHERE id = :i"), {"i": so_id}
+                ).scalar()
+
+            edit(first)
+            assert name() == "NAME-AS-ISSUED"
+            edit(second)
+            assert name() == "NAME-SECOND"
+
+    def test_a_push_moving_the_order_to_another_customer_without_a_name_takes_its_name(self, env):
+        first, second = unique_code(MARKER), unique_code(MARKER)
+        _customer(env.db, env.company_a, code=first, name="NAME-FIRST")
+        _customer(env.db, env.company_a, code=second, name="NAME-SECOND")
+        ref = f"{MARKER}-SO-{uuid.uuid4().hex[:8]}"
+        env.post(INGEST_SO, [_so_record(env, ref=ref, customer_code=first)])
+        assert env.header("sales_orders", ref)["debtor_name"] == "NAME-FIRST"
+
+        env.post(INGEST_SO, [_so_record(env, ref=ref, customer_code=second)])
+
+        assert env.header("sales_orders", ref)["debtor_name"] == "NAME-SECOND"
