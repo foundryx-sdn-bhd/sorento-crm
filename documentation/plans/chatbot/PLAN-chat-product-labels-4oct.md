@@ -1,6 +1,6 @@
 # PLAN: product info labels follow the user's language (CHAT-PRODUCT-LABELS)
 
-Status: Plan. Waiting on #1448 (CHAT-LANGUAGE) to merge before any code. Track: small fix (size S,
+Status: Build complete (red tests f7aace61, catalog a3c3b8b3), in review. Track: small fix (size S,
 no migration, no auth/RBAC change, no new ingest surface). Follow-up A of #1448.
 
 ## Owner ask (4 Oct 2026)
@@ -31,14 +31,18 @@ chatbot label catalog so they translate like the rest.
 1. Add every label above to `LABELS` with ms + zh text (one fact per entry, same style).
 2. Add "Not defined" and "not recorded yet" to `LABELS` and to `VALUE_WORDS`, so they translate
    only as the whole value after a catalogued label (never inside data).
-3. Add the access note sentence to `LABELS` (spelled with `—` so the source stays dash-free).
+3. Add the access note sentence to `LABELS` (spelled with the `\u2014` escape so the source stays dash-free).
    It always prints as its own line, so `lines()` matches it whole; no `INLINE` entry needed.
    `{label}` stays a placeholder.
-4. No change to `_LOCALIZED_TOOLS`, the presenters, or the spec registry labels.
+4. Crew ruling (4 Oct, PR #1479): also the three product intros (presenters.py:74-76), the
+   `_VALIDITY_LABELS` words and `FILE_LINK_UNAVAILABLE`. The validity words and the link text
+   translate only as the value of their own label, through a per-label `LABEL_VALUES` map read
+   by `Localizer._value`, so an order `*Status:* Expired` stays as printed (#1448 owner Q3).
+5. No change to `_LOCALIZED_TOOLS`, the presenters, or the spec registry labels.
 
 Out of scope (follow-ups B/C or not asked): spec registry labels inside "Specs", product data
-values (descriptions, names), the Validity value words (Valid / Expiring soon / Expired), the
-"(file link unavailable right now)" value, and `_promotions`' Start Date / End Date.
+values (descriptions, names, attachment type names, file names), and `_promotions`' Start Date /
+End Date.
 
 ## Tests (red first)
 
