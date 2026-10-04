@@ -138,7 +138,7 @@ def test_an_option_with_two_uuids_yields_two_entities():
 
 
 def test_a_picked_entity_carries_the_option_code_not_the_uuid_as_its_canonical_code():
-    """AC-1593 finding, 16 Sep 2026 console browser pass 2 (handpass2, contact Justin,
+    """AC-1593 finding, 16 Sep 2026 console browser pass 2 (handpass2, contact CONTACT N,
     turns c196ebd7/08c88e3f): picking position 1 off an incoming/customer roster and
     then asking for that variant's incoming stock (or that customer's orders) replied
     with the UUID in the header instead of the product/customer CODE - e.g. "*incoming

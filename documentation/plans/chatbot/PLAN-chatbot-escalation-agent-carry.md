@@ -6,7 +6,7 @@ Branch: `fix/chatbot-escalation-agent-carry` (worktree `sorento_crm-escalation-a
 Base: `origin/main` 2280975f9
 UAC: `chatbot-escalation-agent-carry-acceptance-criteria.md`
 
-## Observed (prod transcript, 22 Sep 2026, contact Jennifer)
+## Observed (prod transcript, 22 Sep 2026, contact CONTACT O)
 
 1. `incoming container SRTSC07` -> parser routes `domain incoming` -> team `purchasing`,
    agent `incoming_stock_enquiries` (parser prompt line 534). Answer ends with the roster

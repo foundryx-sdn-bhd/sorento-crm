@@ -208,7 +208,7 @@ def seeded():
     with blank_session() as db:
         company_id = _sorento(db)
         project_seed_service.run(db, company_id=company_id)
-        user_id = _user(db, f"{MARKER} Yana")
+        user_id = _user(db, f"{MARKER} CONTACT AH")
         yield db, company_id, user_id
 
 

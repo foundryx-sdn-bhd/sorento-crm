@@ -1,6 +1,6 @@
 {
   "name": "parity-ac1708-multidomain-control",
-  "source": "chatbot-answer-half-reattach-acceptance-criteria.md AC-1708: a multi-domain ask ('stock and incoming for cb2805q', the UAC's own literal control text) must answer as it did on 484c79d92 - one section per domain, each under its own production intro. 'cb2805q' does not resolve to an exact product_code in this DB (checked read-only: CB2805A-DIY / CB2805A / CB2805A-PJ / CB2805A-NL etc are the nearest real codes, none an exact 'cb2805q'), so this is a genuine typo/near-miss ask exercising the SAME two-domain fan-out shape the UAC names, not a hand-picked hit. Contact 437264483.",
+  "source": "chatbot-answer-half-reattach-acceptance-criteria.md AC-1708: a multi-domain ask ('stock and incoming for cb2805q', the UAC's own literal control text) must answer as it did on 484c79d92 - one section per domain, each under its own production intro. 'cb2805q' does not resolve to an exact product_code in this DB (checked read-only: CB2805A-DIY / CB2805A / CB2805A-PJ / CB2805A-NL etc are the nearest real codes, none an exact 'cb2805q'), so this is a genuine typo/near-miss ask exercising the SAME two-domain fan-out shape the UAC names, not a hand-picked hit. Contact 900000008.",
   "cases": [
     {
       "name": "stock-and-incoming-for-cb2805q-two-sections",

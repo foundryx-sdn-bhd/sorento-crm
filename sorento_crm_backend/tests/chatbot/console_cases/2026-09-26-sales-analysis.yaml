@@ -10,10 +10,10 @@
 #
 # Prerequisites: migration `sales_s1_reports_module` has run (it promotes the parser prompt that
 # teaches `order_status "sales_analysis"`); the MCP server restarted; the act-as user holds
-# `sales.reports.view`; contact 437264483 (Sorento) and 437264484 (Sorento + Mocha) hold the
+# `sales.reports.view`; contact 900000008 (Sorento) and 437264484 (Sorento + Mocha) hold the
 # `sales_orders.sales_report` reveal key; 437264485 is linked to a customer (a dealer) and holds
 # the key; 437264486 does not hold it. Substitute real contacts on the Mini.
-contact: '437264483'
+contact: '900000008'
 cases:
 - name: 'S1 AC-S1-20 compare dealer sales 2025 vs 2026 by month: the whole table as text and the Excel'
   cold: true

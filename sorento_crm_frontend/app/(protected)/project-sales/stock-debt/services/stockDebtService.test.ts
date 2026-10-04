@@ -96,3 +96,25 @@ describe('getStockDebtCell', () => {
     );
   });
 });
+
+describe('exportStockDebt show_aux (STOCKDEBT-AUX-COLS AC-12)', () => {
+  const base = {
+    query: '', onlyDebt: true, book: 'all' as const, supplierIds: [], dateFrom: '',
+    dateTo: '', split: 'none' as const, showAux: true,
+  };
+
+  async function sentBody(extra: Record<string, unknown>) {
+    mockedFetch.mockResolvedValue(okResponse({ id: 'd1' }));
+    const { exportStockDebt } = await import('./stockDebtService');
+    await exportStockDebt({ ...base, ...extra } as Parameters<typeof exportStockDebt>[0]);
+    return JSON.parse((mockedFetch.mock.calls[0][1] as RequestInit).body as string);
+  }
+
+  it('sends show_aux true when the board shows the columns', async () => {
+    expect((await sentBody({ showAux: true })).show_aux).toBe(true);
+  });
+
+  it('sends show_aux false when the board hides them', async () => {
+    expect((await sentBody({ showAux: false })).show_aux).toBe(false);
+  });
+});

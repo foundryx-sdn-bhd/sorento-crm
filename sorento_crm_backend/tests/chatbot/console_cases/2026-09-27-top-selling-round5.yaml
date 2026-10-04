@@ -15,11 +15,11 @@
 #                         chatbot_top_selling_vocab_r5 published>
 #
 # PREREQUISITES: the same as `2026-09-27-top-selling-retest.yaml`, plus the sales agents
-# FANNY I / III / IV and SEAN I / III / IV, the customer SAMPLE - FANNY NG, and product
+# FANNY I / III / IV and SEAN I / III / IV, the customer SAMPLE - CONTACT Z, and product
 # categories whose class label is Water Closet and Bathtub, all on the prod copy.
 # Migrations up to `chatbot_top_selling_vocab_r5` have run.
 
-contact: "437264483"
+contact: "900000008"
 
 cases:
   - name: Transcript 1 - the agent, "2", then outstanding with the filters

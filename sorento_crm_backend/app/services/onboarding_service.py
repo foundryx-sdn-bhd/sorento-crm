@@ -191,7 +191,7 @@ def _plausible_msisdn(raw: Optional[str]) -> Optional[str]:
     """The MSISDN for what somebody typed, or None when it is not a phone number.
 
     Returns the same bare-digits form the rest of the system stores
-    (``60123456781``, no leading ``+``) so a value written here compares directly
+    (``60100000002``, no leading ``+``) so a value written here compares directly
     against ``users.contact_number`` and ``respond_contacts.phone_number``.
 
     The length judgement lives HERE rather than in ``normalize_msisdn``, which is

@@ -167,7 +167,7 @@ def _replay(session_factory, monkeypatch, stub_parser, stub_access, messages) ->
     from app.services.chatbot import console_service
 
     _seed_round5_catalogue(session_factory)
-    _seed_contact(session_factory, phone="+60000865500")
+    _seed_contact(session_factory, phone="+60900000055")
     _link_contact_company(session_factory, company_id=MOCHA_COMPANY_ID)
     _seed_borrowable_envelope(session_factory)
     _seed_marketing_product_team(session_factory)

@@ -173,7 +173,7 @@ describe('RespondChatList internal notes (AC-L1)', () => {
   });
 
   it('makes a url pasted into a note clickable, opening in a new tab', () => {
-    const url = 'https://app.respond.io/space/364817/inbox/497368374#1787975493000000';
+    const url = 'https://app.respond.io/space/364817/inbox/900000108#1787975493000000';
     render(
       <RespondChatList
         items={[]}

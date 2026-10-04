@@ -9,7 +9,7 @@
 #
 # The contact has access levels (the promotion case needs one). Override with --contact.
 # Needs the parser's LLM key (read from ai_assistant_configs) and the MCP server on 8765.
-contact: "438930735"
+contact: "900000052"
 
 cases:
   - name: a full code stays on the forward path (AC-1305)
@@ -199,7 +199,7 @@ cases:
           reply_not_contains: ["Showing"]
           no_uuid: true
 
-  # Owner hand test round 2 (26 Sep 2026, contact 487555417), W1 to W6. Run against a
+  # Owner hand test round 2 (26 Sep 2026, contact 900000039), W1 to W6. Run against a
   # database where Sorento is the chatbot default brand (migration bcd_0001).
   - name: owner turn 1, water basin is a wash basin and no code dump (W6)
     text: "which water basin has stock"
@@ -244,7 +244,7 @@ cases:
           reply_contains: ["Here are 11 to 50."]
           reply_not_contains: ["more", "next"]
 
-  # Owner hand test of round 2 (26 Sep 13:07Z to 13:11Z, contact 487555417), round 3 fixes.
+  # Owner hand test of round 2 (26 Sep 13:07Z to 13:11Z, contact 900000039), round 3 fixes.
   - name: round 3 owner turns 1 to 3, a count after a page continues the same set (W1, W2)
     cold: true
     turns:
@@ -284,7 +284,7 @@ cases:
       reply_contains: ["have incoming stock"]
       reply_not_contains: ["|", "(default)"]
 
-  # Owner console test of round 3 (27 Sep 2026 00:03 to 00:07 MYT, contact 487555417), round 4
+  # Owner console test of round 3 (27 Sep 2026 00:03 to 00:07 MYT, contact 900000039), round 4
   # R1 to R7. The eight exchanges in order, as the owner sent them.
   - name: round 4 owner exchanges 1 to 8 (R1 to R7)
     cold: true

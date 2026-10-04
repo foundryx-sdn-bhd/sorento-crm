@@ -3,7 +3,7 @@
 `test_rearch_r11_zero_stock_ladder.py` is 14/14 green. That file's own fixtures do not
 mirror the live path - see the module docstring below for the two measured seams.
 
-Replays live turn `8781cd47-a357-4c44-85bc-679527daa87b` (contact `437264483`, clone DB
+Replays live turn `8781cd47-a357-4c44-85bc-679527daa87b` (contact `900000008`, clone DB
 `sorento_ai_automation_rearch`, read-only SELECTs against `chatbot.turns.trace`, no
 journey runner, no turn to :8081, no OpenAI call). Everything quoted below is copied
 byte-for-byte from that turn's own trace:
@@ -156,7 +156,7 @@ _RECORDED_VERDICT = _parser_output(
 
 # --------------------------------------------------------------------------- #
 # Second live example - turn `cfee5933-7cda-4b4c-a482-7ec8b1b81737` (SAME contact
-# 437264483, SAME session, the very next real message: "check stock
+# 900000008, SAME session, the very next real message: "check stock
 # srtwc6022-sh-uf-new" - the FULL exact code this time, no separator stripped, one
 # clean `match_tier: "exact"` resolve, ONE product, no family-prefix ambiguity at
 # all). Isolates seam 2 alone (module docstring): `crossdomain_zeroset`'s `exacts`

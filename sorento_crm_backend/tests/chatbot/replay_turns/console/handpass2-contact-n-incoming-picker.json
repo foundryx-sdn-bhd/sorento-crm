@@ -1,0 +1,4459 @@
+{
+  "turns": [
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow",
+        "hidden_spec_keys": []
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1061691@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1061691,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1777880659,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000010"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000010",
+          "id": "900000010",
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000010",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "console",
+        "is_test": true,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000015\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "id": "900000010"
+          },
+          "event_id": "9911f47f-53d4-4226-9f9f-04f7d36a7c5e",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxMjI0NjUyMTMVAgASGBYzRUIwQjBEOTUwRTgzRENBRTZBRjZEAA==",
+            "contactId": "900000010",
+            "message": {
+              "text": "check stock srtwc286",
+              "type": "text"
+            },
+            "messageId": "console-6dd03d8373e1",
+            "timestamp": 1789410104000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "previous_conversation_state": {},
+        "prompt_overrides": {
+          "chatbot_semantic_parser": "965268d8-6f6d-46a7-84db-d42d0a129fca"
+        },
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": "console-956e0735-91e4-4173-a6fe-261943fb6ee1"
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "0d0ed752-fd6f-4759-ad8f-0b40e0cbc601",
+          "13ffa633-91db-4db6-9050-5de7a0deb9b8",
+          "65514803-1609-4fe8-8b60-2e908c8f9bd4",
+          "677b6eb7-f21f-4a65-8195-b969a0a465dd",
+          "77a5e4da-877a-462d-a0f8-cc558fdc5a51",
+          "78c96bfa-edea-4695-a215-4a02cc0c53a0",
+          "7a8f2543-ef3b-4e5f-9dad-e29f6f688485",
+          "d55d8829-5e3d-4386-ab77-6c93e26d73e7",
+          "d73a33f3-956b-401f-90c7-0ad6ff792ea1",
+          "dcaeb074-6b9f-46bd-9e86-97a16e976b59"
+        ],
+        "focus_after": null,
+        "pending": null,
+        "text": "*stock* for SRTWC286-SH-200, SRTWC286-SH-P, SRTWC286-SH-PP, SRTWC286-SH, SRTWC286-SH-UF, SRTWC286-SH-NEW-150, SRTWC286-SH-150, SRTWC286-SH-NEW-P, SRTWC286-SH-NEW-200, SRTWC286-SH-NEW:\n1. *Product Code:* SRTWC286-SH\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 4\n*Outstanding:* 21\n\n2. *Product Code:* SRTWC286-SH\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-ACTS\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n3. *Product Code:* SRTWC286-SH\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-BB\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n4. *Product Code:* SRTWC286-SH\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-IB\n*Quantity On Hand:* 0\n*Outstanding:* 741\n\n5. *Product Code:* SRTWC286-SH\n*Warehouse:* BERSATU (PORT KLANG)\n*System Location:* DC1-IB\n*Quantity On Hand:* 685\n*Outstanding:* 0\n\n6. *Product Code:* SRTWC286-SH\n*Warehouse:* MERU\n*System Location:* MWH\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n7. *Product Code:* SRTWC286-SH\n*Warehouse:* MERU\n*System Location:* MWH-BB\n*Quantity On Hand:* 2\n*Outstanding:* 0\n\n8. *Product Code:* SRTWC286-SH\n*Warehouse:* MERU\n*System Location:* MWH-IB\n*Quantity On Hand:* 121\n*Outstanding:* 0\n\n9. *Product Code:* SRTWC286-SH\n*Warehouse:* WH3 (PSM)\n*System Location:* WH3-PSM\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n10. *Product Code:* SRTWC286-SH-150\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 0\n*Outstanding:* 16\n\n11. *Product Code:* SRTWC286-SH-150\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SMC\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n12. *Product Code:* SRTWC286-SH-150\n*Warehouse:* MERU\n*System Location:* MWH\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n13. *Product Code:* SRTWC286-SH-150\n*Warehouse:* WH3 (PSM)\n*System Location:* WH3-PSM\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n14. *Product Code:* SRTWC286-SH-200\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n15. *Product Code:* SRTWC286-SH-200\n*Warehouse:* MERU\n*System Location:* MWH\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n16. *Product Code:* SRTWC286-SH-NEW\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 2\n*Outstanding:* 150\n\n17. *Product Code:* SRTWC286-SH-NEW\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-BB\n*Quantity On Hand:* 0\n*Outstanding:* 343\n\n18. *Product Code:* SRTWC286-SH-NEW\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-BILL\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n19. *Product Code:* SRTWC286-SH-NEW\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-HP\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n20. *Product Code:* SRTWC286-SH-NEW\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-IB\n*Quantity On Hand:* 7\n*Outstanding:* 275\n\n21. *Product Code:* SRTWC286-SH-NEW\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-IR\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n22. *Product Code:* SRTWC286-SH-NEW\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-NTC\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n23. *Product Code:* SRTWC286-SH-NEW\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SMC\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n24. *Product Code:* SRTWC286-SH-NEW\n*Warehouse:* BERSATU (PORT KLANG)\n*System Location:* DC1-BB\n*Quantity On Hand:* 13\n*Outstanding:* 0\n\n25. *Product Code:* SRTWC286-SH-NEW\n*Warehouse:* MERU\n*System Location:* MWH\n*Quantity On Hand:* 403\n*Outstanding:* 0\n\n26. *Product Code:* SRTWC286-SH-NEW\n*Warehouse:* MERU\n*System Location:* MWH-BB\n*Quantity On Hand:* 29\n*Outstanding:* 0\n\n27. *Product Code:* SRTWC286-SH-NEW\n*Warehouse:* MERU\n*System Location:* MWH-HP\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n28. *Product Code:* SRTWC286-SH-NEW\n*Warehouse:* WH3 (PSM)\n*System Location:* WH3\n*Quantity On Hand:* 81\n*Outstanding:* 0\n\n29. *Product Code:* SRTWC286-SH-NEW-150\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 29\n*Outstanding:* 19\n\n30. *Product Code:* SRTWC286-SH-NEW-150\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-IR\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n31. *Product Code:* SRTWC286-SH-NEW-150\n*Warehouse:* MERU\n*System Location:* MWH\n*Quantity On Hand:* 41\n*Outstanding:* 0\n\n32. *Product Code:* SRTWC286-SH-NEW-150\n*Warehouse:* MERU\n*System Location:* MWH-BB\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n33. *Product Code:* SRTWC286-SH-NEW-200\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 0\n*Outstanding:* 72\n\n34. *Product Code:* SRTWC286-SH-NEW-200\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-HP\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n35. *Product Code:* SRTWC286-SH-NEW-200\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-IR\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n36. *Product Code:* SRTWC286-SH-NEW-200\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-NTC\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n37. *Product Code:* SRTWC286-SH-NEW-P\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 30\n*Outstanding:* 23\n\n38. *Product Code:* SRTWC286-SH-NEW-P\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-BB\n*Quantity On Hand:* 22\n*Outstanding:* 75\n\n39. *Product Code:* SRTWC286-SH-NEW-P\n*Warehouse:* MERU\n*System Location:* MWH\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n40. *Product Code:* SRTWC286-SH-P\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 1\n*Outstanding:* 10\n\n41. *Product Code:* SRTWC286-SH-P\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SYNT\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n42. *Product Code:* SRTWC286-SH-P\n*Warehouse:* MERU\n*System Location:* MWH\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n43. *Product Code:* SRTWC286-SH-P\n*Warehouse:* MERU\n*System Location:* MWH-BB\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n44. *Product Code:* SRTWC286-SH-UF\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-IR\n*Quantity On Hand:* 0\n*Outstanding:* 36\n\n45. *Product Code:* SRTWC286-SH-UF\n*Warehouse:* MERU\n*System Location:* MWH-IR\n*Quantity On Hand:* 48\n*Outstanding:* 0\n\n46. *Product Code:* SRTWC286-SH-UF\n*Warehouse:* WH3 (PSM)\n*System Location:* WH3-IR\n*Quantity On Hand:* 3\n*Outstanding:* 0",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "contact_id",
+              "date_mode",
+              "include_sellable",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_inventory_stock_balance_list"
+          },
+          {
+            "args_keys": [],
+            "tool": null
+          }
+        ]
+      },
+      "received_session_vars": {
+        "respond_io_id": "900000010",
+        "session_vars": {
+          "user_response": "Stock details found for the requested products.\n\n1. *Product Code:* SRTKS7061\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 25\n*Outstanding:* 2\n\n2. *Product Code:* SRTKS7061\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-BB\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n3. *Product Code:* SRTKS7061\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SMC\n*Quantity On Hand:* 0\n*Outstanding:* 1\n\n4. *Product Code:* SRTKS7061\n*Warehouse:* MERU\n*System Location:* MWH\n*Quantity On Hand:* 216\n*Outstanding:* 0\n\n5. *Product Code:* SRTKS7061\n*Warehouse:* MERU\n*System Location:* MWH-BB\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n6. *Product Code:* SRTKS7061\n*Warehouse:* WH3 (PSM)\n*System Location:* WH3-PSM\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n7. *Product Code:* SRTKS7061-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 21\n*Outstanding:* 0\n\n8. *Product Code:* SRTKS7061-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-BB\n*Quantity On Hand:* 1\n*Outstanding:* 1\n\n9. *Product Code:* SRTKS7061-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SMC\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n10. *Product Code:* SRTKS7061-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SYNT\n*Quantity On Hand:* 4\n*Outstanding:* 4\n\n11. *Product Code:* SRTKS7061-BL\n*Warehouse:* MERU\n*System Location:* MWH\n*Quantity On Hand:* 9\n*Outstanding:* 0\n\n_Data last updated: 14/09/2026 17:25:40_",
+          "variables": {}
+        }
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "srtwc286",
+                "entity_type": "product",
+                "uuid": "0d0ed752-fd6f-4759-ad8f-0b40e0cbc601"
+              }
+            ],
+            "resolved": true,
+            "token": "srtwc286"
+          }
+        ],
+        "tokens": [
+          "srtwc286"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 23,
+        "recorded_at": "2026-09-16T11:25:43.873105+09:00",
+        "turn_id": "b54e4ff8-74a4-45e8-946e-4c89b8f1a4c7"
+      },
+      "switches": {
+        "chatbot_business_lane_enabled": true,
+        "chatbot_completed_lanes": [
+          "out_of_scope",
+          "access_denied",
+          "demand_qty",
+          "clarify_menu",
+          "escalate_offer",
+          "escalation_declined",
+          "ideate",
+          "low_signal",
+          "not_supported",
+          "offer_hold",
+          "stock_denied",
+          "check_promotion",
+          "business_query"
+        ],
+        "chatbot_crossdomain_ladder": {
+          "incoming": [
+            "inventory",
+            "purchase_order"
+          ],
+          "inventory": [
+            "incoming",
+            "purchase_order"
+          ]
+        },
+        "chatbot_ordering_enabled": true,
+        "chatbot_stock_denial_enabled": true,
+        "chatbot_tier_order": [
+          "dealer",
+          "office",
+          "end_user"
+        ],
+        "chatbot_unsupported_domains": [
+          "goods_receive"
+        ],
+        "switches_source": "source_db_at_record_time"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 10,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 10,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "contact_id": "900000010",
+            "date_mode": null,
+            "include_sellable": true,
+            "is_active": null,
+            "product_ids": [
+              "65514803-1609-4fe8-8b60-2e908c8f9bd4",
+              "d73a33f3-956b-401f-90c7-0ad6ff792ea1",
+              "7a8f2543-ef3b-4e5f-9dad-e29f6f688485",
+              "0d0ed752-fd6f-4759-ad8f-0b40e0cbc601",
+              "d55d8829-5e3d-4386-ab77-6c93e26d73e7",
+              "13ffa633-91db-4db6-9050-5de7a0deb9b8",
+              "78c96bfa-edea-4695-a215-4a02cc0c53a0",
+              "677b6eb7-f21f-4a65-8195-b969a0a465dd",
+              "dcaeb074-6b9f-46bd-9e86-97a16e976b59",
+              "77a5e4da-877a-462d-a0f8-cc558fdc5a51"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "bytes": 24932,
+            "head": "{\"result_type\": \"stock\", \"intro\": \"Stock details found for the requested products.\", \"items\": [{\"title\": \"SRTWC286-SH\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWC286-SH\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"BUKIT RAJA\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"BRW\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 4}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 21}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWC286-SH\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWC286-SH\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"BUKIT RAJA\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"BRW-ACTS\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 0}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWC286-SH\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWC286-SH\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"BUKIT RAJA\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"BRW-BB\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 0}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWC286-SH\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWC286-SH\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"BUKIT RAJA\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"BRW-IB\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 0}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 741}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWC286-SH\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWC286-SH\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"BERSATU (PORT KLANG)\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"DC1-IB\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 685}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWC286-SH\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWC286-SH\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"MERU\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"MWH\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 0}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWC286-SH\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWC286-SH\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"MERU\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"MWH-BB\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 2}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWC286-SH\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWC286-SH\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"MERU\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"MWH-IB\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 121}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWC286-SH\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWC286-SH\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"WH3 (PSM)\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"WH3-PSM\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 0}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWC286-SH-150\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWC286-SH-150\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"BUKIT RAJA\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"BRW\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 0}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 16}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWC286-SH-150\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWC286-SH-150\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"BUKIT RAJA\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"BRW-SMC\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 0}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWC286-SH-150\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWC286-SH-150\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"MERU\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"MWH\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 0}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWC286-SH-150\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWC286-SH-150\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"WH3 (PSM)\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"WH3-PSM\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 0}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWC286-SH-200\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWC286-SH-200\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"BUKIT RAJA\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"BRW\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 0}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWC286-SH-200\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWC286-SH-200\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"MERU\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"MWH\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 0}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWC286-SH-NEW\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWC286-SH-NEW\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"BUKIT RAJA\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"BRW\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 2}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 150}], \"flags",
+            "truncated": true
+          },
+          "tool": "crm_inventory_stock_balance_list"
+        },
+        {
+          "args": null,
+          "envelope": null,
+          "tool": null
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "anaphora": {
+          "backward_reference": false
+        },
+        "answers_open_question": {
+          "answer": null,
+          "picks": null,
+          "resolved": null
+        },
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "continuation": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "document": [],
+        "domain_hint": "inventory",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "hint_confident": true,
+            "raw": "srtwc286"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_stock",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": "general_enquiries",
+          "suggested_team": "warehouse"
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "status": null,
+        "top_n": null,
+        "user_goal": "trying to check stock for SRTWC286"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "Incoming Stock Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow",
+        "hidden_spec_keys": []
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1061691@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1061691,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1777880659,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000010"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000010",
+          "id": "900000010",
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000010",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "console",
+        "is_test": true,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000015\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "id": "900000010"
+          },
+          "event_id": "9911f47f-53d4-4226-9f9f-04f7d36a7c5e",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxMjI0NjUyMTMVAgASGBYzRUIwQjBEOTUwRTgzRENBRTZBRjZEAA==",
+            "contactId": "900000010",
+            "message": {
+              "text": "incoming",
+              "type": "text"
+            },
+            "messageId": "console-96992a724a41",
+            "timestamp": 1789410104000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "previous_conversation_state": {
+          "access_levels": [],
+          "contains_flyer": false,
+          "focus": {
+            "brands": [],
+            "customers": [],
+            "date_window": null,
+            "document": [],
+            "domains": [
+              "inventory"
+            ],
+            "extra": {},
+            "products": [
+              {
+                "canonical_code": null,
+                "confident": true,
+                "current_message": true,
+                "hint": "product",
+                "hint_confident": true,
+                "raw": "srtwc286"
+              }
+            ],
+            "set_page": null,
+            "status": null,
+            "tier": [],
+            "warehouse": []
+          },
+          "ideation": null,
+          "open_question": null
+        },
+        "prompt_overrides": {
+          "chatbot_semantic_parser": "965268d8-6f6d-46a7-84db-d42d0a129fca"
+        },
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": "console-956e0735-91e4-4173-a6fe-261943fb6ee1"
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [],
+        "focus_after": null,
+        "pending": {
+          "kind": null,
+          "option_labels": [
+            "SRTWC286-SH-200",
+            "SRTWC286-SH-P",
+            "SRTWC286-SH-PP",
+            "SRTWC286-SH",
+            "SRTWC286-SH-UF",
+            "SRTWC286-SH-NEW-150",
+            "SRTWC286-SH-150",
+            "SRTWC286-SH-NEW-P",
+            "SRTWC286-SH-NEW-200",
+            "SRTWC286-SH-NEW"
+          ]
+        },
+        "text": "Which product do you mean?\n1. SRTWC286-SH-200 - no incoming\n2. SRTWC286-SH-P - no incoming\n3. SRTWC286-SH-PP - no incoming\n4. SRTWC286-SH - no incoming\n5. SRTWC286-SH-UF - no incoming\n6. SRTWC286-SH-NEW-150 - no incoming\n7. SRTWC286-SH-150 - no incoming\n8. SRTWC286-SH-NEW-P - has incoming\n9. SRTWC286-SH-NEW-200 - has incoming\n10. SRTWC286-SH-NEW - has incoming",
+        "tools": []
+      },
+      "received_session_vars": {
+        "respond_io_id": "900000010",
+        "session_vars": {
+          "user_response": "Stock details found for the requested products.\n\n1. *Product Code:* SRTKS7061\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 25\n*Outstanding:* 2\n\n2. *Product Code:* SRTKS7061\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-BB\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n3. *Product Code:* SRTKS7061\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SMC\n*Quantity On Hand:* 0\n*Outstanding:* 1\n\n4. *Product Code:* SRTKS7061\n*Warehouse:* MERU\n*System Location:* MWH\n*Quantity On Hand:* 216\n*Outstanding:* 0\n\n5. *Product Code:* SRTKS7061\n*Warehouse:* MERU\n*System Location:* MWH-BB\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n6. *Product Code:* SRTKS7061\n*Warehouse:* WH3 (PSM)\n*System Location:* WH3-PSM\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n7. *Product Code:* SRTKS7061-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 21\n*Outstanding:* 0\n\n8. *Product Code:* SRTKS7061-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-BB\n*Quantity On Hand:* 1\n*Outstanding:* 1\n\n9. *Product Code:* SRTKS7061-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SMC\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n10. *Product Code:* SRTKS7061-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SYNT\n*Quantity On Hand:* 4\n*Outstanding:* 4\n\n11. *Product Code:* SRTKS7061-BL\n*Warehouse:* MERU\n*System Location:* MWH\n*Quantity On Hand:* 9\n*Outstanding:* 0\n\n_Data last updated: 14/09/2026 17:25:40_",
+          "variables": {
+            "access_levels": [],
+            "contains_flyer": false,
+            "focus": {
+              "brands": [],
+              "customers": [],
+              "date_window": null,
+              "document": [],
+              "domains": [
+                "inventory"
+              ],
+              "extra": {},
+              "products": [
+                {
+                  "canonical_code": null,
+                  "confident": true,
+                  "current_message": true,
+                  "hint": "product",
+                  "hint_confident": true,
+                  "raw": "srtwc286"
+                }
+              ],
+              "set_page": null,
+              "status": null,
+              "tier": [],
+              "warehouse": []
+            },
+            "ideation": null,
+            "open_question": null
+          }
+        }
+      },
+      "resolutions": {
+        "resolutions": [],
+        "tokens": [],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 23,
+        "recorded_at": "2026-09-16T11:26:18.204025+09:00",
+        "turn_id": "53aba0fe-ee11-42d5-99a1-a099cca16cb7"
+      },
+      "switches": {
+        "chatbot_business_lane_enabled": true,
+        "chatbot_completed_lanes": [
+          "out_of_scope",
+          "access_denied",
+          "demand_qty",
+          "clarify_menu",
+          "escalate_offer",
+          "escalation_declined",
+          "ideate",
+          "low_signal",
+          "not_supported",
+          "offer_hold",
+          "stock_denied",
+          "check_promotion",
+          "business_query"
+        ],
+        "chatbot_crossdomain_ladder": {
+          "incoming": [
+            "inventory",
+            "purchase_order"
+          ],
+          "inventory": [
+            "incoming",
+            "purchase_order"
+          ]
+        },
+        "chatbot_ordering_enabled": true,
+        "chatbot_stock_denial_enabled": true,
+        "chatbot_tier_order": [
+          "dealer",
+          "office",
+          "end_user"
+        ],
+        "chatbot_unsupported_domains": [
+          "goods_receive"
+        ],
+        "switches_source": "source_db_at_record_time"
+      },
+      "tool_results": [],
+      "verdict": {
+        "access_levels": [],
+        "anaphora": {
+          "backward_reference": false
+        },
+        "answers_open_question": {
+          "answer": null,
+          "picks": null,
+          "resolved": null
+        },
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "continuation": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "document": [],
+        "domain_hint": "incoming",
+        "entities": [],
+        "entity_op": "reuse",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_incoming",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": "incoming_stock_enquiries",
+          "suggested_team": "purchasing"
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "status": null,
+        "top_n": null,
+        "user_goal": "trying to check incoming stock"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "Incoming Stock Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow",
+        "hidden_spec_keys": []
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1061691@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1061691,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1777880659,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000010"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000010",
+          "id": "900000010",
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000010",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "console",
+        "is_test": true,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000015\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "id": "900000010"
+          },
+          "event_id": "9911f47f-53d4-4226-9f9f-04f7d36a7c5e",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxMjI0NjUyMTMVAgASGBYzRUIwQjBEOTUwRTgzRENBRTZBRjZEAA==",
+            "contactId": "900000010",
+            "message": {
+              "text": "incoming srtwc286",
+              "type": "text"
+            },
+            "messageId": "console-45e74dc0db5d",
+            "timestamp": 1789410104000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "previous_conversation_state": {
+          "access_levels": [],
+          "contains_flyer": false,
+          "focus": {
+            "brands": [],
+            "customers": [],
+            "date_window": null,
+            "document": [],
+            "domains": [
+              "incoming"
+            ],
+            "extra": {},
+            "products": [
+              {
+                "canonical_code": null,
+                "confident": true,
+                "current_message": true,
+                "hint": "product",
+                "hint_confident": true,
+                "raw": "srtwc286"
+              }
+            ],
+            "set_page": null,
+            "status": null,
+            "tier": [],
+            "warehouse": []
+          },
+          "ideation": null,
+          "open_question": {
+            "asked_at_turn": 52,
+            "expects": "pick",
+            "kind": "product_pick",
+            "options": [
+              {
+                "entity_type": "product",
+                "label": "srtwc286",
+                "payload": {},
+                "position": 1,
+                "uuid": "srtwc286",
+                "uuids": [
+                  "srtwc286"
+                ]
+              }
+            ],
+            "payload": {
+              "domain": "incoming"
+            },
+            "team": "purchasing"
+          }
+        },
+        "prompt_overrides": {
+          "chatbot_semantic_parser": "965268d8-6f6d-46a7-84db-d42d0a129fca"
+        },
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": "console-956e0735-91e4-4173-a6fe-261943fb6ee1"
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [],
+        "focus_after": null,
+        "pending": {
+          "kind": null,
+          "option_labels": [
+            "SRTWC286-SH-200",
+            "SRTWC286-SH-P",
+            "SRTWC286-SH-PP",
+            "SRTWC286-SH",
+            "SRTWC286-SH-UF",
+            "SRTWC286-SH-NEW-150",
+            "SRTWC286-SH-150",
+            "SRTWC286-SH-NEW-P",
+            "SRTWC286-SH-NEW-200",
+            "SRTWC286-SH-NEW"
+          ]
+        },
+        "text": "Which product do you mean?\n1. SRTWC286-SH-200 - no incoming\n2. SRTWC286-SH-P - no incoming\n3. SRTWC286-SH-PP - no incoming\n4. SRTWC286-SH - no incoming\n5. SRTWC286-SH-UF - no incoming\n6. SRTWC286-SH-NEW-150 - no incoming\n7. SRTWC286-SH-150 - no incoming\n8. SRTWC286-SH-NEW-P - has incoming\n9. SRTWC286-SH-NEW-200 - has incoming\n10. SRTWC286-SH-NEW - has incoming",
+        "tools": []
+      },
+      "received_session_vars": {
+        "respond_io_id": "900000010",
+        "session_vars": {
+          "user_response": "Stock details found for the requested products.\n\n1. *Product Code:* SRTKS7061\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 25\n*Outstanding:* 2\n\n2. *Product Code:* SRTKS7061\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-BB\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n3. *Product Code:* SRTKS7061\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SMC\n*Quantity On Hand:* 0\n*Outstanding:* 1\n\n4. *Product Code:* SRTKS7061\n*Warehouse:* MERU\n*System Location:* MWH\n*Quantity On Hand:* 216\n*Outstanding:* 0\n\n5. *Product Code:* SRTKS7061\n*Warehouse:* MERU\n*System Location:* MWH-BB\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n6. *Product Code:* SRTKS7061\n*Warehouse:* WH3 (PSM)\n*System Location:* WH3-PSM\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n7. *Product Code:* SRTKS7061-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 21\n*Outstanding:* 0\n\n8. *Product Code:* SRTKS7061-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-BB\n*Quantity On Hand:* 1\n*Outstanding:* 1\n\n9. *Product Code:* SRTKS7061-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SMC\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n10. *Product Code:* SRTKS7061-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SYNT\n*Quantity On Hand:* 4\n*Outstanding:* 4\n\n11. *Product Code:* SRTKS7061-BL\n*Warehouse:* MERU\n*System Location:* MWH\n*Quantity On Hand:* 9\n*Outstanding:* 0\n\n_Data last updated: 14/09/2026 17:25:40_",
+          "variables": {
+            "access_levels": [],
+            "contains_flyer": false,
+            "focus": {
+              "brands": [],
+              "customers": [],
+              "date_window": null,
+              "document": [],
+              "domains": [
+                "incoming"
+              ],
+              "extra": {},
+              "products": [
+                {
+                  "canonical_code": null,
+                  "confident": true,
+                  "current_message": true,
+                  "hint": "product",
+                  "hint_confident": true,
+                  "raw": "srtwc286"
+                }
+              ],
+              "set_page": null,
+              "status": null,
+              "tier": [],
+              "warehouse": []
+            },
+            "ideation": null,
+            "open_question": {
+              "asked_at_turn": 52,
+              "expects": "pick",
+              "kind": "product_pick",
+              "options": [
+                {
+                  "entity_type": "product",
+                  "label": "srtwc286",
+                  "payload": {},
+                  "position": 1,
+                  "uuid": "srtwc286",
+                  "uuids": [
+                    "srtwc286"
+                  ]
+                }
+              ],
+              "payload": {
+                "domain": "incoming"
+              },
+              "team": "purchasing"
+            }
+          }
+        }
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [],
+            "resolved": false,
+            "token": "srtwc286"
+          }
+        ],
+        "tokens": [
+          "srtwc286"
+        ],
+        "unresolved_tokens": [
+          "srtwc286"
+        ]
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 23,
+        "recorded_at": "2026-09-16T11:26:55.734937+09:00",
+        "turn_id": "2b921315-1774-44fe-b189-2d5abd385f15"
+      },
+      "switches": {
+        "chatbot_business_lane_enabled": true,
+        "chatbot_completed_lanes": [
+          "out_of_scope",
+          "access_denied",
+          "demand_qty",
+          "clarify_menu",
+          "escalate_offer",
+          "escalation_declined",
+          "ideate",
+          "low_signal",
+          "not_supported",
+          "offer_hold",
+          "stock_denied",
+          "check_promotion",
+          "business_query"
+        ],
+        "chatbot_crossdomain_ladder": {
+          "incoming": [
+            "inventory",
+            "purchase_order"
+          ],
+          "inventory": [
+            "incoming",
+            "purchase_order"
+          ]
+        },
+        "chatbot_ordering_enabled": true,
+        "chatbot_stock_denial_enabled": true,
+        "chatbot_tier_order": [
+          "dealer",
+          "office",
+          "end_user"
+        ],
+        "chatbot_unsupported_domains": [
+          "goods_receive"
+        ],
+        "switches_source": "source_db_at_record_time"
+      },
+      "tool_results": [],
+      "verdict": {
+        "access_levels": [],
+        "anaphora": {
+          "backward_reference": false
+        },
+        "answers_open_question": {
+          "answer": null,
+          "picks": null,
+          "resolved": null
+        },
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "continuation": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "document": [],
+        "domain_hint": "incoming",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "hint_confident": true,
+            "raw": "srtwc286"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_incoming",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": "incoming_stock_enquiries",
+          "suggested_team": "purchasing"
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "status": null,
+        "top_n": null,
+        "user_goal": "trying to check incoming status for srtwc286"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow",
+        "hidden_spec_keys": []
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1061691@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1061691,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1777880659,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000010"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000010",
+          "id": "900000010",
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000010",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "console",
+        "is_test": true,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000015\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "id": "900000010"
+          },
+          "event_id": "9911f47f-53d4-4226-9f9f-04f7d36a7c5e",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxMjI0NjUyMTMVAgASGBYzRUIwQjBEOTUwRTgzRENBRTZBRjZEAA==",
+            "contactId": "900000010",
+            "message": {
+              "text": "1",
+              "type": "text"
+            },
+            "messageId": "console-ee41b4976c6a",
+            "timestamp": 1789410104000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "previous_conversation_state": {
+          "access_levels": [],
+          "contains_flyer": false,
+          "focus": {
+            "brands": [],
+            "customers": [],
+            "date_window": null,
+            "document": [],
+            "domains": [
+              "incoming"
+            ],
+            "extra": {},
+            "products": [
+              {
+                "canonical_code": null,
+                "confident": true,
+                "current_message": true,
+                "hint": "product",
+                "hint_confident": true,
+                "raw": "srtwc286"
+              }
+            ],
+            "set_page": null,
+            "status": null,
+            "tier": [],
+            "warehouse": []
+          },
+          "ideation": null,
+          "open_question": {
+            "asked_at_turn": 53,
+            "expects": "pick",
+            "kind": "product_pick",
+            "options": [
+              {
+                "entity_type": "product",
+                "label": "SRTWC286-SH-200",
+                "payload": {},
+                "position": 1,
+                "stamp": "no incoming",
+                "uuid": "65514803-1609-4fe8-8b60-2e908c8f9bd4",
+                "uuids": [
+                  "65514803-1609-4fe8-8b60-2e908c8f9bd4"
+                ]
+              },
+              {
+                "entity_type": "product",
+                "label": "SRTWC286-SH-P",
+                "payload": {},
+                "position": 2,
+                "stamp": "no incoming",
+                "uuid": "d73a33f3-956b-401f-90c7-0ad6ff792ea1",
+                "uuids": [
+                  "d73a33f3-956b-401f-90c7-0ad6ff792ea1"
+                ]
+              },
+              {
+                "entity_type": "product",
+                "label": "SRTWC286-SH-PP",
+                "payload": {},
+                "position": 3,
+                "stamp": "no incoming",
+                "uuid": "7a8f2543-ef3b-4e5f-9dad-e29f6f688485",
+                "uuids": [
+                  "7a8f2543-ef3b-4e5f-9dad-e29f6f688485"
+                ]
+              },
+              {
+                "entity_type": "product",
+                "label": "SRTWC286-SH",
+                "payload": {},
+                "position": 4,
+                "stamp": "no incoming",
+                "uuid": "0d0ed752-fd6f-4759-ad8f-0b40e0cbc601",
+                "uuids": [
+                  "0d0ed752-fd6f-4759-ad8f-0b40e0cbc601"
+                ]
+              },
+              {
+                "entity_type": "product",
+                "label": "SRTWC286-SH-UF",
+                "payload": {},
+                "position": 5,
+                "stamp": "no incoming",
+                "uuid": "d55d8829-5e3d-4386-ab77-6c93e26d73e7",
+                "uuids": [
+                  "d55d8829-5e3d-4386-ab77-6c93e26d73e7"
+                ]
+              },
+              {
+                "entity_type": "product",
+                "label": "SRTWC286-SH-NEW-150",
+                "payload": {},
+                "position": 6,
+                "stamp": "no incoming",
+                "uuid": "13ffa633-91db-4db6-9050-5de7a0deb9b8",
+                "uuids": [
+                  "13ffa633-91db-4db6-9050-5de7a0deb9b8"
+                ]
+              },
+              {
+                "entity_type": "product",
+                "label": "SRTWC286-SH-150",
+                "payload": {},
+                "position": 7,
+                "stamp": "no incoming",
+                "uuid": "78c96bfa-edea-4695-a215-4a02cc0c53a0",
+                "uuids": [
+                  "78c96bfa-edea-4695-a215-4a02cc0c53a0"
+                ]
+              },
+              {
+                "entity_type": "product",
+                "label": "SRTWC286-SH-NEW-P",
+                "payload": {},
+                "position": 8,
+                "stamp": "has incoming",
+                "uuid": "677b6eb7-f21f-4a65-8195-b969a0a465dd",
+                "uuids": [
+                  "677b6eb7-f21f-4a65-8195-b969a0a465dd"
+                ]
+              },
+              {
+                "entity_type": "product",
+                "label": "SRTWC286-SH-NEW-200",
+                "payload": {},
+                "position": 9,
+                "stamp": "has incoming",
+                "uuid": "dcaeb074-6b9f-46bd-9e86-97a16e976b59",
+                "uuids": [
+                  "dcaeb074-6b9f-46bd-9e86-97a16e976b59"
+                ]
+              },
+              {
+                "entity_type": "product",
+                "label": "SRTWC286-SH-NEW",
+                "payload": {},
+                "position": 10,
+                "stamp": "has incoming",
+                "uuid": "77a5e4da-877a-462d-a0f8-cc558fdc5a51",
+                "uuids": [
+                  "77a5e4da-877a-462d-a0f8-cc558fdc5a51"
+                ]
+              }
+            ],
+            "payload": {
+              "domain": "incoming"
+            },
+            "team": "purchasing"
+          }
+        },
+        "prompt_overrides": {
+          "chatbot_semantic_parser": "965268d8-6f6d-46a7-84db-d42d0a129fca"
+        },
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": "console-956e0735-91e4-4173-a6fe-261943fb6ee1"
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "65514803-1609-4fe8-8b60-2e908c8f9bd4"
+        ],
+        "focus_after": null,
+        "pending": {
+          "kind": null,
+          "option_labels": [
+            "incoming stock"
+          ]
+        },
+        "text": "*incoming stock* for SRTWC286-SH-200:\nNo matching results found.\n\nWould you like me to escalate?",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "contact_id",
+              "date_mode",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_incoming_stock_list"
+          },
+          {
+            "args_keys": [],
+            "tool": null
+          }
+        ]
+      },
+      "received_session_vars": {
+        "respond_io_id": "900000010",
+        "session_vars": {
+          "user_response": "Stock details found for the requested products.\n\n1. *Product Code:* SRTKS7061\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 25\n*Outstanding:* 2\n\n2. *Product Code:* SRTKS7061\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-BB\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n3. *Product Code:* SRTKS7061\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SMC\n*Quantity On Hand:* 0\n*Outstanding:* 1\n\n4. *Product Code:* SRTKS7061\n*Warehouse:* MERU\n*System Location:* MWH\n*Quantity On Hand:* 216\n*Outstanding:* 0\n\n5. *Product Code:* SRTKS7061\n*Warehouse:* MERU\n*System Location:* MWH-BB\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n6. *Product Code:* SRTKS7061\n*Warehouse:* WH3 (PSM)\n*System Location:* WH3-PSM\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n7. *Product Code:* SRTKS7061-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 21\n*Outstanding:* 0\n\n8. *Product Code:* SRTKS7061-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-BB\n*Quantity On Hand:* 1\n*Outstanding:* 1\n\n9. *Product Code:* SRTKS7061-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SMC\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n10. *Product Code:* SRTKS7061-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SYNT\n*Quantity On Hand:* 4\n*Outstanding:* 4\n\n11. *Product Code:* SRTKS7061-BL\n*Warehouse:* MERU\n*System Location:* MWH\n*Quantity On Hand:* 9\n*Outstanding:* 0\n\n_Data last updated: 14/09/2026 17:25:40_",
+          "variables": {
+            "access_levels": [],
+            "contains_flyer": false,
+            "focus": {
+              "brands": [],
+              "customers": [],
+              "date_window": null,
+              "document": [],
+              "domains": [
+                "incoming"
+              ],
+              "extra": {},
+              "products": [
+                {
+                  "canonical_code": null,
+                  "confident": true,
+                  "current_message": true,
+                  "hint": "product",
+                  "hint_confident": true,
+                  "raw": "srtwc286"
+                }
+              ],
+              "set_page": null,
+              "status": null,
+              "tier": [],
+              "warehouse": []
+            },
+            "ideation": null,
+            "open_question": {
+              "asked_at_turn": 53,
+              "expects": "pick",
+              "kind": "product_pick",
+              "options": [
+                {
+                  "entity_type": "product",
+                  "label": "SRTWC286-SH-200",
+                  "payload": {},
+                  "position": 1,
+                  "stamp": "no incoming",
+                  "uuid": "65514803-1609-4fe8-8b60-2e908c8f9bd4",
+                  "uuids": [
+                    "65514803-1609-4fe8-8b60-2e908c8f9bd4"
+                  ]
+                },
+                {
+                  "entity_type": "product",
+                  "label": "SRTWC286-SH-P",
+                  "payload": {},
+                  "position": 2,
+                  "stamp": "no incoming",
+                  "uuid": "d73a33f3-956b-401f-90c7-0ad6ff792ea1",
+                  "uuids": [
+                    "d73a33f3-956b-401f-90c7-0ad6ff792ea1"
+                  ]
+                },
+                {
+                  "entity_type": "product",
+                  "label": "SRTWC286-SH-PP",
+                  "payload": {},
+                  "position": 3,
+                  "stamp": "no incoming",
+                  "uuid": "7a8f2543-ef3b-4e5f-9dad-e29f6f688485",
+                  "uuids": [
+                    "7a8f2543-ef3b-4e5f-9dad-e29f6f688485"
+                  ]
+                },
+                {
+                  "entity_type": "product",
+                  "label": "SRTWC286-SH",
+                  "payload": {},
+                  "position": 4,
+                  "stamp": "no incoming",
+                  "uuid": "0d0ed752-fd6f-4759-ad8f-0b40e0cbc601",
+                  "uuids": [
+                    "0d0ed752-fd6f-4759-ad8f-0b40e0cbc601"
+                  ]
+                },
+                {
+                  "entity_type": "product",
+                  "label": "SRTWC286-SH-UF",
+                  "payload": {},
+                  "position": 5,
+                  "stamp": "no incoming",
+                  "uuid": "d55d8829-5e3d-4386-ab77-6c93e26d73e7",
+                  "uuids": [
+                    "d55d8829-5e3d-4386-ab77-6c93e26d73e7"
+                  ]
+                },
+                {
+                  "entity_type": "product",
+                  "label": "SRTWC286-SH-NEW-150",
+                  "payload": {},
+                  "position": 6,
+                  "stamp": "no incoming",
+                  "uuid": "13ffa633-91db-4db6-9050-5de7a0deb9b8",
+                  "uuids": [
+                    "13ffa633-91db-4db6-9050-5de7a0deb9b8"
+                  ]
+                },
+                {
+                  "entity_type": "product",
+                  "label": "SRTWC286-SH-150",
+                  "payload": {},
+                  "position": 7,
+                  "stamp": "no incoming",
+                  "uuid": "78c96bfa-edea-4695-a215-4a02cc0c53a0",
+                  "uuids": [
+                    "78c96bfa-edea-4695-a215-4a02cc0c53a0"
+                  ]
+                },
+                {
+                  "entity_type": "product",
+                  "label": "SRTWC286-SH-NEW-P",
+                  "payload": {},
+                  "position": 8,
+                  "stamp": "has incoming",
+                  "uuid": "677b6eb7-f21f-4a65-8195-b969a0a465dd",
+                  "uuids": [
+                    "677b6eb7-f21f-4a65-8195-b969a0a465dd"
+                  ]
+                },
+                {
+                  "entity_type": "product",
+                  "label": "SRTWC286-SH-NEW-200",
+                  "payload": {},
+                  "position": 9,
+                  "stamp": "has incoming",
+                  "uuid": "dcaeb074-6b9f-46bd-9e86-97a16e976b59",
+                  "uuids": [
+                    "dcaeb074-6b9f-46bd-9e86-97a16e976b59"
+                  ]
+                },
+                {
+                  "entity_type": "product",
+                  "label": "SRTWC286-SH-NEW",
+                  "payload": {},
+                  "position": 10,
+                  "stamp": "has incoming",
+                  "uuid": "77a5e4da-877a-462d-a0f8-cc558fdc5a51",
+                  "uuids": [
+                    "77a5e4da-877a-462d-a0f8-cc558fdc5a51"
+                  ]
+                }
+              ],
+              "payload": {
+                "domain": "incoming"
+              },
+              "team": "purchasing"
+            }
+          }
+        }
+      },
+      "resolutions": {
+        "resolutions": [],
+        "tokens": [],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 23,
+        "recorded_at": "2026-09-16T11:27:27.658814+09:00",
+        "turn_id": "c196ebd7-bdaf-4bd4-80c8-09755542f00a"
+      },
+      "switches": {
+        "chatbot_business_lane_enabled": true,
+        "chatbot_completed_lanes": [
+          "out_of_scope",
+          "access_denied",
+          "demand_qty",
+          "clarify_menu",
+          "escalate_offer",
+          "escalation_declined",
+          "ideate",
+          "low_signal",
+          "not_supported",
+          "offer_hold",
+          "stock_denied",
+          "check_promotion",
+          "business_query"
+        ],
+        "chatbot_crossdomain_ladder": {
+          "incoming": [
+            "inventory",
+            "purchase_order"
+          ],
+          "inventory": [
+            "incoming",
+            "purchase_order"
+          ]
+        },
+        "chatbot_ordering_enabled": true,
+        "chatbot_stock_denial_enabled": true,
+        "chatbot_tier_order": [
+          "dealer",
+          "office",
+          "end_user"
+        ],
+        "chatbot_unsupported_domains": [
+          "goods_receive"
+        ],
+        "switches_source": "source_db_at_record_time"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 1,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 1,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "contact_id": "900000010",
+            "date_mode": null,
+            "is_active": null,
+            "product_ids": [
+              "65514803-1609-4fe8-8b60-2e908c8f9bd4"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "alternatives": [
+              {
+                "display": "SRTWC286-SH-NEW-200",
+                "id": "dcaeb074-6b9f-46bd-9e86-97a16e976b59",
+                "is_variant": false,
+                "sim": 0.632,
+                "value": "SRTWC286-SH-NEW-200"
+              },
+              {
+                "display": "SRTWC286-SH-NEW",
+                "id": "77a5e4da-877a-462d-a0f8-cc558fdc5a51",
+                "is_variant": false,
+                "sim": 0.556,
+                "value": "SRTWC286-SH-NEW"
+              },
+              {
+                "display": "SRTWC286-SH-NEW-P",
+                "id": "677b6eb7-f21f-4a65-8195-b969a0a465dd",
+                "is_variant": false,
+                "sim": 0.526,
+                "value": "SRTWC286-SH-NEW-P"
+              }
+            ],
+            "attachments": [],
+            "field_access": {
+              "denied": [
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "eta_delay_date",
+                  "label": "ETA Delay",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "inspection_date",
+                  "label": "CIDB Inspection",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "approval_date",
+                  "label": "CIDB Approval",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "gatepass_date",
+                  "label": "Gatepass",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "warehouse_arrival_date",
+                  "label": "Warehouse Arrival",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "informed_collection_date",
+                  "label": "Collection Informed",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "collection_date",
+                  "label": "Collection",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "loading_date",
+                  "label": "Loading",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "etc_date",
+                  "label": "ETC",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "etd_date",
+                  "label": "ETD",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "liner_code",
+                  "label": "Liner",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "china_forwarder",
+                  "label": "China Forwarder",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "malaysia_forwarder",
+                  "label": "Malaysia Forwarder",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "consignee",
+                  "label": "Consignee",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "delivery_warehouse",
+                  "label": "Delivery Warehouse",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "free_days_available",
+                  "label": "Free Days Available",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "loc",
+                  "label": "Location",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "stacked",
+                  "label": "Stacked",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "coa_permit_no",
+                  "label": "COA Permit No.",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "source_sheet",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                }
+              ],
+              "note": "These fields are omitted because this caller may not see them. Absent does NOT mean the value is unknown or not yet reached."
+            },
+            "field_vocabulary": {
+              "approval_date": "CIDB Approval",
+              "china_forwarder": "China Forwarder",
+              "coa_permit_no": "COA Permit No.",
+              "collection_date": "Collection",
+              "consignee": "Consignee",
+              "delivery_warehouse": "Delivery Warehouse",
+              "estimated_arrival_date": "ETA",
+              "eta_delay_date": "ETA Delay",
+              "etc_date": "ETC",
+              "etd_date": "ETD",
+              "free_days_available": "Free Days Available",
+              "gatepass_date": "Gatepass",
+              "informed_collection_date": "Collection Informed",
+              "inspection_date": "CIDB Inspection",
+              "liner_code": "Liner",
+              "loading_date": "Loading",
+              "loc": "Location",
+              "malaysia_forwarder": "Malaysia Forwarder",
+              "stacked": "Stacked",
+              "warehouse_arrival_date": "Warehouse Arrival"
+            },
+            "has_result": false,
+            "intro": "No matching results found.",
+            "items": [],
+            "last_updated_at": null,
+            "relaxed_axis": "entity",
+            "result_type": "incoming_stock"
+          },
+          "tool": "crm_incoming_stock_list"
+        },
+        {
+          "args": null,
+          "envelope": null,
+          "tool": null
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "anaphora": {
+          "backward_reference": false
+        },
+        "answers_open_question": {
+          "answer": "1",
+          "picks": [
+            1
+          ],
+          "resolved": true
+        },
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "continuation": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "document": [],
+        "domain_hint": null,
+        "entities": [],
+        "entity_op": "reuse",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": null,
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "casual",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [
+          1
+        ],
+        "reference_target": "result",
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "status": null,
+        "top_n": null,
+        "user_goal": "trying to answer the pending product pick question"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow",
+        "hidden_spec_keys": []
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1061691@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1061691,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1777880659,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000010"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000010",
+          "id": "900000010",
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000010",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "console",
+        "is_test": true,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000015\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "id": "900000010"
+          },
+          "event_id": "9911f47f-53d4-4226-9f9f-04f7d36a7c5e",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxMjI0NjUyMTMVAgASGBYzRUIwQjBEOTUwRTgzRENBRTZBRjZEAA==",
+            "contactId": "900000010",
+            "message": {
+              "text": "photo srtwc286",
+              "type": "text"
+            },
+            "messageId": "console-1a5eff91f680",
+            "timestamp": 1789410104000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "previous_conversation_state": {
+          "access_levels": [],
+          "contains_flyer": false,
+          "focus": {
+            "brands": [],
+            "customers": [],
+            "date_window": null,
+            "document": [],
+            "domains": [
+              "incoming"
+            ],
+            "extra": {},
+            "products": [
+              {
+                "canonical_code": "65514803-1609-4fe8-8b60-2e908c8f9bd4",
+                "confident": true,
+                "current_message": true,
+                "hint": "product",
+                "raw": "SRTWC286-SH-200",
+                "uuid": "65514803-1609-4fe8-8b60-2e908c8f9bd4"
+              }
+            ],
+            "set_page": null,
+            "status": null,
+            "tier": [],
+            "warehouse": []
+          },
+          "ideation": null,
+          "open_question": {
+            "asked_at_turn": null,
+            "expects": "yes_no",
+            "kind": "team_pick",
+            "options": [
+              {
+                "entity_type": "team",
+                "label": "incoming stock",
+                "payload": {
+                  "team": "purchasing"
+                },
+                "position": 1
+              }
+            ],
+            "payload": {},
+            "team": "purchasing"
+          }
+        },
+        "prompt_overrides": {
+          "chatbot_semantic_parser": "965268d8-6f6d-46a7-84db-d42d0a129fca"
+        },
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": "console-956e0735-91e4-4173-a6fe-261943fb6ee1"
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [],
+        "focus_after": null,
+        "pending": {
+          "kind": null,
+          "option_labels": [
+            "SRTWC286-SH-200",
+            "SRTWC286-SH-P",
+            "SRTWC286-SH-PP",
+            "SRTWC286-SH",
+            "SRTWC286-SH-UF",
+            "SRTWC286-SH-NEW-150",
+            "SRTWC286-SH-150",
+            "SRTWC286-SH-NEW-P",
+            "SRTWC286-SH-NEW-200",
+            "SRTWC286-SH-NEW"
+          ]
+        },
+        "text": "Which product do you mean?\n1. SRTWC286-SH-200\n2. SRTWC286-SH-P\n3. SRTWC286-SH-PP\n4. SRTWC286-SH\n5. SRTWC286-SH-UF\n6. SRTWC286-SH-NEW-150\n7. SRTWC286-SH-150\n8. SRTWC286-SH-NEW-P\n9. SRTWC286-SH-NEW-200\n10. SRTWC286-SH-NEW",
+        "tools": []
+      },
+      "received_session_vars": {
+        "respond_io_id": "900000010",
+        "session_vars": {
+          "user_response": "Stock details found for the requested products.\n\n1. *Product Code:* SRTKS7061\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 25\n*Outstanding:* 2\n\n2. *Product Code:* SRTKS7061\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-BB\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n3. *Product Code:* SRTKS7061\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SMC\n*Quantity On Hand:* 0\n*Outstanding:* 1\n\n4. *Product Code:* SRTKS7061\n*Warehouse:* MERU\n*System Location:* MWH\n*Quantity On Hand:* 216\n*Outstanding:* 0\n\n5. *Product Code:* SRTKS7061\n*Warehouse:* MERU\n*System Location:* MWH-BB\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n6. *Product Code:* SRTKS7061\n*Warehouse:* WH3 (PSM)\n*System Location:* WH3-PSM\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n7. *Product Code:* SRTKS7061-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 21\n*Outstanding:* 0\n\n8. *Product Code:* SRTKS7061-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-BB\n*Quantity On Hand:* 1\n*Outstanding:* 1\n\n9. *Product Code:* SRTKS7061-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SMC\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n10. *Product Code:* SRTKS7061-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SYNT\n*Quantity On Hand:* 4\n*Outstanding:* 4\n\n11. *Product Code:* SRTKS7061-BL\n*Warehouse:* MERU\n*System Location:* MWH\n*Quantity On Hand:* 9\n*Outstanding:* 0\n\n_Data last updated: 14/09/2026 17:25:40_",
+          "variables": {
+            "access_levels": [],
+            "contains_flyer": false,
+            "focus": {
+              "brands": [],
+              "customers": [],
+              "date_window": null,
+              "document": [],
+              "domains": [
+                "incoming"
+              ],
+              "extra": {},
+              "products": [
+                {
+                  "canonical_code": "65514803-1609-4fe8-8b60-2e908c8f9bd4",
+                  "confident": true,
+                  "current_message": true,
+                  "hint": "product",
+                  "raw": "SRTWC286-SH-200",
+                  "uuid": "65514803-1609-4fe8-8b60-2e908c8f9bd4"
+                }
+              ],
+              "set_page": null,
+              "status": null,
+              "tier": [],
+              "warehouse": []
+            },
+            "ideation": null,
+            "open_question": {
+              "asked_at_turn": null,
+              "expects": "yes_no",
+              "kind": "team_pick",
+              "options": [
+                {
+                  "entity_type": "team",
+                  "label": "incoming stock",
+                  "payload": {
+                    "team": "purchasing"
+                  },
+                  "position": 1
+                }
+              ],
+              "payload": {},
+              "team": "purchasing"
+            }
+          }
+        }
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [],
+            "resolved": false,
+            "token": "photo"
+          },
+          {
+            "matches": [],
+            "resolved": false,
+            "token": "srtwc286"
+          }
+        ],
+        "tokens": [
+          "photo",
+          "srtwc286"
+        ],
+        "unresolved_tokens": [
+          "photo",
+          "srtwc286"
+        ]
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 23,
+        "recorded_at": "2026-09-16T11:28:10.853833+09:00",
+        "turn_id": "67ada660-bde7-4a08-9313-6197a803141e"
+      },
+      "switches": {
+        "chatbot_business_lane_enabled": true,
+        "chatbot_completed_lanes": [
+          "out_of_scope",
+          "access_denied",
+          "demand_qty",
+          "clarify_menu",
+          "escalate_offer",
+          "escalation_declined",
+          "ideate",
+          "low_signal",
+          "not_supported",
+          "offer_hold",
+          "stock_denied",
+          "check_promotion",
+          "business_query"
+        ],
+        "chatbot_crossdomain_ladder": {
+          "incoming": [
+            "inventory",
+            "purchase_order"
+          ],
+          "inventory": [
+            "incoming",
+            "purchase_order"
+          ]
+        },
+        "chatbot_ordering_enabled": true,
+        "chatbot_stock_denial_enabled": true,
+        "chatbot_tier_order": [
+          "dealer",
+          "office",
+          "end_user"
+        ],
+        "chatbot_unsupported_domains": [
+          "goods_receive"
+        ],
+        "switches_source": "source_db_at_record_time"
+      },
+      "tool_results": [],
+      "verdict": {
+        "access_levels": [],
+        "anaphora": {
+          "backward_reference": false
+        },
+        "answers_open_question": {
+          "answer": null,
+          "picks": null,
+          "resolved": null
+        },
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "continuation": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "document": [],
+        "domain_hint": "product_attachment",
+        "entities": [
+          {
+            "canonical_code": "photo",
+            "confident": true,
+            "current_message": true,
+            "hint": "attachment_type",
+            "hint_confident": true,
+            "raw": "photo"
+          },
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "hint_confident": true,
+            "raw": "srtwc286"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_product_attachment",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": "general_enquiries",
+          "suggested_team": "marketing_product"
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "status": null,
+        "top_n": null,
+        "user_goal": "trying to get the photo attachment for SRTWC286"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow",
+        "hidden_spec_keys": []
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1061691@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1061691,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1777880659,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000010"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000010",
+          "id": "900000010",
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000010",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "console",
+        "is_test": true,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000015\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "id": "900000010"
+          },
+          "event_id": "9911f47f-53d4-4226-9f9f-04f7d36a7c5e",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxMjI0NjUyMTMVAgASGBYzRUIwQjBEOTUwRTgzRENBRTZBRjZEAA==",
+            "contactId": "900000010",
+            "message": {
+              "text": "2",
+              "type": "text"
+            },
+            "messageId": "console-b52227484f08",
+            "timestamp": 1789410104000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "previous_conversation_state": {
+          "access_levels": [],
+          "contains_flyer": false,
+          "focus": {
+            "brands": [],
+            "customers": [],
+            "date_window": null,
+            "document": [],
+            "domains": [
+              "product_attachment"
+            ],
+            "extra": {
+              "attachment_type": [
+                {
+                  "canonical_code": "photo",
+                  "confident": true,
+                  "current_message": true,
+                  "hint": "attachment_type",
+                  "hint_confident": true,
+                  "raw": "photo"
+                }
+              ]
+            },
+            "products": [
+              {
+                "canonical_code": null,
+                "confident": true,
+                "current_message": true,
+                "hint": "product",
+                "hint_confident": true,
+                "raw": "srtwc286"
+              }
+            ],
+            "set_page": null,
+            "status": null,
+            "tier": [],
+            "warehouse": []
+          },
+          "ideation": null,
+          "open_question": {
+            "asked_at_turn": 55,
+            "expects": "pick",
+            "kind": "product_pick",
+            "options": [
+              {
+                "entity_type": "product",
+                "label": "SRTWC286-SH-200",
+                "payload": {},
+                "position": 1,
+                "uuid": "65514803-1609-4fe8-8b60-2e908c8f9bd4",
+                "uuids": [
+                  "65514803-1609-4fe8-8b60-2e908c8f9bd4"
+                ]
+              },
+              {
+                "entity_type": "product",
+                "label": "SRTWC286-SH-P",
+                "payload": {},
+                "position": 2,
+                "uuid": "d73a33f3-956b-401f-90c7-0ad6ff792ea1",
+                "uuids": [
+                  "d73a33f3-956b-401f-90c7-0ad6ff792ea1"
+                ]
+              },
+              {
+                "entity_type": "product",
+                "label": "SRTWC286-SH-PP",
+                "payload": {},
+                "position": 3,
+                "uuid": "7a8f2543-ef3b-4e5f-9dad-e29f6f688485",
+                "uuids": [
+                  "7a8f2543-ef3b-4e5f-9dad-e29f6f688485"
+                ]
+              },
+              {
+                "entity_type": "product",
+                "label": "SRTWC286-SH",
+                "payload": {},
+                "position": 4,
+                "uuid": "0d0ed752-fd6f-4759-ad8f-0b40e0cbc601",
+                "uuids": [
+                  "0d0ed752-fd6f-4759-ad8f-0b40e0cbc601"
+                ]
+              },
+              {
+                "entity_type": "product",
+                "label": "SRTWC286-SH-UF",
+                "payload": {},
+                "position": 5,
+                "uuid": "d55d8829-5e3d-4386-ab77-6c93e26d73e7",
+                "uuids": [
+                  "d55d8829-5e3d-4386-ab77-6c93e26d73e7"
+                ]
+              },
+              {
+                "entity_type": "product",
+                "label": "SRTWC286-SH-NEW-150",
+                "payload": {},
+                "position": 6,
+                "uuid": "13ffa633-91db-4db6-9050-5de7a0deb9b8",
+                "uuids": [
+                  "13ffa633-91db-4db6-9050-5de7a0deb9b8"
+                ]
+              },
+              {
+                "entity_type": "product",
+                "label": "SRTWC286-SH-150",
+                "payload": {},
+                "position": 7,
+                "uuid": "78c96bfa-edea-4695-a215-4a02cc0c53a0",
+                "uuids": [
+                  "78c96bfa-edea-4695-a215-4a02cc0c53a0"
+                ]
+              },
+              {
+                "entity_type": "product",
+                "label": "SRTWC286-SH-NEW-P",
+                "payload": {},
+                "position": 8,
+                "uuid": "677b6eb7-f21f-4a65-8195-b969a0a465dd",
+                "uuids": [
+                  "677b6eb7-f21f-4a65-8195-b969a0a465dd"
+                ]
+              },
+              {
+                "entity_type": "product",
+                "label": "SRTWC286-SH-NEW-200",
+                "payload": {},
+                "position": 9,
+                "uuid": "dcaeb074-6b9f-46bd-9e86-97a16e976b59",
+                "uuids": [
+                  "dcaeb074-6b9f-46bd-9e86-97a16e976b59"
+                ]
+              },
+              {
+                "entity_type": "product",
+                "label": "SRTWC286-SH-NEW",
+                "payload": {},
+                "position": 10,
+                "uuid": "77a5e4da-877a-462d-a0f8-cc558fdc5a51",
+                "uuids": [
+                  "77a5e4da-877a-462d-a0f8-cc558fdc5a51"
+                ]
+              }
+            ],
+            "payload": {
+              "domain": "product_attachment"
+            },
+            "team": "marketing_product"
+          }
+        },
+        "prompt_overrides": {
+          "chatbot_semantic_parser": "965268d8-6f6d-46a7-84db-d42d0a129fca"
+        },
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": "console-956e0735-91e4-4173-a6fe-261943fb6ee1"
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message",
+          "send_attachments"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "d73a33f3-956b-401f-90c7-0ad6ff792ea1"
+        ],
+        "focus_after": null,
+        "pending": null,
+        "text": "*product attachments* for d73a33f3-956b-401f-90c7-0ad6ff792ea1, photo:\n1. *Product Code:* SRTWC286-SH-P\n*Attachment Type:* Technical Specifications\n*File Name:* SRTWC286-SH_TD.jpg\n\n2. *Product Code:* SRTWC286-SH-P\n*Attachment Type:* Certification\n*File Name:* SPAN - WCM PC 000318 - EXP 28 AUG 2027.pdf\n*Certificate Number:* 0985-2024\n*Valid Until:* 2027-08-28\n*Validity:* Valid\n\n3. *Product Code:* SRTWC286-SH-P\n*Attachment Type:* Certification\n*File Name:* WCM - WCM PC 000318 - EXP 14 JUNE 2016.pdf\n*Certificate Number:* 000318\n*Valid Until:* 2026-06-14\n*Validity:* Expired\n\n4. *Product Code:* SRTWC286-SH-P\n*Attachment Type:* Certification\n*File Name:* PPS - JBC WCM PC 000318 - EXP 07 JAN 2027.pdf\n*Certificate Number:* 2-11250086\n*Valid Until:* 2027-01-07\n*Validity:* Valid\n\nI have attached the file(s) below.",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "contact_id",
+              "date_mode",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_master_product_attachments_list"
+          },
+          {
+            "args_keys": [],
+            "tool": null
+          }
+        ]
+      },
+      "received_session_vars": {
+        "respond_io_id": "900000010",
+        "session_vars": {
+          "user_response": "Stock details found for the requested products.\n\n1. *Product Code:* SRTKS7061\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 25\n*Outstanding:* 2\n\n2. *Product Code:* SRTKS7061\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-BB\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n3. *Product Code:* SRTKS7061\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SMC\n*Quantity On Hand:* 0\n*Outstanding:* 1\n\n4. *Product Code:* SRTKS7061\n*Warehouse:* MERU\n*System Location:* MWH\n*Quantity On Hand:* 216\n*Outstanding:* 0\n\n5. *Product Code:* SRTKS7061\n*Warehouse:* MERU\n*System Location:* MWH-BB\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n6. *Product Code:* SRTKS7061\n*Warehouse:* WH3 (PSM)\n*System Location:* WH3-PSM\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n7. *Product Code:* SRTKS7061-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 21\n*Outstanding:* 0\n\n8. *Product Code:* SRTKS7061-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-BB\n*Quantity On Hand:* 1\n*Outstanding:* 1\n\n9. *Product Code:* SRTKS7061-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SMC\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n10. *Product Code:* SRTKS7061-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SYNT\n*Quantity On Hand:* 4\n*Outstanding:* 4\n\n11. *Product Code:* SRTKS7061-BL\n*Warehouse:* MERU\n*System Location:* MWH\n*Quantity On Hand:* 9\n*Outstanding:* 0\n\n_Data last updated: 14/09/2026 17:25:40_",
+          "variables": {
+            "access_levels": [],
+            "contains_flyer": false,
+            "focus": {
+              "brands": [],
+              "customers": [],
+              "date_window": null,
+              "document": [],
+              "domains": [
+                "product_attachment"
+              ],
+              "extra": {
+                "attachment_type": [
+                  {
+                    "canonical_code": "photo",
+                    "confident": true,
+                    "current_message": true,
+                    "hint": "attachment_type",
+                    "hint_confident": true,
+                    "raw": "photo"
+                  }
+                ]
+              },
+              "products": [
+                {
+                  "canonical_code": null,
+                  "confident": true,
+                  "current_message": true,
+                  "hint": "product",
+                  "hint_confident": true,
+                  "raw": "srtwc286"
+                }
+              ],
+              "set_page": null,
+              "status": null,
+              "tier": [],
+              "warehouse": []
+            },
+            "ideation": null,
+            "open_question": {
+              "asked_at_turn": 55,
+              "expects": "pick",
+              "kind": "product_pick",
+              "options": [
+                {
+                  "entity_type": "product",
+                  "label": "SRTWC286-SH-200",
+                  "payload": {},
+                  "position": 1,
+                  "uuid": "65514803-1609-4fe8-8b60-2e908c8f9bd4",
+                  "uuids": [
+                    "65514803-1609-4fe8-8b60-2e908c8f9bd4"
+                  ]
+                },
+                {
+                  "entity_type": "product",
+                  "label": "SRTWC286-SH-P",
+                  "payload": {},
+                  "position": 2,
+                  "uuid": "d73a33f3-956b-401f-90c7-0ad6ff792ea1",
+                  "uuids": [
+                    "d73a33f3-956b-401f-90c7-0ad6ff792ea1"
+                  ]
+                },
+                {
+                  "entity_type": "product",
+                  "label": "SRTWC286-SH-PP",
+                  "payload": {},
+                  "position": 3,
+                  "uuid": "7a8f2543-ef3b-4e5f-9dad-e29f6f688485",
+                  "uuids": [
+                    "7a8f2543-ef3b-4e5f-9dad-e29f6f688485"
+                  ]
+                },
+                {
+                  "entity_type": "product",
+                  "label": "SRTWC286-SH",
+                  "payload": {},
+                  "position": 4,
+                  "uuid": "0d0ed752-fd6f-4759-ad8f-0b40e0cbc601",
+                  "uuids": [
+                    "0d0ed752-fd6f-4759-ad8f-0b40e0cbc601"
+                  ]
+                },
+                {
+                  "entity_type": "product",
+                  "label": "SRTWC286-SH-UF",
+                  "payload": {},
+                  "position": 5,
+                  "uuid": "d55d8829-5e3d-4386-ab77-6c93e26d73e7",
+                  "uuids": [
+                    "d55d8829-5e3d-4386-ab77-6c93e26d73e7"
+                  ]
+                },
+                {
+                  "entity_type": "product",
+                  "label": "SRTWC286-SH-NEW-150",
+                  "payload": {},
+                  "position": 6,
+                  "uuid": "13ffa633-91db-4db6-9050-5de7a0deb9b8",
+                  "uuids": [
+                    "13ffa633-91db-4db6-9050-5de7a0deb9b8"
+                  ]
+                },
+                {
+                  "entity_type": "product",
+                  "label": "SRTWC286-SH-150",
+                  "payload": {},
+                  "position": 7,
+                  "uuid": "78c96bfa-edea-4695-a215-4a02cc0c53a0",
+                  "uuids": [
+                    "78c96bfa-edea-4695-a215-4a02cc0c53a0"
+                  ]
+                },
+                {
+                  "entity_type": "product",
+                  "label": "SRTWC286-SH-NEW-P",
+                  "payload": {},
+                  "position": 8,
+                  "uuid": "677b6eb7-f21f-4a65-8195-b969a0a465dd",
+                  "uuids": [
+                    "677b6eb7-f21f-4a65-8195-b969a0a465dd"
+                  ]
+                },
+                {
+                  "entity_type": "product",
+                  "label": "SRTWC286-SH-NEW-200",
+                  "payload": {},
+                  "position": 9,
+                  "uuid": "dcaeb074-6b9f-46bd-9e86-97a16e976b59",
+                  "uuids": [
+                    "dcaeb074-6b9f-46bd-9e86-97a16e976b59"
+                  ]
+                },
+                {
+                  "entity_type": "product",
+                  "label": "SRTWC286-SH-NEW",
+                  "payload": {},
+                  "position": 10,
+                  "uuid": "77a5e4da-877a-462d-a0f8-cc558fdc5a51",
+                  "uuids": [
+                    "77a5e4da-877a-462d-a0f8-cc558fdc5a51"
+                  ]
+                }
+              ],
+              "payload": {
+                "domain": "product_attachment"
+              },
+              "team": "marketing_product"
+            }
+          }
+        }
+      },
+      "resolutions": {
+        "resolutions": [],
+        "tokens": [],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 23,
+        "recorded_at": "2026-09-16T11:28:37.735989+09:00",
+        "turn_id": "fed0ecba-a42e-4401-ac58-305aac9b1f6f"
+      },
+      "switches": {
+        "chatbot_business_lane_enabled": true,
+        "chatbot_completed_lanes": [
+          "out_of_scope",
+          "access_denied",
+          "demand_qty",
+          "clarify_menu",
+          "escalate_offer",
+          "escalation_declined",
+          "ideate",
+          "low_signal",
+          "not_supported",
+          "offer_hold",
+          "stock_denied",
+          "check_promotion",
+          "business_query"
+        ],
+        "chatbot_crossdomain_ladder": {
+          "incoming": [
+            "inventory",
+            "purchase_order"
+          ],
+          "inventory": [
+            "incoming",
+            "purchase_order"
+          ]
+        },
+        "chatbot_ordering_enabled": true,
+        "chatbot_stock_denial_enabled": true,
+        "chatbot_tier_order": [
+          "dealer",
+          "office",
+          "end_user"
+        ],
+        "chatbot_unsupported_domains": [
+          "goods_receive"
+        ],
+        "switches_source": "source_db_at_record_time"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 2,
+              "scalar_truncated": [],
+              "skipped": [
+                {
+                  "code": null,
+                  "reason": "missing_or_bad_uuid"
+                }
+              ],
+              "total_uuids_passed": 1,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "contact_id": "900000010",
+            "date_mode": null,
+            "is_active": null,
+            "product_ids": [
+              "d73a33f3-956b-401f-90c7-0ad6ff792ea1"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "attachments": [
+              {
+                "attachmentType": "Technical Specifications",
+                "filename": "SRTWC286-SH.jpg",
+                "mimeType": "image/jpeg",
+                "uploadedAt": "2026-05-14T15:26:39.064384",
+                "url": "https://cdn-sorento.com/technical_specifications/4a85f006-41ed-4797-a911-c13dcd9cfbd4/SRTWC286-SH.jpg"
+              },
+              {
+                "attachmentType": "Certification",
+                "filename": "SPAN - WCM PC 000318 - EXP 28 AUG 2027.pdf",
+                "mimeType": "application/pdf",
+                "uploadedAt": "2026-08-06T11:40:16.191731",
+                "url": "https://cdn-sorento.com/certification/c6171bf5-e518-45ef-9135-896414a73dc4/SPAN - WCM PC 000318 - EXP 28 AUG 2027.pdf"
+              },
+              {
+                "attachmentType": "Certification",
+                "filename": "WCM - WCM PC 000318 - EXP 14 JUNE 2016.pdf",
+                "mimeType": "application/pdf",
+                "uploadedAt": "2026-03-10T10:00:36.514941",
+                "url": "https://cdn-sorento.com/product_attachments/6a7fdaf3-da25-4b5f-b8f3-5114f799f303/WCM - WCM PC 000318 - EXP 14 JUNE 2016.pdf"
+              },
+              {
+                "attachmentType": "Certification",
+                "filename": "PPS - JBC WCM PC 000318 - EXP 07 JAN 2027.pdf",
+                "mimeType": "application/pdf",
+                "uploadedAt": "2026-05-14T15:35:01.069808",
+                "url": "https://cdn-sorento.com/certification/6ea5c58e-73a4-4279-9100-82ed2389ec59/PPS - JBC WCM PC 000318 - EXP 07 JAN 2027.pdf"
+              }
+            ],
+            "fallback_used": false,
+            "has_result": true,
+            "intro": "I have attached the file(s) below.",
+            "items": [
+              {
+                "fields": [
+                  {
+                    "label": "Product Code",
+                    "value": "SRTWC286-SH-P"
+                  },
+                  {
+                    "label": "Attachment Type",
+                    "value": "Technical Specifications"
+                  },
+                  {
+                    "label": "File Name",
+                    "value": "SRTWC286-SH_TD.jpg"
+                  }
+                ],
+                "flags": {
+                  "discontinued": true,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTWC286-SH-P"
+              },
+              {
+                "fields": [
+                  {
+                    "label": "Product Code",
+                    "value": "SRTWC286-SH-P"
+                  },
+                  {
+                    "label": "Attachment Type",
+                    "value": "Certification"
+                  },
+                  {
+                    "label": "File Name",
+                    "value": "SPAN - WCM PC 000318 - EXP 28 AUG 2027.pdf"
+                  },
+                  {
+                    "label": "Certificate Number",
+                    "value": "0985-2024"
+                  },
+                  {
+                    "label": "Valid Until",
+                    "value": "2027-08-28"
+                  },
+                  {
+                    "label": "Validity",
+                    "value": "Valid"
+                  }
+                ],
+                "flags": {
+                  "discontinued": true,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTWC286-SH-P"
+              },
+              {
+                "fields": [
+                  {
+                    "label": "Product Code",
+                    "value": "SRTWC286-SH-P"
+                  },
+                  {
+                    "label": "Attachment Type",
+                    "value": "Certification"
+                  },
+                  {
+                    "label": "File Name",
+                    "value": "WCM - WCM PC 000318 - EXP 14 JUNE 2016.pdf"
+                  },
+                  {
+                    "label": "Certificate Number",
+                    "value": "000318"
+                  },
+                  {
+                    "label": "Valid Until",
+                    "value": "2026-06-14"
+                  },
+                  {
+                    "label": "Validity",
+                    "value": "Expired"
+                  }
+                ],
+                "flags": {
+                  "discontinued": true,
+                  "expired": true,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTWC286-SH-P"
+              },
+              {
+                "fields": [
+                  {
+                    "label": "Product Code",
+                    "value": "SRTWC286-SH-P"
+                  },
+                  {
+                    "label": "Attachment Type",
+                    "value": "Certification"
+                  },
+                  {
+                    "label": "File Name",
+                    "value": "PPS - JBC WCM PC 000318 - EXP 07 JAN 2027.pdf"
+                  },
+                  {
+                    "label": "Certificate Number",
+                    "value": "2-11250086"
+                  },
+                  {
+                    "label": "Valid Until",
+                    "value": "2027-01-07"
+                  },
+                  {
+                    "label": "Validity",
+                    "value": "Valid"
+                  }
+                ],
+                "flags": {
+                  "discontinued": true,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTWC286-SH-P"
+              }
+            ],
+            "last_updated_at": "2026-08-06T11:40:16.191731",
+            "result_type": "product_attachments"
+          },
+          "tool": "crm_master_product_attachments_list"
+        },
+        {
+          "args": null,
+          "envelope": null,
+          "tool": null
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "anaphora": {
+          "backward_reference": false
+        },
+        "answers_open_question": {
+          "answer": "2",
+          "picks": [
+            2
+          ],
+          "resolved": true
+        },
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "continuation": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "document": [],
+        "domain_hint": null,
+        "entities": [],
+        "entity_op": "reuse",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": null,
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "casual",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [
+          2
+        ],
+        "reference_target": "result",
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "status": null,
+        "top_n": null,
+        "user_goal": "trying to select option 2 from the pending product pick list"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "Order Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow",
+        "hidden_spec_keys": []
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1061691@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1061691,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1777880659,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000010"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000010",
+          "id": "900000010",
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000010",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "console",
+        "is_test": true,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000015\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "id": "900000010"
+          },
+          "event_id": "9911f47f-53d4-4226-9f9f-04f7d36a7c5e",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxMjI0NjUyMTMVAgASGBYzRUIwQjBEOTUwRTgzRENBRTZBRjZEAA==",
+            "contactId": "900000010",
+            "message": {
+              "text": "delivery to hanlim",
+              "type": "text"
+            },
+            "messageId": "console-7ba56b956d40",
+            "timestamp": 1789410104000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "previous_conversation_state": {
+          "access_levels": [],
+          "contains_flyer": false,
+          "focus": {
+            "brands": [],
+            "customers": [],
+            "date_window": null,
+            "document": [],
+            "domains": [
+              "product_attachment"
+            ],
+            "extra": {
+              "attachment_type": [
+                {
+                  "canonical_code": "photo",
+                  "confident": true,
+                  "current_message": true,
+                  "hint": "attachment_type",
+                  "hint_confident": true,
+                  "raw": "photo"
+                }
+              ]
+            },
+            "products": [
+              {
+                "canonical_code": "d73a33f3-956b-401f-90c7-0ad6ff792ea1",
+                "confident": true,
+                "current_message": true,
+                "hint": "product",
+                "raw": "SRTWC286-SH-P",
+                "uuid": "d73a33f3-956b-401f-90c7-0ad6ff792ea1"
+              }
+            ],
+            "set_page": null,
+            "status": null,
+            "tier": [],
+            "warehouse": []
+          },
+          "ideation": null,
+          "open_question": {
+            "asked_at_turn": 55,
+            "expects": "pick",
+            "kind": "product_pick",
+            "options": [
+              {
+                "entity_type": "product",
+                "label": "SRTWC286-SH-200",
+                "payload": {},
+                "position": 1,
+                "uuid": "65514803-1609-4fe8-8b60-2e908c8f9bd4",
+                "uuids": [
+                  "65514803-1609-4fe8-8b60-2e908c8f9bd4"
+                ]
+              },
+              {
+                "entity_type": "product",
+                "label": "SRTWC286-SH-P",
+                "payload": {},
+                "position": 2,
+                "uuid": "d73a33f3-956b-401f-90c7-0ad6ff792ea1",
+                "uuids": [
+                  "d73a33f3-956b-401f-90c7-0ad6ff792ea1"
+                ]
+              },
+              {
+                "entity_type": "product",
+                "label": "SRTWC286-SH-PP",
+                "payload": {},
+                "position": 3,
+                "uuid": "7a8f2543-ef3b-4e5f-9dad-e29f6f688485",
+                "uuids": [
+                  "7a8f2543-ef3b-4e5f-9dad-e29f6f688485"
+                ]
+              },
+              {
+                "entity_type": "product",
+                "label": "SRTWC286-SH",
+                "payload": {},
+                "position": 4,
+                "uuid": "0d0ed752-fd6f-4759-ad8f-0b40e0cbc601",
+                "uuids": [
+                  "0d0ed752-fd6f-4759-ad8f-0b40e0cbc601"
+                ]
+              },
+              {
+                "entity_type": "product",
+                "label": "SRTWC286-SH-UF",
+                "payload": {},
+                "position": 5,
+                "uuid": "d55d8829-5e3d-4386-ab77-6c93e26d73e7",
+                "uuids": [
+                  "d55d8829-5e3d-4386-ab77-6c93e26d73e7"
+                ]
+              },
+              {
+                "entity_type": "product",
+                "label": "SRTWC286-SH-NEW-150",
+                "payload": {},
+                "position": 6,
+                "uuid": "13ffa633-91db-4db6-9050-5de7a0deb9b8",
+                "uuids": [
+                  "13ffa633-91db-4db6-9050-5de7a0deb9b8"
+                ]
+              },
+              {
+                "entity_type": "product",
+                "label": "SRTWC286-SH-150",
+                "payload": {},
+                "position": 7,
+                "uuid": "78c96bfa-edea-4695-a215-4a02cc0c53a0",
+                "uuids": [
+                  "78c96bfa-edea-4695-a215-4a02cc0c53a0"
+                ]
+              },
+              {
+                "entity_type": "product",
+                "label": "SRTWC286-SH-NEW-P",
+                "payload": {},
+                "position": 8,
+                "uuid": "677b6eb7-f21f-4a65-8195-b969a0a465dd",
+                "uuids": [
+                  "677b6eb7-f21f-4a65-8195-b969a0a465dd"
+                ]
+              },
+              {
+                "entity_type": "product",
+                "label": "SRTWC286-SH-NEW-200",
+                "payload": {},
+                "position": 9,
+                "uuid": "dcaeb074-6b9f-46bd-9e86-97a16e976b59",
+                "uuids": [
+                  "dcaeb074-6b9f-46bd-9e86-97a16e976b59"
+                ]
+              },
+              {
+                "entity_type": "product",
+                "label": "SRTWC286-SH-NEW",
+                "payload": {},
+                "position": 10,
+                "uuid": "77a5e4da-877a-462d-a0f8-cc558fdc5a51",
+                "uuids": [
+                  "77a5e4da-877a-462d-a0f8-cc558fdc5a51"
+                ]
+              }
+            ],
+            "payload": {
+              "answered_positions": [
+                2
+              ],
+              "domain": "product_attachment"
+            },
+            "team": "marketing_product"
+          }
+        },
+        "prompt_overrides": {
+          "chatbot_semantic_parser": "965268d8-6f6d-46a7-84db-d42d0a129fca"
+        },
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": "console-956e0735-91e4-4173-a6fe-261943fb6ee1"
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [],
+        "focus_after": null,
+        "pending": {
+          "kind": null,
+          "option_labels": [
+            "HANLIM TRADING SDN BHD [A/C II]",
+            "HANLIM TRADING SDN BHD [A/C I]",
+            "HANLIM TRADING SDN BHD [A/C III]",
+            "HANLIM TRADING SDN BHD [A/C IV]",
+            "HANLIM TRADING SDN BHD",
+            "HANLIM TRADING SDN BHD (CERAMIC & ELLECI)"
+          ]
+        },
+        "text": "Which customer do you mean?\n1. HANLIM TRADING SDN BHD [A/C II]\n2. HANLIM TRADING SDN BHD [A/C I]\n3. HANLIM TRADING SDN BHD [A/C III]\n4. HANLIM TRADING SDN BHD [A/C IV]\n5. HANLIM TRADING SDN BHD\n6. HANLIM TRADING SDN BHD (CERAMIC & ELLECI)",
+        "tools": []
+      },
+      "received_session_vars": {
+        "respond_io_id": "900000010",
+        "session_vars": {
+          "user_response": "Stock details found for the requested products.\n\n1. *Product Code:* SRTKS7061\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 25\n*Outstanding:* 2\n\n2. *Product Code:* SRTKS7061\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-BB\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n3. *Product Code:* SRTKS7061\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SMC\n*Quantity On Hand:* 0\n*Outstanding:* 1\n\n4. *Product Code:* SRTKS7061\n*Warehouse:* MERU\n*System Location:* MWH\n*Quantity On Hand:* 216\n*Outstanding:* 0\n\n5. *Product Code:* SRTKS7061\n*Warehouse:* MERU\n*System Location:* MWH-BB\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n6. *Product Code:* SRTKS7061\n*Warehouse:* WH3 (PSM)\n*System Location:* WH3-PSM\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n7. *Product Code:* SRTKS7061-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 21\n*Outstanding:* 0\n\n8. *Product Code:* SRTKS7061-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-BB\n*Quantity On Hand:* 1\n*Outstanding:* 1\n\n9. *Product Code:* SRTKS7061-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SMC\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n10. *Product Code:* SRTKS7061-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SYNT\n*Quantity On Hand:* 4\n*Outstanding:* 4\n\n11. *Product Code:* SRTKS7061-BL\n*Warehouse:* MERU\n*System Location:* MWH\n*Quantity On Hand:* 9\n*Outstanding:* 0\n\n_Data last updated: 14/09/2026 17:25:40_",
+          "variables": {
+            "access_levels": [],
+            "contains_flyer": false,
+            "focus": {
+              "brands": [],
+              "customers": [],
+              "date_window": null,
+              "document": [],
+              "domains": [
+                "product_attachment"
+              ],
+              "extra": {
+                "attachment_type": [
+                  {
+                    "canonical_code": "photo",
+                    "confident": true,
+                    "current_message": true,
+                    "hint": "attachment_type",
+                    "hint_confident": true,
+                    "raw": "photo"
+                  }
+                ]
+              },
+              "products": [
+                {
+                  "canonical_code": "d73a33f3-956b-401f-90c7-0ad6ff792ea1",
+                  "confident": true,
+                  "current_message": true,
+                  "hint": "product",
+                  "raw": "SRTWC286-SH-P",
+                  "uuid": "d73a33f3-956b-401f-90c7-0ad6ff792ea1"
+                }
+              ],
+              "set_page": null,
+              "status": null,
+              "tier": [],
+              "warehouse": []
+            },
+            "ideation": null,
+            "open_question": {
+              "asked_at_turn": 55,
+              "expects": "pick",
+              "kind": "product_pick",
+              "options": [
+                {
+                  "entity_type": "product",
+                  "label": "SRTWC286-SH-200",
+                  "payload": {},
+                  "position": 1,
+                  "uuid": "65514803-1609-4fe8-8b60-2e908c8f9bd4",
+                  "uuids": [
+                    "65514803-1609-4fe8-8b60-2e908c8f9bd4"
+                  ]
+                },
+                {
+                  "entity_type": "product",
+                  "label": "SRTWC286-SH-P",
+                  "payload": {},
+                  "position": 2,
+                  "uuid": "d73a33f3-956b-401f-90c7-0ad6ff792ea1",
+                  "uuids": [
+                    "d73a33f3-956b-401f-90c7-0ad6ff792ea1"
+                  ]
+                },
+                {
+                  "entity_type": "product",
+                  "label": "SRTWC286-SH-PP",
+                  "payload": {},
+                  "position": 3,
+                  "uuid": "7a8f2543-ef3b-4e5f-9dad-e29f6f688485",
+                  "uuids": [
+                    "7a8f2543-ef3b-4e5f-9dad-e29f6f688485"
+                  ]
+                },
+                {
+                  "entity_type": "product",
+                  "label": "SRTWC286-SH",
+                  "payload": {},
+                  "position": 4,
+                  "uuid": "0d0ed752-fd6f-4759-ad8f-0b40e0cbc601",
+                  "uuids": [
+                    "0d0ed752-fd6f-4759-ad8f-0b40e0cbc601"
+                  ]
+                },
+                {
+                  "entity_type": "product",
+                  "label": "SRTWC286-SH-UF",
+                  "payload": {},
+                  "position": 5,
+                  "uuid": "d55d8829-5e3d-4386-ab77-6c93e26d73e7",
+                  "uuids": [
+                    "d55d8829-5e3d-4386-ab77-6c93e26d73e7"
+                  ]
+                },
+                {
+                  "entity_type": "product",
+                  "label": "SRTWC286-SH-NEW-150",
+                  "payload": {},
+                  "position": 6,
+                  "uuid": "13ffa633-91db-4db6-9050-5de7a0deb9b8",
+                  "uuids": [
+                    "13ffa633-91db-4db6-9050-5de7a0deb9b8"
+                  ]
+                },
+                {
+                  "entity_type": "product",
+                  "label": "SRTWC286-SH-150",
+                  "payload": {},
+                  "position": 7,
+                  "uuid": "78c96bfa-edea-4695-a215-4a02cc0c53a0",
+                  "uuids": [
+                    "78c96bfa-edea-4695-a215-4a02cc0c53a0"
+                  ]
+                },
+                {
+                  "entity_type": "product",
+                  "label": "SRTWC286-SH-NEW-P",
+                  "payload": {},
+                  "position": 8,
+                  "uuid": "677b6eb7-f21f-4a65-8195-b969a0a465dd",
+                  "uuids": [
+                    "677b6eb7-f21f-4a65-8195-b969a0a465dd"
+                  ]
+                },
+                {
+                  "entity_type": "product",
+                  "label": "SRTWC286-SH-NEW-200",
+                  "payload": {},
+                  "position": 9,
+                  "uuid": "dcaeb074-6b9f-46bd-9e86-97a16e976b59",
+                  "uuids": [
+                    "dcaeb074-6b9f-46bd-9e86-97a16e976b59"
+                  ]
+                },
+                {
+                  "entity_type": "product",
+                  "label": "SRTWC286-SH-NEW",
+                  "payload": {},
+                  "position": 10,
+                  "uuid": "77a5e4da-877a-462d-a0f8-cc558fdc5a51",
+                  "uuids": [
+                    "77a5e4da-877a-462d-a0f8-cc558fdc5a51"
+                  ]
+                }
+              ],
+              "payload": {
+                "answered_positions": [
+                  2
+                ],
+                "domain": "product_attachment"
+              },
+              "team": "marketing_product"
+            }
+          }
+        }
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [],
+            "resolved": false,
+            "token": "hanlim"
+          }
+        ],
+        "tokens": [
+          "hanlim"
+        ],
+        "unresolved_tokens": [
+          "hanlim"
+        ]
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 23,
+        "recorded_at": "2026-09-16T11:29:06.811980+09:00",
+        "turn_id": "2ba9f8c6-4882-453f-9cf6-4d3580321c13"
+      },
+      "switches": {
+        "chatbot_business_lane_enabled": true,
+        "chatbot_completed_lanes": [
+          "out_of_scope",
+          "access_denied",
+          "demand_qty",
+          "clarify_menu",
+          "escalate_offer",
+          "escalation_declined",
+          "ideate",
+          "low_signal",
+          "not_supported",
+          "offer_hold",
+          "stock_denied",
+          "check_promotion",
+          "business_query"
+        ],
+        "chatbot_crossdomain_ladder": {
+          "incoming": [
+            "inventory",
+            "purchase_order"
+          ],
+          "inventory": [
+            "incoming",
+            "purchase_order"
+          ]
+        },
+        "chatbot_ordering_enabled": true,
+        "chatbot_stock_denial_enabled": true,
+        "chatbot_tier_order": [
+          "dealer",
+          "office",
+          "end_user"
+        ],
+        "chatbot_unsupported_domains": [
+          "goods_receive"
+        ],
+        "switches_source": "source_db_at_record_time"
+      },
+      "tool_results": [],
+      "verdict": {
+        "access_levels": [],
+        "anaphora": {
+          "backward_reference": false
+        },
+        "answers_open_question": {
+          "answer": null,
+          "picks": null,
+          "resolved": null
+        },
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "continuation": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "document": [],
+        "domain_hint": "order",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "customer",
+            "hint_confident": true,
+            "raw": "hanlim"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_order",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [
+          "delivery"
+        ],
+        "routing": {
+          "suggested_agent": "order_enquiries",
+          "suggested_team": "customer_service"
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "status": null,
+        "top_n": null,
+        "user_goal": "trying to check delivery to hanlim"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow",
+        "hidden_spec_keys": []
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1061691@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1061691,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1777880659,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000010"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000010",
+          "id": "900000010",
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000010",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "console",
+        "is_test": true,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000015\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "id": "900000010"
+          },
+          "event_id": "9911f47f-53d4-4226-9f9f-04f7d36a7c5e",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxMjI0NjUyMTMVAgASGBYzRUIwQjBEOTUwRTgzRENBRTZBRjZEAA==",
+            "contactId": "900000010",
+            "message": {
+              "text": "1",
+              "type": "text"
+            },
+            "messageId": "console-e1f5a375fb46",
+            "timestamp": 1789410104000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "previous_conversation_state": {
+          "access_levels": [],
+          "contains_flyer": false,
+          "focus": {
+            "brands": [],
+            "customers": [
+              {
+                "canonical_code": null,
+                "confident": true,
+                "current_message": true,
+                "hint": "customer",
+                "hint_confident": true,
+                "raw": "hanlim"
+              }
+            ],
+            "date_window": null,
+            "document": [],
+            "domains": [
+              "order"
+            ],
+            "extra": {
+              "attachment_type": [
+                {
+                  "canonical_code": "photo",
+                  "confident": true,
+                  "current_message": true,
+                  "hint": "attachment_type",
+                  "hint_confident": true,
+                  "raw": "photo"
+                }
+              ]
+            },
+            "products": [
+              {
+                "canonical_code": "d73a33f3-956b-401f-90c7-0ad6ff792ea1",
+                "confident": true,
+                "current_message": true,
+                "hint": "product",
+                "raw": "SRTWC286-SH-P",
+                "uuid": "d73a33f3-956b-401f-90c7-0ad6ff792ea1"
+              }
+            ],
+            "set_page": null,
+            "status": null,
+            "tier": [],
+            "warehouse": []
+          },
+          "ideation": null,
+          "open_question": {
+            "asked_at_turn": 57,
+            "expects": "pick",
+            "kind": "customer_pick",
+            "options": [
+              {
+                "entity_type": "customer",
+                "label": "HANLIM TRADING SDN BHD [A/C II]",
+                "payload": {},
+                "position": 1,
+                "uuid": "6f5a419b-840a-4e4d-8107-291971dd3bb8",
+                "uuids": [
+                  "6f5a419b-840a-4e4d-8107-291971dd3bb8"
+                ]
+              },
+              {
+                "entity_type": "customer",
+                "label": "HANLIM TRADING SDN BHD [A/C I]",
+                "payload": {},
+                "position": 2,
+                "uuid": "c2f38bdf-767a-4b04-b92d-1c0d56cfd4d3",
+                "uuids": [
+                  "c2f38bdf-767a-4b04-b92d-1c0d56cfd4d3"
+                ]
+              },
+              {
+                "entity_type": "customer",
+                "label": "HANLIM TRADING SDN BHD [A/C III]",
+                "payload": {},
+                "position": 3,
+                "uuid": "6b52807a-537b-437d-9f55-12f7fda29df8",
+                "uuids": [
+                  "6b52807a-537b-437d-9f55-12f7fda29df8"
+                ]
+              },
+              {
+                "entity_type": "customer",
+                "label": "HANLIM TRADING SDN BHD [A/C IV]",
+                "payload": {},
+                "position": 4,
+                "uuid": "2a4575e0-836b-4a5d-8566-73223465020d",
+                "uuids": [
+                  "2a4575e0-836b-4a5d-8566-73223465020d"
+                ]
+              },
+              {
+                "entity_type": "customer",
+                "label": "HANLIM TRADING SDN BHD",
+                "payload": {},
+                "position": 5,
+                "uuid": "3c15f4e4-be46-4fd7-9de8-3430a9b1217a",
+                "uuids": [
+                  "3c15f4e4-be46-4fd7-9de8-3430a9b1217a"
+                ]
+              },
+              {
+                "entity_type": "customer",
+                "label": "HANLIM TRADING SDN BHD (CERAMIC & ELLECI)",
+                "payload": {},
+                "position": 6,
+                "uuid": "2d0cd958-9f5e-4eee-8b6e-ed31a94bee44",
+                "uuids": [
+                  "2d0cd958-9f5e-4eee-8b6e-ed31a94bee44"
+                ]
+              }
+            ],
+            "payload": {
+              "domain": "order"
+            },
+            "team": "customer_service"
+          }
+        },
+        "prompt_overrides": {
+          "chatbot_semantic_parser": "965268d8-6f6d-46a7-84db-d42d0a129fca"
+        },
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": "console-956e0735-91e4-4173-a6fe-261943fb6ee1"
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "6f5a419b-840a-4e4d-8107-291971dd3bb8"
+        ],
+        "focus_after": null,
+        "pending": {
+          "kind": null,
+          "option_labels": [
+            "orders"
+          ]
+        },
+        "text": "*orders* for HANLIM TRADING SDN BHD [A/C II]:\nNo matching results found.\n\nWould you like me to escalate?",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "contact_id",
+              "customer_ids",
+              "date_mode",
+              "is_active",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_order_management_orders_list"
+          },
+          {
+            "args_keys": [],
+            "tool": null
+          }
+        ]
+      },
+      "received_session_vars": {
+        "respond_io_id": "900000010",
+        "session_vars": {
+          "user_response": "Stock details found for the requested products.\n\n1. *Product Code:* SRTKS7061\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 25\n*Outstanding:* 2\n\n2. *Product Code:* SRTKS7061\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-BB\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n3. *Product Code:* SRTKS7061\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SMC\n*Quantity On Hand:* 0\n*Outstanding:* 1\n\n4. *Product Code:* SRTKS7061\n*Warehouse:* MERU\n*System Location:* MWH\n*Quantity On Hand:* 216\n*Outstanding:* 0\n\n5. *Product Code:* SRTKS7061\n*Warehouse:* MERU\n*System Location:* MWH-BB\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n6. *Product Code:* SRTKS7061\n*Warehouse:* WH3 (PSM)\n*System Location:* WH3-PSM\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n7. *Product Code:* SRTKS7061-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 21\n*Outstanding:* 0\n\n8. *Product Code:* SRTKS7061-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-BB\n*Quantity On Hand:* 1\n*Outstanding:* 1\n\n9. *Product Code:* SRTKS7061-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SMC\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n10. *Product Code:* SRTKS7061-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SYNT\n*Quantity On Hand:* 4\n*Outstanding:* 4\n\n11. *Product Code:* SRTKS7061-BL\n*Warehouse:* MERU\n*System Location:* MWH\n*Quantity On Hand:* 9\n*Outstanding:* 0\n\n_Data last updated: 14/09/2026 17:25:40_",
+          "variables": {
+            "access_levels": [],
+            "contains_flyer": false,
+            "focus": {
+              "brands": [],
+              "customers": [
+                {
+                  "canonical_code": null,
+                  "confident": true,
+                  "current_message": true,
+                  "hint": "customer",
+                  "hint_confident": true,
+                  "raw": "hanlim"
+                }
+              ],
+              "date_window": null,
+              "document": [],
+              "domains": [
+                "order"
+              ],
+              "extra": {
+                "attachment_type": [
+                  {
+                    "canonical_code": "photo",
+                    "confident": true,
+                    "current_message": true,
+                    "hint": "attachment_type",
+                    "hint_confident": true,
+                    "raw": "photo"
+                  }
+                ]
+              },
+              "products": [
+                {
+                  "canonical_code": "d73a33f3-956b-401f-90c7-0ad6ff792ea1",
+                  "confident": true,
+                  "current_message": true,
+                  "hint": "product",
+                  "raw": "SRTWC286-SH-P",
+                  "uuid": "d73a33f3-956b-401f-90c7-0ad6ff792ea1"
+                }
+              ],
+              "set_page": null,
+              "status": null,
+              "tier": [],
+              "warehouse": []
+            },
+            "ideation": null,
+            "open_question": {
+              "asked_at_turn": 57,
+              "expects": "pick",
+              "kind": "customer_pick",
+              "options": [
+                {
+                  "entity_type": "customer",
+                  "label": "HANLIM TRADING SDN BHD [A/C II]",
+                  "payload": {},
+                  "position": 1,
+                  "uuid": "6f5a419b-840a-4e4d-8107-291971dd3bb8",
+                  "uuids": [
+                    "6f5a419b-840a-4e4d-8107-291971dd3bb8"
+                  ]
+                },
+                {
+                  "entity_type": "customer",
+                  "label": "HANLIM TRADING SDN BHD [A/C I]",
+                  "payload": {},
+                  "position": 2,
+                  "uuid": "c2f38bdf-767a-4b04-b92d-1c0d56cfd4d3",
+                  "uuids": [
+                    "c2f38bdf-767a-4b04-b92d-1c0d56cfd4d3"
+                  ]
+                },
+                {
+                  "entity_type": "customer",
+                  "label": "HANLIM TRADING SDN BHD [A/C III]",
+                  "payload": {},
+                  "position": 3,
+                  "uuid": "6b52807a-537b-437d-9f55-12f7fda29df8",
+                  "uuids": [
+                    "6b52807a-537b-437d-9f55-12f7fda29df8"
+                  ]
+                },
+                {
+                  "entity_type": "customer",
+                  "label": "HANLIM TRADING SDN BHD [A/C IV]",
+                  "payload": {},
+                  "position": 4,
+                  "uuid": "2a4575e0-836b-4a5d-8566-73223465020d",
+                  "uuids": [
+                    "2a4575e0-836b-4a5d-8566-73223465020d"
+                  ]
+                },
+                {
+                  "entity_type": "customer",
+                  "label": "HANLIM TRADING SDN BHD",
+                  "payload": {},
+                  "position": 5,
+                  "uuid": "3c15f4e4-be46-4fd7-9de8-3430a9b1217a",
+                  "uuids": [
+                    "3c15f4e4-be46-4fd7-9de8-3430a9b1217a"
+                  ]
+                },
+                {
+                  "entity_type": "customer",
+                  "label": "HANLIM TRADING SDN BHD (CERAMIC & ELLECI)",
+                  "payload": {},
+                  "position": 6,
+                  "uuid": "2d0cd958-9f5e-4eee-8b6e-ed31a94bee44",
+                  "uuids": [
+                    "2d0cd958-9f5e-4eee-8b6e-ed31a94bee44"
+                  ]
+                }
+              ],
+              "payload": {
+                "domain": "order"
+              },
+              "team": "customer_service"
+            }
+          }
+        }
+      },
+      "resolutions": {
+        "resolutions": [],
+        "tokens": [],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 23,
+        "recorded_at": "2026-09-16T11:29:33.092742+09:00",
+        "turn_id": "08c88e3f-c9de-479f-9ab7-d2b8ee1cf30d"
+      },
+      "switches": {
+        "chatbot_business_lane_enabled": true,
+        "chatbot_completed_lanes": [
+          "out_of_scope",
+          "access_denied",
+          "demand_qty",
+          "clarify_menu",
+          "escalate_offer",
+          "escalation_declined",
+          "ideate",
+          "low_signal",
+          "not_supported",
+          "offer_hold",
+          "stock_denied",
+          "check_promotion",
+          "business_query"
+        ],
+        "chatbot_crossdomain_ladder": {
+          "incoming": [
+            "inventory",
+            "purchase_order"
+          ],
+          "inventory": [
+            "incoming",
+            "purchase_order"
+          ]
+        },
+        "chatbot_ordering_enabled": true,
+        "chatbot_stock_denial_enabled": true,
+        "chatbot_tier_order": [
+          "dealer",
+          "office",
+          "end_user"
+        ],
+        "chatbot_unsupported_domains": [
+          "goods_receive"
+        ],
+        "switches_source": "source_db_at_record_time"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 1,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 1,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "contact_id": "900000010",
+            "customer_ids": [
+              "6f5a419b-840a-4e4d-8107-291971dd3bb8"
+            ],
+            "date_mode": null,
+            "is_active": null,
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "attachments": [],
+            "fallback_used": false,
+            "has_result": false,
+            "intro": "No matching results found.",
+            "items": [],
+            "last_updated_at": null,
+            "result_type": "orders"
+          },
+          "tool": "crm_order_management_orders_list"
+        },
+        {
+          "args": null,
+          "envelope": null,
+          "tool": null
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "anaphora": {
+          "backward_reference": false
+        },
+        "answers_open_question": {
+          "answer": "1",
+          "picks": [
+            1
+          ],
+          "resolved": true
+        },
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "continuation": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "document": [],
+        "domain_hint": null,
+        "entities": [],
+        "entity_op": "reuse",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": null,
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "casual",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [
+          1
+        ],
+        "reference_target": "result",
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "status": null,
+        "top_n": null,
+        "user_goal": "trying to select the first customer option"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow",
+        "hidden_spec_keys": []
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1061691@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1061691,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1777880659,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000010"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000010",
+          "id": "900000010",
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000010",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "console",
+        "is_test": true,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000015\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "id": "900000010"
+          },
+          "event_id": "9911f47f-53d4-4226-9f9f-04f7d36a7c5e",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxMjI0NjUyMTMVAgASGBYzRUIwQjBEOTUwRTgzRENBRTZBRjZEAA==",
+            "contactId": "900000010",
+            "message": {
+              "text": "hello",
+              "type": "text"
+            },
+            "messageId": "console-dac84506e181",
+            "timestamp": 1789410104000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "previous_conversation_state": {
+          "access_levels": [],
+          "contains_flyer": false,
+          "focus": {
+            "brands": [],
+            "customers": [
+              {
+                "canonical_code": "6f5a419b-840a-4e4d-8107-291971dd3bb8",
+                "confident": true,
+                "current_message": true,
+                "hint": "customer",
+                "raw": "HANLIM TRADING SDN BHD [A/C II]",
+                "uuid": "6f5a419b-840a-4e4d-8107-291971dd3bb8"
+              }
+            ],
+            "date_window": null,
+            "document": [],
+            "domains": [
+              "order"
+            ],
+            "extra": {
+              "attachment_type": [
+                {
+                  "canonical_code": "photo",
+                  "confident": true,
+                  "current_message": true,
+                  "hint": "attachment_type",
+                  "hint_confident": true,
+                  "raw": "photo"
+                }
+              ]
+            },
+            "products": [
+              {
+                "canonical_code": "d73a33f3-956b-401f-90c7-0ad6ff792ea1",
+                "confident": true,
+                "current_message": true,
+                "hint": "product",
+                "raw": "SRTWC286-SH-P",
+                "uuid": "d73a33f3-956b-401f-90c7-0ad6ff792ea1"
+              }
+            ],
+            "set_page": null,
+            "status": null,
+            "tier": [],
+            "warehouse": []
+          },
+          "ideation": null,
+          "open_question": {
+            "asked_at_turn": null,
+            "expects": "yes_no",
+            "kind": "team_pick",
+            "options": [
+              {
+                "entity_type": "team",
+                "label": "orders",
+                "payload": {
+                  "team": "customer_service"
+                },
+                "position": 1
+              }
+            ],
+            "payload": {},
+            "team": "customer_service"
+          }
+        },
+        "prompt_overrides": {
+          "chatbot_semantic_parser": "965268d8-6f6d-46a7-84db-d42d0a129fca"
+        },
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": "console-956e0735-91e4-4173-a6fe-261943fb6ee1"
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message"
+        ],
+        "branch_kind": "low_signal",
+        "canned": [],
+        "entity_ids": [],
+        "focus_after": null,
+        "pending": {
+          "kind": null,
+          "option_labels": [
+            "orders"
+          ]
+        },
+        "text": "ZZT stubbed casual reply.",
+        "tools": []
+      },
+      "received_session_vars": {
+        "respond_io_id": "900000010",
+        "session_vars": {
+          "user_response": "Stock details found for the requested products.\n\n1. *Product Code:* SRTKS7061\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 25\n*Outstanding:* 2\n\n2. *Product Code:* SRTKS7061\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-BB\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n3. *Product Code:* SRTKS7061\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SMC\n*Quantity On Hand:* 0\n*Outstanding:* 1\n\n4. *Product Code:* SRTKS7061\n*Warehouse:* MERU\n*System Location:* MWH\n*Quantity On Hand:* 216\n*Outstanding:* 0\n\n5. *Product Code:* SRTKS7061\n*Warehouse:* MERU\n*System Location:* MWH-BB\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n6. *Product Code:* SRTKS7061\n*Warehouse:* WH3 (PSM)\n*System Location:* WH3-PSM\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n7. *Product Code:* SRTKS7061-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 21\n*Outstanding:* 0\n\n8. *Product Code:* SRTKS7061-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-BB\n*Quantity On Hand:* 1\n*Outstanding:* 1\n\n9. *Product Code:* SRTKS7061-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SMC\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n10. *Product Code:* SRTKS7061-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SYNT\n*Quantity On Hand:* 4\n*Outstanding:* 4\n\n11. *Product Code:* SRTKS7061-BL\n*Warehouse:* MERU\n*System Location:* MWH\n*Quantity On Hand:* 9\n*Outstanding:* 0\n\n_Data last updated: 14/09/2026 17:25:40_",
+          "variables": {
+            "access_levels": [],
+            "contains_flyer": false,
+            "focus": {
+              "brands": [],
+              "customers": [
+                {
+                  "canonical_code": "6f5a419b-840a-4e4d-8107-291971dd3bb8",
+                  "confident": true,
+                  "current_message": true,
+                  "hint": "customer",
+                  "raw": "HANLIM TRADING SDN BHD [A/C II]",
+                  "uuid": "6f5a419b-840a-4e4d-8107-291971dd3bb8"
+                }
+              ],
+              "date_window": null,
+              "document": [],
+              "domains": [
+                "order"
+              ],
+              "extra": {
+                "attachment_type": [
+                  {
+                    "canonical_code": "photo",
+                    "confident": true,
+                    "current_message": true,
+                    "hint": "attachment_type",
+                    "hint_confident": true,
+                    "raw": "photo"
+                  }
+                ]
+              },
+              "products": [
+                {
+                  "canonical_code": "d73a33f3-956b-401f-90c7-0ad6ff792ea1",
+                  "confident": true,
+                  "current_message": true,
+                  "hint": "product",
+                  "raw": "SRTWC286-SH-P",
+                  "uuid": "d73a33f3-956b-401f-90c7-0ad6ff792ea1"
+                }
+              ],
+              "set_page": null,
+              "status": null,
+              "tier": [],
+              "warehouse": []
+            },
+            "ideation": null,
+            "open_question": {
+              "asked_at_turn": null,
+              "expects": "yes_no",
+              "kind": "team_pick",
+              "options": [
+                {
+                  "entity_type": "team",
+                  "label": "orders",
+                  "payload": {
+                    "team": "customer_service"
+                  },
+                  "position": 1
+                }
+              ],
+              "payload": {},
+              "team": "customer_service"
+            }
+          }
+        }
+      },
+      "resolutions": {
+        "resolutions": [],
+        "tokens": [],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 23,
+        "recorded_at": "2026-09-16T11:30:33.492384+09:00",
+        "turn_id": "f8fe14a4-c2da-4d20-8ef7-104578ad21c3"
+      },
+      "switches": {
+        "chatbot_business_lane_enabled": true,
+        "chatbot_completed_lanes": [
+          "out_of_scope",
+          "access_denied",
+          "demand_qty",
+          "clarify_menu",
+          "escalate_offer",
+          "escalation_declined",
+          "ideate",
+          "low_signal",
+          "not_supported",
+          "offer_hold",
+          "stock_denied",
+          "check_promotion",
+          "business_query"
+        ],
+        "chatbot_crossdomain_ladder": {
+          "incoming": [
+            "inventory",
+            "purchase_order"
+          ],
+          "inventory": [
+            "incoming",
+            "purchase_order"
+          ]
+        },
+        "chatbot_ordering_enabled": true,
+        "chatbot_stock_denial_enabled": true,
+        "chatbot_tier_order": [
+          "dealer",
+          "office",
+          "end_user"
+        ],
+        "chatbot_unsupported_domains": [
+          "goods_receive"
+        ],
+        "switches_source": "source_db_at_record_time"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 1,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 1,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "contact_id": "900000010",
+            "customer_ids": [
+              "6f5a419b-840a-4e4d-8107-291971dd3bb8"
+            ],
+            "date_mode": null,
+            "is_active": null,
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "attachments": [],
+            "fallback_used": false,
+            "has_result": false,
+            "intro": "No matching results found.",
+            "items": [],
+            "last_updated_at": null,
+            "result_type": "orders"
+          },
+          "tool": "crm_order_management_orders_list"
+        },
+        {
+          "args": null,
+          "envelope": null,
+          "tool": null
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "anaphora": {
+          "backward_reference": false
+        },
+        "answers_open_question": {
+          "answer": null,
+          "picks": null,
+          "resolved": null
+        },
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "continuation": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "document": [],
+        "domain_hint": null,
+        "entities": [],
+        "entity_op": "reuse",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": null,
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "casual",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "status": null,
+        "top_n": null,
+        "user_goal": "trying to greet"
+      }
+    }
+  ]
+}

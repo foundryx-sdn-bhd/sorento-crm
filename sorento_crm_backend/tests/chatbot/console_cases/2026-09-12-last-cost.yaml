@@ -45,7 +45,7 @@
 # -P, -P-NEW).
 #
 # THE GRANT: `purchase_orders.cost` is off by default for every contact (D6). The console
-# contact below (respond_io id 437264483, RespondContact.id 80560c8f-6358-4115-8b2c-
+# contact below (respond_io id 900000008, RespondContact.id 80560c8f-6358-4115-8b2c-
 # e139ef31e48e "Jayson") held no row for the key at measurement time. This file cannot
 # flip the grant itself and the script runs a whole file under ONE grant state, so THE
 # DENIED CASE (AC-32a) MUST RUN AS ITS OWN INVOCATION, before the key is granted - run it
@@ -54,7 +54,7 @@
 # AC-32b / AC-32c / AC-30 together as this file, THEN revert the grant (delete the row -
 # it never existed before) so a repeat starts from the same default-hidden state. Verified
 # 12 Sep 2026 in exactly this order against the shared dev copy.
-contact: "437264483"
+contact: "900000008"
 
 cases:
   # ======================================================================================

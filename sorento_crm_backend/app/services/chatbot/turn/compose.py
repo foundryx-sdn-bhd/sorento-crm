@@ -10,6 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from typing import Any
 
+from app.services.chatbot import label_catalog
+from app.services.chatbot.label_catalog import IDENTITY
 from app.services.chatbot.turn.decide import OUTSTANDING_KINDS
 from app.services.chatbot.turn.fetch import envelope_missed
 from app.services.chatbot.turn.narrow import ledger_family_key, ledger_family_label
@@ -395,6 +397,7 @@ def _did_you_mean_per_code(
     None when a lane already asked this turn's question - and whether any did-you-mean
     was listed (when none was, the miss offer arm offers the escalation instead).
     """
+    localizer = getattr(ctx, "localizer", None) or IDENTITY
     suggestions: dict[str, dict[str, Any]] = {}
     for env in envelopes:
         carried = env.get("unresolved_suggestions")
@@ -440,7 +443,7 @@ def _did_you_mean_per_code(
             plain.append(token)
     if not paragraphs:
         if plain:
-            text += "\n" + f"I could not find {_join_words(plain)}."
+            text += "\n" + f"I could not find {_join_words(plain, localizer)}."
         return text, None, False
 
     domain, team = None, None
@@ -464,7 +467,7 @@ def _did_you_mean_per_code(
         closing = f"{lead_in}."
     # The codes with no suggestion follow the lists, above the one closing line - the
     # all-miss reply's own order (`answer._unsuggested_line`).
-    unsuggested = f"\n\nI could not find {_join_words(plain)}." if plain else ""
+    unsuggested = f"\n\nI could not find {_join_words(plain, localizer)}." if plain else ""
     text += "\n\n" + "\n\n".join(paragraphs) + unsuggested + "\n" + closing
 
     if lane_asked:
@@ -485,6 +488,7 @@ def _did_you_mean_per_code(
 
 
 def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: Any) -> Answer:
+    localizer = getattr(ctx, "localizer", None) or IDENTITY
     sections: list[Section] = []
     seen_rows: set[tuple] = set()
     text_parts: list[str] = []
@@ -520,6 +524,9 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
             missed_domains.append(domain)
 
         label = row.label if row else str(domain).replace("_", " ")
+        # The domain label is policy wording, not a value: it reads in the reply's language
+        # wherever a composer sentence below prints it.
+        shown_label = localizer.sentence(label) if isinstance(label, str) else label
         subjects = _with_quantities(_header_subjects(entities), state)
         # W6 (owner hand test round 2, turn 1): a long subject list is counted, never
         # dumped as one line of codes ("*stock* for BRBC22102W, BRBC22108W-1A, ...").
@@ -536,7 +543,7 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
         if isinstance(header_override, str) and header_override.strip():
             header = header_override.strip()
         else:
-            header = f"*{label}* for {codes}:" if codes else f"*{label}*:"
+            header = f"*{shown_label}* for {codes}:" if codes else f"*{shown_label}*:"
         # R-d (owner hand pass 7, 19 Sep 2026): the lane's own `lane_text` IS the
         # section, whether or not it carries rows. `lanes/business/fetch.py::
         # output_structurer` already renders the production intro, the per-row
@@ -563,7 +570,7 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
         # `lane_text`, so it is caught by name, once, here, and answered with the
         # SAME neutral line the `error` arm below already gives a broken fetch.
         if isinstance(lane_words, str) and "Error executing tool" in lane_words:
-            block = header + "\n" + f"I could not fetch {label} just now, please try again."
+            block = header + "\n" + f"I could not fetch {shown_label} just now, please try again."
         elif isinstance(lane_words, str) and lane_words.strip():
             block = lane_words.strip()
             # Hand pass 12, Group H: a missed leg of a MULTI-domain ask must name
@@ -576,20 +583,21 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
             # nothing" fallback is replaced, and only when there is a subject to name.
             from app.services.chatbot.lanes.business.fetch import NO_RESULT_INTRO
 
-            if block == NO_RESULT_INTRO and codes:
+            # An ms / zh render of the same fallback is the same miss.
+            if block in (NO_RESULT_INTRO, localizer.sentence(NO_RESULT_INTRO)) and codes:
                 subject_label = label.lower() if isinstance(label, str) else str(domain)
-                block = f"No {subject_label} found for {codes}."
+                block = localizer.sentence(f"No {subject_label} found for {codes}.")
         elif rows_text:
             block = header + "\n" + "\n\n".join(rows_text)
         elif env.get("denied"):
-            block = f"*{label}*: this is not enabled for your account."
+            block = f"*{shown_label}*: this is not enabled for your account."
         elif env.get("error"):
             # The fetch BROKE - the tool timed out or the call failed - which is neither
             # an answer nor a miss, and the section had nothing to print but its own
             # header. Measured on turn 32425b9a (16 Sep 2026): the MCP call timed out and
             # the customer read `*orders* for HANLIM TRADING SDN BHD:` and nothing else,
             # which reads as "there are none" rather than "ask me again".
-            block = header + "\n" + f"I could not fetch {label} just now, please try again."
+            block = header + "\n" + f"I could not fetch {shown_label} just now, please try again."
         else:
             block = header
         # Prod turn f0a2 (1 Oct 2026, "Srtswt3001 / Srtswt3001-gm stock"): both codes
@@ -614,10 +622,16 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
             if absent:
                 # Above the lane's "_Data last updated: ..._" footer, which closes the
                 # section, rather than under it.
-                line = f"No stock found for {_join_words(absent)}."
-                body, sep, footer = block.rpartition("\n_Data last updated")
-                if sep:
-                    block = body + "\n" + line + sep + footer
+                line = localizer.sentence(f"No stock found for {_join_words(absent, localizer)}.")
+                # The footer in whichever language printed it; the last one in the block closes
+                # the section (`footer_leads` drops a blanked lead, which would match any line).
+                split = None
+                for lead in label_catalog.footer_leads(localizer):
+                    head, found, rest = block.rpartition("\n_" + lead)
+                    if found and (split is None or len(head) > len(split[0])):
+                        split = (head, found, rest)
+                if split:
+                    block = split[0] + "\n" + line + split[1] + split[2]
                 else:
                     block = block + "\n" + line
         if (
@@ -631,7 +645,10 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
         ):
             gaps = _types_without_files(product_codes, env.get("attachment_types") or [], figures)
             if gaps:
-                lines = "\n".join(f"{code} has no {_join_words(missing)}." for code, missing in gaps)
+                lines = "\n".join(
+                    localizer.fill("{code} has no {types}.", code=code, types=_join_words(missing, localizer))
+                    for code, missing in gaps
+                )
                 # Its own paragraph, and the lane's footer keeps the blank line above it.
                 body, sep, footer = block.rpartition("\n_Data last updated")
                 block = (
@@ -659,10 +676,10 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
         rungs_tried = [r for r in (env.get("rungs_tried") or []) if isinstance(r, str)]
         if rungs_tried:
             names = [
-                (policy.domain(r).label if (policy and policy.domain(r)) else r)
+                localizer.sentence(policy.domain(r).label if (policy and policy.domain(r)) else r)
                 for r in rungs_tried
             ]
-            block = block + "\n" + f"Nothing on {_join_words(names)} either."
+            block = block + "\n" + f"Nothing on {_join_words(names, localizer)} either."
         # Ported from PR #1118 (feat/chatbot-dealer-stock-verdict, not merged, owner
         # ruling 24 Sep 2026) for chatbot-stock-ask-v2 S3, D15: "just proceed"
         # answered the products that had a quantity and dropped the rest, so the
@@ -925,14 +942,15 @@ _ASK_HEADERS: dict[str, str] = {
 }
 
 
-def _join_words(names: list[str]) -> str:
-    """`a`, `a or b`, `a, b or c` - the list grammar the rung line reads with."""
+def _join_words(names: list[str], localizer: Any = IDENTITY) -> str:
+    """`a`, `a or b`, `a, b or c` - the list grammar the rung line reads with. The joiner comes
+    from the catalog, so a composer sentence reads in the reply's language."""
     clean = [n for n in names if n]
     if not clean:
         return ""
     if len(clean) == 1:
         return clean[0]
-    return ", ".join(clean[:-1]) + " or " + clean[-1]
+    return ", ".join(clean[:-1]) + localizer.sentence(" or ") + clean[-1]
 
 
 #: How the scope line names each axis - the report's own words for the same filters
@@ -997,15 +1015,17 @@ def _in_ranking(state: State | None) -> bool:
     return bool(focus is not None and (focus.status == "top_selling" or focus.top_selling))
 
 
-def _short_question(pending: Any) -> str:
+def _short_question(pending: Any, localizer: Any = IDENTITY) -> str:
     count = len(pending.options)
     if pending.kind == "top_selling_pick":
         return f"Which item do you mean? Reply with a rank number from 1 to {count}."
-    header = _ASK_HEADERS.get(pending.kind, "Which one do you mean?")
+    # The header is a sentence of its own: it reads in the reply's language before the
+    # composed line carries it, the same way a domain label does.
+    header = localizer.sentence(_ASK_HEADERS.get(pending.kind, "Which one do you mean?"))
     return f"{header} I found {count}, please type a little more of the name."
 
 
-def compose_question(pending: Any, state: State | None = None) -> Answer:
+def compose_question(pending: Any, state: State | None = None, localizer: Any = None) -> Answer:
     """The ask, as an Answer: the subject line, the header, the numbered roster, and the
     same pending back.
 
@@ -1036,6 +1056,9 @@ def compose_question(pending: Any, state: State | None = None) -> Answer:
     verbatim = str(offered.get("offer_text") or "").strip() if isinstance(offered, dict) else ""
     if verbatim:
         body = verbatim
+        if pending.kind == "outstanding_detail" and localizer is not None:
+            # CHAT-LANGUAGE: the stored offer text stays English; its re-print is in the turn's.
+            body = localizer.lines(verbatim)
         positions = [o.get("position") for o in pending.options if isinstance(o.get("position"), int)]
         if pending.kind == "sales_report_detail" and positions:
             # PR #1401 fix round 3, F4 (mock v3 section 8, carried into v4): a re-print of
@@ -1047,7 +1070,7 @@ def compose_question(pending: Any, state: State | None = None) -> Answer:
         # menu lists more than five options (it listed all 100 ranked codes under
         # "2025?"); the bot asks one short question in words and a typed number or
         # name still picks, off the same stored options.
-        body = _short_question(pending)
+        body = _short_question(pending, localizer or IDENTITY)
         labels = []
     action: dict[str, Any] = {
         "kind": "send_message",
@@ -1061,7 +1084,7 @@ def compose_question(pending: Any, state: State | None = None) -> Answer:
     return Answer(sections=[], question=pending, offer=None, canned=[], files=[], actions=[action], text=body)
 
 
-def _join_words_and(items: list[str]) -> str:
+def _join_words_and(items: list[str], localizer: Any = IDENTITY) -> str:
     """"a", "a and b", "a, b and c" - the same shape `media_extract.wording.join_
     phrase` uses, copied rather than imported (`turn/` reads no module outside its
     own package and `contracts.py`). NOT `_join_words` above: that one joins on
@@ -1072,11 +1095,16 @@ def _join_words_and(items: list[str]) -> str:
         return ""
     if len(values) == 1:
         return values[0]
-    return ", ".join(values[:-1]) + " and " + values[-1]
+    return ", ".join(values[:-1]) + localizer.sentence(" and ") + values[-1]
 
 
 def entities_only_reply(
-    placed: list[str], unplaced: list[str], *, from_photo: bool, media_prefixed: bool = False
+    placed: list[str],
+    unplaced: list[str],
+    *,
+    from_photo: bool,
+    media_prefixed: bool = False,
+    localizer: Any = IDENTITY,
 ) -> str:
     """S3 (PLAN-chatbot-media-into-turn.md): the entities-only arm's own deterministic
     reply (AC-1824/AC-1825) - never an LLM, never a roster. `placed`/`unplaced` are the
@@ -1106,7 +1134,7 @@ def entities_only_reply(
         if from_photo and not media_prefixed:
             parts.append("I could not match any product code in that photo.")
         if unplaced:
-            parts.append(f"Couldn't find {_join_words_and(unplaced)}.")
+            parts.append(f"Couldn't find {_join_words_and(unplaced, localizer)}.")
         parts.append(
             "What would you like me to do with it?" if from_photo else "Ask again with the correct code."
         )
@@ -1115,13 +1143,13 @@ def entities_only_reply(
     parts = []
     if not media_prefixed:
         lead = (
-            f"I read {_join_words_and(placed)} from that photo."
+            f"I read {_join_words_and(placed, localizer)} from that photo."
             if from_photo
-            else f"I have {_join_words_and(placed)}."
+            else localizer.fill("I have {names}.", names=_join_words_and(placed, localizer))
         )
         parts.append(lead)
     if unplaced:
-        parts.append(f"Couldn't find {_join_words_and(unplaced)}.")
+        parts.append(f"Couldn't find {_join_words_and(unplaced, localizer)}.")
     parts.append(
         "What would you like me to do with it?" if from_photo else "What would you like me to know?"
     )

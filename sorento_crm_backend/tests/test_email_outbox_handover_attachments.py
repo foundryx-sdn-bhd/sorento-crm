@@ -52,7 +52,7 @@ def test_handover_outbox_row_carries_extra_attachments():
             body="Handover body",
             data={
                 "single_email_to_all": True,
-                "recipient_emails": ["buyer@sorento.com.my"],
+                "recipient_emails": ["person7@example.com"],
                 "extra_attachments": [
                     {
                         "filename": "SO423136-L3-a.png",
@@ -81,7 +81,7 @@ def test_handover_outbox_row_carries_extra_attachments():
 
         row = (
             db.query(EmailOutbox)
-            .filter(EmailOutbox.recipient_email == "buyer@sorento.com.my")
+            .filter(EmailOutbox.recipient_email == "person7@example.com")
             .one()
         )
         assert row.metadata_json.get("extra_attachments") == [
@@ -145,7 +145,7 @@ def test_drainer_skips_missing_optional_attachment(monkeypatch):
 
     row = EmailOutbox(
         event_key="order_inquiry_handover",
-        recipient_email="buyer@sorento.com.my",
+        recipient_email="person7@example.com",
         subject="Order inquiry handover",
         body_text="Body",
         metadata_json={

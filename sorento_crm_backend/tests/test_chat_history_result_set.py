@@ -28,7 +28,7 @@ from app.services.conversation_variables_service import (
 from tests._external_auth import external_permissions_granted
 from tests._pg_fixture import blank_session
 
-RESPOND_IO_ID = "437264483"
+RESPOND_IO_ID = "900000008"
 MESSAGE_ID = "1780751891000000"
 RESULT_SET = [
     {
@@ -73,7 +73,7 @@ def _seed_contact(db) -> None:
         RespondContact(
             id=str(uuid.uuid4()),
             respond_io_id=RESPOND_IO_ID,
-            phone_number="+60166753328",
+            phone_number="+60160000509",
             session_vars={"flow": "promo", "last_result_set": [{"idx": 9}]},
         )
     )
@@ -84,7 +84,7 @@ def _ingest_payload(**overrides) -> dict:
     payload = {
         "channel": "whatsapp",
         "contact_id": RESPOND_IO_ID,
-        "phone_number": "+60166753328",
+        "phone_number": "+60160000509",
         "message": "I have attached the file(s) below.",
         "sent_at": 1780751906900,
         "first_name": "Jayson",
@@ -434,7 +434,7 @@ def test_referenced_state_picks_latest_on_legacy_duplicate_message_id(client, db
             ChatHistory(
                 channel="whatsapp",
                 contact_id=RESPOND_IO_ID,
-                phone_number="+60166753328",
+                phone_number="+60160000509",
                 message="quoted outgoing message",
                 sent_at=sent_at,
                 type="outgoing",
@@ -447,7 +447,7 @@ def test_referenced_state_picks_latest_on_legacy_duplicate_message_id(client, db
             ChatHistory(
                 channel="whatsapp",
                 contact_id=RESPOND_IO_ID,
-                phone_number="+60166753328",
+                phone_number="+60160000509",
                 message="promo for stop valve",
                 sent_at=sent_at,
                 type="incoming",

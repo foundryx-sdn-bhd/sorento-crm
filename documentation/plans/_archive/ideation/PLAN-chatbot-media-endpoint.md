@@ -330,7 +330,7 @@ Request:
 
 ```jsonc
 {
-  "respond_io_id": "437264483",
+  "respond_io_id": "900000008",
   "message_id": "1783918786000000",
   "media_ordinal": 0,                 // optional, default 0
   "modality": "image",                // or "voice"

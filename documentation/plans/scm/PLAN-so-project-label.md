@@ -13,7 +13,7 @@ Sales orders carry no project. The project module is not live (`projects.project
 | --- | --- | --- | --- |
 | Order Inquiry sheet | `PROJECT/CUSTOMER` column, read by `app/services/project_order_inquiry_reader.py` into `OrderInquiryRow.project` | 465 distinct cells over 15,800 rows in `JAN - DEC 2026 ORDERabc.xlsx` | `CUSTOMER / PROJECT / AREA` (201 cells), `CUSTOMER / PROJECT` (176), customer only (29), 3 or 4 slashes (59) |
 | AutoCount SO Note | `sales_orders.internal_note`, plain text once the RTF lane lands | ~190 noted SOs sampled: 35% `PROJECT :` label line, 38% delivery block only, 27% own-collect or nothing | `***PROJECT : X`, `PROJECT: X`, `**PROJECT; X`, `PROJ: X`, `PROJECT CODE: 50-02`; or `DELIVERY ADDRESS` then a site line |
-| AutoCount SO `Ref` | not in the push contract today | for JUSTIN / TERA / LEENA / ERIC NG it is the project name; for JENNIFER / JOHNSON an agent stamp `JF- 9/9 3.50` | free text |
+| AutoCount SO `Ref` | not in the push contract today | for CONTACT N / TERA / LEENA / CONTACT Y it is the project name; for CONTACT O / CONTACT AA an agent stamp `JF- 9/9 3.50` | free text |
 
 Today the Order Inquiry importer (`project_order_inquiry_import_service.py`) keeps the cell only when it CREATES a provisional SO and no customer matches, as `internal_note = "Order Inquiry project: <whole cell>"` (12 rows locally). For an SO AutoCount already owns (75,600 rows) it stamps `demand_origin` and drops the cell.
 
@@ -32,7 +32,7 @@ One module holds every rule: `app/services/project_label_rules.py`.
 
 `label_from_inquiry_cell(cell)`: split on the FIRST `/`; label = remainder with whitespace collapsed and each ` / ` normalised to one space either side. No slash = no label (the cell is a customer only). Applied by the importer to EVERY order the sheet names, including orders owned by AutoCount (same place `demand_origin` is stamped) and provisional orders it creates. The existing `Order Inquiry project:` note behaviour and the customer match on the whole cell are left unchanged in this lane.
 
-Examples: `URC ENGINEERING / BAMBOO RESIDENCE / KUALA LUMPUR` -> `BAMBOO RESIDENCE / KUALA LUMPUR`; `KNUSFORD/EKOTITIWANGSA/KL` -> `EKOTITIWANGSA / KL`; `GLOBAL INGRESS/ 252U RMMJ TAMAN IMPIAN EMAS` -> `252U RMMJ TAMAN IMPIAN EMAS`; `OTM GROUP SDN BHD (SMC-JENNIFER)` -> none.
+Examples: `URC ENGINEERING / BAMBOO RESIDENCE / KUALA LUMPUR` -> `BAMBOO RESIDENCE / KUALA LUMPUR`; `KNUSFORD/EKOTITIWANGSA/KL` -> `EKOTITIWANGSA / KL`; `GLOBAL INGRESS/ 252U RMMJ TAMAN IMPIAN EMAS` -> `252U RMMJ TAMAN IMPIAN EMAS`; `OTM GROUP SDN BHD (SMC-contact-o)` -> none.
 
 ### Rule 2: note label line (`note`)
 

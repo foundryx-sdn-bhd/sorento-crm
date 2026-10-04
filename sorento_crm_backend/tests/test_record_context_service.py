@@ -285,7 +285,7 @@ def test_assemble_stock_inquiry_pending_has_no_decision(db_session: Session):
 
 
 def test_assemble_stock_inquiry_responded_captures_responder(db_session: Session):
-    _seed_user(db_session, "5a100be9-6c93-5a7a-9c7a-1eb22334ba36", "Li Juan")
+    _seed_user(db_session, "5a100be9-6c93-5a7a-9c7a-1eb22334ba36", "CONTACT AC")
     responded_at = datetime(2026, 5, 22, 6, 47, 0)
     si = _seed_stock_inquiry(
         db_session,
@@ -300,10 +300,10 @@ def test_assemble_stock_inquiry_responded_captures_responder(db_session: Session
     out = RecordContextService(db_session).assemble("stock_inquiry", si.id)
     assert out["current_state"]["status"] == "responded"
     # "who set the current state" must resolve to the responder, not None.
-    assert out["current_state"]["set_by"] == "Li Juan"
+    assert out["current_state"]["set_by"] == "CONTACT AC"
     # response block surfaces who/when/what so "who responded" is answerable.
     assert out["response"] is not None
-    assert out["response"]["responded_by"] == "Li Juan"
+    assert out["response"]["responded_by"] == "CONTACT AC"
     assert out["response"]["summary"] == "incoming eta 30.05.2026"
     assert out["response"]["lead_time_hours"] == 6.8
     # A responded inquiry is answered, NOT awaiting an approval decision.

@@ -1,0 +1,143 @@
+# Console cases for lane CHAT-LANGUAGE slice 1, the stock answer (PR #1448, owner rulings 2 Oct 2026).
+#
+# `documentation/plans/chatbot/PLAN-chat-language-2oct.md`; `chat-language-behaviour-card.md`;
+# `chat-language-acceptance-criteria.md`. A stock answer's labels and fixed sentences follow the
+# language of the message (zh on any Chinese character, ms or en by marker words); values never
+# change; a message that decides nothing keeps the conversation's last reply language.
+#
+# NOT collected by pytest. Run with `scripts/chatbot_console_check.py` against the lane stack,
+# per `documentation/agents/chatbot-verification.md`:
+#
+#   venv/bin/python scripts/chatbot_console_check.py \
+#       tests/chatbot/console_cases/2026-10-02-chat-language.yaml \
+#       --base-url http://127.0.0.1:8000 --sleep-seconds 8
+#
+# ═══ DATA THE TURNS ASSUME ═══
+# SRTWC286 exists with stock rows (the prod copy has them). Which stock MODE answers depends on
+# the contact (staff: detailed rows; dealer: compact or availability), so each case grades only
+# what holds in every mode: the code is named, and the English label or sentence it replaced is
+# absent. Read the printed reply by eye for the exact translated labels (card examples A-D).
+#
+# Every turn is a dry run: the Translations page gains no rows from this file (D14). The rows
+# appear the first time a REAL ms/zh turn answers.
+contact: "437264483"
+
+cases:
+  - name: A Chinese stock ask answers with Chinese labels and the code unchanged
+    cold: true
+    live_only: true
+    text: "SRTWC286 有货吗"
+    expect:
+      branch_kind: business_query
+      reply_contains:
+        - "SRTWC286"
+      reply_not_contains:
+        - "Product Code"
+        - "Data last updated"
+      no_uuid: true
+
+  - name: A Malay stock ask answers with Malay labels and the code unchanged
+    cold: true
+    live_only: true
+    text: "ada stok SRTWC286?"
+    expect:
+      branch_kind: business_query
+      reply_contains:
+        - "SRTWC286"
+      reply_not_contains:
+        - "Product Code"
+        - "Data last updated"
+      no_uuid: true
+
+  - name: An English stock ask is unchanged
+    cold: true
+    live_only: true
+    text: "check stock SRTWC286"
+    expect:
+      branch_kind: business_query
+      reply_contains:
+        - "SRTWC286"
+      reply_not_contains:
+        - "Kod Produk"
+        - "产品代码"
+      no_uuid: true
+
+  - name: Mid-chat switch, then a message that decides nothing keeps the last language
+    cold: true
+    live_only: true
+    turns:
+      - text: "check stock SRTWC286"
+        expect:
+          branch_kind: business_query
+          reply_not_contains:
+            - "Kod Produk"
+      - text: "berapa stok SRTWC286 lagi?"
+        expect:
+          branch_kind: business_query
+          reply_contains:
+            - "SRTWC286"
+          reply_not_contains:
+            - "Product Code"
+      - text: "SRTWC286"
+        expect:
+          branch_kind: business_query
+          reply_contains:
+            - "SRTWC286"
+          reply_not_contains:
+            - "Product Code"
+
+  # ═══ Slices 2-4 (PO/SO/SPO/orders, reports, final reply pass) ═══
+  - name: A Malay PO ask answers with Malay labels, PO stays PO, values unchanged
+    cold: true
+    live_only: true
+    text: "ada PO untuk SRTWC286?"
+    expect:
+      branch_kind: business_query
+      reply_contains:
+        - "SRTWC286"
+      reply_not_contains:
+        - "PO Number"
+        - "Here is the PO placed I found."
+      no_uuid: true
+
+  - name: A Chinese outstanding report keeps every number and offers the lists in Chinese
+    cold: true
+    live_only: true
+    text: "SRTWC286 未交货订单"
+    expect:
+      branch_kind: business_query
+      reply_not_contains:
+        - "Sales order outstanding"
+        - "Reply with a number for detail"
+      no_uuid: true
+
+  - name: The parser still reads a reply to a Malay "how many" ranking question
+    cold: true
+    live_only: true
+    turns:
+      - text: "barang paling laris bulan ini"
+        expect:
+          reply_not_contains:
+            - "do you want to see?"
+      - text: "20"
+        expect:
+          branch_kind: business_query
+          reply_not_contains:
+            - "do you want to see?"
+            - "Sorry, I didn't get that"
+
+  - name: A Malay miss offers escalation in Malay, and "ya" escalates (Malay confirmation)
+    cold: true
+    live_only: true
+    turns:
+      - text: "ada stok ZZNOPE999?"
+        expect:
+          reply_contains:
+            - "Adakah anda mahu saya rujuk kepada pasukan"
+          reply_not_contains:
+            - "Would you like me to escalate"
+      - text: "ya"
+        expect:
+          reply_not_contains:
+            - "This inquiry has been routed"
+            - "Your request is out of the scope"

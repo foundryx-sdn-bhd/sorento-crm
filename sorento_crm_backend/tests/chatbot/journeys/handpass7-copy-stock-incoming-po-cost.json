@@ -1,11 +1,11 @@
 {
   "name": "handpass7-copy-stock-incoming-po-cost",
-  "source": "hand pass 7 owner console turns 19 Sep 2026 21:53:00-21:54:00 MYT (contact_respond_id 437264483): 'check stock srtwc286', 'incomign?', 'ok how about PO?', 'stock incoming and PO', 'purchase cost'. Ruling R-d: the reply copy per domain is the PRODUCTION copy (sorento_crm_mcp/presenters.py _DEFAULT_INTRO / _STOCK_COMPACT_INTRO, app/services/chatbot/lanes/business/answer.py's own '_Data last updated:' footer and PRODUCT DISCONTINUED flag), not the rearch engine's current '*domain* for <codes>:' label header. Measured live against :8081 (git_sha c9967c34b) 19 Sep 2026: every one of these turns currently renders the label-header style, never the production intro - confirmed red for the right reason (missing copy), not a permission or data gap. Contact 437264483 used throughout because 'purchase cost' needs purchase_orders.cost, which contact 440987225 does not hold (measured: 'Sorry, you are not allowed to access purchase cost').",
+  "source": "hand pass 7 owner console turns 19 Sep 2026 21:53:00-21:54:00 MYT (contact_respond_id 900000008): 'check stock srtwc286', 'incomign?', 'ok how about PO?', 'stock incoming and PO', 'purchase cost'. Ruling R-d: the reply copy per domain is the PRODUCTION copy (sorento_crm_mcp/presenters.py _DEFAULT_INTRO / _STOCK_COMPACT_INTRO, app/services/chatbot/lanes/business/answer.py's own '_Data last updated:' footer and PRODUCT DISCONTINUED flag), not the rearch engine's current '*domain* for <codes>:' label header. Measured live against :8081 (git_sha c9967c34b) 19 Sep 2026: every one of these turns currently renders the label-header style, never the production intro - confirmed red for the right reason (missing copy), not a permission or data gap. Contact 900000008 used throughout because 'purchase cost' needs purchase_orders.cost, which contact 900000010 does not hold (measured: 'Sorry, you are not allowed to access purchase cost').",
   "cases": [
     {
       "name": "stock-compact-intro-and-footer",
       "cold": true,
-      "contact": "437264483",
+      "contact": "900000008",
       "turns": [
         {
           "text": "check stock srtwc286",
@@ -20,7 +20,7 @@
     {
       "name": "stock-discontinued-flag",
       "cold": true,
-      "contact": "437264483",
+      "contact": "900000008",
       "_note": "SRTCB7029C measured is_discontinued=true in this clone's products table (19 Sep 2026), a real discontinued code, not invented.",
       "turns": [
         {
@@ -34,7 +34,7 @@
     {
       "name": "incoming-intro-and-clearance-fields",
       "cold": true,
-      "contact": "437264483",
+      "contact": "900000008",
       "turns": [
         {
           "text": "check stock srtwc286",
@@ -52,7 +52,7 @@
     {
       "name": "po-placed-intro",
       "cold": true,
-      "contact": "437264483",
+      "contact": "900000008",
       "turns": [
         {
           "text": "check stock srtwc286",
@@ -70,7 +70,7 @@
     {
       "name": "purchase-cost-intro",
       "cold": true,
-      "contact": "437264483",
+      "contact": "900000008",
       "turns": [
         {
           "text": "check stock srtwc286",
@@ -88,7 +88,7 @@
     {
       "name": "multi-domain-each-intro-once",
       "cold": true,
-      "contact": "437264483",
+      "contact": "900000008",
       "_note": "measured live 19 Sep 2026: 'stock incoming and PO' renders THREE sections today ('*stock* for', '*incoming stock* for', '*outstanding purchase orders* for'), confirming the fan-out itself works - only the per-section copy is wrong.",
       "turns": [
         {

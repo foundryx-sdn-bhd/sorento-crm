@@ -1,6 +1,6 @@
 {
   "name": "handpass5-outstanding-domain",
-  "source": "hand pass 5 owner console turns 32-35 (contact_respond_id 437264483, 2026-09-17 05:25-05:26 +09) / ruling R3: 'Total outstanding <code>' / 'outstanding quantity <code>' is the outstanding report (a 'Product: ... / Customer: all / Location: all / Order date: all' header, or the scope question), never a *stock* answer. Recorded (pre-fix) behaviour for both phrasings is a plain *stock* for <code> reply, which is the defect this pins.",
+  "source": "hand pass 5 owner console turns 32-35 (contact_respond_id 900000008, 2026-09-17 05:25-05:26 +09) / ruling R3: 'Total outstanding <code>' / 'outstanding quantity <code>' is the outstanding report (a 'Product: ... / Customer: all / Location: all / Order date: all' header, or the scope question), never a *stock* answer. Recorded (pre-fix) behaviour for both phrasings is a plain *stock* for <code> reply, which is the defect this pins.",
   "cases": [
     {
       "name": "total-outstanding-srtwc8518-sh-is-the-outstanding-report",

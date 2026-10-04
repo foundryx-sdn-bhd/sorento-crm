@@ -1,4 +1,4 @@
-==== turn 1  contact=437264483  branch_kind=business_query ====
+==== turn 1  contact=900000008  branch_kind=business_query ====
 > Srtwt7443 sales order outstanding for IB
 
 Product: SRTWT7443
@@ -26,7 +26,7 @@ IDEAL BATH SDN BHD: 497 (O/S: 482)
 Reply with a number for detail:
 1. Sales order list
 
-==== turn 2  contact=437264483  branch_kind=business_query ====
+==== turn 2  contact=900000008  branch_kind=business_query ====
 > SRTWT7445 outstanding in 2026
 
 Product: SRTWT7445-LV-GM
@@ -69,17 +69,17 @@ TOTAL HOME DIY SDN BHD [A/C I]: 4 (O/S: 0)
 Reply with a number for detail:
 1. Delivery order list
 
-==== turn 3  contact=437264483  branch_kind=business_query ====
+==== turn 3  contact=900000008  branch_kind=business_query ====
 > 3
 
 That would search every delivery order we have - I need at least one filter to narrow it down. Give me an order number, transporter, customer, or date range, and I can look it up.
 
-==== turn 4  contact=437264483  branch_kind=low_signal ====
+==== turn 4  contact=900000008  branch_kind=low_signal ====
 > 1
 
 Hi! How can I help you today?
 
-==== turn 5  contact=437264483  branch_kind=business_query ====
+==== turn 5  contact=900000008  branch_kind=business_query ====
 > FULLSHUN sales order outstanding SRTWT7445
 
 Which customer do you mean? Please choose:
@@ -88,7 +88,7 @@ Which customer do you mean? Please choose:
 
 None of these have a recent DO.
 
-==== turn 6  contact=437264483  branch_kind=business_query ====
+==== turn 6  contact=900000008  branch_kind=business_query ====
 > SRTWT02 outstanding both
 
 Product: SRTWT02-A
@@ -114,7 +114,7 @@ Please choose who to route to (reply with the number):
 
 If you have no preference, just reply 'yes' and we'll assign automatically.
 
-==== turn 7  contact=438930735  branch_kind=None ====
+==== turn 7  contact=900000052  branch_kind=None ====
 > SRTWT7445 outstanding
 
 (no reply - see error)
