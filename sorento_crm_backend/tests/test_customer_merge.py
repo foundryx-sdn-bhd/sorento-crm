@@ -19,6 +19,7 @@ from sqlalchemy import text
 from app.models.company import Company
 from app.models.integration_reference import IntegrationReference
 from app.models.order import Customer, CustomerAlias, CustomerContact, CustomerMergeMap, Order, SalesOrder
+from app.models.project_so import CustomerItemCodeMap
 from app.models.product import Product, ProductCategory, UnitOfMeasure
 from app.services import customer_merge
 from app.services.company_scope import DEFAULT_COMPANY_ID, register_company_scope_listeners
@@ -161,15 +162,16 @@ def _product(db) -> str:
 
 
 def _code_map(db, customer_id, item_code, product_id) -> str:
-    mid = _uid()
-    db.execute(
-        text(
-            "INSERT INTO projects.customer_item_code_map "
-            "(id, company_id, customer_id, customer_code, product_id) VALUES (:i, :co, :cu, :cc, :p)"
-        ),
-        {"i": mid, "co": DEFAULT_COMPANY_ID, "cu": customer_id, "cc": item_code, "p": product_id},
+    row = CustomerItemCodeMap(
+        id=_uid(),
+        company_id=DEFAULT_COMPANY_ID,
+        customer_id=customer_id,
+        customer_code=item_code,
+        product_id=product_id,
     )
-    return mid
+    db.add(row)
+    db.flush()
+    return str(row.id)
 
 
 def _scalar(db, sql, **params):
@@ -364,15 +366,11 @@ class TestApply:
         _code_map(db, retired, "CUST-ITEM-1", p2)
         moved = _code_map(db, retired, "CUST-ITEM-2", p2)
         customer_merge.apply(db, run_id="run-ic", codes=[code])
-        rows = dict(
-            db.execute(
-                text(
-                    "SELECT customer_code, id::text FROM projects.customer_item_code_map "
-                    "WHERE customer_id = :s"
-                ),
-                {"s": survivor},
-            ).all()
-        )
+        db.expire_all()
+        rows = {
+            m.customer_code: str(m.id)
+            for m in db.query(CustomerItemCodeMap).filter(CustomerItemCodeMap.customer_id == survivor)
+        }
         assert rows == {"CUST-ITEM-1": kept, "CUST-ITEM-2": moved}
 
     def test_integration_refs_one_per_row_code_form_wins(self, db):
