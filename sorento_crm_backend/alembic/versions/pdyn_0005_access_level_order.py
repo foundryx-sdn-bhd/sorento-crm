@@ -3,6 +3,7 @@ the order the owner's parser prompt lists them in, so `{{access_levels}}` render
 
 Only `sort_order` of ACTIVE rows with these exact names changes; nothing is inserted,
 renamed or deactivated, and an inactive row keeps its order. Re-running is a no-op.
+Only a row whose sort_order IS NULL is filled, and an order someone already set is never overwritten.
 Chained before the wording-layer migrations (pdyn_0002, pdyn_0003) so they render the
 aligned order. Agents and the master_products narrowing (also answer 6) are on hold.
 
@@ -30,7 +31,10 @@ ACCESS_LEVEL_ORDER: tuple[str, ...] = (
 def apply(bind) -> None:
     for i, name in enumerate(ACCESS_LEVEL_ORDER, start=1):
         bind.execute(
-            sa.text("UPDATE contact_access_types SET sort_order = :s WHERE is_active AND name = :n"),
+            sa.text(
+                "UPDATE contact_access_types SET sort_order = :s "
+                "WHERE is_active AND name = :n AND sort_order IS NULL"
+            ),
             {"s": i, "n": name},
         )
 

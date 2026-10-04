@@ -238,7 +238,10 @@ def _pdyn_0004_sql() -> str:
     )
     order = _load("pdyn_0005_access_level_order.py")
     for i, name in enumerate(order.ACCESS_LEVEL_ORDER, start=1):
-        lines.append(f"UPDATE contact_access_types SET sort_order = {i} WHERE is_active AND name = {_q(name)};")
+        lines.append(
+            f"UPDATE contact_access_types SET sort_order = {i} "
+            f"WHERE is_active AND name = {_q(name)} AND sort_order IS NULL;"
+        )
     return "\n".join(lines)
 
 

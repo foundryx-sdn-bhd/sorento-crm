@@ -24,13 +24,13 @@ INSERT INTO chatbot_domain_words (id, word, sort_order) VALUES (gen_random_uuid(
 INSERT INTO chatbot_domain_words (id, word, sort_order) VALUES (gen_random_uuid(), 'GRN', 18) ON CONFLICT (word) DO NOTHING;
 ALTER TABLE access_agents ADD COLUMN IF NOT EXISTS in_parser_prompt boolean NOT NULL DEFAULT false;
 UPDATE access_agents SET in_parser_prompt = true WHERE code = ANY(ARRAY['general_enquiries', 'order_enquiries', 'incoming_stock_enquiries', 'marketing_form', 'it_support']::text[]) AND NOT EXISTS (SELECT 1 FROM access_agents WHERE in_parser_prompt);
-UPDATE contact_access_types SET sort_order = 1 WHERE is_active AND name = 'Sorento Dealer';
-UPDATE contact_access_types SET sort_order = 2 WHERE is_active AND name = 'Mocha Dealer';
-UPDATE contact_access_types SET sort_order = 3 WHERE is_active AND name = 'Mocha Office';
-UPDATE contact_access_types SET sort_order = 4 WHERE is_active AND name = 'Cabana Dealer';
-UPDATE contact_access_types SET sort_order = 5 WHERE is_active AND name = 'Cabana Office';
-UPDATE contact_access_types SET sort_order = 6 WHERE is_active AND name = 'End User';
-UPDATE contact_access_types SET sort_order = 7 WHERE is_active AND name = 'Sorento Office';
+UPDATE contact_access_types SET sort_order = 1 WHERE is_active AND name = 'Sorento Dealer' AND sort_order IS NULL;
+UPDATE contact_access_types SET sort_order = 2 WHERE is_active AND name = 'Mocha Dealer' AND sort_order IS NULL;
+UPDATE contact_access_types SET sort_order = 3 WHERE is_active AND name = 'Mocha Office' AND sort_order IS NULL;
+UPDATE contact_access_types SET sort_order = 4 WHERE is_active AND name = 'Cabana Dealer' AND sort_order IS NULL;
+UPDATE contact_access_types SET sort_order = 5 WHERE is_active AND name = 'Cabana Office' AND sort_order IS NULL;
+UPDATE contact_access_types SET sort_order = 6 WHERE is_active AND name = 'End User' AND sort_order IS NULL;
+UPDATE contact_access_types SET sort_order = 7 WHERE is_active AND name = 'Sorento Office' AND sort_order IS NULL;
 DO $crew$
 DECLARE
 r_teams text := 'purchasing|purchasing_certification|customer_service|marketing_product|marketing_form|warehouse|marketing_promotion|it_admin';
