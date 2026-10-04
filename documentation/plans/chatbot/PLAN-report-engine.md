@@ -1,9 +1,9 @@
 # PLAN: Chatbot report engine (one catalogue, one spec, one executor)
 
-Status: slice 1 built, reviewed and live-parser verified; semantic-only round done (4 Oct 2026:
-parser `ranking_refine` / `measure` decide, every text-reading guard removed, held ranking frame).
-Live gpt-5.4-mini on prompt md5 b436385e. Waiting on CI, the browser pass on the final head
-and the owner's hand test (`laneboard/scripts/1447.md`). #1445 is on main.
+Status: slice 1 built, reviewed, live-parser and browser verified; owner chose option (a), 4 Oct
+2026: ship slice 1 as is (full asks reliable, short follow-ups degrade safely) and measure
+follow-ups on live use. Final prompt md5 b436385e. Waiting on CI and the owner's hand test
+(`laneboard/scripts/1447.md`, prompt picked in the console, the shared `production` label unmoved).
 FULL track (new API-key route, per-audience access rule, data-only migration
 `report_engine_0001_prompt`: owner moves the parser `production` label after deploy). Card answered 2 Oct 2026 (`report-engine-behaviour-card.md`
 revision 2); section 0 below records how the answers change this plan, and wins over the
@@ -610,3 +610,13 @@ Owner: the PARSER decides meaning; code never reads the message text with a rege
   reply text itself (`collect`'s cancel words, `reply_verdict`'s "more than three words" / "?"
   checks); #1470 replaces that capture with `reply_verdict`.
 - **Rate limit.** The route keeps 10 rankings per contact per 10 minutes.
+
+### Owner decision on short follow-ups (4 Oct 2026)
+
+Live gpt-5.4-mini reads full asks reliably (the owner's message 100% across every run) but short
+follow-ups ("5", "3", "last month", a singular "top salesman", a ranking typed over an open top
+selling question) vary run to run (the 10-step script as one conversation: 24/33). They degrade
+safely: no widening, no wrong filter, no company total. Owner: option (a), ship and measure on
+live use; a stronger parser model (b) or dropping bare refines (c) stay open if the live numbers
+call for it. The hand test picks the published prompt in the console's prompt-version picker; the
+shared dev `production` label is not moved.
