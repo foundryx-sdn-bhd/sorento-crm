@@ -288,6 +288,14 @@ class TestOptionalFieldAskedWhenUnknown:
 
 
 class TestParserAnswers:
+    def test_a_blank_answer_is_asked_again_then_gives_up(self):
+        blank = rf.Resolved("unknown", label="")
+        first = rf.collect(None, ONE, slot=_start(ONE).slot, reply=blank)
+        assert first.reply == CATEGORY.question and first.slot["misses"] == 1
+        last = rf.collect(None, ONE, slot=first.slot, reply=blank)
+        assert last.slot is None
+        assert last.reply == "I still can't place 'that'. Ask again."
+
     def test_a_caller_resolved_reply_is_taken_as_is(self):
         out = rf.collect(None, ONE, slot=_start(ONE).slot, reply=rf.Resolved("ok", value=["X"], label="x"))
         assert out.done and out.values["category"]["value"] == ["X"]

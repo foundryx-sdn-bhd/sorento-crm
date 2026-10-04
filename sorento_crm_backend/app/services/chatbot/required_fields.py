@@ -109,6 +109,9 @@ class AskType:
     reroute: dict[str, Any]
     cancelled: str
     give_up: str
+    #: The give-up line when the last miss carried no word of its own (the parser read an
+    #: answer but placed nothing in it); `give_up` with "that" when unset.
+    give_up_blank: str | None = None
 
 
 #: Every registered ask type, by name (`register`). The engine seam reads the open slot's
@@ -241,8 +244,12 @@ def collect(
                     return collect(db, ask, given=given, slot={**slot, "values": values, "asking": None},
                                    extras=carried)
                 if misses >= MAX_MISSES:
-                    return Outcome(values=values, reply=ask.give_up.format(word=word), slot=None, extras=carried)
-                return Outcome(values=values, reply=_miss_line(word, spec),
+                    line = ask.give_up.format(word=word) if word else (ask.give_up_blank or ask.give_up.format(word="that"))
+                    return Outcome(values=values, reply=line, slot=None, extras=carried)
+                # A reply the caller could read nothing from is asked again, plainly (a
+                # numbered pick shows its list again).
+                again = _pick_line(spec, options) if options else spec.question
+                return Outcome(values=values, reply=_miss_line(word, spec) if word else again,
                                slot=_slot(ask, values, carried, asking=spec.name, options=options, misses=misses),
                                extras=carried)
 

@@ -154,3 +154,22 @@ As "Proposed behaviour", plus:
   category, or both. Which one? Reply with a number:` then `1. Supplier` / `2. Category` /
   `3. Supplier x category` / `4. No grouping` (only `Category` / `No grouping` for a contact
   without `purchase_orders.supplier`).
+
+## Crew design review (4 Oct 2026, after the owner hand test PASS)
+
+P1 / P3 / P4 PASS. P2 follow-up, landed before merge: the raw-text fallback is gone. A reply
+to the low stock question counts only through the parser's declared answer
+(`open_question_answer` plus the `low_stock` fields, or a pick of the listed options). An
+answer the parser declared but placed nothing in is asked again (counted as a miss, so the
+second one ends the ask); the reply text is never resolved. The lane now hands the shared
+`required_fields` helper only resolved values, so none of its reply readers (`ALL_WORDS`,
+`NONE_WORDS`, `CANCEL_WORDS`, the `\d+` pick regex) is reached by a low stock ask
+(`TestNoWordListIsReached`, `test_the_reply_text_is_never_read`,
+`test_a_typed_number_counts_only_as_the_parsers_pick`).
+
+Not done (crew: minor, add if small): the escalation offer on the give-up line. It is not
+small. Ending the turn through the miss half (the `_low_stock_not_enabled` shape) makes the
+engine compose the generic "Could not find inventory." in place of the lane's line; the
+existing not-enabled refusal has the same end-to-end gap (its test covers the fragment only).
+Follow-up: a lane-owned no-answer reply that keeps its own line and appends the standard
+offer.

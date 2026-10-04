@@ -360,6 +360,52 @@ class TestTheRulesAreGone:
         assert "low_stock_text" not in source
 
 
+class TestNoWordListIsReached:
+    """Kill test (crew design review, 4 Oct 2026): a low stock ask never reaches the
+    shared helper's reply readers (`_settle` with its ALL / NONE word lists, `_from_pick`
+    with its number regex) nor CANCEL_WORDS: every value the lane hands over is the
+    parser's, already resolved."""
+
+    @pytest.fixture
+    def guarded(self, console, monkeypatch):
+        from app.services.chatbot import required_fields as rf
+
+        def _boom(*_a, **_k):
+            raise AssertionError("a low stock ask reached a required_fields word reader")
+
+        for name in ("_settle", "_from_pick", "_is_all"):
+            monkeypatch.setattr(rf, name, _boom)
+        monkeypatch.setattr(rf, "CANCEL_WORDS", frozenset())
+        monkeypatch.setattr(rf, "ALL_WORDS", frozenset())
+        monkeypatch.setattr(rf, "NONE_WORDS", frozenset())
+        return console
+
+    def test_fresh_answer_pick_all_cancel_grouping_supplier_and_refinement(self, guarded) -> None:
+        c = guarded
+        _t, calls = c.say(_ask(low_stock=_ls(categories=["water tap"], brands=["sorento"], group_by="none")), "x")
+        assert len(calls) == 1
+        c.say(_ask(), "low stock report")
+        _t, calls = c.say(_answer("fill", categories=["water closet"]), "tandas")
+        assert calls[0]["categories"] == ["SRT-WC"]
+        c.say(_ask(), "low stock report")
+        _t, calls = c.say(_answer("all"), "semua")
+        assert len(calls) == 1
+        c.say(_ask(), "low stock report")
+        text, calls = c.say(_answer("cancel"), "batal")
+        assert calls == [] and text == "Low stock report cancelled."
+        c.say(_ask(low_stock=_ls(categories=["water tap"], group_by="brand")), "split by brand")
+        _t, calls = c.say(_answer("pick", 2), "2")
+        assert calls[0]["split"] == "category"
+        c.say(_ask(low_stock=_ls(categories=["water tap"], suppliers=["acme"])), "x")
+        _t, calls = c.say(_answer("fill", suppliers=["bolt"]), "bolt")
+        assert not calls[0].get("suppliers")
+        _t, calls = c.say(_refine(group_by="supplier"), "by supplier")
+        assert calls[0]["split"] == "supplier"
+        c.say(_ask(), "low stock report")
+        text, calls = c.say(_answer("fill"), "water closet")
+        assert calls == [] and text == QUESTION
+
+
 # --------------------------------------------------------------------------- #
 # Asked: nothing runs until the category is settled
 # --------------------------------------------------------------------------- #
@@ -378,11 +424,13 @@ class TestAsked:
         assert args.get("categories") == ["SRT-WC"], args
         assert _filter_line(text) == "water closet, all suppliers, no grouping"
 
-    def test_a_bare_answer_the_parser_placed_nothing_in_is_resolved_as_the_answer(self, console) -> None:
+    def test_the_reply_text_is_never_read(self, console) -> None:
+        """Kill test (crew design review, 4 Oct 2026): the parser declared an answer but
+        placed nothing; the text "water closet" names a seeded category, and a raw-text
+        fallback would run it. Nothing runs: the question is asked again."""
         console.say(_ask(), "low stock report")
-        _text, calls = console.say(_answer("fill"), "water closet")
-        (args,) = calls
-        assert args.get("categories") == ["SRT-WC"], args
+        text, calls = console.say(_answer("fill"), "water closet")
+        assert calls == [] and text == QUESTION
 
     def test_an_answer_naming_more_settles_every_field(self, console) -> None:
         console.say(_ask(), "low stock report")
@@ -485,9 +533,13 @@ class TestSupplier:
         assert args.get("suppliers") == ["JINBAICHUAN TRADING"], args
         assert sorted(args.get("categories")) == ["CB-FT", "SRT-FT"], args
 
-    def test_a_typed_number_still_picks(self, console) -> None:
+    def test_a_typed_number_counts_only_as_the_parsers_pick(self, console) -> None:
+        """Kill test: the old `\\d+` reading of the reply text is gone; "1" picks only
+        when the parser declares the pick."""
         console.say(_ask(low_stock=_ls(categories=["water tap"], suppliers=["jinbaichuan"])), "x")
-        _text, calls = console.say(_answer("fill"), "1")
+        text, calls = console.say(_answer("fill"), "1")
+        assert calls == [] and text.startswith("Which supplier do you mean?"), text
+        _text, calls = console.say(_answer("pick", 1), "1")
         (args,) = calls
         assert args.get("suppliers") == ["JINBAICHUAN HARDWARE"], args
 
