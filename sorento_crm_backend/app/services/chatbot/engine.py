@@ -55,6 +55,7 @@ from app.services.error_handler import AppException
 from app.services.ledger_family import customer_groups
 from app.services.chatbot.head import grounding, parser
 from app.services.chatbot.head.access import check_access, default_space_id
+from app.services.chatbot.prompt_gates import grant_for_order_status
 from app.services.chatbot.head.build_ctx import build_ctx
 from app.services.chatbot.lanes import business, canned as canned_lanes, casual
 from app.services.chatbot.lanes import fallback as fallback_mod
@@ -4653,13 +4654,14 @@ def _run_stages_body(  # noqa: PLR0915
         # defence, for a re-entry path that calls it directly.
         from app.services.chatbot.lanes.business import _SALES_REPORT_GRANT
 
-        from app.services.chatbot.contracts import SALES_FIGURE_STATUSES
-
         # PLAN-chatbot-top-x-hot-selling-24sep.md S4 point 5: the top selling ranking is
         # the same money under the same key, refused at the same seam.
-        sales_report_grant_refused = (
-            jsc.js_string(parsed_output.get("order_status") or "").strip() in SALES_FIGURE_STATUSES
-            and _SALES_REPORT_GRANT not in set(access.get("attributes") or [])
+        # The ask-to-grant map is `prompt_gates.PROMPT_GATES` (PARSER-PER-AUDIENCE).
+        status_grant = grant_for_order_status(
+            jsc.js_string(parsed_output.get("order_status") or "").strip()
+        )
+        sales_report_grant_refused = bool(status_grant) and status_grant not in set(
+            access.get("attributes") or []
         )
         if sales_report_grant_refused:
             # Same event shape `lanes.business.run_fetch`'s own sales-report grant

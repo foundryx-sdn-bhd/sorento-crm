@@ -27,6 +27,7 @@ import time
 from app.services.chatbot import contracts
 from app.services.chatbot import copy as reply_copy
 from app.services.chatbot import jsc
+from app.services.chatbot.prompt_gates import grant_for_intent, grant_for_order_status
 from app.services.chatbot.lanes.business import brand_guard
 from app.services.chatbot import do_ask
 from app.services.chatbot.lanes.business import fetch as fetch_mod
@@ -99,7 +100,6 @@ TOP_SELLING_UNCLEAR = "Sorry, I didn't get that. What would you like to change i
 #: a reorder run.
 _LOW_STOCK_INTENT = "low_stock_report"
 _LOW_STOCK_TOOL = "crm_low_stock_report"
-_LOW_STOCK_GRANT = "scm.low_stock_report"
 #: The one sentence a contact without that key sees, verbatim (AC-64) -
 #: `fetch.SO_NOT_ENABLED_MESSAGE`'s sibling, and a literal for the same reason: one
 #: wording, in one place, so the lane and the route's own 403 cannot drift.
@@ -174,17 +174,12 @@ def _outstanding_filters_from(entities: Any, semantic_input: dict[str, Any]) -> 
 
 
 def _low_stock_not_enabled() -> dict[str, Any]:
-    """AC-64: refuse the low stock ask BEFORE any fetch, and end in the team picker.
+    """AC-64: refuse the low stock ask BEFORE any fetch, with ONE line and nothing else.
 
-    Two things ride on this fragment. The refusal LINE is the reply's first line, verbatim
-    (`LOW_STOCK_NOT_ENABLED_MESSAGE`) - the customer is told plainly that the report is not
-    enabled for them, not given a vague miss. And the outcome is `not_found`, which is the
-    lane's existing route into `_run_miss_half` - the same path a total miss takes
-    (`TestTotalMissEscalates`), so the escalate offer and the team picker that follow are
-    the ones already in place rather than a second copy of them here.
-
-    `escalate` states on the fragment itself that this turn must end that way, so a reader
-    of the fragment (or of a trace) can see the intent without replaying the miss half.
+    A TERMINAL answer (`has_result: True`, the shape of `_sales_report_not_enabled`):
+    the refusal reaches the customer verbatim. It used to ride the lane's `not_found`
+    route into the miss half, and the miss composer replaced it with the inventory
+    domain's generic "Could not find inventory" line (PARSER-PER-AUDIENCE finding).
 
     No tool is called, so no reorder run is created - which is the whole point of gating
     here rather than letting the route answer 403 after the fetch.
@@ -196,12 +191,13 @@ def _low_stock_not_enabled() -> dict[str, Any]:
         "attachments": [],
         "action_links": [],
         "last_updated_at": None,
-        "has_result": False,
+        "has_result": True,
         "alternatives": [],
         "relaxed_axis": None,
         "field_access": None,
         "requested_attributes": [],
         "keys_served": False,
+        "outstanding_report": True,
     }
     item = fetch_mod.fetch_result(structured, tool=None, tier_probe=None)
     return {
@@ -210,7 +206,8 @@ def _low_stock_not_enabled() -> dict[str, Any]:
         "delegate": DELEGATE,
         "delegate_payload": {"fetch": item},
         "fetch": item,
-        "outcome": "not_found",
+        # States on the fragment that the team picker follows, for a reader of the
+        # fragment or its trace; the miss half is NOT entered (no `not_found` outcome).
         "escalate": True,
         "response": LOW_STOCK_NOT_ENABLED_MESSAGE,
     }
@@ -1644,7 +1641,8 @@ def run_fetch(
             if isinstance(granted_raw, (list, tuple, set, frozenset))
             else set()
         )
-        if _LOW_STOCK_GRANT not in granted:
+        # The key (`scm.low_stock_report`) is read off PROMPT_GATES, not restated here.
+        if grant_for_intent(_LOW_STOCK_INTENT) not in granted:
             return _low_stock_not_enabled()
 
         # LOWSTOCK-FILTER-ASK (owner ruling, 2 Oct 2026): nothing runs until the product
@@ -1756,15 +1754,16 @@ def run_fetch(
     # is what still answers the refusal on that path, and is the SECOND line of
     # defence (mirrors `DOMAIN_GRANT_REQUIRED`'s own trace shape above) for a
     # re-entry path that calls `run_fetch` directly (this module's own tests).
-    if order_status_raw in contracts.SALES_FIGURE_STATUSES:
+    status_need = grant_for_order_status(order_status_raw)
+    if status_need:
         access_ctx = ctx.get("access") if isinstance(ctx.get("access"), dict) else {}
         granted_raw = access_ctx.get("attributes")
         granted = set(granted_raw) if isinstance(granted_raw, (list, tuple, set, frozenset)) else set()
-        if _SALES_REPORT_GRANT not in granted:
+        if status_need not in granted:
             if trace is not None:
                 trace.add(
                     "domain_grant",
-                    {"domain": domain, "skipped": "not_granted", "needs": _SALES_REPORT_GRANT},
+                    {"domain": domain, "skipped": "not_granted", "needs": status_need},
                 )
             return _sales_report_not_enabled()
 

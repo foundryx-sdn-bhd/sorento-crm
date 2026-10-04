@@ -32,6 +32,7 @@ from functools import cmp_to_key
 from typing import Any, Literal
 
 from app.services.chatbot import jsc, label_catalog
+from app.services.chatbot.prompt_gates import PROMPT_GATES
 from app.services.chatbot.lanes.business.fetch import DATE_PARAMS, space_id_or_default
 from app.services.ledger_family import customer_group_of, customer_header_words
 from app.services.product_spec_registry import SPEC_ACRONYMS
@@ -1169,9 +1170,11 @@ _CROSSDOMAIN_RUNG_GRANT: dict[str, str] = {"purchase_order": "purchase_orders.pl
 #: R7 (PLAN-prompt-dynamic-30sep D9): the `sales` domain is the sales figures, read under
 #: the key every sales figure ask was already gated on (`contracts.SALES_FIGURE_STATUSES`);
 #: `run_fetch` refuses it in that ask's own words.
+#: PARSER-PER-AUDIENCE: read off `prompt_gates.PROMPT_GATES`, the one table the parser
+#: prompt trim reads too, so the trim and this refusal cannot drift. `purchase_order` (Q2)
+#: and `spo_allocation` (G2) joined it there.
 DOMAIN_GRANT_REQUIRED: dict[str, str] = {
-    "purchase_cost": "purchase_orders.cost",
-    "sales": "sales_orders.sales_report",
+    domain: gate.grant for gate in PROMPT_GATES for domain in gate.refused_domains
 }
 #: What the refusal CALLS the domain it just refused, for the one registered
 #: `access_denied` template (`canned.field_grant_denied_text`). A plain-language FEATURE
@@ -1180,7 +1183,11 @@ DOMAIN_GRANT_REQUIRED: dict[str, str] = {
 #: `DOMAIN_GRANT_REQUIRED` because it is the same per-domain fact wearing its other half,
 #: and it is the wording `complete_answer` used to hand out before the turn package
 #: became the one that answers.
-DOMAIN_GRANT_SUBJECT: dict[str, str] = {"purchase_cost": "purchase cost"}
+DOMAIN_GRANT_SUBJECT: dict[str, str] = {
+    "purchase_cost": "purchase cost",
+    "purchase_order": "purchase orders",
+    "spo_allocation": "supplier receipts",
+}
 #: The shipped ladder (migration 491, D7): stock -> incoming -> PO from either side. The
 #: DATABASE row is where the default lives; `engine._crossdomain_ladder` hands this out
 #: only for a settings row that carries no usable ladder (a `create_all` schema), never
