@@ -1193,6 +1193,11 @@ class AutocountDocIngestService(MasterRefResolver):
                                 exclude_header_id=str(existing.id) if existing is not None else None)
         for values, link in zip(lines, links):
             values.update(link)
+        # Set only when the lines name an SPO, so a push never clears a stored one (an
+        # adopted Excel GRN keeps the SPO its import wrote).
+        header_spo = self._grn_header_spo(asks, lines)
+        if header_spo is not None:
+            header["spo_number"] = header_spo
 
         counts = _line_counts()
         counts["skipped"] = sum(1 for line in doc.lines if line.item_code is None)
@@ -1253,6 +1258,33 @@ class AutocountDocIngestService(MasterRefResolver):
         self.released_allocation_ids.update(held_before - held_after)
         self._count_links(counts, existing.picking_lines, "po_line_id", "spo_allocation_id")
         return _Verdict(IngestOutcome.UPDATED, str(existing.id), warnings, counts)
+
+    def _grn_header_spo(self, asks: list[_LinkAsk],
+                        lines: list[dict[str, Any]]) -> Optional[str]:
+        """`picking_headers.spo_number`: the distinct SPOs the lines resolved to, in Seq order,
+        joined with ", " like the Excel import's `_header_spo_display` (GRN-HEADER-SPO). The
+        AutoCount GRN header has no SPO field (owner, 4 Oct: `Ref` holds a container number),
+        so it is never read. A linked SPO line gives its own number; an unmatched item gives
+        the SPO it named (`spo_number_raw`). None when no line is on an SPO."""
+        from app.services.procurement_service import _spo_match_key
+
+        allocation_ids = {v["spo_allocation_id"] for v in lines if v["spo_allocation_id"]}
+        numbers_by_allocation = {
+            str(row[0]): row[1]
+            for row in self.db.query(SPOAllocation.id, SPOAllocation.spo_number)
+            .filter(SPOAllocation.company_id == self.company_id,
+                    SPOAllocation.id.in_(allocation_ids))
+            .all()
+        } if allocation_ids else {}
+        numbers: dict[str, str] = {}
+        for position in sorted(range(len(asks)), key=lambda i: asks[i].order):
+            values = lines[position]
+            number = _text(numbers_by_allocation.get(str(values["spo_allocation_id"]))
+                           or values["spo_number_raw"])
+            key = _spo_match_key(number)
+            if key and key not in numbers:
+                numbers[key] = number
+        return _text(", ".join(numbers.values()), 255)
 
     def _release(self, row: PickingLine, warnings: list[str]) -> None:
         if row.spo_allocation_id:
