@@ -193,7 +193,7 @@ _RANK_NULLS = dict(rank_by=None, basis=None, rank_group=None, rank_direction=Non
 def _ask(**overrides: Any) -> dict[str, Any]:
     base: dict[str, Any] = dict(
         domain_hint="order", intent_hint="check_order", order_status="top_selling", entities=[],
-        domain_in_message=True, **_RANK_NULLS,
+        domain_in_message=True, **{**_RANK_NULLS, "basis": "delivered"},
     )
     base.update(overrides)
     return _parser_output(**base)

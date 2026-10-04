@@ -186,7 +186,7 @@ class TestTheOwnersConsoleRetest:
         assert captured == []
         focus = (turn1.session_vars or {}).get("focus") or {}
         assert focus.get("status") == "top_selling", focus
-        assert focus.get("top_selling") == {"top_n": 100, "asked": "metric"}, focus
+        assert focus.get("top_selling") == {"top_n": 100, "basis": "delivered", "asked": "metric"}, focus
 
     @pytest.mark.parametrize("reading", list(AMOUNT_READINGS))
     def test_top_100_sold_item_then_amount_is_the_ranking_by_amount(self, console, reading) -> None:
@@ -361,7 +361,7 @@ class TestR2EveryOtherQuestion:
         way: seeded as the console holds it after that reply."""
         turn1, _ = console(_ask(top_n=100), "top 100 sold item", {})
         carried = copy.deepcopy(turn1.session_vars)
-        carried["focus"]["top_selling"] = {"rank_by": "amount", "asked": "how_many"}
+        carried["focus"]["top_selling"] = {"rank_by": "amount", "basis": "delivered", "asked": "how_many"}
         turn2, captured = console(_fresh_order("all"), body, carried)
         _assert_ranking(turn2.reply_text, captured, rank_by="amount", top_n=20)
 
@@ -369,7 +369,7 @@ class TestR2EveryOtherQuestion:
         """"Which category do you mean? Reply with one code: ..." answered with a code."""
         turn1, _ = console(_ask(top_n=100), "top 100 sold item", {})
         carried = copy.deepcopy(turn1.session_vars)
-        carried["focus"]["top_selling"] = {"rank_by": "amount", "top_n": 100, "asked": "category", "category_words": ["wc"]}
+        carried["focus"]["top_selling"] = {"rank_by": "amount", "basis": "delivered", "top_n": 100, "asked": "category", "category_words": ["wc"]}
         turn2, captured = console(_fresh_order("all"), "SRT-WC", carried)
         call = _assert_ranking(turn2.reply_text, captured, rank_by="amount")
         assert call.get("category_ids") == [cat.water_closet[0]], call
@@ -379,7 +379,7 @@ class TestR2EveryOtherQuestion:
         turn1, _ = console(_ask(top_n=100), "top 100 sold item", {})
         carried = copy.deepcopy(turn1.session_vars)
         carried["focus"]["top_selling"] = {
-            "rank_by": "amount", "top_n": 100, "asked": "who",
+            "rank_by": "amount", "basis": "delivered", "top_n": 100, "asked": "who",
             "who": {"word": "sean", "agent_ids": list(cat.sean_agents), "agent_label": "SEAN I, SEAN III, SEAN IV"},
         }
         turn2, captured = console(_fresh_order("all"), "2", carried)

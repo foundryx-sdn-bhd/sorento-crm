@@ -584,6 +584,7 @@ def _parity_world(db):
         L7    PD       AG1    Sep 15   -         open/open     5        5          333.33   (second category)
         L8    PC       AG2    Sep 16   -         open/open     3        0          90.00    (nothing delivered)
         L9    PC       AG1    Sep 17   -         open/open     4        4          0.00     (real qty, zero value)
+        L10   PE       AG2    NULL     Sep 20    open/open     7        7          70.00    (SO order_date NULL, required in Sep)
     """
     w = SimpleNamespace()
     w.cust = seed_customer(db, name=unique_code("Cust"))
@@ -591,6 +592,7 @@ def _parity_world(db):
     w.cat1, w.cat2 = _category(db, "ZZT-PAR-CAT1"), _category(db, "ZZT-PAR-CAT2")
     w.pa, w.pb, w.pc = (_prod(db, f"ZZTPAR-{n}", category=w.cat1) for n in "ABC")
     w.pd = _prod(db, "ZZTPAR-D", category=w.cat2)
+    w.pe = _prod(db, "ZZTPAR-E", category=w.cat1)
     w.ag1, w.ag2 = seed_agent(db, code="ZZT-PAR-AG1"), seed_agent(db, code="ZZT-PAR-AG2")
     kw = dict(cust=w.cust, wh=w.wh)
     seed_so_line(db, prod=w.pa, agent=w.ag1, qty=10, total="1000.00", order_date=date(2026, 9, 10), **kw)
@@ -606,6 +608,10 @@ def _parity_world(db):
     seed_so_line(db, prod=w.pd, agent=w.ag1, qty=5, total="333.33", order_date=date(2026, 9, 15), **kw)
     seed_so_line(db, prod=w.pc, agent=w.ag2, qty=3, delivered=0, total="90.00", order_date=date(2026, 9, 16), **kw)
     seed_so_line(db, prod=w.pc, agent=w.ag1, qty=4, total="0.00", order_date=date(2026, 9, 17), **kw)
+    # REVIEW S1: top selling files a line by coalesce(required_date, order_date) IS NOT NULL, so a line
+    # whose SO has NO order_date but a required date in the window counts there; report-ask must too.
+    seed_so_line(db, prod=w.pe, agent=w.ag2, qty=7, total="70.00", order_date=None,
+                 required_date=date(2026, 9, 20), **kw)
     db.commit()
     return w
 
@@ -636,17 +642,20 @@ def test_ac_re_20_group_by_product_is_top_sellings_item_ranking(client, db, basi
 
 def test_ac_re_20_the_world_pins_the_numbers_not_only_the_parity(client, db):
     """Hand-computed, so two wrong-in-the-same-way implementations cannot agree. Delivered, by amount:
-    PA 10+8 / 1000+240, PB 4+6 / 200+120, PD 5 / 333.33, PC 4 / 0.00 (qty, no value). The cancelled
-    line, the Oct-required line and the undelivered PC line are out or zero."""
+    PA 10+8 / 1000+240, PB 4+6 / 200+120, PD 5 / 333.33, PE 7 / 70.00 (SO order_date NULL, required
+    in Sep), PC 4 / 0.00 (qty, no value). The cancelled line, the Oct-required line and the undelivered
+    PC line are out or zero."""
     _parity_world(db)
     contact = _full(db)
     delivered = _ok(client, contact, group_by="product", top_n=100, basis="delivered")
     assert _rows(delivered) == [("ZZTPAR-A", 18, D("1240.00")), ("ZZTPAR-D", 5, D("333.33")),
-                                ("ZZTPAR-B", 10, D("320.00")), ("ZZTPAR-C", 4, D("0.00"))], delivered["rows"]
+                                ("ZZTPAR-B", 10, D("320.00")), ("ZZTPAR-E", 7, D("70.00")),
+                                ("ZZTPAR-C", 4, D("0.00"))], delivered["rows"]
     ordered = _ok(client, contact, group_by="product", top_n=100, basis="ordered")
-    # PA 30 / 1600, PB 10+6 / 500+120, PD 5 / 333.33, PC 3+4 / 90
+    # PA 30 / 1600, PB 10+6 / 500+120, PD 5 / 333.33, PC 3+4 / 90, PE 7 / 70
     assert _rows(ordered) == [("ZZTPAR-A", 30, D("1600.00")), ("ZZTPAR-B", 16, D("620.00")),
-                              ("ZZTPAR-D", 5, D("333.33")), ("ZZTPAR-C", 7, D("90.00"))], ordered["rows"]
+                              ("ZZTPAR-D", 5, D("333.33")), ("ZZTPAR-C", 7, D("90.00")),
+                              ("ZZTPAR-E", 7, D("70.00"))], ordered["rows"]
 
 
 @pytest.mark.parametrize("basis", ["delivered", "ordered"])
@@ -683,10 +692,18 @@ def test_every_basis_ranks_the_sales_agent_of_the_so_not_of_any_delivery(client,
     """No DO exists anywhere in this chain: the delivered basis still ranks, by the SO's own agent."""
     w = _parity_world(db)
     body = _ok(client, _full(db), group_by="sales_agent", top_n=10, basis="delivered")
-    # AG1: L1 10/1000 + L3 4/200 + L7 5/333.33 + L9 4/0 ; AG2: L2 8/240 + L5 6/120 (L8 delivered nothing)
-    assert _rows(body) == [("ZZT-PAR-AG1", 23, D("1533.33")), ("ZZT-PAR-AG2", 14, D("360.00"))], body["rows"]
+    # AG1: L1 10/1000 + L3 4/200 + L7 5/333.33 + L9 4/0 ; AG2: L2 8/240 + L5 6/120 + L10 7/70
+    # (L8 delivered nothing; L10's SO has no order_date, its required date is in the window)
+    assert _rows(body) == [("ZZT-PAR-AG1", 23, D("1533.33")), ("ZZT-PAR-AG2", 21, D("430.00"))], body["rows"]
     assert w.ag1.sales_agent == "ZZT-PAR-AG1"
 
+
+def test_a_line_whose_so_has_no_order_date_shows_in_a_sales_agent_ranking_on_the_ordered_basis(client, db):
+    """REVIEW S1: AG1 L1 10/1000 + L3 10/500 + L7 5/333.33 + L9 4/0 ; AG2 L2 20/600 + L5 6/120 +
+    L8 3/90 + L10 7/70 (SO order_date NULL, required Sep 20). Without L10 AG2 is 29 / 810.00."""
+    _parity_world(db)
+    body = _ok(client, _full(db), group_by="sales_agent", top_n=10, basis="ordered")
+    assert _rows(body) == [("ZZT-PAR-AG1", 29, D("1833.33")), ("ZZT-PAR-AG2", 36, D("880.00"))], body["rows"]
 
 def test_the_delivered_basis_dates_a_line_by_its_required_date(client, db):
     """`group_by=month` is bucketed by `coalesce(required_date, order_date)`: L5 (Aug SO, required
@@ -694,8 +711,8 @@ def test_the_delivered_basis_dates_a_line_by_its_required_date(client, db):
     _parity_world(db)
     body = _ok(client, _full(db), group_by="month", top_n=12, date_from="2026-08-01", date_to="2026-09-30")
     assert [r["name"] for r in body["rows"]] == ["2026-09"], body["rows"]
-    assert body["rows"][0]["qty"] == 37, body["rows"]
-    assert money(body["rows"][0]["amount"]) == D("1893.33"), body["rows"]
+    assert body["rows"][0]["qty"] == 44, body["rows"]
+    assert money(body["rows"][0]["amount"]) == D("1963.33"), body["rows"]
     wide = _ok(client, _full(db), group_by="month", top_n=12, date_from="2026-08-01", date_to="2026-10-31")
     assert sorted(r["name"] for r in wide["rows"]) == ["2026-09", "2026-10"], wide["rows"]
 

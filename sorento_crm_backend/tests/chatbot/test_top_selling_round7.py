@@ -302,6 +302,10 @@ def _year_as_order(year: int) -> dict[str, Any]:
     return _year(year, order_status="all", domain_in_message=True)
 
 
+#: The top selling basis question (`lanes/business.TOP_SELLING_ASK_BASIS`).
+ASK_BASIS_LINE = "Delivered (transferred to DO) or ordered?"
+
+
 def _william_as_order() -> dict[str, Any]:
     """"top 10 hot selling item by william in q1 2026" read as an order ask."""
     return _parser_output(
@@ -525,8 +529,12 @@ class TestR2RankingWords:
         assert c.slot.get("top_n") == 10 and "rank_direction" not in c.slot, c.slot
         text, captured = c.say(_answer(rank_by="quantity"), "quantity")
         _clean(text, "quantity")
+        # Owner ruling 4 Oct 2026: no basis word is asked, never run delivered.
+        assert captured == [] and text == ASK_BASIS_LINE, (text, captured)
+        text, captured = c.say(_answer(basis="delivered"), "delivered")
+        _clean(text, "delivered")
         (args,) = _calls(captured)
-        assert args["n"] == 10 and args.get("direction") != "bottom", args
+        assert args["n"] == 10 and args.get("direction") != "bottom" and args["basis"] == "delivered", args
         assert (args.get("date_from"), args.get("date_to")) == ("2026-01-01", "2026-03-31"), args
         assert "sales_agent_ids" not in args and "category_ids" not in args, args
         assert text.startswith("*Top 10 selling items*"), text
@@ -698,7 +706,10 @@ class TestR4Aliases:
         text, captured = c.say(_william_as_order(), "top 10 hot selling item by william in q1 2026")
         assert text == ASK_METRIC, text
         text, captured = c.say(_answer(rank_by="quantity"), "quantity")
+        assert captured == [] and text == ASK_BASIS_LINE, (text, captured)
+        text, captured = c.say(_answer(basis="ordered"), "ordered")
         (args,) = _calls(captured)
+        assert args["basis"] == "ordered", args
         assert sorted(args["sales_agent_ids"]) == c.seeded.agents("WT"), args
         _line(text, "Sales agent", WT)
         _line(text, "Delivery date", Q1)

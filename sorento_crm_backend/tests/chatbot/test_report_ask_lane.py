@@ -61,11 +61,15 @@ def _e(raw: str, hint: str) -> dict[str, Any]:
 
 
 def _rank(*entities: dict[str, Any], **overrides: Any) -> dict[str, Any]:
-    """The parser's reading of "top 3 salesman for Sorento brand last month" (section 11)."""
+    """The parser's reading of "top 3 salesman for Sorento brand last month" (section 11).
+
+    Owner ruling 4 Oct 2026: a ranking never runs on a silent default, so this reading NAMES its
+    measure and basis ("by amount, delivered"); a test of the clarify questions overrides both to
+    None (`tests/chatbot/test_report_ask_clarify.py`)."""
     base: dict[str, Any] = dict(
         domain_hint="order", intent_hint="check_order", order_status="sales_ranking",
         entities=list(entities), group_by="sales_agent", top_n=3,
-        rank_direction="top", rank_by=None, basis=None, measure=None, ranking_refine=False, **SEP,
+        rank_direction="top", rank_by=None, basis="delivered", measure="amount", ranking_refine=False, **SEP,
     )
     base.update(overrides)
     return _parser_output(**base)
@@ -257,10 +261,11 @@ def test_basis_ordered_passes_through(console) -> None:
     assert args["basis"] == "ordered", args
 
 
-def test_an_unclear_basis_is_delivered(console) -> None:
-    _text, calls = console.say(_rank(_e("Sorento", "brand"), basis="unclear"), "top 3 salesman for Sorento")
-    (args,) = calls
-    assert args["basis"] == "delivered", args
+def test_an_unclear_basis_is_asked_never_delivered(console) -> None:
+    """Owner ruling 4 Oct 2026 (was: an unclear basis ran delivered)."""
+    text, calls = console.say(_rank(_e("Sorento", "brand"), basis="unclear"), "top 3 salesman for Sorento")
+    assert calls == [], calls
+    assert text.strip() == "Delivered, ordered or outstanding?", text
 
 
 def test_group_by_warehouse_is_location(console) -> None:
@@ -893,11 +898,12 @@ def test_the_lane_takes_measure_qty_from_the_parsers_measure_key(console, body) 
 
 
 @pytest.mark.parametrize("body", ["top 3 salesman for sorento this year by quantity", "top 3 salesman for sorento this year"])
-def test_a_null_measure_is_amount_even_when_rank_by_says_quantity(console, body) -> None:
-    """Owner rule 4 Oct: no regex over the text. measure null + rank_by quantity -> amount, whatever the words."""
-    _text, calls = console.say(_rank(_e("sorento", "brand"), measure=None, rank_by="quantity", **THIS_YEAR), body)
-    (args,) = calls
-    assert args["measure"] == "amount", (body, args)
+def test_a_null_measure_is_asked_whatever_the_words_say(console, body) -> None:
+    """Owner rule 4 Oct: no regex over the text, and (ruling 4 Oct) no silent amount either. measure
+    null asks the metric question, even when the words say quantity."""
+    text, calls = console.say(_rank(_e("sorento", "brand"), measure=None, **THIS_YEAR), body)
+    assert calls == [], (body, calls)
+    assert text.strip() == "By quantity or by amount?", (body, text)
 
 
 def test_the_lane_takes_measure_amount_from_the_parsers_measure_key(console) -> None:
@@ -1593,14 +1599,7 @@ def test_c_a_category_named_by_its_own_name_still_resolves_alone(console) -> Non
 
 @pytest.mark.parametrize(
     "parser_basis, route_basis",
-    [
-        ("outstanding", "outstanding"),
-        ("ordered", "ordered"),
-        ("delivered", "delivered"),
-        ("unclear", "delivered"),
-        (None, "delivered"),
-        ("invoiced", "delivered"),
-    ],
+    [("outstanding", "outstanding"), ("ordered", "ordered"), ("delivered", "delivered")],
 )
 def test_d_the_parsers_basis_maps_onto_the_routes(console, parser_basis, route_basis) -> None:
     _text, calls = console.say(
@@ -1609,6 +1608,16 @@ def test_d_the_parsers_basis_maps_onto_the_routes(console, parser_basis, route_b
     (args,) = calls
     assert args["basis"] == route_basis, (parser_basis, args)
     assert args["group_by"] == "sales_agent" and args["brand_ids"] == [console.ids["brand"]], args
+
+
+@pytest.mark.parametrize("parser_basis", ["unclear", None, "invoiced"])
+def test_d_a_basis_the_parser_did_not_settle_is_asked_never_delivered(console, parser_basis) -> None:
+    """Owner ruling 4 Oct 2026 (was: unclear, null and an unknown word all ran delivered)."""
+    text, calls = console.say(
+        _rank(_e("Sorento", "brand"), basis=parser_basis, **THIS_YEAR), "top 3 salesman for sorento"
+    )
+    assert calls == [], (parser_basis, calls)
+    assert text.strip() == "Delivered, ordered or outstanding?", (parser_basis, text)
 
 
 def test_d_a_basis_refine_to_outstanding_reruns_the_held_ranking(console) -> None:
@@ -1644,15 +1653,14 @@ def test_e_a_top_selling_verdict_with_basis_outstanding_is_not_an_outstanding_to
     console, monkeypatch
 ) -> None:
     """Top selling has two bases (delivered, ordered). A parser slip of `outstanding` on a
-    top_selling verdict neither reroutes to the ranking lane nor reaches the top selling route."""
+    top_selling verdict neither reroutes to the ranking lane nor reaches the top selling route
+    (review S2: never run delivered silently): the basis question is asked and nothing is fetched."""
     text, log = _say_all(
         console, monkeypatch, _old(_hit("sorento", "brand"), basis="outstanding"), "top 3 selling items outstanding"
     )
     assert TOOL not in _names(log), (_names(log), text)
-    for name, args in log:
-        if name == "crm_top_selling_report":
-            assert args.get("basis") in (None, "delivered", "ordered"), args
-            assert args.get("basis") != "outstanding", args
+    assert "crm_top_selling_report" not in _names(log), (_names(log), text)
+    assert text.strip() == "Delivered (transferred to DO) or ordered?", text
 
 
 def test_e_the_schema_lets_a_sales_ranking_emit_outstanding() -> None:

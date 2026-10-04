@@ -209,7 +209,7 @@ def _ask(**overrides: Any) -> dict[str, Any]:
     parser's `domain_in_message` is true."""
     base: dict[str, Any] = dict(
         domain_hint="order", intent_hint="check_order", order_status="top_selling", entities=[],
-        rank_by=None, basis=None, rank_group=None, rank_direction=None, top_n=None,
+        rank_by=None, basis="delivered", rank_group=None, rank_direction=None, top_n=None,
         domain_in_message=True,
     )
     base.update(overrides)
