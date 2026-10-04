@@ -86,6 +86,15 @@ class Finding:
     line: int
 
 
+def _invalid_my_number(value: str) -> bool:
+    """+60 / 0060 / 60 followed by 0 is no Malaysian number (a national number never
+    starts with 0), so a placeholder in that shape is not personal data."""
+    d = re.sub(r"\D", "", value)
+    if d.startswith("00"):
+        d = d[2:]
+    return d.startswith("600")
+
+
 def is_fake_phone(digits: str) -> bool:
     """True only for the agreed fake shapes: a zero run of four straight after the
     60xx prefix (+60 17-000 0501), exactly the classic 012-345 6789, or one digit
@@ -106,6 +115,8 @@ def scan_text(text: str) -> list[Finding]:
         if not _KEY_HINT.search(line):
             continue
         for m in _KEYED_PHONE.finditer(line):
+            if _invalid_my_number(m.group(1)):
+                continue
             if not _PHONE.search(m.group(1)) and not is_fake_phone(m.group(1)):
                 found.append(Finding("phone", lineno))
     if not _PLATE_HINT.search(text):
