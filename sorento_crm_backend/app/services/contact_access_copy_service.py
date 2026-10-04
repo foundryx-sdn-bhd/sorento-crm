@@ -3,7 +3,10 @@
 Owner job (card `documentation/plans/contacts/CARD-contact-bulk-access-3oct.md`): ~240 dealer
 contacts get the same access as a reference contact the owner configured by hand. Copy means
 "make the target the same as the source" for every facet below (owner Q2: replace, not add).
-Linked customers, companies, CS routing, media limits and memory are never part of it (Q1).
+Linked customers, CS routing, media limits and memory are never part of it (Q1). Companies, market
+segments and the contact's stock visibility override (stock check mode + locations) joined the set
+on 4 Oct 2026 (lane CONTACT-COPY-FIELDS); `facets_to_skip` leaves a facet out for an actor who could not set
+it directly, so the copy never widens what that actor can change.
 
 The access set is the `FACETS` tuple, read for many contacts at once (`snapshots`) and compared
 per facet (`diff`). The endpoint's dry run, its apply, and the contacts list's
@@ -25,9 +28,13 @@ from app.models.access import (
     AccessAgent,
     ContactAccessType,
     ContactAgentAccess,
+    MarketSegment,
     RespondContact,
+    StockVisibilityPolicy,
     respond_contact_access_types,
+    respond_contact_market_segments,
 )
+from app.models.company import Company, RespondContactCompany
 from app.services import contact_field_reveal_service
 from app.services import audit_service
 from app.services.audit_service import audit_event
@@ -46,6 +53,38 @@ SWITCHES: tuple[tuple[str, str], ...] = (
     ("chatbot_eta_offset_applied", "ETA buffer days"),
     ("escalation_allowed", "Escalation"),
 )
+
+STOCK_MODE_LABELS = {"detailed": "Detailed", "compact": "Compact", "availability": "Availability only"}
+
+#: Facets an actor may only copy when they could set them directly; the route names the ones to
+#: leave out (`skip`). Companies: superadmin/admin (`PUT /contacts/{id}/companies`). Stock check
+#: mode + locations: `inventory.stock.edit` (`PUT /inventory/stock-visibility/contacts/{id}`).
+STOCK_FACETS = frozenset({"stock_check_mode", "stock_locations"})
+COMPANIES_FACET = "companies"
+
+
+
+def facets_to_skip(db: Session, user_id: str) -> frozenset[str]:
+    """The facets `user_id` could not set directly, so the copy must not set them either."""
+    from app.api.v1.system.companies import _is_superadmin
+    from app.services.user_service import UserPermissionService
+
+    skip: set[str] = set()
+    if not _is_superadmin(db, user_id):
+        skip.add(COMPANIES_FACET)
+    if not UserPermissionService(db).check_user_has_permission(user_id, "inventory.stock.edit"):
+        skip |= STOCK_FACETS
+    return frozenset(skip)
+
+
+#: Always named under "Not copied" in the dialog; a skipped facet's label is added to it.
+NOT_COPIED = ("Linked customers", "CS routing", "Media limits", "Memory")
+FACET_LABELS = {
+    "stock_check_mode": "Stock check mode",
+    "stock_locations": "Locations",
+    "companies": "Companies",
+    "market_segments": "Market segments",
+}
 
 SKIPPED_SOURCE = "This is the source contact."
 NOT_FOUND = "Contact not found."
@@ -77,6 +116,17 @@ class AgentGrant:
         }
 
 
+@dataclass(frozen=True)
+class StockOverride:
+    mode: str
+    include: Optional[tuple[str, ...]]  # None = every active warehouse
+    exclude: Optional[tuple[str, ...]]  # None = no exclusion
+    hide_zero: bool
+
+    def warehouse_ids(self) -> set[str]:
+        return set(self.include or ()) | set(self.exclude or ())
+
+
 @dataclass
 class AccessSnapshot:
     """One contact's access set. Reveals hold only keys this build knows (a key it does not
@@ -89,6 +139,20 @@ class AccessSnapshot:
     switches: dict[str, bool] = field(default_factory=dict)
     reveals: list[str] = field(default_factory=list)
     agents: dict[str, AgentGrant] = field(default_factory=dict)  # agent_id -> grant
+    #: The contact-tier stock visibility row, or None when the contact inherits.
+    stock: Optional[StockOverride] = None
+    companies: list[str] = field(default_factory=list)  # company ids
+    segments: list[str] = field(default_factory=list)  # market segment codes
+
+
+@dataclass
+class Names:
+    """Display names for the ids a diff shows; an id missing here shows as itself."""
+
+    types: dict[str, str] = field(default_factory=dict)  # access type code -> name
+    warehouses: dict[str, str] = field(default_factory=dict)  # warehouse id -> code
+    companies: dict[str, tuple[str, str]] = field(default_factory=dict)  # id -> (code, name)
+    segments: dict[str, str] = field(default_factory=dict)  # code -> name
 
 
 def _iso(value: Any) -> Optional[str]:
@@ -162,9 +226,34 @@ def snapshots(db: Session, contacts: Iterable[RespondContact]) -> dict[str, Acce
             ),
         )
 
+    for row in db.query(StockVisibilityPolicy).filter(StockVisibilityPolicy.contact_id.in_(ids)):
+        out[str(row.contact_id)].stock = StockOverride(
+            mode=row.mode,
+            include=tuple(sorted(str(w) for w in row.warehouse_ids)) if row.warehouse_ids is not None else None,
+            exclude=(
+                tuple(sorted(str(w) for w in row.excluded_warehouse_ids))
+                if row.excluded_warehouse_ids is not None
+                else None
+            ),
+            hide_zero=bool(row.hide_zero_locations),
+        )
+
+    for contact_id, company_id in db.query(
+        RespondContactCompany.respond_contact_id, RespondContactCompany.company_id
+    ).filter(RespondContactCompany.respond_contact_id.in_(ids)):
+        out[str(contact_id)].companies.append(str(company_id))
+
+    for contact_id, code in db.execute(
+        select(respond_contact_market_segments.c.contact_id, respond_contact_market_segments.c.segment_code)
+        .where(respond_contact_market_segments.c.contact_id.in_(ids))
+    ):
+        out[str(contact_id)].segments.append(code)
+
     for snap in out.values():
         snap.access_types.sort()
         snap.reveals.sort()
+        snap.companies.sort()
+        snap.segments.sort()
     return out
 
 
@@ -182,20 +271,81 @@ def _change(facet: str, label: str, before: Any, after: Any, added=(), removed=(
     }
 
 
-def _type_names(db: Session, codes: Iterable[str]) -> dict[str, str]:
-    codes = list(codes)
-    if not codes:
-        return {}
-    return dict(
-        db.query(ContactAccessType.code, ContactAccessType.name)
-        .filter(ContactAccessType.code.in_(codes))
-        .all()
+def names_for(db: Session, snaps: Iterable[AccessSnapshot]) -> Names:
+    """Display names for every id the given snapshots hold, one query per kind."""
+    snaps = list(snaps)
+    codes = {c for s in snaps for c in s.access_types}
+    warehouse_ids = {w for s in snaps if s.stock for w in s.stock.warehouse_ids()}
+    company_ids = {c for s in snaps for c in s.companies}
+    segment_codes = {c for s in snaps for c in s.segments}
+    names = Names()
+    if codes:
+        names.types = dict(
+            db.query(ContactAccessType.code, ContactAccessType.name)
+            .filter(ContactAccessType.code.in_(codes))
+            .all()
+        )
+    if warehouse_ids:
+        from app.services.stock_visibility import policy_warehouses
+
+        # Across every company, as the Stock visibility card resolves them.
+        names.warehouses = {w["id"]: w["code"] for w in policy_warehouses(db, frozenset(warehouse_ids)) or []}
+    if company_ids:
+        names.companies = {
+            str(cid): (code, name)
+            for cid, code, name in db.query(Company.id, Company.code, Company.name).filter(Company.id.in_(company_ids))
+        }
+    if segment_codes:
+        names.segments = dict(
+            db.query(MarketSegment.code, MarketSegment.name).filter(MarketSegment.code.in_(segment_codes)).all()
+        )
+    return names
+
+
+def locations_text(stock: Optional[StockOverride], names: Names) -> Optional[str]:
+    """The locations half of a stock override as one line; None when the contact inherits."""
+    if stock is None:
+        return None
+
+    def codes(ids: tuple[str, ...]) -> str:
+        return ", ".join(sorted(names.warehouses.get(w, w) for w in ids))
+
+    if stock.exclude is not None:
+        text_ = f"All except {codes(stock.exclude)}" if stock.exclude else "All locations"
+    elif stock.include is None:
+        text_ = "All locations"
+    elif not stock.include:
+        text_ = "No locations"
+    else:
+        text_ = f"Only {codes(stock.include)}"
+    return f"{text_}; hide zero-quantity" if stock.hide_zero else text_
+
+
+def _locations_key(stock: Optional[StockOverride]) -> Optional[tuple]:
+    return None if stock is None else (stock.include, stock.exclude, stock.hide_zero)
+
+
+def _list_change(facet: str, before: list[str], after: list[str], label_of, value_of) -> dict:
+    return _change(
+        facet,
+        FACET_LABELS[facet],
+        sorted(value_of(x) for x in before),
+        sorted(value_of(x) for x in after),
+        sorted(label_of(x) for x in after if x not in before),
+        sorted(label_of(x) for x in before if x not in after),
     )
 
 
-def diff(source: AccessSnapshot, target: AccessSnapshot, type_names: dict[str, str]) -> list[dict]:
-    """What a copy from `source` changes on `target`, one row per differing facet, in facet order."""
+def diff(
+    source: AccessSnapshot,
+    target: AccessSnapshot,
+    names: Names,
+    skip: frozenset[str] = frozenset(),
+) -> list[dict]:
+    """What a copy from `source` changes on `target`, one row per differing facet, in facet order.
+    Facets in `skip` are never compared (the actor may not set them)."""
     changes: list[dict] = []
+    type_names = names.types
 
     if source.access_types != target.access_types:
         added = [c for c in source.access_types if c not in target.access_types]
@@ -247,14 +397,55 @@ def diff(source: AccessSnapshot, target: AccessSnapshot, type_names: dict[str, s
                 sorted(removed),
             )
         )
+
+    src_mode = source.stock.mode if source.stock else None
+    tgt_mode = target.stock.mode if target.stock else None
+    if "stock_check_mode" not in skip and src_mode != tgt_mode:
+        changes.append(_change("stock_check_mode", FACET_LABELS["stock_check_mode"], tgt_mode, src_mode))
+    if "stock_locations" not in skip and _locations_key(source.stock) != _locations_key(target.stock):
+        changes.append(
+            _change(
+                "stock_locations",
+                FACET_LABELS["stock_locations"],
+                locations_text(target.stock, names),
+                locations_text(source.stock, names),
+            )
+        )
+
+    if COMPANIES_FACET not in skip and source.companies != target.companies:
+        changes.append(
+            _list_change(
+                COMPANIES_FACET,
+                target.companies,
+                source.companies,
+                lambda c: names.companies.get(c, (c, c))[1],
+                lambda c: names.companies.get(c, (c, c))[0],
+            )
+        )
+    if "market_segments" not in skip and source.segments != target.segments:
+        changes.append(
+            _list_change(
+                "market_segments",
+                target.segments,
+                source.segments,
+                lambda c: names.segments.get(c, c),
+                lambda c: c,
+            )
+        )
     return changes
 
 
-def summary(source: AccessSnapshot, type_names: dict[str, str]) -> list[dict]:
+def not_copied(skip: frozenset[str]) -> list[str]:
+    """What the copy leaves alone for this actor, as dialog labels."""
+    return [*NOT_COPIED, *(FACET_LABELS[f] for f in FACET_LABELS if f in skip)]
+
+
+def summary(source: AccessSnapshot, names: Names, skip: frozenset[str] = frozenset()) -> list[dict]:
     """The source's access set as display lines for the dialog's first step."""
+    type_names = names.types
     labels = dict(contact_field_reveal_service.FIELD_REVEAL_KEYS)
     agents = sorted(g.agent_name for g in source.agents.values() if g.is_allowed)
-    return [
+    lines = [
         {"label": "Access types", "value": ", ".join(type_names.get(c, c) for c in source.access_types)},
         {"label": "Tier", "value": TIER_LABELS.get(source.tier or "", source.tier or "")},
         {
@@ -264,13 +455,31 @@ def summary(source: AccessSnapshot, type_names: dict[str, str]) -> list[dict]:
         {"label": "Field reveals", "value": ", ".join(labels.get(k, k) for k in source.reveals)},
         {"label": "Agent access", "value": ", ".join(agents)},
     ]
+    extra = {
+        "stock_check_mode": STOCK_MODE_LABELS.get(source.stock.mode, source.stock.mode) if source.stock else "Inherited",
+        "stock_locations": locations_text(source.stock, names) or "Inherited",
+        "companies": ", ".join(sorted(names.companies.get(c, (c, c))[1] for c in source.companies)),
+        "market_segments": ", ".join(names.segments.get(c, c) for c in source.segments),
+    }
+    lines.extend({"label": FACET_LABELS[f], "value": v} for f, v in extra.items() if f not in skip)
+    return lines
 
 
 # ---------------------------------------------------------------- write
 
 
-def _write(db: Session, source: AccessSnapshot, target: RespondContact, snap: AccessSnapshot, actor_id: Optional[str]) -> None:
-    """Make `target` equal to `source` on every facet. Caller owns the savepoint."""
+def _write(
+    db: Session,
+    source: AccessSnapshot,
+    target: RespondContact,
+    snap: AccessSnapshot,
+    actor_id: Optional[str],
+    changed: frozenset[str] = frozenset(),
+) -> None:
+    """Make `target` equal to `source` on every facet. Caller owns the savepoint.
+
+    The facets added on 4 Oct 2026 are written only when `changed` (the facets of this target's
+    diff) names them, so a facet the actor may not set (left out of the diff) is never written."""
     target_id = str(target.id)
 
     if snap.access_types != source.access_types:
@@ -306,7 +515,48 @@ def _write(db: Session, source: AccessSnapshot, target: RespondContact, snap: Ac
         )
 
     _write_agents(db, source, target, actor_id)
+
+    if changed & STOCK_FACETS:
+        _write_stock(db, source.stock, target_id)
+
+    if COMPANIES_FACET in changed:
+        db.query(RespondContactCompany).filter(RespondContactCompany.respond_contact_id == target_id).delete(
+            synchronize_session=False
+        )
+        for company_id in source.companies:
+            db.add(RespondContactCompany(respond_contact_id=target_id, company_id=company_id))
+
+    if "market_segments" in changed:
+        db.execute(
+            respond_contact_market_segments.delete().where(respond_contact_market_segments.c.contact_id == target_id)
+        )
+        if source.segments:
+            db.execute(
+                respond_contact_market_segments.insert(),
+                [{"contact_id": target_id, "segment_code": code} for code in source.segments],
+            )
+        # The contact's `market_segments` relationship was loaded before this Core write.
+        db.expire(target, ["market_segments"])
     db.flush()
+
+
+def _write_stock(db: Session, stock: Optional[StockOverride], target_id: str) -> None:
+    """The target's contact-tier stock visibility row becomes the source's; none when the source
+    inherits. Through the ORM, not `stock_visibility.upsert_policy` (which commits and so would end
+    the per-target savepoint), so the table's audit listener still records the change. The values
+    were validated when the source's row was saved."""
+    row = db.query(StockVisibilityPolicy).filter(StockVisibilityPolicy.contact_id == target_id).first()
+    if stock is None:
+        if row is not None:
+            db.delete(row)
+        return
+    if row is None:
+        row = StockVisibilityPolicy(contact_id=target_id)
+        db.add(row)
+    setattr(row, "mode", stock.mode)
+    setattr(row, "warehouse_ids", list(stock.include) if stock.include is not None else None)
+    setattr(row, "excluded_warehouse_ids", list(stock.exclude) if stock.exclude is not None else None)
+    setattr(row, "hide_zero_locations", stock.hide_zero)
 
 
 def _write_agents(db: Session, source: AccessSnapshot, target: RespondContact, actor_id: Optional[str]) -> None:
@@ -368,8 +618,12 @@ def copy_access(
     *,
     dry_run: bool,
     actor_id: Optional[str],
+    skip: frozenset[str] = frozenset(),
 ) -> dict:
     """Preview (dry run) or apply a copy from `source` to every id in `target_ids`.
+
+    `skip` names the facets this actor may not set directly (`facets_to_skip`);
+    they are left out of the preview, the write and the summary, and named in `not_copied`.
 
     Each target is written inside its own savepoint: a failure rolls back that target only
     and answers `failed` with the reason; the rest still apply. The caller commits.
@@ -381,10 +635,7 @@ def copy_access(
     }
     snaps = snapshots(db, [source, *found.values()])
     src = snaps[str(source.id)]
-    all_codes = set(src.access_types)
-    for s in snaps.values():
-        all_codes.update(s.access_types)
-    type_names = _type_names(db, all_codes)
+    names = names_for(db, snaps.values())
 
     results: list[dict] = []
     for target_id in target_ids:
@@ -396,14 +647,14 @@ def copy_access(
             results.append(_result(target_id, contact_label(contact), "skipped", [], SKIPPED_SOURCE))
             continue
         snap = snaps[target_id]
-        changes = diff(src, snap, type_names)
+        changes = diff(src, snap, names, skip)
         if not changes:
             results.append(_result(target_id, snap.label, "unchanged", [], None))
             continue
         if not dry_run:
             savepoint = db.begin_nested()
             try:
-                _write(db, src, contact, snap, actor_id)
+                _write(db, src, contact, snap, actor_id, frozenset(c["facet"] for c in changes))
                 # One row per copied contact naming the source: access types (Core pivot
                 # writes) and tier (raw UPDATE) are invisible to the ORM audit listeners.
                 audit_service.record(
@@ -432,7 +683,12 @@ def copy_access(
         counts[row["status"]] += 1
     return {
         "dry_run": dry_run,
-        "source": {"id": src.contact_id, "label": src.label, "summary": summary(src, type_names)},
+        "source": {
+            "id": src.contact_id,
+            "label": src.label,
+            "summary": summary(src, names, skip),
+            "not_copied": not_copied(skip),
+        },
         "results": results,
         "counts": counts,
     }
@@ -447,4 +703,4 @@ def contacts_differing_from(db: Session, source: RespondContact, candidates: lis
     others = [c for c in candidates if str(c.id) != str(source.id)]
     snaps = snapshots(db, [source, *others])
     src = snaps[str(source.id)]
-    return [str(c.id) for c in others if diff(src, snaps[str(c.id)], {})]
+    return [str(c.id) for c in others if diff(src, snaps[str(c.id)], Names())]

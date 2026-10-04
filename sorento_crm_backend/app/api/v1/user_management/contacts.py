@@ -215,6 +215,8 @@ def bulk_copy_contact_access(
             body.target_contact_ids,
             dry_run=body.dry_run,
             actor_id=str(current_user.get("id") or "") or None,
+            # Companies and stock visibility are copied only by someone who could set them directly.
+            skip=contact_access_copy_service.facets_to_skip(db, current_user["id"]),
         )
         # A dry run wrote nothing (no savepoint was opened); `get_db` never commits.
         if not body.dry_run:
