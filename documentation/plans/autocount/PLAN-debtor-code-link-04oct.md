@@ -19,7 +19,9 @@ fail "already linked to another source" (crew E2E, 4 Oct).
   the document, so documents are out of scope. Sales agent still goes to every same-code row (#1468).
 - Crew 4 Oct: Q2 (a) keep the stored ref and warn `ref_mismatch`; Q3 (a) keep each ref's prefix.
 - Owner 4 Oct: Q1 (a) first = oldest created_at, ties to the lowest id.
-- Owner 4 Oct ~11:30: exact (code, name) row first, else the oldest row (renamed). Never name alone.
+- Owner 4 Oct ~11:30: exact (code, name) row first, else the oldest row. Never name alone.
+- Owner decision 4 Oct: never rename (the oldest row keeps its name); unique code per company
+  follows in lane DEBTOR-CODE-UNIQUE; the SO `debtor_name` backfill ships here (R10).
   Q4 (name clash) is gone with it.
 
 ## Design (simplest thing that works)
@@ -32,6 +34,8 @@ fail "already linked to another source" (crew E2E, 4 Oct).
 1. `_customer_by_code(company, code, name)`: `SELECT id ... WHERE company_id = :cid AND
    lower(btrim(customer_code)) = :code ORDER BY (lower(btrim(customer_name)) = :name) DESC,
    created_at, id::text LIMIT 1` (exact-name row first, else the oldest).
+   When the target's name differs from the pushed one, `customer_name` is dropped from the columns
+   (never rename).
 2. None -> the existing create path (`_insert` + `_link`).
 3. Found -> the existing update path (segment fill-only, `_diff`, `_update`), plus:
    - ref bookkeeping per R5 (link only when both the row and the ref are free; otherwise keep and
@@ -46,6 +50,11 @@ masters push; `customer_back_create` and the document ladders are untouched (R8)
 (CSV of every change written first), revert from the CSV. A script, not an alembic migration, so a
 merge or deploy never rewrites prod links; the prod run is crew-held after owner approval.
 Equivalent idempotent SQL for the dev copy goes in a `crew-migration:` comment.
+
+### Slice 3: SO issue name (R10)
+
+`alembic/versions/sdn_0002_so_debtor_backfill.py` (data only) + fill-forward in
+`document_ingest_service._header_values` and `SalesOrderService.create`. Done, `cb2f2751`.
 
 ### ss
 

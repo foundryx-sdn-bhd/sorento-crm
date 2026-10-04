@@ -10,8 +10,11 @@ Owner rules this card is built on:
   updates does not matter for documents. The sales agent still goes to every same-code row (#1468).
 - 4 Oct ~11:30 (Q2 of the owner round): within company + debtor code, a row whose name matches
   AutoCount's name exactly (trim / case-insensitive, the unique index's own rule) is updated;
-  otherwise the oldest-created row is updated and renamed. Never match by name alone, no fuzzy
-  matching.
+  otherwise the oldest-created row is updated. Never match by name alone, no fuzzy matching.
+- 4 Oct (decision): the debtor code becomes UNIQUE per company in a follow-up lane
+  (DEBTOR-CODE-UNIQUE: merge script, code-only create paths, unique index). Until then the master
+  feed NEVER renames: the oldest row's fields update and its name is kept. The SO `debtor_name`
+  backfill ships here because that lane depends on it.
 
 All examples are masked (public repo). Codes like `300-X001` and names like `NAME-A` are fake.
 This sandbox cannot reach the dev DB, so the examples are built on the crew's dev counts
@@ -43,10 +46,10 @@ This sandbox cannot reach the dev DB, so the examples are built on the crew's de
   1. the row whose name equals the pushed name exactly (`lower(btrim(...))`, the same comparison
      as `uq_customers_company_code_name_lower`, so at most one row can match);
   2. otherwise the oldest `created_at`, then lowest `id` (rows from one import batch share a
-     `created_at`), renamed to the pushed name. That rename cannot clash: step 1 found no row with
-     that name under this code.
-  Name, phone, email, registration no, tax id, country, region, active and segment (fill-only,
-  unchanged) apply to the target only. Outcome `updated`.
+     `created_at`). Its name is NEVER changed (owner decision, 4 Oct): every other field updates.
+  Phone, email, registration no, tax id, country, region, active and segment (fill-only,
+  unchanged) apply to the target only; the name only ever matches, it is never written onto an
+  existing row. Outcome `updated`.
 - **R4 Other same-code rows.** Untouched, except the sales agent, which #1468 already writes to
   every same-code row of the company. (This lane keeps that; it does not add any other fan-out.)
 - **R5 The pushed ref.** Bookkeeping only, never a reason to fail:
@@ -55,8 +58,13 @@ This sandbox cannot reach the dev DB, so the examples are built on the crew's de
   - the target holds a different ref, or the pushed ref belongs to another row: keep what is
     stored, link nothing, warn `ref_mismatch` (the same code-wins rule products use since
     contract 2.4, `PLAN-ingest-products-code-wins.md`).
-- **R6 No name clash possible.** Removed by the owner's 11:30 rule: a rename only happens when no
-  same-code row has the pushed name (R3 step 2), so the unique index cannot fire.
+- **R6 No rename, so no name clash.** An existing row's name is never written by the master feed,
+  so the (code, name) unique index cannot fire on an update. Names converge when DEBTOR-CODE-UNIQUE
+  merges same-code rows.
+- **R10 SO keeps its issue name.** `sales_orders.debtor_name` is backfilled from today's customer
+  name where it is NULL (alembic `sdn_0002_so_debtor_backfill`, additive, idempotent), and every
+  SO write fills it (AutoCount ingest when no name is sent, fill-only; manual create), so a later
+  rename or merge never rewrites the name on an existing order.
 - **R7 Companies.** Matching never crosses companies: `300-X001` in SRT and `300-X001` in MCH are
   two customers, each found only by its own company's push.
 - **R8 Documents unchanged.** SO / DO / billing customer resolution is not touched (owner,
@@ -78,9 +86,9 @@ This sandbox cannot reach the dev DB, so the examples are built on the crew's de
 | # | Situation | Push | Today | Proposed |
 |---|---|---|---|---|
 | E1 | `300-X001` has one row `NAME-A`, linked `AED_SORENTO:1001` | `<db>:300-X001`, `NAME-A`, new phone | FAILED (already linked) | Row updated (phone). Ref kept, warn `ref_mismatch` until R9 runs; after R9 the stored ref is `AED_SORENTO:300-X001`, and if `<db>` is `AED_SORENTO` there is no warning at all. |
-| E2 | `300-X002` has a ledger `NAME-B` (created 2025-01) and a DO back-created row `NAME-B SDN BHD` (created 2026-09) | `NAME-B SDN BHD (NEW)`, agent `AGENT-A I` | no ref match, no exact name: created a third row | No row has that exact name: the oldest (2025 ledger) is renamed `NAME-B SDN BHD (NEW)` and gets the phone etc.; the DO row keeps its name; both get `AGENT-A I` (#1468). |
+| E2 | `300-X002` has a ledger `NAME-B` (created 2025-01) and a DO back-created row `NAME-B SDN BHD` (created 2026-09) | `NAME-B SDN BHD (NEW)`, agent `AGENT-A I` | no ref match, no exact name: created a third row | No row has that exact name: the oldest (2025 ledger) gets the phone etc. and KEEPS the name `NAME-B`; the DO row is untouched; both get `AGENT-A I` (#1468). |
 | E3 | `300-X003`: ledger `NAME-C` (2025-01, linked `AED_SORENTO:1003`) and DO row `NAME-C2` (2026-09, unlinked); AutoCount now says `NAME-C2` | `<db>:300-X003`, name ` name-c2 `, new phone | adopts the DO row by exact name | Exact-name match: the DO row `NAME-C2` gets the phone and the pushed ref (it had none); the ledger is untouched; both get the agent. |
-| E7 | `301-X007` is a cash-sale code with many DO back-created names, none equal to AutoCount's debtor name | `CASH SALES` | created another row | The oldest `301-X007` row is renamed `CASH SALES` and updated; every other row keeps its name; all get the agent (#1468). |
+| E7 | `301-X007` is a cash-sale code with many DO back-created names, none equal to AutoCount's debtor name | `CASH SALES` | created another row | The oldest `301-X007` row is updated and keeps its name; every other row is untouched; all get the agent (#1468). |
 | E4 | `300-X004` exists in SRT and in MCH | SRT push | SRT row only | SRT row only (R7). |
 | E5 | `300-X005` not in the CRM | push | created | created, ref linked (R2). |
 | E6 | AutoCount renumbers `300-X006` to `300-X060` (AutoKey unchanged) | `<db>:300-X060` | vendor API: ref match, the old row's code is changed to `300-X060` | No row has `300-X060`: a new ledger is created; the `300-X006` row and its history stay as they are. |

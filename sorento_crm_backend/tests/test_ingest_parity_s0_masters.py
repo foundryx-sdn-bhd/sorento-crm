@@ -146,7 +146,8 @@ class TestAcP01CustomerIdentityDebtorCodeFirstRow:
     identity on the masters push is company + debtor code (trimmed,
     case-insensitive). Within that code, a row whose name matches exactly
     (btrim, case-insensitive) is the one updated; otherwise the oldest row
-    (tie: lowest id) is updated and renamed. The name never picks a row alone
+    (tie: lowest id) is updated and keeps its name (never rename, owner
+    decision 4 Oct). The name never picks a row alone
     and the source_ref is bookkeeping only. D13 alone used the (code, name)
     pair and created a third row for an unknown name.
     """
@@ -182,7 +183,7 @@ class TestAcP01CustomerIdentityDebtorCodeFirstRow:
         assert alpha_row == ("ALPHA", "alpha@old.com"), "ALPHA (oldest, not the name match) is untouched"
         assert beta_row == ("BETA", "beta@new.com"), "BETA is the exact-name row and should update"
 
-    def test_pushing_a_new_name_under_a_known_code_renames_the_oldest_row_no_third_row(self, db):
+    def test_pushing_a_new_name_under_a_known_code_updates_the_oldest_row_no_rename_no_third_row(self, db):
         set_company_scope(db, frozenset({DEFAULT_COMPANY_ID}))
         code = _code("CUST2")
         db.add_all(
@@ -210,7 +211,7 @@ class TestAcP01CustomerIdentityDebtorCodeFirstRow:
                 {"c": code},
             ).scalars()
         )
-        assert names == {"gamma", "beta"}, "the first row is renamed, the sibling is untouched"
+        assert names == {"alpha", "beta"}, "no row is renamed and no third row is created"
 
     def test_integration_reference_links_the_row_matched_by_name_not_an_arbitrary_one(self, db):
         set_company_scope(db, frozenset({DEFAULT_COMPANY_ID}))

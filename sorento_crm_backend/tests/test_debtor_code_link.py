@@ -165,7 +165,8 @@ class TestFirstRowByDebtorCode:
 
         assert rec.outcome is IngestOutcome.UPDATED, rec.errors
         assert rec.entity_id == a
-        assert _cols(db, a, "customer_name", "phone_number") == ("NAME-NEW", "0133333333")
+        # never rename (owner decision, 4 Oct): the oldest row's fields update, its name stays
+        assert _cols(db, a, "customer_name", "phone_number") == ("NAME-A", "0133333333")
         assert _cols(db, b, "customer_name", "phone_number") == ("NAME-B", "0122222222")
 
     def test_t3_same_created_at_lowest_id_wins_regardless_of_insert_order(self, db):
@@ -183,7 +184,7 @@ class TestFirstRowByDebtorCode:
 
         assert rec.outcome is IngestOutcome.UPDATED, rec.errors
         assert rec.entity_id == id_low
-        assert _cols(db, id_low, "customer_name", "phone_number") == ("NAME-PUSHED", "0144444444")
+        assert _cols(db, id_low, "customer_name", "phone_number") == ("NAME-LOW", "0144444444")
         assert _cols(db, id_high, "customer_name", "phone_number") == ("NAME-HIGH", None)
 
     def test_t4_exact_name_row_wins_over_the_oldest_row(self, db):
@@ -235,7 +236,7 @@ class TestFirstRowByDebtorCode:
         assert rec.entity_id == target
         assert _cols(db, target, "customer_code", "customer_name", "phone_number") == (
             code,
-            "NAME-SHARED",
+            "NAME-OTHER",
             "0199999914",
         )
         assert _cols(db, other, "customer_code", "customer_name", "phone_number") == (
@@ -276,7 +277,7 @@ class TestFirstRowByDebtorCode:
         )
         assert rec_b.outcome is IngestOutcome.UPDATED, rec_b.errors
         assert rec_b.entity_id == only_b
-        assert _cols(db, only_b, "customer_name", "phone_number") == ("NAME-B2", "0188888888")
+        assert _cols(db, only_b, "customer_name", "phone_number") == ("NAME-B", "0188888888")
         assert _cols(db, rec.entity_id, "phone_number") == ("0177777777",)
 
 
@@ -388,7 +389,8 @@ class TestDryRunAndUnchangedBehaviour:
         assert result.dry_run is True
         assert rec.outcome is IngestOutcome.UPDATED, rec.errors
         assert rec.entity_id == a
-        assert rec.diff is not None and "phone_number" in rec.diff and "customer_name" in rec.diff
+        assert rec.diff is not None and "phone_number" in rec.diff
+        assert "customer_name" not in rec.diff, "the master feed never renames an existing row"
         assert _cols(db, a, "customer_name", "phone_number") == ("NAME-A", "0100000012")
         assert _cols(db, b, "phone_number") == ("0122222212",)
         assert _refs_of(db, a) == []
