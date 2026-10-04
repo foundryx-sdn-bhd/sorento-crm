@@ -42,7 +42,7 @@ from tests._pg_fixture import TEST_PREFIX, blank_session
 
 CONVERSATIONS_LINK = "/sla-management/conversations"
 RESPOND_IO_ID = f"{TEST_PREFIX}-rio-{uuid.uuid4().hex[:8]}"
-PHONE = "+60166753328"
+PHONE = "+60160000509"
 
 
 @pytest.fixture

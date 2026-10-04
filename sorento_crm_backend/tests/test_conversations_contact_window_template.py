@@ -49,7 +49,7 @@ from app.services.sla_service import ConversationSLATrackingService
 from app.services.user_service import UserPermissionService
 from tests._pg_fixture import blank_session
 
-PHONE = "+60127770031"
+PHONE = "+60120000547"
 RESPOND_IO_ID = "zzt-win-io-1"
 TICKET_BASE = "/api/v1/sla-management/conversation-sla-tracking"
 INBOX_BASE = "/api/v1/sla-management/conversations"
@@ -334,14 +334,14 @@ def test_a_contact_with_no_respond_link_is_a_closed_window_and_no_template(clien
     db.add(
         RespondContact(
             id=str(uuid.uuid4()),
-            phone_number="+60127770039",
+            phone_number="+60120000548",
             name="ZZT Unlinked",
             respond_io_id=None,
             session_vars={},
         )
     )
     db.commit()
-    got = client.get(f"{INBOX_BASE}/+60127770039/window")
+    got = client.get(f"{INBOX_BASE}/+60120000548/window")
     assert got.status_code == 200, got.text
     assert got.json() == {
         "window": {"open": False, "expires_at": None},

@@ -4,7 +4,7 @@ complicated, can it be point form, we can do like numbered list, then " - " and 
 them put in (no emdash), well of course they can just say one number like 10 to apply
 to all".
 
-Observed (chatbot.turns, contact 437264483):
+Observed (chatbot.turns, contact 900000008):
 
     check stock srtwc286
     -> SRTWC286 matches 10 products. Which one?  (numbered, good)

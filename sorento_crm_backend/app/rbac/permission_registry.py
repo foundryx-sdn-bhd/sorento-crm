@@ -538,12 +538,12 @@ PERMISSION_REGISTRY.extend([
     {
         "slug": "system.translations.view",
         "name": "View Translations",
-        "description": "View the Chinese-English translation memory.",
+        "description": "View the Chinese-English translation memory and the wording the chatbot uses in its replies.",
     },
     {
         "slug": "system.translations.edit",
         "name": "Edit Translations",
-        "description": "Correct a translation or remove one from the memory.",
+        "description": "Correct a translation or remove one from the memory, and edit the wording the chatbot uses in its replies.",
     },
 ])
 

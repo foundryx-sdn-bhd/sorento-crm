@@ -75,7 +75,7 @@ def _seed(sf, *, dealer: bool, salesperson: bool, later_shipment: bool = False, 
     from app.models.product import Product, ProductCategory, UnitOfMeasure
     from app.models.sales_agent import SalesAgent
 
-    _seed_contact(sf, phone="+60111222333")
+    _seed_contact(sf, phone="+60110000526")
     _link_contact_company(sf, company_id=SORENTO)
     db = sf()
     set_company_scope(db, frozenset({SORENTO}))

@@ -16,9 +16,10 @@ import re
 from dataclasses import replace
 from typing import Any
 
+from app.services.chatbot import label_catalog
 from app.services.chatbot.turn import refer
 from app.services.chatbot.turn.pending import ESCALATION_OFFER_KINDS, Pending, ask
-from app.services.chatbot.turn.task import MAX_SLOTS, REFER_TO_SALESMAN, numbered
+from app.services.chatbot.turn.task import MAX_SLOTS, numbered
 
 #: Every escalation sentence the stock ask's composers print
 #: (`lanes/business/answer.py`, `turn/compose.py`), whole: the "reply with a code"
@@ -36,7 +37,9 @@ def refers_to_salesman(text: str) -> tuple[str, bool]:
     return stripped.rstrip(), bool(count)
 
 
-def without_escalation(text: str, question: Pending | None) -> tuple[str, Pending | None]:
+def without_escalation(
+    text: str, question: Pending | None, *, localizer: Any = None
+) -> tuple[str, Pending | None]:
     """The dealer's version of a stock reply: no escalation sentence, no escalation
     pending, and "Please refer to your salesman." wherever one was offered. A roster the
     reply also carried (a pick of products) stays, without its attached offer."""
@@ -65,7 +68,7 @@ def without_escalation(text: str, question: Pending | None) -> tuple[str, Pendin
     if not offered:
         return text, question
     body = stripped.strip()
-    if REFER_TO_SALESMAN in body:
+    if any(line in body for line in label_catalog.refer_sentences(localizer)):
         # ESCALATION-CONTROL: a blocked contact's composer already printed the line.
         return body, question
     return refer.after(body), question

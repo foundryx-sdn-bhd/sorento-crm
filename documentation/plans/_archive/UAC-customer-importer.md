@@ -59,7 +59,7 @@ Migration 220 gave the two-column expression shape; migration **305** prepended
   by definition. Renaming stays a UI edit.
 - **AC-1.5** A code that already exists under a *different* name is a normal insert, not a
   conflict. `301-C001` is a cash-sale bucket holding person names and phone numbers
-  (`CASH (SRT) - 016-225 8620`, `ABDUL RAUF`); flagging every such row would fire 99 times on
+  (`CASH (SRT) - 016-000 0505`, `ABDUL RAUF`); flagging every such row would fire 99 times on
   one code and mean nothing.
 - **AC-1.6** Only a **near** name match under the same code is flagged, using the `pg_trgm`
   similarity already on this table (migration 169). `CASH (SRT) - AISAH SHAMSUDlN` against
@@ -241,8 +241,8 @@ Added after the first real file. A 4,196-row AutoCount debtor export produced **
 `upsert_error` rows against a preview that had promised zero failures**: three `customers`
 columns were narrower in the database than the model declared, and the importer's
 over-length pre-check was reading the model. `phone_number` was `varchar(20)` against a
-declared `String(50)`, and 58 rows carry a longer one (`016-978 5508 (MR.CHAEH)`,
-`09-5668833/013-9800123`). This is the **third** time this one table has drifted from its
+declared `String(50)`, and 58 rows carry a longer one (`016-000 0503 (MR.CHAEH)`,
+`95-0000558/013-0000504`). This is the **third** time this one table has drifted from its
 model (the stale unique index of AC-2.5 was the first).
 
 - **AC-7.1 The three drifted columns are widened to what the model has always declared.**

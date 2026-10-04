@@ -45,7 +45,7 @@
             },
             {
               "name": "backend_id",
-              "value": "https://internal.example.invalid/contacts/440987225"
+              "value": "https://internal.example.invalid/contacts/900000010"
             },
             {
               "name": "is_allowed_ai",
@@ -57,14 +57,14 @@
             }
           ],
           "email": null,
-          "firstName": "ZZT-440987225",
-          "id": 440987225,
+          "firstName": "ZZT-900000010",
+          "id": 900000010,
           "isBlocked": false,
           "language": null,
           "lastName": "",
           "lifecycle": "New Lead",
           "locale": null,
-          "phone": "+60440987225",
+          "phone": "+60900000010",
           "profilePic": null,
           "status": "open",
           "tags": [
@@ -79,7 +79,7 @@
           "channel": {
             "created_at": 1767682908,
             "id": 453209,
-            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.27127869030170057\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000015\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
             "name": "Internal (scrubbed)",
             "source": "whatsapp_business"
           },
@@ -94,11 +94,11 @@
             "countryCode": "MY",
             "created_at": 1777880659,
             "email": null,
-            "firstName": "ZZT-440987225",
-            "id": 440987225,
+            "firstName": "ZZT-900000010",
+            "id": 900000010,
             "language": null,
             "lastName": "",
-            "phone": "+60440987225",
+            "phone": "+60900000010",
             "profilePic": null,
             "status": "open"
           },
@@ -107,7 +107,7 @@
           "message": {
             "channelId": 453209,
             "channelMessageId": "wamid.HBgLNjAxMjI0NjUyMTMVAgASGBYzRUIwQjBEOTUwRTgzRENBRTZBRjZEAA==",
-            "contactId": 440987225,
+            "contactId": 900000010,
             "message": {
               "text": "check stock srtks7061",
               "type": "text"
@@ -161,7 +161,7 @@
         ]
       },
       "received_session_vars": {
-        "respond_io_id": "440987225",
+        "respond_io_id": "900000010",
         "session_vars": {
           "user_response": "Stock details found for the requested products.\n\n1. *Product Code:* SRTWT908SS\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 125\n*Outstanding:* 1\n\n2. *Product Code:* SRTWT908SS\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-BB\n*Quantity On Hand:* 132\n*Outstanding:* 132\n\n3. *Product Code:* SRTWT908SS\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-IR\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n4. *Product Code:* SRTWT908SS\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SMC\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n5. *Product Code:* SRTWT908SS\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SYNT\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n6. *Product Code:* SRTWT908SS-BL-DIY\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 251\n*Outstanding:* 0\n\n7. *Product Code:* SRTWT908SS-BL-DIY\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SMC\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n8. *Product Code:* SRTWT908SS-GM\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\u26a0\ufe0f  *(PRODUCT DISCONTINUED)*\n\n9. *Product Code:* SRTWT908SS-GM-DIY\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 32\n*Outstanding:* 0\n\n_Data last updated: 14/09/2026 17:25:40_",
           "variables": {
@@ -347,7 +347,7 @@
               "unmapped_types": []
             },
             "access_levels": [],
-            "contact_id": "440987225",
+            "contact_id": "900000010",
             "date_mode": null,
             "include_sellable": true,
             "is_active": null,

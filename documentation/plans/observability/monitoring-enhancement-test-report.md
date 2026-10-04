@@ -310,7 +310,7 @@ Those 821 collapse to **three** distinct causes:
 | Count | Code | Cause |
 |---|---|---|
 | 428 | 401 | `Client error '401 Unauthorized' for url '…/contact/id:55555/message'` |
-| 330 | 403 | `Client error '403 Forbidden' for url '…/contact/id:437264483/message'` |
+| 330 | 403 | `Client error '403 Forbidden' for url '…/contact/id:900000008/message'` |
 | 18 | - | `24h window closed and template send skipped for use case 'sla_daily_summary': configured template was removed on sync` |
 
 The digit masking is doing the work here: the contact id varies per row, so without it these

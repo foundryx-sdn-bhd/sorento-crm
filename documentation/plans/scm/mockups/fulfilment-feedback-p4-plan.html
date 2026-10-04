@@ -140,7 +140,7 @@ form.q label{display:block;margin:3px 0}form.q button{font-size:12px;padding:4px
 <div class="card warn"><b>Today</b>Bare "Send this request?" confirm. Email goes to <code>suppliers.email</code> only; no way to add an address. A chat row is written on EVERY send and always reads <i>skipped: "No chat channel is linked to this supplier yet."</i> Nothing records whether the supplier opened the link.</div>
 <div class="dialog"><h4>Send this request</h4>
 <div class="field">◉ Email &nbsp; ○ Chat (WeChat via Respond.io)</div>
-<div class="field"><div class="lbl">To</div><span class="chip">sales@jinbaichuan.cn ✕</span><span class="chip">ms.tee@sorento.com.my ✕</span> <span class="sel" style="min-width:160px;color:#9ca3af">Add an address</span></div>
+<div class="field"><div class="lbl">To</div><span class="chip">person36@example.com ✕</span><span class="chip">person27@example.com ✕</span> <span class="sel" style="min-width:160px;color:#9ca3af">Add an address</span></div>
 <div class="field"><div class="lbl">Note (optional)</div><span class="sel" style="min-width:100%;color:#9ca3af">Please confirm by Friday</span></div>
 <div class="note">PDF + XLSX attached · link <code>/c/sorento/supplier-request/…</code> · 30-day link, previous link retired</div>
 <div style="text-align:right;margin-top:8px"><span class="btn">Cancel</span><span class="btn p">Send</span></div></div>
@@ -148,7 +148,7 @@ form.q label{display:block;margin:3px 0}form.q button{font-size:12px;padding:4px
 <div class="card"><b>Chat channel = WeChat.</b> Suppliers are in China, so the chat row is the supplier's WeChat contact on the Respond.io WeChat channel (Respond.io lists WeChat Official Account as a channel; whether the workspace has one connected is a check, Q3). Picker over Respond.io contacts on that channel, prefilled by the supplier's phone; sends through the composer's outbound path (text + link inside the 24h window, approved template outside it, outbox row always). No approved template = refused with that reason (seeding the template is a Respond.io task with its own go, Q3). ONE notice row per send for the chosen channel; the always-skipped chat row is gone. Migration 441: <code>recipients</code> JSONB, <code>opened_at</code>, <code>last_opened_at</code>, <code>open_count</code>.</div>
 <div class="mock"><p class="lbl">Requests sent (on the record)</p>
 <table><tr><th>Sent</th><th>Channel</th><th>To</th><th>Status</th><th>Opened</th><th></th></tr>
-<tr><td>27/08 14:40</td><td>✉ Email</td><td>sales@jinbaichuan.cn, ms.tee@…</td><td><span class="pos">Sent</span></td><td>3 times · last 27/08 15:10</td><td>PDF · XLSX · Copy link</td></tr>
+<tr><td>27/08 14:40</td><td>✉ Email</td><td>person36@example.com, ms.tee@…</td><td><span class="pos">Sent</span></td><td>3 times · last 27/08 15:10</td><td>PDF · XLSX · Copy link</td></tr>
 <tr><td>20/08 11:30</td><td>💬 WeChat</td><td>Mr Chen (JBC)</td><td><span class="pos">Sent</span></td><td>Not opened yet</td><td>XLSX · link retired</td></tr></table>
 <p class="note">The public page (and its downloads) stamps the open on the notice: best-effort write on GET, never blocks the page. Plan status stays <b>Sent</b>; an open is an event, not a status.</p></div>
 

@@ -1,4 +1,4 @@
-"""Owner hand test round 2 on PR #833 (26 Sep 2026, contact 487555417, a dealer spanning
+"""Owner hand test round 2 on PR #833 (26 Sep 2026, contact 900000039, a dealer spanning
 Mocha + Sorento). W1 to W6 of the fix brief, as whole turns.
 
 Each case runs `engine.run_turn` with the v3 verdict shape, the real resolver, the real

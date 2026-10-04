@@ -57,7 +57,7 @@ from tests.chatbot.test_engine import (
 # Per-test contact ids.
 #
 # Coordinator fix round, 23 Sep 2026: every test in this module used to share
-# `test_engine.CONTACT_ID` (437264483). The media gate's burst check
+# `test_engine.CONTACT_ID` (900000008). The media gate's burst check
 # (`media_access_service.decide_and_record` step 5) hits REAL Redis keyed by
 # `respond_io_id` with a real TTL bucket - NOT rolled back with the blank-schema
 # Postgres transaction each test rolls back - so running every test that reaches the

@@ -1,5 +1,5 @@
 """Owner console test of round 3 on PR #833 (27 Sep 2026 00:03 to 00:07 MYT, console :3084,
-head 1683cb2f1, contact 487555417). Rulings R1 to R7 of the round 4 fix brief.
+head 1683cb2f1, contact 900000039). Rulings R1 to R7 of the round 4 fix brief.
 
 The owner's words (verbatim): "i want weights as brand preference instead of switch, i got
 feedback more than that one wor, like Brand, product type needs to be line by line, label

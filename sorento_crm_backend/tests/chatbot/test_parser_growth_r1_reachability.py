@@ -105,7 +105,7 @@ def _parse_output(**overrides: Any) -> dict[str, Any]:
 def _tool_args(parse_output: dict[str, Any], *, tool: str, entities: list[dict] | None = None) -> dict:
     """The MCP arguments a turn with this parse would send, through both real steps."""
     semantic_input = _fetch_semantic_input(
-        parse_output, tier_gate=None, contact_id="437264483", space_id=None
+        parse_output, tier_gate=None, contact_id="900000008", space_id=None
     )
     return entity_ids_transformer(
         {"tool": tool, "semantic_input": semantic_input, "entities": entities or []}

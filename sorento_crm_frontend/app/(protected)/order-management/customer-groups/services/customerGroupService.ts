@@ -4,7 +4,7 @@
  * Layering: components -> hooks (useCustomerGroups) -> THIS service -> lib/api-client.
  *
  * Backend (order_management router, reads `order_management.customers.view`, writes `.edit`):
- *   GET   /api/v1/order-management/customer-groups?page&limit&sort&dir&query
+ *   GET   /api/v1/order-management/customer-groups?page&limit&sort&dir&query&agent_mixed
  *   GET   /api/v1/order-management/customer-groups/select?query -> { data: [{ id, name, ledger_count }] }
  *   POST  /api/v1/order-management/customer-groups  { name }     (409 on a duplicate name)
  *   GET   /api/v1/order-management/customer-groups/{id}
@@ -25,10 +25,14 @@ import type {
 
 const BASE = '/api/v1/order-management/customer-groups';
 
+export type CustomerGroupsListParams = DataGridApiFetchParams & { agent_mixed?: boolean };
+
 export async function getCustomerGroups(
-  params: DataGridApiFetchParams,
+  params: CustomerGroupsListParams,
 ): Promise<DataGridApiResponse<CustomerGroup>> {
-  const response = await apiFetch(`${BASE}?${buildDataGridParams(params).toString()}`);
+  const response = await apiFetch(
+    `${BASE}?${buildDataGridParams(params, { agent_mixed: params.agent_mixed || undefined }).toString()}`,
+  );
   if (!response.ok) {
     throw new Error(await extractApiError(response, 'Failed to load customer groups'));
   }

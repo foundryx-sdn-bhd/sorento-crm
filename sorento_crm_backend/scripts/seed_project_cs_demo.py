@@ -90,7 +90,7 @@ def _actor(db: Session) -> str:
         sa.text(
             "SELECT id FROM users WHERE status = 'ACTIVE' AND email = :email LIMIT 1"
         ),
-        {"email": "tehjayson@gmail.com"},
+        {"email": "person38@example.com"},
     ).first()
     if row:
         return str(row[0])

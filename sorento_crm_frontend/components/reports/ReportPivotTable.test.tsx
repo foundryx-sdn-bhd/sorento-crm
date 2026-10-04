@@ -24,10 +24,10 @@ const LAYOUT: ReportPivotLayout = {
     value_labels: { '2025-01': "Jan'25", '2025-02': "Feb'25" },
   },
   measures: [{ key: 'project_value', label: 'Project value', type: 'money' }],
-  row_values: ['ACT', 'Amirul'],
+  row_values: ['ACT', 'CONTACT U'],
   cells: {
     ACT: { '2025-01': { project_value: '0.00' }, '2025-02': { project_value: '985884.00' } },
-    Amirul: {},
+    'CONTACT U': {},
   },
   row_totals: { ACT: { project_value: '985884.00' } },
   col_totals: { '2025-01': { project_value: '0.00' } },
@@ -46,8 +46,8 @@ describe('ReportPivotTable money cells', () => {
   it('leaves a month with no form at all blank', () => {
     render(<ReportPivotTable layout={LAYOUT} />);
 
-    const amirul = screen.getByText('Amirul').closest('tr') as HTMLTableRowElement;
-    const cells = Array.from(amirul.querySelectorAll('td')).slice(1);
+    const row = screen.getByText('CONTACT U').closest('tr') as HTMLTableRowElement;
+    const cells = Array.from(row.querySelectorAll('td')).slice(1);
     expect(cells.every((cell) => cell.textContent === '')).toBe(true);
   });
 });

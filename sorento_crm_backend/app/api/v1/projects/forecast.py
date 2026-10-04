@@ -43,6 +43,14 @@ async def project_forecast(
     db: Session = Depends(get_db),
 ):
     """AC-I1. Pipeline, Weighted and Committed, never blended."""
+    from fastapi import HTTPException, status
+
+    from app.models.base import get_brand_scope
+    from app.services.contact_brand_scope import brand_scope_allows_tool
+
+    if not brand_scope_allows_tool("crm_project_forecast", get_brand_scope(db)):
+        # A brand-scoped contact gets the route's own not-granted answer.
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Permission required: {VIEW}")
     try:
         return svc.forecast(db, company_id=acting_company_id(db))
     except Exception as exc:

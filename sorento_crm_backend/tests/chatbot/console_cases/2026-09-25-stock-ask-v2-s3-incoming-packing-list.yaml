@@ -22,15 +22,15 @@
 #       --base-url http://127.0.0.1:8000 --api-key <EXTERNAL_API_KEY> --mock-parser
 #
 # Run once with:
-#   UPDATE respond_contacts SET packing_list_allowed = true  WHERE respond_io_id = '437264483';
+#   UPDATE respond_contacts SET packing_list_allowed = true  WHERE respond_io_id = '900000008';
 # and once with:
-#   UPDATE respond_contacts SET packing_list_allowed = false WHERE respond_io_id = '437264483';
+#   UPDATE respond_contacts SET packing_list_allowed = false WHERE respond_io_id = '900000008';
 # `--mock-parser` is mandatory (no OPENAI_API_KEY in the sandbox this file was authored in).
 #
 # Round 2 review, Should fix 1: the seed database must ALSO carry a `stock_ledger` row
 # with `transaction_type = 'BULK_IMPORT'` - see the branches file's header for why.
 
-contact: "437264483"
+contact: "900000008"
 
 cases:
   - name: "B3 - incoming with ETA (run with packing_list_allowed both true and false)"

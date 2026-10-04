@@ -65,7 +65,7 @@ vi.mock('@/components/common/AttachmentPreviewModal', () => ({
 const CONTACT: PortalContact = {
   contact_id: 'contact-1',
   space_id: 'space-1',
-  name: 'Darren Lee',
+  name: 'CONTACT X Lee',
   phone_number: '60123456789',
   expires_at: '2026-08-01T00:00:00Z',
 };
@@ -115,7 +115,7 @@ function detail(over: Partial<PortalSubmissionDetail> = {}): PortalSubmissionDet
     project_customer: '',
     project_name: '',
     salesperson_contact_id: 'contact-1',
-    salesperson: 'Darren Lee',
+    salesperson: 'CONTACT X Lee',
     remark: '',
     additional_remark: '',
     ...over,

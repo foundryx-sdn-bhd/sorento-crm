@@ -43,10 +43,10 @@ _SAMPLES_DIR = (
     Path(__file__).resolve().parents[3] / "documentation" / "plans" / "chatbot" / "samples"
 )
 
-_CONTACT_ID = "437264483"
-_PHONE = "+60123450099"
+_CONTACT_ID = "900000008"
+_PHONE = "+60120000527"
 
-# The real dev contact and phone the README names (`contact 437264483 is the dev contact
+# The real dev contact and phone the README names (`contact 900000008 is the dev contact
 # and is real`); the parser output is what a live call produces for "I need to speak to a
 # human" as `request_for_help` - reproduced literally rather than re-derived so the sample
 # reads the same as it always has.

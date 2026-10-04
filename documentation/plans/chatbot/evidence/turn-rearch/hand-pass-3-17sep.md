@@ -1,4 +1,4 @@
-# Owner hand pass 3 (AC-1593), 17 Sep 2026 17:31 to 17:38 MYT, phone via tunnel, head 99b97c8fb + parser v24, clone, contact 437264483
+# Owner hand pass 3 (AC-1593), 17 Sep 2026 17:31 to 17:38 MYT, phone via tunnel, head 99b97c8fb + parser v24, clone, contact 900000008
 
 25 console turns stored on the clone. Rulings pending the owner's go (alignment list sent 17 Sep evening).
 

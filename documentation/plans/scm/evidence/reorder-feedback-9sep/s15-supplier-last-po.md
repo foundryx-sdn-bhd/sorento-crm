@@ -163,7 +163,7 @@ owner's call after review - NOT run here.
 ## 10. Browser verification - PASS, no console errors
 
 `npx -y agent-browser@0.27.0 --session-name s15tester`, logged in as
-`tehjayson@gmail.com`. Navigated via sidebar only: `/` -> Procurement -> nested "Supply
+`person38@example.com`. Navigated via sidebar only: `/` -> Procurement -> nested "Supply
 Chain" -> "Reorder Planning" -> `/scm/reorder` -> "Start Plan" (defaults) ->
 `/scm/reorder/1170bcc5-...`. Actions menu -> "Order sheet Excel" fired
 `GET /api/v1/scm/order-summary/export?run_id=1170bcc5-...&format=xlsx` -> 200 (browser

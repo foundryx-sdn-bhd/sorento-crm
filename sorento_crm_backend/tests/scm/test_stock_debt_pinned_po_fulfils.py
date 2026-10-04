@@ -62,7 +62,7 @@ def _line(key, qty, *, core_line_no, source_ref=None, due=DUE, order=ORDER):
         so_number="SO419208",
         line_no=None,
         warehouse="BRW-BB",
-        agent_code="ERIC NG",
+        agent_code="CONTACT Y",
         required_date=due,
         open_qty=qty,
         sales_order_id=order,

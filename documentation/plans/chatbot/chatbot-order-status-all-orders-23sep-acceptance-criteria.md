@@ -13,7 +13,7 @@ Plan: `PLAN-chatbot-order-status-all-orders-23sep.md`. Track: small fix.
   `by_entity_type`, `resolutions` renders once.
 - AC-1863 One resolved order produces the same text as before this fix (existing
   test in `tests/chatbot/test_s6c_answer_lane.py` unchanged and green).
-- AC-1864 The live turn (contact 482766833, turn 48: PS202609-0374, PS202609-0398,
+- AC-1864 The live turn (contact 900000105, turn 48: PS202609-0374, PS202609-0398,
   PS202609-0410, all `New Order`) satisfies AC-1860 with all three named.
 - AC-1865 `tests/chatbot/test_turn_replay.py` stays green with no DIVERGENCES entry.
 
@@ -29,7 +29,7 @@ Plan: `PLAN-chatbot-order-status-all-orders-23sep.md`. Track: small fix.
   every other roster kind) is unaffected: `quick_replies` is still the comma-joined
   option-label string exactly as before this fix.
 
-## Fix 3: the console's harness state actually replaces the stored memory (console defect, contact 437264483, 23 Sep 2026)
+## Fix 3: the console's harness state actually replaces the stored memory (console defect, contact 900000008, 23 Sep 2026)
 
 - AC-1868 On a dry run, when the harness `previous_conversation_state` carries any of
   `session_state.FIVE_KEYS` (the console's own echo of `result.session_vars`), the

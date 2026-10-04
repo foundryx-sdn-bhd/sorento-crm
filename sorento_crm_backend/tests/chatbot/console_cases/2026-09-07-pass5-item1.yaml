@@ -1,5 +1,5 @@
 # Console case for owner console pass 5, item 1 (H78/AC-827) - the "photo" attachment-type
-# ambiguity fix. Real production shape: contact 437264483's own turns a5317cf4 / b4369aba
+# ambiguity fix. Real production shape: contact 900000008's own turns a5317cf4 / b4369aba
 # both replied a did-you-mean for "Shipment Line Photo" where the pre-deploy control
 # (008676fc) sent the file clean.
 #
@@ -13,7 +13,7 @@
 # environment, not the regression this case is pinned against. Graded green on the
 # production run, where the embedding provider is configured.
 
-contact: "437264483"
+contact: "900000008"
 
 cases:
   - name: send me the photo of SRTWC8517-SH-UF (item A, H78/AC-827)
