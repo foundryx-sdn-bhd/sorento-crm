@@ -26,7 +26,7 @@ A, B = "SRTWC286-SH-150", "SRTWC286-SH-200"
 
 @pytest.fixture
 def console(session_factory, monkeypatch, stub_access):
-    return EngineConsole(session_factory, monkeypatch, stub_access, phone="+60000009471")
+    return EngineConsole(session_factory, monkeypatch, stub_access, phone="+60170000471")
 
 
 def _open_the_question(c: EngineConsole) -> None:
