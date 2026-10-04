@@ -38,6 +38,7 @@ import csv
 import os
 import re
 import sys
+import uuid
 from dataclasses import dataclass, field
 from types import SimpleNamespace
 from datetime import datetime
@@ -97,7 +98,6 @@ CSV_COLUMNS = ["phone", "contact", "excel_rows", "facet", "before", "after", "st
 MISSING_COLUMNS = ["phone", "name", "excel_row", "reason"]
 TICKS = {"Y", "YES", "X", "TRUE", "1"}
 MAX_CANDIDATES = 5
-TRIPLES = 11
 # Only the contact columns this script reads: prod can lag main, and a column the script never
 # uses must not make it fail.
 CONTACT_COLUMNS = (
@@ -159,7 +159,13 @@ def _text(value: Any) -> str:
 def parse_workbook(path, *, rules: dict = RULES) -> tuple[list[Entry], list[dict]]:
     wb = openpyxl.load_workbook(path, data_only=True, read_only=True)
     ws = wb["working file"] if "working file" in wb.sheetnames else wb.worksheets[0]
-    rows = ws.iter_rows(values_only=True)
+    # A formula cell has no cached value in a file saved by a script; fall back to its text.
+    wf = openpyxl.load_workbook(path, data_only=False, read_only=True)
+    wsf = wf["working file"] if "working file" in wf.sheetnames else wf.worksheets[0]
+    rows = (
+        [v if v is not None else f for v, f in zip(vals, forms)]
+        for vals, forms in zip(ws.iter_rows(values_only=True), wsf.iter_rows(values_only=True))
+    )
     header = [_text(h).lower() for h in next(rows)]
 
     def col(pred) -> Optional[int]:
@@ -223,16 +229,21 @@ def desired_by_phone(entries: list[Entry]) -> dict[str, Desired]:
 # ---------------------------------------------------------------- read the DB
 
 
-def _find_contacts(db, phones) -> dict[str, RespondContact]:
-    """normalised phone -> contact, matched on the digits of respond_contacts.phone_number."""
+def _find_contacts(db, phones) -> tuple[dict[str, RespondContact], set[str]]:
+    """(normalised phone -> contact, ambiguous phones), matched on the digits of
+    respond_contacts.phone_number. Two contacts with the same digits: neither is returned."""
     wanted = {p: re.sub(r"\D", "", p) for p in phones}
     if not wanted:
-        return {}
+        return {}, set()
     digits = func.regexp_replace(RespondContact.phone_number, r"\D", "", "g")
-    by_digits: dict[str, RespondContact] = {}
-    for contact, d in db.query(RespondContact, digits).options(load_only(*CONTACT_COLUMNS)).filter(digits.in_(set(wanted.values()))).order_by(RespondContact.id):
-        by_digits.setdefault(d, contact)
-    return {p: by_digits[d] for p, d in wanted.items() if d in by_digits}
+    by_digits: dict[str, list[RespondContact]] = {}
+    for contact, d in db.query(RespondContact, digits).options(load_only(*CONTACT_COLUMNS)).filter(
+        digits.in_(set(wanted.values()))
+    ).order_by(RespondContact.id):
+        by_digits.setdefault(d, []).append(contact)
+    found = {p: by_digits[d][0] for p, d in wanted.items() if len(by_digits.get(d, [])) == 1}
+    ambiguous = {p for p, d in wanted.items() if len(by_digits.get(d, [])) > 1}
+    return found, ambiguous
 
 
 def _resolve_world(db, rules: dict) -> dict:
@@ -395,11 +406,13 @@ def run(db, path, *, rules: dict = RULES, apply: bool = False, actor_id: Optiona
     contact only."""
     entries, invalid = parse_workbook(path, rules=rules)
     desired = desired_by_phone(entries)
-    found = _find_contacts(db, desired)
+    found, ambiguous = _find_contacts(db, desired)
     world = _resolve_world(db, rules) if found else None
 
     missing = [
-        {"phone": p, "name": d.name, "row": d.rows[0], "reason": "missing"} for p, d in desired.items() if p not in found
+        {"phone": p, "name": d.name, "row": d.rows[0], "reason": "missing"} for p, d in desired.items() if p not in found and p not in ambiguous
+    ] + [
+        {"phone": p, "name": desired[p].name, "row": desired[p].rows[0], "reason": "ambiguous"} for p in sorted(ambiguous)
     ] + [{"phone": i["raw_phone_masked"], "name": i["name"], "row": i["row"], "reason": "invalid"} for i in invalid]
 
     changes: list[dict] = []
@@ -458,6 +471,7 @@ def run(db, path, *, rules: dict = RULES, apply: bool = False, actor_id: Optiona
         "unique_phones": len(desired),
         "found": len(found),
         "missing": len([m for m in missing if m["reason"] == "missing"]),
+        "ambiguous": len(ambiguous),
         "invalid": len(invalid),
         "changed": changed_contacts,
         "failed": len(failed),
@@ -478,6 +492,23 @@ def _cell(value: Any) -> str:
     return str(value)
 
 
+def _safe(value: Any) -> Any:
+    """A spreadsheet runs a cell that starts with = + - @ tab or CR as a formula: prefix a quote."""
+    if isinstance(value, str) and value[:1] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + value
+    return value
+
+
+def _unsafe(value: Any) -> str:
+    """Undo `_safe` on a cell read back from a sheet this script wrote."""
+    text = _text(value)
+    return text[1:] if text[:1] == "'" and text[1:2] in ("=", "+", "-", "@", "\t", "\r") else text
+
+
+def _private(path) -> None:
+    os.chmod(path, 0o600)
+
+
 def write_csv(result: dict, changes_path) -> Path:
     """The changes CSV at `changes_path`, plus the missing list beside it as `<stem>_missing.csv`."""
     changes_path = Path(changes_path)
@@ -485,14 +516,16 @@ def write_csv(result: dict, changes_path) -> Path:
         w = csv.writer(fh)
         w.writerow(CSV_COLUMNS)
         for c in result["changes"]:
-            w.writerow([c["phone"], c["contact"], ";".join(str(r) for r in c["excel_rows"]), c["facet"],
-                        _cell(c["before"]), _cell(c["after"]), c["status"]])
+            w.writerow([c["phone"], _safe(c["contact"]), ";".join(str(r) for r in c["excel_rows"]), c["facet"],
+                        _safe(_cell(c["before"])), _safe(_cell(c["after"])), c["status"]])
     missing_path = changes_path.with_name(f"{changes_path.stem}_missing.csv")
     with open(missing_path, "w", newline="") as fh:
         w = csv.writer(fh)
         w.writerow(MISSING_COLUMNS)
         for m in result["missing"]:
-            w.writerow([m["phone"], m["name"], m["row"], m["reason"]])
+            w.writerow([m["phone"], _safe(m["name"]), m["row"], m["reason"]])
+    _private(changes_path)
+    _private(missing_path)
     return missing_path
 
 
@@ -516,7 +549,7 @@ def links_review(db, path, out_path, *, rules: dict = RULES) -> int:
     """Write the review sheet: per Excel row and company, the top candidate customers. Links nothing."""
     entries, _ = parse_workbook(path, rules=rules)
     groups = _row_groups(entries)
-    found = _find_contacts(db, {p for g in groups.values() for p in g["phones"]})
+    found, _ambiguous = _find_contacts(db, {p for g in groups.values() for p in g["phones"]})
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "links review"
@@ -541,9 +574,10 @@ def links_review(db, path, out_path, *, rules: dict = RULES) -> int:
                 reason = f"similarity {_score(g['company_name'], cust.customer_name or ''):.2f}"
                 if linked:
                     reason = f"already linked ({linked} of {len(contact_ids)} contacts)"
-                ws.append([row, g["company_name"], code, cust.customer_code, cust.customer_name, str(cust.id), reason, None])
+                ws.append([row, _safe(g["company_name"]), code, _safe(cust.customer_code), _safe(cust.customer_name), str(cust.id), reason, None])
                 written += 1
     wb.save(out_path)
+    _private(out_path)
     return written
 
 
@@ -551,7 +585,12 @@ def apply_links(db, path, reviewed_path, *, actor_id: Optional[str], rules: dict
     """Link the ticked candidates to every found contact of that Excel row. Idempotent."""
     entries, _ = parse_workbook(path, rules=rules)
     groups = _row_groups(entries)
-    found = _find_contacts(db, {p for g in groups.values() for p in g["phones"]})
+    found, _ambiguous = _find_contacts(db, {p for g in groups.values() for p in g["phones"]})
+    company_ids = {str(c.code): str(c.id) for c in db.query(Company.id, Company.code)}
+
+    def row_company_ids(group: dict) -> set:
+        return {company_ids[c] for c in group["companies"] if c in company_ids}
+
     contact_ids = {p: str(c.id) for p, c in found.items()}  # plain ids: commits expire the entities
     ws = openpyxl.load_workbook(reviewed_path, data_only=True).active
     header = [_text(c.value).lower() for c in ws[1]]
@@ -562,13 +601,25 @@ def apply_links(db, path, reviewed_path, *, actor_id: Optional[str], rules: dict
         if _text(cells[idx["link"]]).upper() not in TICKS or cells[idx["excel_row"]] is None:
             continue
         row = int(cells[idx["excel_row"]])
-        debtor = _text(cells[idx["debtor_code"]])
-        customer = (
-            db.query(Customer.id, Customer.company_id).filter(Customer.id == _text(cells[idx["customer_id"]])).first()
-            if cells[idx["customer_id"]] else None
-        )
-        if customer is None or row not in groups:
-            result["failed"].append({"excel_row": row, "debtor_code": debtor, "error": "customer or row no longer exists"})
+        debtor = _unsafe(cells[idx["debtor_code"]])
+        customer = None
+        try:
+            cust_id = str(uuid.UUID(_text(cells[idx["customer_id"]])))
+            customer = db.query(Customer.id, Customer.customer_code, Customer.company_id).filter(Customer.id == cust_id).first()
+        except ValueError:
+            pass
+        group = groups.get(row)
+        problem = None
+        if customer is None or group is None:
+            problem = "customer or row no longer exists"
+        elif str(customer.company_id) not in row_company_ids(group):
+            problem = "customer belongs to a company outside this Excel row"
+        elif (customer.customer_code or "") != debtor:
+            problem = "debtor code does not match the customer"
+        elif _unsafe(cells[idx["excel_company"]]) != group["company_name"]:
+            problem = "company name does not match the Excel row"
+        if problem:
+            result["failed"].append({"excel_row": row, "debtor_code": debtor, "error": problem})
             continue
         for phone in groups[row]["phones"]:
             contact = found.get(phone)
@@ -595,7 +646,7 @@ def apply_links(db, path, reviewed_path, *, actor_id: Optional[str], rules: dict
                     entity_type="respond_contacts",
                     entity_id=cid,
                     old_values={"customer": None},
-                    new_values={"customer": debtor},
+                    new_values={"customer": customer.customer_code},
                     description="Customer linked from the contact bulk setup review sheet",
                 )
                 savepoint.commit()
@@ -636,12 +687,14 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap.add_argument("--excel", required=True)
     ap.add_argument("--db-url", required=True, help="explicit target database; never defaulted")
     ap.add_argument("--apply", action="store_true", help="write; omit for a dry run")
-    ap.add_argument("--out", default=".", help="directory for the CSV files (default: current directory)")
+    ap.add_argument("--out", help="directory for the CSV files (required for a dry run or --apply)")
     ap.add_argument("--links-review", metavar="OUT.xlsx")
     ap.add_argument("--apply-links", metavar="REVIEWED.xlsx")
     ap.add_argument("--actor-email")
     ap.add_argument("--debug", action="store_true", help="re-raise errors with the full traceback")
     args = ap.parse_args(argv)
+    if not (args.links_review or args.apply_links) and not args.out:
+        ap.error("--out is required for a dry run or --apply")
 
     db = _session(args.db_url)
     try:
