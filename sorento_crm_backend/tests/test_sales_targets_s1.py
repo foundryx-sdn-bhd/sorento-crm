@@ -118,7 +118,7 @@ def _so_line(
     from app.models.order import SalesOrder, SalesOrderLine
 
     so = SalesOrder(
-        id=_uid(), company_id=company_id, so_number=f"ZZT{_uid()[:8]}", order_date=order_date,
+        id=_uid(), company_id=company_id, so_number=f"ZZT{_uid().replace('-', '')}", order_date=order_date,
         status=status, sales_agent_id=agent_id, customer_id=customer_id, demand_class=demand_class,
     )
     db.add(so)
@@ -137,7 +137,7 @@ def _do_line(db, company_id, product_id, warehouse_id, sales_order_line_id, *, q
     from app.models.order import Order, OrderLine
 
     order = Order(
-        id=_uid(), company_id=company_id, order_number=f"ZZT{_uid()[:8]}", order_date=order_date,
+        id=_uid(), company_id=company_id, order_number=f"ZZT{_uid().replace('-', '')}", order_date=order_date,
         is_cancelled=is_cancelled,
     )
     db.add(order)
