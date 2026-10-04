@@ -4014,10 +4014,27 @@ def _run_stages_body(  # noqa: PLR0915
     # turn returned before this line and never needed a provider configured for a
     # parser it will not call (AC-1810's "no parser call" reading extended to setup).
     with _session(session_factory) as db:
+        # PARSER-PER-AUDIENCE: the prompt is rendered for what this contact may be
+        # answered on. The grants are the same `ctx.access.attributes` every refusal
+        # reads; an unreadable lookup is the minimal audience, never the full one.
+        try:
+            prompt_grants = list(
+                check_access(
+                    db,
+                    agent_code=None,
+                    contact_id=contact_respond_id,
+                    space_id=default_space_id(db),
+                ).get("attributes")
+                or []
+            )
+        except Exception:  # noqa: BLE001 - fail closed to the minimal audience
+            logger.warning("chatbot: audience grants lookup failed", exc_info=True)
+            prompt_grants = []
         parser_config = parser.resolve_config(
             db,
             current_date=_current_date_directive(),
             override_version_id=_prompt_override(envelope, parser.PROMPT_KEY, dry_run=dry_run),
+            grants=prompt_grants,
         )
         # #1262 slice 9 (F1a): the live brand list for the `Known brands:` line,
         # read in the SAME session as the config above (already scoped to this
