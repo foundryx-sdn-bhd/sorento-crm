@@ -13,6 +13,13 @@ export interface FindController {
   matches: FindMatch[];
   /** 0-based index of the active match, or -1 when there are none. */
   activeIndex: number;
+  /**
+   * Bumped ONLY by an explicit find navigation (open, new query, next, prev).
+   * Hosts jump the caret to the active match when this changes, never when the
+   * text changes, so typing in the host while the bar is open edits at the
+   * caret instead of snapping back to a match.
+   */
+  jumpSeq: number;
   setQuery: (q: string) => void;
   openFind: () => void;
   close: () => void;
@@ -46,6 +53,8 @@ export function useFindController(text: string): FindController {
   const [open, setOpen] = useState(false);
   const [query, setQueryState] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
+  const [jumpSeq, setJumpSeq] = useState(0);
+  const bump = useCallback(() => setJumpSeq((n) => n + 1), []);
 
   const matches = useMemo(() => computeMatches(text, query), [text, query]);
 
@@ -61,9 +70,13 @@ export function useFindController(text: string): FindController {
   const setQuery = useCallback((q: string) => {
     setQueryState(q);
     setActiveIndex(0);
-  }, []);
+    bump();
+  }, [bump]);
 
-  const openFind = useCallback(() => setOpen(true), []);
+  const openFind = useCallback(() => {
+    setOpen(true);
+    bump();
+  }, [bump]);
 
   const close = useCallback(() => {
     setOpen(false);
@@ -73,19 +86,22 @@ export function useFindController(text: string): FindController {
 
   const next = useCallback(() => {
     setActiveIndex((i) => (matches.length === 0 ? 0 : (i + 1) % matches.length));
-  }, [matches.length]);
+    bump();
+  }, [matches.length, bump]);
 
   const prev = useCallback(() => {
     setActiveIndex((i) =>
       matches.length === 0 ? 0 : (i - 1 + matches.length) % matches.length,
     );
-  }, [matches.length]);
+    bump();
+  }, [matches.length, bump]);
 
   return {
     open,
     query,
     matches,
     activeIndex: matches.length === 0 ? -1 : activeIndex,
+    jumpSeq,
     setQuery,
     openFind,
     close,

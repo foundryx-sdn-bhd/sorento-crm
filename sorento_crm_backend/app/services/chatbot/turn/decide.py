@@ -33,7 +33,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from app.services.chatbot.contracts import DETAIL_OFFER_KINDS, SALES_REPORT_GROUP_BYS
+from app.services.chatbot.contracts import DETAIL_OFFER_KINDS, ORDER_OR_SALES_DOMAINS, SALES_REPORT_GROUP_BYS
 from app.services.chatbot.turn.pending import ESCALATION_OFFER_KINDS, Pending
 from app.services.chatbot.turn.state import KIND_FIELD_MAP, Focus
 
@@ -472,6 +472,11 @@ def _outstanding_domain_mismatch(pending: Pending | None, verdict: dict[str, Any
     if not isinstance(domain_hint, str) or not domain_hint:
         return False
     offer_domain = pending.payload.get("domain")
+    if {domain_hint, offer_domain} <= ORDER_OR_SALES_DOMAINS:
+        # R7 (PLAN-prompt-dynamic-30sep D9): a sales report's detail offer is asked under
+        # `sales`, and its own list is a sales ORDER list the parser may still call
+        # `order`. Both were one domain until then; neither is a switch away from it.
+        return False
     return isinstance(offer_domain, str) and bool(offer_domain) and domain_hint != offer_domain
 
 

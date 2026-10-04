@@ -49,6 +49,9 @@ PINNED_PICK: dict[str, str] = {
     # PLAN-chatbot-last-purchase-cost.md, 12 Sep 2026: a domain this plan invents, so no
     # captured turn can carry it - one tool, no choice to measure.
     "purchase_cost": "crm_procurement_po_last_cost_list",
+    # R7 (PLAN-prompt-dynamic-30sep D9): the `sales` domain's first tool. A sales status
+    # never reaches it (`run_fetch`'s three overrides pick), so no captured turn does.
+    "sales": "crm_sales_report",
 }
 
 #: The two domains with an empty `tools` tuple. Nothing can answer them, which is why the

@@ -127,6 +127,13 @@ def republish_and_promote(bind) -> None:
 
     session = Session(bind=bind)
     try:
+        # PLAN-prompt-dynamic-30sep R3: the label moves only by the owner once his
+        # wording layer exists; nothing here promotes over it.
+        from app.services.chatbot_prompt_vars import wording_layer_exists
+
+        if wording_layer_exists(session):
+            logger.info("parser wording layer exists; production label left alone")
+            return
         # s4's own formula, imported not copied, so the two can never drift.
         template, _blocks_hash = s4._body(session)
         target = (

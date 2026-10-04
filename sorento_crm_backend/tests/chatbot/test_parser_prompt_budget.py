@@ -97,6 +97,10 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # prompt without MEMORY_ADDENDUM to 44,883 est. tokens and the whole prompt to 45,399
 # (crew design review round: "supplier_category" only when BOTH are named);
 # CEILING is 45,399 - 512 = 44,887 so both assertions hold.
+# Seventh re-pin, 4 Oct 2026 (PROMPT-DYNAMIC merged over LOWSTOCK-SEMANTIC, PLAN-prompt-dynamic-30sep
+# D9): main 690d41fc measures 44,883 without MEMORY_ADDENDUM; the owner's `sales` domain row adds one
+# domain line to the policy blocks (+88): 44,971 without MEMORY_ADDENDUM and 45,487 with it;
+# CEILING is 45,487 - 512 = 44,975 so both assertions hold. Nothing else grew.
 # Sixth re-pin, 2 Oct 2026 (REPORT-ENGINE slice 1b, PLAN-report-engine.md section 11):
 # REPORT_ASK_ADDENDUM (the `sales_ranking` vocabulary, 505 est. tokens on its own) sits between
 # ACCOUNT_LEDGER and MEMORY and takes the prompt without MEMORY_ADDENDUM to 44,005 est. tokens
@@ -117,7 +121,8 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # PR #1447 (rankings clarify): the basis answer line, the delivered answer and the outstanding refine, +114 est. tokens (review B1 removed the sales ranking metric bullet, -63).
 # Ranking keys come from the current message only (REPORT_ASK_ADDENDUM), +52 est. tokens.
 # Merge of main (#1470 LOWSTOCK-SEMANTIC) with PR #1447 (report engine): merged prompt measures 46,424 est. tokens without MEMORY_ADDENDUM and 46,939 with it, so CEILING is 46,939 - 512.
-CEILING = 46_427
+# Merge of main (#1405 PROMPT-DYNAMIC) with PR #1447 (report engine): the owner's `sales` domain line (+88) on top of the #1470 merge: 46,512 est. tokens without MEMORY_ADDENDUM and 47,028 with it, so CEILING is 47,028 - 512.
+CEILING = 46_516
 # The memory addendum on its own, bounded separately so this PR's growth stays bounded.
 # 26 Sep baseline (lane d89110c0): 339 est. tokens. Round 4 (baf4c813, 28 Sep: the history
 # question in any wording, the number re-run, commercial_request) took it to 512, which is

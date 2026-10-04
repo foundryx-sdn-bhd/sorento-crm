@@ -42,6 +42,8 @@ from app.services.chatbot import dispatch, jsc, llm_call, media_intake, send_ord
 from app.services.chatbot.contracts import (
     BUSINESS_BRANCH_KINDS,
     CRM_COMPLETED_BRANCH_KINDS,
+    ORDER_OR_SALES_DOMAINS,
+    SALES_DOMAIN,
     SELF_CLOSING_BRANCH_KINDS,
     TURN_FAILURE_STAGES,
     Envelope,
@@ -1777,7 +1779,9 @@ def _customer_scope_gate(
         return parse_output, None, False, None
     self_reference = verdict.get("self_reference") is True
     enforced = bool(scope.get("enforced"))
-    in_order = "order" in (domains or ())
+    # R7 (PLAN-prompt-dynamic-30sep D9): "my sales" is the `sales` domain now, and scopes
+    # to the links exactly as it did under `order`.
+    in_order = bool(ORDER_OR_SALES_DOMAINS & set(domains or ()))
     if not (enforced or (self_reference and in_order)):
         return parse_output, None, False, None
     entities = [e for e in (parse_output.get("entities") or []) if isinstance(e, dict)]
@@ -2298,7 +2302,7 @@ def _as_ranking_answer(verdict: dict[str, Any], **keys: Any) -> dict[str, Any]:
     out = {
         **verdict,
         "message_type": "business_query",
-        "domain_hint": "order",
+        "domain_hint": SALES_DOMAIN,
         "intent_hint": "check_order",
         "order_status": "top_selling",
         "domain_in_message": None,
@@ -2355,7 +2359,7 @@ def _ranking_words_claim(verdict: dict[str, Any], text: str) -> dict[str, Any] |
     out = {
         **verdict,
         "message_type": "business_query",
-        "domain_hint": "order",
+        "domain_hint": SALES_DOMAIN,
         "intent_hint": "check_order",
         "order_status": "top_selling",
         "domain_in_message": True,
@@ -2689,7 +2693,7 @@ def _top_selling_verdict(
     out = {**verdict, "entities": rebuilt}
     if leftover:
         out["top_selling_leftover"] = leftover
-    if not asks_ranking and out.get("domain_hint") not in (None, "", "order"):
+    if not asks_ranking and out.get("domain_hint") not in (None, "", *ORDER_OR_SALES_DOMAINS):
         # A word the parser sent to a promotion or document lookup, inside a ranking.
         out = _as_ranking_answer(out, entities=rebuilt)
     return out, state, "top_selling_split_token"
@@ -4627,7 +4631,7 @@ def _run_stages_body(  # noqa: PLR0915
         customer_scope = (
             business_services.customer_scope(db, contact_respond_id, space_id_for_turn)
             if verdict.get("self_reference") is True
-            or {"order", "purchase_order"} & {*(plan.domains or ()), *(spec.domain for spec in plan.fetch)}
+            or {*ORDER_OR_SALES_DOMAINS, "purchase_order"} & {*(plan.domains or ()), *(spec.domain for spec in plan.fetch)}
             else None
         )
 

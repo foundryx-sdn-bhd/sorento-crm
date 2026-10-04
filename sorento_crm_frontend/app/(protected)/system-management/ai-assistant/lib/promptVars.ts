@@ -17,12 +17,17 @@ export function tokensInTemplate(template: string): string[] {
   return Array.from(seen);
 }
 
-export function validateVars(template: string, declared: string[]): VarValidation {
+/**
+ * `registry` is the key's registry variables (PROMPT-DYNAMIC): the backend fills them
+ * itself, so they are always known, and never missing - removing one is how the owner
+ * writes that list in his own words.
+ */
+export function validateVars(template: string, declared: string[], registry: string[] = []): VarValidation {
   const found = new Set(tokensInTemplate(template));
-  const declaredSet = new Set(declared);
+  const known = new Set([...declared, ...registry]);
   return {
     present: declared.filter((d) => found.has(d)),
     missing: declared.filter((d) => !found.has(d)),
-    unknown: Array.from(found).filter((t) => !declaredSet.has(t)),
+    unknown: Array.from(found).filter((t) => !known.has(t)),
   };
 }
