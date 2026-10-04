@@ -66,7 +66,7 @@ SUBJECT (what the question is about) or OWNED by the intent (how that one ask is
    stamps, and `pending.tick`'s 3-turn escalation-offer clock (AC-816).
 6. **Held questions** keep #1471's consume rule: a roster survives a new intent but speaks
    only when the reply is a pick (ruling (a)). An escalation offer lives as long as the
-   contact's next message (security review B1, crew-ask pending): a message that does not
+   contact's next message (security review B1; owner ruling (a), 4 Oct 2026): a message that does not
    answer it closes it after APPLY has read the turn (a pick off the did-you-mean codes
    the miss printed beside it counts as answering), and a roster loses the escalate
    sentence printed under it, so a later "ok thanks" never hands the chat to a person.
@@ -123,6 +123,8 @@ true`, measured live), so the gunmetal basins carry into the certificate ask.
 - **Q3 (a):** one live frame, no stack.
 - **Q4 (a):** "clear", "reset", "start over" examples in a new unlabelled prompt version.
 - **Q5 (a):** one not-found rule.
+- **Escalation-offer lifetime (a)** (security review B1 follow-up): the offer closes when the
+  contact's next message neither answers it nor picks, as built.
 
 ## Questions as asked (recommendations first)
 
