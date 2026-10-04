@@ -17,7 +17,7 @@ seed, so an owner edit made before a re-run is never overwritten. `apply(bind)` 
 with `scripts.bootstrap_env` (a `create_all`-built database never runs this body).
 
 Revision ID: pdyn_0001_status_words_sales
-Revises: sdn_0002_so_debtor_backfill
+Revises: lss_0001_parser_vocab
 Create Date: 2026-09-30
 """
 from __future__ import annotations
@@ -26,7 +26,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "pdyn_0001_status_words_sales"
-down_revision = "sdn_0002_so_debtor_backfill"
+down_revision = "lss_0001_parser_vocab"
 branch_labels = None
 depends_on = None
 
