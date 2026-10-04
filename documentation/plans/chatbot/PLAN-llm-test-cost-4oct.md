@@ -182,3 +182,43 @@ never recorded misses in replay (it raises; the indexer logs it). Whisper
 - Direct-HTTP embeddings record/replay rather than refuse, so replay matches live.
 - The environment guard is an allowlist.
 - `_read` checks the cassette root's ownership too.
+
+## Crew ruling (b), 4 Oct: static system prompt and `prompt_cache_key`
+
+Asked for: send `prompt_cache_key` per prompt version, and move the CURRENT DATE line out of the
+system prompt into the user block with no wording change, proven to give identical parses on the
+replay corpus.
+
+**Shipped:**
+- `prompt_cache_key = "chatbot_semantic_parser:v<prompt_version>"` on every parse
+  (`head/parser.py` `parse`). It goes through `OpenAIProvider.chat`; Anthropic and Gemini accept
+  and ignore it. It is not part of the cassette key.
+- `LLM_CASSETTE_DATE` pins the parser's "today" (`engine._current_date_directive` via
+  `llm_cassette.pinned_date`), honoured only in record/replay. This is what actually keeps
+  cassettes valid past midnight. Moving the date would not have done it alone: the date would
+  still be in the request, so still in the key.
+
+**Measured, NOT shipped: moving the date line.** It was implemented (commit `1ee5e1453`,
+`parser.render_static` plus `scripts/chatbot_parser_parity.py --date-layout`) and measured live on
+gpt-5.4-mini, prompt v3 as bootstrapped:
+- Sample: 60 of the 431 distinct messages in `tests/chatbot/replay_turns`, seed 1963. Each was
+  parsed with the old layout, the new layout, and the old layout again as the noise floor.
+- gpt-5.4-mini is not deterministic here: old vs old gave identical emissions (all 48 keys) on
+  only 30/60, and new vs old on 22/60.
+- On the routing-decisive keys (`message_type`, `domain_hint`, `intent_hint`, `routing`,
+  `escalation`, `document`), new vs old differed on 5/60 inputs and old vs old on 1/60.
+- Re-running those 5 inputs 4 times per layout showed 3 consistent layout effects, plus one
+  that leans differently:
+
+| replay input | old layout (4/4) | new layout |
+| --- | --- | --- |
+| `business-query-438930735-chain-001#5` | `master_products` / `check_product` | `domain_hint: null`, `intent_hint: null` (4/4) |
+| `check-promotion-404285551-chain-001#7` | `message_type: business_query` | `clarification` (4/4) |
+| `focus-006-g-incoming-wc286...#2` | `message_type: unknown` | `business_query` (4/4) |
+| `case-029-a3-belum-do...#0` | `document: ["SO"]` 3/4 | `["DO"]` 2/4 |
+
+So the move changes the parse on about 5% of messages, and not always for the better. That
+fails "output unchanged", so the move was reverted. The prefix cache does not need it: the date
+already sits at 97% of the system prompt, so roughly 31k of 33.5k tokens are a stable prefix
+(the 98.5% warm hit rate above). Trigger to revisit: an owner-approved prompt revision that is
+re-graded on the replay corpus anyway.

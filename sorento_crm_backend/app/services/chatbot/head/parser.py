@@ -79,10 +79,6 @@ class ParserConfig:
     provider: str
     model: str
     api_key: str
-    # The prompt's `{{current_date}}` line, moved out of `system_prompt` into the head of
-    # the user message (LLM-TEST-COST, crew ruling 4 Oct) so the system prompt is
-    # byte-identical every day. None keeps the date where the template put it.
-    date_line: str | None = None
 
 
 def _build_json_schema() -> dict[str, Any]:
@@ -596,8 +592,8 @@ def resolve_config(
     from app.services.ai_assistant_service import AIAssistantConfigService
     from app.services.llm_provider import resolve_api_key
 
-    system_prompt, prompt_version, date_line = render_static(
-        db, current_date=current_date, override_version_id=override_version_id
+    system_prompt, prompt_version = render(
+        db, PROMPT_KEY, current_date=current_date, override_version_id=override_version_id
     )
     provider_override, model_override = agent_model(db, PROMPT_KEY)
 
@@ -615,39 +611,7 @@ def resolve_config(
         provider=provider,
         model=model,
         api_key=api_key,
-        date_line=date_line,
     )
-
-
-# A stand-in for the date while the prompt renders, so the one line that carries it can be
-# found exactly. Nothing a prompt editor would type.
-_DATE_SENTINEL = "\x00CURRENT_DATE\x00"
-
-
-def render_static(
-    db: Session, *, current_date: str, override_version_id: str | None
-) -> tuple[str, int | None, str | None]:
-    """`(system_prompt, prompt_version, date_line)`: the prompt with its date line lifted out.
-
-    LLM-TEST-COST (crew ruling, 4 Oct 2026): `{{current_date}}` was the only thing in the
-    system prompt that changed from one call to the next, so the prompt cache and every
-    test cassette rolled over at midnight. The line that carries it (today `CURRENT DATE:
-    {{current_date}}`) now travels at the head of the user message instead, same words, and
-    the rest of the prompt is byte-for-byte what it was. A template whose date is not
-    alone on one line keeps it where it is: no rewording is ever guessed at.
-    """
-    text, version = render(
-        db, PROMPT_KEY, current_date=_DATE_SENTINEL, override_version_id=override_version_id
-    )
-    lines = [line for line in text.split("\n") if _DATE_SENTINEL in line]
-    if text.count(_DATE_SENTINEL) != 1 or len(lines) != 1:
-        return text.replace(_DATE_SENTINEL, current_date), version, None
-    line = lines[0]
-    for cut in (line + "\n\n", line + "\n", line):
-        if cut in text:
-            text = text.replace(cut, "", 1)
-            break
-    return text, version, line.replace(_DATE_SENTINEL, current_date)
 
 
 def _subject_names(rows: Any) -> list[str]:
@@ -885,10 +849,9 @@ def parse(config: ParserConfig, user_block: str) -> ParsedOutput:
     """
     from app.services.chatbot import llm_call
 
-    user_content = f"{config.date_line}\n\n{user_block}" if config.date_line else user_block
     messages = [
         {"role": "system", "content": config.system_prompt},
-        {"role": "user", "content": user_content},
+        {"role": "user", "content": user_block},
     ]
     try:
         # A rate limit is waited out inside the call (PR #1247 round 6, ruling 3).
