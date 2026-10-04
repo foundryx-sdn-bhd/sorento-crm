@@ -5,7 +5,7 @@ import TranslationsList from './components/TranslationsList';
 
 export const metadata: Metadata = {
   title: 'Translations',
-  description: 'The Chinese-English translation memory supplier documents read from.',
+  description: 'The translation memory supplier documents and chatbot replies read from.',
 };
 
 export default async function TranslationsPage() {

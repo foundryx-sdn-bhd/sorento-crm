@@ -682,9 +682,10 @@ class Focus(BaseModel):
 
 
 class SessionVars(BaseModel):
-    """The five-key session shape (AC-1504). Byte-compatible hazard (contract 129,
-    "the five-key session shape must stay byte-compatible for #930's parked lane and for
-    live contacts mid-conversation at deploy"): exactly these five keys, nothing more.
+    """The session shape (AC-1504), five keys plus `reply_language` (CHAT-LANGUAGE).
+    Byte-compatible hazard (contract 129, "the five-key session shape must stay
+    byte-compatible for #930's parked lane and for live contacts mid-conversation at
+    deploy"): the new key is optional and defaults to None, so an old row still reads.
 
     `extra = "forbid"` for the same H15 reason `LegacyVariables` carries it - nothing
     outside this list may leak into a customer's session.
@@ -697,6 +698,8 @@ class SessionVars(BaseModel):
     ideation: dict[str, Any] | None = None
     access_levels: list[str] = Field(default_factory=list)
     contains_flyer: bool = False
+    # CHAT-LANGUAGE: the language the last decided reply was in, carried to the next turn.
+    reply_language: Literal["en", "ms", "zh"] | None = None
 
 
 # The widths the `chatbot.turns` columns actually have. Validated on the way IN so an

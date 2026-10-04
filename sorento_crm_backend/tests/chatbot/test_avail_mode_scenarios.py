@@ -489,7 +489,9 @@ def test_S46b_misread_through_asks_too(console):
 @pytest.mark.parametrize("typed", ["SRTW2000 x 10 when arrive?", "ETA SRTW2000 x 10", "SRTW2000 x 10 bila sampai"])
 def test_S46c_a_quantity_ask_with_an_eta_word_stays_an_eta_ask(console, typed):
     c = console(SRTW2000=Stock(eta=ETA))
-    assert c.say(typed, _misread_as_eta(product("SRTW2000", 10))) == f"SRTW2000: {TICK} ETA 19/10/2026\n\n{R}"
+    # CHAT-LANGUAGE (#1448): a Malay message gets the Malay refer line.
+    refer = "Sila rujuk jurujual anda." if "bila" in typed else R
+    assert c.say(typed, _misread_as_eta(product("SRTW2000", 10))) == f"SRTW2000: {TICK} ETA 19/10/2026\n\n{refer}"
 
 
 # ================================================================== owner hand test, 3 Oct 2026
