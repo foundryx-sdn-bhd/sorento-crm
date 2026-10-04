@@ -6,6 +6,8 @@ wording change). Saved unlabelled; never labelled, published or staged.
 """
 from __future__ import annotations
 
+import re
+import sys
 import uuid
 
 import pytest
@@ -196,3 +198,68 @@ def test_verify_against_a_version_reports_the_first_line_where_they_part():
 def test_the_cli_takes_an_against_version():
     args = _script().parse_args(["--verify", "57", "--against", "56"])
     assert (args.verify, args.against) == (57, 56)
+
+
+# --------------------------------------------------------------------------- #
+# Owner rule: no `{{...}}` placeholder may ever reach the parser. `verify` reports the
+# tokens still present in the render and is never equal while any remain, even when the
+# reference carries the very same text.
+# --------------------------------------------------------------------------- #
+
+LEAK = "{{not_a_registry_var}}"
+
+
+def _leaky_source() -> str:
+    source = SNAPSHOT.read_text(encoding="utf-8")
+    lines = source.split("\n")
+    lines[9] = lines[9] + f" {LEAK}"
+    return "\n".join(lines)
+
+
+def test_a_surviving_placeholder_fails_verify_even_when_the_reference_has_it_too():
+    script = _script()
+    with pg_session() as db:
+        base = 90000 + uuid.uuid4().int % 9999
+        reference = _put_version(db, _leaky_source(), base)
+        leaky = _put_version(db, _with_block(_leaky_source()), base + 1)
+        out = script.verify(db, leaky.version, against_version=reference.version)
+        assert out["leftover_tokens"] == [LEAK]
+        assert out["equal"] is False
+
+
+def test_a_registry_variable_always_renders_so_no_token_is_left():
+    source = SNAPSHOT.read_text(encoding="utf-8")
+    swapped, n = re.subn(r"(drawn\s+ONLY from:\s*\n)\[\"[^\]\n]*\"\]", r"\1{{access_levels}}", source, count=1)
+    assert n == 1
+    script = _script()
+    with pg_session() as db:
+        row = _put_version(db, swapped, 90000 + uuid.uuid4().int % 9999)
+        out, _ = ai_prompt_registry.render(db, KEY, current_date="D", override_version_id=row.id)
+        assert "{{" not in out
+        assert script.verify(db, row.version, SNAPSHOT)["leftover_tokens"] == []
+
+
+def test_clean_versions_report_no_leftover_tokens():
+    source = SNAPSHOT.read_text(encoding="utf-8")
+    script = _script()
+    with pg_session() as db:
+        base = 90000 + uuid.uuid4().int % 9999
+        good = _put_version(db, _with_block(source), base)
+        owner = _put_version(db, source, base + 1)
+        assert script.verify(db, good.version, SNAPSHOT)["leftover_tokens"] == []
+        assert script.verify(db, owner.version, against_version=good.version)["leftover_tokens"] == []
+
+
+def test_the_cli_prints_the_leftover_placeholders_and_exits_1(monkeypatch, capsys):
+    import app.database
+
+    script = _script()
+    with pg_session() as db:
+        base = 90000 + uuid.uuid4().int % 9999
+        reference = _put_version(db, _leaky_source(), base)
+        leaky = _put_version(db, _with_block(_leaky_source()), base + 1)
+        monkeypatch.setattr(db, "close", lambda: None)
+        monkeypatch.setattr(app.database, "SessionLocal", lambda: db)
+        monkeypatch.setattr(sys, "argv", ["x", "--verify", str(leaky.version), "--against", str(reference.version)])
+        assert script.main() == 1
+    assert f"# leftover placeholders in v{leaky.version}: ['{LEAK}']" in capsys.readouterr().out
