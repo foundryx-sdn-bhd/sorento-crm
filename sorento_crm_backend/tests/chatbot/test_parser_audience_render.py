@@ -310,7 +310,7 @@ class TestSizes:
     token bounds over 33,207 (81.3% and 83.1%) with a little headroom for the proxy."""
 
     def test_minimal_audience_is_at_most_82_percent_of_the_prod_text(self) -> None:
-        assert len(_render(_tagged(), [])) / len(_prod()) <= 0.83  # crew ruling 5 Oct: worked examples stay
+        assert len(_render(_tagged(), [])) / len(_prod()) <= 0.84  # crew ruling 5 Oct: vocabulary and worked examples stay
 
     def test_placed_only_is_at_most_84_percent_of_the_prod_text(self) -> None:
         assert len(_render(_tagged(), [P])) / len(_prod()) <= 0.84

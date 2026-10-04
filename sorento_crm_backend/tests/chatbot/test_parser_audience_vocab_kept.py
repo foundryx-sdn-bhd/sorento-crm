@@ -140,12 +140,12 @@ class TestHeavyBlocksStillDropped:
         assert "LOW STOCK REPORT FILTERS" not in bare
         assert LOW_STOCK_FILTERS_ADDENDUM.strip("\n") not in bare
 
-    def test_no_grant_render_is_at_least_6000_tokens_smaller_than_full(self) -> None:
+    def test_no_grant_render_is_at_least_5500_tokens_smaller_than_full(self) -> None:
         tiktoken = pytest.importorskip("tiktoken")
         enc = tiktoken.get_encoding("o200k_base")
         full = len(enc.encode(render_for_audience(_tagged(), list(ALL_GRANTS))))
         bare = len(enc.encode(render_for_audience(_tagged(), [])))
-        assert full - bare >= 6000, (full, bare, full - bare)
+        assert full - bare >= 5500, (full, bare, full - bare)
         assert full == len(enc.encode(_prod()))
 
     @pytest.mark.parametrize(
