@@ -32,6 +32,7 @@ from typing import Any
 import pytest
 
 from app.services.chatbot import dealer_stock as dealer
+from app.services.chatbot import label_catalog, language
 from app.services.chatbot.head import parser as parser_mod
 from app.services.chatbot.turn import pending as turn_pending
 from app.services.chatbot.turn import task as task_mod
@@ -481,8 +482,93 @@ def _point_form(codes: list[str], values: dict[int, int] | None = None) -> str:
     )
 
 
-def _answered(*pairs: tuple[str, int]) -> str:
-    return "\n\n".join(f"{code} x {qty}: {TOO_BIG}" for code, qty in pairs)
+def _answered(*pairs: tuple[str, int], lang: str = "en") -> str:
+    """CHAT-LANGUAGE: the verdict sentence follows the dealer's language (`lang`)."""
+    loc = label_catalog.Localizer(lang, label_catalog.defaults(lang))
+    return "\n\n".join(loc.tail(f"{code} x {qty}: {TOO_BIG}") for code, qty in pairs)
+
+
+#: The reply language each H message must get, spelled out per message so a detection bug fails
+#: here instead of being absorbed. Every H case opens in English, so a message with no marker
+#: word keeps English; a Malay or Chinese message switches the reply.
+_LANG: dict[str, str] = {
+    "1 and 3": "en",
+    "first and third": "en",
+    "the second and the fourth": "en",
+    "1, 2": "en",
+    "both SRTWC286-SH and SRTWC286-SH-150": "en",
+    "satu dan tiga": "ms",
+    "yang kedua dan ketiga": "ms",
+    "一和三": "zh",
+    "di er ge he di san ge": "en",
+    "all": "en",
+    "1,2,3,4,5,6,7,8,9,10": "en",
+    "both": "en",
+    "both, 2 each": "en",
+    "dua-dua": "ms",
+    "两个都要": "zh",
+    "liang ge dou yao, 3 each": "en",
+    "semua, 4 unit": "ms",
+    "1 and 2": "en",
+    "both of them please, 5": "en",
+    "the two, 1 each": "en",
+    "kedua-duanya": "en",
+    "the first one, I need 2": "en",
+    "1, I need 2": "en",
+    "first one x2": "en",
+    "number 1 please, 2 units": "en",
+    "SRTWC286-SH, 2 pcs": "en",
+    "the top one, two": "en",
+    "yang pertama, 2 unit": "ms",
+    "nombor satu, dua": "ms",
+    "第一个，要两个": "zh",
+    "yi hao, liang ge": "en",
+    "yes": "en",
+    "ya": "ms",
+    "betul, yang itu": "ms",
+    "对": "zh",
+    "yup that one": "en",
+    "no": "en",
+    "tak": "ms",
+    "bukan": "ms",
+    "不是": "zh",
+    "nope, not that one": "en",
+    "1. 10, 2. 5, 3. 1": "en",
+    "10 / 5 / 1": "en",
+    "SRTWC286-SH 10, SRTWC286-SH-150 5, SRTWC286-SH-200 1": "en",
+    "3 for all": "en",
+    "semua 3": "ms",
+    "每个三个": "zh",
+    "first 10, second 5, third 1": "en",
+    "satu 10, dua 5, tiga 1": "ms",
+    "yi 10 er 5 san 1": "en",
+    "dua dua ja": "ms",
+    "make line 2 10": "en",
+    "the second one 10 instead": "en",
+    "SRTWC286-SH-150 10": "en",
+    "how about 5 for all of them": "en",
+    "semua 5": "ms",
+    "全部五个": "zh",
+    "yang pertama 1": "ms",
+    "di san ge yao 8": "en",
+    "first 1 and last 8": "en",
+    "tukar yang kedua jadi sepuluh": "ms",
+}
+
+
+def _lang(message: str) -> str:
+    """The reply language the H case expects for `message` (a KeyError means the row was
+    added without stating one)."""
+    return _LANG[message]
+
+
+def _says(expected: str, message: str) -> str:
+    """`expected` as the reply to `message` reads: the final reply pass (slice 4) renders the
+    composer's own sentences in the message's language."""
+    lang = _lang(message)
+    if lang == "en":
+        return expected
+    return label_catalog.Localizer(lang, label_catalog.defaults(lang)).reply(expected)
 
 
 def test_g_1406_the_first_one_i_need_2(session_factory, monkeypatch, stub_access):
@@ -651,7 +737,7 @@ PICK_WITH_QTY = [
 def test_h_pick_one_with_a_quantity(session_factory, monkeypatch, stub_access, message, obj):
     c = EngineConsole(session_factory, monkeypatch, stub_access, phone="+60900000042")
     c.say("check stock STWC2867", stock(product("STWC2867")))
-    assert c.say(message, reply(open_question_answer=obj)) == _answered(("SRTWC286-SH", 2))
+    assert c.say(message, reply(open_question_answer=obj)) == _answered(("SRTWC286-SH", 2), lang=_lang(message))
 
 
 #: Several picked off the family list (pick_one, "both" / "all" / "1 and 3").
@@ -675,7 +761,7 @@ def test_h_pick_one_several_opens_their_quantities(session_factory, monkeypatch,
     c = EngineConsole(session_factory, monkeypatch, stub_access, phone="+60900000043")
     c.say("check stock srtwc286", stock(product("srtwc286")))
     out = c.say(message, reply(open_question_answer=answer("pick", picked=picked)))
-    assert out == _point_form([OWNER_FAMILY[p - 1] for p in picked])
+    assert out == _says(_point_form([OWNER_FAMILY[p - 1] for p in picked]), message)
 
 
 #: "both" over the two-option did-you-mean, with and without one quantity (pick_one).
@@ -699,9 +785,9 @@ def test_h_pick_one_both(session_factory, monkeypatch, stub_access, message, obj
     c.say("check stock STWC2867", stock(product("STWC2867")))
     out = c.say(message, reply(open_question_answer=obj))
     if qty is None:
-        assert out == _point_form(DYM)
+        assert out == _says(_point_form(DYM), message)
     else:
-        assert out == _answered(*[(code, qty) for code in DYM])
+        assert out == _answered(*[(code, qty) for code in DYM], lang=_lang(message))
 
 
 #: The one-option did-you-mean (confirm): five yeses answer it, five noes refer.
@@ -729,9 +815,9 @@ def test_h_confirm(session_factory, monkeypatch, stub_access, message, mode):
     # carries the yes or the no.
     out = c.say(message, reply(open_question_answer=answer(mode)))
     if mode == "yes":
-        assert out == _answered(("ELP3754", 10))
+        assert out == _answered(("ELP3754", 10), lang=_lang(message))
     else:
-        assert out == task_mod.REFER_TO_SALESMAN
+        assert out == _says(task_mod.REFER_TO_SALESMAN, message)
 
 
 #: The point-form quantities question over three products (quantities).
@@ -756,7 +842,7 @@ def test_h_quantities(session_factory, monkeypatch, stub_access, message, obj, q
     c = EngineConsole(session_factory, monkeypatch, stub_access, phone="+60900000062")
     c.say("check stock srtwc286", stock(product("srtwc286")))
     assert c.say("1 2 3", reply(open_question_answer=answer("pick", picked=[1, 2, 3]))) == _point_form(three)
-    assert c.say(message, reply(open_question_answer=obj)) == _answered(*zip(three, qtys))
+    assert c.say(message, reply(open_question_answer=obj)) == _answered(*zip(three, qtys), lang=_lang(message))
 
 
 #: Revising a three-product answer (last_answer).
@@ -783,7 +869,9 @@ def test_h_last_answer(session_factory, monkeypatch, stub_access, message, obj, 
     assert c.say("3 each", reply(open_question_answer=answer("all", qty_for_all=3))) == _answered(
         *[(code, 3) for code in three]
     )
-    assert c.say(message, reply(correction=True, open_question_answer=obj)) == _answered(*zip(three, qtys))
+    assert c.say(message, reply(correction=True, open_question_answer=obj)) == _answered(
+        *zip(three, qtys), lang=_lang(message)
+    )
 
 
 def test_h_family_order_survives_a_reshuffled_heap(session_factory, monkeypatch, stub_access):
