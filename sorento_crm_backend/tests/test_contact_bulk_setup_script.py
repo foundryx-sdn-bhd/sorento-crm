@@ -1003,7 +1003,7 @@ def test_auto_exact_name_single_survivor_is_auto_and_dry_run_writes_nothing(db, 
     assert (res["already_linked"], res["needs_human"], res["linked"]) == (0, 0, 0)
     assert _links(db) == [] and _audits(db, event="contact.customer_linked_bulk") == []
     fields, rows = _read_plan(out)
-    assert fields == ["excel_row", "company_code", "debtor_code", "customer_name", "contact", "status"]
+    assert fields == ["excel_row", "company_code", "debtor_code", "excel_company", "customer_name", "contact", "status"]
     assert sorted(r["contact"] for r in rows) == sorted([c1.name, c2.name])
     assert {r["debtor_code"] for r in rows} == {"ZZT-A1"}
     for f in (out / "auto-links-plan.csv", out / "links-review-leftover.xlsx"):
@@ -1200,3 +1200,37 @@ def test_auto_counts_and_plans_each_contact_and_ledger_pair_once(db, tmp_path, w
     res, _ = _auto(db, w, path, tmp_path, apply=True, actor_id=w.actor)
     assert (res["linked"], res["skipped_existing"]) == (plan["counts"]["auto_pairs"], 0)
     assert [(l.contact_id, l.customer_id) for l in _links(db)] == [(c1.id, ledger.id)]
+
+
+def test_auto_blank_excel_company_name_is_needs_human(db, tmp_path, w):
+    _contact(db, 1)
+    _customer(db, w.a, "", "ZZT-Z1")
+    _customer(db, w.a, "[A/C I]", "ZZT-Z2")  # normalises to its fallback, never to a real name
+    path = _book(tmp_path, [_row([("ZZT P1", raw(1), BO)], company=None)])
+    res, _ = _auto(db, w, path, tmp_path, apply=True, actor_id=w.actor)
+    assert res["auto"] == [] and res["linked"] == 0
+    assert res["counts"]["needs_human"] == 1 and res["needs_human"] == 1
+    assert _links(db) == []
+
+
+def test_auto_plan_csv_shows_excel_company_next_to_customer_name(db, tmp_path, w):
+    _contact(db, 1)
+    _customer(db, w.a, "ZZT Dealer A Sdn Bhd", "ZZT-X1")
+    path = _book(tmp_path, [_row([("ZZT P1", raw(1), BO)], company="=ZZT Dealer A Sdn Bhd")])
+    _, out = _auto(db, w, path, tmp_path)
+    fields, rows = _read_plan(out)
+    assert fields[fields.index("customer_name") - 1] == "excel_company", fields
+    assert {r["excel_company"] for r in rows} == {"'=ZZT Dealer A Sdn Bhd"}
+
+
+def test_auto_held_ledger_in_a_block_with_a_clear_ledger_is_listed_as_held(db, tmp_path, w):
+    _contact(db, 1)
+    clear = _customer(db, w.a, "ZZT Dealer A Sdn Bhd", "ZZT-K1")
+    held = _dup(db, w, "ZZT Dealer A Trading", "ZZT-K2", created=datetime(2020, 1, 1))
+    _dup(db, w, "ZZT Unrelated Hardware", "ZZT-K2", created=datetime(2021, 1, 1))
+    res, out = _auto(db, w, _auto_book(tmp_path), tmp_path, apply=True, actor_id=w.actor)
+    assert [x["customer_id"] for x in res["auto"]] == [clear.id]
+    assert (res["counts"]["auto_blocks"], res["counts"]["needs_human"]) == (1, 0)
+    assert {l.customer_id for l in _links(db)} == {clear.id}
+    _, rows = _read_review(out / "links-review-leftover.xlsx")
+    assert [r["reason"] for r in rows if r["customer_id"] == held.id] == ["held"]
