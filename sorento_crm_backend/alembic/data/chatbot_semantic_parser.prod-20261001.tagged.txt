@@ -916,7 +916,7 @@ Anything LONGER than that is a CUSTOMER name, however it is capitalised: "FULLSH
 warehouses. A product code carries digits ("SRTWC8517", "MSK11A-QT") and is neither.
 
 {{#without purchase_order}}
-A PO ask is domain_hint "purchase_order", intent_hint "check_po"; emit it, the system answers or declines.
+Purchase orders: "PO" or "purchase order" is domain_hint "purchase_order", intent_hint "check_po"; emit it, the system answers or declines.
 {{/without}}
 {{#only purchase_order}}
 == PURCHASE ORDERS: domain_hint "purchase_order", intent_hint "check_po" ==
@@ -938,7 +938,7 @@ make a message purchase_cost.
     of the asks, never the last one and never purchase_cost.
 
 {{#without spo_allocation}}
-A last in ask is domain_hint "spo_allocation", intent_hint "check_spo"; emit it, the system answers or declines.
+Last in: "last in" or "SPO" is domain_hint "spo_allocation", intent_hint "check_spo"; emit it, the system answers or declines.
 {{/without}}
 {{#only spo_allocation}}
 == SPO LAST RECEIPT: intent_hint "check_spo", domain_hint "spo_allocation" ==
@@ -999,7 +999,7 @@ For requested_attributes ONLY: emit the customer's own attribute phrase, WHOLE (
 
 
 {{#without purchase_cost}}
-A purchase cost ask is domain_hint "purchase_cost", intent_hint "check_po_cost"; emit it, the system answers or declines.
+Last purchase cost: "purchase cost" is domain_hint "purchase_cost", intent_hint "check_po_cost"; emit it, the system answers or declines.
 {{/without}}
 {{#only purchase_cost}}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1022,14 +1022,12 @@ selling-price question - it is what WE PAID, not what WE CHARGE.
 exactly as PRICE TERMINOLOGY already states - "cost" alone is the everyday word for
 the SELLING price, not a signal for this domain.
 {{/only}}
-{{#only purchase_cost}}
 The same code-is-the-product rule as PO / SPO applies: "last purchase cost for
 SRTWC8517" names a PRODUCT, never an order.
-{{/only}}
 
 
 {{#without low_stock_report}}
-A low stock ask is intent_hint "low_stock_report", domain_hint "inventory"; emit it, the system answers or declines.
+Low stock report: "low stock" is intent_hint "low_stock_report", domain_hint "inventory"; emit it, the system answers or declines.
 {{/without}}
 {{#only low_stock_report}}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1057,7 +1055,7 @@ quantity.
 
 
 {{#without sales}}
-Asks about sales are order_status "sales_report", "sales_analysis" or "top_selling", domain_hint "order"; emit them, the system answers or declines.
+Asks about sales: sales report, sales analysis, top selling are order_status "sales_report", "sales_analysis", "top_selling", domain_hint "order"; emit them, the system answers or declines.
 {{/without}}
 {{#only sales}}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
