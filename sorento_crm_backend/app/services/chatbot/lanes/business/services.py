@@ -612,7 +612,19 @@ def customer_scope(db: Session, contact_respond_id: Any, space_id: str | None) -
         return None
     scope = scope_mod.contact_customer_scope(db, contact_id)
     if not scope.linked:
-        return None
+        if scope.staff:
+            return None
+        # G1 (PARSER-PER-AUDIENCE, owner ruling 2 Oct 2026): a contact with no office
+        # access type and no linked customer fails closed, never "no scope, so everything".
+        return {
+            "ids": [],
+            "names": {},
+            "linked": [],
+            "staff": False,
+            "enforced": True,
+            "levels": {},
+            "refusal": scope_mod.UNLINKED_REFUSAL_LINE,
+        }
     return {
         "ids": scope.customer_ids,
         "names": {cid: name for cid, name, _code in scope.linked},

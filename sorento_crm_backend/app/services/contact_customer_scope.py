@@ -21,6 +21,10 @@ from sqlalchemy.orm import Session
 _OFFICE_ACCESS_TYPE_RE = re.compile(r"^(sorento|cabana|mocha) office\Z")
 
 
+#: What a non-office contact with no linked customer is told (G1, fail closed).
+UNLINKED_REFUSAL_LINE = "Sorry, I can't find an account linked to you yet."
+
+
 def is_office_staff(db: Session, contact_id: str) -> bool:
     """True when the contact holds at least one ACTIVE office access type
     (`_OFFICE_ACCESS_TYPE_RE`, e.g. "Sorento Office"), whatever other types it holds."""
