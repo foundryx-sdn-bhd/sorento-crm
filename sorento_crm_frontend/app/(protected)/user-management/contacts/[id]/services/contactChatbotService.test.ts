@@ -86,3 +86,32 @@ describe('contactChatbotService - escalation switch (ESCALATION-CONTROL)', () =>
     expect(saved.escalation_allowed).toBe(false);
   });
 });
+
+describe('contactChatbotService - skip date-range questions switch (DO-PERIOD-SKIP)', () => {
+  it('reads the switch off the contact, and a contact without the field defaults off', async () => {
+    getContact.mockResolvedValueOnce({ chatbot_skip_period_questions: true });
+    expect((await getContactChatbotProfile('c1')).skip_period_questions).toBe(true);
+
+    getContact.mockResolvedValueOnce({});
+    expect((await getContactChatbotProfile('c1')).skip_period_questions).toBe(false);
+  });
+
+  it('sends the switch as chatbot_skip_period_questions on save, true and false', async () => {
+    getContact.mockResolvedValueOnce({});
+    const profile = await getContactChatbotProfile('c1');
+    apiFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ chatbot_skip_period_questions: true }), { status: 200 }),
+    );
+
+    const saved = await saveContactChatbotProfile('c1', { ...profile, skip_period_questions: true });
+
+    expect(JSON.parse(apiFetch.mock.calls[0][1].body).chatbot_skip_period_questions).toBe(true);
+    expect(saved.skip_period_questions).toBe(true);
+
+    apiFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ chatbot_skip_period_questions: false }), { status: 200 }),
+    );
+    await saveContactChatbotProfile('c1', { ...profile, skip_period_questions: false });
+    expect(JSON.parse(apiFetch.mock.calls[1][1].body).chatbot_skip_period_questions).toBe(false);
+  });
+});
