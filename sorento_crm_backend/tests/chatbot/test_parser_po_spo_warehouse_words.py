@@ -96,6 +96,7 @@ class TestTheAddendumIsTaught:
             ESCALATION_CONFIRMATION_ADDENDUM,
             MEMORY_ADDENDUM,
             REPORT_ASK_ADDENDUM,
+            LOW_STOCK_FILTERS_ADDENDUM,
             SEMANTIC_PARSER_PROMPT,
         )
 
@@ -105,6 +106,8 @@ class TestTheAddendumIsTaught:
         # REPORT-ENGINE slice 1b: REPORT_ASK_ADDENDUM sits between ACCOUNT_LEDGER_ADDENDUM and MEMORY_ADDENDUM.
         before_memory = SEMANTIC_PARSER_PROMPT.removesuffix(MEMORY_ADDENDUM).removesuffix(
             REPORT_ASK_ADDENDUM
+        ).removesuffix(
+            LOW_STOCK_FILTERS_ADDENDUM
         ).removesuffix(
             ACCOUNT_LEDGER_ADDENDUM
         )

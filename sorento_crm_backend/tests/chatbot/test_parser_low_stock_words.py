@@ -97,6 +97,7 @@ class TestBothPublishedBodiesCarryTheVocabulary:
             KNOWN_BRANDS_ADDENDUM,
             MEMORY_ADDENDUM,
             REPORT_ASK_ADDENDUM,
+            LOW_STOCK_FILTERS_ADDENDUM,
             PO_SPO_WAREHOUSE_ADDENDUM,
             QUANTITY_ADDENDUM,
             SALES_ANALYSIS_ADDENDUM,
@@ -113,7 +114,7 @@ class TestBothPublishedBodiesCarryTheVocabulary:
         for name, body in _bodies().items():
             assert (
                 # REPORT-ENGINE slice 1b: REPORT_ASK_ADDENDUM sits between ACCOUNT_LEDGER_ADDENDUM and MEMORY_ADDENDUM.
-                body.removesuffix(MEMORY_ADDENDUM).removesuffix(REPORT_ASK_ADDENDUM).removesuffix(ACCOUNT_LEDGER_ADDENDUM).removesuffix(PO_SPO_WAREHOUSE_ADDENDUM)
+                body.removesuffix(MEMORY_ADDENDUM).removesuffix(REPORT_ASK_ADDENDUM).removesuffix(LOW_STOCK_FILTERS_ADDENDUM).removesuffix(ACCOUNT_LEDGER_ADDENDUM).removesuffix(PO_SPO_WAREHOUSE_ADDENDUM)
                 .removesuffix(ESCALATION_CONFIRMATION_ADDENDUM).removesuffix(SELF_REFERENCE_ADDENDUM)
                 .removesuffix(TOP_SELLING_ADDENDUM)
                 .removesuffix(KNOWN_BRANDS_ADDENDUM)
@@ -143,6 +144,7 @@ class TestBothPublishedBodiesCarryTheVocabulary:
             ESCALATION_CONFIRMATION_ADDENDUM,
             MEMORY_ADDENDUM,
             REPORT_ASK_ADDENDUM,
+            LOW_STOCK_FILTERS_ADDENDUM,
             PO_SPO_WAREHOUSE_ADDENDUM,
             SELF_REFERENCE_ADDENDUM,
             QUANTITY_ADDENDUM,
@@ -157,7 +159,7 @@ class TestBothPublishedBodiesCarryTheVocabulary:
         for name, body in _bodies().items():
             assert (
                 # REPORT-ENGINE slice 1b: REPORT_ASK_ADDENDUM sits between ACCOUNT_LEDGER_ADDENDUM and MEMORY_ADDENDUM.
-                body.removesuffix(MEMORY_ADDENDUM).removesuffix(REPORT_ASK_ADDENDUM).removesuffix(ACCOUNT_LEDGER_ADDENDUM).removesuffix(PO_SPO_WAREHOUSE_ADDENDUM)
+                body.removesuffix(MEMORY_ADDENDUM).removesuffix(REPORT_ASK_ADDENDUM).removesuffix(LOW_STOCK_FILTERS_ADDENDUM).removesuffix(ACCOUNT_LEDGER_ADDENDUM).removesuffix(PO_SPO_WAREHOUSE_ADDENDUM)
                 .removesuffix(ESCALATION_CONFIRMATION_ADDENDUM).removesuffix(SELF_REFERENCE_ADDENDUM)
                 .removesuffix(TOP_SELLING_ADDENDUM)
                 .removesuffix(KNOWN_BRANDS_ADDENDUM)

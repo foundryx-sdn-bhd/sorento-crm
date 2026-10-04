@@ -668,6 +668,8 @@ class Focus(BaseModel):
     required_ask: dict[str, Any] | None = None
     # REPORT-ENGINE: the last sales ranking's route args (`turn/state.py::Focus.sales_ranking_frame`).
     sales_ranking_frame: dict[str, Any] | None = None
+    # LOWSTOCK-SEMANTIC: the last low stock report's filters (`turn/state.py::Focus.low_stock`).
+    low_stock: dict[str, Any] | None = None
     # Ported from PR #1118 (feat/chatbot-dealer-stock-verdict, not merged, owner ruling
     # 24 Sep 2026) for chatbot-stock-ask-v2 S3: the open tasks, carried INSIDE the
     # focus rather than on a session key of their own. Declared here because this

@@ -44,6 +44,7 @@ from app.services.chatbot_parser_prompt import (
     ESCALATION_CONFIRMATION_ADDENDUM,
     MEMORY_ADDENDUM,
     REPORT_ASK_ADDENDUM,
+    LOW_STOCK_FILTERS_ADDENDUM,
     PO_SPO_WAREHOUSE_ADDENDUM,
     SELF_REFERENCE_ADDENDUM,
     QUANTITY_ADDENDUM,
@@ -184,7 +185,7 @@ class TestBothPublishedBodiesCarryTheVocabulary:
         once the later ones are off."""
         for body in (SEMANTIC_PARSER_PROMPT,):
             # REPORT-ENGINE slice 1b: REPORT_ASK_ADDENDUM sits between ACCOUNT_LEDGER_ADDENDUM and MEMORY_ADDENDUM.
-            assert body.removesuffix(MEMORY_ADDENDUM).removesuffix(REPORT_ASK_ADDENDUM).removesuffix(ACCOUNT_LEDGER_ADDENDUM).removesuffix(PO_SPO_WAREHOUSE_ADDENDUM).removesuffix(
+            assert body.removesuffix(MEMORY_ADDENDUM).removesuffix(REPORT_ASK_ADDENDUM).removesuffix(LOW_STOCK_FILTERS_ADDENDUM).removesuffix(ACCOUNT_LEDGER_ADDENDUM).removesuffix(PO_SPO_WAREHOUSE_ADDENDUM).removesuffix(
                 ESCALATION_CONFIRMATION_ADDENDUM
             ).removesuffix(SELF_REFERENCE_ADDENDUM).removesuffix(TOP_SELLING_ADDENDUM).removesuffix(
                 KNOWN_BRANDS_ADDENDUM

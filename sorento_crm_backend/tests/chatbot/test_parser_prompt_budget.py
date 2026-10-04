@@ -91,6 +91,12 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # owner-approved verbatim text) sits between PO_SPO_WAREHOUSE and MEMORY and takes the prompt
 # without MEMORY_ADDENDUM to 43,425 est. tokens and the whole prompt to 44,016; CEILING is
 # 44,016 - 512 = 43,504 so both assertions hold.
+# Sixth re-pin, 4 Oct 2026 (LOWSTOCK-SEMANTIC, owner: "remove the rules entirely"):
+# LOW_STOCK_FILTERS_ADDENDUM (the `low_stock` key that replaces the lane's hard-coded
+# reading rules, 1,380 est. tokens) sits between ACCOUNT_LEDGER and MEMORY and takes the
+# prompt without MEMORY_ADDENDUM to 44,883 est. tokens and the whole prompt to 45,399
+# (crew design review round: "supplier_category" only when BOTH are named);
+# CEILING is 45,399 - 512 = 44,887 so both assertions hold.
 # Sixth re-pin, 2 Oct 2026 (REPORT-ENGINE slice 1b, PLAN-report-engine.md section 11):
 # REPORT_ASK_ADDENDUM (the `sales_ranking` vocabulary, 505 est. tokens on its own) sits between
 # ACCOUNT_LEDGER and MEMORY and takes the prompt without MEMORY_ADDENDUM to 44,005 est. tokens
@@ -110,7 +116,8 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # PR #1447 (report engine): REPORT_ASK_ADDENDUM teaches the outstanding basis, +27 est. tokens.
 # PR #1447 (rankings clarify): the basis answer line, the delivered answer and the outstanding refine, +114 est. tokens (review B1 removed the sales ranking metric bullet, -63).
 # Ranking keys come from the current message only (REPORT_ASK_ADDENDUM), +52 est. tokens.
-CEILING = 45_045
+# Merge of main (#1470 LOWSTOCK-SEMANTIC) with PR #1447 (report engine): merged prompt measures 46,424 est. tokens without MEMORY_ADDENDUM and 46,939 with it, so CEILING is 46,939 - 512.
+CEILING = 46_427
 # The memory addendum on its own, bounded separately so this PR's growth stays bounded.
 # 26 Sep baseline (lane d89110c0): 339 est. tokens. Round 4 (baf4c813, 28 Sep: the history
 # question in any wording, the number re-run, commercial_request) took it to 512, which is

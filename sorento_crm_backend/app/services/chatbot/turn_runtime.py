@@ -4293,6 +4293,9 @@ def envelope_of(
         "required_ask": fetched.get("required_ask"),
         # REPORT-ENGINE: the route args of a sales ranking that ran, held on the focus by `engine.py`.
         "sales_ranking_frame": fetched.get("sales_ranking_frame"),
+        # LOWSTOCK-SEMANTIC: the filters a low stock report ran with, recorded on
+        # `focus.low_stock` by `engine.py` so a refinement narrows that report.
+        "low_stock_frame": fetched.get("low_stock_frame"),
     }
     if raw_fragment is not None:
         # R4 (PLAN-chatbot-answer-half-reattach.md): the UNTOUCHED `business.run_fetch`

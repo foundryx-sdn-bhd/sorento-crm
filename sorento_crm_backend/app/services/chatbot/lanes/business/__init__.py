@@ -2199,6 +2199,9 @@ def run_fetch(
             structured["response"] = filters["header"] + response[len("Low stock report"):]
         else:
             structured["response"] = f"{filters['header']}\n{response}" if response else filters["header"]
+        if isinstance(filters.get("frame"), dict):
+            # LOWSTOCK-SEMANTIC: persisted by the engine on `focus.low_stock`.
+            structured["low_stock_frame"] = filters["frame"]
     if trace is not None:
         restricted = envelope.get("restricted_fields") if isinstance(envelope, dict) else None
         if isinstance(restricted, dict) and restricted:

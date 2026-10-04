@@ -336,6 +336,7 @@ doc_key IS NOT NULL`.
 | `ship_via`*, `ship_info`*, `ref`*, `ref_doc_no`*, `remarks`*, `description`*, `doc_status`* | as DO |
 | `is_cancelled`* | `Cancelled` |
 | `currency_code`*, `currency_rate`*, `subtotal_amount`*, `tax_amount`*, `total_amount`*, `local_net_total`* | as DO |
+| `spo_number` | no header field (the API has none; `Ref` is a container number): the distinct SPOs the lines resolved to, in Seq order, one SPO or several joined with ", " like the Excel import; left as stored when no line is on an SPO (GRN-HEADER-SPO, `PLAN-grn-header-spo-04oct.md`) |
 
 Partial unique index `uq_picking_headers_company_book_doc_key`.
 

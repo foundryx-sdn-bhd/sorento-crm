@@ -25,8 +25,9 @@ from app.models.procurement import Supplier
 from app.models.product import Brand, ItemType, Product, ProductCategory, UnitOfMeasure
 
 #: The exact-match code column per master this module resolves through.
-#: Customers are absent on purpose - identity there is the (code, name) pair,
-#: not the code alone (D13, `customer_rules.customer_identity`). Sales agents
+#: Customers are absent on purpose - codes are not unique per company yet, so the
+#: masters push picks among same-code rows itself (`master_ingest_service.
+#: _customer_by_code`, DEBTOR-CODE-LINK). Sales agents
 #: are absent too - shared (no company scope), matched via
 #: `sales_agent_service`, which owns its own normalisation.
 _CODE_COLUMNS: dict[type, str] = {

@@ -1071,8 +1071,9 @@ class TestParser:
         assert prompt_mod.SEMANTIC_PARSER_PROMPT.removesuffix(
             prompt_mod.MEMORY_ADDENDUM
         ).removesuffix(
-            # REPORT-ENGINE slice 1b: REPORT_ASK_ADDENDUM sits between ACCOUNT_LEDGER_ADDENDUM and MEMORY_ADDENDUM.
             prompt_mod.REPORT_ASK_ADDENDUM
+        ).removesuffix(
+            prompt_mod.LOW_STOCK_FILTERS_ADDENDUM
         ).removesuffix(
             prompt_mod.ACCOUNT_LEDGER_ADDENDUM
         ).removesuffix(
