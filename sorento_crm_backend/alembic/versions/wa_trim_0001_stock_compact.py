@@ -18,13 +18,13 @@ to drop it. Idempotent: a second run finds no
 Plan: ``documentation/plans/chatbot/PLAN-wa-msg-trim.md``.
 
 Revision ID: wa_trim_0001_stock_compact
-Revises: dev_login_0001
+Revises: sa_person_label_0001
 """
 from alembic import op
 import sqlalchemy as sa
 
 revision = "wa_trim_0001_stock_compact"
-down_revision = "dev_login_0001"
+down_revision = "sa_person_label_0001"
 branch_labels = None
 depends_on = None
 

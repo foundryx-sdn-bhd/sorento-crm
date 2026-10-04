@@ -54,3 +54,17 @@ def test_dry_run_preview_shows_the_same_single_message(session_factory) -> None:
     assert [a["kind"] for a in result["actions"]] == ["assign_conversation", "add_comment", "send_message"]
     assert _sends(result["actions"]) == [ROUTED]
     assert all(a.get("dry_run") is True for a in result["actions"])
+
+
+def test_the_single_message_reads_in_the_reply_language() -> None:
+    """CHAT-LANGUAGE (#1448) translates the lane's copy through the label catalog, so the one
+    message the lane now sends must be catalogued too, or ms/zh customers get English."""
+    from app.services.chatbot import label_catalog
+    from app.services.chatbot.label_catalog import Localizer
+
+    def loc(lang: str) -> Localizer:
+        return Localizer(lang, label_catalog.defaults(lang))
+
+    assert loc("ms").reply(ROUTED) == "Telah diserahkan kepada PIC anda, mereka akan membalas tidak lama lagi."
+    assert loc("zh").reply(ROUTED) == "已转交给您的负责人（PIC），他们会尽快回复。"
+    assert loc("en").reply(ROUTED) == ROUTED
