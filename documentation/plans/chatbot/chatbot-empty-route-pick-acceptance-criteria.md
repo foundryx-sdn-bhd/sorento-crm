@@ -27,11 +27,15 @@ when nothing was asked changes nothing.
   Test: `test_a_question_answered_by_a_position_elsewhere_keeps_the_positions`,
   `test_positions_read_elsewhere_names_the_two_questions`,
   `test_the_first_one_answers_the_top_selling_who_question`.
-- AC-4 Inside an open order list (R6), when the routing picker's question is taken out, its
-  header, its numbered rows, its close line, the escalate offer sentence and the
-  multi-company group lines all leave the text; no blank line stands where they were, and
-  the empty list still ends with "No orders matched these.".
-  Test: `TestListReplyDropsTheWholePicker`, `test_an_empty_list_inside_the_open_list_has_no_picker_frame`.
+- AC-4 Inside an open order list that answered (R6), when the routing picker's question is
+  taken out, its header, its numbered rows, its close line, the escalate offer sentence and
+  the multi-company group lines all leave the text; no blank line stands where they were.
+  Superseded in part by owner ruling 4 Oct 2026 (PICKER-ESCALATION, "any no answer should
+  get the escalation question"): an empty list is a no-answer and keeps its escalate offer
+  and routing picker whole (a barred contact keeps "Please refer to your salesman."); the
+  one-line "No orders matched these." is retired.
+  Test: `TestListReplyDropsTheWholePicker`, `test_an_empty_list_inside_the_open_list_keeps_the_offer_and_picker`,
+  `tests/chatbot/test_picker_escalation_offer.py`.
 - AC-5 A routing picker never renders with zero rows (`answer_bridge._miss_company_picker`
   returns the plain offer when no option could be built; `member_offer` already returns
   `member_offer: False` with no members).

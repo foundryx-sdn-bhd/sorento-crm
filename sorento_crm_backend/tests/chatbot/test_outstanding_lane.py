@@ -160,6 +160,7 @@ from app.services.chatbot.lanes.business.services import (
 )
 from app.services.company_scope import DEFAULT_COMPANY_ID
 from tests._mc_lookup_seed import customer as mc_customer
+from tests.chatbot._turn_helpers import do_window
 from tests.chatbot.conftest import set_chatbot_switches, validating_resolve_entity
 from tests.chatbot.test_engine import CONTACT_ID, _envelope, _parser_output, seeded  # noqa: F401
 from tests.chatbot.test_engine import stub_access, stub_parser  # noqa: F401
@@ -1043,7 +1044,7 @@ class TestWarehouseOnAPlainOrderAsk:
             },
             "tier_gate": None,
             "ctx": {
-                "parse": {"output": _qf(order_status=None, entities=[])},
+                "parse": {"output": _qf(order_status=None, entities=[], **do_window())},  # Dated: a dateless DO list ask asks which period first (DO-ASK-SIMPLIFY, owner 4 Oct 2026).
                 "contact": {"id": CONTACT_ID},
                 "access": {"attributes": []},
             },
@@ -1564,6 +1565,8 @@ class TestScopeQuestionGuardsAgainstAStrayPositionWithAnEntity:
             monkeypatch,
             qf=_parser_output(
                 message_type="business_query", intent_hint="check_order", domain_hint="order",
+                # Dated: a dateless DO list ask asks which period first (DO-ASK-SIMPLIFY, owner 4 Oct 2026).
+                **do_window(),
                 entities=[
                     {
                         "raw": "hanlim", "hint": "customer", "canonical_code": None,
@@ -2794,6 +2797,8 @@ class TestCustomerOnlyOutstandingAskReachesTheReport:
                 "parse": {
                     "output": _parser_output(
                         domain_hint="order", intent_hint="check_order", order_status=None,
+                        # Dated: a dateless DO list ask asks which period first (DO-ASK-SIMPLIFY, owner 4 Oct 2026).
+                        **do_window(),
                         entities=[
                             {
                                 "raw": "hanlim", "hint": "customer", "canonical_code": None,
@@ -4360,7 +4365,7 @@ class TestAllOnTheCustomerPickerKeepsTheQuestion:
         _result, captured = _run_turn(
             session_factory,
             monkeypatch,
-            qf=_all_pick_parser_output(),
+            qf={**_all_pick_parser_output(), **do_window()},  # Dated: the pick-all is a DO list ask, which asks which period first (DO-ASK-SIMPLIFY, owner 4 Oct 2026).
             text_body="all",
             msg_id="ZZT-outstanding-r21-guard-1",
             attributes=["sales_orders.outstanding"],
@@ -4650,6 +4655,8 @@ def _r24_business_query_qf() -> dict[str, Any]:
     return _parser_output(
         message_type="business_query", domain_hint="order", intent_hint="check_order",
         requested_attributes=["delivery"], order_status=None,
+        # Dated: a dateless DO list ask asks which period first (DO-ASK-SIMPLIFY, owner 4 Oct 2026).
+        **do_window(),
         entities=[
             {
                 "raw": "hanlim", "hint": "customer", "canonical_code": None,

@@ -74,6 +74,10 @@ class RespondContactResponse(RespondContactBase):
     chatbot_eta_offset_applied: bool = True
     # ESCALATION-CONTROL: may the chatbot hand this contact to a person. Default on.
     escalation_allowed: bool = True
+    # CONTACT-BULK-ACCESS (UAC A2.1): `chatbot_profile.tier` flattened, and whether the
+    # contact holds the `purchase_orders.cost` reveal (filled by the list only; null on detail).
+    chatbot_tier: Optional[str] = None
+    cost_visible: Optional[bool] = None
     # Identity S3 1.7. List rows: linked_user_id/name only (one batched query per
     # page - see `ContactService.list_contacts`). Detail additionally carries
     # is_salesperson/suggested_role_slug and the full linked_user. Both the id/name

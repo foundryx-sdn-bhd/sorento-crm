@@ -61,7 +61,10 @@ def test_orders_by_product_quantity_trailing_zeros_truncated():
         }],
     })
     fields = {f["label"]: f["value"] for f in out["items"][0]["fields"]}
-    assert fields["Products"] == "AAA (3) @ BRW"
+    # DO-ASK-SIMPLIFY (owner hand test 3 Oct 2026): the warehouse is its own switched field,
+    # no longer folded into Products, so the Warehouse reveal can hide it.
+    assert fields["Products"] == "AAA (3)"
+    assert fields["Warehouse"] == "BRW"
 
 
 def test_incoming_list_one_item_per_line_with_attachment():
@@ -1015,10 +1018,10 @@ def test_render_by_product_fields_carry_the_key():
 
 def test_render_omits_key_where_the_presenter_has_no_source_key():
     """`key` is omitted, not emitted as null, so a consumer can test for it."""
-    out = env("crm_order_management_orders_list", {
-        "data": [{"order_number": "202606-1622", "debtor_name": "HANLIM"}],
-    })
-    assert out["items"][0]["fields"][0] == {"label": "Order Number", "value": "202606-1622"}
+    # The DO list's fields all carry keys since DO-ASK-SIMPLIFY (each is a reveal switch), so
+    # the keyless example is the product list's own code field.
+    out = env("crm_master_products_list", {"data": [{"product_code": "SRTWC8517"}]})
+    assert out["items"][0]["fields"][0] == {"label": "Product Code", "value": "SRTWC8517"}
 
 
 # ------------------------------------------------ absent-field vocabulary
