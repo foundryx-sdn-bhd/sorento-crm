@@ -1,9 +1,11 @@
 # PLAN: Chatbot report engine (one catalogue, one spec, one executor)
 
-Status: slice 1 built, reviewed, live-parser and browser verified; owner chose option (a), 4 Oct
-2026: ship slice 1 as is (full asks reliable, short follow-ups degrade safely) and measure
-follow-ups on live use. Final prompt md5 b436385e. Waiting on CI and the owner's hand test
-(`laneboard/scripts/1447.md`, prompt picked in the console, the shared `production` label unmoved).
+Status: slice 1 rebuilt on SALES ORDER lines (owner direction 4 Oct 2026, section 00, which wins
+over every section after it); clarify round (metric then basis asked, no silent defaults) in
+progress. Earlier: owner chose option (a), 4 Oct 2026 (full asks reliable, short follow-ups
+degrade safely, measured on live use). The prompt md5 is recorded in the PR with each prompt
+change. Waiting on CI and the owner's hand test (`laneboard/scripts/1447.md`, on shared dev,
+prompt picked in the console, the shared `production` label unmoved).
 FULL track (new API-key route, per-audience access rule, data-only migration
 `report_engine_0001_prompt`: owner moves the parser `production` label after deploy). Card answered 2 Oct 2026 (`report-engine-behaviour-card.md`
 revision 2); section 0 below records how the answers change this plan, and wins over the
@@ -11,7 +13,31 @@ sections after it where they differ.
 Lane: REPORT-ENGINE. Evidence: `report-engine-inventory.md` (deliverable 1, file:line for every
 claim below that is not cited inline). UAC: `report-engine-acceptance-criteria.md`.
 
-## 0. Owner answers applied (2 Oct 2026)
+## 00. Owner direction 4 Oct 2026: rank from sales orders, clarify instead of default
+
+Supersedes every DO-based statement below (sections 0 to 12 describe the first build and are
+kept as history).
+
+- **Source.** DO data is thin (the AutoCount push went live 3 Oct; prod has DOs for the second
+  half of 2026 only) and no DO carries `sales_order_id` (only the AutoCount push sets it, from
+  `ref_doc_no`: `autocount_doc_ingest_service.py:904`, `:1065`). So every `crm_report_ask` basis
+  ranks SALES ORDER lines with the SO's own agent (`SalesOrder.sales_agent_id`).
+- **One definition with top selling.** `datasets/sales_order_lines_ask.py` builds one definition
+  per basis from `sales_report_service`, imported, never copied: `delivered` and `ordered` are
+  `_basis_figures(basis)`, `outstanding` (new) is `_per_line_exprs()` outstanding (ordered minus
+  delivered while the SO and the line are open). Every line is dated by `_bucket_expr()` (the
+  line's required date, else the SO date), cancelled SOs and lines are out, and a group zero on
+  the basis is not ranked: top selling's own rules. Parity tests pin the ranking by product equal
+  to `top_selling(...)`. `delivery_order_lines` stays for the chatbot delivered sales report only.
+- **Category.** A category word resolves through top selling's `_top_selling_category_ids`
+  (`lanes/business/__init__.py:522`): "water closet" is every category whose `class_label` is
+  `Water Closet`. An ambiguous word lists codes, as top selling's picker does.
+- **Clarify, never default (Q1 ruling).** A ranking that names no metric asks `By quantity or by
+  amount?`, then a missing basis asks `Delivered, ordered or outstanding?`; plain top selling
+  asks its own basis question the same way. One shared function picks the next question for both
+  lanes; the answer is bound from the parser's keys (semantic only), never the message text.
+- **Rejected:** resolving the agent from the DO's own `orders.agent` (built, then reverted on this
+  ruling: rankings no longer read DOs).
 
 - **Access (Q1, Q2).** The gate is the reveal grant `sales_orders.sales_report`
   (`contact_field_reveal_service.py:51`), checked in the route off `contact_id`, the shape the

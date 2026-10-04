@@ -7,7 +7,7 @@ BEGIN;
 INSERT INTO ai_prompt_versions (id, name, version, type, template, variables, commit_message, created_at)
 SELECT gen_random_uuid(), 'chatbot_semantic_parser',
        COALESCE((SELECT max(version) FROM ai_prompt_versions WHERE name = 'chatbot_semantic_parser'), 0) + 1,
-       'text', replace($tpl_82ebeea0f3$You are the Sorento Semantic Parser. You are given:
+       'text', replace($tpl_83b0f01903$You are the Sorento Semantic Parser. You are given:
 - Previous response: the assistant's last message to the user (may be "(none)").
 - current_user_message: the latest user message.
 
@@ -1447,7 +1447,7 @@ The number of rows asked for, from the CURRENT message only ("top 10" -> 10, "to
   - "delivered", "transferred to DO", "sudah hantar" -> "delivered"
   - "ordered", "by order", "booked", "tempahan" -> "ordered"
   - a word that could mean either, e.g. "top orders" -> "unclear"
-  - "selling" / "sold" with no basis word -> null (the default, delivered)
+  - "selling" / "sold" with no basis word -> null (the bot asks which sale is counted; NEVER guess)
 
 == RANK_GROUP: what is ranked ==
   - items or products ranked ("top selling items", "top 5 sinks") -> "item"
@@ -1473,7 +1473,8 @@ list of orders.
   - after "Do you want the top items inside one category, or the categories ranked
     against each other?": "categories" -> rank_group "category"; "items" -> rank_group
     "item"; a category name -> rank_group "item" plus that category entity
-  - after "Delivered (transferred to DO) or ordered?": "ordered" -> basis "ordered"
+  - after "Delivered (transferred to DO) or ordered?": "ordered" -> basis "ordered";
+    "delivered" -> basis "delivered"
   - after "How many items do you want to see?": "20" or "top 20" -> top_n 20 (a count,
     NEVER reference_positions)
 A follow-up to a ranking already shown that only changes the metric, the basis or the
@@ -1784,17 +1785,19 @@ location -> "warehouse". A named brand, sales agent or category is an entity
 {hint: "brand" | "sales_agent" | "category"}, never a customer. The ranked noun
 (salesman, sales agent, SA, rep, customer(s), account(s)) is never an entity of ANY hint, whatever
 was asked before. basis "delivered" or
-"ordered" only when said, else null. sales_channel as for sales_report.
+"ordered" only when said, else null; "by outstanding", "outstanding" or "not yet delivered"
+-> basis "outstanding". sales_channel as for sales_report.
 measure "qty" only when the message names quantity, qty, units or pcs; "amount" when it
 names amount, RM or value; else measure null.
 Follow-up to a SALES RANKING: "Previous response" starts "Top N sales agents|customers|brands|
-categories|locations|channels|months by delivered sales" (or "by ordered sales", or "Bottom N").
+categories|locations|channels|months by delivered sales" (or "by ordered sales", "by outstanding orders", or "Bottom N").
 That is NOT a top selling list ("Top N selling items"): a number never picks a row
 (reference_positions []) and the ask stays "sales_ranking". A message that ONLY changes:
   - the count: "5", "top 10", "show 20" -> ranking_refine true, top_n 5 / 10 / 20 (the number IS
     top_n; a count refine never leaves top_n null)
   - the period: "this year", "2025", "last month" -> ranking_refine true, those dates
-  - the basis: "ordered" -> ranking_refine true, basis "ordered"
+  - the basis: "ordered" -> ranking_refine true, basis "ordered"; "by outstanding" ->
+    ranking_refine true, basis "outstanding"
   - the measure: "by quantity" -> ranking_refine true, measure "qty"
 each with order_status "sales_ranking", group_by null, entities [], every other key null.
 A message naming its own axis or subject is a NEW ask: ranking_refine false; top_n and dates
@@ -1810,6 +1813,10 @@ is ALWAYS order_status "sales_ranking" with its own group_by, even while a top s
 question ("By quantity or by amount?") is open: a new ask, not a reply to that question.
   - answering "How many? For example top 5." with "5", "top 5" or "five" -> order_status
     "sales_ranking", top_n 5
+  - after "Delivered, ordered or outstanding?": "delivered" -> basis "delivered"; "ordered" ->
+    basis "ordered"; "outstanding" -> basis "outstanding"; entities [], every other key null
+  - after "By quantity or by amount?" inside a sales ranking: "qty" -> measure "qty"; "amount"
+    -> measure "amount"; with order_status "sales_ranking", entities [], every other key null
 NOT a sales ranking:
   - company totals by month, year or channel with nothing named and no ranking word
     ("sales by month this year", "dealer sales this year") stay "sales_analysis";
@@ -1832,10 +1839,10 @@ CURRENT DATE
 
 CURRENT DATE: {{current_date}}
 
-If relative dates such as "today" or "yesterday" appear in the current turn input, convert them to absolute dates before calling the MCP tool.$tpl_82ebeea0f3$, '@@EMDASH@@', chr(8212)), '["current_date"]'::jsonb,
+If relative dates such as "today" or "yesterday" appear in the current turn input, convert them to absolute dates before calling the MCP tool.$tpl_83b0f01903$, '@@EMDASH@@', chr(8212)), '["current_date"]'::jsonb,
        'report_engine_0001_prompt (REPORT-ENGINE PR #1447): sales_ranking vocabulary', now()
  WHERE NOT EXISTS (SELECT 1 FROM ai_prompt_versions
-                    WHERE name = 'chatbot_semantic_parser' AND md5(template) = 'b436385eda6136b9f3fcbfec854c2c11');
+                    WHERE name = 'chatbot_semantic_parser' AND md5(template) = 'da5b2048e9160ab1663aee5f8d88232b');
 COMMIT;
 -- check: SELECT version, length(template) FROM ai_prompt_versions WHERE name='chatbot_semantic_parser'
---         AND md5(template) = 'b436385eda6136b9f3fcbfec854c2c11';   -- expect one row, length 129544
+--         AND md5(template) = 'da5b2048e9160ab1663aee5f8d88232b';   -- expect one row, length 130154
