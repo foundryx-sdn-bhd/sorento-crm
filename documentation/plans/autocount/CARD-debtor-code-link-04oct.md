@@ -98,12 +98,24 @@ AutoKey, switching it to `AccNo` makes new links code-form from day one; optiona
 
 - Q1 "First" row: (a) oldest `created_at`, then lowest id (b) the row that already holds an
   AutoCount ref, else (a). Recommendation (a): it is what the owner asked for and it does not
-  depend on refs at all.
-- Q2 Pushed ref differs from the stored one: (a) keep stored + warn `ref_mismatch` (b) re-key the
-  stored ref to the pushed one. Recommendation (a): the products precedent, and (b) can collide
-  with the 26 E2E refs already on dev.
-- Q3 Converted ref prefix: (a) keep the existing prefix, `AED_SORENTO:<code>` (b) use the ss HTTP
-  database name. Recommendation (a), and crew confirms the ss HTTP preset's database name for SRT
-  prod is `AED_SORENTO`; if it is not, R5 still works, it just warns `ref_mismatch`.
+  depend on refs at all. Owner to answer; building on (a).
+- Q2 Pushed ref differs from the stored one: **answered (a), crew 4 Oct**: keep stored + warn
+  `ref_mismatch`.
+- Q3 Converted ref prefix: **answered (a), crew 4 Oct**: keep the existing prefix. The script
+  never hardcodes it: it keeps field one of EACH ref (`split_part(source_ref, ':', 1)`), the rule
+  `PLAN-scm-book-linkage-on-document-lines.md:136-139` already sets ("the database name is data").
+  What the repo shows about the source DB names:
+  - SRT: every AutoCount ref measured so far is `AED_SORENTO:` (9,067 product refs on the 19 Sep
+    prod copy, `PLAN-ingest-products-code-wins.md:15`; the 2,415 dev customer links, crew E2E).
+  - MCH: held no references at all on the 19 Sep prod copy (`PLAN-ingest-products-code-wins.md:17`),
+    so it has nothing to convert; whatever DB name its first push uses is kept as sent.
+  - The ss company config (the HTTP preset's `database_name` per company) is in the ss repo, which
+    this sandbox cannot read. The 4 Oct local E2E minted `foundryx_service_s51:` (the copy's DB name,
+    PR #1468 crew-note). Crew check on dev before the prod run:
+    `SELECT c.code, split_part(r.source_ref, ':', 1) AS prefix, count(*) FROM integration_references r
+    JOIN companies c ON c.id = r.company_id WHERE r.entity_type = 'customers' GROUP BY 1, 2;`
+    If SRT prod's HTTP DB name is not `AED_SORENTO`, nothing fails: matching is by code (R1) and the
+    push only warns `ref_mismatch` (R5).
 - Q4 Name clash (R6): (a) keep the old name + warn (b) fail the record as today.
-  Recommendation (a): one clash should not stop the phone and agent from updating.
+  Recommendation (a): one clash should not stop the phone and agent from updating. Owner to
+  answer; building on (a).
