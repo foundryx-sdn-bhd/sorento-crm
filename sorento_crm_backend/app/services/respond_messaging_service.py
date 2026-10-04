@@ -230,7 +230,7 @@ def _last_incoming_from_chat_history(
 ) -> Optional[datetime]:
     """Latest incoming-message timestamp from local chat_histories (UTC naive).
 
-    chat_histories.contact_id stores the Respond.io id (e.g. "437264483"), NOT
+    chat_histories.contact_id stores the Respond.io id (e.g. "900000008"), NOT
     the internal respond_contacts.id (UUID). The send path passes the Respond
     ``identifier`` (the respond_io_id, optionally ``id:`` / ``phone:`` prefixed)
     but usually NOT respond_contact_id - so derive the respond_io_id straight

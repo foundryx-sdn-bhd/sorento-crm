@@ -375,6 +375,8 @@ function TasksCard({ scope, filter, onClear, window }: { scope: KpiScope; filter
       table={table}
       recordCount={total}
       isLoading={tasksQ.isLoading}
+      error={tasksQ.error}
+      onRetry={() => void tasksQ.refetch()}
       isPlaceholderData={tasksQ.isPlaceholderData}
       standardToolbar={false}
       listingKey="sla.kpi.view::tasks"

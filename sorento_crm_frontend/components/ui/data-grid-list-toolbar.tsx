@@ -5,6 +5,7 @@ import Link from 'next/link';
 import type { Table } from '@tanstack/react-table';
 import { Columns3, Download, Filter, MoreHorizontal, RefreshCw, X, type LucideIcon } from 'lucide-react';
 import { toast } from '@/lib/toast';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -84,6 +85,12 @@ export type ListToolbarFilters =
       /** Whether any custom filter is currently active (drives the "On" badge + count). */
       active?: boolean;
       activeCount?: number;
+      /**
+       * The filter menu is a modal dropdown by default, which hides the rest of the page from
+       * assistive tech while it is open. Set false for a panel the reader keeps working beside
+       * (the grid stays readable while the filters are being changed).
+       */
+      modal?: boolean;
       /**
        * When supplied AND `active`, the toolbar states the filter on screen as a chip
        * with a clear affordance, above the grid and without opening the filter menu.
@@ -214,6 +221,11 @@ export type DataGridListToolbarProps<TData extends object> = {
   bulkActionsSlot?: ReactNode | ((api: { openExport: () => void }) => ReactNode);
   /** "Select all N records" banner config (D4/F). Omit to disable cross-page selection. */
   selectAllMatching?: ListToolbarSelectAllMatching;
+  /**
+   * Keep the right cluster (secondary actions + primary) against the right edge even where it
+   * wraps onto its own row. Off by default, so every other list is unchanged.
+   */
+  alignActionsEnd?: boolean;
 };
 
 function ActionButton({ action }: { action: ToolbarAction }) {
@@ -277,6 +289,7 @@ export function DataGridListToolbar<TData extends object>({
   onRefresh,
   isRefreshing = false,
   leftActions,
+  alignActionsEnd = false,
 }: DataGridListToolbarProps<TData>) {
   const [filterOpen, setFilterOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
@@ -490,7 +503,7 @@ export function DataGridListToolbar<TData extends object>({
                     ) : null}
                   </Button>
                 ) : (
-                  <DropdownMenu>
+                  <DropdownMenu modal={filters.modal ?? true}>
                     <DropdownMenuTrigger asChild>
                       <Button variant="outline" size="sm" className="gap-1.5">
                         <Filter className="size-4" />
@@ -539,7 +552,7 @@ export function DataGridListToolbar<TData extends object>({
           )}
 
           {/* RIGHT cluster - secondary overflow + primary CTA (always present). */}
-          <div className="flex flex-wrap items-center gap-2">
+          <div className={cn('flex flex-wrap items-center gap-2', alignActionsEnd && 'ms-auto justify-end')}>
             {secondaryActions.length === 1 ? (
               <ActionButton action={secondaryActions[0]} />
             ) : secondaryActions.length >= 2 ? (

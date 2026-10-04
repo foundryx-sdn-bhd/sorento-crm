@@ -171,6 +171,8 @@ export function SeriesListClient() {
       table={table}
       recordCount={rows.length}
       isLoading={series.isLoading}
+      error={series.error}
+      onRetry={() => void series.refetch()}
       onRowClick={(row: ProjectSeries) => router.push(`/project-sales/series/${row.id}`)}
       tableLayout={{ width: 'fixed', columnsResizable: true, columnsVisibility: true }}
       tableClassNames={{ edgeCell: 'px-5' }}

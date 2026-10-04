@@ -27,10 +27,16 @@ import type {
   CompareMappingKind,
 } from '../types/autocountPull.types';
 
-const KIND_TABS: Array<{ kind: CompareMappingKind; label: string }> = [
-  { kind: 'order_listing', label: 'Order Listing' },
-  { kind: 'order_tracking', label: 'Order Tracking' },
-];
+const KIND_TABS: Record<'delivery_orders' | 'goods_receive_notes', Array<{ kind: CompareMappingKind; label: string }>> = {
+  delivery_orders: [
+    { kind: 'order_listing', label: 'Order Listing' },
+    { kind: 'order_tracking', label: 'Order Tracking' },
+  ],
+  goods_receive_notes: [
+    { kind: 'grn_detail_listing', label: 'Detail Listing' },
+    { kind: 'grn_listing', label: 'GRN Listing' },
+  ],
+};
 
 const TRANSFORM_OPTIONS = [
   { value: 'text', label: 'Text' },
@@ -59,6 +65,21 @@ const FIELD_OPTIONS: Record<CompareMappingKind, Array<{ value: string; label: st
     { value: 'debtor_code', label: 'Debtor Code' },
     { value: 'cancel', label: 'Cancel' },
   ],
+  grn_detail_listing: [
+    { value: 'doc_no', label: 'Doc No' },
+    { value: 'doc_date', label: 'Doc Date' },
+    { value: 'item_code', label: 'Item Code' },
+    { value: 'location', label: 'Location' },
+    { value: 'qty', label: 'Qty' },
+    { value: 'source_doc', label: 'Source PO / SPO' },
+  ],
+  grn_listing: [
+    { value: 'doc_no', label: 'Doc No' },
+    { value: 'doc_date', label: 'Doc Date' },
+    { value: 'creditor_code', label: 'Creditor Code' },
+    { value: 'source_doc', label: 'Source PO / SPO' },
+    { value: 'cancel', label: 'Cancelled' },
+  ],
 };
 
 /** Mirrors the backend `TRANSFORMS_BY_FIELD`: the transforms that can read each field. */
@@ -66,6 +87,7 @@ const TRANSFORMS_BY_FIELD: Record<string, string[]> = {
   doc_no: ['text'], item_code: ['text'], location: ['text'], debtor_code: ['text'],
   doc_date: ['date'], qty: ['number'], unit_price: ['money'], total_ex: ['money'],
   discount: ['percent_text', 'percent_fraction'], cancel: ['cancel_flag'],
+  creditor_code: ['text'], source_doc: ['text'],
 };
 
 function transformOptionsFor(field: string) {
@@ -78,15 +100,22 @@ type Drafts = Partial<Record<CompareMappingKind, CompareMappingBody>>;
 export interface CompareMappingDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Whose two workbooks the tabs edit; delivery orders when absent. */
+  entity?: 'delivery_orders' | 'goods_receive_notes';
 }
 
 /** "Mapping": the sheet and the Excel column -> transform -> Sorento field rows the delivery
  *  orders compare reads each macro workbook with. One line tab per workbook kind, edited in
  *  place, one Save for the tab on screen. */
-export function CompareMappingDialog({ open, onOpenChange }: CompareMappingDialogProps) {
+export function CompareMappingDialog({
+  open,
+  onOpenChange,
+  entity = 'delivery_orders',
+}: CompareMappingDialogProps) {
   const { data } = useCompareMappings(open);
   const save = useSaveCompareMapping();
-  const [kind, setKind] = useState<CompareMappingKind>('order_listing');
+  const tabs = KIND_TABS[entity];
+  const [kind, setKind] = useState<CompareMappingKind>(tabs[0].kind);
   const [drafts, setDrafts] = useState<Drafts | null>(null);
 
   // Seed the drafts once per open; later refetches (after a save) must not wipe unsaved
@@ -226,7 +255,7 @@ export function CompareMappingDialog({ open, onOpenChange }: CompareMappingDialo
         </DialogHeader>
         <Tabs value={kind} onValueChange={(value) => setKind(value as CompareMappingKind)}>
           <TabsList variant="line">
-            {KIND_TABS.map((tab) => (
+            {tabs.map((tab) => (
               <TabsTrigger key={tab.kind} value={tab.kind}>
                 {tab.label}
               </TabsTrigger>

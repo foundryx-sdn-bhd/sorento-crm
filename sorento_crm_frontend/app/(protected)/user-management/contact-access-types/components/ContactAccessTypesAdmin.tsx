@@ -43,7 +43,7 @@ import { useHasPermission } from '@/hooks/usePermissions';
 export default function ContactAccessTypesAdmin() {
   const queryClient = useQueryClient();
 
-  const { data: types = [], isLoading: typesLoading } = useQuery({
+  const { data: types = [], isLoading: typesLoading, error, refetch } = useQuery({
     queryKey: ['contact-access-types-admin'],
     queryFn: getAllContactAccessTypes,
   });
@@ -318,6 +318,8 @@ export default function ContactAccessTypesAdmin() {
         table={typeTable}
         recordCount={types.length}
         isLoading={typesLoading}
+        error={error}
+        onRetry={() => void refetch()}
         emptyMessage="No access types. Add one to get started."
         tableLayout={{ width: 'fixed', columnsVisibility: true }}
       >

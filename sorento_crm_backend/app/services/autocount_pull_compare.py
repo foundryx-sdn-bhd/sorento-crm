@@ -272,13 +272,23 @@ def window_excel_rows(
     the column the `mapping` maps to `doc_date` (default: the Order Listing mapping)."""
     start = _excel_day(from_day) if from_day else None
     end = _excel_day(to_day) if to_day else None
-    if start is None and end is None:
-        return list(excel_rows), 0
     mapping = mapping or DEFAULT_MAPPINGS["order_listing"]
     kept: list[dict] = []
     ignored = 0
-    for row in excel_rows:
-        day = _mapped_row(row, mapping).get("doc_date")
+    mapped = [(row, _mapped_row(row, mapping)) for row in excel_rows]
+    # When the sheet carries the mapped document number column, a row without one is not a
+    # line or a document: the listing's own totals row (GRN-PULL-CRM e2e gap 3: 72 "lines"
+    # against AutoCount's 71). The browser's parser leaves a blank cell out of the row, so
+    # "without one" is the key absent or blank. It is neither in the window nor ignored
+    # outside it; the compares skip it anyway. A sheet with no such column is left alone.
+    has_doc_column = any("doc_no" in fields for _, fields in mapped)
+    for row, fields in mapped:
+        if has_doc_column and not str(fields.get("doc_no") or "").strip():
+            continue
+        if start is None and end is None:
+            kept.append(row)
+            continue
+        day = fields.get("doc_date")
         if day is None or (start is None or day >= start) and (end is None or day <= end):
             kept.append(row)
         else:
@@ -558,6 +568,184 @@ def compare_delivery_order_headers(
         pull_debtor = _key(rec.get("DebtorCode"))
         if excel_debtor and pull_debtor and excel_debtor != pull_debtor:
             row_diffs.append(("debtor_code", excel_row["debtor_code"], str(rec.get("DebtorCode") or "").strip()))
+        if "cancel" in mapped_fields:
+            excel_cancel = bool(excel_row.get("cancel"))
+            pull_cancel = _cancel_flag(rec.get("Cancelled"))
+            if excel_cancel != pull_cancel:
+                row_diffs.append(("cancel", excel_cancel, pull_cancel))
+        if row_diffs:
+            for field, excel_value, pull_value in row_diffs:
+                differences.append({
+                    "item_code": "", "doc_no": doc_no, "location": "",
+                    "field": field, "excel": excel_value, "pull": pull_value,
+                })
+        else:
+            matched += 1
+
+    total = len(common_keys)
+    return {
+        "summary": {"total": total, "matched": matched, "different": total - matched},
+        "differences": differences,
+        "only_in_excel": only_in_excel,
+        "only_in_pull": only_in_pull,
+    }
+
+
+# ================================================================ goods receive notes
+def _source_keys(value: Any) -> frozenset[str]:
+    """The documents a cell names (one, or a comma list on the listing's `Transfer From`),
+    each matched the upload's way (`_spo_match_key`: letters and digits, upper case)."""
+    from app.services.procurement_service import _spo_match_key
+
+    return frozenset(
+        key for key in (_spo_match_key(part) for part in str(value or "").split(",")) if key
+    )
+
+
+def _qty_text(quantities: list[Decimal]) -> str:
+    return ", ".join(str(_json_number(q)) for q in sorted(quantities))
+
+
+def compare_goods_receive_notes(
+    excel_rows: list[dict], pull_rows: list[dict], mapping: Optional[dict] = None
+) -> dict:
+    """GRN-PULL-CRM plan 1.5, the LINES half: the GRN "DETAIL LISTING" sheet against the
+    pull's raw GRN records, keyed by (Doc No, Item Code, Location) trimmed and case-
+    insensitive. The file's rows are not in AutoCount's order and one document's rows are
+    scattered, so nothing is compared by position: per key, `qty` is a MULTISET (the sorted
+    quantities: 106/24 against 24/106 agrees, 2 + 98 against 100 does not), and `source_doc`
+    (the sheet's `Our PO No.` = AutoCount's line `FromDocNo`) compares as the set of
+    documents named, matched the upload's way. A blank sheet cell is not compared; the totals
+    row (no Doc No) is skipped. Only-in labels are `DOCNO|ITEM|LOCATION`."""
+    mapping = mapping or DEFAULT_MAPPINGS["grn_detail_listing"]
+    mapped_fields = {c["field"] for c in mapping["columns"]}
+    excel_by_key: dict[tuple[str, str, str], dict] = {}
+    excel_qty: dict[tuple[str, str, str], list[Decimal]] = {}
+    excel_source: dict[tuple[str, str, str], set[str]] = {}
+    excel_source_text: dict[tuple[str, str, str], set[str]] = {}
+    for row in excel_rows:
+        fields = _mapped_row(row, mapping)
+        key = (_key(fields.get("doc_no")), _key(fields.get("item_code")), _key(fields.get("location")))
+        if not (key[0] and key[1]):
+            continue
+        excel_by_key.setdefault(key, fields)
+        excel_qty.setdefault(key, []).append(fields.get("qty") or Decimal("0"))
+        excel_source.setdefault(key, set()).update(_source_keys(fields.get("source_doc")))
+        if str(fields.get("source_doc") or "").strip():
+            excel_source_text.setdefault(key, set()).add(str(fields["source_doc"]).strip())
+
+    pull_by_key: dict[tuple[str, str, str], tuple[dict, dict]] = {}
+    pull_qty: dict[tuple[str, str, str], list[Decimal]] = {}
+    pull_source: dict[tuple[str, str, str], set[str]] = {}
+    pull_source_text: dict[tuple[str, str, str], set[str]] = {}
+    for rec in pull_rows:
+        if not isinstance(rec, dict):
+            continue
+        for line in rec.get("Details") or []:
+            if not isinstance(line, dict) or not str(line.get("ItemCode") or "").strip():
+                continue
+            key = (_key(rec.get("DocNo")), _key(line.get("ItemCode")), _key(line.get("Location")))
+            pull_by_key.setdefault(key, (rec, line))
+            pull_qty.setdefault(key, []).append(_do_qty(line.get("Qty")))
+            named = line.get("FromDocNo") or line.get("OurPONo")
+            pull_source.setdefault(key, set()).update(_source_keys(named))
+            if str(named or "").strip():
+                pull_source_text.setdefault(key, set()).add(str(named).strip())
+
+    only_in_excel = sorted(
+        _do_label(f.get("doc_no"), f.get("item_code"), f.get("location"))
+        for k, f in excel_by_key.items() if k not in pull_by_key
+    )
+    only_in_pull = sorted(
+        _do_label(rec.get("DocNo"), line.get("ItemCode"), line.get("Location"))
+        for k, (rec, line) in pull_by_key.items() if k not in excel_by_key
+    )
+
+    common_keys = [k for k in excel_by_key if k in pull_by_key]
+    differences: list[dict] = []
+    matched = 0
+    for key in common_keys:
+        rec, line = pull_by_key[key]
+        row_diffs: list[tuple[str, Any, Any]] = []
+        if "qty" in mapped_fields and sorted(excel_qty[key]) != sorted(pull_qty[key]):
+            row_diffs.append(("qty", _qty_text(excel_qty[key]), _qty_text(pull_qty[key])))
+        if "source_doc" in mapped_fields and excel_source[key] and excel_source[key] != pull_source.get(key, set()):
+            excel_text = ", ".join(sorted(excel_source_text.get(key, set())))
+            row_diffs.append(("source_doc", excel_text or None,
+                              ", ".join(sorted(pull_source_text.get(key, set()))) or None))
+        if row_diffs:
+            for field, excel_value, pull_value in row_diffs:
+                differences.append({
+                    "item_code": str(line.get("ItemCode") or "").strip(),
+                    "doc_no": str(rec.get("DocNo") or "").strip(),
+                    "location": str(line.get("Location") or "").strip(),
+                    "field": field, "excel": excel_value, "pull": pull_value,
+                })
+        else:
+            matched += 1
+
+    total = len(common_keys)
+    return {
+        "summary": {"total": total, "matched": matched, "different": total - matched},
+        "differences": differences,
+        "only_in_excel": only_in_excel,
+        "only_in_pull": only_in_pull,
+    }
+
+
+def compare_goods_receive_note_headers(
+    excel_rows: list[dict], pull_rows: list[dict], mapping: Optional[dict] = None
+) -> dict:
+    """The HEADERS half: the "GRN Listing" macro's `Master` sheet, one row per GRN, keyed by
+    document number. Fields: `doc_date` (a calendar day), `creditor_code`, `source_doc`
+    (`Transfer From` against the set of documents the GRN's lines name, matched the
+    upload's way), `cancel`. A GRN only in AutoCount (live 1 Oct: GR-2026/10-0006 missing
+    from the listing) is an only-in row to check, never something Confirm deletes."""
+    mapping = mapping or DEFAULT_MAPPINGS["grn_listing"]
+    mapped_fields = {c["field"] for c in mapping["columns"]}
+    excel_by_key: dict[str, dict] = {}
+    for row in excel_rows:
+        fields = _mapped_row(row, mapping)
+        key = _key(fields.get("doc_no"))
+        if key:
+            excel_by_key.setdefault(key, fields)
+    pull_by_key: dict[str, dict] = {}
+    for rec in pull_rows:
+        if isinstance(rec, dict) and _key(rec.get("DocNo")):
+            pull_by_key.setdefault(_key(rec.get("DocNo")), rec)
+
+    only_in_excel = sorted(
+        str(excel_by_key[k].get("doc_no") or "").strip() for k in excel_by_key if k not in pull_by_key
+    )
+    only_in_pull = sorted(
+        str(pull_by_key[k].get("DocNo") or "").strip() for k in pull_by_key if k not in excel_by_key
+    )
+
+    common_keys = [k for k in excel_by_key if k in pull_by_key]
+    differences: list[dict] = []
+    matched = 0
+    for key in common_keys:
+        excel_row = excel_by_key[key]
+        rec = pull_by_key[key]
+        doc_no = str(rec.get("DocNo") or "").strip()
+        row_diffs: list[tuple[str, Any, Any]] = []
+        excel_day = excel_row.get("doc_date")
+        pull_day = _excel_day(rec.get("DocDate"))
+        if excel_day is not None and pull_day is not None and excel_day != pull_day:
+            row_diffs.append(("doc_date", excel_day.isoformat(), pull_day.isoformat()))
+        excel_creditor = _key(excel_row.get("creditor_code"))
+        pull_creditor = _key(rec.get("CreditorCode"))
+        if excel_creditor and pull_creditor and excel_creditor != pull_creditor:
+            row_diffs.append(("creditor_code", excel_row["creditor_code"],
+                              str(rec.get("CreditorCode") or "").strip()))
+        excel_sources = _source_keys(excel_row.get("source_doc"))
+        if "source_doc" in mapped_fields and excel_sources:
+            named = [l.get("FromDocNo") or l.get("OurPONo") for l in rec.get("Details") or []
+                     if isinstance(l, dict)]
+            pull_sources = frozenset().union(*(_source_keys(n) for n in named)) if named else frozenset()
+            if excel_sources != pull_sources:
+                row_diffs.append(("source_doc", str(excel_row.get("source_doc") or "").strip(),
+                                  ", ".join(sorted({str(n).strip() for n in named if n})) or None))
         if "cancel" in mapped_fields:
             excel_cancel = bool(excel_row.get("cancel"))
             pull_cancel = _cancel_flag(rec.get("Cancelled"))

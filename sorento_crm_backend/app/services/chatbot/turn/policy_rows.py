@@ -376,7 +376,7 @@ SPECIFICATION_KIND_ROW: dict[str, Any] = dict(
     default_narrowing="optional_filter",
     family_grouping=None,
     base_property_words={},
-    roster_cap=10,
+    roster_cap=50,
 )
 
 DEFAULT_KIND_ROWS: list[dict[str, Any]] = [
@@ -388,7 +388,7 @@ DEFAULT_KIND_ROWS: list[dict[str, Any]] = [
         default_narrowing="list_all",
         family_grouping="base_code",
         base_property_words=PRODUCT_BASE_PROPERTY_WORDS,
-        roster_cap=10,
+        roster_cap=50,
     ),
     dict(
         kind="promotion",
@@ -398,7 +398,7 @@ DEFAULT_KIND_ROWS: list[dict[str, Any]] = [
         default_narrowing="optional_filter",
         family_grouping=None,
         base_property_words={},
-        roster_cap=10,
+        roster_cap=50,
     ),
     dict(
         kind="customer",
@@ -408,7 +408,7 @@ DEFAULT_KIND_ROWS: list[dict[str, Any]] = [
         default_narrowing="must_narrow_one",
         family_grouping="ledger_family",
         base_property_words={},
-        roster_cap=10,
+        roster_cap=50,
     ),
     dict(
         kind="transporter",
@@ -418,7 +418,7 @@ DEFAULT_KIND_ROWS: list[dict[str, Any]] = [
         default_narrowing="optional_filter",
         family_grouping=None,
         base_property_words={},
-        roster_cap=10,
+        roster_cap=50,
     ),
     dict(
         kind="inbound_shipment",
@@ -428,7 +428,7 @@ DEFAULT_KIND_ROWS: list[dict[str, Any]] = [
         default_narrowing="optional_filter",
         family_grouping=None,
         base_property_words={},
-        roster_cap=10,
+        roster_cap=50,
     ),
     dict(
         kind="warehouse",
@@ -438,7 +438,7 @@ DEFAULT_KIND_ROWS: list[dict[str, Any]] = [
         default_narrowing="optional_filter",
         family_grouping=None,
         base_property_words={},
-        roster_cap=10,
+        roster_cap=50,
     ),
     dict(
         kind="attachment",
@@ -448,7 +448,7 @@ DEFAULT_KIND_ROWS: list[dict[str, Any]] = [
         default_narrowing="not_applicable",
         family_grouping=None,
         base_property_words={},
-        roster_cap=10,
+        roster_cap=50,
     ),
     dict(
         kind="form",
@@ -458,7 +458,7 @@ DEFAULT_KIND_ROWS: list[dict[str, Any]] = [
         default_narrowing="not_applicable",
         family_grouping=None,
         base_property_words={},
-        roster_cap=10,
+        roster_cap=50,
     ),
     dict(
         kind="order",
@@ -468,7 +468,7 @@ DEFAULT_KIND_ROWS: list[dict[str, Any]] = [
         default_narrowing="not_applicable",
         family_grouping=None,
         base_property_words={},
-        roster_cap=10,
+        roster_cap=50,
     ),
     dict(
         kind="category",
@@ -478,7 +478,7 @@ DEFAULT_KIND_ROWS: list[dict[str, Any]] = [
         default_narrowing="optional_filter",
         family_grouping=None,
         base_property_words={},
-        roster_cap=10,
+        roster_cap=50,
     ),
     dict(
         kind="brand",
@@ -488,7 +488,7 @@ DEFAULT_KIND_ROWS: list[dict[str, Any]] = [
         default_narrowing="optional_filter",
         family_grouping=None,
         base_property_words={},
-        roster_cap=10,
+        roster_cap=50,
     ),
     dict(
         kind="attachment_type",
@@ -498,7 +498,7 @@ DEFAULT_KIND_ROWS: list[dict[str, Any]] = [
         default_narrowing="narrow_by_type",
         family_grouping=None,
         base_property_words={},
-        roster_cap=10,
+        roster_cap=50,
     ),    # Fix round 8 on PR #833 (migration `spk_0001_specification_kind`): a product
     # property, grounded against the specification registry after the parse.
     SPECIFICATION_KIND_ROW,

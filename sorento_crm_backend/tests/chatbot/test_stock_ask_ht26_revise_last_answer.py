@@ -200,6 +200,7 @@ def test_the_stock_task_addendum_teaches_the_last_answered_line():
         ESCALATION_CONFIRMATION_ADDENDUM,
         SELF_REFERENCE_ADDENDUM,
         KNOWN_BRANDS_ADDENDUM,
+        ACCOUNT_LEDGER_ADDENDUM,
         MEMORY_ADDENDUM,
         PO_SPO_WAREHOUSE_ADDENDUM,
         QUANTITY_ADDENDUM,
@@ -219,7 +220,7 @@ def test_the_stock_task_addendum_teaches_the_last_answered_line():
     # ESCALATION_CONFIRMATION_ADDENDUM, then chatbot memory lane A's MEMORY_ADDENDUM,
     # newest outermost.
     assert (
-        SEMANTIC_PARSER_PROMPT.removesuffix(MEMORY_ADDENDUM).removesuffix(PO_SPO_WAREHOUSE_ADDENDUM)
+        SEMANTIC_PARSER_PROMPT.removesuffix(MEMORY_ADDENDUM).removesuffix(ACCOUNT_LEDGER_ADDENDUM).removesuffix(PO_SPO_WAREHOUSE_ADDENDUM)
         .removesuffix(ESCALATION_CONFIRMATION_ADDENDUM).removesuffix(SELF_REFERENCE_ADDENDUM)
         .removesuffix(TOP_SELLING_ADDENDUM)
         .removesuffix(KNOWN_BRANDS_ADDENDUM)

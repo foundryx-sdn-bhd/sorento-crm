@@ -58,7 +58,7 @@ export default function AccessAgentsList() {
   // page 1 over the page `useListStateFromUrl` had just restored from the URL.
   useResetPageOnFilterChange(setPagination, [searchQuery]);
 
-  const { data, isLoading, isPlaceholderData, refetch, isFetching } = useAccessAgents({
+  const { data, isLoading, isPlaceholderData, refetch, isFetching, error } = useAccessAgents({
     pageIndex: pagination.pageIndex,
     pageSize: pagination.pageSize,
     sorting,
@@ -170,6 +170,8 @@ export default function AccessAgentsList() {
       table={table}
       recordCount={data?.pagination.total || 0}
       isLoading={isLoading}
+      error={error}
+      onRetry={() => void refetch()}
       isPlaceholderData={isPlaceholderData}
       rowHref={rowHref}
       tableLayout={{ columnsVisibility: true }}

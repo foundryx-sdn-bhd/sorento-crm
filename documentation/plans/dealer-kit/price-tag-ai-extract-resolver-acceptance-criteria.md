@@ -83,10 +83,10 @@ Plan: PLAN-price-tag-ai-extract-resolver.md
 
 ## S7 The price tag send is addressed and logged by respond_io_id
 
-- AC-S7-1 `[BE]` For a request whose contact has `respond_io_id="437264483"`,
-  `notify_salesperson` calls `send_text_or_template` with `identifier="437264483"` and both the
-  success and the failed `IntegrationLog` rows carry `external_reference="437264483"` and an
-  endpoint ending `contact/id:437264483/message`.
+- AC-S7-1 `[BE]` For a request whose contact has `respond_io_id="900000008"`,
+  `notify_salesperson` calls `send_text_or_template` with `identifier="900000008"` and both the
+  success and the failed `IntegrationLog` rows carry `external_reference="900000008"` and an
+  endpoint ending `contact/id:900000008/message`.
 - AC-S7-2 `[BE]` A contact with no `respond_io_id` falls back to the contact's id (today's
   behaviour), so nothing is dropped.
 - AC-S7-3 `[BE]` `GET /api/v1/system/respond-outbox?business_table=price_tag_requests` returns

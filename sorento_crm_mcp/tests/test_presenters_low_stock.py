@@ -217,3 +217,14 @@ def test_null_as_of_is_treated_as_an_empty_scope():
         "Nothing was planned for that scope - no low stock report to send."
     ), repr(env["response"])
     assert env["attachments"] == [], env["attachments"]
+
+
+def test_a_dry_run_pending_says_nothing_is_sent():
+    """LOWSTOCK-FILTER-ASK tester finding: a console (dry run) turn never pushes the file
+    to WhatsApp, so its pending line must not promise "sent here"."""
+    env = _envelope({**PENDING, "dry_run": True})
+    assert env["has_result"] is True, env
+    assert env["response"] == (
+        "Preparing the low stock report - test turn: it will be in My Downloads, "
+        "nothing is sent to WhatsApp."
+    ), repr(env["response"])

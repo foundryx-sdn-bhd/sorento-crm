@@ -25,8 +25,9 @@ _TYPE_POLICIES = {"narrow_by_type"}
 #: hard cap - measured, main's `gate.py` caps its own customer-base picker at 8
 #: ("8 lines is already a lot") but has no cap for a PRODUCT roster, so 10 is this
 #: one's own number. A roster this wide is never a real choice: it printed 200
-#: unrelated product codes over one unresolved token.
-_ROSTER_CAP = 10
+#: unrelated product codes over one unresolved token. PICKER-NO-CAP (owner, 2 Oct
+#: 2026): 50, the same ceiling `chatbot_entity_kinds.roster_cap` starts at.
+_ROSTER_CAP = 50
 
 
 def _candidates(focus: Focus, kind: str) -> list[dict[str, Any]]:

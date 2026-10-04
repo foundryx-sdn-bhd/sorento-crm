@@ -212,7 +212,7 @@ def _ctx(text: str, entities: list[dict[str, Any]], domain: str) -> dict[str, An
     """`build-ctx`'s inner ctx for one AND-mode business turn."""
     return {
         "text": {"message": {"message": {"text": text}}},
-        "contact": {"id": "437264483"},
+        "contact": {"id": "900000008"},
         "parse": {
             "output": {
                 "message_type": "business_query",
@@ -273,7 +273,7 @@ def _args_for(entities: list[dict[str, Any]], tool: str) -> dict[str, Any]:
         {
             "entities": entities,
             "tool": tool,
-            "semantic_input": {"contact_id": "437264483", "space_id": "364817"},
+            "semantic_input": {"contact_id": "900000008", "space_id": "364817"},
         }
     )
 
@@ -365,7 +365,11 @@ class TestProductAndWarehouseResolveTogether:
             ),
         )
         assert len(calls) == 1, f"the lane must still make ONE resolve call: {calls!r}"
-        assert calls[0]["match_mode"] == "and"
+        # CHATBOT-QUEUE-FIX (crew browser pass, prod turn f0a2): two product codes are
+        # two products, so they resolve OR. An AND intersection folded "SRTSWT3001"
+        # onto SRTSWT3001-GM and dropped it (tests/test_resolve_two_product_codes_and_mode.py);
+        # for this pair the intersection was empty and the route degraded to OR anyway.
+        assert calls[0]["match_mode"] == "or"
         assert calls[0]["allowed_entity_types"] == ["product", "product"]
         assert calls[0]["tokens"] == ["SRT62GM", "SRTWC286SH"]
         assert entities is not None

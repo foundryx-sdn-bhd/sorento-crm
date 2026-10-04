@@ -22,6 +22,7 @@ import { DataGridPagination } from '@/components/ui/data-grid-pagination';
 import { DataGridTable } from '@/components/ui/data-grid-table';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ListLoadFailure } from '@/components/common/ListLoadFailure';
 
 /**
  * The system list, inside a detail tab.
@@ -50,6 +51,7 @@ export function PanelDataGrid<TRow extends object>({
   listingKey,
   isLoading = false,
   error,
+  onRetry,
   emptyTitle,
   emptyBody,
   onRowClick,
@@ -95,7 +97,10 @@ export function PanelDataGrid<TRow extends object>({
   /** Drives per-user column order and visibility. See docs/LISTING-COLUMN-PREFERENCES.md. */
   listingKey: string;
   isLoading?: boolean;
+  /** The read's error. With no rows it renders no-access or message + Retry (lever L2). */
   error?: unknown;
+  /** Refetch the rows; shown as Retry beside a non-refusal `error`. */
+  onRetry?: () => void;
   emptyTitle: string;
   /** One short line at most. A tab is not the place to explain the feature (ADR 1e). */
   emptyBody?: string;
@@ -437,9 +442,9 @@ export function PanelDataGrid<TRow extends object>({
         )}
 
         <CardTable>
-          {error ? (
-            <div className="px-6 py-10 text-center text-sm text-destructive">
-              {error instanceof Error ? error.message : 'This list could not be loaded.'}
+          {error && rows.length === 0 && !isLoading ? (
+            <div className="px-5 py-6 text-sm">
+              <ListLoadFailure error={error} onRetry={onRetry} />
             </div>
           ) : isLoading ? (
             <div className="space-y-2 p-5">

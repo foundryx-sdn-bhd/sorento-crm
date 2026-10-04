@@ -42,7 +42,7 @@ def _serialize(svc, complaint):
 
 def test_complaint_reject_dto_resolves_via_respond_user_id(db):
     cid = str(uuid.uuid4())
-    db.add(RespondContact(id=cid, phone_number="60111222333", name="CX", respond_io_id="io", session_vars={}))
+    db.add(RespondContact(id=cid, phone_number="60110000526", name="CX", respond_io_id="io", session_vars={}))
     uid = str(uuid.uuid4())
     db.add(User(id=uid, email="cx@t.com", name="Complaint Rejecter", respond_contact_id=cid, respond_user_id="respond-xyz"))
     comp_id = str(uuid.uuid4())
@@ -59,7 +59,7 @@ def test_complaint_reject_dto_resolves_via_respond_user_id(db):
     svc = ComplaintService(db)
     data = _serialize(svc, db.query(Complaint).get(comp_id))
     assert data["rejected_by_name"] == "Complaint Rejecter"
-    assert data["rejected_by_wa_phone"] == "60111222333"
+    assert data["rejected_by_wa_phone"] == "60110000526"
     assert data["rejected_at"] == when
 
 

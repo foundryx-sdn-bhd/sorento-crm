@@ -20,6 +20,8 @@ import {
   SlidersHorizontal,
 } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
+import { apiError, retryUnlessRefused } from '@/lib/api-client';
+import { QueryErrorState } from '@/components/common/LoadErrorState';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Container } from '@/components/common/container';
 import { SectionSkeleton } from '@/components/common/SectionSkeleton';
@@ -181,7 +183,7 @@ export function mapSettingsFromApi(
 const fetchSettings = async () => {
   const response = await apiFetch('/api/user-management/settings');
   if (!response.ok) {
-    throw new Error('Failed to fetch settings');
+    throw await apiError(response, 'Failed to load settings');
   }
   const data = await response.json();
   return {
@@ -267,14 +269,23 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
 
-  const { data = { settings: null, roles: [] }, isLoading } = useQuery({
+  const {
+    data: loaded,
+    isLoading,
+    error,
+    refetch,
+    isFetching,
+  } = useQuery({
     queryKey: ['system-settings'],
     queryFn: fetchSettings,
     staleTime: Infinity,
     gcTime: 1000 * 60 * 60, // 60 minutes
     refetchOnReconnect: false,
-    retry: 1,
+    retry: retryUnlessRefused,
+    // The layout renders the failure in place; no toast on top of it.
+    meta: { silent: true },
   });
+  const data = loaded ?? { settings: null, roles: [] };
 
   const roles = data.roles ?? [];
   const settings = data.settings ?? createDefaultSettings();
@@ -374,6 +385,24 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   if (isLoading) {
     return <SectionSkeleton rows={3} className="mx-auto max-w-md mt-[30%]" />;
+  }
+
+  // Defaults are not data (NEVER-STUCK-UI S3, lever L9). Without a successful read
+  // the tabs would draw `createDefaultSettings()`, and their Save would write those
+  // blanks over the real configuration, so no tab renders until the read succeeds.
+  // A background refetch that fails over settings already loaded keeps them.
+  if (error && !loaded) {
+    return (
+      <Container>
+        <PageHeader title="Settings" />
+        <QueryErrorState
+          error={error}
+          title="Could not load settings"
+          onRetry={() => void refetch()}
+          retrying={isFetching}
+        />
+      </Container>
+    );
   }
 
   return (

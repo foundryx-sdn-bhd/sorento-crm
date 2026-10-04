@@ -3,6 +3,7 @@
 import { ChevronDown, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { SelectLoadFailure } from '@/components/common/SelectLoadFailure';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   DropdownMenu,
@@ -22,9 +23,18 @@ type Props = {
   value: string[];
   onChange: (value: string[]) => void;
   disabled?: boolean;
+  loadError?: unknown;
+  onRetry?: () => void;
 };
 
-export function AccessLevelsMultiSelect({ options, value, onChange, disabled }: Props) {
+export function AccessLevelsMultiSelect({
+  options,
+  value,
+  onChange,
+  disabled,
+  loadError,
+  onRetry,
+}: Props) {
   const selected = new Set(value);
   const labelFor = (code: string) => options.find((opt) => opt.code === code)?.name || code;
   const allSelected = options.length > 0 && options.every((opt) => selected.has(opt.code));
@@ -53,40 +63,46 @@ export function AccessLevelsMultiSelect({ options, value, onChange, disabled }: 
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-72">
-          <DropdownMenuItem
-            onSelect={(event) => {
-              event.preventDefault();
-              toggleAll();
-            }}
-            className="gap-2"
-          >
-            <Checkbox
-              checked={allSelected ? true : value.length > 0 ? 'indeterminate' : false}
-              onCheckedChange={() => toggleAll()}
-              onClick={(event) => event.stopPropagation()}
-              size="sm"
-            />
-            <span>{allSelected ? 'Clear all' : 'Select all'}</span>
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          {options.map((opt) => (
-            <DropdownMenuItem
-              key={opt.code}
-              onSelect={(event) => {
-                event.preventDefault();
-                setOne(opt.code, !selected.has(opt.code));
-              }}
-              className="gap-2"
-            >
-              <Checkbox
-                checked={selected.has(opt.code)}
-                onCheckedChange={(checked) => setOne(opt.code, Boolean(checked))}
-                onClick={(event) => event.stopPropagation()}
-                size="sm"
-              />
-              <span>{opt.name || opt.code}</span>
-            </DropdownMenuItem>
-          ))}
+          {loadError != null && loadError !== false && options.length === 0 ? (
+            <SelectLoadFailure error={loadError} onRetry={onRetry} />
+          ) : (
+            <>
+              <DropdownMenuItem
+                onSelect={(event) => {
+                  event.preventDefault();
+                  toggleAll();
+                }}
+                className="gap-2"
+              >
+                <Checkbox
+                  checked={allSelected ? true : value.length > 0 ? 'indeterminate' : false}
+                  onCheckedChange={() => toggleAll()}
+                  onClick={(event) => event.stopPropagation()}
+                  size="sm"
+                />
+                <span>{allSelected ? 'Clear all' : 'Select all'}</span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              {options.map((opt) => (
+                <DropdownMenuItem
+                  key={opt.code}
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    setOne(opt.code, !selected.has(opt.code));
+                  }}
+                  className="gap-2"
+                >
+                  <Checkbox
+                    checked={selected.has(opt.code)}
+                    onCheckedChange={(checked) => setOne(opt.code, Boolean(checked))}
+                    onClick={(event) => event.stopPropagation()}
+                    size="sm"
+                  />
+                  <span>{opt.name || opt.code}</span>
+                </DropdownMenuItem>
+              ))}
+            </>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
       {value.length > 0 && (

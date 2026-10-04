@@ -18,17 +18,27 @@ import type { ToolbarAction } from '@/components/ui/data-grid-list-toolbar';
  * per the "hide when none apply" rule) - the caller's pure builder returns `[]`
  * in that case.
  */
-export function BulkActionsMenu({ actions }: { actions: ToolbarAction[] }) {
+export function BulkActionsMenu({
+  actions,
+  modal,
+  onCloseAutoFocus,
+}: {
+  actions: ToolbarAction[];
+  /** False keeps the list readable (not hidden from assistive tech) while the menu is open or closing. */
+  modal?: boolean;
+  /** Prevent the default to keep focus where an item just put it (an item that opens a dialog). */
+  onCloseAutoFocus?: (event: Event) => void;
+}) {
   if (!actions.length) return null;
   return (
-    <DropdownMenu>
+    <DropdownMenu modal={modal}>
       <DropdownMenuTrigger asChild>
         <Button variant="outline" size="sm" className="gap-1.5">
           Actions
           <ChevronDown className="size-4" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start">
+      <DropdownMenuContent align="start" onCloseAutoFocus={onCloseAutoFocus}>
         {actions.map((action) => {
           const Icon = action.icon;
           return (

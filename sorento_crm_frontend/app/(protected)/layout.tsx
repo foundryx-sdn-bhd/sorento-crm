@@ -1,11 +1,11 @@
 'use client';
 
 import { Fragment, useEffect } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { ScreenLoader } from '@/components/common/screen-loader';
 import { Demo1Layout } from '../components/layouts/demo1/layout';
 import { useImpersonation } from '@/hooks/useImpersonation';
+import { endSessionAndRedirect, setSignedInShell } from '@/lib/session-end';
 import GuideTargetSpotlight from '@/app/components/common/GuideTargetSpotlight';
 import {
   UploadActivityDrawer,
@@ -15,6 +15,7 @@ import { MyDownloadsProvider } from '@/components/my-downloads/MyDownloadsContex
 import { MyDownloadsDrawer } from '@/components/my-downloads/MyDownloadsDrawer';
 import { CompanyProvider } from '@/app/providers/CompanyProvider';
 import PushPrompts from '@/components/pwa/PushPrompts';
+import PermissionsLoadBanner from '@/app/components/common/PermissionsLoadBanner';
 
 export default function ProtectedLayout({
   children,
@@ -22,8 +23,6 @@ export default function ProtectedLayout({
   children: React.ReactNode;
 }) {
   const { data: session, status } = useSession();
-  const router = useRouter();
-  const pathname = usePathname();
   const { hydrate } = useImpersonation();
 
   useEffect(() => {
@@ -33,21 +32,21 @@ export default function ProtectedLayout({
   }, [status, hydrate]);
 
   useEffect(() => {
+    setSignedInShell(status === 'authenticated');
+    return () => setSignedInShell(false);
+  }, [status]);
+
+  useEffect(() => {
     if (status === 'unauthenticated') {
-      // Permanent deep-link-after-login: capture the FULL relative URL the user
-      // landed on (path + query + hash), not just the pathname, so any internal
-      // link survives the sign-in round-trip. The signin page reads callbackUrl
-      // and only honours same-origin relative paths (starts with '/', not '//').
-      // This is staff/NextAuth only - the portal contact OTP flow uses public
-      // /view links + confirm-identity and never hits this protected layout.
-      const loc = typeof window !== 'undefined' ? window.location : null;
-      const target = loc
-        ? `${loc.pathname}${loc.search}${loc.hash}`
-        : pathname ?? '';
-      const callbackUrl = target ? `/signin?callbackUrl=${encodeURIComponent(target)}` : '/signin';
-      router.push(callbackUrl);
+      // Permanent deep-link-after-login: the return URL is the FULL relative URL
+      // (path + query + hash). One latched hard navigation shared with apiFetch's
+      // dead-session path, so a session that dies mid-page reaches /signin exactly
+      // once and leaves view-as behind (SESSION-NEVER-STUCK). The signin page only
+      // honours same-origin relative callbackUrls. Staff/NextAuth only - the portal
+      // contact OTP flow uses public /view links and never hits this layout.
+      endSessionAndRedirect();
     }
-  }, [status, router, pathname]);
+  }, [status]);
 
   if (status === 'loading' || status === 'unauthenticated') {
     return <ScreenLoader />;
@@ -69,6 +68,9 @@ export default function ProtectedLayout({
                 routed page arrives with no key of its own: without these, every
                 page logged a missing-key error (the dev "1 Issue" badge, #1286). */}
             <PushPrompts key="push-prompts" />
+            {/* A failed permission check hides menus and buttons (fail closed);
+                this says so, with Retry, instead of leaving a thinner app (L6). */}
+            <PermissionsLoadBanner key="permissions-load-banner" />
             <Fragment key="page">{children}</Fragment>
           </Demo1Layout>
           <UploadActivityDrawer />

@@ -9,7 +9,6 @@ not list (the L23/L26 shape).
 """
 from __future__ import annotations
 
-import ast
 import pathlib
 import uuid
 
@@ -181,18 +180,8 @@ class TestStandaloneSafetyRails:
         with pytest.raises(SystemExit):
             standalone.build_parser().parse_args(["--company", "SRT"])
 
-    def test_imports_nothing_from_the_app(self):
-        """Requirement (1): it must run against whatever code the prod container
-        holds, so no import of any `app.*` module (every service #1411 changed
-        lives there)."""
-        tree = ast.parse(SCRIPT.read_text())
-        modules = {
-            node.module if isinstance(node, ast.ImportFrom) else alias.name
-            for node in ast.walk(tree)
-            if isinstance(node, (ast.Import, ast.ImportFrom))
-            for alias in (node.names if isinstance(node, ast.Import) else [None])
-        }
-        assert not any((m or "").split(".")[0] in {"app", "scripts", "tests"} for m in modules), modules
+    # The import rule (nothing from the app outside the post-apply refresh)
+    # lives in tests/test_dedupe_spo_all.py::TestCli.
 
 
 class TestStandalonePaths:

@@ -21,9 +21,10 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.inventory import Warehouse
-from app.models.order import Customer, Order, OrderLine, SalesOrder, SalesOrderLine
+from app.models.order import Customer, CustomerGroup, Order, OrderLine, SalesOrder, SalesOrderLine
 from app.models.product import Brand, Product
 from app.services.error_handler import handle_not_found
+from app.services.ledger_family import customer_header_words
 from app.services.order_service import (
     _delivered_status_ids,
     _outstanding_clause,
@@ -129,30 +130,24 @@ def _customer_echo(
     that were filtered to one customer. The names are read back and joined by ", ";
     `customer_query` stays the echo when no ids were given (n8n's own path).
 
-    AC-1163 (R19, owner ruling, 13 Sep 2026): DISTINCT names, in the order the ids
-    arrived. One company keeps one `customers` row per ledger, so a resolved family is
-    routinely several ids with the SAME name - a live FULLSHUN ask printed "FULLSHUN
-    SANITARYWARE SDN BHD" five times among fourteen. First-seen order, not
-    `ORDER BY customer_name`: the ids arrive in the order the resolver ranked them, and
-    alphabetical sorting put a name the ledger happens to prefix with `*` at the front
-    of a list whose first entry the reader takes as the main account. Nothing else about
-    a name is touched - the asterisk and the `[A/C III]` suffix are the ledger's own
-    data, and the owner turned down grouping them into a family with a count."""
+    AC-1163 (R19, 13 Sep 2026) printed DISTINCT ledger names and the owner turned down
+    grouping; the owner REVERSED that on 2 Oct 2026 (CUSTOMER-GROUP). The line now names
+    each customer COMPANY once, by its group name (an ungrouped ledger by its own name), in the order
+    the ids arrived, with no count: `ledger_family.customer_header_words`. One query reads
+    each id's name and its group's name."""
     if customer_ids:
-        name_by_id = {
-            row[0]: row[1]
-            for row in db.query(Customer.id, Customer.customer_name)
+        by_id = {
+            row[0]: (row[1], row[2])
+            for row in db.query(Customer.id, Customer.customer_name, CustomerGroup.name)
+            .outerjoin(CustomerGroup, CustomerGroup.id == Customer.customer_group_id)
             .filter(Customer.id.in_(customer_ids))
             .all()
             if row[1]
         }
-        names: list[str] = []
-        for customer_id in customer_ids:
-            name = name_by_id.get(customer_id)
-            if name and name not in names:
-                names.append(name)
-        if names:
-            return ", ".join(names)
+        entries = [by_id[i] for i in customer_ids if i in by_id]
+        words = customer_header_words(entries)
+        if words:
+            return words
     return customer_query
 
 

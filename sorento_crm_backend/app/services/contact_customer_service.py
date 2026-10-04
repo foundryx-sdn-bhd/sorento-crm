@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 from app.models.access import RespondContact, RespondContactCustomer
 from app.models.order import Customer
 from app.models.sales_agent import SalesAgent
+from app.services.company_scope_resolver import company_name_map
 from app.services.error_handler import handle_not_found
 from app.utils.phone_normalize import normalize_phone
 
@@ -237,6 +238,25 @@ def links_with_customers(
     )
 
 
+def customer_codes_by_contact(db: Session, contact_ids: Sequence[str]) -> dict[str, list[str]]:
+    """Linked customer codes (sorted asc) per contact, ONE query for the whole page.
+
+    Customer is company-scoped, so the join sees only the caller's customers, the same
+    as the contact card's payload."""
+    if not contact_ids:
+        return {}
+    rows = (
+        db.query(RespondContactCustomer.contact_id, Customer.customer_code)
+        .join(Customer, Customer.id == RespondContactCustomer.customer_id)
+        .filter(RespondContactCustomer.contact_id.in_(list(contact_ids)))
+        .all()
+    )
+    out: dict[str, list[str]] = {}
+    for contact_id, code in rows:
+        out.setdefault(str(contact_id), []).append(code)
+    return {k: sorted(v) for k, v in out.items()}
+
+
 def get_link(db: Session, contact_id: str, customer_id: str) -> RespondContactCustomer | None:
     return (
         db.query(RespondContactCustomer)
@@ -287,8 +307,8 @@ def agents_for_contact(db: Session, contact_id: str) -> list[SalesAgent]:
     )
 
 
-def link_row(link: RespondContactCustomer, customer: Customer) -> dict:
-    """One link as the routes answer it: the link plus its customer and that customer's agent."""
+def link_row(link: RespondContactCustomer, customer: Customer, company_names: dict[str, str]) -> dict:
+    """One link as the routes answer it: the link plus its customer, that customer's agent and company."""
     return {
         "id": link.id,
         "customer_id": customer.id,
@@ -299,14 +319,17 @@ def link_row(link: RespondContactCustomer, customer: Customer) -> dict:
         "sales_agent_id": customer.sales_agent_id,
         "sales_agent_code": customer.sales_agent_code,
         "sales_agent_name": customer.sales_agent_name,
+        "company_id": customer.company_id,
+        "company_name": company_names.get(str(customer.company_id)),
         "created_at": link.created_at,
     }
 
 
 def contact_customers_payload(db: Session, contact_id: str) -> dict:
     """The contact card's read: the links, oldest first."""
+    names = company_name_map(db)
     return {
-        "data": [link_row(link, customer) for link, customer in links_with_customers(db, contact_id)],
+        "data": [link_row(link, customer, names) for link, customer in links_with_customers(db, contact_id)],
     }
 
 

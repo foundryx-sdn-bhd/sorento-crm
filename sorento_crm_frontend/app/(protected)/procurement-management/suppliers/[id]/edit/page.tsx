@@ -1,7 +1,7 @@
 'use client';
 
 import { use } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { MoveLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -16,6 +16,9 @@ export default function EditSupplierPage({
 }) {
   const { id } = use(params);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const qs = searchParams.toString();
+  const querySuffix = qs ? `?${qs}` : '';
 
   return (
     <>
@@ -24,7 +27,7 @@ export default function EditSupplierPage({
           title="Edit Supplier"
           actions={
             <Button asChild variant="outline">
-              <Link href={`/procurement-management/suppliers/${id}`}>
+              <Link href={`/procurement-management/suppliers/${id}${querySuffix}`}>
                 <MoveLeft /> Back to supplier
               </Link>
             </Button>
@@ -36,7 +39,7 @@ export default function EditSupplierPage({
         <SupplierForm
           supplierId={id}
           onSuccess={() => {
-            router.push(`/procurement-management/suppliers/${id}`);
+            router.push(`/procurement-management/suppliers/${id}${querySuffix}`);
           }}
         />
       </Container>

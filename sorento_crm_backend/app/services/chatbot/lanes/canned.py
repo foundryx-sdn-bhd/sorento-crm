@@ -68,7 +68,9 @@ def access_denied_text(db: Session, ctx: Mapping[str, Any], copy: CannedCopy) ->
     """
     routing = jsc.get(jsc.get(jsc.get(ctx, "parse"), "output") or {}, "routing") or {}
     agent = jsc.get(routing, "suggested_agent")
-    folded = jsc.js_string(agent if jsc.truthy(agent) else "").replace(EM_DASH, "-")
+    # ATTACHMENT-MULTI: the agent is a slug (`incoming_stock_enquiries`); the customer reads
+    # "incoming stock enquiries". The `ideation` check below reads the raw value.
+    folded = jsc.js_string(agent if jsc.truthy(agent) else "").replace(EM_DASH, "-").replace("_", " ")
     fallback_text = copy.render("access_denied", team=folded)
     if agent != "ideation":
         return fallback_text

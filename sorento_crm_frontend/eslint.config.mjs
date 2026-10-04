@@ -282,7 +282,8 @@ const eslintConfig = [
     rules: { 'local/no-px-text-class': 'off' },
   },
   {
-    ignores: ['.next/**', 'node_modules/**', 'prisma/**'],
+    // .next-*: the NEXT_DIST_DIR builds (.next-dev, .next-never-stuck).
+    ignores: ['.next/**', '.next-*/**', 'node_modules/**', 'prisma/**'],
   },
 ];
 

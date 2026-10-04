@@ -122,6 +122,8 @@ function rowSelectionOf(
 export function OrderInquiryLinesTab({
   lines,
   isLoading,
+  error,
+  onRetry,
   rowSelection,
   onRowSelectionChange,
   canReserve,
@@ -135,6 +137,8 @@ export function OrderInquiryLinesTab({
 }: {
   lines: OrderInquiryWorklistRow[];
   isLoading: boolean;
+  error?: unknown;
+  onRetry?: () => void;
   rowSelection: RowSelectionState;
   onRowSelectionChange: (next: RowSelectionState) => void;
   /** AC-RS-83 (`PLAN-oi-request-cs-reserve.md` 6e.2): gates the Lines grid's own
@@ -270,6 +274,8 @@ export function OrderInquiryLinesTab({
       table={table}
       recordCount={table.getFilteredRowModel().rows.length}
       isLoading={isLoading}
+      error={error}
+      onRetry={onRetry}
       tableLayout={{ width: 'fixed', columnsResizable: true, columnsVisibility: true }}
       emptyMessage={
         allLineRows.length === 0

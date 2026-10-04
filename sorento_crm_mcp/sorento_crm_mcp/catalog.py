@@ -536,6 +536,11 @@ CATALOG: tuple[ToolSpec, ...] = (
             "this tool does no suffix matching. `product_codes` - exact product codes. `date_from` / "
             "`date_to` (YYYY-MM-DD) narrow which sales orders the plan counts as demand. Omit any of "
             "them to plan everything.\n\n"
+            "WORKBOOK FILTERS (the plan still covers the whole scope above; these narrow the file): "
+            "`categories` - exact category codes; `suppliers` - exact supplier names, one per value; "
+            "`split` - none | supplier | category | supplier_category, one Low/All sheet pair per "
+            "group. Settle them with the user BEFORE calling. `dry_run` (a test turn): the file "
+            "is built but never sent to the contact.\n\n"
             "REQUIRED: pass BOTH `contact_id` (Respond.io contact id) and `space_id` - the report is "
             "per-contact, and the call is refused without them.\n\n"
             "COMPANY SCOPE: the plan is built for the contact's own company, resolved from the "
@@ -546,6 +551,7 @@ CATALOG: tuple[ToolSpec, ...] = (
         (
             "warehouse_codes", "product_codes", "date_from", "date_to",
             "contact_id", "space_id",
+            "categories", "suppliers", "split", "dry_run",
         ),
         # GET, and therefore `read_only` stays at its default False - "every GET tool is
         # read-only by definition and does NOT set this" (see `ToolSpec.read_only`). The
@@ -626,7 +632,22 @@ CATALOG: tuple[ToolSpec, ...] = (
         # here for the Contacts > Access > Field reveals card; the actual gate is the
         # chatbot lane's own redirect (`lanes/business/__init__.py::run_fetch`) plus
         # `_orders_so_outstanding`'s `b.restrict` in the presenter.
-        restricted_fields=(("sales_orders.outstanding", "Sales order outstanding"),),
+        # DO-ASK-SIMPLIFY rule 2 (owner, 2 Oct 2026): the DO list's logistics fields are
+        # per-contact reveals, gated by `output_structurer` off `_orders_list`'s restrict.
+        restricted_fields=(
+            ("sales_orders.outstanding", "Sales order outstanding"),
+            ("delivery_orders.status", "DO status"),
+            ("delivery_orders.pickup_time", "DO pickup time"),
+            ("delivery_orders.transporter", "DO transporter"),
+            ("delivery_orders.driver", "DO driver"),
+            ("delivery_orders.lorry_plate", "DO lorry plate"),
+            ("delivery_orders.order_number", "DO order number"),
+            ("delivery_orders.customer", "DO customer"),
+            ("delivery_orders.order_date", "DO order date"),
+            ("delivery_orders.delivery_date", "DO delivery date"),
+            ("delivery_orders.warehouse", "DO warehouse"),
+            ("delivery_orders.products", "DO products"),
+        ),
     ),
     ToolSpec(
         "crm_order_management_orders_by_product_list",
@@ -668,8 +689,17 @@ CATALOG: tuple[ToolSpec, ...] = (
         related_tools=("crm_order_management_orders_list", "crm_incoming_stock_by_product", "crm_outstanding_report"),
         escalation_team="sales",
         # S2 (security review, 13 Sep 2026): same gate as the sibling
-        # `crm_order_management_orders_list` above - see its own comment.
-        restricted_fields=(("sales_orders.outstanding", "Sales order outstanding"),),
+        # `crm_order_management_orders_list` above - see its own comment. DO-ASK-SIMPLIFY
+        # (owner hand test 3 Oct 2026): the DO fields this list prints are reveals too.
+        restricted_fields=(
+            ("sales_orders.outstanding", "Sales order outstanding"),
+            ("delivery_orders.order_number", "DO order number"),
+            ("delivery_orders.customer", "DO customer"),
+            ("delivery_orders.order_date", "DO order date"),
+            ("delivery_orders.delivery_date", "DO delivery date"),
+            ("delivery_orders.warehouse", "DO warehouse"),
+            ("delivery_orders.products", "DO products"),
+        ),
     ),
     ToolSpec(
         "crm_outstanding_report",
@@ -1552,7 +1582,8 @@ CATALOG: tuple[ToolSpec, ...] = (
             "respond.io contact id) and `message_text` (what they just said), plus `session_vars` "
             "carrying the `ideation` pointer from the previous turn (null on the first). Optionally "
             "`submitter_name`, `media_selection` when a photo menu is open (comma-joined positions, "
-            "or 'all'), `is_new_idea` to start a fresh draft over an open one, and `is_test` "
+            "or 'all'), `is_new_idea` to start a fresh draft over an open one, `ask_reply` (true when "
+            "the message answers the bot's ask-back for an idea), and `is_test` "
             "for a test turn (the idea is stored hidden from the board, no session state is "
             "persisted). RETURNS "
             "`{status, reply_text, link?, session_vars}` - `reply_text` is what to "
@@ -1575,6 +1606,7 @@ CATALOG: tuple[ToolSpec, ...] = (
             "media_selection",
             "is_new_idea",
             "is_test",
+            "ask_reply",
         ),
         module="chatbot",
         external=True,

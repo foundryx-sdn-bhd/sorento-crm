@@ -22,10 +22,11 @@ table itself; there is no `integration_references` row, because the row can pred
 **Links are resolved, never waited for.** A line names the SO / PO / SPO line it came from
 exactly when the vendor sends a real `FromDocDtlKey` (today it sends 0, which names nothing).
 Without one, a DO line that names its SO (`FromDocNo`) links to the one line of its product in
-that SO (PLAN-do-so-line-link-1oct.md); otherwise the document number (`RefDocNo` on a DO,
-`OurPONo` on a GRN line) links the document and the line link stays null (Q10 a). A link once
-made is never unset by a later push that cannot resolve it. At the end of every real batch,
-waiting links that now resolve are filled.
+that SO (PLAN-do-so-line-link-1oct.md), and its header links by `RefDocNo` (Q10 a). A GRN line
+links to ONE line of the PO or SPO its `FromDocNo` (else `OurPONo`) names, by product and
+position (PLAN-autocount-grn-pull-crm-02oct.md 1.3: AutoCount writes one GRN line per SPO line
+in the SPO's Seq order). A link once made is never unset by a later push that cannot resolve
+it. At the end of every real batch, waiting links that now resolve are filled.
 """
 from __future__ import annotations
 
@@ -37,7 +38,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any, Callable, Optional
 
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -106,6 +107,10 @@ WARN_SALES_ORDER_UNRESOLVED = "sales_order_unresolved"
 WARN_PURCHASE_ORDER_UNRESOLVED = "purchase_order_unresolved"
 WARN_LEGACY_LINKS_RELEASED = "legacy_links_released"
 WARN_RESTORED = "restored"
+# GRN-PULL-CRM plan 1.3: a GRN line that received more than its PO / SPO line had left, and
+# one whose product is not on the PO / SPO it names (D3, owner pending).
+WARN_OVER_RECEIPT = "over_receipt"
+WARN_ITEM_NOT_ON_ORDER = "item_not_on_order"
 CONTRACT_2_7_WARNINGS = (
     WARN_ADOPTED,
     WARN_BRANCH_UNRESOLVED,
@@ -116,6 +121,8 @@ CONTRACT_2_7_WARNINGS = (
     WARN_PURCHASE_ORDER_UNRESOLVED,
     WARN_LEGACY_LINKS_RELEASED,
     WARN_RESTORED,
+    WARN_OVER_RECEIPT,
+    WARN_ITEM_NOT_ON_ORDER,
 )
 
 # Columns a push never UNSETS: a link made earlier (by an exact ref, a document number, a
@@ -123,7 +130,14 @@ CONTRACT_2_7_WARNINGS = (
 # resolve one. A push that resolves a DIFFERENT target replaces it.
 _DO_HEADER_LINKS = ("sales_order_id",)
 _DO_LINE_LINKS = ("sales_order_line_id",)
-_GRN_LINE_LINKS = ("po_line_id", "spo_allocation_id", "purchase_order_id")
+_GRN_LINE_LINKS = ("po_line_id", "spo_allocation_id", "purchase_order_id", "spo_number_raw")
+# Marks line values whose link columns were RESOLVED and are written as given, None included
+# (GRN-PULL-CRM review S4); never a column, stripped before a row is built.
+_FORCE_LINKS = "_force_links"
+
+
+def _columns(values: dict[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in values.items() if k != _FORCE_LINKS}
 
 _MONEY = Decimal("0.01")
 _FOUR = Decimal("0.0001")
@@ -289,6 +303,49 @@ class _Doc:
     cancelled: bool
     lines: list[_Line]
     values: dict[str, Any]
+
+
+@dataclass
+class _LinkAsk:
+    """One GRN line asking for its PO / SPO line (plan 1.3): the ingest builds these from the
+    parsed record, the waiting fill from stored rows, and both get the same answer."""
+    order: tuple
+    product_id: str
+    qty: int
+    from_doc_type: Optional[str]
+    from_doc_no: Optional[str]
+    our_po_no: Optional[str]
+    from_dtl_key: Optional[int]
+
+
+@dataclass
+class _Candidate:
+    """A PO or SPO line a GRN line may take, with what it has left (drawn down in place)."""
+    id: str
+    available: int
+
+
+def _choose_candidate(candidates: list[_Candidate], qty: int,
+                      used: set[str]) -> tuple[Optional[_Candidate], bool]:
+    """D1 (a), in line order among the lines no other line of this GRN took: remaining equal
+    to the qty, else enough remaining, else any remaining (over receipt), else the last line
+    (over receipt). Returns (candidate or None when there are none, over_receipt)."""
+    if not candidates:
+        return None, False
+    free = [c for c in candidates if c.id not in used] or candidates
+    for test, over in ((lambda c: c.available == qty, False),
+                       (lambda c: c.available >= qty, False),
+                       (lambda c: c.available > 0, True)):
+        pick = next((c for c in free if test(c)), None)
+        if pick is not None:
+            return pick, over
+    return free[-1], True
+
+
+def _dtl_order(source_ref: Optional[str]) -> int:
+    """A PO line's AutoCount DtlKey (the last segment of `source_ref`), its only order (D4)."""
+    tail = str(source_ref or "").rsplit(":", 1)[-1]
+    return int(tail) if tail.isdigit() else _INT8_MAX
 
 
 def _source_ref(book: str, entity: str, doc_key: Any) -> Optional[str]:
@@ -463,6 +520,51 @@ def _parse(entity: str, raw: dict) -> _Doc:
         lines=lines,
         values=header,
     )
+
+
+def run_grn_receipt_hook(db: Session, service: "AutocountDocIngestService") -> None:
+    """An AutoCount GRN write moved picking lines that point at SPO allocations (a carried
+    Excel link released, a cancel, an exact or line-order link): recompute those
+    allocations' receipt the way an approved Excel GRN does. After the batch commit, best
+    effort. One function for the push route and the pull's apply (GRN-PULL-CRM)."""
+    touched = getattr(service, "touched_allocation_ids", set())
+    if not touched:
+        return
+    try:
+        from app.services.procurement_service import InboundShipmentService, PickingHeaderService
+
+        allocations = db.query(SPOAllocation).filter(SPOAllocation.id.in_(list(touched))).all()
+        proc = PickingHeaderService(db)
+        shipment_ids = proc._sync_received_for_allocations(
+            allocations, released=getattr(service, "released_allocation_ids", set())
+        )
+        db.commit()
+        inbound = InboundShipmentService(db)
+        for shipment_id in shipment_ids:
+            inbound.refresh_shipment_line_statuses(shipment_id)
+    except Exception:  # noqa: BLE001 - the ingest itself already committed
+        db.rollback()
+        logger.warning("ingest.grn_receipt_hook_failed", exc_info=True)
+
+
+def link_waiting_grn_lines(db: Session, *, company_id: str, numbers: set[str]) -> None:
+    """When a PO or SPO arrives (the shipping-order ingest's post-commit hook), link the
+    AutoCount GRN lines that were waiting for it, at once, through the same resolver the GRN
+    ingest uses (crew e2e gap 1: GR-2026/10-0006 landed before SPO-2026/09-0115). Then the
+    receipt of every SPO line it linked is recomputed. Best effort after the caller's own
+    commit: a failure is logged and the next GRN batch's fill retries."""
+    if not company_id or not numbers:
+        return
+    service = AutocountDocIngestService(db, None, company_id=str(company_id), book="")
+    try:
+        with company_scope(db, frozenset({str(company_id)})):
+            service._link_waiting_grn_lines(set(numbers))
+        db.commit()
+    except Exception:  # noqa: BLE001 - the document itself already committed
+        db.rollback()
+        logger.warning("ingest.grn_waiting_link_failed", exc_info=True)
+        return
+    run_grn_receipt_hook(db, service)
 
 
 # ============================================================================ the service
@@ -690,8 +792,11 @@ class AutocountDocIngestService(MasterRefResolver):
     @staticmethod
     def _changes(row, values: dict[str, Any], keep_links: tuple[str, ...]) -> dict[str, Any]:
         out = {}
+        forced = bool(values.get(_FORCE_LINKS))
         for key, value in values.items():
-            if key in keep_links and value is None:
+            if key == _FORCE_LINKS:
+                continue
+            if key in keep_links and value is None and not forced:
                 continue
             if getattr(row, key) != value:
                 out[key] = value
@@ -807,27 +912,139 @@ class AutocountDocIngestService(MasterRefResolver):
         )
         return str(rows[0][0]) if len(rows) == 1 else None
 
-    def _purchase_order(self, po_number: str) -> tuple[Optional[str], Optional[str]]:
-        """(purchase_order_id, from_doc_type) for a GRN line's `OurPONo`."""
+    # ------------------------------------------------------------ GRN line -> PO / SPO line
+    def _grn_links(self, asks: list[_LinkAsk], warnings: list[str], *,
+                   exclude_header_id: Optional[str],
+                   used: Optional[set[str]] = None) -> list[dict[str, Any]]:
+        """The link columns for each ask, in the asks' own order (plan 1.3). Lines are
+        resolved in GRN Seq order; each line of a product takes a DIFFERENT line of the
+        named PO / SPO while unused ones remain (`used` may arrive pre-filled with what
+        sibling lines already hold). `exclude_header_id` is this GRN, so a re-push never
+        competes with its own earlier receipt."""
+        used = set(used or ())
+        pools: dict[tuple[str, str, str], list[_Candidate]] = {}
+        out: list[dict[str, Any]] = [{} for _ in asks]
+        for position in sorted(range(len(asks)), key=lambda i: asks[i].order):
+            ask = asks[position]
+            if ask.from_dtl_key is not None:
+                po_line, spo_line = self._po_or_spo_line(ask.from_dtl_key, ask.from_doc_no)
+                out[position] = {"po_line_id": po_line, "spo_allocation_id": spo_line}
+                if po_line is None and spo_line is None:
+                    warnings.append(WARN_PO_LINE_UNRESOLVED)
+                else:
+                    out[position][_FORCE_LINKS] = True
+                continue
+            # Q3 a: FromDocNo is AutoCount's own; OurPONo is hand typed.
+            source = ask.from_doc_no or ask.our_po_no
+            if not source:
+                continue
+            kind, target = self._grn_source(source)
+            if kind is None:
+                warnings.append(WARN_PURCHASE_ORDER_UNRESOLVED)
+                continue
+            # A resolved document writes the WHOLE link set (review S4): a re-push that moves a
+            # line from a PO to an SPO, or back, must clear the other kind's columns, which
+            # `keep_links` would otherwise keep.
+            link = {"from_doc_type": ask.from_doc_type or kind,
+                    "from_doc_no": ask.from_doc_no or source,
+                    "po_line_id": None, "spo_allocation_id": None,
+                    "purchase_order_id": None, "spo_number_raw": None,
+                    _FORCE_LINKS: True}
+            if kind == "PO":
+                link["purchase_order_id"] = target
+            else:
+                link["spo_number_raw"] = source
+            key = (kind, target, str(ask.product_id))
+            if key not in pools:
+                pools[key] = self._grn_candidates(kind, target, ask.product_id,
+                                                  exclude_header_id)
+            pick, over = _choose_candidate(pools[key], ask.qty, used)
+            if pick is None:
+                self._unmatched_item(link, warnings)
+            else:
+                used.add(pick.id)
+                pick.available -= ask.qty
+                link["po_line_id" if kind == "PO" else "spo_allocation_id"] = pick.id
+                if over:
+                    warnings.append(WARN_OVER_RECEIPT)
+            out[position] = link
+        return out
+
+    @staticmethod
+    def _unmatched_item(link: dict[str, Any], warnings: list[str]) -> None:
+        """D3 (owner pending, built as (a)): the product is not on the named PO / SPO. The
+        line keeps the document link already in `link` (`purchase_order_id`, or
+        `spo_number_raw` for an SPO, which has no header table) and no line link. One
+        function, so the owner's answer changes one place."""
+        warnings.append(WARN_ITEM_NOT_ON_ORDER)
+
+    def _grn_source(self, number: str) -> tuple[Optional[str], Optional[str]]:
+        """("SPO", the number) or ("PO", purchase_order_id) or (None, None). The number's
+        table decides, never `FromDocType`: AutoCount sends 'PO' on SPO lines too (crew,
+        2 Oct). SPO is asked first (plan 1.3 rule 3): an SPO the CRM raised itself is a
+        `purchase_orders` row AND `spo_allocations` lines under one number
+        (`spo_conversion_service`), and its receipt belongs on the SPO line. A PO number held
+        twice resolves to nothing (no guess)."""
+        from app.services.grn_spo_matching import spo_number_known
+
+        key = ("grn_source", number)
+        if key not in self._memo:
+            if spo_number_known(self.db, number, company_id=self.company_id):
+                self._memo[key] = ("SPO", number)
+            else:
+                rows = (
+                    self.db.query(PurchaseOrder.id)
+                    .filter(PurchaseOrder.company_id == self.company_id,
+                            PurchaseOrder.po_number == number)
+                    .limit(2)
+                    .all()
+                )
+                self._memo[key] = ("PO", str(rows[0][0])) if len(rows) == 1 else (None, None)
+        return self._memo[key]
+
+    def _grn_candidates(self, kind: str, target: str, product_id: str,
+                        exclude_header_id: Optional[str]) -> list[_Candidate]:
+        """The named document's lines of this product, in line order, with what each has left
+        after OTHER GRNs (rejected and cancelled ones hold nothing, Q4 a)."""
+        from app.services.grn_spo_matching import NON_CONSUMING_GRN_STATUSES, spo_line_candidates
+
+        exclude = {exclude_header_id} if exclude_header_id else set()
+        if kind == "SPO":
+            return [
+                _Candidate(id=entry.allocation_id, available=entry.available)
+                for entry in spo_line_candidates(
+                    self.db, product_id=str(product_id), spo_number=target,
+                    exclude_header_ids=exclude, company_id=self.company_id)
+            ]
         rows = (
-            self.db.query(PurchaseOrder.id)
-            .filter(PurchaseOrder.company_id == self.company_id,
-                    PurchaseOrder.po_number == po_number)
-            .limit(2)
+            self.db.query(PurchaseOrderLine.id, PurchaseOrderLine.qty_ordered,
+                          PurchaseOrderLine.source_ref)
+            .filter(PurchaseOrderLine.company_id == self.company_id,
+                    PurchaseOrderLine.purchase_order_id == target,
+                    PurchaseOrderLine.product_id == str(product_id))
             .all()
         )
-        if len(rows) == 1:
-            return str(rows[0][0]), "PO"
         if not rows:
-            spo = (
-                self.db.query(SPOAllocation.id)
-                .filter(SPOAllocation.company_id == self.company_id,
-                        SPOAllocation.spo_number == po_number)
-                .first()
-            )
-            if spo is not None:
-                return None, "SPO"
-        return None, None
+            return []
+        drawn = func.coalesce(func.sum(PickingLine.quantity_picked), 0)
+        consumed_query = (
+            self.db.query(PickingLine.po_line_id, drawn)
+            .join(PickingHeader, PickingHeader.id == PickingLine.picking_header_id)
+            .filter(PickingLine.company_id == self.company_id,
+                    PickingLine.po_line_id.in_([str(r[0]) for r in rows]),
+                    PickingHeader.picking_type == "goods_received",
+                    PickingHeader.picking_status.notin_(NON_CONSUMING_GRN_STATUSES))
+            .group_by(PickingLine.po_line_id)
+        )
+        if exclude:
+            consumed_query = consumed_query.filter(PickingLine.picking_header_id.notin_(exclude))
+        consumed = {str(r[0]): int(r[1]) for r in consumed_query.all()}
+        rows = sorted(rows, key=lambda r: (_dtl_order(r[2]), str(r[0])))
+        return [
+            _Candidate(id=str(r[0]),
+                       available=max(0, int(r[1] or 0) - consumed.get(str(r[0]), 0)))
+            for r in rows
+        ]
 
     # ================================================================== delivery orders
     def _apply_do(self, doc: _Doc) -> _Verdict:
@@ -948,6 +1165,7 @@ class AutocountDocIngestService(MasterRefResolver):
         )
 
         lines: list[dict[str, Any]] = []
+        asks: list[_LinkAsk] = []
         for line in doc.lines:
             if line.item_code is None:
                 continue
@@ -962,21 +1180,19 @@ class AutocountDocIngestService(MasterRefResolver):
                 po_line_id=None,
                 spo_allocation_id=None,
                 purchase_order_id=None,
+                spo_number_raw=None,
             )
-            if line.from_dtl_key is not None:
-                po_line, spo_line = self._po_or_spo_line(line.from_dtl_key, line.from_doc_no)
-                values.update(po_line_id=po_line, spo_allocation_id=spo_line)
-                if po_line is None and spo_line is None:
-                    warnings.append(WARN_PO_LINE_UNRESOLVED)
-            elif values["our_po_no"]:
-                purchase_order_id, doc_type = self._purchase_order(values["our_po_no"])
-                if doc_type is None:
-                    warnings.append(WARN_PURCHASE_ORDER_UNRESOLVED)
-                else:
-                    values.update(purchase_order_id=purchase_order_id,
-                                  from_doc_type=line.from_doc_type or doc_type,
-                                  from_doc_no=line.from_doc_no or values["our_po_no"])
             lines.append(values)
+            asks.append(_LinkAsk(
+                order=(line.seq is None, line.seq or 0, line.index),
+                product_id=product_id, qty=values["quantity_picked"],
+                from_doc_type=line.from_doc_type, from_doc_no=line.from_doc_no,
+                our_po_no=values["our_po_no"], from_dtl_key=line.from_dtl_key,
+            ))
+        links = self._grn_links(asks, warnings,
+                                exclude_header_id=str(existing.id) if existing is not None else None)
+        for values, link in zip(lines, links):
+            values.update(link)
 
         counts = _line_counts()
         counts["skipped"] = sum(1 for line in doc.lines if line.item_code is None)
@@ -988,7 +1204,7 @@ class AutocountDocIngestService(MasterRefResolver):
             self.db.flush()
             for values in lines:
                 self.db.add(PickingLine(company_id=self.company_id, picking_header_id=grn.id,
-                                        **values))
+                                        **_columns(values)))
                 if values["spo_allocation_id"]:
                     self.touched_allocation_ids.add(values["spo_allocation_id"])
             self.db.flush()
@@ -1002,16 +1218,21 @@ class AutocountDocIngestService(MasterRefResolver):
         if existing.source_vanished_at is not None:
             warnings.append(WARN_RESTORED)
         stored = list(existing.picking_lines)
+        # A link this write moves leaves its old SPO line's receipt to recompute.
+        held_before = {str(row.spo_allocation_id) for row in stored if row.spo_allocation_id}
+        self.touched_allocation_ids.update(held_before)
         changed = self._write_lines(
             existing, stored, lines, counts,
             seq_column=None,
             legacy_key=lambda row: (str(row.product_id), row.quantity_picked),
             incoming_key=lambda v: (str(v["product_id"]), v["quantity_picked"]),
             make=lambda values: PickingLine(company_id=self.company_id,
-                                            picking_header_id=existing.id, **values),
+                                            picking_header_id=existing.id, **_columns(values)),
             attach=None,
             keep_links=_GRN_LINE_LINKS,
             on_removed=lambda row: self._release(row, warnings),
+            merge=(lambda row: str(row.product_id), lambda row: row.quantity_picked or 0,
+                   lambda v: str(v["product_id"]), lambda v: v["quantity_picked"] or 0),
         )
         header_changes = self._changes(existing, header, ())
         if not header_changes and not changed:
@@ -1022,9 +1243,14 @@ class AutocountDocIngestService(MasterRefResolver):
         existing.last_synced_at = datetime.utcnow()
         self.db.flush()
         self.db.expire(existing, ["picking_lines"])
+        held_after = set()
         for row in existing.picking_lines:
             if row.spo_allocation_id:
+                held_after.add(str(row.spo_allocation_id))
                 self.touched_allocation_ids.add(str(row.spo_allocation_id))
+        # An SPO line this GRN no longer points at gives its receipt back: the recompute only
+        # writes a line it is told was released or that something still picks against.
+        self.released_allocation_ids.update(held_before - held_after)
         self._count_links(counts, existing.picking_lines, "po_line_id", "spo_allocation_id")
         return _Verdict(IngestOutcome.UPDATED, str(existing.id), warnings, counts)
 
@@ -1037,11 +1263,16 @@ class AutocountDocIngestService(MasterRefResolver):
 
     # ------------------------------------------------------------------ lines
     def _write_lines(self, header, stored, incoming, counts, *, seq_column, legacy_key,
-                     incoming_key, make, attach, keep_links, on_removed=None) -> bool:
+                     incoming_key, make, attach, keep_links, on_removed=None, merge=None) -> bool:
         """Apply the incoming line set to a stored document. Returns whether anything changed.
 
         Stored lines with a `dtl_key` match by it. Lines without one (an adopted upload's)
         are claimed one to one by `legacy_key == incoming_key`, first fit, and keep their id.
+        With `merge` (`(row_group, row_qty, values_group, values_qty)`, GRN only, D2 a): an
+        incoming line still unclaimed then claims the remaining stored lines of its group, in
+        stored order, while their quantities add up to its own; exactly equal claims them all
+        (the first keeps its id, the rest are deleted), anything else claims none. That is the
+        Excel import's FIFO split of one AutoCount line (2 + 98 for 100) folding back to one.
         Everything else stored and not claimed is deleted.
         """
         by_dtl = {row.dtl_key: row for row in stored if row.dtl_key is not None}
@@ -1057,7 +1288,26 @@ class AutocountDocIngestService(MasterRefResolver):
                     counts["adopted"] += 1
                     row = match
             plan.append((row, values))
-        removed = list(by_dtl.values()) + legacy
+        merged_away: list[Any] = []
+        if merge is not None:
+            row_group, row_qty, values_group, values_qty = merge
+            for position, (row, values) in enumerate(plan):
+                if row is not None:
+                    continue
+                group = [r for r in legacy if row_group(r) == values_group(values)]
+                claimed, total = [], 0
+                for candidate in group:
+                    if total >= values_qty(values):
+                        break
+                    claimed.append(candidate)
+                    total += row_qty(candidate)
+                if len(claimed) > 1 and total == values_qty(values):
+                    for candidate in claimed:
+                        legacy.remove(candidate)
+                    counts["adopted"] += 1
+                    plan[position] = (claimed[0], values)
+                    merged_away.extend(claimed[1:])
+        removed = list(by_dtl.values()) + legacy + merged_away
 
         changes: list[tuple[Any, dict[str, Any]]] = []
         created: list[dict[str, Any]] = []
@@ -1162,27 +1412,86 @@ class AutocountDocIngestService(MasterRefResolver):
                     row.po_line_id, row.spo_allocation_id = po_line, spo_line
                     if spo_line:
                         self.touched_allocation_ids.add(spo_line)
-            by_number = (
-                self.db.query(PickingLine)
-                .filter(PickingLine.company_id == self.company_id,
-                        PickingLine.dtl_key.isnot(None),
-                        PickingLine.purchase_order_id.is_(None),
-                        # <= 0: stored before `_link_key` existed, names no line.
-                        or_(PickingLine.from_dtl_key.is_(None), PickingLine.from_dtl_key <= 0),
+            self._link_waiting_grn_lines()
+        self.db.flush()
+
+    def _link_waiting_grn_lines(self, numbers: Optional[set[str]] = None) -> None:
+        """Link waiting AutoCount GRN lines through `_grn_links` (plan 1.3 rule 11): at the
+        end of every GRN batch over the newest waiting lines, and when a PO / SPO arrives
+        (`link_waiting_grn_lines`) over the lines that name it."""
+        # Lines that name a source document (FromDocNo, else OurPONo, else the SPO an
+        # adopted Excel line stated) and hold no line link yet - the PO or SPO had not
+        # arrived when they landed (plan 1.3 rule 11). A D3 line (product not on the
+        # document, its document link already held) is retried too, so it links the day
+        # the document gains the product; the newest `MAX_WAITING_LINKS` bound stays.
+        # Review B1: an adopted Excel line still waiting for its SPO keeps the SPO it
+        # stated (`spo_number_raw`), and forward matching skips AutoCount GRNs, so this
+        # fill is the one path that links it.
+        query = (
+            self.db.query(PickingLine)
+            .filter(PickingLine.company_id == self.company_id,
+                    PickingLine.dtl_key.isnot(None),
+                    PickingLine.po_line_id.is_(None),
+                    PickingLine.spo_allocation_id.is_(None),
+                    # <= 0: stored before `_link_key` existed, names no line.
+                    or_(PickingLine.from_dtl_key.is_(None), PickingLine.from_dtl_key <= 0),
+                    or_(PickingLine.from_doc_no.isnot(None),
                         PickingLine.our_po_no.isnot(None),
-                        # A line received against an SPO has no purchase order to wait for.
-                        or_(PickingLine.from_doc_type.is_(None),
-                            PickingLine.from_doc_type != "SPO"))
-                .order_by(PickingLine.created_at.desc())
-                .limit(MAX_WAITING_LINKS)
-                .all()
-            )
-            for row in by_number:
-                purchase_order_id, doc_type = self._purchase_order(row.our_po_no)
-                if purchase_order_id is not None:
-                    row.purchase_order_id = purchase_order_id
-                    row.from_doc_type = row.from_doc_type or doc_type
-                    row.from_doc_no = row.from_doc_no or row.our_po_no
+                        PickingLine.spo_number_raw.isnot(None)))
+        )
+        if numbers:
+            # Narrowed to the documents that just arrived (`link_waiting_grn_lines`), matched
+            # the upload's way on every column a line may name its source in.
+            from app.services.grn_spo_matching import _spo_match_key_sql
+            from app.services.procurement_service import _spo_match_key
+
+            keys = sorted({k for k in (_spo_match_key(n) for n in numbers) if k})
+            if not keys:
+                return
+            query = query.filter(or_(
+                _spo_match_key_sql(PickingLine.from_doc_no).in_(keys),
+                _spo_match_key_sql(PickingLine.our_po_no).in_(keys),
+                _spo_match_key_sql(PickingLine.spo_number_raw).in_(keys),
+            ))
+        waiting = (
+            query.order_by(PickingLine.created_at.desc())
+            .limit(MAX_WAITING_LINKS)
+            .all()
+        )
+        by_header: dict[str, list[PickingLine]] = {}
+        for row in waiting:
+            by_header.setdefault(str(row.picking_header_id), []).append(row)
+        for header_id, rows in by_header.items():
+            # Siblings already linked keep their lines: counted as other receipts (no
+            # exclusion) and marked used, so a waiting line never takes one of them.
+            held = {
+                str(target)
+                for (po_line, spo_line) in (
+                    self.db.query(PickingLine.po_line_id, PickingLine.spo_allocation_id)
+                    .filter(PickingLine.company_id == self.company_id,
+                            PickingLine.picking_header_id == header_id)
+                    .all()
+                )
+                for target in (po_line, spo_line) if target
+            }
+            asks = [
+                _LinkAsk(order=(row.seq is None, row.seq or 0, str(row.id)),
+                         product_id=str(row.product_id), qty=row.quantity_picked or 0,
+                         from_doc_type=row.from_doc_type,
+                         from_doc_no=row.from_doc_no or row.spo_number_raw,
+                         our_po_no=row.our_po_no, from_dtl_key=None)
+                for row in rows
+            ]
+            links = self._grn_links(asks, [], exclude_header_id=None, used=held)
+            for row, link in zip(rows, links):
+                if not link.get(_FORCE_LINKS):
+                    continue  # the document is still not here; the row is left as it was
+                for column, value in _columns(link).items():
+                    if column in ("from_doc_type", "from_doc_no") and getattr(row, column):
+                        continue
+                    setattr(row, column, value)
+                if link.get("spo_allocation_id"):
+                    self.touched_allocation_ids.add(link["spo_allocation_id"])
         self.db.flush()
 
     # ================================================================== deletions

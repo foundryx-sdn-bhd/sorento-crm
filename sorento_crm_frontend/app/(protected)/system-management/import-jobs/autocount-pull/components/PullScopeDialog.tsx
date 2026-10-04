@@ -52,6 +52,11 @@ export interface PullScopeDialogProps {
    *  gateway's default). The dialog closes itself before calling. */
   onPull: (scope: AutocountPullScope | null) => void | Promise<void>;
   companyLabel?: string;
+  /** What is pulled, in the title and the sentence under it; delivery orders when absent. */
+  documentLabel?: string;
+  /** Both days required, no "leave both empty" default: the GRN gateway refuses a build with
+   *  no scope (ss#107). */
+  requireWindow?: boolean;
 }
 
 /**
@@ -60,7 +65,14 @@ export interface PullScopeDialogProps {
  * Stock pull the whole book and never see this dialog; a Delivery Orders click with an open
  * pull goes straight to "Review pull" and skips it too.
  */
-export function PullScopeDialog({ open, onOpenChange, onPull, companyLabel }: PullScopeDialogProps) {
+export function PullScopeDialog({
+  open,
+  onOpenChange,
+  onPull,
+  companyLabel,
+  documentLabel = 'delivery orders',
+  requireWindow = false,
+}: PullScopeDialogProps) {
   const [fromDay, setFromDay] = useState<string>('');
   const [toDay, setToDay] = useState<string>('');
 
@@ -74,7 +86,8 @@ export function PullScopeDialog({ open, onOpenChange, onPull, companyLabel }: Pu
 
   const halfWindow = Boolean(fromDay) !== Boolean(toDay);
   const inverted = Boolean(fromDay && toDay && fromDay > toDay);
-  const canPull = !halfWindow && !inverted;
+  const noWindow = !fromDay && !toDay;
+  const canPull = !halfWindow && !inverted && !(requireWindow && noWindow);
 
   const handlePull = async () => {
     if (!canPull) return;
@@ -87,10 +100,10 @@ export function PullScopeDialog({ open, onOpenChange, onPull, companyLabel }: Pu
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Pull delivery orders from AutoCount</DialogTitle>
+          <DialogTitle>Pull {documentLabel} from AutoCount</DialogTitle>
           <DialogDescription>
-            {companyLabel ? `${companyLabel}. ` : ''}AutoCount builds a snapshot of the delivery
-            orders dated inside this window; you review it before anything changes.
+            {companyLabel ? `${companyLabel}. ` : ''}AutoCount builds a snapshot of the{' '}
+            {documentLabel} dated inside this window; you review it before anything changes.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 sm:grid-cols-2">
@@ -113,11 +126,15 @@ export function PullScopeDialog({ open, onOpenChange, onPull, companyLabel }: Pu
             />
           </div>
         </div>
-        <p className="text-xs text-muted-foreground">
-          Leave both empty for the last {DEFAULT_WINDOW_DAYS} days.
-        </p>
-        {halfWindow && (
-          <p className="text-xs text-destructive">Set both days, or clear both.</p>
+        {!requireWindow && (
+          <p className="text-xs text-muted-foreground">
+            Leave both empty for the last {DEFAULT_WINDOW_DAYS} days.
+          </p>
+        )}
+        {(halfWindow || (requireWindow && noWindow)) && (
+          <p className="text-xs text-destructive">
+            {requireWindow ? 'Set both days.' : 'Set both days, or clear both.'}
+          </p>
         )}
         {inverted && <p className="text-xs text-destructive">From day is after To day.</p>}
         <DialogFooter>

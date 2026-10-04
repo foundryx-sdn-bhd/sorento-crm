@@ -68,3 +68,46 @@ def hit(bucket: str, ident: Optional[str], *, limit: int, window_seconds: int) -
         logger.warning("Rate limit: backend error (%s); failing open.", e)
         return RateResult(allowed=True)
     return RateResult(allowed=True)
+
+
+def peek(bucket: str, ident: Optional[str], *, limit: int, window_seconds: int) -> RateResult:
+    """Would one more request be allowed in (bucket, ident)? Reads the counter, consumes nothing.
+
+    For an endpoint that must charge a bucket only once the work is known to be legitimate (a
+    comment on a real token): check with `peek`, do the work, then `record` on success. Same key
+    scheme and fail-open behaviour as `hit`.
+    """
+    if limit <= 0:
+        return RateResult(allowed=True)
+    r = _redis_conn()
+    if r is None:
+        return RateResult(allowed=True)
+    key = _key(bucket, ident or "")
+    try:
+        pipe = r.pipeline()
+        pipe.get(key)
+        pipe.ttl(key)
+        raw, ttl = pipe.execute()
+        if raw is not None and int(raw) >= limit:
+            retry = int(ttl) if isinstance(ttl, int) and ttl > 0 else window_seconds
+            return RateResult(allowed=False, retry_after_seconds=retry)
+    except Exception as e:  # pragma: no cover - infra
+        logger.warning("Rate limit: backend error (%s); failing open.", e)
+    return RateResult(allowed=True)
+
+
+def record(bucket: str, ident: Optional[str], *, window_seconds: int) -> None:
+    """Count one request in (bucket, ident), starting the window if it has none."""
+    r = _redis_conn()
+    if r is None:
+        return
+    key = _key(bucket, ident or "")
+    try:
+        pipe = r.pipeline()
+        pipe.incr(key)
+        pipe.ttl(key)
+        count, ttl = pipe.execute()
+        if int(count) == 1 or (isinstance(ttl, int) and ttl < 0):
+            r.expire(key, window_seconds)
+    except Exception as e:  # pragma: no cover - infra
+        logger.warning("Rate limit: backend error (%s); failing open.", e)

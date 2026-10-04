@@ -240,6 +240,8 @@ export default function PortalRevisionsSettingsPage() {
         table={table}
         recordCount={configsQuery.data?.length ?? 0}
         isLoading={configsQuery.isLoading}
+        error={configsQuery.error}
+        onRetry={() => void configsQuery.refetch()}
         standardToolbar={false}
         tableLayout={{ width: 'fixed', columnsResizable: true }}
       >

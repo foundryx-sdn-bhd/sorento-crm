@@ -169,7 +169,7 @@ beforeEach(() => {
   hooks.useSalesTeamAgentOptions.mockReturnValue({
     data: [
       { id: 'ali', code: 'ALI', label: 'ALI - Ali Hassan', team_id: 'north', team_name: 'North' },
-      { id: 'sean', code: 'SEAN I', label: 'SEAN I - Sean Lee', team_id: 'central', team_name: 'Central' },
+      { id: 'sean', code: 'SEAN I', label: 'SEAN I - CONTACT AE', team_id: 'central', team_name: 'Central' },
       { id: 'raj', code: 'RAJ', label: 'RAJ - Raj Kumar', team_id: null, team_name: null },
     ],
     isLoading: false,
@@ -355,7 +355,7 @@ describe('SalesTeamDetail', () => {
     // A member who already left has nothing to remove.
     expect(screen.queryByRole('button', { name: 'Remove KIM - Kim Tan' })).toBeNull();
 
-    fireEvent.click(screen.getByLabelText('SEAN I - Sean Lee (now in Central)'));
+    fireEvent.click(screen.getByLabelText('SEAN I - CONTACT AE (now in Central)'));
     const movesOn = screen.getByLabelText('Moves on') as HTMLInputElement;
     fireEvent.change(movesOn, { target: { value: '2026-10-15' } });
 

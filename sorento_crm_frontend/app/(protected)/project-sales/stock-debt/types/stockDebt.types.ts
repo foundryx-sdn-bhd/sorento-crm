@@ -58,6 +58,11 @@ export interface StockDebtRow {
   category_code: string | null;
   /** Sum of every month's balance plus `tba` + `undated` + `unlocated` (R9, AC-5). */
   total: number;
+  /** BRW pool on hand, open PO and open SPO quantity, and dealer outstanding (negative). */
+  pool_on_hand: number;
+  pool_po_qty: number;
+  pool_incoming_qty: number;
+  dealer_outstanding: number;
 }
 
 /**
@@ -71,6 +76,10 @@ export interface StockDebtTotals {
   undated: number;
   unlocated: number;
   total: number;
+  pool_on_hand: number;
+  pool_po_qty: number;
+  pool_incoming_qty: number;
+  dealer_outstanding: number;
 }
 
 /** One entry of the toolbar's supplier select (AC-7): never an id on screen, only `name`. */

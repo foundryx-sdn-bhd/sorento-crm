@@ -11,6 +11,7 @@ from sqlalchemy import (
     Numeric,
     Index,
     Integer,
+    SmallInteger,
     UniqueConstraint,
     event,
     text,
@@ -44,6 +45,31 @@ class OrderStatus(Base):
     __table_args__ = (
         Index("ix_order_statuses_sequence", "sequence"),
         Index("ix_order_statuses_is_final_status", "is_final_status"),
+    )
+
+
+class CustomerGroup(Base, CompanyScopedMixin):
+    """One company's customer, made of several ledgers (`customers` rows).
+
+    The chatbot used to join ledgers by the name rule (`ledger_family_key`), which merges
+    different legal entities and cannot join one owner's two names. A group is the office's
+    own say-so; a ledger with no group still falls back to the name rule.
+    """
+
+    __tablename__ = "customer_groups"
+    __audit_track__ = True
+    __audit_entity_type__ = "customer_group"
+    __audit_columns__ = ["name"]
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=_uuid_str)
+    name = Column(String(255), nullable=False)
+    created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
+    updated_at = Column(
+        DateTime(timezone=False), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        Index("uq_customer_groups_company_name_lower", "company_id", func.lower(name), unique=True),
     )
 
 
@@ -93,6 +119,8 @@ class Customer(Base, CompanyScopedMixin):
         # Who handles the customer: assigned from the customer form, the contact card's
         # agent column and the sales agent's Customers tab, so a move has to be traceable.
         "sales_agent_id",
+        "account_level",
+        "customer_group_id",
     ]
 
     id = Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -148,6 +176,16 @@ class Customer(Base, CompanyScopedMixin):
         ForeignKey("sales_agents.id", ondelete="SET NULL"),
         nullable=True,
     )
+    # Which numbered account this ledger is ("account 1" in a chatbot message selects the
+    # ledger at level 1). NULL = not a numbered account. A setting the office edits; the
+    # name marker is read once, by migration acct_ledger_0001's seed, never again.
+    account_level = Column(SmallInteger, nullable=True)
+    # The group this ledger belongs to (see `CustomerGroup`). NULL = ungrouped.
+    customer_group_id = Column(
+        UUID(as_uuid=False),
+        ForeignKey("customer_groups.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     orders = relationship("Order", back_populates="customer")
     customer_contacts = relationship(
@@ -165,6 +203,15 @@ class Customer(Base, CompanyScopedMixin):
     # extra query for the whole result set (never per-row), just not joined onto rows that
     # do not ask for it.
     sales_agent = relationship("SalesAgent", lazy="selectin")
+    # `selectin` for the same reason as `sales_agent`: the list draws the group name on
+    # every row, and this is one extra query for the page, never one per row.
+    customer_group = relationship("CustomerGroup", lazy="selectin")
+
+    @property
+    def customer_group_name(self):
+        """The group's name, for `CustomerResponse` (no UUID is ever shown)."""
+        group = self.customer_group
+        return group.name if group else None
 
     @property
     def sales_agent_code(self):
@@ -187,6 +234,8 @@ class Customer(Base, CompanyScopedMixin):
         Index("ix_customers_is_active", "is_active"),
         Index("ix_customers_customer_code", "customer_code"),
         Index("ix_customers_account_owner_user_id", "account_owner_user_id"),
+        Index("ix_customers_customer_group_id", "customer_group_id"),
+        CheckConstraint("account_level >= 1", name="ck_customers_account_level"),
         # Composite uniqueness - see column docstring. Created as a functional
         # UNIQUE INDEX by migration 220 so case + whitespace differences don't
         # produce silent duplicates, then re-created WITH company_id by migration

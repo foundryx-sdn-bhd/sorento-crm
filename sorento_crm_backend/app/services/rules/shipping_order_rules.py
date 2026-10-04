@@ -7,12 +7,15 @@ not the other.
 """
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from typing import Optional
 
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 #: A real ISO 6346 container number: four letters, seven digits. Preferred
 #: over "the text after the first space" (the SPO xlsx Loading Date cell's
@@ -155,6 +158,31 @@ def nightly_relink_all_containers(db: Session) -> int:
     for company_id, container in pairs:
         relinked += relink_allocations_for_container(db, container, company_id=company_id)
     return relinked
+
+
+def nightly_refresh_open_containers(db: Session) -> int:
+    """SPO-DEDUPE-ALL: recompute the stored received figures of every shipment
+    not yet fully received. They are otherwise refreshed only when the packing
+    list page is opened or an ingest/allocation write touches the shipment, so a
+    receipt that reached the container another way (a dedupe, a GRN on a sibling
+    row) left the chatbot's "incoming" reading the stale figure (GCXU6137164:
+    stored 95 of 99, 4 reported incoming, packing list showed 99/99).
+
+    Each shipment is refreshed and committed on its own; one that fails is
+    rolled back, logged and skipped. Returns how many were refreshed.
+    """
+    from app.services.procurement_service import InboundShipmentService
+
+    service = InboundShipmentService(db)
+    refreshed = 0
+    for shipment_id in service.open_shipment_ids():
+        try:
+            service.refresh_shipment_line_statuses(shipment_id)
+            refreshed += 1
+        except Exception:  # noqa: BLE001 - one bad shipment must not stop the sweep
+            db.rollback()
+            logger.exception("open container refresh failed for %s", shipment_id)
+    return refreshed
 
 
 def received_guard(

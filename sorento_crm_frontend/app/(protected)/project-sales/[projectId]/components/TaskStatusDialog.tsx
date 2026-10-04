@@ -111,6 +111,8 @@ export function TaskStatusDialog({
                   id="task-escalate-to"
                   value={escalateTo}
                   onChange={setEscalateTo}
+                  loadError={users.error}
+                  onRetry={() => void users.refetch()}
                   options={(users.data ?? []).map((user) => ({
                     value: user.id,
                     label: user.name || 'Unnamed user',

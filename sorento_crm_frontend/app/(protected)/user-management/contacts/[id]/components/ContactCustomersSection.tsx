@@ -1,12 +1,14 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Unlink } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardHeading, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SearchableMultiSelect } from '@/components/common/SearchableMultiSelect';
+import { useDeferredBulkAction } from '@/hooks/useDeferredBulkAction';
 import { useDeferredRowAction } from '@/hooks/useDeferredRowAction';
 import { useHasPermission } from '@/hooks/usePermissions';
 import { useCustomerMultiPicker } from '@/app/(protected)/order-management/customers/hooks/useCustomerMultiPicker';
@@ -41,16 +43,64 @@ export default function ContactCustomersSection({ contactId }: { contactId: stri
     invalidateKeys: [contactCustomersKey(contactId), ['customer-linked-contacts']],
   });
 
+  // Ticked link ids. Cancel leaves them ticked; they clear once the unlink has settled.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const bulkUnlink = useDeferredBulkAction({
+    actionKey: 'contact_customer_link.unlink',
+    entityType: 'contact_customer_link',
+    verb: 'Unlinking',
+    pastVerb: 'unlinked',
+    surface: 'inline',
+    describe: (count) => `${count} customer${count === 1 ? '' : 's'}`,
+    invalidateKeys: [contactCustomersKey(contactId), ['customer-linked-contacts']],
+    onFinished: () => setSelected(new Set()),
+  });
+
   const links = useMemo(() => data?.data ?? [], [data]);
   const linkedIds = useMemo(() => new Set(links.map((l) => l.customer_id)), [links]);
-  const picker = useCustomerMultiPicker((option) => linkedIds.has(option.value));
+  const picker = useCustomerMultiPicker((option) => linkedIds.has(option.value), undefined, {
+    allGrantedCompanies: true,
+  });
+
+  const ticked = links.filter((l) => selected.has(l.id));
+  const allTicked = links.length > 0 && ticked.length === links.length;
+  const toggle = (id: string, on: boolean) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="flex-wrap gap-2">
         <CardHeading>
           <CardTitle>Customers</CardTitle>
         </CardHeading>
+        {canEdit && links.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <Checkbox
+              aria-label="Select all customers"
+              checked={allTicked}
+              onCheckedChange={(v) =>
+                setSelected(v === true ? new Set(links.map((l) => l.id)) : new Set())
+              }
+            />
+            {bulkUnlink.countdown ??
+              (ticked.length >= 1 ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={bulkUnlink.isStarting}
+                  onClick={() => bulkUnlink.run(ticked.map((l) => ({ id: l.id })))}
+                >
+                  <Unlink className="size-4" />
+                  {`Unlink (${ticked.length})`}
+                </Button>
+              ) : null)}
+          </div>
+        ) : null}
       </CardHeader>
       <CardContent className="space-y-4">
         {canEdit ? (
@@ -96,7 +146,8 @@ export default function ContactCustomersSection({ contactId }: { contactId: stri
           <ul className="divide-y rounded-md border">
             {links.map((row) => {
               const agent = agentLabel(row.sales_agent_code, row.sales_agent_name);
-              const customer = `${row.customer_code} - ${row.customer_name}`;
+              const code = `${row.customer_code} - ${row.customer_name}`;
+              const customer = row.company_name ? `${row.company_name} · ${code}` : code;
               const counting = unlink.targetId === row.id && unlink.countdown;
               return (
                 <li
@@ -104,6 +155,13 @@ export default function ContactCustomersSection({ contactId }: { contactId: stri
                   className="flex flex-col gap-2 px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
                 >
                   <div className="flex min-w-0 items-center gap-2">
+                    {canEdit ? (
+                      <Checkbox
+                        aria-label={`Select ${customer}`}
+                        checked={selected.has(row.id)}
+                        onCheckedChange={(v) => toggle(row.id, v === true)}
+                      />
+                    ) : null}
                     <span className="truncate text-sm font-medium" title={customer}>
                       {customer}
                     </span>
@@ -128,7 +186,7 @@ export default function ContactCustomersSection({ contactId }: { contactId: stri
                           <Button
                             variant="ghost"
                             size="sm"
-                            disabled={unlink.isPending}
+                            disabled={unlink.isPending || (!!bulkUnlink.countdown && selected.has(row.id))}
                             onClick={() =>
                               unlink.run({ id: row.id, subject: row.customer_name })
                             }

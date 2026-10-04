@@ -889,6 +889,8 @@ export function OrderInquiryDetail({ id }: { id: string }) {
           <OrderInquiryLinesTab
             lines={lines}
             isLoading={linesQuery.isLoading}
+            error={linesQuery.error}
+            onRetry={() => void linesQuery.refetch()}
             rowSelection={rowSelection}
             onRowSelectionChange={setRowSelection}
             canReserve={canReserve}
@@ -910,6 +912,8 @@ export function OrderInquiryDetail({ id }: { id: string }) {
           <OrderInquiryRelatedPurchaseOrdersTab
             rows={relatedQuery.data?.purchase_orders ?? []}
             isLoading={relatedQuery.isLoading}
+            error={relatedQuery.error}
+            onRetry={() => void relatedQuery.refetch()}
           />
         </TabsContent>
 
@@ -917,6 +921,8 @@ export function OrderInquiryDetail({ id }: { id: string }) {
           <OrderInquiryRelatedSposTab
             rows={relatedQuery.data?.spos ?? []}
             isLoading={relatedQuery.isLoading}
+            error={relatedQuery.error}
+            onRetry={() => void relatedQuery.refetch()}
           />
         </TabsContent>
       </Tabs>

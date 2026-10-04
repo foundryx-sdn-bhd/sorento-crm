@@ -176,6 +176,8 @@ export function PurchaseOrderHeaderCard({
                   value={po.issuing_party_id ?? ''}
                   onChange={(value) => onChange({ issuing_party_id: value || null })}
                   clearable
+                  loadError={parties.error}
+                  onRetry={() => void parties.refetch()}
                   options={(parties.data?.data ?? []).map((party) => ({
                     value: party.id,
                     label: party.name,

@@ -4,6 +4,7 @@ from typing import Optional, List
 from datetime import datetime, date
 from decimal import Decimal
 import uuid
+from app.schemas.regions import normalize_regions
 from app.schemas.resources import AttachmentTypeSimple
 from app.services.error_handler import AppException
 
@@ -367,6 +368,13 @@ class InboundShipmentBase(ClearanceFields, ContainerWorkbookFields):
     #: live on `scm.proforma_invoice`, one level too low for a packing list that routinely
     #: consolidates several PIs. Null means the tenant's default size.
     container_size_id: Optional[str] = None
+    #: 'west' / 'east'. Omitted on create = the column default (West only).
+    regions: Optional[List[str]] = None
+
+    @field_validator("regions")
+    @classmethod
+    def _check_regions(cls, v):
+        return normalize_regions(v)
 
 
 class InboundShipmentCreate(InboundShipmentBase):
@@ -407,7 +415,14 @@ class InboundShipmentUpdate(ClearanceFields, ContainerWorkbookFields):
     #: The Container card's own select (S5). Null means the tenant's default size, the same
     #: convention the field carries on `InboundShipmentBase`.
     container_size_id: Optional[str] = None
+    #: Omitted = unchanged. Never nullable: an explicit null is dropped by `update_shipment`.
+    regions: Optional[List[str]] = None
     shipment_lines: Optional[List[InboundShipmentLineCreate]] = None
+
+    @field_validator("regions")
+    @classmethod
+    def _check_regions(cls, v):
+        return normalize_regions(v)
 
 
 class AttachmentSimple(BaseModel):

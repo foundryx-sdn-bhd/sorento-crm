@@ -83,7 +83,7 @@ def _now_ms() -> int:
 
 
 def _seed_contact(
-    session_factory, contact_id: int, *, focus_codes: list[str], phone: str = "+60163281179"
+    session_factory, contact_id: int, *, focus_codes: list[str], phone: str = "+60160000528"
 ) -> None:
     session_vars = {
         "focus": {"products": [_product(c) for c in focus_codes], "domains": ["inventory"]},
@@ -511,7 +511,11 @@ class TestOrderingOnTheWaitingRequest:
         monkeypatch.setattr(engine_mod, "_s7_mode", lambda *args, **kwargs: True)
         monkeypatch.setattr(engine_mod, "_ordering_redis", lambda: None)
         monkeypatch.setattr(engine_mod.dispatch, "contact_ticket", lambda redis, contact: 2)
-        monkeypatch.setattr(engine_mod.dispatch, "mark_running", lambda *args: None)
+        monkeypatch.setattr(
+            engine_mod.dispatch,
+            "start_heartbeat",
+            lambda *args: type("NoBeat", (), {"stop": lambda self: None})(),
+        )
         monkeypatch.setattr(engine_mod.dispatch, "mark_done", lambda *args: None)
         state = {"first": True}
 

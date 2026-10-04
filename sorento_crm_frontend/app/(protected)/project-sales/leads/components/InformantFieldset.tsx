@@ -95,6 +95,8 @@ export function InformantFieldset({
             value={value.informant_party_id}
             onChange={(next) => set({ informant_party_id: next })}
             clearable
+            loadError={parties.error}
+            onRetry={() => void parties.refetch()}
             options={partyOptions}
             placeholder="Often none"
             emptyMessage="No match. Add the firm under Parties"

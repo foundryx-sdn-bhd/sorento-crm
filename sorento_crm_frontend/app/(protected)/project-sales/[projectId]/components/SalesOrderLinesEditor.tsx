@@ -239,6 +239,8 @@ export function SalesOrderLinesEditor({
         kind: 'select',
         placeholder: 'UNIT',
         options: uomOptions,
+        loadError: uoms.error,
+        onRetry: () => void uoms.refetch(),
         resolveSelected: (_row, draft) =>
           uomOptions.find((option) => option.value === draft.uom),
       },
@@ -278,7 +280,7 @@ export function SalesOrderLinesEditor({
         formatReadOnly: (value) => formatDateInMalaysia(value),
       },
     ],
-    [fetchProducts, flagByLine, uomOptions],
+    [fetchProducts, flagByLine, uomOptions, uoms.error, uoms.refetch],
   );
 
   const sortedLines = React.useMemo(

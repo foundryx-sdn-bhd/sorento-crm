@@ -41,7 +41,8 @@ class EntityKindPolicy:
     # Owner ruling 20 Sep 2026 (PLAN-chatbot-answer-half-reattach.md "Roster cap"):
     # the ceiling on any roster this kind is asked in. `engine.py` reads this off
     # every kind row and hands the mapping down to `resolve_gate.run` / `gate.run_gate`.
-    roster_cap: int = 10
+    # PICKER-NO-CAP (owner, 2 Oct 2026): 50, the column's default and S3 ceiling.
+    roster_cap: int = 50
 
 
 @dataclass(frozen=True)
@@ -96,7 +97,7 @@ class Policy:
                 default_narrowing=row.get("default_narrowing", "optional_filter"),
                 family_grouping=row.get("family_grouping"),
                 base_property_words=dict(row.get("base_property_words") or {}),
-                roster_cap=int(row.get("roster_cap") or 10),
+                roster_cap=int(row.get("roster_cap") or 50),
             )
             for row in kinds
         )

@@ -66,7 +66,7 @@ export default function FormsList() {
   // page 1 over the page `useListStateFromUrl` had just restored from the URL.
   useResetPageOnFilterChange(setPagination, [statusFilter, searchQuery]);
 
-  const { data, isLoading, isPlaceholderData, refetch, isFetching } = useForms({
+  const { data, isLoading, isPlaceholderData, refetch, isFetching, error } = useForms({
     pageIndex: pagination.pageIndex,
     pageSize: pagination.pageSize,
     sorting,
@@ -244,6 +244,8 @@ export default function FormsList() {
       table={table}
       recordCount={data?.pagination.total || 0}
       isLoading={isLoading}
+      error={error}
+      onRetry={() => void refetch()}
       isPlaceholderData={isPlaceholderData}
       rowHref={rowHref}
       standardToolbar={false}

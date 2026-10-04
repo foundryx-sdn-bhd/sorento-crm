@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Edit, Info, MessageSquareText, Store } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -18,6 +19,7 @@ import { CustomerBranchesTab } from './CustomerBranchesTab';
 import { useHasPermission } from '@/hooks/usePermissions';
 import CustomerLinkedContactsSection from './CustomerLinkedContactsSection';
 import CustomerOpportunitiesSection from './CustomerOpportunitiesSection';
+import CustomerGroupLedgersCard from './CustomerGroupLedgersCard';
 
 export type CustomerTab = 'details' | 'branches' | 'asks';
 
@@ -149,6 +151,27 @@ export default function CustomerDetail({ customerId }: CustomerDetailProps) {
                       : 'No sales agent assigned'}
                   </p>
                 </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Account level</p>
+                  <p className="font-medium">
+                    {customer.account_level ? `Account ${customer.account_level}` : 'No account level set'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Group</p>
+                  <p className="font-medium">
+                    {customer.customer_group_id && customer.customer_group_name ? (
+                      <Link
+                        href={`/order-management/customer-groups/${customer.customer_group_id}`}
+                        className="text-primary hover:underline"
+                      >
+                        {customer.customer_group_name}
+                      </Link>
+                    ) : (
+                      'No group'
+                    )}
+                  </p>
+                </div>
               </CardContent>
             </Card>
 
@@ -186,6 +209,13 @@ export default function CustomerDetail({ customerId }: CustomerDetailProps) {
                 )}
               </CardContent>
             </Card>
+          </div>
+
+          <div className="mt-6">
+            <CustomerGroupLedgersCard
+              customerId={customerId}
+              groupId={customer.customer_group_id ?? null}
+            />
           </div>
 
           <div className="mt-6">

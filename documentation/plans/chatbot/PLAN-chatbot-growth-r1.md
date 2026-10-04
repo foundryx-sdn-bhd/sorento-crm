@@ -519,7 +519,7 @@ tied to a real `chat_histories` message - the only three non-test rows in the DB
 contact with no `chat_histories`/`respond_contacts` row at all, so nothing surfaced in the UI
 (the FE never requests `include_test=true`, by design - H57/D14). To exercise the drawer against
 real data rather than mocks, one real turn was posted for the existing dev contact "Jayson
-Jayson" (`respond_io_id 437264483`) via the legitimate ingress contract: `POST
+Jayson" (`respond_io_id 900000008`) via the legitimate ingress contract: `POST
 /api/v1/external/chat/turn` (X-API-Key, envelope borrowed from that contact's most recent
 console-check envelope, `is_test: false`, message "stock for SRTWC8517-SH-UF") followed by
 `POST /api/v1/external/chat-history/messages` (the same contract n8n uses to log the incoming
@@ -531,7 +531,7 @@ contact/message; nothing was written directly to the database.
 
 **Step 1 - Chat History drawer (AC-972, AC-973).** Sidebar: System > Messaging > Chat History
 (`/system-management/chat-history`). Widened the Filters date range (default is 1 day) via the
-native `datetime-local` inputs. Opened the "Jayson Jayson (+60166753328)" thread, searched
+native `datetime-local` inputs. Opened the "Jayson Jayson (+60160000509)" thread, searched
 "SRTWC8517-SH-UF", found the injected incoming message with its `TurnPanel` ("In progress /
 Business query / 7.1 s / #e2c0"), clicked the "Open full trace" icon button. `TurnDetailDrawer`
 opened titled "Turn #e2c0" with all nine sections **in order**: Stages, Parse, Decay, Open
@@ -620,4 +620,4 @@ plus the review round 2 fixes. Contract changes, so nothing here is only in the 
 
 Owner steps: move the `production` label (v21 is the compact successor of v17, v20 the FULL
 one); grant `purchase_orders.placed` per contact on Contacts > Access (the console contact
-437264483 holds it for the graded A7 cases).
+900000008 holds it for the graded A7 cases).

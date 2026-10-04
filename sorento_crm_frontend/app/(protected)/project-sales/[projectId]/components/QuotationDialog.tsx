@@ -122,6 +122,8 @@ export function QuotationDialog({
                 value={seriesId}
                 onChange={setSeriesId}
                 clearable
+                loadError={series.error}
+                onRetry={() => void series.refetch()}
                 options={(series.data ?? [])
                   .filter((row) => row.is_active || row.id === quotation?.series_id)
                   .map((row) => ({

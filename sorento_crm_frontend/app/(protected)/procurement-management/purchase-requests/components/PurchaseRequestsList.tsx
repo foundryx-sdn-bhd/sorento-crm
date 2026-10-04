@@ -190,7 +190,7 @@ export default function PurchaseRequestsList({
   const effectiveStatusFilter =
     statusFilter && statusFilter !== 'all' ? statusFilter : undefined;
 
-  const { data, isLoading, isPlaceholderData, refetch, isFetching } = usePurchaseRequests({
+  const { data, isLoading, isPlaceholderData, refetch, isFetching, error } = usePurchaseRequests({
     pageIndex: pagination.pageIndex,
     pageSize: pagination.pageSize,
     sorting,
@@ -468,6 +468,8 @@ export default function PurchaseRequestsList({
       table={table}
       recordCount={data?.pagination?.total ?? 0}
       isLoading={isLoading}
+      error={error}
+      onRetry={() => void refetch()}
       isPlaceholderData={isPlaceholderData}
       rowHref={rowHref}
       standardToolbar={false}

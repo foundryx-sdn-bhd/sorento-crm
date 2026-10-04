@@ -40,15 +40,25 @@ SAFETY
 - Preflight: refuses to run unless every table and column it reads or writes
   exists on the target DB (`stated_received` from migration 488, `retired_at`,
   `scm.order_link_claim`, `projects.order_inquiry_links`, ...).
-- Plain SQL through the app's own DATABASE_URL; it imports nothing from the
-  app at all, so it runs against whatever code the container holds. Raw SQL
-  bypasses the ORM audit listeners, so KEEP THE LOG (tee it): it names every
-  row deleted with its quantities, every link moved old -> new and every
-  quantity carried.
-- It does not recompute the packing lists' stored line statuses. After an
-  apply it prints each packing list it touched: open each one once in the
-  CRM (Procurement > Packing Lists); the detail page recomputes and saves the
-  status the chatbot reads.
+- Plain SQL through the app's own DATABASE_URL; the plan and the writes import
+  nothing from the app, so they run against whatever code the container
+  holds. Raw SQL bypasses the ORM audit listeners, so KEEP THE LOG (tee it):
+  it names every row deleted with its quantities, every link moved old -> new
+  and every quantity carried.
+- After each SPO commits, --apply refreshes the stored received figures of
+  every packing list (inbound shipment) it touched, through the app's own
+  `InboundShipmentService.refresh_shipment_line_statuses` (what opening the
+  packing list page runs), and prints each line it changed. The dry run lists
+  those packing lists. A refresh that fails is reported (REFRESH FAILED, exit 5)
+  and the run goes on: that SPO is already committed, open that packing list
+  by hand or run `refresh_container_received.py` for it.
+
+--all scans the company for every SPO holding BOTH an Excel-era row and an
+AutoCount row, in `spo_number` order. --limit N takes the first N; the run
+then prints `next batch: --start-after <last>` for the next call. It ends with
+the SPOs that (would) change, those with rows left for review (ORPHAN-BLOCKED
+or kept) and those aborted by a guard. `grep '=>'` on the log gives one
+summary line per SPO.
 
 RUN IT IN THE PROD BACKEND CONTAINER (docker exec)
 --------------------------------------------------
@@ -97,7 +107,8 @@ kills the process and rolls back the SPO in flight.
     docker compose start worker worker_fast
     docker compose ps --services --filter status=running   # workers back up
 
-    # 4. open each packing list the apply printed, once, in the CRM
+    # 4. the apply refreshed each packing list it touched (grep REFRESH FAILED;
+    #    open any such one in the CRM)
     # 5. run the dry run again. It should report nothing left to do. If it
     #    proposes ANY new carry or delete, do not apply it without review: a
     #    group the first run kept can only match lines the first run already
@@ -121,7 +132,9 @@ DATABASE_URL comes from the environment only (no flag, so no password lands in
 Exit codes: 0 done, 1 bad arguments / unknown company / no DATABASE_URL,
 2 preflight failed, 3 at least one SPO was refused by a guard (rolled back,
 the run continued), 4 an unexpected database error (that SPO rolled back, the
-run STOPPED; SPOs before it stay committed).
+run STOPPED; SPOs before it stay committed), 5 every SPO committed but at
+least one packing list refresh failed (a run that also aborted an SPO exits
+3; grep the log for REFRESH FAILED either way).
 """
 from __future__ import annotations
 
@@ -771,18 +784,142 @@ def process_spo(db, company_id: str, spo_number: str, *, write: bool, log) -> di
     return stats
 
 
+# ------------------------------------------------------------------- --all scan
+def candidate_spo_numbers(db, company_id: str) -> list[str]:
+    """Every `spo_number` of the company holding BOTH an Excel-era row and an
+    AutoCount row, by the same tests `process_spo` applies, in number order."""
+    return [
+        row[0]
+        for row in db.execute(
+            text(
+                "SELECT spo_number FROM spo_allocations "
+                "WHERE company_id = :c AND spo_number IS NOT NULL "
+                "GROUP BY spo_number "
+                "HAVING bool_or(coalesce(source_ref, '') <> '') "
+                "AND bool_or(coalesce(source_ref, '') = '' AND coalesce(source_system, '') IN ('', :x) "
+                "AND po_line_id IS NULL) "
+                "ORDER BY spo_number"
+            ),
+            {"c": company_id, "x": XLSX_SOURCE_SYSTEM},
+        )
+    ]
+
+
+# ------------------------------------------------------------- container refresh
+def app_refresher(session=None):
+    """The refresh the packing list page runs on open
+    (`InboundShipmentService.refresh_shipment_line_statuses`, which commits),
+    on `session` (default: a new app `SessionLocal`), scoped to the company.
+    The ONLY place this script imports the app: the plan and the writes above
+    stay import-free. Returns `refresh(company_id, shipment_id)`; a failure
+    rolls `session` back and re-raises."""
+    from app.database import SessionLocal
+    from app.models.base import company_scope
+    from app.services.company_scope import register_company_scope_listeners
+    from app.services.procurement_service import InboundShipmentService
+
+    # A plain `python` process never ran the app's startup: without this the
+    # scope filter is not installed and `company_scope` narrows nothing.
+    register_company_scope_listeners()
+    session = session if session is not None else SessionLocal()
+    service = InboundShipmentService(session)
+
+    def refresh(company_id: str, shipment_id: str) -> None:
+        try:
+            with company_scope(session, frozenset({company_id})):
+                service.refresh_shipment_line_statuses(shipment_id)
+        except Exception:
+            session.rollback()
+            raise
+
+    return refresh
+
+
+def _stored_lines(db, shipment_id: str) -> dict:
+    return {
+        str(r[0]): (_i(r[1]), r[2])
+        for r in db.execute(
+            text("SELECT id, quantity_received, line_status FROM inbound_shipment_lines "
+                 "WHERE shipment_id = :s ORDER BY created_at, id"),
+            {"s": shipment_id},
+        )
+    }
+
+
+def _shipment_label(db, shipment_id: str) -> str:
+    number = db.execute(
+        text("SELECT shipment_number, shipping_container_number FROM inbound_shipments WHERE id = :i"),
+        {"i": shipment_id},
+    ).one_or_none()
+    return f"{number[0]} / container {number[1]} ({shipment_id})" if number else f"({shipment_id})"
+
+
+def _refresh_shipments(db, company_id: str, shipment_ids, refresh, out) -> bool:
+    """After a COMMITTED apply: refresh each shipment, printing every stored line
+    figure it changed. False when any refresh failed (the SPO stays committed;
+    that packing list then needs opening by hand)."""
+    ok = True
+    for shipment_id in sorted(shipment_ids):
+        label = _shipment_label(db, shipment_id)
+        if refresh is None:
+            out(f"  packing list to re-open (refreshes its stored status): {label}")
+            continue
+        owner = db.execute(text("SELECT company_id FROM inbound_shipments WHERE id = :i"), {"i": shipment_id}).scalar()
+        if owner is not None and str(owner) != company_id:
+            out(f"  NOT REFRESHED: packing list {label} belongs to another company ({owner}) - open it by hand")
+            db.rollback()
+            continue
+        before = _stored_lines(db, shipment_id)
+        db.rollback()  # end this read: the refresh commits on its own session
+        try:
+            refresh(company_id, shipment_id)
+        except Exception as exc:  # noqa: BLE001 - the SPO is committed; report and go on
+            out(f"  REFRESH FAILED for packing list {label}: {type(exc).__name__}: {exc} - open it by hand")
+            ok = False
+            continue
+        after = _stored_lines(db, shipment_id)
+        db.rollback()
+        changed = [(lid, before.get(lid, (0, None)), now) for lid, now in after.items() if before.get(lid) != now]
+        out(f"  refreshed packing list {label}: {len(changed)} line(s) changed")
+        for line_id, (old_r, old_s), (new_r, new_s) in changed:
+            out(f"    line {line_id}: received {old_r} -> {new_r}, status {old_s} -> {new_s}")
+    return ok
+
+
 # ------------------------------------------------------------------------ CLI
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--company", required=True, help="companies.code (Sorento: SRT)")
-    parser.add_argument("--spo", action="append", required=True, metavar="SPO_NUMBER",
-                        help="spo_number to repair (repeatable)")
+    which = parser.add_mutually_exclusive_group(required=True)
+    which.add_argument("--spo", action="append", metavar="SPO_NUMBER",
+                       help="spo_number to repair (repeatable)")
+    which.add_argument("--all", action="store_true",
+                       help="every SPO of the company holding both Excel-era and AutoCount rows")
+    parser.add_argument("--limit", type=int, metavar="N", help="with --all: at most N SPOs this run")
+    parser.add_argument("--start-after", metavar="SPO_NUMBER",
+                        help="with --all: only SPO numbers sorting after this one (the next batch)")
     parser.add_argument("--apply", action="store_true", help="write (default: dry run)")
     return parser
 
 
-def run(db, company_code: str, spo_numbers: list[str], *, apply: bool, out=print) -> int:
-    """`db` is a SQLAlchemy Session or Connection. Returns the exit code."""
+def validate_args(args) -> str:
+    """An argument error the parser cannot express, or '' when fine."""
+    if (args.limit is not None or args.start_after) and not args.all:
+        return "--limit and --start-after need --all"
+    if args.limit is not None and args.limit < 1:
+        return "--limit must be at least 1"
+    return ""
+
+
+def run(db, company_code: str, spo_numbers: Optional[list[str]], *, apply: bool, out=print,
+        scan_all: bool = False, limit: Optional[int] = None, start_after: Optional[str] = None,
+        refresh=None) -> int:
+    """`db` is a SQLAlchemy Session or Connection. Returns the exit code.
+
+    `scan_all` replaces `spo_numbers` with `candidate_spo_numbers` (after
+    `start_after`, at most `limit`). `refresh(company_id, shipment_id)` runs
+    after each committed SPO for every shipment it touched (`app_refresher`);
+    None only prints those packing lists."""
     missing = preflight(db)
     if missing:
         out("PREFLIGHT FAILED - this database lacks what the script needs:")
@@ -802,9 +939,23 @@ def run(db, company_code: str, spo_numbers: list[str], *, apply: bool, out=print
         head = "unknown"
     out(f"=== database {where[0]} at {where[1] or 'local socket'}, alembic head {head} ===")
     out(f"=== {company_code} ({company_id}) {'APPLY' if apply else 'DRY-RUN (no writes)'} ===")
+    more_after = None
+    if scan_all:
+        numbers = candidate_spo_numbers(db, company_id)
+        if start_after:
+            numbers = [n for n in numbers if n > start_after]
+        if limit is not None and len(numbers) > limit:
+            numbers = numbers[:limit]
+            more_after = numbers[-1]
+        out(f"=== --all: candidates {len(numbers)}"
+            f"{f' after {start_after}' if start_after else ''}{f' (limit {limit})' if limit else ''} ===")
+    else:
+        numbers = [n.strip() for n in (spo_numbers or []) if n and n.strip()]
     exit_code = 0
+    refresh_failed = False
     totals = {"deleted": 0, "orphans_removed": 0, "orphans_blocked": 0, "kept": 0, "links_moved": 0}
-    for spo_number in [n.strip() for n in spo_numbers if n and n.strip()]:
+    changed, review, aborted = [], [], []
+    for spo_number in numbers:
         out(f"\n--- {spo_number} ---")
         db.rollback()  # every SPO starts in its own transaction
         try:
@@ -813,6 +964,7 @@ def run(db, company_code: str, spo_numbers: list[str], *, apply: bool, out=print
         except GuardFailed as exc:
             db.rollback()
             out(f"  ABORTED, rolled back: {exc}")
+            aborted.append(spo_number)
             exit_code = 3
             continue
         except Exception as exc:  # noqa: BLE001 - stop the run, report, never half-write
@@ -821,18 +973,20 @@ def run(db, company_code: str, spo_numbers: list[str], *, apply: bool, out=print
             return 4
         if apply:
             db.commit()
-            for shipment_id in sorted(stats["shipments"]):
-                number = db.execute(
-                    text("SELECT shipment_number, shipping_container_number FROM inbound_shipments WHERE id = :i"),
-                    {"i": shipment_id},
-                ).one_or_none()
-                label = f"{number[0]} / container {number[1]}" if number else ""
-                out(f"  packing list to re-open (refreshes its stored status): {label} ({shipment_id})")
+            if not _refresh_shipments(db, company_id, stats["shipments"], refresh, out):
+                refresh_failed = True
         else:
+            db.rollback()
+            for shipment_id in sorted(stats["shipments"]):
+                out(f"  packing list to refresh after apply: {_shipment_label(db, shipment_id)}")
             db.rollback()
         for key in totals:
             totals[key] += stats[key]
-        out(f"  => Excel rows superseded {stats['deleted']}, orphans removed {stats['orphans_removed']}, "
+        if stats["deleted"] or stats["orphans_removed"] or stats["retired"]:
+            changed.append(spo_number)
+        if stats["orphans_blocked"] or stats["kept"]:
+            review.append(spo_number)
+        out(f"  => {spo_number}: Excel rows superseded {stats['deleted']}, orphans removed {stats['orphans_removed']}, "
             f"older-DocKey rows retired {stats['retired']}, "
             f"orphans BLOCKED {stats['orphans_blocked']}, kept {stats['kept']}, "
             f"links moved {stats['links_moved']}, received carried {stats['carried']}, "
@@ -840,11 +994,24 @@ def run(db, company_code: str, spo_numbers: list[str], *, apply: bool, out=print
     out(f"\n=== {'APPLIED' if apply else 'DRY-RUN'}: superseded {totals['deleted']}, "
         f"orphans removed {totals['orphans_removed']}, orphans BLOCKED {totals['orphans_blocked']}, "
         f"kept {totals['kept']}, links moved {totals['links_moved']} ===")
+    if scan_all:
+        verb = "changed" if apply else "would change"
+        out(f"{verb} ({len(changed)}): {', '.join(changed)}")
+        out(f"rows left for review (ORPHAN-BLOCKED / kept) ({len(review)}): {', '.join(review)}")
+        out(f"aborted ({len(aborted)}): {', '.join(aborted)}")
+        if more_after:
+            out(f"next batch: --start-after {more_after}")
+    if refresh_failed and exit_code == 0:
+        exit_code = 5
     return exit_code
 
 
 def main() -> int:
     args = build_parser().parse_args()
+    problem = validate_args(args)
+    if problem:
+        print(problem)
+        return 1
     url = os.environ.get("DATABASE_URL")
     if not url:
         print("DATABASE_URL is not set (the backend container sets it)")
@@ -853,8 +1020,23 @@ def main() -> int:
     # on naive timestamp columns (a split pick's created_at, which FIFO reads)
     # must not take the database server's local zone.
     engine = create_engine(url, connect_args={"options": "-c timezone=utc"})
+    refresh = None
+    if args.apply:
+        # The post-apply refresh runs the app's own service, so the app must be
+        # importable: the working directory (`-w /app`) and the backend root
+        # this file sits under (`scripts/oneoff/`) both go on the path.
+        for root in (os.getcwd(), os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))):
+            if root not in sys.path:
+                sys.path.insert(0, root)
+        try:
+            refresh = app_refresher()
+        except Exception as exc:  # noqa: BLE001 - before any write: stop cleanly
+            print(f"cannot load the app for the post-apply refresh ({type(exc).__name__}: {exc}); "
+                  "run from the backend container with -w /app. Nothing was written.")
+            return 1
     with engine.connect() as conn:
-        return run(conn, args.company, args.spo, apply=args.apply)
+        return run(conn, args.company, args.spo, apply=args.apply, scan_all=args.all,
+                   limit=args.limit, start_after=args.start_after, refresh=refresh)
 
 
 if __name__ == "__main__":

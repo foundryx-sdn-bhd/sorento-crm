@@ -112,7 +112,7 @@ def api():
         company_id = _sorento(db)
         project_seed_service.run(db, company_id=company_id)
         user_id = _uid()
-        db.add(User(id=user_id, email=f"{user_id}@zzt.test", name=f"{MARKER} Yana"))
+        db.add(User(id=user_id, email=f"{user_id}@zzt.test", name=f"{MARKER} CONTACT AH"))
         db.flush()
         project = register_project(
             db,

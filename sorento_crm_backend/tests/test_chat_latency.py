@@ -46,7 +46,7 @@ def _msg(
     turn_id=None,
     respond_ts=None,
     sent_at=None,
-    contact_id="445239409",
+    contact_id="900000063",
     delivery_status=None,
     message_id=None,
     ingest_at=None,
@@ -55,7 +55,7 @@ def _msg(
     row = ChatHistory(
         channel="whatsapp",
         contact_id=contact_id,
-        phone_number="+60165622487",
+        phone_number="+60160000517",
         message="hello",
         sent_at=sent_at or respond_ts or NOW,
         type=type,

@@ -12,7 +12,7 @@ PLAN-chatbot-customer-scope-29sep.md, D1.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from sqlalchemy.orm import Session
 
@@ -45,6 +45,9 @@ def is_office_staff(db: Session, contact_id: str) -> bool:
 class ContactCustomerScope:
     linked: tuple[tuple[str, str, str], ...]  # (customer_id, customer_name, customer_code), link order
     staff: bool  # an ACTIVE office access type
+    # customer_id -> `customers.account_level` (None = no level set). A link missing here is
+    # at no level at all.
+    levels: dict[str, int | None] = field(default_factory=dict)
 
     @property
     def enforced(self) -> bool:
@@ -58,17 +61,21 @@ class ContactCustomerScope:
     def names(self) -> list[str]:
         return [name for _cid, name, _code in self.linked]
 
-    def match_words(self, words: list[str]) -> list[str] | None:
+    def match_words(self, words: list[str], accounts: list[int | None] | None = None) -> list[str] | None:
         """The linked customer ids the words name (exact customer code, or a
         case-insensitive substring of the name), in link order; None when ANY word
-        names none of them (the caller refuses). Reads `linked` only."""
+        names none of them (the caller refuses). `accounts` is parallel to `words`: a
+        word with an account keeps only the links at that Account level."""
         matched: list[str] = []
-        for word in words:
+        for index, word in enumerate(words):
+            account = accounts[index] if accounts and index < len(accounts) else None
             needle = " ".join((word or "").split()).lower()
             hits = [
                 cid
                 for cid, name, code in self.linked
-                if needle and (needle == (code or "").strip().lower() or needle in (name or "").lower())
+                if needle
+                and (needle == (code or "").strip().lower() or needle in (name or "").lower())
+                and (account is None or self.levels.get(cid) == account)
             ]
             if not hits:
                 return None
@@ -97,20 +104,34 @@ def contact_customer_scope(db: Session, contact_id: str) -> ContactCustomerScope
         for (cid,) in rows:
             if str(cid) not in ids:
                 ids.append(str(cid))
-        info = {
-            str(i): (n or "", c or "")
-            for i, n, c in db.query(Customer.id, Customer.customer_name, Customer.customer_code)
+        rows = (
+            db.query(Customer.id, Customer.customer_name, Customer.customer_code, Customer.account_level)
             .filter(Customer.id.in_(ids))
             .all()
-        } if ids else {}
+        ) if ids else []
+        info = {str(i): (n or "", c or "") for i, n, c, _lvl in rows}
+        levels = {str(i): lvl for i, _n, _c, lvl in rows}
     linked = tuple((i, *info.get(i, ("", ""))) for i in ids)
-    return ContactCustomerScope(linked=linked, staff=is_office_staff(db, str(contact_id)))
+    return ContactCustomerScope(linked=linked, staff=is_office_staff(db, str(contact_id)), levels=levels)
 
 
 def refusal_line(scope: ContactCustomerScope) -> str:
-    names = [n for n in scope.names if n]
+    return _refusal_for([n for n in scope.names if n])
+
+
+def refusal_line_for(scope: ContactCustomerScope, ids: list[str]) -> str:
+    """The refusal line naming ONLY the linked ledgers in `ids`, in link order."""
+    return _refusal_for([name for cid, name, _code in scope.linked if cid in ids and name])
+
+
+def _refusal_for(names: list[str]) -> str:
+    # Owner rule (2 Oct 2026): a customer company is named by its group name only.
+    from app.services.ledger_family import group_names
+
+    names = group_names(names)
     if len(names) <= 1:
         joined = names[0] if names else "your own account"
     else:
         joined = ", ".join(names[:-1]) + " and " + names[-1]
-    return f"Sorry, that isn't under your account. I can only check on {joined}."
+    stop = "" if joined.endswith(".") else "."  # "SOON HENG HARDWARE CO.SDN.BHD." ends its own sentence
+    return f"Sorry, that isn't under your account. I can only check on {joined}{stop}"

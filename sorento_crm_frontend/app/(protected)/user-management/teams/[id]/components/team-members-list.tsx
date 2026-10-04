@@ -35,9 +35,13 @@ function displayUser(user: UserSelectItem | undefined, userId: string): string {
 export default function TeamMembersList({
   teamId,
   users,
+  usersError,
+  onRetryUsers,
 }: {
   teamId: string;
   users: UserSelectItem[];
+  usersError?: unknown;
+  onRetryUsers?: () => void;
 }) {
   const queryClient = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
@@ -206,6 +210,8 @@ export default function TeamMembersList({
                 onChange={(next) => setSelectedUserIds(new Set(next))}
                 placeholder="Select users"
                 emptyMessage="No user found."
+                loadError={usersError}
+                onRetry={onRetryUsers}
                 // Chips below already list the picks, so the trigger keeps its terse summary.
                 renderTriggerLabel={(sel) =>
                   sel.length === 0

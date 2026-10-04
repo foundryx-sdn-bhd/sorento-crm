@@ -73,6 +73,7 @@ export default function PriceTagRequestsList() {
   } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<unknown>(null);
 
   // Reset page on filter change
   useEffect(() => {
@@ -91,24 +92,48 @@ export default function PriceTagRequestsList() {
       status: statusFilter !== '__all__' ? statusFilter : undefined,
     });
     setData(result);
+    setLoadError(null);
   };
 
   useEffect(() => {
     let cancelled = false;
     setIsLoading(true);
-    fetchData().finally(() => {
-      if (!cancelled) setIsLoading(false);
-    });
+    fetchData()
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        setData(null);
+        setLoadError(e);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pagination.pageIndex, pagination.pageSize, sorting, searchQuery, statusFilter]);
 
+  const handleRetry = () => {
+    setIsLoading(true);
+    fetchData()
+      .catch((e: unknown) => {
+        setData(null);
+        setLoadError(e);
+      })
+      .finally(() => setIsLoading(false));
+  };
+
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await fetchData();
-    setIsRefreshing(false);
+    try {
+      await fetchData();
+    } catch (e) {
+      // Rows on screen stay; the grid only shows a failure in place of no rows, so say it here.
+      setLoadError(e);
+      if (data?.data?.length) toast.error(e instanceof Error ? e.message : 'Could not refresh the list.');
+    } finally {
+      setIsRefreshing(false);
+    }
   };
 
   // Carried into the record URL so its prev/next pager walks the SAME searched,
@@ -364,6 +389,8 @@ export default function PriceTagRequestsList() {
       table={table}
       recordCount={data?.pagination.total ?? 0}
       isLoading={isLoading}
+      error={loadError}
+      onRetry={handleRetry}
       rowHref={detailHref}
       standardToolbar={false}
       tableLayout={{ width: 'fixed', columnsResizable: true }}

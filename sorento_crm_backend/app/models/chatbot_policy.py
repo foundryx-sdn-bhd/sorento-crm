@@ -71,7 +71,9 @@ class ChatbotEntityKind(Base):
     # Owner ruling 20 Sep 2026 (PLAN-chatbot-answer-half-reattach.md "Roster cap"):
     # "configurable, actually I prefer 10" - the ceiling on any roster this kind is
     # asked in (the gate's customer/product picker arms, the did-you-mean list).
-    roster_cap = Column(Integer, nullable=False, server_default="10")
+    # PICKER-NO-CAP (owner, 2 Oct 2026): starts at the S3 ceiling, 50, so no picker is
+    # visibly cut (migration `picker_no_cap_0001`).
+    roster_cap = Column(Integer, nullable=False, server_default="50")
     sort_order = Column(Integer, nullable=False, server_default="0")
     created_at = Column(DateTime(timezone=False), nullable=False, server_default=func.now())
     updated_at = Column(

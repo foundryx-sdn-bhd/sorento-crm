@@ -1191,3 +1191,38 @@ class TestParityGate:
 
         assert x_row["uom_code"] != old_uom_x.uom_code, "Excel re-stamps the default UOM every re-import"
         assert i_row["uom_code"] == old_uom_i.uom_code, "the pull leaves a UOM it never sent"
+
+
+class TestApplyItemType:
+    """ITEM-TYPE-CRM: the AutoCount item pull commits through `MasterIngestService`
+    (`autocount_pull_tasks._apply_products`), so a snapshot row's `item_type_code`
+    back-creates an `item_types` row and links the product, the brand rule exactly."""
+
+    def test_pull_row_item_type_code_is_back_created_and_linked(self, task_db, monkeypatch):
+        db, factory = task_db
+        fake = _FakeFoundryX()
+        _patch_foundryx(monkeypatch, fake, db)
+        code = f"{MARKER}-ITY1"
+        item_type = f"{MARKER} KITCHEN SINK"
+        rows = [_canonical_row(code, item_type_code=item_type)]
+        snapshot_id = f"{MARKER}-snap-ity1"
+        fake.status = (200, {**_header(rows), "snapshotId": snapshot_id})
+        _set_rows_page(fake, snapshot_id, rows)
+        job_id = _seed_apply_job(
+            db, user_id=str(uuid.uuid4()), company_id=DEFAULT_COMPANY_ID, entity="products",
+            snapshot_id=snapshot_id,
+        )
+
+        _run_apply(monkeypatch, factory, job_id)
+
+        assert _job_row(db, job_id)["status"] == "finished"
+        linked = db.execute(
+            text(
+                "SELECT t.item_type_code, t.company_id FROM products p "
+                "JOIN item_types t ON t.id = p.item_type_id WHERE p.product_code = :c"
+            ),
+            {"c": code},
+        ).first()
+        assert linked is not None
+        assert linked[0] == item_type
+        assert str(linked[1]) == DEFAULT_COMPANY_ID

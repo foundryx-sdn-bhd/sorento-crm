@@ -7,18 +7,33 @@ import React, { Suspense } from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
+const nav = vi.hoisted(() => ({ push: vi.fn(), search: '' }));
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: nav.push }),
   usePathname: () => '/order-management/customers/cust-1/edit',
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => new URLSearchParams(nav.search),
 }));
 vi.mock('@/components/common/container', () => ({
   Container: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 vi.mock('@/components/common/PageHeader', () => ({
-  PageHeader: ({ title }: { title: string }) => <h1>{title}</h1>,
+  PageHeader: ({ title, actions }: { title: string; actions?: React.ReactNode }) => (
+    <div>
+      <h1>{title}</h1>
+      {actions}
+    </div>
+  ),
 }));
-vi.mock('../../components/CustomerForm', () => ({ default: () => <div>the customer form</div> }));
+vi.mock('../../components/CustomerForm', () => ({
+  default: ({ onSuccess }: { onSuccess?: () => void }) => (
+    <div>
+      the customer form
+      <button type="button" onClick={() => onSuccess?.()}>
+        fake save
+      </button>
+    </div>
+  ),
+}));
 vi.mock('@/hooks/usePermissions', () => ({
   useHasPermission: (slug: string) => slug === 'order_management.branches.view',
   usePermissions: () => ({ permissions: [], permissionSet: new Set(), isLoading: false }),
@@ -50,5 +65,34 @@ describe('EditCustomerPage - tabs', () => {
     fireEvent.mouseDown(tabs[2]);
     fireEvent.click(tabs[2]);
     await waitFor(() => expect(screen.getByText('asks of cust-1')).toBeInTheDocument());
+  });
+});
+
+describe('EditCustomerPage - pager keeps list state (CUSTOMER-BULK-OPS U1)', () => {
+  const QS = 'page=2&sort=customer_name&query=deluxe&status=active';
+
+  async function renderPage() {
+    await act(async () => {
+      render(
+        <Suspense fallback={null}>
+          <EditCustomerPage params={Promise.resolve({ id: 'cust-1' })} />
+        </Suspense>,
+      );
+    });
+  }
+
+  it('saving returns to the detail page with the list query string', async () => {
+    nav.push.mockClear();
+    nav.search = QS;
+    await renderPage();
+    fireEvent.click(await screen.findByText('fake save'));
+    expect(nav.push).toHaveBeenCalledWith(`/order-management/customers/cust-1?${QS}`);
+  });
+
+  it('Back to customer keeps the list query string', async () => {
+    nav.search = QS;
+    await renderPage();
+    const link = (await screen.findByText('Back to customer')).closest('a');
+    expect(link?.getAttribute('href')).toBe(`/order-management/customers/cust-1?${QS}`);
   });
 });

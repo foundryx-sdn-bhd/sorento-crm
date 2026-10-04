@@ -137,6 +137,8 @@ export function ScmFilterBar({
         <SearchableSelect
           value={filters.categoryId ?? ''}
           onChange={(v) => onChange({ ...filters, categoryId: v || null })}
+          loadError={categoryOptions.error}
+          onRetry={() => void categoryOptions.refetch()}
           options={categoryOptions.data ?? []}
           placeholder="All categories"
         />

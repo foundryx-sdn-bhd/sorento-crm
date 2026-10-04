@@ -35,9 +35,10 @@ const AUTOCOUNT_PULL_JOB_TYPES = new Set([
   'autocount_products_pull',
   'autocount_stock_pull',
   'autocount_delivery_orders_pull',
+  'autocount_grn_pull',
 ]);
 
-type PullEntity = 'products' | 'stock_balances' | 'delivery_orders';
+type PullEntity = 'products' | 'stock_balances' | 'delivery_orders' | 'goods_receive_notes';
 
 /** AC-DS-12: the entity a pull job's OWN `job_type` names, for the main header's Back
  *  button - a fallback for the (rare) render where `pullStatus` has not loaded yet, so
@@ -46,6 +47,7 @@ function pullEntityFromJobType(jobType: string): PullEntity | null {
   if (jobType === 'autocount_products_pull') return 'products';
   if (jobType === 'autocount_stock_pull') return 'stock_balances';
   if (jobType === 'autocount_delivery_orders_pull') return 'delivery_orders';
+  if (jobType === 'autocount_grn_pull') return 'goods_receive_notes';
   return null;
 }
 
@@ -54,6 +56,7 @@ const PULL_BACK: Record<PullEntity, { label: string; href: string }> = {
   products: { label: 'Back to Products', href: '/master-data-management/products' },
   stock_balances: { label: 'Back to Stock', href: '/inventory-management/stock' },
   delivery_orders: { label: 'Back to Delivery Orders', href: '/order-management/orders' },
+  goods_receive_notes: { label: 'Back to Goods Receipt Notes', href: '/procurement-management/grn' },
 };
 
 const JOB_TYPE_LABELS: Record<string, string> = {
@@ -77,6 +80,8 @@ const JOB_TYPE_LABELS: Record<string, string> = {
   autocount_products_apply: 'AutoCount Products Apply',
   autocount_stock_apply: 'AutoCount Stock Apply',
   autocount_delivery_orders_apply: 'AutoCount Delivery Orders Apply',
+  autocount_grn_pull: 'AutoCount GRN Pull',
+  autocount_grn_apply: 'AutoCount GRN Apply',
 };
 
 function getJobTypeLabel(jobType: string): string {
@@ -114,7 +119,10 @@ function deliveryOrdersApplyCountsOf(job: {
   job_type: string;
   job_metadata?: unknown;
 }): DeliveryOrdersApplyCounts | null {
-  if (job.job_type !== 'autocount_delivery_orders_apply') return null;
+  // The GRN apply writes the same document counts (`_apply_goods_receive_notes`).
+  if (job.job_type !== 'autocount_delivery_orders_apply' && job.job_type !== 'autocount_grn_apply') {
+    return null;
+  }
   const meta = job.job_metadata as
     | { autocount_apply?: { counts?: DeliveryOrdersApplyCounts } }
     | null

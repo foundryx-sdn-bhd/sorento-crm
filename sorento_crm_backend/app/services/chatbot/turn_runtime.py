@@ -97,6 +97,11 @@ class TurnContext:
     access_levels: list[str] = field(default_factory=list)
     contains_flyer: bool = False
     ideation: Any = None
+    # CHAT-LANGUAGE: the `label_catalog.Localizer` for this turn's reply language, read by
+    # `turn/compose.py::compose`, and the language itself, which `tail.session_payload`
+    # carries to the next turn as `reply_language`.
+    localizer: Any = None
+    reply_language: str | None = None
     # SRTSC07 (prod transcript, 22 Sep 2026): this turn's own `routing.suggested_agent`,
     # read by `turn/compose.py::compose` so a freshly minted `team_pick` offer can carry
     # the agent half beside the team it already carries - `answer_bridge`'s own mint
@@ -1717,6 +1722,43 @@ def unplaced_tokens(entities: list[Any], resolved: Any) -> dict[str, str]:
     return {key: raw for key, raw in named.items() if key in missed}
 
 
+def absorbed_tokens(entities: list[Any], resolved: Any) -> dict[str, str]:
+    """Typed tokens the resolver answered ONLY with another typed token's exact match.
+
+    Prod turn f0a2 (1 Oct 2026), replayed on the crew copy: "Srtswt3001 / Srtswt3001-gm
+    stock". The resolver placed `srtswt3001` on SRTSWT3001-GM (a non-exact match), the
+    gate deduped the two tokens onto that one product, and SRTSWT3001 vanished: not in
+    `entities`, not in `unresolved_tokens`, so no sentence anywhere named it. A token
+    whose every matched code is a DIFFERENT code the customer also typed, and none of
+    whose matches is the token itself, has not been answered - it is reported unplaced,
+    so the reply says "I could not find SRTSWT3001." rather than nothing.
+    """
+    typed: dict[str, str] = {}
+    for entity in jsc.array(entities):
+        raw = jsc.nullish_str(jsc.get(entity, "raw")).strip()
+        key = _token_key(raw)
+        if key and key not in typed:
+            typed[key] = raw
+    if len(typed) < 2:
+        return {}
+    codes_by_token: dict[str, set[str]] = {}
+    for resolution in jsc.array(jsc.get(resolved, "resolutions")):
+        token = _token_key(jsc.get(resolution, "token"))
+        if token not in typed:
+            continue
+        bucket = codes_by_token.setdefault(token, set())
+        for match in jsc.array(jsc.get(resolution, "matches")):
+            code = _token_key(jsc.get(match, "canonical_code") or jsc.get(match, "code"))
+            if code:
+                bucket.add(code)
+    out: dict[str, str] = {}
+    for token, codes in codes_by_token.items():
+        others = set(typed) - {token}
+        if codes and token not in codes and codes <= others:
+            out[token] = typed[token]
+    return out
+
+
 def companies_by_uuid(resolved: Any) -> dict[str, dict[str, Any]]:
     """R-g (owner hand pass 7, 19 Sep 2026): the resolver's own COMPANY per match, keyed
     by uuid - `{"company_id", "company_name"}`, both stamped by the same pass
@@ -1860,6 +1902,7 @@ def resolve_kinds(
     stamp_promotion: bool = False,
     stamp_purchase_order: bool = False,
     roster_caps: Mapping[str, int] | None = None,
+    enforced_scope: bool = False,
 ) -> ResolveOutcome:
     """Ask the resolver what each named token actually IS (AC-1527).
 
@@ -2003,6 +2046,9 @@ def resolve_kinds(
             dry_run=dry_run,
             roster_caps=roster_caps,
             resolver_excluded_entity_ids=resolver_excluded_entity_ids,
+            account_levels=business_services.account_levels_reader(db),
+            # ACCOUNT-LEDGER: an enforced contact's own ledger is never an exact-name sibling.
+            account_exact_names=not enforced_scope,
         )
     except Exception:  # noqa: BLE001 - see the docstring: nothing to reconcile, not a failure
         logger.warning("chatbot: the resolver did not answer", exc_info=True)
@@ -2023,6 +2069,8 @@ def resolve_kinds(
     gate = payload.get("gate") if isinstance(payload.get("gate"), dict) else {}
     compatible = [e for e in jsc.array(gate.get("compatible_entities")) if isinstance(e, dict)]
     unplaced = unplaced_tokens(entities, resolved)
+    for key, raw in absorbed_tokens(entities, resolved).items():
+        unplaced.setdefault(key, raw)
     compatible = _without_guesses(compatible, resolved, unplaced)
     if is_order_domain and live_brands_read:
         # #1262 fix lane round 3, S5: a brand word that is NOT on the live list, typed
@@ -2366,10 +2414,15 @@ def _spec_quantities(
         quantity = _int(e.get("quantity"))
         if quantity is None:
             continue
-        for name in ("canonical_code", "raw"):
-            code = e.get(name)
-            if isinstance(code, str) and code.strip():
-                by_code[code.strip().casefold()] = quantity
+        # AVAIL-MODE-REPLIES (owner Q2 (a), 2 Oct 2026): a code named twice in one message
+        # is one line whose quantities add up ("SRT5674 x 2 ... SRT5674 x 3" asks for 5).
+        # Each entity counts once, however many of its names carry the code.
+        for code in {
+            value.strip().casefold()
+            for value in (e.get("canonical_code"), e.get("raw"))
+            if isinstance(value, str) and value.strip()
+        }:
+            by_code[code] = by_code.get(code, 0) + quantity
     if not by_code:
         # D13 lives in ONE place (review round 9, finding 5): `turn/apply.py::
         # _normalise_demand_qty` writes a single named code's top-level `demand_qty`
@@ -2390,6 +2443,23 @@ def _spec_quantities(
             if quantity is not None:
                 quantities[uuid] = quantity
                 break
+    # AVAIL-MODE-REPLIES rule 5: a typed token that is the prefix of exactly ONE resolved
+    # code ("SRTWC287-S" placed SRTWC287-S-150 alone) is that code, so its quantity goes
+    # with it. A prefix of several codes is a family, asked as a pick, and carries none.
+    resolved_codes = {
+        str(e["uuid"]): e.get("code") or e.get("canonical_code")
+        for e in entities
+        if isinstance(e, dict) and isinstance(e.get("uuid"), str) and e.get("uuid")
+        and isinstance(e.get("code") or e.get("canonical_code"), str)
+    }
+    for token, quantity in by_code.items():
+        if any((code or "").casefold() == token for code in resolved_codes.values()):
+            continue
+        prefixed = [
+            uuid for uuid, code in resolved_codes.items() if (code or "").casefold().startswith(token)
+        ]
+        if len(prefixed) == 1 and prefixed[0] not in quantities:
+            quantities[prefixed[0]] = quantity
     return {**out, "requested_quantities": quantities} if quantities else out
 
 
@@ -2633,6 +2703,8 @@ def make_tool_runner(
     resolved_kinds: dict[str, dict[str, int]] | None = None,
     policy: Any = None,
     customer_scope: dict[str, Any] | None = None,
+    localizer: Any = None,
+    unplaced_suggestions: dict[str, list[dict[str, Any]]] | None = None,
 ) -> Callable[[str, FetchSpec], dict[str, Any]]:
     """The ONE seam that reaches a tool: `run_fetch` calls it once per `FetchSpec`.
 
@@ -2705,6 +2777,16 @@ def make_tool_runner(
         answered = spec.filters.get("outstanding")
         if isinstance(answered, dict):
             lane_out = outstanding_carry(lane_out, focus, answered)
+            if _offer_picks_the_so_list(answered, lane_out):
+                # Owner hand test, 3 Oct 2026: "1" / the "Sales order list" button under a
+                # customer-subject outstanding summary is the SO list over that summary's
+                # customers and window, not the same report again. A product-subject
+                # report keeps its own SO detail rows (AC-1138): the SO list has no product.
+                lane_out = {**lane_out, "so_list": True, "outstanding_detail_pick": None}
+                # The conversation is on the SO list now: a period typed next continues
+                # it (`_asks_for_so_list` reads the carried document), not the summary.
+                focus.status = None
+                focus.document = ["SO"]
         brand_names: list[str] = []
         ranking = jsc.js_string(lane_out.get("order_status") or "").strip() == "top_selling"
         if domain == "order" and not ranking:
@@ -2730,6 +2812,8 @@ def make_tool_runner(
             # The contact's customer scope (`engine._customer_scope_gate`), read by
             # `lanes.business.run_fetch`; a lane-only key, never on the engine's own ctx.
             "customer_scope": customer_scope,
+            # CHAT-LANGUAGE: read by `output_structurer` (render-only).
+            "localizer": localizer,
         }
         if page_predicate is not None:
             entities = [
@@ -2754,6 +2838,24 @@ def make_tool_runner(
         # (line ~906 above), so the miss header can name each ledger rather than
         # falling back to the option's own rollup code.
         fill_customer_names(db, entities)
+        # SO-NUMBER-ASK: SO numbers this message typed that nothing placed are answered
+        # by the lane from `sales_orders` (`lanes/business/run_fetch`'s `so_numbers` arm),
+        # and so are not "could not find" words for compose to name a second time.
+        so_numbers = _so_numbers_asked(domain, verdict, unplaced)
+        envelope_unplaced = unplaced
+        if so_numbers:
+            lane_out = {**lane_out, "so_numbers": so_numbers}
+            envelope_unplaced = {k: v for k, v in unplaced.items() if v not in so_numbers}
+            # Answered here, so never carried: a word left on `focus.extra["order"]` without a
+            # uuid is handed to the resolver again on the next order turn and named as a miss
+            # there (owner hand test: "okay how about all my sales order?" replied
+            # `Couldn't find: "SO422056"` over the `self_reference` answer).
+            _drop_focus_entities(focus, [{"entity_type": "order", "raw": w} for w in so_numbers])
+        elif _asks_for_so_list(domain, verdict, focus, lane_out):
+            # "all my sales orders" / "my SOs": the SO list over the customers in scope
+            # (`lanes/business/run_fetch`'s `so_list` arm). The document is read off the
+            # focus too, so a typed period answering "Which period?" runs the same ask.
+            lane_out = {**lane_out, "so_list": True}
         # Ported from PR #1118 (not merged), D13/D20: the dealer's own quantity per
         # product, resolved to uuids here - `lanes/business/fetch.py` reads it
         # straight off the lane input.
@@ -2824,7 +2926,7 @@ def make_tool_runner(
             and all(_entity_is_unplaced(e, unplaced) for e in entities)
         )
         # Hotfix 22 Sep 2026 (PLAN-chatbot-stock-no-subject-hotfix-22sep.md, live
-        # contact 423729104 turns 59-60): the guard above needs `bool(unplaced)`, and
+        # contact 900000081 turns 59-60): the guard above needs `bool(unplaced)`, and
         # the whole-book read that got through carried NOTHING unplaced. Turn 59's
         # "Srtwc8608-p-rl" resolved only as a `product_set` - a kind
         # `ALLOWED["inventory"]` does not take - so the carry was parked on
@@ -3020,9 +3122,13 @@ def make_tool_runner(
                 else None
             ),
             ran_with=lane_out,
-            unplaced=unplaced,
+            unplaced=envelope_unplaced,
+            suggestions=unplaced_suggestions,
             raw_fragment=fragment,
             brand_names=brand_names,
+            attachment_types=(
+                attachment_type_labels(db, entities) if spec.domain == "product_attachment" else None
+            ),
         )
         if page_predicate is not None:
             # W4: what an "another N" after this page continues from; after the last page
@@ -3435,6 +3541,50 @@ def _tier_gate(
     }
 
 
+def _with_carried_document_types(parse_output: dict[str, Any], focus: Focus) -> dict[str, Any]:
+    """The carried document types a product-attachment FETCH turn still needs resolving.
+
+    ATTACHMENT-MULTI (tester re-run 2 Oct 2026, crew trace turn 29a88795): "photo and
+    certification for CB11" rostered, the customer replied "3", and the parser echoed the
+    picked product as the turn's own entity (`entity_op: reuse`). A turn that names its own
+    entities is otherwise handed over untouched, so the carried "photo" / "certificate" -
+    stored as the parser's raw words, no uuid, because a roster turn settles nothing - never
+    reached the resolver, the fetch dropped both as `missing_or_bad_uuid` and answered with
+    every file of every type, and the "has no Certification" line had no types to name.
+
+    Only the document types, only those with no uuid, only when this turn named none of its
+    own, and only when the one domain in play is `product_attachment` - any other domain's
+    gate would read a document type as an incompatible entity.
+    """
+    own = [e for e in parse_output.get("entities") or [] if isinstance(e, dict)]
+    if any(str(e.get("hint") or "").strip().lower() == "attachment_type" for e in own):
+        return parse_output
+    domain = parse_output.get("domain_hint")
+    domains = [d for d in (getattr(focus, "domains", []) or []) if d]
+    if domain != "product_attachment" and not (not domain and domains == ["product_attachment"]):
+        return parse_output
+    rows = (getattr(focus, "extra", {}) or {}).get("attachment_type") or []
+    carried: list[dict[str, Any]] = []
+    for row in rows if isinstance(rows, list) else []:
+        if not isinstance(row, dict) or row.get("uuid"):
+            continue
+        code = row.get("canonical_code") or row.get("raw")
+        if not jsc.truthy(code):
+            continue
+        carried.append(
+            {
+                "raw": row.get("raw") or code,
+                "hint": "attachment_type",
+                "canonical_code": code,
+                "current_message": False,
+                "confident": True,
+            }
+        )
+    if not carried:
+        return parse_output
+    return {**parse_output, "entities": [*own, *carried]}
+
+
 def with_carried_entities(
     parse_output: dict[str, Any], focus: Focus, *, unsettled_only: bool = False
 ) -> dict[str, Any]:
@@ -3469,7 +3619,7 @@ def with_carried_entities(
         for e in own
     )
     if parse_output.get("entities") and not domain_word_only:
-        return parse_output
+        return _with_carried_document_types(parse_output, focus) if unsettled_only else parse_output
     carried: list[dict[str, Any]] = []
     # Every kind the focus holds, `extra` included. `KIND_FIELD_MAP` names four kinds
     # and the rest of them live in the catch-all, so an `attachment_type` carried from
@@ -3516,6 +3666,41 @@ def with_carried_entities(
     if not carried:
         return parse_output
     return {**parse_output, "entities": [*carried, *own]}
+
+
+def attachment_type_labels(db: Session, entities: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """`[{name, keys}]` per attachment-type entity of a fetch, read by uuid (ATTACHMENT-MULTI R3).
+
+    `name` is `attachment_types.type_name`, what the customer reads (R5). `keys` are the
+    spellings an answer row's "Attachment Type" field can carry: the MCP presenter prints the
+    description when the type has one, else the name. An entity with no uuid, or a failed
+    read, yields `[]` - the composer then names no gap rather than a false one.
+    """
+    ids = [
+        jsc.js_string(e.get("uuid"))
+        for e in entities
+        if isinstance(e, dict)
+        and jsc.nullish_str(e.get("entity_type")).strip().lower() == "attachment_type"
+    ]
+    if not ids or not all(_UUID_TEXT.match(i) for i in ids):
+        return []
+    from app.models.resources import AttachmentType
+
+    try:
+        with db.begin_nested():
+            rows = db.query(AttachmentType).filter(AttachmentType.id.in_(ids)).all()
+    except Exception:  # noqa: BLE001 - fail closed: no gap line, never a wrong one
+        logger.warning("chatbot: attachment_type label lookup failed", exc_info=True)
+        return []
+    by_id = {str(row.id): row for row in rows}
+    out: list[dict[str, Any]] = []
+    for type_id in ids:
+        row = by_id.get(type_id)
+        if row is None or not row.type_name:
+            return []
+        keys = [k for k in (row.type_name, row.description) if k]
+        out.append({"name": row.type_name, "keys": keys})
+    return out
 
 
 def _is_certificate_type(db: Session, attachment_type_id: Any) -> bool:
@@ -3654,6 +3839,55 @@ def _code_of(entity: dict[str, Any]) -> str:
     return jsc.js_string(entity.get("code") or entity.get("canonical_code") or entity.get("raw")).strip().lower()
 
 
+def _so_numbers_asked(domain: str, verdict: dict[str, Any], unplaced: dict[str, str]) -> list[str]:
+    """The SO numbers an order ask typed that the resolver could not place - the lane's
+    `so_numbers` (SO-NUMBER-ASK). Only when EVERY word this message typed went unplaced:
+    a message that also placed a subject of its own keeps today's answer for it."""
+    if domain != "order" or not unplaced:
+        return []
+    from app.services.chatbot import so_status
+
+    typed = [
+        jsc.nullish_str(jsc.get(e, "raw")).strip()
+        for e in jsc.array(jsc.get(verdict, "entities"))
+        if isinstance(e, dict) and e.get("current_message") is not False
+    ]
+    typed = [t for t in typed if t]
+    if not typed or any(_token_key(t) not in unplaced for t in typed):
+        return []
+    return [unplaced[_token_key(t)] for t in typed if so_status.is_so_number(t)]
+
+
+def _offer_picks_the_so_list(answered: dict[str, Any], lane_out: dict[str, Any]) -> bool:
+    """Did this turn pick the outstanding detail offer's "Sales order list" on a report
+    about customers only? A product, brand or location narrows the report in a way the SO
+    list cannot, so those keep the report's own SO detail rows (AC-1138)."""
+    if answered.get("kind") != "outstanding_detail" or answered.get("detail") != "so":
+        return False
+    return not (
+        jsc.truthy(lane_out.get("outstanding_carried_product_code"))
+        or jsc.array(lane_out.get("outstanding_carried_product_codes"))
+        or jsc.array(lane_out.get("outstanding_carried_brand_ids"))
+        or jsc.array(lane_out.get("outstanding_carried_warehouse_codes"))
+        or jsc.truthy(lane_out.get("outstanding_carried_location_token"))
+    )
+
+
+def _asks_for_so_list(domain: str, verdict: dict[str, Any], focus: Focus, lane_out: dict[str, Any]) -> bool:
+    """An order ask about sales orders with no SO number and no status word: the SO list
+    (owner option (2) on PR #1435). "outstanding" keeps the outstanding report; a message
+    that typed a subject of its own (a product, an order number) keeps today's answer."""
+    if domain != "order" or jsc.js_string(lane_out.get("order_status") or "").strip():
+        return False
+    document = [str(d).upper() for d in (verdict.get("document") or focus.document or [])]
+    if document != ["SO"]:
+        return False
+    return not any(
+        isinstance(e, dict) and e.get("current_message") is not False and e.get("hint") != "customer"
+        for e in jsc.array(verdict.get("entities"))
+    )
+
+
 def _answered_unfiltered(
     fragment: dict[str, Any], entities: list[dict[str, Any]], unplaced: dict[str, str]
 ) -> bool:
@@ -3673,10 +3907,19 @@ def _answered_unfiltered(
     `unplaced` still names. `entities and not all(...)` is what actually gates the
     non-empty case below - an empty `entities` is falsy and skips that check rather than
     returning False for it, so this one guard clause covers both shapes.
+
+    A linked contact's customer-scope rows (`engine._scoped_compatible`, `scope: True`)
+    are not subjects either: the message did not type them, they only bound who the
+    answer may be about. SO-NUMBER-ASK (PR #1433 tester note): "status of SO422056"
+    left the SO token unplaced, the orders list ran on the dealer's twelve linked
+    customers alone, and the reply was a 20-row DO dump closed by "I could not find
+    SO422056." A dealer's own customer word never reaches this as unplaced - it is
+    answered from the links and never sent to the resolver (AC-CS-12).
     """
     if not unplaced:
         return False
-    if entities and not all(_entity_is_unplaced(e, unplaced) for e in entities):
+    subjects = [e for e in entities if not e.get("scope")]
+    if subjects and not all(_entity_is_unplaced(e, unplaced) for e in subjects):
         return False
     fetched = fragment.get("fetch") if isinstance(fragment.get("fetch"), dict) else {}
     if fetched.get("outstanding_report"):
@@ -3841,6 +4084,24 @@ def _lane_text_without_withheld_header(
     return text
 
 
+def _suggestions_by_typed_word(
+    unplaced: dict[str, str] | None, suggestions: dict[str, list[dict[str, Any]]] | None
+) -> dict[str, dict[str, Any]]:
+    """`suggestions` (keyed by the resolver's token) under the unplaced word the customer
+    typed for the same token key, with the sentence that opens its list; a token with
+    none is left out."""
+    if not unplaced or not suggestions:
+        return {}
+    from app.services.chatbot.lanes.business.answer import did_you_mean_head
+
+    by_key = {_token_key(token): rows for token, rows in suggestions.items() if rows}
+    return {
+        raw: {"head": did_you_mean_head(raw), "rows": list(by_key[key])}
+        for key, raw in unplaced.items()
+        if key in by_key
+    }
+
+
 def envelope_of(
     fragment: dict[str, Any],
     spec: FetchSpec,
@@ -3852,6 +4113,8 @@ def envelope_of(
     counted_set: bool = True,
     raw_fragment: dict[str, Any] | None = None,
     brand_names: list[str] | None = None,
+    attachment_types: list[dict[str, Any]] | None = None,
+    suggestions: dict[str, list[dict[str, Any]]] | None = None,
 ) -> dict[str, Any]:
     """The kept lane's fetch fragment as the composer's envelope (AC-1530, AC-1531).
 
@@ -3880,6 +4143,20 @@ def envelope_of(
         "domain": spec.domain,
         "denied": refused,
         "entities": codes,
+        # The PRODUCT subjects alone, for the composer's "No stock found for X" line: a
+        # customer pinned from an earlier turn is a subject too, and is not a stock code.
+        "product_codes": [
+            name
+            for name in (
+                _answer_subject(e)
+                for e in entities
+                if jsc.nullish_str(e.get("entity_type")).strip().lower() == "product"
+            )
+            if name
+        ],
+        # ATTACHMENT-MULTI R3: the document types this fetch asked for, `{name, keys}`
+        # (`attachment_type_labels`), so the composer can name a product lacking one.
+        "attachment_types": list(attachment_types or []),
         "figures": figures,
         "files": [f for f in files if isinstance(f, dict)] if isinstance(files, list) else [],
         "miss": [] if has_result else codes,
@@ -3890,6 +4167,10 @@ def envelope_of(
         # wc287 wc2867 7445"). Turn-wide rather than per-entity: they are the tokens no
         # fetch could be about, which is why none of them is in `entities`.
         "unresolved": list(unplaced.values()) if unplaced else [],
+        # MULTI-CODE-DYM: each of those tokens' did-you-mean (`answer.did_you_mean_by_token`,
+        # keyed by the resolver's echo), re-keyed by the word the customer typed, so the
+        # composer offers a missing code beside found ones what it offers when asked alone.
+        "unresolved_suggestions": _suggestions_by_typed_word(unplaced, suggestions),
         # The TOOL's own verdict, before the rows test above: a report or a refusal
         # renders as `lane_text` with no figures yet DID find something, and the
         # composer's miss rule (an offer to escalate) must not read it as a miss.
@@ -3997,6 +4278,9 @@ def envelope_of(
         # Slot keys the reply asks to forget (a category word it said it does not
         # know), applied by the same `record_top_selling_asked`.
         "top_selling_drop": fetched.get("top_selling_drop"),
+        # LOWSTOCK-FILTER-ASK: the `required_fields` slot a lane left open, recorded on
+        # `focus.required_ask` by `engine.py` for the next message only.
+        "required_ask": fetched.get("required_ask"),
     }
     if raw_fragment is not None:
         # R4 (PLAN-chatbot-answer-half-reattach.md): the UNTOUCHED `business.run_fetch`

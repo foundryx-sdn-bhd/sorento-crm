@@ -131,7 +131,11 @@ export default function AuditLogsList() {
 
   // Users for the "User" picker - the audit user_id is a UUID, so a name must
   // resolve to an id (free text would 500 the UUID-typed column).
-  const { data: users } = useQuery({
+  const {
+    data: users,
+    error: usersError,
+    refetch: refetchUsers,
+  } = useQuery({
     queryKey: ['audit-user-select'],
     queryFn: () => getUsersSelect(),
     staleTime: 5 * 60 * 1000,
@@ -387,6 +391,8 @@ export default function AuditLogsList() {
                       <SearchableSelect
                         value={userId}
                         onChange={setUserId}
+                        loadError={usersError}
+                        onRetry={() => void refetchUsers()}
                         options={[
                           { value: '', label: 'Any user' },
                           ...(users?.map((u) => ({

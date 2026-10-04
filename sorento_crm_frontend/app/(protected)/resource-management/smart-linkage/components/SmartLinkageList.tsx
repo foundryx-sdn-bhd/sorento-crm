@@ -46,7 +46,7 @@ export default function SmartLinkageList() {
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
 
   // Always filter by business_table = 'attachments'
-  const { data, isLoading, isPlaceholderData, isFetching, refetch } = useIntegrationLogs({
+  const { data, isLoading, isPlaceholderData, isFetching, refetch, error } = useIntegrationLogs({
     pageIndex: pagination.pageIndex,
     pageSize: pagination.pageSize,
     sorting,
@@ -186,6 +186,8 @@ export default function SmartLinkageList() {
       table={table}
       recordCount={data?.pagination.total || 0}
       isLoading={isLoading}
+      error={error}
+      onRetry={() => void refetch()}
       isPlaceholderData={isPlaceholderData}
       tableLayout={{ columnsVisibility: true }}
       onRowClick={(row) => {

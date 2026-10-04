@@ -148,7 +148,11 @@ export default function ConversationSLATrackingDetail({
   const [reopenInitiated, setReopenInitiated] = useState('');
   const [reopenResetResponded, setReopenResetResponded] = useState(true);
 
-  const { data: usersSelect = [] } = useQuery({
+  const {
+    data: usersSelect = [],
+    error: usersSelectError,
+    refetch: refetchUsersSelect,
+  } = useQuery({
     queryKey: ['user-lookup', 'sla-test-override'],
     queryFn: () => getUserLookup(),
     enabled: assigneeDialogOpen && canSlaTestOverride,
@@ -464,6 +468,8 @@ export default function ConversationSLATrackingDetail({
             <SearchableSelect
               value={selectedAssigneeId}
               onChange={setSelectedAssigneeId}
+              loadError={usersSelectError}
+              onRetry={() => void refetchUsersSelect()}
               options={[
                 { value: '', label: 'No assignee' },
                 ...usersSelect.map((user) => ({

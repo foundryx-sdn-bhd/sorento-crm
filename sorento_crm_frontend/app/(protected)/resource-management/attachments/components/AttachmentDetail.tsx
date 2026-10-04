@@ -258,7 +258,11 @@ export default function AttachmentDetail({
   const [descriptionEdit, setDescriptionEdit] = useState<string | null>(null);
   const [accessLevelsEdit, setAccessLevelsEdit] = useState<string[] | null>(null);
   const [companyDialogOpen, setCompanyDialogOpen] = useState(false);
-  const { data: accessTypeOptions = [] } = useContactAccessTypes();
+  const {
+    data: accessTypeOptions = [],
+    error: accessTypesError,
+    refetch: refetchAccessTypes,
+  } = useContactAccessTypes();
   const defaultAccessLevels = accessTypeOptions.length > 0 ? accessTypeOptions.map((o) => o.code) : ['dealer', 'end_user'];
   const codeToName = Object.fromEntries(accessTypeOptions.map((o) => [o.code, o.name || o.code]));
   const deleteMutation = useDeleteAttachment();
@@ -470,6 +474,8 @@ export default function AttachmentDetail({
               <div className="space-y-2">
                 <AccessLevelsMultiSelect
                   options={accessTypeOptions}
+                  loadError={accessTypesError}
+                  onRetry={() => void refetchAccessTypes()}
                   value={accessLevelsEdit}
                   onChange={setAccessLevelsEdit}
                 />

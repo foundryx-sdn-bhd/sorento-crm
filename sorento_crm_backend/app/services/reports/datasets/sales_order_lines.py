@@ -216,6 +216,7 @@ DATASET = reg.Dataset(
     company_column=SalesOrder.company_id,
     company_param="company",
     years=years,
+    product_id_column=SalesOrderLine.product_id,
 )
 
 

@@ -62,7 +62,7 @@ export default function CampaignsList() {
   // page 1 over the page `useListStateFromUrl` had just restored from the URL.
   useResetPageOnFilterChange(setPagination, [statusFilter, searchQuery]);
 
-  const { data, isLoading, isPlaceholderData, refetch, isFetching } = useCampaigns({
+  const { data, isLoading, isPlaceholderData, refetch, isFetching, error } = useCampaigns({
     pageIndex: pagination.pageIndex,
     pageSize: pagination.pageSize,
     sorting,
@@ -200,6 +200,8 @@ export default function CampaignsList() {
       table={table}
       recordCount={data?.pagination.total || 0}
       isLoading={isLoading}
+      error={error}
+      onRetry={() => void refetch()}
       isPlaceholderData={isPlaceholderData}
       rowHref={rowHref}
       standardToolbar={false}

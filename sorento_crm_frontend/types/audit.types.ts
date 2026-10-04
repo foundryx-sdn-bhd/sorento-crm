@@ -7,7 +7,7 @@ export interface AuditLogEntry {
   user_display_name?: string | null;
   /** user | contact | integration | worker | scheduler | public_link | system | legacy */
   actor_type?: string | null;
-  /** password | phone_otp | portal_link | portal_token | api_key | impersonation */
+  /** password | phone_otp | portal_link | portal_token | api_key | impersonation | dev_login */
   auth_method?: string | null;
   /** Who was at the keyboard; differs from user_id only when impersonating. Never rendered raw. */
   real_user_id?: string | null;

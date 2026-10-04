@@ -425,7 +425,7 @@ function teamTarget(over: Record<string, unknown> = {}) {
         ],
       },
       {
-        target_id: 'c2', target_no: 'TGT-000005', sales_agent_id: 'cin', label: 'CIN - Cindy Lee',
+        target_id: 'c2', target_no: 'TGT-000005', sales_agent_id: 'cin', label: 'CIN - CONTACT W',
         periods: [
           { id: 'b1', period_start: '2026-10-01', target_value: 400 },
           { id: 'b2', period_start: '2026-11-01', target_value: 400 },
@@ -654,7 +654,7 @@ describe('TargetRecord round 3, F3: the agent target record', () => {
   function childRecord() {
     return splitAgent({
       id: 'c2', target_no: 'TGT-000005', name: '2026 Q4 Target', sales_agent_id: 'cin',
-      subject_label: 'CIN - Cindy Lee', product_scope: 'all', scope: [],
+      subject_label: 'CIN - CONTACT W', product_scope: 'all', scope: [],
       parent: { id: 'team1', name: '2026 Q4 Target', target_no: 'TGT-000003' },
       periods: Q4_PERIODS.map((p) => ({ ...p, id: `b${p.id.slice(1)}`, target_value: 400 })),
     });

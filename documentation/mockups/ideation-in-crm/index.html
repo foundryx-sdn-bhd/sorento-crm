@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ideas in Sorento CRM (mockup)</title>
+<style>
+/* Tokens copied from sorento_crm_frontend/css/config.reui.css (light theme), same as
+   documentation/mockups/do-pull/index.html */
+:root{
+  --background:#fff;--foreground:#09090b;--card:#fff;--muted:#f4f4f5;--muted-fg:#71717a;
+  --border:#ececee;--primary:#3b82f6;--primary-fg:#fff;--primary-soft:#eff6ff;--primary-line:#bfdbfe;
+  --secondary:#f4f4f5;--destructive:#dc2626;--destructive-soft:#fef2f2;--destructive-line:#fecaca;
+  --success:#15803d;--success-soft:#f0fdf4;--success-line:#bbf7d0;--warning:#a16207;--warning-soft:#fefce8;--warning-line:#fde68a;--info:#7c3aed;--info-soft:#f5f3ff;
+  --radius:8px;--page:#f7f7f8;
+}
+.dark{
+  --background:#09090b;--foreground:#fafafa;--card:#111113;--muted:#1c1c1f;--muted-fg:#a1a1aa;
+  --border:#27272a;--primary:#3b82f6;--primary-soft:#172554;--primary-line:#1e3a8a;--secondary:#1c1c1f;
+  --success-soft:#052e16;--success-line:#14532d;--warning-soft:#422006;--warning-line:#713f12;--info-soft:#2e1065;--page:#0c0c0e;
+}
+*{box-sizing:border-box}
+body{margin:0;background:#f7f7f8;color:#09090b;font:14px/1.45 Inter,ui-sans-serif,system-ui,sans-serif}
+h1{font-size:22px;margin:0 0 4px}
+.doc{max-width:1400px;margin:0 auto;padding:16px}
+.intro{color:#71717a;font-size:13px;margin:0 0 12px;max-width:960px}
+.nav{position:sticky;top:0;z-index:5;background:#f7f7f8;padding:8px 0 10px;border-bottom:1px solid #ececee;margin-bottom:16px;display:flex;flex-wrap:wrap;gap:6px}
+.nav a{font-size:12px;text-decoration:none;border:1px solid #ececee;background:#fff;border-radius:999px;padding:3px 10px;color:#71717a}
+section{margin:0 0 38px}
+section>h2{font-size:15px;margin:0 0 4px}
+section>.why{font-size:12.5px;color:#71717a;margin:0 0 12px;max-width:960px}
+.row{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start}
+.note{font-size:12px;color:#71717a;border-left:2px solid #ececee;padding:2px 0 2px 10px;margin:8px 0 0;max-width:960px}
+.note.q{border-left-color:#a16207;color:#09090b}
+.nb{display:inline-block;min-width:18px;height:18px;border-radius:9px;background:#09090b;color:#fff;font-size:11px;line-height:18px;text-align:center;margin-right:6px}
+
+/* frames */
+.desk{width:1280px;flex:none;background:var(--background);color:var(--foreground);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.desk .screen{height:900px;overflow:auto;display:flex;background:var(--background)}
+.desk.short .screen{height:auto}
+.cap{font-size:11px;color:#71717a;text-align:center;padding:6px;border-top:1px solid #ececee;background:#fff}
+.phone{width:375px;flex:none;background:var(--background);color:var(--foreground);border:1px solid var(--border);border-radius:16px;overflow:hidden}
+.phone .screen{height:812px;overflow:auto;background:var(--page);padding:12px}
+.sidebar{width:240px;flex:none;border-right:1px solid var(--border);padding:16px 12px;font-size:13px;background:var(--background)}
+.sidebar .brand{font-weight:700;font-size:18px;padding:0 8px 18px}
+.sidebar .grp{font-size:10.5px;letter-spacing:.06em;color:var(--muted-fg);padding:10px 8px 6px}
+.sidebar .it{padding:6px 8px;border-radius:6px}
+.sidebar .it.on{background:var(--muted);color:var(--primary);font-weight:500}
+.main{flex:1;min-width:0;padding:22px 26px;background:var(--page);position:relative}
+.pagehead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:14px}
+.pagehead .t{font-size:22px;font-weight:600;line-height:1.2}
+.crumbs{font-size:13px;color:var(--muted-fg);margin-top:4px}
+.mtop{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.mtop .t{font-size:18px;font-weight:600}
+
+/* primitives */
+.btn{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 10px;border:1px solid var(--border);background:var(--card);border-radius:6px;font-size:13px;color:var(--foreground);white-space:nowrap}
+.btn.sm{height:28px;font-size:12.5px}
+.btn.primary{background:var(--primary);color:#fff;border-color:var(--primary);font-weight:500}
+.btn.icon{width:32px;justify-content:center;padding:0}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--muted-fg)}
+.badge{display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:999px;font-size:11.5px;font-weight:500;border:1px solid}
+.b-grey{background:var(--muted);color:var(--muted-fg);border-color:var(--border)}
+.b-info{background:var(--primary-soft);color:var(--primary);border-color:var(--primary-line)}
+.b-violet{background:var(--info-soft);color:var(--info);border-color:#ddd6fe}
+.b-ok{background:var(--success-soft);color:var(--success);border-color:var(--success-line)}
+.b-warn{background:var(--warning-soft);color:var(--warning);border-color:var(--warning-line)}
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius)}
+.sub{font-size:12px;color:var(--muted-fg)}
+.inp{height:32px;border:1px solid var(--border);border-radius:6px;padding:0 10px;display:flex;align-items:center;font-size:13px;background:var(--card);color:var(--muted-fg)}
+.ta{min-height:64px;border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:13px;background:var(--card);color:var(--muted-fg)}
+.ta.focus{border-color:var(--primary);color:var(--foreground)}
+.ta.err{border-color:var(--destructive)}
+.errt{font-size:12px;color:var(--destructive);margin-top:4px}
+.toolbar{display:flex;gap:8px;align-items:center;padding:12px;border-bottom:1px solid var(--border)}
+.toolbar .grow{flex:1}
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:6px;overflow:hidden}
+.seg span{padding:0 10px;height:30px;line-height:30px;font-size:12.5px;color:var(--muted-fg)}
+.seg span.on{background:var(--muted);color:var(--foreground);font-weight:500}
+svg.i{width:15px;height:15px;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+/* vote box */
+.vbox{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;border:1px solid var(--border);border-radius:8px;background:var(--card);font-weight:600;color:var(--foreground);line-height:1}
+.vbox.md{width:48px;height:52px;font-size:15px;gap:2px}
+.vbox.sm{width:38px;height:40px;font-size:13px;gap:1px}
+.vbox.on{background:#fff7ed;border-color:#fdba74;color:#c2410c}
+.dark .vbox.on{background:#431407;border-color:#9a3412;color:#fdba74}
+.vbox.dis{opacity:.45}
+
+/* grid */
+.grid{width:100%;border-collapse:collapse;font-size:12.5px;table-layout:fixed}
+.grid th{font-weight:500;color:var(--muted-fg);text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);white-space:nowrap;position:relative}
+.grid th:after{content:"";position:absolute;right:0;top:8px;bottom:8px;border-right:1px solid var(--border)}
+.grid td{padding:7px 10px;border-bottom:1px solid var(--border);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}
+.gridfoot{display:flex;justify-content:space-between;padding:10px 12px;font-size:12px;color:var(--muted-fg)}
+
+/* record card */
+.rc-head{display:flex;justify-content:space-between;gap:16px;padding:16px;border-bottom:1px solid var(--border)}
+.idrow{display:flex;gap:14px;align-items:flex-start;min-width:0}
+.ident h2{margin:0 0 6px;font-size:18px;line-height:1.3}
+.meta{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:12.5px;color:var(--muted-fg);padding:10px 16px;border-bottom:1px solid var(--border)}
+.meta b{color:var(--foreground);font-weight:500}
+.acts{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.pager{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted-fg)}
+.tabs{display:flex;gap:20px;border-bottom:1px solid var(--border);padding:0 16px;font-size:13.5px}
+.tabs span{padding:10px 0 9px;color:var(--muted-fg)}
+.tabs span.on{color:var(--foreground);border-bottom:2px solid var(--foreground);font-weight:500}
+.tbody{padding:14px 16px}
+.fr{display:grid;grid-template-columns:180px 1fr;gap:10px;padding:7px 0;border-bottom:1px dashed var(--border);font-size:13px}
+.fr .k{color:var(--muted-fg)}
+.menuwrap{position:relative;display:inline-block}
+.menu{position:absolute;right:0;top:36px;width:210px;background:var(--card);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.12);padding:4px;z-index:3}
+.mi{display:flex;gap:8px;align-items:center;padding:7px 8px;font-size:13px;border-radius:6px}
+.mi.del{color:var(--destructive)}
+.dv{height:1px;background:var(--border);margin:4px 0}
+.countdown{display:inline-flex;align-items:center;gap:8px;height:32px;padding:0 4px 0 10px;border:1px solid var(--destructive-line);background:var(--destructive-soft);color:var(--destructive);border-radius:6px;font-size:13px;font-weight:500}
+.countdown .btn{height:24px}
+
+/* comments */
+.cm{margin-top:18px}
+.cm h3{font-size:14px;margin:0 0 10px}
+.cm h3 .n{color:var(--muted-fg);font-weight:500}
+.av{width:30px;height:30px;border-radius:50%;background:var(--muted);color:var(--muted-fg);font-size:11px;font-weight:600;display:flex;align-items:center;justify-content:center;flex:none}
+.av.sm{width:24px;height:24px;font-size:10px}
+.comp{display:flex;gap:10px;margin-bottom:14px}
+.comp .ft{display:flex;justify-content:flex-end;gap:8px;margin-top:6px}
+.c{display:flex;gap:10px;padding:8px 0}
+.c .b{flex:1;min-width:0}
+.c .h{display:flex;gap:8px;align-items:baseline;font-size:13px}
+.c .h .t{font-size:12px;color:var(--muted-fg)}
+.c .x{font-size:13px;margin-top:2px}
+.c .ops{display:flex;gap:14px;font-size:12px;color:var(--muted-fg);margin-top:4px}
+.c.del .x{color:var(--muted-fg);font-style:italic}
+.rep{margin-left:40px;border-left:2px solid var(--border);padding-left:12px}
+.tag{font-size:11px;color:var(--muted-fg);border:1px solid var(--border);border-radius:4px;padding:0 4px}
+.empty{padding:22px 0;text-align:center}
+.empty b{display:block;font-size:13.5px}
+.empty span{font-size:12.5px;color:var(--muted-fg)}
+
+/* board */
+.lanes{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+.lane{background:var(--muted);border-radius:8px;padding:8px}
+.lane .lh{display:flex;justify-content:space-between;font-size:12.5px;font-weight:600;padding:2px 4px 8px}
+.lane .lh span{color:var(--muted-fg);font-weight:500}
+.bc{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:8px;margin-bottom:8px;display:flex;gap:8px}
+.bc .grip{color:var(--muted-fg);font-size:12px;line-height:1;padding-top:2px}
+.bc .no{font-size:11.5px;color:var(--muted-fg)}
+.bc .tt{font-size:12.5px;font-weight:500;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.bc .sb{font-size:11.5px;color:var(--muted-fg);margin-top:2px}
+.bc.drag{box-shadow:0 8px 20px rgba(0,0,0,.15);transform:rotate(-2deg)}
+.toast{position:absolute;right:24px;bottom:24px;background:var(--card);border:1px solid var(--border);box-shadow:0 8px 24px rgba(0,0,0,.12);border-radius:8px;padding:10px 14px;font-size:13px;display:flex;gap:8px;align-items:center}
+.toast.bad{border-color:var(--destructive-line)}
+
+/* dialog */
+.dlg{width:520px;background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.12);padding:20px}
+.dlg h3{margin:0 0 14px;font-size:16px}
+.field{margin-bottom:12px}
+.field label{display:block;font-size:12px;color:var(--muted-fg);margin-bottom:4px}
+.field label .r{color:var(--destructive)}
+.dlg .ft{display:flex;justify-content:flex-end;gap:8px;margin-top:6px}
+.drop{border:1px dashed var(--border);border-radius:8px;padding:16px;text-align:center;font-size:12.5px;color:var(--muted-fg)}
+
+/* phone cards */
+.pc{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:10px;margin:0 0 8px;display:flex;gap:10px}
+.pc .tt{font-size:13px;font-weight:500}
+.pc .l2{font-size:12px;color:var(--muted-fg);margin-top:4px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+
+/* portal */
+.portal{flex:1;background:var(--page);display:flex;justify-content:center;padding:28px 16px}
+.portal .wrap{width:100%;max-width:720px}
+.portal .brandbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+.portal .brandbar b{font-size:18px}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="up" viewBox="0 0 24 24"><path d="M18 15l-6-6-6 6"/></symbol>
+<symbol id="right" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></symbol>
+<symbol id="cl" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></symbol>
+<symbol id="cr" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></symbol>
+<symbol id="more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
+<symbol id="pen" viewBox="0 0 24 24"><path d="M17 3a2.8 2.8 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></symbol>
+<symbol id="rocket" viewBox="0 0 24 24"><path d="M12 15l-3-3a22 22 0 0 1 2-4A13 13 0 0 1 22 2c0 3-1 8-6 11a22 22 0 0 1-4 2zM9 12H4s1-3 2-4c2-1 5 0 5 0M12 15v5s3-1 4-2c1-2 0-5 0-5"/></symbol>
+<symbol id="merge" viewBox="0 0 24 24"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/></symbol>
+<symbol id="archive" viewBox="0 0 24 24"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></symbol>
+<symbol id="restore" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5"/></symbol>
+<symbol id="trash" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></symbol>
+<symbol id="split" viewBox="0 0 24 24"><path d="M16 3h5v5M8 3H3v5M12 22v-8.3a4 4 0 0 0-1.2-2.8L3 3M15 9l6-6"/></symbol>
+<symbol id="reply" viewBox="0 0 24 24"><path d="M9 17l-5-5 5-5M20 18v-2a4 4 0 0 0-4-4H4"/></symbol>
+<symbol id="plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></symbol>
+<symbol id="cols" viewBox="0 0 24 24"><path d="M3 3h18v18H3zM9 3v18M15 3v18"/></symbol>
+<symbol id="x" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></symbol>
+</defs></svg>
+
+<div class="doc">
+<h1>Ideas inside Sorento CRM: one mock per CRM screen</h1>
+<p class="intro">Lane IDEATION-IN-CRM, Option C (owner, 2 Oct): the CRM renders Ideas with its own components and calls the shared-service Ideas API through the CRM backend, so there is no iframe and no shared-service domain in the browser. Layout follows the approved IDEATION-COMMENTS mock v2 (vote box, comments, "Move to &lt;next&gt;" + Edit), rebuilt from existing CRM pieces: PageHeader, DataGrid, Badge, RecordNavigation, line tabs, DetailActions menu, Dialog, FileDropzone, Kanban, deferred-action countdown. Ideas, submitters, votes and dates are real dev data (shared-service dev tenant, as in the IDEATION-COMMENTS mock); comment texts are SAMPLE text, since dev has no comments yet. Dates use the CRM format (dd/MM/yyyy). Numbered notes mark what is new; yellow notes are open questions.</p>
+<div class="nav">
+  <a href="#s1">1 Ideas list</a><a href="#s2">2 Capture idea</a><a href="#s3">3 Idea page</a><a href="#s4">4 Header states</a><a href="#s5">5 Comments and countdowns</a><a href="#s6">6 Board</a><a href="#s7">7 Merge and promote</a><a href="#s8">8 Customer track page (portal)</a><a href="#s9">9 Dark and 375px</a><a href="#q">Open questions</a>
+</div>
+
+<!-- 1 -->
+<section id="s1">
+<h2><span class="nb">1</span> Ideas list (sidebar &gt; Ideas, route /ideas)</h2>
+<p class="why">Standard CRM listing: DataGrid with fixed layout and resizable columns, toolbar search, status filter (SearchableSelect, clearable), Columns menu, List / Board switch, one CTA "Capture idea" in the page header. Hidden columns and widths save per user in the CRM's own list preferences (fixes owner feedback 1). Each row leads with the vote box from the IDEATION-COMMENTS mock (orange = you voted); clicking it votes without opening the idea. Rows open /ideas/{id}.</p>
+<div class="row">
+<div class="desk"><div class="screen">
+  <div class="sidebar"><div class="brand">Sorento</div><div class="it">Dashboard</div><div class="it on">Ideas</div><div class="grp">SALES</div><div class="it">Customers</div><div class="it">Sales orders</div><div class="it">Opportunities</div><div class="grp">PROCUREMENT</div><div class="it">Purchase requests</div></div>
+  <div class="main">
+    <div class="pagehead"><div><div class="t">Ideas</div><div class="crumbs">Home / Ideas</div></div><span class="btn primary"><svg class="i"><use href="#plus"/></svg>Capture idea</span></div>
+    <div class="card">
+      <div class="toolbar"><div class="inp" style="width:280px"><svg class="i"><use href="#search"/></svg>&nbsp;Search ideas</div><div class="inp" style="width:170px">All active statuses</div><span class="grow"></span><span class="btn"><svg class="i"><use href="#cols"/></svg>Columns</span><span class="seg"><span class="on">List</span><span>Board</span></span></div>
+      <table class="grid">
+        <colgroup><col style="width:72px"><col style="width:330px"><col style="width:96px"><col style="width:120px"><col style="width:100px"><col style="width:110px"><col style="width:100px"></colgroup>
+        <tr><th>Votes</th><th>Idea</th><th>No.</th><th>Submitter</th><th>Channel</th><th>Status</th><th>Captured</th></tr>
+        <tr><td><span class="vbox sm"><svg class="i"><use href="#up"/></svg>2</span></td><td title="I want a mobile app so field staff can log deliveries offline">I want a mobile app so field staff can log deliveries offline</td><td>IDEA-0001</td><td>CONTACT A</td><td>WhatsApp</td><td><span class="badge b-info">New</span></td><td>20/07/2026</td></tr>
+        <tr><td><span class="vbox sm on"><svg class="i"><use href="#up"/></svg>2</span></td><td>Let CS bulk-export orders to Excel with column presets</td><td>IDEA-0003</td><td>Demo User</td><td>CRM</td><td><span class="badge b-info">New</span></td><td>14/08/2026</td></tr>
+        <tr><td><span class="vbox sm on"><svg class="i"><use href="#up"/></svg>1</span></td><td>test</td><td>IDEA-0008</td><td>Admin User</td><td>CRM</td><td><span class="badge b-info">New</span></td><td>02/09/2026</td></tr>
+        <tr><td><span class="vbox sm"><svg class="i"><use href="#up"/></svg>0</span></td><td>I wish the CRM could remind me before a DO SLA breaches</td><td>IDEA-0002</td><td>Event Manager</td><td>WhatsApp</td><td><span class="badge b-grey">Draft</span></td><td>05/08/2026</td></tr>
+        <tr><td><span class="vbox sm dis"><svg class="i"><use href="#up"/></svg>0</span></td><td>Remind me before a DO SLA breaches <span class="sub">merged into IDEA-0006</span></td><td>IDEA-0004</td><td>CONTACT A</td><td>WhatsApp</td><td><span class="badge b-info">New</span></td><td>06/08/2026</td></tr>
+        <tr><td><span class="vbox sm"><svg class="i"><use href="#up"/></svg>0</span></td><td>E2E Idea 20260928-1349 Bravo - problem statement</td><td>IDEA-0005</td><td>Admin User</td><td>CRM</td><td><span class="badge b-grey">Closed</span></td><td>28/09/2026</td></tr>
+      </table>
+      <div class="gridfoot"><span>Showing 1 to 6 of 6</span><span>Rows per page 25</span></div>
+    </div>
+  </div>
+</div><div class="cap">1280px, Demo User (has the manage permission)</div></div>
+<div class="phone"><div class="screen">
+  <div class="mtop"><span class="t">Ideas</span><span class="btn primary sm"><svg class="i"><use href="#plus"/></svg>Capture</span></div>
+  <div class="inp" style="margin-bottom:8px"><svg class="i"><use href="#search"/></svg>&nbsp;Search ideas</div>
+  <div style="display:flex;gap:8px;margin-bottom:10px"><div class="inp" style="flex:1">All active statuses</div><span class="seg"><span class="on">List</span><span>Board</span></span></div>
+  <div class="pc"><span class="vbox sm"><svg class="i"><use href="#up"/></svg>2</span><div><div class="tt">I want a mobile app so field staff can log deliveries offline</div><div class="l2"><span class="badge b-info">New</span>IDEA-0001 &middot; CONTACT A &middot; 20/07/2026</div></div></div>
+  <div class="pc"><span class="vbox sm on"><svg class="i"><use href="#up"/></svg>2</span><div><div class="tt">Let CS bulk-export orders to Excel with column presets</div><div class="l2"><span class="badge b-info">New</span>IDEA-0003 &middot; Demo User &middot; 14/08/2026</div></div></div>
+  <div class="pc"><span class="vbox sm on"><svg class="i"><use href="#up"/></svg>1</span><div><div class="tt">test</div><div class="l2"><span class="badge b-info">New</span>IDEA-0008 &middot; Admin User &middot; 02/09/2026</div></div></div>
+  <div class="pc"><span class="vbox sm"><svg class="i"><use href="#up"/></svg>0</span><div><div class="tt">I wish the CRM could remind me before a DO SLA breaches</div><div class="l2"><span class="badge b-grey">Draft</span>IDEA-0002 &middot; Event Manager &middot; 05/08/2026</div></div></div>
+</div><div class="cap">375px, card view</div></div>
+</div>
+<p class="note"><span class="nb">1</span>The vote box is the only new list element; everything else is the standard CRM DataGrid. Product is not shown: with the connection scoped to one product (owner Q3) it would always read "Sorento CRM", so it starts hidden and is available under Columns.</p>
+<p class="note">Archived ideas are not in "All active statuses"; the status filter has Archived as an option (as ss does today).</p>
+</section>
+
+<!-- 2 -->
+<section id="s2">
+<h2><span class="nb">2</span> Capture idea (modal, header CTA)</h2>
+<p class="why">Create is a modal by CRM standard. Fields are the shared-service capture fields. No Product picker: the connection is scoped to the CRM's ideation product (owner Q3), which is what fixes owner feedback 2. Files dropped here are uploaded right after the idea is created (the shared-service dialog drops them today).</p>
+<div class="row">
+<div class="dlg">
+  <h3>Capture idea</h3>
+  <div class="field"><label>Problem statement <span class="r">*</span></label><div class="ta err"></div><div class="errt">Problem statement is required</div></div>
+  <div class="field"><label>Proposed solution</label><div class="ta" style="min-height:48px"></div></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+    <div class="field"><label>Impact</label><div class="inp">&nbsp;</div></div>
+    <div class="field"><label>Department</label><div class="inp">&nbsp;</div></div>
+  </div>
+  <div class="field"><label>Original message</label><div class="ta" style="min-height:48px"></div></div>
+  <div class="field"><label>Attachments</label><div class="drop">Drop files here or click to upload</div></div>
+  <div class="ft"><span class="btn">Cancel</span><span class="btn primary">Capture</span></div>
+</div>
+<div style="max-width:600px">
+  <p class="note">Shown after "Capture" was clicked with an empty Problem statement. A new idea lands as Draft, like an idea captured in the shared service.</p>
+</div>
+</div>
+</section>
+
+<!-- 3 -->
+<section id="s3">
+<h2><span class="nb">3</span> Idea page (/ideas/IDEA-0001), status New, "..." menu open</h2>
+<p class="why">CRM detail page: PageHeader with the idea number, record card with the vote box left of the title (IDEATION-COMMENTS mock), status Badge, primary "Move to &lt;next status&gt;" with Edit as an outline button to its left, RecordNavigation, then the "..." menu with Promote to BR, Merge, Archive, Delete. Read-only metadata (submitter, channel, product, captured) sits directly under the header, never in a tab (CRM rule). View and Edit are the same layout: Edit swaps each value for an input in place. Comments sit under the Details fields, oldest first, one reply level.</p>
+<div class="desk"><div class="screen">
+  <div class="sidebar"><div class="brand">Sorento</div><div class="it">Dashboard</div><div class="it on">Ideas</div><div class="grp">SALES</div><div class="it">Customers</div><div class="it">Sales orders</div></div>
+  <div class="main">
+    <div class="pagehead"><div><div class="t">IDEA-0001</div><div class="crumbs">Home / Ideas / IDEA-0001</div></div><div class="pager"><span class="btn icon sm"><svg class="i"><use href="#cl"/></svg></span>1 / 6<span class="btn icon sm"><svg class="i"><use href="#cr"/></svg></span></div></div>
+    <div class="card">
+      <div class="rc-head">
+        <div class="idrow"><span class="vbox md"><svg class="i"><use href="#up"/></svg>2</span><div class="ident"><h2>I want a mobile app so field staff can log deliveries offline</h2><span class="badge b-info">New</span></div></div>
+        <div class="acts">
+          <span class="menuwrap"><span class="btn icon" title="Idea options"><svg class="i"><use href="#more"/></svg></span>
+            <span class="menu"><span class="mi"><svg class="i"><use href="#rocket"/></svg>Promote to BR</span><span class="mi"><svg class="i"><use href="#merge"/></svg>Merge into another idea</span><span class="mi"><svg class="i"><use href="#archive"/></svg>Archive</span><span class="dv"></span><span class="mi del"><svg class="i"><use href="#trash"/></svg>Delete</span></span>
+          </span>
+          <span class="btn"><svg class="i"><use href="#pen"/></svg>Edit</span>
+          <span class="btn primary"><svg class="i"><use href="#right"/></svg>Move to Triaged</span>
+        </div>
+      </div>
+      <div class="meta"><span>Submitter <b>CONTACT A</b></span><span>Channel <b>WhatsApp</b></span><span>Product <b>Sorento CRM</b></span><span>Captured <b>20/07/2026, 2:19 PM</b></span></div>
+      <div class="tabs"><span class="on">Details</span><span>Attachments</span><span>Business requirements</span></div>
+      <div class="tbody">
+        <div class="fr"><span class="k">Problem statement</span><span>I want a mobile app so field staff can log deliveries offline</span></div>
+        <div class="fr"><span class="k">Proposed solution</span><span>a mobile app so field staff can log deliveries offline</span></div>
+        <div class="fr"><span class="k">Impact</span><span>it saves 2 hours a day</span></div>
+        <div class="fr"><span class="k">Department</span><span>operations</span></div>
+        <div class="cm">
+          <h3>Comments <span class="n">3</span></h3>
+          <div class="comp"><span class="av">DU</span><div style="flex:1"><div class="ta">Write a comment</div><div class="ft"><span class="btn primary sm" style="opacity:.5">Comment</span></div></div></div>
+          <div class="c"><span class="av">AU</span><div class="b"><div class="h"><b>Admin User</b><span class="t">21/07/2026, 9:05 AM</span></div><div class="x">Drivers lose signal in the Shah Alam warehouse basement. Offline capture with sync on reconnect would cover it.</div><div class="ops"><span>Reply</span></div></div></div>
+          <div class="rep"><div class="c"><span class="av sm">EM</span><div class="b"><div class="h"><b>Event Manager</b><span class="t">21/07/2026, 11:40 AM</span></div><div class="x">Same for the event crew at venues. Proof-of-delivery photo would help too.</div><div class="ops"><span>Reply</span></div></div></div></div>
+          <div class="c"><span class="av">DU</span><div class="b"><div class="h"><b>Demo User</b><span class="t">22/07/2026, 4:12 PM</span><span class="tag">edited</span></div><div class="x">Asked CONTACT A on WhatsApp: about 30 field staff, Android phones.</div><div class="ops"><span>Reply</span><span>Edit</span><span>Delete</span></div></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div><div class="cap">1280px, Demo User, has not voted</div></div>
+<p class="note"><span class="nb">3</span>Differences from the IDEATION-COMMENTS mock, all from CRM rules: page title is the idea number (the full title is in the card, once); Submitter / Channel / Product / Captured move from the Details rows to the metadata strip under the header; dates in dd/MM/yyyy; "Merge into another idea" is added to the menu (shared-service has merge on the list, the CRM needs an entry point on the idea).</p>
+<p class="note">Business requirements tab: the linked BRs as read-only rows (number, title, status), empty state "No business requirements" + hint. Attachments tab: file list plus a drop area (no second button; the header keeps the one primary action).</p>
+</section>
+
+<!-- 4 -->
+<section id="s4">
+<h2><span class="nb">4</span> Header action states (same rule as the IDEATION-COMMENTS mock section 2)</h2>
+<p class="why">Primary = the next status by the tenant's status order and label. No next move: Edit is primary. Archived: Restore is primary. Merged child: Unmerge is primary, no Edit, no comment box, vote box disabled. Users without the new <code>ideation.ideas.manage</code> permission (owner Q2) see only the vote box and comments: no Edit, no Move, no "..." menu.</p>
+<div class="card" style="max-width:1100px">
+  <div class="rc-head"><div class="idrow"><span class="vbox md"><svg class="i"><use href="#up"/></svg>0</span><div class="ident"><h2>I wish the CRM could remind me before a DO SLA breaches</h2><span class="badge b-grey">Draft</span> <span class="sub">&nbsp;A. Draft</span></div></div><div class="acts"><span class="btn icon"><svg class="i"><use href="#more"/></svg></span><span class="btn"><svg class="i"><use href="#pen"/></svg>Edit</span><span class="btn primary"><svg class="i"><use href="#right"/></svg>Move to New</span></div></div>
+  <div class="rc-head"><div class="idrow"><span class="vbox md on"><svg class="i"><use href="#up"/></svg>2</span><div class="ident"><h2>Let CS bulk-export orders to Excel with column presets</h2><span class="badge b-info">New</span> <span class="sub">&nbsp;B. viewer has upvoted</span></div></div><div class="acts"><span class="btn icon"><svg class="i"><use href="#more"/></svg></span><span class="btn"><svg class="i"><use href="#pen"/></svg>Edit</span><span class="btn primary"><svg class="i"><use href="#right"/></svg>Move to Triaged</span></div></div>
+  <div class="rc-head"><div class="idrow"><span class="vbox md"><svg class="i"><use href="#up"/></svg>0</span><div class="ident"><h2>E2E Idea 20260928-1349 Bravo - problem statement</h2><span class="badge b-grey">Closed</span> <span class="sub">&nbsp;C. no next move</span></div></div><div class="acts"><span class="btn icon"><svg class="i"><use href="#more"/></svg></span><span class="btn primary"><svg class="i"><use href="#pen"/></svg>Edit</span></div></div>
+  <div class="rc-head"><div class="idrow"><span class="vbox md"><svg class="i"><use href="#up"/></svg>0</span><div class="ident"><h2>a brand new test idea about export scheduling</h2><span class="badge b-grey">Archived</span> <span class="sub">&nbsp;D. archived</span></div></div><div class="acts"><span class="btn icon"><svg class="i"><use href="#more"/></svg></span><span class="btn"><svg class="i"><use href="#pen"/></svg>Edit</span><span class="btn primary"><svg class="i"><use href="#restore"/></svg>Restore</span></div></div>
+  <div class="rc-head"><div class="idrow"><span class="vbox md dis"><svg class="i"><use href="#up"/></svg>0</span><div class="ident"><h2>Remind me before a DO SLA breaches</h2><span class="badge b-info">New</span> <span class="sub">&nbsp;E. merged into IDEA-0006</span></div></div><div class="acts"><span class="btn icon"><svg class="i"><use href="#more"/></svg></span><span class="btn primary"><svg class="i"><use href="#split"/></svg>Unmerge</span></div></div>
+  <div class="rc-head" style="border-bottom:0"><div class="idrow"><span class="vbox md"><svg class="i"><use href="#up"/></svg>2</span><div class="ident"><h2>I want a mobile app so field staff can log deliveries offline</h2><span class="badge b-info">New</span> <span class="sub">&nbsp;F. viewer without the manage permission</span></div></div><div class="acts"></div></div>
+</div>
+<p class="note">D: dev has no archived idea; this Draft idea is shown as if archived (same as the IDEATION-COMMENTS mock). E: "Remind me before a DO SLA breaches" shown as merged into IDEA-0006 for illustration.</p>
+</section>
+
+<!-- 5 -->
+<section id="s5">
+<h2><span class="nb">5</span> Comments: reply, deleted with replies, and the delete countdown</h2>
+<p class="why">Delete never asks for confirmation (CRM rule D7, crew answer Q1): the control turns into a countdown with Cancel and the server deletes when it ends. Same for Archive (5 s, reversible) and Delete (10 s) on the idea itself.</p>
+<div class="row">
+<div class="card" style="width:620px;padding:14px 16px">
+  <div class="c"><span class="av">AU</span><div class="b"><div class="h"><b>Admin User</b><span class="t">21/07/2026, 9:05 AM</span></div><div class="x">Drivers lose signal in the Shah Alam warehouse basement. Offline capture with sync on reconnect would cover it.</div></div></div>
+  <div class="rep">
+    <div class="c"><span class="av sm">EM</span><div class="b"><div class="h"><b>Event Manager</b><span class="t">21/07/2026, 11:40 AM</span></div><div class="x">Same for the event crew at venues. Proof-of-delivery photo would help too.</div></div></div>
+    <div class="comp" style="margin:6px 0 0"><span class="av sm">DU</span><div style="flex:1"><div class="ta focus">Agreed, adding photo capture to the BR scope.</div><div class="ft"><span class="btn sm">Cancel</span><span class="btn primary sm">Reply</span></div></div></div>
+  </div>
+  <div class="c del"><span class="av"></span><div class="b"><div class="x">Comment deleted</div></div></div>
+  <div class="rep"><div class="c"><span class="av sm">DU</span><div class="b"><div class="h"><b>Demo User</b><span class="t">23/07/2026, 10:02 AM</span></div><div class="x">Thanks, noted.</div></div></div></div>
+  <div class="c"><span class="av">DU</span><div class="b"><div class="h"><b>Demo User</b><span class="t">22/07/2026, 4:12 PM</span><span class="tag">edited</span></div><div class="x">Asked CONTACT A on WhatsApp: about 30 field staff, Android phones.</div><div class="ops"><span>Reply</span><span>Edit</span><span class="countdown">Deleting in 8s <span class="btn sm">Cancel</span></span></div></div></div>
+</div>
+<div>
+  <div class="card" style="width:560px;padding:14px 16px;margin-bottom:12px"><div class="acts" style="justify-content:flex-start"><span class="countdown">Archiving in 4s <span class="btn sm">Cancel</span></span><span class="btn"><svg class="i"><use href="#pen"/></svg>Edit</span><span class="btn primary"><svg class="i"><use href="#right"/></svg>Move to Triaged</span></div><p class="sub" style="margin:8px 0 0">Idea header while an Archive is pending (from the "..." menu).</p></div>
+  <div class="card" style="width:560px;padding:14px 16px"><div class="empty"><b>No comments yet</b><span>Comments from your team appear here.</span></div><p class="sub" style="margin:0">Empty state: heading and hint, no button.</p></div>
+</div>
+</div>
+<p class="note">A reply to a reply attaches to the same top-level comment (one level). A deleted comment with no replies disappears. Your own comment shows Edit and Delete; a user with the manage permission can delete anyone's comment.</p>
+</section>
+
+<!-- 6 -->
+<section id="s6">
+<h2><span class="nb">6</span> Board (/ideas/board, the "Board" switch on the list)</h2>
+<p class="why">CRM Kanban: one lane per board status, cards ordered by rank, drag by the grip to reorder or move. A move the status graph does not allow is refused and the card goes back. Each card leads with the small vote box (IDEATION-COMMENTS mock: "the triage board card uses the same box"). Only users with the manage permission can drag.</p>
+<div class="desk short"><div class="screen">
+  <div class="sidebar"><div class="brand">Sorento</div><div class="it">Dashboard</div><div class="it on">Ideas</div><div class="grp">SALES</div><div class="it">Customers</div></div>
+  <div class="main" style="min-height:560px">
+    <div class="pagehead"><div><div class="t">Ideas</div><div class="crumbs">Home / Ideas / Board</div></div><div style="display:flex;gap:8px"><span class="seg"><span>List</span><span class="on">Board</span></span><span class="btn primary"><svg class="i"><use href="#plus"/></svg>Capture idea</span></div></div>
+    <div class="lanes">
+      <div class="lane"><div class="lh">New <span>3</span></div>
+        <div class="bc"><span class="grip">&#8942;&#8942;</span><span class="vbox sm"><svg class="i"><use href="#up"/></svg>2</span><div><div class="no">IDEA-0001</div><div class="tt">I want a mobile app so field staff can log deliveries offline</div><div class="sb">CONTACT A</div></div></div>
+        <div class="bc drag"><span class="grip">&#8942;&#8942;</span><span class="vbox sm on"><svg class="i"><use href="#up"/></svg>2</span><div><div class="no">IDEA-0003</div><div class="tt">Let CS bulk-export orders to Excel with column presets</div><div class="sb">Demo User</div></div></div>
+        <div class="bc"><span class="grip">&#8942;&#8942;</span><span class="vbox sm on"><svg class="i"><use href="#up"/></svg>1</span><div><div class="no">IDEA-0008</div><div class="tt">test</div><div class="sb">Admin User</div></div></div>
+      </div>
+      <div class="lane"><div class="lh">Triaged <span>0</span></div><div class="empty" style="padding:14px 0"><span>No ideas</span></div></div>
+      <div class="lane"><div class="lh">Linked <span>0</span></div><div class="empty" style="padding:14px 0"><span>No ideas</span></div></div>
+      <div class="lane"><div class="lh">Building <span>0</span></div><div class="empty" style="padding:14px 0"><span>No ideas</span></div></div>
+      <div class="lane"><div class="lh">Delivered <span>0</span></div><div class="empty" style="padding:14px 0"><span>No ideas</span></div></div>
+    </div>
+    <div class="toast bad"><svg class="i"><use href="#x"/></svg>This idea cannot move to that status.</div>
+  </div>
+</div><div class="cap">1280px: IDEA-0003 dragged from New onto Delivered is refused (New only moves to Triaged)</div></div>
+<p class="note">Lanes and their order come from the tenant's statuses in the shared service (Draft, Closed and Archived are not lanes, as in the shared-service board today). Dev data has every Sorento idea in New, which is why the other lanes are empty here.</p>
+</section>
+
+<!-- 7 -->
+<section id="s7">
+<h2><span class="nb">7</span> Merge and promote</h2>
+<p class="why">Both from the idea's "..." menu, both CRM Dialogs. Merge: pick the idea this one merges into (SearchableSelect over active ideas); its votes and comments stay with it, and the target lists it under "Merged ideas". Promote to BR: creates a Business Requirement in the shared service from the idea. Promote only works for a CRM user whose email is also a shared-service user with BR access; otherwise the shared-service message is shown (crew answer Q3).</p>
+<div class="row">
+<div class="dlg">
+  <h3>Merge into another idea</h3>
+  <div class="field"><label>Merge IDEA-0004 "Remind me before a DO SLA breaches" into <span class="r">*</span></label><div class="inp" style="color:var(--foreground)">IDEA-0002 - I wish the CRM could remind me before a DO SLA breaches</div></div>
+  <div class="ft"><span class="btn">Cancel</span><span class="btn primary">Merge</span></div>
+</div>
+<div class="dlg">
+  <h3>Promote to business requirement</h3>
+  <div class="field"><label>Title <span class="r">*</span></label><div class="inp" style="color:var(--foreground)">I want a mobile app so field staff can log deliveries offline</div></div>
+  <div class="field"><label>Summary</label><div class="ta" style="color:var(--foreground)">a mobile app so field staff can log deliveries offline. Impact: it saves 2 hours a day.</div></div>
+  <div class="ft"><span class="btn">Cancel</span><span class="btn primary">Promote</span></div>
+</div>
+</div>
+<div class="row" style="margin-top:14px">
+<div class="card" style="width:520px;padding:14px 16px"><b style="font-size:13.5px">Merged ideas</b>
+  <div class="c"><span class="vbox sm dis"><svg class="i"><use href="#up"/></svg>0</span><div class="b"><div class="x">IDEA-0004 &middot; Remind me before a DO SLA breaches</div><div class="sub">CONTACT A &middot; 06/08/2026</div></div></div>
+  <p class="sub" style="margin:4px 0 0">On IDEA-0002's Details tab, under the fields.</p></div>
+<div class="card" style="width:520px;padding:12px 14px;display:flex;gap:8px;align-items:center;border-color:var(--destructive-line)"><svg class="i" style="color:var(--destructive)"><use href="#x"/></svg><span style="font-size:13px">This user has no Business Requirements access in the Ideas workspace.</span></div>
+</div>
+<p class="note q">Q1. Promote fields: the mock shows Title + Summary prefilled from the idea. The exact field list is whatever the shared-service promote endpoint requires; if it needs nothing beyond the idea, Promote becomes a one-click menu action with a success toast instead of a dialog. Recommendation: one click, no dialog, if the API allows it.</p>
+</section>
+
+<!-- 8 -->
+<section id="s8">
+<h2><span class="nb">8</span> Customer track page, inside the customer portal: {CRM domain}/portal/ideas/{link token}</h2>
+<p class="why">The "Track it here" link in the WhatsApp reply and status updates opens this page on the Sorento CRM domain, inside the existing customer portal shell (owner Q4). No login: the link token is the key, as today. The customer sees the idea, its status and vote count, and can read and post comments; their comments are posted as the idea's submitter (crew answer Q4). Staff comments from the idea page appear here.</p>
+<div class="row">
+<div class="desk short"><div class="screen">
+  <div class="portal"><div class="wrap">
+    <div class="brandbar"><b>Sorento</b><span class="sub">Idea status</span></div>
+    <div class="card">
+      <div class="rc-head" style="border-bottom:0"><div class="idrow"><span class="vbox md"><svg class="i"><use href="#up"/></svg>2</span><div class="ident"><h2>I want a mobile app so field staff can log deliveries offline</h2><span class="badge b-info">New</span></div></div></div>
+      <div class="meta"><span>Idea <b>IDEA-0001</b></span><span>Submitted <b>20/07/2026</b></span><span>Last update <b>22/07/2026</b></span></div>
+      <div class="tbody">
+        <div class="fr"><span class="k">Your idea</span><span>I want a mobile app so field staff can log deliveries offline. It saves 2 hours a day.</span></div>
+        <div class="cm">
+          <h3>Comments <span class="n">3</span></h3>
+          <div class="comp"><span class="av">CA</span><div style="flex:1"><div class="ta">Write a comment</div><div class="ft"><span class="btn primary sm" style="opacity:.5">Comment</span></div></div></div>
+          <div class="c"><span class="av">AU</span><div class="b"><div class="h"><b>Admin User</b><span class="t">21/07/2026, 9:05 AM</span></div><div class="x">Drivers lose signal in the Shah Alam warehouse basement. Offline capture with sync on reconnect would cover it.</div></div></div>
+          <div class="rep"><div class="c"><span class="av sm">EM</span><div class="b"><div class="h"><b>Event Manager</b><span class="t">21/07/2026, 11:40 AM</span></div><div class="x">Same for the event crew at venues. Proof-of-delivery photo would help too.</div></div></div></div>
+          <div class="c"><span class="av">CA</span><div class="b"><div class="h"><b>CONTACT A</b><span class="tag">You</span><span class="t">22/07/2026, 5:30 PM</span></div><div class="x">Yes, about 30 of us, all on Android.</div></div></div>
+        </div>
+      </div>
+    </div>
+  </div></div>
+</div><div class="cap">1280px, opened from WhatsApp, not logged in</div></div>
+<div class="phone"><div class="screen">
+  <div class="brandbar" style="display:flex;justify-content:space-between;margin-bottom:12px"><b style="font-size:17px">Sorento</b><span class="sub">Idea status</span></div>
+  <div class="card" style="padding:12px">
+    <div style="display:flex;gap:10px"><span class="vbox sm"><svg class="i"><use href="#up"/></svg>2</span><div><div style="font-weight:600">I want a mobile app so field staff can log deliveries offline</div><div style="margin-top:6px"><span class="badge b-info">New</span></div></div></div>
+    <div class="sub" style="margin-top:8px">IDEA-0001 &middot; Submitted 20/07/2026</div>
+    <div class="cm" style="margin-top:12px"><h3>Comments <span class="n">3</span></h3>
+      <div class="ta" style="min-height:44px;margin-bottom:10px">Write a comment</div>
+      <div class="c"><span class="av sm">AU</span><div class="b"><div class="h"><b>Admin User</b></div><div class="t sub">21/07/2026, 9:05 AM</div><div class="x">Drivers lose signal in the Shah Alam warehouse basement.</div></div></div>
+      <div class="c"><span class="av sm">CA</span><div class="b"><div class="h"><b>CONTACT A</b><span class="tag">You</span></div><div class="x">Yes, about 30 of us, all on Android.</div></div></div>
+    </div>
+  </div>
+  <div class="card" style="padding:12px;margin-top:14px"><div class="empty" style="padding:10px 0"><b>Idea not found</b><span>This link is not valid.</span></div></div>
+  <p class="sub" style="text-align:center">Unknown or mistyped link</p>
+</div><div class="cap">375px, plus the not-found state</div></div>
+</div>
+<p class="note">The vote count is read-only here (customers do not vote from the link). Links already sent on the shared-service domain keep working there.</p>
+<p class="note q">Q2. Track page vote box: show the count read-only (mock) or let the customer upvote from the link? Recommendation: read-only; a link-holder vote would count the submitter for their own idea.</p>
+</section>
+
+<!-- 9 -->
+<section id="s9">
+<h2><span class="nb">9</span> Dark theme (owner feedback 3) and the idea page at 375px</h2>
+<p class="why">Native CRM pages follow the CRM theme switch with no extra work, because they use the CRM's own colour tokens. The iframe followed the shared-service theme instead.</p>
+<div class="row">
+<div class="desk short dark"><div class="screen">
+  <div class="sidebar"><div class="brand">Sorento</div><div class="it">Dashboard</div><div class="it on">Ideas</div></div>
+  <div class="main">
+    <div class="pagehead"><div><div class="t">IDEA-0003</div><div class="crumbs">Home / Ideas / IDEA-0003</div></div></div>
+    <div class="card">
+      <div class="rc-head"><div class="idrow"><span class="vbox md on"><svg class="i"><use href="#up"/></svg>2</span><div class="ident"><h2>Let CS bulk-export orders to Excel with column presets</h2><span class="badge b-info">New</span></div></div><div class="acts"><span class="btn icon"><svg class="i"><use href="#more"/></svg></span><span class="btn"><svg class="i"><use href="#pen"/></svg>Edit</span><span class="btn primary"><svg class="i"><use href="#right"/></svg>Move to Triaged</span></div></div>
+      <div class="meta"><span>Submitter <b>Demo User</b></span><span>Channel <b>CRM</b></span><span>Captured <b>14/08/2026, 10:12 AM</b></span></div>
+      <div class="tabs"><span class="on">Details</span><span>Attachments</span><span>Business requirements</span></div>
+      <div class="tbody"><div class="cm" style="margin-top:0"><div class="empty"><b>No comments yet</b><span>Comments from your team appear here.</span></div></div></div>
+    </div>
+  </div>
+</div><div class="cap">1280px, dark</div></div>
+<div class="phone"><div class="screen">
+  <div class="mtop"><span class="t">IDEA-0001</span><span class="pager"><span class="btn icon sm"><svg class="i"><use href="#cl"/></svg></span><span class="btn icon sm"><svg class="i"><use href="#cr"/></svg></span></span></div>
+  <div class="card">
+    <div style="padding:12px;display:flex;gap:10px"><span class="vbox md"><svg class="i"><use href="#up"/></svg>2</span><div><div style="font-weight:600;font-size:15px">I want a mobile app so field staff can log deliveries offline</div><div style="margin-top:6px"><span class="badge b-info">New</span></div></div></div>
+    <div style="padding:0 12px 12px;display:flex;gap:8px"><span class="btn icon"><svg class="i"><use href="#more"/></svg></span><span class="btn"><svg class="i"><use href="#pen"/></svg>Edit</span><span class="btn primary" style="flex:1;justify-content:center"><svg class="i"><use href="#right"/></svg>Move to Triaged</span></div>
+    <div class="meta" style="padding:8px 12px">CONTACT A &middot; WhatsApp &middot; 20/07/2026, 2:19 PM</div>
+    <div class="tabs" style="padding:0 12px;gap:14px;font-size:13px"><span class="on">Details</span><span>Attachments</span><span>BRs</span></div>
+    <div class="tbody" style="padding:10px 12px">
+      <div class="fr" style="grid-template-columns:1fr"><span class="k">Impact</span><span>it saves 2 hours a day</span></div>
+      <div class="cm"><h3>Comments <span class="n">3</span></h3><div class="ta" style="min-height:44px">Write a comment</div>
+        <div class="c"><span class="av sm">AU</span><div class="b"><div class="h"><b>Admin User</b></div><div class="sub">21/07/2026, 9:05 AM</div><div class="x">Drivers lose signal in the Shah Alam warehouse basement.</div></div></div>
+      </div>
+    </div>
+  </div>
+</div><div class="cap">375px idea page</div></div>
+</div>
+</section>
+
+<section id="q">
+<h2>Open questions</h2>
+<p class="note q">Q1 (section 7). Promote: dialog with Title + Summary, or one click from the menu with a success toast if the shared-service API needs nothing more? Recommendation: one click.</p>
+<p class="note q">Q2 (section 8). Track page vote box read-only, or customer upvote from the link? Recommendation: read-only.</p>
+<p class="note q">Q3 (section 1). Product column hidden by default (it always reads "Sorento CRM" once the connection is scoped)? Recommendation: hidden by default, available in Columns.</p>
+</section>
+</div>
+</body>
+</html>

@@ -38,7 +38,7 @@ import type { TagSizeRecord } from '../../services/tagSizeService';
 import { TagSizeDialog } from './TagSizeDialog';
 
 export function TagSizesList() {
-  const { data: sizes = [], isLoading } = useTagSizesQuery();
+  const { data: sizes = [], isLoading, error, refetch } = useTagSizesQuery();
   // Delete asks nothing (D7): the row dims and a toast counts down with
   // Cancel, exactly like `TagTemplatesList`'s own row delete.
   const deletion = useDeleteTagSizePreset();
@@ -198,6 +198,8 @@ export function TagSizesList() {
             table={table}
             recordCount={filtered.length}
             isLoading={isLoading}
+            error={error}
+            onRetry={() => void refetch()}
             tableLayout={{ width: 'fixed', columnsResizable: true }}
             rowPending={rowPending}
           >

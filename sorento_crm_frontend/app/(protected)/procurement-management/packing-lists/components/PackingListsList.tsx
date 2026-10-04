@@ -20,6 +20,9 @@ import { Download, Eye, Plus, RefreshCw, Trash2, Upload } from 'lucide-react';
 import { toast } from '@/lib/toast';
 import { getLatestContainerStatusDocument } from '../services/packingListService';
 import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import { SearchableSelect } from '@/components/common/SearchableSelect';
+import { PACKING_LIST_REGION_OPTIONS, regionLabel } from '@/lib/packing-list-regions';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardFooter, CardHeader, CardTable } from '@/components/ui/card';
 import { DataGrid } from '@/components/ui/data-grid';
@@ -53,6 +56,7 @@ export default function PackingListsList() {
   const qc = useQueryClient();
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [attachmentUploadOpen, setAttachmentUploadOpen] = useState(false);
+  const [regionFilter, setRegionFilter] = useState('');
 
   // The Drive-style Upload button fires the create-attachment write route directly
   // (`POST /api/v1/resource-management/attachments`), gated on its own permission -
@@ -93,11 +97,12 @@ export default function PackingListsList() {
     setPagination({ pageIndex: state.pageIndex, pageSize: state.pageSize });
     setSorting(state.sorting);
     resetSearch(state.searchQuery);
+    setRegionFilter(state.filters.region ?? '');
   });
 
   // Page one when a filter CHANGES, never on mount - the mount run used to stamp
   // page 1 over the page `useListStateFromUrl` had just restored from the URL.
-  useResetPageOnFilterChange(setPagination, [searchQuery]);
+  useResetPageOnFilterChange(setPagination, [searchQuery, regionFilter]);
   /**
    * Clearance columns are OFF by default. There are 17 of them; showing them all
    * would bury the eight columns everyone already uses. Each user turns on the ones
@@ -134,6 +139,7 @@ export default function PackingListsList() {
     pageSize: pagination.pageSize,
     sorting,
     searchQuery,
+    region: regionFilter || undefined,
   });
 
   // The whole row opens the record, carrying the list query the pager rebuilds
@@ -144,7 +150,7 @@ export default function PackingListsList() {
       pageSize: pagination.pageSize,
       sorting,
       searchQuery,
-    });
+    }, { region: regionFilter || undefined });
     const qs = search ? `?${search}` : '';
     return `/procurement-management/packing-lists/${row.id}${qs}`;
   };
@@ -298,6 +304,24 @@ export default function PackingListsList() {
         meta: { headerTitle: 'Status', skeleton: <Skeleton className="h-4 w-20" /> },
       },
       {
+        accessorKey: 'regions',
+        header: ({ column }) => (
+          <DataGridColumnHeader title="Regions" column={column} />
+        ),
+        cell: ({ row }) => (
+          <div className="flex flex-wrap gap-1">
+            {(row.original.regions ?? []).map((code) => (
+              <Badge key={code} variant="outline" size="sm">
+                {regionLabel(code)}
+              </Badge>
+            ))}
+          </div>
+        ),
+        size: 220,
+        enableSorting: false,
+        meta: { headerTitle: 'Regions', skeleton: <Skeleton className="h-4 w-24" /> },
+      },
+      {
         accessorKey: 'total_items_shipped',
         header: ({ column }) => (
           <DataGridColumnHeader title="Items" column={column} />
@@ -424,6 +448,27 @@ export default function PackingListsList() {
                 className="w-64"
               />
             }
+            filters={{
+              kind: 'custom',
+              active: !!regionFilter,
+              activeCount: regionFilter ? 1 : 0,
+              content: (
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="packing-list-region-filter">Region</Label>
+                    <SearchableSelect
+                      id="packing-list-region-filter"
+                      value={regionFilter}
+                      onChange={setRegionFilter}
+                      options={PACKING_LIST_REGION_OPTIONS}
+                      placeholder="All regions"
+                      triggerClassName="mt-1"
+                      clearable
+                    />
+                  </div>
+                </div>
+              ),
+            }}
             exportConfig={{ filename: 'packing_lists_export.xlsx' }}
             primaryAction={listPrimaryAction}
             secondaryActions={[

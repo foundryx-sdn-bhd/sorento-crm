@@ -15,7 +15,10 @@ import type { CustomerFormData } from '../types/customer.types';
 import { LIST_QUERY_OPTIONS } from '@/lib/list-query/options';
 
 
-export type CustomersListParams = DataGridApiFetchParams & { status?: string };
+export type CustomersListParams = DataGridApiFetchParams & {
+  status?: string;
+  customer_group_id?: string;
+};
 
 /**
  * The list's React Query key. The detail page's pager rebuilds the SAME key from
@@ -29,6 +32,7 @@ export function customersListQueryKey(params: CustomersListParams): QueryKey {
     params.sorting,
     params.searchQuery,
     params.status,
+    params.customer_group_id,
   ];
 }
 
@@ -42,6 +46,7 @@ export function customersListParamsFromUrl(
     sorting: params.sorting,
     searchQuery: params.searchQuery,
     status: params.filters.status,
+    customer_group_id: params.filters.customer_group_id,
   };
 }
 

@@ -35,6 +35,8 @@ export interface ProductLineRef extends ProductVariantRef {
   brand_id?: string | null;
   base_uom_id?: string | null;
   list_price?: string | null;
+  /** Set on a `company_scope=grants` read. */
+  company_name?: string | null;
 }
 
 // Product Interface (matches database schema)
@@ -170,6 +172,8 @@ export interface Brand {
   description?: string | null;
   logo_url?: string | null;
   is_active: boolean;
+  /** Set on a `company_scope=grants` read. */
+  company_name?: string | null;
   access_levels?: string[];
   // A brand marked false is bought locally by CS and never raises an Order
   // Inquiry - PLAN-brand-flows-to-purchasing.md.

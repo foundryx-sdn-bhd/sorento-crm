@@ -3,11 +3,12 @@
  * (PLAN-autocount-compare-tab-detail.md). No React, no DataGrid - kept separate so the
  * formatting/labelling/combining logic is unit-testable without rendering the table.
  */
-import type {
-  AutocountCompareDifference,
-  AutocountComparePullResult,
-  AutocountPullCompareSource,
-  AutocountPullEntity,
+import {
+  isDocumentEntity,
+  type AutocountCompareDifference,
+  type AutocountComparePullResult,
+  type AutocountPullCompareSource,
+  type AutocountPullEntity,
 } from '../types/autocountPull.types';
 
 /** Booleans -> `Active`/`Inactive` (the only boolean field the compare service sends is
@@ -41,6 +42,10 @@ const FIELD_LABELS: Record<string, string> = {
   doc_date: 'Date',
   debtor_code: 'Debtor Code',
   cancel: 'Cancel',
+  // The GRN files (`compare_goods_receive_notes`, `_headers`): the sheets' "Our PO No." and
+  // "Transfer From", both the PO or SPO the receipt came from.
+  creditor_code: 'Creditor Code',
+  source_doc: 'Source PO / SPO',
 };
 
 /** Human label for a backend field key (cursor rule: no snake_case in the UI). Unknown keys
@@ -79,7 +84,7 @@ function splitOnlyInLabel(
   label: string,
   entity: AutocountPullEntity,
 ): { item_code: string; doc_no?: string; location?: string } {
-  if (entity === 'delivery_orders') {
+  if (isDocumentEntity(entity)) {
     const first = label.indexOf('|');
     const last = label.lastIndexOf('|');
     if (first === -1 || last === first) return { item_code: label };

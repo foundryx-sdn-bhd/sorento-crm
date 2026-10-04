@@ -11,6 +11,7 @@ from app.api.v1.public import (
     portal,
     portal_conversations,
     portal_customer_asks,
+    portal_ideas,
     portal_price_tag,
     portal_sales_opportunity,
     print as print_route,
@@ -35,6 +36,9 @@ router.include_router(view.router, prefix="/view", tags=["public-view"])
 router.include_router(
     portal_price_tag.router, prefix="/portal", tags=["public-portal-price-tag"]
 )
+# Customer idea track page (IDEATION-IN-CRM): literal `/portal/ideas/...` paths, mounted before
+# the generic portal router for the same reason.
+router.include_router(portal_ideas.router, prefix="/portal", tags=["public-portal-ideas"])
 # Chatbot stock ask v2 S6: literal `/customer-asks` paths only, mounted before the
 # generic portal router for the same reason as the price tag router above.
 router.include_router(

@@ -65,4 +65,26 @@ describe('PullScopeDialog', () => {
 
     expect(onPull).toHaveBeenCalledWith(null);
   });
+
+  it('with requireWindow (goods receipt notes, ss#107) both days cleared holds Pull', () => {
+    const onPull = vi.fn();
+    render(
+      <PullScopeDialog
+        open
+        onOpenChange={vi.fn()}
+        onPull={onPull}
+        documentLabel="goods receipt notes"
+        requireWindow
+      />,
+    );
+
+    expect(screen.getByRole('heading', { name: 'Pull goods receipt notes from AutoCount' })).toBeInTheDocument();
+    expect(screen.queryByText(/Leave both empty/)).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('From day'), { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText('To day'), { target: { value: '' } });
+    expect(screen.getByRole('button', { name: 'Pull' })).toBeDisabled();
+    expect(screen.getByText('Set both days.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Pull' }));
+    expect(onPull).not.toHaveBeenCalled();
+  });
 });

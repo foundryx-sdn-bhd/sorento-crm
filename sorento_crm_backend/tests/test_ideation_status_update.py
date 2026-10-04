@@ -611,7 +611,7 @@ def test_ac_is041_opted_out_skips_and_logs(db):
 
 def test_ac_is042_unknown_phone_skips_and_logs(db):
     tpl = _map_template(db)
-    ev = _event(22, phone="+60999000111")
+    ev = _event(22, phone="+60900000074")
 
     svc.poll_ideation_status_events(db, fetch=FakeFeed([ev]))
 
@@ -735,7 +735,7 @@ def test_outbox_renders_a_skipped_row_when_the_template_resolves(db, case, code)
     if case == "opted_out":
         ev = _event(n, phone=_contact(db, outbound=False).phone_number)
     elif case == "unknown_contact":
-        ev = _event(n, phone="+60999000222")
+        ev = _event(n, phone="+60900000075")
     else:
         ev = _event(n, phone=_contact(db).phone_number, is_test=True)
 
@@ -795,7 +795,7 @@ def test_ac_is062_no_row_is_ever_pending_or_processing(db):
         _event(40, phone=c.phone_number),
         _event(41, phone=c.phone_number, is_test=True),
         _event(42, phone=off.phone_number),
-        _event(43, phone="+60999000222"),
+        _event(43, phone="+60900000075"),
     ]
 
     svc.poll_ideation_status_events(db, fetch=FakeFeed(events))

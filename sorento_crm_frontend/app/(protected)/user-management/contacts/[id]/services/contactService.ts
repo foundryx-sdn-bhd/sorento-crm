@@ -1,5 +1,10 @@
 import { apiFetch } from '@/lib/api';
-import { buildDataGridParams, extractApiError, type DataGridParamsInput } from '@/lib/api-client';
+import {
+  apiError,
+  buildDataGridParams,
+  extractApiError,
+  type DataGridParamsInput,
+} from '@/lib/api-client';
 import type { RespondContact } from '../../types/contact.types';
 
 /**
@@ -18,7 +23,8 @@ export interface RespondContactListResponse {
 export async function getContact(contactId: string): Promise<RespondContact> {
   const response = await apiFetch(`/api/user-management/contacts/${contactId}`);
   if (!response.ok) {
-    throw new Error(await extractApiError(response, 'Failed to load contact'));
+    // Status-carrying, so the layout can tell a refusal or a missing contact from a fault.
+    throw await apiError(response, 'Failed to load contact');
   }
   return (await response.json()) as RespondContact;
 }

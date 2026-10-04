@@ -94,7 +94,7 @@ export default function OutgoingMailsList() {
     setPagination((p) => ({ ...p, pageIndex: 0 }));
   }, [query]);
 
-  const { data, isLoading, isPlaceholderData, refetch, isFetching } = useOutgoingMails({
+  const { data, isLoading, isPlaceholderData, refetch, isFetching, error } = useOutgoingMails({
     pageIndex: pagination.pageIndex,
     pageSize: pagination.pageSize,
     status: status === '__all__' ? undefined : status,
@@ -217,6 +217,8 @@ export default function OutgoingMailsList() {
 
   return (
     <DataGrid table={table} recordCount={data?.pagination.total || 0} isLoading={isLoading}
+      error={error}
+      onRetry={() => void refetch()}
       isPlaceholderData={isPlaceholderData}
       tableLayout={{ columnsVisibility: true }}
     >

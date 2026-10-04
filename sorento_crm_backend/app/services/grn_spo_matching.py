@@ -64,6 +64,11 @@ def _spo_match_key_sql(column):
 # ---------------------------------------------------------------------------
 _DRAWN_QUANTITY = func.coalesce(PickingLine.quantity_picked, 0)
 
+#: A GRN in either state received nothing, so its lines hold no SPO capacity: `rejected`
+#: always, `cancelled` since GRN-PULL-CRM (owner Q4 a, 2 Oct) - an AutoCount GRN cancelled
+#: in the book lands `cancelled` and keeps its links for the audit trail.
+NON_CONSUMING_GRN_STATUSES = ("rejected", "cancelled")
+
 
 @dataclass
 class PoolEntry:
@@ -120,7 +125,7 @@ def build_allocation_pool(
 
     So each allocation's consumption is the sum of the DRAWN quantity (see the
     convention note above) over the picking lines linked to it, REGARDLESS of
-    approval status - except lines on a REJECTED GRN, which must not consume
+    approval status - except lines on a REJECTED or CANCELLED GRN, which must not consume
     capacity (the same rule the forward-match candidate filter states) - plus
     whatever part of the stored receipt neither a picking line nor the statement
     (`stated_received`) explains.
@@ -160,10 +165,74 @@ def build_allocation_pool(
         .all()
     )
     matched = [a for a in allocations if _spo_match_key(a.spo_number) == key]
-    if not matched:
+    entries = _measure(db, matched, exclude_header_ids=exclude_header_ids, company_id=company_id)
+    return [entry for entry in entries if entry.available > 0]
+
+
+def spo_line_candidates(
+    db: Session,
+    *,
+    product_id: str,
+    spo_number: Optional[str],
+    company_id: str,
+    exclude_header_ids: Iterable[str] = (),
+) -> list[PoolEntry]:
+    """Every line of ``spo_number`` carrying ``product_id``, in LINE order, with what each
+    has left - the AutoCount GRN ingest's candidates (GRN-PULL-CRM plan 1.3).
+
+    Same capacity arithmetic as ``build_allocation_pool`` (one ``_measure``), with two
+    differences that come from AutoCount writing ONE GRN line per SPO line in the SPO's
+    Seq order: the order is ``spo_line_number`` (the SPO ingest numbers new lines in Seq
+    order; Seq itself is not stored), not age; and a line with nothing left is KEPT, so an
+    over-receipt can still land on the line it belongs to.
+    """
+    if not company_id:
+        # Security review N1: no company would read every company's lines.
+        raise ValueError("spo_line_candidates needs the company the GRN belongs to")
+    key = _spo_match_key(spo_number)
+    if not key:
+        return []
+    query = db.query(SPOAllocation).filter(
+        SPOAllocation.product_id == str(product_id),
+        SPOAllocation.spo_number.isnot(None),
+        _spo_match_key_sql(SPOAllocation.spo_number) == key,
+    )
+    query = query.filter(SPOAllocation.company_id == str(company_id))
+    rows = query.order_by(
+        SPOAllocation.spo_line_number.asc().nulls_last(),
+        SPOAllocation.created_at.asc(),
+        SPOAllocation.id.asc(),
+    ).all()
+    return _measure(db, rows, exclude_header_ids=exclude_header_ids, company_id=company_id)
+
+
+def spo_number_known(db: Session, spo_number: Optional[str], *, company_id: str) -> bool:
+    """Whether any line of ``spo_number`` (matched the upload's way) exists in the company."""
+    key = _spo_match_key(spo_number)
+    if not key:
+        return False
+    return db.query(
+        db.query(SPOAllocation.id)
+        .filter(SPOAllocation.company_id == str(company_id),
+                SPOAllocation.spo_number.isnot(None),
+                _spo_match_key_sql(SPOAllocation.spo_number) == key)
+        .exists()
+    ).scalar()
+
+
+def _measure(
+    db: Session,
+    allocations: list[SPOAllocation],
+    *,
+    exclude_header_ids: Iterable[str],
+    company_id: Optional[str],
+) -> list[PoolEntry]:
+    """What each allocation has left, in the order given (see ``build_allocation_pool``'s
+    docstring for the arithmetic). A retired line nothing picks against is dropped."""
+    if not allocations:
         return []
 
-    allocation_ids = [str(a.id) for a in matched]
+    allocation_ids = [str(a.id) for a in allocations]
     excluded = {str(header_id) for header_id in exclude_header_ids}
 
     line_qty = _DRAWN_QUANTITY
@@ -182,7 +251,7 @@ def build_allocation_pool(
         .filter(
             PickingLine.spo_allocation_id.in_(allocation_ids),
             PickingHeader.picking_type == "goods_received",
-            PickingHeader.picking_status != "rejected",
+            PickingHeader.picking_status.notin_(NON_CONSUMING_GRN_STATUSES),
         )
         .group_by(PickingLine.spo_allocation_id)
     )
@@ -191,8 +260,8 @@ def build_allocation_pool(
     rows = consumption.all()
     linked = {str(row[0]): (int(row[1]), int(row[2])) for row in rows}
 
-    pool: list[PoolEntry] = []
-    for allocation in matched:
+    entries: list[PoolEntry] = []
+    for allocation in allocations:
         linked_all, linked_excluded = linked.get(str(allocation.id), (0, 0))
         if allocation.retired_at is not None and linked_all == 0:
             # D34 (SPO-XLSX-SUPERSEDE round 2): a retired line nothing picks
@@ -209,16 +278,14 @@ def build_allocation_pool(
         stated = int(allocation.stated_received or 0)
         external_received = max(0, int(allocation.quantity_received or 0) - stated - linked_all)
         consumed = linked_other + external_received
-        available = max(0, int(allocation.allocated_quantity or 0) - consumed)
-        if available > 0:
-            pool.append(
-                PoolEntry(
-                    allocation_id=str(allocation.id),
-                    warehouse_id=str(allocation.warehouse_id) if allocation.warehouse_id else None,
-                    available=available,
-                )
+        entries.append(
+            PoolEntry(
+                allocation_id=str(allocation.id),
+                warehouse_id=str(allocation.warehouse_id) if allocation.warehouse_id else None,
+                available=max(0, int(allocation.allocated_quantity or 0) - consumed),
             )
-    return pool
+        )
+    return entries
 
 
 def draw_fifo(
@@ -289,7 +356,11 @@ def forward_match_grn_lines_for_spo(
             PickingLine.spo_number_raw.isnot(None),
             _spo_match_key_sql(PickingLine.spo_number_raw) == key,
             PickingHeader.picking_type == "goods_received",
-            PickingHeader.picking_status != "rejected",
+            PickingHeader.picking_status.notin_(NON_CONSUMING_GRN_STATUSES),
+            # An AutoCount GRN's line is ONE row per AutoCount line (unique DtlKey) and is
+            # linked by the GRN ingest's own resolver and waiting fill (GRN-PULL-CRM plan
+            # 1.3); a FIFO draw here would split it into rows AutoCount never wrote.
+            PickingHeader.doc_key.is_(None),
         )
     )
     if company_id:

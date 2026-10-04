@@ -228,6 +228,7 @@ async def get_packing_lists(
     query: Optional[str] = Query(None),
     supplier_id: Optional[str] = Query(None),
     shipment_status: Optional[str] = Query(None),
+    region: Optional[str] = Query(None, pattern="^(west|east)$"),
     sort: Optional[str] = Query("created_at"),
     dir: Optional[str] = Query("asc"),
     current_user: dict = Depends(get_current_user_or_api_key),
@@ -243,7 +244,8 @@ async def get_packing_lists(
             supplier_id=supplier_id,
             shipment_status=shipment_status,
             sort_field=sort or "created_at",
-            sort_dir=dir or "asc"
+            sort_dir=dir or "asc",
+            region=region,
         )
         return result
     except Exception as e:

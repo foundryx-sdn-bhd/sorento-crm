@@ -20,6 +20,10 @@ function Skeleton({
   return (
     <Comp
       data-slot="skeleton"
+      // The never-stuck smoke (e2e/never-stuck.smoke.spec.ts) fails a page that still
+      // shows any `[data-loading]` element 15s after navigation. Placed before the
+      // spread so it marks every skeleton without clobbering a caller's own attributes.
+      data-loading=""
       className={cn('animate-pulse rounded-md bg-accent', className)}
       {...props}
     />

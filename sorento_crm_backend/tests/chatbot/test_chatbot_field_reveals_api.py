@@ -22,6 +22,9 @@ from app.services.user_service import UserPermissionService
 
 from tests.chatbot.test_turns_admin_api import db  # noqa: F401 - reuses the blank-schema fixture
 
+# DO-ASK-SIMPLIFY (owner, 4 Oct 2026): every DO field reveal defaults ON for every contact.
+DO_KEYS = sorted(key for key, _label in FIELD_REVEAL_KEYS if key.startswith("delivery_orders."))
+
 BASE = "/api/v1/system/chatbot"
 CONTACT_VIEW = "user_management.contacts.view"
 CONTACT_EDIT = "user_management.contacts.edit"
@@ -91,11 +94,11 @@ class TestFieldRevealKeys:
 
 
 class TestContactFieldReveals:
-    def test_get_defaults_to_empty(self, client, db):
+    def test_get_defaults_to_the_do_keys(self, client, db):
         contact_id = _contact(db)
         resp = client.get(f"{BASE}/contacts/{contact_id}/field-reveals")
         assert resp.status_code == 200, resp.text
-        assert resp.json()["granted"] == []
+        assert resp.json()["granted"] == DO_KEYS
 
     def test_put_replaces_and_get_reflects_it(self, client, db):
         contact_id = _contact(db)
@@ -134,7 +137,7 @@ class TestContactFieldReveals:
 
         # Nothing was written by the rejected call.
         get_resp = client.get(f"{BASE}/contacts/{contact_id}/field-reveals")
-        assert get_resp.json()["granted"] == []
+        assert get_resp.json()["granted"] == DO_KEYS
 
     def test_put_requires_edit_permission(self, client, db):
         contact_id = _contact(db)
@@ -143,3 +146,56 @@ class TestContactFieldReveals:
             f"{BASE}/contacts/{contact_id}/field-reveals", json={"granted": []}
         )
         assert resp.status_code == 403
+
+
+class TestUnknownHeldKeysAreKept:
+    """Tester pass of #1431: the dev DB holds `delivery_orders.*` reveal rows seeded by
+    another lane (#1433) that this build does not know. The contact screen sends the
+    contact's held keys back on save, so rejecting every unknown key 422'd ANY reveal
+    change on that contact (merge order). A key the contact already holds and this build
+    does not know is kept untouched; a NEW unknown key is still a 422."""
+
+    HELD = "delivery_orders.zzt_future_key"
+
+    def _hold(self, db, contact_id: str) -> None:
+        from app.models.access import ContactFieldReveal
+
+        db.add(ContactFieldReveal(respond_contact_id=contact_id, field_key=self.HELD, granted=True))
+        db.add(
+            ContactFieldReveal(
+                respond_contact_id=contact_id, field_key="inventory.sellable", granted=True
+            )
+        )
+        db.commit()
+
+    def test_save_echoing_a_held_unknown_key_succeeds_and_keeps_it(self, client, db):
+        contact_id = _contact(db)
+        self._hold(db, contact_id)
+
+        resp = client.put(
+            f"{BASE}/contacts/{contact_id}/field-reveals", json={"granted": [self.HELD]}
+        )
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["granted"] == [self.HELD]
+
+    def test_save_omitting_a_held_unknown_key_leaves_it_untouched(self, client, db):
+        contact_id = _contact(db)
+        self._hold(db, contact_id)
+
+        resp = client.put(f"{BASE}/contacts/{contact_id}/field-reveals", json={"granted": []})
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["granted"] == [self.HELD]
+
+    def test_a_new_unknown_key_is_still_rejected(self, client, db):
+        contact_id = _contact(db)
+        self._hold(db, contact_id)
+
+        resp = client.put(
+            f"{BASE}/contacts/{contact_id}/field-reveals",
+            json={"granted": [self.HELD, "not_a_real_key"]},
+        )
+
+        assert resp.status_code == 422, resp.text
+        assert "not_a_real_key" in resp.text

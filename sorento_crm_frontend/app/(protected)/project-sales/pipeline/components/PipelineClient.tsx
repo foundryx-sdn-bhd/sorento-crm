@@ -32,6 +32,7 @@ import { DeliveryScheduleUploadDialog } from '../../[projectId]/components/Deliv
 import { PageHeader } from '@/components/common/PageHeader';
 import { isSearchInFlight, useDebouncedSearch } from '@/hooks/useDebouncedSearch';
 import { ListSearchInput } from '@/components/common/ListSearchInput';
+import { ListLoadFailure } from '@/components/common/ListLoadFailure';
 
 type StartAction = 'upload-po' | 'upload-schedule' | null;
 
@@ -352,7 +353,12 @@ export function PipelineClient() {
         </div>
       )}
 
-      {view === 'board' && !projects.isLoading && total === 0 ? (
+      {view === 'board' && !projects.isLoading && projects.error && total === 0 ? (
+        // A failed read is not "no projects registered yet" (lever L2).
+        <div className="rounded-lg border px-4 py-6 text-sm">
+          <ListLoadFailure error={projects.error} onRetry={() => void projects.refetch()} />
+        </div>
+      ) : view === 'board' && !projects.isLoading && total === 0 ? (
         hasFilters ? (
           <EmptyState
             title="No projects match these filters"
@@ -381,6 +387,7 @@ export function PipelineClient() {
           projects={rows}
           total={total}
           isLoading={projects.isLoading}
+          error={projects.error}
           isFetching={projects.isFetching}
           isPlaceholderData={projects.isPlaceholderData}
           pagination={pagination}

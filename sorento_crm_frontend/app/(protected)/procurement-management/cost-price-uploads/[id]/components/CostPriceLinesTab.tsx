@@ -392,7 +392,7 @@ function ReturnDialog({ setId, onDone }: { setId: string; onDone: () => void }) 
 }
 
 export function CostPriceLinesTab({ changeSet }: { changeSet: CostPriceChangeSetDetail }) {
-  const { data } = useCostPriceChangeLines(changeSet.id);
+  const { data, error, refetch } = useCostPriceChangeLines(changeSet.id);
   const lines = React.useMemo(() => (data?.data ?? []).filter((l) => !isDuplicateRow(l)), [data]);
   // Cards at 375 (mockup "At 375 wide"), the DataGrid at sm+ - a JS switch, not a CSS
   // one: `sm:hidden`/`hidden sm:block` render BOTH into the DOM regardless of viewport
@@ -806,6 +806,8 @@ export function CostPriceLinesTab({ changeSet }: { changeSet: CostPriceChangeSet
         <DataGrid
           table={table}
           recordCount={filteredLines.length}
+          error={error}
+          onRetry={() => void refetch()}
           listingKey="procurement.cost_price_changes.view::change-set-lines"
           tableLayout={{ width: 'fixed', columnsResizable: true }}
         >

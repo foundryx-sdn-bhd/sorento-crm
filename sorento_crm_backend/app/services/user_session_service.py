@@ -33,7 +33,7 @@ REASON_REVOKED = "session_revoked"
 REASON_EXPIRED = "session_expired"
 
 # How a session was minted (identity S0, AC-07). Mirrors `ck_user_sessions_auth_method`.
-AUTH_METHODS = ("password", "phone_otp", "portal_link", "impersonation")
+AUTH_METHODS = ("password", "phone_otp", "portal_link", "impersonation", "dev_login")
 
 
 class SessionAuthError(Exception):

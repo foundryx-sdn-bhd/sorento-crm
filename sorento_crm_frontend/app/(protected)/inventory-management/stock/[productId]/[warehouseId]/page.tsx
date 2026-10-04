@@ -302,6 +302,8 @@ export default function StockDetailPage({ params }: StockDetailPageProps) {
             table={table}
             recordCount={ledgerQuery.data?.pagination.total || 0}
             isLoading={ledgerQuery.isLoading}
+            error={ledgerQuery.error}
+            onRetry={() => void ledgerQuery.refetch()}
             isPlaceholderData={ledgerQuery.isPlaceholderData}
           >
             <Card>

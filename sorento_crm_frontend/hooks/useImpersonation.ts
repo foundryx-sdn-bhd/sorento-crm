@@ -32,8 +32,16 @@ export function useImpersonation() {
 
   const stopMutation = useMutation({
     mutationFn: stopImpersonation,
-    onSuccess: () => {
+    // Clear before the call, not after: a query answered between the server ending
+    // the row and onSuccess would carry X-Impersonation-Ended while the target still
+    // matched, and show "View-as ended" for a stop the user just asked for.
+    onMutate: () => {
+      const previous = impersonationStore.getState();
       impersonationStore.setSession(null);
+      return { previous };
+    },
+    onError: (_error, _vars, context) => {
+      if (context?.previous) impersonationStore.setSession(context.previous);
     },
   });
 

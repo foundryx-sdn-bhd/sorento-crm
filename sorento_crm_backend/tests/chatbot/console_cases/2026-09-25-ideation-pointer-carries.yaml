@@ -29,7 +29,7 @@
 # unreachable service answers `unconfigured` / `error` instead of opening a draft, which
 # fails this case for an unrelated reason.
 
-contact: "437264483"
+contact: "900000008"
 
 cases:
   - name: a second ideate turn keeps the draft the first turn opened (owner console walk 25 Sep 2026)

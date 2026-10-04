@@ -115,7 +115,11 @@ const languages = [
 export default function Page() {
   const { settings } = useSettings();
   const queryClient = useQueryClient();
-  const { data: supplierOptions = [] } = useQuery({
+  const {
+    data: supplierOptions = [],
+    error: supplierOptionsError,
+    refetch: refetchSupplierOptions,
+  } = useQuery({
     queryKey: ['suppliers-select-for-settings'],
     queryFn: async () => {
       const r = await apiFetch('/api/procurement/suppliers/select');
@@ -133,7 +137,11 @@ export default function Page() {
 
   // The units master is eight rows, so the shared static select is the right shape here -
   // no server search, no paging, and it is the same list every other UoM picker reads.
-  const { data: uomOptions = [] } = useUOMSelectQuery();
+  const {
+    data: uomOptions = [],
+    error: uomOptionsError,
+    refetch: refetchUomOptions,
+  } = useUOMSelectQuery();
   const { data: poolWarehouseOptions = [] } = usePoolWarehouseSelectQuery();
 
   // The distinct class labels categories are grouped by - a short, closed list,
@@ -862,6 +870,8 @@ export default function Page() {
                         onChange={field.onChange}
                         value={field.value}
                         placeholder="Select supplier"
+                        loadError={supplierOptionsError}
+                        onRetry={() => void refetchSupplierOptions()}
                         options={[
                           {
                             value: NO_DEFAULT_SUPPLIER_VALUE,
@@ -983,6 +993,8 @@ export default function Page() {
                         value={field.value}
                         placeholder="Select unit"
                         clearable
+                        loadError={uomOptionsError}
+                        onRetry={() => void refetchUomOptions()}
                         options={[
                           { value: NO_DEFAULT_UOM_VALUE, label: 'Automatic' },
                           ...uomOptions.map((u) => ({

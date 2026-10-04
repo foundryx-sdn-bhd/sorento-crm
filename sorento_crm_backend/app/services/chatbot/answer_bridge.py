@@ -1597,7 +1597,15 @@ def _miss_triggers(
         maybe_fetch = raw_fragment.get("fetch")
         fetch_item = maybe_fetch if isinstance(maybe_fetch, dict) else None
 
-    via_resolver_exit = payload.get("_exit_kind") == "not_found"
+    # SO-NUMBER-ASK: the lane answered the SO words the resolver could not place, and its
+    # reply already names the ones no SO answered (`lanes/business/run_fetch`'s
+    # `so_numbers` arm), so the resolver's own exit is no miss of its own.
+    so_status_answered = isinstance(fetch_item, Mapping) and fetch_item.get("so_status") is True
+    # LOWSTOCK-FILTER-ASK (owner hand test, 3 Oct 2026, turn 4a90dd1d): a low stock
+    # report ran and said its own line; a word the resolver missed on the same turn
+    # never turns that reply into "Could not find inventory".
+    low_stock_answered = isinstance(fetch_item, Mapping) and fetch_item.get("low_stock_report") is True
+    via_resolver_exit = payload.get("_exit_kind") == "not_found" and not (so_status_answered or low_stock_answered)
     via_error_fragment = fragment_outcome == "not_found"
     # R5 (AC-1699, AC-1702): a THIRD trigger - the resolver settled a real subject,
     # the fetch genuinely ran for it, and the tool came back with zero rows. This
@@ -1690,6 +1698,17 @@ def answer_for(
             **resolved,
             "unresolved_tokens": [*(resolved.get("unresolved_tokens") or []), *extra_unplaced],
         }
+    # SO-NUMBER-ASK: a linked contact's customer-scope rows (`engine._scoped_compatible`,
+    # `scope: True`) are not what the message asked about. On a miss over a word nobody
+    # could place ("status of SO422056") they printed a Customer/Product/Dates header and
+    # a "customer: <link> (+11 more)" bullet above the miss line, as if the dealer had
+    # named their own accounts. The miss is about the word, so only the word is named.
+    if resolved.get("unresolved_tokens") and gate.get("compatible_entities"):
+        gate["compatible_entities"] = [
+            e
+            for e in gate["compatible_entities"]
+            if not (isinstance(e, dict) and e.get("scope"))
+        ]
     # D4 (hand pass 9): a bare positional pick's own verdict names no team of its
     # own - the customer typed "1", not the original ask - so `turn_runtime.
     # lane_parse_output`'s own generic fallback (`DEFAULT_SUGGESTED_TEAM`,
@@ -1777,7 +1796,12 @@ def answer_for(
     if miss_gate is None:
         miss_gate = _breakdown_gate(gate, raw_fragment)
     not_found = answer_mod.not_found_error_message(
-        full_payload, parser=parser, resolved=resolved, gate=miss_gate, profile=profile
+        full_payload,
+        parser=parser,
+        resolved=resolved,
+        gate=miss_gate,
+        profile=profile,
+        granted_keys=((ctx.get("access") or {}).get("attributes") if isinstance(ctx, Mapping) else None),
     )
     offer = miss_mod.run_miss_lane(
         not_found,

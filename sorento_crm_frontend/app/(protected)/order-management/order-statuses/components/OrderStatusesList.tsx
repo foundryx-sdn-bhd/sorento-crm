@@ -45,7 +45,7 @@ export default function OrderStatusesList() {
   const [finalFilter, setFinalFilter] = useState<'all' | 'yes' | 'no'>('all');
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
 
-  const { data, isLoading, isPlaceholderData, refetch, isFetching } = useOrderStatuses({
+  const { data, isLoading, isPlaceholderData, refetch, isFetching, error } = useOrderStatuses({
     pageIndex: pagination.pageIndex,
     pageSize: pagination.pageSize,
     sorting,
@@ -154,6 +154,8 @@ export default function OrderStatusesList() {
       table={table}
       recordCount={data?.pagination.total || 0}
       isLoading={isLoading}
+      error={error}
+      onRetry={() => void refetch()}
       isPlaceholderData={isPlaceholderData}
       onRowClick={handleRowClick}
       tableLayout={{ columnsVisibility: true }}

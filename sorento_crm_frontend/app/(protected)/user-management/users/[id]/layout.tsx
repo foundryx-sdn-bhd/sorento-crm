@@ -11,6 +11,8 @@ import { PageHeader } from '@/components/common/PageHeader';
 import BackToList from '@/components/common/BackToList';
 import { useHasPermission } from '@/hooks/usePermissions';
 import { useDeletedRecordGuard } from '@/hooks/useDeletedRecordGuard';
+import { apiError, isNotFound, retryUnlessRefused } from '@/lib/api-client';
+import { QueryErrorState } from '@/components/common/LoadErrorState';
 import { UserProvider } from './components/user-context';
 import UserHero from './components/user-hero';
 
@@ -75,18 +77,15 @@ export default function UserLayout({
     }
   }, [navRoutes, pathname]);
 
-  const { data: user, isLoading } = useQuery({
+  const { data: user, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ['user-user', id],
     queryFn: async () => {
       const response = await apiFetch(`/api/user-management/users/${id}`);
 
-      if (response.status == 404) {
-        router.push('/user-management/users');
-      }
-
+      // No redirect in here: a queryFn runs once per retry (NEVER-STUCK-UI S6.4).
+      // The 404 is handled below, on the settled error.
       if (!response.ok) {
-        const { message } = await response.json();
-        throw new Error(message);
+        throw await apiError(response, 'Failed to load user');
       }
 
       const data = await response.json();
@@ -138,16 +137,28 @@ export default function UserLayout({
     staleTime: Infinity,
     gcTime: 1000 * 60 * 60, // 60 minutes
     refetchOnReconnect: false,
-    retry: 1,
+    retry: retryUnlessRefused,
+    // The layout renders the failure in place; no toast on top of it.
+    meta: { silent: true },
   });
+
+  const notFound = isNotFound(error);
+  // A background refetch that fails over a record already shown keeps showing it.
+  const failed = !!error && (!user || notFound);
 
   // A user this tab deleted a moment ago is gone on purpose, so a stale link to
   // them returns to the list quietly instead of reading as a fault (S6 feedback C).
-  useDeletedRecordGuard({
+  const deletedHere = useDeletedRecordGuard({
     entityId: id,
-    notFound: !isLoading && !user,
+    notFound,
     listPath: '/user-management/users',
   });
+
+  // Any other 404 also goes back to the list, once, with replace so Back does not
+  // land on the dead URL again.
+  useEffect(() => {
+    if (notFound && !deletedHere) router.replace('/user-management/users');
+  }, [notFound, deletedHere, router]);
 
   const handleTabClick = (key: string, path: string) => {
     setActiveTab(key);
@@ -163,25 +174,42 @@ export default function UserLayout({
             <BackToList listPath="/user-management/users" label="Back to users" />
           }
         />
-        <UserHero user={user} isLoading={isLoading} />
-        <Tabs defaultValue={activeTab} value={activeTab}>
-          <TabsList variant="line" className="mb-5">
-            {Object.entries(navRoutes).map(
-              ([key, { title, icon: Icon, path }]) => (
-                <TabsTrigger
-                  key={key}
-                  value={key}
-                  disabled={isLoading}
-                  onClick={() => handleTabClick(key, path)}
-                >
-                  <Icon />
-                  <span>{title}</span>
-                </TabsTrigger>
-              ),
-            )}
-          </TabsList>
-        </Tabs>
-        {children}
+        {/* A failed read ends here, before the hero and tabs: each of them waits
+            on `user`, so drawing them would leave every tab on its skeleton
+            (NEVER-STUCK-UI S5.3, lever L9). A 404 renders nothing while the
+            effect above leaves for the list. */}
+        {failed ? (
+          notFound ? null : (
+            <QueryErrorState
+              error={error}
+              title="Could not load this user"
+              onRetry={() => void refetch()}
+              retrying={isFetching}
+            />
+          )
+        ) : (
+          <>
+            <UserHero user={user} isLoading={isLoading} />
+            <Tabs defaultValue={activeTab} value={activeTab}>
+              <TabsList variant="line" className="mb-5">
+                {Object.entries(navRoutes).map(
+                  ([key, { title, icon: Icon, path }]) => (
+                    <TabsTrigger
+                      key={key}
+                      value={key}
+                      disabled={isLoading}
+                      onClick={() => handleTabClick(key, path)}
+                    >
+                      <Icon />
+                      <span>{title}</span>
+                    </TabsTrigger>
+                  ),
+                )}
+              </TabsList>
+            </Tabs>
+            {children}
+          </>
+        )}
       </Container>
     </UserProvider>
   );

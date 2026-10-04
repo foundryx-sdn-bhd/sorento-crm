@@ -21,6 +21,7 @@ import re
 from typing import Any, Mapping
 
 from app.services.chatbot.turn.state import focus_row_label
+from app.services.ledger_family import customer_group_of, customer_header_words
 
 # NARROWED (main, captain ruling 2026-08-24, ported verbatim): this header describes
 # a DELIVERY ORDER search specifically - it used to gate on "domains the CRM
@@ -112,13 +113,17 @@ def _raw_of_token(qf: Mapping[str, Any], token: str) -> str:
     return str(token)
 
 
+#: `_axis_words`' answer for an axis that prints no line at all this turn.
+_SKIP = object()
+
+
 def _axis_words(
     gate_json: Mapping[str, Any] | None,
     resolver_json: Mapping[str, Any] | None,
     qf: Mapping[str, Any],
     *,
     axis: Mapping[str, Any],
-) -> str | None:
+) -> Any:
     """The words this axis is IN SCOPE by, rendered from the GATE's own
     `compatible_entities` (what was actually put in scope), never from the parser's
     hints alone - a pick off a numbered list scopes the search to ONE row, and the
@@ -137,6 +142,19 @@ def _axis_words(
         if printable and printable not in words:
             words.append(printable)
 
+    if axis["label"] == "Customer":
+        # DO-ASK-SIMPLIFY tester pass 1: the customer company's name, not the word typed,
+        # whenever the DB has named every row (a code never prints, so a row it has not
+        # named falls back to the ladder below). The forced links of a contact asking
+        # about an order NUMBER are not a subject of their own: no Customer line.
+        if all(row.get("scope") for row in rows) and any(
+            isinstance(e, dict) and e.get("entity_type") in ("customer_order", "order", "order_number")
+            for e in gate_entities or []
+        ):
+            return _SKIP
+        named = [_printable(row.get("display_name")) for row in rows]
+        if all(named):
+            return customer_header_words([(n, customer_group_of(n)) for n in named]) or None
     resolutions = resolver_json.get("resolutions") if isinstance(resolver_json, Mapping) else None
     for res in resolutions or []:
         if not isinstance(res, dict):
@@ -153,6 +171,10 @@ def _axis_words(
                 continue
             if str(e.get("hint") or "") in hints:
                 _add(e.get("raw"))
+    if not words and axis["label"] == "Customer":
+        # The group's name once per customer company, never ledger by ledger.
+        names = [_printable(row.get("display_name") or row.get("title") or row.get("code")) for row in rows]
+        return customer_header_words([(n, customer_group_of(n)) for n in names if n]) or None
     if not words:
         for row in rows:
             # Hand pass 12 round 3, Group F (owner ruling): a customer row's own
@@ -211,7 +233,7 @@ def _one_typed_word(rows: Any) -> str | None:
     return raws.pop() or None
 
 
-def _focus_words(rows: Any) -> str | None:
+def _focus_words(rows: Any, *, customer: bool = False) -> str | None:
     """The SAME axis, off the FOCUS carry - AC-1695's own case, which main has no
     equivalent for because main's header runs in the tail, where the session's
     carried subject is already on `prev`. A bare positional pick ("1") names no
@@ -222,9 +244,21 @@ def _focus_words(rows: Any) -> str | None:
     after a pick to name it. Customer and Product only: those are the two axes a
     `Focus` carries."""
     words: list[str] = []
+    if customer:
+        # DO-ASK-SIMPLIFY tester pass 1: rows that each carry their resolved name print the
+        # customer company's name, not the one word typed for them (`_one_typed_word`).
+        kept = [row for row in rows or [] if isinstance(row, Mapping)]
+        named = [_printable(row.get("display_name") or row.get("name")) for row in kept]
+        if kept and all(named):
+            return customer_header_words([(n, customer_group_of(n)) for n in named]) or None
     typed = _one_typed_word(rows)
     if typed:
         return typed
+    if customer:
+        names = [
+            _printable(focus_row_label(row)) for row in rows or [] if isinstance(row, Mapping)
+        ]
+        return customer_header_words([(n, customer_group_of(n)) for n in names if n]) or None
     for row in rows or []:
         if not isinstance(row, Mapping):
             continue
@@ -273,8 +307,10 @@ def search_scope_header(
     lines: list[str] = []
     for axis in _AXES:
         words = _axis_words(gate_json, resolver_json, q, axis=axis)
+        if words is _SKIP:
+            continue
         if words is None and axis["label"] in focus_by_label:
-            words = _focus_words(focus_by_label[axis["label"]])
+            words = _focus_words(focus_by_label[axis["label"]], customer=axis["label"] == "Customer")
         if axis["always"]:
             lines.append(f"{axis['label']}: {words or axis['all_text']}")
         elif words:

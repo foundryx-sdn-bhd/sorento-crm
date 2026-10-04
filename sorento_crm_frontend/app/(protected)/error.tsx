@@ -1,11 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
-import Link from 'next/link';
-import { MoveLeft } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Container } from '@/components/common/container';
+import RouteErrorScreen from '@/components/common/RouteErrorScreen';
 
 /**
  * The route-level error boundary for everything under `app/(protected)`
@@ -27,40 +22,17 @@ export default function ProtectedError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  useEffect(() => {
-    console.error(error);
-  }, [error]);
-
+  // Fixed copy, never `error.message` (M5-04 review B2): in production a
+  // server-component throw yields Next's own developer boilerplate, a client
+  // throw yields something like "Cannot read properties of undefined", and a
+  // rethrown API error can carry a record id. The shared screen also turns a
+  // chunk-load failure (a deploy replaced the build this tab runs) into Reload,
+  // since Try again cannot fetch chunks that no longer exist.
   return (
-    <Container>
-      <Card className="mx-auto mt-10 max-w-lg">
-        <CardHeader>
-          <CardTitle>Something went wrong</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/*
-           * Fixed copy, never `error.message` (M5-04 review B2): in production a
-           * server-component throw yields Next's own developer boilerplate, a client
-           * throw yields something like "Cannot read properties of undefined", and a
-           * rethrown API error can carry a record id - none of those are a message
-           * meant for a reader, and the last one is a UUID-in-the-UI violation.
-           * `error.digest` is the one token that correlates with the server log, so
-           * that is what gets shown, not the message itself.
-           */}
-          <p className="text-sm text-muted-foreground">Something went wrong on this page.</p>
-          {error.digest ? (
-            <p className="font-mono text-xs text-muted-foreground">Reference: {error.digest}</p>
-          ) : null}
-          <div className="flex flex-wrap items-center gap-2">
-            <Button onClick={reset}>Try again</Button>
-            <Button asChild variant="outline">
-              <Link href="/">
-                <MoveLeft /> Back to dashboards
-              </Link>
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    </Container>
+    <RouteErrorScreen
+      error={error}
+      reset={reset}
+      exit={{ href: '/', label: 'Back to dashboards' }}
+    />
   );
 }

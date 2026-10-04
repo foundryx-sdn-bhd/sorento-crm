@@ -80,6 +80,8 @@ export function AssignLeadDialog({
                 id="assign-lead-owner"
                 value={ownerUserId}
                 onChange={setOwnerUserId}
+                loadError={users.error}
+                onRetry={() => void users.refetch()}
                 options={options}
                 disabled={users.isLoading}
                 placeholder={users.isLoading ? 'Loading people' : 'Search people'}

@@ -6,7 +6,12 @@ import TeamMembersList from './team-members-list';
 
 export default function TeamMembersClient({ teamId }: { teamId: string }) {
   const { data: team, isLoading: teamLoading, error: teamError } = useTeam(teamId);
-  const { data: users = [], isLoading: usersLoading } = useUsersSelect();
+  const {
+    data: users = [],
+    isLoading: usersLoading,
+    error: usersError,
+    refetch: refetchUsers,
+  } = useUsersSelect();
 
   if (teamLoading || !team) {
     return (
@@ -33,7 +38,12 @@ export default function TeamMembersClient({ teamId }: { teamId: string }) {
           <p className="text-muted-foreground text-sm mt-1">{team.description}</p>
         )}
       </div>
-      <TeamMembersList teamId={teamId} users={users} />
+      <TeamMembersList
+        teamId={teamId}
+        users={users}
+        usersError={usersError}
+        onRetryUsers={() => void refetchUsers()}
+      />
     </div>
   );
 }

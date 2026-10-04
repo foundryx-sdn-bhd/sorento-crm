@@ -12,7 +12,7 @@ What is STUBBED: the parser (each turn's verdict is the one the live parser SHOU
 emit for that message, the round 9 contract) and the stock tool's database read. The
 stock tool answers the way `StockService._apply_stock_visibility` answers a dealer
 whose category has no X set: every product with no quantity `needs_quantity`, every
-quantity `too_big` ("the quantity is more than what I can confirm here, please refer to
+quantity `too_big` ("🚫 the quantity is more than what I can confirm here, please refer to
 your salesman.") - the sentence the owner saw on every answered row.
 """
 from __future__ import annotations
@@ -32,7 +32,7 @@ from tests.chatbot.test_engine import CONTACT_ID, _envelope
 from tests.chatbot.test_rearch_s3_attribute_first import SORENTO, _link_contact_company
 from tests.chatbot.test_rearch_s3_roster_from_resolver import _seed_contact
 
-TOO_BIG = "the quantity is more than what I can confirm here. Please refer to your salesman."
+TOO_BIG = "🚫 the quantity is more than what I can confirm here. Please refer to your salesman."
 
 #: The family the owner's "check stock srtwc286" placed (26 Sep, every session).
 OWNER_FAMILY = [

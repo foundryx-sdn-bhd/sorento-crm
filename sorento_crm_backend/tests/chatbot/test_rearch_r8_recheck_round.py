@@ -794,5 +794,7 @@ class TestACertificateDidYouMeanProbesOnlyItsOwnNeighbours:
             f"the stamped numbered form must render, not the bare inline "
             f"sentence a page-saturated probe would fall back to: {reply!r}"
         )
-        assert "has certificate" in reply, reply
-        assert "no certificate" in reply, reply
+        # ATTACHMENT-MULTI R5 (tester re-run 2 Oct 2026, finding 3): a resolved type stamps
+        # its type_name, so the seeded Certification type reads "Certification".
+        assert "has Certification" in reply, reply
+        assert "no Certification" in reply, reply

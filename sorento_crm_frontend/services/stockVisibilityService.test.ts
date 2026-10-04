@@ -238,6 +238,46 @@ describe('the warehouse pickers', () => {
   });
 });
 
+describe('CONTACT-COMPANYLESS - the pickers read every granted company', () => {
+  it('asks the locations search for company_scope=grants and keeps company_name', async () => {
+    apiFetch.mockResolvedValue(
+      jsonResponse({
+        data: [
+          {
+            id: 'wh-9',
+            warehouse_code: 'MOCHA-WH',
+            warehouse_name: 'Mocha Site',
+            company_id: 'co-2',
+            company_name: 'Mocha',
+          },
+        ],
+      }),
+    );
+    const rows = await searchStockVisibilityWarehouses('mocha');
+
+    expect(queryOf(lastCall()[0]).get('company_scope')).toBe('grants');
+    expect(rows).toEqual([
+      { id: 'wh-9', code: 'MOCHA-WH', name: 'Mocha Site', company_name: 'Mocha' },
+    ]);
+  });
+
+  it('asks the Dealer pool for company_scope=grants alongside segment=dealer', async () => {
+    apiFetch.mockResolvedValue(
+      jsonResponse({
+        data: [
+          { id: 'wh-1', warehouse_code: 'BRW', warehouse_name: 'Rawang', company_name: 'Sorento' },
+        ],
+      }),
+    );
+    const rows = await getDealerPoolWarehouses();
+
+    const q = queryOf(lastCall()[0]);
+    expect(q.get('company_scope')).toBe('grants');
+    expect(q.get('segment')).toBe('dealer');
+    expect(rows[0].company_name).toBe('Sorento');
+  });
+});
+
 describe('errors reach the caller as the API worded them', () => {
   it('throws the FastAPI detail on a rejected save', async () => {
     apiFetch.mockResolvedValue(

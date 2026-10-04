@@ -161,8 +161,16 @@ export default function ComplaintForm({
   const [formInitialized, setFormInitialized] = useState(false);
   const updateAndReplyMutation = useUpdateComplaintAndReply();
   const publicViewLinksEnabled = usePublicViewLinksEnabled();
-  const { data: rootCauseOptions = [] } = useComplaintRootCausesSelect();
-  const { data: resolutionOptions = [] } = useComplaintResolutionsSelect();
+  const {
+    data: rootCauseOptions = [],
+    error: rootCauseError,
+    refetch: refetchRootCauses,
+  } = useComplaintRootCausesSelect();
+  const {
+    data: resolutionOptions = [],
+    error: resolutionError,
+    refetch: refetchResolutions,
+  } = useComplaintResolutionsSelect();
 
   // Load complaint data when editing (normalize dates so schema validation passes)
   useEffect(() => {
@@ -971,6 +979,8 @@ export default function ComplaintForm({
                       onChange={(v) =>
                         field.onChange(v === "__unset__" ? null : v)
                       }
+                      loadError={rootCauseError}
+                      onRetry={() => void refetchRootCauses()}
                       options={[
                         { value: "__unset__", label: " - None - " },
                         ...rootCauseOptions.map((opt) => ({
@@ -998,6 +1008,8 @@ export default function ComplaintForm({
                       onChange={(v) =>
                         field.onChange(v === "__unset__" ? null : v)
                       }
+                      loadError={resolutionError}
+                      onRetry={() => void refetchResolutions()}
                       options={[
                         { value: "__unset__", label: " - None - " },
                         ...resolutionOptions.map((opt) => ({

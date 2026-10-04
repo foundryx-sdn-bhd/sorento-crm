@@ -1928,11 +1928,14 @@ def test_unrecognised_label_clarifies_as_a_document_type():
             access_types=lambda **_: [], resolve_entity=resolve_entity, probe=lambda **_: None
         )
 
+        # ATTACHMENT-MULTI (tester re-run 2 Oct 2026): "photo" now RESOLVES on this leg (the
+        # type's own name/description, product-facing types only), so the unrecognised label
+        # is a word that names no type at all.
         ctx = _cert_ctx(
-            "which basin has photo",
+            "which basin has hologram",
             [
                 {"hint": "category", "raw": "basin"},
-                {"hint": "attachment_type", "raw": "photo"},
+                {"hint": "attachment_type", "raw": "hologram"},
             ],
         )
         out = resolve_gate.run(ctx, "resolve", {}, services=services, space_id="364817")
@@ -1943,7 +1946,7 @@ def test_unrecognised_label_clarifies_as_a_document_type():
         msg = not_found_error_message({}, parser=parser, resolved=resolved, gate=gate)
         text = (msg.get("escalate_message") or "").strip()
 
-    assert "I don't know 'photo' as a document type" in text, text
+    assert "I don't know 'hologram' as a document type" in text, text
     assert "Types I know:" in text, text
     assert "Product Photos" in text, text
     assert "as a product type" not in text, text
@@ -2041,11 +2044,14 @@ def test_document_types_listed_are_product_facing_only():
             access_types=lambda **_: [], resolve_entity=resolve_entity, probe=lambda **_: None
         )
 
+        # ATTACHMENT-MULTI (tester re-run 2 Oct 2026): "photo" now RESOLVES on this leg (the
+        # type's own name/description, product-facing types only), so the unrecognised label
+        # is a word that names no type at all.
         ctx = _cert_ctx(
-            "which basin has photo",
+            "which basin has hologram",
             [
                 {"hint": "category", "raw": "basin"},
-                {"hint": "attachment_type", "raw": "photo"},
+                {"hint": "attachment_type", "raw": "hologram"},
             ],
         )
         out = resolve_gate.run(ctx, "resolve", {}, services=services, space_id="364817")

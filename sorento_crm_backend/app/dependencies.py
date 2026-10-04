@@ -8,6 +8,7 @@ from typing import Optional, List
 from app.database import get_db
 from app.config import settings
 from app.services.user_service import UserPermissionService
+from app.middleware.impersonation_ended_middleware import IMPERSONATION_ENDED_STATE
 from app.services.user_session_service import (
     resolve_session,
     SessionAuthError,
@@ -185,16 +186,22 @@ def _maybe_apply_impersonation(
 ) -> dict:
     """If real user is admin/superadmin AND active session matches header, swap to target user dict.
 
-    Stash the real user on ``request.state.real_user`` regardless. Stale or invalid headers
-    are silently ignored - admin browses as themselves.
+    Stash the real user on ``request.state.real_user`` regardless. A stale or invalid header
+    is ignored - admin browses as themselves - and marked on ``request.state`` so
+    ``ImpersonationEndedMiddleware`` tells the client its view-as is over.
     """
     request.state.real_user = real_user
     target_id = request.headers.get(IMPERSONATE_HEADER)
     if not target_id:
         return real_user
+
+    def _ignored() -> dict:
+        setattr(request.state, IMPERSONATION_ENDED_STATE, True)
+        return real_user
+
     role_slugs = UserPermissionService(db).get_user_role_slugs(real_user["id"])
     if not (role_slugs & {UserPermissionService.SUPERADMIN_ROLE_SLUG, "admin"}):
-        return real_user
+        return _ignored()
     from app.models.impersonation import ImpersonationSession
 
     session_row = (
@@ -207,10 +214,10 @@ def _maybe_apply_impersonation(
         .first()
     )
     if not session_row:
-        return real_user
+        return _ignored()
     target_user = _load_user_dict_from_db(db, target_id)
     if not target_user or target_user.get("status") != "ACTIVE":
-        return real_user
+        return _ignored()
     request.state.impersonation_session_id = session_row.id
     # The target is the effective actor, the admin is at the keyboard (plan 8.1/8.2).
     from app.audit_context import AuditActor, stamp_actor

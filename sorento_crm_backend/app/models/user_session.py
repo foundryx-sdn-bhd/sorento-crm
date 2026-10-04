@@ -55,7 +55,7 @@ class UserSession(Base):
         Index("ix_user_sessions_user_id", "user_id"),
         Index("ix_user_sessions_expires_at", "expires_at"),
         CheckConstraint(
-            "auth_method IN ('password', 'phone_otp', 'portal_link', 'impersonation')",
+            "auth_method IN ('password', 'phone_otp', 'portal_link', 'impersonation', 'dev_login')",
             name="ck_user_sessions_auth_method",
         ),
     )

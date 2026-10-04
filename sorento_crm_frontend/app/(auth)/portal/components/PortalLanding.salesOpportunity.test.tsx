@@ -54,7 +54,7 @@ const ME = {
   name: 'Jayson',
   phone_number: '60123456789',
   expires_at: '2026-09-01T00:00:00Z',
-  portal_slug: 'darren',
+  portal_slug: 'contact-x',
 };
 
 const OPP = {
@@ -138,7 +138,7 @@ beforeEach(() => {
 describe('PortalLanding - Sales Opportunity is one kind in the selector (F1)', () => {
   it('offers Sales Opportunity with its count beside Price Tag Request', async () => {
     mockContact(['price_tag_request', 'sales_opportunity']);
-    render(<PortalLanding slug="darren" />);
+    render(<PortalLanding slug="contact-x" />);
 
     const trigger = await screen.findByRole('combobox');
     await waitFor(() => expect(listPortalSalesOpportunities).toHaveBeenCalled());
@@ -151,7 +151,7 @@ describe('PortalLanding - Sales Opportunity is one kind in the selector (F1)', (
 
   it('has no separate Sales Opportunities card or Open link any more', async () => {
     mockContact(['stock_inquiry', 'sales_opportunity']);
-    render(<PortalLanding slug="darren" />);
+    render(<PortalLanding slug="contact-x" />);
     await screen.findByRole('combobox');
     expect(screen.queryByRole('link', { name: /sales opportunities/i })).toBeNull();
     expect(screen.queryByText('Open')).toBeNull();
@@ -160,7 +160,7 @@ describe('PortalLanding - Sales Opportunity is one kind in the selector (F1)', (
   it('lists opportunities as cards with number, customer or prospect, stage label, amount and close date', async () => {
     searchParams = new URLSearchParams('type=sales_opportunity');
     mockContact(['sales_opportunity']);
-    render(<PortalLanding slug="darren" />);
+    render(<PortalLanding slug="contact-x" />);
 
     // The My target panel lists OPP-000001 too; the card is the one inside a role="link".
     expect((await screen.findAllByText('OPP-000001')).length).toBeGreaterThan(0);
@@ -181,9 +181,9 @@ describe('PortalLanding - Sales Opportunity is one kind in the selector (F1)', (
   it('has the New button for the kind, pointing at the slug tree', async () => {
     searchParams = new URLSearchParams('type=sales_opportunity');
     mockContact(['sales_opportunity']);
-    render(<PortalLanding slug="darren" />);
+    render(<PortalLanding slug="contact-x" />);
     const link = await screen.findByRole('link', { name: /New Sales Opportunity/ });
-    expect(link.getAttribute('href')).toBe('/portal/c/darren/sales_opportunity/new');
+    expect(link.getAttribute('href')).toBe('/portal/c/contact-x/sales_opportunity/new');
   });
 
   it('search narrows the opportunities by title, number or customer', async () => {
@@ -191,7 +191,7 @@ describe('PortalLanding - Sales Opportunity is one kind in the selector (F1)', (
     (getMyTargets as ReturnType<typeof vi.fn>).mockResolvedValue({ today: '2026-09-27', targets: [] });
     searchParams = new URLSearchParams('type=sales_opportunity');
     mockContact(['sales_opportunity']);
-    render(<PortalLanding slug="darren" />);
+    render(<PortalLanding slug="contact-x" />);
     await screen.findByText('OPP-000001');
     fireEvent.change(screen.getByRole('textbox', { name: /search/i }), {
       target: { value: 'lim tiles' },
@@ -202,7 +202,7 @@ describe('PortalLanding - Sales Opportunity is one kind in the selector (F1)', (
 
   it('is not offered, and nothing is fetched, when the kind is not granted', async () => {
     mockContact(['stock_inquiry']);
-    render(<PortalLanding slug="darren" />);
+    render(<PortalLanding slug="contact-x" />);
     const trigger = await screen.findByRole('combobox');
     await waitFor(() => expect(fetchSubmissions).toHaveBeenCalled());
     trigger.click();
@@ -217,7 +217,7 @@ describe('PortalLanding - My target panel at the top of the Sales Opportunity ki
   it('shows target, achieved, open before the end date and short as labelled rows, no sentence (Lavish notes)', async () => {
     searchParams = new URLSearchParams('type=sales_opportunity');
     mockContact(['sales_opportunity']);
-    render(<PortalLanding slug="darren" />);
+    render(<PortalLanding slug="contact-x" />);
 
     const panel = await screen.findByRole('region', { name: 'My target' });
     expect(within(panel).getByText('Q4 sales')).toBeInTheDocument();
@@ -244,7 +244,7 @@ describe('PortalLanding - My target panel at the top of the Sales Opportunity ki
     });
     searchParams = new URLSearchParams('type=sales_opportunity');
     mockContact(['sales_opportunity']);
-    render(<PortalLanding slug="darren" />);
+    render(<PortalLanding slug="contact-x" />);
     const panel = await screen.findByRole('region', { name: 'My target' });
     expect(within(panel).getByTestId('target-stat-short').textContent).toBe('ShortRM 0');
   });
@@ -253,7 +253,7 @@ describe('PortalLanding - My target panel at the top of the Sales Opportunity ki
     (getMyTargets as ReturnType<typeof vi.fn>).mockResolvedValue({ today: '2026-09-27', targets: [] });
     searchParams = new URLSearchParams('type=sales_opportunity');
     mockContact(['sales_opportunity']);
-    render(<PortalLanding slug="darren" />);
+    render(<PortalLanding slug="contact-x" />);
     await screen.findByText('OPP-000001');
     expect(screen.queryByRole('region', { name: 'My target' })).toBeNull();
   });
@@ -261,7 +261,7 @@ describe('PortalLanding - My target panel at the top of the Sales Opportunity ki
   it('does not show the panel on another kind', async () => {
     searchParams = new URLSearchParams('type=price_tag_request');
     mockContact(['price_tag_request', 'sales_opportunity']);
-    render(<PortalLanding slug="darren" />);
+    render(<PortalLanding slug="contact-x" />);
     await screen.findByRole('combobox');
     expect(screen.queryByRole('region', { name: 'My target' })).toBeNull();
   });

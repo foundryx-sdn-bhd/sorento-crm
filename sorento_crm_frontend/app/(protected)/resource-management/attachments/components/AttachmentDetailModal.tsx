@@ -837,7 +837,11 @@ export default function AttachmentDetailModal({
     'details',
   );
 
-  const { data: accessTypeOptions = [] } = useContactAccessTypes();
+  const {
+    data: accessTypeOptions = [],
+    error: accessTypesError,
+    refetch: refetchAccessTypes,
+  } = useContactAccessTypes();
   const defaultAccessLevels = accessTypeOptions.length > 0 ? accessTypeOptions.map((o) => o.code) : ['dealer', 'end_user'];
   const codeToName = Object.fromEntries(accessTypeOptions.map((o) => [o.code, o.name || o.code]));
 
@@ -1159,6 +1163,8 @@ export default function AttachmentDetailModal({
                         <div className="space-y-2">
                           <AccessLevelsMultiSelect
                             options={accessTypeOptions}
+                            loadError={accessTypesError}
+                            onRetry={() => void refetchAccessTypes()}
                             value={accessLevelsEdit}
                             onChange={setAccessLevelsEdit}
                           />

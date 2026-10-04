@@ -3,6 +3,9 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
+import { SearchableMultiSelect } from '@/components/common/SearchableMultiSelect';
+import { Badge } from '@/components/ui/badge';
+import { PACKING_LIST_REGION_OPTIONS, regionLabel } from '@/lib/packing-list-regions';
 import { ContainerVolumeFill } from '@/components/common/ContainerVolumeFill';
 import { formatDate } from '@/lib/helpers';
 import { useContainerSizes } from '@/app/(protected)/scm/hooks/useFulfilment';
@@ -174,6 +177,30 @@ export function PackingListDetailsTab() {
               onChange={setField}
               view={text(record.consignee)}
             />
+            <div className="min-w-0">
+              <p className="text-sm text-muted-foreground">Regions</p>
+              {editing ? (
+                <SearchableMultiSelect
+                  triggerClassName="mt-1"
+                  size="sm"
+                  value={(draft.regions ?? '').split(',').filter(Boolean)}
+                  onChange={(next) => {
+                    if (next.length > 0) setField('regions', next.join(','));
+                  }}
+                  options={PACKING_LIST_REGION_OPTIONS}
+                />
+              ) : (
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {(packingList.regions ?? []).length === 0
+                    ? '-'
+                    : (packingList.regions ?? []).map((code) => (
+                        <Badge key={code} variant="outline" size="sm">
+                          {regionLabel(code)}
+                        </Badge>
+                      ))}
+                </div>
+              )}
+            </div>
             <PackingListField
               label="Shipper"
               name="shipper"
@@ -224,6 +251,8 @@ export function PackingListDetailsTab() {
                   size="sm"
                   value={draft.container_size_id ?? ''}
                   onChange={(v: string) => setField('container_size_id', v)}
+                  loadError={containerSizes.error}
+                  onRetry={() => void containerSizes.refetch()}
                   options={containerSizeOptions}
                   placeholder={
                     defaultContainerSize
