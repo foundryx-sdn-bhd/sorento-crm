@@ -896,7 +896,7 @@ def test_out_of_scope_finishes_in_turn(session_factory, system_settings_row, mon
         {"c": contact_id},
     ).scalar()
 
-    def fake_resolve_config(db, *, current_date, override_version_id=None):
+    def fake_resolve_config(db, *, current_date, override_version_id=None, grants=None):
         return parser_mod.ParserConfig(
             system_prompt="stub", prompt_version=1, provider="openai", model="gpt-test", api_key="sk-test"
         )
@@ -1063,7 +1063,7 @@ def test_out_of_scope_dry_run_carries_session_patch_and_writes_nothing(
         {"c": contact_id},
     ).scalar()
 
-    def fake_resolve_config(db, *, current_date, override_version_id=None):
+    def fake_resolve_config(db, *, current_date, override_version_id=None, grants=None):
         return parser_mod.ParserConfig(
             system_prompt="stub", prompt_version=1, provider="openai", model="gpt-test", api_key="sk-test"
         )
@@ -1215,7 +1215,7 @@ def test_out_of_scope_seam_failure_fails_at_looked_up_with_no_partial_assignment
     setting.chatbot_completed_lanes = ["out_of_scope"]
     db.commit()
 
-    def fake_resolve_config(db, *, current_date, override_version_id=None):
+    def fake_resolve_config(db, *, current_date, override_version_id=None, grants=None):
         return parser_mod.ParserConfig(
             system_prompt="stub", prompt_version=1, provider="openai", model="gpt-test", api_key="sk-test"
         )

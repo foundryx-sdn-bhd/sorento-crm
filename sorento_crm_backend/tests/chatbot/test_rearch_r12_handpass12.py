@@ -343,7 +343,7 @@ def _run_turn_dry(session_factory, monkeypatch, *, qf, text_body: str, msg_id: s
     )
     monkeypatch.setattr(engine_mod, "default_space_id", lambda db: "364817")
 
-    def fake_resolve_config(db, *, current_date, override_version_id=None):
+    def fake_resolve_config(db, *, current_date, override_version_id=None, grants=None):
         return parser_mod.ParserConfig(
             system_prompt="stub",
             prompt_version=1,

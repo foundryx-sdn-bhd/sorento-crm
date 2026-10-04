@@ -63,7 +63,7 @@ def stub_world(monkeypatch):
     """Replace the three off-box calls with what that execution actually saw."""
 
     def _install(world: worlds_mod.World) -> None:
-        def fake_resolve_config(db, *, current_date, override_version_id=None):
+        def fake_resolve_config(db, *, current_date, override_version_id=None, grants=None):
             return parser_mod.ParserConfig(
                 system_prompt="stub",
                 prompt_version=1,

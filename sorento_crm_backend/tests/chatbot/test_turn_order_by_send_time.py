@@ -231,7 +231,7 @@ def _install_parser(monkeypatch, calls: list[str]) -> None:
     monkeypatch.setattr(
         parser_mod,
         "resolve_config",
-        lambda db, *, current_date, override_version_id=None: parser_mod.ParserConfig(
+        lambda db, *, current_date, override_version_id=None, grants=None: parser_mod.ParserConfig(
             system_prompt="stub", prompt_version=1, provider="openai", model="gpt-test", api_key="sk-test"
         ),
     )

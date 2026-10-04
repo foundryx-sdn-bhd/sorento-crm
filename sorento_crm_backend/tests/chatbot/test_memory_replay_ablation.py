@@ -103,7 +103,7 @@ def _run_turn(session_factory, stub_access, *, message: str, verdict_overrides: 
     stub_access()
     v = verdict_defaults(**verdict_overrides)
 
-    def fake_resolve_config(db, *, current_date, override_version_id=None):
+    def fake_resolve_config(db, *, current_date, override_version_id=None, grants=None):
         return parser_mod.ParserConfig(
             system_prompt="stub", prompt_version=1, provider="openai", model="gpt-test", api_key="sk-test",
         )

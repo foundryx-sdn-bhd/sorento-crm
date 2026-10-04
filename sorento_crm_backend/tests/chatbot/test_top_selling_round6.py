@@ -110,7 +110,7 @@ def console(session_factory, monkeypatch, cat):
     monkeypatch.setattr(
         parser_mod,
         "resolve_config",
-        lambda db, *, current_date, override_version_id=None: parser_mod.ParserConfig(
+        lambda db, *, current_date, override_version_id=None, grants=None: parser_mod.ParserConfig(
             system_prompt="stub", prompt_version=39, provider="openai", model="gpt-test", api_key="sk-test",
         ),
     )

@@ -221,7 +221,7 @@ class TestStageIsNamedOnEveryFailure:
             monkeypatch.setattr(
                 parser_mod,
                 "resolve_config",
-                lambda db, *, current_date: (_ for _ in ()).throw(RuntimeError("x")),
+                lambda db, *, current_date, grants=None: (_ for _ in ()).throw(RuntimeError("x")),
             )
         else:
             monkeypatch.setattr(
@@ -504,7 +504,7 @@ class TestTheRowKeepsTheFirstOutcome:
         monkeypatch.setattr(
             parser_mod,
             "resolve_config",
-            lambda db, *, current_date: (_ for _ in ()).throw(RuntimeError("boom")),
+            lambda db, *, current_date, grants=None: (_ for _ in ()).throw(RuntimeError("boom")),
         )
 
         result = engine_mod.run_turn(_envelope(), session_factory=session_factory)

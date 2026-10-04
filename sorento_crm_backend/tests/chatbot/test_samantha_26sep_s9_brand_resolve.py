@@ -251,7 +251,7 @@ class TestT2BrandTokenNotResolvedAsCustomerInOrderDomain:
             },
         )
 
-        def fake_resolve_config(db, *, current_date, override_version_id=None):
+        def fake_resolve_config(db, *, current_date, override_version_id=None, grants=None):
             return parser_mod.ParserConfig(
                 system_prompt="stub", prompt_version=1, provider="openai", model="gpt-test", api_key="sk-test",
             )
@@ -754,7 +754,7 @@ class TestB1OrdersListAskGetsTheBrand:
             },
         )
 
-        def fake_resolve_config(db, *, current_date, override_version_id=None):
+        def fake_resolve_config(db, *, current_date, override_version_id=None, grants=None):
             return parser_mod.ParserConfig(
                 system_prompt="stub", prompt_version=1, provider="openai", model="gpt-test", api_key="sk-test",
             )

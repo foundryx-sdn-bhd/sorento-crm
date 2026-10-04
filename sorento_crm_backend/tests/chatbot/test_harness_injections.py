@@ -62,7 +62,7 @@ def exploding_parser(monkeypatch):
     the model still pass, because the stub's output is shaped like a real one.
     """
 
-    def fake_resolve_config(db, *, current_date, override_version_id=None):
+    def fake_resolve_config(db, *, current_date, override_version_id=None, grants=None):
         return parser_mod.ParserConfig(
             system_prompt="stub",
             prompt_version=1,

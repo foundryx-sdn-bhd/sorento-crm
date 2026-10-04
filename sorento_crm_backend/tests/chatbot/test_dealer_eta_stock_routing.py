@@ -223,7 +223,7 @@ class Console:
 
         monkeypatch.setattr(MCPRuntimeClient, "call_tool", fake_call_tool)
 
-        def fake_resolve_config(db, *, current_date, override_version_id=None):
+        def fake_resolve_config(db, *, current_date, override_version_id=None, grants=None):
             return parser_mod.ParserConfig(
                 system_prompt="stub",
                 prompt_version=1,

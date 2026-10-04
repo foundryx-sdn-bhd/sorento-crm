@@ -196,7 +196,7 @@ def real_contacts(redis_client):
 def stub_engine_seams(monkeypatch):
     """Same seam stack as `test_d15_duplicate_race.py`'s `stub_engine_seams`."""
 
-    def fake_resolve_config(db, *, current_date, override_version_id=None):
+    def fake_resolve_config(db, *, current_date, override_version_id=None, grants=None):
         return parser_mod.ParserConfig(
             system_prompt="stub", prompt_version=1, provider="openai", model="gpt-test", api_key="sk-test",
         )

@@ -218,7 +218,7 @@ def live_console(session_factory, monkeypatch):
 
     console = harness._console(session_factory, monkeypatch, grants=[harness.GRANT, harness.SUPPLIER_KEY])
     monkeypatch.setattr(parser_mod, "resolve_config",
-                        lambda db, *, current_date, override_version_id=None: _config())
+                        lambda db, *, current_date, override_version_id=None, grants=None: _config())
     real_parse = parser_mod.parse
 
     def say(body: str) -> tuple[str, list[dict[str, Any]]]:
