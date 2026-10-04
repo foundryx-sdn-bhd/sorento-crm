@@ -366,6 +366,24 @@ export default function ContactsList() {
         },
         meta: { headerTitle: 'Access types', skeleton: <Skeleton className="h-4 w-32" /> },
       },
+      {
+        id: 'brands',
+        accessorFn: (row) => (row.brands ?? []).map((b) => b.brand_name).join(', '),
+        header: ({ column }) => <DataGridColumnHeader title="Brands" column={column} />,
+        size: 180,
+        enableSorting: false,
+        cell: ({ row }) => {
+          const label = (row.original.brands ?? []).map((b) => b.brand_name).join(', ');
+          return label ? (
+            <span className="block truncate" title={label}>
+              {label}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">All</span>
+          );
+        },
+        meta: { headerTitle: 'Brands', skeleton: <Skeleton className="h-4 w-28" /> },
+      },
       // CONTACT-BULK-ACCESS (UAC A2.2): the access a bulk copy sets, readable per row.
       {
         id: 'chatbot_tier',

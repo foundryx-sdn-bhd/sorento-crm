@@ -25,6 +25,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.order import Customer, SalesOrder, SalesOrderLine
+from app.services.contact_brand_scope import product_in_scope_clauses
 
 #: AutoCount's SO numbering ("SO422056"). A word of this shape that nothing placed is an SO ask.
 SO_NUMBER_RE = re.compile(r"^SO\d{4,}$")
@@ -83,6 +84,26 @@ def _card(so: SalesOrder, name: str | None, lines: list[tuple[Any, Any]]) -> str
     return "\n".join(out)
 
 
+def _in_scope_so_ids(db: Session, so_ids: list[str]) -> set[str] | None:
+    """CONTACT-BRAND-SCOPE: the ids among `so_ids` with at least one line the contact's brands
+    allow; None when the session is unscoped. These answers are built before any tool runs, so
+    the fetch guard never sees them: an SO with no in-scope line must read as a missing one."""
+    from app.services.contact_brand_scope import product_in_scope_clauses
+
+    clauses = product_in_scope_clauses(db, SalesOrderLine.product_id)
+    if not clauses:
+        return None
+    if not so_ids:
+        return set()
+    return {
+        str(i)
+        for (i,) in db.query(SalesOrderLine.sales_order_id)
+        .filter(SalesOrderLine.sales_order_id.in_(so_ids), *clauses)
+        .distinct()
+        .all()
+    }
+
+
 def lookup(
     db: Session,
     words: Iterable[str],
@@ -106,6 +127,9 @@ def lookup(
         .filter(SalesOrder.so_number.in_(keys))
         .all()
     )
+    allowed = _in_scope_so_ids(db, [so.id for so, _ in rows])
+    if allowed is not None:
+        rows = [(so, name) for so, name in rows if str(so.id) in allowed]
     by_number: dict[str, list[tuple[SalesOrder, str | None]]] = {}
     for so, master_name in rows:
         by_number.setdefault(so.so_number.upper(), []).append((so, master_name))
@@ -116,6 +140,7 @@ def lookup(
             .filter(
                 SalesOrderLine.sales_order_id.in_([so.id for so, _ in rows]),
                 func.coalesce(SalesOrderLine.line_status, "") != "cancelled",
+                *product_in_scope_clauses(db, SalesOrderLine.product_id),
             )
             .all()
         ):
@@ -253,6 +278,9 @@ def list_text(db: Session, names_by_id: dict[str, str], start: Any, end: Any) ->
         .order_by(SalesOrder.order_date.desc(), SalesOrder.so_number.desc())
         .all()
     )
+    allowed = _in_scope_so_ids(db, [so.id for so in rows])
+    if allowed is not None:
+        rows = [so for so in rows if str(so.id) in allowed]
     if not rows:
         return f"No sales orders for {header_names} from {_day(start)} to {_day(end)}."
     lines_by_so: dict[str, list[tuple[Any, Any]]] = {}
@@ -261,6 +289,7 @@ def list_text(db: Session, names_by_id: dict[str, str], start: Any, end: Any) ->
         .filter(
             SalesOrderLine.sales_order_id.in_([so.id for so in rows]),
             func.coalesce(SalesOrderLine.line_status, "") != "cancelled",
+            *product_in_scope_clauses(db, SalesOrderLine.product_id),
         )
         .all()
     ):
