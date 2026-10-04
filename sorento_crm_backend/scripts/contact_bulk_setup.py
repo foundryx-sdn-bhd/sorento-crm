@@ -39,6 +39,7 @@ import os
 import re
 import sys
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 from datetime import datetime
 from difflib import SequenceMatcher
 from pathlib import Path
@@ -353,7 +354,7 @@ def _plan_contact(db, contact, snap, d: Desired, names: Names, world: dict, rule
 
 
 def _apply_contact(db, contact, d: Desired, todo: dict, rules: dict, actor_id: Optional[str]) -> None:
-    cid = str(contact.id)
+    cid = contact.id  # `contact` is plain (id, name, phone_number), never an expired entity
     if todo["types"]:
         db.execute(respond_contact_access_types.insert(), [{"contact_id": cid, "access_type_code": c} for c in todo["types"]])
     for company_id in todo["companies"]:
@@ -382,8 +383,10 @@ def _apply_contact(db, contact, d: Desired, todo: dict, rules: dict, actor_id: O
             agent_id=str(agent.id), is_allowed=True, valid_from=rules["agent_valid_from"],
             valid_to=rules["agent_valid_to"], created_by=actor_id,
         ))
-    for col_name, value in todo["switches"].items():
-        setattr(contact, col_name, value)
+    if todo["switches"]:
+        db.query(RespondContact).filter(RespondContact.id == cid).update(
+            todo["switches"], synchronize_session=False
+        )
     db.flush()
 
 
@@ -412,10 +415,16 @@ def run(db, path, *, rules: dict = RULES, apply: bool = False, actor_id: Optiona
                 ContactMediaLimit.contact_id.in_(ids), ContactMediaLimit.modality == rules["media_modality"])
         }
         actor = audit_context.AuditActor(actor_type="user", user_id=actor_id) if actor_id else None
+        # Plan every contact BEFORE the first commit, and hold plain values from here on: a commit
+        # expires the loaded entities and touching one reloads it with every mapped column.
+        plans = []
         for phone, contact in found.items():
-            d = desired[phone]
-            rows, todo = _plan_contact(db, contact, snaps[str(contact.id)], d, names, world, rules, media.get(str(contact.id)))
+            cid = str(contact.id)
+            plain = SimpleNamespace(id=cid, name=contact.name, phone_number=contact.phone_number)
+            rows, todo = _plan_contact(db, contact, snaps[cid], desired[phone], names, world, rules, media.get(cid))
             changes.extend(rows)
+            plans.append((phone, plain, desired[phone], rows, todo))
+        for phone, contact, d, rows, todo in plans:
             touched = [r for r in rows if r["changed"]]
             if not apply or not touched:
                 continue
@@ -428,7 +437,7 @@ def run(db, path, *, rules: dict = RULES, apply: bool = False, actor_id: Optiona
                     db,
                     event="contact.bulk_setup",
                     entity_type="respond_contacts",
-                    entity_id=str(contact.id),
+                    entity_id=contact.id,
                     old_values={r["facet"]: r["before"] for r in touched},
                     new_values={r["facet"]: r["after"] for r in touched},
                     description="Contact bulk setup from the dealer Excel",
@@ -543,6 +552,7 @@ def apply_links(db, path, reviewed_path, *, actor_id: Optional[str], rules: dict
     entries, _ = parse_workbook(path, rules=rules)
     groups = _row_groups(entries)
     found = _find_contacts(db, {p for g in groups.values() for p in g["phones"]})
+    contact_ids = {p: str(c.id) for p, c in found.items()}  # plain ids: commits expire the entities
     ws = openpyxl.load_workbook(reviewed_path, data_only=True).active
     header = [_text(c.value).lower() for c in ws[1]]
     idx = {h: i for i, h in enumerate(header)}
@@ -564,7 +574,7 @@ def apply_links(db, path, reviewed_path, *, actor_id: Optional[str], rules: dict
             contact = found.get(phone)
             if contact is None:
                 continue
-            cid = str(contact.id)
+            cid = contact_ids[phone]
             if db.query(RespondContactCustomer).filter(
                 RespondContactCustomer.contact_id == cid, RespondContactCustomer.customer_id == customer.id
             ).first():
@@ -605,7 +615,7 @@ def _session(db_url: str):
     from sqlalchemy.orm import sessionmaker
 
     # hide_parameters: an error must never echo bound phone numbers or names.
-    db = sessionmaker(bind=create_engine(db_url, hide_parameters=True))()
+    db = sessionmaker(bind=create_engine(db_url, hide_parameters=True), expire_on_commit=False)()
     set_company_scope(db, None)  # an admin tool: reads every company
     return db
 
