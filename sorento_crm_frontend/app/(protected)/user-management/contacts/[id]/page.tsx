@@ -24,6 +24,7 @@ import ContactMarketSegmentSection from './components/ContactMarketSegmentSectio
 import ContactAttachmentTypesSection from './components/ContactAttachmentTypesSection';
 import ContactPortalFormsSection from './components/ContactPortalFormsSection';
 import ContactEditDialog from './components/ContactEditDialog';
+import ContactBrandScopeSection from '@/components/contacts/ContactBrandScopeSection';
 import { StockVisibilitySection } from '@/components/stock-visibility/StockVisibilitySection';
 import { SpecVisibilitySection } from '@/components/spec-visibility/SpecVisibilitySection';
 
@@ -183,6 +184,10 @@ export default function ContactProfilePage() {
                 375px without clipping their chips. */}
             <div className="md:col-span-2">
               <StockVisibilitySection scope={{ kind: 'contact', contactId }} />
+            </div>
+            {/* Which brands the chatbot and MCP may tell this contact about. Empty = all. */}
+            <div className="md:col-span-2">
+              <ContactBrandScopeSection contactId={contactId} />
             </div>
             {/* Which product spec keys (Thickness, Material, ...) the chatbot may
                 reveal to this contact. Sits directly under Stock visibility, same

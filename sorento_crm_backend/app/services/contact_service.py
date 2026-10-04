@@ -181,6 +181,10 @@ class ContactService:
         codes_map = customer_codes_by_contact(self.db, [str(c.id) for c in contacts])
         cost_ids = self._cost_visible_ids([str(c.id) for c in contacts])
 
+        from app.services.contact_brand_scope import brand_refs_by_contact
+
+        brands_map = brand_refs_by_contact(self.db, [str(c.id) for c in contacts])
+
         # Validate and convert contacts to response models
         # Explicitly convert UUID to string to ensure Pydantic validation works
         contact_responses = []
@@ -191,6 +195,7 @@ class ContactService:
                 data["linked_user_id"] = linked["id"] if linked else None
                 data["linked_user_name"] = linked["name"] if linked else None
                 data["customer_codes"] = codes_map.get(str(contact.id), [])
+                data["brands"] = brands_map.get(str(contact.id), [])
                 data["cost_visible"] = str(contact.id) in cost_ids
                 contact_responses.append(RespondContactResponse.model_validate(data))
             except Exception as e:
@@ -757,7 +762,11 @@ class ContactService:
         ws = getattr(contact, "workspace", None)
         access_types = list(getattr(contact, "access_types", []) or [])
         chatbot_profile = dict(getattr(contact, "chatbot_profile", None) or {})
+        brands: list = []
         if db is not None:
+            from app.services.contact_brand_scope import brand_refs_by_contact
+
+            brands = brand_refs_by_contact(db, [str(contact.id)]).get(str(contact.id), [])
             # AC-MEM041: both dict builders carry facts, the live CRM ones (never
             # stored) merged in the same way the memory GET does. Skipped entirely
             # when there is nothing to add - a contact with no stored facts and no
@@ -809,6 +818,9 @@ class ContactService:
             # ESCALATION-CONTROL: the one per-contact switch, default ON - a row without
             # the attribute is allowed. Listed by hand, like every field above.
             "escalation_allowed": getattr(contact, "escalation_allowed", True) is not False,
+            # CONTACT-BRAND-SCOPE: listed by hand like every field above. The list endpoint
+            # fills it for a whole page in one query; here, one contact when a session is given.
+            "brands": brands,
             "created_at": contact.created_at,
             "updated_at": contact.updated_at,
             "created_by": contact.created_by,

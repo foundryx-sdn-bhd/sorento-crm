@@ -2758,7 +2758,9 @@ def _chat_visible_product_ids(db: Session, product_ids: Iterable[str]) -> set[st
     The trigram and embedding tiers read raw SQL over tables the predicate does
     not join, so they re-check their product hits here through the ORM - one
     bounded IN query, company-scoped like every other product read - instead of
-    each carrying a hand-written copy of the rule.
+    each carrying a hand-written copy of the rule. The same ORM read carries the contact's
+    brand scope (the session criterion, CONTACT-BRAND-SCOPE), so an out-of-scope id is
+    dropped here too.
     """
     ids = [str(p) for p in product_ids if p]
     if not ids:
@@ -5405,6 +5407,21 @@ def _dedupe_preserve_order(values: Iterable[Optional[str]]) -> list[str]:
     return out
 
 
+def _drop_out_of_scope_product_hits(db: Session, hits: list[ResolvedEntity]) -> list[ResolvedEntity]:
+    """CONTACT-BRAND-SCOPE: the phrase search reads embedding rows with raw SQL, so a product
+    hit outside the session's brand scope is dropped here by one ORM re-check (the session
+    criterion hides the product row). An unscoped session returns `hits` untouched."""
+    from app.models.base import get_brand_scope
+
+    if not get_brand_scope(db):
+        return hits
+    codes = [h.canonical_code for h in hits if h.entity_type == "product" and h.canonical_code]
+    if not codes:
+        return hits
+    seen = {str(c) for (c,) in db.query(Product.product_code).filter(Product.product_code.in_(codes)).all()}
+    return [h for h in hits if h.entity_type != "product" or str(h.canonical_code) in seen]
+
+
 RAG_MIN_SIMILARITY = 0.20
 RAG_TOP_K = 15
 RAG_AMBIGUOUS_GAP = 0.04
@@ -5530,6 +5547,8 @@ def _rag_resolve_phrase(
                 display={"source_type": str(r.source_type)},
             )
         )
+
+    out = _drop_out_of_scope_product_hits(db, out)
 
     # Substring re-rank: embedding similarity on short product/customer codes is
     # noisy - the top-K above similarity threshold is often a mix of relevant
