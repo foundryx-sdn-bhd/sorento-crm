@@ -251,6 +251,47 @@ def test_u3_up_to_eleven_triples_with_gaps_skipped(tmp_path, w):
     assert invalid == []
 
 
+REAL_HEADER = [None, "Dealer Registered Under", "Sales Person", "APPROVAL TO USE ", "Company Name",
+               "Name", "Contact Number", "Access Level"]
+for _i in range(2, 6):
+    REAL_HEADER += [f"Name {_i}", f"Contact Number {_i}", f"Access Level {_i}"]
+for _i in range(6, 12):  # persons 6-11 reuse the "5" labels for phone and level
+    REAL_HEADER += [f"Name {_i}", "Contact Number 5", "Access Level 5"]
+
+
+def _real_book(tmp_path, slots_per_row):
+    """slots_per_row: list of {slot(1..11): (name, phone, level)}; header exactly as the real sheet."""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "working file"
+    ws.append(REAL_HEADER)
+    for slots in slots_per_row:
+        line = [None, "Sorento Sdn Bhd", "ZZT Sales", "YES ", "ZZT Dealer A Sdn Bhd"]
+        for i in range(1, 12):
+            line.extend(slots.get(i, [None, None, None]))
+        ws.append(line)
+    path = tmp_path / "real.xlsx"
+    wb.save(path)
+    return path
+
+
+def test_u3_real_header_first_person_unnumbered_and_persons_six_to_eleven_reuse_labels(tmp_path, w):
+    path = _real_book(tmp_path, [
+        {1: ("ZZT One", raw(1), BO), 5: ("ZZT Five", raw(5), EMP), 6: ("ZZT Six", raw(6), BO), 11: ("ZZT Eleven", raw(11), EMP)},
+        {1: ("ZZT Solo", raw(7), BO)},
+    ])
+    entries, invalid = cbs.parse_workbook(path, rules=w.rules)
+    got = {e.phone: (e.name, e.level, e.row) for e in entries}
+    assert got == {
+        norm(1): ("ZZT One", "owner", 2),
+        norm(5): ("ZZT Five", "employee", 2),
+        norm(6): ("ZZT Six", "owner", 2),
+        norm(11): ("ZZT Eleven", "employee", 2),
+        norm(7): ("ZZT Solo", "owner", 3),
+    }
+    assert invalid == []
+
+
 @pytest.mark.parametrize(
     "value",
     ["0123456789", "60123456789", 60123456789, "+60 12-345 6789", "012 345 6789", "+60123456789"],
