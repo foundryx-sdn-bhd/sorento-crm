@@ -1,6 +1,6 @@
 # PLAN: contact bulk setup from the owner's dealer Excel (CONTACT-BULK-SETUP)
 
-Status: planned, M track (script only, no migration, no UI, no auth change). Behaviour card:
+Status: building, M track (script only, no migration, no UI, no auth change). Behaviour card:
 crew/state/files/contact-bulk/CARD.md (outside git, holds real names). UAC alongside:
 `contact-bulk-setup-4oct-acceptance-criteria.md`.
 
@@ -28,7 +28,7 @@ RULES constant in the script (codes, not data): company SRT/MCH; BO types dealer
 (MCH) + end_user; employee end_user; stock mode availability, locations SRT -> BRW, MWH; MCH -> HQ,
 MOCHA-WH; segment retail; media image allowed; agents general_enquiries, order_enquiries,
 incoming_stock_enquiries allowed 2026-01-01 00:00 -> 2026-12-31 00:00 (naive, as Wong's rows);
-switches chatbot_stock_allowed + chatbot_eta_offset_applied ON. Every rule read off the example
+switches chatbot_stock_allowed + chatbot_eta_offset_applied ON, escalation_allowed OFF (owner Q3). Stock override is SET exactly (owner Q2); everything else ADD-only. Owner answers 4 Oct: Q1 keep agent grants, Q4 BO wins, Q5 ticked customer -> every found contact of the row. Every rule read off the example
 contact's stored rows (card).
 
 ## Out of scope

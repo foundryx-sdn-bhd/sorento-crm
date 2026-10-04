@@ -11,7 +11,7 @@ Fake data only in tests. "BO" = Access Level starting "Business Owner"; "EMP" = 
 
 ## Desired per contact
 - U6 BO: access types dealer (SRT) / mocha_dealer (MCH) for each company + end_user. EMP: end_user only.
-- U7 Companies per row; stock override mode availability, include SRT -> BRW+MWH, MCH -> HQ+MOCHA-WH (warehouse codes resolved to ids in the DB); segment retail; media image allowed; three agents allowed 2026-01-01 -> 2026-12-31; stock checks + ETA buffer switches ON.
+- U7 Companies per row; stock override mode availability, include SRT -> BRW+MWH, MCH -> HQ+MOCHA-WH for the contact's desired companies (warehouse codes resolved to ids in the DB); segment retail; media image allowed; three agents allowed 2026-01-01 -> 2026-12-31; stock checks + ETA buffer switches ON; escalation switch (`escalation_allowed`, "Chatbot hands over to support teams") OFF (owner Q3, 4 Oct).
 
 ## Dry run (default)
 - U8 Writes nothing (DB unchanged after run).
@@ -19,9 +19,10 @@ Fake data only in tests. "BO" = Access Level starting "Business Owner"; "EMP" = 
 - U10 Contact already holding everything -> status already, zero adds.
 
 ## Apply
-- U11 ADD only: existing access types, companies, segments, agent grants, locations, media rows and switches are never removed or turned off.
+- U11 ADD only, except stock override (U13) and escalation (U13b): existing access types, companies, segments, agent grants, media rows and the other switches are never removed or turned off.
 - U12 Existing agent grant with other dates/allowed -> kept untouched, reported "kept".
-- U13 Existing stock override: mode kept; include list gets missing locations added; include-all (NULL) or exclusion list left untouched ("kept").
+- U13 Stock override is SET, not merged (owner Q2, 4 Oct): mode becomes availability and the include list becomes exactly the rule's locations for the contact's desired companies; excluded_warehouse_ids becomes NULL; hide_zero_locations is kept on an existing row (false on a new row). CSV shows old -> new for mode and locations.
+- U13b escalation_allowed is set false where true; CSV shows old -> new.
 - U14 Existing image media row with is_allowed false -> set true; limits untouched.
 - U15 One transaction per contact; a failure on one contact rolls back that contact only and is reported; others apply.
 - U16 One audit row `contact.bulk_setup` per changed contact (entity respond_contacts, old/new per facet).
