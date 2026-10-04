@@ -40,7 +40,7 @@ _SAMPLE_RTF = (
     r"{\rtf1\ansi\ansicpg1252\deff0\deflang1033{\fonttbl{\f0\fnil\fcharset0 Microsoft YaHei;}} "
     r"{\colortbl ;\red0\green0\blue0;} \viewkind4\uc1\pard\cf1\b\f0\fs20 DELIVERY ADDRESS\par "
     r"A-25-07 MAYA ARA RESIDENCES\par 1 JALAN PJU 1A/1, ARA DAMANSARA\par "
-    r"47301 PETALING JAYA, SELANGOR\par \par PIC: 013-293 8073 - FAD\cf0\fs20\par }"
+    r"47301 PETALING JAYA, SELANGOR\par \par PIC: 013-000 0549 - FAD\cf0\fs20\par }"
 )
 _SAMPLE_PLAIN = (
     "DELIVERY ADDRESS\n"
@@ -48,7 +48,7 @@ _SAMPLE_PLAIN = (
     "1 JALAN PJU 1A/1, ARA DAMANSARA\n"
     "47301 PETALING JAYA, SELANGOR\n"
     "\n"
-    "PIC: 013-293 8073 - FAD"
+    "PIC: 013-000 0549 - FAD"
 )
 
 _MIGRATION_PATH = (

@@ -1,11 +1,11 @@
 {
   "name": "handpass7-roster-copy-stamps",
-  "source": "hand pass 7 owner console turn 19 Sep 2026 22:00:16 MYT (contact_respond_id 437264483), sent as one two-line message 'mab7050\\nPhoto' - measured live against :8081 today: 'Which product do you mean? 1. MAB7050-BL 2. MAB7050-WH', a bare unstamped, unsplit list. Ruling R-g: the production picker line is 'search needs to be more specific. Multiple matches found. Please choose:' (app/services/chatbot/lanes/business/gate.py:858-859), each option stamped 'has Product Photos' / 'no Product Photos', and MAB7050-WH splits by company - measured via psql the owner's own follow-up turns (22:00:21 '1' -> MAB7050-BL has none; 22:00:32 '2' -> MAB7050-WH resolves to TWO attachment rows, one Company: Sorento and one Company: Mocha, same product code, different company - the split this ruling asks the roster itself to show up front rather than after two more turns.",
+  "source": "hand pass 7 owner console turn 19 Sep 2026 22:00:16 MYT (contact_respond_id 900000008), sent as one two-line message 'mab7050\\nPhoto' - measured live against :8081 today: 'Which product do you mean? 1. MAB7050-BL 2. MAB7050-WH', a bare unstamped, unsplit list. Ruling R-g: the production picker line is 'search needs to be more specific. Multiple matches found. Please choose:' (app/services/chatbot/lanes/business/gate.py:858-859), each option stamped 'has Product Photos' / 'no Product Photos', and MAB7050-WH splits by company - measured via psql the owner's own follow-up turns (22:00:21 '1' -> MAB7050-BL has none; 22:00:32 '2' -> MAB7050-WH resolves to TWO attachment rows, one Company: Sorento and one Company: Mocha, same product code, different company - the split this ruling asks the roster itself to show up front rather than after two more turns.",
   "cases": [
     {
       "name": "mab7050-photo-picker-copy-and-company-split",
       "cold": true,
-      "contact": "440987225",
+      "contact": "900000010",
       "turns": [
         {
           "text": "mab7050\nPhoto",

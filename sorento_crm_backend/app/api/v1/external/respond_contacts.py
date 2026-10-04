@@ -40,7 +40,7 @@ async def sync_respond_contact(
     **Auth:** X-API-Key header (external API key).
 
     **Body:**
-  - phone_number (required): E.164 or similar, e.g. "+60166753328"
+  - phone_number (required): E.164 or similar, e.g. "+60160000509"
   - name (optional): Display name
 
     **Returns:** Contact id, phone_number, name, respond_io_id, and action ("created" | "updated").

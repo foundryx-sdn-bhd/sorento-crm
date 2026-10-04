@@ -52,7 +52,7 @@ function entry(overrides: Partial<FormRevisionEntry> = {}): FormRevisionEntry {
     label: 'Revision 1',
     reason: null,
     submitted_at: '2026-08-01T02:00:00',
-    submitted_by: 'Darren Lee',
+    submitted_by: 'CONTACT X Lee',
     snapshot: {},
     snapshot_fields: [{ field: 'quantity', label: 'Quantity', value: '4' }],
     attachments: [

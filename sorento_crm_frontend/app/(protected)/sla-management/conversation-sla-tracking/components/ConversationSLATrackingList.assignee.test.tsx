@@ -63,7 +63,7 @@ const baseRow = {
   due_at: '2026-08-12T03:00:00',
   is_responded: false,
   is_resolved: false,
-  contact_phone: '+60 12-334 5566',
+  contact_phone: '+60 12-000 0553',
   contact_name: 'Aisyah Rahman',
   policy_name: 'Conversation SLA - Standard',
 };

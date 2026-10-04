@@ -69,10 +69,10 @@ const DRAFT_ROW: PortalSubmissionSummary = {
 const ME = {
   contact_id: 'contact-1',
   space_id: 'space-1',
-  name: 'Darren Lee',
+  name: 'CONTACT X Lee',
   phone_number: '60123456789',
   expires_at: '2026-09-01T00:00:00Z',
-  portal_slug: 'darren',
+  portal_slug: 'contact-x',
 };
 
 function mockContact(visible: string[]) {
@@ -96,7 +96,7 @@ beforeEach(() => {
 describe('PortalLanding - Price Tag Request in the type dropdown', () => {
   it('offers the option, with a count, to a contact whose grant includes it', async () => {
     mockContact(['stock_inquiry', 'price_tag_request']);
-    render(<PortalLanding slug="darren" />);
+    render(<PortalLanding slug="contact-x" />);
 
     const trigger = await screen.findByRole('combobox');
     // Not a call COUNT: the landing loads on mount and again when the search
@@ -112,7 +112,7 @@ describe('PortalLanding - Price Tag Request in the type dropdown', () => {
 
   it('does not offer it to a contact whose grant omits it, and asks for no list', async () => {
     mockContact(['stock_inquiry']);
-    render(<PortalLanding slug="darren" />);
+    render(<PortalLanding slug="contact-x" />);
 
     const trigger = await screen.findByRole('combobox');
     await waitFor(() => expect(fetchSubmissions).toHaveBeenCalled());
@@ -126,7 +126,7 @@ describe('PortalLanding - Price Tag Request in the type dropdown', () => {
   it('lists the requests in the same card as the other kinds when selected', async () => {
     searchParams = new URLSearchParams('type=price_tag_request');
     mockContact(['price_tag_request']);
-    render(<PortalLanding slug="darren" />);
+    render(<PortalLanding slug="contact-x" />);
 
     expect(await screen.findByText('PT-202608-0001')).toBeInTheDocument();
     // One dealer line per card: both rows name the same debtor.
@@ -139,7 +139,7 @@ describe('PortalLanding - Price Tag Request in the type dropdown', () => {
   it('falls back to stock inquiry on a ?type= deep link the contact cannot see', async () => {
     searchParams = new URLSearchParams('type=price_tag_request');
     mockContact(['stock_inquiry']);
-    render(<PortalLanding slug="darren" />);
+    render(<PortalLanding slug="contact-x" />);
 
     // The New button names the active kind, so it is what proves the
     // fallback. The label is split across spans (short "New" below `sm`,
@@ -161,7 +161,7 @@ describe('PortalLanding - Price Tag Request in the type dropdown', () => {
       new Error('Request failed with 500'),
     );
 
-    render(<PortalLanding slug="darren" />);
+    render(<PortalLanding slug="contact-x" />);
 
     const trigger = await screen.findByRole('combobox');
     trigger.click();
@@ -176,14 +176,14 @@ describe('PortalLanding - Price Tag Request in the type dropdown', () => {
     );
     searchParams = new URLSearchParams('type=price_tag_request');
 
-    render(<PortalLanding slug="darren" />);
+    render(<PortalLanding slug="contact-x" />);
 
     expect(await screen.findByText('PT-202608-0001')).toBeInTheDocument();
   });
 
   it('no longer renders the separate Price Tag Requests link button', async () => {
     mockContact(['price_tag_request']);
-    render(<PortalLanding slug="darren" />);
+    render(<PortalLanding slug="contact-x" />);
 
     await screen.findByRole('combobox');
     expect(screen.queryByText('Price Tag Requests')).toBeNull();
@@ -202,7 +202,7 @@ describe('PortalLanding - price tag card shows the revision badge/chip too (AC-R
       { ...PRICE_TAG_ROW, revision_no: 1, last_revised_at: '2026-09-01T00:00:00Z' },
     ]);
 
-    render(<PortalLanding slug="darren" />);
+    render(<PortalLanding slug="contact-x" />);
 
     await screen.findByText('PT-202608-0001');
     expect(screen.getByText('Rev 1')).toBeInTheDocument();
@@ -220,7 +220,7 @@ describe('PortalLanding - price tag card shows the revision badge/chip too (AC-R
       },
     ]);
 
-    render(<PortalLanding slug="darren" />);
+    render(<PortalLanding slug="contact-x" />);
 
     await screen.findByText('PT-202608-0001');
     const chip = screen.getByTestId('revising-chip');
@@ -236,7 +236,7 @@ describe('PortalLanding - card needed_by_date is formatted, not raw ISO (review 
       { ...PRICE_TAG_ROW, needed_by_date: '2026-09-04' },
     ]);
 
-    render(<PortalLanding slug="darren" />);
+    render(<PortalLanding slug="contact-x" />);
     await screen.findByText('PT-202608-0001');
 
     const expected = new Date('2026-09-04').toLocaleDateString(undefined, {

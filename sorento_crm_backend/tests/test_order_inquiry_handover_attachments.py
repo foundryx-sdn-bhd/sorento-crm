@@ -56,7 +56,7 @@ def _pending(
         "row_id": row_id,
         "core_line_id": core_line_id,
         "line_no": line_no,
-        "actor": {"name": "Eling", "email": "eling@sorento.com.my"},
+        "actor": {"name": "Eling", "email": "person12@example.com"},
     }
 
 

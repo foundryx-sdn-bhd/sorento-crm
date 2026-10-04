@@ -4,7 +4,7 @@ Status: in progress. Track: small fix. Owner ask 23 Sep 2026 ("the user asks 3 b
 only answers 1, why ah" / "yes").
 UAC: `chatbot-order-status-all-orders-23sep-acceptance-criteria.md`.
 
-## Evidence (prod, 23 Sep 2026 08:58, contact 482766833, turn 48)
+## Evidence (prod, 23 Sep 2026 08:58, contact 900000105, turn 48)
 
 - Message "STATUS DELIVERY / PS202609-0374 / PS202609-0398 / PS202609-0410". Parser:
   `domain_hint: order`, `order_status: delivered`, three `hint: order` entities.
@@ -97,7 +97,7 @@ calls - is asserted `None` while `result_set` still lists the members) and
 
 ## Fix 3: the console's harness state actually replaces the stored memory
 
-Owner-measured on console contact 437264483, turns at 20:41:40 and 20:41:51 +09, in
+Owner-measured on console contact 900000008, turns at 20:41:40 and 20:41:51 +09, in
 `chatbot.turns`.
 
 ### Cause

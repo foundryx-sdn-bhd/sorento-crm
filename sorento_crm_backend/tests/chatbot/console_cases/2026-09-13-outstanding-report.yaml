@@ -39,15 +39,15 @@
 # on the prod copy - left in place).
 #
 # AC-1140/AC-1141'S "NO KEY" CASE IS NOT RUN HERE. Every candidate non-granted contact
-# checked (438930735, 445239409, 445239415, 477071889, 477071892, 477071888, 423755030,
-# 423882401) has a stored `chatbot.turns` envelope missing `contact.custom_fields`, which
+# checked (900000052, 900000063, 900000056, 900000059, 900000106, 900000101, 900000071,
+# 900000089) has a stored `chatbot.turns` envelope missing `contact.custom_fields`, which
 # the engine's `is_human_intervened` read needs - the console script's envelope-borrowing
 # mechanism cannot exercise this case with the contacts available on this prod copy. AC-1140
 # and AC-1141 are covered by the pytest suite instead
 # (`tests/chatbot/test_outstanding_lane.py::TestFieldRevealGateBeforeFetch`), which builds
 # the `ctx.access.attributes` gate directly rather than depending on a real contact's
 # reveal-grant history.
-contact: "437264483"
+contact: "900000008"
 
 cases:
   - name: outstanding report journey - SO direct ask, missing-scope question, both, detail, customer filter, miss

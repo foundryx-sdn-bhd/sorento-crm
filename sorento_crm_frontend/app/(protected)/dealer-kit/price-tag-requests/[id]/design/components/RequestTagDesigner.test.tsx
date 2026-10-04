@@ -349,7 +349,7 @@ function request(overrides: Partial<PriceTagRequestDetail> = {}): PriceTagReques
     created_at: '2026-09-01T00:00:00Z',
     assigned_to_id: 'user-1',
     assigned_to_name: 'Jayson',
-    contact_name: 'Ziv Beh',
+    contact_name: 'CONTACT AI',
     contact_id: 'contact-1',
     lines: [line()],
     ...overrides,

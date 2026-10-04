@@ -62,7 +62,7 @@ No prompt or code changes were made as part of run 2 itself, or to produce these
 | Your Ref | `REP202607-0152` | entity `REP202607-0152` hint=`order`, confident | exact match |
 | Document date | `13/08/2026` | not present anywhere in the output | refused-or-absent |
 | Address (Ipoh, Perak) | present on the form | not present | refused-or-absent |
-| Contact `017-429 3882` | present on the form | not present | refused-or-absent |
+| Contact `017-000 0513` | present on the form | not present | refused-or-absent |
 | Item code (line 1) | `ACC-SRT1011` | entity `ACC-SRT1011` hint=`product`, confident | exact match |
 | DO reference (line 1) | `REP202607-0152` dated `07/07/2026` | date not present; code already captured above | refused-or-absent (the `07/07/2026` line-date) |
 | Qty (line 1) | `1 UNIT` | attribute `quantity` = `1 UNIT`, confident | exact match |
@@ -104,7 +104,7 @@ misread.
 | Your Ref | `REP202607-0152` | entity `REP202607-0152` hint=`order`, confident | exact match |
 | Document date | `13/08/2026` | attribute `document_date`=`13/08/2026`, confident | **exact match - fixed.** Run 1 dropped this entirely; the new `document_date` kind gives it a home |
 | Address (Ipoh, Perak) | present on the form | not present | refused-or-absent (unchanged, not one of the named ACs) |
-| Contact `017-429 3882` | present on the form | not present | refused-or-absent (unchanged, not one of the named ACs) |
+| Contact `017-000 0513` | present on the form | not present | refused-or-absent (unchanged, not one of the named ACs) |
 | Item code (line 1) | `ACC-SRT1011` | entity `ACC-SRT1011` hint=`product`, confident | exact match |
 | DO reference (line 1) | `REP202607-0152` dated `07/07/2026` | code captured above; `07/07/2026` still not present anywhere | refused-or-absent (the line-level date only) |
 | Qty (line 1) | `1 UNIT` | attribute `quantity`=`1 UNIT`, `entity_raw`=`REP202607-0152`, confident | exact match, and now line-scoped via `entity_raw` |

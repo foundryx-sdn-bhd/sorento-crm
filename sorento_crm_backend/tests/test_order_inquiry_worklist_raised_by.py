@@ -10,7 +10,7 @@ Four things are pinned here, and each one is a way it would silently stop workin
   response JSON rather than on the service dict, because `response_model` drops a field
   the schema does not declare and the service would still look right;
 * the one search box finds them, by name and by the front of their email address, which is
-  what a person types when they only know "cindy";
+  what a person types when they only know "contact w";
 * the `raised_by` filter narrows the list, and the summary offers ONLY users who have
   actually raised something (a picker listing every user in the company is a picker whose
   entries mostly return nothing);
@@ -255,8 +255,8 @@ def _restore(originals) -> None:
 def _seed(db, company_id: str) -> dict:
     """Two CS users, one inquiry each, so every assertion below is about telling them
     apart rather than about the only row there is."""
-    cindy = _user(db, f"{MARKER} Cindy Lee", f"cindy.{_uid()[:8]}@zzt.test")
-    johnson = _user(db, f"{MARKER} Johnson Tan", f"johnson.{_uid()[:8]}@zzt.test")
+    contact_w = _user(db, f"{MARKER} CONTACT W", f"contact w.{_uid()[:8]}@zzt.test")
+    contact_aa = _user(db, f"{MARKER} CONTACT AA Tan", f"contact aa.{_uid()[:8]}@zzt.test")
     # A third CS user who has raised nothing: the filter's own list must not offer them.
     idle = _user(db, f"{MARKER} Never Raised", f"idle.{_uid()[:8]}@zzt.test")
 
@@ -267,7 +267,7 @@ def _seed(db, company_id: str) -> dict:
         db,
         company_id,
         cindy_order,
-        raised_by=cindy.id,
+        raised_by=contact_w.id,
         raised_at=datetime(2026, 8, 25, 0, 42),
     )
     cindy_decision = _decision(
@@ -275,7 +275,7 @@ def _seed(db, company_id: str) -> dict:
         company_id,
         cindy_order,
         revision_no=1,
-        confirmed_by=cindy.id,
+        confirmed_by=contact_w.id,
         confirmed_at=datetime(2026, 8, 25, 0, 42),
     )
     cindy_row = _row(
@@ -287,40 +287,40 @@ def _seed(db, company_id: str) -> dict:
         decision=cindy_decision,
     )
 
-    johnson_order = _adopted_order(db, company_id, f"ZZTSO{_uid()[:8]}")
-    johnson_product = _product(db, f"ZZT-M310CRPJ-{_uid()[:6]}")
-    johnson_line = _line(db, company_id, johnson_order, johnson_product)
-    johnson_inquiry = _inquiry(
+    contact_aa_order = _adopted_order(db, company_id, f"ZZTSO{_uid()[:8]}")
+    contact_aa_product = _product(db, f"ZZT-M310CRPJ-{_uid()[:6]}")
+    contact_aa_line = _line(db, company_id, contact_aa_order, contact_aa_product)
+    contact_aa_inquiry = _inquiry(
         db,
         company_id,
-        johnson_order,
-        raised_by=johnson.id,
+        contact_aa_order,
+        raised_by=contact_aa.id,
         raised_at=datetime(2026, 8, 22, 6, 10),
     )
-    johnson_decision = _decision(
+    contact_aa_decision = _decision(
         db,
         company_id,
-        johnson_order,
+        contact_aa_order,
         revision_no=1,
-        confirmed_by=johnson.id,
+        confirmed_by=contact_aa.id,
         confirmed_at=datetime(2026, 8, 22, 6, 10),
     )
-    johnson_row = _row(
+    contact_aa_row = _row(
         db,
         company_id,
-        johnson_inquiry,
-        johnson_line,
-        johnson_product.product_code,
-        decision=johnson_decision,
+        contact_aa_inquiry,
+        contact_aa_line,
+        contact_aa_product.product_code,
+        decision=contact_aa_decision,
     )
 
     db.commit()
     return {
-        "cindy": cindy,
-        "johnson": johnson,
+        "contact w": contact_w,
+        "contact aa": contact_aa,
         "idle": idle,
         "cindy_row": cindy_row,
-        "johnson_row": johnson_row,
+        "contact_aa_row": contact_aa_row,
         "cindy_order": cindy_order,
         "cindy_line": cindy_line,
         "cindy_inquiry": cindy_inquiry,
@@ -336,7 +336,7 @@ def api():
     with blank_session() as db:
         company_id = _sorento(db)
         seeded = _seed(db, company_id)
-        client, originals = _client(db, seeded["cindy"].id, READ_ONLY)
+        client, originals = _client(db, seeded["contact w"].id, READ_ONLY)
         try:
             with company_scope(db, frozenset({company_id})):
                 yield client, db, company_id, seeded
@@ -354,13 +354,13 @@ def test_the_worklist_row_names_who_raised_it_and_when(api):
 
     assert response.status_code == 200, response.text
     rows = {row["id"]: row for row in response.json()["data"]}
-    cindy = rows[seeded["cindy_row"].id]
+    contact_w = rows[seeded["cindy_row"].id]
     # The NAME, on the wire. A service that resolved it and a schema that dropped it
     # would still pass an assertion made against the service.
-    assert cindy["raised_by_name"] == seeded["cindy"].name
-    assert cindy["raised_at"] is not None
+    assert contact_w["raised_by_name"] == seeded["contact w"].name
+    assert contact_w["raised_at"] is not None
     # Never the id: the screen prints this cell as it comes.
-    assert seeded["cindy"].id not in str(cindy["raised_by_name"])
+    assert seeded["contact w"].id not in str(contact_w["raised_by_name"])
 
 
 def test_a_row_whose_inquiry_names_nobody_reads_blank_rather_than_breaking(api):
@@ -398,30 +398,30 @@ def test_the_worklist_sorts_by_the_raising_person(api):
 def test_searching_the_cs_users_name_returns_their_inquiries(api):
     client, _db, _company_id, seeded = api
 
-    response = client.get(LIST, params={"query": "Cindy"})
+    response = client.get(LIST, params={"query": "CONTACT W"})
 
     assert response.status_code == 200, response.text
     ids = {row["id"] for row in response.json()["data"]}
     assert seeded["cindy_row"].id in ids
-    assert seeded["johnson_row"].id not in ids
+    assert seeded["contact_aa_row"].id not in ids
 
 
 def test_searching_the_front_of_the_cs_users_email_returns_their_inquiries(api):
     client, _db, _company_id, seeded = api
-    prefix = seeded["johnson"].email.split("@")[0][:7]
+    prefix = seeded["contact aa"].email.split("@")[0][:10]
 
     response = client.get(LIST, params={"query": prefix})
 
     assert response.status_code == 200, response.text
     ids = {row["id"] for row in response.json()["data"]}
-    assert seeded["johnson_row"].id in ids
+    assert seeded["contact_aa_row"].id in ids
     assert seeded["cindy_row"].id not in ids
 
 
 def test_the_raised_by_filter_narrows_the_list_to_one_person(api):
     client, _db, _company_id, seeded = api
 
-    response = client.get(LIST, params={"raised_by": seeded["cindy"].id})
+    response = client.get(LIST, params={"raised_by": seeded["contact w"].id})
 
     assert response.status_code == 200, response.text
     body = response.json()
@@ -438,9 +438,9 @@ def test_the_summary_offers_only_people_who_have_raised_something(api):
     assert response.status_code == 200, response.text
     facets = response.json()["raised_by"]
     by_id = {entry["id"]: entry for entry in facets}
-    assert by_id[seeded["cindy"].id]["label"] == seeded["cindy"].name
-    assert by_id[seeded["cindy"].id]["rows"] == 1
-    assert seeded["johnson"].id in by_id
+    assert by_id[seeded["contact w"].id]["label"] == seeded["contact w"].name
+    assert by_id[seeded["contact w"].id]["rows"] == 1
+    assert seeded["contact aa"].id in by_id
     # Somebody who has never raised an inquiry is not a filter option.
     assert seeded["idle"].id not in by_id
 
@@ -448,15 +448,15 @@ def test_the_summary_offers_only_people_who_have_raised_something(api):
 def test_the_raised_by_list_keeps_every_person_while_one_of_them_is_selected(api):
     client, _db, _company_id, seeded = api
 
-    response = client.get(SUMMARY, params={"raised_by": seeded["cindy"].id})
+    response = client.get(SUMMARY, params={"raised_by": seeded["contact w"].id})
 
     assert response.status_code == 200, response.text
     body = response.json()
     # The control drops its OWN filter, or picking a person makes every other person
     # disappear from the picker and it cannot be used a second time.
     assert {entry["id"] for entry in body["raised_by"]} >= {
-        seeded["cindy"].id,
-        seeded["johnson"].id,
+        seeded["contact w"].id,
+        seeded["contact aa"].id,
     }
     # The totals beside it still honour the filter, because they describe the screen.
     assert body["total_rows"] == 1
@@ -508,7 +508,7 @@ def test_a_reconfirm_by_somebody_else_leaves_the_earlier_rows_attributed_to_who_
         company_id,
         order,
         revision_no=2,
-        confirmed_by=seeded["johnson"].id,
+        confirmed_by=seeded["contact aa"].id,
         confirmed_at=datetime(2026, 8, 25, 2, 25),
         supersedes=seeded["cindy_decision"],
     )
@@ -524,7 +524,7 @@ def test_a_reconfirm_by_somebody_else_leaves_the_earlier_rows_attributed_to_who_
                 "line_no": 2,
             }
         ],
-        actor_user_id=seeded["johnson"].id,
+        actor_user_id=seeded["contact aa"].id,
     )
     db.commit()
 
@@ -536,7 +536,7 @@ def test_a_reconfirm_by_somebody_else_leaves_the_earlier_rows_attributed_to_who_
     from app.models.project_so import OrderInquiryRaise
 
     db.refresh(inquiry)
-    assert inquiry.raised_by == seeded["cindy"].id
+    assert inquiry.raised_by == seeded["contact w"].id
     assert inquiry.raised_at == first_raised_at
     # This fixture's own header is built by a raw insert (`_inquiry` above), never
     # through `ensure_inquiry`, so it holds no `raised` row of its own - only what
@@ -548,13 +548,13 @@ def test_a_reconfirm_by_somebody_else_leaves_the_earlier_rows_attributed_to_who_
         .all()
     )
     assert [r.kind for r in raises] == ["reconfirmed"]
-    assert raises[-1].raised_by == seeded["johnson"].id
+    assert raises[-1].raised_by == seeded["contact aa"].id
 
     response = client.get(LIST, params={"query": inquiry.inquiry_no})
     assert response.status_code == 200, response.text
     by_item = {row["item_code"]: row for row in response.json()["data"]}
     # B's revision raised B's row, and it is still open (`raised`) - visible by default.
-    assert by_item[second_product.product_code]["raised_by_name"] == seeded["johnson"].name
+    assert by_item[second_product.product_code]["raised_by_name"] == seeded["contact aa"].name
 
     # A's line was NOT named in revision 2, so _retire_uncovered_rows superseded A's own
     # row (a line the new revision does not cover, unrelated to this test's own point) -
@@ -570,7 +570,7 @@ def test_a_reconfirm_by_somebody_else_leaves_the_earlier_rows_attributed_to_who_
         row["item_code"]: row for row in cancelled_response.json()["data"]
     }
     assert cancelled_by_item[seeded["cindy_product"].product_code]["raised_by_name"] == (
-        seeded["cindy"].name
+        seeded["contact w"].name
     )
 
 
@@ -583,7 +583,7 @@ def test_a_restated_unchanged_line_keeps_its_row_and_follows_the_new_confirmer(a
     decision_id` moves to revision 2. Nothing is cancelled and nothing fresh is
     raised, so `raised_by` (`coalesce(decision.confirmed_by, row.acknowledged_by,
     inquiry.raised_by)`) now reads revision 2's OWN confirmer for this exact row -
-    Johnson, not Cindy - and Cindy's own name finds nothing at all, in any state:
+    contact_aa, not contact_w - and contact_w's own name finds nothing at all, in any state:
     there is no historical, cancelled row left naming her the way there used to be.
     """
     from app.services.project_order_inquiry_service import ProjectOrderInquiryService
@@ -597,7 +597,7 @@ def test_a_restated_unchanged_line_keeps_its_row_and_follows_the_new_confirmer(a
         company_id,
         order,
         revision_no=2,
-        confirmed_by=seeded["johnson"].id,
+        confirmed_by=seeded["contact aa"].id,
         confirmed_at=datetime(2026, 8, 25, 2, 25),
         supersedes=seeded["cindy_decision"],
     )
@@ -617,7 +617,7 @@ def test_a_restated_unchanged_line_keeps_its_row_and_follows_the_new_confirmer(a
                 "line_no": 1,
             }
         ],
-        actor_user_id=seeded["johnson"].id,
+        actor_user_id=seeded["contact aa"].id,
     )
     db.commit()
 
@@ -630,27 +630,27 @@ def test_a_restated_unchanged_line_keeps_its_row_and_follows_the_new_confirmer(a
         "the row's own supply_decision_id must move to the new revision"
     )
 
-    johnson_response = client.get(LIST, params={"raised_by": seeded["johnson"].id})
-    assert johnson_response.status_code == 200, johnson_response.text
-    johnson_by_id = {r["id"]: r for r in johnson_response.json()["data"]}
-    assert original_row_id in johnson_by_id, (
-        "the row now follows revision 2's own confirmer, Johnson"
+    contact_aa_response = client.get(LIST, params={"raised_by": seeded["contact aa"].id})
+    assert contact_aa_response.status_code == 200, contact_aa_response.text
+    contact_aa_by_id = {r["id"]: r for r in contact_aa_response.json()["data"]}
+    assert original_row_id in contact_aa_by_id, (
+        "the row now follows revision 2's own confirmer, CONTACT AA"
     )
-    assert johnson_by_id[original_row_id]["raised_by_name"] == seeded["johnson"].name
+    assert contact_aa_by_id[original_row_id]["raised_by_name"] == seeded["contact aa"].name
 
-    cindy_response = client.get(LIST, params={"raised_by": seeded["cindy"].id})
+    cindy_response = client.get(LIST, params={"raised_by": seeded["contact w"].id})
     assert cindy_response.status_code == 200, cindy_response.text
     assert cindy_response.json()["data"] == [], (
-        "Cindy's own name must find nothing - the row she raised now follows Johnson"
+        "CONTACT W's own name must find nothing - the row she raised now follows CONTACT AA"
     )
 
     cindy_cancelled_response = client.get(
-        LIST, params={"raised_by": seeded["cindy"].id, "state": "cancelled"}
+        LIST, params={"raised_by": seeded["contact w"].id, "state": "cancelled"}
     )
     assert cindy_cancelled_response.status_code == 200, cindy_cancelled_response.text
     assert cindy_cancelled_response.json()["data"] == [], (
         "AC-R2-10: nothing was cancelled, so there is no historical row left naming "
-        "Cindy either"
+        "CONTACT W either"
     )
 
 
@@ -671,7 +671,7 @@ def test_a_row_with_no_supply_revision_falls_back_to_its_own_headers_raiser(api)
         db,
         company_id,
         order,
-        raised_by=seeded["johnson"].id,
+        raised_by=seeded["contact aa"].id,
         raised_at=datetime(2026, 8, 19, 9, 23),
     )
     row = _row(db, company_id, inquiry, line, product.product_code)  # no decision at all
@@ -681,4 +681,4 @@ def test_a_row_with_no_supply_revision_falls_back_to_its_own_headers_raiser(api)
 
     assert response.status_code == 200, response.text
     rows = {entry["id"]: entry for entry in response.json()["data"]}
-    assert rows[row.id]["raised_by_name"] == seeded["johnson"].name
+    assert rows[row.id]["raised_by_name"] == seeded["contact aa"].name

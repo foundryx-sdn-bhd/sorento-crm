@@ -3,13 +3,13 @@
 There was nowhere on the form to record the person receiving the delivery, so
 staff typed them onto the end of the delivery address:
 
-    2, Lebuh Cecil, Ghaut, 10300 George Town, Pulau Pinang Contact: Hanson (012-403 9611)
+    2, Lebuh Cecil, Ghaut, 10300 George Town, Pulau Pinang Contact: CONTACT Q (012-000 0502)
 
 which makes the address two facts in one column - unreadable programmatically and
 easy to miss when scanning the printed form.
 
 Deliberately ONE free-text column rather than pic_name + pic_phone: real values
-are messy ("Hanson (012-403 9611)", "Hanson / Ali 012-4039411", a name with no
+are messy ("CONTACT Q (012-000 0502)", "CONTACT Q / CONTACT R 012-0000523", a name with no
 number at all), nothing downstream parses it, and the field is explicitly
 optional - two required-shaped columns would just invite empty halves. The
 structured path already exists as ``requested_by_contact_id``.

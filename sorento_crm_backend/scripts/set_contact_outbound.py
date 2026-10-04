@@ -15,7 +15,7 @@ Examples:
     python scripts/set_contact_outbound.py --status
     python scripts/set_contact_outbound.py --off --all --dry-run
     python scripts/set_contact_outbound.py --off --all --yes
-    python scripts/set_contact_outbound.py --on --contact 437264483 --yes
+    python scripts/set_contact_outbound.py --on --contact 900000008 --yes
 
 `--dry-run` reports what WOULD change and writes nothing. Without `--yes` a
 mutating run behaves as a dry run and exits non-zero, so a half-typed command

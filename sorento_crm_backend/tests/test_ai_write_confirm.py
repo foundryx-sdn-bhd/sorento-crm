@@ -300,7 +300,7 @@ def test_ideation_turn_confirm_denied_when_user_lacks_the_permission(svc, conv, 
 
     pending = {
         "tool_name": "crm_ideation_turn",
-        "args": {"respond_io_id": "437264483", "message_text": "an idea"},
+        "args": {"respond_io_id": "900000008", "message_text": "an idea"},
         "summary": "run ideation turn",
     }
     svc._serve_pending_confirmation(conv=conv, config=_CFG, pending=pending, request_started=0.0)
@@ -324,7 +324,7 @@ def test_ideation_turn_confirm_runs_when_the_user_has_the_permission(svc, conv, 
         us.UserPermissionService, "check_user_has_permission", lambda self, uid, slug: True
     )
 
-    args = {"respond_io_id": "437264483", "message_text": "an idea"}
+    args = {"respond_io_id": "900000008", "message_text": "an idea"}
     pending = {"tool_name": "crm_ideation_turn", "args": args, "summary": "run ideation turn"}
     svc._serve_pending_confirmation(conv=conv, config=_CFG, pending=pending, request_started=0.0)
     loaded = svc._load_pending_confirmation(conv.id)

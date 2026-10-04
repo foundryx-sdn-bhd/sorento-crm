@@ -74,7 +74,7 @@ a follow-up lane.
 ## Verification
 
 - `SORENTO_ENV_FILE=.env.ci-tests pytest tests/chatbot/test_ideation_pointer_tail.py tests/chatbot/test_s3_canned_and_ideate.py tests/chatbot/test_turn_replay.py tests/test_ideation_turn.py -q` green on a private DB.
-- Console check on stack A (:8000, contact 437264483) once the fix is cherry-picked
+- Console check on stack A (:8000, contact 900000008) once the fix is cherry-picked
   there: "i have an idea" then "the price tag should show promo in red" -> ONE idea row
   on `fx_shared_local`, second turn's MCP body carries the first turn's `draft_id`.
 - No screen changed: no browser pass.

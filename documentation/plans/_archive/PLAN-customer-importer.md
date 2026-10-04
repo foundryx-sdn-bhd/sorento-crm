@@ -242,7 +242,7 @@ debtor export** was run through the live UI and the preview and the import **dis
 columns were narrower in the database than `app/models/order.py` declared - `phone_number`
 `varchar(20)` against `String(50)`, `industry` `varchar(100)` against `String(120)`, `website`
 `varchar(255)` against `String(500)` - and 58 rows of the export carry a `Phone 1` longer than
-20 characters (`016-978 5508 (MR.CHAEH)`, `09-5668833/013-9800123`). The over-length pre-check
+20 characters (`016-000 0503 (MR.CHAEH)`, `95-0000558/013-0000504`). The over-length pre-check
 read the MODEL's lengths, so all 58 passed the preview and Postgres then refused every one of
 them with `StringDataRightTruncation`.
 

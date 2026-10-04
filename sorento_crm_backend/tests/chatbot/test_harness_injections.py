@@ -355,7 +355,7 @@ class TestHarnessInjectionsG8:
 
 
 # --------------------------------------------------------------------------- #
-# Fix 3 (PLAN-chatbot-order-status-all-orders-23sep.md, console contact 437264483,
+# Fix 3 (PLAN-chatbot-order-status-all-orders-23sep.md, console contact 900000008,
 # turns 20:41:40 / 20:41:51 +09, 23 Sep 2026). `_inject_harness_session` wrote the
 # harness `previous_conversation_state` into `session_vars["variables"]` only, never
 # touching the stored row's own top-level `focus`/`open_question`/etc -

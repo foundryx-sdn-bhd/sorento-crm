@@ -18,9 +18,9 @@ real `contact.custom_fields` array and does not hit the known
 `KeyError: 'custom_fields'` at `route.py:220`):
 
 - **Sean**, `respond_contacts.id=04ddf73e-3a0e-4914-8b24-18ed8aac06b8`,
-  `respond_io_id=477071886`, `respond_contact_market_segments.segment_code=retail`.
-- **CK@Sorento**, `respond_contacts.id=6ea667f4-0a66-4607-93ec-366e4d96dfc9`,
-  `respond_io_id=469779580`, `segment_code=project`.
+  `respond_io_id=900000053`, `respond_contact_market_segments.segment_code=retail`.
+- **CONTACT V**, `respond_contacts.id=6ea667f4-0a66-4607-93ec-366e4d96dfc9`,
+  `respond_io_id=900000110`, `segment_code=project`.
 
 Neither contact carries a contact-tier override, so both resolve via `default_policy` /
 `project` segment respectively - confirmed via
@@ -73,7 +73,7 @@ projection/gating logic from the separate, already-documented parser-vocabulary 
 - **Sean (retail):** `*Specs:* Product class: Kitchen Sink, Length: 820 mm, Material:
   stainless_steel, Width: 450 mm, Brand: SORENTO, Height: 220 mm` - **no Thickness**,
   though the row's `product_specifications.values` carries it.
-- **CK@Sorento (project):** identical line plus `, Thickness: 0.8 mm` at the end -
+- **CONTACT V (project):** identical line plus `, Thickness: 0.8 mm` at the end -
   confirming the two contacts get materially different pages for the SAME product/turn
   shape, differing exactly by the one key each policy hides.
 
@@ -85,7 +85,7 @@ PASS - AC-15 (drop hidden keys from the "Specs:" summary before it is built).
 
 - **Sean (retail):** `*Thickness:* not available` - never "not recorded for ...", matches
   AC-16 exactly.
-- **CK@Sorento (project):** `*Thickness:* 0.8 mm` - the real value.
+- **CONTACT V (project):** `*Thickness:* 0.8 mm` - the real value.
 
 PASS - AC-16.
 
@@ -94,7 +94,7 @@ PASS - AC-16.
 `"SRTKS2007B spec"`, same pinned version:
 
 - **Sean (retail):** Specs line omits Thickness (same 6 keys as Case 1).
-- **CK@Sorento (project):** Specs line includes `Thickness: 0.8 mm` (7 keys).
+- **CONTACT V (project):** Specs line includes `Thickness: 0.8 mm` (7 keys).
 
 PASS - consistent with Case 1, rules out the pin itself changing the projection.
 
@@ -110,7 +110,7 @@ turn:
   ```
   PASS - matches AC-17 exactly (`spec_visibility: {hidden, dropped}` beside the other
   stage entries, naming the keys actually removed).
-- **CK@Sorento (project)**, same case: **no `spec_visibility` entry appears anywhere in
+- **CONTACT V (project)**, same case: **no `spec_visibility` entry appears anywhere in
   the trace array at all** (checked every element's `kind`). Read together with Case 1/3
   (project's envelope keeps every key, nothing was dropped), this is the entry being
   genuinely conditional on the projection having removed something - not a missing

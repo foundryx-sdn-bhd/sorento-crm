@@ -96,7 +96,7 @@ function inquiry(over: Partial<SalesOrderInquiry> = {}): SalesOrderInquiry {
     inquiry_no: 'OI-000001',
     state: 'raised',
     raised_at: '2026-07-02T09:00:00',
-    raised_by_name: 'Yana',
+    raised_by_name: 'CONTACT AH',
     rows_total: 4,
     rows_placed: 1,
     ...over,
@@ -178,7 +178,7 @@ describe('SalesOrdersList - Order inquiries column', () => {
 
     const link = await screen.findByRole('link', { name: 'OI-000001' });
     const cell = link.closest('span[title]');
-    expect(cell?.getAttribute('title')).toContain('by Yana');
+    expect(cell?.getAttribute('title')).toContain('by CONTACT AH');
     expect(cell?.getAttribute('title')).toContain('1/4 placed');
   });
 

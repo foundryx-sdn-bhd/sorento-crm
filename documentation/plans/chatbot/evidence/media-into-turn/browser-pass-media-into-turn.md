@@ -6,10 +6,10 @@ headless, against the lane's own stack (FE :3000 `next dev`, BE :8000 uvicorn on
 Chatbot Console (System > Messaging > Chatbot Console, reached by sidebar clicks) because the
 `/external/chat/turn` API key is not available on this DB.
 
-**Console contact used:** "Chua Chin Long" (`respond_io_id 477071885`), chosen because
+**Console contact used:** "CONTACT D" (`respond_io_id 900000072`), chosen because
 `contact_media_limit` shows `is_allowed=true` for image and voice for this contact (the console's
 default contact, Katherine Loo, has no `contact_media_limit` row at all - see AC-1810 below, that
-turned out to be free coverage of the gate-denied path). Chua Chin Long is mapped to company
+turned out to be free coverage of the gate-denied path). CONTACT D is mapped to company
 `00000000-0000-0000-0000-000000000001`, the same company that owns the three test product codes.
 
 **Test image:** the pre-rendered PNG at the scratchpad path given in the brief, containing
@@ -38,7 +38,7 @@ of the tool call. Noted per AC below as SKIP (environment), not FAIL.
 
 ## Defect 1 - `entities_only` arm resolves nothing (blocks AC-1822/1823/1824/1825, J1, part of J2)
 
-**Steps (photo, no caption):** Chatbot Console, contact Chua Chin Long, Reset, attach the test
+**Steps (photo, no caption):** Chatbot Console, contact CONTACT D, Reset, attach the test
 PNG with no caption, no prior focus/domain. **Expected** (AC-1824): "I read A, B and C from that
 photo. Couldn't find D. What would you like me to do with it?" - listing only tokens that truly
 did not resolve; since all three codes are real, no "Couldn't find" sentence should appear at all.
@@ -191,9 +191,9 @@ No uncaught console errors during any turn. `network requests --filter /api/v1/`
 
 ## Rerun 2 (same day) - updated stack: BE :8000 pid 21925 restarted with B1/B2 fixes, MCP now on :8767
 
-Same console contact "Chua Chin Long", Reset before every turn, same test PNG. Logged back in
+Same console contact "CONTACT D", Reset before every turn, same test PNG. Logged back in
 first (session had been invalidated by the BE restart; contact selector had reverted to the
-default "Katherine Loo" and was re-set to "Chua Chin Long" for every scenario below).
+default "Katherine Loo" and was re-set to "CONTACT D" for every scenario below).
 
 ### NEW blocker found, reported live to the coordinator mid-run, confirmed by them independently
 
@@ -285,8 +285,7 @@ before redoing J1/J2/J3's photo steps and the voice check.**
 ## Rerun 3 (same day) - stack back on af3d4aceb: worker pid 32895 (bytes fix), BE pid 33481, MCP :8767, FE :3000
 
 Logged back in (BE restart invalidated the session again). Used a FRESH console contact per
-journey this time (Jayden Loo for J2, Kay for J3, Yu Mong Huei for J4) after noticing Chua Chin
-Long's own conversation history from earlier tests was leaking into new "fresh" turns' PARSING
+journey this time (Jayden Loo for J2, Kay for J3, CONTACT G for J4) after noticing CONTACT D's own conversation history from earlier tests was leaking into new "fresh" turns' PARSING
 even after Reset + a full page reload + `session_vars` confirmed `{before: {}, after: {}}` on the
 Session tab - the parser apparently reads back recent real turn text for that contact regardless
 of the per-turn session reset. Noting this as a console-testing gotcha, not a lane defect (worth
@@ -295,7 +294,7 @@ for a genuinely clean re-test of the SAME contact).
 
 ### J1 - PASS on the specific ask, blocked further down by a NEW, separate MCP/backend auth issue
 
-Photo-only, no caption, contact Chua Chin Long, turn `767e0472-2388-47f8-9b40-efef429b45a8`:
+Photo-only, no caption, contact CONTACT D, turn `767e0472-2388-47f8-9b40-efef429b45a8`:
 **"I read BRBC22293W-1, SRTWT1506 and SRTWT1805 from that photo."** - every code listed, NO
 "Couldn't find" for any of the three real codes. Exactly what was asked. Screenshot
 `rerun3-J1-turn1-photo-prefix-correct.png`.
@@ -324,7 +323,7 @@ log for that turn:
 
 ```
 POST http://localhost:8767/mcp "HTTP/1.1 200 OK"
-GET /api/v1/inventory/stock/balance?product_ids=...&contact_id=477071885&space_id=364817 - Status: 401
+GET /api/v1/inventory/stock/balance?product_ids=...&contact_id=900000072&space_id=364817 - Status: 401
 integration.auth_refused code=invalid_key
 (repeats for /incoming-stock/list and /procurement/purchase-orders/placed)
 ```
@@ -358,7 +357,7 @@ domain `inventory` directly, state diff shows all three with real uuids. Screens
 
 ### J4 (voice, bare code) - PASS on the specific ask, but reveals the `entities_only` resolver ITSELF is still unfixed
 
-Fresh contact Yu Mong Huei. Synthesized voice saying "SRTWT1506" (no domain word at all). Reply:
+Fresh contact CONTACT G. Synthesized voice saying "SRTWT1506" (no domain word at all). Reply:
 **"I heard: SRTWT1506.\nWhat would you like me to know?"** - exactly one "I heard: ..." line, NO
 second "I have" lead. Matches the specific ask. Screenshot `rerun3-J4-voice-I-heard-no-double-
 lead.png`.
@@ -570,7 +569,7 @@ now a genuine numbers table, not "no stock" or a 401.**
 
 ### (b) Real WhatsApp path via curl - INVALIDATED by an active port collision with a different lane, not a finding about this PR
 
-Copied a real historical envelope for contact `437264483` (Jayson) from `chatbot.turns`, swapped
+Copied a real historical envelope for contact `900000008` (Jayson) from `chatbot.turns`, swapped
 `message.message.message` for an `attachment` (`type: image`, a freshly minted signed URL for
 the classic 3-code PNG via `console_service._upload_console_media`, called directly from a
 script since the FE was mid-restart), and `POST`ed to `/api/v1/external/chat/turn` with

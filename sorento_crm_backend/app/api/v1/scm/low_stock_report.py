@@ -517,6 +517,12 @@ def _prepare(
     # `**kwargs` to `Queue.enqueue`, and RQ honours `depends_on` natively.
     try:
         run_job = enqueue_job(run_reorder_job, run_id, queue_name="imports")
+        # CONTACT-BRAND-SCOPE: the worker opens a fresh session, so a brand-scoped contact's
+        # brands ride the job. Unscoped sends nothing extra (the call is unchanged).
+        from app.models.base import get_brand_scope
+
+        brand_scope = get_brand_scope(db)
+        scope_kwargs = {"brand_ids": sorted(brand_scope)} if brand_scope else {}
         enqueue_job(
             generate_low_stock_report,
             download_id,
@@ -526,6 +532,7 @@ def _prepare(
             split=split,
             suppliers=suppliers,
             categories=categories,
+            **scope_kwargs,
             queue_name="imports",
             job_timeout=600,
             depends_on=run_job,

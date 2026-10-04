@@ -24,17 +24,17 @@ lane, same class as pass 1's finding 1a, not a product defect.
 
 | # | Step | Result | Evidence |
 |---|------|--------|----------|
-| 1 | Console, contact Justin: 9-turn chain (check stock / incoming / incoming srtwc286 / "1" / photo srtwc286 / "2" / delivery to hanlim / "1" / hello-while-open) | **3 of 9 turns FAIL** | See breakdown below. |
+| 1 | Console, contact CONTACT N: 9-turn chain (check stock / incoming / incoming srtwc286 / "1" / photo srtwc286 / "2" / delivery to hanlim / "1" / hello-while-open) | **3 of 9 turns FAIL** | See breakdown below. |
 | 2 | Chatbot Domains: Add/Edit/Delete visible; product_attachment 4 tabs; Narrowing Product = "Must narrow to one"; Prompt block server-rendered `<pre>` block, no client-preview text, no explanation sentences; zz-test throwaway delete (countdown+Cancel, then lapse) | **PASS** | See below. |
 | 3 | Chat History: open newest console turn's drawer, confirm Sent panel with send_message action | **FAIL** (2nd sample, matches pass 1) | See below. |
 | 4 | Settings > Chatbot: exactly one Save button; tier order move-one-down; toggle a switch; Save once; reload; both persisted; restored | **PARTIAL FAIL** (2 Save buttons, not 1; "Move X down" buttons broken) + **PASS** (persistence itself, once achieved via "Move X up" as a workaround) | See below. |
-| 5 | Contact Justin > Access > Chatbot card: Stock checks + Recall toggle persistence | **PASS** | See below. |
+| 5 | Contact CONTACT N > Access > Chatbot card: Stock checks + Recall toggle persistence | **PASS** | See below. |
 | 6 | 375px: repeat 2 console turns + Domains modal | **PASS** | See below. |
 
-## Step 1 detail - Console, contact Justin (9-turn chain)
+## Step 1 detail - Console, contact CONTACT N (9-turn chain)
 
 Contact combobox is a searchable combobox (types + click, not a Radix `Select` - no trap here).
-Set to "Justin" once at the top of the run; contact selection persisted across turns and
+Set to "CONTACT N" once at the top of the run; contact selection persisted across turns and
 survived one in-app re-navigation back to the console.
 
 | Turn | Sent | Branch chip | Result | Notes / trace turn id |
@@ -100,7 +100,7 @@ link is effectively a dead end for a console-originated turn**: it takes you to 
 never show that turn.
 
 To still verify whether a "Sent" panel exists at all, I widened the date range to Sept 1-17 on
-real (n8n-sourced) WhatsApp traffic for Justin, opened the newest real row's drawer, and expanded
+real (n8n-sourced) WhatsApp traffic for CONTACT N, opened the newest real row's drawer, and expanded
 a turn's "details" (`#0504`, a `business_query` turn). Counted occurrences of each documented
 trace-panel label in the drawer's rendered text:
 
@@ -148,9 +148,9 @@ looks intentional and is not itself a finding).
   accepted it) and tier order back to `Dealer, Office, End user` via "Move Dealer up". Reloaded
   once more: both confirmed back to their original values.
 
-## Step 5 detail - Contact Justin > Access > Chatbot card
+## Step 5 detail - Contact CONTACT N > Access > Chatbot card
 
-Reached via Users & Access > People > Internal Users > search "Justin" > same contact id as pass
+Reached via Users & Access > People > Internal Users > search "CONTACT N" > same contact id as pass
 1 (`aefb2cb0-abec-490e-b74b-bf2f2d4a5b37`) > Access tab. Switch ids: `contact-chatbot-stock`
 (baseline `true`), `contact-chatbot-recall` (baseline `false`).
 

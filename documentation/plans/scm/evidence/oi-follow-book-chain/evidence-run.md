@@ -18,7 +18,7 @@ validates an OPAQUE, DB-backed session token via `resolve_session()` against the
 `user_sessions` table (`_decode_jwt_user` still exists in the file but is dead code, never
 called). So a bare JWT signed with `JWT_SECRET` would not have authenticated at all against
 this running server. Instead, a real ACTIVE admin user was picked straight off the `users`
-table (`tehjayson@gmail.com`, id `5994214c-81a1-4662-abce-2e93520ce642`, role `admin`, no user
+table (`person38@example.com`, id `5994214c-81a1-4662-abce-2e93520ce642`, role `admin`, no user
 created, no permission changed), and a session row was minted for that real user through the
 SAME function `POST /api/v1/auth/login` itself calls (`app.services.user_session_service
 .mint_session`), run as a one-off script against the SAME database the server reads. The
@@ -33,7 +33,7 @@ Verified against `GET /api/v1/user-management/users/me`:
 
 ```
 curl -s -H "Authorization: Bearer <REDACTED>" http://127.0.0.1:8060/api/v1/user-management/users/me
-# -> 200, {"email":"tehjayson@gmail.com","name":"Teh Jayson","status":"ACTIVE",...}
+# -> 200, {"email":"person38@example.com","name":"Teh Jayson","status":"ACTIVE",...}
 ```
 
 PASS, with the auth-mechanism correction noted above.
@@ -255,7 +255,7 @@ SO421886 documents re-inserted (PO line `AED_SORENTO:45391885:45820014` closed 2
 SO line `AED_SORENTO:45810027:45810033`; SPO-2026/09-0036 line 237, source_ref
 `AED_SORENTO:45728035:45820113`, open 2, `from_po_line_ref` = that PO line). No order inquiry
 row for SO421886 in the fresh clone, same as Run 1's starting state. Same auth mechanism as
-Run 1 (a minted session for the same real admin, `tehjayson@gmail.com`); ids below differ from
+Run 1 (a minted session for the same real admin, `person38@example.com`); ids below differ from
 Run 1's because of the fresh clone, same real sequence otherwise: adopt, read supply, confirm,
 worklist read, acknowledge, SQL read-back, then the Auto link all check Run 1 did not cover.
 
@@ -396,7 +396,7 @@ proxying `/api/v1` to the lane backend on 8060, reading `sorento_oi_book_chain_e
 Per the brief ("if that user cannot log in against this database, report it; do not create
 users or change passwords"), stopped here. No password was reset, no user was created or
 modified, and Job 2's separate `mint_session` admin token (a different real user,
-`tehjayson@gmail.com`, used only for the pytest-adjacent API evidence run under a different
+`person38@example.com`, used only for the pytest-adjacent API evidence run under a different
 instruction) was deliberately NOT substituted into this browser session - this round asks for
 the real login door specifically, and swapping in an unrelated bypass would not have verified
 what AC-FB-50/51 actually needs verified (a real user logging in and reading the screen).

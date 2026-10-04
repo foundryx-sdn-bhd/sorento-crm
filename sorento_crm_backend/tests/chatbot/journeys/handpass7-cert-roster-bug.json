@@ -1,11 +1,11 @@
 {
   "name": "handpass7-cert-roster-bug",
-  "source": "hand pass 7 owner console turn 19 Sep 2026 22:01:04 MYT (contact_respond_id 437264483): 'SRTWT165-FT CERT' - that exact code does not exist (measured via psql: SRTWT165, SRTWT165-DIY, SRTWT165-NL, SRTWT165-QT, SRTWT165-BLUE, SRTWT165-RED do). Measured live against :8081 today: the reply is a 200-OPTION roster starting '1. ADW-3115A' (measured via psql: the roster runs '1.' through '200.' with zero occurrences of 'SRTWT165' anywhere in the text) - effectively an unscoped dump of the whole catalog, not a did-you-mean over the SRTWT165 family. Bug B1: the reply must name SRTWT165, must not carry an unrelated code like ADW-3115A, and a roster this size ('200.', '21.' - both measured present today) is never a sane did-you-mean list.",
+  "source": "hand pass 7 owner console turn 19 Sep 2026 22:01:04 MYT (contact_respond_id 900000008): 'SRTWT165-FT CERT' - that exact code does not exist (measured via psql: SRTWT165, SRTWT165-DIY, SRTWT165-NL, SRTWT165-QT, SRTWT165-BLUE, SRTWT165-RED do). Measured live against :8081 today: the reply is a 200-OPTION roster starting '1. ADW-3115A' (measured via psql: the roster runs '1.' through '200.' with zero occurrences of 'SRTWT165' anywhere in the text) - effectively an unscoped dump of the whole catalog, not a did-you-mean over the SRTWT165 family. Bug B1: the reply must name SRTWT165, must not carry an unrelated code like ADW-3115A, and a roster this size ('200.', '21.' - both measured present today) is never a sane did-you-mean list.",
   "cases": [
     {
       "name": "unmatched-code-does-not-dump-the-whole-catalog",
       "cold": true,
-      "contact": "440987225",
+      "contact": "900000010",
       "turns": [
         {
           "text": "SRTWT165-FT CERT",

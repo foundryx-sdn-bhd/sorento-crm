@@ -34,15 +34,15 @@ Facts from code (file:line) and the 25 Sep prod copy `sorento_ai_automation_0925
   Assignee, enquiry_type, user_type, complaint_id, is_allowed_stock, is_human_intervened, backend_id,
   is_allowed_ai, is_allowed_voice. Only First Name, Phone Number, Tags are filled (all 143); every other column empty.
 - Tags = comma list of: dealer NAME, company (`Sorento Sdn Bhd` 121, `Mocha Sdn Bhd` 56), sales agent FIRST NAME
-  (Fanny Ng 26, William 18, Long 17, Jayden 14, Kent 13, Shirley 12, Chong 10, Samantha 9, ...), role
+  (CONTACT Z 26, William 18, Long 17, Jayden 14, Kent 13, CONTACT AG 12, Chong 10, Samantha 9, ...), role
   (Business Owner 92, Employee 51). ~75 distinct dealer names; some rows carry 2 agents.
 - Samples (phones masked):
   - `Wong | +6016*****982 | YOO LIVING HOUSE, Sorento Sdn Bhd, Chong, Business Owner, Mocha Sdn Bhd, Samantha`
   - `ELEEN TAY | +6016*****885 | SKY PURE Water Solutions, Sorento Sdn Bhd, Chong, Business Owner`
-  - `Lokyi | +6016*****980 | EUROTAN ENTERPRISE SDN BHD, Sorento Sdn Bhd, Fanny Ng, Business Owner`
+  - `Lokyi | +6016*****980 | EUROTAN ENTERPRISE SDN BHD, Sorento Sdn Bhd, CONTACT Z, Business Owner`
 - NO customer code and NO agent code anywhere. And names are not unique:
   - `EUROTAN ENTERPRISE SDN BHD` = 300-E002, E029, E031, E043, E046 (Sorento) + E025, E026, E027 (Mocha, A/C I / CERAMIC / IBORN).
-  - Tag `Chong` = agents `CHONG - I`, `CHONG - II`, `CHONG - III`, `CHONGTH I/III/IV`; `Kent` = `KENT - I..III`, `KENT TEH I/III/IV`.
+  - Tag `Chong` = agents `CHONG - I`, `CHONG - II`, `CHONG - III`, `CHONGTH I/III/IV`; `Kent` = `KENT - I..III`, `CONTACT AB I/III/IV`.
   - Spelling variants: `MAHLIM CERAMICS SDN. BHD.` vs `MAHLIM CERAMICS SDN BHD`; `DELUXE HOME CENTRE` vs `... SDN BHD`.
 - Contacts: 0 of the 143 phones are in the prod copy (100 contacts there). UNVERIFIED for live prod.
   CRM can create a contact (`POST /contacts/`, `api/v1/user_management/contacts.py:214`).
