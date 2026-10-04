@@ -21,6 +21,7 @@ from tests.chatbot.test_customer_scope_lane import _ent, _link_customers, _turn
 from tests._mc_lookup_seed import customer as seed_customer
 from app.services.company_scope import DEFAULT_COMPANY_ID
 from tests.chatbot.test_engine import _parser_output
+from tests.chatbot.test_customer_scope_lane import _give_access_type
 from tests.chatbot.test_outstanding_lane import _seed_contact
 
 OWN = "ZZT SOON HENG TRADING [A/C II]"
@@ -72,6 +73,7 @@ def test_enforced_contact_never_hears_a_foreign_name_in_a_non_order_domain(sessi
 def test_staff_still_get_the_staff_refusal_in_the_same_shape(session_factory, monkeypatch) -> None:
     """Regression: an unlinked (non-enforced) contact is told which levels the typed name has."""
     _seed_contact(session_factory, variables={})
+    _give_access_type(session_factory, "Sorento Office")
     rows = _foreign_row(session_factory)
     reply, captured = _ask_purchase_order(session_factory, monkeypatch, rows)
     assert "has no Account 2" in reply, reply

@@ -46,6 +46,7 @@ from tests.chatbot.test_customer_scope_lane import (
     SALES_KEY,
     _ask,
     _calls,
+    _give_access_type,
     _ent,
     _hanlim_services,
     _link_customers,
@@ -117,6 +118,7 @@ AUDIENCES = [
 
 def _turn_for(session_factory, monkeypatch, *, qf, attributes, body, **kw):
     _seed_contact(session_factory, variables={})
+    _give_access_type(session_factory, "Sorento Office")  # G1: an unlinked non-office contact is refused
     result, captured = _run_turn(
         session_factory, monkeypatch, qf=qf, text_body=body,
         msg_id=f"ZZT-pa-{uuid.uuid4().hex[:12]}", attributes=list(attributes), **kw,
