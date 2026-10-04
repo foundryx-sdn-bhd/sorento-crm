@@ -2,7 +2,7 @@
 sync state, and the reconcile task.
 
 Revision ID: clf_0001_chat_local_first
-Revises: oihr_0004_wide_line_table
+Revises: ideation_capture_0001
 Create Date: 2026-09-30
 
 `documentation/plans/sla/PLAN-chat-local-first-30sep.md`. Additive only:
@@ -30,7 +30,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "clf_0001_chat_local_first"
-down_revision = "oihr_0004_wide_line_table"
+down_revision = "ideation_capture_0001"
 branch_labels = None
 depends_on = None
 
