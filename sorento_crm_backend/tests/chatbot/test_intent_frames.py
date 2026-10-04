@@ -443,19 +443,19 @@ def test_a_held_access_stamp_from_the_stuck_qty_loop_release_is_read_as_the_fram
 # --------------------------------------------------------------------------- #
 
 
-@pytest.mark.parametrize("carry", [False, True], ids=["no_carry", "continuation"])
-def test_an_echoed_old_entity_never_lands_on_a_new_intents_frame(carry):
-    """The live parser sometimes copies the carried product as an entity marked
-    `current_message: false`. On a new intent it is dropped: without a carry signal it
-    would leak the old product, with one it would replace the settled row with a raw code
-    the resolver widens to its family (live pass, 4 Oct 2026)."""
+@pytest.mark.parametrize("carry", [False, True], ids=["echo_only", "continuation"])
+def test_an_echoed_old_entity_carries_its_axis_as_the_settled_row(carry):
+    """The parser sometimes copies the carried product as an entity marked
+    `current_message: false` ("hav incoming?" in replay case-025, live "check stock").
+    The echo itself never lands - as a raw code the resolver widened it to its family
+    (live pass, 4 Oct 2026) - but it says which axis the message is about, so that axis's
+    settled row carries; nothing else does."""
     echoed = entity("SRTWB9GM0", current_message=False)
     v = verdict(intent_hint="check_stock", domain_hint="inventory", continuation=carry, entities=[echoed])
     focus = _turn(_ranking_frame(), v)
-    if carry:
-        assert focus.products == [BASIN]
-    else:
-        assert focus.products == []
+    assert focus.products == [BASIN]
+    assert (focus.customers == [HANLIM]) is carry
+    assert focus.extra.get("sales_agent") in (None, [])
 
 
 def test_a_typed_entity_still_lands_on_a_new_intent():

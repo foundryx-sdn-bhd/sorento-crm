@@ -44,7 +44,9 @@ SUBJECT (what the question is about) or OWNED by the intent (how that one ask is
    itself. `entity_op: "reuse"` alone is NOT a carry signal: measured live (gpt-5.4-mini,
    4 Oct 2026), the parser also emits it for a fresh "low stock report for sorento water
    tap" right after a stock check. An entity the parser copied from the conversation
-   (`current_message: false`) never lands on a new frame. An escalation request, a
+   (`current_message: false`) never lands on a new frame as itself, but it says which axis
+   the message is about, so that axis's own settled rows carry (recorded replay case-025
+   "hav incoming?" and case-043 "any PO for it?"). An escalation request, a
    clarification or a casual turn never starts a frame, and never relabels the frame's
    intent. No word rules: the engine reads only those parser fields.
 3. **Stale entities never reach the resolver or the miss list**: the resolver and the miss
@@ -65,7 +67,8 @@ SUBJECT (what the question is about) or OWNED by the intent (how that one ask is
 6. **Held questions** keep #1471's consume rule: a roster survives a new intent but speaks
    only when the reply is a pick (ruling (a)). An escalation offer lives as long as the
    contact's next message (security review B1, crew-ask pending): a message that does not
-   answer it closes it after APPLY has read the turn, and a roster loses the escalate
+   answer it closes it after APPLY has read the turn (a pick off the did-you-mean codes
+   the miss printed beside it counts as answering), and a roster loses the escalate
    sentence printed under it, so a later "ok thanks" never hands the chat to a person.
 7. **Reply format and escalation are untouched**: one fact per line `*Label:* value`; a
    no-answer for an escalation-allowed contact still ends with the escalation offer.

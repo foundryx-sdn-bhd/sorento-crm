@@ -27,7 +27,7 @@ from typing import Any
 
 from app.services.chatbot.turn import held
 from app.services.chatbot.turn.decide import NEW_INTENT
-from app.services.chatbot.turn.state import Focus, State
+from app.services.chatbot.turn.state import KIND_FIELD_MAP, Focus, State
 
 __all__ = [
     "CONTACT_AXES", "OWNED_AXES", "STAMPS", "SUBJECT_AXES", "SUBJECT_EXTRA",
@@ -62,30 +62,39 @@ def carries_subject(verdict: dict[str, Any]) -> bool:
     )
 
 
-def _clean(focus: Focus, *, keep_subject: bool) -> Focus:
+def _clean(focus: Focus, *, keep_subject: bool, echoed: frozenset[str] = frozenset()) -> Focus:
     """A frame with only the contact's axes, the held questions (`held.py` owns their
-    lifecycle) and the stamps - plus the subject when it is carried."""
+    lifecycle) and the stamps - plus the subject when it is carried, whole, or only on
+    the axes the parser echoed."""
     keep = (*CONTACT_AXES, *held.FOCUS_HELD, *STAMPS)
     fresh = Focus(**{name: getattr(focus, name) for name in keep})
-    if keep_subject:
-        fresh.products = list(focus.products)
-        fresh.customers = list(focus.customers)
-        fresh.warehouse = list(focus.warehouse)
-        fresh.extra = {kind: list(rows) for kind, rows in focus.extra.items() if kind in SUBJECT_EXTRA}
+    for hint, attr in KIND_FIELD_MAP.items():
+        if attr in SUBJECT_AXES and (keep_subject or hint in echoed):
+            setattr(fresh, attr, list(getattr(focus, attr)))
+    fresh.extra = {
+        kind: list(rows)
+        for kind, rows in focus.extra.items()
+        if kind in SUBJECT_EXTRA and (keep_subject or kind in echoed)
+    }
     return fresh
 
 
 def on_new_intent(state: State, verdict: dict[str, Any], trace: Any) -> State:
     """APPLY's first step on a message `held.consume` marked as a new intent: a clean
-    frame, the subject carried only on the parser's own signal. The message's own
-    entities then land on it through the focus rules, as on any turn."""
+    frame, the subject carried only on the parser's own signal - `continuation` or a
+    backward reference for the whole subject, or an axis the parser echoed from the
+    conversation (`held.ECHOED_KINDS`) for that axis alone. The message's own entities
+    then land on it through the focus rules, as on any turn."""
     if verdict.get(NEW_INTENT) is not True:
         return state
     keep_subject = carries_subject(verdict)
+    echoed = frozenset(verdict.get(held.ECHOED_KINDS) or ())
     trace.rules_fired.append("frame_new_intent")
     if keep_subject:
         trace.rules_fired.append("frame_carries_subject")
-    return replace(state, focus=_clean(state.focus, keep_subject=keep_subject))
+    elif echoed:
+        trace.rules_fired.append("frame_carries_echoed_axes")
+    return replace(state, focus=_clean(state.focus, keep_subject=keep_subject, echoed=echoed))
 
 
 def _has_frame(focus: Focus) -> bool:

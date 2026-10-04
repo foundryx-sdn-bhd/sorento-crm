@@ -37,7 +37,7 @@ from app.services.chatbot.turn.policy_rows import DEFAULT_DOMAIN_ROWS
 from app.services.chatbot.turn.pending import ESCALATION_OFFER_KINDS, is_roster
 from app.services.chatbot.turn.state import Focus, State
 
-__all__ = ["CLOSE_OFFER", "NEW_INTENT", "SLOTS", "consume", "held_slots", "without_unanswered_offer"]
+__all__ = ["CLOSE_OFFER", "ECHOED_KINDS", "NEW_INTENT", "SLOTS", "consume", "held_slots", "without_unanswered_offer"]
 
 #: The intents the routing table knows (`policy_rows.DEFAULT_DOMAIN_ROWS`, every row's
 #: `intents`). An intent outside it never counts as a change of question.
@@ -130,6 +130,10 @@ def _answers(state: State, verdict: dict[str, Any]) -> bool:
     return False
 
 
+#: Verdict marker `consume` sets on a new-intent turn: the entity hints the parser echoed
+#: from the conversation (`current_message: false`), read by `frame.on_new_intent`.
+ECHOED_KINDS = "_echoed_kinds"
+
 #: Verdict marker `consume` sets when the open question carries an escalation offer the
 #: message did not answer; `apply` closes that offer once it has read the turn
 #: (`without_unanswered_offer`), after the arms that settle the question's subject.
@@ -140,6 +144,14 @@ def _offers_escalation(pending: Any) -> bool:
     return pending is not None and (
         pending.kind in ESCALATION_OFFER_KINDS or pending.payload.get("escalate_offered") is True
     )
+
+
+def _picks(verdict: dict[str, Any]) -> bool:
+    """Did the parser read this message as a pick off a numbered list? A miss offer prints
+    its did-you-mean codes beside the escalate sentence, and the engine's own readers
+    answer a position off them (`answer.did_you_mean_by_token`), so a pick engages the
+    question that printed them even when no option of the stored offer matches it."""
+    return bool(verdict.get("reference_positions"))
 
 
 def without_unanswered_offer(asked: Any, carried: Any) -> Any:
@@ -195,9 +207,13 @@ def consume(
         # (`frame.on_new_intent`). Left in, an echo replaced the carried settled row with a
         # raw code the resolver widened to its family, or leaked an old product into a
         # question that carries nothing (reviewer B2, live pass 4 Oct 2026).
-        verdict["entities"] = [
-            e for e in verdict.get("entities") or [] if not (isinstance(e, dict) and e.get("current_message") is False)
-        ]
+        entities = [e for e in verdict.get("entities") or [] if isinstance(e, dict)]
+        echoed = [e for e in entities if e.get("current_message") is False]
+        # What the echo DOES say is which axis the message is about: the parser referred to
+        # the carried subject on that axis ("hav incoming?" echoing the product it asked
+        # about), so `frame.on_new_intent` carries that axis's own settled rows.
+        verdict[ECHOED_KINDS] = sorted({str(e.get("hint") or "") for e in echoed if e.get("hint")})
+        verdict["entities"] = [e for e in entities if e.get("current_message") is not False]
     if intent and (prior is None or starts):
         # The frame's owner changes only when a frame starts: a casual turn or an answer
         # carrying a stale hint never re-labels the frame it is in (reviewer S1).
@@ -215,7 +231,7 @@ def consume(
         if _offers_escalation(state.pending):
             verdict[CLOSE_OFFER] = True
         return _cleared(state, keep_pending=keep), "new_intent"
-    if not answers and _offers_escalation(state.pending):
+    if not answers and not _picks(verdict) and _offers_escalation(state.pending):
         verdict[CLOSE_OFFER] = True
         return state, "offer_unanswered"
     return state, None
