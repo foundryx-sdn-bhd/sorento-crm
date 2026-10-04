@@ -1995,7 +1995,7 @@ def run_fetch(
             semantic_input["top_selling_drop"] = ["category_words", "category_code"]
         semantic_input["top_selling_notes"] = notes
         semantic_input["top_selling_category_ids"] = category_ids
-    elif domain == "order" and order_status_raw == report_ask.ASK_NAME:
+    elif domain in contracts.ORDER_OR_SALES_DOMAINS and order_status_raw == report_ask.ASK_NAME:
         # REPORT-ENGINE slice 1b (PLAN-report-engine.md section 11): sales ranked or
         # totalled by one dimension, `crm_report_ask`. The grant was checked above for
         # every sales figure status; every other gate (audience, company, location) is
