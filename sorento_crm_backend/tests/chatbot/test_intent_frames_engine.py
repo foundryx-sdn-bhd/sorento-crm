@@ -96,6 +96,20 @@ def test_the_stock_check_products_never_reach_the_low_stock_report(dealer, monke
     assert (dealer.state or {}).get("focus", {}).get("products") == []
 
 
+def test_an_access_change_drops_the_frame_a_continuation_would_carry(dealer, monkeypatch):
+    """Owner ruling Q1, through the engine: the same intent, a continuation that would
+    carry the stock check's products, but the contact's access changed in between. Only
+    `frame.expire` stands between them and the products (reviewer S5)."""
+    dealer.say(f"check stock {A} {B}", stock(product(A), product(B)))
+    monkeypatch.setattr(turn_runtime, "_stock_availability_only", lambda *a, **k: False)
+    dealer.stock_on_hand = 40
+    since = len(dealer.tool_calls)
+    text = dealer.say("stock?", reply(entity_op="reuse", continuation=True))
+    assert ASK not in text, text
+    for _name, args in dealer.tool_calls[since:]:
+        assert not args.get("product_ids"), args
+
+
 def test_after_the_switch_to_compact_stock_asks_for_its_own_subject(dealer, monkeypatch, stub_access):
     """Sequence 1, last leg: "stock?" after the low stock report, the contact switched to
     compact. The access change drops the frame; "stock?" names nothing, so nothing is
@@ -260,7 +274,17 @@ def test_a_picker_answer_that_finds_nothing_ends_with_the_escalation_offer(sessi
     from tests.chatbot.test_picker_escalation_offer import ESCALATE_WORDS, _chat, _yoo_ask
     from tests.chatbot.test_samantha_27sep_r5_do_list_carry import ORDERS_LIST, _pick
 
+    from app.services.chatbot import engine as engine_mod
+
     chat, app = _chat(session_factory, monkeypatch, escalation_allowed=True)
+    fired: list[list[str]] = []
+    real_apply = engine_mod.turn_apply
+
+    def traced(*args: Any, **kwargs: Any):
+        state_out, plan = real_apply(*args, **kwargs)
+        fired.append(list(plan.trace.rules_fired))
+        return state_out, plan
+
     try:
         # A period on the ask, so the DO list runs rather than asking "Which period?"
         # (`do_ask.range_reply`; the undated shape is date-dependent on main too).
@@ -271,9 +295,34 @@ def test_a_picker_answer_that_finds_nothing_ends_with_the_escalation_offer(sessi
         one = _pick(1)
         if stale_intent:
             one.update(intent_hint=stale_intent, domain_hint="inventory")
+        monkeypatch.setattr(engine_mod, "turn_apply", traced)
         reply_text, calls, _ = chat.turn("1", one)
     finally:
         app.dependency_overrides.clear()
     assert [a for n, a in calls if n == ORDERS_LIST], calls
     assert any(w in reply_text.casefold() for w in ESCALATE_WORDS), reply_text
     assert " · " not in reply_text
+    # The pick answers the picker: it starts no new frame, stale intent or not (S5).
+    assert not [r for rules in fired for r in rules if r == "frame_new_intent"], fired
+
+
+# --------------------------------------------------------------------------- #
+# An escalation request keeps the frame it is about                            #
+# --------------------------------------------------------------------------- #
+
+
+def test_an_escalation_request_after_a_stock_answer_keeps_its_subject(dealer, monkeypatch):
+    """Only a business question starts a frame: "please escalate to marketing team" after
+    a stock answer is about that product, whatever intent the parser carried onto it."""
+    monkeypatch.setattr(turn_runtime, "_stock_availability_only", lambda *a, **k: False)
+    dealer.stock_on_hand = 12
+    dealer.say(f"stock {A}", stock(product(A)))
+    dealer.say(
+        "please escalate to marketing team",
+        verdict(message_type="request_for_help", intent_hint="check_product", domain_hint="master_products",
+                routing={"suggested_team": "marketing_product", "suggested_agent": "general_enquiries"}),
+    )
+    assert "frame_new_intent" not in (dealer.last_trace.rules_fired or [])
+    focus = (dealer.state or {}).get("focus", {})
+    assert [p.get("raw") for p in focus.get("products") or []] == [A], focus
+    assert focus.get("intent") == "check_stock", focus

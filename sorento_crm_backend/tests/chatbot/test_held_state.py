@@ -133,8 +133,11 @@ def test_both_sides_of_the_matrix_are_populated():
 @pytest.mark.parametrize("kind", OFFERS)
 def test_a_new_intent_closes_an_escalation_offer(kind):
     state = _state(_all_held_focus(intent="check_order"), pending=_pending(kind))
-    out, why = held.consume(state, verdict(intent_hint="check_promotion", entities=[entity("X1")]))
-    assert why == "new_intent" and out.pending is None
+    v = verdict(intent_hint="check_promotion", entities=[entity("X1")])
+    out, why = held.consume(state, v)
+    assert why == "new_intent" and v.get(held.CLOSE_OFFER) is True
+    closed, _plan = apply(out, v, build_policy())
+    assert closed.pending is None
 
 
 @pytest.mark.parametrize("kind", PICK_ONLY)

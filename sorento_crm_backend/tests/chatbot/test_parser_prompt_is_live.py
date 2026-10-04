@@ -35,6 +35,7 @@ from app.services.chatbot_parser_prompt import (
     ACCOUNT_LEDGER_ADDENDUM,
     MEMORY_ADDENDUM,
     LOW_STOCK_FILTERS_ADDENDUM,
+    INTENT_FRAMES_ADDENDUM,
     PO_SPO_WAREHOUSE_ADDENDUM,
     QUANTITY_ADDENDUM,
     SALES_ANALYSIS_ADDENDUM,
@@ -249,6 +250,8 @@ def _without_growth_r1_addendum(text: str) -> str:
     # chatbot-stock-ask-v2 S3).
     if text.endswith(MEMORY_ADDENDUM):
         text = text[: -len(MEMORY_ADDENDUM)]
+    if text.endswith(INTENT_FRAMES_ADDENDUM):
+        text = text[: -len(INTENT_FRAMES_ADDENDUM)]
     if text.endswith(LOW_STOCK_FILTERS_ADDENDUM):
         text = text[: -len(LOW_STOCK_FILTERS_ADDENDUM)]
     if text.endswith(ACCOUNT_LEDGER_ADDENDUM):

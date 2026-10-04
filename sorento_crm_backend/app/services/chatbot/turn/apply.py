@@ -26,6 +26,7 @@ from typing import Any
 
 from app.services.chatbot import contracts
 from app.services.chatbot.turn import frame as frame_mod
+from app.services.chatbot.turn import held as held_mod
 from app.services.chatbot.turn import refer
 from app.services.chatbot.turn import task as task_mod
 from app.services.chatbot.turn.decide import (
@@ -3199,6 +3200,28 @@ def _hand_on_unanswered_lists(asked: Any, specs: list[Any], verdict: dict[str, A
 
 
 def apply(
+    state: State,
+    verdict: dict[str, Any],
+    policy: Policy,
+    resolved: dict[str, dict[str, int]] | None = None,
+    candidates: dict[str, list[dict[str, Any]]] | None = None,
+    unplaced: frozenset[str] | set[str] | None = None,
+):
+    """`_gated_apply`, then the escalation offer the message did not answer is closed
+    (INTENT-FRAMES security review B1, `held.without_unanswered_offer`): after the arms
+    have read it, so a question's settled subject still lands on the focus."""
+    new_state, plan = _gated_apply(state, verdict, policy, resolved, candidates, unplaced)
+    if verdict.get(held_mod.CLOSE_OFFER) is True and plan.trace.lane != "offer_hold":
+        # `offer_hold` re-asks the company question this turn: a question asked anew,
+        # which lives for the next message like any other.
+        closed = held_mod.without_unanswered_offer(state.pending, new_state.pending)
+        if closed is not new_state.pending:
+            new_state = replace(new_state, pending=closed)
+            plan.trace.rules_fired.append("offer_unanswered_closed")
+    return new_state, plan
+
+
+def _gated_apply(
     state: State,
     verdict: dict[str, Any],
     policy: Policy,

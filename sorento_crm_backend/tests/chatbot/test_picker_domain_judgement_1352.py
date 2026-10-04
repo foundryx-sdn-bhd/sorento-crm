@@ -81,10 +81,10 @@ def _check_stock(*, pick: int | None = None) -> dict[str, Any]:
     # INTENT-FRAMES: the parser's reading of a domain word over the carried subject is
     # `entity_op: "reuse"` and `continuation: true` (the prompt's SAME SUBJECT rule), the
     # signal that carries the picked product into the stock ask's frame.
-    return verdict(
-        domain_hint="inventory", intent_hint="check_stock", domain_in_message=True,
-        entity_op="reuse", continuation=True, **extra,
-    )
+    # A reported pick is not a continuation (the prompt: a pick off a numbered list is false).
+    if pick is None:
+        extra.update(entity_op="reuse", continuation=True)
+    return verdict(domain_hint="inventory", intent_hint="check_stock", domain_in_message=True, **extra)
 
 
 def _stock_for_position(n: int) -> dict[str, Any]:

@@ -2,9 +2,10 @@
 
 The focus IS the frame and `focus.intent` (STUCK-QTY-LOOP) names its owner. A new intent
 starts a clean frame: the old ask's own filters never move over, and its subject moves
-over only when the parser says the message is about the same subject (`entity_op:
-"reuse"`, `anaphora.backward_reference`, `continuation`). A refinement of the same intent
-narrows the frame as before. Frames expire after a silence and on an access change.
+over only when the parser says the message is about the same subject (`continuation`,
+`anaphora.backward_reference`; never `entity_op: "reuse"` alone, measured live). A
+refinement of the same intent narrows the frame as before. Nothing expires by time or turn count (owner ruling Q1): a
+frame ends by context, a reset, or an access change.
 
 Card: documentation/plans/chatbot/intent-frames-behaviour-card.md. The engine replays of
 the owner's sequences are `test_intent_frames_engine.py`.
@@ -374,26 +375,32 @@ def _offer(kind: str = "team_pick", **payload):
     )
 
 
+def _apply_turn(state, v):
+    state, why = held.consume(state, v)
+    out, plan = apply(state, v, build_policy())
+    return out, plan, why
+
+
 @pytest.mark.parametrize("kind", ["team_pick", "member_offer", "company_pick"])
 def test_an_escalation_offer_the_next_message_ignores_is_closed(kind):
     """Offer, then an unrelated turn: the offer is gone, so no later "ok thanks" can
     accept it (the AC-816 defect without its 3-turn clock)."""
     state = dataclasses.replace(_state(_ranking_frame(intent="check_stock")), pending=_offer(kind))
-    out, why = held.consume(state, verdict(intent_hint="check_stock", entities=[entity("SRTWC286-SH-150")]))
+    out, plan, why = _apply_turn(state, verdict(intent_hint="check_stock", entities=[entity("SRTWC286-SH-150")]))
     assert out.pending is None and why == "offer_unanswered"
 
 
 def test_an_escalation_offer_is_closed_on_a_new_intent_too():
     state = dataclasses.replace(_state(_ranking_frame(intent="check_stock")), pending=_offer())
-    out, why = held.consume(state, verdict(intent_hint="check_promotion", entities=[entity("X1")]))
+    out, _plan, why = _apply_turn(state, verdict(intent_hint="check_promotion", entities=[entity("X1")]))
     assert out.pending is None and why == "new_intent"
 
 
-def test_an_accepted_escalation_offer_is_kept_for_its_arm():
+def test_an_accepted_escalation_offer_is_not_marked():
     state = dataclasses.replace(_state(_ranking_frame(intent="check_stock")), pending=_offer())
     v = verdict(escalation={"is_escalation_confirmation": True, "company_pick": None})
     out, why = held.consume(state, v)
-    assert out.pending is not None and why is None
+    assert out.pending is not None and why is None and held.CLOSE_OFFER not in v
 
 
 def test_a_roster_keeps_its_pick_but_loses_the_escalate_sentence_when_ignored():
@@ -403,10 +410,16 @@ def test_a_roster_keeps_its_pick_but_loses_the_escalate_sentence_when_ignored():
         "product_pick", [{"position": 1, "label": "A", "code": "A"}], asked_at_turn=3,
         payload={"domain": "incoming", "escalate_offered": True},
     )
-    state = dataclasses.replace(_state(_ranking_frame(intent="check_incoming")), pending=roster)
-    out, why = held.consume(state, verdict(message_type="casual", intent_hint=None))
-    assert out.pending is not None and out.pending.kind == "product_pick"
-    assert "escalate_offered" not in out.pending.payload and why == "offer_unanswered"
+    after = held.without_unanswered_offer(roster, roster)
+    assert after is not None and after.kind == "product_pick"
+    assert "escalate_offered" not in after.payload
+
+
+def test_a_question_asked_anew_this_turn_is_never_closed():
+    from app.services.chatbot.turn import pending as pending_mod
+
+    new = pending_mod.ask("team_pick", [{"position": 1, "label": "Sales", "code": "sales"}], asked_at_turn=4)
+    assert held.without_unanswered_offer(_offer(), new) is new
 
 
 def test_the_stamp_covers_the_question_the_composer_writes():
@@ -423,3 +436,59 @@ def test_a_held_access_stamp_from_the_stuck_qty_loop_release_is_read_as_the_fram
     assert focus.frame_access == "fp-old"
     _state_out, why = frame.expire(_state(focus, access_fp="fp-new"))
     assert why == "access_changed"
+
+
+# --------------------------------------------------------------------------- #
+# Reviewer B2 / S1                                                             #
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize("carry", [False, True], ids=["no_carry", "continuation"])
+def test_an_echoed_old_entity_never_lands_on_a_new_intents_frame(carry):
+    """The live parser sometimes copies the carried product as an entity marked
+    `current_message: false`. On a new intent it is dropped: without a carry signal it
+    would leak the old product, with one it would replace the settled row with a raw code
+    the resolver widens to its family (live pass, 4 Oct 2026)."""
+    echoed = entity("SRTWB9GM0", current_message=False)
+    v = verdict(intent_hint="check_stock", domain_hint="inventory", continuation=carry, entities=[echoed])
+    focus = _turn(_ranking_frame(), v)
+    if carry:
+        assert focus.products == [BASIN]
+    else:
+        assert focus.products == []
+
+
+def test_a_typed_entity_still_lands_on_a_new_intent():
+    v = verdict(intent_hint="check_stock", domain_hint="inventory", entities=[entity("SRTWC286-SH-150")])
+    assert _codes(_turn(_ranking_frame(), v).products) == ["SRTWC286-SH-150"]
+
+
+@pytest.mark.parametrize(
+    "v",
+    [
+        verdict(message_type="casual", intent_hint="check_stock"),
+        verdict(message_type="request_for_help", intent_hint="check_product"),
+    ],
+    ids=["casual", "escalation_request"],
+)
+def test_a_turn_that_starts_no_frame_never_relabels_the_frame(v):
+    """Reviewer S1: "thanks" read casual with a stale hint must not make the next
+    refinement of the ranking look like a new intent."""
+    state, _why = held.consume(_state(_ranking_frame()), v)
+    assert state.focus.intent == "check_order"
+    refine = verdict(intent_hint="check_order", domain_hint="order", domain_in_message=False,
+                     entity_op="replace_combine", entities=[entity("hanlim", hint="customer")])
+    consumed, _why = held.consume(state, refine)
+    out, plan = apply(consumed, refine, build_policy())
+    assert "frame_new_intent" not in plan.trace.rules_fired
+    assert out.focus.extra.get("sales_agent") == [AGENT] and out.focus.status == "top_selling"
+
+
+def test_an_answer_with_a_stale_hint_never_relabels_the_frame():
+    from app.services.chatbot.turn import pending as pending_mod
+
+    roster = pending_mod.ask("tier_pick", [{"position": 1, "label": "Dealer", "code": "Dealer"}], asked_at_turn=3)
+    state = dataclasses.replace(_state(_ranking_frame()), pending=roster)
+    v = verdict(intent_hint="check_product", reference_positions=[1], domain_in_message=False)
+    out, _why = held.consume(state, v)
+    assert out.focus.intent == "check_order" and held.NEW_INTENT not in v

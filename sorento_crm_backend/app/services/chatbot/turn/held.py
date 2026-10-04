@@ -37,7 +37,7 @@ from app.services.chatbot.turn.policy_rows import DEFAULT_DOMAIN_ROWS
 from app.services.chatbot.turn.pending import ESCALATION_OFFER_KINDS, is_roster
 from app.services.chatbot.turn.state import Focus, State
 
-__all__ = ["NEW_INTENT", "SLOTS", "consume", "held_slots"]
+__all__ = ["CLOSE_OFFER", "NEW_INTENT", "SLOTS", "consume", "held_slots", "without_unanswered_offer"]
 
 #: The intents the routing table knows (`policy_rows.DEFAULT_DOMAIN_ROWS`, every row's
 #: `intents`). An intent outside it never counts as a change of question.
@@ -130,21 +130,33 @@ def _answers(state: State, verdict: dict[str, Any]) -> bool:
     return False
 
 
-def _without_offer(state: State) -> tuple[State, bool]:
+#: Verdict marker `consume` sets when the open question carries an escalation offer the
+#: message did not answer; `apply` closes that offer once it has read the turn
+#: (`without_unanswered_offer`), after the arms that settle the question's subject.
+CLOSE_OFFER = "_close_offer"
+
+
+def _offers_escalation(pending: Any) -> bool:
+    return pending is not None and (
+        pending.kind in ESCALATION_OFFER_KINDS or pending.payload.get("escalate_offered") is True
+    )
+
+
+def without_unanswered_offer(asked: Any, carried: Any) -> Any:
     """INTENT-FRAMES security review B1: an escalation offer lives exactly as long as the
-    contact's next message. One that message did not answer is closed (nothing counts
-    turns: the next message IS the context), and a roster keeps its pick but loses the
-    escalate sentence printed under it, so a later "ok" never hands the conversation to a
-    person nobody asked for (the AC-816 defect the 3-turn clock used to bound)."""
-    pending = state.pending
-    if pending is None:
-        return state, False
-    if pending.kind in ESCALATION_OFFER_KINDS:
-        return replace(state, pending=None), True
-    if pending.payload.get("escalate_offered") is True:
-        payload = {k: v for k, v in pending.payload.items() if k != "escalate_offered"}
-        return replace(state, pending=replace(pending, payload=payload)), True
-    return state, False
+    contact's next message. The offer the message did not answer (`asked`, still carried
+    as `carried`) is closed - nothing counts turns: the next message IS the context - and a
+    roster keeps its pick but loses the escalate sentence printed under it, so a later
+    "ok" never hands the conversation to a person nobody asked for (the AC-816 defect the
+    3-turn clock used to bound). A question this turn asked anew is untouched."""
+    if carried is None or asked is None or carried.kind != asked.kind or carried.options != asked.options:
+        return carried
+    if carried.kind in ESCALATION_OFFER_KINDS:
+        return None
+    if carried.payload.get("escalate_offered") is True:
+        payload = {k: v for k, v in carried.payload.items() if k != "escalate_offered"}
+        return replace(carried, payload=payload)
+    return carried
 
 
 def consume(
@@ -171,13 +183,24 @@ def consume(
     changed = changed and verdict.get("message_type") in ("business_query", None)
     holding = bool(held_slots(state))
     answers = holding and (bool(answered) or _answers(state, verdict))
-    if changed and not answers:
+    starts = changed and not answers
+    if starts:
         # INTENT-FRAMES: a message that answers the held question is inside that question's
         # frame whatever intent rides on it (a bare "2" carrying a stale hint picks the
         # tier for the product the roster was asked about, #1353), so only a message that
         # answers nothing starts a new frame.
         verdict[NEW_INTENT] = True
-    if intent and intent != prior:
+        # An entity the parser copied from the conversation (`current_message: false`) is
+        # the OLD frame's, never this message's: the frame alone decides what carries
+        # (`frame.on_new_intent`). Left in, an echo replaced the carried settled row with a
+        # raw code the resolver widened to its family, or leaked an old product into a
+        # question that carries nothing (reviewer B2, live pass 4 Oct 2026).
+        verdict["entities"] = [
+            e for e in verdict.get("entities") or [] if not (isinstance(e, dict) and e.get("current_message") is False)
+        ]
+    if intent and (prior is None or starts):
+        # The frame's owner changes only when a frame starts: a casual turn or an answer
+        # carrying a stale hint never re-labels the frame it is in (reviewer S1).
         state = replace(state, focus=replace(state.focus, intent=intent))
     if not holding:
         return state, None
@@ -188,11 +211,11 @@ def consume(
         # (the new question is still answered as itself; it cannot be captured): "incoming
         # srtwc286" -> "4" -> "check stock" -> "7" still picks (#1352). Reset and access
         # change still drop it.
-        state = _cleared(state, keep_pending=state.pending is not None and is_roster(state.pending.kind))
-        state, _closed = _without_offer(state)
-        return state, "new_intent"
-    if not answers:
-        state, closed = _without_offer(state)
-        if closed:
-            return state, "offer_unanswered"
+        keep = state.pending is not None and (is_roster(state.pending.kind) or state.pending.kind in ESCALATION_OFFER_KINDS)
+        if _offers_escalation(state.pending):
+            verdict[CLOSE_OFFER] = True
+        return _cleared(state, keep_pending=keep), "new_intent"
+    if not answers and _offers_escalation(state.pending):
+        verdict[CLOSE_OFFER] = True
+        return state, "offer_unanswered"
     return state, None

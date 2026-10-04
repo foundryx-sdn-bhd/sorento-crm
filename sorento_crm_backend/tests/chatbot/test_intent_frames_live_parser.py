@@ -56,8 +56,9 @@ class LiveConsole(EngineConsole):
             "entity_op": r.get("entity_op"), "topic_reset": r.get("topic_reset"),
             "positions": r.get("reference_positions"), "answer": r.get("open_question_answer"),
             "dim": r.get("domain_in_message"), "domain": r.get("domain_hint"),
+            "ents": [(e.get("raw"), e.get("hint"), e.get("current_message")) for e in r.get("entities") or []], "broaden": [r.get("scope_intent"), r.get("broaden_axis"), r.get("broaden_to"), r.get("match_mode")],
             "stored": (self.stored_question or {}).get("kind"),
-            "rules": [x for x in (self.last_trace.rules_fired or []) if x.startswith("frame_")],
+            "rules": list(self.last_trace.rules_fired or []),
             "reply": text[:160],
         }, ensure_ascii=False))
         return text
@@ -125,3 +126,16 @@ def test_live_eta_follow_up_carries_the_product(live, monkeypatch):
     c.tell(f"stock {A}")
     text = c.tell("got eta?")
     assert f"No incoming for {A}" in text, text
+
+
+def test_live_ignored_offer_is_not_accepted_later(live, monkeypatch):
+    """Security review B1, live: a miss offers escalation, the contact asks something else,
+    then "ok thanks" never hands the chat to a person."""
+    c = live("+60000014745")
+    monkeypatch.setattr(turn_runtime, "_stock_availability_only", lambda *a, **k: False)
+    c.stock_on_hand = 12
+    offer = c.tell("check stock SRTWX0000")
+    c.tell(f"stock {A}")
+    c.tell("ok thanks")
+    assert c.last_trace.lane not in ("escalation",), (offer, c.last_trace.lane)
+    assert (c.stored_question or {}).get("kind") not in ("team_pick", "member_offer", "company_pick")

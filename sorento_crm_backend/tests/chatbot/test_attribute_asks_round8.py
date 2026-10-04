@@ -226,6 +226,8 @@ def _v2b() -> dict[str, Any]:
         user_goal="trying to see the certificates of those basins",
         requested_attributes=["cert"],
         entity_op="reuse",
+        # INTENT-FRAMES: the live parser's same-subject signal (gpt-5.4-mini, 4 Oct 2026).
+        continuation=True,
         entities=[],
     )
 
@@ -398,7 +400,7 @@ def test_a_one_word_follow_up_switches_the_domain_and_keeps_the_described_set(co
     intent, domain = {"stock": ("check_stock", "inventory"), "incoming": ("check_incoming", "incoming")}[kind]
     text = compact.say(
         word,
-        _parser_output(intent_hint=intent, domain_hint=domain, match_mode="or", requested_attributes=[kind], entity_op="reuse", entities=[]),
+        _parser_output(intent_hint=intent, domain_hint=domain, match_mode="or", requested_attributes=[kind], entity_op="reuse", continuation=True, entities=[]),
     )
     assert _codes(text, world) == {p.product_code for p in world["gunmetal"]}, text
 

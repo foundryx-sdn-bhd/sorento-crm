@@ -96,7 +96,12 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # reading rules, 1,380 est. tokens) sits between ACCOUNT_LEDGER and MEMORY and takes the
 # prompt without MEMORY_ADDENDUM to 44,880 est. tokens and the whole prompt to 45,396;
 # CEILING is 45,396 - 512 = 44,884 so both assertions hold.
-CEILING = 44_884
+# Seventh re-pin, 4 Oct 2026 (INTENT-FRAMES, owner ruling Q4): INTENT_FRAMES_ADDENDUM (defines
+# `continuation`, the frame carry signal, and the clear / reset / start over topic reset,
+# 368 est. tokens) sits between LOW_STOCK_FILTERS and MEMORY and takes the prompt without
+# MEMORY_ADDENDUM to 45,248 est. tokens and the whole prompt to 45,764; CEILING is
+# 45,764 - 512 = 45,252 so both assertions hold.
+CEILING = 45_252
 # The memory addendum on its own, bounded separately so this PR's growth stays bounded.
 # 26 Sep baseline (lane d89110c0): 339 est. tokens. Round 4 (baf4c813, 28 Sep: the history
 # question in any wording, the number re-run, commercial_request) took it to 512, which is
