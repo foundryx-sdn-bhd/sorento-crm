@@ -244,7 +244,10 @@ class TestLowStockMatrix:
     UAC table names the refusal as the reply, so that half is its own test."""
 
     def _ask(self, session_factory, monkeypatch, grants):
-        qf = _qf(domain_hint="inventory", intent_hint="low_stock_report", entities=[])
+        qf = _qf(
+            domain_hint="inventory", intent_hint="low_stock_report", entities=[],
+            low_stock={"all_categories": True, "categories": [], "brands": [], "suppliers": [], "group_by": None},
+        )
         return _turn_for(
             session_factory, monkeypatch, qf=qf, attributes=grants,
             body="low stock report", mcp_response=LOW_STOCK_ENVELOPE,
