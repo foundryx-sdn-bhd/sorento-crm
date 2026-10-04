@@ -83,6 +83,14 @@ def publish_policy_blocks(bind) -> None:
 
     session = Session(bind=bind)
     try:
+        # PLAN-prompt-dynamic-30sep R1: once the owner's wording layer exists the blocks
+        # render per turn from `{{domains_detail}}` etc., and a version rebuilt from the
+        # code constant would drop his edits. Stand down.
+        from app.services.chatbot_prompt_vars import wording_layer_exists
+
+        if wording_layer_exists(session):
+            logger.info("parser wording layer exists; policy blocks are live, nothing to publish")
+            return
         template, blocks_hash = _body(session)
         # `blocks_hash` alone under-counts: it covers the POLICY BLOCKS, not
         # `SEMANTIC_PARSER_PROMPT` itself, so an edit to the constant with the policy

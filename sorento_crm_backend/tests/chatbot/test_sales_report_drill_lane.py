@@ -420,6 +420,9 @@ class TestFixRound2:
             mcp_response=SALES_REPORT_HIT,
         )
         assert not any(name == "crm_sales_report" for name, _a in captured), captured
+        # PROMPT-DYNAMIC reviewer pass 3, S3: it IS the outstanding report that runs, in the
+        # order domain, not merely "not the sales report".
+        assert any(name == "crm_outstanding_report" for name, _a in captured), captured
         assert _open_question(session_factory).get("kind") != "sales_report_detail", _open_question(session_factory)
         _result, after = _pick(session_factory, monkeypatch, position=1, msg_id="ZZT-drill-r1-2")
         assert not any(name == "crm_sales_report" for name, _a in after), after

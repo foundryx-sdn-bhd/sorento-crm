@@ -28,6 +28,7 @@ from typing import Callable
 from sqlalchemy.orm import Session
 
 from app.models.ai_prompt import AIPromptLabel, AIPromptVersion
+from app.services import chatbot_prompt_vars
 
 logger = logging.getLogger(__name__)
 
@@ -940,6 +941,10 @@ class PromptKeySpec:
     # the tester an answer their edit had no part in. Defaults False so a new key
     # fails safe: a key that is genuinely a pipeline node says so.
     dry_runnable: bool = False
+    # Registry variables (PLAN-prompt-dynamic-30sep D1): `{{name}}` tokens that `render`
+    # fills from their tables itself, so no caller passes them. Always known (never an
+    # unknown token), never required (the owner removes one to write the list himself).
+    registry_variables: tuple[str, ...] = ()
 
 
 PROMPT_KEYS: dict[str, PromptKeySpec] = {
@@ -965,6 +970,7 @@ PROMPT_KEYS: dict[str, PromptKeySpec] = {
         activates_in=None,
         variables=["current_date"],
         fallback=_chatbot_semantic_parser_fallback,
+        registry_variables=chatbot_prompt_vars.VARIABLE_NAMES,
     ),
     # --- The `low_signal` lane's own model call (S4). One per turn, only on a turn the
     #     parser could not route: small talk, or a request too vague to answer. ---
@@ -1271,8 +1277,9 @@ def validate_template(name: str, template: str) -> tuple[list[str], list[str]]:
     literally → block save); ``missing`` = declared vars absent (soft warn)."""
     spec = PROMPT_KEYS.get(name)
     declared = set(spec.variables) if spec else set()
+    registry = set(spec.registry_variables) if spec else set()
     found = extract_tokens(template)
-    unknown = sorted(found - declared)
+    unknown = sorted(found - declared - registry)
     missing = sorted(declared - found)
     return unknown, missing
 
@@ -1428,7 +1435,14 @@ def render(
             f"Missing required variable(s) for prompt '{name}': {', '.join(sorted(missing))}"
         )
     rp = get_prompt(db, name, label=label, override_version_id=override_version_id)
-    return _substitute(rp.text, variables), rp.version
+    values: dict[str, object] = dict(variables)
+    if spec is not None and spec.registry_variables:
+        wanted = (extract_tokens(rp.text) & set(spec.registry_variables)) - set(values)
+        if wanted:
+            # Never raises and never leaves a token unfilled: a failing reader falls back
+            # to its last good text (see `render_values_safe`).
+            values.update(chatbot_prompt_vars.render_values_safe(db, wanted))
+    return _substitute(rp.text, values), rp.version
 
 
 def _safe_rollback(db: Session) -> None:
