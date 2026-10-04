@@ -26,6 +26,7 @@ import {
   type AccessCopyResult,
   type AccessCopyStatus,
 } from '../[id]/services/contactAccessCopyService';
+import { STOCK_VISIBILITY_MODE_LABELS, type StockVisibilityMode } from '@/services/stockVisibilityService';
 import type { RespondContact } from '../types/contact.types';
 
 /**
@@ -67,10 +68,19 @@ const RESULT_BADGE: Record<AccessCopyStatus, { label: string; variant: 'primary'
 
 const TIER_LABEL: Record<string, string> = { dealer: 'Dealer', office: 'Office', end_user: 'End user' };
 
-function scalarText(value: unknown): string {
+/** The contact's own Stock visibility override; with none it inherits the access type / default. */
+const STOCK_FACETS = new Set(['stock_check_mode', 'stock_locations']);
+
+/** Shown when an older backend sends no `not_copied`. */
+const DEFAULT_NOT_COPIED = ['Linked customers', 'CS routing', 'Media limits', 'Memory'];
+
+function scalarText(value: unknown, facet?: string): string {
   if (value === true) return 'on';
   if (value === false) return 'off';
-  if (value == null || value === '') return '(none)';
+  if (value == null || value === '') return facet && STOCK_FACETS.has(facet) ? 'Inherited' : '(none)';
+  if (facet === 'stock_check_mode') {
+    return STOCK_VISIBILITY_MODE_LABELS[value as StockVisibilityMode] ?? String(value);
+  }
   return TIER_LABEL[String(value)] ?? String(value);
 }
 
@@ -95,8 +105,10 @@ function ChangeLine({ change }: { change: AccessCopyChange }) {
           </>
         ) : (
           <>
-            <span className="rounded bg-destructive/10 px-1 text-destructive line-through">{scalarText(change.before)}</span>
-            <span className="rounded bg-success/10 px-1 text-success">{scalarText(change.after)}</span>
+            <span className="rounded bg-destructive/10 px-1 text-destructive line-through">
+              {scalarText(change.before, change.facet)}
+            </span>
+            <span className="rounded bg-success/10 px-1 text-success">{scalarText(change.after, change.facet)}</span>
           </>
         )}
       </span>
@@ -302,8 +314,8 @@ export default function BulkCopyAccessDialog({
                     </div>
                   ))}
                   <dt className="text-muted-foreground">Not copied</dt>
-                  <dd className="m-0 text-muted-foreground">
-                    Linked customers, companies, CS routing, media limits, memory
+                  <dd className="m-0 text-muted-foreground" data-testid="copy-access-not-copied">
+                    {(preview.data.source.not_copied ?? DEFAULT_NOT_COPIED).join(', ')}
                   </dd>
                 </dl>
               ) : null}

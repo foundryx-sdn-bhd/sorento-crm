@@ -65,12 +65,16 @@ export interface Idea {
   mergedIntoId: string | null;
   mergedInto: IdeaMergedInto | null;
   mergedCount: number;
+  /** ss decides whether the viewer submitted this idea (sent after SS-IDEATION-OWN); the CRM never guesses. */
+  isMine?: boolean;
 }
 
 export interface IdeaListParams {
   query?: string;
   /** A status key, or empty for every live idea. `archived` shows archived ones. */
   status?: string;
+  /** Only the viewer's own ideas. */
+  mine?: boolean;
 }
 
 export interface IdeaStatusOption {
