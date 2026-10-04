@@ -863,3 +863,109 @@ def test_output_files_are_owner_only(db, tmp_path, w):
     assert len(files) == 3
     for f in files:
         assert os.stat(f).st_mode & 0o777 == 0o600, f
+
+
+# ---------------------------------------------------------------- links review: merge survivor + held
+
+
+def _dup(db, w, name, code, *, created=None, ident=None, ref=None):
+    """A company-A customer sharing a debtor code; ref = source_ref of a customers integration_references row."""
+    from app.models.integration_reference import IntegrationReference
+
+    row = Customer(customer_code=code, customer_name=name, company_id=w.a.id)
+    if ident:
+        row.id = ident
+    if created:
+        row.created_at = created
+    db.add(row)
+    db.flush()
+    if ref:
+        db.add(IntegrationReference(entity_type="customers", entity_id=row.id, company_id=w.a.id,
+                                    source_system="autocount", source_ref=ref))
+        db.flush()
+    return row
+
+
+def _review_by_id(db, tmp_path, w, people=1):
+    _contact(db, 1)
+    path = _book(tmp_path, [_row([("ZZT P1", raw(1), BO)])])
+    out = tmp_path / "review.xlsx"
+    cbs.links_review(db, path, out, rules=w.rules)
+    header, rows = _read_review(out)
+    assert "survives_merge" in header and "held" in header, header
+    return path, out, {r["customer_id"]: r for r in rows}, rows
+
+
+def test_merge_survivor_code_form_ref_beats_older_unlinked_row(db, tmp_path, w):
+    old = _dup(db, w, "ZZT Dealer A Sdn Bhd", "ZZT-M1", created=datetime(2020, 1, 1))
+    other_ref = _dup(db, w, "ZZT Dealer A Trading", "ZZT-M1", created=datetime(2021, 1, 1), ref="ZZTDB:OTHER-9")
+    coded = _dup(db, w, "ZZT Dealer A Holdings", "ZZT-M1", created=datetime(2022, 1, 1), ref="ZZTDB: zzt-m1 ")
+    _, _, by, _ = _review_by_id(db, tmp_path, w)
+    assert [by[x.id]["survives_merge"] for x in (old, other_ref, coded)] == ["N", "N", "Y"]
+
+
+def test_merge_survivor_any_ref_beats_older_row(db, tmp_path, w):
+    old = _dup(db, w, "ZZT Dealer A Sdn Bhd", "ZZT-M2", created=datetime(2020, 1, 1))
+    ref = _dup(db, w, "ZZT Dealer A Trading", "ZZT-M2", created=datetime(2022, 1, 1), ref="ZZTDB:99999")
+    _, _, by, _ = _review_by_id(db, tmp_path, w)
+    assert (by[old.id]["survives_merge"], by[ref.id]["survives_merge"]) == ("N", "Y")
+
+
+def test_merge_survivor_without_refs_is_oldest_then_lowest_id(db, tmp_path, w):
+    old = _dup(db, w, "ZZT Dealer A Sdn Bhd", "ZZT-M3", created=datetime(2020, 1, 1))
+    new = _dup(db, w, "ZZT Dealer A Trading", "ZZT-M3", created=datetime(2021, 1, 1))
+    t1 = _dup(db, w, "ZZT Dealer A Holdings", "ZZT-M4", created=datetime(2020, 5, 5), ident="00000000-0000-0000-0000-0000000000b2")
+    t2 = _dup(db, w, "ZZT Dealer A Services", "ZZT-M4", created=datetime(2020, 5, 5), ident="00000000-0000-0000-0000-0000000000a1")
+    _, _, by, _ = _review_by_id(db, tmp_path, w)
+    assert (by[old.id]["survives_merge"], by[new.id]["survives_merge"]) == ("Y", "N")
+    assert (by[t1.id]["survives_merge"], by[t2.id]["survives_merge"]) == ("N", "Y")
+
+
+def test_merge_single_row_code_survives_and_is_not_held(db, tmp_path, w):
+    only = _dup(db, w, "ZZT Dealer A Sdn Bhd", "ZZT-M5")
+    _, _, by, _ = _review_by_id(db, tmp_path, w)
+    assert (by[only.id]["survives_merge"], by[only.id]["held"]) == ("Y", "N")
+
+
+def test_held_is_y_when_names_differ_in_core(db, tmp_path, w):
+    a = _dup(db, w, "ZZT ALPHA SDN BHD", "ZZT-H1", created=datetime(2020, 1, 1))
+    b = _dup(db, w, "ZZT BRAVO HARDWARE", "ZZT-H1", created=datetime(2021, 1, 1))
+    _, _, by, _ = _review_by_id(db, tmp_path, w)
+    assert (by[a.id]["held"], by[b.id]["held"]) == ("Y", "Y")
+
+
+def test_held_is_n_when_only_suffix_bracket_or_tag_differs(db, tmp_path, w):
+    a = _dup(db, w, "ZZT ALPHA SDN BHD", "ZZT-H2", created=datetime(2020, 1, 1))
+    b = _dup(db, w, "ZZT ALPHA SDN. BHD. - [A/C I]", "ZZT-H2", created=datetime(2021, 1, 1))
+    _, _, by, _ = _review_by_id(db, tmp_path, w)
+    assert (by[a.id]["held"], by[b.id]["held"]) == ("N", "N")
+    assert (by[a.id]["survives_merge"], by[b.id]["survives_merge"]) == ("Y", "N")
+
+
+def test_held_is_n_for_a_301_code_even_when_names_differ(db, tmp_path, w):
+    a = _dup(db, w, "ZZT ALPHA SDN BHD", "301-ZZT1", created=datetime(2020, 1, 1))
+    b = _dup(db, w, "ZZT BRAVO HARDWARE", "301-ZZT1", created=datetime(2021, 1, 1))
+    _, _, by, _ = _review_by_id(db, tmp_path, w)
+    assert (by[a.id]["held"], by[b.id]["held"]) == ("N", "N")
+
+
+def test_survivors_sort_before_non_survivors_inside_a_block(db, tmp_path, w):
+    # the non-survivor is the exact name match, so similarity alone would list it first
+    _dup(db, w, "ZZT Dealer A Sdn Bhd", "ZZT-S1", created=datetime(2022, 1, 1))
+    _dup(db, w, "ZZT Dealer A Zebra Works", "ZZT-S1", created=datetime(2020, 1, 1))
+    _dup(db, w, "ZZT Dealer A Trading", "ZZT-S2")
+    _, _, _, rows = _review_by_id(db, tmp_path, w)
+    flags = [r["survives_merge"] for r in rows if r["excel_row"] == 2]
+    assert "N" in flags and flags == sorted(flags, reverse=True), flags
+
+
+def test_apply_links_works_on_a_sheet_with_the_new_columns(db, tmp_path, w):
+    lw = _link_world(db, tmp_path, w)
+    review, reviewed = tmp_path / "review.xlsx", tmp_path / "reviewed.xlsx"
+    cbs.links_review(db, lw.path, review, rules=w.rules)
+    header, _ = _read_review(review)
+    assert {"survives_merge", "held"} <= set(header), header
+    assert header[:8] == ["excel_row", "excel_company", "company_code", "debtor_code", "customer_name", "customer_id", "reason", "link"]
+    _tick(review, reviewed, {"ZZT-D-EXACT"})
+    res = cbs.apply_links(db, lw.path, reviewed, actor_id=w.actor, rules=w.rules)
+    assert (res["linked"], res["failed"]) == (2, [])
