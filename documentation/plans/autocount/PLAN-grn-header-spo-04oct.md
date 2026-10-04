@@ -1,6 +1,6 @@
 # PLAN: AutoCount GRN ingest fills the header SPO number (GRN-HEADER-SPO)
 
-Status: **in build** (small fix track: backend only, no migration, no auth/RBAC change, no new
+Status: **built, in review on PR #1484** (small fix track: backend only, no migration, no auth/RBAC change, no new
 ingest surface). UAC: `grn-header-spo-04oct-acceptance-criteria.md`.
 
 ## Problem (owner, 4 Oct)
@@ -37,3 +37,12 @@ header is never read for an SPO.
 
 - A line whose SPO arrives after the GRN links later through the waiting fill; the header
   fills on the GRN's next push, not at that moment.
+- GRNs already stored (GR-2026/10-0008 included) are fixed only when AutoCount sends them
+  again: a re-pull of their date range through the AutoCount pull, or the next edit in
+  AutoCount. No backfill script is built; the trigger for one is a GRN that AutoCount will not
+  resend and still shows "-".
+- A re-push that moves every line off its SPOs keeps the old header SPO (never-clear rule).
+- Side effect: `update_grn` (`be/app/services/procurement_service.py`) rebuilds lines against
+  `grn.spo_number` when a user edits a GRN. An AutoCount GRN used to have no header SPO, so
+  that branch never ran for one; now it can. The edit already dropped AutoCount links before
+  this change and the next push restores them, so the outcome is unchanged in practice.

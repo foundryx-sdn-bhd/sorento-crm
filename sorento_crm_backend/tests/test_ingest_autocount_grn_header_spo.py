@@ -58,6 +58,25 @@ def test_ghs03_several_spos_are_joined_in_line_order(env):
     assert _header_spo(env, 803010) == "SPO-ZZ-0302, SPO-ZZ-0301"
 
 
+def test_ghs03b_seq_decides_the_order_not_the_array(env):
+    """AutoCount's Seq is the line order; the Details array may list lines in another order."""
+    _spo(env, "SPO-ZZ-0304", (env.p2, 50), warehouse_id=env.wh1)
+    _spo(env, "SPO-ZZ-0303", (env.p1, 100), warehouse_id=env.wh1)
+    rec = _doc(803030, "ZZGRN-3030", [("ZZAC-P1", 100, "ZZAC-WH1", "SPO-ZZ-0303"),
+                                      ("ZZAC-P2", 50, "ZZAC-WH1", "SPO-ZZ-0304")])
+    rec["Details"][0]["Seq"], rec["Details"][1]["Seq"] = 64, 16
+    _push(env, rec)
+    assert _header_spo(env, 803030) == "SPO-ZZ-0304, SPO-ZZ-0303"
+
+
+def test_ghs03c_a_linked_line_shows_the_spos_own_spelling(env):
+    """A hand-typed variant spelling never reaches the header when the line linked."""
+    _spo(env, "SPO-ZZ-0305", (env.p1, 100), (env.p2, 50), warehouse_id=env.wh1)
+    _push(env, _doc(803050, "ZZGRN-3050", [("ZZAC-P1", 100, "ZZAC-WH1", "spo-zz.0305"),
+                                           ("ZZAC-P2", 50, "ZZAC-WH1", "SPO-ZZ-0305")]))
+    assert _header_spo(env, 803050) == "SPO-ZZ-0305"
+
+
 # ===================================================================== AC-GHS01 / AC-GHS04
 def test_ghs01_header_fields_are_never_read_as_the_spo(env):
     """An SPO number typed in `Ref` / `RefDocNo` / `Description` is ignored: lines on a PO
