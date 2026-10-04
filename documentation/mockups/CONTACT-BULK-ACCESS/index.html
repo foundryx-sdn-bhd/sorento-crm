@@ -148,16 +148,16 @@ code{overflow-wrap:anywhere;font-size:12px;background:var(--muted);padding:1px 4
 
 <script>
 const AT={dealer:'Dealer',end_user:'End user',office:'Sorento Office'};
-const REF={id:'c0',name:'Reference: Owner, Contoh Living Sdn Bhd',phone:'+60 12-300 0001',cust:'CL001',at:['dealer','end_user'],tier:'dealer',cost:true,esc:false,pack:false,stock:true,notify:false,eta:true,
+const REF={id:'c0',name:'Reference: Owner, Contoh Living Sdn Bhd',phone:'+60 12-000 0601',cust:'CL001',at:['dealer','end_user'],tier:'dealer',cost:true,esc:false,pack:false,stock:true,notify:false,eta:true,
   reveals:['purchase_orders.cost'],agents:['general_enquiries','order_enquiries','incoming_stock_enquiries','lead_time_enquiries','marketing_form']};
 const base=()=>({at:[],tier:null,cost:false,esc:true,pack:false,stock:true,notify:false,eta:true,reveals:[],agents:[]});
 const C=[REF,
- {id:'c1',name:'Owner, Meja Indah Trading',phone:'+60 12-300 0002',cust:'MI004',...base()},
- {id:'c2',name:'Director, Kerusi Jaya Enterprise',phone:'+60 12-300 0003',cust:'',...base(),at:['dealer']},
- {id:'c3',name:'Owner, Almari Baru Furniture',phone:'+60 12-300 0004',cust:'AB017',...REF,id:'c3',name:'Owner, Almari Baru Furniture',phone:'+60 12-300 0004',cust:'AB017'},
- {id:'c4',name:'Owner, Sofa Ria Home',phone:'+60 12-300 0005',cust:'SR002',...base(),at:['dealer','end_user'],tier:'dealer',cost:true,esc:true,reveals:['purchase_orders.cost','inventory.sellable'],agents:REF.agents},
- {id:'c5',name:'Director, Tilam Sejuk Bedding',phone:'+60 12-300 0006',cust:'',...base(),missing:true},
- {id:'c6',name:'Employee, Meja Indah Trading',phone:'+60 12-300 0007',cust:'MI004',...base(),at:['end_user'],tier:'end_user',esc:false},
+ {id:'c1',name:'Owner, Meja Indah Trading',phone:'+60 12-000 0602',cust:'MI004',...base()},
+ {id:'c2',name:'Director, Kerusi Jaya Enterprise',phone:'+60 12-000 0603',cust:'',...base(),at:['dealer']},
+ {id:'c3',name:'Owner, Almari Baru Furniture',phone:'+60 12-000 0604',cust:'AB017',...REF,id:'c3',name:'Owner, Almari Baru Furniture',phone:'+60 12-000 0604',cust:'AB017'},
+ {id:'c4',name:'Owner, Sofa Ria Home',phone:'+60 12-000 0605',cust:'SR002',...base(),at:['dealer','end_user'],tier:'dealer',cost:true,esc:true,reveals:['purchase_orders.cost','inventory.sellable'],agents:REF.agents},
+ {id:'c5',name:'Director, Tilam Sejuk Bedding',phone:'+60 12-000 0606',cust:'',...base(),missing:true},
+ {id:'c6',name:'Employee, Meja Indah Trading',phone:'+60 12-000 0607',cust:'MI004',...base(),at:['end_user'],tier:'end_user',esc:false},
 ];
 let selected=new Set(['c1','c2','c3','c4','c5']);
 let filters={};
