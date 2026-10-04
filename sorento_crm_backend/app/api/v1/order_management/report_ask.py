@@ -311,6 +311,17 @@ def report_ask(
         if c
     }
 
+    if brands:
+        # A brand named by id that belongs to a company outside the contact's own is dropped
+        # silently (one brand name can exist per company); 404 only when none remain, so
+        # nothing tells the caller another company's brand exists, and none is ever echoed.
+        cond = or_(Brand.company_id.is_(None), Brand.company_id.in_(sorted(grants))) if grants else Brand.company_id.is_(None)
+        with company_scope(db, None):
+            own = {str(i) for (i,) in db.query(Brand.id).filter(Brand.id.in_(brands), cond).all()}
+        brands = [b for b in brands if b in own]
+        if not brands:
+            raise handle_not_found("Brand", brand_ids[0] if brand_ids else "")
+
     # Matched inside the contact's companies, like every other lookup and the run itself.
     with company_scope(db, frozenset(grants)):
         products = _resolve_products(db, code) if code else []

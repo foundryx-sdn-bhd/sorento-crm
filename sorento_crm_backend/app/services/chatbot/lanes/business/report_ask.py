@@ -405,10 +405,12 @@ def _fresh_args(
             found, names = _resolve_word(db, hint, word)
             if not found:
                 return None, f"I don't know '{word}' as a {WORD_HINTS[hint]}."
-            if len(found) > 1 and hint in SEVERAL_NOUNS:
-                # 1b code review S3: never a silent widening (the PR #1273 rule). Several
-                # sales agent rows for one word stay a union: one person's accounts.
-                listed = ", ".join(sorted(set(names)))
+            distinct = {" ".join(n.split()).casefold(): " ".join(n.split()) for n in reversed(names)}
+            if len(distinct) > 1 and hint in SEVERAL_NOUNS:
+                # 1b code review S3: never a silent widening (the PR #1273 rule). Hits sharing
+                # one name (a brand per company) are ONE brand, their ids a union; several
+                # sales agent rows for one word stay a union too: one person's accounts.
+                listed = ", ".join(sorted(distinct.values()))
                 return None, f"'{word}' matches several {SEVERAL_NOUNS[hint]}: {listed}. Ask again naming one."
             ids.extend(i for i in found if i not in ids)
         if ids:
