@@ -65,6 +65,12 @@ the exact values in a `finally`. On a PRODUCTION checkout it refuses to write th
 (the Settings > Chatbot screen is the only sanctioned way there) and runs against whatever
 is already set, after `--production` acknowledges where it is pointed.
 
+**Replay by default (LLM-TEST-COST, 4 Oct 2026).** A graded run is meant to answer from
+recorded parses: start the backend with `LLM_CASSETTE_MODE=replay` (see
+`app/services/llm_cassette.py`). The run reads the backend's mode off each turn's
+`understood` facts and stops after the first turn that was parsed live, unless `--live`
+says to spend.
+
 Reads `EXTERNAL_API_KEY` from the environment (or `--api-key`).
 """
 from __future__ import annotations
@@ -212,6 +218,7 @@ def _post_with_pacing(
     timeout: float,
     *,
     sleep_seconds: float = 0.0,
+    live: bool = True,
 ) -> dict:
     """`_post`, plus the owner's two pacing rules (8 Sep 2026, a graded run sharing the
     parser's OpenAI key with someone testing live): sleep `sleep_seconds` BEFORE every
@@ -226,7 +233,71 @@ def _post_with_pacing(
         print(f"      (429 from the parser - waiting {_RETRY_WAIT_SECONDS:g}s and retrying once)")
         time.sleep(_RETRY_WAIT_SECONDS)
         body = _post(session, url, api_key, envelope, timeout)
+    refusal = _cassette_refusal(body, live)
+    if refusal:
+        raise SystemExit(refusal)
     return body
+
+
+def _cassette_refusal(body: dict[str, Any], live: bool) -> str | None:
+    """Why this run must stop, or None. LLM-TEST-COST: a scripted run answers from
+    recorded parses (the backend in `LLM_CASSETTE_MODE=replay`) unless `--live` says to
+    spend. The backend's mode is read off the turn's own `understood` facts - the 200
+    body carries no trace, so off the stored row - and at most ONE live turn is paid
+    before the run stops."""
+    if live or "_http_error" in body:
+        return None
+    turn_id = body.get("turn_id")
+    trace = _row_trace(turn_id)
+    if turn_id and not trace:
+        # The backend wrote this turn somewhere this script cannot see (another
+        # DATABASE_URL), so whether it was replayed cannot be checked: stop, never assume.
+        return (
+            f"stopped: cannot confirm replay, turn {turn_id} is not in this script's "
+            "database (is the backend on another DATABASE_URL?). Pass --live to run unchecked."
+        )
+    for record in trace:
+        if not (isinstance(record, dict) and record.get("stage") == "understood"):
+            continue
+        facts = record.get("facts") or {}
+        if facts.get("parser_bypassed"):
+            return None
+        mode = facts.get("llm_cassette")
+        if mode == "replay":
+            if record.get("status") == "failed":
+                # A cassette miss: nothing spent, but the run cannot grade anything.
+                return f"stopped: replay could not answer this turn: {record.get('error')}"
+            return None
+        return (
+            f"stopped: the backend parsed this turn live (LLM_CASSETTE_MODE="
+            f"{mode or 'unset, backend predates LLM-TEST-COST'}), which spends real "
+            "OpenAI tokens. Start the backend in replay (LLM_CASSETTE_MODE=replay, or a "
+            "harness launcher with no flag), or pass --live to spend on purpose (a "
+            "--record backend needs --live too)."
+        )
+    return None
+
+
+def _row_trace(turn_id: str | None) -> list[Any]:
+    """`chatbot.turns.trace` for one turn, as a list (empty when there is none)."""
+    if not turn_id:
+        return []
+    from sqlalchemy import text
+
+    db = _script_session()
+    try:
+        row = db.execute(
+            text("SELECT trace FROM chatbot.turns WHERE id = :id"), {"id": turn_id}
+        ).fetchone()
+    finally:
+        db.close()
+    trace = (row[0] if row is not None else None) or []
+    if isinstance(trace, str):
+        try:
+            trace = json.loads(trace)
+        except ValueError:
+            return []
+    return trace if isinstance(trace, list) else []
 
 
 def _pending_kind(body: dict[str, Any], turn_id: str | None) -> str | None:
@@ -585,6 +656,15 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
+        "--live",
+        action="store_true",
+        help=(
+            "allow live parser calls (LLM-TEST-COST). Without it the run stops after the "
+            "first turn the backend did not answer from a recorded cassette "
+            "(LLM_CASSETTE_MODE=replay on the backend)."
+        ),
+    )
+    parser.add_argument(
         "--mock-parser",
         action="store_true",
         help="use each case's own `parser:` block instead of calling the model",
@@ -744,7 +824,13 @@ def _run_ad_hoc(args, session, url, run_id) -> int:
                 prompt_version=args.prompt_version,
             )
             body = _post_with_pacing(
-                session, url, args.api_key, envelope, args.timeout, sleep_seconds=args.sleep_seconds
+                session,
+                url,
+                args.api_key,
+                envelope,
+                args.timeout,
+                sleep_seconds=args.sleep_seconds,
+                live=args.live,
             )
             print(f"\n--- turn {index}  contact {contact} ---")
             print(f"> {text_in}")
@@ -790,7 +876,13 @@ def _run_cases(cases, session, url, args, default_contact, run_id) -> int:
                 prompt_version=args.prompt_version,
             )
             body = _post_with_pacing(
-                session, url, args.api_key, envelope, args.timeout, sleep_seconds=args.sleep_seconds
+                session,
+                url,
+                args.api_key,
+                envelope,
+                args.timeout,
+                sleep_seconds=args.sleep_seconds,
+                live=args.live,
             )
             pending = _pending_kind(body, body.get("turn_id"))
             reply = _customer_words(body)
