@@ -239,6 +239,52 @@ describe('AC-B-01 / AC-B-02 without manage', () => {
   });
 });
 
+describe('Q3 own-idea edit without manage', () => {
+  it('a viewer without manage sees Edit on their own idea (isMine true), edits in place and Save calls updateIdea', async () => {
+    renderDetail(makeIdea({ isMine: true }));
+    await loaded();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    const problem = await screen.findByLabelText('Problem statement');
+    fireEvent.change(problem, { target: { value: 'Quotes take far too long' } });
+    svc.updateIdea.mockResolvedValue(makeIdea({ isMine: true }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() =>
+      expect(svc.updateIdea).toHaveBeenCalledWith(
+        'idea-1',
+        expect.objectContaining({ problem: 'Quotes take far too long' }),
+      ),
+    );
+  });
+
+  it.each([
+    ['isMine false', { isMine: false }],
+    ['isMine absent', {}],
+  ])('no Edit button without manage when %s', async (_label, over) => {
+    renderDetail(makeIdea(over));
+    await loaded();
+    expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull();
+  });
+
+  it('isMine does not unlock manage actions: no Move, Restore, Unmerge or "..." menu for a non-manage owner', async () => {
+    renderDetail(makeIdea({ isMine: true }));
+    await loaded();
+    expect(screen.getByRole('button', { name: 'Edit' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Move to/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Idea options/ })).toBeNull();
+    for (const label of ['Archive', 'Delete', 'Merge', 'Promote']) {
+      expect(screen.queryByRole('button', { name: new RegExp(label) })).toBeNull();
+      expect(screen.queryByRole('menuitem', { name: new RegExp(label) })).toBeNull();
+    }
+  });
+
+  it('an archived own idea shows Edit but no Restore for a non-manage owner', async () => {
+    renderDetail(makeIdea({ isMine: true, statusIsArchived: true, statusLabel: 'Archived' }));
+    await loaded();
+    expect(screen.getByRole('button', { name: 'Edit' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Restore/ })).toBeNull();
+  });
+});
+
 describe('AC-D-04 the "..." menu', () => {
   beforeEach(() => held.add(MANAGE));
 
@@ -430,11 +476,50 @@ describe('AC-D-05 attachments', () => {
     fireEvent.click(screen.getByRole('tab', { name: /Attachments/ }));
   }
 
-  it('every viewer gets the upload dropzone, manage or not (captain decision, UAC AC-A-08 / AC-D-05)', async () => {
+  it('a view-only viewer on someone else\'s idea (isMine false) sees no upload control', async () => {
+    renderDetail(makeIdea({ isMine: false }));
+    await loaded();
+    fireEvent.click(screen.getByRole('tab', { name: /Attachments/ }));
+    await screen.findByText('No attachments');
+    expect(screen.queryByLabelText('Upload attachments')).toBeNull();
+  });
+
+  it('a view-only viewer sees no upload control when isMine is absent', async () => {
     renderDetail(makeIdea());
     await loaded();
     fireEvent.click(screen.getByRole('tab', { name: /Attachments/ }));
+    await screen.findByText('No attachments');
+    expect(screen.queryByLabelText('Upload attachments')).toBeNull();
+  });
+
+  it('a view-only viewer on their own idea (isMine true) gets the upload control', async () => {
+    renderDetail(makeIdea({ isMine: true }));
+    await loaded();
+    fireEvent.click(screen.getByRole('tab', { name: /Attachments/ }));
     expect(await screen.findByLabelText('Upload attachments')).toBeInTheDocument();
+  });
+
+  it('a manage holder always gets the upload control', async () => {
+    held.add(MANAGE);
+    renderDetail(makeIdea({ isMine: false }));
+    await loaded();
+    fireEvent.click(screen.getByRole('tab', { name: /Attachments/ }));
+    expect(await screen.findByLabelText('Upload attachments')).toBeInTheDocument();
+  });
+
+  it('an isMine merged child (non-manage) has no Edit and no upload control', async () => {
+    renderDetail(
+      makeIdea({
+        isMine: true,
+        mergedIntoId: 'idea-9',
+        mergedInto: { id: 'idea-9', ideaNumber: 'IDEA-0009', title: 'Survivor' },
+      }),
+    );
+    await loaded();
+    expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull();
+    fireEvent.click(screen.getByRole('tab', { name: /Attachments/ }));
+    await screen.findByText('No attachments');
+    expect(screen.queryByLabelText('Upload attachments')).toBeNull();
   });
 
   it('a download saves through an anchor with the download attribute and never window.open of a blob', async () => {

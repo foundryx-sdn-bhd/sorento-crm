@@ -9094,6 +9094,9 @@ def _complete_canned_lane(
             tail_item = lane["item"]
             reply_extras = lane["reply_extras"]
             fragments: dict[str, Any] = {"item": tail_item}
+            # The lane's open required-field slot lives for the next message only.
+            if state is not None:
+                state.focus.required_ask = lane.get("required_ask")
         else:
             fragments = canned_lanes.fragments_for(branch_kind, item, ctx, prev_variables, canned)
             tail_item = fragments["item"]

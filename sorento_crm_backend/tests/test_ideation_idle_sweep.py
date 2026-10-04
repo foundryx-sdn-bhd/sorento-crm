@@ -707,3 +707,32 @@ def test_scheduler_registers_ideation_idle_sweep_every_15_minutes(monkeypatch):
     trigger = matching[0].kwargs.get("trigger")
     assert trigger is not None
     assert trigger.interval == timedelta(minutes=15)
+
+
+# --------------------------------------------------------------------------- #
+# A held similar-list is not a draft: the sweep never reminds or closes it     #
+# --------------------------------------------------------------------------- #
+def test_held_similar_list_is_ignored_by_the_sweep(db, monkeypatch):
+    send_spy = MagicMock()
+    monkeypatch.setattr("app.services.respond_messaging_service.send_text_or_template", send_spy)
+    close_calls = []
+    monkeypatch.setattr(
+        svc, "call_create_idea", lambda _b, _k, payload: close_calls.append(payload) or {"status": "cancelled"}
+    )
+    held = {
+        "status": "similar_offered",
+        "message_text": "price tag should show promo price in red",
+        "title": "Promo price in red",
+        "similar": [{"idea_id": str(uuid.uuid4()), "idea_number": "IDEA-0151", "title": "Held"}],
+        "updated_at": _iso(NOW - timedelta(hours=49)),
+        "is_test": False,
+    }
+    contact = _make_contact(db, ideation=dict(held))
+
+    for tick in range(3):
+        result = sweep_idle_ideation_drafts(db, now=NOW + timedelta(minutes=15 * tick))
+        assert result == {"reminded": 0, "closed": 0}
+
+    assert send_spy.call_count == 0
+    assert close_calls == []
+    assert _reload_ideation(db, contact.id) == held

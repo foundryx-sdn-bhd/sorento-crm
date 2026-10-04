@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies import require_permission, require_permission_with_api_key
 from app.services.error_handler import AppException
+from app.services.user_service import UserPermissionService
 from app.services.ideation_gateway_service import UNREACHABLE, call_ss, relay, ss_path
 
 VIEW = "ideation.board.view"
@@ -70,6 +71,8 @@ def _masked_comment(resp: httpx.Response) -> Response:
 @router.get("/ideas")
 def list_ideas(request: Request, user: dict = _read, db: Session = Depends(get_db)):
     params = {k: v for k, v in request.query_params.items() if k in ("filter", "search")}
+    if request.query_params.get("mine") == "true":
+        params["mine"] = "true"
     return _forward(db, user, "GET", ss_path("embed", "ideas"), params=params)
 
 
@@ -160,10 +163,20 @@ def edit_comment(
 
 
 @router.patch("/ideas/{idea_id}")
-def update_idea(idea_id: UUID, payload: dict = Body(...), user: dict = _manage, db: Session = Depends(get_db)):
+def update_idea(idea_id: UUID, payload: dict = Body(...), user: dict = _write, db: Session = Depends(get_db)):
     # The product is the workspace's, never edited from here, so `productId` is not forwarded.
     body = _pick(payload, ("problem", "proposedSolution", "impact", "department", "rawText"))
-    return _forward(db, user, "PATCH", ss_path("embed", "ideas", str(idea_id)), json=body)
+    path = ss_path("embed", "ideas", str(idea_id))
+    # A manager edits any idea. Anyone else (view only) edits only their own, and ss alone says
+    # whose it is (`isMine`); a non-2xx on the lookup is relayed by `call_ss` (404 stays 404).
+    if not UserPermissionService(db).check_user_has_permission(user["id"], MANAGE):
+        try:
+            idea = call_ss(db, user, "GET", path).json()
+        except ValueError:
+            raise AppException(502, UNREACHABLE, code="IDEATION_UNREACHABLE")
+        if not (isinstance(idea, dict) and idea.get("isMine") is True):
+            raise AppException(403, "You can only edit your own ideas.", code="FORBIDDEN")
+    return _forward(db, user, "PATCH", path, json=body)
 
 
 @router.post("/ideas/{idea_id}/status")

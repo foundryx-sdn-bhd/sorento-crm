@@ -36,8 +36,7 @@ emits:
 
 ``confirm`` is no longer read from the model (AC-1201): it is DERIVED here from
 ``review_action`` and the draft's status, so there is exactly one place (this
-function) that decides it - ``handle_turn`` just reads ``.confirm`` off the result,
-same as before this slice.
+function) that decides it - the old draft flow read ``.confirm`` off the result.
 
 Reuses the same provider plumbing as before (``get_provider`` + ``json_schema``
 forced output) and the prompt registry (``ideate_extractor`` key). On any failure
@@ -70,6 +69,7 @@ _SKIPPABLE_KEYS = {"proposed_solution", "impact", "department"}
 
 _REVIEW_ACTIONS = {"submit", "change", "cancel", "none"}
 _DUPLICATE_CHOICES = {"vote", "separate", "none"}
+_LANGUAGES = {"en", "ms", "zh"}
 
 # OpenAI strict-mode json_schema: every property required, additionalProperties
 # false, no open-ended object maps (``fields`` is an array of {key,value} pairs
@@ -154,6 +154,24 @@ IDEATE_EXTRACTION_JSON_SCHEMA: dict[str, Any] = {
                 "not address the choice at all (e.g. it just adds a new detail)."
             ),
         },
+        "has_idea": {
+            "type": "boolean",
+            "description": (
+                "false when the message only says the user wants to submit or share an "
+                "idea without stating one (for example 'I have an idea', 'want to submit "
+                "idea', 'boleh saya hantar idea'); true when it states an idea, a need or "
+                "a change."
+            ),
+        },
+        "language": {
+            "type": ["string", "null"],
+            "enum": ["en", "ms", "zh", None],
+            "description": (
+                "The language the user's message is written in: 'en' (English), 'ms' "
+                "(Malay) or 'zh' (Chinese). null when it is none of these or cannot be "
+                "told (a bare number or 'new')."
+            ),
+        },
     },
     "required": [
         "fields",
@@ -163,6 +181,8 @@ IDEATE_EXTRACTION_JSON_SCHEMA: dict[str, Any] = {
         "review_action",
         "change_text",
         "duplicate_choice",
+        "has_idea",
+        "language",
     ],
 }
 
@@ -177,6 +197,10 @@ class IdeateExtraction:
     change_text: str = ""
     duplicate_choice: str = "none"
     confirm: bool = False
+    #: The language of the message: en / ms / zh, None when unknown (IDEATION-CAPTURE).
+    language: str | None = None
+    #: False when the message only announces an idea without stating one; None when unknown.
+    has_idea: bool | None = None
 
 
 # #1279 round 2 (owner ruling, 26 Sep 2026): "only a yes creates the idea", in the
@@ -292,9 +316,9 @@ def extract_ideate_turn(
     Never raises - degrades to an empty extraction on any failure. ``confirm`` is
     derived here (AC-1201) by ``derive_confirm``: only a yes while ``status ==
     "review"`` (D-CONFIRM / AC-1208 / AC-1211, owner ruling 26 Sep 2026) - a
-    confirmation only means anything once the draft is being reviewed. ``handle_turn``
-    derives it again after its own normalisation, so an empty (failed) extraction
-    still lets a plain yes submit. ``cancel`` has no such gate:
+    confirmation only means anything once the draft is being reviewed. The old draft flow
+    derived it again after its own normalisation, so an empty (failed) extraction
+    still let a plain yes submit. ``cancel`` has no such gate:
     the caller reads ``review_action == "cancel"`` directly and honours it at any
     status (AC-1211).
     """
@@ -399,8 +423,18 @@ def extract_ideate_turn(
         status, raw, fields=fields, remove=remove, review_action=review_action
     )
 
+    language = data.get("language")
+    if language not in _LANGUAGES:
+        language = None
+
+    has_idea = data.get("has_idea")
+    if not isinstance(has_idea, bool):
+        has_idea = None
+
     return IdeateExtraction(
         fields=fields,
+        language=language,
+        has_idea=has_idea,
         remove=remove,
         skip=skip,
         title=title,
