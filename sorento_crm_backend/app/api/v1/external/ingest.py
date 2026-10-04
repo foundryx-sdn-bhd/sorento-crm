@@ -258,12 +258,10 @@ SUPPORTED_ENTITIES = (
 # "2.3" (autocount-brands-ingest): `brands` joins ENTITY_SPECS as a
 # first-class master, with its own INGEST/READ/DELETE permission slugs -
 # additive, an ESB on 2.2 simply never sees `brands` in `entities`.
-# "2.4" (ingest-products-code-wins, SR0): a product whose stored reference is
-# under the SAME source system as the incoming push now resolves by item
-# code instead of failing as a conflict (`ref_mismatch`, stored reference
-# kept). `/{entity}/deletions` gains an optional `codes` map for the same
-# reason, only ever read for `products`. Both additive: an ESB still on 2.3
-# sends no `codes` and simply keeps hitting the old conflict.
+# "2.4" (ingest-products-code-wins, SR0): `/{entity}/deletions` gains an
+# optional `codes` map, only read for `products`. Since PRODUCT-REF-COLLISION
+# (3 Oct) products are matched by code alone and `codes` is the only way a
+# product deletion resolves.
 # "2.5" (ingest-stock-balances-2-5, Foundryx SR5): `stock_balances` joins as a
 # new push entity - upsert `stock.quantity_on_hand` for a (item_code,
 # location_code) pair, and `/{entity}/deletions` zeroes it rather than

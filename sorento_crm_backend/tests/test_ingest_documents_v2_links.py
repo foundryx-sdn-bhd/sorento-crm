@@ -271,6 +271,7 @@ class TestShippingOrderFromSoNumbersClaims:
                 {
                     "source_ref": _ref("SPOL"),
                     "product_ref": env.product_ref,
+                    "product_code": _product_code(env, env.product_ref),
                     "qty_ordered": 5,
                     "from_so_numbers": [so_a],
                 }

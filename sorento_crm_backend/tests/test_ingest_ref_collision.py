@@ -86,7 +86,8 @@ class TestProductRefMismatchOnASalesOrderLine:
 
         entry = res.json()["records"][0]
         assert entry["outcome"] == "created", res.text
-        assert WARN_REF_MISMATCH in entry.get("warnings", []), entry
+        # Products match by code only (owner rulings, 3 Oct): no ref_mismatch
+        # for products, and the unknown ref is never linked.
 
         header = env.header("sales_orders", record["source_ref"])
         line_row = env.so_lines(header["id"])[0]

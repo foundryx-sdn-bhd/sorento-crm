@@ -338,7 +338,9 @@ class TestFailedRecordNeverPoisonsTheCache:
     GUARD: already green today (no cache exists yet to poison) - kept as a
     regression fence for the coder's per-batch cache."""
 
-    def test_t6_category_created_by_a_failed_record_is_resolved_fresh_by_the_next(self, db):
+    def test_t6_category_created_by_a_failed_record_is_resolved_fresh_by_the_next(
+        self, db, monkeypatch
+    ):
         existing_cat = ProductCategory(
             category_code=unique_code(MARKER), category_name="existing", company_id=DEFAULT_COMPANY_ID
         )
@@ -348,35 +350,28 @@ class TestFailedRecordNeverPoisonsTheCache:
         db.add_all([existing_cat, uom])
         db.flush()
 
-        claimed_code = unique_code(MARKER)
-        claimed_product = Product(
-            product_code=claimed_code,
-            product_name=claimed_code,
-            category_id=existing_cat.id,
-            base_uom_id=uom.id,
-            list_price=Decimal("1.00"),
-            company_id=DEFAULT_COMPANY_ID,
-        )
-        db.add(claimed_product)
-        db.flush()
-        IntegrationReferenceService(db, company_id=DEFAULT_COMPANY_ID).link(
-            entity_type="products",
-            entity_id=str(claimed_product.id),
-            source_ref=f"{MARKER}:othersys:{uuid.uuid4().hex[:6]}",
-            source_system="othersys",
-        )
         db.commit()
 
         shared_new_cat_code = unique_code(f"{MARKER}NEWCAT")
-        # Record A: adopts `claimed_product` by code, but it is claimed under a
-        # DIFFERENT source system -> ReferenceConflict, raised AFTER
-        # `_product_columns` has already created + flushed `shared_new_cat_code`
-        # inside this record's own savepoint.
-        record_a = _row(code=claimed_code, category_code=shared_new_cat_code, uom_code=uom.uom_code)
+        # Record A: a new product whose category is created + flushed inside its own
+        # savepoint, then a synthetic post-write failure (the old cross-source
+        # ReferenceConflict no longer exists for products - owner rulings, 3 Oct).
+        record_a = _row(category_code=shared_new_cat_code, uom_code=uom.uom_code)
         # Record B: a genuinely new product, sharing the SAME (now rolled-back)
         # category code - must resolve/create it again, never be handed A's
         # dead id.
         record_b = _row(category_code=shared_new_cat_code, uom_code=uom.uom_code)
+
+        real_hooks = MasterIngestService._post_write_product_hooks
+        calls = {"n": 0}
+
+        def _flaky_hooks(self, entity_type, product_id):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise Exception("synthetic T6 failure")
+            return real_hooks(self, entity_type, product_id)
+
+        monkeypatch.setattr(MasterIngestService, "_post_write_product_hooks", _flaky_hooks)
 
         result = MasterIngestService(db, company_id=DEFAULT_COMPANY_ID).ingest(
             "products", [record_a, record_b]
@@ -384,7 +379,6 @@ class TestFailedRecordNeverPoisonsTheCache:
 
         entry_a, entry_b = result.records
         assert entry_a.outcome is IngestOutcome.FAILED, entry_a
-        assert "source_ref" in entry_a.errors, entry_a.errors
         assert entry_b.outcome is IngestOutcome.CREATED, entry_b
 
         cat_row = db.execute(
@@ -408,7 +402,7 @@ class TestAdoptionLinksEvenWithNoColumnChanges:
     branch) - kept as a regression fence against a C1 change that skips
     linking along with the write when the diff is empty."""
 
-    def test_t7_adoption_links_the_reference_on_an_unchanged_row(self, db):
+    def test_t7_adoption_by_code_on_an_unchanged_row_writes_no_reference(self, db):
         cat = ProductCategory(
             category_code=unique_code(MARKER), category_name="cat", company_id=DEFAULT_COMPANY_ID
         )
@@ -447,6 +441,7 @@ class TestAdoptionLinksEvenWithNoColumnChanges:
         assert entry.outcome is IngestOutcome.UPDATED, entry
         assert entry.entity_id == str(product.id), entry
 
+        # Ingest never writes a product reference now (owner ruling 2, 3 Oct).
         ref_row = db.execute(
             text(
                 "SELECT entity_id FROM integration_references "
@@ -454,8 +449,7 @@ class TestAdoptionLinksEvenWithNoColumnChanges:
             ),
             {"r": new_ref},
         ).mappings().first()
-        assert ref_row is not None, "adoption must link the reference even on an empty diff"
-        assert str(ref_row["entity_id"]) == str(product.id)
+        assert ref_row is None, "adoption by code must not write a product reference"
 
         after = db.execute(
             text("SELECT description, list_price FROM products WHERE id = :id"), {"id": product.id}
@@ -642,20 +636,19 @@ class TestFailedInsertNeverPoisonsTheCodePreloadMap:
         record_a = _row(code=shared_new_code)
         record_b = _row(code=shared_new_code)
 
-        real_link = _MIS._link
+        real_hooks = _MIS._post_write_product_hooks
         calls = {"n": 0}
 
-        def _flaky_link(self, entity_type, entity_id, payload):
+        def _flaky_hooks(self, entity_type, product_id):
             calls["n"] += 1
             if calls["n"] == 1:
-                # record_a only - a synthetic post-insert failure standing in
-                # for whatever real one might land after `_insert` some day;
-                # `real_link` never runs for it, so nothing IT would have
-                # added to the preload leaks either.
-                raise Exception(f"synthetic T11 failure for {payload.source_ref!r}")
-            return real_link(self, entity_type, entity_id, payload)
+                # record_a only - a synthetic post-insert failure (the product
+                # `_link` step is gone, owner ruling 2, 3 Oct), injected where
+                # the rollback revert of the preload `code_to_id` map matters.
+                raise Exception("synthetic T11 failure")
+            return real_hooks(self, entity_type, product_id)
 
-        monkeypatch.setattr(_MIS, "_link", _flaky_link)
+        monkeypatch.setattr(_MIS, "_post_write_product_hooks", _flaky_hooks)
 
         result = MasterIngestService(db, company_id=DEFAULT_COMPANY_ID).ingest(
             "products", [record_a, record_b]
@@ -746,7 +739,6 @@ class TestSecondSameBatchAdopterSeesTheFirstLink:
         entry_a, entry_b = result.records
         assert entry_a.outcome is IngestOutcome.UPDATED, entry_a
         assert entry_b.outcome is IngestOutcome.UPDATED, entry_b
-        assert entry_b.warnings == ["ref_mismatch"], entry_b
         assert entry_a.entity_id == str(product.id)
         assert entry_b.entity_id == str(product.id)
 
@@ -763,7 +755,7 @@ class TestSecondSameBatchAdopterSeesTheFirstLink:
             ),
             {"pid": str(product.id)},
         ).scalar()
-        assert ref_rows == 1, ref_rows
+        assert ref_rows == 0, ref_rows  # ingest writes no product references
 
 
 # ============================================================ T13 (fix round)
@@ -803,7 +795,7 @@ class TestCreatedThenDuplicateCodeSameBatch:
 
 
 # ============================================================ T14 (fix round)
-class TestRenamedCodeResolvedViaRefKeepsOneSupplierLink:
+class TestRenamedCodeIsANewProductNotARename:
     """B2: a product resolved by its SOURCE_REF (renamed code - the incoming
     code no longer matches the stored one, so the batch's own code preload
     never covers this id) already has an EXISTING `product_suppliers` row -
@@ -811,7 +803,7 @@ class TestRenamedCodeResolvedViaRefKeepsOneSupplierLink:
     real per-record query rather than reading Python's bare `None` default
     as "confirmed no link" and inserting a duplicate."""
 
-    def test_t14_renamed_code_resolved_via_ref_keeps_one_supplier_link(self, db):
+    def test_t14_renamed_code_creates_a_new_product_and_leaves_the_old_one(self, db):
         cat = ProductCategory(
             category_code=unique_code(MARKER), category_name="cat", company_id=DEFAULT_COMPANY_ID
         )
@@ -860,13 +852,20 @@ class TestRenamedCodeResolvedViaRefKeepsOneSupplierLink:
             "name": new_code,
             "description": description,
             "list_price": "10.00",
+            "category_code": cat.category_code,
         }
 
         result = MasterIngestService(db, company_id=DEFAULT_COMPANY_ID).ingest("products", [row])
 
         entry = result.records[0]
-        assert entry.outcome is IngestOutcome.UPDATED, entry
-        assert entry.entity_id == str(product.id)
+        # Code is identity (owner rulings, 3 Oct): a renamed item is a NEW
+        # product; the old one is untouched and keeps its single supplier link.
+        assert entry.outcome is IngestOutcome.CREATED, entry
+        assert entry.entity_id != str(product.id)
+        old = db.execute(
+            text("SELECT product_code FROM products WHERE id = :pid"), {"pid": str(product.id)}
+        ).scalar()
+        assert old == old_code
 
         supplier_rows = db.execute(
             text("SELECT standard_lead_time_days FROM product_suppliers WHERE product_id = :pid"),

@@ -456,7 +456,7 @@ def test_ac_cl20_presenter_row_labels_are_catalogued():
         "pickup_time": "09:30",
         "transporter": "T",
         "driver_name": "D",
-        "lorry_plate": "W 1",
+        "lorry_plate": "PLATE-1",
         "warehouse": "BRW",
         "lines": [{"product_code": "A", "quantity": 1}],
         "matched_products": [{"product_code": "A", "quantity": 1, "warehouse_code": "BRW"}],

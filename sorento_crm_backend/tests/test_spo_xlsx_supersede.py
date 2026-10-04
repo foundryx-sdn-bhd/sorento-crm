@@ -855,6 +855,7 @@ class TestAcX11XlsxThenGrnThenPushMatchesPushThenGrn:
                             {
                                 "source_ref": f"{MARKER}:SPOL:{uuid.uuid4().hex[:8]}",
                                 "product_ref": ref_a,
+                                "product_code": product_a.product_code,
                                 "warehouse_code": wh_a.warehouse_code,
                                 "qty_ordered": "29",
                                 "qty_received": "0",
@@ -862,6 +863,7 @@ class TestAcX11XlsxThenGrnThenPushMatchesPushThenGrn:
                             {
                                 "source_ref": f"{MARKER}:SPOL:{uuid.uuid4().hex[:8]}",
                                 "product_ref": ref_a,
+                                "product_code": product_a.product_code,
                                 "warehouse_code": wh_a.warehouse_code,
                                 "qty_ordered": "18",
                                 "qty_received": "0",
@@ -891,6 +893,7 @@ class TestAcX11XlsxThenGrnThenPushMatchesPushThenGrn:
                             {
                                 "source_ref": f"{MARKER}:SPOLB1:{uuid.uuid4().hex[:8]}",
                                 "product_ref": ref_b,
+                                "product_code": product_b.product_code,
                                 "warehouse_code": wh_b.warehouse_code,
                                 "qty_ordered": "29",
                                 "qty_received": "0",
@@ -898,6 +901,7 @@ class TestAcX11XlsxThenGrnThenPushMatchesPushThenGrn:
                             {
                                 "source_ref": f"{MARKER}:SPOLB2:{uuid.uuid4().hex[:8]}",
                                 "product_ref": ref_b,
+                                "product_code": product_b.product_code,
                                 "warehouse_code": wh_b.warehouse_code,
                                 "qty_ordered": "18",
                                 "qty_received": "0",

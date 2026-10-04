@@ -25,6 +25,7 @@ from tests.test_ingest_documents import (
     INGEST_PO,
     INGEST_SO,
     MARKER as DOC_MARKER,
+    _code_of_ref,
     _po_line,
     _po_record,
     _ref,
@@ -126,7 +127,7 @@ class TestB1DroppedLineLeavesItsPersistedCounterpartAlone:
         env.refs.link(entity_type="sales_orders", entity_id=header.id, source_ref=so_ref)
 
         good_line = {
-            "source_ref": _ref("SOL"), "product_ref": env.product_ref, "qty_ordered": 10,
+            "source_ref": _ref("SOL"), "product_ref": env.product_ref, "product_code": _code_of_ref(env, env.product_ref), "qty_ordered": 10,
         }
         bad_line = {
             "source_ref": _ref("SOL"), "product_code": f"{DOC_MARKER}-NOSUCHITEM",
@@ -216,7 +217,7 @@ class TestB4OrderInquiryConflictRecordedOnBothPaths:
         # `_adopt_lines` still claims it (warehouse is not part of pass 1's
         # match key when it differs; see its own `_row_key`/`_line_key`).
         incoming_line = {
-            "source_ref": _ref("SOL"), "product_ref": env.product_ref,
+            "source_ref": _ref("SOL"), "product_ref": env.product_ref, "product_code": _code_of_ref(env, env.product_ref),
             "warehouse_ref": warehouse_b_ref, "qty_ordered": 10,
         }
         record = _so_record(env, ref=so_ref, number=so_number, lines=[incoming_line])
@@ -389,7 +390,7 @@ class TestB6ContainerLinking:
                 "source_ref": _ref("SPO"), "spo_number": spo_number, "status": "open",
                 "container_number": container,
                 "lines": [{
-                    "source_ref": _ref("SPOL"), "product_ref": env.product_ref,
+                    "source_ref": _ref("SPOL"), "product_ref": env.product_ref, "product_code": _code_of_ref(env, env.product_ref),
                     "warehouse_code": env.db.execute(
                         text("SELECT warehouse_code FROM warehouses WHERE id = :id"),
                         {"id": env.refs.resolve(
@@ -636,7 +637,7 @@ class TestS3DerivedStatusWiring:
             [{
                 "source_ref": _ref("SPO"), "spo_number": spo_number,
                 "lines": [{
-                    "source_ref": _ref("SPOL"), "product_ref": env.product_ref,
+                    "source_ref": _ref("SPOL"), "product_ref": env.product_ref, "product_code": _code_of_ref(env, env.product_ref),
                     "warehouse_code": warehouse_code, "qty_ordered": "10",
                     "qty_received": "10",
                 }],
@@ -763,33 +764,33 @@ class TestS8UploadVsEsbParityScaledMix:
             assert result.records[0].outcome is IngestOutcome.CREATED, result.records[0].errors
 
         _esb_push(n1, [{
-            "source_ref": f"DK-{n1}-L1", "product_ref": product_ref_b, "qty_ordered": "10",
+            "source_ref": f"DK-{n1}-L1", "product_ref": product_ref_b, "product_code": product_code, "qty_ordered": "10",
         }])
         _esb_push(n2, [{
-            "source_ref": f"DK-{n2}-L1", "product_ref": product_ref_b, "qty_ordered": "10",
+            "source_ref": f"DK-{n2}-L1", "product_ref": product_ref_b, "product_code": product_code, "qty_ordered": "10",
             "qty_delivered": "4",
         }], status="partial")
         _esb_push(n3, [{
-            "source_ref": f"DK-{n3}-L1", "product_ref": product_ref_b, "qty_ordered": "10",
+            "source_ref": f"DK-{n3}-L1", "product_ref": product_ref_b, "product_code": product_code, "qty_ordered": "10",
             "qty_delivered": "10",
         }])
         _esb_push(n4, [{
-            "source_ref": f"DK-{n4}-L1", "product_ref": product_ref_b, "qty_ordered": "10",
+            "source_ref": f"DK-{n4}-L1", "product_ref": product_ref_b, "product_code": product_code, "qty_ordered": "10",
         }], status="cancelled")
         _esb_push(n5, [
-            {"source_ref": f"DK-{n5}-L1", "product_ref": product_ref_b, "qty_ordered": "10"},
+            {"source_ref": f"DK-{n5}-L1", "product_ref": product_ref_b, "product_code": product_code, "qty_ordered": "10"},
             {"source_ref": f"DK-{n5}-L2", "product_code": f"{DOC_MARKER}-NOSUCH",
              "qty_ordered": "3"},
         ])
         _esb_push(n6, [{
-            "source_ref": f"DK-{n6}-L1", "product_ref": product_ref_b, "qty_ordered": "10",
+            "source_ref": f"DK-{n6}-L1", "product_ref": product_ref_b, "product_code": product_code, "qty_ordered": "10",
             "warehouse_code": f"{DOC_MARKER}-NOSUCHLOC",
         }])
         _esb_push(n7, [{
-            "source_ref": f"DK-{n7}-L1", "product_ref": product_ref_b, "qty_ordered": "10",
+            "source_ref": f"DK-{n7}-L1", "product_ref": product_ref_b, "product_code": product_code, "qty_ordered": "10",
         }], customer_code=new_debtor, customer_name="New Co")
         _esb_push(n8, [{
-            "source_ref": f"DK-{n8}-L1", "product_ref": product_ref_b, "qty_ordered": "10",
+            "source_ref": f"DK-{n8}-L1", "product_ref": product_ref_b, "product_code": product_code, "qty_ordered": "10",
         }], agent_code=new_agent)
 
         exclude = {

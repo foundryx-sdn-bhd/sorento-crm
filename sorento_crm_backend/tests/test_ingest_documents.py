@@ -423,6 +423,36 @@ def _so_record(env, *, ref=None, number=None, lines=None, **extra) -> dict:
     return record
 
 
+def _code_of_ref(env, product_ref: str) -> str:
+    from sqlalchemy import text as _text
+
+    pid = env.refs.resolve(entity_type="products", source_ref=product_ref)
+    return env.db.execute(
+        _text("SELECT product_code FROM products WHERE id = :i"), {"i": str(pid)}
+    ).scalar()
+
+
+def _with_product_code(env, line: dict) -> dict:
+    """Real AutoCount lines always send ItemCode next to the product ref, and
+    products match by code only (owner rulings, 3 Oct): add the linked
+    product's code unless the caller chose one (or sent none on purpose with
+    `product_code=None`)."""
+    if "product_code" in line:
+        if line["product_code"] is None:
+            del line["product_code"]
+        return line
+    ref = line.get("product_ref")
+    if ref:
+        from sqlalchemy import text as _text
+
+        pid = env.refs.resolve(entity_type="products", source_ref=ref)
+        if pid is not None:
+            line["product_code"] = env.db.execute(
+                _text("SELECT product_code FROM products WHERE id = :i"), {"i": str(pid)}
+            ).scalar()
+    return line
+
+
 def _so_line(env, *, ref=None, product_ref=None, **extra) -> dict:
     line = {
         "source_ref": ref or _ref("SOL"),
@@ -430,7 +460,7 @@ def _so_line(env, *, ref=None, product_ref=None, **extra) -> dict:
         "qty_ordered": 10,
     }
     line.update(extra)
-    return line
+    return _with_product_code(env, line)
 
 
 def _po_record(env, *, ref=None, number=None, lines=None, **extra) -> dict:
@@ -451,7 +481,7 @@ def _po_line(env, *, ref=None, product_ref=None, **extra) -> dict:
         "qty_ordered": 4,
     }
     line.update(extra)
-    return line
+    return _with_product_code(env, line)
 
 
 # ============================================================== create (AC-A3-1)
