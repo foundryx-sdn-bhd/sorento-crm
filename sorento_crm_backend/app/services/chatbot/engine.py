@@ -2000,11 +2000,27 @@ def _drop_foreign_order_suggestions(
     resolved = (payload or {}).get("resolved") if isinstance(payload, dict) else None
     if isinstance(resolved, dict):
         resolutions = [r for r in resolved.get("resolutions") or [] if isinstance(r, dict)]
+    # The AND-mode shape carries its rows at the top level too (`_screen_resolver_for_scope`
+    # cleans the same three): `alternatives`, `intersection` and `by_entity_type`.
+    top_level: list[tuple[str, list[Any]]] = []
+    if isinstance(resolved, dict):
+        for key in ("alternatives", "intersection"):
+            if isinstance(resolved.get(key), list):
+                top_level.append((key, resolved[key]))
+        if isinstance(resolved.get("by_entity_type"), dict):
+            top_level.extend(
+                ("by_entity_type", rows) for rows in resolved["by_entity_type"].values() if isinstance(rows, list)
+            )
     asked = {
         str(row["uuid"])
         for res in resolutions
         for key in ("matches", "alternatives")
         for row in res.get(key) or []
+        if _suggested(row, alternative=key == "alternatives")
+    } | {
+        str(row["uuid"])
+        for key, rows in top_level
+        for row in rows
         if _suggested(row, alternative=key == "alternatives")
     } | {
         str(row["uuid"])
@@ -2039,8 +2055,12 @@ def _drop_foreign_order_suggestions(
         for key in ("matches", "alternatives"):
             if isinstance(res.get(key), list):
                 res[key] = _clean(res[key])
-    if isinstance(resolved, dict) and isinstance(resolved.get("alternatives"), list):
-        resolved["alternatives"] = _clean(resolved["alternatives"])
+    if isinstance(resolved, dict):
+        for key in ("alternatives", "intersection"):
+            if isinstance(resolved.get(key), list):
+                resolved[key] = _clean(resolved[key])
+        if isinstance(resolved.get("by_entity_type"), dict):
+            resolved["by_entity_type"] = {k: _clean(v) for k, v in resolved["by_entity_type"].items()}
     gate = (payload or {}).get("gate") if isinstance(payload, dict) else None
     if isinstance(gate, dict):
         for key in ("compatible_entities", "customer_probe_entities"):
