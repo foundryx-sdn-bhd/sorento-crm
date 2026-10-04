@@ -388,27 +388,81 @@ def _reset_global_state():
 # test runs on Postgres via tests/_pg_fixture.py.
 
 # ---------------------------------------------------------------------------
-# No live LLM calls guard (review round 1, purchasing consolidation batch lane
-# C) - `.env` carries a real `OPENAI_API_KEY` for the app itself, and a test
-# that forgets its own `get_provider` stub reaches the real network the
-# moment its scenario hits a translation/AI-fill miss, exactly the incident
-# `test_translation_service.py`'s own module docstring names.
+# No live external calls, suite-wide (NO-LIVE-LLM-TESTS). The backend `.env` a
+# developer runs pytest against carries real OPENAI / RESPOND keys, and a test
+# that forgets its own stub would spend them. Two layers, both autouse:
 #
-# NOT autouse: an autouse fixture here breaks every pre-existing test that
-# calls `get_provider`/`resolve_provider` with its own stub at another seam
-# (`test_ai_extract_service.py`, `test_llm_provider*.py`,
-# `test_media_extract_service.py`, `test_product_spec_understanding.py`), so
-# it is opt-in per module instead: `pytestmark = pytest.mark.usefixtures(
-# "no_live_llm")` (or an autouse fixture requesting it) in the lane C modules
-# that actually need it.
+# * `tests/_live_call_guard.py` wraps the httpx / urllib / requests transports
+#   so any request to an LLM or messaging provider host raises
+#   `LiveExternalCallBlocked`, and a blocked attempt fails the test at teardown
+#   even when app code swallowed the exception;
+# * the provider keys are blanked in `settings` and `os.environ` per test, so a
+#   call that somehow bypasses the transport fails on "no key".
+#
+# A test that genuinely means to reach a provider is marked
+# `@pytest.mark.live_external`; it is skipped unless CHATBOT_LIVE_LLM=1, and
+# with it set both layers are lifted for that test only.
+#
+# The older `no_live_llm` fixture below stays: it is the opt-in, seam-level
+# guard on `get_provider()` (lane C modules request it), and it catches a
+# missing stub before any transport is built.
 # ---------------------------------------------------------------------------
+
+_PROVIDER_KEY_SETTINGS = ("openai_api_key", "anthropic_api_key", "gemini_api_key", "respond_api_key")
+
+
+def _live_opt_in() -> bool:
+    from tests._live_call_guard import LIVE_OPT_IN_ENV
+
+    return os.environ.get(LIVE_OPT_IN_ENV) == "1"
+
+
+def pytest_collection_modifyitems(config, items):
+    if _live_opt_in():
+        return
+    skip = pytest.mark.skip(reason="live external call test; set CHATBOT_LIVE_LLM=1 to run it")
+    for item in items:
+        if item.get_closest_marker("live_external"):
+            item.add_marker(skip)
+
+
+@pytest.fixture(autouse=True)
+def _no_live_external_calls(request, monkeypatch):
+    from tests import _live_call_guard as guard
+
+    if request.node.get_closest_marker("live_external") and _live_opt_in():
+        guard.ENABLED = False
+        try:
+            yield
+        finally:
+            guard.ENABLED = True
+        return
+
+    from app.config import settings
+
+    for name in _PROVIDER_KEY_SETTINGS:
+        monkeypatch.setattr(settings, name, None, raising=False)
+        monkeypatch.delenv(name.upper(), raising=False)
+
+    guard.ENABLED = True
+    guard.BLOCKED_CALLS.clear()
+    yield
+    guard.fail_if_blocked()
 
 
 def pytest_configure(config):
+    from tests._live_call_guard import install
+
+    install()
     config.addinivalue_line(
         "markers",
-        "allow_live_llm: opt this test out of the no_live_llm get_provider() guard "
-        "(a test that genuinely means to exercise a real provider call).",
+        "live_external: this test means to reach a real LLM / messaging provider; "
+        "skipped unless CHATBOT_LIVE_LLM=1, which lifts the live call guard for it.",
+    )
+    config.addinivalue_line(
+        "markers",
+        "allow_live_llm: opt this test out of the no_live_llm get_provider() seam guard "
+        "only; the suite-wide transport guard still blocks the call (see live_external).",
     )
     config.addinivalue_line(
         "markers",
@@ -436,8 +490,10 @@ def no_live_llm(monkeypatch, request):
     already does, e.g. `test_translation_service.py`'s `_stub_provider`) simply
     overwrites this raising stub with its own fake - same `monkeypatch`
     instance, so pytest still restores the true original at teardown either
-    way. Opt out with `@pytest.mark.allow_live_llm` for a test that means to
-    reach a real provider.
+    way. `@pytest.mark.allow_live_llm` lifts only this seam guard; the
+    suite-wide transport guard (`_no_live_external_calls`) still blocks the
+    request, so a test that really means to reach a provider is marked
+    `@pytest.mark.live_external` instead.
     """
     if request.node.get_closest_marker("allow_live_llm"):
         yield
