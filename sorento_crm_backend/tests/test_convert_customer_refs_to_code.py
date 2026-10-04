@@ -341,3 +341,26 @@ class TestApplyRevert:
 
         mod.main(["--revert", path])
         assert _stored(db, rid) == "AED_SORENTO:140"
+
+
+class TestChainedRefs:
+    def test_s15_new_ref_freed_only_by_another_change_waits_for_a_second_run(self, db, tmp_path):
+        """Row A (code C1) holds a stale `P:<C2>`; row B (code C2) holds `P:99`. B's new ref is
+        A's current one, so this run converts A only; the next run converts B. No UPDATE in a
+        run ever meets the unique index."""
+        mod = _script()
+        c1, c2 = _code("S15A"), _code("S15B")
+        a = _customer(db, c1, "NAME-A", OLD)
+        b = _customer(db, c2, "NAME-B", NEW)
+        r_a = _ref(db, a, f"AED_SORENTO:{c2}")
+        r_b = _ref(db, b, "AED_SORENTO:99")
+
+        first = mod.plan_conversion(db)
+        assert _change_for(first, r_a) is not None
+        assert _skip_for(first, r_b).reason == "collision"
+        mod.apply_conversion(db, first, str(tmp_path / "1.csv"))
+
+        second = mod.plan_conversion(db)
+        assert [c.ref_id for c in second.changes] == [r_b]
+        mod.apply_conversion(db, second, str(tmp_path / "2.csv"))
+        assert (_stored(db, r_a), _stored(db, r_b)) == (f"AED_SORENTO:{c1}", f"AED_SORENTO:{c2}")
