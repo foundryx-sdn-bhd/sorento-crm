@@ -1157,7 +1157,14 @@ def entity_ids_transformer(
     # reads `top_n` directly (see `TOP_N_DIRECT_TOOLS`).
     group_by = jsc.get(semantic_input, "group_by")
     if tool_name in GROUP_BY_TOOLS and jsc.truthy(group_by):
-        out["group_by"] = jsc.js_string(group_by)
+        # Only an axis the tool's own route accepts: the parser's `group_by` also carries the
+        # ranking-only axes (sales_agent, brand, ...), which the route answers with a 422.
+        from app.services.order_service import ORDER_GROUP_BY_AXES
+        from app.services.purchase_order_service import PO_GROUP_BY_AXES
+
+        allowed = ORDER_GROUP_BY_AXES if tool_name == "crm_order_management_orders_list" else PO_GROUP_BY_AXES
+        if jsc.js_string(group_by) in allowed:
+            out["group_by"] = jsc.js_string(group_by)
     top_n = jsc.get(semantic_input, "top_n")
     if jsc.truthy(top_n):
         if tool_name in TOP_N_DIRECT_TOOLS:
