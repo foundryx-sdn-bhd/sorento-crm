@@ -186,6 +186,7 @@ was asked before. basis "delivered" or
 -> basis "outstanding". sales_channel as for sales_report.
 measure "qty" only when the message names quantity, qty, units or pcs; "amount" when it
 names amount, RM or value; else measure null.
+basis, measure, rank_by and sales_channel come from the CURRENT message only; a key the message does not name is null, never carried from an earlier message.
 Follow-up to a SALES RANKING: "Previous response" starts "Top N sales agents|customers|brands|
 categories|locations|channels|months by delivered sales" (or "by ordered sales", "by outstanding orders", or "Bottom N").
 That is NOT a top selling list ("Top N selling items"): a number never picks a row
