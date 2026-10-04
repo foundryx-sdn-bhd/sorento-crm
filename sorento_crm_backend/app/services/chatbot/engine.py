@@ -59,7 +59,7 @@ from app.services.chatbot.head.access import (
     contact_reveal_grants,
     default_space_id,
 )
-from app.services.chatbot.prompt_gates import grant_for_order_status
+from app.services.chatbot.prompt_gates import grant_for_domain, grant_for_order_status
 from app.services.chatbot.head.build_ctx import build_ctx
 from app.services.chatbot.lanes import business, canned as canned_lanes, casual
 from app.services.chatbot.lanes import fallback as fallback_mod
@@ -4022,13 +4022,16 @@ def _run_stages_body(  # noqa: PLR0915
         # PARSER-PER-AUDIENCE: the prompt is rendered for what this contact may be
         # answered on. The grants are read the way `check_access` reads the
         # `attributes` every refusal uses, with no access decision of their own; an
-        # unreadable lookup is the minimal audience, never the full one.
+        # unreadable lookup is the minimal audience, never the full one. In its own
+        # savepoint (review R2): an SQL error there rolls back to it, so the prompt read
+        # below still runs on a live transaction.
         try:
-            prompt_grants = list(
-                contact_reveal_grants(
-                    db, contact_id=contact_respond_id, space_id=default_space_id(db)
+            with db.begin_nested():
+                prompt_grants = list(
+                    contact_reveal_grants(
+                        db, contact_id=contact_respond_id, space_id=default_space_id(db)
+                    )
                 )
-            )
         except Exception:  # noqa: BLE001 - fail closed to the minimal audience
             logger.warning("chatbot: audience grants lookup failed", exc_info=True)
             prompt_grants = []
@@ -4677,6 +4680,32 @@ def _run_stages_body(  # noqa: PLR0915
                 },
             )
 
+        # PARSER-PER-AUDIENCE (review S1): a whole gated domain (purchase cost, purchase
+        # orders, supplier receipts) is refused at the SAME seam, before the resolver, the
+        # picker or a not-found miss could name a product the contact may not ask about.
+        # Only when the plan asks that domain alone: a fan-out keeps its other asks, and
+        # `lanes.business.run_fetch`'s whole-domain gate refuses the gated one there.
+        gated_domain = jsc.js_string(verdict.get("domain_hint") or "").strip()
+        gated_need = grant_for_domain(gated_domain)
+        plan_domains = {*(plan.domains or ()), *(spec.domain for spec in plan.fetch)}
+        domain_refusal_text: str | None = None
+        if (
+            not sales_report_grant_refused
+            and gated_need
+            and gated_need != _SALES_REPORT_GRANT
+            and gated_need not in set(access.get("attributes") or [])
+            and plan_domains <= {gated_domain}
+        ):
+            domain_refusal_text = turn_runtime.domain_denial_text(db, gated_domain)
+            if domain_refusal_text:
+                turn_trace.add(
+                    "domain_grant",
+                    {"domain": gated_domain, "skipped": "not_granted", "needs": gated_need},
+                )
+        # Every seam below that skips the resolver, the bridge, the fetch and the ask
+        # for a refused sales report skips them for a refused domain too.
+        grant_refused = sales_report_grant_refused or bool(domain_refusal_text)
+
         top_selling_updates: dict[str, Any] = {}
         customer_scope_refused = False
         account_question: str | None = None
@@ -4703,7 +4732,7 @@ def _run_stages_body(  # noqa: PLR0915
         # the set's predicate placed nothing ("wash basin" is no product code), and that
         # resolver's own not-found exit turned the page into "Couldn't find: wash basin".
         set_page_turn = bool(plan.fetch) and isinstance(plan.fetch[0].filters.get("set_page"), dict)
-        if not sales_report_grant_refused and not set_page_turn and (plan.fetch or plan.ask is not None):
+        if not grant_refused and not set_page_turn and (plan.fetch or plan.ask is not None):
             # The REAL branch this plan belongs to, the SAME function "D ROUTE" below
             # calls on the (possibly reconciled) plan - not a literal "business_query"
             # for every turn, so a promotion ask reaches `resolve_gate.run` at
@@ -5303,7 +5332,7 @@ def _run_stages_body(  # noqa: PLR0915
             answer is None
             and branch_kind in ("business_query", "check_promotion")
             and completes_here
-            and not sales_report_grant_refused
+            and not grant_refused
             and not customer_scope_refused
             # AC-1708 (captain's ruling, 20 Sep 2026): an `offer` / `access_ask` exit is
             # the SAME question whether the message named one domain or two - "which
@@ -5386,7 +5415,7 @@ def _run_stages_body(  # noqa: PLR0915
             answer is None
             and branch_kind in ("business_query", "check_promotion")
             and completes_here
-            and not sales_report_grant_refused
+            and not grant_refused
             and not customer_scope_refused
             and not plan.fetch
             and len(plan.domains) == 1
@@ -5421,7 +5450,7 @@ def _run_stages_body(  # noqa: PLR0915
             answer is None
             and branch_kind in ("business_query", "check_promotion")
             and completes_here
-            and not sales_report_grant_refused
+            and not grant_refused
             and not customer_scope_refused
         ):
             stage[0] = "looked_up"
@@ -6015,7 +6044,7 @@ def _run_stages_body(  # noqa: PLR0915
         # they were never entitled to ask. The grant comes before ANY question.
         if (
             not bridge_answered
-            and not sales_report_grant_refused
+            and not grant_refused
             and not customer_scope_refused
             and plan.ask is not None
             and completes_here
@@ -6071,6 +6100,11 @@ def _run_stages_body(  # noqa: PLR0915
 
             stage[0] = "replied"
             answer = turn_compose.Answer(text=SALES_REPORT_NOT_ENABLED_MESSAGE)
+
+        # -- the REFUSAL: a whole gated domain, same seam (PARSER-PER-AUDIENCE S1) -- #
+        if answer is None and domain_refusal_text and completes_here:
+            stage[0] = "replied"
+            answer = turn_compose.Answer(text=domain_refusal_text)
 
         # -- the REFUSAL: a customer word outside a scoped contact's links -------- #
         # Once for the whole turn, however many domains the plan fans out to; no picker,

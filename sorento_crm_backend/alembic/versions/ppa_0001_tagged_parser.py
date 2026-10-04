@@ -19,8 +19,8 @@ that text and carried onto the production template line by line:
 The gated section headings (`GATED_HEADINGS`) must all be in the template before, and none
 may survive the no-grant render after.
 
-Proven before insert: rendering the result for all gated grants equals the production
-template plus the low stock block, byte for byte; every tag is present; the no-grant render
+Proven before insert: rendering the result for all gated grants equals
+`with_account_block(production template)` plus the low stock block, byte for byte; every tag is present; the no-grant render
 carries no gated heading and no low stock block. Any check failing: nothing is written, a
 WARNING is logged and `apply` returns None.
 

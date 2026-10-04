@@ -82,6 +82,9 @@ class ParserConfig:
     provider: str
     model: str
     api_key: str
+    # PARSER-PER-AUDIENCE (review R1): a short stable hash of the gate tags this
+    # contact's prompt leaves out; "" for the full audience. One audience, one cache key.
+    audience: str = ""
 
 
 def _build_json_schema() -> dict[str, Any]:
@@ -631,12 +634,13 @@ def resolve_config(
     from app.services.ai_assistant_service import AIAssistantConfigService
     from app.services.llm_provider import resolve_api_key
 
+    hidden = hidden_tags(grants)
     system_prompt, prompt_version = render(
         db,
         PROMPT_KEY,
         current_date=current_date,
         override_version_id=override_version_id,
-        hidden_tags=hidden_tags(grants),
+        hidden_tags=hidden,
     )
     system_prompt = render_for_audience(system_prompt, grants)
     provider_override, model_override = agent_model(db, PROMPT_KEY)
@@ -655,7 +659,17 @@ def resolve_config(
         provider=provider,
         model=model,
         api_key=api_key,
+        audience=_audience_key(hidden),
     )
+
+
+def _audience_key(hidden: frozenset[str]) -> str:
+    """Eight hex characters naming the hidden tag set, "" when nothing is hidden."""
+    if not hidden:
+        return ""
+    import hashlib
+
+    return hashlib.sha256("+".join(sorted(hidden)).encode()).hexdigest()[:8]
 
 
 def _subject_names(rows: Any) -> list[str]:
@@ -910,7 +924,10 @@ def parse(config: ParserConfig, user_block: str) -> ParsedOutput:
             json_schema_name=PARSE_OUTPUT_SCHEMA_NAME,
             # One cache bucket per published prompt version: every parse on it shares
             # the same static prefix (OpenAI only; the others ignore it).
-            prompt_cache_key=f"{PROMPT_KEY}:v{config.prompt_version or 'fallback'}",
+            prompt_cache_key=(
+                f"{PROMPT_KEY}:v{config.prompt_version or 'fallback'}"
+                + (f":a{config.audience}" if config.audience else "")
+            ),
         )
     except llm_call.RateLimited as exc:
         raise ParserError(f"parser provider call failed: {exc}", rate_limited=True) from exc
