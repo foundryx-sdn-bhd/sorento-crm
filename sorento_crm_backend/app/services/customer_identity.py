@@ -18,7 +18,9 @@ from typing import Optional
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.models.base import get_company_scope
 from app.models.order import Customer, CustomerAlias
+from app.services.company_scope import resolve_write_company_id
 
 
 def code_key(code: Optional[str]) -> str:
@@ -50,13 +52,18 @@ def customer_by_code(
 ) -> Optional[Customer]:
     """The one customer this debtor code names, or None.
 
-    `company_id` filters explicitly; without it the session's company scope applies (the
-    `Customer` ORM load below is auto-scoped). Raw SQL picks the id so the survivor order
-    can read `integration_references`; the row itself is loaded through the ORM.
+    `company_id` filters explicitly. Without it, the company the caller's next insert would
+    be stamped with (`resolve_write_company_id`) is used, so a lookup under an all-companies
+    scope (an import job with no company snapshot) never links a document to another
+    company's customer under the same code. Only a scope that cannot name one company falls
+    back to the session's scope alone (the ORM load below is auto-scoped). Raw SQL picks the
+    id so the survivor order can read `integration_references`.
     """
     key = code_key(code)
     if not key:
         return None
+    if company_id is None:
+        company_id = resolve_write_company_id(get_company_scope(db), ambiguous=None)
     params: dict = {"k": key}
     company_sql = ""
     if company_id is not None:
@@ -90,10 +97,10 @@ def record_alias(
     *,
     source: str,
     merge_run_id: Optional[str] = None,
-    company_id: Optional[str] = None,
 ) -> bool:
-    """Record `name` as another name of the customer. Idempotent; the customer's current
-    name is never an alias. Returns True when a row was written."""
+    """Record `name` as another name of the customer, in the customer's own company.
+    Idempotent; the customer's current name is never an alias. Returns True when a row was
+    written."""
     clean = (name or "").strip()
     if not clean:
         return False
@@ -117,7 +124,7 @@ def record_alias(
     db.add(
         CustomerAlias(
             customer_id=str(customer_id),
-            company_id=company_id or row.company_id,
+            company_id=row.company_id,
             alias_name=clean,
             source=source,
             merge_run_id=merge_run_id,
@@ -127,25 +134,31 @@ def record_alias(
     return True
 
 
-#: SQL predicate: customer alias `c` is named `:name_expr` by its own name or an alias.
-#: Format with the SQL expression holding the name, e.g. `NAME_OR_ALIAS_SQL.format(n="o.debtor_name")`.
+#: SQL predicate: customer alias `c` is named `{n}` by its own name or an alias, in the company
+#: `{co}`. Format with the SQL expressions, e.g.
+#: `NAME_OR_ALIAS_SQL.format(n="o.debtor_name", co="o.company_id")`.
 NAME_OR_ALIAS_SQL = (
-    "(lower(btrim(c.customer_name)) = lower(btrim({n})) OR EXISTS ("
+    "(c.company_id = {co} AND (lower(btrim(c.customer_name)) = lower(btrim({n})) OR EXISTS ("
     "SELECT 1 FROM customer_aliases ca WHERE ca.customer_id = c.id "
-    "AND lower(btrim(ca.alias_name)) = lower(btrim({n}))))"
+    "AND lower(btrim(ca.alias_name)) = lower(btrim({n})))))"
 )
 
 
-def name_or_alias_clause(customer_cls, name_column):
-    """ORM join predicate: `customer_cls` is named `name_column` by its name or an alias."""
-    from sqlalchemy import exists, func, or_, select
+def name_or_alias_clause(customer_cls, name_column, company_column):
+    """ORM join predicate: `customer_cls` is named `name_column` by its name or an alias, in
+    the company `company_column` (an order names a customer of its own company only)."""
+    from sqlalchemy import and_, exists, func, or_, select
 
-    return or_(
-        func.lower(func.btrim(customer_cls.customer_name)) == func.lower(func.btrim(name_column)),
-        exists(
-            select(CustomerAlias.id).where(
-                CustomerAlias.customer_id == customer_cls.id,
-                func.lower(func.btrim(CustomerAlias.alias_name)) == func.lower(func.btrim(name_column)),
-            )
+    return and_(
+        customer_cls.company_id == company_column,
+        or_(
+            func.lower(func.btrim(customer_cls.customer_name)) == func.lower(func.btrim(name_column)),
+            exists(
+                select(CustomerAlias.id).where(
+                    CustomerAlias.customer_id == customer_cls.id,
+                    func.lower(func.btrim(CustomerAlias.alias_name))
+                    == func.lower(func.btrim(name_column)),
+                )
+            ),
         ),
     )

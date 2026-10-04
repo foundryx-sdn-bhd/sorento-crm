@@ -1179,7 +1179,7 @@ def _probe_customer_debtor_name(db: Session, tokens: list[str]) -> dict[str, lis
         exact_clauses.append(_ws_insensitive_lower(Order.debtor_name).in_(list(norm_to_token)))
     rows = (
         db.query(Order.debtor_name, Order.debtor_code, Customer.id)
-        .outerjoin(Customer, customer_identity.name_or_alias_clause(Customer, Order.debtor_name))
+        .outerjoin(Customer, customer_identity.name_or_alias_clause(Customer, Order.debtor_name, Order.company_id))
         .filter(
             Order.deleted_at.is_(None),
             Order.debtor_name.isnot(None),
@@ -1229,7 +1229,7 @@ def _probe_customer_debtor_name(db: Session, tokens: list[str]) -> dict[str, lis
         _DEBTOR_FUZZY_LIMIT = 25
         rows = (
             db.query(Order.debtor_name, Order.debtor_code, Customer.id)
-            .outerjoin(Customer, customer_identity.name_or_alias_clause(Customer, Order.debtor_name))
+            .outerjoin(Customer, customer_identity.name_or_alias_clause(Customer, Order.debtor_name, Order.company_id))
             .filter(
                 Order.deleted_at.is_(None),
                 Order.debtor_name.isnot(None),
@@ -2024,7 +2024,7 @@ def _prefix_probe_customer_debtor_name(db: Session, token: str) -> list[Resolved
         return []
     rows = (
         db.query(Order.debtor_name, Order.debtor_code, Customer.id)
-        .outerjoin(Customer, customer_identity.name_or_alias_clause(Customer, Order.debtor_name))
+        .outerjoin(Customer, customer_identity.name_or_alias_clause(Customer, Order.debtor_name, Order.company_id))
         .filter(
             Order.deleted_at.is_(None),
             Order.debtor_name.isnot(None),
@@ -2038,7 +2038,7 @@ def _prefix_probe_customer_debtor_name(db: Session, token: str) -> list[Resolved
     if not rows:
         rows = (
             db.query(Order.debtor_name, Order.debtor_code, Customer.id)
-            .outerjoin(Customer, customer_identity.name_or_alias_clause(Customer, Order.debtor_name))
+            .outerjoin(Customer, customer_identity.name_or_alias_clause(Customer, Order.debtor_name, Order.company_id))
             .filter(
                 Order.deleted_at.is_(None),
                 Order.debtor_name.isnot(None),
@@ -2059,7 +2059,7 @@ def _prefix_probe_customer_debtor_name(db: Session, token: str) -> list[Resolved
         if len(words) >= 2:
             q = (
                 db.query(Order.debtor_name, Order.debtor_code, Customer.id)
-                .outerjoin(Customer, customer_identity.name_or_alias_clause(Customer, Order.debtor_name))
+                .outerjoin(Customer, customer_identity.name_or_alias_clause(Customer, Order.debtor_name, Order.company_id))
                 .filter(Order.deleted_at.is_(None), Order.debtor_name.isnot(None))
             )
             for w in words:
@@ -2883,7 +2883,7 @@ ENTITY_MISS_SUGGEST_FLOOR = 0.30
 # "did you mean" alternatives when the caller passed no entity-type whitelist.
 _ALL_TRGM_TYPES = frozenset({"product", "customer", "customer_order", "promotion", "transporter"})
 # An order's debtor name names a customer by its own name or an alias (DEBTOR-CODE-UNIQUE).
-_ORDER_CUSTOMER_JOIN = customer_identity.NAME_OR_ALIAS_SQL.format(n="o.debtor_name")
+_ORDER_CUSTOMER_JOIN = customer_identity.NAME_OR_ALIAS_SQL.format(n="o.debtor_name", co="o.company_id")
 # Max fuzzy alternatives surfaced per unresolved token (keep the suggestion tight).
 _ALTERNATIVES_CAP = 5
 
@@ -3728,7 +3728,7 @@ def _and_probe_customer(db: Session, tokens: list[str]) -> list[ResolvedEntity]:
     counts_o = _and_token_match_counts(blob_o, tokens)
     base_o = (
         db.query(Order.debtor_name, Order.debtor_code, Customer.id)
-        .outerjoin(Customer, customer_identity.name_or_alias_clause(Customer, Order.debtor_name))
+        .outerjoin(Customer, customer_identity.name_or_alias_clause(Customer, Order.debtor_name, Order.company_id))
         .filter(Order.deleted_at.is_(None), Order.debtor_name.isnot(None))
     )
     tier_o = _and_max_tier_filter(base_o, counts_o)

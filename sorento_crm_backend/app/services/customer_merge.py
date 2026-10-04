@@ -471,9 +471,7 @@ def _merge_group(
         if remaining:
             raise RuntimeError(f"rows still point at retired customer {rid}: {remaining}")
         db.execute(text("DELETE FROM customers WHERE id = :r"), {"r": rid})
-        customer_identity.record_alias(
-            db, survivor, name, source="merge", merge_run_id=run_id, company_id=group.company_id
-        )
+        customer_identity.record_alias(db, survivor, name, source="merge", merge_run_id=run_id)
     db.expire_all()
 
 
@@ -530,13 +528,14 @@ def _audit(db, group, survivor, retired_id, retired_row, run_id, action, actor_u
                 (id, entity_type, entity_id, action, user_id, company_id, old_values, new_values,
                  description, actor_type, source, root_entity_type, root_entity_id, event, correlation_id)
             VALUES (gen_random_uuid(), 'customer', :s, :a, :u, :cid, CAST(:old AS jsonb),
-                    CAST(:new AS jsonb), :d, 'system', 'worker', 'customer', :s, :e, :run)
+                    CAST(:new AS jsonb), :d, :actor_type, 'script', 'customer', :s, :e, :run)
             """
         ),
         {
             "s": survivor,
             "a": action,
             "u": actor_user_id,
+            "actor_type": "user" if actor_user_id else "system",
             "cid": group.company_id if group else None,
             "old": _jsonb(retired_row),
             "new": _jsonb({"survivor_id": survivor, "retired_id": retired_id, "run_id": run_id}),
@@ -563,12 +562,22 @@ def revert(db: Session, run_id: str, *, actor_user_id: Optional[str] = None) -> 
         {"run": run_id},
     ).all()
     customers_table = _table_of(db, "customers")
+    allowed = _revert_targets(db)
     if maps:
         # The retired rows share their survivor's code, so the code-unique index (if a
         # clean apply created it) has to go first. `create_unique_index` puts it back once
         # the codes are unique again.
         db.execute(text(f"DROP INDEX IF EXISTS {_index_qualified(db)}"))
     for map_id, cid, survivor, retired, row, repointed, dropped, updated in maps:
+        # Every identifier below is read back from the map and pasted into SQL, so each one
+        # is checked against the live schema first (security review S2): a tampered row
+        # fails here instead of running.
+        for key, entry in repointed.items():
+            _check_target(db, allowed, *key.rsplit(".", 1), pk=entry["pk"], pk_type=entry["pk_type"])
+        for entry in updated:
+            _check_target(db, allowed, entry["table"], entry["column"], pk=entry["pk"], pk_type="uuid")
+        for entry in dropped:
+            _check_target(db, allowed, entry["table"])
         db.execute(
             text(
                 f"INSERT INTO {customers_table} "
@@ -621,6 +630,47 @@ def revert(db: Session, run_id: str, *, actor_user_id: Optional[str] = None) -> 
         db.execute(text("DELETE FROM customer_aliases WHERE merge_run_id = :run"), {"run": run_id})
     db.expire_all()
     return len(maps)
+
+
+_PK_TYPES = frozenset({"uuid", "text", "integer", "bigint", "character varying"})
+
+
+def _revert_targets(db: Session) -> set[str]:
+    """The only tables a revert may write: what a merge writes."""
+    out = {table for table, _c, _p, _t in _referencing_fks(db)}
+    for name in ("customers", "orders", "sales_orders", "integration_references",
+                 "scm.market_segment_backfill_425"):
+        qualified = _table_of(db, name)
+        if qualified:
+            out.add(qualified)
+    return out
+
+
+def _check_target(
+    db: Session,
+    allowed: set[str],
+    table: str,
+    column: Optional[str] = None,
+    *,
+    pk: Optional[str] = None,
+    pk_type: Optional[str] = None,
+) -> None:
+    if table not in allowed:
+        raise ValueError(f"merge map names a table a merge never writes: {table!r}")
+    if pk_type is not None and pk_type not in _PK_TYPES:
+        raise ValueError(f"merge map names an unexpected key type: {pk_type!r}")
+    for name in (column, pk):
+        if name is None:
+            continue
+        found = db.execute(
+            text(
+                "SELECT 1 FROM pg_attribute WHERE attrelid = to_regclass(:t) AND attname = :c "
+                "AND attnum > 0 AND NOT attisdropped"
+            ),
+            {"t": table, "c": name},
+        ).first()
+        if found is None or not name.replace("_", "").isalnum() or name != name.lower():
+            raise ValueError(f"merge map names an unknown column {name!r} on {table}")
 
 
 # ------------------------------------------------------------------------------ unique index

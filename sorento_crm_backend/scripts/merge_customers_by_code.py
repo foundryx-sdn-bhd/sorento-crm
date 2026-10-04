@@ -9,9 +9,9 @@ Run from sorento_crm_backend/:
 
     venv/bin/python scripts/merge_customers_by_code.py                  # dry run, writes the plan CSV
     venv/bin/python scripts/merge_customers_by_code.py --code 301-S007  # one code
-    venv/bin/python scripts/merge_customers_by_code.py --apply --resolutions scripts/out/<plan>.csv
-    venv/bin/python scripts/merge_customers_by_code.py --apply --create-index
-    venv/bin/python scripts/merge_customers_by_code.py --revert dcu-20261004T120000
+    venv/bin/python scripts/merge_customers_by_code.py --apply --actor ops@example.com --resolutions scripts/out/<plan>.csv
+    venv/bin/python scripts/merge_customers_by_code.py --apply --actor ops@example.com --create-index
+    venv/bin/python scripts/merge_customers_by_code.py --revert dcu-20261004T120000 --actor ops@example.com
 
 - The dry run changes nothing. Its CSV (one row per group: survivor, retired rows, rows that
   would move per table, conflicts) holds real customer data: it lands in `scripts/out/`
@@ -55,6 +55,19 @@ def _company_id(db, value: str | None) -> str | None:
     return row[0]
 
 
+def _actor_id(db, value: str | None) -> str:
+    """The operator named on every audit row a write run leaves (security review S3)."""
+    if not value:
+        raise SystemExit("--actor <email or user id> is required for --apply and --revert")
+    row = db.execute(
+        text("SELECT id::text FROM users WHERE id::text = :v OR lower(email) = lower(:v)"),
+        {"v": value},
+    ).first()
+    if row is None:
+        raise SystemExit(f"unknown user {value!r}")
+    return row[0]
+
+
 def _summary(groups: list[customer_merge.Group]) -> str:
     rows = sum(len(g.retired_ids) + 1 for g in groups)
     conflicts = [g for g in groups if g.conflicts]
@@ -76,6 +89,10 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--dry-run", action="store_true", help="default: plan only, change nothing")
     mode.add_argument("--apply", action="store_true")
     mode.add_argument("--revert", metavar="RUN_ID")
+    parser.add_argument(
+        "--actor",
+        help="the user running it (email or id); required for --apply and --revert, named on every audit row",
+    )
     parser.add_argument("--company", help="company id or code (default: every company)")
     parser.add_argument("--code", action="append", help="limit to this debtor code (repeatable)")
     parser.add_argument("--resolutions", help="a plan CSV with the owner's `keep` column filled")
@@ -90,8 +107,9 @@ def main(argv: list[str] | None = None) -> int:
     db = SessionLocal()
     set_company_scope(db, None)  # a maintenance run sees every company; filters are explicit
     try:
+        actor = _actor_id(db, args.actor) if (args.apply or args.revert) else None
         if args.revert:
-            n = customer_merge.revert(db, args.revert)
+            n = customer_merge.revert(db, args.revert, actor_user_id=actor)
             db.commit()
             print(f"reverted run {args.revert}: {n} customers restored")
             return 0
@@ -113,7 +131,12 @@ def main(argv: list[str] | None = None) -> int:
         for cid in companies:
             try:
                 result = customer_merge.apply(
-                    db, run_id=run_id, company_id=cid, codes=args.code, resolutions=resolutions
+                    db,
+                    run_id=run_id,
+                    company_id=cid,
+                    codes=args.code,
+                    resolutions=resolutions,
+                    actor_user_id=actor,
                 )
                 db.commit()
             except Exception:

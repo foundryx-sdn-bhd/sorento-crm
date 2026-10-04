@@ -30,7 +30,6 @@ from app.services.company_scope import (
     build_company_predicate,
     get_company_scope,
     pending_company_id,
-    resolve_write_company_id,
     stamp_lookup_companies,
 )
 from app.services.embedding_change_listener import (
@@ -3696,11 +3695,9 @@ class CustomerService:
         customer_data = customer_data.model_copy(
             update={"customer_code": code, "customer_name": name}
         )
-        # The company this row is about to join, resolved the way the insert stamp will
-        # resolve it, so the code check runs in exactly that company.
-        company_id = resolve_write_company_id(get_company_scope(self.db), ambiguous=None)
+        # `customer_by_code` checks the company this row is about to be stamped with.
         with self.db.no_autoflush:
-            existing = customer_identity.customer_by_code(self.db, code, company_id=company_id)
+            existing = customer_identity.customer_by_code(self.db, code)
         if existing:
             raise handle_conflict(
                 f"Debtor code {code} already exists ({existing.customer_name})."

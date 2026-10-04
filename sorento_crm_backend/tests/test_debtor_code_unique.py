@@ -133,6 +133,19 @@ class TestCustomerByCode:
         found = customer_identity.customer_by_code(db, code, company_id=company_b)
         assert str(found.id) == mch
 
+    def test_all_companies_scope_looks_in_the_write_company(self, db, company_b):
+        """Security review S1: an import job with no company snapshot runs all-companies and
+        writes to the default company, so the lookup must not hand back another company's
+        older or linked row under the same code."""
+        set_company_scope(db, None)
+        code = _code("W")
+        mch = _seed(db, code, "NAME-MCH", OLD, company_id=company_b)
+        _ref(db, mch, f"AED_MOCHA:{code}", company_id=company_b)
+        assert customer_identity.customer_by_code(db, code) is None
+        got = OrderService(db)._upsert_customer_from_debtor("NAME-SRT", code)
+        assert got != mch
+        assert str(db.get(Customer, got).company_id) == DEFAULT_COMPANY_ID
+
     def test_unlinked_group_resolves_to_oldest(self, db):
         code = _code("O")
         _seed(db, code, "NAME-NEW", NEW)

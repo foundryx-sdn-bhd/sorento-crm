@@ -304,16 +304,19 @@ class TestApply:
         code = _code("MM")
         survivor = _seed(db, code, "CASH SALES", OLD)
         retired = _seed(db, code, "BUYER-1", NEW)
-        customer_merge.apply(db, run_id="run-mm", codes=[code])
+        actor = _uid()
+        customer_merge.apply(db, run_id="run-mm", codes=[code], actor_user_id=actor)
         maps = db.query(CustomerMergeMap).filter(CustomerMergeMap.run_id == "run-mm").all()
         assert [(str(m.survivor_id), str(m.retired_id)) for m in maps] == [(survivor, retired)]
         assert maps[0].retired_row["customer_name"] == "BUYER-1"
         audit = _scalar(
             db,
             "SELECT count(*) FROM audit_logs WHERE entity_type = 'customer' AND entity_id = :s "
-            "AND action = 'CUSTOMER_MERGE' AND old_values->>'id' = :r",
+            "AND action = 'CUSTOMER_MERGE' AND old_values->>'id' = :r "
+            "AND user_id = :u AND actor_type = 'user'",
             s=survivor,
             r=retired,
+            u=actor,
         )
         assert audit == 1
 
@@ -498,6 +501,23 @@ class TestRevert:
         customer_merge.create_unique_index(db)
         customer_merge.revert(db, "run-ri")
         assert _exists(db, retired)
+
+    def test_revert_refuses_a_tampered_map_row(self, db):
+        """Security review S2: identifiers read back from the map are checked first."""
+        code = _code("TM")
+        _seed(db, code, "NAME-A", OLD)
+        retired = _seed(db, code, "NAME-B", NEW)
+        _so(db, retired)
+        customer_merge.apply(db, run_id="run-tm", codes=[code])
+        db.execute(
+            text(
+                "UPDATE customer_merge_map SET repointed = jsonb_set(repointed, "
+                "ARRAY[(SELECT k FROM jsonb_object_keys(repointed) k LIMIT 1), 'pk_type'], "
+                "to_jsonb('uuid[])); SELECT 1; --'::text)) WHERE run_id = 'run-tm'"
+            )
+        )
+        with pytest.raises(ValueError):
+            customer_merge.revert(db, "run-tm")
 
     def test_revert_twice_is_a_no_op(self, db):
         code = _code("R2")
