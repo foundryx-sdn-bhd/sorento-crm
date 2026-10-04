@@ -182,7 +182,8 @@ location -> "warehouse". A named brand, sales agent or category is an entity
 {hint: "brand" | "sales_agent" | "category"}, never a customer. The ranked noun
 (salesman, sales agent, SA, rep, customer(s), account(s)) is never an entity of ANY hint, whatever
 was asked before. basis "delivered" or
-"ordered" only when said, else null. sales_channel as for sales_report.
+"ordered" only when said, else null; "by outstanding", "outstanding" or "not yet delivered"
+-> basis "outstanding". sales_channel as for sales_report.
 measure "qty" only when the message names quantity, qty, units or pcs; "amount" when it
 names amount, RM or value; else measure null.
 Follow-up to a SALES RANKING: "Previous response" starts "Top N sales agents|customers|brands|

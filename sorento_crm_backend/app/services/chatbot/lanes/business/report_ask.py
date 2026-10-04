@@ -322,7 +322,7 @@ def _fresh_args(
         return None, DEALER_REFUSAL
 
     args: dict[str, Any] = {
-        "basis": "ordered" if parse_output.get("basis") == "ordered" else "delivered",
+        "basis": parse_output.get("basis") if parse_output.get("basis") in ("ordered", "outstanding") else "delivered",
         "measure": "qty" if parse_output.get("measure") == "qty" else "amount",
         "sort": "asc" if parse_output.get("rank_direction") == "bottom" else "desc",
     }
@@ -338,6 +338,21 @@ def _fresh_args(
         for word in jsc.array(words.get(hint)):
             word = " ".join(jsc.js_string(word).split())
             if not word:
+                continue
+            if hint == "category":
+                # One definition with top selling's category filter (owner, 4 Oct 2026):
+                # code or name, then the class vocabulary ("water closet").
+                from app.services.chatbot.lanes import business as business_pkg
+
+                found, _named, ambiguous, unknown = business_pkg._top_selling_category_ids(
+                    {"category_words": [word]}, db=db
+                )
+                if unknown:
+                    return None, f"I don't know '{word}' as a {WORD_HINTS[hint]}."
+                if ambiguous:
+                    listed = ", ".join(sorted(set(ambiguous)))
+                    return None, f"'{word}' matches several {SEVERAL_NOUNS[hint]}: {listed}. Ask again naming one."
+                ids.extend(i for i in found if i not in ids)
                 continue
             found, names = _resolve_word(db, hint, word)
             if not found:
@@ -469,7 +484,7 @@ def _refine(
         ):
             return None, DEALER_REFUSAL
     args = {k: v for k, v in frame.items() if k not in ("date_from", "date_to", "top_n")}
-    if parse_output.get("basis") in ("ordered", "delivered"):
+    if parse_output.get("basis") in ("ordered", "delivered", "outstanding"):
         args["basis"] = parse_output["basis"]
     if parse_output.get("measure") in ("qty", "amount"):
         args["measure"] = parse_output["measure"]

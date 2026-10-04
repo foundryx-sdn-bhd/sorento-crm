@@ -1,7 +1,7 @@
 """`GET /api/v1/order-management/report-ask`: the chatbot's one flexible sales report (lane
 REPORT-ENGINE, slice 1a; `documentation/plans/chatbot/PLAN-report-engine.md` section 0 and 10).
 
-A ranking (one `group_by`) or a number over delivered or ordered sales, for a required period,
+A ranking (one `group_by`) or a number over delivered, ordered or outstanding sales (all from sales order lines), for a required period,
 with the common filters. Every gate runs here, from `contact_id`, never in the lane or the
 prompt: the API key, the `sales_orders.sales_report` reveal grant, the audience (a
 customer-scoped contact is a DEALER and may only slice by product, brand, category, month),
@@ -42,6 +42,8 @@ _RATE_LIMIT = 10
 _RATE_WINDOW_SECONDS = 600
 _DEALER_MESSAGE = "That breakdown is not available for your account."
 _CHANNELS = {"dealer": "Dealer", "project": "Project team"}
+#: The basis a request without one gets. The owner decides the default; this is the one place.
+DEFAULT_BASIS = "delivered"
 _MAX_VALUES = 50
 _MIN_YEAR, _MAX_YEAR = 1900, 2200
 
@@ -143,7 +145,11 @@ def report_ask(
     request: Request,
     date_from: Optional[date] = Query(None, description="First day of the period (ISO). Required."),
     date_to: Optional[date] = Query(None, description="Last day of the period (ISO). Required."),
-    basis: str = Query("delivered", description="delivered (DO lines by DO date) | ordered (SO lines by SO date)."),
+    basis: str = Query(
+        DEFAULT_BASIS,
+        description="delivered | ordered | outstanding. All three rank sales order lines (the SO's own agent), "
+        "dated by the line's required date, else the SO date.",
+    ),
     measure: str = Query("amount", description="amount | qty - what the ranking sorts by."),
     group_by: Optional[str] = Query(
         None,

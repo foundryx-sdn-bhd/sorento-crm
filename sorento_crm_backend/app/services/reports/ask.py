@@ -17,7 +17,7 @@ from typing import Any, Optional
 
 from sqlalchemy.orm import Session
 
-from app.services.reports.datasets import delivery_order_lines, sales_order_lines_ask
+from app.services.reports.datasets import sales_order_lines_ask
 from app.services.sales_report_delivered import _CHANNEL_CLASS, resolve_locations
 from app.services.sales_report_service import _money_edge, _qty
 
@@ -27,20 +27,19 @@ from app.services.sales_report_service import _money_edge, _qty
 DIMENSIONS = ("customer", "product", "brand", "category", "sales_agent", "location", "channel", "month")
 FILTERS = ("customer", "product", "brand", "category", "sales_agent", "location", "channel")
 
-#: One entry per basis.
+#: One entry per basis, every one over sales order lines.
 CATALOGUE: dict[str, dict[str, Any]] = {
-    "delivered": {
-        "definition": delivery_order_lines.DEFINITION,
-        "label": "delivered sales",
+    basis: {
+        "definition": sales_order_lines_ask.DEFINITIONS[basis],
+        "label": label,
         "dimensions": DIMENSIONS,
         "filters": FILTERS,
-    },
-    "ordered": {
-        "definition": sales_order_lines_ask.DEFINITION,
-        "label": "ordered sales",
-        "dimensions": DIMENSIONS,
-        "filters": FILTERS,
-    },
+    }
+    for basis, label in (
+        ("delivered", "delivered sales"),
+        ("ordered", "ordered sales"),
+        ("outstanding", "outstanding orders"),
+    )
 }
 
 #: What a customer-scoped contact (a dealer) may group or filter by (PLAN section 0, Q1/Q2).

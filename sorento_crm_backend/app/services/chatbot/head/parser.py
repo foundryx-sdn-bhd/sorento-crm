@@ -263,7 +263,7 @@ def _build_json_schema() -> dict[str, Any]:
             # (owner rulings 26 Sep 2026: never assume the basis or the grain). A null
             # `rank_by` is asked too (no default metric).
             "rank_by": {"type": ["string", "null"], "enum": ["quantity", "amount", None]},
-            "basis": {"type": ["string", "null"], "enum": ["delivered", "ordered", "unclear", None]},
+            "basis": {"type": ["string", "null"], "enum": ["delivered", "ordered", "outstanding", "unclear", None]},
             "rank_group": {"type": ["string", "null"], "enum": ["item", "category", "unclear", None]},
             # Fix lane round 4 (owner retest, 27 Sep 2026): "cold selling", "least sold"
             # rank ascending. Same shape and same exemption as the three above.
