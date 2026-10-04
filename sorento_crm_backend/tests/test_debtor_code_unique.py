@@ -17,6 +17,7 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy import text
 
+from app.models.base import set_company_scope
 from app.models.company import Company
 from app.models.integration_reference import IntegrationReference
 from app.models.order import Customer, CustomerAlias, Order
@@ -125,6 +126,7 @@ class TestCustomerByCode:
         assert customer_identity.customer_by_code(db, "  ", company_id=DEFAULT_COMPANY_ID) is None
 
     def test_never_crosses_companies(self, db, company_b):
+        set_company_scope(db, None)  # an all-companies session: the explicit filter decides
         code = _code("X")
         _seed(db, code, "NAME-SRT", OLD)
         mch = _seed(db, code, "NAME-MCH", NEW, company_id=company_b)

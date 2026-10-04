@@ -56,6 +56,7 @@ from app.models.resources import Attachment, AttachmentType
 # here either - `incoming_stock_service` already excludes it from every list read, and an
 # assistant that could still NAME the draft via this resolver would ask incoming_list about
 # it and get told "nothing incoming for container X" instead of never hearing of it.
+from app.services import customer_identity
 from app.services.scm import spo_supply
 from app.services.scm.proforma_invoice_service import _DRAFT_SHIPMENT_STATUS
 
@@ -1178,7 +1179,7 @@ def _probe_customer_debtor_name(db: Session, tokens: list[str]) -> dict[str, lis
         exact_clauses.append(_ws_insensitive_lower(Order.debtor_name).in_(list(norm_to_token)))
     rows = (
         db.query(Order.debtor_name, Order.debtor_code, Customer.id)
-        .outerjoin(Customer, func.lower(func.btrim(Customer.customer_name)) == func.lower(func.btrim(Order.debtor_name)))
+        .outerjoin(Customer, customer_identity.name_or_alias_clause(Customer, Order.debtor_name))
         .filter(
             Order.deleted_at.is_(None),
             Order.debtor_name.isnot(None),
@@ -1228,7 +1229,7 @@ def _probe_customer_debtor_name(db: Session, tokens: list[str]) -> dict[str, lis
         _DEBTOR_FUZZY_LIMIT = 25
         rows = (
             db.query(Order.debtor_name, Order.debtor_code, Customer.id)
-            .outerjoin(Customer, func.lower(func.btrim(Customer.customer_name)) == func.lower(func.btrim(Order.debtor_name)))
+            .outerjoin(Customer, customer_identity.name_or_alias_clause(Customer, Order.debtor_name))
             .filter(
                 Order.deleted_at.is_(None),
                 Order.debtor_name.isnot(None),
@@ -2023,7 +2024,7 @@ def _prefix_probe_customer_debtor_name(db: Session, token: str) -> list[Resolved
         return []
     rows = (
         db.query(Order.debtor_name, Order.debtor_code, Customer.id)
-        .outerjoin(Customer, func.lower(func.btrim(Customer.customer_name)) == func.lower(func.btrim(Order.debtor_name)))
+        .outerjoin(Customer, customer_identity.name_or_alias_clause(Customer, Order.debtor_name))
         .filter(
             Order.deleted_at.is_(None),
             Order.debtor_name.isnot(None),
@@ -2037,7 +2038,7 @@ def _prefix_probe_customer_debtor_name(db: Session, token: str) -> list[Resolved
     if not rows:
         rows = (
             db.query(Order.debtor_name, Order.debtor_code, Customer.id)
-            .outerjoin(Customer, func.lower(func.btrim(Customer.customer_name)) == func.lower(func.btrim(Order.debtor_name)))
+            .outerjoin(Customer, customer_identity.name_or_alias_clause(Customer, Order.debtor_name))
             .filter(
                 Order.deleted_at.is_(None),
                 Order.debtor_name.isnot(None),
@@ -2058,7 +2059,7 @@ def _prefix_probe_customer_debtor_name(db: Session, token: str) -> list[Resolved
         if len(words) >= 2:
             q = (
                 db.query(Order.debtor_name, Order.debtor_code, Customer.id)
-                .outerjoin(Customer, func.lower(func.btrim(Customer.customer_name)) == func.lower(func.btrim(Order.debtor_name)))
+                .outerjoin(Customer, customer_identity.name_or_alias_clause(Customer, Order.debtor_name))
                 .filter(Order.deleted_at.is_(None), Order.debtor_name.isnot(None))
             )
             for w in words:
@@ -2881,6 +2882,8 @@ ENTITY_MISS_SUGGEST_FLOOR = 0.30
 # Entity types `_trgm_lookup` can probe. Used as the default scope for resolve
 # "did you mean" alternatives when the caller passed no entity-type whitelist.
 _ALL_TRGM_TYPES = frozenset({"product", "customer", "customer_order", "promotion", "transporter"})
+# An order's debtor name names a customer by its own name or an alias (DEBTOR-CODE-UNIQUE).
+_ORDER_CUSTOMER_JOIN = customer_identity.NAME_OR_ALIAS_SQL.format(n="o.debtor_name")
 # Max fuzzy alternatives surfaced per unresolved token (keep the suggestion tight).
 _ALTERNATIVES_CAP = 5
 
@@ -3004,7 +3007,7 @@ def _trgm_lookup(
                                    similarity({n_dcode}, :pn)
                                ) AS sim
                         FROM orders o
-                        LEFT JOIN customers c ON lower(btrim(c.customer_name)) = lower(btrim(o.debtor_name))
+                        LEFT JOIN customers c ON {_ORDER_CUSTOMER_JOIN}
                         WHERE o.deleted_at IS NULL
                           AND o.debtor_name IS NOT NULL
                           AND ({n_dname} % :pn OR {n_dcode} % :pn){order_scope_sql}{cust_scope_sql}
@@ -3066,6 +3069,43 @@ def _trgm_lookup(
                         match_tier="trgm",
                         similarity=sim,
                         display={"customer_name": r.customer_name},
+                    )
+                )
+            # DEBTOR-CODE-UNIQUE: a merged customer is still found by the buyer names it
+            # absorbed (`customer_aliases`). Small table, no index needed; a customer the
+            # probe above already returned is not repeated.
+            alias_scope_sql, alias_params = _company_scope_sql(db, "c.company_id")
+            n_alias = _norm_sql("ca.alias_name")
+            seen = {e.uuid for e in out if e.entity_type == "customer"}
+            with db.begin_nested():
+                rows = db.execute(
+                    text(
+                        f"""
+                        SELECT c.id, c.customer_code, c.customer_name, ca.alias_name,
+                               similarity({n_alias}, :pn) AS sim
+                        FROM customer_aliases ca
+                        JOIN customers c ON c.id = ca.customer_id
+                        WHERE {n_alias} % :pn{alias_scope_sql}
+                        ORDER BY sim DESC
+                        LIMIT :n
+                        """
+                    ),
+                    {"pn": norm, "n": TRGM_LIMIT, **alias_params},
+                ).all()
+            for r in rows:
+                sim = float(r.sim or 0.0)
+                if sim < TRGM_THRESHOLD or str(r.id) in seen:
+                    continue
+                seen.add(str(r.id))
+                out.append(
+                    ResolvedEntity(
+                        entity_type="customer",
+                        canonical_code=r.customer_code,
+                        uuid=str(r.id),
+                        match_field="alias_name",
+                        match_tier="trgm",
+                        similarity=sim,
+                        display={"customer_name": r.customer_name, "alias_name": r.alias_name},
                     )
                 )
         except Exception:
@@ -3688,7 +3728,7 @@ def _and_probe_customer(db: Session, tokens: list[str]) -> list[ResolvedEntity]:
     counts_o = _and_token_match_counts(blob_o, tokens)
     base_o = (
         db.query(Order.debtor_name, Order.debtor_code, Customer.id)
-        .outerjoin(Customer, func.lower(func.btrim(Customer.customer_name)) == func.lower(func.btrim(Order.debtor_name)))
+        .outerjoin(Customer, customer_identity.name_or_alias_clause(Customer, Order.debtor_name))
         .filter(Order.deleted_at.is_(None), Order.debtor_name.isnot(None))
     )
     tier_o = _and_max_tier_filter(base_o, counts_o)

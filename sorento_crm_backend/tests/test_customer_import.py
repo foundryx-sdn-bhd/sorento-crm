@@ -22,7 +22,7 @@ import pytest
 
 from app.models.base import set_company_scope
 from app.models.company import Company
-from app.models.order import Customer
+from app.models.order import Customer, CustomerAlias
 from app.services import customer_import_service as svc
 from app.services import import_outcome_codes as oc
 from app.services.company_scope import DEFAULT_COMPANY_ID, register_company_scope_listeners
@@ -46,14 +46,6 @@ HEADERS = [
 @pytest.fixture(autouse=True)
 def _scope_listeners():
     register_company_scope_listeners()
-
-
-@pytest.fixture(autouse=True)
-def _reset_trgm_schema_cache():
-    """The resolved pg_trgm schema is a process global; keep it per-test honest."""
-    svc._TRGM_SCHEMA.clear()
-    yield
-    svc._TRGM_SCHEMA.clear()
 
 
 def _workbook(rows: list[list], headers: list[str] | None = None, title_lines: int = 1) -> bytes:
@@ -220,27 +212,6 @@ def test_company_id_is_never_read_from_a_file_column():
         assert rows[0].id != planted_id, "identity is ours, never the file's"
         assert rows[0].created_by == importing_user, "provenance is the caller, not a cell"
         assert rows[0].created_at is not None and rows[0].created_at.year > 2001
-
-
-def test_the_same_code_under_a_different_name_is_a_second_row():
-    """AC-1.2: `301-S007` carries 225 names. Code alone is never identity."""
-    with blank_session() as session:
-        _aliases(session)
-        set_company_scope(session, frozenset({DEFAULT_COMPANY_ID}))
-        code = unique_code("C")[:50]
-
-        result, _outcome = _apply(
-            session,
-            _workbook(
-                [
-                    [code, "ABDUL RAUF", None, None, None, None, None],
-                    [code, "AIMAN", None, None, None, None, None],
-                ]
-            ),
-        )
-
-        assert result["created"] == 2
-        assert [c.customer_name for c in _held(session, code)] == ["ABDUL RAUF", "AIMAN"]
 
 
 def test_the_same_code_and_name_may_exist_under_two_companies():
@@ -564,69 +535,53 @@ def test_customer_type_is_written_on_insert_only():
         assert _held(session, code)[0].customer_type == "individual"
 
 
-# ------------------------------------------------------------------ near names
+# --------------------------------------------- one customer per debtor code (DEBTOR-CODE-UNIQUE)
 
 
-def test_a_near_name_on_the_same_code_inserts_and_is_flagged():
-    """AC-1.6: the typo is caught, the row still lands, nothing is blocked."""
+def test_a_new_name_on_a_held_code_updates_that_customer_and_keeps_the_name_as_alias():
+    """Owner, 4 Oct 2026: one customer per debtor code. The held name stays; the file's
+    name is an alias so search still finds it."""
     with blank_session() as session:
         _aliases(session)
         set_company_scope(session, frozenset({DEFAULT_COMPANY_ID}))
         code = unique_code("C")[:50]
-        _apply(
-            session,
-            _workbook([[code, "CASH (SRT) - AISAH SHAMSUDIN", None, None, None, None, None]]),
-        )
+        _apply(session, _workbook([[code, "CASH (SRT) - ABDUL RAUF", None, None, None, None, None]]))
 
         result, outcome = _apply(
-            session,
-            _workbook([[code, "CASH (SRT) - AISAH SHAMSUDlN", None, None, None, None, None]]),
+            session, _workbook([[code, "CASH (SRT) - AIMAN", None, None, None, None, None]])
         )
 
-        assert result["created"] == 1, "it is still inserted"
-        assert result["needs_review"] == 1
-        assert result["review_rows"][0]["similar_to"] == "CASH (SRT) - AISAH SHAMSUDIN"
-        assert outcome.count_of(oc.CODE_EXISTS_UNDER_OTHER_NAME) == 1
+        assert result["created"] == 0
+        assert result["needs_review"] == 0
         assert outcome.failed == 0 and outcome.skipped == 0
-        assert len(_held(session, code)) == 2
+        held = _held(session, code)
+        assert [c.customer_name for c in held] == ["CASH (SRT) - ABDUL RAUF"]
+        aliases = session.query(CustomerAlias).filter(CustomerAlias.customer_id == held[0].id).all()
+        assert [a.alias_name for a in aliases] == ["CASH (SRT) - AIMAN"]
 
 
-def test_an_unrelated_name_on_the_same_code_is_not_flagged():
-    """AC-1.5: `301-C001` holds 99 person names. Flagging each would fire 99 times and
-    mean nothing."""
+def test_a_code_twice_in_one_file_is_one_customer():
     with blank_session() as session:
         _aliases(session)
         set_company_scope(session, frozenset({DEFAULT_COMPANY_ID}))
         code = unique_code("C")[:50]
-        _apply(session, _workbook([[code, "ABDUL RAUF", None, None, None, None, None]]))
-
         result, outcome = _apply(
-            session, _workbook([[code, "AIMAN", None, None, None, None, None]])
+            session,
+            _workbook(
+                [
+                    [code, "Deluxe Home Center (KTN)", None, None, None, None, None],
+                    [code, "Deluxe Home Center AC (I)", None, None, None, None, None],
+                ]
+            ),
         )
 
         assert result["created"] == 1
-        assert result["needs_review"] == 0
-        assert outcome.count_of(oc.CODE_EXISTS_UNDER_OTHER_NAME) == 0
-
-
-def test_two_branches_of_one_dealer_are_not_reported_as_near_names():
-    """Both rows legitimately exist; a threshold that flags them turns the signal to noise."""
-    with blank_session() as session:
-        _aliases(session)
-        set_company_scope(session, frozenset({DEFAULT_COMPANY_ID}))
-        code = unique_code("C")[:50]
-        _apply(
-            session,
-            _workbook([[code, "Deluxe Home Center (KTN)", None, None, None, None, None]]),
-        )
-
-        result, _outcome = _apply(
-            session,
-            _workbook([[code, "Deluxe Home Center AC (I)", None, None, None, None, None]]),
-        )
-
-        assert result["created"] == 1
-        assert result["needs_review"] == 0
+        assert result["skipped"] == 1
+        assert outcome.count_of(oc.DUPLICATE_IN_FILE) == 1
+        held = _held(session, code)
+        assert [c.customer_name for c in held] == ["Deluxe Home Center (KTN)"]
+        aliases = session.query(CustomerAlias).filter(CustomerAlias.customer_id == held[0].id).all()
+        assert [a.alias_name for a in aliases] == ["Deluxe Home Center AC (I)"]
 
 
 # ------------------------------------------------------------- partial success

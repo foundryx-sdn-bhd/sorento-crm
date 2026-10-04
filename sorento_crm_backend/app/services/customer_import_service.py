@@ -2,12 +2,11 @@
 
 Three decisions carry this file, all from UAC-customer-importer.
 
-**The key is (company, code, name), all three.** It mirrors the live index
-`uq_customers_company_code_name_lower` exactly, `lower(btrim(...))` included, or "new" and
-"already exists" disagree and the insert takes a 23505. `customer_code` alone is never
-identity: Sorento holds 2,391 customers across 1,453 codes, `301-S007` carrying 225 distinct
-names. The importer therefore never renames - a changed name IS a new row by definition -
-and a code appearing under a different name is a normal insert, not a conflict (AC-1).
+**The key is (company, debtor code).** DEBTOR-CODE-UNIQUE (owner, 4 Oct 2026): one customer per
+debtor code per company, like AutoCount (`customer_identity`). A row whose code is already held
+updates that customer, fill-only, and never renames it; a different name on the row is kept as
+an alias (`customer_aliases`) so search still finds it. Only a code nobody in the company holds
+is inserted. A code twice in one file is one customer: the later row is a duplicate.
 
 **What a person curates is never overwritten.** Account owners, notes and the active flag are
 untouched by any re-import; the market segment is filled when blank and never replaced,
@@ -38,11 +37,12 @@ import uuid
 from datetime import datetime
 from typing import Any, Callable, Optional
 
-from sqlalchemy import func, inspect as sa_inspect, text
+from sqlalchemy import func, inspect as sa_inspect
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.models.order import Customer
+from app.services import customer_identity
 from app.services import import_outcome_codes as oc
 from app.services.customer_import_reader import (
     CustomerReadResult,
@@ -99,21 +99,6 @@ NEVER_WRITTEN_FIELDS = (
     "billing_address",
 )
 
-#: Trigram similarity at or above which two names on ONE code are "near" enough to put in
-#: front of a human (AC-1.6). Measured on Postgres, not guessed:
-#:
-#:   'CASH (SRT) - AISAH SHAMSUDlN' vs 'CASH (SRT) - AISAH SHAMSUDIN'  0.778  -> flag
-#:   'Deluxe Home Center (KTN)'     vs 'Deluxe Home Center AC (I)'     0.679  -> no
-#:   'CASH (SRT) - ABDUL RAUF'      vs 'CASH (SRT) - AIMAN'            0.400  -> no
-#:   'ABDUL RAUF'                   vs 'AIMAN'                         0.063  -> no
-#:
-#: 0.75 sits in the gap between the typo and the two real-but-similar cases. The second line
-#: is why it cannot go much lower: those are two genuinely different branches that both
-#: legitimately exist, and a threshold that flags them turns the signal into noise. The third
-#: is why a shared prefix alone is not enough - `301-C001` is a cash-sale bucket holding 99
-#: person names all starting `CASH (SRT) - `, and a loose threshold fires 99 times on one
-#: code. Tune upward, not down, against the first real file.
-NEAR_NAME_THRESHOLD = 0.75
 
 # A field cannot be both writable and protected. Asserted rather than trusted to review:
 # adding `notes` to UPDATABLE_FIELDS is a one-word change that would silently start
@@ -264,38 +249,41 @@ def _run(
         )
 
     dropped_segments = _resolve_market_segments(db, parsed.rows, out)
-    existing_by_key, names_by_code = _load_candidates(db, parsed.rows)
-    near = _near_name_matches(db, parsed.rows, existing_by_key, names_by_code)
+    held_by_code = _load_candidates(db, parsed.rows)
     # ONE reflection for the whole file, and the same one for preview and apply, so Test and
     # Confirm can never disagree about how long a column is.
     limits = column_limits(db)
 
-    seen: set[tuple[str, str]] = set()
+    seen: set[str] = set()
     now = datetime.utcnow()
 
     for row in parsed.rows:
-        code_key, name_key = _key(row.customer_code), _key(row.customer_name)
+        code_key = _key(row.customer_code)
         identity = {"customer_code": row.customer_code, "customer_name": row.customer_name}
 
         dropped_segment = dropped_segments.get(row.row_number)
 
-        if (code_key, name_key) in seen:
-            # The same key twice in one file states nothing the first row did not. Counting
-            # it as a second create would make the preview disagree with the import, which
-            # writes it once.
+        if code_key in seen:
+            # One debtor code is one customer, so a second row under it states nothing new
+            # about the customer. Counting it as a write would make the preview disagree
+            # with the import. Its name is kept as an alias, the way a held code's is.
+            if write and code_key in held_by_code:
+                customer_identity.record_alias(
+                    db, held_by_code[code_key].id, row.customer_name, source="customer_import"
+                )
             out["skipped"] += 1
             out["problems"].append(
-                {"row": row.row_number, "reason": "the same code and name appears earlier in the file"}
+                {"row": row.row_number, "reason": "the same debtor code appears earlier in the file"}
             )
             outcome.skip(
                 row=row.row_number,
                 code=oc.DUPLICATE_IN_FILE,
-                message="the same code and name appears earlier in the file",
+                message="the same debtor code appears earlier in the file",
                 value=row.customer_code,
                 identity=identity,
             )
             continue
-        seen.add((code_key, name_key))
+        seen.add(code_key)
 
         too_long = _too_long(row, limits)
         if too_long:
@@ -310,21 +298,14 @@ def _run(
             )
             continue
 
-        held = existing_by_key.get((code_key, name_key))
+        held = held_by_code.get(code_key)
 
         if held is None:
-            flag = near.get((code_key, name_key))
             code, message = _written_row_code(
-                oc.CREATED, None, flag=flag, dropped_segment=dropped_segment
+                oc.CREATED, None, flag=None, dropped_segment=dropped_segment
             )
             if not write:
                 out["created"] += 1
-                if flag:
-                    out["needs_review"] += 1
-                    out["review_rows"].append(
-                        {"row": row.row_number, "customer_code": row.customer_code,
-                         "customer_name": row.customer_name, "similar_to": flag}
-                    )
                 outcome.success(
                     row=row.row_number,
                     code=code,
@@ -348,14 +329,7 @@ def _run(
                 )
                 continue
             out["created"] += 1
-            if flag:
-                out["needs_review"] += 1
-                out["review_rows"].append(
-                    {"row": row.row_number, "customer_code": row.customer_code,
-                     "customer_name": row.customer_name, "similar_to": flag}
-                )
-            # The flag rides on a SUCCESS outcome: the row IS written, and a human reads it
-            # on the job detail afterwards. It is not a skip and never blocks the file.
+            held_by_code[code_key] = created
             outcome.success(
                 row=row.row_number,
                 code=code,
@@ -367,6 +341,10 @@ def _run(
             )
             continue
 
+        if write:
+            customer_identity.record_alias(
+                db, held.id, row.customer_name, source="customer_import"
+            )
         changes = _changes(held, row)
         if not changes:
             code, message = _written_row_code(
@@ -521,161 +499,39 @@ def _resolve_market_segments(
     return dropped
 
 
-def _load_candidates(
-    db: Session, rows: list[CustomerRow]
-) -> tuple[dict[tuple[str, str], Customer], dict[str, list[str]]]:
-    """Every customer already held under any code the file names, in ONE scoped read.
+def _load_candidates(db: Session, rows: list[CustomerRow]) -> dict[str, Customer]:
+    """The customer already held under each code the file names, in ONE scoped read.
 
-    Keyed exactly as the unique index is. The by-code index is what the near-name check
-    compares against, so both halves come from the same read and cannot disagree.
+    Keyed by `lower(btrim(code))`. A code that still holds several rows (before the
+    DEBTOR-CODE-UNIQUE merge has run) resolves to the row the merge keeps.
     """
     code_keys = {_key(r.customer_code) for r in rows}
     if not code_keys:
-        return {}, {}
+        return {}
 
-    by_key: dict[tuple[str, str], Customer] = {}
-    names_by_code: dict[str, list[str]] = {}
+    by_code: dict[str, list[Customer]] = {}
     # ORM query: the company-scope predicate is applied by `do_orm_execute`, so this reads
     # only the active company's book. Chunked because a file can name thousands of codes
     # and Postgres has a bind-parameter ceiling.
-    chunk: list[str] = []
-    for code_key in sorted(code_keys):
-        chunk.append(code_key)
-        if len(chunk) >= 500:
-            _absorb(db, chunk, by_key, names_by_code)
-            chunk = []
-    if chunk:
-        _absorb(db, chunk, by_key, names_by_code)
-    return by_key, names_by_code
-
-
-def _absorb(
-    db: Session,
-    code_keys: list[str],
-    by_key: dict[tuple[str, str], Customer],
-    names_by_code: dict[str, list[str]],
-) -> None:
-    held = (
-        db.query(Customer)
-        .filter(func.lower(func.btrim(Customer.customer_code)).in_(code_keys))
-        .all()
-    )
-    for customer in held:
-        name = str(customer.customer_name or "")
-        code_key, name_key = _key(str(customer.customer_code or "")), _key(name)
-        by_key.setdefault((code_key, name_key), customer)
-        names_by_code.setdefault(code_key, []).append(name)
-
-
-def _near_name_matches(
-    db: Session,
-    rows: list[CustomerRow],
-    existing_by_key: dict[tuple[str, str], Customer],
-    names_by_code: dict[str, list[str]],
-) -> dict[tuple[str, str], str]:
-    """For each row that would INSERT, the held name on the same code it most resembles.
-
-    Exact matches are updates and never reach here. Only a NEAR name is worth a human's
-    attention: `CASH (SRT) - AISAH SHAMSUDlN` against `CASH (SRT) - AISAH SHAMSUDIN` is a
-    typo worth catching, `ABDUL RAUF` against `AIMAN` is just another cash sale.
-
-    Compared against what the database ALREADY holds, computed once before any write. Two
-    near-identical names that are both new in the same file do not flag each other - which
-    is the same answer the preview gives, and preview agreeing with the import matters more
-    here than catching a rarer case in one of them only.
-    """
-    pairs: list[tuple[str, str, str, str]] = []  # (code_key, name_key, file name, held name)
-    for row in rows:
-        code_key, name_key = _key(row.customer_code), _key(row.customer_name)
-        if (code_key, name_key) in existing_by_key:
-            continue
-        for held_name in names_by_code.get(code_key, []):
-            if _key(held_name) == name_key:
-                continue
-            pairs.append((code_key, name_key, row.customer_name, held_name))
-    if not pairs:
-        return {}
-
-    scores = _trgm_similarity(db, [(a, b) for _c, _n, a, b in pairs])
-    best: dict[tuple[str, str], tuple[float, str]] = {}
-    for code_key, name_key, file_name, held_name in pairs:
-        score = scores.get((file_name, held_name))
-        if score is None or score < NEAR_NAME_THRESHOLD:
-            continue
-        current = best.get((code_key, name_key))
-        if current is None or score > current[0]:
-            best[(code_key, name_key)] = (score, held_name)
-    return {key: held for key, (_score, held) in best.items()}
-
-
-#: Schema `pg_trgm` is installed in, read from the catalog once per process. Qualifying the
-#: call is not pedantry: any session whose `search_path` excludes that schema - a test on a
-#: scratch schema, for one - gets "function similarity(unknown, unknown) does not exist",
-#: and the flag would silently vanish in exactly the place it is being tested.
-_TRGM_SCHEMA: list[Optional[str]] = []
-
-
-def _trgm_schema(db: Session) -> Optional[str]:
-    if not _TRGM_SCHEMA:
-        try:
-            _TRGM_SCHEMA.append(
-                db.execute(
-                    text(
-                        "SELECT n.nspname FROM pg_extension e "
-                        "JOIN pg_namespace n ON n.oid = e.extnamespace "
-                        "WHERE e.extname = 'pg_trgm'"
-                    )
-                ).scalar()
-            )
-        except SQLAlchemyError:
-            logger.warning("could not resolve the pg_trgm schema", exc_info=True)
-            _TRGM_SCHEMA.append(None)
-    return _TRGM_SCHEMA[0]
-
-
-def _trgm_similarity(
-    db: Session, pairs: list[tuple[str, str]]
-) -> dict[tuple[str, str], float]:
-    """`pg_trgm` similarity for many string pairs in ONE round trip.
-
-    The same extension that backs the trigram indexes on this table (migration 169), so the
-    flag agrees with what search already considers a near match. Touches no table, hence no
-    company-scope concern.
-
-    Best effort: an installation without `pg_trgm` loses the advisory flag with a warning
-    rather than losing the import. The flag never blocks a row, so degrading it is honest;
-    failing a 900-row file over a missing extension would not be.
-    """
-    unique = sorted({pair for pair in pairs})
-    if not unique:
-        return {}
-    schema = _trgm_schema(db)
-    if not schema:
-        return {}
-    values = ", ".join(f"(:a{i}, :b{i})" for i in range(len(unique)))
-    params: dict[str, str] = {}
-    for i, (left, right) in enumerate(unique):
-        params[f"a{i}"] = left
-        params[f"b{i}"] = right
-    try:
-        # Inside a savepoint: a failed statement poisons the enclosing Postgres
-        # transaction, and rolling the WHOLE import back over an advisory flag would be
-        # the cure being worse than the disease.
-        with db.begin_nested():
-            rows = db.execute(
-                text(
-                    f'SELECT p.a, p.b, "{schema}".similarity(p.a, p.b) AS sim '
-                    f"FROM (VALUES {values}) AS p(a, b)"
-                ),
-                params,
-            ).all()
-    except SQLAlchemyError:
-        logger.warning(
-            "pg_trgm similarity unavailable; near-name flags skipped for this import",
-            exc_info=True,
+    ordered = sorted(code_keys)
+    for start in range(0, len(ordered), 500):
+        chunk = ordered[start:start + 500]
+        held = (
+            db.query(Customer)
+            .filter(func.lower(func.btrim(Customer.customer_code)).in_(chunk))
+            .all()
         )
-        return {}
-    return {(row[0], row[1]): float(row[2] or 0.0) for row in rows}
+        for customer in held:
+            by_code.setdefault(_key(str(customer.customer_code or "")), []).append(customer)
+
+    out: dict[str, Customer] = {}
+    for code_key, customers in by_code.items():
+        if len(customers) == 1:
+            out[code_key] = customers[0]
+            continue
+        survivor = customer_identity.customer_by_code(db, code_key)
+        out[code_key] = survivor if survivor is not None else customers[0]
+    return out
 
 
 def _too_long(row: CustomerRow, limits: dict[str, int]) -> Optional[str]:
