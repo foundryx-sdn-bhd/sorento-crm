@@ -33,7 +33,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from app.services.chatbot.contracts import DETAIL_OFFER_KINDS
+from app.services.chatbot.contracts import DETAIL_OFFER_KINDS, SALES_REPORT_GROUP_BYS
 from app.services.chatbot.turn.pending import ESCALATION_OFFER_KINDS, Pending
 from app.services.chatbot.turn.state import KIND_FIELD_MAP, Focus
 
@@ -60,6 +60,10 @@ SCOPE_BY_DOCUMENT: dict[tuple[str, ...], str] = {
     ("DO",): "do",
     ("DO", "SO"): "both",
 }
+
+#: A position no roster ever prints (they count from 1): a pick of nothing on offer, which
+#: the generic re-print rule answers by asking the same question again.
+NOT_OFFERED = 0
 
 
 @dataclass(frozen=True)
@@ -160,9 +164,17 @@ def _positions_by_label(pending: Pending, verdict: dict[str, Any]) -> list[int]:
         o["position"]
         for o in pending.options
         if o.get("position") is not None
-        and isinstance(o.get("label"), str)
-        and o["label"].strip().lower() in named
+        and named & _option_words(o)
     ]
+
+
+def _option_words(option: dict[str, Any]) -> set[str]:
+    """An option's label plus the aliases its own writer gave it (the sales report's
+    drill-downs: "DO" for Delivery orders, `presenters._SALES_OPTION_ALIASES`), each
+    lower-cased. Still an exact match: the aliases are data on the option, not words this
+    engine reads."""
+    words = [option.get("label"), *((option.get("payload") or {}).get("aliases") or [])]
+    return {w.strip().lower() for w in words if isinstance(w, str) and w.strip()}
 
 
 #: How far `broaden_to` widens the axis `broaden_axis` names (owner ruling, 17 Sep 2026).
@@ -269,7 +281,7 @@ def picked_positions(pending: Pending, verdict: dict[str, Any]) -> tuple[list[in
         return positions, "positions"
     if positions:
         return positions, "positions"
-    # Prod turns 339 and 342 (contact 487555417, 23 Sep 2026): "Photo srt446-RG" and
+    # Prod turns 339 and 342 (contact 900000039, 23 Sep 2026): "Photo srt446-RG" and
     # "Srt446-RG list price" both label-matched an offered option even though the
     # parser itself said `domain_in_message: true` - the message named its own
     # question. The parser decides ask vs pick; this engine only resolves WHICH
@@ -346,6 +358,10 @@ def _named_scope(verdict: dict[str, Any]) -> str | None:
 def _picked_scope(pending: Pending, positions: list[int]) -> str | None:
     matched = [o for o in pending.options if o.get("position") in positions] if positions else []
     values = [(o.get("payload") or {}).get("value") for o in matched]
+    if pending.kind == "sales_report_detail":
+        # AC-SR-28: the sales report's drill-downs are a `group_by`, one at a time (the
+        # first picked); never a document.
+        return next((v for v in values if v in SALES_REPORT_GROUP_BYS), None)
     # "all" over the scope question picks every option, and every option at once IS the
     # widest one - answering "both" rather than the first row on the list.
     scope = "both" if "both" in values else next((v for v in values if v), None)
@@ -597,6 +613,11 @@ def decide(
         reading = _subject_reading(verdict, focus, pending, entities, window, facts)
         if not positions and reading.refines:
             return reading
+        if picked and picked[1] == "label_match" and pending.kind == "sales_report_detail":
+            # AC-SR-28: "by product", "DO" typed back at the drill offer arrives as an
+            # ENTITY (the label-match arm of `picked_positions`); that entity IS the pick,
+            # not a new subject. The outstanding report's kinds keep their order.
+            entities = []
         if entities:
             # D17 point 3: a stray position riding along with an entity is still a new
             # ask, because the parser is told never to emit both.
@@ -609,6 +630,32 @@ def decide(
                 **facts,
             )
         named_scope = _named_scope(verdict)
+        own_status = verdict.get("status") or verdict.get("order_status")
+        sales_drill = pending.kind == "sales_report_detail" and own_status in (None, "", "sales_report")
+        if sales_drill and positions:
+            # Fix round 3, F6: a picked position (a number, or the typed label itself) wins
+            # over a `document` on the same verdict - the parser carries a stale one from an
+            # earlier "DO" turn - so the pick is read below, never the document.
+            named_scope = None
+        if named_scope is not None and sales_drill:
+            # Fix round 1, B1 (AC-SR-28): "DO" / "delivery orders" typed at the sales
+            # report's drill offer comes back as `document: ["DO"]` (the parser's document
+            # enum). Here it picks the Delivery orders option; SO (or both), or DO when that
+            # option is not on offer, is a pick of nothing offered, re-asked like a number
+            # past the end. A message that names its own status ("DO outstanding") is a new
+            # ask and falls through to the named-document arm below (fix round 2, R1), as
+            # every outstanding kind's named document does.
+            offered = [
+                o["position"]
+                for o in pending.options
+                if (o.get("payload") or {}).get("value") == "delivery_order" and o.get("position") is not None
+            ]
+            if named_scope == "do" and offered:
+                return Decision(
+                    ANSWER, "named_document_pick", positions=tuple(offered[:1]), window=window,
+                    scope="delivery_order", **facts,
+                )
+            return Decision(ANSWER, "named_document_not_offered", positions=(NOT_OFFERED,), window=window, **facts)
         if named_scope is not None:
             # "Sales order", typed straight after the DO detail list, emitted
             # `document: ["SO"]` AND `reference_positions: [1]`, and the position won:

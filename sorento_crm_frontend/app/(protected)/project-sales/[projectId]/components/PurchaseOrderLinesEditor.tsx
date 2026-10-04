@@ -232,6 +232,8 @@ export function PurchaseOrderLinesEditor({
         kind: 'select',
         placeholder: 'PCS',
         options: uomOptions,
+        loadError: uoms.error,
+        onRetry: () => void uoms.refetch(),
         resolveSelected: (_row, draft) =>
           uomOptions.find((option) => option.value === draft.uom),
       },
@@ -277,7 +279,7 @@ export function PurchaseOrderLinesEditor({
         },
       },
     ],
-    [fetchProducts, uomOptions],
+    [fetchProducts, uomOptions, uoms.error, uoms.refetch],
   );
 
   /**

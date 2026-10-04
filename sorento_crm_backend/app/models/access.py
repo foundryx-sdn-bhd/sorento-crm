@@ -256,6 +256,9 @@ class RespondContact(Base):
     # as it did before the switch existed. Flipped in bulk or per contact by
     # scripts/set_contact_outbound.py.
     outbound_enabled = Column(Boolean, nullable=False, default=True, server_default=text("true"))
+    # CONTACT-BRAND-SCOPE: the brands this contact may see. NULL or empty = every brand.
+    # Read only through app.services.contact_brand_scope.contact_brand_scope.
+    brand_ids = Column(ARRAY(UUID(as_uuid=False)), nullable=True)
     # Chatbot turn re-architecture (AC-1503): the Profile shelf, one JSONB blob
     # (tier, language, default ledgers - PLAN "Design > State"), written by explicit
     # picks (a WhatsApp pick, or the Contact > Access "Chatbot" card) and read as a
@@ -281,6 +284,11 @@ class RespondContact(Base):
     # stock ask and the incoming routes, `app/services/eta_policy.py`). Default ON: the
     # stock ask padded the ETA for everyone before the switch existed.
     chatbot_eta_offset_applied = Column(Boolean, nullable=False, server_default=text("true"), default=True)
+    # ESCALATION-CONTROL (owner, 30 Sep 2026): may the chatbot offer this contact a
+    # hand-off to a person, or let them force one. The ONE control (access types do not
+    # decide it); default ON, every existing contact backfilled ON, unticked on the
+    # contact page's Chatbot card to block.
+    escalation_allowed = Column(Boolean, nullable=False, server_default=text("true"), default=True)
     created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=False), server_default=func.now(), onupdate=func.now(), nullable=False)
     created_by = Column(Text, nullable=True)

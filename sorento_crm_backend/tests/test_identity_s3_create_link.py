@@ -125,7 +125,7 @@ def real_session_client():
 
     with blank_session() as db:
         admin = _seed_admin_user(db)
-        session_row = mint_session(db, admin.id, remember=True, user_agent="ZZT-Agent/1.0")
+        session_row = mint_session(db, admin.id, user_agent="ZZT-Agent/1.0")
 
         def _override_db():
             yield db
@@ -687,7 +687,7 @@ def test_ac46_use_new_number_clears_phone_verified_at_revokes_sessions_flag_goes
     user.respond_contact_id = contact.id
     user.phone_verified_at = _dt.datetime.utcnow()
     db.commit()
-    session_row = mint_session(db, user.id, remember=True)
+    session_row = mint_session(db, user.id)
 
     new_phone = _msisdn(_phone())
     contact.phone_number = new_phone
@@ -794,7 +794,7 @@ def test_ac52_get_user_and_get_me_carry_five_fields(api_client):
     user.respond_contact_id = contact.id
     user.phone_verified_at = _dt.datetime.utcnow()
     db.commit()
-    mint_session(db, user.id, remember=True, auth_method="phone_otp")
+    mint_session(db, user.id, auth_method="phone_otp")
 
     resp = client.get(f"/api/v1/user-management/users/{user.id}")
     assert resp.status_code == 200, resp.text
@@ -844,7 +844,7 @@ def test_ac52_get_me_carries_real_sign_in_field_values_not_just_schema_defaults(
     self_user.respond_contact_id = contact.id
     self_user.phone_verified_at = _dt.datetime.utcnow()
     db.commit()
-    mint_session(db, self_user.id, remember=True, auth_method="phone_otp")
+    mint_session(db, self_user.id, auth_method="phone_otp")
 
     def _override_self():
         return {"id": self_user.id, "email": None, "name": self_user.name, "status": "ACTIVE"}
@@ -891,8 +891,8 @@ def test_ac52_last_sign_in_method_is_newest_session_method(api_client):
     client, db, _admin = api_client
     user = _seed_user(db, name="Multi Session User")
     db.commit()
-    mint_session(db, user.id, remember=True, auth_method="password")
-    mint_session(db, user.id, remember=True, auth_method="portal_link")
+    mint_session(db, user.id, auth_method="password")
+    mint_session(db, user.id, auth_method="portal_link")
 
     resp = client.get(f"/api/v1/user-management/users/{user.id}")
     assert resp.json().get("last_sign_in_method") == "portal_link"
@@ -910,7 +910,7 @@ def test_ac54_put_unlink_revokes_every_session_and_writes_audit(api_client):
     user = _seed_user(db, name="Unlink Session User")
     user.respond_contact_id = contact.id
     db.commit()
-    session_row = mint_session(db, user.id, remember=True)
+    session_row = mint_session(db, user.id)
 
     resp = client.put(f"/api/v1/user-management/users/{user.id}", json={"respond_contact_id": None})
     assert resp.status_code == 200, resp.text
@@ -936,7 +936,7 @@ def test_ac54_deferred_unlink_contact_executor_revokes_sessions_and_writes_audit
         user = _seed_user(db, name="Deferred Unlink User")
         user.respond_contact_id = contact.id
         db.commit()
-        session_row = mint_session(db, user.id, remember=True)
+        session_row = mint_session(db, user.id)
 
         action = get_action("user.unlink_contact")
         assert action is not None, "user.unlink_contact must be registered"
@@ -1005,7 +1005,7 @@ def test_ac54_phone_change_revokes_sessions(api_client):
     original_phone = _msisdn(_phone())
     user = _seed_user(db, name="Phone Change Sessions User", email=None, phone=original_phone)
     db.commit()
-    session_row = mint_session(db, user.id, remember=True)
+    session_row = mint_session(db, user.id)
 
     new_phone = _msisdn(_phone())
     resp = client.put(f"/api/v1/user-management/users/{user.id}", json={"contact_number": new_phone})
@@ -1022,7 +1022,7 @@ def test_ac54_first_link_does_not_revoke_sessions(api_client):
     contact = _seed_contact(db, name="First Link Contact")
     user = _seed_user(db, name="First Link User")
     db.commit()
-    session_row = mint_session(db, user.id, remember=True)
+    session_row = mint_session(db, user.id)
 
     resp = client.put(f"/api/v1/user-management/users/{user.id}", json={"respond_contact_id": contact.id})
     assert resp.status_code == 200, resp.text
@@ -1041,7 +1041,7 @@ def test_ac54_clearing_phone_to_null_revokes_sessions_and_clears_verified_at(api
     user = _seed_user(db, name="Clear Phone User", email=f"{unique_code('clr')}@x.com".lower(), phone=phone)
     user.phone_verified_at = _dt.datetime.utcnow()
     db.commit()
-    session_row = mint_session(db, user.id, remember=True)
+    session_row = mint_session(db, user.id)
 
     resp = client.put(f"/api/v1/user-management/users/{user.id}", json={"contact_number": None})
     assert resp.status_code == 200, resp.text

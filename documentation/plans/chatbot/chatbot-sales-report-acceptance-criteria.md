@@ -19,7 +19,7 @@ transferred to DO, unit price, discount, line total, required date).
    the customer "hanlim" and the channel "dealer". If "hanlim" matches more than one company
    family the existing customer picker asks which one; "1" or "all" continues this same ask.
    No date in the message means all dates. Nothing else is asked.
-2. One reply. Header: Customer / Product / Channel / Location / Delivery date, `all` on any
+2. One reply. Header: Customer / Product / Channel / Location / Required date (or order date), `all` on any
    axis nobody named. Then one block per month, latest month first. Each block: Sales orders,
    Ordered, Confirmed (DO), Outstanding, each money line as `RM value (Qty: n)`, then a
    By product list ranked by ordered value. Then one closing line: `Reply 1 for the sales
@@ -67,8 +67,8 @@ Other stakeholders: nobody is notified; this is a read.
 |---|---|
 | S1 | Money and quantity come from sales order lines only. The DO tables are not read. |
 | S2 | Confirmed = the part of a line transferred to DO: `confirmed_qty = LEAST(qty_delivered, qty_ordered)`, `confirmed_value = line_total * confirmed_qty / qty_ordered` (0 when `qty_ordered` is 0). Outstanding = the rest of the line, counted only while `sales_orders.status = 'open'` AND `line_status = 'open'` (the outstanding report's own predicate). Ordered = Confirmed + Outstanding. Cancelled lines and cancelled SOs are never counted. |
-| S3 | A line belongs to the month of its own `required_date`; a line with none falls back to `sales_orders.order_date`. Header line is `Delivery date:`. An SO with lines in two months counts once in each month's `Sales orders`. Future months print like any other. |
-| S4 | No date in the message = all dates, printed `Delivery date: all`. |
+| S3 | A line belongs to the month of its own `required_date`; a line with none falls back to `sales_orders.order_date`. Header line is `Required date (or order date):`. An SO with lines in two months counts once in each month's `Sales orders`. Future months print like any other. |
+| S4 | No date in the message = all dates, printed `Required date (or order date): all`. |
 | S5 | ONE shape: a block per month, latest first, each with its own breakdown list, always. Every row is sent, no "+N more". |
 | S6 | Breakdown under a month: customer subject = By product; product subject = By customer; both named = no breakdown, UNLESS the product filter covers 2+ codes (S20 extends this - see S20). Ranked by ordered value descending, ties by ordered quantity descending, then name ascending. Sorted in the route; the presenter never re-sorts. |
 | S7 | Subject rule: at least one of customer or product (422 `subject_required` otherwise). |
@@ -90,7 +90,7 @@ Other stakeholders: nobody is notified; this is a read.
 
 - **AC-1601 [FE][T]** Given a report body with a customer subject and two months, when
   presented, then the text equals golden `sales-report-customer.txt` byte for byte: five
-  header lines in the order Customer / Product / Channel / Location / Delivery date, a blank
+  header lines in the order Customer / Product / Channel / Location / Required date (or order date), a blank
   line, then month blocks in the order given. Evidence: golden fixture.
 - **AC-1602 [FE][T]** Each month block prints, in order: `*_Sep 2026_*`, `Sales orders: n`,
   `Ordered: RM v (Qty: n)`, `Confirmed (DO): RM v (Qty: n)`, `Outstanding: RM v (Qty: n)`,

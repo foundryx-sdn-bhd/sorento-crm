@@ -83,7 +83,9 @@ def _redis_client():
 
 
 def _clear_contact_keys(client: Any, contact: str) -> None:
-    client.delete(dispatch.seq_key(contact), dispatch.done_key(contact), dispatch.running_key(contact))
+    client.delete(dispatch.seq_key(contact), dispatch.done_key(contact))
+    for key in client.scan_iter(f"chatbot:alive:{contact}:*"):
+        client.delete(key)
 
 
 def _second_message_envelope(contact: str, message_id: str) -> Any:
@@ -451,7 +453,7 @@ class TestTicketReleaseUnderS6cClosesAc705:
                 "the outage close must release ticket 1 in run_turn's finally, or every "
                 "later message for this contact deadlocks behind it"
             )
-            assert redis_client.exists(dispatch.running_key(CONTACT_ID)) == 0
+            assert redis_client.exists(dispatch.alive_key(CONTACT_ID, 1)) == 0
 
             second, elapsed = self._second_turn_delegates_fast(session_factory, monkeypatch)
             assert elapsed < 2.0, (
@@ -508,7 +510,7 @@ class TestTicketReleaseUnderS6cClosesAc705:
                 "a tail failure inside _run_business_answer must still release the "
                 "ticket, or the contact is stuck behind a turn that already finished"
             )
-            assert redis_client.exists(dispatch.running_key(CONTACT_ID)) == 0
+            assert redis_client.exists(dispatch.alive_key(CONTACT_ID, 1)) == 0
 
             second, elapsed = self._second_turn_delegates_fast(session_factory, monkeypatch)
             assert elapsed < 2.0, (

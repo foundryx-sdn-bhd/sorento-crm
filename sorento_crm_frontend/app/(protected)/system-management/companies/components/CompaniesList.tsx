@@ -45,7 +45,7 @@ export default function CompaniesList() {
   const [companyToDelete, setCompanyToDelete] = useState<Company | null>(null);
   const [accessCompany, setAccessCompany] = useState<Company | null>(null);
 
-  const { data, isLoading, isPlaceholderData } = useCompanies({
+  const { data, isLoading, isPlaceholderData, error, refetch } = useCompanies({
     pageIndex: 0,
     pageSize: 100,
     sorting: [{ id: 'name', desc: false }],
@@ -134,6 +134,8 @@ export default function CompaniesList() {
         table={table}
         recordCount={filteredCompanies.length}
         isLoading={isLoading}
+        error={error}
+        onRetry={() => void refetch()}
         isPlaceholderData={isPlaceholderData}
         tableLayout={{ width: 'fixed', columnsResizable: true, columnsVisibility: true }}
       >

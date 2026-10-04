@@ -118,6 +118,8 @@ export async function uploadAttachment(
     entityType?: string;
     entityId?: string;
     accessLevels?: string[];
+    /** Packing List uploads only: 'west' / 'east'. */
+    regions?: string[];
     directoryId?: string | null;
     /** Field-linkage template: target table this doc describes. */
     targetEntityType?: string | null;
@@ -134,6 +136,7 @@ export async function uploadAttachment(
     entityType,
     entityId,
     accessLevels,
+    regions,
     directoryId,
     targetEntityType,
     targetFieldKeys,
@@ -148,6 +151,9 @@ export async function uploadAttachment(
   if (directoryId) formData.append('directory_id', directoryId);
   if (accessLevels && accessLevels.length > 0) {
     formData.append('access_levels', JSON.stringify(accessLevels));
+  }
+  if (regions && regions.length > 0) {
+    formData.append('regions', JSON.stringify(regions));
   }
   if (targetEntityType) {
     formData.append('target_entity_type', targetEntityType);

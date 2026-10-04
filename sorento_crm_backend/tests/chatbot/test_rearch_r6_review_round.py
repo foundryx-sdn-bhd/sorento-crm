@@ -46,6 +46,7 @@ from app.services.chatbot.turn.policy import default_policy
 from app.services.chatbot.turn.state import Focus, Profile
 from app.services.company_scope import DEFAULT_COMPANY_ID
 from tests._pg_fixture import unique_code
+from tests.chatbot._turn_helpers import do_window
 from tests.chatbot.test_engine import (
     CONTACT_ID,
     _envelope,
@@ -1006,7 +1007,8 @@ class TestMissArmRosterHasNoMinimumTwoGuard:
 
 
 # --------------------------------------------------------------------------- #
-# REVIEWER item 11b (S4) - `turn/narrow.py::_ROSTER_CAP = 10` is a literal AC-1710
+# REVIEWER item 11b (S4) - `turn/narrow.py::_ROSTER_CAP` (10 then, 50 since
+# PICKER-NO-CAP) is a literal AC-1710
 # forbids by name, still live for `customer`/`attachment_type`/`kind_pick` rosters
 # (the `product` kind's own roster moved to `gate.py`, R5/R6). `decide()` has no
 # `roster_cap` parameter today - AC-1710 says this must key off `chatbot_entity_
@@ -1027,7 +1029,7 @@ class TestNarrowPyCustomerRosterHonoursConfiguredCapNotTheLiteral:
         )
         assert len(outcome.ask_options) <= 3, (
             f"AC-1710/S4: a customer roster must honour a CONFIGURED cap, never "
-            f"narrow.py's own literal `_ROSTER_CAP = 10`: {outcome.ask_options!r}"
+            f"narrow.py's own literal `_ROSTER_CAP`: {outcome.ask_options!r}"
         )
 
 
@@ -1065,6 +1067,8 @@ class TestScopeBlockAskScopedAxesAndBestEffortWrapper:
         _seed_product(session_factory, company_id=DEFAULT_COMPANY_ID, code=code)
         qf = _parser_output(
             domain_hint="order", intent_hint="check_order",
+            # Dated: a dateless DO list ask asks which period first (DO-ASK-SIMPLIFY, owner 4 Oct 2026).
+            **do_window(),
             entities=[
                 {"raw": code, "hint": "product", "canonical_code": None, "current_message": True, "confident": True}
             ],

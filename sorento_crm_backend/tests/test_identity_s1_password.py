@@ -178,7 +178,7 @@ def test_s1_phone_only_user_sets_password_without_current_password(app_client):
     digits = _digits()
     contact = _contact(db, _workspace(db), digits)
     user = _user(db, phone=digits, contact_id=contact.id, email=f"{unique_code('phoneonly')}@x.com".lower())
-    session_row = mint_session(db, user.id, remember=True, auth_method="phone_otp")
+    session_row = mint_session(db, user.id, auth_method="phone_otp")
 
     resp = client.post(
         "/api/v1/auth/password",
@@ -199,7 +199,7 @@ def test_s1_wrong_current_password_is_400(app_client):
     user = _user(db, email=f"{unique_code('haspw')}@x.com".lower())
     user.password = _hash(pw)
     db.commit()
-    session_row = mint_session(db, user.id, remember=True, auth_method="password")
+    session_row = mint_session(db, user.id, auth_method="password")
 
     resp = client.post(
         "/api/v1/auth/password",
@@ -218,8 +218,8 @@ def test_s1_password_change_revokes_every_other_session_keeps_current(app_client
     user = _user(db, email=f"{unique_code('multi')}@x.com".lower())
     user.password = _hash(pw)
     db.commit()
-    current = mint_session(db, user.id, remember=True, auth_method="password")
-    other = mint_session(db, user.id, remember=True, auth_method="password")
+    current = mint_session(db, user.id, auth_method="password")
+    other = mint_session(db, user.id, auth_method="password")
 
     resp = client.post(
         "/api/v1/auth/password",
@@ -239,7 +239,7 @@ def test_s1_new_password_under_8_chars_is_422(app_client):
     user = _user(db, email=f"{unique_code('short')}@x.com".lower())
     user.password = _hash("original-password")
     db.commit()
-    session_row = mint_session(db, user.id, remember=True, auth_method="password")
+    session_row = mint_session(db, user.id, auth_method="password")
 
     resp = client.post(
         "/api/v1/auth/password",
@@ -257,7 +257,7 @@ def test_s1_account_payload_carries_has_password_and_phone_verified_at(app_clien
     user = _user(db, email=f"{unique_code('hp')}@x.com".lower())
     user.password = _hash("some-password-123")
     db.commit()
-    session_row = mint_session(db, user.id, remember=True, auth_method="password")
+    session_row = mint_session(db, user.id, auth_method="password")
 
     resp = client.get(
         "/api/v1/user-management/users/me",
@@ -286,7 +286,7 @@ def test_s1_admin_changing_contact_number_clears_verification_and_revokes_sessio
     user = _user(db, phone=digits, contact_id=contact.id, email=f"{unique_code('lost')}@x.com".lower())
     user.phone_verified_at = datetime.now(timezone.utc).replace(tzinfo=None)
     db.commit()
-    session_row = mint_session(db, user.id, remember=True, auth_method="phone_otp")
+    session_row = mint_session(db, user.id, auth_method="phone_otp")
 
     new_digits = _digits()
     resp = client.put(f"/api/v1/user-management/users/{user.id}", json={"contact_number": new_digits})
@@ -313,7 +313,7 @@ def test_s1_admin_put_without_phone_change_leaves_verification_and_sessions(admi
     user = _user(db, phone=digits, contact_id=contact.id, email=f"{unique_code('samephone')}@x.com".lower())
     user.phone_verified_at = datetime.now(timezone.utc).replace(tzinfo=None)
     db.commit()
-    session_row = mint_session(db, user.id, remember=True, auth_method="phone_otp")
+    session_row = mint_session(db, user.id, auth_method="phone_otp")
 
     resp = client.put(f"/api/v1/user-management/users/{user.id}", json={"name": "Renamed ZZT"})
     assert resp.status_code == 200, resp.text

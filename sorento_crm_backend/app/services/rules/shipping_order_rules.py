@@ -7,12 +7,15 @@ not the other.
 """
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from typing import Optional
 
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 #: A real ISO 6346 container number: four letters, seven digits. Preferred
 #: over "the text after the first space" (the SPO xlsx Loading Date cell's
@@ -155,6 +158,31 @@ def nightly_relink_all_containers(db: Session) -> int:
     for company_id, container in pairs:
         relinked += relink_allocations_for_container(db, container, company_id=company_id)
     return relinked
+
+
+def nightly_refresh_open_containers(db: Session) -> int:
+    """SPO-DEDUPE-ALL: recompute the stored received figures of every shipment
+    not yet fully received. They are otherwise refreshed only when the packing
+    list page is opened or an ingest/allocation write touches the shipment, so a
+    receipt that reached the container another way (a dedupe, a GRN on a sibling
+    row) left the chatbot's "incoming" reading the stale figure (GCXU6137164:
+    stored 95 of 99, 4 reported incoming, packing list showed 99/99).
+
+    Each shipment is refreshed and committed on its own; one that fails is
+    rolled back, logged and skipped. Returns how many were refreshed.
+    """
+    from app.services.procurement_service import InboundShipmentService
+
+    service = InboundShipmentService(db)
+    refreshed = 0
+    for shipment_id in service.open_shipment_ids():
+        try:
+            service.refresh_shipment_line_statuses(shipment_id)
+            refreshed += 1
+        except Exception:  # noqa: BLE001 - one bad shipment must not stop the sweep
+            db.rollback()
+            logger.exception("open container refresh failed for %s", shipment_id)
+    return refreshed
 
 
 def received_guard(
@@ -305,6 +333,13 @@ class SupersedeGroupPlan:
     #: they were written on is what would lose them.
     rejected_total: int = 0
     notes: Optional[str] = None
+    #: D31/D32 (SPO-XLSX-SUPERSEDE round 2): a product-level FALLBACK group -
+    #: Excel rows that named no warehouse, paired with lines that sit in
+    #: DIFFERENT `(product, location)` groups. Its receipt picks are split over
+    #: the lines by capacity (`repoint_picking_lines_by_capacity`) instead of
+    #: all moving to `lines[0]`, which would charge one location's line with
+    #: another location's receipt.
+    split_receipts: bool = False
 
 
 @dataclass(frozen=True)
@@ -474,7 +509,9 @@ def carried_received(
     return received, received >= int(allocated or 0)
 
 
-def plan_xlsx_supersede(incoming, refless_rows) -> SupersedePlan:
+def plan_xlsx_supersede(
+    incoming, refless_rows, *, fallback_blocked_products=(), follow_autocount: bool = False
+) -> SupersedePlan:
     """Plan D26/D26a/D27 for ONE document. Pure: reads, decides, writes nothing.
 
     `incoming` is a sequence of mappings carrying `product_id`,
@@ -484,6 +521,22 @@ def plan_xlsx_supersede(incoming, refless_rows) -> SupersedePlan:
     already filtered to `is_xlsx_era_row` and to the groups D25a still counts
     as Excel-era by the caller, since only the caller can see which groups
     already hold a ref row.
+
+    `fallback_blocked_products` (review B1): product ids the D31 fallback must
+    not touch because this `spo_number` already carries a ref row for them. A
+    no-warehouse Excel group never joins the caller's ESB keys (AutoCount never
+    resolves "HQ"), so on a RE-push it would otherwise still be offered every
+    NEW line of that product and pair on quantity alone - a fresh, unreceived
+    line would come out fully received with the old picks on it. The ingest
+    passes the products its ESB keys name; the repair script passes none, since
+    it plans against the document's whole live line-set at once.
+
+    `follow_autocount` (owner ruling after #1411, the REPAIR scripts only):
+    AutoCount is the truth for a document it states. A product whose Excel rows
+    the keyed pass settles completely keeps that result; a product with ANY row
+    it cannot settle is planned as one pool across warehouses
+    (`_follow_autocount_pools`, D37). The ingest push leaves it off: a live push
+    keeps D31.
     """
     ordered_rows = sorted(
         refless_rows,
@@ -568,54 +621,178 @@ def plan_xlsx_supersede(incoming, refless_rows) -> SupersedePlan:
             locked.append(
                 SupersedeKeptGroup(key=key, row_ids=row_ids, reason=KEPT_RECEIVED_LOCKED)
             )
+            # Review should-fix 2: the line(s) this locked group named are still
+            # its counterpart (the push creates them as ordinary rows beside the
+            # locked Excel rows), so the D31 fallback must not hand them to a
+            # different Excel row of equal quantity.
+            claimed_lines.update(indexes)
             continue
 
-        shipment_ids: list[str] = []
-        for row in rows:
-            if row.inbound_shipment_id:
-                value = str(row.inbound_shipment_id)
-                if value not in shipment_ids:
-                    shipment_ids.append(value)
-        group_shipment = shipment_ids[0] if shipment_ids else None
-        # D25c: the same "first non-null wins" rule as the shipment, for the
-        # bin and the unit the upload recorded.
-        group_zone = next(
-            (str(row.storage_zone_id) for row in rows if row.storage_zone_id), None
+        claimed_lines.update(indexes)
+        groups.append(_group_plan(key, rows, indexes, incoming))
+
+    if follow_autocount:
+        return _follow_autocount_pools(incoming, rows_by_key, groups, kept, locked, all_have_seq)
+
+    # D31 (SPO-XLSX-SUPERSEDE round 2): an Excel row that named NO warehouse -
+    # the SCM upload's "HQ" aggregate - can never meet a line on the keyed pass,
+    # because every AutoCount line resolves a warehouse. Its rows are pooled per
+    # product with that product's lines nobody claimed, and superseded when the
+    # two sides order EXACTLY the same quantity: with no destination to agree
+    # on, the quantity is the only evidence they describe the same goods, so
+    # anything short of equality stays kept exactly as before. A row that does
+    # name a warehouse is never pooled - its destination is a statement, and a
+    # line elsewhere is not its counterpart.
+    still_kept: list[SupersedeKeptGroup] = []
+    fallback: dict[str, list[SupersedeKeptGroup]] = {}
+    blocked = {str(product) for product in fallback_blocked_products if product}
+    for group in kept:
+        if (
+            group.key[0]
+            and group.key[0] not in blocked
+            and not (group.key[1] or "").startswith("wh:")
+        ):
+            fallback.setdefault(group.key[0], []).append(group)
+        else:
+            still_kept.append(group)
+    for product, kept_groups in fallback.items():
+        rows = sorted(
+            (row for group in kept_groups for row in rows_by_key[group.key]),
+            key=lambda r: (
+                r.spo_line_number if r.spo_line_number is not None else 10**9,
+                str(r.id),
+            ),
         )
-        group_uom = next((str(row.uom_id) for row in rows if row.uom_id), None)
-        rejected_total = sum(int(row.quantity_rejected or 0) for row in rows)
-        group_notes = "; ".join(
-            note
-            for note in ((row.allocation_notes or "").strip() for row in rows)
-            if note
-        ) or None
-        shares = distribute_received(group_received, incoming_allocated)
-        line_plans = tuple(
-            SupersedeLinePlan(
-                index=index,
-                carried_received=share,
-                inbound_shipment_id=group_shipment,
-                storage_zone_id=group_zone,
-                uom_id=group_uom,
-            )
-            for index, share in zip(indexes, shares)
-        )
+        indexes = [
+            index
+            for index, values in enumerate(incoming)
+            if index not in claimed_lines and str(values.get("product_id") or "") == product
+        ]
+        indexes.sort(key=lambda i: incoming[i]["line_number"] if all_have_seq else i)
+        rows_allocated = sum(int(row.allocated_quantity or 0) for row in rows)
+        lines_allocated = sum(int(incoming[i].get("allocated_quantity") or 0) for i in indexes)
+        if not indexes or rows_allocated != lines_allocated:
+            still_kept.extend(kept_groups)
+            continue
         claimed_lines.update(indexes)
         groups.append(
-            SupersedeGroupPlan(
-                key=key,
-                lines=line_plans,
-                superseded_row_ids=row_ids,
-                # D26a: everything after the first is dropped, and saying so
-                # is the point - a group whose rows named two containers
-                # cannot keep both on one line.
-                dropped_shipment_ids=tuple(shipment_ids[1:]),
-                rejected_total=rejected_total,
-                notes=group_notes,
-            )
+            _group_plan((product, "product:*"), rows, indexes, incoming, split_receipts=True)
         )
     return SupersedePlan(
-        groups=tuple(groups), kept_groups=tuple(kept), locked_groups=tuple(locked)
+        groups=tuple(groups), kept_groups=tuple(still_kept), locked_groups=tuple(locked)
+    )
+
+
+def _follow_autocount_pools(incoming, rows_by_key, groups, kept, locked, all_have_seq) -> SupersedePlan:
+    """D37 (owner ruling after #1411, the REPAIR only): AutoCount is the truth
+    for every product it lists on the document.
+
+    A product the keyed pass settled completely (every Excel row of it in a
+    superseded same-destination group) keeps that result. A product with ANY
+    Excel row the keyed pass could not settle - no line at its warehouse
+    (SPO-2026/08-0074: Excel at BRW, AutoCount at BRW-NTC), no warehouse at
+    all, a same-warehouse line too small for its receipt (NTC 77 + IB 22
+    against 99 received at NTC), or a sibling group that took every line of the
+    product - is planned as ONE pool: all its Excel rows against all its
+    AutoCount lines, picks split by capacity (same warehouse first), superseded
+    whenever the lines can hold the receipt the rows carry (the D26a rule) and
+    `received_locked` otherwise. A product AutoCount does not list at all is
+    left as it was (`no_counterpart`, the repair's orphan rule).
+    """
+    unsettled = {g.key[0] for g in (*kept, *locked) if g.key[0]}
+    lines_by_product: dict[str, list[int]] = {}
+    for index, values in enumerate(incoming):
+        if values.get("product_id"):
+            lines_by_product.setdefault(str(values["product_id"]), []).append(index)
+    pooled = {product for product in unsettled if product in lines_by_product}
+
+    out_groups = [g for g in groups if g.key[0] not in pooled]
+    out_kept = [g for g in kept if g.key[0] not in pooled]
+    out_locked = [g for g in locked if g.key[0] not in pooled]
+    for product in sorted(pooled):
+        keys = [key for key in rows_by_key if key[0] == product]
+        rows = sorted(
+            (row for key in keys for row in rows_by_key[key]),
+            key=lambda r: (
+                r.spo_line_number if r.spo_line_number is not None else 10**9,
+                str(r.id),
+            ),
+        )
+        indexes = sorted(
+            lines_by_product[product],
+            key=lambda i: incoming[i]["line_number"] if all_have_seq else i,
+        )
+        received = sum(int(row.quantity_received or 0) for row in rows)
+        allocated = sum(int(row.allocated_quantity or 0) for row in rows)
+        lines_total = sum(int(incoming[i].get("allocated_quantity") or 0) for i in indexes)
+        if lines_total < min(received, allocated):
+            out_locked.extend(
+                SupersedeKeptGroup(
+                    key=key,
+                    row_ids=tuple(str(row.id) for row in rows_by_key[key]),
+                    reason=KEPT_RECEIVED_LOCKED,
+                )
+                for key in keys
+            )
+            continue
+        out_groups.append(
+            _group_plan((product, "product:*"), rows, indexes, incoming, split_receipts=True)
+        )
+    return SupersedePlan(
+        groups=tuple(out_groups), kept_groups=tuple(out_kept), locked_groups=tuple(out_locked)
+    )
+
+
+def _group_plan(
+    key: SupersedeKey, rows, indexes: list[int], incoming, *, split_receipts: bool = False
+) -> SupersedeGroupPlan:
+    """One superseded group's plan (D26 carry, D25c facts) - shared by the keyed
+    pass and the D31 product fallback so the two cannot carry differently."""
+    shipment_ids: list[str] = []
+    for row in rows:
+        if row.inbound_shipment_id:
+            value = str(row.inbound_shipment_id)
+            if value not in shipment_ids:
+                shipment_ids.append(value)
+    group_shipment = shipment_ids[0] if shipment_ids else None
+    # D25c: the same "first non-null wins" rule as the shipment, for the
+    # bin and the unit the upload recorded.
+    group_zone = next(
+        (str(row.storage_zone_id) for row in rows if row.storage_zone_id), None
+    )
+    group_uom = next((str(row.uom_id) for row in rows if row.uom_id), None)
+    rejected_total = sum(int(row.quantity_rejected or 0) for row in rows)
+    group_notes = "; ".join(
+        note
+        for note in ((row.allocation_notes or "").strip() for row in rows)
+        if note
+    ) or None
+    group_received = sum(int(row.quantity_received or 0) for row in rows)
+    incoming_allocated = [
+        int(incoming[index].get("allocated_quantity") or 0) for index in indexes
+    ]
+    shares = distribute_received(group_received, incoming_allocated)
+    line_plans = tuple(
+        SupersedeLinePlan(
+            index=index,
+            carried_received=share,
+            inbound_shipment_id=group_shipment,
+            storage_zone_id=group_zone,
+            uom_id=group_uom,
+        )
+        for index, share in zip(indexes, shares)
+    )
+    return SupersedeGroupPlan(
+        key=key,
+        lines=line_plans,
+        superseded_row_ids=tuple(str(row.id) for row in rows),
+        # D26a: everything after the first is dropped, and saying so
+        # is the point - a group whose rows named two containers
+        # cannot keep both on one line.
+        dropped_shipment_ids=tuple(shipment_ids[1:]),
+        rejected_total=rejected_total,
+        notes=group_notes,
+        split_receipts=split_receipts,
     )
 
 
@@ -713,3 +890,232 @@ def repoint_allocation_dependants(
         # `SET NULL` wins the race and the pairing is lost anyway.
         db.flush()
     return moved
+
+
+def repoint_picking_lines_by_capacity(
+    db: Session,
+    from_ids,
+    targets,
+    *,
+    company_id: str,
+    dry_run: bool = False,
+) -> int:
+    """Move the GRN picks on `from_ids` onto `targets` by capacity (D32), and say how many.
+
+    `targets` is `[(allocation_id, warehouse_id, allocated_quantity), ...]` in
+    AutoCount Seq order - the lines of ONE D31 fallback group. Those lines sit
+    in different `(product, location)` groups, so moving every pick to the
+    first line (`repoint_allocation_dependants`, right for a keyed group) would
+    charge BRW-IB's line with BRW-NTC's receipt and D28a would then
+    redistribute it inside the wrong group. Instead each pick is drawn with the
+    GRN import's own rule (`grn_spo_matching.draw_fifo`): same warehouse first,
+    then any, each line up to its allocated quantity less what already picks
+    against it, and an overflow onto the LAST line (D26's remainder rule - a
+    receipt that physically arrived is never dropped). A pick spanning two
+    lines is split into two rows on the same GRN, the shape the forward match
+    writes: `quantity_picked` follows the draw, `quantity_expected` follows it
+    too when the row stated one, with any expected-vs-picked shortfall kept on
+    the last chunk so the GRN's own discrepancy is not lost.
+
+    Only `picking_lines` move here. Claims and order-inquiry links carry no
+    quantity to split and still go to the first line through
+    `repoint_allocation_dependants`, which then finds no pick left to move.
+    Same company rule as that function (S4): the dependant's own company, or
+    NULL, read with the ambient scope off and the anchor as the predicate.
+    """
+    from app.models.base import company_scope
+    from app.models.procurement import PickingHeader, PickingLine
+    from app.services.grn_spo_matching import PoolEntry, draw_fifo
+
+    ids = [str(value) for value in from_ids if value]
+    targets = [(str(a), str(w) if w else None, int(q or 0)) for a, w, q in targets]
+    if not ids or not targets:
+        return 0
+    target_ids = [allocation_id for allocation_id, _, _ in targets]
+    with company_scope(db, None):
+        lines = (
+            db.query(PickingLine)
+            .filter(PickingLine.spo_allocation_id.in_(ids))
+            .filter(or_(PickingLine.company_id == company_id, PickingLine.company_id.is_(None)))
+            .order_by(PickingLine.created_at.asc(), PickingLine.id.asc())
+            .all()
+        )
+        already = dict(
+            db.query(
+                PickingLine.spo_allocation_id,
+                func.coalesce(func.sum(PickingLine.quantity_picked), 0),
+            )
+            # Same consumption rule as `build_allocation_pool`: a pick on a
+            # REJECTED GRN holds no capacity (review should-fix 4).
+            .join(PickingHeader, PickingLine.picking_header_id == PickingHeader.id)
+            .filter(PickingHeader.picking_status != "rejected")
+            .filter(PickingLine.spo_allocation_id.in_(target_ids))
+            .filter(or_(PickingLine.company_id == company_id, PickingLine.company_id.is_(None)))
+            .group_by(PickingLine.spo_allocation_id)
+            .all()
+        )
+    if not lines:
+        return 0
+    pool = [
+        PoolEntry(
+            allocation_id=allocation_id,
+            warehouse_id=warehouse_id,
+            available=max(0, allocated - int(already.get(allocation_id) or 0)),
+        )
+        for allocation_id, warehouse_id, allocated in targets
+    ]
+    last_id = target_ids[-1]
+    moved = 0
+    for line in lines:
+        quantity = int(line.quantity_picked or 0)
+        warehouse = line.source_warehouse_id or line.destination_warehouse_id
+        draws = draw_fifo(pool, warehouse_id=str(warehouse) if warehouse else None, quantity=quantity)
+        # The uncovered remainder lands on the last line; consecutive draws on
+        # one allocation (that remainder, usually) fold into one chunk.
+        chunks: list[list] = []
+        for draw in draws:
+            allocation_id = draw.allocation_id or last_id
+            if chunks and chunks[-1][0] == allocation_id:
+                chunks[-1][1] += draw.quantity
+            else:
+                chunks.append([allocation_id, draw.quantity])
+        if not chunks:
+            # A zero-quantity pick has nothing to place; it follows the group.
+            chunks = [[target_ids[0], quantity]]
+        if line.dtl_key is not None and len(chunks) > 1:
+            # Review should-fix 1: an AutoCount GRN line is never split. Its
+            # identity is `(picking_header_id, dtl_key)` (unique), which a chunk
+            # cannot share, and the next push of that GRN would fold the chunk
+            # back into the original row and delete it anyway. The whole pick
+            # goes to the line its first draw chose (same warehouse first), and
+            # the capacity the other draws took is given back.
+            for draw in draws[1:]:
+                for entry in pool:
+                    if draw.allocation_id and entry.allocation_id == draw.allocation_id:
+                        entry.available += draw.quantity
+            chunks = [[chunks[0][0], quantity]]
+        moved += 1
+        if dry_run:
+            continue
+        states_expected = int(line.quantity_expected or 0) > 0
+        # Expected follows the chunks the way a receipt does (`distribute_received`:
+        # each up to its own quantity, the rest on the last), so a short receipt
+        # keeps its shortfall on the last chunk and an over-pick never yields a
+        # negative expectation (review should-fix 3).
+        expected_parts = distribute_received(
+            int(line.quantity_expected or 0), [qty for _, qty in chunks]
+        )
+        # Acceptance follows the split in order, each chunk taking up to its own
+        # quantity, so the chunks never accept more than they picked and still
+        # sum to what the original row accepted (security review N2).
+        accepted_left = int(line.qty_accepted) if line.qty_accepted is not None else None
+        line.spo_allocation_id = chunks[0][0]
+        if len(chunks) == 1:
+            continue
+        for position, (allocation_id, chunk_qty) in enumerate(chunks):
+            expected = expected_parts[position] if states_expected else 0
+            if position == 0:
+                line.quantity_picked = chunk_qty
+                if states_expected:
+                    line.quantity_expected = expected
+                if accepted_left is not None:
+                    line.qty_accepted = min(accepted_left, chunk_qty)
+                    accepted_left -= line.qty_accepted
+                continue
+            chunk_accepted = None
+            if accepted_left is not None:
+                chunk_accepted = min(accepted_left, chunk_qty)
+                accepted_left -= chunk_accepted
+            db.add(
+                PickingLine(
+                    picking_header_id=line.picking_header_id,
+                    product_id=line.product_id,
+                    source_warehouse_id=line.source_warehouse_id,
+                    destination_warehouse_id=line.destination_warehouse_id,
+                    uom_id=line.uom_id,
+                    picked_condition=line.picked_condition or "good",
+                    condition_remarks=line.condition_remarks,
+                    batch_number_picked=line.batch_number_picked,
+                    expiry_date=line.expiry_date,
+                    unit_cost=line.unit_cost,
+                    spo_number_raw=line.spo_number_raw,
+                    po_line_id=line.po_line_id,
+                    item_code=line.item_code,
+                    location_code=line.location_code,
+                    spo_allocation_id=allocation_id,
+                    quantity_expected=expected,
+                    quantity_picked=chunk_qty,
+                    qty_accepted=chunk_accepted,
+                    # Explicit, never left to the insert hook (same reason as
+                    # the forward match): under a NULL scope the hook stamps the
+                    # incumbent company.
+                    company_id=line.company_id,
+                )
+            )
+    if moved and not dry_run:
+        # Before the caller deletes the superseded rows, for the same FK race
+        # `repoint_allocation_dependants` flushes against.
+        db.flush()
+    return moved
+
+
+class SupersedeNotConserved(RuntimeError):
+    """A supersede would lose a receipt (D33 guard). Raised before anything is
+    removed or zeroed, so the caller's transaction rolls the whole document back."""
+
+
+def assert_supersede_conserved(
+    db: Session,
+    removed_ids,
+    removed_received: int,
+    carried_total: int,
+    replacement_received: int,
+) -> None:
+    """D33 (crew ruling, 1 Oct 2026): the superseded rows' receipt is gone from them
+    only once it is provably on the lines that replace them.
+
+    Three facts, checked in the same transaction as the move and BEFORE the rows are
+    deleted or zeroed:
+
+    - the CARRY conserves: the planned shares (`SupersedeLinePlan.carried_received`)
+      sum to exactly what the removed rows held - a regression in `_group_plan` or
+      `distribute_received` that dropped a remainder fails here (security review S2);
+    - the replacement lines state at least that receipt after the carry
+      (`carried_received` takes the max of the carry and AutoCount's own figure);
+    - no GRN pick still points at a removed row. Counted across EVERY company, not
+      just the anchor: a foreign pick hanging off a row about to be zeroed is exactly
+      the receipt this guard exists to protect, and the read returns a number only,
+      so failing closed on it exposes nothing (security review S2).
+
+    Any failure raises, and the document's own savepoint (ingest) or rollback
+    (repair script) leaves it exactly as it was.
+    """
+    from app.models.base import company_scope
+    from app.models.procurement import PickingLine
+
+    removed_received = int(removed_received or 0)
+    if int(carried_total or 0) != removed_received:
+        raise SupersedeNotConserved(
+            f"planned carry {carried_total} does not equal the {removed_received} "
+            "the superseded rows held"
+        )
+    if int(replacement_received or 0) < removed_received:
+        raise SupersedeNotConserved(
+            f"replacement lines state {replacement_received} received, "
+            f"superseded rows held {removed_received}"
+        )
+    ids = [str(value) for value in removed_ids if value]
+    if not ids:
+        return
+    with company_scope(db, None):
+        stranded = (
+            db.query(func.count(PickingLine.id))
+            .filter(PickingLine.spo_allocation_id.in_(ids))
+            .scalar()
+        )
+    if stranded:
+        raise SupersedeNotConserved(
+            f"{stranded} GRN pick(s) still point at superseded rows; a pick stamped with "
+            "another company cannot be moved by this company's push and must be "
+            "corrected by hand first"
+        )

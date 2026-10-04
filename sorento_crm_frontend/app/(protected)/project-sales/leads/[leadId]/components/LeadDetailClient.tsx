@@ -34,7 +34,7 @@ import { DataGridColumnHeader } from '@/components/ui/data-grid-column-header';
 import { PanelDataGrid } from '@/components/common/PanelDataGrid';
 import { ProjectStatusPill } from '../../../[projectId]/components/ProjectStatusPill';
 import { formatDateTimeInMalaysia } from '@/lib/helpers';
-import { useStatusGraph } from '@/app/(protected)/system-management/status-graphs/hooks/useStatusGraphs';
+import { useProjectStatusGraph } from '@/app/(protected)/project-sales/_shared/hooks/useProjectStatusGraph';
 import {
   leadsPagerQuery,
   useCustomerPortfolio,
@@ -99,7 +99,7 @@ export function LeadDetailClient({ leadId }: { leadId: string }) {
     requestedTab && TABS.some((tab) => tab.id === requestedTab) ? requestedTab : 'overview';
 
   const { data: lead, isLoading, isError, error } = useLead(leadId);
-  const graph = useStatusGraph('project_lead', null, false);
+  const graph = useProjectStatusGraph('project_lead');
   const { move, disqualify, reopen, remove, update } = useLeadMutations();
   const { assign, accept, decline } = useLeadAcceptanceMutations();
   const { data: session } = useSession();

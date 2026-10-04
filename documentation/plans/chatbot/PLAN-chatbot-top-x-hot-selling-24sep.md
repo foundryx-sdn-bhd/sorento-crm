@@ -55,6 +55,9 @@ later reader can tell a ruling from a proposal.
 
 - Owner ruling 26 Sep: **N.** A number in the message ranks that many, 1 to 100 (the owner's
   own example is "top 100"). No number = no cut-off: every ranked row. No invented default N.
+  SUPERSEDED 30 Sep 2026 (owner: "remove the cap, there is a use case of 100, 200"): N is
+  1 to 1000, a technical safety ceiling, and a long ranking is split into WhatsApp-sized
+  parts. See `PLAN-top-n-uncap-30sep.md`.
 - Owner ruling 26 Sep 01:50Z (amends the first reading of the N ruling): **no paging.** No
   "more", no "next", no "lagi" anywhere in the reply; the owner called paging "very not
   transparent". The header states the full count.
@@ -658,7 +661,7 @@ transcripts in order and types the owner's own messages; live parser run:
   strictly against sales agents, categories (code, name or class vocabulary term), brands
   and customers (`engine._split_noisy_token`). A token naming an agent or a brand beside
   another kind always splits; any other splits only when it does not resolve whole ("water
-  tap" stays the Tap class, "SAMPLE - FANNY NG" one customer). Words under three letters
+  tap" stays the Tap class, "SAMPLE - CONTACT Z" one customer). Words under three letters
   ("by") are dropped; one unknown leftover is said once ("I don't know 'marble'.") and the
   ranking runs. A split word the parser sent to a promotion or document lookup is read
   back into the ranking.

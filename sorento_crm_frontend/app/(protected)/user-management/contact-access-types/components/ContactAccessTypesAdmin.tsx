@@ -35,13 +35,15 @@ import {
   createContactAccessType,
   updateContactAccessType,
   deleteContactAccessType,
+  CONTACT_ACCESS_TYPE_PERMS,
   type ContactAccessTypeAdmin,
 } from '../services/contactAccessTypeService';
+import { useHasPermission } from '@/hooks/usePermissions';
 
 export default function ContactAccessTypesAdmin() {
   const queryClient = useQueryClient();
 
-  const { data: types = [], isLoading: typesLoading } = useQuery({
+  const { data: types = [], isLoading: typesLoading, error, refetch } = useQuery({
     queryKey: ['contact-access-types-admin'],
     queryFn: getAllContactAccessTypes,
   });
@@ -83,6 +85,9 @@ export default function ContactAccessTypesAdmin() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  // Writes need `reference_data.manage`; the screen itself is reachable with
+  // `access_agents.view`, so a reader sees the list without buttons that would 403.
+  const canManage = useHasPermission(CONTACT_ACCESS_TYPE_PERMS.manage);
   const [typeDialogOpen, setTypeDialogOpen] = useState(false);
   const [editingType, setEditingType] = useState<ContactAccessTypeAdmin | null>(null);
   const [deleteTypeCode, setDeleteTypeCode] = useState<string | null>(null);
@@ -263,22 +268,26 @@ export default function ContactAccessTypesAdmin() {
             >
               <Boxes className="size-4" />
             </Button>
-            <Button variant="ghost" size="icon" onClick={() => openEditType(row.original)} aria-label="Edit">
-              <Pencil className="size-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setDeleteTypeCode(row.original.code)}
-              aria-label="Delete"
-            >
-              <Trash2 className="size-4 text-destructive" />
-            </Button>
+            {canManage && (
+              <>
+                <Button variant="ghost" size="icon" onClick={() => openEditType(row.original)} aria-label="Edit">
+                  <Pencil className="size-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setDeleteTypeCode(row.original.code)}
+                  aria-label="Delete"
+                >
+                  <Trash2 className="size-4 text-destructive" />
+                </Button>
+              </>
+            )}
           </div>
         ),
       },
     ],
-    [],
+    [canManage],
   );
 
   const typeTable = useReactTable({
@@ -296,12 +305,12 @@ export default function ContactAccessTypesAdmin() {
 
   // The one offer this listing makes, in both places it belongs: the
   // toolbar, and the empty state's next step (S5-06).
-  const listPrimaryAction = (
+  const listPrimaryAction = canManage ? (
     <Button onClick={openCreateType}>
       <Plus className="size-4 mr-2" />
       Add type
     </Button>
-  );
+  ) : undefined;
 
   return (
     <div className="space-y-6">
@@ -309,6 +318,8 @@ export default function ContactAccessTypesAdmin() {
         table={typeTable}
         recordCount={types.length}
         isLoading={typesLoading}
+        error={error}
+        onRetry={() => void refetch()}
         emptyMessage="No access types. Add one to get started."
         tableLayout={{ width: 'fixed', columnsVisibility: true }}
       >

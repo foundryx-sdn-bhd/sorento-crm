@@ -19,6 +19,7 @@ import ContactChatbotSection from './ContactChatbotSection';
 
 const useContactChatbotProfile = vi.fn();
 const mutate = vi.fn();
+const escalationMutate = vi.fn();
 const memoryMutate = vi.fn();
 
 // Chatbot memory lane A: `chatbot_memory_level` replaces `recall_enabled`, `language`
@@ -29,6 +30,7 @@ const memoryMutate = vi.fn();
 vi.mock('../hooks/useContactChatbot', () => ({
   useContactChatbotProfile: (...a: unknown[]) => useContactChatbotProfile(...a),
   useSaveContactChatbotProfile: () => ({ mutate, isPending: false }),
+  useSaveContactEscalation: () => ({ mutate: escalationMutate, isPending: false }),
   useContactChatbotMemory: () => ({
     data: {
       level: { own: null, effective: 'off', system_default: 'off' },
@@ -77,6 +79,7 @@ const BASE_PROFILE = {
   notify_salesman: false,
   packing_list_allowed: false,
   eta_offset_applied: true,
+  escalation_allowed: true,
 };
 
 function renderWithClient(ui: React.ReactElement) {
@@ -87,6 +90,7 @@ function renderWithClient(ui: React.ReactElement) {
 beforeEach(() => {
   useContactChatbotProfile.mockReset();
   mutate.mockReset();
+  escalationMutate.mockReset();
 });
 
 afterEach(() => cleanup());
@@ -262,5 +266,52 @@ describe('ContactChatbotSection - ETA buffer days switch (#1328)', () => {
     fireEvent.click(screen.getByLabelText(/eta buffer days/i));
     expect(mutate).toHaveBeenCalledTimes(1);
     expect(mutate.mock.calls[0][0]).toEqual({ ...loaded, eta_offset_applied: false });
+  });
+});
+
+/**
+ * ESCALATION-CONTROL (owner change, 30 Sep 2026): one per-contact switch, "Chatbot hands
+ * over to support teams" (owner-approved label, 1 Oct 2026), default on; access types no
+ * longer decide it.
+ */
+describe('ContactChatbotSection - Chatbot hands over to support teams switch', () => {
+  it('shows the owner-approved helper text under the switch', () => {
+    useContactChatbotProfile.mockReturnValue({ data: BASE_PROFILE, isLoading: false, isError: false });
+    renderWithClient(<ContactChatbotSection contactId="c1" />);
+    expect(
+      screen.getByText('When off, the chatbot tells this contact to refer to their salesman.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Can escalate to a person')).not.toBeInTheDocument();
+  });
+
+  it('renders checked for a contact that may escalate', () => {
+    useContactChatbotProfile.mockReturnValue({ data: BASE_PROFILE, isLoading: false, isError: false });
+    renderWithClient(<ContactChatbotSection contactId="c1" />);
+    expect(screen.getByLabelText('Chatbot hands over to support teams')).toHaveAttribute('data-state', 'checked');
+  });
+
+  it('renders unchecked for a blocked contact', () => {
+    useContactChatbotProfile.mockReturnValue({
+      data: { ...BASE_PROFILE, escalation_allowed: false },
+      isLoading: false,
+      isError: false,
+    });
+    renderWithClient(<ContactChatbotSection contactId="c1" />);
+    expect(screen.getByLabelText('Chatbot hands over to support teams')).toHaveAttribute('data-state', 'unchecked');
+  });
+
+  it('unticking saves through its own mutation, never the card save (security review S3)', () => {
+    useContactChatbotProfile.mockReturnValue({ data: BASE_PROFILE, isLoading: false, isError: false });
+    renderWithClient(<ContactChatbotSection contactId="c1" />);
+    fireEvent.click(screen.getByLabelText('Chatbot hands over to support teams'));
+    expect(escalationMutate).toHaveBeenCalledTimes(1);
+    expect(escalationMutate.mock.calls[0][0]).toBe(false);
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
+  it('shows no inherited-from-access-type text any more', () => {
+    useContactChatbotProfile.mockReturnValue({ data: BASE_PROFILE, isLoading: false, isError: false });
+    renderWithClient(<ContactChatbotSection contactId="c1" />);
+    expect(screen.queryByText(/Inherited/)).not.toBeInTheDocument();
   });
 });

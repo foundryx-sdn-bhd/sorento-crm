@@ -227,8 +227,16 @@ export default function ComplaintDetail({ complaintId }: ComplaintDetailProps) {
   // or Update & Reply (record + tell the contact what it is).
   const [editRootCauseOpen, setEditRootCauseOpen] = useState(false);
   const [editResolutionOpen, setEditResolutionOpen] = useState(false);
-  const { data: rootCauseOptions = [] } = useComplaintRootCausesSelect();
-  const { data: resolutionOptions = [] } = useComplaintResolutionsSelect();
+  const {
+    data: rootCauseOptions = [],
+    error: rootCauseError,
+    refetch: refetchRootCauses,
+  } = useComplaintRootCausesSelect();
+  const {
+    data: resolutionOptions = [],
+    error: resolutionError,
+    refetch: refetchResolutions,
+  } = useComplaintResolutionsSelect();
   const [replyComposePrefill, setReplyComposePrefill] = useState<{
     key: number;
     text: string;
@@ -1039,6 +1047,8 @@ export default function ComplaintDetail({ complaintId }: ComplaintDetailProps) {
         kind="root_cause"
         value={complaint.root_cause_id ?? null}
         options={rootCauseOptions}
+        loadError={rootCauseError}
+        onRetry={() => void refetchRootCauses()}
         canReply={canUseRespondChat && canEditComplaint}
         isPending={updateComplaintMutation.isPending || notifyRootCauseMutation.isPending}
         onUpdate={(id) => saveNotifiableField('root_cause_id', id)}
@@ -1054,6 +1064,8 @@ export default function ComplaintDetail({ complaintId }: ComplaintDetailProps) {
         kind="resolution"
         value={complaint.resolution_id ?? null}
         options={resolutionOptions}
+        loadError={resolutionError}
+        onRetry={() => void refetchResolutions()}
         canReply={canUseRespondChat && canEditComplaint}
         isPending={updateComplaintMutation.isPending || notifyResolutionMutation.isPending}
         onUpdate={(id) => saveNotifiableField('resolution_id', id)}

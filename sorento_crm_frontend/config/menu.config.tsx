@@ -207,6 +207,11 @@ export const MENU_SIDEBAR: MenuConfig = [
         permission: 'order_management.customers.view',
       },
       {
+        title: 'Customer Groups',
+        path: '/order-management/customer-groups',
+        permission: 'order_management.customers.view',
+      },
+      {
         title: 'Customer Branches',
         path: '/order-management/branches',
         permission: 'order_management.branches.view',
@@ -1646,6 +1651,10 @@ export const MENU_SIDEBAR_COMPACT: MenuConfig = [
       {
         title: 'Customers',
         path: '/order-management/customers',
+      },
+      {
+        title: 'Customer Groups',
+        path: '/order-management/customer-groups',
       },
       {
         title: 'Customer Branches',

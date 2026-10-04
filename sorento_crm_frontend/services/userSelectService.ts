@@ -43,3 +43,38 @@ export async function getUsersSelect(params?: {
   if (!response.ok) throw new Error(await extractApiError(response, 'Failed to fetch users'));
   return response.json();
 }
+
+/**
+ * A row of the shared people picker. Id and name only: no email, phone or account state.
+ * `respond_user_id` is present only when the caller asked for `respond_synced`.
+ */
+export interface UserLookupItem {
+  id: string;
+  name: string | null;
+  respond_user_id?: string | null;
+}
+
+const USERS_LOOKUP = '/api/user-management/users/lookup';
+
+/**
+ * Active people for owner / assignee / watcher pickers in any module. Open to every
+ * signed-in user (owner ruling 1 Oct 2026, never-stuck L10), unlike {@link getUsersSelect},
+ * which needs `user_management.users.view` and serves the user-admin screens.
+ */
+export async function getUserLookup(params?: {
+  /** Matches the name only. */
+  query?: string;
+  /** Only users linked to a Respond.io agent, each with its `respond_user_id`. */
+  respond_synced?: boolean;
+  /** Also deactivated staff: for filters over past records, never for assigning. */
+  include_inactive?: boolean;
+}): Promise<UserLookupItem[]> {
+  const sp = new URLSearchParams();
+  if (params?.query) sp.set('query', params.query);
+  if (params?.respond_synced) sp.set('respond_synced', 'true');
+  if (params?.include_inactive) sp.set('include_inactive', 'true');
+  const url = USERS_LOOKUP + (sp.toString() ? `?${sp.toString()}` : '');
+  const response = await apiFetch(url);
+  if (!response.ok) throw new Error(await extractApiError(response, 'Failed to fetch people'));
+  return response.json();
+}

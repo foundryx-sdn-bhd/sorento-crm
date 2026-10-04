@@ -70,6 +70,8 @@ def cs_roster_plan(gate: Any) -> list[dict[str, Any]]:
 #: (R6: no routing picker inside an open order list) takes the frame out by the same
 #: strings - CHATBOT-EMPTY-ROUTE-PICK: the header and the close once stood over an empty
 #: list because only the rows were taken out.
+#: REFER-ONLY-FIXES: every printing site keeps a blank line between the rows and the close;
+#: `order_list._without_picker` reads the rows as the lines under a header up to that blank.
 PICKER_HEADER = "Please choose who to route to (reply with the number):"
 PICKER_CLOSE = "If you have no preference, just reply 'yes' and we'll assign automatically."
 #: The multi-company close's opening words (`build_cs_member_offer`'s `cs_multi_close`

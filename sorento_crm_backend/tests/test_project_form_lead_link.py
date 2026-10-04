@@ -60,8 +60,13 @@ def _uid() -> str:
 def _title(stem: str) -> str:
     """A title unique per call: the clash matcher blocks near-duplicate titles under
     the same developer, and every test here registers under no developer at all --
-    so two tests sharing a stem would still collide on the exact-title fast path."""
-    return f"{MARKER} {stem} {uuid.uuid4().hex[:8]}"
+    so two tests sharing a stem would still collide on the exact-title fast path.
+
+    The full uuid, not 8 hex: with 8, two `_title("Project")` calls cross the 0.70 block
+    bar about 7 times in 20,000 pairs (measured with pg_trgm `similarity()`), and the
+    second registration is then refused as `project_already_registered` before the lead
+    check runs. With 32 the highest score measured was 0.36."""
+    return f"{MARKER} {stem} {uuid.uuid4().hex}"
 
 
 def _sorento(db) -> str:

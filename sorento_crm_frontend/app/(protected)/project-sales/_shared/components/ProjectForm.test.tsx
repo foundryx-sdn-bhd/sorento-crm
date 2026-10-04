@@ -38,9 +38,9 @@ vi.mock('@/hooks/usePermissions', () => ({
   useHasPermission: (slug: string) => hasManagePermission(slug),
 }));
 
-const getUsersSelect = vi.fn();
+const getUserLookup = vi.fn();
 vi.mock('@/services/userSelectService', () => ({
-  getUsersSelect: (...args: unknown[]) => getUsersSelect(...args),
+  getUserLookup: (...args: unknown[]) => getUserLookup(...args),
 }));
 
 const useBrandSelectQuery = vi.fn();
@@ -429,9 +429,9 @@ beforeEach(() => {
   registerProject.mockResolvedValue({ id: 'new1', project_code: 'PRJ-000099' });
   updateProject.mockResolvedValue(baseProject());
   listLeads.mockResolvedValue({ data: [LEAD_OPEN], pagination: { total: 1, page: 1, limit: 20 } });
-  getUsersSelect.mockResolvedValue([
-    { id: 'u-me', name: 'Me', email: 'me@example.com' },
-    { id: 'u-2', name: 'Aina', email: 'aina@example.com' },
+  getUserLookup.mockResolvedValue([
+    { id: 'u-me', name: 'Me' },
+    { id: 'u-2', name: 'Aina' },
   ]);
   useBrandSelectQuery.mockReturnValue({ data: [BRAND_A], isLoading: false });
 });
@@ -676,7 +676,7 @@ describe('ProjectForm: Brands (AC-PF021)', () => {
 describe('ProjectForm: Salesperson (AC-PF040-043)', () => {
   it('defaults to the current session user on create', async () => {
     renderForm({ mode: 'create' });
-    await waitFor(() => expect(getUsersSelect).toHaveBeenCalledWith({ status: 'ACTIVE' }));
+    await waitFor(() => expect(getUserLookup).toHaveBeenCalled());
     await waitFor(() =>
       expect((screen.getByLabelText('Salesperson') as HTMLSelectElement).value).toBe('u-me'),
     );

@@ -337,6 +337,24 @@ def reserve_window_end(as_of: date, lead_time_days: Optional[int] = None) -> dat
     return as_of + timedelta(days=days + RESERVE_BUFFER_DAYS)
 
 
+def later_order_can_wait(
+    required_date: Optional[date], *, window: date, tba_from: date
+) -> bool:
+    """"A LATER ORDER THAT CAN WAIT", the date half, in ONE place.
+
+    Dated, short of the TBA line, and due on or after `window` (`reserve_window_end`:
+    `as_of + lead + 14`, the day purchasing could still buy for it). It is what the board's
+    Borrow step asks of a donor (`ProjectSupplyService._eligible_donor`) and what the Stock
+    Debt view asks of a landed pin before lending it (STOCK-DEBT-LENDABLE, owner 30 Sep
+    2026, option B: "anchored to today + lead time, not to a view filter"). One function,
+    so the view cannot lend a pin the board would refuse as a donor, or the other way
+    round, by one day.
+    """
+    if required_date is None or required_date >= tba_from:
+        return False
+    return required_date >= window
+
+
 def _reserve_window_buy_reason() -> str:
     return (
         "Delivery date beyond the lead time window; stock kept for nearer orders"

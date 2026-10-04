@@ -255,14 +255,18 @@ class TestStoredDemandClassNeverDowngraded:
 
 # ================================================================== AC-V2-7
 class TestDemandClassIsNeverAPayloadField:
-    def test_demand_class_in_the_payload_is_rejected(self, env):
+    def test_demand_class_in_the_payload_is_dropped_never_written(self, env):
+        # AC-V2-7, as amended by the owner (1 Oct 2026): unknown keys are dropped rather
+        # than refused. `demand_class` is still never a payload field - it is DERIVED - so
+        # the push lands and the stated class reaches no column: with no customer and no
+        # agent the ladder has nothing to classify from.
         record = _so_record(env, demand_class="project")
 
         res = env.post(INGEST_SO, [record])
 
         entry = res.json()["records"][0]
-        assert entry["outcome"] == "failed", res.text
-        assert "demand_class" in entry.get("errors", {}), entry
+        assert entry["outcome"] == "created", res.text
+        assert env.header("sales_orders", record["source_ref"])["demand_class"] != "project"
 
 
 # ==================================================== agent-arrival AC-1 / AC-2

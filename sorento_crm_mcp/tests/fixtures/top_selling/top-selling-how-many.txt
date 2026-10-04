@@ -9,4 +9,4 @@ Sales agent: all
 Channel: all
 Delivery date: 01/01/2026 to 31/12/2026
 
-How many items do you want to see? Reply with a number from 1 to 100.
+How many items do you want to see? Reply with a number from 1 to 1000.

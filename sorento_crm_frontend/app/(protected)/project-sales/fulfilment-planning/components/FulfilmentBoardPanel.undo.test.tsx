@@ -20,7 +20,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
   usePathname: () => '/project-sales/fulfilment-planning',
-  useSearchParams: () => new URLSearchParams('view=grid'),
+  useSearchParams: () => new URLSearchParams('view=grid&scope=all'),
 }));
 
 vi.mock('@/lib/listing-column-preferences/useListingColumnPreferences', () => ({

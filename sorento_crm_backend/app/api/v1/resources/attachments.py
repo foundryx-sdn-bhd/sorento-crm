@@ -302,6 +302,14 @@ async def get_attachments(
             normalize_list_query_param,
         )
         from app.services.contact_attachment_access import visible_type_ids
+        from app.services.eta_policy import resolve_request_contact, rules_for_contact
+
+        # A contact's list also stops at its packing list regions (unresolved = West).
+        contact_regions = (
+            rules_for_contact(db, resolve_request_contact(db, contact_id, space_id)).regions
+            if contact_id
+            else None
+        )
 
         result = service.list_attachments(
             page=page,
@@ -331,6 +339,7 @@ async def get_attachments(
             direct_access_only=direct_access_only,
             visible_attachment_type_ids=visible_type_ids(db, contact_id, space_id),
             company=company,
+            contact_regions=contact_regions,
         )
         # Enrich each attachment with uploaded_by_user for display.
         # Batch-resolve users in ONE query to avoid N+1 (was a per-row SELECT).
@@ -737,6 +746,7 @@ async def create_attachment(
     entity_id: Optional[str] = Form(None),
     directory_id: Optional[str] = Form(None),
     access_levels: Optional[str] = Form(None),
+    regions: Optional[str] = Form(None, description="JSON array of 'west' / 'east'; Packing List uploads."),
     target_entity_type: Optional[str] = Form(
         None,
         description="Field-linkage template: target table this doc describes (product/promotion/packing_list/form). Used to fan field links when later linked to a row.",
@@ -991,6 +1001,21 @@ async def create_attachment(
         if not access_levels_payload:
             access_levels_payload = access_svc.get_default_access_levels()
 
+        regions_payload = None
+        if regions:
+            from app.schemas.regions import normalize_regions
+
+            try:
+                regions_payload = normalize_regions(json.loads(regions))
+            except (ValueError, TypeError):
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="regions must be a JSON array holding west and/or east.",
+                )
+            # Regions belong to Packing List files only; any other type stores NULL.
+            if getattr(attachment_type, "code", None) != "packing_list":
+                regions_payload = None
+
         # Field-linkage template: target_entity_type + target_field_keys (JSON array).
         target_entity_type_clean = (target_entity_type or "").strip() or None
         target_field_keys_parsed: Optional[list[str]] = None
@@ -1036,6 +1061,8 @@ async def create_attachment(
                 existing_to_replace.target_entity_type = target_entity_type_clean  # type: ignore[assignment]
             if target_field_keys_parsed is not None:
                 existing_to_replace.target_field_keys = target_field_keys_parsed  # type: ignore[assignment]
+            if regions_payload is not None:
+                existing_to_replace.regions = regions_payload  # type: ignore[assignment]
             upload_batch_clean = (upload_batch_id or "").strip() or None
             if upload_batch_clean is not None:
                 existing_to_replace.upload_batch_id = upload_batch_clean  # type: ignore[assignment]
@@ -1081,6 +1108,7 @@ async def create_attachment(
             entity_id=entity_id,
             directory_id=directory_id,
             access_levels=access_levels_payload,
+            regions=regions_payload,
             storage_provider=provider,
             target_entity_type=target_entity_type_clean,
             target_field_keys=target_field_keys_parsed,
@@ -1655,6 +1683,14 @@ async def resubmit_attachment_webhook(
         # Verify attachment exists (ORM row; file_path is stable base URL or S3 key from DB)
         attachment_service = AttachmentService(db)
         attachment = attachment_service.get_attachment(attachment_id)
+
+        # An untyped attachment is never sent to n8n (owner rule, 2 Oct 2026), even
+        # one with a log from before that rule; say so rather than send it.
+        if getattr(attachment, "attachment_type_id", None) is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This file has no attachment type, so it is not sent to n8n.",
+            )
 
         # Find the integration log for this attachment
         integration_service = IntegrationLogService(db)

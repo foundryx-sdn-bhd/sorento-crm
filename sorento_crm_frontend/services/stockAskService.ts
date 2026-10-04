@@ -28,7 +28,7 @@ const SALES_BASE = '/api/v1/sales/customer-asks';
  *        returns every agent's rows, each StockAsk carrying `agent_code`; every pickable agent's rows (view_all: everyone, a
  *        team leader: their team; a plain user: 403).
  *   GET   /api/v1/sales/customer-asks/agents
- *     -> [{ agent_id, code, name, open, needs_attention }], the pickable agents (view_all: those
+ *     -> [{ agent_id, code, name, open }], the pickable agents (view_all: those
  *        with an open ask; a team leader: every current member, 0 allowed; otherwise `[]`, 200),
  *        counted with the same rules as the to-do payload.
  *   PATCH /api/v1/sales/customer-asks/{ask_id}  { state?, note? } -> StockAsk

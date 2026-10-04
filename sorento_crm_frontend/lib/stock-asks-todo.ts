@@ -1,12 +1,12 @@
 /**
  * Sales asks as a salesperson's to-do list (lane SALES-ASKS-TODO): the payload both mounts
  * (portal Customer asks, CRM Sales > Customer asks) receive, and the pure functions that turn it
- * into sections and into the landing toolbar's shapes. The server owns the day boundary
- * (`today_start`); nothing here guesses a timezone.
+ * into sections and into the landing toolbar's shapes. The server owns the day boundary of
+ * Done today (`today_start`); nothing here guesses a timezone.
  *
  * Rules (owner rulings, plan section 0b and 0c):
- * - Q3 grouping: one `Needs attention` section (open, asked before `today_start`), then `Today`.
- * - Q4 overdue: needs attention = open and asked before `today_start`.
+ * - One `Open` section, oldest first by default (owner ruling 1 Oct 2026, CUSTOMER-ASKS-REFER-ONLY:
+ *   the old `Needs attention` / `Today` split is gone); each card shows its own date.
  * - Q5: every branch counts, `incoming` and `console` included.
  */
 import type { StockAsk } from '@/lib/stock-asks';
@@ -38,7 +38,6 @@ export interface AskAgentSummary {
   code: string;
   name: string;
   open: number;
-  needs_attention: number;
 }
 
 /** The chat around one ask (`GET .../customer-asks/{id}/conversation`). */
@@ -62,7 +61,7 @@ export interface AskConversation {
   contact_id?: string | null;
 }
 
-export type TodoSectionKey = 'needs_attention' | 'today';
+export type TodoSectionKey = 'open';
 
 /** One day group inside a section. Since the reshape a section holds exactly one. */
 export interface TodoDay {
@@ -78,7 +77,7 @@ export interface TodoSection {
 }
 
 export interface BucketedTodo {
-  counts: { open: number; needs_attention: number; done_today: number };
+  counts: { open: number; done_today: number };
   sections: TodoSection[];
   done: StockAsk[];
 }
@@ -182,42 +181,21 @@ export function filterTodoPayload(
 
 // ---- grouping ----------------------------------------------------------------------------
 
-/** Backend datetimes are naive UTC; treat a string with no zone as UTC. */
-export function utcMs(value: string): number {
-  return Date.parse(/(Z|[+-]\d{2}:?\d{2})$/.test(value) ? value : `${value}Z`);
-}
-
 function ordered(asks: StockAsk[], sort: LandingSort): StockAsk[] {
   const byId = new Map(asks.map((a) => [a.id, a]));
   return sortLandingItems(asks.map(askToSummary), ASK_LANDING_FIELDS, sort).map((s) => byId.get(s.id)!);
 }
 
 /**
- * Counts and sections from one payload. `Needs attention` (pinned) holds every open ask asked
- * before `today_start`, `Today` the rest; `sort` orders the rows inside each. An empty section is
- * absent. Every branch counts (Q5 (a)).
+ * Counts and sections from one payload: one `Open` section holding every open ask, ordered by
+ * `sort` (oldest first by default), absent when nothing is open. Every branch counts (Q5 (a)).
  */
 export function bucketTodo(payload: AskTodoPayload, sort: LandingSort = DEFAULT_ASK_SORT): BucketedTodo {
-  const start = utcMs(payload.today_start);
-  const before = payload.open.filter((a) => utcMs(a.created_at) < start);
-  const today = payload.open.filter((a) => utcMs(a.created_at) >= start);
-
-  const section = (key: TodoSectionKey, label: string, asks: StockAsk[]): TodoSection => ({
-    key,
-    label,
-    days: [{ key, label, asks: ordered(asks, sort) }],
-  });
-
-  const sections: TodoSection[] = [];
-  if (before.length) sections.push(section('needs_attention', 'Needs attention', before));
-  if (today.length) sections.push(section('today', 'Today', today));
-
+  const sections: TodoSection[] = payload.open.length
+    ? [{ key: 'open', label: 'Open', days: [{ key: 'open', label: 'Open', asks: ordered(payload.open, sort) }] }]
+    : [];
   return {
-    counts: {
-      open: payload.open.length,
-      needs_attention: before.length,
-      done_today: payload.done_today.length,
-    },
+    counts: { open: payload.open.length, done_today: payload.done_today.length },
     sections,
     done: payload.done_today,
   };

@@ -224,7 +224,7 @@ def _live_body(entities: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         "access_levels": [],
         "domain": "inventory",
         "fallback_to_all_types": True,
-        "limit": 15,
+        "limit": 50,
         "spec_fallback": True,
         "understand_phrase": True,
         "hidden_spec_keys": [],

@@ -156,7 +156,7 @@ const ORDER_COLUMNS: ColumnDef<FulfilmentOrder>[] = [
 export default function ComplaintFulfilmentOrdersSection({
   complaintId,
 }: ComplaintFulfilmentOrdersSectionProps) {
-  const { data: orders, isLoading } = useComplaintFulfilmentOrders(complaintId);
+  const { data: orders, isLoading, error, refetch } = useComplaintFulfilmentOrders(complaintId);
 
   return (
     <PanelDataGrid<FulfilmentOrder>
@@ -166,6 +166,8 @@ export default function ComplaintFulfilmentOrdersSection({
       getRowId={(row) => row.order_id}
       listingKey="complaint_management.complaints.view::fulfilment-orders"
       isLoading={isLoading}
+      error={error}
+      onRetry={() => void refetch()}
       emptyTitle="No replacement delivery order linked yet."
     />
   );

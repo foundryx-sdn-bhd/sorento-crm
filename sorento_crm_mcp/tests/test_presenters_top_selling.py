@@ -29,10 +29,13 @@ from sorento_crm_mcp.presenters import (
     TOP_SELLING_ASK_BASIS,
     TOP_SELLING_ASK_GROUP,
     TOP_SELLING_ASK_METRIC,
+    TOP_SELLING_N_CEILING,
     TOP_SELLING_REFUSED_OTHER_CUSTOMER,
+    WHATSAPP_MESSAGE_MAX_CHARS,
     _top_selling,
     _top_selling_envelope,
     present_response,
+    whatsapp_parts,
 )
 
 _FIXTURES = Path(__file__).parent / "fixtures" / "top_selling"
@@ -197,16 +200,18 @@ def test_agent_fill_note_threshold(rate, printed):
 # --------------------------------------------------------------------------
 
 
-def test_never_prints_past_one_hundred():
+def test_never_prints_past_the_ceiling():
+    """TOP-N-UNCAP (owner, 30 Sep 2026): no 100 cap, only the shared 1000 safety ceiling."""
     body = _mock("items-qty")
-    body["n"] = 100
+    body["n"] = TOP_SELLING_N_CEILING
     body["rows"] = [
-        {"rank": i, "code": f"ZZ{i:03d}", "name": None, "quantity": 1, "amount": 1}
-        for i in range(1, 121)
+        {"rank": i, "code": f"ZZ{i:04d}", "name": None, "quantity": 1, "amount": 1}
+        for i in range(1, TOP_SELLING_N_CEILING + 6)
     ]
     rendered = _top_selling(body)
-    assert "\n100. ZZ100:" in rendered
-    assert "ZZ101" not in rendered
+    assert "\n101. ZZ0101:" in rendered
+    assert "\n1000. ZZ1000:" in rendered
+    assert "ZZ1001" not in rendered
 
 
 def test_presenter_keeps_input_order():
@@ -236,13 +241,13 @@ def test_miss_prints_no_offer():
 
 def test_how_many_reply():
     """No N named: the header states the full count and the bot asks how many (owner
-    rulings 26 Sep). Not a message-size rule: n8n already chunks a long WhatsApp
-    message (owner, PR #1258 05:32Z), so the reply says nothing about length and the
-    range it offers is 1 to the smaller of the count and the 100 cap."""
+    rulings 26 Sep). Not a message-size rule: a long list is split into messages
+    (TOP-N-UNCAP), so the reply says nothing about length and the range it offers is 1
+    to the smaller of the count and the 1000 safety ceiling (no 100 cap, 30 Sep)."""
     body = _mock("how-many")
     rendered = _top_selling(body)
     assert rendered.endswith(
-        "\n\nHow many items do you want to see? Reply with a number from 1 to 100."
+        "\n\nHow many items do you want to see? Reply with a number from 1 to 1000."
     )
     assert "Items with sales: 1,284" in rendered
     assert "too long" not in rendered and "one message" not in rendered
@@ -459,9 +464,9 @@ def test_sales_report_not_enabled_renders_the_denial_line():
 def test_any_other_route_error_is_an_error_envelope():
     """A 422 (or anything else the route refuses) is an infrastructure failure for the
     lane (`envelope["error"]`), never a header over "No sales found."."""
-    body = {"message": "n must be between 1 and 100", "detail": "0", "code": "invalid_n"}
+    body = {"message": "n must be between 1 and 1000", "detail": "0", "code": "invalid_n"}
     envelope = _top_selling_envelope(body)
-    assert envelope == {"error": "invalid_n: n must be between 1 and 100"}
+    assert envelope == {"error": "invalid_n: n must be between 1 and 1000"}
 
 
 def test_a_named_n_of_one_reads_singular():
@@ -506,3 +511,105 @@ def test_bottom_ranking_titles_and_the_no_sale_line():
 
 def test_a_top_ranking_has_no_no_sale_line():
     assert "no sale" not in _top_selling(_mock("items-qty"))
+
+
+# --------------------------------------------------------------------------
+# TOP-N-UNCAP (owner, 30 Sep 2026): a named N past 100, split into WhatsApp parts
+# --------------------------------------------------------------------------
+
+
+def _ranking(n: int) -> dict:
+    body = _mock("items-qty")
+    body["n"] = n
+    body["total_count"] = max(n, 1284)
+    body["rows"] = [
+        {"rank": i, "code": f"SRTWC{i:04d}", "name": None, "quantity": 10_000 - i, "amount": 123_456.78 - i}
+        for i in range(1, n + 1)
+    ]
+    return body
+
+
+_MARKER = re.compile(r"^\((\d+)/(\d+)\)$")
+_ROW = re.compile(r"^\d+\. SRTWC")
+
+
+def _parts(rendered: str) -> list[str]:
+    """The rendered reply cut at each "(k/m)" line (the engine's own split)."""
+    return re.split(r"\n\n(?=\(\d+/\d+\)\n)", rendered)
+
+
+def test_top_200_prints_every_row_in_ordered_whatsapp_parts():
+    rendered = _top_selling(_ranking(200))
+    parts = _parts(rendered)
+    assert len(parts) > 1
+    for k, part in enumerate(parts, start=1):
+        assert len(part) <= WHATSAPP_MESSAGE_MAX_CHARS, (k, len(part))
+        marker = _MARKER.match(part.split("\n", 1)[0])
+        assert marker and (int(marker.group(1)), int(marker.group(2))) == (k, len(parts)), part[:20]
+    rows = [line for part in parts for line in part.split("\n") if _ROW.match(line)]
+    assert [int(r.split(".", 1)[0]) for r in rows] == list(range(1, 201)), "every row once, in rank order"
+    # Never a row broken across two parts: every row line is whole.
+    assert all(re.fullmatch(r"\d+\. SRTWC\d{4}: Qty [\d,]+, RM [\d,]+\.\d{2}", r) for r in rows)
+    assert parts[0].startswith("(1/") and "*Top 200 selling items*" in parts[0]
+    assert parts[-1].endswith(_ITEM_OFFER)
+    envelope = _top_selling_envelope(_ranking(200))
+    assert envelope["response"] == rendered
+    assert [r["idx"] for r in envelope["result_set"]] == list(range(1, 201))
+
+
+def test_top_5_is_one_unmarked_message():
+    rendered = _top_selling(_ranking(5))
+    assert _parts(rendered) == [rendered]
+    assert rendered.startswith("*Top 5 selling items*")
+    assert "\n5. SRTWC0005:" in rendered
+
+
+def test_the_ceiling_fits_in_parts_too():
+    rendered = _top_selling(_ranking(TOP_SELLING_N_CEILING))
+    parts = _parts(rendered)
+    assert all(len(p) <= WHATSAPP_MESSAGE_MAX_CHARS for p in parts)
+    assert parts[-1].split("\n", 1)[0] == f"({len(parts)}/{len(parts)})"
+    assert "\n1000. SRTWC1000:" in parts[-1]
+
+
+def test_whatsapp_parts_never_splits_a_line():
+    lines = [f"{i}. " + "x" * 90 for i in range(1, 120)]
+    parts = whatsapp_parts("\n".join(lines), limit=1000)
+    assert len(parts) > 1
+    body = [line for p in parts for line in p.split("\n")[1:]]
+    assert body == lines
+    assert all(len(p) <= 1000 for p in parts)
+
+
+def test_ceiling_matches_the_backend_copy():
+    """The presenter's ceiling is a COPY of the backend's (this package cannot import
+    it): read the backend source so the two can never drift apart."""
+    source = (
+        Path(__file__).parent.parent.parent / "sorento_crm_backend" / "app" / "services" / "sales_report_service.py"
+    )
+    if not source.exists():
+        pytest.skip("backend source not in this container")
+    match = re.search(r"^TOP_SELLING_N_CEILING = (\d+)$", source.read_text(), re.M)
+    assert match and int(match.group(1)) == TOP_SELLING_N_CEILING
+
+
+def test_a_long_detail_reply_is_split_too():
+    """Grill Q6 (owner, 30 Sep 2026: "split detail reply here"): one code bought by
+    hundreds of customers goes out in ordered WhatsApp parts, every customer once."""
+    body = _mock("detail")
+    body["detail"]["by_customer"] = [
+        {"customer_name": f"CUSTOMER NUMBER {i:03d} SDN BHD", "quantity": 500 - i, "amount": 5000.0 - i}
+        for i in range(1, 301)
+    ]
+    rendered = _top_selling(body)
+    parts = _parts(rendered)
+    assert len(parts) > 1
+    assert all(len(p) <= WHATSAPP_MESSAGE_MAX_CHARS for p in parts)
+    assert [p.split("\n", 1)[0] for p in parts] == [f"({k}/{len(parts)})" for k in range(1, len(parts) + 1)]
+    names = [line for p in parts for line in p.split("\n") if "CUSTOMER NUMBER" in line]
+    assert [int(n.split(".", 1)[0]) for n in names] == list(range(1, 301))
+    assert _top_selling_envelope(body)["response"] == rendered
+
+
+def test_a_short_detail_reply_is_unchanged():
+    assert _parts(_top_selling(_mock("detail"))) == [_golden("detail")]

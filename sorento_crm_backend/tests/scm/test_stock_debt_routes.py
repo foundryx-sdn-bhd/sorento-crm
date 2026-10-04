@@ -1590,6 +1590,7 @@ def test_a_hold_at_a_pool_or_an_unflagged_bin_still_reads_pinned(scm_app):
         {
             "kind": "on_hand", "ref": f"On hand {pool.warehouse_code}",
             "spo_number": None, "spo_line_number": None, "qty": 40,
+            "lent_from_so_number": None,
         }
     ]
     assert by_so[f"{marker}-SO-HP"]["status"] == "pinned"
@@ -1597,6 +1598,7 @@ def test_a_hold_at_a_pool_or_an_unflagged_bin_still_reads_pinned(scm_app):
         {
             "kind": "on_hand", "ref": f"On hand {unflagged.warehouse_code}",
             "spo_number": None, "spo_line_number": None, "qty": 30,
+            "lent_from_so_number": None,
         }
     ]
     # And the month agrees with the drill: 70 pinned against 70 owed owes nothing.
@@ -1637,6 +1639,7 @@ def test_a_donor_holds_stock_in_another_group_and_group_bb_still_reads_it_pinned
         {
             "kind": "on_hand", "ref": f"On hand {ib.warehouse_code}",
             "spo_number": None, "spo_line_number": None, "qty": 25,
+            "lent_from_so_number": None,
         }
     ]
 
@@ -1742,6 +1745,7 @@ def _assert_pinned_on_the_bin(c, *, marker, warehouse, product, due):
         {
             "kind": "on_hand", "ref": f"On hand {warehouse.warehouse_code}",
             "spo_number": None, "spo_line_number": None, "qty": 50,
+            "lent_from_so_number": None,
         }
     ]
     so2 = by_so[f"{marker}-SO2"]

@@ -53,7 +53,7 @@ export default function CountryList() {
   });
   const rowPending = useRowPending<Country>('country');
 
-  const { data, isLoading, isPlaceholderData, refetch, isFetching } = useCountries({
+  const { data, isLoading, isPlaceholderData, refetch, isFetching, error } = useCountries({
     pageIndex: pagination.pageIndex,
     pageSize: pagination.pageSize,
     sorting,
@@ -159,6 +159,8 @@ export default function CountryList() {
       table={table}
       recordCount={data?.pagination.total || 0}
       isLoading={isLoading}
+      error={error}
+      onRetry={() => void refetch()}
       isPlaceholderData={isPlaceholderData}
       // The row opens the edit modal (ADR standard: modal by default, no dedicated page for
       // a reference row of three fields).

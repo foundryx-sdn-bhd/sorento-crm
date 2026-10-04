@@ -437,7 +437,6 @@ def attempt_verify(
     session_row = mint_session(
         db,
         str(user.id),
-        remember=True,
         user_agent=user_agent,
         ip_address=ip_address,
         auth_method="phone_otp",

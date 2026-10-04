@@ -51,6 +51,10 @@ from app.services.error_handler import AppException
 from app.middleware.logging_middleware import LoggingMiddleware
 from app.middleware.idempotency_middleware import IdempotencyMiddleware
 from app.middleware.api_call_log_middleware import ApiCallLogMiddleware
+from app.middleware.impersonation_ended_middleware import (
+    IMPERSONATION_ENDED_HEADER,
+    ImpersonationEndedMiddleware,
+)
 from app.middleware.relative_redirect_middleware import (
     RelativeRedirectMiddleware,
     SlashTolerantPathMiddleware,
@@ -66,6 +70,23 @@ logging.basicConfig(
 if settings.debug:
     logging.getLogger('app.dependencies').setLevel(logging.DEBUG)
 
+# DEV-LOGIN-BYPASS: crash at import (never just warn) when DEV_AUTO_LOGIN is on anywhere but
+# a local uvicorn run, and log a loud banner when it is legitimately active.
+from app.services.dev_login import (
+    assert_safe_startup as _assert_dev_login_safe,
+    running_in_container as _running_in_container,
+    running_under_gunicorn as _running_under_gunicorn,
+)
+
+_assert_dev_login_safe(
+    enabled=settings.dev_auto_login,
+    environment=settings.environment,
+    environment_explicit="environment" in settings.model_fields_set,
+    secret=settings.dev_auto_login_secret,
+    under_gunicorn=_running_under_gunicorn(),
+    in_container=_running_in_container(),
+)
+
 # Create FastAPI app
 app = FastAPI(
     title="Sorento CRM API",
@@ -77,6 +98,11 @@ app = FastAPI(
 
 # Add logging middleware
 app.add_middleware(LoggingMiddleware)
+
+# A view-as header the auth dependency could not honour gets X-Impersonation-Ended: 1,
+# so the client drops its banner instead of labelling the admin's own data as the
+# target's. See app/middleware/impersonation_ended_middleware.py.
+app.add_middleware(ImpersonationEndedMiddleware)
 
 # A list route called without its trailing slash is served as the slashed route, no 307;
 # any redirect that still happens to our own host gets a path-only Location.
@@ -107,7 +133,7 @@ app.add_middleware(
     allow_headers=["*"],
     # Only expose headers the browser actually needs to read; "*" leaked internal
     # headers cross-origin (security audit 2026-06-29).
-    expose_headers=["Content-Type", "Content-Length", "Content-Disposition"],
+    expose_headers=["Content-Type", "Content-Length", "Content-Disposition", IMPERSONATION_ENDED_HEADER],
 )
 
 # Global exception handler for AppException

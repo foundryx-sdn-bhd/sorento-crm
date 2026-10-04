@@ -159,6 +159,8 @@ export default function RespondWorkspacesAdmin() {
   const {
     data: workspaces = [],
     isLoading,
+    error,
+    refetch,
   } = useQuery({
     queryKey: ['respond-workspaces'],
     queryFn: listRespondWorkspaces,
@@ -501,6 +503,8 @@ export default function RespondWorkspacesAdmin() {
           table={table}
           recordCount={workspaces.length}
           isLoading={isLoading}
+          error={error}
+          onRetry={() => void refetch()}
           emptyMessage="No Respond.io workspaces configured. Add one to start syncing contacts."
           tableLayout={{ width: 'fixed', columnsResizable: true, columnsVisibility: true }}
         >

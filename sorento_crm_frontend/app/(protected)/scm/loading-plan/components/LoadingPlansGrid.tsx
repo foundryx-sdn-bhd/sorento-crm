@@ -295,6 +295,8 @@ export function LoadingPlansGrid() {
         table={table}
         recordCount={total}
         isLoading={list.isLoading}
+        error={list.error}
+        onRetry={() => void list.refetch()}
         isPlaceholderData={list.isPlaceholderData}
         emptyMessage={
           searchQuery || status !== 'active'

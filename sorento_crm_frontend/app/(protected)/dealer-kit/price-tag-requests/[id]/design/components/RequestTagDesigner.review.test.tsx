@@ -311,7 +311,7 @@ const REQUEST: PriceTagRequestDetail = {
   created_at: '2026-09-01T00:00:00Z',
   assigned_to_id: 'user-1',
   assigned_to_name: 'Jayson',
-  contact_name: 'Ziv Beh',
+  contact_name: 'CONTACT AI',
   contact_id: 'contact-1',
   lines: [line('line-1', 'SRT-1234', 0), line('line-2', 'SRT-5678', 1)],
 };
@@ -327,7 +327,7 @@ function comment(overrides: Record<string, unknown> = {}) {
     w: 0,
     h: 0,
     body: 'Make the price bigger',
-    author_name: 'Ziv Beh',
+    author_name: 'CONTACT AI',
     created_at: '2026-09-14T00:00:00Z',
     resolved_at: null,
     resolved_by_name: null,

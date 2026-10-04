@@ -17,6 +17,7 @@ incoming_stock_service.py` for the implementation.
 """
 from __future__ import annotations
 
+import uuid
 from datetime import date
 from typing import Optional
 
@@ -51,6 +52,8 @@ class _Contact:
         self.asked = bool(contact_id)
         self.resolved = resolve_request_contact(db, contact_id, space_id) if contact_id else None
         self.rules = rules_for_contact(db, self.resolved) if contact_id else None
+        #: The packing list regions this contact may be told about; None = no contact, no filter.
+        self.regions = self.rules.regions if self.rules is not None else None
 
     def eta_from(self, db: Session, eta_from: Optional[date]) -> Optional[date]:
         return query_eta_from(db, self.rules, eta_from)
@@ -107,6 +110,7 @@ def _for_contact(
     eta_from: Optional[date] = None,
     eta_to: Optional[date] = None,
     paged: Optional[tuple[int, int]] = None,
+    asked: Optional[list[str]] = None,
 ):
     """One gate for every incoming route: the contact's ETA offset and packing list rule
     (`eta_policy.apply_to_incoming`), then the per-field reveals. Both read the SAME
@@ -135,8 +139,44 @@ def _for_contact(
         # PR #1329 fix round: a dealer is told each product once and its distinct ETAs -
         # after the reveals, so a date the contact may not see is not told. Who to ask
         # is the presenter's one refer sentence (REFER-SALESMAN).
-        result = dealer_view(result)
+        # AVAIL-MODE-REPLIES: every product the dealer asked about is told, one with no
+        # shipment as "No ETA" - unless a date window was asked, where no
+        # row only means none in that window.
+        windowed = eta_from is not None or eta_to is not None
+        result = dealer_view(result, asked=None if windowed else _asked_codes(db, asked))
     return result
+
+
+def _asked_codes(db: Session, tokens: Optional[list[str]]) -> list[str]:
+    """The product codes a request named, in its order: each token is a product id or a
+    code (the routes accept both)."""
+    from app.models.product import Product
+    from sqlalchemy import func, or_
+
+    wanted = [str(t).strip() for t in tokens or [] if t and str(t).strip()]
+    if not wanted:
+        return []
+    ids = []
+    for token in wanted:
+        try:
+            ids.append(str(uuid.UUID(token)))
+        except ValueError:
+            continue
+    matches = [func.lower(Product.product_code).in_([t.lower() for t in wanted])]
+    if ids:
+        matches.append(Product.id.in_(ids))
+    rows = db.query(Product.id, Product.product_code).filter(or_(*matches)).all()
+    by_token: dict[str, str] = {}
+    for pid, code in rows:
+        if code:
+            by_token.setdefault(str(pid), code)
+            by_token.setdefault(code.lower(), code)
+    out: list[str] = []
+    for token in wanted:
+        code = by_token.get(token) or by_token.get(token.lower())
+        if code and code not in out:
+            out.append(code)
+    return out
 
 
 #: A contact id no row carries: `apply_field_access` treats a contact that named nobody
@@ -205,11 +245,16 @@ def get_incoming_for_product(
             if piece:
                 resolved_product_filter.append(piece)
 
+    try:
+        contact = _Contact(db, contact_id, space_id)
+    except Exception as e:
+        raise handle_internal_error(str(e))
+
     # Resolve entities → product_codes → push through legacy product_ids path.
     entity_echo = None
     norm = normalize_entities_query_param(entities)
     if norm:
-        buckets = resolve_or_empty(db, norm)
+        buckets = resolve_or_empty(db, norm, regions=contact.regions)
         if buckets is not None:
             entity_echo = buckets.as_echo()
             if not buckets.product_codes:
@@ -220,8 +265,7 @@ def get_incoming_for_product(
                 }
             resolved_product_filter.extend(buckets.product_codes)
     try:
-        svc = IncomingStockService(db)
-        contact = _Contact(db, contact_id, space_id)
+        svc = IncomingStockService(db, regions=contact.regions)
         # A windowed contact answer reads the service's maximum and pages the products
         # that survive the padded window itself (`_fetch_window`); this route has no page.
         result, paged = _fetch_window(
@@ -249,6 +293,7 @@ def get_incoming_for_product(
             eta_from=eta_from,
             eta_to=eta_to,
             paged=paged,
+            asked=resolved_product_filter,
         )
     except Exception as e:
         raise handle_internal_error(str(e))
@@ -287,13 +332,17 @@ def get_incoming_shipments(
         resolve_or_empty,
     )
 
+    try:
+        contact = _Contact(db, contact_id, space_id)
+    except Exception as e:
+        raise handle_internal_error(str(e))
     entity_echo = None
     extra_query = query
     shipment_uuid_list = parse_uuid_list(shipment_ids, param_name="shipment_ids")
     supplier_uuid_list = parse_uuid_list(supplier_ids, param_name="supplier_ids")
     norm = normalize_entities_query_param(entities)
     if norm:
-        buckets = resolve_or_empty(db, norm)
+        buckets = resolve_or_empty(db, norm, regions=contact.regions)
         if buckets is not None:
             entity_echo = buckets.as_echo()
             if buckets.shipment_numbers:
@@ -309,8 +358,7 @@ def get_incoming_shipments(
                     "resolved_entities": entity_echo,
                 }
     try:
-        svc = IncomingStockService(db)
-        contact = _Contact(db, contact_id, space_id)
+        svc = IncomingStockService(db, regions=contact.regions)
         result, paged = _fetch_window(
             lambda p, n: svc.incoming_shipments(
                 query=extra_query,
@@ -405,8 +453,8 @@ def get_incoming_list(
             if piece:
                 flat_product_ids.append(piece)
     try:
-        svc = IncomingStockService(db)
         contact = _Contact(db, contact_id, space_id)
+        svc = IncomingStockService(db, regions=contact.regions)
         # product_ids may be UUIDs or product_codes; the service resolves both, so
         # pass through raw rather than via parse_uuid_list (which rejects codes).
         result, paged = _fetch_window(
@@ -443,6 +491,7 @@ def get_incoming_list(
                 eta_from=eta_from,
                 eta_to=eta_to,
                 paged=paged,
+                asked=flat_product_ids,
             )
         return apply_field_access(
             db,
@@ -471,11 +520,12 @@ def get_incoming_shipment_products(
     shipping_container_number, bill_of_lading_number, invoice_number.
     """
     try:
-        svc = IncomingStockService(db)
+        contact = _Contact(db, contact_id, space_id)
+        svc = IncomingStockService(db, regions=contact.regions)
         return _for_contact(
             db,
             svc.shipment_incoming_products(shipment_id),
-            _Contact(db, contact_id, space_id),
+            contact,
             current_user=current_user,
         )
     except Exception as e:
@@ -497,13 +547,12 @@ def get_incoming_shipment_attachment(
     packing list permission (#1328) `attachment` is absent and the answer is empty.
     """
     try:
-        svc = IncomingStockService(db)
+        contact = _Contact(db, contact_id, space_id)
+        svc = IncomingStockService(db, regions=contact.regions)
         data = svc.shipment_attachment(shipment_id)
         if data is None:
             return {"data": None, "empty": True}
-        gated = _for_contact(
-            db, {"data": data}, _Contact(db, contact_id, space_id), current_user=current_user
-        )
+        gated = _for_contact(db, {"data": data}, contact, current_user=current_user)
         data = gated["data"]
         return {"data": data, "empty": data.get("attachment") is None}
     except Exception as e:
@@ -536,7 +585,9 @@ def get_incoming_stock_grn(
     current_user: dict = Depends(get_current_user_or_api_key),
     db: Session = Depends(get_db),
 ):
-    """Surface GRN (goods received note) records only when the user explicitly asks."""
+    """Surface GRN (goods received note) records only when the user explicitly asks.
+
+    No contact in play and no region filter here: a future contact wiring must add both."""
     from app.services.entity_filter_helpers import (
         normalize_entities_query_param,
         resolve_or_empty,

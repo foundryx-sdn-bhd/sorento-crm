@@ -1,0 +1,41 @@
+{
+  "status": "ok",
+  "message": null,
+  "basis": "delivered",
+  "customer_name": "ACME HARDWARE SDN BHD [A/C I]",
+  "customer_count": 1,
+  "product_code": null,
+  "product_codes": [],
+  "channel": null,
+  "channel_shown": false,
+  "location_token": null,
+  "warehouse_codes": [],
+  "date_from": "2026-09-30",
+  "date_to": "2026-09-30",
+  "grain": "day",
+  "total": {
+    "qty": 12,
+    "amount": 1500.0
+  },
+  "periods": [
+    {
+      "from": "2026-09-30",
+      "to": "2026-09-30",
+      "qty": 12,
+      "amount": 1500.0
+    }
+  ],
+  "group_by": null,
+  "rows": [],
+  "more": 0,
+  "options": [
+    {
+      "key": "product",
+      "label": "By product"
+    },
+    {
+      "key": "delivery_order",
+      "label": "Delivery orders"
+    }
+  ]
+}

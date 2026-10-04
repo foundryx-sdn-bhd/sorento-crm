@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Availability-mode stock replies</title>
+<style>
+/* Tokens copied from sorento_crm_frontend/css/config.reui.css (light theme), as the other mockups. */
+:root{
+  --background:#fff;--foreground:#09090b;--card:#fff;--muted:#f4f4f5;--muted-fg:#71717a;
+  --border:#ececee;--primary:#3b82f6;--primary-soft:#eff6ff;--primary-line:#bfdbfe;
+  --success:#15803d;--success-soft:#f0fdf4;--warning:#a16207;--warning-soft:#fefce8;
+  --destructive:#dc2626;--destructive-soft:#fef2f2;
+  --wa-in:#ffffff;--wa-out:#d9fdd3;--wa-bg:#efeae2;
+  --radius:8px;--page:#f7f7f8;
+}
+*{box-sizing:border-box}
+code{overflow-wrap:anywhere}
+.intro,.rules,.why,td{overflow-wrap:anywhere}
+body{margin:0;background:var(--page);color:var(--foreground);font:14px/1.45 Inter,ui-sans-serif,system-ui,sans-serif}
+.doc{max-width:1180px;margin:0 auto;padding:16px}
+h1{font-size:22px;margin:0 0 4px}
+.intro{color:var(--muted-fg);font-size:13px;margin:0 0 14px;max-width:860px}
+.nav{position:sticky;top:0;z-index:5;background:var(--page);padding:8px 0 10px;border-bottom:1px solid var(--border);margin-bottom:16px;display:flex;flex-wrap:wrap;gap:6px}
+.nav a{font-size:12px;text-decoration:none;border:1px solid var(--border);background:#fff;border-radius:999px;padding:3px 10px;color:var(--muted-fg)}
+.nav a:hover{color:var(--foreground)}
+.card{background:#fff;border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin:0 0 14px}
+.card h3{font-size:14px;margin:0 0 6px}
+.rules{margin:0;padding-left:18px;font-size:13px}
+.rules li{margin:2px 0}
+.ask{background:var(--warning-soft);border-color:#fde68a}
+section{margin:0 0 28px}
+section>h2{font-size:16px;margin:0 0 4px}
+section>.why{font-size:12.5px;color:var(--muted-fg);margin:0 0 10px;max-width:860px}
+table{width:100%;border-collapse:separate;border-spacing:0;background:#fff;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;table-layout:fixed}
+th,td{text-align:left;vertical-align:top;padding:10px 12px;border-bottom:1px solid var(--border);font-size:13px}
+tr:last-child td{border-bottom:0}
+th{background:var(--muted);font-weight:600;font-size:12px;color:var(--muted-fg)}
+col.id{width:62px}col.facts{width:190px}col.rule{width:200px}
+.sid{font-weight:700;font-variant-numeric:tabular-nums}
+.facts{color:var(--muted-fg);font-size:12px}
+.chat{background:var(--wa-bg);border-radius:8px;padding:8px;display:flex;flex-direction:column;gap:6px}
+.b{max-width:92%;padding:6px 9px;border-radius:8px;white-space:pre-wrap;word-break:break-word;font-size:13px;box-shadow:0 1px .5px rgba(0,0,0,.08)}
+.b.in{align-self:flex-start;background:var(--wa-in)}
+.b.out{align-self:flex-end;background:var(--wa-out)}
+.b .who{display:block;font-size:10.5px;color:var(--muted-fg);margin-bottom:2px}
+.tag{display:inline-block;font-size:11px;border-radius:999px;padding:1px 8px;margin:0 4px 4px 0;border:1px solid var(--border);background:var(--muted)}
+.tag.new{background:var(--primary-soft);border-color:var(--primary-line);color:#1d4ed8}
+.tag.v2{background:var(--warning-soft);border-color:#fde68a;color:var(--warning)}
+.tag.same{background:var(--success-soft);border-color:#bbf7d0;color:var(--success)}
+.full{font-size:12px;color:var(--muted-fg);margin-top:6px}
+@media (max-width:760px){
+  table,thead,tbody,tr,td,th,colgroup,col{display:block;width:100%!important}
+  .b{max-width:100%}
+  thead{display:none}
+  tr{border-bottom:1px solid var(--border);padding:6px 0}
+  td{border:0;padding:6px 12px}
+  td.sid{padding-bottom:0}
+}
+</style>
+</head>
+<body>
+<div class="doc">
+<h1>Availability-mode stock replies: every scenario (v2)</h1>
+<p class="intro"><b>v2</b> applies the owner's notes of 2 Oct: 🚫 on the above-max line (S05, S06), quantity + position replies to a picker (S36 to S39), and every picker in ONE message (S21, S21b, S22b; card Q3 is now (b)). Rows changed in v2 carry a yellow tag. Lane AVAIL-MODE-REPLIES (PR #1430), for the owner to check every reply before slice 4 is finished. An <b>availability-only</b> contact (a dealer) may see "got stock / no stock" but never our quantities. Each row shows what the dealer types (left bubble), the exact reply (right bubble), the stock facts behind it, and the rule. Codes come from the repo's hand tests. The same scenarios are asserted by <code>sorento_crm_backend/tests/chatbot/test_avail_mode_scenarios.py</code> (test ids S01 to S35); the written catalogue sits beside it in <code>AVAIL-MODE-SCENARIOS.md</code>.</p>
+
+<nav class="nav">
+  <a href="#rules">Rules</a><a href="#open">Open points</a><a href="#single">One code</a><a href="#eta">ETA asks</a><a href="#multi">Several codes</a><a href="#pick">Picker replies</a><a href="#qty">Quantity follow-ups</a><a href="#full">Full mode</a>
+</nav>
+
+<div class="card" id="rules">
+  <h3>Rules (behaviour card + owner answers, 2 Oct 2026)</h3>
+  <ol class="rules">
+    <li>Got stock / no stock is a tick / cross: <b>✅</b> and <b>❌</b>, never the words. Every line starts with "CODE x Q:".</li>
+    <li>Has stock but less than Q, with Q within the category max: <b>✅ N available</b>, nothing else (Q1 a). Above the category max: <b>🚫</b> "the quantity is more than what I can confirm here", no count (Q5 a; 🚫 added in v2).</li>
+    <li>ETA ask: one compact line per product, <b>CODE: ✅ ETA dd/mm/yyyy</b>, or <b>CODE: No ETA</b> (owner hand test, 3 Oct 2026).</li>
+    <li>Exact codes only: an exact code never brings its family; an unknown code gets the did-you-mean; a number on a list is that option (owner hand test, 3 Oct 2026).</li>
+    <li>Pickers never offer "all", and refuse a bare "all" / "semua". The list stays open. Typing every number is a pick and is answered (Q4 b).</li>
+    <li>Several codes in one message get one reply, in this order: answered lines in the order asked, then <b>Couldn't find: X, Y.</b>, then at most one question. Every vague code gets its picker in the SAME message (Q3 changed to b in v2), numbered on from the previous list so no two options share a number. A code named twice is one line with the quantities added up (Q2 a).</li>
+    <li>Full mode (staff) is unchanged. There is one parser prompt; every difference lives in the reply code.</li>
+  </ol>
+</div>
+
+<div class="card ask" id="open">
+  <h3>Points to confirm</h3>
+  <ol class="rules">
+    <li><b>v2: numbering when several pickers share one message</b> (S21). Proposal: one running number across all the lists. SRTWC286 options are 1 to 10, SRTWC6022 options carry on at 11 and 12. A reply like "2 and 11" picks one from each, and "2 of 3" style quantities work the same way. The dealer may answer one list at a time: the answered code is answered, and the lists still open are asked again with their numbers unchanged (S21b). Alternative: letters per list ("A2, B1"). It is not recommended: the parser would have to learn a new reply shape, and the owner asked for one prompt.</li>
+    <li><b>v2: "2 of 3"</b> (S36 to S39) means quantity 2 of option 3. The number after "of" is always the option. The parser reads it into the same open-question answer it already returns for "the first one, I need 2". No prompt change is planned; if the live parser misreads "2 of 3", that goes to lane PARSER-PER-AUDIENCE as a prompt example.</li>
+    <li><b>Every code not found</b> (S12, S23): today's shared miss sentence reads <code>Couldn't find: "FOO99" (product), "BAR12" (product).</code> followed by the refer line. Full mode uses the same sentence. Recommendation: keep it (one sentence for both modes).</li>
+    <li><b>ETA ask with a code not found</b> (S16): shown below as <code>Couldn't find: FOO99.</code>, the same as the stock mix. Recommendation: same wording as the stock mix.</li>
+  </ol>
+</div>
+
+<section id="single"><h2>One code</h2>
+<p class="why">Category max (X) is 100 unless a row says otherwise. "Available" means on hand in the dealer's allowed locations minus open sales orders.</p>
+<table><colgroup><col class="id"><col><col class="facts"><col class="rule"></colgroup>
+<thead><tr><th>Id</th><th>Conversation</th><th>Stock facts</th><th>Rule</th></tr></thead>
+<tbody id="t-single"></tbody></table></section>
+
+<section id="eta"><h2>ETA asks</h2>
+<p class="why">The dealer asks when stock arrives. One line per product, then the refer line.</p>
+<table><colgroup><col class="id"><col><col class="facts"><col class="rule"></colgroup>
+<thead><tr><th>Id</th><th>Conversation</th><th>Stock facts</th><th>Rule</th></tr></thead>
+<tbody id="t-eta"></tbody></table></section>
+
+<section id="multi"><h2>Several codes in one message</h2>
+<p class="why">Found codes are answered, codes not found are listed, and every vague code gets its picker in the same message, numbered on from the list before it (v2).</p>
+<table><colgroup><col class="id"><col><col class="facts"><col class="rule"></colgroup>
+<thead><tr><th>Id</th><th>Conversation</th><th>Stock facts</th><th>Rule</th></tr></thead>
+<tbody id="t-multi"></tbody></table></section>
+
+<section id="pick"><h2>Picker replies</h2>
+<p class="why">Over the which-one list for <code>srtwc286 x 10</code> (ten SRTWC286-SH codes). SRTWC286-SH-150 has 50 on hand, the others none.</p>
+<table><colgroup><col class="id"><col><col class="facts"><col class="rule"></colgroup>
+<thead><tr><th>Id</th><th>Conversation</th><th>Stock facts</th><th>Rule</th></tr></thead>
+<tbody id="t-pick"></tbody></table></section>
+
+<section id="qty"><h2>Quantity follow-ups</h2>
+<p class="why">Turns that only supply or change a quantity.</p>
+<table><colgroup><col class="id"><col><col class="facts"><col class="rule"></colgroup>
+<thead><tr><th>Id</th><th>Conversation</th><th>Stock facts</th><th>Rule</th></tr></thead>
+<tbody id="t-qty"></tbody></table></section>
+
+<div class="card" id="full">
+  <h3>Full mode (staff: compact / detailed), for comparison, unchanged by this lane</h3>
+  <ul class="rules">
+    <li>Stock asks answer with quantities: a "Total" per product (compact) or per location (detailed). No quantity is asked for and there is no category max.</li>
+    <li>ETA asks list shipments with container, quantity and allocation.</li>
+    <li>Pickers keep "all": "all" over a numbered roster picks every option.</li>
+    <li>Codes not found keep the shared miss sentence and the did-you-mean.</li>
+  </ul>
+</div>
+</div>
+
+<script>
+const R = "Please refer to your salesman.";
+const FAMILY = ["SRTWC286-SH","SRTWC286-SH-150","SRTWC286-SH-200","SRTWC286-SH-NEW","SRTWC286-SH-NEW-150","SRTWC286-SH-NEW-200","SRTWC286-SH-NEW-P","SRTWC286-SH-P","SRTWC286-SH-PP","SRTWC286-SH-UF"];
+const list = (head, codes) => [head, ...codes.map((c, i) => `${i + 1}. ${c}`)].join("\n");
+const PICK10 = list("SRTWC286 x 10: which one?", FAMILY);
+const PICK6022_LINES = ["SRTWC6022-SH-UF","SRTWC6022-SH-UF-NEW"];
+const PICK6022 = ["SRTWC6022 x 4: which one?", ...PICK6022_LINES.map((c, i) => `${i + 11}. ${c}`)].join("\n");
+const PICK2 = PICK10 + "\n\n" + PICK6022;
+const NOT_ALL = "Please reply with the number of the code you need.";
+// [id, [[who, text], ...], facts, [tags], rule]
+const T = {
+single: [
+ ["S01", [["in","SRT5674 x 50 got stock?"],["out",`SRT5674 x 50: ✅ ${R}`]], "SRT5674 on hand 100", ["new"], "Enough stock: tick only (rule 1)."],
+ ["S02", [["in","SRT5674 x 50"],["out",`SRT5674 x 50: ✅ 30 available. ${R}`]], "on hand 30, X 100", ["new"], "Some stock, less than Q, Q within X: tick + count (rule 2, Q1 a)."],
+ ["S03", [["in","SRTW2000 x 150"],["out","SRTW2000 x 150: ❌ ETA 19/10/2026."]], "on hand 0, X 200, shipment due 19/10/2026", ["new"], "No stock, shipment due: cross + ETA (rule 1)."],
+ ["S04", [["in","SRT5674 x 5"],["out",`SRT5674 x 5: ❌ No stock and no incoming. ${R}`]], "on hand 0, no shipment", ["new"], "No stock, nothing incoming (rule 1)."],
+ ["S05", [["in","CWCX604 x 300"],["out",`CWCX604 x 300: 🚫 the quantity is more than what I can confirm here. ${R}`]], "on hand 30, X 200", ["new","v2"], "Q above the category max: 🚫, no count (Q5 a, v2 note 1)."],
+ ["S06", [["in","CWCX604 x 5"],["out",`CWCX604 x 5: 🚫 the quantity is more than what I can confirm here. ${R}`]], "on hand 30, X not set", ["new","v2"], "No category max set means 0: every Q is above it."],
+ ["S07", [["in","SRT5674 got stock?"],["out","How many units of SRT5674?"],["in","50"],["out",`SRT5674 x 50: ✅ ${R}`]], "on hand 100", ["same"], "Exact code, no quantity: asked first."],
+ ["S08", [["in","SRTWC287-S x 3"],["out",`SRTWC287-S-150 x 3: ✅ ${R}`]], "SRTWC287-S matches one code; on hand 9", ["new"], "A prefix of exactly one code is that code, quantity kept (rule 5)."],
+ ["S09", [["in","srtwc286 x 10"],["out",PICK10],["in","2"],["out",`SRTWC286-SH-150 x 10: ✅ ${R}`]], "SRTWC286-SH-150 on hand 50", ["same"], "Vague code: which-one picker, quantity rides on the pick."],
+ ["S10", [["in","check stock srtwc286"],["out",list("SRTWC286 matches 10 products. Which one?", FAMILY)],["in","2"],["out","How many units of SRTWC286-SH-150?"]], "", ["same"], "Vague code, no quantity: pick, then the quantity."],
+ ["S11", [["in","ELP3753 x 10"],["out","Couldn't find ELP3753. Did you mean ELP3754?"],["in","yes"],["out",`ELP3754 x 10: ✅ ${R}`]], "ELP3754 on hand 20", ["same"], "One code not found, a near code exists: did-you-mean (unchanged)."],
+ ["S12", [["in","FOO99 x 1"],["out",`Couldn't find: "FOO99" (product).\n\n${R}`]], "no such product", ["same"], "Not found, nothing near: shared miss sentence (open point 1)."],
+],
+eta: [
+ ["S14", [["in","ETA SRTW2000?"],["out",`SRTW2000: ✅ ETA 19/10/2026\n\n${R}`]], "shipment due 19/10/2026", ["new"], "One line per product (rule 3)."],
+ ["S15", [["in","ETA SRTW2000 and MWT5727SS-CR"],["out",`SRTW2000: ✅ ETA 19/10/2026\n\nMWT5727SS-CR: No ETA\n\n${R}`]], "MWT5727SS-CR has no shipment", ["new"], "Several codes, one line each (rule 3)."],
+ ["S16", [["in","ETA SRTW2000 and FOO99"],["out",`SRTW2000: ✅ ETA 19/10/2026\n\nCouldn't find: FOO99.\n\n${R}`]], "FOO99 does not exist", ["new"], "Not-found code listed (open point 2)."],
+],
+multi: [
+ ["S17", [["in","SRT5674 x 50, CWCX604 x 40, SRTW2000 x 10"],["out",`SRT5674 x 50: ✅ ${R}\n\nCWCX604 x 40: ✅ 30 available. ${R}\n\nSRTW2000 x 10: ❌ ETA 19/10/2026.`]], "SRT5674 100; CWCX604 30 (X 200); SRTW2000 0 + shipment", ["new"], "All exact: one line each, in the order asked."],
+ ["S18", [["in","SRT5674 x 5, FOO99 x 1"],["out",`SRT5674 x 5: ✅ ${R}\n\nCouldn't find: FOO99.`]], "", ["new"], "Exact + not found (rule 5)."],
+ ["S19", [["in","SRT5674 x 5, SRTWC287-S x 3"],["out",`SRT5674 x 5: ✅ ${R}\n\nSRTWC287-S-150 x 3: ✅ ${R}`]], "", ["new"], "Exact + prefix of one code."],
+ ["S20", [["in","SRT5674 x 5, srtwc286 x 10"],["out",`SRT5674 x 5: ✅ ${R}\n\n${PICK10}`],["in","2"],["out",`SRTWC286-SH-150 x 10: ✅ ${R}`]], "", ["new"], "Exact + vague: exact answered now, picker for the vague one."],
+ ["S21", [["in","srtwc286 x 10, srtwc6022 x 4"],["out",PICK2],["in","2 and 11"],["out",`SRTWC286-SH-150 x 10: ✅ ${R}\n\nSRTWC6022-SH-UF x 4: ❌ No stock and no incoming. ${R}`]], "SRTWC286-SH-150 on hand 50", ["new","v2"], "Two vague codes: both pickers in ONE message, numbering runs on (Q3 b, v2 note 3)."],
+ ["S21b", [["in","srtwc286 x 10, srtwc6022 x 4"],["out",PICK2],["in","2"],["out",`SRTWC286-SH-150 x 10: ✅ ${R}\n\n${PICK6022}`],["in","12"],["out",`SRTWC6022-SH-UF-NEW x 4: ❌ No stock and no incoming. ${R}`]], "SRTWC286-SH-150 on hand 50", ["new","v2"], "Only one list answered: that code is answered, the open list is asked again with its numbers unchanged."],
+ ["S22", [["in","srtwc286 x 10, FOO99 x 1"],["out",`Couldn't find: FOO99.\n\n${PICK10}`]], "", ["new"], "Vague + not found: the miss is named, then the picker."],
+ ["S22b", [["in","SRT5674 x 5, srtwc286 x 10, srtwc6022 x 4, FOO99 x 1"],["out",`SRT5674 x 5: ✅ ${R}\n\nCouldn't find: FOO99.\n\n${PICK2}`]], "SRT5674 on hand 100", ["new","v2"], "Exact + two vague + not found: answered, missing, then both pickers in one message."],
+ ["S23", [["in","FOO99 x 1, BAR12 x 2"],["out",`Couldn't find: "FOO99" (product), "BAR12" (product).\n\n${R}`]], "", ["same"], "All not found: shared miss sentence (open point 1)."],
+ ["S24", [["in","SRT5674 x 2, SRT5674 x 3"],["out",`SRT5674 x 5: ✅ ${R}`]], "", ["new"], "Duplicates add up into one line (Q2 a)."],
+ ["S25", [["in","SRT5674, CWCX604 got stock?"],["out","How many units for each?\n1. SRT5674 - \n2. CWCX604 - "],["in","1. 10, 2. 5"],["out",`SRT5674 x 10: ✅ ${R}\n\nCWCX604 x 5: ✅ ${R}`]], "both on hand 100, X 200", ["same"], "Several codes, no quantity: point-form question."],
+ ["S26", [["in","SRT5674, CWCX604, FOO99 got stock?"],["out","Couldn't find: FOO99.\n\nHow many units for each?\n1. SRT5674 - \n2. CWCX604 - "]], "", ["new"], "No quantities + not found: miss named before the question."],
+ ["S27", [["in","SRT5674 x 5 and CWCX604"],["out",`SRT5674 x 5: ✅ ${R}\n\nHow many units of CWCX604?`],["in","7"],["out",`CWCX604 x 7: ✅ ${R}`]], "both on hand 100, X 200", ["new"], "Some with quantities: those answered now, the rest asked."],
+ ["S29", [["in","SRT5674 x 50, SRTW2000 x 150"],["out",`SRT5674 x 50: ✅ 30 available. ${R}\n\nSRTW2000 x 150: ❌ ETA 19/10/2026.`]], "SRT5674 30; SRTW2000 0 + shipment (X 200)", ["new"], "Short stock beside an ETA line."],
+],
+pick: [
+ ["S30", [["in","srtwc286 x 10"],["out",PICK10],["in","all"],["out",NOT_ALL]], "", ["new"], "Bare \"all\" refused, list stays open (rule 4)."],
+ ["S31", [["in","srtwc286 x 10"],["out",PICK10],["in","all of them"],["out",NOT_ALL]], "", ["new"], "Same for \"all of them\"."],
+ ["S34", [["in","srtwc286 x 10"],["out",PICK10],["in","semua"],["out",NOT_ALL]], "", ["new"], "Same for \"semua\" (the parser reads it as every number; the engine reads the word)."],
+ ["S33", [["in","srtwc286 x 10"],["out",PICK10],["in","all"],["out",NOT_ALL],["in","2"],["out",`SRTWC286-SH-150 x 10: ✅ ${R}`]], "", ["new"], "After the refusal, a number answers."],
+ ["S35", [["in","srtwc286 x 10"],["out",PICK10],["in","1 and 2"],["out",`SRTWC286-SH x 10: ❌ No stock and no incoming. ${R}\n\nSRTWC286-SH-150 x 10: ✅ ${R}`]], "", ["same"], "Several numbers: each answered."],
+ ["S36", [["in","check stock srtwc286"],["out",list("SRTWC286 matches 10 products. Which one?", FAMILY)],["in","2 of 3"],["out",`SRTWC286-SH-200 x 2: ❌ No stock and no incoming. ${R}`]], "", ["new","v2"], "\"2 of 3\": quantity 2 of option 3 (v2 note 2)."],
+ ["S37", [["in","check stock srtwc286"],["out",list("SRTWC286 matches 10 products. Which one?", FAMILY)],["in","i want 2 of the third one"],["out",`SRTWC286-SH-200 x 2: ❌ No stock and no incoming. ${R}`]], "", ["new","v2"], "\"2 of the third one\" / \"2 of 3rd product\": the same pick."],
+ ["S38", [["in","check stock srtwc286"],["out",list("SRTWC286 matches 10 products. Which one?", FAMILY)],["in","2 of 1 and 5 of 3"],["out",`SRTWC286-SH x 2: ❌ No stock and no incoming. ${R}\n\nSRTWC286-SH-200 x 5: ❌ No stock and no incoming. ${R}`]], "", ["new","v2"], "Several quantity + position pairs: each answered."],
+ ["S39", [["in","srtwc286 x 10"],["out",PICK10],["in","2 of 2"],["out",`SRTWC286-SH-150 x 2: ✅ ${R}`]], "SRTWC286-SH-150 on hand 50", ["new","v2"], "A quantity in the pick replaces the one typed earlier (10 becomes 2)."],
+ ["S32", [["in","srtwc286 x 10"],["out",PICK10],["in","1,2,3,4,5,6,7,8,9,10"],["out",`SRTWC286-SH x 10: ❌ No stock and no incoming. ${R}\n\nSRTWC286-SH-150 x 10: ✅ ${R}\n\n... (one line per code, ten lines)`]], "", ["same"], "Every number typed out is a pick and is answered (Q4 b)."],
+],
+qty: [
+ ["S07", [["in","SRT5674 got stock?"],["out","How many units of SRT5674?"],["in","50"],["out",`SRT5674 x 50: ✅ ${R}`]], "on hand 100", ["same"], "A bare number answers the one product asked."],
+ ["S28", [["in","SRT5674, CWCX604 got stock?"],["out","How many units for each?\n1. SRT5674 - \n2. CWCX604 - "],["in","10"],["out",`SRT5674 x 10: ✅ ${R}\n\nCWCX604 x 10: ✅ ${R}`]], "both on hand 100, X 200", ["same"], "One number applies to every product asked (26 Sep ruling)."],
+ ["S27", [["in","SRT5674 x 5 and CWCX604"],["out",`SRT5674 x 5: ✅ ${R}\n\nHow many units of CWCX604?`],["in","7"],["out",`CWCX604 x 7: ✅ ${R}`]], "", ["new"], "Only the product still owed is asked and answered."],
+],
+};
+const esc = s => s.replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+for (const [key, rows] of Object.entries(T)) {
+  const body = document.getElementById("t-" + key);
+  body.innerHTML = rows.map(([id, turns, facts, tags, rule]) => `
+    <tr>
+      <td class="sid">${id}</td>
+      <td><div class="chat">${turns.map(([who, text]) => `<div class="b ${who}"><span class="who">${who === "in" ? "Dealer" : "Bot"}</span>${esc(text)}</div>`).join("")}</div></td>
+      <td class="facts">${esc(facts || "-")}</td>
+      <td>${tags.map(t => `<span class="tag ${t}">${t === "new" ? "changed by this lane" : t === "v2" ? "v2 owner note" : "unchanged"}</span>`).join("")}<div>${esc(rule)}</div></td>
+    </tr>`).join("");
+}
+</script>
+</body>
+</html>

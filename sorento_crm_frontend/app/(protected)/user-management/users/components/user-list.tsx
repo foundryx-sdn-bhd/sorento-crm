@@ -85,6 +85,9 @@ interface UsersToolbarProps {
     action: 'delete' | 'activate' | 'deactivate' | 'permanent_delete' | 'resend_invite',
   ) => void;
   roleList: UserRoleSimple[] | undefined;
+  /** The role options read's error (L5): the role filter says so instead of looking empty. */
+  roleListError: unknown;
+  refetchRoleList: () => void;
   addUserButton: React.ReactNode;
 }
 
@@ -113,6 +116,8 @@ const UsersToolbar = ({
   bulkActionPending,
   runBulkAction,
   roleList,
+  roleListError,
+  refetchRoleList,
   addUserButton,
 }: UsersToolbarProps) => {
   const initialConditionsFromApplied = (): UserFilterCondition[] => {
@@ -256,6 +261,8 @@ const UsersToolbar = ({
                             label: role.name,
                           })),
                         ]}
+                        loadError={roleListError}
+                        onRetry={refetchRoleList}
                       />
                     ) : cond.field === 'status' ? (
                       <SearchableSelect
@@ -346,7 +353,11 @@ const UserList = () => {
   const [bulkConfirmAction, setBulkConfirmAction] = useState<'delete' | 'activate' | 'deactivate' | 'permanent_delete' | 'resend_invite' | null>(null);
 
   // Role select query
-  const { data: roleList } = useRoleSelectQuery();
+  const {
+    data: roleList,
+    error: roleListError,
+    refetch: refetchRoleList,
+  } = useRoleSelectQuery();
 
   // Back hands the list its own query string back, and the pager keeps
   // rewriting it, so the list reads it (S3-01). One hook, every list.
@@ -401,7 +412,7 @@ const UserList = () => {
     [pagination, sorting, searchQuery, selectedRole, selectedStatus, selectedTrashed],
   );
 
-  const { data, isLoading, isPlaceholderData, isFetching } = useQuery({
+  const { data, isLoading, isPlaceholderData, isFetching, error, refetch } = useQuery({
     ...LIST_QUERY_OPTIONS,
     queryKey: usersListQueryKey(listParams),
     queryFn: () => fetchUsersListPage(listParams),
@@ -762,6 +773,8 @@ const UserList = () => {
         recordCount={data?.pagination.total || 0}
         isLoading={isLoading}
         isPlaceholderData={isPlaceholderData}
+        error={error}
+        onRetry={() => void refetch()}
         rowHref={rowHref}
         rowPending={rowPending}
         standardToolbar={false}
@@ -794,6 +807,8 @@ const UserList = () => {
             bulkActionPending={bulkActionPending}
             runBulkAction={runBulkAction}
             roleList={roleList}
+            roleListError={roleListError}
+            refetchRoleList={() => void refetchRoleList()}
             addUserButton={addUserButton}
           />
           <CardTable>

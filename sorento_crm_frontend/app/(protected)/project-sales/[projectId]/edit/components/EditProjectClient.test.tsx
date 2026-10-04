@@ -29,9 +29,9 @@ vi.mock('@/hooks/usePermissions', () => ({
   useHasPermission: (slug: string) => hasManagePermission(slug),
 }));
 
-const getUsersSelect = vi.fn();
+const getUserLookup = vi.fn();
 vi.mock('@/services/userSelectService', () => ({
-  getUsersSelect: (...args: unknown[]) => getUsersSelect(...args),
+  getUserLookup: (...args: unknown[]) => getUserLookup(...args),
 }));
 
 const useBrandSelectQuery = vi.fn();
@@ -247,7 +247,7 @@ beforeEach(() => {
   previewClashes.mockResolvedValue({ candidates: [], would_block: false });
   updateProject.mockResolvedValue(fixture());
   listLeads.mockResolvedValue({ data: [], pagination: { total: 0, page: 1, limit: 20 } });
-  getUsersSelect.mockResolvedValue([{ id: 'u-me', name: 'Me', email: 'me@example.com' }]);
+  getUserLookup.mockResolvedValue([{ id: 'u-me', name: 'Me' }]);
   useBrandSelectQuery.mockReturnValue({ data: [], isLoading: false });
 });
 

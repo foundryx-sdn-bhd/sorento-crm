@@ -48,7 +48,7 @@ export default function BrandsList() {
   });
   const rowPending = useRowPending<Brand>('brand');
 
-  const { data, isLoading, isPlaceholderData } = useBrands({
+  const { data, isLoading, isPlaceholderData, error, refetch } = useBrands({
     pageIndex: 0,
     pageSize: 100,
     sorting: [{ id: 'brand_name', desc: false }],
@@ -129,6 +129,8 @@ export default function BrandsList() {
         table={table}
         recordCount={filteredBrands.length}
         isLoading={isLoading}
+        error={error}
+        onRetry={() => void refetch()}
         isPlaceholderData={isPlaceholderData}
         rowHref={(row) => `/master-data-management/brands/${row.id}`}
         rowPending={rowPending}

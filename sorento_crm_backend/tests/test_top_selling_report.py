@@ -8,7 +8,7 @@ amended by the owner's 26 Sep 2026 rulings on PR #1175:
 * `rank_by` (quantity | amount) is REQUIRED, 422 when missing: no default metric.
 * `basis` ordered | delivered, default delivered.
 * `group` item | category, default item.
-* `n` 1 to 100, optional; absent = every ranked row plus `total_count` (no paging,
+* `n` 1 to 1000 (TOP-N-UNCAP, 30 Sep 2026: was 1 to 100), optional; absent = every ranked row plus `total_count` (no paging,
   no page / page_size params, no has_more).
 * date default = the current calendar year, echoed back resolved.
 * a dealer caller is forced to its own customers; naming another customer is 403.
@@ -442,13 +442,52 @@ def test_count_only_with_no_sales_is_an_empty_miss(client, db):
     assert body["rows"] == []
 
 
-@pytest.mark.parametrize("n,status", [(0, 422), (101, 422), (-1, 422), (1, 200), (100, 200)])
+@pytest.mark.parametrize(
+    "n,status", [(0, 422), (-1, 422), (1, 200), (100, 200), (101, 200), (1000, 200), (1001, 422)]
+)
 def test_n_cap(client, db, n, status):
+    """TOP-N-UNCAP (owner, 30 Sep 2026): no 100 cap; only the 1000 safety ceiling 422s."""
     p = _product(db)
     _line(db, product_id=p.id, ordered=1, delivered=1, line_total=Decimal("1.00"))
     db.commit()
     resp = _get(client, rank_by="quantity", n=n)
     assert resp.status_code == status, (n, resp.text)
+
+
+def test_n_past_the_ceiling_names_the_ceiling(client, db):
+    resp = _get(client, rank_by="quantity", n=1001)
+    assert resp.status_code == 422
+    assert "1000" in resp.json()["message"]
+
+
+def test_top_200_returns_200_rows_and_renders_as_ordered_parts(client, db):
+    """TOP-N-UNCAP end to end from the route: n=200 returns 200 rows, and the real MCP
+    presenter prints every one of them across ordered WhatsApp-sized parts."""
+    import re
+
+    for i in range(205):
+        p = _product(db, f"ZZTN{i:04d}")
+        _line(db, product_id=p.id, ordered=1000 - i, delivered=1000 - i, line_total=Decimal("10.00"))
+    db.commit()
+    body = _get(client, rank_by="quantity", n=200).json()
+    assert body["total_count"] == 205
+    assert [r["rank"] for r in body["rows"]] == list(range(1, 201))
+    assert _codes(body)[:3] == ["ZZTN0000", "ZZTN0001", "ZZTN0002"]
+
+    body5 = _get(client, rank_by="quantity", n=5).json()
+    assert _codes(body5) == [f"ZZTN{i:04d}" for i in range(5)]
+
+    from tests.chatbot.test_outstanding_lane import _present_response
+
+    import json
+
+    rendered = json.loads(_present_response()("crm_top_selling_report", json.dumps(body, default=str)))["response"]
+    parts = re.split(r"\n\n(?=\(\d+/\d+\)\n)", rendered)
+    assert len(parts) > 1
+    assert all(len(p) <= 3900 for p in parts)
+    assert [p.split("\n", 1)[0] for p in parts] == [f"({k}/{len(parts)})" for k in range(1, len(parts) + 1)]
+    printed = [line.split(":", 1)[0] for p in parts for line in p.split("\n") if re.match(r"^\d+\. ZZTN", line)]
+    assert printed == [f"{i + 1}. ZZTN{i:04d}" for i in range(200)]
 
 
 # --------------------------------------------------------------------- dates

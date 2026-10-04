@@ -33,6 +33,7 @@ import {
   useContactChatbotMemory,
   useContactChatbotProfile,
   useSaveContactChatbotProfile,
+  useSaveContactEscalation,
   useSaveContactFact,
 } from '../hooks/useContactChatbot';
 import {
@@ -95,21 +96,27 @@ const TIER_OPTIONS = [
 function SwitchRow({
   id,
   label,
+  hint,
   checked,
   disabled,
   onCheckedChange,
 }: {
   id: string;
   label: string;
+  /** One line under the label, the card's helper-text style. */
+  hint?: string;
   checked: boolean;
   disabled?: boolean;
   onCheckedChange: (checked: boolean) => void;
 }) {
   return (
     <div className="flex items-center justify-between gap-4">
-      <Label htmlFor={id} className="cursor-pointer font-normal">
-        {label}
-      </Label>
+      <div className="space-y-0.5">
+        <Label htmlFor={id} className="cursor-pointer font-normal">
+          {label}
+        </Label>
+        {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
+      </div>
       <Switch
         id={id}
         checked={checked}
@@ -129,6 +136,7 @@ function ChatbotSettingsCard({
 }) {
   const { data: profile, isLoading, isError } = useContactChatbotProfile(contactId);
   const save = useSaveContactChatbotProfile(contactId);
+  const saveEscalation = useSaveContactEscalation(contactId);
 
   if (isLoading) {
     return (
@@ -227,6 +235,15 @@ function ChatbotSettingsCard({
             checked={profile.eta_offset_applied}
             disabled={save.isPending}
             onCheckedChange={(checked) => save.mutate({ ...profile, eta_offset_applied: checked })}
+          />
+          <SwitchRow
+            id="contact-chatbot-escalation"
+            label="Chatbot hands over to support teams"
+            // Owner-approved wording (1 Oct 2026, hand test of #1406).
+            hint="When off, the chatbot tells this contact to refer to their salesman."
+            checked={profile.escalation_allowed}
+            disabled={save.isPending || saveEscalation.isPending}
+            onCheckedChange={(checked) => saveEscalation.mutate(checked)}
           />
         </div>
       </CardContent>

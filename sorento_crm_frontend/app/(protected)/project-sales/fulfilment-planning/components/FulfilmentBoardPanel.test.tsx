@@ -18,6 +18,7 @@ import {
   waitFor,
   within,
 } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const routerReplace = vi.fn();
@@ -43,6 +44,7 @@ const getPlanningBoard = vi.fn();
 const confirmSupply = vi.fn();
 const adoptSalesOrder = vi.fn();
 const confirmMany = vi.fn();
+const previewConfirmMany = vi.fn();
 
 vi.mock('../../_shared/services/fulfilmentPlanningService', () => ({
   getPlanningBoard: (...args: unknown[]) => getPlanningBoard(...args),
@@ -53,6 +55,7 @@ vi.mock('../../_shared/services/fulfilmentPlanningService', () => ({
   getSupply: vi.fn(),
   confirmSupply: (...args: unknown[]) => confirmSupply(...args),
   confirmMany: (...args: unknown[]) => confirmMany(...args),
+  previewConfirmMany: (...args: unknown[]) => previewConfirmMany(...args),
   // S4 (`useLineDraftMutation`): no test here presses Save deep enough to reach these -
   // that interaction is `BoardLineDecisionPanel.test.tsx`'s, against a plain `vi.fn()`
   // `onDecide` - but `decide()` closes over them regardless, so an undefined export would
@@ -305,12 +308,52 @@ function openLinesTab() {
   fireEvent.click(tab);
 }
 
+/**
+ * FULFIL-CONFIRM-SCOPE v2: Confirm is only offered after a Preview, so a test that used to press
+ * the confirm dialog now previews first. The default preview answer echoes the lines the body
+ * names (line number read off the fixture's `pl-<so>-<line_no>` ids), with no purchase rows.
+ */
+function defaultPreview(body: {
+  orders: { pso_id: string; lines: { project_line_id: string }[]; rejected_line_ids?: string[] }[];
+}) {
+  return Promise.resolve({
+    results: body.orders.map((order) => ({
+      pso_id: order.pso_id,
+      ok: true,
+      preview: true,
+      decision_revision: 1,
+      lines_confirmed: order.lines.map((line) => ({
+        project_line_id: line.project_line_id,
+        line_no: Number(line.project_line_id.split('-').pop()),
+        item_code: null,
+      })),
+      lines_carried: 0,
+      lines_held_back: [],
+      lines_withdrawn: (order.rejected_line_ids ?? []).map((id) => ({
+        project_line_id: id,
+        line_no: null,
+        item_code: null,
+      })),
+      lines_fulfilled_skipped: 0,
+      inquiry_rows: [],
+      transfers: [],
+    })),
+  });
+}
+
+async function pressPreviewThenConfirm() {
+  await waitFor(() => expect(screen.getByTestId('board-confirm')).toBeEnabled());
+  fireEvent.click(screen.getByTestId('board-confirm'));
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
+  previewConfirmMany.mockImplementation(defaultPreview);
   // R-J (List is now the default view): every spec here exercises the GRID matrix,
   // so `?view=grid` is seeded by default rather than clicking the Grid button in
   // each test - one place, per the coordinator's repair note.
-  currentSearchParams = new URLSearchParams('view=grid');
+  // `scope=all`: the fixtures here are saved lines; the Others default is tested on its own.
+  currentSearchParams = new URLSearchParams('view=grid&scope=all');
 });
 
 /**
@@ -1142,9 +1185,7 @@ describe('FulfilmentBoardPanel: a background refetch dims the board, never blank
         }),
     );
 
-    fireEvent.click(screen.getByTestId('board-confirm'));
-    await screen.findByRole('alertdialog');
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    await pressPreviewThenConfirm();
     await waitFor(() => expect(confirmMany).toHaveBeenCalledTimes(1));
 
     // In flight: the row already on screen stays mounted and dims - never a skeleton, never
@@ -1200,48 +1241,6 @@ describe('FulfilmentBoardPanel: a stale saved line is named as "changed" (C4)', 
     expect(screen.getByTestId('board-confirm-summary')).toHaveTextContent('1 changed');
   });
 
-  it('names the changed count in the Confirm dialog, and re-save as what clears it', async () => {
-    // A SECOND, plannable line beside the stale one: a board where the stale line is the
-    // ONLY line has nothing left to confirm, and Confirm disables itself before the dialog
-    // ever opens - this board keeps Confirm pressable so the sentence can be read. It must
-    // itself be SAVED (8 Sep 2026 ruling, reverses R11), or it too contributes nothing.
-    let mixed = withContribution(
-      boardOf([demand(), demand({ sales_order_id: 'so-b', so_number: 'SO398322', line_no: 1, item_code: 'WESERP20B' })]),
-      (entry) => entry.item_code === 'WESERP10B',
-      (entry) => ({
-        ...entry,
-        draft: {
-          decision: { verdict: 'amended' },
-          saved_by: 'Test Planner',
-          saved_at: '2026-09-03T00:00:00Z',
-          stale: true,
-        },
-      }),
-    );
-    mixed = withContribution(
-      mixed,
-      (entry) => entry.item_code === 'WESERP20B',
-      (entry) => ({
-        ...entry,
-        draft: {
-          decision: { verdict: 'approved' },
-          saved_by: 'Test Planner',
-          saved_at: '2026-09-08T00:00:00Z',
-        },
-      }),
-    );
-    getPlanningBoard.mockResolvedValue(mixed);
-    renderPanel(['SO403340', 'SO398322']);
-    await screen.findByTestId('fulfilment-board-matrix');
-
-    fireEvent.click(screen.getByTestId('board-confirm'));
-
-    expect(
-      await screen.findByText(
-        '1 saved line whose suggestion changed will not be confirmed; re-save it first.',
-      ),
-    ).toBeInTheDocument();
-  });
 });
 
 /**
@@ -1423,7 +1422,7 @@ describe('FulfilmentBoardPanel: the calendar control (13.3)', () => {
         .filter((bucket) => bucket.kind === 'dated')
         .slice(0, 5),
     });
-    currentSearchParams = new URLSearchParams('view=grid&granularity=day');
+    currentSearchParams = new URLSearchParams('scope=all&view=grid&granularity=day');
 
     renderPanel(['SO403340']);
     await screen.findByTestId('fulfilment-board-matrix');
@@ -1464,7 +1463,7 @@ describe('FulfilmentBoardPanel: the calendar control (13.3)', () => {
       'day',
     );
     getPlanningBoard.mockResolvedValue(dayBoard);
-    currentSearchParams = new URLSearchParams('view=grid&granularity=day');
+    currentSearchParams = new URLSearchParams('scope=all&view=grid&granularity=day');
 
     renderPanel(['SO403340']);
     await screen.findByTestId('fulfilment-board-matrix');
@@ -1638,8 +1637,8 @@ describe('FulfilmentBoardPanel: Confirm actually confirms', () => {
   }
 
   async function openConfirmDialog() {
-    fireEvent.click(await screen.findByTestId('board-confirm'));
-    await screen.findByRole('alertdialog');
+    await waitFor(() => expect(screen.getByTestId('board-confirm')).toBeEnabled());
+    fireEvent.click(screen.getByTestId('board-confirm'));
   }
 
   it('posts every plannable line as the engine’s own suggestion, in one confirmMany call (D2)', async () => {
@@ -1658,7 +1657,6 @@ describe('FulfilmentBoardPanel: Confirm actually confirms', () => {
 
     renderPanel(['SO403340']);
     await openConfirmDialog();
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
 
     await waitFor(() => expect(confirmMany).toHaveBeenCalledTimes(1));
     const [body] = confirmMany.mock.calls[0];
@@ -1687,7 +1685,6 @@ describe('FulfilmentBoardPanel: Confirm actually confirms', () => {
 
     renderPanel(['SO403340']);
     await openConfirmDialog();
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
 
     await waitFor(() =>
       expect(toast.success).toHaveBeenCalledWith(
@@ -1713,7 +1710,6 @@ describe('FulfilmentBoardPanel: Confirm actually confirms', () => {
 
     renderPanel(['SO403340']);
     await openConfirmDialog();
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
 
     await waitFor(() =>
       expect(toast.success).toHaveBeenCalledWith(
@@ -1733,7 +1729,6 @@ describe('FulfilmentBoardPanel: Confirm actually confirms', () => {
     const boardCallsBefore = getPlanningBoard.mock.calls.length;
 
     await openConfirmDialog();
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
 
     await waitFor(() => expect(confirmMany).toHaveBeenCalledTimes(1));
     await waitFor(() =>
@@ -1757,7 +1752,6 @@ describe('FulfilmentBoardPanel: Confirm actually confirms', () => {
 
     renderPanel(['SO403340']);
     await openConfirmDialog();
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
 
     expect(
       await screen.findByText(
@@ -1801,16 +1795,11 @@ describe('FulfilmentBoardPanel: Confirm actually confirms', () => {
     expect(
       within(banner).getByRole('button', { name: 'TPE-9204 line 2' }),
     ).toBeInTheDocument();
-    // `plannedLineCount` still counts it here: it cannot tell "adopted, but this one line's
-    // mirror lags" from "not adopted at all", where the count DOES have to include a
-    // not-yet-mirrored line (see "adopts, refetches, then posts..." below) - so the aggregate
-    // reads 2 while the notice above still names the one line that will not post.
-    expect(screen.getByTestId('board-confirm')).toHaveTextContent(
-      'Confirm (2)',
-    );
+    // FULFIL-CONFIRM-SCOPE fix round 1: on an ADOPTED order a line with no mirror is left out
+    // and named, so the count no longer includes it - title, list, button and body agree.
+    expect(screen.getByTestId('board-confirm')).toHaveTextContent('Confirm (1)');
 
     await openConfirmDialog();
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
     await waitFor(() => expect(confirmMany).toHaveBeenCalledTimes(1));
     expect(confirmMany.mock.calls[0][0].orders[0].lines).toHaveLength(1);
   });
@@ -1891,7 +1880,6 @@ describe('FulfilmentBoardPanel: Confirm actually confirms', () => {
     expect(screen.getByTestId('board-confirm')).toHaveTextContent('Confirm (2)');
 
     await openConfirmDialog();
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
     await waitFor(() => expect(confirmMany).toHaveBeenCalledTimes(1));
     expect(
       confirmMany.mock.calls[0][0].orders[0].lines
@@ -2049,7 +2037,10 @@ describe('FulfilmentBoardPanel: Confirm actually confirms', () => {
     // B1 bug) this row is STILL filtered out right here, and `getByTestId` throws immediately
     // rather than retrying past it.
     expect(screen.getByTestId(/^line-decision-so-a\|28\|ITEM28/)).toBeInTheDocument();
-    expect(searchBox).toHaveValue('');
+    // The click switched to the list, whose toolbar draws its own box: read that one.
+    expect(
+      screen.getByPlaceholderText('Search sales order, customer, project or product'),
+    ).toHaveValue('');
     expect(scrollSpy).toHaveBeenCalledTimes(1);
 
     scrollSpy.mockRestore();
@@ -2079,7 +2070,6 @@ describe('FulfilmentBoardPanel: Confirm actually confirms', () => {
     renderPanel(['SO403340']);
     await screen.findByTestId('fulfilment-board-matrix');
     await openConfirmDialog();
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
 
     await waitFor(() => expect(confirmMany).toHaveBeenCalledTimes(1));
     // S4: a press that left something out is not an unqualified success (the owner's own
@@ -2137,8 +2127,8 @@ describe('FulfilmentBoardPanel: Confirm adopts first when it has to', () => {
   }
 
   async function openConfirmDialog() {
-    fireEvent.click(await screen.findByTestId('board-confirm'));
-    await screen.findByRole('alertdialog');
+    await waitFor(() => expect(screen.getByTestId('board-confirm')).toBeEnabled());
+    fireEvent.click(screen.getByTestId('board-confirm'));
   }
 
   it('offers Confirm on an order nobody has adopted, and never says planning has not started', async () => {
@@ -2152,6 +2142,7 @@ describe('FulfilmentBoardPanel: Confirm adopts first when it has to', () => {
     expect(screen.getByTestId('board-confirm')).toHaveTextContent(
       'Confirm (2)',
     );
+    // Confirm waits for a Preview (v2); Preview itself is on offer.
     expect(screen.getByTestId('board-confirm')).toBeEnabled();
     expect(
       screen.queryByText('Nobody has started planning this sales order yet.'),
@@ -2174,7 +2165,6 @@ describe('FulfilmentBoardPanel: Confirm adopts first when it has to', () => {
 
     renderPanel(['SO403340']);
     await openConfirmDialog();
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
 
     await waitFor(() => expect(adoptSalesOrder).toHaveBeenCalledWith('so-a'));
     await waitFor(() => expect(confirmMany).toHaveBeenCalledTimes(1));
@@ -2199,7 +2189,6 @@ describe('FulfilmentBoardPanel: Confirm adopts first when it has to', () => {
 
     renderPanel(['SO403340']);
     await openConfirmDialog();
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
 
     await waitFor(() => expect(confirmMany).toHaveBeenCalledTimes(1));
     expect(adoptSalesOrder).not.toHaveBeenCalled();
@@ -2212,10 +2201,10 @@ describe('FulfilmentBoardPanel: Confirm adopts first when it has to', () => {
     );
 
     renderPanel(['SO403340']);
-    await openConfirmDialog();
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    fireEvent.click(await screen.findByTestId('board-confirm'));
 
     await waitFor(() => expect(adoptSalesOrder).toHaveBeenCalledWith('so-a'));
+    expect(previewConfirmMany).not.toHaveBeenCalled();
     expect(confirmMany).not.toHaveBeenCalled();
     // Nothing was committed, so the work is still the planner's.
     expect(screen.getByTestId('board-confirm-summary')).toHaveTextContent(
@@ -2283,8 +2272,8 @@ describe('FulfilmentBoardPanel: Confirm posts against the id adopt itself return
   }
 
   async function openConfirmDialog() {
-    fireEvent.click(await screen.findByTestId('board-confirm'));
-    await screen.findByRole('alertdialog');
+    await waitFor(() => expect(screen.getByTestId('board-confirm')).toBeEnabled());
+    fireEvent.click(screen.getByTestId('board-confirm'));
   }
 
   it('posts against the id the adopt call returned, even though the refetched board still names none', async () => {
@@ -2304,7 +2293,6 @@ describe('FulfilmentBoardPanel: Confirm posts against the id adopt itself return
 
     renderPanel(['SO419851']);
     await openConfirmDialog();
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
 
     await waitFor(() =>
       expect(adoptSalesOrder).toHaveBeenCalledWith('so-419851'),
@@ -2333,8 +2321,7 @@ describe('FulfilmentBoardPanel: Confirm posts against the id adopt itself return
     renderPanel(['SO419851']);
     expect(screen.queryByText(/SO419851/)).not.toBeInTheDocument();
 
-    await openConfirmDialog();
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    fireEvent.click(await screen.findByTestId('board-confirm'));
 
     await waitFor(() =>
       expect(adoptSalesOrder).toHaveBeenCalledWith('so-419851'),
@@ -2380,26 +2367,15 @@ describe('FulfilmentBoardPanel: a Confirm that posts nothing says so', () => {
     );
   }
 
-  async function openConfirmDialog() {
-    fireEvent.click(await screen.findByTestId('board-confirm'));
-    await screen.findByRole('alertdialog');
-  }
-
-  it('names SO419852 and says nothing was posted, rather than ending the press with nothing shown', async () => {
+  it('names SO419852 in the banner and offers no press that would post nothing', async () => {
     getPlanningBoard.mockResolvedValue(boardAdoptedNoMirror());
 
     renderPanel(['SO419852']);
-    await openConfirmDialog();
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
-
-    await waitFor(() => {
-      const match = screen.queryAllByText(/SO419852/).find((node) =>
-        /not on the planning record|nothing (was )?posted/i.test(
-          node.textContent ?? '',
-        ),
-      );
-      expect(match).toBeTruthy();
-    });
+    const banner = await screen.findByTestId('board-left-out-banner');
+    expect(banner).toHaveTextContent(/not on the planning record yet/i);
+    // FULFIL-CONFIRM-SCOPE fix round 1: the count excludes a no-mirror line on an adopted
+    // order, so there is nothing to press: the button is disabled at 0.
+    expect(screen.getByTestId('board-confirm')).toBeDisabled();
     expect(adoptSalesOrder).not.toHaveBeenCalled();
     expect(confirmMany).not.toHaveBeenCalled();
   });
@@ -2546,14 +2522,14 @@ describe('FulfilmentBoardPanel: searching the product rows', () => {
 
     await waitFor(() =>
       expect(routerReplace).toHaveBeenCalledWith(
-        '/project-sales/fulfilment-planning?view=grid&product=tpe',
+        '/project-sales/fulfilment-planning?view=grid&scope=all&product=tpe',
         expect.objectContaining({ scroll: false }),
       ),
     );
   });
 
   it('opens on the term the URL carries', async () => {
-    currentSearchParams = new URLSearchParams('view=grid&product=ceiling');
+    currentSearchParams = new URLSearchParams('scope=all&view=grid&product=ceiling');
     getPlanningBoard.mockResolvedValue(catalogue());
 
     renderPanel();
@@ -2651,7 +2627,7 @@ describe('FulfilmentBoardPanel: the live policy, and only it', () => {
  */
 describe('FulfilmentBoardPanel: granularity in the URL', () => {
   it('opens on the granularity the URL names', async () => {
-    currentSearchParams = new URLSearchParams('view=grid&granularity=month');
+    currentSearchParams = new URLSearchParams('scope=all&view=grid&granularity=month');
     getPlanningBoard.mockResolvedValue(boardOf([demand()], {}, 'month'));
 
     renderPanel(['SO403340']);
@@ -2668,7 +2644,7 @@ describe('FulfilmentBoardPanel: granularity in the URL', () => {
   });
 
   it('AC-B1-5: a URL naming granularity=week opens week view, not the date default', async () => {
-    currentSearchParams = new URLSearchParams('view=grid&granularity=week');
+    currentSearchParams = new URLSearchParams('scope=all&view=grid&granularity=week');
     getPlanningBoard.mockResolvedValue(boardOf([demand()], {}, 'week'));
 
     renderPanel(['SO403340']);
@@ -2688,7 +2664,7 @@ describe('FulfilmentBoardPanel: granularity in the URL', () => {
     // S1 (`PLAN-board-oi-mechanical-22sep.md`, AC-B1-1/AC-B1-5): `date` is what an
     // unrecognised param resolves to now, the same default an ABSENT param gets - `week`
     // is still a real, explicitly-named option (`?granularity=week` is honoured as-is).
-    currentSearchParams = new URLSearchParams('view=grid&granularity=fortnightly');
+    currentSearchParams = new URLSearchParams('scope=all&view=grid&granularity=fortnightly');
     getPlanningBoard.mockResolvedValue(boardOf([demand()]));
 
     renderPanel(['SO403340']);
@@ -2715,7 +2691,7 @@ describe('FulfilmentBoardPanel: granularity in the URL', () => {
 
     await waitFor(() =>
       expect(routerReplace).toHaveBeenCalledWith(
-        '/project-sales/fulfilment-planning?view=grid&granularity=month',
+        '/project-sales/fulfilment-planning?view=grid&scope=all&granularity=month',
         expect.objectContaining({ scroll: false }),
       ),
     );
@@ -2928,14 +2904,14 @@ describe('FulfilmentBoardPanel: pivoting the rows', () => {
 
     await waitFor(() =>
       expect(routerReplace).toHaveBeenCalledWith(
-        '/project-sales/fulfilment-planning?view=grid&rows=customer',
+        '/project-sales/fulfilment-planning?view=grid&scope=all&rows=customer',
         expect.objectContaining({ scroll: false }),
       ),
     );
   });
 
   it('opens on the axis the URL names, and falls back to product on nonsense', async () => {
-    currentSearchParams = new URLSearchParams('view=grid&rows=project');
+    currentSearchParams = new URLSearchParams('scope=all&view=grid&rows=project');
     getPlanningBoard.mockResolvedValue(twoOrders());
 
     renderPanel();
@@ -2946,7 +2922,7 @@ describe('FulfilmentBoardPanel: pivoting the rows', () => {
   });
 
   it('falls back to product on an axis nobody defined', async () => {
-    currentSearchParams = new URLSearchParams('view=grid&rows=warehouse');
+    currentSearchParams = new URLSearchParams('scope=all&view=grid&rows=warehouse');
     getPlanningBoard.mockResolvedValue(twoOrders());
 
     renderPanel();
@@ -3052,23 +3028,6 @@ describe('FulfilmentBoardPanel: one Confirm, not Approve all (D1, D4)', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('opens the confirm dialog naming how many lines across how many orders (D4)', async () => {
-    getPlanningBoard.mockResolvedValue(twoUndecidedOrders());
-
-    renderPanel();
-    await screen.findByTestId('fulfilment-board-matrix');
-    // Both lines are SAVED: Confirm (2) from the start.
-    expect(screen.getByTestId('board-confirm')).toHaveTextContent(
-      'Confirm (2)',
-    );
-
-    fireEvent.click(screen.getByTestId('board-confirm'));
-
-    expect(
-      await screen.findByText('Confirm 2 lines across 2 orders?'),
-    ).toBeInTheDocument();
-  });
-
   it('posts ONE confirm-all call grouped per order, and renders each order its own result', async () => {
     getPlanningBoard.mockResolvedValue(twoUndecidedOrders());
     confirmMany.mockResolvedValue({
@@ -3089,10 +3048,7 @@ describe('FulfilmentBoardPanel: one Confirm, not Approve all (D1, D4)', () => {
 
     renderPanel();
     await screen.findByTestId('fulfilment-board-matrix');
-    fireEvent.click(screen.getByTestId('board-confirm'));
-    await screen.findByText('Confirm 2 lines across 2 orders?');
-
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    await pressPreviewThenConfirm();
 
     await waitFor(() => expect(confirmMany).toHaveBeenCalledTimes(1));
     const body = confirmMany.mock.calls[0][0] as {
@@ -3189,7 +3145,7 @@ describe('FulfilmentBoardPanel: one Confirm, not Approve all (D1, D4)', () => {
     expect(board.contributions).toHaveLength(2);
     // Both SAVED (8 Sep 2026 ruling, reverses R11), or the counter reads 0 regardless of window.
     getPlanningBoard.mockResolvedValue(allSaved(board));
-    currentSearchParams = new URLSearchParams('view=grid&granularity=day');
+    currentSearchParams = new URLSearchParams('scope=all&view=grid&granularity=day');
     confirmMany.mockResolvedValue({
       results: [
         { pso_id: 'pso-so-a', ok: true, decision_revision: 1 },
@@ -3205,12 +3161,7 @@ describe('FulfilmentBoardPanel: one Confirm, not Approve all (D1, D4)', () => {
       'Confirm (2)',
     );
 
-    fireEvent.click(screen.getByTestId('board-confirm'));
-    expect(
-      await screen.findByText('Confirm 2 lines across 2 orders?'),
-    ).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    await pressPreviewThenConfirm();
     await waitFor(() => expect(confirmMany).toHaveBeenCalledTimes(1));
     const body = confirmMany.mock.calls[0][0] as {
       orders: { pso_id: string }[];
@@ -3260,8 +3211,7 @@ describe('FulfilmentBoardPanel: Confirm counts only saved lines (8 Sep 2026 ruli
       'Confirm (17)',
     );
 
-    fireEvent.click(screen.getByTestId('board-confirm'));
-    fireEvent.click(await screen.findByRole('button', { name: 'Confirm' }));
+    await pressPreviewThenConfirm();
 
     await waitFor(() => expect(confirmMany).toHaveBeenCalledTimes(1));
     const body = confirmMany.mock.calls[0][0] as {
@@ -3591,8 +3541,8 @@ describe('FulfilmentBoardPanel: an order whose change is already applied is not 
     renderPanel(['SO403340'], vi.fn(), 'pcb-1');
     await screen.findByTestId('fulfilment-board-matrix');
 
-    fireEvent.click(screen.getByTestId('board-confirm'));
-    fireEvent.click(await screen.findByRole('button', { name: 'Confirm' }));
+    // The applied order is left out at Preview already, and said so in the results.
+    fireEvent.click(await screen.findByTestId('board-confirm'));
 
     expect(
       await screen.findByText(
@@ -4188,9 +4138,7 @@ describe('FulfilmentBoardPanel: a local draft is dropped once the server confirm
     // before the confirmation below ever fires.
     expect(await screen.findByTestId(`decision-pill-${KEY_A}`)).toHaveTextContent('Saved');
 
-    fireEvent.click(await screen.findByTestId('board-confirm'));
-    await screen.findByRole('alertdialog');
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    await pressPreviewThenConfirm();
     await waitFor(() => expect(confirmMany).toHaveBeenCalledTimes(1));
 
     await waitFor(() =>
@@ -4243,9 +4191,7 @@ describe('FulfilmentBoardPanel: a local draft is dropped once the server confirm
     // Confirm succeeds overall (so-b's own line goes through) and its refetch lands a board
     // read that already shows so-a covered with no server draft - so-a's own save is still on
     // the wire underneath it, and its own confirm attempt was refused, never committed.
-    fireEvent.click(await screen.findByTestId('board-confirm'));
-    await screen.findByRole('alertdialog');
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    await pressPreviewThenConfirm();
     await waitFor(() => expect(confirmMany).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(getPlanningBoard).toHaveBeenCalledTimes(2));
 
@@ -4305,9 +4251,7 @@ describe("FulfilmentBoardPanel: Confirm carries a covered line's staged reject (
 
     renderPanel(['SO403340']);
     await screen.findByTestId('fulfilment-board-matrix');
-    fireEvent.click(screen.getByTestId('board-confirm'));
-    await screen.findByRole('alertdialog');
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    await pressPreviewThenConfirm();
 
     await waitFor(() => expect(confirmMany).toHaveBeenCalledTimes(1));
     const [body] = confirmMany.mock.calls[0] as [
@@ -4336,9 +4280,7 @@ describe("FulfilmentBoardPanel: Confirm carries a covered line's staged reject (
 
     renderPanel(['SO403340']);
     await screen.findByTestId('fulfilment-board-matrix');
-    fireEvent.click(screen.getByTestId('board-confirm'));
-    await screen.findByRole('alertdialog');
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    await pressPreviewThenConfirm();
 
     await waitFor(() =>
       expect(toast.success).toHaveBeenCalledWith(expect.stringContaining('· 1 withdrawn')),
@@ -4372,5 +4314,798 @@ describe('FulfilmentBoardPanel: line attachments lookup (#1312, AC-U2, fix round
     );
     const lastCall = soLineAttachmentLookup.mock.calls.at(-1)?.[0] as string[];
     expect(lastCall).toHaveLength(2);
+  });
+});
+
+/**
+ * FULFIL-CONFIRM-SCOPE (`PLAN-fulfil-confirm-scope-30sep.md`): Confirm runs the server dry run
+ * first and posts what it said it would write; the toast and results block read the lines the
+ * SERVER says it wrote (AC-R1..R4).
+ */
+describe('FulfilmentBoardPanel: the toast and results block read the server echo (FULFIL-CONFIRM-SCOPE)', () => {
+
+  function lines6And9() {
+    return allSaved(
+      boardOf([
+        demand({ line_no: 6, item_code: 'SRTWT6808' }),
+        demand({ line_no: 9, item_code: 'SRTWT6808' }),
+      ]),
+    );
+  }
+
+  function threeLines() {
+    return allSaved(
+      boardOf([
+        demand({ line_no: 1, item_code: 'WESERP10B' }),
+        demand({ line_no: 2, item_code: 'TPE-9204' }),
+        demand({ line_no: 3, item_code: 'WESERP20B' }),
+      ]),
+    );
+  }
+
+  async function press() {
+    await pressPreviewThenConfirm();
+    await waitFor(() => expect(confirmMany).toHaveBeenCalledTimes(1));
+  }
+
+  it('toasts the echoed count and lists the lines and the carried count (AC-R1, R2)', async () => {
+    getPlanningBoard.mockResolvedValue(lines6And9());
+    confirmMany.mockResolvedValue({
+      results: [
+        {
+          pso_id: 'pso-so-a',
+          ok: true,
+          decision_revision: 2,
+          inquiry_rows_created: 2,
+          lines_confirmed: [
+            { project_line_id: 'pl-so-a-6', line_no: 6, item_code: 'SRTWT6808' },
+            { project_line_id: 'pl-so-a-9', line_no: 9, item_code: 'SRTWT6808' },
+          ],
+          lines_carried: 4,
+        },
+      ],
+    });
+
+    renderPanel(['SO403340']);
+    await press();
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+    expect(String((toast.success as unknown as { mock: { calls: unknown[][] } }).mock.calls[0][0])).toMatch(
+      /^2 lines confirmed/,
+    );
+    const block = await screen.findByTestId('board-confirm-results');
+    expect(block).toHaveTextContent('line 6 SRTWT6808');
+    expect(block).toHaveTextContent('line 9 SRTWT6808');
+    expect(block).toHaveTextContent('4 carried forward');
+    expect(block).not.toHaveTextContent(/Posted \d+, server confirmed/);
+  });
+
+  it('warns in amber when the server confirmed fewer lines than were posted (AC-R3)', async () => {
+    getPlanningBoard.mockResolvedValue(threeLines());
+    confirmMany.mockResolvedValue({
+      results: [
+        {
+          pso_id: 'pso-so-a',
+          ok: true,
+          decision_revision: 1,
+          inquiry_rows_created: 0,
+          lines_confirmed: [
+            { project_line_id: 'pl-so-a-1', line_no: 1, item_code: 'WESERP10B' },
+            { project_line_id: 'pl-so-a-2', line_no: 2, item_code: 'TPE-9204' },
+          ],
+          lines_carried: 0,
+        },
+      ],
+    });
+
+    renderPanel(['SO403340']);
+    await press();
+
+    // AC-R1: the toast counts what the server echoed (2), not what was posted (3).
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+    expect(
+      String((toast.success as unknown as { mock: { calls: unknown[][] } }).mock.calls[0][0]),
+    ).toMatch(/^2 lines confirmed/);
+    const block = await screen.findByTestId('board-confirm-results');
+    const warning = await within(block).findByText(/Posted 3, server confirmed 2/);
+    expect(warning.className).toMatch(/amber/);
+    expect(warning).toHaveTextContent(/line 3 WESERP20B/);
+  });
+
+  it('clears the local Saved pill only on the lines the server echoed (AC-R4)', async () => {
+    getPlanningBoard.mockResolvedValueOnce(threeLines());
+    // The refetch after Confirm reads a board carrying NO server drafts (a read that raced the
+    // draft writes), so the Saved pills left on screen are the panel's own local draft state:
+    // exactly the lines the server echoed lose theirs, the posted-but-not-echoed one keeps it.
+    getPlanningBoard.mockResolvedValue(
+      boardOf([
+        demand({ line_no: 1, item_code: 'WESERP10B' }),
+        demand({ line_no: 2, item_code: 'TPE-9204' }),
+        demand({ line_no: 3, item_code: 'WESERP20B' }),
+      ]),
+    );
+    confirmMany.mockResolvedValue({
+      results: [
+        {
+          pso_id: 'pso-so-a',
+          ok: true,
+          decision_revision: 1,
+          inquiry_rows_created: 0,
+          lines_confirmed: [
+            { project_line_id: 'pl-so-a-1', line_no: 1, item_code: 'WESERP10B' },
+            { project_line_id: 'pl-so-a-2', line_no: 2, item_code: 'TPE-9204' },
+          ],
+          lines_carried: 0,
+        },
+      ],
+    });
+
+    renderPanel(['SO403340']);
+    await screen.findByTestId('fulfilment-board-matrix');
+    fireEvent.click(screen.getByRole('button', { name: 'List' }));
+    const pillFor = (itemCode: string): HTMLElement => {
+      const pill = screen
+        .getAllByTestId(/^decision-pill-/)
+        .find((el) => el.getAttribute('data-testid')?.includes(itemCode));
+      if (!pill) throw new Error(`No decision pill carries ${itemCode} in its key`);
+      return pill;
+    };
+    await waitFor(() => expect(pillFor('WESERP20B')).toHaveTextContent('Saved'));
+
+    await press();
+
+    await waitFor(() => expect(pillFor('WESERP10B')).not.toHaveTextContent('Saved'));
+    expect(pillFor('TPE-9204')).not.toHaveTextContent('Saved');
+    expect(pillFor('WESERP20B')).toHaveTextContent('Saved');
+  });
+});
+
+describe('FulfilmentBoardPanel: confirm scope fix round 1 (FULFIL-CONFIRM-SCOPE)', () => {
+  const threeLines = () =>
+    allSaved(
+      boardOf([
+        demand({ line_no: 1, item_code: 'WESERP10B' }),
+        demand({ line_no: 2, item_code: 'TPE-9204' }),
+        demand({ line_no: 3, item_code: 'WESERP20B' }),
+      ]),
+    );
+
+  it('falls back to the posted count and says the server named no lines (AC-R1 fallback)', async () => {
+    getPlanningBoard.mockResolvedValue(threeLines());
+    confirmMany.mockResolvedValue({
+      results: [{ pso_id: 'pso-so-a', ok: true, decision_revision: 1, inquiry_rows_created: 0 }],
+    });
+
+    renderPanel(['SO403340']);
+    await pressPreviewThenConfirm();
+    await waitFor(() => expect(confirmMany).toHaveBeenCalledTimes(1));
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+    expect(
+      String((toast.success as unknown as { mock: { calls: unknown[][] } }).mock.calls.at(-1)?.[0]),
+    ).toMatch(/^3 lines confirmed/);
+    const block = await screen.findByTestId('board-confirm-results');
+    expect(block).toHaveTextContent('The server did not name the lines it confirmed.');
+  });
+
+});
+
+describe('FulfilmentBoardPanel: Confirm runs the dry run first (FULFIL-CONFIRM-SCOPE v5)', () => {
+  const twoLines = () =>
+    allSaved(
+      boardOf([
+        demand({ line_no: 6, item_code: 'SRTWT6808' }),
+        demand({ line_no: 9, item_code: 'SRTWT6808' }),
+      ]),
+    );
+
+  it('posts the body narrowed to the lines the dry run confirmed, with no popup and no preview key', async () => {
+    getPlanningBoard.mockResolvedValue(twoLines());
+    previewConfirmMany.mockResolvedValue({
+      results: [
+        {
+          pso_id: 'pso-so-a',
+          ok: true,
+          preview: true,
+          lines_confirmed: [{ project_line_id: 'pl-so-a-6', line_no: 6, item_code: 'SRTWT6808' }],
+          lines_withdrawn: [],
+          lines_held_back: [{ line_no: 9, item_code: 'SRTWT6808', reason: 'only 3 free' }],
+        },
+      ],
+    });
+    confirmMany.mockResolvedValue({
+      results: [
+        {
+          pso_id: 'pso-so-a',
+          ok: true,
+          decision_revision: 2,
+          lines_confirmed: [{ project_line_id: 'pl-so-a-6', line_no: 6, item_code: 'SRTWT6808' }],
+          lines_carried: 0,
+        },
+      ],
+    });
+
+    renderPanel(['SO403340']);
+    fireEvent.click(await screen.findByTestId('board-confirm'));
+
+    await waitFor(() => expect(confirmMany).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(previewConfirmMany).toHaveBeenCalledTimes(1);
+    const [body] = confirmMany.mock.calls[0] as [
+      { orders: { lines: { project_line_id: string }[]; only_line_ids?: string[] }[]; preview?: boolean },
+    ];
+    expect(body).not.toHaveProperty('preview');
+    expect(body.orders[0].only_line_ids).toEqual(['pl-so-a-6']);
+    expect(body.orders[0].lines.map((line) => line.project_line_id)).toEqual(['pl-so-a-6']);
+    await screen.findByTestId('board-confirm-results');
+    expect(screen.queryByTestId('board-confirm-mismatch-pso-so-a')).toBeNull();
+  });
+
+  it('posts nothing for an order the dry run refuses and shows the refusal in the results', async () => {
+    getPlanningBoard.mockResolvedValue(twoLines());
+    previewConfirmMany.mockResolvedValue({
+      results: [
+        {
+          pso_id: 'pso-so-a',
+          ok: false,
+          preview: true,
+          error: '2 lines cannot be confirmed. Nothing was written.',
+          failing_lines: [],
+        },
+      ],
+    });
+
+    renderPanel(['SO403340']);
+    fireEvent.click(await screen.findByTestId('board-confirm'));
+
+    const block = await screen.findByTestId('board-confirm-results');
+    expect(block).toHaveTextContent('Nothing was written');
+    expect(confirmMany).not.toHaveBeenCalled();
+  });
+
+  const twoOrders = () =>
+    allSaved(
+      boardOf([
+        demand({ line_no: 6, item_code: 'SRTWT6808' }),
+        demand({ sales_order_id: 'so-b', so_number: 'SO398322', line_no: 1, item_code: 'WESERP20B' }),
+      ]),
+    );
+
+  it('posts only the order the dry run confirmed something for, not one that only held lines back', async () => {
+    getPlanningBoard.mockResolvedValue(twoOrders());
+    previewConfirmMany.mockResolvedValue({
+      results: [
+        {
+          pso_id: 'pso-so-a',
+          ok: true,
+          preview: true,
+          lines_confirmed: [],
+          lines_withdrawn: [],
+          lines_held_back: [{ line_no: 6, item_code: 'SRTWT6808', reason: 'only 3 free' }],
+        },
+        {
+          pso_id: 'pso-so-b',
+          ok: true,
+          preview: true,
+          lines_confirmed: [{ project_line_id: 'pl-so-b-1', line_no: 1, item_code: 'WESERP20B' }],
+          lines_withdrawn: [],
+        },
+      ],
+    });
+    confirmMany.mockResolvedValue({
+      results: [{ pso_id: 'pso-so-b', ok: true, decision_revision: 1, lines_confirmed: [], lines_carried: 0 }],
+    });
+
+    renderPanel(['SO403340', 'SO398322']);
+    fireEvent.click(await screen.findByTestId('board-confirm'));
+
+    await waitFor(() => expect(confirmMany).toHaveBeenCalledTimes(1));
+    const [body] = confirmMany.mock.calls[0] as [{ orders: { pso_id: string }[] }];
+    expect(body.orders.map((order) => order.pso_id)).toEqual(['pso-so-b']);
+  });
+
+  it('posts the ok order and shows the refusal of the other in the results', async () => {
+    getPlanningBoard.mockResolvedValue(twoOrders());
+    previewConfirmMany.mockResolvedValue({
+      results: [
+        { pso_id: 'pso-so-a', ok: false, preview: true, error: 'Line 6 has no supply.' },
+        {
+          pso_id: 'pso-so-b',
+          ok: true,
+          preview: true,
+          lines_confirmed: [{ project_line_id: 'pl-so-b-1', line_no: 1, item_code: 'WESERP20B' }],
+          lines_withdrawn: [],
+        },
+      ],
+    });
+    confirmMany.mockResolvedValue({
+      results: [{ pso_id: 'pso-so-b', ok: true, decision_revision: 1, lines_confirmed: [], lines_carried: 0 }],
+    });
+
+    renderPanel(['SO403340', 'SO398322']);
+    fireEvent.click(await screen.findByTestId('board-confirm'));
+
+    await waitFor(() => expect(confirmMany).toHaveBeenCalledTimes(1));
+    const [body] = confirmMany.mock.calls[0] as [{ orders: { pso_id: string }[] }];
+    expect(body.orders.map((order) => order.pso_id)).toEqual(['pso-so-b']);
+    expect(await screen.findByTestId('board-confirm-results')).toHaveTextContent('Line 6 has no supply.');
+  });
+
+  it('still posts an order whose named lines are all already fulfilled, and names them in the results', async () => {
+    getPlanningBoard.mockResolvedValue(twoLines());
+    previewConfirmMany.mockResolvedValue({
+      results: [
+        {
+          pso_id: 'pso-so-a',
+          ok: true,
+          preview: true,
+          revision_no: null,
+          lines_confirmed: [],
+          lines_withdrawn: [],
+          lines_fulfilled_skipped: 2,
+        },
+      ],
+    });
+    confirmMany.mockResolvedValue({
+      results: [
+        {
+          pso_id: 'pso-so-a',
+          ok: true,
+          decision_revision: null,
+          lines_confirmed: [],
+          lines_carried: 0,
+          lines_fulfilled_skipped: 2,
+        },
+      ],
+    });
+
+    renderPanel(['SO403340']);
+    fireEvent.click(await screen.findByTestId('board-confirm'));
+
+    await waitFor(() => expect(confirmMany).toHaveBeenCalledTimes(1));
+    const block = await screen.findByTestId('board-confirm-results');
+    expect(block).toHaveTextContent('2 lines already fulfilled, decision cleared');
+    expect(block).toHaveTextContent('line 6 SRTWT6808');
+    expect(block).toHaveTextContent('line 9 SRTWT6808');
+  });
+
+  it('shows a "nothing to confirm" entry for an order the dry run answers with nothing at all', async () => {
+    getPlanningBoard.mockResolvedValue(twoLines());
+    previewConfirmMany.mockResolvedValue({
+      results: [
+        {
+          pso_id: 'pso-so-a',
+          ok: true,
+          preview: true,
+          lines_confirmed: [],
+          lines_withdrawn: [],
+          lines_fulfilled_skipped: 0,
+        },
+      ],
+    });
+
+    renderPanel(['SO403340']);
+    fireEvent.click(await screen.findByTestId('board-confirm'));
+
+    const block = await screen.findByTestId('board-confirm-results');
+    expect(block).toHaveTextContent('SO403340: has nothing to confirm');
+    expect(confirmMany).not.toHaveBeenCalled();
+  });
+
+  it('posts nothing when the dry run itself fails', async () => {
+    getPlanningBoard.mockResolvedValue(twoLines());
+    previewConfirmMany.mockRejectedValue(new Error('Network down'));
+
+    renderPanel(['SO403340']);
+    fireEvent.click(await screen.findByTestId('board-confirm'));
+
+    await waitFor(() => expect(previewConfirmMany).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByTestId('board-confirm')).toBeEnabled());
+    expect(confirmMany).not.toHaveBeenCalled();
+  });
+
+
+  it('names the lines the dry run held back in the results, and counts them in the toast', async () => {
+    getPlanningBoard.mockResolvedValue(twoLines());
+    previewConfirmMany.mockResolvedValue({
+      results: [
+        {
+          pso_id: 'pso-so-a',
+          ok: true,
+          preview: true,
+          lines_confirmed: [{ project_line_id: 'pl-so-a-6', line_no: 6, item_code: 'SRTWT6808' }],
+          lines_withdrawn: [],
+          lines_held_back: [{ line_no: 9, item_code: 'SRTWT6808', reason: 'only 3 free' }],
+        },
+      ],
+    });
+    confirmMany.mockResolvedValue({
+      results: [
+        {
+          pso_id: 'pso-so-a',
+          ok: true,
+          decision_revision: 2,
+          lines_confirmed: [{ project_line_id: 'pl-so-a-6', line_no: 6, item_code: 'SRTWT6808' }],
+          lines_carried: 0,
+        },
+      ],
+    });
+
+    renderPanel(['SO403340']);
+    fireEvent.click(await screen.findByTestId('board-confirm'));
+
+    const block = await screen.findByTestId('board-confirm-results');
+    expect(block).toHaveTextContent('only 3 free');
+    expect(block).toHaveTextContent('Line 9');
+    const toasts = [
+      ...(toast.success as unknown as { mock: { calls: unknown[][] } }).mock.calls,
+      ...(toast.warning as unknown as { mock: { calls: unknown[][] } }).mock.calls,
+    ].map((call) => String(call[0]));
+    expect(toasts.some((text) => text.includes('1 held back'))).toBe(true);
+  });
+
+});
+
+describe('FulfilmentBoardPanel: search and Status live under the cards, not in the header (owner, 30 Sep)', () => {
+  const SEARCH = 'Search sales order, customer, project or product';
+  const twoProducts = () =>
+    withContribution(
+      boardOf([
+        demand({ line_no: 1, item_code: 'WESERP10B' }),
+        demand({ line_no: 2, item_code: 'TPE-9204' }),
+      ]),
+      (entry) => entry.item_code === 'WESERP10B',
+      (entry) => ({
+        ...entry,
+        draft: {
+          decision: { verdict: 'approved' as const },
+          saved_by: 'Test Planner',
+          saved_at: '2026-09-08T00:00:00Z',
+        },
+      }),
+    );
+
+  it('grid view: no search in the header; the filter strip has the search and Status, and no Columns', async () => {
+    getPlanningBoard.mockResolvedValue(twoProducts());
+    renderPanel(['SO403340']);
+    await screen.findByTestId('fulfilment-board-matrix');
+
+    expect(within(screen.getByTestId('board-header')).queryByPlaceholderText(SEARCH)).toBeNull();
+    const strip = screen.getByTestId('board-grid-filter-strip');
+    expect(within(strip).getByPlaceholderText(SEARCH)).toBeInTheDocument();
+    expect(within(strip).getByText('Status')).toBeInTheDocument();
+    expect(within(strip).queryByRole('button', { name: 'Columns' })).toBeNull();
+    expect(within(strip).queryByRole('button', { name: 'Expand all' })).toBeNull();
+    expect(within(strip).queryByTestId('board-decide-button')).toBeNull();
+  });
+
+  it('grid view: the strip is ONE flex row with the search and the compact Status control as siblings', async () => {
+    getPlanningBoard.mockResolvedValue(twoProducts());
+    renderPanel(['SO403340']);
+    await screen.findByTestId('fulfilment-board-matrix');
+
+    const strip = screen.getByTestId('board-grid-filter-strip');
+    // The same Card > CardHeader shell PanelDataGrid draws around the list toolbar, so the search
+    // box shares the list's left edge instead of jumping between views.
+    expect(strip.closest('[data-slot="card-header"]')).not.toBeNull();
+    expect(strip.className).toMatch(/\bflex\b/);
+    expect(strip.className).not.toMatch(/flex-col/);
+    // Search, the Saved | All toggle, then the compact Status control: siblings in one row.
+    expect(strip.children).toHaveLength(3);
+    expect(within(strip.children[0] as HTMLElement).getByPlaceholderText(SEARCH)).toBeInTheDocument();
+    expect(strip.children[1]).toHaveAttribute('data-testid', 'board-scope-toggle');
+    const status = strip.children[2] as HTMLElement;
+    expect(status).toHaveTextContent('Status');
+    expect(status.className).toMatch(/\bw-40\b/);
+    expect(status.className).not.toMatch(/\bw-full\b/);
+  });
+
+  it('list view: no title row, no header search; the list toolbar carries the search, Filters, Columns and Decide', async () => {
+    getPlanningBoard.mockResolvedValue(twoProducts());
+    renderPanel(['SO403340']);
+    await screen.findByTestId('fulfilment-board-matrix');
+    fireEvent.click(screen.getByRole('button', { name: 'List' }));
+
+    const toolbar = await waitFor(() => {
+      const found = document.querySelector('[data-slot="data-grid-list-toolbar"]');
+      if (!found) throw new Error('toolbar not yet mounted');
+      return found as HTMLElement;
+    });
+    expect(within(screen.getByTestId('board-header')).queryByPlaceholderText(SEARCH)).toBeNull();
+    expect(within(toolbar).getByPlaceholderText(SEARCH)).toBeInTheDocument();
+    expect(within(toolbar).getByRole('button', { name: /^Filters/ })).toBeInTheDocument();
+    expect(within(toolbar).getByRole('button', { name: 'Columns' })).toBeInTheDocument();
+    expect(within(toolbar).getByRole('button', { name: 'Expand all' })).toBeInTheDocument();
+    expect(within(toolbar).getByRole('button', { name: 'Collapse all' })).toBeInTheDocument();
+    expect(within(toolbar).getByTestId('board-decide-button')).toBeInTheDocument();
+    expect(screen.queryByText('Every contributing line')).toBeNull();
+  });
+
+  it('the Status filter narrows the matrix rows to the products that have a saved line', async () => {
+    getPlanningBoard.mockResolvedValue(twoProducts());
+    renderPanel(['SO403340']);
+    await screen.findByTestId('fulfilment-board-matrix');
+    expect(screen.getByText('TPE-9204')).toBeInTheDocument();
+
+    const strip = screen.getByTestId('board-grid-filter-strip');
+    await userEvent.click(within(strip).getByText('Status'));
+    await userEvent.click(await screen.findByRole('option', { name: /Saved/ }));
+    await userEvent.keyboard('{Escape}');
+
+    await waitFor(() => expect(screen.queryByText('TPE-9204')).not.toBeInTheDocument());
+    expect(screen.getByText('WESERP10B')).toBeInTheDocument();
+  });
+});
+
+describe('FulfilmentBoardPanel: Saved | All toggle, carried-over behaviour (owner, 30 Sep)', () => {
+  /** A saved, B suggested (no draft), C confirmed (covered by an active decision). */
+  const threeStates = () => {
+    const base = boardOf([
+      demand({ line_no: 1, item_code: 'WESERP10B' }),
+      demand({ line_no: 2, item_code: 'TPE-9204' }),
+      demand({ line_no: 3, item_code: 'WESERP20B' }),
+    ]);
+    const saved = withContribution(
+      base,
+      (entry) => entry.item_code === 'WESERP10B',
+      (entry) => ({
+        ...entry,
+        draft: {
+          decision: { verdict: 'approved' as const },
+          saved_by: 'Test Planner',
+          saved_at: '2026-09-08T00:00:00Z',
+        },
+      }),
+    );
+    return withContribution(
+      saved,
+      (entry) => entry.item_code === 'WESERP20B',
+      (entry) => ({
+        ...entry,
+        covered: true,
+        decision: { revision_no: 1, timely_spo_qty: '0', reserve: [], borrow: [], buy_qty: '100' },
+      }),
+    );
+  };
+  const segment = (name: RegExp) => screen.getByRole('button', { name });
+
+  beforeEach(() => {
+    currentSearchParams = new URLSearchParams('view=grid');
+  });
+
+  it('keeps the chosen segment across a Confirm press', async () => {
+    getPlanningBoard.mockResolvedValue(threeStates());
+    confirmMany.mockResolvedValue({
+      results: [{ pso_id: 'pso-so-a', ok: true, decision_revision: 2, lines_confirmed: [], lines_carried: 0 }],
+    });
+    renderPanel(['SO403340']);
+    await screen.findByTestId('fulfilment-board-matrix');
+    await userEvent.click(segment(/^Saved/));
+
+    fireEvent.click(await screen.findByTestId('board-confirm'));
+    await waitFor(() => expect(confirmMany).toHaveBeenCalledTimes(1));
+    await screen.findByTestId('board-confirm-results');
+
+    expect(segment(/^Saved/)).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('the pressed segment uses the same primary variant as the Grid | List switch', async () => {
+    getPlanningBoard.mockResolvedValue(threeStates());
+    renderPanel(['SO403340']);
+    await screen.findByTestId('fulfilment-board-matrix');
+
+    const pressedHeaderItem = screen.getByRole('button', { name: 'Grid' });
+    expect(pressedHeaderItem).toHaveAttribute('aria-pressed', 'true');
+    const primaryToken = 'bg-primary';
+    expect(pressedHeaderItem.className).toContain(primaryToken);
+    expect(segment(/^All/).className).toContain(primaryToken);
+    expect(segment(/^Saved/).className).not.toContain(primaryToken);
+
+    await userEvent.click(segment(/^Saved/));
+    await waitFor(() => expect(segment(/^Saved/).className).toContain(primaryToken));
+    expect(segment(/^All/).className).not.toContain(primaryToken);
+  });
+
+  it('reads "Nothing to confirm yet" in the grid and in the list when Saved has nothing', async () => {
+    getPlanningBoard.mockResolvedValue(
+      boardOf([demand({ line_no: 1, item_code: 'WESERP10B' })]),
+    );
+    renderPanel(['SO403340']);
+    await screen.findByTestId('fulfilment-board-matrix');
+
+    await userEvent.click(segment(/^Saved/));
+    expect(await screen.findByText('Nothing to confirm yet')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'List' }));
+    expect(await screen.findByText('Nothing to confirm yet')).toBeInTheDocument();
+    expect(screen.queryByText('Nothing is outstanding on this board')).not.toBeInTheDocument();
+  });
+
+
+  it('leaves the Saved and All counts alone when a Status is chosen', async () => {
+    getPlanningBoard.mockResolvedValue(threeStates());
+    renderPanel(['SO403340']);
+    await screen.findByTestId('fulfilment-board-matrix');
+
+    const strip = screen.getByTestId('board-grid-filter-strip');
+    await userEvent.click(within(strip).getByText('Status'));
+    await userEvent.click(await screen.findByRole('option', { name: /Confirmed/ }));
+    await userEvent.keyboard('{Escape}');
+
+    expect(segment(/^Saved/)).toHaveTextContent('Saved (1)');
+    expect(segment(/^All/)).toHaveTextContent('All (3)');
+  });
+
+  it('the left-out link reaches a saved line from the Saved segment', async () => {
+    const board = allSaved(
+      boardOf([
+        demand({ line_no: 1, item_code: 'WESERP10B' }),
+        demand({ line_no: 2, item_code: 'TPE-9204' }),
+      ]),
+    );
+    getPlanningBoard.mockResolvedValue(
+      withContribution(
+        board,
+        (entry) => entry.item_code === 'TPE-9204',
+        (entry) => ({ ...entry, project_line_id: null }),
+      ),
+    );
+    renderPanel(['SO403340']);
+    await screen.findByTestId('board-grid-filter-strip');
+    await userEvent.click(segment(/^Saved/));
+
+    const banner = await screen.findByTestId('board-left-out-banner');
+    fireEvent.click(within(banner).getByRole('button', { name: 'TPE-9204 line 2' }));
+
+    expect(await screen.findByTestId(/^line-decision-so-a\|2\|TPE-9204/)).toBeInTheDocument();
+    // The link sets All so it reaches the row.
+    const toggle = within(screen.getByTestId('board-scope-toggle'));
+    expect(toggle.getByRole('button', { name: /^Saved/ })).toHaveAttribute('aria-pressed', 'false');
+    expect(toggle.getByRole('button', { name: /^All/ })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+});
+
+describe('FulfilmentBoardPanel: Saved | All toggle (owner hand test, 1 Oct)', () => {
+  /** A saved, B suggested (no draft), C confirmed (covered by an active decision). */
+  const threeStates = () => {
+    const base = boardOf([
+      demand({ line_no: 1, item_code: 'WESERP10B' }),
+      demand({ line_no: 2, item_code: 'TPE-9204' }),
+      demand({ line_no: 3, item_code: 'WESERP20B' }),
+    ]);
+    const saved = withContribution(
+      base,
+      (entry) => entry.item_code === 'WESERP10B',
+      (entry) => ({
+        ...entry,
+        draft: {
+          decision: { verdict: 'approved' as const },
+          saved_by: 'Test Planner',
+          saved_at: '2026-09-08T00:00:00Z',
+        },
+      }),
+    );
+    return withContribution(
+      saved,
+      (entry) => entry.item_code === 'WESERP20B',
+      (entry) => ({
+        ...entry,
+        covered: true,
+        decision: { revision_no: 1, timely_spo_qty: '0', reserve: [], borrow: [], buy_qty: '100' },
+      }),
+    );
+  };
+  // Inside the toggle: a saved row's "Saved by ..." pill is also a button starting with Saved.
+  const segment = (name: RegExp) =>
+    within(screen.getByTestId('board-scope-toggle')).getByRole('button', { name });
+  // The list shows order numbers, not item codes: a row is told by its select box.
+  const rowOf = (line: number, query = false) =>
+    query
+      ? screen.queryByRole('checkbox', { name: `Select SO403340 line ${line}` })
+      : screen.getByRole('checkbox', { name: `Select SO403340 line ${line}` });
+  const toList = async () => {
+    await screen.findByTestId('fulfilment-board-matrix');
+    fireEvent.click(screen.getByRole('button', { name: 'List' }));
+  };
+  const findRow = (line: number) =>
+    screen.findByRole('checkbox', { name: `Select SO403340 line ${line}` });
+
+  beforeEach(() => {
+    // No `scope=` at all: the default segment is what is under test.
+    currentSearchParams = new URLSearchParams('view=grid');
+  });
+
+  it('AC-ALL-1: defaults to All: Saved (1) | All (3), All pressed and primary, every row visible', async () => {
+    getPlanningBoard.mockResolvedValue(threeStates());
+    renderPanel(['SO403340']);
+    await toList();
+
+    expect(await findRow(1)).toBeInTheDocument();
+    expect(rowOf(2)).toBeInTheDocument();
+    expect(rowOf(3)).toBeInTheDocument();
+    expect(segment(/^Saved/)).toHaveTextContent('Saved (1)');
+    expect(segment(/^All/)).toHaveTextContent('All (3)');
+    expect(segment(/^All/)).toHaveAttribute('aria-pressed', 'true');
+    expect(segment(/^All/).className).toContain('bg-primary');
+    expect(segment(/^Saved/)).toHaveAttribute('aria-pressed', 'false');
+    expect(segment(/^Saved/).className).not.toContain('bg-primary');
+    expect(screen.queryByRole('button', { name: /^Others/ })).not.toBeInTheDocument();
+  });
+
+  it('AC-ALL-2: a line stays visible after it is saved; Saved goes 0 to 1, All stays 2', async () => {
+    getPlanningBoard.mockResolvedValue(
+      boardOf([
+        demand({ line_no: 1, item_code: 'WESERP10B' }),
+        demand({ line_no: 2, item_code: 'TPE-9204' }),
+      ]),
+    );
+    renderPanel(['SO403340']);
+    await toList();
+
+    expect(await findRow(1)).toBeInTheDocument();
+    expect(segment(/^Saved/)).toHaveTextContent('Saved (0)');
+    expect(segment(/^All/)).toHaveTextContent('All (2)');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Save SO403340 line 1 as suggested' }));
+
+    await waitFor(() => expect(putLineDraft).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(segment(/^Saved/)).toHaveTextContent('Saved (1)'));
+    expect(segment(/^All/)).toHaveTextContent('All (2)');
+    expect(rowOf(1)).toBeInTheDocument();
+    expect(rowOf(2)).toBeInTheDocument();
+  });
+
+  it('AC-ALL-3: Saved shows only the posting set; All shows every row again', async () => {
+    getPlanningBoard.mockResolvedValue(threeStates());
+    renderPanel(['SO403340']);
+    await toList();
+    await findRow(1);
+
+    await userEvent.click(segment(/^Saved/));
+    await waitFor(() => expect(rowOf(2, true)).not.toBeInTheDocument());
+    expect(rowOf(1)).toBeInTheDocument();
+    expect(rowOf(3, true)).not.toBeInTheDocument();
+    expect(segment(/^Saved/)).toHaveAttribute('aria-pressed', 'true');
+
+    await userEvent.click(segment(/^All/));
+    await waitFor(() => expect(rowOf(2)).toBeInTheDocument());
+    expect(rowOf(1)).toBeInTheDocument();
+    expect(rowOf(3)).toBeInTheDocument();
+    expect(segment(/^All/)).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('AC-ALL-4: the grid strip reads Saved (1) | All (3) and All shows every matrix row', async () => {
+    currentSearchParams = new URLSearchParams('view=grid');
+    getPlanningBoard.mockResolvedValue(threeStates());
+    renderPanel(['SO403340']);
+    await screen.findByTestId('fulfilment-board-matrix');
+
+    const strip = screen.getByTestId('board-grid-filter-strip');
+    expect(within(strip).getByRole('button', { name: 'Saved (1)' })).toBeInTheDocument();
+    expect(within(strip).getByRole('button', { name: 'All (3)' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByText('WESERP10B')).toBeInTheDocument();
+    expect(screen.getByText('TPE-9204')).toBeInTheDocument();
+    expect(screen.getByText('WESERP20B')).toBeInTheDocument();
+  });
+
+  it('AC-ALL-5: under All the "No other lines" copy never appears, a fully saved board shows its rows', async () => {
+    getPlanningBoard.mockResolvedValue(
+      allSaved(boardOf([demand({ line_no: 1, item_code: 'WESERP10B' })])),
+    );
+    renderPanel(['SO403340']);
+    await toList();
+
+    expect(await findRow(1)).toBeInTheDocument();
+    expect(screen.queryByText('No other lines')).not.toBeInTheDocument();
+    expect(segment(/^All/)).toHaveTextContent('All (1)');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Grid' }));
+    await screen.findByTestId('fulfilment-board-matrix');
+    expect(screen.getByText('WESERP10B')).toBeInTheDocument();
+    expect(screen.queryByText('No other lines')).not.toBeInTheDocument();
   });
 });

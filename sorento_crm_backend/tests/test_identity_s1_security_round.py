@@ -423,8 +423,8 @@ def impersonation_setup():
         db.add(imp)
         db.commit()
 
-        admin_session = mint_session(db, admin.id, remember=True, auth_method="password")
-        target_session = mint_session(db, target.id, remember=True, auth_method="password")
+        admin_session = mint_session(db, admin.id, auth_method="password")
+        target_session = mint_session(db, target.id, auth_method="password")
 
         yield db, admin, target, admin_session, target_session
 
@@ -464,7 +464,7 @@ def test_b3_normal_password_change_revokes_the_changed_users_own_sessions(impers
     db, admin, target, _admin_session, target_session = impersonation_setup
     target.password = _hash_password("original-password-123")
     db.commit()
-    other_target_session = mint_session(db, target.id, remember=True, auth_method="password")
+    other_target_session = mint_session(db, target.id, auth_method="password")
 
     with _client_ctx(db) as client:
         resp = client.post(
@@ -561,7 +561,7 @@ def test_note_password_over_72_bytes_is_422_not_500(rate_limit_cleanup):
     with blank_session() as db:
         user = _user(db, email=f"{unique_code('longpw')}@x.com".lower())
         db.commit()
-        session_row = mint_session(db, user.id, remember=True, auth_method="password")
+        session_row = mint_session(db, user.id, auth_method="password")
 
         with _client_ctx(db) as client:
             resp = client.post(
@@ -715,9 +715,9 @@ def test_survivor8_password_change_revokes_current_users_sessions_not_get_actor_
         other_user = _user(db, email=f"{unique_code('other')}@x.com".lower())
         db.commit()
 
-        current_session = mint_session(db, acting_user.id, remember=True, auth_method="password")
-        acting_other_session = mint_session(db, acting_user.id, remember=True, auth_method="password")
-        other_user_session = mint_session(db, other_user.id, remember=True, auth_method="password")
+        current_session = mint_session(db, acting_user.id, auth_method="password")
+        acting_other_session = mint_session(db, acting_user.id, auth_method="password")
+        other_user_session = mint_session(db, other_user.id, auth_method="password")
 
         with _client_ctx(db) as client, patch(
             "app.api.v1.auth.get_actor_user_id", return_value=other_user.id

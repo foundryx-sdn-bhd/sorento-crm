@@ -1083,10 +1083,11 @@ describe('FulfilmentPlanningClient: the board lives in the URL', () => {
         {},
       ),
     );
-    // The board's own box, which now searches the same four things the worklist's does.
+    // The board's own box now lives in the list toolbar / grid strip, drawn once the board has
+    // loaded (it is still pending here), so the page header carries none.
     expect(
-      screen.getAllByPlaceholderText('Search sales order, customer, project or product').length,
-    ).toBeGreaterThan(0);
+      screen.queryAllByPlaceholderText('Search sales order, customer, project or product'),
+    ).toHaveLength(0);
   });
 
   it('falls back to date on a granularity nobody defined', async () => {

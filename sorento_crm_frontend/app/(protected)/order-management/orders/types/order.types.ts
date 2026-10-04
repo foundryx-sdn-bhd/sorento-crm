@@ -23,6 +23,11 @@ export interface Order {
    * readonly state of the Remarks CS field in OrderForm.
    */
   remarks_cs_locked?: boolean | null;
+  /**
+   * The fields an AutoCount-owned DO takes only from AutoCount; the edit form shows them
+   * read-only and leaves them out of the update. Empty for every other order.
+   */
+  autocount_owned_fields?: string[] | null;
   order_type?: string | null;
   pickup_time?: string | null;
   checker?: string | null;

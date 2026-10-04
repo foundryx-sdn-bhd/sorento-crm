@@ -25,6 +25,9 @@ from app.models.access import ContactFieldReveal
 from app.services import contact_field_reveal_service as svc
 from app.services.chatbot.head.access import check_access
 
+# DO-ASK-SIMPLIFY (owner, 4 Oct 2026): every DO field reveal defaults ON for every contact.
+DO_KEYS = sorted(key for key, _label in svc.FIELD_REVEAL_KEYS if key.startswith("delivery_orders."))
+
 CONTACT_ID = "ZZT-contact-field-reveal-1"
 SPACE_ID = "364817"
 
@@ -58,10 +61,10 @@ def seeded_contact(session_factory):
 
 class TestTableShape:
     def test_default_absent_is_hidden(self, session_factory, seeded_contact):
-        """AC-960: no row for a key -> the contact holds nothing."""
+        """AC-960: no row for a non-DO key -> hidden. DO keys default ON (owner, 4 Oct)."""
         _db, contact_id = seeded_contact
         db2 = session_factory()
-        assert svc.granted_keys(db2, contact_id) == []
+        assert svc.granted_keys(db2, contact_id) == DO_KEYS
 
     def test_unique_on_contact_and_field_key(self, session_factory, seeded_contact):
         """AC-960: (respond_contact_id, field_key) is unique."""
@@ -114,7 +117,10 @@ class TestSetGrantedKeysFullReplace:
         row_id = (
             session_factory()
             .query(ContactFieldReveal.id)
-            .filter(ContactFieldReveal.respond_contact_id == contact_id)
+            .filter(
+                ContactFieldReveal.respond_contact_id == contact_id,
+                ContactFieldReveal.field_key == "inventory.sellable",
+            )
             .scalar()
         )
         svc.set_granted_keys(db, contact_id, [], actor_id="u-1")
@@ -123,7 +129,10 @@ class TestSetGrantedKeysFullReplace:
         rows = (
             session_factory()
             .query(ContactFieldReveal)
-            .filter(ContactFieldReveal.respond_contact_id == contact_id)
+            .filter(
+                ContactFieldReveal.respond_contact_id == contact_id,
+                ContactFieldReveal.field_key == "inventory.sellable",
+            )
             .all()
         )
         assert len(rows) == 1, "a toggle off then on must not leave a second row"
@@ -134,10 +143,10 @@ class TestSetGrantedKeysFullReplace:
 class TestCheckAccessAttributes:
     """AC-961."""
 
-    def test_a_contact_with_no_grants_gets_an_empty_list(self, session_factory, seeded_contact):
+    def test_a_contact_with_no_grants_gets_only_the_do_keys(self, session_factory, seeded_contact):
         db, _contact_id = seeded_contact
         access = check_access(db, agent_code="general_enquiries", contact_id=CONTACT_ID, space_id=SPACE_ID)
-        assert access["attributes"] == []
+        assert access["attributes"] == DO_KEYS
         assert access["all_attributes_allowed"] is False
 
     def test_a_contact_with_a_grant_sees_it_in_attributes(self, session_factory, seeded_contact):

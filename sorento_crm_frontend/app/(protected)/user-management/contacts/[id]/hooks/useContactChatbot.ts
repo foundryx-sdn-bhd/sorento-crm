@@ -6,6 +6,7 @@ import {
   getContactChatbotMemory,
   getContactChatbotProfile,
   saveContactChatbotProfile,
+  saveContactEscalation,
   saveContactFact,
   type ContactChatbotSaveInput,
 } from '../services/contactChatbotService';
@@ -40,6 +41,23 @@ export function useSaveContactChatbotProfile(contactId: string) {
       // The memory context level is the same underlying value the memory card
       // displays (own/system default) - a profile save has to refresh that read too.
       queryClient.invalidateQueries({ queryKey: contactChatbotMemoryQueryKey(contactId) });
+      toast.success('Chatbot settings saved');
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to save'),
+  });
+}
+
+/**
+ * ESCALATION-CONTROL: the "Chatbot hands over to support teams" switch's own save (only that key goes
+ * over the wire), with the same cache handling as the card's save.
+ */
+export function useSaveContactEscalation(contactId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (allowed: boolean) => saveContactEscalation(contactId, allowed),
+    onSuccess: (profile) => {
+      queryClient.setQueryData(contactChatbotQueryKey(contactId), profile);
+      queryClient.invalidateQueries({ queryKey: contactChatbotQueryKey(contactId) });
       toast.success('Chatbot settings saved');
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to save'),

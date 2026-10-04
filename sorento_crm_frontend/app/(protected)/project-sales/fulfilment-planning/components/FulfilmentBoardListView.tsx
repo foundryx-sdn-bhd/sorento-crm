@@ -16,6 +16,10 @@ import { Button } from '@/components/ui/button';
 import { DataGridColumnHeader } from '@/components/ui/data-grid-column-header';
 import { buildSelectColumn } from '@/components/ui/data-grid-select-column';
 import { PanelDataGrid } from '@/components/common/PanelDataGrid';
+import { DataGridListToolbar } from '@/components/ui/data-grid-list-toolbar';
+import { ListSearchInput } from '@/components/common/ListSearchInput';
+import { BoardScopeToggle, type BoardScope } from './BoardScopeToggle';
+import { SearchableMultiSelect } from '@/components/common/SearchableMultiSelect';
 import { DecisionTrailButton } from '../../_shared/components/DecisionTrailButton';
 import { SoLineAttachmentsButton } from '../../_shared/components/SoLineAttachmentsButton';
 import type { SoLineAttachmentsByLine } from '../../_shared/services/soLineAttachmentService';
@@ -23,6 +27,7 @@ import { BoardCellBreakdownDialog } from './BoardCellBreakdownDialog';
 import { BoardDecidedMarker, decidedRevisions } from './BoardDecidedMarker';
 import {
   BoardDecisionPill,
+  VERDICT_FILTER_OPTIONS,
   VERDICT_SORT_RANK,
   verdictOf,
 } from './BoardDecisionPill';
@@ -33,7 +38,12 @@ import { BoardChangeTable } from './BoardChangeTable';
 import { changedFieldsOf, lineKeyOf } from '../../_shared/lib/boardChangeAnnotations';
 import type { BoardChangeAnnotation } from '../../_shared/lib/boardChangeAnnotations';
 import { canDecide } from '../../_shared/lib/boardAmend';
-import { contributionMatchesSearch, soLineLabel, soLineNoText } from '../../_shared/lib/fulfilmentBoard';
+import {
+  contributionMatchesSearch,
+  soLineLabel,
+  soLineNoIsSynced,
+  soLineNoText,
+} from '../../_shared/lib/fulfilmentBoard';
 import { BoardDecideControl } from './BoardDecideControl';
 import {
   boardOrderInquiryWord,
@@ -157,6 +167,26 @@ export interface FulfilmentBoardListViewProps {
    * supplies it.
    */
   attachmentsByLine?: SoLineAttachmentsByLine;
+  /**
+   * The board's ONE search box, drawn in this list's toolbar (`searchSlot`) instead of the page
+   * header, exactly as the Products list draws its own. Omitted, the list shows no box.
+   */
+  search?: { value: string; onChange: (next: string) => void; placeholder: string };
+  /** The Status filter's state, when the board owns it (shared with the grid view). */
+  status?: { value: string[]; onChange: (next: string[]) => void };
+  /**
+   * The Saved | All toggle (owner hand test, 1 Oct 2026), drawn after the search box. Saved = the
+   * lines Confirm sends, All = every line. Omitted, the list
+   * shows every line and draws no toggle.
+   */
+  scope?: {
+    value: BoardScope;
+    onChange: (next: BoardScope) => void;
+    savedCount: number;
+    allCount: number;
+    /** Whether Confirm sends this line: the board's ONE `pressPostsContribution` predicate. */
+    isSaved: (contribution: BoardContribution) => boolean;
+  };
 }
 
 export function FulfilmentBoardListView({
@@ -173,6 +203,9 @@ export function FulfilmentBoardListView({
   poolSharePct,
   canEditAttachments = false,
   attachmentsByLine = {},
+  search,
+  status,
+  scope,
 }: FulfilmentBoardListViewProps) {
   /**
    * AC-RS-42: the Stock button and the "To plan" figure both open the SAME dialog the grid
@@ -198,9 +231,24 @@ export function FulfilmentBoardListView({
   // S6: the row filter itself, off the board's own search box - `contributionMatchesSearch`
   // is the SAME matcher `rowMatchesSearch` reads for the grid's rows, so the two views can
   // never disagree about what one search term narrows to.
+  // The Status filter (owner, 30 Sep 2026): the SAME state the Verdict pill and its sort read
+  // (`verdictOf`), so a status can never be filtered by one rule and shown by another.
+  // Controlled by the board when it hands `status` in (so the grid view shares it), else local.
+  const [localStatusFilter, setLocalStatusFilter] = React.useState<string[]>([]);
+  const statusFilter = status?.value ?? localStatusFilter;
+  const setStatusFilter = status?.onChange ?? setLocalStatusFilter;
   const filteredContributions = React.useMemo(
-    () => contributions.filter((contribution) => contributionMatchesSearch(contribution, externalSearch ?? '')),
-    [contributions, externalSearch],
+    () =>
+      contributions.filter(
+        (contribution) =>
+          contributionMatchesSearch(contribution, externalSearch ?? '') &&
+          (!scope ||
+            scope.value === 'all' ||
+            scope.isSaved(contribution) === (scope.value === 'saved')) &&
+          (statusFilter.length === 0 ||
+            statusFilter.includes(verdictOf(contribution, draft[contribution.key] ?? null))),
+      ),
+    [contributions, externalSearch, statusFilter, draft, scope],
   );
 
   // Should fix 3 (review round 1, fixed again round 2): AC-10's "the order follows the list's
@@ -285,10 +333,27 @@ export function FulfilmentBoardListView({
    * below): there is nothing a quick save would change on either.
    */
   const [rowSelection, setRowSelection] = React.useState<RowSelectionState>({});
-  const selectedKeys = React.useMemo(
-    () => Object.keys(rowSelection).filter((key) => rowSelection[key]),
-    [rowSelection],
-  );
+  // Only rows on screen: a row ticked and then hidden by the Status filter is not part of what
+  // Decide would act on, so it is not counted or saved (its tick is kept for when it returns).
+  const selectedKeys = React.useMemo(() => {
+    const visible = new Set(filteredContributions.map((entry) => entry.key));
+    return Object.keys(rowSelection).filter((key) => rowSelection[key] && visible.has(key));
+  }, [rowSelection, filteredContributions]);
+  // A tick on a row the segment, the Status filter or the search has since hidden is dropped, so
+  // the strip's "N selected" is exactly the rows Decide would act on.
+  React.useEffect(() => {
+    const visible = new Set(filteredContributions.map((entry) => entry.key));
+    setRowSelection((current) => {
+      const next: RowSelectionState = {};
+      let dropped = false;
+      for (const key of Object.keys(current)) {
+        if (!current[key]) continue;
+        if (visible.has(key)) next[key] = true;
+        else dropped = true;
+      }
+      return dropped ? next : current;
+    });
+  }, [filteredContributions]);
   // S3 (D1, R9): saved rows untick, skipped rows stay ticked - so a Decide press narrows the
   // selection to exactly what it could not cover, ready for a second pick.
   const untickSaved = React.useCallback((savedKeys: string[]) => {
@@ -363,6 +428,7 @@ export function FulfilmentBoardListView({
       // The repo's own select column (the users list uses the same one), so a quick save is
       // a bulk action like any other rather than a second selection mechanism.
       buildSelectColumn<BoardContribution>({
+        selectAllRows: true,
         // S3 (D1): widened from `canQuickSave` - a Confirmed or already-saved row is
         // tickable too (R3), so only an unplannable or a cancelled line is refused.
         enableRow: (row) => canDecide(row.original),
@@ -382,12 +448,22 @@ export function FulfilmentBoardListView({
       // here - the caller's own order IS the default (`PanelDataGrid`'s own contract).
       {
         id: 'line',
+        meta: { headerTitle: 'Line' },
         // #1362 item 5: AutoCount's own line number, never the planning row index;
         // "row N" only where AutoCount gave the line none.
         accessorFn: (row) => row.so_line_no ?? row.line_no,
         header: ({ column }) => <DataGridColumnHeader title="Line" column={column} />,
         cell: ({ row }) => (
-          <span className="block tabular-nums">{soLineNoText(row.original)}</span>
+          <span
+            className="block tabular-nums"
+            title={
+              soLineNoIsSynced(row.original)
+                ? undefined
+                : 'AutoCount line number not synced for this order'
+            }
+          >
+            {soLineNoText(row.original)}
+          </span>
         ),
         size: 70,
         minSize: 60,
@@ -456,6 +532,7 @@ export function FulfilmentBoardListView({
         // Owner ruling, 22 Sep 2026: every column on this list sorts.
         enableSorting: true,
         meta: {
+          headerTitle: 'Sales order',
           // The SAME editor the cell breakdown expands, so a decision reads and is taken
           // identically whichever way the planner came at the line - the per-location
           // Available included (C4). The figures ride on the CONTRIBUTION, netted of this
@@ -483,6 +560,7 @@ export function FulfilmentBoardListView({
       },
       {
         id: 'agent',
+        meta: { headerTitle: 'Agent' },
         accessorFn: (row) => row.agent_code ?? '',
         header: ({ column }) => <DataGridColumnHeader title="Agent" column={column} />,
         cell: ({ row }) =>
@@ -502,6 +580,7 @@ export function FulfilmentBoardListView({
       },
       {
         id: 'customer',
+        meta: { headerTitle: 'Customer' },
         accessorFn: (row) => row.customer_name ?? '',
         header: ({ column }) => <DataGridColumnHeader title="Customer" column={column} />,
         cell: ({ row }) =>
@@ -518,6 +597,7 @@ export function FulfilmentBoardListView({
       },
       {
         id: 'product',
+        meta: { headerTitle: 'Product' },
         accessorFn: (row) => row.item_code,
         header: ({ column }) => <DataGridColumnHeader title="Product" column={column} />,
         cell: ({ row }) => {
@@ -561,6 +641,7 @@ export function FulfilmentBoardListView({
       // reads a plain dash, never a guess.
       {
         id: 'order_inquiry',
+        meta: { headerTitle: 'OI' },
         accessorFn: (row) => row.order_inquiry?.inquiry_no ?? '',
         header: ({ column }) => <DataGridColumnHeader title="OI" column={column} />,
         cell: ({ row }) => {
@@ -597,6 +678,7 @@ export function FulfilmentBoardListView({
       },
       {
         id: 'required_date',
+        meta: { headerTitle: 'Required date' },
         accessorFn: (row) => row.required_date ?? '',
         header: ({ column }) => <DataGridColumnHeader title="Required date" column={column} />,
         cell: ({ row }) => (
@@ -617,6 +699,7 @@ export function FulfilmentBoardListView({
       },
       {
         id: 'owed_qty',
+        meta: { headerTitle: 'Outstanding qty' },
         // Numeric, not the raw string `qty_outstanding`/`qty` ride on - a lexicographic
         // sort would put "20" ahead of "9" (owner ruling, 22 Sep 2026).
         accessorFn: (row) => Number(row.qty_outstanding ?? row.qty ?? 0),
@@ -676,6 +759,7 @@ export function FulfilmentBoardListView({
         // proposal on an undecided one - so the two could never be compared, which is the
         // one thing the planner opens this view to do.
         id: 'suggested',
+        meta: { headerTitle: 'Suggested' },
         // Owner ruling, 22 Sep 2026: sorts on the SAME text the cell prints
         // (`suggestedSortText` below), so the sort order and the words on screen can never
         // disagree.
@@ -718,6 +802,7 @@ export function FulfilmentBoardListView({
       },
       {
         id: 'decided',
+        meta: { headerTitle: 'Decided' },
         // Owner ruling, 22 Sep 2026: sorts on the SAME text the cell prints
         // (`decidedSortText` below).
         accessorFn: (row) => decidedSortText(row, draft[row.key] ?? null),
@@ -772,6 +857,7 @@ export function FulfilmentBoardListView({
       },
       {
         id: 'rank',
+        meta: { headerTitle: 'Rank' },
         accessorFn: (row) => row.rank_score,
         header: ({ column }) => <DataGridColumnHeader title="Rank" column={column} />,
         cell: ({ row }) =>
@@ -788,6 +874,7 @@ export function FulfilmentBoardListView({
       },
       {
         id: 'verdict',
+        meta: { headerTitle: 'Verdict' },
         // AC-7: sorted by the SAME state the pill renders (`verdictOf`, `BoardDecisionPill`) -
         // never a second reading of "how far this line has got", which is exactly how the
         // column and the pill it sorts could come to disagree.
@@ -864,62 +951,130 @@ export function FulfilmentBoardListView({
   return (
     <>
     <PanelDataGrid
-      title="Every contributing line"
       columns={columns}
       rows={filteredContributions}
       getRowId={(row) => row.key}
-      pageResetKey={pageResetKey ?? externalSearch}
-      listingKey="projects.projects.view::project-fulfilment-board-list-v1"
-      emptyTitle="Nothing is outstanding on this board"
+      pageResetKey={`${pageResetKey ?? externalSearch ?? ''}|${statusFilter.join(',')}|${scope?.value ?? ''}`}
+      // Rank is a planner's tiebreak, not something to read on every row: hidden until asked.
+      initialColumnVisibility={{ rank: false }}
+      listingKey="projects.projects.view::project-fulfilment-board-list-v2"
+      emptyTitle={
+        scope?.value === 'saved'
+          ? statusFilter.length > 0
+            ? 'No saved decisions match the filter'
+            : 'Nothing to confirm yet'
+          : 'Nothing is outstanding on this board'
+      }
       rowSelection={rowSelection}
       onRowSelectionChange={setRowSelection}
       enableRowSelection={(row) => canDecide(row.original)}
-      toolbar={
-        <div className="flex flex-wrap items-center gap-2">
-          {/* The same pair reorder planning carries, in the same place and the same shape
-              (AC-C12): two icon buttons, each dead when it has nothing to do, so the
-              control itself says whether the list is open or closed. */}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            mode="icon"
-            className="h-8 w-8"
-            data-testid="board-list-expand-all"
-            title="Expand all"
-            aria-label="Expand all"
-            disabled={openKeys.length >= filteredContributions.length}
-            onClick={() => expandAll(filteredContributions.map((row) => row.key))}
-          >
-            <ChevronsUpDown className="size-4" aria-hidden />
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            mode="icon"
-            className="h-8 w-8"
-            data-testid="board-list-collapse-all"
-            title="Collapse all"
-            aria-label="Collapse all"
-            disabled={openKeys.length === 0}
-            onClick={requestCollapseAll}
-          >
-            <ChevronsDownUp className="size-4" aria-hidden />
-          </Button>
-          {/* S3 (D1, R1, R4): Decide replaces the old "Save as suggested" button - As
-              suggested is now its first menu item, and Decide itself is ALWAYS rendered,
-              disabled with a tooltip while nothing is ticked. */}
-          <BoardDecideControl
-            contributions={sortedContributions}
-            selectedKeys={selectedKeys}
-            draft={draft}
-            onSave={onDecideBatch}
-            onSaved={untickSaved}
-            onClear={() => setRowSelection({})}
-          />
-        </div>
-      }
+      // The app's own list toolbar (`DataGridListToolbar`, PLAN-unified-list-toolbar-UAC.md D2/D3):
+      // search, the Saved | All toggle, Filters (Status) and Columns on the left, Expand and
+      // Collapse as `leftActions` (the component's own slot for a grid whose rows expand, since
+      // they change what the table shows), Decide as the primary action. While rows are ticked
+      // its bulk strip ("N selected", Clear) replaces the left cluster, so Decide keeps its place.
+      toolbar={({ table }) => (
+        <DataGridListToolbar
+          table={table}
+          exportConfig={false}
+          showColumns
+          keepSearchWhileSelected
+          searchSlot={
+            search || scope ? (
+              <>
+                {search && (
+                  <ListSearchInput
+                    value={search.value}
+                    onChange={search.onChange}
+                    placeholder={search.placeholder}
+                    aria-label={search.placeholder}
+                    className="w-64"
+                  />
+                )}
+                {scope && (
+                  <BoardScopeToggle
+                    value={scope.value}
+                    onChange={scope.onChange}
+                    savedCount={scope.savedCount}
+                    allCount={scope.allCount}
+                  />
+                )}
+              </>
+            ) : undefined
+          }
+          filters={{
+            kind: 'custom',
+            active: statusFilter.length > 0,
+            activeCount: statusFilter.length,
+            activeSummary:
+              statusFilter.length > 0
+                ? {
+                    label: `Status: ${statusFilter
+                      .map(
+                        (value) =>
+                          VERDICT_FILTER_OPTIONS.find((option) => option.value === value)?.label ??
+                          value,
+                      )
+                      .join(', ')}`,
+                    onClear: () => setStatusFilter([]),
+                  }
+                : undefined,
+            content: (
+              <SearchableMultiSelect
+                value={statusFilter}
+                onChange={setStatusFilter}
+                options={VERDICT_FILTER_OPTIONS}
+                placeholder="Status"
+                size="sm"
+              />
+            ),
+          }}
+          leftActions={
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                mode="icon"
+                data-testid="board-list-expand-all"
+                title="Expand all"
+                aria-label="Expand all"
+                disabled={openKeys.length >= filteredContributions.length}
+                onClick={() => expandAll(filteredContributions.map((row) => row.key))}
+              >
+                <ChevronsUpDown className="size-4" aria-hidden />
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                mode="icon"
+                data-testid="board-list-collapse-all"
+                title="Collapse all"
+                aria-label="Collapse all"
+                disabled={openKeys.length === 0}
+                onClick={requestCollapseAll}
+              >
+                <ChevronsDownUp className="size-4" aria-hidden />
+              </Button>
+            </>
+          }
+          // S3 (D1, R1, R4): Decide replaces the old "Save as suggested" button - As suggested
+          // is its first menu item, and Decide itself is ALWAYS rendered, disabled with a
+          // tooltip while nothing is ticked.
+          primaryAction={
+            <BoardDecideControl
+              contributions={sortedContributions}
+              selectedKeys={selectedKeys}
+              draft={draft}
+              onSave={onDecideBatch}
+              onSaved={untickSaved}
+              onClear={() => setRowSelection({})}
+              embedded
+            />
+          }
+        />
+      )}
       expanded={expanded}
       onExpandedChange={setExpanded}
       onRowClick={(row) => requestRow(row.key)}

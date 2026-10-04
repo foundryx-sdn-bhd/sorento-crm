@@ -1,0 +1,27 @@
+{
+  "status": "refused",
+  "message": "Sorry, REPAIR isn't one of the locations you can check.",
+  "basis": "delivered",
+  "customer_name": "ACME HARDWARE SDN BHD [A/C I]",
+  "customer_count": 1,
+  "product_code": null,
+  "product_codes": [],
+  "channel": null,
+  "channel_shown": false,
+  "location_token": "REPAIR",
+  "warehouse_codes": [
+    "REPAIR"
+  ],
+  "date_from": "2026-07-01",
+  "date_to": "2026-09-30",
+  "grain": "month",
+  "total": {
+    "qty": 0,
+    "amount": 0.0
+  },
+  "periods": [],
+  "group_by": null,
+  "rows": [],
+  "more": 0,
+  "options": []
+}

@@ -102,6 +102,7 @@ export function ProjectSetupClient() {
         <ProjectTypesGrid
           rows={typeRows}
           isLoading={types.isLoading}
+          error={types.error}
           isFetching={types.isFetching}
           selectedTypeId={selectedTypeId}
           onSelect={setSelectedTypeId}
@@ -114,6 +115,7 @@ export function ProjectSetupClient() {
         <ProjectTemplatesGrid
           rows={templateRows}
           isLoading={Boolean(selectedTypeId) && templates.isLoading}
+          error={templates.error}
           isFetching={templates.isFetching}
           hasType={Boolean(selectedTypeId)}
           selectedTemplateId={selectedTemplateId}
@@ -196,6 +198,7 @@ export function ProjectSetupClient() {
 function ProjectTypesGrid({
   rows,
   isLoading,
+  error,
   isFetching,
   selectedTypeId,
   onSelect,
@@ -206,6 +209,7 @@ function ProjectTypesGrid({
 }: {
   rows: ProjectType[];
   isLoading: boolean;
+  error?: unknown;
   isFetching: boolean;
   selectedTypeId: string | null;
   onSelect: (id: string) => void;
@@ -325,6 +329,8 @@ function ProjectTypesGrid({
       onRowClick={(row) => onSelect(row.id)}
       recordCount={rows.length}
       isLoading={isLoading}
+      error={error}
+      onRetry={onRefresh}
       listingKey="projects.types.view::types"
       tableLayout={{ width: 'fixed', columnsResizable: true, columnsVisibility: true }}
       emptyMessage={
@@ -367,6 +373,7 @@ function ProjectTypesGrid({
 function ProjectTemplatesGrid({
   rows,
   isLoading,
+  error,
   isFetching,
   hasType,
   selectedTemplateId,
@@ -378,6 +385,7 @@ function ProjectTemplatesGrid({
 }: {
   rows: ProjectTemplate[];
   isLoading: boolean;
+  error?: unknown;
   isFetching: boolean;
   hasType: boolean;
   selectedTemplateId: string | null;
@@ -485,6 +493,8 @@ function ProjectTemplatesGrid({
       onRowClick={(row) => onSelect(row.id)}
       recordCount={hasType ? rows.length : 0}
       isLoading={isLoading}
+      error={error}
+      onRetry={onRefresh}
       listingKey="projects.types.view::templates"
       tableLayout={{ width: 'fixed', columnsResizable: true, columnsVisibility: true }}
       emptyMessage={

@@ -259,8 +259,10 @@ export async function resetVariantAuto(productId: string): Promise<ProductDetail
  */
 export async function getProductsForLineSelect(
   query?: string,
+  options?: { companyScope?: 'grants' },
 ): Promise<ProductLineRef[]> {
   const queryParams = new URLSearchParams(query ? { query } : {});
+  if (options?.companyScope) queryParams.set('company_scope', options.companyScope);
   const response = await apiFetch(
     `/api/v1/master-data/products/select?${queryParams.toString()}`,
     {
@@ -282,6 +284,7 @@ export async function getProductsForLineSelect(
     brand_id?: string | null;
     base_uom_id?: string | null;
     list_price?: number | string | null;
+    company_name?: string | null;
   }> = body?.data ?? [];
   return rows.map((p) => ({
     id: p.id,
@@ -293,6 +296,7 @@ export async function getProductsForLineSelect(
     // Left as the STRING the API sent. A price that becomes a number here comes back out of
     // `String(...)` as `1250` or `392.85000000000002`, and the line endpoints take decimals.
     list_price: p.list_price === null || p.list_price === undefined ? null : String(p.list_price),
+    company_name: p.company_name ?? undefined,
   }));
 }
 

@@ -21,7 +21,7 @@ export function McpToolsList() {
     setValue: setSearchInput,
     debouncedValue: search,
   } = useDebouncedSearch();
-  const { data, isLoading } = useMcpToolsCatalog({ is_active: !includeInactive });
+  const { data, isLoading, error, refetch } = useMcpToolsCatalog({ is_active: !includeInactive });
   const rows = (data ?? []).filter((r) => {
     if (!search.trim()) return true;
     const q = search.toLowerCase();
@@ -95,6 +95,8 @@ export function McpToolsList() {
           <DataGrid
             table={table}
             recordCount={rows.length}
+            error={error}
+            onRetry={() => void refetch()}
             emptyMessage="No tools match."
             // Nav permission (`system.ai_assistant_settings.view`) is shared by three
             // sibling pages (Prompts/Usage/Wishlist) - `::mcp-tools` disambiguates the

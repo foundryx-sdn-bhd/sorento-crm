@@ -294,7 +294,7 @@ class TestDryRunTurnLeavesContactFieldRevealsUntouched:
 
 
 class TestOrderingKeysSkipDryRunTurns:
-    """S7 mode's redis ticket keys (`dispatch.seq_key` / `done_key` / `running_key`) are
+    """S7 mode's redis ticket keys (`dispatch.seq_key` / `done_key` / `alive_key`) are
     keyed on the contact id alone - a dry run must not take a place in the SAME queue a
     live message from that contact is about to wait on."""
 
@@ -327,7 +327,7 @@ class TestOrderingKeysSkipDryRunTurns:
         keys = (
             dispatch.seq_key(contact_id),
             dispatch.done_key(contact_id),
-            dispatch.running_key(contact_id),
+            dispatch.alive_key(contact_id, 1),
         )
         redis_client.delete(*keys)
         try:

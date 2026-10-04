@@ -76,6 +76,7 @@ import { PlanNumberButton } from '../../../components/PlanNumberButton';
 import { SoLineLinksBody } from './SoLineLinksBody';
 import { fmtDate, fmtInt } from '../../../lib/format';
 import { demandClassBadge } from '../../../lib/demandClass';
+import { transferableBadge } from '../../../lib/transferable';
 import { salesOrderPlannedBadge } from '../../../lib/salesOrderPlanned';
 import {
   salesOrderPriorityVariant,
@@ -1745,6 +1746,28 @@ export function SalesOrderDetail({ id }: { id: string }) {
                 )}
               </Field>
               <Field label="Source">{SOURCE_LABELS[so.source ?? 'manual'] ?? 'Manual'}</Field>
+              {/* AutoCount's Transferable flag (SO-TRANSFERABLE). Read-only in view AND edit:
+                  AutoCount owns it, and the order edit has no input for it. */}
+              <Field label="Transferable">
+                {(() => {
+                  const flag = transferableBadge(so.is_transferable);
+                  return (
+                    <span className="inline-flex flex-wrap items-center gap-1.5">
+                      <Badge variant={flag.variant} appearance="light" size="md">
+                        {flag.label}
+                      </Badge>
+                      {/* `text-2xs`: a value hint, not a Field label (see Order type). Only on
+                          an AutoCount order: an Excel / manual / inquiry order never had the
+                          flag stated by AutoCount, so the hint would be untrue there. */}
+                      {so.source === 'autocount' ? (
+                        <span className="text-2xs font-normal text-muted-foreground">
+                          From AutoCount
+                        </span>
+                      ) : null}
+                    </span>
+                  );
+                })()}
+              </Field>
               {/* Resolved from whichever of the four rules ranked highest - the sheet, the
                   note, the AutoCount `Ref`, or a delivery address. Read-only: correcting one
                   is a later slice (rank 5, manual edit), not this one. */}

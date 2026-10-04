@@ -14,6 +14,7 @@ export function ScreenLoader() {
     <div
       className="flex flex-col items-center gap-3 justify-center fixed inset-0 z-50"
       data-slot="screen-loader"
+      data-loading=""
     >
       <img
         className="h-[30px] max-w-none"

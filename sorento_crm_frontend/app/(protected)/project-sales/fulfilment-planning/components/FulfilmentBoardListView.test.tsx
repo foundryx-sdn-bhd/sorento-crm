@@ -161,7 +161,7 @@ describe('FulfilmentBoardListView', () => {
 
   it('#1362 item 5: the Line column prints the AutoCount line number, never the row index', async () => {
     // SO382618's January B2154-NL line: planning row 110, AutoCount No. 2912. And the
-    // owner's unnumbered 200-piece line, which AutoCount gave no No.: "row 3".
+    // owner's unnumbered 200-piece line, which AutoCount gave no No.: its position, "3", with a not-synced title.
     renderView({
       contributions: [
         contribution({
@@ -177,7 +177,10 @@ describe('FulfilmentBoardListView', () => {
     expect(within(january).getByText('2912')).toBeInTheDocument();
     expect(within(january).queryByText('110')).not.toBeInTheDocument();
     const unnumbered = screen.getByText('SO382619').closest('tr') as HTMLElement;
-    expect(within(unnumbered).getByText('row 3')).toBeInTheDocument();
+    expect(within(unnumbered).getByText('3')).toHaveAttribute(
+      'title',
+      'AutoCount line number not synced for this order',
+    );
   });
 
   // S6 (PLAN-scm-oi-worklist-excel-parity.md R-J, AC-P2/AC-P3): the board's ONE search
@@ -224,7 +227,7 @@ describe('FulfilmentBoardListView', () => {
       expect(screen.getByText('SO397451')).toBeInTheDocument();
     });
 
-    it('renders no search box of its own - "Every contributing line" has one search, the boards', async () => {
+    it('renders no search box unless the board hands it one', async () => {
       renderView();
 
       await screen.findByText('SO397450');
@@ -838,7 +841,7 @@ describe('FulfilmentBoardListView: quick save as suggested and per-line undo', (
 
   function selectAll() {
     fireEvent.click(
-      screen.getByRole('checkbox', { name: 'Select all rows on this page' }),
+      screen.getByRole('checkbox', { name: 'Select all rows' }),
     );
   }
 
@@ -2141,7 +2144,7 @@ describe('FulfilmentBoardListView: every column sorts (owner ruling 22 Sep)', ()
       'Outstanding qty',
       'Suggested',
       'Decided',
-      'Rank',
+      // Rank is hidden by default (owner, 30 Sep 2026); the Columns menu brings it back.
       'Verdict',
     ];
     for (const title of sortableTitles) {
@@ -2213,4 +2216,297 @@ describe('FulfilmentBoardListView: every column sorts (owner ruling 22 Sep)', ()
       ).toEqual(['SO000001', 'SO000002']),
     );
   });
+});
+
+/**
+ * FULFIL-CONFIRM-SCOPE (AC-L1): the board list's header tick box ticks every row across every
+ * page, not the page (`pageSize` is 25, so a board of 30 used to tick 25 of them). The label
+ * changes with the behaviour; the older test above that presses 'Select all rows on this page'
+ * is for the coder to switch to 'Select all rows'.
+ */
+describe('FulfilmentBoardListView: the header tick box selects every row (FULFIL-CONFIRM-SCOPE, AC-L1)', () => {
+  function thirtyRows() {
+    return Array.from({ length: 30 }, (_, index) =>
+      contribution({
+        key: `so-${index + 1}:line-${(index + 1) * 10}`,
+        sales_order_id: `so-${index + 1}`,
+        line_id: `core-line-${index + 1}`,
+        so_number: `SO4${String(10000 + index)}`,
+        line_no: (index + 1) * 10,
+      }),
+    );
+  }
+
+  it('ticks all 30 rows across both pages and the Decide chip counts 30', async () => {
+    renderView({ contributions: thirtyRows() });
+
+    await screen.findByText('SO410000');
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select all rows' }));
+
+    expect(await screen.findByText('30 selected')).toBeInTheDocument();
+  });
+});
+
+
+/**
+ * Owner, 30 Sep 2026: a Columns menu, Rank hidden until asked for, and a Status filter over the
+ * same state the Verdict pill shows.
+ */
+describe('FulfilmentBoardListView: Columns and Status filter', () => {
+  it('hides Rank by default and shows it from the Columns menu', async () => {
+    renderView();
+    await screen.findByText('SO397450');
+    expect(screen.queryByRole('button', { name: 'Rank' })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Columns' }));
+    await userEvent.click(await screen.findByRole('menuitemcheckbox', { name: 'Rank' }));
+    await userEvent.keyboard('{Escape}');
+
+    expect(await screen.findByRole('button', { name: 'Rank' })).toBeInTheDocument();
+  });
+
+  it('the Columns menu hides a column that is showing', async () => {
+    renderView();
+    await screen.findByText('SO397450');
+    expect(screen.getByRole('button', { name: 'Customer' })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Columns' }));
+    await userEvent.click(await screen.findByRole('menuitemcheckbox', { name: 'Customer' }));
+    await userEvent.keyboard('{Escape}');
+
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Customer' })).not.toBeInTheDocument(),
+    );
+  });
+
+  it('the Status filter Saved shows only the saved rows', async () => {
+    const saved = contribution({ key: 'so-1:line-10', so_number: 'SO397450', line_no: 10 });
+    const plain = contribution({ key: 'so-2:line-20', so_number: 'SO397451', line_no: 20 });
+    renderView({
+      contributions: [saved, plain],
+      draft: { [saved.key]: { verdict: 'approved' } },
+    });
+    await screen.findByText('SO397450');
+    expect(screen.getByText('SO397451')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /^Filters/ }));
+    await userEvent.click(await screen.findByText('Status'));
+    await userEvent.click(await screen.findByRole('option', { name: /Saved/ }));
+    await userEvent.keyboard('{Escape}');
+
+    await waitFor(() => expect(screen.queryByText('SO397451')).not.toBeInTheDocument());
+    expect(screen.getByText('SO397450')).toBeInTheDocument();
+  });
+
+  it('the Status filter reads the verdict, not "has a draft": Rejected shows only the rejected row', async () => {
+    const rejected = contribution({ key: 'so-1:line-10', so_number: 'SO397450', line_no: 10 });
+    const saved = contribution({ key: 'so-2:line-20', so_number: 'SO397451', line_no: 20 });
+    renderView({
+      contributions: [rejected, saved],
+      draft: {
+        [rejected.key]: { verdict: 'rejected', reason: 'No.' },
+        [saved.key]: { verdict: 'approved' },
+      },
+    });
+    await screen.findByText('SO397450');
+
+    await userEvent.click(screen.getByRole('button', { name: /^Filters/ }));
+    await userEvent.click(await screen.findByText('Status'));
+    await userEvent.click(await screen.findByRole('option', { name: /Rejected/ }));
+    await userEvent.keyboard('{Escape}');
+
+    await waitFor(() => expect(screen.queryByText('SO397451')).not.toBeInTheDocument());
+    expect(screen.getByText('SO397450')).toBeInTheDocument();
+  });
+
+  it('a row ticked and then hidden by a narrower view is not counted as selected', async () => {
+    const rows = [
+      contribution({ key: 'so-1:line-10', so_number: 'SO397450', line_no: 10 }),
+      contribution({ key: 'so-2:line-20', so_number: 'SO397451', line_no: 20 }),
+      contribution({ key: 'so-3:line-30', so_number: 'SO397452', line_no: 30 }),
+    ];
+    const { rerender } = renderView({ contributions: rows });
+    await screen.findByText('SO397450');
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select SO397450 line 10' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select SO397451 line 20' }));
+    expect(screen.getByText('2 selected')).toBeInTheDocument();
+
+    rerender(
+      <FulfilmentBoardListView
+        contributions={rows}
+        draft={{}}
+        onDecide={vi.fn()}
+        onDecideMany={vi.fn()}
+        onDecideBatch={vi.fn()}
+        externalSearch="SO397452"
+      />,
+    );
+
+    await waitFor(() => expect(screen.queryByText(/selected/)).not.toBeInTheDocument());
+  });
+
+  it('a line with an AutoCount number carries no not-synced title', async () => {
+    renderView({
+      contributions: [
+        contribution({ key: 'so-1:line-10', so_number: 'SO397450', line_no: 10, so_line_no: 2912 }),
+      ],
+    });
+    expect(await screen.findByText('2912')).not.toHaveAttribute('title');
+  });
+
+
+  it('uses the shared list toolbar: Filters (Status), Columns, expand and collapse, and Decide in one bar', async () => {
+    const { container } = renderView();
+    await screen.findByText('SO397450');
+
+    const toolbar = container.querySelector('[data-slot="data-grid-list-toolbar"]') as HTMLElement;
+    expect(toolbar).not.toBeNull();
+    expect(within(toolbar).getByRole('button', { name: /^Filters/ })).toBeInTheDocument();
+    expect(within(toolbar).getByRole('button', { name: 'Columns' })).toBeInTheDocument();
+    expect(within(toolbar).getByRole('button', { name: 'Expand all' })).toBeInTheDocument();
+    expect(within(toolbar).getByRole('button', { name: 'Collapse all' })).toBeInTheDocument();
+    expect(within(toolbar).getByTestId('board-decide-button')).toBeInTheDocument();
+    // One toolbar only: the grid does not draw a second row of controls of its own.
+    expect(container.querySelectorAll('[data-slot="data-grid-list-toolbar"]')).toHaveLength(1);
+  });
+
+
+  it('draws no title row, and puts the board search in the toolbar when handed one', async () => {
+    const onChange = vi.fn();
+    const rows = [contribution()];
+    render(
+      <FulfilmentBoardListView
+        contributions={rows}
+        draft={{}}
+        onDecide={vi.fn()}
+        onDecideMany={vi.fn()}
+        onDecideBatch={vi.fn()}
+        search={{ value: '', onChange, placeholder: 'Search sales order, customer, project or product' }}
+      />,
+    );
+    await screen.findByText('SO397450');
+
+    expect(screen.queryByText('Every contributing line')).not.toBeInTheDocument();
+    const toolbar = document.querySelector('[data-slot="data-grid-list-toolbar"]') as HTMLElement;
+    fireEvent.change(
+      within(toolbar).getByPlaceholderText('Search sales order, customer, project or product'),
+      { target: { value: 'cks' } },
+    );
+    expect(onChange).toHaveBeenCalledWith('cks');
+  });
+
+  it('the toolbar controls share one height: the Expand all icon button and Columns carry the same size token', async () => {
+    renderView();
+    await screen.findByText('SO397450');
+    const heightOf = (name: string) =>
+      (screen.getByRole('button', { name }).className.match(/\bh-\d+(\.\d+)?\b/) ?? [])[0];
+
+    expect(heightOf('Expand all')).toBeDefined();
+    expect(heightOf('Expand all')).toBe(heightOf('Columns'));
+  });
+
+
+  it('the Saved scope shows only the saved rows', async () => {
+    const saved = contribution({ key: 'so-1:line-10', so_number: 'SO397450', line_no: 10 });
+    const plain = contribution({ key: 'so-2:line-20', so_number: 'SO397451', line_no: 20 });
+    render(
+      <FulfilmentBoardListView
+        contributions={[saved, plain]}
+        draft={{ [saved.key]: { verdict: 'approved' as const } }}
+        onDecide={vi.fn()}
+        onDecideMany={vi.fn()}
+        onDecideBatch={vi.fn()}
+        scope={{
+          value: 'saved',
+          onChange: vi.fn(),
+          savedCount: 1,
+          allCount: 2,
+          isSaved: (line) => line.key === saved.key,
+        }}
+      />,
+    );
+    await screen.findByText('SO397450');
+    expect(screen.queryByText('SO397451')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Saved (1)' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+
+  // The board hands in Confirm's own predicate; here it is stood in for by a plain function.
+  const scopeProps = (
+    value: 'saved' | 'all',
+    isSaved: (line: BoardContribution) => boolean = (line) => line.key === 'so-1:line-10',
+  ) => ({ value, onChange: vi.fn(), savedCount: 1, allCount: 1, isSaved });
+  const viewProps = (rows: BoardContribution[], draft: BoardDraft) => ({
+    contributions: rows,
+    draft,
+    onDecide: vi.fn(),
+    onDecideMany: vi.fn(),
+    onDecideBatch: vi.fn(),
+  });
+
+  it('reads "No saved decisions match the filter" under Saved when a Status matches nothing', async () => {
+    const saved = contribution({ key: 'so-1:line-10', so_number: 'SO397450', line_no: 10 });
+    render(
+      <FulfilmentBoardListView
+        {...viewProps([saved], { [saved.key]: { verdict: 'approved' } })}
+        scope={scopeProps('saved')}
+        status={{ value: ['confirmed'], onChange: vi.fn() }}
+      />,
+    );
+    expect(await screen.findByText('No saved decisions match the filter')).toBeInTheDocument();
+  });
+
+  it('drops ticks on rows a segment change hides, so "N selected" is what Decide acts on', async () => {
+    const saved = contribution({ key: 'so-1:line-10', so_number: 'SO397450', line_no: 10 });
+    const plain = contribution({ key: 'so-2:line-20', so_number: 'SO397451', line_no: 20 });
+    const props = viewProps([saved, plain], { [saved.key]: { verdict: 'approved' } });
+    const { rerender } = render(<FulfilmentBoardListView {...props} scope={scopeProps('all')} />);
+    await screen.findByText('SO397450');
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select SO397450 line 10' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select SO397451 line 20' }));
+    expect(screen.getByText('2 selected')).toBeInTheDocument();
+
+    rerender(<FulfilmentBoardListView {...props} scope={scopeProps('saved')} />);
+
+    await waitFor(() => expect(screen.getByText('1 selected')).toBeInTheDocument());
+  });
+
+  it('goes back to page 1 when the segment changes', async () => {
+    const rows = Array.from({ length: 30 }, (_, index) =>
+      contribution({
+        key: `so-${index}:line-${index}`,
+        so_number: `SO${String(500000 + index)}`,
+        line_no: index + 1,
+      }),
+    );
+    const draft: BoardDraft = Object.fromEntries(
+      rows.map((row) => [row.key, { verdict: 'approved' as const }]),
+    );
+    const props = viewProps(rows, draft);
+    const { rerender } = render(<FulfilmentBoardListView {...props} scope={scopeProps('saved', () => true)} />);
+    await screen.findByText('SO500000');
+    fireEvent.click(screen.getByRole('button', { name: /next/i }));
+    await waitFor(() => expect(screen.queryByText('SO500000')).not.toBeInTheDocument());
+
+    rerender(<FulfilmentBoardListView {...props} scope={scopeProps('all')} />);
+
+    expect(await screen.findByText('SO500000')).toBeInTheDocument();
+  });
+
+
+  it('AC-ALL-6: the All scope shows saved and unsaved rows and reads "All (2)" pressed', async () => {
+    const saved = contribution({ key: 'so-1:line-10', so_number: 'SO397450', line_no: 10 });
+    const plain = contribution({ key: 'so-2:line-20', so_number: 'SO397451', line_no: 20 });
+    render(
+      <FulfilmentBoardListView
+        {...viewProps([saved, plain], { [saved.key]: { verdict: 'approved' } })}
+        scope={{ ...scopeProps('all'), allCount: 2 }}
+      />,
+    );
+    expect(await screen.findByText('SO397450')).toBeInTheDocument();
+    expect(screen.getByText('SO397451')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'All (2)' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Saved (1)' })).toHaveAttribute('aria-pressed', 'false');
+  });
+
 });

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, Check, ExternalLink, Link2, Save } from 'lucide-react';
@@ -64,6 +64,7 @@ export function NewWorkflowSubmission({
   const createMut = useCreateWorkflowSubmission();
   const canAdd = useHasPermission('workflow_forms.submissions.add');
   const [defs, setDefs] = useState<{ id: string; name: string }[]>([]);
+  const [defsError, setDefsError] = useState<unknown>(null);
   const [definitionId, setDefinitionId] = useState(defaultDefinitionId ?? '');
   const [schema, setSchema] = useState<WorkflowFormSchema | null>(null);
   const [schemaError, setSchemaError] = useState<string | null>(null);
@@ -79,16 +80,20 @@ export function NewWorkflowSubmission({
     if (defaultDefinitionId) setDefinitionId(defaultDefinitionId);
   }, [defaultDefinitionId]);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetchPublishedWorkflowDefinitionsForSubmission();
-        setDefs(res.data.map((d) => ({ id: d.id, name: d.name })));
-      } catch {
-        setDefs([]);
-      }
-    })();
+  const loadDefs = useCallback(async () => {
+    try {
+      const res = await fetchPublishedWorkflowDefinitionsForSubmission();
+      setDefs(res.data.map((d) => ({ id: d.id, name: d.name })));
+      setDefsError(null);
+    } catch (e) {
+      setDefs([]);
+      setDefsError(e);
+    }
   }, []);
+
+  useEffect(() => {
+    void loadDefs();
+  }, [loadDefs]);
 
   useEffect(() => {
     if (!definitionId) {
@@ -205,6 +210,8 @@ export function NewWorkflowSubmission({
                 value={definitionId}
                 onChange={setDefinitionId}
                 options={defs.map((d) => ({ value: d.id, label: d.name }))}
+                loadError={defsError}
+                onRetry={() => void loadDefs()}
                 placeholder="Select published form…"
               />
               <p className="text-xs text-muted-foreground">Only forms with a published version can accept submissions.</p>

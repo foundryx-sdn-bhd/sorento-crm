@@ -125,8 +125,8 @@ function payload(over: Record<string, unknown> = {}) {
 }
 
 const AGENTS = [
-  { agent_id: 'agent-a', code: 'SEAN I', name: 'Sean Ibrahim', open: 4, needs_attention: 2 },
-  { agent_id: 'agent-b', code: 'WT I', name: 'William Tan', open: 1, needs_attention: 0 },
+  { agent_id: 'agent-a', code: 'SEAN I', name: 'Sean Ibrahim', open: 4 },
+  { agent_id: 'agent-b', code: 'WT I', name: 'William Tan', open: 1 },
 ];
 
 /** ASKS-UX item 3: the anchor read plus the shared thread's tail page. */
@@ -345,7 +345,8 @@ describe('MyCustomerAsksClient Agent select (AC-ST210)', () => {
     render(<MyCustomerAsksClient />);
     const select = await screen.findByLabelText('Agent');
     expect(select).toHaveAttribute('data-clearable', 'true');
-    await screen.findByRole('option', { name: 'SEAN I · 4 open · 2 need attention' });
+    // CUSTOMER-ASKS-REFER-ONLY: the open count alone; the to-do has no needs-attention split.
+    await screen.findByRole('option', { name: 'SEAN I · 4 open' });
     const labels = within(select).getAllByRole('option').map((o) => o.textContent);
     expect(labels[0]).toBe('-'); // the mock's clear option
     expect(labels[1]).toBe('All agents');

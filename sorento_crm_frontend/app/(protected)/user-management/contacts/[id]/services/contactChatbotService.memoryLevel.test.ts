@@ -28,6 +28,7 @@ const BASE_INPUT = {
   notify_salesman: false,
   packing_list_allowed: false,
   eta_offset_applied: true,
+  escalation_allowed: true,
 };
 
 beforeEach(() => {

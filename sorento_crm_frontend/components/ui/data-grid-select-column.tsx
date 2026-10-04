@@ -35,20 +35,35 @@ export function buildSelectColumn<TData>(options?: {
    * which one is being ticked.
    */
   rowLabel?: (row: Row<TData>) => string;
+  /**
+   * Header tick box ticks EVERY row across every page, not just the current one. Opt-in:
+   * default is page-scope, which is what every other listing relies on.
+   */
+  selectAllRows?: boolean;
   size?: number;
 }): ColumnDef<TData> {
   const size = options?.size ?? 44;
   return {
     id: 'select',
-    header: ({ table }: { table: Table<TData> }) => (
-      <Checkbox
-        checked={
-          table.getIsAllPageRowsSelected() || (table.getIsSomePageRowsSelected() && 'indeterminate')
-        }
-        onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-        aria-label="Select all rows on this page"
-      />
-    ),
+    header: ({ table }: { table: Table<TData> }) =>
+      options?.selectAllRows ? (
+        <Checkbox
+          checked={
+            table.getIsAllRowsSelected() || (table.getIsSomeRowsSelected() && 'indeterminate')
+          }
+          onCheckedChange={(value) => table.toggleAllRowsSelected(!!value)}
+          aria-label="Select all rows"
+        />
+      ) : (
+        <Checkbox
+          checked={
+            table.getIsAllPageRowsSelected() ||
+            (table.getIsSomePageRowsSelected() && 'indeterminate')
+          }
+          onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
+          aria-label="Select all rows on this page"
+        />
+      ),
     cell: ({ row }: { row: Row<TData> }) => {
       const blocked = !row.getCanSelect();
       const reason = blocked ? options?.disabledReason?.(row) : undefined;

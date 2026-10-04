@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/lib/toast';
-import { getUsersSelect } from '@/services/userSelectService';
+import { getUserLookup } from '@/services/userSelectService';
 import {
   acceptLead,
   assignLead,
@@ -30,12 +30,12 @@ export function useAwaitingAcceptance(params: AwaitingAcceptanceParams) {
 }
 
 /**
- * Who a lead can be handed to. The shared user select, not a per-feature fetch.
+ * Who a lead can be handed to. The shared people lookup, open to every signed-in user.
  */
 export function useAssignableUsers() {
   return useQuery({
-    queryKey: ['users-select', 'ACTIVE'],
-    queryFn: () => getUsersSelect({ status: 'ACTIVE' }),
+    queryKey: ['user-lookup'],
+    queryFn: () => getUserLookup(),
     staleTime: 5 * 60 * 1000,
   });
 }

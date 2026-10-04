@@ -36,6 +36,7 @@ function and one row rather than a transport abstraction.
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from typing import Any
 
@@ -47,37 +48,38 @@ from app.services.queue_service import REDIS_SOCKET_TIMEOUT_SECONDS
 logger = logging.getLogger(__name__)
 
 # --------------------------------------------------------------------------- #
-# Per-contact ordering (AC-709, AC-710, H30, H31)
+# Per-contact ordering (AC-709, AC-710, H30, H31; rebuilt by CHATBOT-QUEUE-FIX, 1 Oct)
 #
-# Three keys per contact, and the third one is the interesting one:
+#   chatbot:seq:{contact}            the ticket counter. INCR on arrival; a turn's ticket is
+#                                    its place in the queue for THIS contact only.
+#   chatbot:done:{contact}           every ticket up to here has finished (or died). Absent
+#                                    means zero.
+#   chatbot:alive:{contact}:{ticket} ONE KEY PER TICKET, present while that ticket's turn is
+#                                    alive. Stamped in the same script as the INCR, kept fresh
+#                                    by a heartbeat thread (`Heartbeat`), deleted on release.
 #
-#   chatbot:seq:{contact}      the ticket counter. INCR on arrival; a turn's ticket is
-#                              its place in the queue for THIS contact only.
-#   chatbot:done:{contact}     the last ticket that finished. Absent means zero.
-#   chatbot:running:{contact}  present only while a ticket is actually being worked.
+# A ticket may run once `done >= ticket - 1`. `done` only ever moves through `_settle`, which
+# walks it forward over every ticket whose alive key is GONE - finished, or dead and lapsed -
+# and stops at the first one that is still alive. That one rule replaces three that failed
+# on prod (contact 900000081, 1 Oct):
 #
-# `running` exists so a waiter can tell "my predecessor is slow" from "my predecessor is
-# dead". The dead case is the one that matters: a process killed mid-turn never advances
-# `done`, and without a repair every later message from that contact would wait out the
-# full queue timeout and fail - one crashed turn silently breaking a conversation for as
-# long as the customer keeps typing. So `mark_done` DELETES the key rather than letting it
-# expire, and a waiter that sees it absent for `STALL_GRACE_SECONDS` repairs the counter
-# and goes.
+# * The old single `running` key was overwritten by every new ticket, so a waiter read its
+#   OWN stamp as a live predecessor and the dead-predecessor repair could never fire.
+# * A ticket that gave up waiting marked itself done, which let its successors run beside a
+#   predecessor that was still working. `_settle` cannot pass a live ticket, whoever calls it.
+# * `seq` and `done` expired on separate clocks (seq's TTL refreshed at take, done's at
+#   release), so after a quiet hour `seq` restarted at 1 under a stale, higher `done`: ticket
+#   1's release was a no-op, the stale `done` lapsed, and ticket 2 waited 45 s for a ticket 1
+#   that had finished a minute earlier. The take now resets a `done` from an earlier session.
 #
-# The key is set by `contact_ticket`, in the SAME pipeline as the INCR, and not after the
-# wait. A ticket that exists but whose holder has not reached `mark_running` yet would
-# otherwise be invisible, and a waiter whose own poll happened to be slow could call a
-# live predecessor dead and run beside it - the one failure per-contact ordering exists to
-# prevent. "A ticket exists" and "somebody is alive holding it" become one write.
-#
-# Every write to `done` is MONOTONE (`_advance_done`, a compare-and-set in Lua). Two
-# writers reach it - a finishing turn and a repairing waiter - and a plain SET from either
-# could move the counter BACKWARDS, which strands the next ticket behind a number that has
-# already passed. Nothing here may lower it.
+# A turn whose process is killed simply stops heart-beating; its alive key lapses within
+# `ALIVE_TTL_SECONDS` and the next poll walks past it. No grace timer, no repair path.
 #
 # Redis, not Postgres advisory locks: the wait is a poll of one integer, it must not hold a
 # database connection while it waits (the capacity rule), and redis is already the queue
-# substrate this process talks to.
+# substrate this process talks to. The alive keys are built inside the Lua scripts from a
+# prefix because their name depends on the ticket number INCR returns; this is a single
+# redis instance, not a cluster.
 # --------------------------------------------------------------------------- #
 
 # The counter is per conversation and a conversation goes quiet. An hour after the last
@@ -85,36 +87,62 @@ logger = logging.getLogger(__name__)
 # correct - nothing is waiting on the old numbers.
 TICKET_TTL_SECONDS = 3600
 
-# How long the `running` key survives without anyone clearing it. Far longer than a turn
-# (the whole turn budget is tens of seconds), because a key that lapsed mid-turn would
-# invite a repair while its holder is still working - two turns for one contact at once,
-# the exact thing this is for.
-#
-# It is therefore LONGER than the queue budget, so a process killed with the key set does
-# leave the contact looking busy. What bounds that is not this number: the waiter gives up
-# after `chatbot_queue_wait_seconds` and releases its own ticket on the way out (see
-# `wait_for_turn`), so the stale key costs one turn, not five minutes of them.
-RUNNING_TTL_SECONDS = 300
+# How long a ticket counts as alive after its last heartbeat. It must clear the redis
+# socket timeout (`queue_service.REDIS_SOCKET_TIMEOUT_SECONDS`, 10 s) so ONE slow refresh
+# cannot make a live turn look dead; with a beat every `HEARTBEAT_INTERVAL_SECONDS` a turn
+# has to miss three refreshes in a row before its successors stop waiting for it.
+ALIVE_TTL_SECONDS = float(REDIS_SOCKET_TIMEOUT_SECONDS) + 5.0
+HEARTBEAT_INTERVAL_SECONDS = 4.0
 
-# The waiter polls; it does not subscribe. One integer read every 200 ms for at most the
+# The longest a heartbeat keeps one ticket alive. A turn that is still holding its ticket
+# past this is hung (n8n gave up on it at 90 s, `send_order.N8N_CHAT_TURN_TIMEOUT_SECONDS`),
+# and beating forever would hold every later message from the contact at the queue cap for
+# the life of the process. Past it the heartbeat stops with an ERROR and the ticket lapses.
+MAX_HOLD_SECONDS = 120.0
+
+# The waiter polls; it does not subscribe. One script call every 200 ms for at most the
 # queue-wait window is a handful of cheap reads, and a pub/sub channel per contact would be
 # a second mechanism to keep alive for no measured gain.
 POLL_INTERVAL_SECONDS = 0.2
 
-# How long `running` may be ABSENT before a waiter decides the predecessor died and repairs
-# the counter.
-#
-# It has to clear the REDIS SOCKET TIMEOUT (`queue_service.REDIS_SOCKET_TIMEOUT_SECONDS`,
-# 10 s), because the probe that reads the key is itself a redis round trip on that
-# connection: with a two-second grace, one slow redis call is enough to make a live
-# predecessor look dead, and the repair would then let two turns for one contact run at
-# once. Twelve seconds is that timeout plus a poll, and still a quarter of the 45 s queue
-# budget, so a genuinely dead predecessor is repaired long before the waiter gives up.
-STALL_GRACE_SECONDS = float(REDIS_SOCKET_TIMEOUT_SECONDS) + 2.0
+# How many tickets one `_settle` call walks. A conversation is a handful of tickets an hour;
+# the cap only bounds a pathological backlog so one script call stays short.
+SETTLE_MAX_STEPS = 64
+
+
+# The queue wait is what is LEFT of n8n's turn budget once the waiting turn's own work is
+# paid for (crew decision, 1 Oct: the reply must never be lost). A turn that waits the whole
+# cap and then runs still has to answer inside n8n's HTTP timeout, or n8n drops the reply.
+#   n8n turn budget   send_order.N8N_CHAT_TURN_TIMEOUT_SECONDS   90 s
+#   parser call       llm_call.CALL_DEADLINE_SECONDS             35 s
+#   lane work         LANE_BUDGET_SECONDS (DB + MCP fetches; prod looked_up <= 4.8 s)
+#   margin            QUEUE_MARGIN_SECONDS (respond.io / n8n hops, row writes)
+LANE_BUDGET_SECONDS = 15.0
+QUEUE_MARGIN_SECONDS = 10.0
+
+
+def max_queue_wait_seconds() -> float:
+    """The ceiling on `chatbot_queue_wait_seconds`, derived from the budgets above."""
+    from app.services.chatbot.llm_call import CALL_DEADLINE_SECONDS
+    from app.services.chatbot.send_order import N8N_CHAT_TURN_TIMEOUT_SECONDS
+
+    return max(
+        0.0,
+        N8N_CHAT_TURN_TIMEOUT_SECONDS
+        - CALL_DEADLINE_SECONDS
+        - LANE_BUDGET_SECONDS
+        - QUEUE_MARGIN_SECONDS,
+    )
+
+
+def queue_wait_seconds(configured: float) -> float:
+    """The wait a turn actually uses: the configured value, never above the ceiling."""
+    return min(float(configured), max_queue_wait_seconds())
 
 
 class QueueWait(RuntimeError):
-    """The wait for this contact's turn exceeded the budget. The turn fails at `queued`."""
+    """The wait for this contact's turn exceeded the budget while a predecessor was still
+    alive. The engine runs the turn anyway (ordering is best effort past the cap)."""
 
 
 # What "redis is not answering" looks like from here. The engine catches these and runs the
@@ -134,8 +162,12 @@ def done_key(contact: str) -> str:
     return f"chatbot:done:{contact}"
 
 
-def running_key(contact: str) -> str:
-    return f"chatbot:running:{contact}"
+def _alive_prefix(contact: str) -> str:
+    return f"chatbot:alive:{contact}:"
+
+
+def alive_key(contact: str, ticket: int) -> str:
+    return f"{_alive_prefix(contact)}{int(ticket)}"
 
 
 def _as_int(value: Any) -> int:
@@ -143,8 +175,7 @@ def _as_int(value: Any) -> int:
 
     Both client shapes reach this: the engine's connection decodes nothing
     (`queue_service.redis_conn`, `decode_responses=False`), a test's client decodes
-    everything. A counter that cannot be read is treated as "nothing finished yet", which
-    makes a waiter wait rather than run out of turn.
+    everything.
     """
     if value is None:
         return 0
@@ -156,147 +187,164 @@ def _as_int(value: Any) -> int:
         return 0
 
 
-# A compare-and-set, because `done` has two writers and neither may lower it. Written in
-# Lua rather than WATCH/MULTI so it is one round trip and cannot be interleaved: redis runs
-# the whole script before it serves anything else.
-_ADVANCE_DONE_LUA = """
-local current = tonumber(redis.call('GET', KEYS[1])) or 0
-local target = tonumber(ARGV[1])
-if current < target then
-  redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])
-  return target
-end
-return current
-"""
-
-
-def _advance_done(redis: Any, contact: str, ticket: int) -> None:
-    """Move `done` UP to `ticket`, never down. Both writers go through here."""
-    redis.eval(
-        _ADVANCE_DONE_LUA, 1, done_key(contact), int(ticket), int(TICKET_TTL_SECONDS)
-    )
-
-
-# Compare-and-delete: clear the liveness key only when it is still MINE. A successor takes
-# its ticket - and stamps its own number on this key - while I am still working, so an
-# unconditional delete on my way out would erase a marker that belongs to a turn that is
-# very much alive, and hand the next waiter an absence to start its death timer on.
-_RELEASE_RUNNING_LUA = """
-if redis.call('GET', KEYS[1]) == ARGV[1] then
-  return redis.call('DEL', KEYS[1])
-end
-return 0
-"""
-
-
-def _release_running(redis: Any, contact: str, ticket: int) -> None:
-    """Drop the liveness key if this ticket is the one holding it."""
-    redis.eval(_RELEASE_RUNNING_LUA, 1, running_key(contact), str(int(ticket)))
-
-
-# INCR and the liveness stamp in ONE script rather than a pipeline, because the liveness
-# key has to carry the ticket NUMBER (see `_release_running`) and a pipeline cannot read
-# INCR's own reply. Lua runs to completion before redis serves anything else, so there is
-# no instant at which the ticket exists and its holder does not.
+# INCR, the session reset and the liveness stamp in ONE script: Lua runs to completion
+# before redis serves anything else, so there is no instant at which the ticket exists
+# and its holder does not. `done` gets its TTL refreshed here too, so the two counters
+# age together; a `done` at or past the new ticket can only be from an earlier session
+# (the counter restarted under it) and is pulled back to `ticket - 1`.
 _TAKE_TICKET_LUA = """
 local ticket = redis.call('INCR', KEYS[1])
 redis.call('EXPIRE', KEYS[1], ARGV[1])
-redis.call('SET', KEYS[2], ticket, 'EX', ARGV[2])
+local done = tonumber(redis.call('GET', KEYS[2])) or 0
+if done >= ticket then
+  redis.call('SET', KEYS[2], ticket - 1, 'EX', ARGV[1])
+elseif redis.call('EXISTS', KEYS[2]) == 1 then
+  redis.call('EXPIRE', KEYS[2], ARGV[1])
+end
+redis.call('SET', ARGV[3] .. ticket, '1', 'PX', ARGV[2])
 return ticket
 """
 
+# Walk `done` forward over tickets that are no longer alive, never past `seq`, never past a
+# live one. Monotone by construction: it only ever adds. Returns the new `done`.
+_SETTLE_LUA = """
+local done = tonumber(redis.call('GET', KEYS[1])) or 0
+local seq = tonumber(redis.call('GET', KEYS[2])) or 0
+local start = done
+local steps = 0
+while done < seq and steps < tonumber(ARGV[3]) do
+  if redis.call('EXISTS', ARGV[2] .. (done + 1)) == 1 then
+    break
+  end
+  done = done + 1
+  steps = steps + 1
+end
+if done > start then
+  redis.call('SET', KEYS[1], done, 'EX', ARGV[1])
+end
+return done
+"""
+
+
+def _settle(redis: Any, contact: str) -> int:
+    return _as_int(
+        redis.eval(
+            _SETTLE_LUA,
+            2,
+            done_key(contact),
+            seq_key(contact),
+            int(TICKET_TTL_SECONDS),
+            _alive_prefix(contact),
+            int(SETTLE_MAX_STEPS),
+        )
+    )
+
 
 def contact_ticket(redis: Any, contact: str) -> int:
-    """This turn's place in the queue for this contact. Monotonic per contact.
+    """This turn's place in the queue for this contact, stamped alive in the same script.
 
-    The liveness key is stamped HERE, in the same script as the INCR: the moment a ticket
-    exists, its holder is visibly alive. Doing it after the wait instead leaves a window -
-    short, but a waiter's own probe is a network call - in which a live predecessor reads
-    as a dead one and gets jumped.
+    The caller starts a `Heartbeat` right after, and must, or the stamp lapses after
+    `ALIVE_TTL_SECONDS` and successors stop waiting for this turn.
     """
     return int(
         redis.eval(
             _TAKE_TICKET_LUA,
             2,
             seq_key(contact),
-            running_key(contact),
+            done_key(contact),
             int(TICKET_TTL_SECONDS),
-            int(RUNNING_TTL_SECONDS),
+            int(ALIVE_TTL_SECONDS * 1000),
+            _alive_prefix(contact),
         )
     )
 
 
-def mark_running(redis: Any, contact: str, ticket: int) -> None:
-    """Say this ticket is being worked, so a waiter does not mistake it for a dead one.
+def beat(redis: Any, contact: str, ticket: int) -> None:
+    """Refresh this ticket's alive key once."""
+    redis.set(alive_key(contact, ticket), 1, px=int(ALIVE_TTL_SECONDS * 1000))
 
-    Still needed after the wait even though `contact_ticket` already set the key: the
-    predecessor's `mark_done` DELETED it on its way out, and the successor has to put it
-    back before the next waiter's grace window runs out.
+
+class Heartbeat:
+    """Keeps one ticket alive from the take to the release, on a daemon thread.
+
+    A thread because the turn spends its life in blocking calls (the LLM, the database,
+    MCP) and nothing in it yields. A refresh that fails is logged and retried on the next
+    beat; three missed in a row and the ticket reads as dead, which is the intended
+    behaviour for a process that has lost redis.
     """
-    redis.set(running_key(contact), int(ticket), ex=RUNNING_TTL_SECONDS)
+
+    def __init__(self, redis: Any, contact: str, ticket: int) -> None:
+        self._redis = redis
+        self._contact = contact
+        self._ticket = int(ticket)
+        self._stop = threading.Event()
+        self._thread = threading.Thread(
+            target=self._run, name=f"chatbot-heartbeat-{self._ticket}", daemon=True
+        )
+        self._thread.start()
+
+    def _run(self) -> None:
+        started = time.monotonic()
+        while not self._stop.wait(HEARTBEAT_INTERVAL_SECONDS):
+            if time.monotonic() - started > MAX_HOLD_SECONDS:
+                logger.error(
+                    "chatbot ordering: ticket %s of %s held its slot past %.0fs, "
+                    "letting it lapse",
+                    self._ticket,
+                    self._contact,
+                    MAX_HOLD_SECONDS,
+                )
+                return
+            try:
+                beat(self._redis, self._contact, self._ticket)
+            except Exception:  # noqa: BLE001 - a heartbeat thread must never die loudly
+                logger.warning(
+                    "chatbot ordering: heartbeat failed for ticket %s of %s",
+                    self._ticket,
+                    self._contact,
+                    exc_info=True,
+                )
+
+    def stop(self) -> None:
+        """Stop beating. Joined for at most a second: a beat stuck on a hung redis call is
+        not worth holding the request thread for. If one does land after the release, the
+        key it writes lapses on its own TTL and only delays the next turn by that much."""
+        self._stop.set()
+        self._thread.join(timeout=1.0)
+
+
+def start_heartbeat(redis: Any, contact: str, ticket: int) -> Heartbeat:
+    return Heartbeat(redis, contact, ticket)
 
 
 def mark_done(redis: Any, contact: str, ticket: int) -> None:
-    """Release the next waiter. Called from a `finally`, so a FAILED turn releases too.
+    """Release this ticket. Called from a `finally`, so a FAILED turn releases too.
 
-    Monotone (`_advance_done`): a turn that finishes out of order - the one case a
-    spurious repair can create - must not pull the counter back to its own number and
-    strand every ticket the repair already let through.
-
-    Deleting `running` rather than letting it lapse is what makes its absence a signal
-    (see the block comment above).
+    Deletes the alive key and settles: `done` moves up to (and past) this ticket only if
+    every earlier one is finished or dead. A turn that ran past a timed-out wait while its
+    predecessor was still working therefore never releases the predecessor's successors.
+    The caller stops the `Heartbeat` FIRST, or a late beat could resurrect the key.
     """
-    _advance_done(redis, contact, ticket)
-    _release_running(redis, contact, ticket)
+    redis.delete(alive_key(contact, ticket))
+    _settle(redis, contact)
 
 
 def wait_for_turn(redis: Any, contact: str, ticket: int, *, timeout_s: float) -> None:
-    """Block until every earlier ticket for this contact has finished.
+    """Block until every earlier ticket for this contact has finished or died.
 
-    Returns as soon as `done >= ticket - 1`, repairs a stalled counter after
-    `STALL_GRACE_SECONDS` with no `running` key, and raises `QueueWait` if neither happens
-    inside `timeout_s`. The caller records that as a turn failed at stage `queued`; it
-    never hangs the request past the budget.
-
-    **A `QueueWait` still advances the counter**, because the engine calls `mark_done` in
-    a `finally` that covers this wait. That is what bounds the other death case: a process
-    killed with its `running` key still SET stays "alive" for the key's whole TTL, so no
-    repair can fire and every later message from that contact would wait out the budget
-    and fail - for five minutes. Giving up now costs exactly one turn instead, and the
-    turn that gave up produces no reply, so letting its successors through reorders
-    nothing that was ever going to be said.
+    Each poll settles the counter, so a dead predecessor (alive key lapsed) is walked past
+    on the first poll after its last heartbeat expires. Raises `QueueWait` if a predecessor
+    is still alive after `timeout_s`; it never hangs the request past the budget, and it
+    never writes `done` on its way out.
     """
     target = int(ticket) - 1
-    if target <= 0 and _as_int(redis.get(done_key(contact))) >= target:
-        return
-
     deadline = time.monotonic() + max(0.0, float(timeout_s))
-    absent_since: float | None = None
-
     while True:
-        if _as_int(redis.get(done_key(contact))) >= target:
+        if _settle(redis, contact) >= target:
             return
-
-        now = time.monotonic()
-        if redis.exists(running_key(contact)):
-            # Somebody is genuinely working. Reset the death timer: a predecessor that
-            # takes 30 s is slow, not dead, and jumping it would answer out of order.
-            absent_since = None
-        elif absent_since is None:
-            absent_since = now
-        elif now - absent_since > STALL_GRACE_SECONDS:
-            logger.warning(
-                "chatbot ordering: repairing stalled counter for %s (ticket %s, done -> %s)",
-                contact,
-                ticket,
-                target,
-            )
-            _advance_done(redis, contact, target)
-            return
-
         if time.monotonic() >= deadline:
             raise QueueWait(
-                f"waited {timeout_s}s for ticket {target} of contact {contact} to finish"
+                f"waited {timeout_s}s for ticket {target} of contact {contact}, still running"
             )
         time.sleep(POLL_INTERVAL_SECONDS)
 

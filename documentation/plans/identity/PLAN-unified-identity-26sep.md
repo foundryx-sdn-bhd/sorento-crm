@@ -180,6 +180,7 @@ behaviour the owner asked for. The trigger that would justify it is named in sec
 ### 3.2 CRM sign-in and sessions
 
 - **NextAuth, one provider:** `CredentialsProvider` (email, password, rememberMe)
+  [Superseded by SIGNIN-ALWAYS-SLIDE, 30 Sep 2026: no Remember me checkbox and no `rememberMe`; every sign-in is the 30-day sliding session. See `PLAN-signin-always-slide-30sep.md`.]
   (`app/api/auth/[...nextauth]/auth-options.ts:64-125`). `authorize()` posts to FastAPI
   `/api/v1/auth/login` and stores the returned opaque `apiToken` (:121) in the NextAuth JWT with
   id, email, name, roles and company grants (:126-185). `/api/auth/token` hands the `apiToken` to
@@ -207,6 +208,7 @@ behaviour the owner asked for. The trigger that would justify it is named in sec
   "Sign in to Sorento" (:108-112), a destructive `Alert` for errors (:114-121), "Email" `Input`
   (:123-135), "Password" with "Forgot Password?" on the label row and the eye toggle (:137-178),
   "Remember me" `Checkbox` (:180-200), and a full-width "Continue" `Button` with a spinner
+  [Superseded by SIGNIN-ALWAYS-SLIDE, 30 Sep 2026: no Remember me checkbox and no `rememberMe`; every sign-in is the 30-day sliding session. See `PLAN-signin-always-slide-30sep.md`.]
   (:202-209). It calls `signIn('credentials')` and honours a same-origin `callbackUrl` (:48-72).
 - **No Next.js middleware:** CRM pages are gated client-side in `app/(protected)/layout.tsx:24-58`.
 - **Account lifecycle:** admin create (with password) or invite (no password, INACTIVE)
@@ -479,13 +481,14 @@ already has (section 3.2).
   button, no Sign Up line. No extra heading, no explanatory copy.
 - **Email mode** is today's page exactly: Email, Password with "Forgot Password?", the eye
   toggle, Remember me, Continue. Nothing moves; the divider and phone button sit below it.
+  [Superseded by SIGNIN-ALWAYS-SLIDE, 30 Sep 2026: no Remember me checkbox and no `rememberMe`; every sign-in is the 30-day sliding session. See `PLAN-signin-always-slide-30sep.md`.]
 - **Phone mode, step 1:** "Phone number" through the shared system `PhoneInput`
   (`components/common/PhoneInput.tsx`; fix round 2, owner ruling 29 Sep 2026: "i think our phone
   number input needs to use a proper phone number input ... default to malaysia so all phone
   number is cleansed"): a flag + dial-code country picker (the standard `SearchableSelect`),
   Malaysia (+60) by default, the number in national format as it is typed, placeholder
-  "012-345 6789", then the full-width "Continue" button. "0166753328", "60166753328" and
-  "+60 16-675 3328" all become `+60166753328`; the FE sends that E.164 value, and an incomplete
+  "012-345 6789", then the full-width "Continue" button. "0160000509", "60160000509" and
+  "+60 16-000 0509" all become `+60160000509`; the FE sends that E.164 value, and an incomplete
   number stops at the field's error state ("Enter a complete phone number.") without a request.
   The backend still normalises what it receives with `normalize_msisdn` (the second line). No
   Remember me: a phone sign-in is always the 30-day rolling session (Q15).

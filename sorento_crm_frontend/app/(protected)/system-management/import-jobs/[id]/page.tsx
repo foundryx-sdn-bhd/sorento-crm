@@ -1,10 +1,10 @@
 'use client';
 
-import { use, useState } from 'react';
+import { use, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { MoveLeft, ChevronLeft, ChevronRight, Download } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Container } from '@/components/common/container';
 import { PageHeader } from '@/components/common/PageHeader';
@@ -35,9 +35,10 @@ const AUTOCOUNT_PULL_JOB_TYPES = new Set([
   'autocount_products_pull',
   'autocount_stock_pull',
   'autocount_delivery_orders_pull',
+  'autocount_grn_pull',
 ]);
 
-type PullEntity = 'products' | 'stock_balances' | 'delivery_orders';
+type PullEntity = 'products' | 'stock_balances' | 'delivery_orders' | 'goods_receive_notes';
 
 /** AC-DS-12: the entity a pull job's OWN `job_type` names, for the main header's Back
  *  button - a fallback for the (rare) render where `pullStatus` has not loaded yet, so
@@ -46,6 +47,7 @@ function pullEntityFromJobType(jobType: string): PullEntity | null {
   if (jobType === 'autocount_products_pull') return 'products';
   if (jobType === 'autocount_stock_pull') return 'stock_balances';
   if (jobType === 'autocount_delivery_orders_pull') return 'delivery_orders';
+  if (jobType === 'autocount_grn_pull') return 'goods_receive_notes';
   return null;
 }
 
@@ -54,6 +56,7 @@ const PULL_BACK: Record<PullEntity, { label: string; href: string }> = {
   products: { label: 'Back to Products', href: '/master-data-management/products' },
   stock_balances: { label: 'Back to Stock', href: '/inventory-management/stock' },
   delivery_orders: { label: 'Back to Delivery Orders', href: '/order-management/orders' },
+  goods_receive_notes: { label: 'Back to Goods Receipt Notes', href: '/procurement-management/grn' },
 };
 
 const JOB_TYPE_LABELS: Record<string, string> = {
@@ -77,6 +80,8 @@ const JOB_TYPE_LABELS: Record<string, string> = {
   autocount_products_apply: 'AutoCount Products Apply',
   autocount_stock_apply: 'AutoCount Stock Apply',
   autocount_delivery_orders_apply: 'AutoCount Delivery Orders Apply',
+  autocount_grn_pull: 'AutoCount GRN Pull',
+  autocount_grn_apply: 'AutoCount GRN Apply',
 };
 
 function getJobTypeLabel(jobType: string): string {
@@ -96,6 +101,46 @@ function planningChangeBatchOf(
   const batch = upload?.planning_change_batch as OutstandingPlanningChangeBatch | null | undefined;
   return batch ?? null;
 }
+
+/** A finished AutoCount Delivery Orders apply's own counts (`metadata.autocount_apply.counts`,
+ *  written by `_apply_delivery_orders`) - `null` for every other job, and for a DO apply
+ *  still running. */
+type DeliveryOrdersApplyCounts = {
+  created: number;
+  adopted: number;
+  updated: number;
+  unchanged: number;
+  failed: number;
+  retryable: number;
+  lines_deleted: number;
+};
+
+function deliveryOrdersApplyCountsOf(job: {
+  job_type: string;
+  job_metadata?: unknown;
+}): DeliveryOrdersApplyCounts | null {
+  // The GRN apply writes the same document counts (`_apply_goods_receive_notes`).
+  if (job.job_type !== 'autocount_delivery_orders_apply' && job.job_type !== 'autocount_grn_apply') {
+    return null;
+  }
+  const meta = job.job_metadata as
+    | { autocount_apply?: { counts?: DeliveryOrdersApplyCounts } }
+    | null
+    | undefined;
+  return meta?.autocount_apply?.counts ?? null;
+}
+
+const DO_APPLY_COUNT_FIELDS: { key: keyof DeliveryOrdersApplyCounts; label: string; tone?: string }[] = [
+  { key: 'created', label: 'Created', tone: 'text-emerald-600' },
+  { key: 'adopted', label: 'Adopted', tone: 'text-emerald-600' },
+  { key: 'updated', label: 'Updated', tone: 'text-emerald-600' },
+  { key: 'unchanged', label: 'Unchanged', tone: 'text-yellow-600' },
+  { key: 'failed', label: 'Failed', tone: 'text-red-600' },
+  { key: 'retryable', label: 'Retryable', tone: 'text-red-600' },
+  { key: 'lines_deleted', label: 'Lines deleted' },
+];
+
+const TERMINAL_STATUSES = ['finished', 'failed', 'cancelled'];
 
 type ImportJobDetailPageProps = {
   params: Promise<{ id: string }>;
@@ -161,6 +206,25 @@ export default function ImportJobDetailPage({ params }: ImportJobDetailPageProps
   // Poll for status updates if job is still processing
   const { data: statusData } = useImportJobStatus(id, !isLoading && !!job && !pullStillBuilding);
   const cancelJobMutation = useCancelImportJob();
+  const queryClient = useQueryClient();
+
+  // The job query is only refetched on focus, so a job that finishes while the page is open
+  // kept its running copy (no final counts, no metadata), and the rows card kept the empty
+  // page it read mid-run. Re-read both once the 2s status poll reports a terminal status the
+  // loaded job does not have yet.
+  const polledStatus = statusData?.status;
+  const loadedStatus = job?.status;
+  useEffect(() => {
+    if (
+      polledStatus &&
+      loadedStatus &&
+      polledStatus !== loadedStatus &&
+      TERMINAL_STATUSES.includes(polledStatus)
+    ) {
+      queryClient.invalidateQueries({ queryKey: ['import-job', id] });
+      queryClient.invalidateQueries({ queryKey: ['import-job-rows', id] });
+    }
+  }, [polledStatus, loadedStatus, id, queryClient]);
 
   if (isLoading) {
     return (
@@ -224,6 +288,9 @@ export default function ImportJobDetailPage({ params }: ImportJobDetailPageProps
   const displaySuccessful = progress ? progress.successful : job.successful_rows;
   const displayFailed = progress ? progress.failed : job.failed_rows;
   const displaySkipped = progress ? progress.skipped : job.skipped_rows;
+  // The polled total too: the job query's own copy is the one read at page load.
+  const displayTotal = progress ? progress.total : job.total_rows;
+  const doApplyCounts = deliveryOrdersApplyCountsOf(job);
   const planningChangeBatch = planningChangeBatchOf(job.result);
 
   // AC-DS-12/13: only the MAIN header's Back button - the loading / not-found ones above
@@ -350,11 +417,11 @@ export default function ImportJobDetailPage({ params }: ImportJobDetailPageProps
                 </div>
                 <div>
                   <p className="text-muted-foreground">Total Rows</p>
-                  <p className="font-medium text-lg">{job.total_rows}</p>
+                  <p className="font-medium text-lg">{displayTotal}</p>
                 </div>
                 <div>
                   <p className="text-muted-foreground">Processed</p>
-                  <p className="font-medium text-lg">{displayProcessed} / {job.total_rows}</p>
+                  <p className="font-medium text-lg">{displayProcessed} / {displayTotal}</p>
                 </div>
                 {job.filename && (
                   <div>
@@ -435,6 +502,16 @@ export default function ImportJobDetailPage({ params }: ImportJobDetailPageProps
                 <CardTitle>Results</CardTitle>
               </CardHeader>
               <CardContent>
+                {doApplyCounts ? (
+                  <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 text-sm">
+                    {DO_APPLY_COUNT_FIELDS.map(({ key, label, tone }) => (
+                      <div key={key}>
+                        <p className="text-muted-foreground">{label}</p>
+                        <p className={`font-medium text-lg ${tone ?? ''}`}>{doApplyCounts[key] ?? 0}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 text-sm">
                   <div>
                     <p className="text-muted-foreground">Successful</p>
@@ -453,6 +530,7 @@ export default function ImportJobDetailPage({ params }: ImportJobDetailPageProps
                     <p className="font-medium text-lg">{displayProcessed}</p>
                   </div>
                 </div>
+                )}
               </CardContent>
             </Card>
           )}

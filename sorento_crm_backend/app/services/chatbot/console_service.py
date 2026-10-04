@@ -286,6 +286,13 @@ def _customer_texts(body: dict[str, Any]) -> tuple[str, list[str]]:
         for a in (body.get("actions") or [])
         if isinstance(a, dict) and a.get("kind") == "send_message" and isinstance(a.get("text"), str) and a.get("text")
     ]
+    # A long reply goes out as its marked parts (`engine.split_send_actions`): the
+    # console shows them the way the customer gets them, one bubble per part.
+    from app.services.chatbot.engine import split_marked_message
+
+    parts = split_marked_message(reply_text) if reply_text else []
+    if len(parts) > 1 and action_texts[: len(parts)] == parts:
+        return parts[0], action_texts[1:]
     if reply_text and action_texts and action_texts[0] == reply_text:
         action_texts = action_texts[1:]
     return reply_text, action_texts
@@ -518,7 +525,7 @@ def run_console_turn(
 # answer (`snapshot_and_caption`, the same real upload a WhatsApp photo pick makes), and
 # spends one real LLM extraction (`extract_ideate_turn`, never stubbed here). Unlike
 # media, the CONTACT's own `respond_contacts.session_vars` stays untouched on a test turn
-# (`ideation_turn_service.handle_turn`'s `is_test` guard) - only the shared-service side
+# (`ideation_capture_service.handle_capture_turn`'s `is_test` guard) - only the shared-service side
 # writes. Acceptable for the same reason media's exception is: a manual testing tool used
 # sparingly, stated here so it is a known trade-off, not a surprise.
 # --------------------------------------------------------------------------- #

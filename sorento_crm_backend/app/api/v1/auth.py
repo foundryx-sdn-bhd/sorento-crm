@@ -130,11 +130,10 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
 
     uid = str(getattr(user, "id", "") or "")
 
-    # Mint the opaque rolling session (30d if remember_me, else 8h).
+    # Mint the opaque 30-day sliding session (same rule as phone sign-in and the portal).
     session_row = mint_session(
         db,
         uid,
-        remember=bool(payload.remember_me),
         user_agent=request.headers.get("user-agent"),
         ip_address=ip,
         auth_method="password",

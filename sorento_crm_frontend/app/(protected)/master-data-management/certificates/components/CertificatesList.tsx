@@ -129,7 +129,7 @@ export default function CertificatesList() {
     searchQuery,
   ]);
 
-  const { data, isLoading, isPlaceholderData, refetch, isFetching } = useCertificates({
+  const { data, isLoading, isPlaceholderData, refetch, isFetching, error } = useCertificates({
     pageIndex: pagination.pageIndex,
     pageSize: pagination.pageSize,
     sorting,
@@ -349,6 +349,8 @@ export default function CertificatesList() {
       table={table}
       recordCount={data?.pagination.total || 0}
       isLoading={isLoading}
+      error={error}
+      onRetry={() => void refetch()}
       isPlaceholderData={isPlaceholderData}
       rowPending={rowPending}
       rowHref={(row: Certificate) => {

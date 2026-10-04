@@ -96,25 +96,25 @@ def test_the_row_matches_the_reconfirm_event_written_a_beat_after_it():
 def test_a_row_with_no_matching_event_carries_none_on_all_three():
     with blank_session() as db:
         company_id = _sorento(db)
-        johnson = _user(db, f"{MARKER} Johnson", f"johnson.{_uid()[:8]}@zzt.test")
+        contact_aa = _user(db, f"{MARKER} CONTACT AA", f"CONTACT AA.{_uid()[:8]}@zzt.test")
         order = _adopted_order(db, company_id, f"ZZTSO{_uid()[:8]}")
         product = _product(db, f"ZZT-{_uid()[:6]}")
         line = _line(db, company_id, order, product)
         header = _inquiry(
-            db, company_id, order, raised_by=johnson.id,
+            db, company_id, order, raised_by=contact_aa.id,
             raised_at=datetime(2026, 8, 1, 0, 0),
         )
         # An event that exists, but is far outside this row's own window.
         _raise(
             db, company_id, header,
-            kind=OI_RAISE_RAISED, raised_by=johnson.id,
+            kind=OI_RAISE_RAISED, raised_by=contact_aa.id,
             raised_at=datetime(2026, 8, 1, 0, 0),
         )
         row = _row(db, company_id, header, line, product.product_code)
         row.created_at = datetime(2026, 9, 1, 0, 0)
         db.commit()
 
-        client, originals = _client(db, johnson.id, READ_ONLY)
+        client, originals = _client(db, contact_aa.id, READ_ONLY)
         try:
             response = client.get(LIST, params={"query": product.product_code})
         finally:
@@ -128,7 +128,7 @@ def test_a_row_with_no_matching_event_carries_none_on_all_three():
         assert entry["raise_event_at"] is None
         # The pre-existing "who currently owns this row" column is untouched by this
         # change - it still reads off its own coalesce, never off `order_inquiry_raises`.
-        assert entry["raised_by_name"] == johnson.name
+        assert entry["raised_by_name"] == contact_aa.name
 
 
 def test_a_row_whose_only_event_is_hours_later_carries_none_on_all_three():

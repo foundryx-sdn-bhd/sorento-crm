@@ -4,7 +4,7 @@ itself names the access level (parser `access_levels` non-empty); otherwise the 
 question is asked EVERY new ask. Tier persists only across the roster's own answering
 turns (pick/refine) - never across a fresh NEW_ASK.
 
-Recorded from the clone `chatbot.turns` (contact 437264483, 21 Sep 04:57-05:13 MYT,
+Recorded from the clone `chatbot.turns` (contact 900000008, 21 Sep 04:57-05:13 MYT,
 `sorento_ai_automation_rearch`, read-only, no live turn run here):
 `42c2da52-6202-4bd2-b529-a09a8b4da3fa` "promo for srtwc286" (tier ask) ->
 `a5dc8ded-a521-499d-9536-35649aef2126` "2" (Dealer files) ->

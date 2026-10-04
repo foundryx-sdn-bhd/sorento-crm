@@ -39,6 +39,16 @@ describe('salesOrderService', () => {
     expect(u.searchParams.has('customer_id')).toBe(false);
   });
 
+  it('list forwards the transferable filter (SO-TRANSFERABLE), and nothing when it is unset', async () => {
+    apiFetch.mockResolvedValue(ok({ data: [], empty: true, pagination: { total: 0, page: 1 } }));
+    await getSalesOrders({ pageIndex: 0, pageSize: 25, transferable: 'no' });
+    await getSalesOrders({ pageIndex: 0, pageSize: 25, transferable: null });
+    const narrowed = new URL(String(apiFetch.mock.calls[0][0]), 'http://x');
+    const all = new URL(String(apiFetch.mock.calls[1][0]), 'http://x');
+    expect(narrowed.searchParams.get('transferable')).toBe('no');
+    expect(all.searchParams.has('transferable')).toBe(false);
+  });
+
   it('create forwards a line uom the caller set (9a730b5dc: uom is a real, editable field)', async () => {
     apiFetch.mockResolvedValue(ok({ id: 'so-1' }, 201));
     const form: SalesOrderFormData = {

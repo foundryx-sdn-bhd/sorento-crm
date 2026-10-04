@@ -22,7 +22,7 @@ vi.mock('next/navigation', () => ({
   usePathname: () => '/project-sales/fulfilment-planning',
   // R-J (List is now the default view): every spec here exercises the GRID matrix, so
   // `?view=grid` is seeded rather than clicking the Grid button in each test.
-  useSearchParams: () => new URLSearchParams('view=grid'),
+  useSearchParams: () => new URLSearchParams('view=grid&scope=all'),
 }));
 
 vi.mock('@/lib/listing-column-preferences/useListingColumnPreferences', () => ({
@@ -35,6 +35,7 @@ vi.mock('@/lib/listing-column-preferences/useListingColumnPreferences', () => ({
 const getPlanningBoard = vi.fn();
 const confirmSupply = vi.fn();
 const confirmMany = vi.fn();
+const previewConfirmMany = vi.fn();
 
 vi.mock('../../_shared/services/fulfilmentPlanningService', () => ({
   getPlanningBoard: (...args: unknown[]) => getPlanningBoard(...args),
@@ -45,6 +46,7 @@ vi.mock('../../_shared/services/fulfilmentPlanningService', () => ({
   getSupply: vi.fn(),
   confirmSupply: (...args: unknown[]) => confirmSupply(...args),
   confirmMany: (...args: unknown[]) => confirmMany(...args),
+  previewConfirmMany: (...args: unknown[]) => previewConfirmMany(...args),
   // S4 (`useLineDraftMutation`): `decide()` closes over these regardless of whether a test
   // presses Save deep enough to reach them.
   putLineDraft: vi.fn().mockResolvedValue({
@@ -177,8 +179,47 @@ function renderPanel(
   );
 }
 
+/**
+ * FULFIL-CONFIRM-SCOPE v2: Confirm is only offered after a Preview, so a test that used to press
+ * the confirm dialog now previews first. The default preview answer echoes the lines the body
+ * names (line number read off the fixture's `pl-<so>-<line_no>` ids), with no purchase rows.
+ */
+function defaultPreview(body: {
+  orders: { pso_id: string; lines: { project_line_id: string }[]; rejected_line_ids?: string[] }[];
+}) {
+  return Promise.resolve({
+    results: body.orders.map((order) => ({
+      pso_id: order.pso_id,
+      ok: true,
+      preview: true,
+      decision_revision: 1,
+      lines_confirmed: order.lines.map((line) => ({
+        project_line_id: line.project_line_id,
+        line_no: Number(line.project_line_id.split('-').pop()),
+        item_code: null,
+      })),
+      lines_carried: 0,
+      lines_held_back: [],
+      lines_withdrawn: (order.rejected_line_ids ?? []).map((id) => ({
+        project_line_id: id,
+        line_no: null,
+        item_code: null,
+      })),
+      lines_fulfilled_skipped: 0,
+      inquiry_rows: [],
+      transfers: [],
+    })),
+  });
+}
+
+async function pressPreviewThenConfirm() {
+  await waitFor(() => expect(screen.getByTestId('board-confirm')).toBeEnabled());
+  fireEvent.click(screen.getByTestId('board-confirm'));
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
+  previewConfirmMany.mockImplementation(defaultPreview);
   getPlanningBoard.mockResolvedValue(
     buildBoard([demand()], {
       today: TODAY,
@@ -536,8 +577,7 @@ describe('the pre-marked decision, and Confirm', () => {
       ),
     );
 
-    fireEvent.click(screen.getByTestId('board-confirm'));
-    fireEvent.click(await screen.findByRole('button', { name: 'Confirm' }));
+    await pressPreviewThenConfirm();
 
     await waitFor(() => expect(confirmMany).toHaveBeenCalledTimes(1));
     const [body] = confirmMany.mock.calls[0];
@@ -760,8 +800,7 @@ describe('S5: Change proposed is not Saved (owner ruling 25 Sep 2026, issue #124
       screen.getByTestId('decision-pill-so-381895|9|SRTWCX7405-RL-S-PJ|2026-08-17'),
     ).toHaveTextContent('Change proposed');
 
-    fireEvent.click(screen.getByTestId('board-confirm'));
-    fireEvent.click(await screen.findByRole('button', { name: 'Confirm' }));
+    await pressPreviewThenConfirm();
 
     await waitFor(() => expect(confirmMany).toHaveBeenCalledTimes(1));
     const [body] = confirmMany.mock.calls[0];

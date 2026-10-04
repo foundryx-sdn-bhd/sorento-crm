@@ -860,6 +860,43 @@ def test_ac24_verify_success_returns_login_shape_and_mints_session(rate_limit_cl
             assert sessions_resp.status_code == 200, sessions_resp.text
 
 
+def test_regression_phone_otp_session_is_30d_and_slides_after_a_day(rate_limit_cleanup):
+    """(3) SIGNIN-ALWAYS-SLIDE regression: phone OTP sign-in still mints the 30-day
+    sliding session, and a request more than a day later moves expires_at forward."""
+    from app.models.user_session import UserSession
+    from app.services.user_session_service import _utcnow
+
+    with blank_session() as db:
+        ws, contact, user, digits = _eligible_chain(db)
+        rate_limit_cleanup.append(digits)
+        with _phone_client(db) as client:
+            with patch("app.services.queue_service.enqueue_job"):
+                req = client.post("/api/v1/auth/phone/request-code", json={"phone": digits})
+            assert req.status_code == 200, req.text
+            code = _seed_signin_code(db, contact)
+
+            resp = client.post("/api/v1/auth/phone/verify", json={"phone": digits, "code": code})
+            assert resp.status_code == 200, resp.text
+            token = resp.json()["token"]
+
+            row = db.query(UserSession).filter(UserSession.token == token).one()
+            assert row.auth_method == "phone_otp"
+            assert row.rolling is True
+            remaining = row.expires_at - _utcnow()
+            assert timedelta(days=29, hours=23) < remaining <= timedelta(days=30, minutes=1)
+
+            row.expires_at = row.expires_at - timedelta(days=1, hours=1)
+            db.commit()
+            pulled_back = row.expires_at
+
+            auth = {"Authorization": f"Bearer {token}"}
+            assert client.get("/api/v1/auth/sessions", headers=auth).status_code == 200
+
+            db.refresh(row)
+            assert row.expires_at > pulled_back, "expires_at did not move forward on activity"
+            assert row.expires_at - _utcnow() > timedelta(days=29, hours=23)
+
+
 def test_ac24_consumed_code_is_refused_even_with_a_fresh_request_marker(rate_limit_cleanup):
     """Kill-test finding (captain, S1 security round): mutating out the
     consumption logic in `attempt_verify`/`PortalService.reserve_attempt`

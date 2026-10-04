@@ -47,9 +47,9 @@ from tests.chatbot.test_engine import stub_access  # noqa: F401 - a pytest fixtu
 from tests.chatbot.test_rearch_s3_attribute_first import SORENTO, _link_contact_company
 from tests.chatbot.test_rearch_s3_roster_from_resolver import _seed_contact
 
-TOO_BIG = "the quantity is more than what I can confirm here. Please refer to your salesman."
-IN_STOCK = "yes, we have stock. Please refer to your salesman."
-NO_INCOMING = "no stock and no incoming at the moment. Please refer to your salesman."
+TOO_BIG = "🚫 the quantity is more than what I can confirm here. Please refer to your salesman."
+IN_STOCK = "✅ Please refer to your salesman."
+NO_INCOMING = "❌ No stock and no incoming. Please refer to your salesman."
 
 # One product per branch, so a single four-product ask exercises all four.
 #
@@ -313,7 +313,7 @@ def test_ac_sa401_toggle_on_enqueues_one_job_per_b1_b2_b4_and_none_for_b3(
     out = dealer.ask_all_four()
     assert out.error is None, out.error
     reply = (out.reply or {}).get("text") or ""
-    assert f"ZZTSA4-INC x 150: no stock at the moment, ETA 19/10/2026." in reply
+    assert f"ZZTSA4-INC x 150: ❌ ETA 19/10/2026." in reply
 
     facts = dealer.notified
     assert sorted(f["branch"] for f in facts) == ["in_stock", "no_incoming", "too_big"]
@@ -463,9 +463,10 @@ def test_ac_sa411_agent_not_allowed_to_send_enqueues_nothing_but_writes_and_logs
     assert dealer.notified == []
 
     asks, logs = _asks_and_logs(session_factory, dealer.contact_id)
-    assert sorted(a.branch for a in asks) == ["in_stock", "incoming", "no_incoming", "too_big"]
+    # CUSTOMER-ASKS-REFER-ONLY: B3 `incoming` does not refer, so it is not a row.
+    assert sorted(a.branch for a in asks) == ["in_stock", "no_incoming", "too_big"]
     assert {a.source for a in asks} == {"console" if console else "live"}
-    notified = [a for a in asks if a.branch != "incoming"]
+    notified = asks
     assert all(a.notified_agent is False for a in notified)
     assert {a.notify_skip_reason for a in notified} == {"contact_not_allowed_to_send"}
     assert len(logs) == 3
@@ -487,7 +488,7 @@ def test_ac_sa411_agent_allowed_to_send_enqueues_the_jobs(
     facts = dealer.notified
     assert sorted(f["branch"] for f in facts) == ["in_stock", "no_incoming", "too_big"]
     asks, logs = _asks_and_logs(session_factory, dealer.contact_id)
-    assert len(asks) == 4
+    assert len(asks) == 3
     assert logs == []
 
 

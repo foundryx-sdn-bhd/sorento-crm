@@ -681,26 +681,14 @@ class DocumentIngestService(MasterRefResolver):
         anything in the batch has written) rather than once per record.
 
         Product ids are pre-resolved CHEAPLY rather than by running the real
-        ladder a second time: a `product_ref` resolves through the same
-        `IntegrationReferenceService.resolve` the ladder itself calls first
-        (a plain read, no back-create - products are never back-created
-        anyway), and every `product_code` in the batch resolves through ONE
-        query rather than one per line. Best-effort like the upload's own
-        equivalent: a defect here must cost the route's plan-exception hook
-        (which simply has less to compare against), never any record in the
-        batch - a document ingest is not the operation this diff is FOR.
-
-        Perf round 5 (B): resolved through `self._resolve_ref` - the SAME
-        ladder rung a line's own `product_ref` resolution calls, and the
-        thing that populates `self._memo` - rather than a bare
-        `self.refs.resolve()`, for two reasons at once: it shares the memo
-        (this runs FIRST, so a ref resolved here is a ref the record loop
-        never re-queries, and vice versa for anything this loop misses), and
-        it applies the SAME cross-company check the ladder's own resolution
-        would, so a memo entry is never trusted without it. `MissingReference`/
-        `ReferenceConflict` are swallowed here exactly as a bare miss was
-        silently dropped before - this is an input to a best-effort snapshot,
-        never the reason a record fails.
+        ladder a second time, and by CODE only (PRODUCT-REF-COLLISION, owner
+        ruling 3 Oct: a product reference is never read): every
+        `product_code` in the batch resolves through ONE query rather than one
+        per line, and a line with no code has no product to snapshot. Best-effort
+        like the upload's own equivalent: a defect here must cost the route's
+        plan-exception hook (which simply has less to compare against), never
+        any record in the batch - a document ingest is not the operation this
+        diff is FOR.
         """
         product_ids: set[str] = set()
         codes: set[str] = set()
@@ -710,15 +698,8 @@ class DocumentIngestService(MasterRefResolver):
             for line in raw.get("lines") or []:
                 if not isinstance(line, dict):
                     continue
-                ref = line.get("product_ref")
-                if ref:
-                    try:
-                        resolved = self._resolve_ref("product_ref", ref, Product)
-                    except (MissingReference, ReferenceConflict):
-                        resolved = None
-                    if resolved:
-                        product_ids.add(resolved)
-                    continue
+                # PRODUCT-REF-COLLISION (owner ruling 3 Oct): code only, a
+                # ref-only line has no product to snapshot.
                 code = (line.get("product_code") or "").strip()
                 if code:
                     codes.add(code)
@@ -1009,6 +990,13 @@ class DocumentIngestService(MasterRefResolver):
         customer_name = (getattr(payload, "customer_name", None) or "").strip()
         if customer_name:
             values["debtor_name"] = customer_name
+        # `is_transferable` (SO-TRANSFERABLE): AutoCount's `Transferable` flag, written
+        # whenever it is SENT and left alone when it is not - the same shape rule as the two
+        # above. Explicit `is not None`: an F is a False, and a falsy check would drop it.
+        # A PO payload has no such field, so this is a no-op for a PO.
+        transferable = getattr(payload, "transferable", None)
+        if transferable is not None:
+            values["is_transferable"] = transferable
         # PO currency default (D1): only a spec that carries a `currency`
         # header column reaches this, which today is `purchase_orders` alone -
         # so the fill is shape-driven rather than a hardcoded entity check.
@@ -1367,8 +1355,16 @@ class DocumentIngestService(MasterRefResolver):
         or resizes an already-mirrored line otherwise leaves the mirror the board actually
         reads drifting behind the book (SO419122). A line with no mirror yet (the order
         was never adopted) is left alone, no error (AC-8).
+
+        OI-PRODUCT-FOLLOW S1: the product follows too, as the manual SO edit already does
+        (`sales_order_service.py` matched-line branch). A swap left on the old product kept
+        the board, and `auto_place_products`, sourcing what the order no longer asks for.
         """
-        if "required_date" not in values and "qty_ordered" not in values:
+        if (
+            "required_date" not in values
+            and "qty_ordered" not in values
+            and "product_id" not in values
+        ):
             return
         from app.models.project_so import ProjectSalesOrderLine
 
@@ -1383,6 +1379,8 @@ class DocumentIngestService(MasterRefResolver):
             mirror.delivery_date = core_line.required_date
         if "qty_ordered" in values:
             mirror.qty = core_line.qty_ordered
+        if "product_id" in values and core_line.product_id:
+            mirror.product_id = core_line.product_id
 
     def _sync_lines(
         self,
@@ -1884,6 +1882,10 @@ class DocumentReadService:
         # column, hence the guard rather than a per-entity literal.
         if hasattr(header, "order_type"):
             record["order_type"] = header.order_type
+        # Read back under the payload's own name. Not in `header_fields` for the same
+        # reason as `order_type`: the write side is fill-when-sent, not unconditional.
+        if hasattr(header, "is_transferable"):
+            record["transferable"] = header.is_transferable
         record["lines"] = [
             self._line(spec, line) for line in self._lines(spec, header)
         ]

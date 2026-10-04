@@ -58,6 +58,19 @@ vi.mock('@/lib/revision-fence', () => ({
   registerRevisionStaleHandler: vi.fn(),
 }));
 
+// SESSION-NEVER-STUCK: the provider reads the session-ending latch and registers the
+// view-as-ended refetch; both are driven from here.
+const sessionEnd = vi.hoisted(() => ({
+  ending: false,
+  viewAsEnded: null as null | (() => void),
+}));
+vi.mock('@/lib/session-end', () => ({
+  isSessionEnding: () => sessionEnd.ending,
+  registerViewAsEndedHandler: (fn: (() => void) | null) => {
+    sessionEnd.viewAsEnded = fn;
+  },
+}));
+
 vi.mock('@/services/pendingActionService', () => ({
   createPendingAction: vi.fn(),
   cancelPendingAction: vi.fn(),
@@ -251,5 +264,45 @@ describe('QueryProvider default query options (M4-04)', () => {
       .map((file) => path.relative(root, file));
 
     expect(offenders).toEqual([]);
+  });
+});
+
+describe('QueryProvider while a dead session is ending (SESSION-NEVER-STUCK)', () => {
+  beforeEach(() => {
+    capturedOnError = null;
+    toastCustom.mockClear();
+    sessionEnd.ending = false;
+    sessionEnd.viewAsEnded = null;
+    render(
+      <QueryProvider>
+        <div />
+      </QueryProvider>,
+    );
+  });
+
+  it('raises no error toast once the session is on its way to sign-in', () => {
+    sessionEnd.ending = true;
+    fireOnError('Your session has ended. Please sign in again.', undefined, ['a']);
+    fireOnError('Failed to fetch my pending SLAs', undefined, ['b']);
+
+    expect(toastCustom).not.toHaveBeenCalled();
+  });
+
+  it('still toasts an ordinary failure while the session is alive', () => {
+    fireOnError('Failed to fetch my pending SLAs', undefined, ['c']);
+
+    expect(toastCustom).toHaveBeenCalledTimes(1);
+  });
+
+  it('an ended view-as refetches every query (cached data may be the target\'s)', async () => {
+    const { QueryClient } = await import('@tanstack/react-query');
+    const invalidate = vi.spyOn(QueryClient.prototype, 'invalidateQueries');
+
+    expect(sessionEnd.viewAsEnded).toBeTypeOf('function');
+    sessionEnd.viewAsEnded!();
+
+    expect(invalidate).toHaveBeenCalledTimes(1);
+    expect(invalidate).toHaveBeenCalledWith();
+    invalidate.mockRestore();
   });
 });

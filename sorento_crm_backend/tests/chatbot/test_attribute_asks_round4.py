@@ -1,5 +1,5 @@
 """Owner console test of round 3 on PR #833 (27 Sep 2026 00:03 to 00:07 MYT, console :3084,
-head 1683cb2f1, contact 487555417). Rulings R1 to R7 of the round 4 fix brief.
+head 1683cb2f1, contact 900000039). Rulings R1 to R7 of the round 4 fix brief.
 
 The owner's words (verbatim): "i want weights as brand preference instead of switch, i got
 feedback more than that one wor, like Brand, product type needs to be line by line, label
@@ -79,7 +79,10 @@ def world(r3world):
     db.add(cabana)
     db.flush()
     taps = [
-        _product(db, brand_id=sorento.id, category_id=tap_category, uom_id=uom, noun="COLD TAP", prefix="ZZR4T", name=f"Sorento Cold Tap {i}")
+        # Prefix never ends in T: the alpha suffix is a-p, so "ZZR4T-ap..." spelled "TAP"
+        # once punctuation was ignored, and exchange 7's "tap" matched that one code
+        # instead of both taps (CI run 37114540099).
+        _product(db, brand_id=sorento.id, category_id=tap_category, uom_id=uom, noun="COLD TAP", prefix="ZZR4Q", name=f"Sorento Cold Tap {i}")
         for i in range(2)
     ]
     incoming_basin = _product(

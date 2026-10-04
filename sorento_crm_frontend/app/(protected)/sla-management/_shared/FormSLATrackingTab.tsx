@@ -146,7 +146,7 @@ export default function FormSLATrackingTab({
     () => ['form-sla-trackers', sourceEntityType, sourceEntityId] as const,
     [sourceEntityType, sourceEntityId],
   );
-  const { data, isLoading, isFetching, refetch } = useQuery({
+  const { data, isLoading, isFetching, refetch, error } = useQuery({
     queryKey,
     queryFn: () => getFormSLATrackers(sourceEntityType, sourceEntityId),
     enabled: !!sourceEntityId,
@@ -487,6 +487,8 @@ export default function FormSLATrackingTab({
       tableLayout={{ columnsVisibility: true }}
       recordCount={trackers.length}
       isLoading={isLoading}
+      error={error}
+      onRetry={() => void refetch()}
       onRowClick={handleRowClick}
       onRefresh={() => void refetch()}
       isRefreshing={isFetching && !isLoading}

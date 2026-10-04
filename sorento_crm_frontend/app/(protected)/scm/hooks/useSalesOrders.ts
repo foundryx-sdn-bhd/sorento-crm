@@ -33,6 +33,8 @@ export interface UseSalesOrdersParams {
   salesAgentId?: string | null;
   /** The planning class: 'project' | 'retail' | 'unclassified'. Null for all. */
   demandClass?: string | null;
+  /** AutoCount's Transferable flag: 'yes' | 'no' | 'unknown'. Null for all. */
+  transferable?: string | null;
 }
 
 /**
@@ -63,6 +65,7 @@ export function salesOrdersListParamsFromUrl(
     outstanding: params.filters.outstanding === 'true',
     salesAgentId: params.filters.sales_agent_id || null,
     demandClass: params.filters.demand_class || null,
+    transferable: params.filters.transferable || null,
   };
 }
 
@@ -87,6 +90,7 @@ export const salesOrdersPagerQuery = {
       outstanding: p.outstanding ?? false,
       salesAgentId: p.salesAgentId ?? null,
       demandClass: p.demandClass ?? null,
+      transferable: p.transferable ?? null,
     });
   },
 };
@@ -118,6 +122,7 @@ export function useSalesOrders(params: UseSalesOrdersParams & { enabled?: boolea
         outstanding: listParams.outstanding ?? false,
         salesAgentId: listParams.salesAgentId ?? null,
         demandClass: listParams.demandClass ?? null,
+        transferable: listParams.transferable ?? null,
       }),
     enabled,
     staleTime: 10_000,

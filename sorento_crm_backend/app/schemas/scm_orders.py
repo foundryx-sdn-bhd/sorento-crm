@@ -291,6 +291,11 @@ class SalesOrder(BaseModel):
     #: `order_type_label`, which names the ERP document type and is blank on almost every
     #: row - this is what the list's "Type" column actually shows.
     demand_class: Optional[str] = None
+    #: AutoCount's `Transferable` flag (SO-TRANSFERABLE): `False` is an order AutoCount has
+    #: not confirmed for the queue yet, which Stock Debt and the fulfilment ladder do not
+    #: count; `None` means the source never said (counted). Read-only - AutoCount owns it and
+    #: `SalesOrderUpdate` has no such input.
+    is_transferable: Optional[bool] = None
     #: The purchase orders its lines wait on, each with whether the pairing is resolved.
     #: Present on the LIST (attached in one query per page); absent on a single read.
     linked_purchase_orders: List[LinkedPurchaseOrder] = Field(default_factory=list)

@@ -600,6 +600,15 @@ export async function confirmMany(body: ConfirmManyBody): Promise<ConfirmManyRes
 }
 
 /**
+ * Preview of a Confirm (FULFIL-CONFIRM-SCOPE v2): the SAME body a Confirm posts, sent with
+ * `preview: true`. The server runs the press and rolls it back, answering per order with the
+ * lines, order inquiry rows and transfers it would write. Nothing is committed.
+ */
+export async function previewConfirmMany(body: ConfirmManyBody): Promise<ConfirmManyResult> {
+  return confirmMany({ ...body, preview: true });
+}
+
+/**
  * Save decision (S4, R-F): the row survives leaving the page, another device, another
  * planner.
  *

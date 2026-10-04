@@ -305,5 +305,5 @@ def test_customerless_ask_in_another_company_is_not_the_agents(w):
         with pytest.raises(Exception) as exc:
             svc.update_for_agent(db, cw["a"].id, cw["foreign"].id, {"state": "done"}, actor_contact_id=cw["ca"])
         assert getattr(exc.value, "status_code", None) == 404
-        counts = {c["agent_id"]: c for c in svc.agent_counts(db, now=NOW)}
+        counts = {c["agent_id"]: c for c in svc.agent_counts(db)}
         assert counts[cw["a"].id]["open"] == 1  # only `loose`

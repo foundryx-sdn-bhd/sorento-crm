@@ -6,6 +6,7 @@ import { toast } from '@/lib/toast';
 import {
   adoptSalesOrder,
   confirmMany,
+  previewConfirmMany,
   deleteLineDraft,
   getClassificationEvidence,
   getPileQueue,
@@ -440,6 +441,19 @@ export function useConfirmManyMutation() {
       // the pill from Saved/Rejected back to Confirmed once the real state arrives.
       queryClient.invalidateQueries({ queryKey: [PLANNING_BOARD_KEY] });
       queryClient.invalidateQueries({ queryKey: [FULFILMENT_PLANNING_KEY] });
+      toast.error(error.message);
+    },
+  });
+}
+
+/**
+ * Preview of a Confirm: writes nothing, so it invalidates nothing and toasts nothing on
+ * success (the panel shows the answer). A failure speaks like every other mutation here.
+ */
+export function usePreviewConfirmManyMutation() {
+  return useMutation({
+    mutationFn: (body: ConfirmManyBody) => previewConfirmMany(body),
+    onError: (error: Error) => {
       toast.error(error.message);
     },
   });

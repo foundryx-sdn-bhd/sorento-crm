@@ -122,7 +122,7 @@ export function FileDropzone({
   };
 
   return (
-    <div className={cn('space-y-2', className)}>
+    <div className={cn('w-full min-w-0 space-y-2', className)}>
       <div
         role="button"
         tabIndex={disabled ? -1 : 0}
@@ -157,7 +157,10 @@ export function FileDropzone({
         )}
       >
         <Upload className="mx-auto size-5 text-muted-foreground" aria-hidden />
-        <p className="mt-2 text-sm font-medium">
+        <p
+          className="mt-2 break-words text-sm font-medium"
+          title={dragging ? undefined : (title ?? 'Drop a file here, or click to browse')}
+        >
           {dragging ? 'Drop it here' : (title ?? 'Drop a file here, or click to browse')}
         </p>
         <p className="mt-0.5 text-xs text-muted-foreground">

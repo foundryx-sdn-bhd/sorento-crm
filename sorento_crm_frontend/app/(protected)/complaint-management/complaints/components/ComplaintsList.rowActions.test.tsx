@@ -41,7 +41,7 @@ vi.mock('@/lib/toast', () => ({
 }));
 
 vi.mock('@/services/userSelectService', () => ({
-  getUsersSelect: vi.fn(async () => []),
+  getUserLookup: vi.fn(async () => []),
 }));
 
 vi.mock('../../complaint-root-causes/hooks/useComplaintRootCauses', () => ({

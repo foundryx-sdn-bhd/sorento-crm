@@ -8,6 +8,8 @@ A zero-knowledge orientation to the Sorento CRM: how to sign in, what each part 
 2. On the **Sign In** page, enter your work email and password, then click **Sign In**. (If your organisation uses Google sign-in, click **Sign in with Google** instead.)
 3. After signing in you land on **Dashboards** - the home page. The left-hand **sidebar** is your main way to move around; the top bar holds search, notifications, your profile, and the AI assistant.
 
+You stay signed in as long as you use the CRM at least once every 29 days; there is nothing to tick. To end a session, sign out from your profile menu.
+
 If you forget your password, use the **Reset Password** link on the sign-in page. If a page says you don't have access, your account hasn't been granted that area yet - ask your administrator.
 
 ## 2. The sidebar map

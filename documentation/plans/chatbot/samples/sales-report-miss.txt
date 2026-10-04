@@ -1,7 +1,5 @@
-Customer: all
-Product: SRTWT9999
-Channel: all
-Location: all
-Delivery date: all
+*Customer:* ACME HARDWARE SDN BHD [A/C I]
+*Product:* all
+*Delivery date:* 01/09/2026 to 30/09/2026
 
 No sales found.

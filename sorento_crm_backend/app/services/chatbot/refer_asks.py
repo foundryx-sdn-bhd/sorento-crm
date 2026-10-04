@@ -4,8 +4,13 @@ that refers a dealer to their salesman is a Customer asks row.
 The stock ask (`stock_availability`) already writes its rows from the fetch's own entries
 (`engine._stock_ask_answered_entries`). This module covers the OTHER refer replies - a
 dealer's incoming ETA reply, an incoming or stock miss, a code the resolver could not place,
-a "no" to a did-you-mean - by reading what the turn already knows: the final reply text, the
-fetch envelopes, the plan's resolved entities and the question the dealer was answering.
+a "no" to a did-you-mean, and (CUSTOMER-ASKS-REFER-ONLY, 1 Oct 2026) every reply a barred
+contact (#1406) is referred in - by reading what the turn already knows: the fetch
+envelopes, the plan's resolved entities and the question the dealer was answering.
+
+Whether the reply refers at all is NOT read off its text: the caller passes `referred`, the
+turn's own mark (`turn/refer.py`, set by the one helper every composer prints the line
+through) or a stock ask line the presenter stamped `refers_to_salesman`.
 The entries it returns take the same road as the stock ask's
 (`stock_ask_service.after_answered_turn`), so there is still ONE writer of `stock_asks`.
 
@@ -21,7 +26,7 @@ from typing import Any, Iterable
 from app.services.chatbot import jsc
 from app.services.chatbot.turn.task import REFER_TO_SALESMAN
 
-__all__ = ["REFER_TO_SALESMAN", "BRANCH_INCOMING_ETA", "BRANCH_REFERRED", "refers", "referred_entries"]
+__all__ = ["REFER_TO_SALESMAN", "BRANCH_INCOMING_ETA", "BRANCH_REFERRED", "referred_entries"]
 
 #: A dealer incoming ask answered with ETAs (one row per product line).
 BRANCH_INCOMING_ETA = "incoming_eta"
@@ -32,16 +37,11 @@ BRANCH_REFERRED = "referred"
 _CODE_CAP = 100
 #: The reply text kept as the answer; the column is TEXT, the cap is a guard.
 _ANSWER_CAP = 2000
-_REFER = re.compile(r"refer to your salesman", re.IGNORECASE)
-
-
-def refers(text: Any) -> bool:
-    """Does this reply refer the dealer to their salesman?"""
-    return bool(text) and isinstance(text, str) and _REFER.search(text) is not None
 
 
 def referred_entries(
     *,
+    referred: bool,
     reply_text: str,
     envelopes: Iterable[dict[str, Any]],
     plan: Any,
@@ -53,9 +53,10 @@ def referred_entries(
 
     Each entry: `product_code`, `product_id` (when the plan resolved the code, else None
     and the writer resolves it by code), `requested_qty` (only a declined did-you-mean
-    carries one), `branch` and `answer_summary`. Empty when the reply does not refer, or when
-    every product it names already has a stock-branch entry."""
-    if not refers(reply_text):
+    carries one), `branch`, `answer_summary` and `refers_to_salesman` (always True: the flag
+    `stock_ask_service.refer_entries` keeps rows by). Empty when the turn did not refer
+    (`referred` False), or when every product it names already has a stock-branch entry."""
+    if not referred:
         return []
     text = (reply_text or "").strip()
     covered = {
@@ -85,10 +86,11 @@ def referred_entries(
                 "requested_qty": qty,
                 "branch": branch,
                 "answer_summary": answer[:_ANSWER_CAP],
+                "refers_to_salesman": True,
             }
         )
 
-    # 1. A dealer incoming reply: one line per product, "<code>\nETA: <dates>".
+    # 1. A dealer incoming reply: one line per product, "<code>: ETA <dates>".
     for envelope in envelopes:
         for item in _figures(envelope):
             flags = jsc.get(item, "flags")
@@ -100,8 +102,13 @@ def referred_entries(
 
     # 2. A miss: the codes the fetch found nothing for, and the tokens it could not place
     #    (read beside step 1 too: "incoming SRT1 XYZ9" answers SRT1's ETA and cannot find
-    #    XYZ9, and both are the dealer's asks - review round 1, finding 2).
+    #    XYZ9, and both are the dealer's asks - review round 1, finding 2). Only a stock or
+    #    incoming fetch names PRODUCTS there; another domain's miss is a customer name or an
+    #    order number, so a barred contact's miss in it falls through to steps 4 and 5
+    #    (CUSTOMER-ASKS-REFER-ONLY review).
     for envelope in envelopes:
+        if envelope.get("domain") not in _PRODUCT_DOMAINS:
+            continue
         for code in [*_strings(envelope.get("miss")), *_strings(envelope.get("unresolved"))]:
             add(code, branch=BRANCH_REFERRED, answer=text)
     if out:
@@ -118,11 +125,21 @@ def referred_entries(
     if out:
         return out
 
-    # 4. Whatever the plan resolved for this turn.
+    # 4. Whatever the plan resolved for this turn, except a product the stock ask itself
+    #    answered or still owes a quantity (AVAIL-MODE-REPLIES, reviewer B2): it is
+    #    recorded by the stock ask, on the turn that answers it, and only there.
+    in_stock_block = {
+        _key(row.get("product_code"))
+        for envelope in envelopes
+        for row in (envelope.get("stock_availability") or [])
+        if isinstance(row, dict) and row.get("product_code")
+    }
     for spec in getattr(plan, "fetch", None) or []:
         for entity in getattr(spec, "entities", None) or []:
             code = _entity_code(entity)
-            if code:
+            if code and _key(code) in in_stock_block:
+                named[0] = True  # named, and the stock ask's to record
+            elif code:
                 add(code, branch=BRANCH_REFERRED, answer=text)
     if out:
         return out
@@ -138,6 +155,8 @@ def referred_entries(
 
 
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]+")
+#: The fetch domains whose `miss` / `unresolved` are product codes.
+_PRODUCT_DOMAINS = frozenset({"inventory", "incoming"})
 
 
 def _key(value: Any) -> str:
@@ -156,13 +175,22 @@ def _figures(envelope: dict[str, Any]) -> list[Any]:
     return []
 
 
+#: AVAIL-MODE-REPLIES: the dealer's ETA line is "<code>: ✅ ETA <dates>" or "<code>: No ETA"
+#: (owner hand test, 3 Oct 2026); "<code>: ETA <dates>" is the form before it.
+_ONE_LINE_ETA = re.compile(r"^(?P<code>.+?):\s+(?P<when>(?:\u2705\s*)?ETA\b.*|No ETA)$")
+
+
 def _dealer_line(title: Any) -> tuple[str, str]:
-    """`"<code>\\nETA: <dates>"` -> (code, "ETA: <dates>"); a title with no code (the
-    `/shipments` route) -> ("", the line)."""
+    """`"<code>: ETA <dates>"` -> (code, "ETA <dates>"); a title with no code (the
+    `/shipments` route) -> ("", the line). The two-line `"<code>\\nETA: <dates>"` an older
+    presenter printed still reads the same way."""
     lines = [ln.strip() for ln in str(title or "").splitlines() if ln.strip()]
     if not lines:
         return "", ""
     if len(lines) == 1:
+        one = _ONE_LINE_ETA.match(lines[0])
+        if one:
+            return one.group("code").strip(), one.group("when").strip()
         return ("", lines[0]) if lines[0].upper().startswith("ETA") else (lines[0], "")
     return lines[0], " ".join(lines[1:])
 

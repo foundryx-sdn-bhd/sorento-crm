@@ -48,6 +48,9 @@ SELECT_KEYS = {
     "sales_agent_id",
     "sales_agent_code",
     "sales_agent_name",
+    # CUSTOMER-GROUP: the group's Add ledgers picker shows which group a ledger is in now.
+    "customer_group_id",
+    "customer_group_name",
 }
 
 

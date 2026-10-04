@@ -65,6 +65,7 @@ export function BoardTransfersPanel({
   inquiryRows = 0,
 }: {
   soNumbers: string[];
+
   /**
    * Whether a confirmation was pressed on this board since it opened.
    *

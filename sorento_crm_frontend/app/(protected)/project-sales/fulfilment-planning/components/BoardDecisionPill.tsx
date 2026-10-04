@@ -72,6 +72,21 @@ const VERDICT_LABEL: Record<string, string> = {
 };
 
 /**
+ * The states the list's Status filter offers, in the order an owner reads them: the four the
+ * planner works with first, then the rest so nothing becomes unfilterable.
+ */
+export const VERDICT_FILTER_OPTIONS: { value: string; label: string }[] = [
+  { value: 'saved', label: VERDICT_LABEL.saved },
+  { value: 'suggested', label: VERDICT_LABEL.suggested },
+  { value: 'confirmed', label: VERDICT_LABEL.confirmed },
+  { value: 'change_proposed', label: VERDICT_LABEL.change_proposed },
+  { value: 'rejected', label: VERDICT_LABEL.rejected },
+  { value: 'stale', label: VERDICT_LABEL.stale },
+  { value: 'cancelled', label: VERDICT_LABEL.cancelled },
+  { value: 'unplannable', label: 'Needs a location' },
+];
+
+/**
  * A pre-mark and NOTHING ELSE: seeded into the session draft by the board's own pre-mark
  * effect (`preMarkedKeys`, `FulfilmentBoardPanel`), with no server-saved draft behind it yet.
  *

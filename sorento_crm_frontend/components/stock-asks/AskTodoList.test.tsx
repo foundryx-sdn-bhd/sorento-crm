@@ -14,6 +14,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AskTodoList } from './AskTodoList';
 import type { StockAsk } from '@/lib/stock-asks';
 import type { AskTodoPayload } from '@/lib/stock-asks-todo';
+import { formatDateTimeInMalaysia } from '@/lib/helpers';
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
@@ -81,30 +82,35 @@ function setup(p: AskTodoPayload | null, extra: Partial<React.ComponentProps<typ
   return { ...handlers, ...view };
 }
 
-describe('AskTodoList cards: sections (AC-ST305)', () => {
-  it('renders one Needs attention heading (red), then Today, then Done today, and nothing else', () => {
+describe('AskTodoList cards: sections (CUSTOMER-ASKS-REFER-ONLY)', () => {
+  it('renders one Open heading, then Done today, and nothing else: no Needs attention / Today split', () => {
     setup(payload({ open: [OLDER, OLD, NEW] }));
     expect(screen.getAllByRole('heading').map((h) => `${h.tagName}:${h.textContent}`)).toEqual([
-      'H2:Needs attention', // one section for both old days: no per-day sub-headings
-      'H2:Today',
+      'H2:Open',
       'H2:Done today',
     ]);
-    expect(screen.getByRole('heading', { name: 'Needs attention' }).className).toContain('text-destructive');
-    expect(screen.getByRole('heading', { name: 'Today' }).className).not.toContain('text-destructive');
+    expect(screen.getByRole('heading', { name: 'Open' }).className).not.toContain('text-destructive');
+    expect(screen.queryByText('Needs attention')).toBeNull();
+    expect(screen.queryByText('Today')).toBeNull();
   });
 
-  it('puts the old asks under Needs attention oldest first, the new one under Today', () => {
-    setup(payload({ open: [OLD, OLDER, NEW] }));
-    const needs = screen.getByRole('heading', { name: 'Needs attention' }).closest('section') as HTMLElement;
-    expect(within(needs).getAllByText(/^(Old|Older) Customer$/).map((n) => n.textContent)).toEqual([
+  it('puts every open ask under Open, oldest first by default, old and new days together', () => {
+    setup(payload({ open: [NEW, OLD, OLDER] }));
+    const open = screen.getByRole('heading', { name: 'Open' }).closest('section') as HTMLElement;
+    expect(within(open).getAllByText(/^(Old|Older|New) Customer$/).map((n) => n.textContent)).toEqual([
       'Older Customer',
       'Old Customer',
+      'New Customer',
     ]);
-    const today = screen.getByRole('heading', { name: 'Today' }).closest('section') as HTMLElement;
-    expect(within(today).getByText('New Customer')).toBeInTheDocument();
   });
 
-  it('applies the sort it is given inside a section', () => {
+  it('each card shows the date it was asked', () => {
+    setup(payload({ open: [OLDER], done_today: [] }));
+    const card = screen.getByText('Older Customer').closest('li') as HTMLElement;
+    expect(card.textContent).toContain(formatDateTimeInMalaysia(OLDER.created_at));
+  });
+
+  it('applies the sort it is given inside the section', () => {
     const a = ask({ id: 'a1', customer_name: 'Zed', created_at: '2026-09-29T01:00:00Z' });
     const b = ask({ id: 'b1', customer_name: 'Abe', created_at: '2026-09-29T02:00:00Z' });
     const { unmount } = setup(payload({ open: [a, b], done_today: [] }), { sort: { key: 'created_at', dir: 'asc' } });
@@ -211,7 +217,7 @@ describe('AskTodoList list view (AC-ST306 via the shared body)', () => {
     const headers = screen.getAllByRole('columnheader').map((h) => (h.textContent ?? '').trim());
     expect(headers.slice(0, 5)).toEqual(['Asked at', 'Customer', 'Contact', 'Asked', 'Answered']);
     expect(headers.at(-1)).toBe('');
-    expect(screen.queryByRole('heading', { name: 'Needs attention' })).toBeNull(); // section ROWS, not headings
+    expect(screen.queryByRole('heading', { name: 'Open' })).toBeNull(); // section ROWS, not headings
   });
 
   it('a row click opens, and Done calls onDone only', () => {

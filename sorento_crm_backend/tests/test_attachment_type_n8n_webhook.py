@@ -60,7 +60,7 @@ def _attachment(db, att_type) -> Attachment:
         original_filename="f.xlsx",
         stored_filename="f.xlsx",
         file_path="https://cdn.test/f.xlsx",
-        attachment_type_id=str(att_type.id),
+        attachment_type_id=str(att_type.id) if att_type is not None else None,
         is_deleted=False,
     )
     db.add(row)
@@ -113,18 +113,75 @@ def test_an_opted_in_type_still_sends(db, monkeypatch):
     assert reached.get("yes"), "an opted-in type must still reach the webhook lookup"
 
 
-def test_a_missing_type_is_treated_as_opted_in(db, monkeypatch):
-    """An untyped attachment keeps today's behaviour rather than going silent."""
-    reached = {}
+def test_an_untyped_attachment_sends_nothing(db, monkeypatch):
+    """Owner rule (2 Oct 2026): attachment type NULL -> never submitted to n8n.
+
+    The loading-plan stock list is stored untyped; n8n has nothing to file it
+    under, so a send would only leave an unanswered log behind. Asserted with a
+    real webhook URL configured, so it is the NULL type that stops it, and on the
+    log table, since the log row is what the upload-activity drawer reads.
+    """
+    from app.models.integration import IntegrationLog
+
+    called = []
     monkeypatch.setattr(
         "app.services.attachment_webhook_helper.get_n8n_attachment_webhook_url",
-        lambda _db: reached.setdefault("yes", True) and None,
+        lambda _db: called.append("looked up") or "https://n8n.test/hook",
     )
-    att_type = _type(db, "Untyped")
+    monkeypatch.setattr(
+        "app.services.attachment_webhook_helper.threading.Thread",
+        lambda *a, **k: pytest.fail("an untyped attachment must not start a send"),
+    )
+    attachment = _attachment(db, None)
 
-    create_and_send_webhook(db, _attachment(db, att_type), None, None, "user-1")
+    create_and_send_webhook(db, attachment, None, None, "user-1")
 
-    assert reached.get("yes")
+    assert called == [], "an untyped attachment must not even resolve the webhook URL"
+    assert (
+        db.query(IntegrationLog)
+        .filter(
+            IntegrationLog.business_table == "attachments",
+            IntegrationLog.business_id == str(attachment.id),
+        )
+        .count()
+        == 0
+    )
+
+
+def test_a_typed_attachment_writes_its_log_and_sends(db, monkeypatch):
+    """The other side of the NULL rule: a typed upload still reaches n8n."""
+    from app.models.integration import IntegrationLog
+
+    started = []
+
+    class _Thread:
+        def __init__(self, target=None, daemon=None):
+            started.append(target)
+
+        def start(self):
+            pass
+
+    monkeypatch.setattr(
+        "app.services.attachment_webhook_helper.get_n8n_attachment_webhook_url",
+        lambda _db: "https://n8n.test/hook",
+    )
+    monkeypatch.setattr("app.services.attachment_webhook_helper.threading.Thread", _Thread)
+    att_type = _type(db, "Product Photos", triggers=True)
+    attachment = _attachment(db, att_type)
+
+    # created_by is a UUID column; no user row is needed for this assertion.
+    create_and_send_webhook(db, attachment, att_type, None, None)
+
+    assert len(started) == 1, "a typed attachment must start the webhook send"
+    assert (
+        db.query(IntegrationLog)
+        .filter(
+            IntegrationLog.business_table == "attachments",
+            IntegrationLog.business_id == str(attachment.id),
+        )
+        .count()
+        == 1
+    )
 
 
 def test_a_type_object_without_the_attribute_is_treated_as_opted_in(db, monkeypatch):

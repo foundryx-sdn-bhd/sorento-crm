@@ -21,6 +21,7 @@ METHOD_WORDS = {
     "portal_token": "portal",
     "api_key": "API key",
     "impersonation": "impersonation",
+    "dev_login": "dev sign-in",
 }
 
 

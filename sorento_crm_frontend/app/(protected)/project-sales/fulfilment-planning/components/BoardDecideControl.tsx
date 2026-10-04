@@ -181,6 +181,7 @@ export function BoardDecideControl({
   onSave,
   onSaved,
   onClear,
+  embedded = false,
 }: {
   /** Every row on screen, in the list's current sort order (R9). */
   contributions: BoardContribution[];
@@ -193,6 +194,11 @@ export function BoardDecideControl({
   /** Saved rows untick (R9); skipped rows stay ticked. */
   onSaved: (savedKeys: string[]) => void;
   onClear: () => void;
+  /**
+   * Placed in the shared list toolbar, whose bulk strip already says "N selected" and carries
+   * Clear: this control then draws only the Decide button.
+   */
+  embedded?: boolean;
 }) {
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [way, setWay] = React.useState<DecideWay | null>(null);
@@ -428,7 +434,7 @@ export function BoardDecideControl({
 
   return (
     <>
-      {selectedKeys.length > 0 ? (
+      {!embedded && selectedKeys.length > 0 ? (
         <Badge variant="secondary" className="h-8 gap-1 px-2.5 text-sm">
           {`${selectedKeys.length} selected`}
         </Badge>
@@ -476,7 +482,7 @@ export function BoardDecideControl({
           ))}
         </DropdownMenuContent>
       </DropdownMenu>
-      {selectedKeys.length > 0 ? (
+      {!embedded && selectedKeys.length > 0 ? (
         <Button type="button" size="sm" variant="ghost" onClick={onClear}>
           Clear
         </Button>

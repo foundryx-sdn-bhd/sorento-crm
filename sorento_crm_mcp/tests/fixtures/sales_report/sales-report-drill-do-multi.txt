@@ -1,0 +1,8 @@
+*Delivery orders*, 01/09/2026 to 30/09/2026
+1. DO-0910, 15/09/2026, BETA TRADING SDN BHD: Qty 5, RM 500.00
+2. DO-0905, 05/09/2026, ACME HARDWARE SDN BHD [A/C I]: Qty 8, RM 600.00
+*Total:* Qty 13, RM 1,100.00
+
+*Drill down:*
+3. By customer
+4. By product

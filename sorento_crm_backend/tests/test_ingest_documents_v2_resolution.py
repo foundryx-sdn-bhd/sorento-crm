@@ -42,6 +42,7 @@ from tests.test_ingest_documents import (
     INGEST_PO,
     INGEST_SO,
     MARKER,
+    _code_of_ref,
     _po_line,
     _po_record,
     _ref,
@@ -432,6 +433,7 @@ class TestWarehouseUnresolvedIsAWarningNotARetry:
         line = {
             "source_ref": _ref("SOL"),
             "product_ref": env.product_ref,
+            "product_code": _code_of_ref(env, env.product_ref),
             "qty_ordered": 5,
             "warehouse_code": f"{MARKER}-NOT-SYNCED-YET",
         }
@@ -641,7 +643,7 @@ class TestDryRunBackCreate:
 
 
 # ============================================================== schema pin
-class TestSchemaStillForbidsUnknownKeys:
+class TestSchemaDropsUnknownKeys:
     def test_a_v1_payload_with_no_new_keys_still_validates(self, env):
         """Byte-for-byte parity: nothing added here should make a plain v1
         record start failing (AC-V0-2 lives in its own file; this is the same
@@ -652,11 +654,12 @@ class TestSchemaStillForbidsUnknownKeys:
 
         assert res.json()["records"][0]["outcome"] == "created", res.text
 
-    def test_an_unknown_key_is_still_rejected_and_names_it(self, env):
+    def test_an_unknown_key_is_dropped_not_refused(self, env):
+        # Owner decision, 1 Oct 2026: dropped (its name logged once per request by the
+        # ingest route), never refused.
         record = _so_record(env, customer_nick="Bob")
 
         res = env.post(INGEST_SO, [record])
 
         entry = res.json()["records"][0]
-        assert entry["outcome"] == "failed", res.text
-        assert "customer_nick" in entry["errors"]
+        assert entry["outcome"] == "created", res.text

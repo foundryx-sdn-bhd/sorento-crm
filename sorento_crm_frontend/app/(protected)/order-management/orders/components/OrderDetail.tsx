@@ -188,7 +188,11 @@ export default function OrderDetail({ orderId, listSearch }: OrderDetailProps) {
               )}
             </CardContent>
           </Card>
-          <OrderLinesCard orderId={orderId} lines={order.lines ?? []} />
+          <OrderLinesCard
+            orderId={orderId}
+            lines={order.lines ?? []}
+            readOnly={(order.autocount_owned_fields ?? []).length > 0}
+          />
         </TabsContent>
 
         <TabsContent value="financial" className="mt-0 focus-visible:outline-none">

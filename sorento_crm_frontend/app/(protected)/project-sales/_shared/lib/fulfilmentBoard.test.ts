@@ -5,7 +5,7 @@
  * asserted directly: which column a line lands in (13.3), the order competing lines are served
  * in (13.5), and when an order becomes confirmable (13.4). None of them needs a grid mounted.
  */
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
   BoardCell,
   BoardContribution,
@@ -16,20 +16,24 @@ import {
   boardAxis,
   bucketLabelText,
   commitPreviewFor,
+  confirmDialogRowsFor,
   confirmLinesFor,
   confirmSummaryFor,
   DAY_WINDOW_COLUMNS as BOARD_DAY_WINDOW_COLUMNS,
   factorLabel,
   matchesSuggestion,
   plannedLineCount,
+  pressPostsContribution,
   rankingNote,
   rejectedCoveredLineIdsFor,
   rowMatchesSearch,
+  savedAgoText,
   shiftedDayWindow,
   unpostableDecidedFor,
   standingsFor,
 } from './fulfilmentBoard';
 import { amendDraftFrom, suggestionDraftFrom } from './boardAmend';
+import { verdictOf } from '../../fulfilment-planning/components/BoardDecisionPill';
 import {
   bucketKeyFor,
   buildBoard,
@@ -2755,10 +2759,13 @@ describe('#1362 item 5: soLineLabel / soLineNoText', () => {
     expect(soLineLabel({ so_line_no: 0, line_no: 4 })).toBe('Line 0');
   });
 
-  it('falls back to "row N" only when AutoCount gave the line no number', async () => {
-    const { soLineLabel, soLineNoText } = await import('./fulfilmentBoard');
-    expect(soLineLabel({ so_line_no: null, line_no: 110 })).toBe('row 110');
-    expect(soLineNoText({ so_line_no: null, line_no: 3 })).toBe('row 3');
+  it('falls back to the plain position only when AutoCount gave the line no number', async () => {
+    const { soLineLabel, soLineNoText, soLineNoIsSynced } = await import('./fulfilmentBoard');
+    expect(soLineLabel({ so_line_no: null, line_no: 110 })).toBe('Line 110');
+    expect(soLineNoText({ so_line_no: null, line_no: 3 })).toBe('3');
+    expect(soLineNoIsSynced({ so_line_no: null })).toBe(false);
+    expect(soLineNoIsSynced({ so_line_no: 2912 })).toBe(true);
+    expect(soLineNoIsSynced({})).toBe(false);
     // A payload with no so_line_no key at all predates the field: its number is bare.
     expect(soLineNoText({ line_no: 3 })).toBe('3');
   });
@@ -2805,9 +2812,349 @@ describe('#1362 (owner, 29 Sep 2026): confirmNoticeLines', () => {
         ],
       }),
     ).toEqual([
-      'row 29, B2154-NL: held back, decision kept: The components add up to 50 and the line is open for 100.',
+      'Line 29, B2154-NL: held back, decision kept: The components add up to 50 and the line is open for 100.',
       'Line 2912, B2154-NL: Buy 100 confirmed as decided; 100 landed for this line on SPO-2026/06-0131 stay linked to it, for purchasing to adjust',
     ]);
     expect(confirmNoticeLines({})).toEqual([]);
+  });
+});
+
+/**
+ * FULFIL-CONFIRM-SCOPE (S2): Confirm posts what the planner ticked in the pre-confirm dialog.
+ * `excludeKeys` leaves a contribution out of the body and the count; `confirmDialogRowsFor`
+ * is the pure read the dialog lists (AC-D1, D2, D4, D5).
+ */
+describe('confirm scope: excludeKeys', () => {
+  const board = buildBoard(
+    [
+      line({ sales_order_id: 'so-a', so_number: 'SO000001', line_no: 1, qty: '100' }),
+      line({ sales_order_id: 'so-a', so_number: 'SO000001', line_no: 2, qty: '50', item_code: 'TPE-9204' }),
+      line({ sales_order_id: 'so-b', so_number: 'SO000002', line_no: 3, qty: '10' }),
+    ],
+    { today: TODAY, freeStock: { 'WESERP10B|BRW-BB': '100', 'TPE-9204|BRW-BB': '20' } },
+  );
+  const contributions = board.cells.flatMap((cell) => cell.contributions);
+  const keyOf = (soNumber: string, lineNo: number) =>
+    contributions.find((entry) => entry.so_number === soNumber && entry.line_no === lineNo)!.key;
+  const saved = () => ({
+    [keyOf('SO000001', 1)]: { verdict: 'approved' as const },
+    [keyOf('SO000001', 2)]: { verdict: 'approved' as const },
+    [keyOf('SO000002', 3)]: { verdict: 'approved' as const },
+  });
+
+  it('confirmLinesFor leaves an excluded contribution out of the returned lines (AC-D3)', () => {
+    const lines = confirmLinesFor(contributions, 'so-a', saved(), {
+      excludeKeys: new Set([keyOf('SO000001', 2)]),
+    });
+    expect(lines.map((entry) => entry.project_line_id)).toEqual(['pl-so-a-1']);
+  });
+
+  it('confirmSummaryFor lowers toConfirm by the excluded count (AC-D3)', () => {
+    const all = confirmSummaryFor(contributions, saved(), new Set<string>());
+    expect(all.toConfirm).toBe(3);
+    const fewer = confirmSummaryFor(contributions, saved(), new Set<string>(), {
+      excludeKeys: new Set([keyOf('SO000001', 1)]),
+    });
+    expect(fewer.toConfirm).toBe(2);
+  });
+});
+
+describe('confirmDialogRowsFor', () => {
+  const OPENED = new Date('2026-09-30T02:00:00Z');
+  const EIGHT_DAYS_AGO = '2026-09-22T03:09:00Z';
+  const board = buildBoard(
+    [
+      line({ sales_order_id: 'so-a', so_number: 'SO000001', line_no: 1, qty: '100', item_code: 'SRTSH1040' }),
+      line({ sales_order_id: 'so-a', so_number: 'SO000001', line_no: 2, qty: '239', item_code: 'SRTWT6808' }),
+      line({ sales_order_id: 'so-a', so_number: 'SO000001', line_no: 3, qty: '10', item_code: 'TPE-9204' }),
+    ],
+    { today: TODAY },
+  );
+  const base = board.cells.flatMap((cell) => cell.contributions);
+  const at = (lineNo: number) => base.find((entry) => entry.line_no === lineNo)!;
+
+  const borrowSource = (qty: string) => ({
+    kind: 'borrow' as const,
+    qty,
+    location: 'BRW-BB',
+    warehouse_id: 'wh-brw-bb',
+    reason: 'Group borrow.',
+  });
+  const withDrafts: BoardContribution[] = [
+    {
+      ...at(1),
+      qty_proposed_reserve: '0',
+      qty_proposed_incoming: '0',
+      qty_proposed_buy: '0',
+      sources: [borrowSource('43'), borrowSource('57')],
+      draft: {
+        decision: { verdict: 'approved' },
+        saved_by: 'Jayson Foundryx',
+        saved_at: EIGHT_DAYS_AGO,
+      },
+    },
+    {
+      ...at(2),
+      draft: {
+        decision: { verdict: 'amended', reserve_qty: '0', reserve: [], borrow: [], buy_qty: '239', reason: 'Late.' },
+        saved_by: 'Cyndi',
+        saved_at: '2026-09-30T02:30:00Z',
+      },
+    },
+    {
+      ...at(3),
+      draft: {
+        decision: { verdict: 'approved' },
+        saved_by: 'Cyndi',
+        saved_at: '2026-09-29T01:00:00Z',
+        stale: true,
+      },
+    },
+  ];
+  const draft = {
+    [withDrafts[0].key]: withDrafts[0].draft!.decision,
+    [withDrafts[1].key]: withDrafts[1].draft!.decision,
+    [withDrafts[2].key]: withDrafts[2].draft!.decision,
+  };
+  const result = () =>
+    confirmDialogRowsFor(withDrafts, draft, { currentUserName: 'Cyndi', openedAt: OPENED });
+
+  it('describes an approved line by the live suggestion that WILL be posted (AC-D5)', () => {
+    const row = result().rows.find((entry) => entry.line_no === 1)!;
+    expect(row).toMatchObject({
+      key: withDrafts[0].key,
+      sales_order_id: 'so-a',
+      so_number: 'SO000001',
+      item_code: 'SRTSH1040',
+      verdict: 'approved',
+      composition: 'Borrow 43 + 57 from BRW-BB',
+      saved_by: 'Jayson Foundryx',
+      saved_at: EIGHT_DAYS_AGO,
+    });
+  });
+
+  it('describes an amended buy by its own composition (AC-D1)', () => {
+    const row = result().rows.find((entry) => entry.line_no === 2)!;
+    expect(row.verdict).toBe('amended');
+    expect(row.composition).toBe('Buy 239');
+  });
+
+  it('flags a row saved by someone else, before the board was opened (AC-D2)', () => {
+    const jayson = result().rows.find((entry) => entry.line_no === 1)!;
+    expect(jayson.savedByOther).toBe(true);
+    expect(jayson.savedBefore).toBe(true);
+    const own = result().rows.find((entry) => entry.line_no === 2)!;
+    expect(own.savedByOther).toBe(false);
+    expect(own.savedBefore).toBe(false);
+  });
+
+  it('lists a stale line under notPosted with its reason, not as a row (AC-D4)', () => {
+    const { rows, notPosted } = result();
+    expect(rows.map((entry) => entry.line_no)).toEqual([1, 2]);
+    expect(notPosted).toHaveLength(1);
+    expect(notPosted[0]).toMatchObject({ key: withDrafts[2].key, line_no: 3, item_code: 'TPE-9204' });
+    expect(notPosted[0].reason).toContain('Suggestion changed');
+  });
+});
+
+/**
+ * FULFIL-CONFIRM-SCOPE fix round 1: title, dialog rows, button and body are views of ONE
+ * population. For every kind of line, the rows the dialog lists equal what the body posts
+ * (lines plus withdrawals), and rows plus cancelled rows equal `plannedLineCount`.
+ */
+describe('confirm scope: one population for dialog, count and body', () => {
+  const board = buildBoard(
+    [line({ sales_order_id: 'so-a', so_number: 'SO000001', line_no: 1, qty: '100' })],
+    { today: TODAY, freeStock: { 'WESERP10B|BRW-BB': '100' } },
+  );
+  const base = board.cells.flatMap((cell) => cell.contributions)[0];
+  const OPENED = new Date('2026-09-30T02:00:00Z');
+  const covered = { covered: true, decision: {} as never };
+
+  type Case = {
+    name: string;
+    contribution: Partial<BoardContribution>;
+    decision: ({ verdict: 'approved' | 'amended' | 'rejected' } & Record<string, unknown>) | null;
+    blocked?: boolean;
+    unadopted?: boolean;
+    listed: boolean;
+    counted: number;
+  };
+  const amended = {
+    verdict: 'amended' as const,
+    reserve_qty: '0',
+    reserve: [],
+    borrow: [],
+    buy_qty: '100',
+    reason: 'Late.',
+  };
+  const cases: Case[] = [
+    { name: 'covered + approved', contribution: covered, decision: { verdict: 'approved' }, listed: true, counted: 1 },
+    { name: 'covered + amended', contribution: covered, decision: amended, listed: true, counted: 1 },
+    { name: 'covered + rejected (withdrawal)', contribution: covered, decision: { verdict: 'rejected' }, listed: true, counted: 1 },
+    { name: 'batch-blocked rejection', contribution: covered, decision: { verdict: 'rejected' }, blocked: true, listed: false, counted: 0 },
+    { name: 'stale draft', contribution: { draft: { decision: { verdict: 'approved' }, saved_by: 'x', saved_at: '2026-09-29T00:00:00Z', stale: true } }, decision: { verdict: 'approved' }, listed: false, counted: 0 },
+    { name: 'no_mirror on an adopted order', contribution: { project_line_id: null }, decision: { verdict: 'approved' }, listed: false, counted: 0 },
+    { name: 'no_mirror on an unadopted order', contribution: { project_line_id: null }, decision: { verdict: 'approved' }, unadopted: true, listed: true, counted: 1 },
+    { name: 'cancelled', contribution: { cancelled: true }, decision: null, listed: false, counted: 1 },
+  ];
+
+  it.each(cases)('$name', (entry) => {
+    const contribution = { ...base, ...entry.contribution } as BoardContribution;
+    const draft = entry.decision ? { [contribution.key]: entry.decision as never } : {};
+    const blocked = new Set(entry.blocked ? ['so-a'] : []);
+    const unadopted = new Set(entry.unadopted ? ['so-a'] : []);
+    const dialog = confirmDialogRowsFor([contribution], draft, {
+      currentUserName: 'Cyndi',
+      openedAt: OPENED,
+      unadoptedSalesOrderIds: unadopted,
+      batchBlockedSalesOrderIds: blocked,
+    });
+    const posted = confirmLinesFor([contribution], 'so-a', draft).map((row) => row.project_line_id);
+    // A rejection under a pending change is zeroed out of the body by the caller.
+    const withdrawn = entry.blocked
+      ? []
+      : rejectedCoveredLineIdsFor([contribution], 'so-a', draft);
+    const bodyCount = posted.length + withdrawn.length;
+    expect(dialog.rows.length).toBe(entry.listed ? 1 : 0);
+    if (!entry.unadopted) expect(dialog.rows.length).toBe(bodyCount);
+    expect(
+      dialog.rows.length + dialog.cancelled.length,
+    ).toBe(
+      plannedLineCount([contribution], 'so-a', draft, blocked, { unadoptedSalesOrderIds: unadopted }),
+    );
+    expect(dialog.rows.length + dialog.cancelled.length).toBe(entry.counted);
+    // A line the press leaves out is named, never silent.
+    if (!entry.listed && !entry.counted) expect(dialog.notPosted.length).toBe(1);
+  });
+
+  it('confirmSummaryFor admits an order whose only posted line is a covered approved one', () => {
+    const contribution = { ...base, ...covered } as BoardContribution;
+    const summary = confirmSummaryFor([contribution], { [contribution.key]: { verdict: 'approved' } });
+    expect(summary.toConfirm).toBe(1);
+    expect(summary.orderCount).toBe(1);
+  });
+
+  it('an unticked covered-rejected line leaves the withdrawal out', () => {
+    const contribution = { ...base, ...covered } as BoardContribution;
+    const draft = { [contribution.key]: { verdict: 'rejected' as const, reason: 'No.' } };
+    expect(
+      rejectedCoveredLineIdsFor([contribution], 'so-a', draft, {
+        excludeKeys: new Set([contribution.key]),
+      }),
+    ).toEqual([]);
+  });
+
+  it('flags nobody as somebody else when the current user is unknown', () => {
+    const contribution = {
+      ...base,
+      draft: { decision: { verdict: 'approved' }, saved_by: 'Jayson', saved_at: '2026-09-29T00:00:00Z' },
+    } as BoardContribution;
+    const { rows } = confirmDialogRowsFor(
+      [contribution],
+      { [contribution.key]: { verdict: 'approved' } },
+      { currentUserName: '', openedAt: OPENED },
+    );
+    expect(rows[0].savedByOther).toBe(false);
+  });
+});
+
+describe('confirm scope: a naive-UTC saved_at is read as UTC', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('a draft saved a moment ago reads "just now" and not before the board opened', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-30T04:50:40Z'));
+    const board = buildBoard(
+      [line({ sales_order_id: 'so-a', so_number: 'SO000001', line_no: 1 })],
+      { today: TODAY },
+    );
+    const base = board.cells.flatMap((cell) => cell.contributions)[0];
+    const contribution = {
+      ...base,
+      draft: { decision: { verdict: 'approved' }, saved_by: 'Jayson', saved_at: '2026-09-30T04:50:00' },
+    } as BoardContribution;
+    const { rows } = confirmDialogRowsFor(
+      [contribution],
+      { [contribution.key]: { verdict: 'approved' } },
+      { currentUserName: 'Cyndi', openedAt: new Date('2026-09-30T04:52:00Z') },
+    );
+    expect(rows[0].savedBefore).toBe(true);
+    expect(savedAgoText('2026-09-30T04:50:00')).toBe('just now');
+  });
+});
+
+/**
+ * Saved | Others is Confirm's own posting set: `pressPostsContribution` is true exactly for the
+ * lines `confirmLinesFor` posts and the covered rejections `rejectedCoveredLineIdsFor` withdraws.
+ */
+describe('pressPostsContribution: Saved is exactly what Confirm posts', () => {
+  const board = buildBoard(
+    [line({ sales_order_id: 'so-a', so_number: 'SO000001', line_no: 1, qty: '100' })],
+    { today: TODAY, freeStock: { 'WESERP10B|BRW-BB': '100' } },
+  );
+  const base = board.cells.flatMap((cell) => cell.contributions)[0];
+  const covered = { covered: true, decision: {} as never };
+  const amended = {
+    verdict: 'amended' as const,
+    reserve_qty: '0',
+    reserve: [],
+    borrow: [],
+    buy_qty: '100',
+    reason: 'Late.',
+  };
+
+  type Case = {
+    name: string;
+    contribution: Partial<BoardContribution>;
+    decision?: { verdict: 'approved' | 'amended' | 'rejected' } & Record<string, unknown>;
+    saved: boolean;
+  };
+  const cases: Case[] = [
+    { name: 'saved, uncovered', contribution: {}, decision: { verdict: 'approved' }, saved: true },
+    { name: 'covered + amended', contribution: covered, decision: amended, saved: true },
+    { name: 'covered + approved', contribution: covered, decision: { verdict: 'approved' }, saved: true },
+    { name: 'staged reject on a covered line', contribution: covered, decision: { verdict: 'rejected' }, saved: true },
+    {
+      name: 'stale draft',
+      contribution: { draft: { decision: { verdict: 'approved' }, saved_by: 'x', saved_at: '2026-09-29T00:00:00Z', stale: true } },
+      decision: { verdict: 'approved' },
+      saved: false,
+    },
+    { name: 'no mirror on an adopted order', contribution: { project_line_id: null }, decision: { verdict: 'approved' }, saved: false },
+    { name: 'unplannable', contribution: { unplannable: true }, decision: { verdict: 'approved' }, saved: false },
+    { name: 'suggested (no decision)', contribution: {}, saved: false },
+  ];
+
+  it.each(cases)('$name', (entry) => {
+    const contribution = { ...base, ...entry.contribution } as BoardContribution;
+    const draft = entry.decision ? { [contribution.key]: entry.decision as never } : {};
+    const posted = confirmLinesFor([contribution], 'so-a', draft).map((row) => row.project_line_id);
+    const withdrawn = rejectedCoveredLineIdsFor([contribution], 'so-a', draft);
+    const inConfirm = [...posted, ...withdrawn].includes(contribution.project_line_id ?? '__none__');
+
+    expect(pressPostsContribution(contribution, draft[contribution.key])).toBe(entry.saved);
+    expect(pressPostsContribution(contribution, draft[contribution.key])).toBe(inConfirm);
+  });
+
+  it('follows the predicate, not the pill: a staged reject reads Rejected yet is in Saved', () => {
+    const contribution = { ...base, ...covered } as BoardContribution;
+    const decision = { verdict: 'rejected' as const, reason: 'No.' };
+    // The old rule (`verdictOf === "saved"`) would have put this line under Others.
+    expect(verdictOf(contribution, decision)).toBe('rejected');
+    expect(pressPostsContribution(contribution, decision)).toBe(true);
+  });
+
+  it('counts a no-mirror line as saved only on an order about to be adopted', () => {
+    const contribution = { ...base, project_line_id: null } as BoardContribution;
+    const decision = { verdict: 'approved' as const };
+    expect(pressPostsContribution(contribution, decision, { unadopted: true })).toBe(true);
+    expect(pressPostsContribution(contribution, decision, { unadopted: false })).toBe(false);
+  });
+
+  it('a staged reject held back by a pending planning change is not a write', () => {
+    const contribution = { ...base, ...covered } as BoardContribution;
+    const decision = { verdict: 'rejected' as const, reason: 'No.' };
+    expect(pressPostsContribution(contribution, decision, { batchBlocked: true })).toBe(false);
   });
 });

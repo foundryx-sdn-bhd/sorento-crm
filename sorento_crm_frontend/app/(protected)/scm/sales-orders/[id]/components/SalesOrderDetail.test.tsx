@@ -140,7 +140,7 @@ vi.mock('../../hooks/useSalesAgentOptions', () => ({
   useSalesAgentOptions: () => ({
     options: [
       { value: 'agent-jeremy', label: 'JR001 · JEREMY' },
-      { value: 'agent-cindy', label: 'CL002 · CINDY LEE' },
+      { value: 'agent-cindy', label: 'CL002 · CONTACT W' },
     ],
   }),
 }));
@@ -1095,7 +1095,7 @@ describe('SalesOrderDetail - the agent', () => {
             inquiry_no: 'OI-000007',
             state: 'raised',
             raised_at: '2026-07-18T09:00:00',
-            raised_by_name: 'Yana',
+            raised_by_name: 'CONTACT AH',
             rows_total: 3,
             rows_placed: 2,
           },
@@ -1115,7 +1115,7 @@ describe('SalesOrderDetail - the agent', () => {
     expect(link.getAttribute('title')).toContain('2/3 placed');
     // WHO raised it and WHEN, ON the header rather than in a tooltip (AC-H2). 09:00 UTC
     // is 5:00 pm in Malaysia: rendering the naive stamp as local time is the defect.
-    expect(within(orderCard).getByText(/Yana/)).toBeInTheDocument();
+    expect(within(orderCard).getByText(/CONTACT AH/)).toBeInTheDocument();
     expect(within(orderCard).getByText(/18\/07\/2026, 5:00 pm/)).toBeInTheDocument();
   });
 

@@ -59,8 +59,8 @@ vi.mock('@/lib/listing-column-preferences/useListingColumnPreferences', () => ({
   },
 }));
 
-vi.mock('@/app/(protected)/system-management/status-graphs/hooks/useStatusGraphs', () => ({
-  useStatusGraph: () => ({ data: { statuses: [] }, isLoading: false }),
+vi.mock('@/app/(protected)/project-sales/_shared/hooks/useProjectStatusGraph', () => ({
+  useProjectStatusGraph: () => ({ data: { statuses: [] }, isLoading: false }),
 }));
 
 vi.mock('../../_shared/services/projectService', async (importOriginal) => {

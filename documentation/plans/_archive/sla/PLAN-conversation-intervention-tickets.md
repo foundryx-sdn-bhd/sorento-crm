@@ -121,7 +121,7 @@ UAC: conversation-intervention-tickets-acceptance-criteria.md (sections J/K/L/M 
   working until flipped) -> verify old flow green -> flip DURING working hours with
   `LLEN sorento-respond-assignee-queue == 0` verified (or right after a drain tick;
   stranded queue items = lost enquiries) -> publish reworked sub to rrYXzE61gCNUck_zmXe-G
-  -> post-flip canary with the dev contact (437264483), user-gated. FLIP SCOPE also
+  -> post-flip canary with the dev contact (900000008), user-gated. FLIP SCOPE also
   includes `respond-close-convo` (-WkzJMQZHmsFQm6A2abLJ): gate/unpublish its
   conversation-scope resolve leg (it resolves + unassigns + messages the contact on
   Respond close events - AC-E4 noise/loop source). Post-flip tidy: remove the dead

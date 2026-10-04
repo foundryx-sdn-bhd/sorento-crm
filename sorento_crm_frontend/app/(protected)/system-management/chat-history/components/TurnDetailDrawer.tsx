@@ -113,6 +113,9 @@ function Sections({ detail }: { detail: TurnDetail }) {
       <Section title="Field reveals" testId="section-reveals">
         <RevealsSection reveals={detail.reveals} />
       </Section>
+      <Section title="Customer scope" testId="section-customer-scope">
+        <CustomerScopeSection events={detail.customer_scope ?? []} />
+      </Section>
       <Section title="Session" testId="section-session">
         <SessionSection session={detail.session} />
       </Section>
@@ -745,6 +748,57 @@ function RevealsSection({ reveals }: { reveals: TurnDetail['reveals'] }) {
       <ChipRow label="Granted" chips={reveals.granted} tone="success" />
       <ChipRow label="Dropped" chips={reveals.dropped} tone="destructive" />
     </div>
+  );
+}
+
+/**
+ * CHATBOT-SELFREF-SCOPE R4: every customer-scope decision the turn made, so a refusal
+ * explains itself here - the reason, the words typed this message, how many linked ids
+ * the turn ran on and how many ids outside the links it dropped. The ids themselves sit
+ * in the record below the line, the way the Tool panel prints its args.
+ */
+function CustomerScopeSection({ events }: { events: NonNullable<TurnDetail['customer_scope']> }) {
+  if (events.length === 0) return <Empty>No customer scope decision this turn.</Empty>;
+  return (
+    <ul className="space-y-2 text-xs">
+      {events.map((event, index) => (
+        <li key={`${event.at ?? 'event'}-${index}`} className="space-y-1.5 rounded-md border px-2 py-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {event.refused ? (
+              <Badge variant="destructive" appearance="light" size="sm">
+                refused
+              </Badge>
+            ) : (
+              <Badge variant="secondary" appearance="light" size="sm">
+                {event.decision ?? 'decision'}
+              </Badge>
+            )}
+            {event.reason ? <span className="text-muted-foreground">{event.reason}</span> : null}
+            {event.tool ? <span className="font-mono">{event.tool}</span> : null}
+            {event.self_reference ? (
+              <Badge variant="secondary" appearance="light" size="sm">
+                self-reference
+              </Badge>
+            ) : null}
+            {event.offer_passed ? (
+              <Badge variant="secondary" appearance="light" size="sm">
+                picker passed
+              </Badge>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap gap-3 text-2xs text-muted-foreground">
+            <span>linked: {event.ids?.length ?? 0}</span>
+            <span>dropped: {event.dropped?.length ?? 0}</span>
+          </div>
+          {event.typed && event.typed.length > 0 ? (
+            <ChipRow label="Typed this message" chips={event.typed} tone="secondary" />
+          ) : null}
+          {(event.dropped?.length ?? 0) > 0 || (event.ids?.length ?? 0) > 0 ? (
+            <Code value={{ ids: event.ids ?? [], dropped: event.dropped ?? [], kept: event.kept ?? [] }} />
+          ) : null}
+        </li>
+      ))}
+    </ul>
   );
 }
 

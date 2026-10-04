@@ -355,8 +355,9 @@ def _contacts_route_specs(db):
 
 
 def _reference_data_route_specs(db):
-    """UAC6c.2 - the two cross-module reference catalogs, on the deliberately
-    low-privilege `user_management.reference_data.view`."""
+    """The two cross-module reference catalogs. Gated on `reference_data.view` by UAC6c.2
+    until the owner opened them to every signed-in user (1 Oct 2026, NS-SHARED-LOOKUPS);
+    no longer in `_all_route_specs`, kept for the open-read test at the bottom."""
     access_type_code = _seed_contact_access_type(db)
     segment_code = _seed_market_segment(db)
     return [
@@ -399,7 +400,6 @@ def _all_route_specs(db):
         + _access_agent_route_specs(db)
         + _contact_access_type_route_specs(db)
         + _contacts_route_specs(db)
-        + _reference_data_route_specs(db)
         + _system_log_route_specs(db)
     )
 
@@ -421,7 +421,9 @@ class TestPerRouteGates:
         # the 3 onboarding reads, the teams member-brands read from the
         # brand-aware escalation PR (#197) and the contact media-access read from
         # the chatbot media PR, all of which have their own tests.)
-        assert len(self.specs) == 24, "one entry per gated route except GET /settings/"
+        # 22 since the two reference catalogs opened to every signed-in user
+        # (NS-SHARED-LOOKUPS, owner ruling 1 Oct 2026).
+        assert len(self.specs) == 22, "one entry per gated route except GET /settings/"
 
     def test_denied_without_permission(self, api):
         client, allow, _caller = api
@@ -518,6 +520,19 @@ _EXCEPTION_ALLOWLIST: dict[str, str] = {
     # See UAC6b.2 / UAC6b.3 / UAC6d.2 and Q2 in _PLAN_PATH.
     "/api/v1/user-management/settings/app-config": (
         "narrow six-field projection, auth-only by design - see the route docstring"
+    ),
+    # --- Shared lookups, open to every signed-in user by owner ruling 1 Oct 2026
+    # (never-stuck L10, documentation/plans/never-stuck/PLAN-ns-shared-lookups.md).
+    # Each returns picker fields only; the writes on both catalogs need
+    # `user_management.reference_data.manage` (tests/test_ns_shared_lookups.py).
+    "/api/v1/user-management/users/lookup": (
+        "people picker: active users, id + name only, name-only search - NS-SHARED-LOOKUPS"
+    ),
+    "/api/v1/user-management/contact-access-types/": (
+        "catalog read (code, name, description, sort order) - NS-SHARED-LOOKUPS"
+    ),
+    "/api/v1/user-management/market-segments/": (
+        "catalog read, no personal data - NS-SHARED-LOOKUPS"
     ),
     # --- Self-scoped: filters on `user_id == current_user["id"]`, discloses
     # nothing about anyone else, and fires on every page load for every user
@@ -643,8 +658,11 @@ class TestStructuralCoverage:
         gated_paths = {r.path for r in _mounted_get_routes() if _is_gated(r)}
         # 46: the chatbot memory read (below) and the contact -> customers read
         # (`/contacts/{contact_id}/customers`, PLAN-contact-customers-29sep D2, under
-        # contacts.view) each joined the package on the same day.
-        assert len(gated_paths) == 46
+        # contacts.view) each joined the package on the same day. 44 since the two
+        # reference catalogs opened to every signed-in user (NS-SHARED-LOOKUPS). 45 with the
+        # per-contact accessible brands read (`/contacts/{contact_id}/brands`,
+        # CONTACT-BRAND-SCOPE, under contacts.view).
+        assert len(gated_paths) == 45
         assert gated_paths == {
             "/api/v1/user-management/teams/",
             "/api/v1/user-management/teams/{team_id}",
@@ -669,6 +687,7 @@ class TestStructuralCoverage:
             "/api/v1/user-management/contacts/{contact_id}/cs-routing",
             "/api/v1/user-management/contacts/{contact_id}/customers",
             "/api/v1/user-management/contacts/{contact_id}/market-segments",
+            "/api/v1/user-management/contacts/{contact_id}/brands",
             # --- The chatbot media PR, and deliberately NOT on the `contacts.view`
             # its path siblings above take: reading a contact's media gates is
             # reading who may send the bot images and voice notes and how much of
@@ -695,9 +714,8 @@ class TestStructuralCoverage:
             # The Chatbot settings screen's lane vocabulary (AC-809). Same slug as the
             # settings blob it is edited beside, and named here rather than counted.
             "/api/v1/user-management/settings/chatbot-lanes",
-            # --- Q3 decided: user_management.reference_data.view
-            "/api/v1/user-management/contact-access-types/",
-            "/api/v1/user-management/market-segments/",
+            # --- Q3's two reference catalogs left this set on 1 Oct 2026: the owner
+            # opened them to every signed-in user (see the allowlist).
             # --- Found by widening this sweep to the whole package:
             # user_management.logs.view, the slug the /user-management/logs menu
             # entry already advertises.
@@ -738,46 +756,20 @@ class TestStructuralCoverage:
 # --------------------------------------------------------------- work item 5
 
 
-_REFERENCE_CATALOG_URLS = (
-    "/api/v1/user-management/contact-access-types/",
-    "/api/v1/user-management/market-segments/",
-)
-
-
-def test_reference_catalogs_take_the_low_privilege_slug_not_the_admin_one(api):
-    """UAC6c.4 - the negative that stops the low-privilege slug being collapsed.
-
-    Q3 decided: the two shared catalogs are gated, but on `reference_data.view`,
-    NOT on the `access_agents.view` their admin siblings use. That distinction is
-    the whole point of the new slug - the ~10 cross-module consumers (promotions,
-    forms, files, trash, attachments, brands, products) run under
-    `marketing_manager` / `marketing_executive`, which hold ZERO
-    `user_management.*` grants, so gating on `access_agents.view` would have
-    broken a picker on pages those roles are fully entitled to.
-
-    So the assertion that matters is the asymmetric one: a caller holding
-    `access_agents.view` and nothing else is DENIED. If someone later "tidies"
-    the two slugs into one, the 200/403 pair for `reference_data.view` alone
-    would still pass - this is the case that would not.
-    """
+def test_reference_catalogs_answer_any_signed_in_user(api, db):
+    """UAC6c.4 is superseded. Q3 gated the two shared catalogs on the low-privilege
+    `reference_data.view` so cross-module pickers would not need `access_agents.view`; the
+    owner then ruled (1 Oct 2026, never-stuck L10) that they open to every signed-in user,
+    because a role without that grant still saw empty access-level and segment pickers.
+    The read carries catalog rows only; writes keep `reference_data.manage`."""
     client, allow, _caller = api
+    specs = _reference_data_route_specs(db)
 
-    for url in _REFERENCE_CATALOG_URLS:
-        allow.clear()
-        allow.add(ACCESS_AGENTS_VIEW)
-        denied = client.get(url)
-        assert denied.status_code == 403, (
-            f"{url}: a caller holding only {ACCESS_AGENTS_VIEW} got "
-            f"{denied.status_code} - the reference slug has been collapsed into "
-            "the admin one"
-        )
-        assert REFERENCE_DATA_VIEW in denied.json()["detail"]
-
-        allow.clear()
-        allow.add(REFERENCE_DATA_VIEW)
+    allow.clear()
+    for label, url, _slug, check in specs:
         resp = client.get(url)
-        assert resp.status_code == 200, f"{url}: {resp.status_code} ({resp.text})"
-        assert isinstance(resp.json(), list)
+        assert resp.status_code == 200, f"{label}: {resp.status_code} ({resp.text})"
+        assert check(resp), label
 
 
 def test_contacts_gets_deny_a_caller_holding_only_the_neighbouring_slugs(api, db):

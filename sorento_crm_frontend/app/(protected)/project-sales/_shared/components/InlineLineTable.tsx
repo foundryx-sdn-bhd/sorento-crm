@@ -59,6 +59,9 @@ export interface InlineLineColumn<TRow> {
   placeholder?: string;
   /** `select`: the whole option set, filtered in the popover. */
   options?: SearchableSelectOption[];
+  /** `select`: the options read failed; the menu says so instead of "No matches". */
+  loadError?: unknown;
+  onRetry?: () => void;
   /** `searchable-select`: debounced server search. */
   fetchOptions?: (query: string) => Promise<SearchableSelectOption[]>;
   /**
@@ -1246,6 +1249,8 @@ function InlineCell<TRow>({
           onChange={onChange}
           onOptionChange={onOptionChange}
           options={column.kind === 'select' ? column.options : undefined}
+          loadError={column.kind === 'select' ? column.loadError : undefined}
+          onRetry={column.kind === 'select' ? column.onRetry : undefined}
           fetchOptions={
             column.kind === 'searchable-select' ? column.fetchOptions : undefined
           }

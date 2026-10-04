@@ -48,7 +48,7 @@ Plan: `PLAN-ci-fast-gate-29sep.md`. Every AC names how it is checked.
 - **AC-14 Docs no longer say a merge deploys.** `CLAUDE.md` lane-merge
   discipline and `documentation/agents/cloud-lanes.md` describe the release
   dispatch and the approval. Check: diff.
-- **AC-15 The ruleset list is exact.** The 18 names in the plan's table equal
+- **AC-15 The ruleset list is exact.** The 19 names (18 at this plan; row 19, the `serial` leg, from CI-SPEED #1426) in the plan's table equal
   the `name:` values with matrix suffixes as reported on a real run. Check: the
   check names on this PR's own `ci` run against the table.
 - **AC-16 Lint is not a gate.** No lint job is added; the plan records the

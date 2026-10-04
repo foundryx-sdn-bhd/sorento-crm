@@ -8,6 +8,7 @@ from typing import Optional, List
 from app.database import get_db
 from app.config import settings
 from app.services.user_service import UserPermissionService
+from app.middleware.impersonation_ended_middleware import IMPERSONATION_ENDED_STATE
 from app.services.user_session_service import (
     resolve_session,
     SessionAuthError,
@@ -185,16 +186,22 @@ def _maybe_apply_impersonation(
 ) -> dict:
     """If real user is admin/superadmin AND active session matches header, swap to target user dict.
 
-    Stash the real user on ``request.state.real_user`` regardless. Stale or invalid headers
-    are silently ignored - admin browses as themselves.
+    Stash the real user on ``request.state.real_user`` regardless. A stale or invalid header
+    is ignored - admin browses as themselves - and marked on ``request.state`` so
+    ``ImpersonationEndedMiddleware`` tells the client its view-as is over.
     """
     request.state.real_user = real_user
     target_id = request.headers.get(IMPERSONATE_HEADER)
     if not target_id:
         return real_user
+
+    def _ignored() -> dict:
+        setattr(request.state, IMPERSONATION_ENDED_STATE, True)
+        return real_user
+
     role_slugs = UserPermissionService(db).get_user_role_slugs(real_user["id"])
     if not (role_slugs & {UserPermissionService.SUPERADMIN_ROLE_SLUG, "admin"}):
-        return real_user
+        return _ignored()
     from app.models.impersonation import ImpersonationSession
 
     session_row = (
@@ -207,10 +214,10 @@ def _maybe_apply_impersonation(
         .first()
     )
     if not session_row:
-        return real_user
+        return _ignored()
     target_user = _load_user_dict_from_db(db, target_id)
     if not target_user or target_user.get("status") != "ACTIVE":
-        return real_user
+        return _ignored()
     request.state.impersonation_session_id = session_row.id
     # The target is the effective actor, the admin is at the keyboard (plan 8.1/8.2).
     from app.audit_context import AuditActor, stamp_actor
@@ -461,6 +468,31 @@ def require_any_permission(permission_slugs: List[str]):
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"One of these permissions required: {', '.join(permission_slugs)}",
             )
+        return current_user
+
+    return _require
+
+
+def require_session_or_api_key_permission(permission_slug: str):
+    """A shared lookup: any signed-in session reads it; an API key still needs ``permission_slug``.
+
+    Owner ruling 1 Oct 2026 (never-stuck L10) opens pickers such as the master-data selects
+    to every signed-in user. An integration, though, acts with its act-as user's grants
+    (``integration_auth.py``), so a key whose act-as user lacks the slug stays refused.
+    """
+
+    def _require(
+        current_user: dict = Depends(get_current_user_or_api_key),
+        db: Session = Depends(get_db),
+    ) -> dict:
+        if current_user.get("auth_method") in {"api_key", "integration_api_key"}:
+            if not UserPermissionService(db).check_user_has_permission(
+                current_user["id"], permission_slug
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Permission required: {permission_slug}",
+                )
         return current_user
 
     return _require

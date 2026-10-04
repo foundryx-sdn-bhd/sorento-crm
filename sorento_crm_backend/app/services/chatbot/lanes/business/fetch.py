@@ -54,7 +54,13 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from app.services.chatbot import jsc
-from app.services.chatbot.contracts import UNDOMAINED_CHATBOT_TOOLS, is_timeline, named_count
+from app.services.chatbot.label_catalog import IDENTITY, Localizer
+from app.services.chatbot.contracts import (
+    SALES_REPORT_GROUP_BYS,
+    UNDOMAINED_CHATBOT_TOOLS,
+    is_timeline,
+    named_count,
+)
 from app.services.chatbot.turn.policy import default_policy
 from app.services.chatbot.turn import policy_rows
 from app.services.product_spec_registry import display_spec_value
@@ -625,6 +631,16 @@ def _rendered_product_count(items: list[Any]) -> int | None:
     return len(codes) if codes else None
 
 
+def _self_reference(semantic_input: Any) -> bool:
+    """CHATBOT-SELFREF-SCOPE (owner rule Q6a, hand test 30 Sep 2026): "my sales" means
+    ALL the asker's linked accounts. An account the conversation carried from an earlier
+    report (`outstanding_carried_customer_ids`, the offer's own subject) is what a "1" or
+    "this month only" narrows, never what "my" means, so on a self-reference turn the
+    carry does not replace this turn's own ids (the links, or the account the message
+    itself named)."""
+    return jsc.get(semantic_input, "self_reference") is True
+
+
 def entity_ids_transformer(
     trigger: dict[str, Any] | None, *, space_id: str | None = None
 ) -> dict[str, Any]:
@@ -767,7 +783,7 @@ def entity_ids_transformer(
         carried_customers = [
             u for u in jsc.array(jsc.get(semantic_input, "outstanding_carried_customer_ids")) if is_uuid(u)
         ]
-        if carried_customers:
+        if carried_customers and not _self_reference(semantic_input):
             out["customer_ids"] = carried_customers
         # AC-1138 (D10 on main): "1"/"2" against an open detail offer re-runs THIS
         # SAME tool with `detail=so|do` - the MCP layer swaps in the numbered list
@@ -799,7 +815,7 @@ def entity_ids_transformer(
         carried_customers = [
             u for u in jsc.array(jsc.get(semantic_input, "outstanding_carried_customer_ids")) if is_uuid(u)
         ]
-        if carried_customers:
+        if carried_customers and not _self_reference(semantic_input):
             out["customer_ids"] = carried_customers
         # R-B3 (reviewer finding, Phase 3 fix round): the turn's OWN sales_channel wins
         # when given; a pick or a refinement of an open sales_report_detail offer names
@@ -810,9 +826,12 @@ def entity_ids_transformer(
             channel = jsc.get(semantic_input, "outstanding_carried_channel")
         if jsc.truthy(channel):
             out["channel"] = jsc.js_string(channel)
+        # AC-SR-28: a drill-down picked off the open `sales_report_detail` offer re-runs
+        # this SAME tool with that `group_by` (the offer's own value, `SALES_REPORT_GROUP_BYS`);
+        # the window, accounts, location and channel ride on the carried keys above.
         detail_pick = jsc.get(semantic_input, "outstanding_detail_pick")
-        if detail_pick == "so":
-            out["detail"] = "so"
+        if detail_pick in SALES_REPORT_GROUP_BYS:
+            out["group_by"] = detail_pick
 
         # S18 (owner ruling, mid-lane): a PRODUCT-ONLY ask (a resolved product, no
         # customer) with no date window defaults to the CURRENT CALENDAR YEAR
@@ -895,8 +914,12 @@ def entity_ids_transformer(
             # A picked row: that code's customers and months, same filters and basis.
             out["detail_code"] = detail_code
         elif isinstance(top_n, (int, float)) and not isinstance(top_n, bool) and top_n >= 1:
-            # Owner ruling 26 Sep: a named N is 1 to 100 ("top 100").
-            out["n"] = min(int(top_n), 100)
+            # Owner, 30 Sep 2026: no 100 cap ("100, 200"). Only the shared safety ceiling
+            # bounds it, and never silently: the lane notes it above the reply
+            # (`lanes/business.top_selling_ceiling_note`).
+            from app.services.sales_report_service import TOP_SELLING_N_CEILING
+
+            out["n"] = min(int(top_n), TOP_SELLING_N_CEILING)
         else:
             # No N named: the full count and no rows, so the reply states the total
             # and asks how many (owner, PR #1258 05:32Z) without the whole book being
@@ -932,6 +955,15 @@ def entity_ids_transformer(
                 product_codes.append(jsc.js_string(code))
         if product_codes:
             out["product_codes"] = product_codes
+        # LOWSTOCK-FILTER-ASK: the workbook filters `run_fetch` settled before calling
+        # (`low_stock_ask.route_filters`). Absent keys keep the old whole-book call.
+        filters = jsc.get(semantic_input, "low_stock_filters")
+        if isinstance(filters, dict):
+            for key in ("categories", "suppliers"):
+                if filters.get(key):
+                    out[key] = list(filters[key])
+            if filters.get("split") and filters["split"] != "none":
+                out["split"] = filters["split"]
         # #892 (console, 14 Sep): this tool REQUIRES both ids - the route 422s without
         # them, and they drive the company scope the write needs - so it must NOT depend on
         # the shared tail below surviving a refactor or a None `semantic_input`. Carry them
@@ -1167,8 +1199,11 @@ def entity_ids_transformer(
     if isinstance(scope_ids, list) and scope_ids and tool_name in CUSTOMER_SCOPED_TOOLS:
         requested = out.get("customer_ids")
         requested = requested if isinstance(requested, list) else ([requested] if requested else [])
-        if any(str(c) not in {str(i) for i in scope_ids} for c in requested):
-            raise ScopeViolation(f"{tool_name} asked for a customer outside the contact's scope")
+        outside = [str(c) for c in requested if str(c) not in {str(i) for i in scope_ids}]
+        if outside:
+            raise ScopeViolation(
+                f"{tool_name} asked for a customer outside the contact's scope", dropped=outside
+            )
         out["customer_ids"] = requested or list(scope_ids)
         out.pop("customer_query", None)
 
@@ -1237,7 +1272,12 @@ class ToolNotAllowed(RuntimeError):
 class ScopeViolation(ToolNotAllowed):
     """PLAN-chatbot-customer-scope-29sep.md D4: a customer-scoped contact's fetch asked for
     a customer outside its links. Never a tool call; `run_fetch` answers it with the
-    refusal line, not the generic "not allowed" text."""
+    refusal line, not the generic "not allowed" text. `dropped` names the ids outside the
+    links, for the trace (CHATBOT-SELFREF-SCOPE R4)."""
+
+    def __init__(self, message: str, *, dropped: list[str] | None = None) -> None:
+        super().__init__(message)
+        self.dropped: list[str] = list(dropped or [])
 
 
 #: The MCP tools that return per-customer data: every catalogue tool whose `query_params`
@@ -1522,7 +1562,10 @@ def _fmt_value(v: Any) -> str:
     if isinstance(v, bool):
         return "Yes" if v else "No"
     if isinstance(v, str):
-        return (_fmt_ts(v) or v) if _ISO_RE.match(v) else v
+        # DO-ASK-SIMPLIFY tester pass 2: a value's own '*' (a product code "*REPLACE")
+        # would pair with the next label's bold marker and leave a stray '*' in WhatsApp.
+        # It prints as the look-alike U+2217, which WhatsApp does not read as formatting.
+        return ((_fmt_ts(v) or v) if _ISO_RE.match(v) else v).replace("*", "\u2217")
     if isinstance(v, (int, float)):
         return jsc.js_string(v)
     if isinstance(v, list):
@@ -2242,7 +2285,9 @@ def _outstanding_report_output(result: Any, ctx: dict[str, Any]) -> dict[str, An
         # ever stripped, AC-S1-3's own narrow fix) - a bare, non-envelope string is
         # NEVER a rendered report, so it must never reach `response` either, the
         # same "never treated as a result" rule `has_result` already states above.
-        "response": text if "response" in envelope else "",
+        # CHAT-LANGUAGE slice 3: the offer above was parsed from the ENGLISH text; only what is
+        # printed is localized, last (the stored offer text stays English).
+        "response": (ctx.get("localizer") or IDENTITY).lines(text) if "response" in envelope else "",
         "response_intro": None,
         "answers": [],
         "attachments": [],
@@ -2305,25 +2350,46 @@ def _sales_report_filters_from_ctx(ctx: dict[str, Any]) -> dict[str, Any]:
 def _sales_report_output(result: Any, ctx: dict[str, Any]) -> dict[str, Any]:
     """S4 wiring point 7 (AC-1654/AC-1655/AC-1658): `crm_sales_report` never goes
     through the generic envelope below - mirrors `_outstanding_report_output` for
-    the sibling tool, the SAME reason: the report's shape (a month block per
-    bucket) has no row list to build items from.
+    the sibling tool, the SAME reason: the report's shape has no row list to build
+    items from.
 
-    `_outstanding_offer_from_text` is REUSED, not copied: this report's own single
-    closing sentence (`Reply 1 for the sales order list.`) is byte-identical to the
-    outstanding report's single-scope offer, so the same regex finds it and returns
-    the SAME one-row shape (`idx` 1, `Sales order list`, `so`) this tool's own
-    detail offer needs.
+    AC-SR-28: the drill-down offer is the presenter's own `options` roster (`{idx, label,
+    value, aliases}`, numbered by the presenter, the one writer of the numbering), never a
+    regex over the reply text. Those rows become the `sales_report_detail` open question.
     """
     envelope = result if isinstance(result, dict) else {}
     if "response" in envelope:
         text = jsc.js_string(envelope.get("response") or "")
         has_result = envelope.get("has_result") is True
+        # CHATBOT-SELFREF-SCOPE (owner hand test, 30 Sep 2026): a rendered report with
+        # no month on the asker's OWN accounts ("my sales this year", or any ask of a
+        # customer-scoped contact) is a final answer - "No sales found." - never the
+        # miss lane's escalate offer: there is nothing to escalate about one's own
+        # account. A miss on a NAMED product or customer keeps AC-1658's offer, since a
+        # wrong code is worth a person's look.
+        semantic_input = ctx.get("semantic_input")
+        if isinstance(semantic_input, str):
+            semantic_input = _safe_json(semantic_input)
+        own_accounts = isinstance(semantic_input, dict) and (
+            semantic_input.get("self_reference") is True or bool(semantic_input.get("scope_customer_ids"))
+        )
+        if not has_result and own_accounts and text.strip().endswith(SALES_REPORT_MISS_MESSAGE):
+            has_result = True
     else:
         # Mirrors `_outstanding_report_output`'s own fix (#1262 slice 1, F2): a bare
         # string here is never a rendered report, so it is never treated as a result.
         text = result if isinstance(result, str) else jsc.js_string(result)
         has_result = False
-    offer = _outstanding_offer_from_text(text)
+    offer = [
+        {
+            "idx": row.get("idx"),
+            "label": row.get("label"),
+            "value": row.get("value"),
+            "aliases": [a for a in jsc.array(row.get("aliases")) if isinstance(a, str)],
+        }
+        for row in jsc.array(envelope.get("options"))
+        if isinstance(row, dict) and row.get("value") in SALES_REPORT_GROUP_BYS and row.get("idx")
+    ]
 
     outstanding_ask = (
         {
@@ -2331,7 +2397,7 @@ def _sales_report_output(result: Any, ctx: dict[str, Any]) -> dict[str, Any]:
             "last_result_set": offer,
             "filters": {
                 **_sales_report_filters_from_ctx(ctx),
-                "offer_text": _outstanding_offer_block(text),
+                "offer_text": _sales_report_offer_block(text),
             },
         }
         if offer
@@ -2363,12 +2429,26 @@ def _sales_report_output(result: Any, ctx: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+#: The heading the presenter prints above the drill-down options (`_sales_report`).
+_SALES_REPORT_DRILL_HEADING = "*Drill down:*"
+
+
+def _sales_report_offer_block(text: str) -> str:
+    """The drill-down block exactly as the customer was shown it (heading plus the numbered
+    options), kept verbatim for the out-of-range re-ask (AC-1102's rule)."""
+    at = (text or "").rfind(_SALES_REPORT_DRILL_HEADING)
+    return text[at:].strip() if at >= 0 else ""
+
+
 #: The miss line for an unrendered low stock payload (N6). The presenter carries the same
 #: wording for its own error envelope; this copy covers only the "render never happened"
 #: fallback, where the presenter's text never reached this function.
 _LOW_STOCK_ERROR_TEXT = "Could not run the low stock report right now."
 #: The presenter's own error line for `crm_sales_analysis`, for a body it never rendered.
 _SALES_ANALYSIS_ERROR_TEXT = "Could not run the sales report right now."
+#: The presenter's own miss line for `crm_sales_report` (`presenters.SALES_REPORT_MISS_MESSAGE`,
+#: AC-1607): the one way a rendered report says it found no month.
+SALES_REPORT_MISS_MESSAGE = "No sales found."
 
 
 def _low_stock_report_output(result: Any, *, fallback: str = _LOW_STOCK_ERROR_TEXT) -> dict[str, Any]:
@@ -2418,6 +2498,9 @@ def _low_stock_report_output(result: Any, *, fallback: str = _LOW_STOCK_ERROR_TE
         "field_access": None,
         "requested_attributes": [],
         "keys_served": False,
+        # The report's own terminal answer on every branch: the miss handler never
+        # answers over it (`answer_bridge._miss_triggers`, owner hand test 3 Oct 2026).
+        "low_stock_report": True,
     }
 
 
@@ -2499,7 +2582,9 @@ def _top_selling_output(result: Any, ctx: dict[str, Any]) -> dict[str, Any]:
         else None
     )
     return {
-        "response": text,
+        # CHAT-LANGUAGE slice 3: the roster above came from the English envelope; the notes and
+        # the ranking are localized last, line by line.
+        "response": (ctx.get("localizer") or IDENTITY).lines(text),
         "response_intro": None,
         "answers": [],
         "attachments": [],
@@ -2536,6 +2621,27 @@ def _dmy(value: Any) -> str:
     return f"{parts[2]}/{parts[1]}/{parts[0]}" if len(parts) == 3 else text
 
 
+_LOCALIZED_TOOLS = frozenset(
+    {
+        "crm_inventory_stock_balance_list",
+        "crm_order_management_orders_list",
+        "crm_order_management_orders_by_product_list",
+        "crm_procurement_po_placed_list",
+        "crm_procurement_spo_allocations_last_receipt_list",
+        "crm_procurement_po_last_cost_list",
+        "crm_incoming_stock_list",
+        "crm_incoming_stock_by_product",
+        "crm_incoming_stock_shipments",
+    }
+)
+
+
+def _field_label(loc: Localizer, f: Any) -> str:
+    """The printed label of a field: translated when the localizer knows it, else as sent."""
+    label = jsc.js_string(jsc.get(f, "label", jsc.UNDEFINED))
+    return loc.label(f) if isinstance(f, dict) and "label" in f else label
+
+
 def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]:
     """The MCP render envelope becomes a WhatsApp message. Deterministic, no LLM (H7).
 
@@ -2561,6 +2667,10 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
             "own_header": True,
         }
     e = _extract_envelope(result)
+    # CHAT-LANGUAGE: render-only. The envelope, the items and `answers` stay English; the
+    # localizer only rewrites the strings printed below (absent = identity, byte-identical).
+    # The stock, incoming and PO / SO / SPO / orders tools; the rest keep English.
+    loc = (ctx.get("localizer") or IDENTITY) if ctx.get("tool") in _LOCALIZED_TOOLS else IDENTITY
     # Read once, for both the restricted-field drop below and the spec-visibility
     # drop (PLAN-spec-visibility-policy.md "Chatbot seam") - one contact, one
     # `ctx.access`, two consumers.
@@ -2896,7 +3006,7 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
     msg = (
         ""
         if plain_lines
-        else jsc.js_string(e.get("intro") or "Here are the results.").strip() + "\n\n"
+        else loc.text(jsc.js_string(e.get("intro") or "Here are the results.").strip()) + "\n\n"
     )
     if isinstance(ctx.get("predicate"), dict):
         # Round 3 W1 (owner hand test on PR #833, "the message too long already"): a
@@ -2921,7 +3031,7 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
             summary_lines = "\n".join(
                 # `${f.label}` on an absent key renders the WORD `undefined`, not "None"
                 # - and this string is sent to a customer.
-                f"*{jsc.js_string(f.get('label', jsc.UNDEFINED))}:* {_fmt_value(f.get('value'))}"
+                f"*{_field_label(loc, f)}:* {_fmt_value(f.get('value'))}"
                 for f in si["fields"]
                 if isinstance(f, dict)
             )
@@ -2949,7 +3059,7 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
 
     def _item_line(position: int, it: Any, *, numbered: bool = True) -> str:
         field_lines = "\n".join(
-            f"*{jsc.js_string(jsc.get(f, 'label', jsc.UNDEFINED))}:* "
+            f"*{_field_label(loc, f)}:* "
             f"{_fmt_value(jsc.get(f, 'value'))}"
             for f in (jsc.get(it, "fields") or [])
         )
@@ -2959,20 +3069,20 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
         # `availability` item's title carries the whole verdict sentence (ported from
         # PR #1118 for chatbot-stock-ask-v2 S3, review round 3, Observation B).
         if not field_lines:
-            field_lines = jsc.nullish_str(jsc.get(it, "title")).strip()
+            field_lines = loc.tail(jsc.nullish_str(jsc.get(it, "title")).strip())
         # Chatbot stock ask v2 S3 fix round 1, Blocking 1 (R14/AC-SA312): an answered
         # `availability` item's title already starts "<code> x <Q>:", so it is not
         # numbered (plan sample (g) shows plain lines, not a numbered list).
         line = field_lines if not numbered else f"{position}. {field_lines}"
         flags = jsc.get(it, "flags")
         if jsc.truthy(flags) and jsc.truthy(jsc.get(flags, "discontinued")):
-            line += "\n⚠️  *(PRODUCT DISCONTINUED)*"
+            line += f"\n⚠️  *({loc.text('PRODUCT DISCONTINUED')})*"
         if jsc.truthy(flags) and jsc.truthy(jsc.get(flags, "expired")):
-            line += "\n⚠️  *(EXPIRED)*"
+            line += f"\n⚠️  *({loc.text('EXPIRED')})*"
         if jsc.truthy(flags) and jsc.truthy(jsc.get(flags, "unallocated")):
-            line += "\n\U0001f6a9  *(PENDING ALLOCATION)*"
+            line += f"\n\U0001f6a9  *({loc.text('PENDING ALLOCATION')})*"
         elif jsc.truthy(flags) and jsc.truthy(jsc.get(flags, "partially_allocated")):
-            line += "\n\U0001f6a9  *(PARTIAL ALLOCATION)*"
+            line += f"\n\U0001f6a9  *({loc.text('PARTIAL ALLOCATION')})*"
         return line
 
     # A3 (AC-905/AC-906): grouped sections, ONE generic branch for every tool - the
@@ -3035,7 +3145,12 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
     ):
         msg += _item_line(i + 1 + set_row_offset, it, numbered=not plain_lines) + "\n\n"
     if dealer_incoming and jsc.truthy(e.get("closing")):
-        msg += jsc.js_string(e["closing"]).strip() + "\n\n"
+        # The presenter's dealer closing is the refer line (`presenters.py`, `closing`);
+        # printed through `turn/refer.py` so the turn is marked for Customer asks
+        # (CUSTOMER-ASKS-REFER-ONLY).
+        from app.services.chatbot.turn import refer
+
+        msg += refer.sentence() + "\n\n"
     # Item 8: the product projection's miss lines, one per asked word, AFTER the items
     # (`_project_product_specs`). Byte-inert when the key is absent.
     for miss in e.get("spec_misses") or []:
@@ -3110,7 +3225,7 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
     stock_availability_reply = jsc.js_string(e.get("result_type") or "") == "stock_availability"
     ts = None if stock_availability_reply else _fmt_ts(e.get("last_updated_at"))
     if ts:
-        msg += f"_Data last updated: {ts}_"
+        msg += f"_{loc.text(f'Data last updated: {ts}')}_"
 
     # E2 (attribute-first asks, AC-1316): a HAS turn's set-answer header, PREPENDED
     # as its own line ahead of everything above - the block itself (intro, items,
@@ -3205,7 +3320,7 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
             msg = header
         else:
             body = msg.strip()
-            footer = f"_Data last updated: {ts}_" if ts else ""
+            footer = f"_{loc.text(f'Data last updated: {ts}')}_" if ts else ""
             if other_brands:
                 if footer and body.endswith(footer):
                     body = f"{body[: -len(footer)].strip()}\n\n{other_brands}\n\n{footer}"

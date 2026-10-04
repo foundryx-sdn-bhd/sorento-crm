@@ -16,7 +16,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
-import { getUsersSelect } from '@/services/userSelectService';
+import { getUserLookup } from '@/services/userSelectService';
 import type { Status } from '@/app/(protected)/system-management/status-graphs/types/statusGraph.types';
 import { useTaskMutations } from '../../_shared/hooks/useProjects';
 import type {
@@ -70,8 +70,8 @@ export function TaskFormDialog({
   );
 
   const users = useQuery({
-    queryKey: ['users-select', 'task-assignee'],
-    queryFn: () => getUsersSelect({ status: 'ACTIVE' }),
+    queryKey: ['user-lookup', 'task-assignee'],
+    queryFn: () => getUserLookup(),
   });
 
   const isEdit = Boolean(task);
@@ -141,10 +141,11 @@ export function TaskFormDialog({
                   value={assignee}
                   onChange={setAssignee}
                   clearable
+                  loadError={users.error}
+                  onRetry={() => void users.refetch()}
                   options={(users.data ?? []).map((user) => ({
                     value: user.id,
-                    label: user.name || user.email || 'Unnamed user',
-                    description: user.name ? (user.email ?? undefined) : undefined,
+                    label: user.name || 'Unnamed user',
                   }))}
                   placeholder="Unassigned"
                   emptyMessage="No active users found"

@@ -5,10 +5,11 @@
 quirks (`"T"`/`"F"` booleans, `Dtlkey` vs `DtlKey` casing, per-customer UDF
 arrays) out of Sorento entirely.
 
-Every model forbids unknown fields. A field the ESB believed it sent and Sorento
-silently dropped is the worst kind of mapping bug: it looks like data loss on
-our side and survives to production because nothing complains. Rejecting is
-noisy and immediate.
+Every model DROPS unknown fields and the ingest route logs their names once per
+request (owner decision, 1 Oct 2026, `app.schemas.ingest_extras`). Rejecting them
+used to fail every record of an entity the day the shared service mapped a new
+AutoCount column, so the two repos had to deploy in a fixed order. The log line is
+what keeps a field the ESB believed it sent from being silently lost.
 
 Related records are addressed by **code, never by local id**. The ESB has no
 knowledge of Sorento's UUIDs, and a code that does not resolve yet is a
@@ -19,12 +20,21 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, Field, model_validator
+
+from app.schemas.ingest_extras import INGEST_MODEL_CONFIG, note_unknown_fields
 
 
 class _Canonical(BaseModel):
-    # extra="forbid" is the point of this layer, not a default worth relaxing.
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    # Unknown keys are dropped and their names logged, never refused (owner decision,
+    # 1 Oct 2026, `app.schemas.ingest_extras`). Declared fields stay strictly typed.
+    model_config = INGEST_MODEL_CONFIG
+
+    @model_validator(mode="before")
+    @classmethod
+    def _note_unknown(cls, data):
+        note_unknown_fields(cls, data)
+        return data
 
     @model_validator(mode="before")
     @classmethod
@@ -116,9 +126,9 @@ class CanonicalSupplier(_Canonical):
     country: Optional[str] = Field(None, max_length=100)
     payment_terms_days: Optional[int] = Field(None, ge=0, le=3650)
     # `payment_terms_code` REMOVED (D15 end state, S4's contract 2.1 cutover):
-    # accepted-and-warned `deprecated_field` through S0-S3, now rejected by
-    # `extra="forbid"` with a field-named validation error like any other
-    # unknown key - see `documentation/plans/autocount/PLAN
+    # accepted-and-warned `deprecated_field` through S0-S3, now dropped and
+    # logged like any other unknown key (`app.schemas.ingest_extras`) - see
+    # `documentation/plans/autocount/PLAN
     # -autocount-cross-repo-contract.md` section 10.
     is_active: Optional[bool] = None
 
@@ -143,6 +153,10 @@ class CanonicalCustomer(_Canonical):
     # sent (no reference table - AutoCount states none for it).
     market_segment_code: Optional[str] = Field(None, max_length=50)
     region: Optional[str] = Field(None, max_length=80)
+    # AutoCount `Debtor.SalesAgent`. Absent or blank = untouched; an unknown code leaves the
+    # agent as it was with warning `agent_unresolved`. A known one is set on the linked ledger
+    # and every same-code ledger of the company.
+    sales_agent_code: Optional[str] = Field(None, max_length=100)
 
 
 class CanonicalSalesAgent(_Canonical):
@@ -160,7 +174,7 @@ class CanonicalSalesAgent(_Canonical):
     Deliberately NOT here: `internal_note`, `follow_up`, `demand_class` and
     `location_group`. Those are the captain's annotations, made on the master
     screen, and AutoCount holds no opinion about any of them - so they are
-    unknown fields, and `extra="forbid"` refuses them rather than letting a
+    unknown fields, and are dropped (never written) rather than letting a
     weekly re-sync restate a classification nobody upstream owns.
     """
 
@@ -180,6 +194,9 @@ class CanonicalProduct(_Canonical):
     category_code: Optional[str] = Field(None, max_length=100)
     uom_code: Optional[str] = Field(None, max_length=100)
     brand_code: Optional[str] = Field(None, max_length=100)
+    # AutoCount ItemType (ITEM-TYPE-CRM). Back-created like brand_code; absent or
+    # blank leaves the stored link untouched.
+    item_type_code: Optional[str] = Field(None, max_length=100)
     # CRM-owned (PLAN D14, price-tag-feedback-r2). Overwrites the stored value
     # only when non-empty; empty/absent leaves a manually entered barcode
     # untouched - see `master_ingest_service._product_columns`.

@@ -25,11 +25,25 @@ def branch(
     q: int, x: int, available: int, shipment_date: Optional[date]
 ) -> Branch:
     """R6: `q > x` -> `too_big`; `available >= q` -> `in_stock`; a shipment exists ->
-    `incoming`; else `no_incoming`."""
+    `incoming`; else `no_incoming`.
+
+    AVAIL-MODE-REPLIES rule 2 (owner, 2 Oct 2026): some stock short of `q`, with `q`
+    within `x`, is `in_stock` too - the dealer is told "got stock" and how many
+    (`short_of`), never "no stock" while some is there."""
     if q > x:
         return "too_big"
-    if available >= q:
+    if available >= min(q, 1):
+        # Covered, or some stock short of `q` (rule 2); `q` is always >= 1 here.
         return "in_stock"
     if shipment_date is not None:
         return "incoming"
     return "no_incoming"
+
+
+def short_of(q: int, x: int, available: int) -> Optional[int]:
+    """The available count an `in_stock` answer names: only when there is some stock,
+    less than `q`, and `q` is within `x` (rule 2). None in every other case, so a count
+    of ours is never shown above the category max (owner Q5 (a)) or when `q` is covered."""
+    if q > x or available < 1 or available >= q:
+        return None
+    return available

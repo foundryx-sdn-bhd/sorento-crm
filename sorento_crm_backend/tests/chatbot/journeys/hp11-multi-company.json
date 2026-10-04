@@ -1,11 +1,11 @@
 {
   "name": "hp11-multi-company",
-  "source": "Hand pass 11 owner console, 21 Sep 2026 (real production, contact_respond_id 437264483). Owner: 'for items that exist in sorento and mocha, we search both sides ... offer to escalate to either company and clarify the company when unclear'. Prod turn 'M90SS-DIY kim seng jaya send yet': every row carries '*Company:* Mocha', then '*Sorento:* no orders records found for customer KIM SENG JAYA SDN BHD, product M90SS-DIY.' and the offer reads 'escalate to *Sorento* customer service team?'. Lane today: same two orders, no Company field, no silent-company line, plain offer. Second local chain 'SRTRT203 Technical drawing' -> miss 'checked in Mocha and Sorento' -> customer answers 'mocha' -> lane today escalates to 'marketing product team' with the company answer unused. See test_rearch_r11_multi_company.py for the measured cause (the production renderer - `lanes/business/fetch.py`'s silent-company note, `gate.company_team`'s offer, `escalation._clarify_over`'s company pairs - is still on the lane; the lane's hit/miss path is not feeding it).",
+  "source": "Hand pass 11 owner console, 21 Sep 2026 (real production, contact_respond_id 900000008). Owner: 'for items that exist in sorento and mocha, we search both sides ... offer to escalate to either company and clarify the company when unclear'. Prod turn 'M90SS-DIY kim seng jaya send yet': every row carries '*Company:* Mocha', then '*Sorento:* no orders records found for customer KIM SENG JAYA SDN BHD, product M90SS-DIY.' and the offer reads 'escalate to *Sorento* customer service team?'. Lane today: same two orders, no Company field, no silent-company line, plain offer. Second local chain 'SRTRT203 Technical drawing' -> miss 'checked in Mocha and Sorento' -> customer answers 'mocha' -> lane today escalates to 'marketing product team' with the company answer unused. See test_rearch_r11_multi_company.py for the measured cause (the production renderer - `lanes/business/fetch.py`'s silent-company note, `gate.company_team`'s offer, `escalation._clarify_over`'s company pairs - is still on the lane; the lane's hit/miss path is not feeding it).",
   "cases": [
     {
       "name": "hit-in-one-company-names-the-silent-one-and-offers-its-team",
       "cold": true,
-      "contact": "437264483",
+      "contact": "900000008",
       "turns": [
         {
           "text": "M90SS-DIY kim seng jaya send yet",
@@ -23,7 +23,7 @@
     {
       "name": "miss-in-both-companies-clarifies-the-company-and-the-answer-routes-the-escalation",
       "cold": true,
-      "contact": "437264483",
+      "contact": "900000008",
       "turns": [
         {
           "text": "SRTRT203 Technical drawing",

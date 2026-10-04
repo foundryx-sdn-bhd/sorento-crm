@@ -13,6 +13,8 @@ import type {
 export type PackingListsListParams = DataGridApiFetchParams & {
   supplier_id?: string;
   shipment_status?: string;
+  /** 'west' | 'east': packing lists serving that region. */
+  region?: string;
 };
 
 
@@ -26,6 +28,7 @@ export async function getPackingLists(
     searchQuery,
     supplier_id,
     shipment_status,
+    region,
   } = params;
   const sortField = sorting?.[0]?.id || '';
   const sortDirection = sorting?.[0]?.desc ? 'desc' : 'asc';
@@ -36,6 +39,7 @@ export async function getPackingLists(
     ...(searchQuery ? { query: searchQuery } : {}),
     ...(supplier_id ? { supplier_id } : {}),
     ...(shipment_status ? { shipment_status } : {}),
+    ...(region ? { region } : {}),
   });
   const response = await apiFetch(
     `/api/v1/procurement/packing-lists?${queryParams.toString()}`,

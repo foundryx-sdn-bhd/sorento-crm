@@ -391,6 +391,34 @@ def warehouse_criterion(policy: Optional[Policy], column):
     return sa.and_(*clauses)
 
 
+def visible_location_codes(
+    db: Session, contact_id: str, space_id: Optional[str] = None
+) -> Optional[set[str]]:
+    """The location codes a contact may be told, for a read that names locations outside
+    the stock balance (the on-order rung's `location`, STOCK-TOTAL-OS-SCOPE).
+
+    None = every location (the policy names neither list). A set = only these codes: the
+    active warehouses `warehouse_criterion` allows, the same set the stock lines and the
+    `stock_visibility.warehouse_codes` echo are built from. `availability` names no
+    location at all, and an unresolvable contact fails closed, so both are the empty set.
+    """
+    import sqlalchemy as sa
+
+    from app.models.inventory import Warehouse
+
+    policy = resolve_policy(db, contact_id, space_id)
+    if policy is None or policy.mode == "availability":
+        return set()
+    if policy.warehouse_ids is None and policy.excluded_warehouse_ids is None:
+        return None
+    rows = (
+        db.query(Warehouse.warehouse_code)
+        .filter(Warehouse.is_active.is_(sa.true()), warehouse_criterion(policy, Warehouse.id))
+        .all()
+    )
+    return {str(code) for (code,) in rows if code}
+
+
 def upsert_policy(
     db: Session,
     *,
@@ -496,8 +524,16 @@ def policy_warehouses(db: Session, warehouse_ids: Optional[frozenset[str]]):
             .order_by(Warehouse.warehouse_code.asc())
             .all()
         )
+    from app.services.company_scope_resolver import company_name_map
+
+    names = company_name_map(db)
     return [
-        {"id": str(row.id), "code": row.warehouse_code, "name": row.warehouse_name}
+        {
+            "id": str(row.id),
+            "code": row.warehouse_code,
+            "name": row.warehouse_name,
+            "company_name": names.get(str(row.company_id)),
+        }
         for row in rows
     ]
 

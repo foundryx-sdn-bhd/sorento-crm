@@ -45,6 +45,7 @@ def resolve_identifier(
     fuzzy_fields: Sequence[str] = (),
     fuzzy: bool = False,
     id_field: str = "id",
+    extra_filters: Sequence = (),
 ) -> Optional[list[str]]:
     """Resolve a user-supplied string to a list of UUID strings.
 
@@ -58,6 +59,8 @@ def resolve_identifier(
             used only when *fuzzy=True*.
         fuzzy: Enable fuzzy name/code lookup fallback.
         id_field: Name of the UUID primary-key column (defaults to ``id``).
+        extra_filters: Clauses ANDed onto the business-code lookup, so a code naming several
+            rows resolves to one that passes them (e.g. a contact's region filter).
 
     Returns:
         ``None`` if *value* is blank (meaning "no filter applied"),
@@ -77,7 +80,7 @@ def resolve_identifier(
     if code_fields:
         lowered = s.lower()
         code_conds = [func.lower(getattr(model, f)) == lowered for f in code_fields]
-        row = db.query(id_col).filter(or_(*code_conds)).first()
+        row = db.query(id_col).filter(or_(*code_conds), *extra_filters).first()
         if row:
             return [str(row[0])]
 

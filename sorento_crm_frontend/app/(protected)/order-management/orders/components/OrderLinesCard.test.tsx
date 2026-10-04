@@ -60,11 +60,11 @@ const LINES = [
 
 import OrderLinesCard from './OrderLinesCard';
 
-function renderCard() {
+function renderCard(readOnly = false) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <OrderLinesCard orderId="o-1" lines={LINES} />
+      <OrderLinesCard orderId="o-1" lines={LINES} readOnly={readOnly} />
     </QueryClientProvider>,
   );
 }
@@ -80,5 +80,24 @@ describe('OrderLinesCard - DataGrid', () => {
     expect(screen.getByText('SKU-1 - Widget A')).toBeInTheDocument();
     expect(screen.getByText('SKU-2 - Widget B')).toBeInTheDocument();
     expect(screen.getByText('WH-KL - KL')).toBeInTheDocument();
+  });
+});
+
+// DO-OWNERSHIP-GUARD AC-OG15: an AutoCount-owned DO's lines come only from AutoCount.
+describe('OrderLinesCard - AutoCount-owned DO', () => {
+  it('offers add, select and delete on an ordinary DO', () => {
+    renderCard();
+    expect(screen.getByRole('button', { name: /Add line/i })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /Delete line/i }).length).toBe(2);
+    expect(screen.queryByText('From AutoCount')).not.toBeInTheDocument();
+  });
+
+  it('renders the lines read-only with the From AutoCount hint', () => {
+    renderCard(true);
+    expect(screen.getByText('SKU-1 - Widget A')).toBeInTheDocument();
+    expect(screen.getByText('From AutoCount')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Add line/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Delete/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
   });
 });

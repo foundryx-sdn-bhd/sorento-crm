@@ -71,11 +71,12 @@ import logging
 from datetime import datetime
 from typing import Any, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, StrictInt, ValidationError
+from pydantic import BaseModel, Field, StrictInt, ValidationError, model_validator
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.schemas.ingest_extras import INGEST_MODEL_CONFIG, note_unknown_fields
 from app.models.inventory import Stock, StockLedger
 from app.services.deletion_service import (
     DeletionOutcome,
@@ -120,10 +121,10 @@ _MAX_QTY = 2_147_483_647
 
 
 class _StockBalanceRecord(BaseModel):
-    """D3. `extra="forbid"`: an unmapped key is a wiring bug on the ESB's
-    side, not data to silently drop. `item_description`/`uom_code` are the
-    two named exceptions - accepted and ignored, display fields Sorento
-    already resolves the product/uom by code.
+    """D3, as amended by the owner (1 Oct 2026): an unmapped key is dropped and
+    its NAME logged once per request (`app.schemas.ingest_extras`), never
+    refused. `item_description`/`uom_code` are declared and ignored, display
+    fields Sorento already resolves the product/uom by code.
 
     `qty` is a strict, bounded, non-negative int: a bool, a float or a
     numeric string are all exactly the kind of upstream mapping slip this
@@ -131,7 +132,13 @@ class _StockBalanceRecord(BaseModel):
     incoming value; a value above `_MAX_QTY` cannot be stored at all.
     """
 
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    model_config = INGEST_MODEL_CONFIG
+
+    @model_validator(mode="before")
+    @classmethod
+    def _note_unknown(cls, data):
+        note_unknown_fields(cls, data)
+        return data
 
     source_ref: str = Field(..., min_length=1, max_length=255)
     item_code: str = Field(..., min_length=1, max_length=255)

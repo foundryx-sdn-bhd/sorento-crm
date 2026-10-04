@@ -121,7 +121,11 @@ export default function ContactEditDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- form is stable; guard prevents loops
   }, [open, isSuperadmin, contact?.id, companiesFetched, contactCompanies]);
 
-  const { data: workspaces = [] } = useQuery({
+  const {
+    data: workspaces = [],
+    error: workspacesError,
+    refetch: refetchWorkspaces,
+  } = useQuery({
     queryKey: ['respond-workspace-select'],
     queryFn: listRespondWorkspaceSelect,
     enabled: open,
@@ -391,6 +395,8 @@ export default function ContactEditDialog({
                       value={field.value ?? ''}
                       onChange={(v) => field.onChange(v || null)}
                       options={workspaceOptions}
+                      loadError={workspacesError}
+                      onRetry={() => void refetchWorkspaces()}
                       placeholder={
                         workspaceOptions.length === 0
                           ? 'No workspaces configured'

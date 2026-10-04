@@ -235,6 +235,9 @@ def _entry(result, product_id):
 #: ours anywhere else - `eta` is a formatted string, not a number).
 _ALLOWED_NUMERIC_KEYS = {"requested_qty", "needs_quantity"}
 _QUANTITY_WORDS = ("quantity", "on_hand", "qty")
+#: AVAIL-MODE-REPLIES rule 2: `available_qty` is a declared key (None unless an `in_stock`
+#: answer is short of Q within X); its VALUE is still checked against the forbidden numbers.
+_ALLOWED_QTY_KEYS = {"available_qty"}
 
 
 def _walk(node, path="$"):
@@ -251,7 +254,8 @@ def _assert_no_quantity_anywhere(body, forbidden_numbers):
     offending_keys = [
         path
         for path, key, _ in _walk(body)
-        if key not in _ALLOWED_NUMERIC_KEYS and any(word in key for word in _QUANTITY_WORDS)
+        if key not in _ALLOWED_NUMERIC_KEYS | _ALLOWED_QTY_KEYS
+        and any(word in key for word in _QUANTITY_WORDS)
     ]
     assert not offending_keys, f"quantity-shaped keys leaked: {offending_keys}"
 
@@ -293,8 +297,9 @@ def test_available_counts_only_the_contacts_policy_locations(db):
 
 
 def test_open_so_in_policy_scope_is_subtracted(db):
-    """AC-SA303. On hand 100, open SO 60 (net 40): Q = 50 exceeds the net and is not
-    `in_stock`; Q = 40 exactly covers it and is."""
+    """AC-SA303. On hand 100, open SO 60 (net 40): Q = 50 exceeds the net, so it is
+    answered short with the NET count (AVAIL-MODE-REPLIES rule 2, was "not in_stock");
+    Q = 40 exactly covers it and carries no count."""
     brw = _wh(db, "ZZTBRW")
     p = product(db, company_id=DEFAULT_COMPANY_ID)
     _category_of(db, p).chatbot_max_qty = 200
@@ -307,7 +312,8 @@ def test_open_so_in_policy_scope_is_subtracted(db):
     not_covered = StockService(db).list_stock(
         product_ids=[p.id], contact_id=contact.id, requested_quantities={p.id: 50}
     )
-    assert _entry(not_covered, p.id)["branch"] != "in_stock"
+    assert _entry(not_covered, p.id)["branch"] == "in_stock"
+    assert _entry(not_covered, p.id)["available_qty"] == 40
 
     covered = StockService(db).list_stock(
         product_ids=[p.id], contact_id=contact.id, requested_quantities={p.id: 40}
@@ -348,7 +354,9 @@ def test_entry_shape_is_the_v2_shape_not_1118s(db):
         "category_name",
         "eta",
         "packing_list",
+        "available_qty",
     }
+    assert entry["available_qty"] is None
     assert entry["needs_quantity"] is False
     assert entry["requested_qty"] == 10
     assert entry["branch"] == "in_stock"
@@ -414,6 +422,7 @@ def test_per_product_map_wins_scalar_fills(db):
         "category_name": None,
         "eta": None,
         "packing_list": None,
+        "available_qty": None,
     }
 
     with_scalar = StockService(db).list_stock(

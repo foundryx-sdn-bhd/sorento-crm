@@ -32,7 +32,7 @@ const getCustomerPortfolio = vi.fn();
 const acceptLead = vi.fn();
 const declineLead = vi.fn();
 const assignLead = vi.fn();
-const getUsersSelect = vi.fn();
+const getUserLookup = vi.fn();
 
 let sessionUserId: string | undefined = 'u-ali';
 
@@ -88,8 +88,8 @@ vi.mock('next-auth/react', () => ({
 }));
 
 vi.mock(
-  '@/app/(protected)/system-management/status-graphs/hooks/useStatusGraphs',
-  () => ({ useStatusGraph: () => ({ data: { statuses: [] }, isLoading: false }) }),
+  '@/app/(protected)/project-sales/_shared/hooks/useProjectStatusGraph',
+  () => ({ useProjectStatusGraph: () => ({ data: { statuses: [] }, isLoading: false }) }),
 );
 
 vi.mock('../../../_shared/services/projectService', () => ({
@@ -124,7 +124,7 @@ vi.mock('../../../_shared/services/leadAcceptanceService', () => ({
 }));
 
 vi.mock('@/services/userSelectService', () => ({
-  getUsersSelect: (...args: unknown[]) => getUsersSelect(...args),
+  getUserLookup: (...args: unknown[]) => getUserLookup(...args),
 }));
 
 vi.mock('@/lib/toast', () => ({
@@ -246,8 +246,8 @@ beforeEach(() => {
   );
   assignLead.mockResolvedValue(lead());
   getCustomerPortfolio.mockResolvedValue({ leads: [], projects: [] });
-  getUsersSelect.mockResolvedValue([
-    { id: 'u-siti', name: 'Siti', email: 'siti@x.my' },
+  getUserLookup.mockResolvedValue([
+    { id: 'u-siti', name: 'Siti' },
   ]);
 });
 

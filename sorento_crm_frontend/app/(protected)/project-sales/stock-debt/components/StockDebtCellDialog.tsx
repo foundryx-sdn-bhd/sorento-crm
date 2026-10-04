@@ -65,6 +65,9 @@ const STATUS_CLASS: Record<StockDebtDemandStatus, string> = {
   pinned: 'bg-sky-100 text-sky-800',
   late: 'bg-amber-100 text-amber-800',
   short: 'bg-red-100 text-red-800',
+  // STOCK-DEBT-LENDABLE: a planned re-buy, neither short (the goods exist, lent to a
+  // nearer line) nor pinned (they are not this line's any more) - its own colour.
+  order_back: 'bg-violet-100 text-violet-800',
 };
 
 const KIND_LABEL: Record<StockDebtSupplyKind, string> = {
@@ -115,7 +118,32 @@ function PoLineLink({
 
 function CoveredByEntry({ entry }: { entry: StockDebtAssignedFrom }) {
   if (entry.kind === 'on_hand') {
-    return <span className="truncate text-muted-foreground">{entry.ref}</span>;
+    // STOCK-DEBT-LENDABLE: the server's own wording carries the lender's name when the
+    // take was lent ("On hand BRW-BB (from SO381065)"); a free take stays plain.
+    return (
+      <span className="truncate text-muted-foreground" title={entry.ref}>
+        {entry.ref}
+      </span>
+    );
+  }
+  if (entry.kind === 'lent') {
+    // STOCK-DEBT-LENDABLE: a line that lent its landed goods names each receiver,
+    // linked to the receiving order the way the Sales order cell links its own.
+    return entry.sales_order_id ? (
+      <Link
+        href={`/scm/sales-orders/${entry.sales_order_id}`}
+        target="_blank"
+        rel="noreferrer"
+        className="truncate text-muted-foreground hover:underline"
+        title={entry.ref}
+      >
+        {entry.ref}
+      </Link>
+    ) : (
+      <span className="truncate text-muted-foreground" title={entry.ref}>
+        {entry.ref}
+      </span>
+    );
   }
   if (entry.kind === 'po') {
     // R42: a purchase order covers a line too. The same link, kind `po`, opened on the
@@ -402,9 +430,29 @@ export function StockDebtCellDialog({
           // read the same - and it STILL books its shortfall in this month (R37, AC-S2-7).
           // Printing only the word "late" left the figure the cell was made of unsaid, so
           // the row is stated as `late . short 40`: what happened, and how much of it.
-          const { status, short_qty: shortQty } = row.original;
+          const { status, short_qty: shortQty, lent_qty: lentQty = 0 } = row.original;
           const pill = cn(STATUS_PILL_BASE, STATUS_CLASS[status]);
           const shortLabel = `short ${shortQty.toLocaleString()}`;
+          // STOCK-DEBT-LENDABLE: a line that lent its landed goods reads "order back N"
+          // (its own status), N being what it is still OWED for the lend - never more
+          // than its own shortfall, so a line that re-covered part of it elsewhere does
+          // not read as owed the whole lend. When it is short beyond that, short outranks
+          // and the two halves are said apart: "short 12 · order back 88" adds up to the
+          // 100 the month books, where "short 100 · order back 88" read as 188.
+          const orderBack = Math.min(lentQty, shortQty);
+          const orderBackLabel = `order back ${orderBack.toLocaleString()}`;
+          if (status === 'order_back') {
+            return <span className={pill}>{orderBackLabel}</span>;
+          }
+          if (shortQty > 0 && status === 'short' && orderBack > 0) {
+            return (
+              <span className={cn(pill, 'gap-1')}>
+                {`short ${(shortQty - orderBack).toLocaleString()}`}
+                <span aria-hidden="true">&middot;</span>
+                <span>{orderBackLabel}</span>
+              </span>
+            );
+          }
           if (shortQty > 0 && status === 'short') {
             // "short 16" already says both, so the word is not repeated.
             return <span className={pill}>{shortLabel}</span>;

@@ -55,6 +55,7 @@ from app.services.chatbot.turn.state import Focus, Profile
 from app.services.company_scope import DEFAULT_COMPANY_ID
 from tests._mc_lookup_seed import customer as seed_customer
 from tests._pg_fixture import unique_code
+from tests.chatbot._turn_helpers import do_window
 from tests.chatbot.test_engine import CONTACT_ID, _parser_output
 from tests.chatbot.test_engine_company_scope import _seed_product
 from tests.chatbot.test_outstanding_lane import (
@@ -451,6 +452,12 @@ class TestHitScopeBlock:
             msg_id=f"zzt-r5-hit-scope-{date_filter_start}", 
             mcp_response=_order_envelope_json([row]),
         )
+        if not date_filter_start and not date_filter_end:
+            # A dateless DO list ask asks which period first and fetches nothing, so there is
+            # no hit to open with a scope block (DO-ASK-SIMPLIFY, owner 4 Oct 2026).
+            assert captured2 == [], captured2
+            assert "Which period" in ((result.reply or {}).get("text") or ""), result.reply
+            return
         assert captured2 and captured2[0][0] == "crm_order_management_orders_list", captured2
         assert payload_calls, "resolve_kinds must have run for this turn"
         assert structurer_calls, (
@@ -503,6 +510,8 @@ class TestScopeBlockAfterPick:
             # (measured directly against `resolve_gate.resolve_entity_body` +
             # `_real_resolve_entity` before writing this test).
             match_mode="or",
+            # Dated: a dateless DO list ask asks which period first (DO-ASK-SIMPLIFY, owner 4 Oct 2026).
+            **do_window(),
             entities=[
                 {"raw": "zzt chin chun", "hint": "customer", "canonical_code": None, "current_message": True, "confident": True},
                 {"raw": code, "hint": "product", "canonical_code": None, "current_message": True, "confident": True},
@@ -567,7 +576,7 @@ class TestScopeBlockAfterPick:
             f"AC-1695: the scope block's own Product line must carry the ORIGINAL "
             f"product token: {reply2!r}"
         )
-        assert "Dates: all dates" in reply2, reply2
+        assert "Dates: 01/09/2026 to 30/09/2026" in reply2, reply2
 
 
 # --------------------------------------------------------------------------- #
@@ -603,7 +612,7 @@ class TestFetchedEmptyIsAMiss:
             f"sentence, the CS member picker) - never the bare generic miss: {reply!r}"
         )
         assert "Here's what you want:" in reply, reply
-        assert "Reply 'all dates' to search without the date filter" in reply, reply
+        assert "Reply with another month or dates (e.g. August, or 15 Sep to 10 Oct)" in reply, reply
 
     def test_attachment_fetch_with_zero_rows_is_the_rich_miss(self, session_factory, monkeypatch) -> None:
         _seed_contact_and_get(session_factory)
@@ -839,7 +848,7 @@ class TestRequireSpecificRosterCopy:
             answer_mcp_probe=answer_probe,
         )
         reply = (result.reply or {}).get("text") or ""
-        assert "product_attachment search needs to be more specific" in reply, (
+        assert "Which product do you mean? Please choose:" in reply, (
             f"AC-1701: gate.py's own require-specific header must win over narrow.py's "
             f"generic fallback: {reply!r}"
         )
@@ -875,7 +884,7 @@ class TestRequireSpecificRosterCopy:
             msg_id="zzt-r5-incoming-roster", mcp_response={"data": []},
         )
         reply = (result.reply or {}).get("text") or ""
-        assert "incoming search needs to be more specific" in reply, (
+        assert "Which product do you mean? Please choose:" in reply, (
             f"AC-1701's own domain-parametrized rule, incoming leg: gate.py's own header "
             f"must win, not narrow.py's generic fallback: {reply!r}"
         )
@@ -990,6 +999,8 @@ class TestCustomerOptionCarriesFamily:
             domain_hint="order",
             intent_hint="check_order",
             match_mode="or",  # see TestScopeBlockAfterPick's own comment on this
+            # Dated: a dateless DO list ask asks which period first (DO-ASK-SIMPLIFY, owner 4 Oct 2026).
+            **do_window(),
             entities=[
                 {"raw": "zzt pick", "hint": "customer", "canonical_code": None, "current_message": True, "confident": True},
                 {"raw": code, "hint": "product", "canonical_code": None, "current_message": True, "confident": True},

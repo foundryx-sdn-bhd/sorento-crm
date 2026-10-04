@@ -82,6 +82,12 @@ export default function OrderForm({ orderId, onSuccess }: OrderFormProps) {
   // (its fulfilment is historical). Backend-owned: `remarks_cs_locked` on the
   // single-order GET response. See PLAN-complaint-do-auto-fulfilment.md.
   const remarksCsLocked = isEditMode && !!order?.remarks_cs_locked;
+  // An AutoCount-owned DO takes these fields only from AutoCount; the API rejects an edit.
+  const autocountOwned = useMemo(
+    () => new Set(isEditMode ? (order?.autocount_owned_fields ?? []) : []),
+    [isEditMode, order?.autocount_owned_fields],
+  );
+  const fromAutoCount = (name: string) => autocountOwned.has(name);
 
   const defaultOrderDate = new Date();
   const defaultEstimatedDeliveryDate = (() => {
@@ -267,7 +273,10 @@ export default function OrderForm({ orderId, onSuccess }: OrderFormProps) {
       };
 
       if (isEditMode && orderId) {
-        await updateMutation.mutateAsync({ id: orderId, data: formData });
+        const editable = Object.fromEntries(
+          Object.entries(formData).filter(([key]) => !autocountOwned.has(key)),
+        ) as OrderFormData;
+        await updateMutation.mutateAsync({ id: orderId, data: editable });
       } else {
         await createMutation.mutateAsync(formData);
       }
@@ -370,7 +379,7 @@ export default function OrderForm({ orderId, onSuccess }: OrderFormProps) {
                         />
                       </FormControl>
                       <FormDescription>
-                        Unique delivery order number
+                        {fromAutoCount('order_number') ? 'From AutoCount' : 'Unique delivery order number'}
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
@@ -391,8 +400,10 @@ export default function OrderForm({ orderId, onSuccess }: OrderFormProps) {
                             onChange={(e) =>
                               field.onChange(e.target.value ? new Date(e.target.value) : undefined)
                             }
+                            disabled={fromAutoCount('order_date')}
                           />
                         </FormControl>
+                        {fromAutoCount('order_date') && <FormDescription>From AutoCount</FormDescription>}
                         <FormMessage />
                       </FormItem>
                     )}
@@ -490,8 +501,14 @@ export default function OrderForm({ orderId, onSuccess }: OrderFormProps) {
                       <FormItem>
                         <FormLabel>Debtor Code</FormLabel>
                         <FormControl>
-                          <Input placeholder="e.g. 300-A007" {...field} value={field.value ?? ''} />
+                          <Input
+                            placeholder="e.g. 300-A007"
+                            {...field}
+                            value={field.value ?? ''}
+                            disabled={fromAutoCount('debtor_code')}
+                          />
                         </FormControl>
+                        {fromAutoCount('debtor_code') && <FormDescription>From AutoCount</FormDescription>}
                         <FormMessage />
                       </FormItem>
                     )}
@@ -504,8 +521,14 @@ export default function OrderForm({ orderId, onSuccess }: OrderFormProps) {
                       <FormItem>
                         <FormLabel>Debtor Name</FormLabel>
                         <FormControl>
-                          <Input placeholder="Company name" {...field} value={field.value ?? ''} />
+                          <Input
+                            placeholder="Company name"
+                            {...field}
+                            value={field.value ?? ''}
+                            disabled={fromAutoCount('debtor_name')}
+                          />
                         </FormControl>
+                        {fromAutoCount('debtor_name') && <FormDescription>From AutoCount</FormDescription>}
                         <FormMessage />
                       </FormItem>
                     )}
@@ -518,8 +541,14 @@ export default function OrderForm({ orderId, onSuccess }: OrderFormProps) {
                       <FormItem>
                         <FormLabel>Agent</FormLabel>
                         <FormControl>
-                          <Input placeholder="Agent name" {...field} value={field.value ?? ''} />
+                          <Input
+                            placeholder="Agent name"
+                            {...field}
+                            value={field.value ?? ''}
+                            disabled={fromAutoCount('agent')}
+                          />
                         </FormControl>
+                        {fromAutoCount('agent') && <FormDescription>From AutoCount</FormDescription>}
                         <FormMessage />
                       </FormItem>
                     )}
@@ -560,9 +589,11 @@ export default function OrderForm({ orderId, onSuccess }: OrderFormProps) {
                             checked={!!field.value}
                             onChange={(e) => field.onChange(e.target.checked)}
                             className="h-4 w-4 rounded border-input"
+                            disabled={fromAutoCount('is_cancelled')}
                           />
                         </FormControl>
                         <FormLabel className="font-normal">Cancelled</FormLabel>
+                        {fromAutoCount('is_cancelled') && <FormDescription>From AutoCount</FormDescription>}
                         <FormMessage />
                       </FormItem>
                     )}
@@ -590,8 +621,10 @@ export default function OrderForm({ orderId, onSuccess }: OrderFormProps) {
                           {...field}
                           value={field.value || ''}
                           rows={8}
+                          disabled={fromAutoCount('remarks')}
                         />
                       </FormControl>
+                      {fromAutoCount('remarks') && <FormDescription>From AutoCount</FormDescription>}
                       <FormMessage />
                     </FormItem>
                   )}
@@ -630,8 +663,14 @@ export default function OrderForm({ orderId, onSuccess }: OrderFormProps) {
                         <FormItem>
                           <FormLabel>Debtor Code</FormLabel>
                           <FormControl>
-                            <Input placeholder="300-A007" {...field} value={field.value || ''} />
+                            <Input
+                              placeholder="300-A007"
+                              {...field}
+                              value={field.value || ''}
+                              disabled={fromAutoCount('debtor_code')}
+                            />
                           </FormControl>
+                          {fromAutoCount('debtor_code') && <FormDescription>From AutoCount</FormDescription>}
                           <FormMessage />
                         </FormItem>
                       )}
@@ -643,8 +682,14 @@ export default function OrderForm({ orderId, onSuccess }: OrderFormProps) {
                         <FormItem>
                           <FormLabel>Debtor Name</FormLabel>
                           <FormControl>
-                            <Input placeholder="ASIAN PAC HOLDINGS BERHAD" {...field} value={field.value || ''} />
+                            <Input
+                              placeholder="ASIAN PAC HOLDINGS BERHAD"
+                              {...field}
+                              value={field.value || ''}
+                              disabled={fromAutoCount('debtor_name')}
+                            />
                           </FormControl>
+                          {fromAutoCount('debtor_name') && <FormDescription>From AutoCount</FormDescription>}
                           <FormMessage />
                         </FormItem>
                       )}
@@ -656,8 +701,14 @@ export default function OrderForm({ orderId, onSuccess }: OrderFormProps) {
                         <FormItem>
                           <FormLabel>Agent</FormLabel>
                           <FormControl>
-                            <Input placeholder="ERIC" {...field} value={field.value || ''} />
+                            <Input
+                              placeholder="ERIC"
+                              {...field}
+                              value={field.value || ''}
+                              disabled={fromAutoCount('agent')}
+                            />
                           </FormControl>
+                          {fromAutoCount('agent') && <FormDescription>From AutoCount</FormDescription>}
                           <FormMessage />
                         </FormItem>
                       )}
@@ -677,8 +728,10 @@ export default function OrderForm({ orderId, onSuccess }: OrderFormProps) {
                                 { value: 'true', label: 'Yes' },
                               ]}
                               placeholder="Select"
+                              disabled={fromAutoCount('is_cancelled')}
                             />
                           </FormControl>
+                          {fromAutoCount('is_cancelled') && <FormDescription>From AutoCount</FormDescription>}
                           <FormMessage />
                         </FormItem>
                       )}
@@ -772,7 +825,7 @@ export default function OrderForm({ orderId, onSuccess }: OrderFormProps) {
                         <FormItem>
                           <FormLabel>Lorry Plate</FormLabel>
                           <FormControl>
-                            <Input placeholder="VCG1678" {...field} value={field.value || ''} />
+                            <Input placeholder="ABC 1234" {...field} value={field.value || ''} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>

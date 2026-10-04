@@ -20,7 +20,7 @@ import { Loader2, StickyNote } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { getUsersSelect, type UserSelectItem } from '@/services/userSelectService';
+import { getUserLookup, type UserLookupItem } from '@/services/userSelectService';
 
 interface InternalCommentComposerProps {
   /** Writes the note. Rejects with an Error whose message is shown by the caller. */
@@ -40,8 +40,8 @@ const MENTION_DEBOUNCE_MS = 200;
 /** Longest partial name we keep looking up before assuming it is prose. */
 const MAX_MENTION_QUERY = 30;
 
-function displayNameOf(user: UserSelectItem): string {
-  return (user.name || user.email || '').trim();
+function displayNameOf(user: UserLookupItem): string {
+  return (user.name || '').trim();
 }
 
 /**
@@ -110,7 +110,7 @@ export default function InternalCommentComposer({
     return () => clearTimeout(handle);
   }, [fragment]);
 
-  // The ONE user-select service (ARCHITECTURE-RULES): no per-feature user fetch.
+  // The shared people lookup: open to every signed-in staff user (never-stuck L10).
   const {
     data: candidates = [],
     isFetching,
@@ -118,7 +118,7 @@ export default function InternalCommentComposer({
     error: lookupError,
   } = useQuery({
     queryKey: ['comment-mention-users', debouncedQuery],
-    queryFn: () => getUsersSelect({ query: debouncedQuery || undefined, status: 'ACTIVE' }),
+    queryFn: () => getUserLookup({ query: debouncedQuery || undefined }),
     enabled: debouncedQuery !== null,
     staleTime: 30_000,
   });
@@ -149,7 +149,7 @@ export default function InternalCommentComposer({
   };
 
   const insertMention = useCallback(
-    (user: UserSelectItem) => {
+    (user: UserLookupItem) => {
       const name = displayNameOf(user);
       if (!fragment || !name) return;
       const caret = textareaRef.current?.selectionStart ?? body.length;

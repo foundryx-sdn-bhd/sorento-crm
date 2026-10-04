@@ -130,7 +130,7 @@ Apply after this PR merges, in this order.
 1. **Require status checks to pass**: enable. "Require branches to be up to
    date before merging": OFF (the queue tests the merge result; ON would force a
    re-run of the fast gate on every base move). Source for every check: GitHub
-   Actions, workflow "Build and Deploy Sorento". Add exactly these 18 names, as
+   Actions, workflow "Build and Deploy Sorento". Add exactly these 19 names, as
    the jobs report them (a matrix leg reports `<name> (<shard>)`):
 
    | # | Required check name |
@@ -153,9 +153,14 @@ Apply after this PR merges, in this order.
    | 16 | `Backend test suite (Postgres, xdist) (4)` |
    | 17 | `Backend test suite (Postgres, xdist) (5)` |
    | 18 | `Backend test suite (Postgres, xdist) (6)` |
+   | 19 | `Backend test suite (Postgres, xdist) (serial)` |
+
+   Row 19 joined with CI-SPEED (1 Oct 2026, PR #1426): the serial migration and
+   `serial_ddl` steps moved off shard 1 onto their own matrix entry, so that leg
+   must be required too or the queue stops gating them.
 
    A job skipped by its `if` reports `skipped`, which satisfies a required
-   check, so on a PR the six backend shards (and any area not touched) block
+   check, so on a PR the seven backend legs (and any area not touched) block
    nothing; in the queue they run for real and gate. A PR with no `ci` label
    reports none of these, so it cannot merge until labelled: that is the
    intent. Do NOT add `Build and push images`, `build-and-deploy`, `Notify owner

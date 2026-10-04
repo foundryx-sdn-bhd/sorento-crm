@@ -29,9 +29,11 @@ import OrderLineDeleteDialog from './OrderLineDeleteDialog';
 interface OrderLinesCardProps {
   orderId: string;
   lines: OrderLine[];
+  /** AutoCount-owned DO: its lines come only from AutoCount, so no add / delete. */
+  readOnly?: boolean;
 }
 
-export default function OrderLinesCard({ orderId, lines }: OrderLinesCardProps) {
+export default function OrderLinesCard({ orderId, lines, readOnly = false }: OrderLinesCardProps) {
   const queryClient = useQueryClient();
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
@@ -125,9 +127,13 @@ export default function OrderLinesCard({ orderId, lines }: OrderLinesCardProps) 
 
   const columns = useMemo<ColumnDef<OrderLine>[]>(
     () => [
-      buildSelectColumn<OrderLine>({
-        rowLabel: (row) => `Select line ${row.original.id}`,
-      }),
+      ...(readOnly
+        ? []
+        : [
+            buildSelectColumn<OrderLine>({
+              rowLabel: (row) => `Select line ${row.original.id}`,
+            }),
+          ]),
       {
         id: 'product',
         accessorFn: (row) => productLineLabel(row),
@@ -241,7 +247,7 @@ export default function OrderLinesCard({ orderId, lines }: OrderLinesCardProps) 
         size: 120,
         meta: { headerTitle: 'Total (incl)' },
       },
-      {
+      ...(readOnly ? [] : [{
         id: 'actions',
         header: () => <span className="sr-only">Actions</span>,
         cell: ({ row }) => (
@@ -261,9 +267,9 @@ export default function OrderLinesCard({ orderId, lines }: OrderLinesCardProps) 
         size: 60,
         enableResizing: false,
         meta: { headerTitle: 'Actions' },
-      },
+      } satisfies ColumnDef<OrderLine>]),
     ],
-    [],
+    [readOnly],
   );
 
   return (
@@ -271,6 +277,9 @@ export default function OrderLinesCard({ orderId, lines }: OrderLinesCardProps) 
       <PanelDataGrid<OrderLine>
         title="Delivery Order Lines"
         toolbar={
+          readOnly ? (
+            <span className="text-sm text-muted-foreground">From AutoCount</span>
+          ) : (
           <>
             <Button
               variant="destructive"
@@ -290,15 +299,16 @@ export default function OrderLinesCard({ orderId, lines }: OrderLinesCardProps) 
               Add line
             </Button>
           </>
+          )
         }
         columns={columns}
         rows={lines}
         getRowId={(row) => row.id}
         listingKey="order_management.orders.view::lines"
-        rowSelection={rowSelection}
-        onRowSelectionChange={setRowSelection}
+        rowSelection={readOnly ? undefined : rowSelection}
+        onRowSelectionChange={readOnly ? undefined : setRowSelection}
         emptyTitle="No delivery order lines."
-        emptyBody="Import from Excel or add manually."
+        emptyBody={readOnly ? undefined : 'Import from Excel or add manually.'}
         // SF-8 (M5 run 3 review): a document's own line table renders every
         // row - a page-2 would hide lines the reader expects in one scroll.
         paginate={false}

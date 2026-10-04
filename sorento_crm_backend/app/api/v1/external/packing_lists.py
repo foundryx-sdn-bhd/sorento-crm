@@ -199,6 +199,8 @@ def create_packing_list(
         total_cartons=payload.packing_list.total_cartons,
         notes=payload.packing_list.notes,
         attachment_id=payload.packing_list.attachment_id,
+        # Payload, else the attachment's own, else None (the column default: West only).
+        regions=payload.packing_list.regions or getattr(attachment, "regions", None),
         shipment_lines=[
             InboundShipmentLineCreate(
                 product_id=pid,

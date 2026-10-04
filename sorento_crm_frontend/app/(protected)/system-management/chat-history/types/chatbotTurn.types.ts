@@ -469,6 +469,28 @@ export interface TurnDetailOrder {
   next: TurnDetailOrderNeighbor | null;
 }
 
+/**
+ * One customer-scope decision on the turn (CHATBOT-SELFREF-SCOPE R4, backend
+ * `app/services/chatbot/trace_detail.py::_customer_scope`): the engine's gate, screen
+ * and scoped-to-links pass, the fetch clamp and refusal, the tier-probe refusal, and the
+ * scoped re-route of a sales analysis. A refusal carries `refused`; every other decision
+ * carries `decision`. `ids` are the linked customer ids the turn ran on, `dropped` the
+ * ids outside the links it dropped, `typed` the words typed this message.
+ */
+export interface TurnDetailCustomerScope {
+  at: string | null;
+  decision?: string;
+  refused?: string;
+  reason?: string;
+  ids?: string[];
+  dropped?: string[];
+  kept?: string[];
+  typed?: string[];
+  self_reference?: boolean;
+  tool?: string;
+  offer_passed?: boolean;
+}
+
 export interface TurnDetail {
   stages: TurnDetailStage[];
   parse: TurnDetailParse | null;
@@ -482,6 +504,8 @@ export interface TurnDetail {
   tool: TurnDetailTool | null;
   crossdomain: TurnDetailCrossdomain[];
   reveals: TurnDetailReveals;
+  /** Absent on a trace composed before the lane shipped; renders as an empty section. */
+  customer_scope?: TurnDetailCustomerScope[];
   session: TurnDetailSession;
 }
 

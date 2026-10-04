@@ -11,7 +11,7 @@ from sqlalchemy import or_, and_, func, exists, false, select
 from sqlalchemy.sql import Select
 from decimal import Decimal
 from app.utils.chunking import chunked
-from app.models.order import Order, OrderStatus, Customer, OrderLine, Transporter
+from app.models.order import Order, OrderStatus, Customer, CustomerGroup, OrderLine, Transporter
 from app.models.product import Product
 from app.models.inventory import Warehouse
 from app.models.sales_agent import SalesAgent
@@ -22,6 +22,7 @@ from app.schemas.order import (
 )
 from app.services.error_handler import handle_not_found, handle_conflict, handle_unprocessable
 from app.services.import_log_service import ImportLogService
+from app.services.contact_brand_scope import product_in_scope_clauses
 from app.services.calendar_service import CalendarService
 from app.services.identifier_resolver import resolve_identifier
 from app.services.company_scope import (
@@ -36,6 +37,13 @@ from app.services.embedding_change_listener import (
     bulk_enqueue_embedding_events,
 )
 from app.services.fuzzy_resolver import resolve_via_embedding_then_ilike
+from app.services.order_field_ownership import (
+    AUTOCOUNT_OWNED_ORDER_COLUMNS,
+    autocount_owned_keys,
+    is_autocount_owned,
+    reject_autocount_line_edit,
+    reject_autocount_owned_edit,
+)
 from app.services.entity_resolver import (
     EntityFilterBuckets,
     resolve_entities_to_filters,
@@ -43,12 +51,6 @@ from app.services.entity_resolver import (
 
 logger = logging.getLogger(__name__)
 
-# The Master sheet columns an AutoCount-owned delivery order (`doc_key` set) keeps from the
-# DO ingest (#1354 S2, plan section 3). `customer_id` is what the sheet's debtor text resolves.
-AUTOCOUNT_OWNED_MASTER_COLUMNS = frozenset(
-    {"order_date", "created_time", "debtor_code", "debtor_name", "agent", "is_cancelled",
-     "customer_id"}
-)
 
 
 # Date-axis relaxation cap (§3.4). When a customer-scoped delivery query returns
@@ -235,6 +237,38 @@ def keep_brand_lines(db: Session, orders: list, brand_product_filter) -> list:
         row.lines = [line for line in (row.lines or []) if str(line.id) in kept]
         out.append(row)
     return out
+
+
+def scope_product_filter(db: Session, value):
+    """CONTACT-BRAND-SCOPE: confine a product filter to the session's accessible brands.
+
+    Unscoped session -> `value` untouched (byte-identical). Scoped -> a `Product.id`
+    subquery of the in-scope products, intersected with `value` when one is given. The brand
+    predicate is explicit (a NULL brand fails the IN, Q1), not left to the ORM criterion.
+    """
+    from app.models.base import get_brand_scope
+
+    scope = get_brand_scope(db)
+    if not scope:
+        return value
+    stmt = select(Product.id).where(Product.brand_id.in_(sorted(scope)))
+    if has_product_filter(value):
+        stmt = stmt.where(Product.id.in_(value))
+    return stmt
+
+
+def scope_order_rows(db: Session, orders: list, scoped_filter) -> list:
+    """CONTACT-BRAND-SCOPE (Q3): a scoped contact's orders list only the in-scope lines, and
+    `total_amount` is the sum of the lines returned. `scoped_filter` is `scope_product_filter`'s
+    subquery; an unscoped session gets `orders` back as is."""
+    from app.models.base import get_brand_scope
+
+    if not get_brand_scope(db) or not isinstance(scoped_filter, Select) or not orders:
+        return orders
+    rows = keep_brand_lines(db, orders, scoped_filter)
+    for row in rows:
+        row.total_amount = sum((line.total or 0 for line in row.lines or []), Decimal("0"))
+    return rows
 
 
 def has_product_filter(value) -> bool:
@@ -840,7 +874,7 @@ class OrderService:
         # cannot shadow them.
         _order_uuid_filter = list(order_ids) if order_ids else None
         _customer_uuid_filter = list(customer_ids) if customer_ids else None
-        _product_uuid_filter = product_filter(product_ids)
+        _product_uuid_filter = scope_product_filter(self.db, product_filter(product_ids))
         _transporter_uuid_filter = list(transporter_ids) if transporter_ids else None
 
         # Date-axis relaxation (§3.4) bookkeeping. `_customer_scoped` gates the
@@ -1214,7 +1248,7 @@ class OrderService:
         )
 
         payload = {
-            "data": orders,
+            "data": scope_order_rows(self.db, orders, _product_uuid_filter),
             "pagination": {
                 "total": total,
                 "page": page,
@@ -1425,6 +1459,9 @@ class OrderService:
         if not order:
             raise handle_not_found("Order", order_id)
         self._attach_remarks_cs_locked(order)
+        order.autocount_owned_fields = (
+            sorted(AUTOCOUNT_OWNED_ORDER_COLUMNS) if is_autocount_owned(order) else []
+        )
         return order
 
     def _attach_remarks_cs_locked(self, order) -> None:
@@ -1509,6 +1546,10 @@ class OrderService:
         product_ids = list(product_ids) if product_ids else None
         product_code = (product_code or "").strip() or None
 
+        from app.models.base import get_brand_scope
+
+        brand_scoped = bool(get_brand_scope(self.db))
+
         def _apply_order_filters(q):
             q = q.filter(Order.deleted_at.is_(None))
             if customer_ids:
@@ -1534,7 +1575,7 @@ class OrderService:
                         ),
                     )
                 )
-            if product_ids or product_code:
+            if product_ids or product_code or brand_scoped:
                 line_conds = []
                 if product_ids:
                     line_conds.append(OrderLine.product_id.in_(product_ids))
@@ -1543,7 +1584,16 @@ class OrderService:
                     line_conds.append(
                         OrderLine.product.has(func.lower(Product.product_code).like(like))
                     )
-                q = q.filter(Order.lines.any(or_(*line_conds)))
+                # CONTACT-BRAND-SCOPE: an order counts only when it has an in-scope line
+                # (matching the product ask too, when there is one).
+                scope_cond = (
+                    [OrderLine.product_id.in_(scope_product_filter(self.db, None))]
+                    if brand_scoped
+                    else []
+                )
+                q = q.filter(
+                    Order.lines.any(and_(*scope_cond, or_(*line_conds)) if line_conds else and_(*scope_cond))
+                )
             if date_from is not None:
                 q = q.filter(Order.order_date >= date_from)
             if date_to is not None:
@@ -1562,6 +1612,7 @@ class OrderService:
                     func.coalesce(OrderLine.total_including_tax, OrderLine.total, 0)
                 ).label("lsum"),
             )
+            .filter(*product_in_scope_clauses(self.db, OrderLine.product_id))
             .group_by(OrderLine.order_id)
             .subquery()
         )
@@ -1579,6 +1630,9 @@ class OrderService:
         ).all()
 
         def _order_value(row) -> float:
+            if brand_scoped:
+                # The header covers every line; a scoped contact's figure is its own lines.
+                return float(row.line_sum or 0)
             header = float(row.total_amount or 0)
             return header if header else float(row.line_sum or 0)
 
@@ -2356,6 +2410,8 @@ class OrderService:
         order = self.get_order(order_id)
 
         update_data = order_data.model_dump(exclude_unset=True)
+        # DO-OWNERSHIP-GUARD: AutoCount's fields on an AutoCount DO are not edited by hand.
+        reject_autocount_owned_edit(order, update_data)
         if update_data:
             update_data = self._normalize_uuid_fields(update_data)
 
@@ -2413,11 +2469,10 @@ class OrderService:
             # debtor_code / transporter text changes on update. Carry the
             # pre-existing values forward so the upsert sees full context even
             # if the caller only patched one field.
-            text_view = {
-                "debtor_name": update_data.get("debtor_name", order.debtor_name),
-                "debtor_code": update_data.get("debtor_code", order.debtor_code),
-                "transporter": update_data.get("transporter", order.transporter),
-            }
+            text_view = {"transporter": update_data.get("transporter", order.transporter)}
+            if not is_autocount_owned(order):  # AutoCount resolves its own customer
+                text_view["debtor_name"] = update_data.get("debtor_name", order.debtor_name)
+                text_view["debtor_code"] = update_data.get("debtor_code", order.debtor_code)
             synced = self._sync_order_master_refs(text_view)
             if "customer_id" in synced:
                 update_data["customer_id"] = synced["customer_id"]
@@ -2459,9 +2514,15 @@ class OrderService:
 
         return order
 
+    def _reject_autocount_line_edit(self, order_id: str) -> None:
+        """409 when the order is AutoCount-owned: the DO ingest rewrites its lines."""
+        order = self.db.query(Order).filter(Order.id == order_id).first()
+        if order is not None:
+            reject_autocount_line_edit(order)
+
     def create_order_line(self, order_id: str, data: OrderLineCreate):
         """Add a line to an order. Lines are ordered by line_sequence (multiple lines may share product+warehouse)."""
-        self.get_order(order_id)  # ensure order exists
+        reject_autocount_line_edit(self.get_order(order_id))  # ensure order exists
         next_seq = (
             self.db.query(func.coalesce(func.max(OrderLine.line_sequence), 0))
             .filter(OrderLine.order_id == order_id)
@@ -2476,6 +2537,7 @@ class OrderService:
 
     def update_order_line(self, order_id: str, line_id: str, data: OrderLineUpdate):
         """Update an order line."""
+        self._reject_autocount_line_edit(order_id)
         line = (
             self.db.query(OrderLine)
             .filter(OrderLine.id == line_id, OrderLine.order_id == order_id)
@@ -2491,6 +2553,7 @@ class OrderService:
 
     def delete_order_line(self, order_id: str, line_id: str):
         """Remove an order line."""
+        self._reject_autocount_line_edit(order_id)
         line = (
             self.db.query(OrderLine)
             .filter(OrderLine.id == line_id, OrderLine.order_id == order_id)
@@ -2506,6 +2569,7 @@ class OrderService:
         """Delete multiple lines from an order by line IDs."""
         if not line_ids:
             return {"message": "No order lines to delete", "deleted_count": 0}
+        self._reject_autocount_line_edit(order_id)
         deleted = (
             self.db.query(OrderLine)
             .filter(OrderLine.order_id == order_id, OrderLine.id.in_(line_ids))
@@ -2697,6 +2761,7 @@ class OrderService:
                         errors.append(f"Row {idx}: Order Number '{mapped_data['order_number']}' already exists")
                         continue
                 
+                sent_keys = [k for k in mapped_data if k != 'order_number']
                 # Calculate total if not provided
                 if 'total_amount' not in mapped_data or not mapped_data['total_amount']:
                     subtotal = mapped_data.get('subtotal_amount', Decimal("0")) or Decimal("0")
@@ -2705,9 +2770,18 @@ class OrderService:
                     mapped_data['total_amount'] = subtotal - discount + tax
                 
                 if existing_order:
-                    # Update existing order
+                    # Update existing order. On a row AutoCount owns, its columns stay
+                    # AutoCount's (DO-OWNERSHIP-GUARD) and the row says which it kept.
+                    # The warning names only what the row sent, not the total computed above.
+                    kept = autocount_owned_keys(existing_order, mapped_data)
+                    named = autocount_owned_keys(existing_order, sent_keys)
+                    if named:
+                        warnings.append(
+                            f"Row {idx}: Order {mapped_data['order_number']} - "
+                            f"{', '.join(named)} owned by AutoCount, not updated"
+                        )
                     for key, value in mapped_data.items():
-                        if key != 'order_number':  # Don't update order_number
+                        if key != 'order_number' and key not in kept:  # Don't update order_number
                             setattr(existing_order, key, value)
                     existing_order.updated_by = user_id
                     updated += 1
@@ -2732,7 +2806,8 @@ class OrderService:
         return {
             "created": created,
             "updated": updated,
-            "errors": errors
+            "errors": errors,
+            "warnings": warnings,
         }
 
     def import_excel_tracking(self, file_data: bytes, user_id: str, validate_only: bool = False, outcome=None):
@@ -3054,7 +3129,7 @@ class OrderService:
                     mapped = self._sync_order_master_refs(mapped)
                     # AutoCount DO ingest (#1354 S2, plan section 3): on a row AutoCount owns,
                     # the columns it sends are its own; the sheet keeps writing the rest.
-                    skip = AUTOCOUNT_OWNED_MASTER_COLUMNS if existing_order.doc_key is not None else ()
+                    skip = AUTOCOUNT_OWNED_ORDER_COLUMNS if is_autocount_owned(existing_order) else ()
                     for key, value in mapped.items():
                         if key != "order_number" and key not in skip:
                             setattr(existing_order, key, value)
@@ -3544,6 +3619,7 @@ class CustomerService:
         sort_field: str = "created_at",
         sort_dir: str = "desc",
         sales_agent_id: Optional[str] = None,
+        customer_group_id: Optional[str] = None,
     ):
         """Build the filtered + sorted customers query shared by ``list_customers``
         and ``neighbours`` so the two can never drift.
@@ -3556,6 +3632,9 @@ class CustomerService:
 
         if sales_agent_id is not None:
             q = q.filter(Customer.sales_agent_id == sales_agent_id)
+
+        if customer_group_id is not None:
+            q = q.filter(Customer.customer_group_id == customer_group_id)
 
         if query:
             q = q.filter(
@@ -3580,16 +3659,18 @@ class CustomerService:
         sort_field: str = "created_at",
         sort_dir: str = "desc",
         sales_agent_id: Optional[str] = None,
+        customer_group_id: Optional[str] = None,
     ):
         """List customers with pagination, search, and sorting.
 
         `sales_agent_id` narrows to the customers one agent handles (the agent's
-        Customers tab)."""
+        Customers tab); `customer_group_id` to one group's ledgers."""
         q = self._build_customer_list_query(
             query=query,
             sort_field=sort_field,
             sort_dir=sort_dir,
             sales_agent_id=sales_agent_id,
+            customer_group_id=customer_group_id,
         )
 
         total = q.count()
@@ -3648,6 +3729,18 @@ class CustomerService:
             raise handle_unprocessable("Sales agent is inactive")
         return agent
 
+    def _resolve_customer_group(self, group_id: str, *, customer_company_id: Optional[str]):
+        """The group a create/update puts a customer in: 422 unless it exists in the
+        CUSTOMER's own company (a hidden or other-company group reads as not found)."""
+        try:
+            uuid.UUID(str(group_id))
+        except (ValueError, AttributeError, TypeError):
+            raise handle_unprocessable("Customer group not found")
+        group = self.db.get(CustomerGroup, group_id)
+        if not group or str(group.company_id) != str(customer_company_id or ""):
+            raise handle_unprocessable("Customer group not found")
+        return group
+
     def create_customer(self, customer_data: CustomerCreate):
         """Create a new customer.
 
@@ -3672,8 +3765,12 @@ class CustomerService:
         # even raised - a 500 instead of the 422 AC-2 promises.
         data = customer_data.model_dump()
         agent_id = data.pop("sales_agent_id", None)
+        group_id = data.pop("customer_group_id", None)
         customer = Customer(**data)
         self.db.add(customer)
+        if group_id is not None:
+            self._resolve_customer_group(group_id, customer_company_id=pending_company_id(customer))
+            customer.customer_group_id = group_id
         if agent_id is not None:
             # `pending_company_id` resolves what `before_insert` is about to stamp on
             # THIS row, from the very same single-company scope, so the agent is checked
@@ -3705,6 +3802,9 @@ class CustomerService:
                 customer_company_id=customer.company_id,
                 require_active=changing,
             )
+        new_group_id = update_data.get("customer_group_id")
+        if new_group_id is not None:
+            self._resolve_customer_group(new_group_id, customer_company_id=customer.company_id)
         for key, value in update_data.items():
             setattr(customer, key, value)
 

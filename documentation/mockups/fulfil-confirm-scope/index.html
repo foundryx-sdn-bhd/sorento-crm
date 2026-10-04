@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Preview in the grid (mockup v3.2)</title>
+<style>
+/* Tokens copied from sorento_crm_frontend/css/config.reui.css (light theme) */
+:root{--background:#fff;--foreground:#09090b;--card:#fff;--muted:#f4f4f5;--muted-fg:#71717a;--border:#ececee;--primary:#3b82f6;--primary-fg:#fff;--primary-soft:#eff6ff;--secondary:#f4f4f5;--destructive:#dc2626;--destructive-soft:#fef2f2;--success:#15803d;--success-soft:#f0fdf4;--warning:#a16207;--warning-soft:#fefce8;--warning-line:#fde68a;--radius:8px;--page:#f7f7f8}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--foreground);font:14px/1.45 Inter,ui-sans-serif,system-ui,sans-serif}
+h1{font-size:22px;margin:0 0 4px}
+.doc{max-width:1400px;margin:0 auto;padding:16px}
+.intro{color:var(--muted-fg);font-size:13px;margin:0 0 12px;max-width:900px}
+.nav{position:sticky;top:0;z-index:5;background:var(--page);padding:8px 0 10px;border-bottom:1px solid var(--border);margin-bottom:16px;display:flex;flex-wrap:wrap;gap:6px}
+.nav a{font-size:12px;text-decoration:none;border:1px solid var(--border);background:#fff;border-radius:999px;padding:3px 10px;color:var(--muted-fg)}
+section{margin:0 0 34px}
+section>h2{font-size:15px;margin:0 0 4px}
+section>.why{font-size:12.5px;color:var(--muted-fg);margin:0 0 12px;max-width:860px}
+.row{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start}
+.note{font-size:12px;color:var(--muted-fg);border-left:2px solid var(--border);padding:2px 0 2px 10px;margin:8px 0 0;max-width:860px}
+.nb{display:inline-block;min-width:18px;height:18px;border-radius:9px;background:var(--foreground);color:#fff;font-size:11px;line-height:18px;text-align:center;margin-right:6px}
+.desk{width:1280px;flex:none;background:#fff;border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.desk .screen{height:760px;overflow:auto;background:#fff;position:relative}
+.phone{width:375px;flex:none;background:#fff;border:1px solid var(--border);border-radius:16px;overflow:hidden}
+.phone .screen{height:812px;overflow:auto;background:var(--page);position:relative}
+.cap{font-size:11px;color:var(--muted-fg);text-align:center;padding:6px;border-top:1px solid var(--border);background:#fff}
+.main{padding:22px 26px}
+.pagehead{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px}
+.pagehead .t{font-size:22px;font-weight:600}
+.sub{font-size:13px;color:var(--muted-fg)}
+.btn{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:6px;border:1px solid var(--border);background:#fff;font-size:13px;font-weight:500;white-space:nowrap}
+.btn.pri{background:var(--primary);color:#fff;border-color:var(--primary)}
+.btn.sm{height:28px;font-size:12px}
+.btn[disabled]{opacity:.5}
+.toolbar{display:flex;gap:8px;align-items:center;margin:0 0 10px}
+.chip{background:var(--secondary);border-radius:6px;padding:0 8px;font-size:12px;line-height:24px}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{border-bottom:1px solid var(--border);padding:7px 8px;text-align:left;white-space:nowrap}
+th{font-size:12px;color:var(--muted-fg);font-weight:500;background:#fff}
+.pill{display:inline-block;border-radius:999px;padding:0 8px;font-size:11px;line-height:20px;border:1px solid var(--border);background:var(--muted)}
+.pill.ok{background:var(--success-soft);color:var(--success);border-color:#bbf7d0}
+.pill.saved{background:var(--primary-soft);color:#1d4ed8;border-color:#bfdbfe}
+.cb{display:inline-block;width:14px;height:14px;border:1px solid #a1a1aa;border-radius:3px;vertical-align:-2px;background:#fff}
+.cb.on{background:var(--primary);border-color:var(--primary);position:relative}
+.cb.on:after{content:"";position:absolute;left:4px;top:1px;width:4px;height:8px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
+.scrim{position:absolute;inset:0;background:rgba(9,9,11,.35)}
+.dlg{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:640px;max-width:calc(100% - 32px);max-height:calc(100% - 32px);overflow:auto;background:#fff;border-radius:12px;border:1px solid var(--border);box-shadow:0 10px 30px rgba(0,0,0,.15);padding:20px}
+.dlg h3{margin:0 0 4px;font-size:16px}
+.dlg .d{font-size:13px;color:var(--muted-fg);margin:0 0 12px}
+.grp{font-size:12px;color:var(--muted-fg);margin:12px 0 4px;font-weight:500}
+.ln{display:grid;grid-template-columns:22px 1fr;gap:8px;padding:6px 0;border-top:1px solid var(--border);align-items:start}
+.ln .h{font-size:13px}
+.ln .m{font-size:12px;color:var(--muted-fg)}
+.ln .m .v{color:var(--foreground)}
+.amber{color:var(--warning)}
+.amberbox{background:var(--warning-soft);border:1px solid var(--warning-line);border-radius:6px;padding:4px 8px;font-size:12px;color:var(--warning);display:inline-block;margin-top:2px}
+.np{opacity:.7}
+.foot{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+.results{border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin:10px 0}
+.results .t{font-size:14px;font-weight:500;margin:0 0 4px}
+.results .o{color:var(--success);font-size:13px}
+.results ul{margin:2px 0 0 0;padding:0;list-style:none}
+.results li{font-size:13px;padding:1px 0}
+.results .k{color:var(--muted-fg)}
+.results .mis{background:var(--warning-soft);border-radius:6px;padding:4px 8px;color:var(--warning);font-size:13px;margin-top:4px}
+.toast{position:absolute;right:16px;bottom:16px;background:#fff;border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:13px;box-shadow:0 4px 14px rgba(0,0,0,.1)}
+.toast.warn{border-color:var(--warning-line);background:var(--warning-soft);color:var(--warning)}
+.dim{color:var(--muted-fg)}
+.flow{display:inline-block;border-radius:6px;padding:0 7px;font-size:11px;line-height:20px;border:1px solid;white-space:nowrap}
+.flow.buy{background:var(--primary-soft);color:#1d4ed8;border-color:#bfdbfe}
+.flow.tr{background:#f5f3ff;color:#6d28d9;border-color:#ddd6fe}
+.flow.hb{background:var(--warning-soft);color:var(--warning);border-color:var(--warning-line)}
+.banner{display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:var(--primary-soft);border:1px solid #bfdbfe;border-radius:8px;padding:8px 12px;font-size:13px;margin:0 0 10px}
+.banner b{font-weight:600}
+.cards{display:flex;gap:10px;margin:0 0 12px}
+.card{flex:1;border:1px solid var(--border);border-radius:8px;padding:10px 12px}
+.card .l{font-size:11px;color:var(--muted-fg)}
+.card .v{font-size:18px;font-weight:600}
+.sect{font-size:13px;font-weight:600;margin:14px 0 6px}
+</style>
+</head>
+<body>
+<div class="doc">
+<h1>Fulfilment planning: Preview is the contributing-lines table, read-only, in two sections</h1>
+<p class="intro">Mock v3.2 (owner annotations on v3.1, 30 Sep): no explanation text; the Preview's Order Inquiry section is the planning page's "Every contributing line" table with the SAME columns and the same date format (dd/mm/yyyy), minus the tick box and every control that can amend, adjust or edit (row expansion, Decide, verdict chips, Undo). The Stock transfer section is the board's Stock transfers grid, read-only. Back to planning returns to the unchanged board; Confirm lives on the Preview. No popup, no autosave, nothing written until Confirm.</p>
+<div class="nav"><a href="#s1">1 Board CTA</a><a href="#s2">2 Preview view (1280)</a><a href="#s3">3 Preview at 375</a><a href="#s4">4 After Confirm</a></div>
+
+<section id="s1">
+<h2><span class="nb">1</span>Board: Preview (N) is the only CTA</h2>
+<div class="row"><div class="desk"><div class="screen" style="height:300px"><div class="main">
+ <div class="pagehead"><div><div class="t">Fulfilment planning</div><div class="sub">SO402757 · OIB CONSTRUCTION SDN BHD (PROJECT) · Revision 1, confirmed by Jayson Foundryx, 4 lines</div></div>
+ <div style="display:flex;gap:8px;align-items:center"><span class="btn">Save all suggested (41)</span><span class="btn">Undo all</span><span class="btn pri">Preview (3)</span></div></div>
+ <div class="toolbar"><span class="btn sm">Expand all</span><span class="btn sm">Collapse all</span><span class="btn sm">Decide</span><span class="chip">0 selected</span></div>
+ <table><tr><th><span class="cb"></span></th><th>Line</th><th>Sales order</th><th>Agent</th><th>Customer</th><th>Product</th><th>OI</th><th>Required date</th><th>Outstanding qty</th><th>Suggested</th><th>Decided</th><th>Rank</th><th>Verdict</th></tr>
+ <tr><td><span class="cb"></span></td><td>6</td><td>SO402757</td><td>LEENA</td><td>OIB CONSTRUCTION</td><td>SRTWT6808</td><td>placed 164</td><td>01/09/2026</td><td>239</td><td>Buy 239</td><td>Buy 239</td><td>3</td><td><span class="pill saved">Saved</span></td></tr>
+ <tr><td><span class="cb"></span></td><td>8</td><td>SO402757</td><td>LEENA</td><td>OIB CONSTRUCTION</td><td>SRTSH1040</td><td></td><td>01/11/2026</td><td>100</td><td>Borrow 43 + 57 from BRW-BB</td><td>Approved</td><td>7</td><td><span class="pill saved">Saved</span></td></tr></table>
+</div></div><div class="cap">1280 · today's board, one CTA, no Confirm here</div></div></div>
+</section>
+
+<section id="s2">
+<h2><span class="nb">2</span>Preview view: the same table, read-only, filtered to what Confirm sends</h2>
+<p class="why">Server dry run of the exact press (nothing written). Section 1, Order Inquiry: the contributing-lines table with its own columns, only the lines whose inquiry rows will be sent to Purchasing; the OI column shows the row that will be raised (verb, qty, delivery date, location). Held-back lines stay in the same table, greyed, with a tag in the OI column. Section 2, Stock transfer: the board's transfer grid, the transfers that will be created. No tick boxes, no expansion, no chips, no Undo.</p>
+<div class="row"><div class="desk"><div class="screen"><div class="main">
+ <div class="pagehead"><div><div class="t">Preview: what Confirm will send</div><div class="sub">SO402757 · OIB CONSTRUCTION SDN BHD (PROJECT) · 3 lines · 3 Order Inquiry rows · 1 stock transfer · 1 held back · 4 carried forward unchanged</div></div>
+ <div style="display:flex;gap:8px;align-items:center"><span class="btn">Back to planning</span><span class="btn pri">Confirm 3 lines</span></div></div>
+ <div class="sect">Order Inquiry</div>
+ <table><tr><th>Line</th><th>Sales order</th><th>Agent</th><th>Customer</th><th>Product</th><th>OI</th><th>Required date</th><th>Outstanding qty</th><th>Suggested</th><th>Decided</th><th>Rank</th><th>Verdict</th></tr>
+ <tr><td>6</td><td>SO402757</td><td>LEENA</td><td>OIB CONSTRUCTION</td><td>SRTWT6808</td><td><span class="flow buy">ORDER 239 · 01/09/2026 · BRW-IB</span></td><td>01/09/2026</td><td>239</td><td>Buy 239</td><td>Buy 239</td><td>3</td><td><span class="pill saved">Saved · you</span></td></tr>
+ <tr><td>9</td><td>SO402757</td><td>LEENA</td><td>OIB CONSTRUCTION</td><td>SRTWT6808</td><td><span class="flow buy">ORDER 436 · 01/11/2026 · BRW-IB</span></td><td>01/11/2026</td><td>436</td><td>Buy 436</td><td>Buy 436</td><td>7</td><td><span class="pill saved">Saved · you</span></td></tr>
+ <tr><td>8</td><td>SO402757</td><td>LEENA</td><td>OIB CONSTRUCTION</td><td>SRTSH1040</td><td><span class="flow buy">ORDER_BACK 100 · 01/11/2026 · BRW-IB</span></td><td>01/11/2026</td><td>100</td><td>Borrow 43 + 57 from BRW-BB</td><td>Approved</td><td>7</td><td><span class="amberbox">Saved · Jayson Foundryx, 1 week ago</span></td></tr>
+ <tr class="np"><td>112</td><td>SO402757</td><td>LEENA</td><td>OIB CONSTRUCTION</td><td>MWB242</td><td><span class="flow hb">Held back · only 3 free at BRW-IB</span></td><td>21/12/2026</td><td>4</td><td>Reserve 4 BRW-IB</td><td>Approved</td><td>12</td><td><span class="pill saved">Saved · you</span></td></tr></table>
+ <div class="sect">Stock transfer</div>
+ <table><tr><th>Transfer no</th><th>Product</th><th>From</th><th>To</th><th>Qty</th><th>State</th><th>For</th></tr>
+ <tr><td class="dim">on Confirm</td><td>SRTSH1040</td><td>BRW-BB</td><td>BRW-IB</td><td>100</td><td><span class="flow tr">Proposed</span></td><td>SO402757 line 8</td></tr></table>
+</div></div><div class="cap">1280 · read-only; Confirm 3 lines writes exactly these rows and this transfer</div></div></div>
+</section>
+
+<section id="s3">
+<h2><span class="nb">3</span>Preview at 375</h2>
+<div class="row"><div class="phone"><div class="screen"><div class="main" style="padding:14px">
+ <div class="pagehead"><div class="t" style="font-size:18px">Preview: what Confirm will send</div></div>
+ <div class="sub" style="margin-bottom:8px">3 lines · 3 OI rows · 1 transfer · 1 held back</div>
+ <div style="display:flex;gap:8px;margin-bottom:10px"><span class="btn">Back to planning</span><span class="btn pri">Confirm 3 lines</span></div>
+ <div class="sect">Order Inquiry</div>
+ <div class="ln"><span></span><div><div class="h">Line 6 · SO402757 · SRTWT6808</div><div class="m"><span class="flow buy">ORDER 239 · 01/09/2026 · BRW-IB</span></div><div class="m">Required 01/09/2026 · Outstanding 239 · Buy 239 · Saved · you</div></div></div>
+ <div class="ln"><span></span><div><div class="h">Line 9 · SO402757 · SRTWT6808</div><div class="m"><span class="flow buy">ORDER 436 · 01/11/2026 · BRW-IB</span></div><div class="m">Required 01/11/2026 · Outstanding 436 · Buy 436 · Saved · you</div></div></div>
+ <div class="ln"><span></span><div><div class="h">Line 8 · SO402757 · SRTSH1040</div><div class="m"><span class="flow buy">ORDER_BACK 100 · 01/11/2026 · BRW-IB</span></div><div class="m">Borrow 43 + 57 from BRW-BB · Approved</div><div class="amberbox">Saved · Jayson Foundryx, 1 week ago</div></div></div>
+ <div class="ln np"><span></span><div><div class="h">Line 112 · SO402757 · MWB242</div><div class="m"><span class="flow hb">Held back · only 3 free at BRW-IB</span></div></div></div>
+ <div class="sect">Stock transfer</div>
+ <div class="ln"><span></span><div><div class="h">SRTSH1040 · BRW-BB to BRW-IB · 100</div><div class="m">Proposed on Confirm · for SO402757 line 8</div></div></div>
+</div></div><div class="cap">375 · the grids' card layout, no horizontal scroll</div></div></div>
+</section>
+
+<section id="s4">
+<h2><span class="nb">4</span>After Confirm: back on the board with the server's list</h2>
+<div class="row"><div class="desk"><div class="screen" style="height:300px"><div class="main">
+ <div class="pagehead"><div><div class="t">Fulfilment planning</div><div class="sub">SO402757 · Revision 2, confirmed by Cyndi, 7 lines</div></div><div style="display:flex;gap:8px"><span class="btn pri">Preview (1)</span></div></div>
+ <div class="results"><div class="t">1 of 1 orders confirmed</div><div class="o">SO402757: confirmed as revision 2 (3 purchase rows handed over)</div><ul><li>Confirmed: line 6 SRTWT6808 · line 8 SRTSH1040 · line 9 SRTWT6808</li><li class="k">4 carried forward unchanged · 1 held back</li></ul></div>
+ <div class="toast">3 lines confirmed · 1 transfer proposed · 3 inquiry rows · 1 held back</div>
+</div></div><div class="cap">1280 · Preview (1) is the held-back line, still saved</div></div></div>
+</section>
+</div>
+</body>
+</html>

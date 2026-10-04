@@ -432,6 +432,9 @@ def _anthropic_web_search(prompt: str, api_key: str) -> tuple[str, list[dict]]:
     """
     import anthropic  # local import: optional dep, only needed on the key-gated path
 
+    from app.services import llm_cassette
+
+    llm_cassette.refuse_uncovered("anthropic")
     client = anthropic.Anthropic(api_key=api_key)
     instruction = (
         "\n\nUsing web search, report the single most relevant current figure for the "

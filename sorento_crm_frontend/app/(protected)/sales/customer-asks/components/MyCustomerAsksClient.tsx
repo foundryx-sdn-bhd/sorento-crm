@@ -78,7 +78,7 @@ export function MyCustomerAsksClient() {
       { value: ALL_AGENTS, label: 'All agents' },
       ...(agents.data ?? []).map((a) => ({
         value: a.agent_id,
-        label: `${a.code} · ${a.open} open · ${a.needs_attention} need attention`,
+        label: `${a.code} · ${a.open} open`,
         searchText: `${a.code} ${a.name}`,
       })),
     ],

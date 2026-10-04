@@ -11,8 +11,8 @@ the backend half, `FIELD_REVEAL_KEYS`, is asserted in
 Written BEFORE the catalog entry exists: `next(s for s in CATALOG if s.name ==
 "crm_sales_report")` fails with `StopIteration`, not an import error - the module
 imports fine, there is simply no such tool yet. The presenter-wiring half fails for a
-different, equally legitimate reason: `_sales_report`/`_sales_report_detail` (S1)
-already render the WhatsApp text correctly (see `test_presenters_sales_report.py`),
+different, equally legitimate reason: `_sales_report` (S1)
+already renders the WhatsApp text correctly (see `test_presenters_sales_report.py`),
 but `present_response` has no `crm_sales_report` branch yet (its own module docstring
 says so, verbatim, above `_sales_report`/`_sales_report_detail`), so the generic
 item/field envelope runs instead and carries no `response` key at all - the assertion
@@ -40,7 +40,7 @@ REQUIRED_QUERY_PARAMS = (
     "location_token",
     "date_from",
     "date_to",
-    "detail",
+    "group_by",
     "contact_id",
     "space_id",
 )
@@ -67,6 +67,10 @@ def test_catalog_lists_sales_report_tool() -> None:
     )
     missing = [p for p in REQUIRED_QUERY_PARAMS if p not in spec.query_params]
     assert not missing, f"crm_sales_report missing query params: {missing} (has {spec.query_params})"
+    assert "detail" not in spec.query_params, (
+        "`detail=so` is retired (the delivery order list replaces the sales order list): "
+        f"{spec.query_params}"
+    )
 
 
 def test_present_response_wires_crm_sales_report_to_the_report_presenter() -> None:
@@ -75,24 +79,21 @@ def test_present_response_wires_crm_sales_report_to_the_report_presenter() -> No
     dispatches to `_outstanding_report` via `_outstanding_envelope` - a minimal
     envelope carrying `response` (the rendered text) and `has_result`, not the
     generic item/field shape."""
-    raw = json.dumps(_mock("customer"))
+    raw = json.dumps(_mock("month"))
     envelope = json.loads(present_response("crm_sales_report", raw))
-    assert envelope.get("response") == _golden("customer"), (
+    assert envelope.get("response") == _golden("month"), (
         f"crm_sales_report is not wired into present_response yet - got envelope keys "
         f"{sorted(envelope)}, response={envelope.get('response')!r}"
     )
     assert envelope.get("has_result") is True, envelope
 
 
-def test_present_response_wires_crm_sales_report_detail() -> None:
-    """`detail=so` on the payload must swap in `_sales_report_detail`, exactly as
-    `crm_outstanding_report`'s own `detail` key swaps in `_outstanding_detail`
-    (`_outstanding_envelope`) - the SAME "payload-keyed presenter swap" mechanism,
-    not a second one invented for this tool."""
-    body = copy.deepcopy(_mock("detail"))
-    body["detail"] = "so"
-    envelope = json.loads(present_response("crm_sales_report", json.dumps(body)))
-    assert envelope.get("response") == _golden("detail"), (
+def test_present_response_wires_a_group_by_drill_through_the_same_presenter() -> None:
+    """A body carrying `group_by` renders the drill (rows, `and N more`, `*Total:*`, the
+    continued options) through the SAME `crm_sales_report` branch: no second tool, no `detail`
+    key to swap on."""
+    envelope = json.loads(present_response("crm_sales_report", json.dumps(_mock("drill-product"))))
+    assert envelope.get("response") == _golden("drill-product"), (
         f"got envelope keys {sorted(envelope)}, response={envelope.get('response')!r}"
     )
     assert envelope.get("has_result") is True, envelope
@@ -123,7 +124,7 @@ def test_sales_report_is_a_presenter_tool() -> None:
 
 
 def test_present_response_wires_crm_sales_report_miss() -> None:
-    """A body with no months must still ride the minimal envelope, `has_result`
+    """A body with no periods must still ride the minimal envelope, `has_result`
     False - the presenter's own `has_result` fact the lane reads to route a total
     miss to the escalate offer (AC-1658), never guessed from the text."""
     raw = json.dumps(_mock("miss"))

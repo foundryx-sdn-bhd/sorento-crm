@@ -5,8 +5,8 @@ import type { DataGridApiFetchParams, DataGridApiResponse } from '@/components/u
 import type { SearchableSelectOption } from '@/components/common/SearchableSelect';
 
 
-export async function getCustomers(params: DataGridApiFetchParams & { status?: string }): Promise<DataGridApiResponse<Customer>> {
-  const { pageIndex, pageSize, sorting, searchQuery, status } = params;
+export async function getCustomers(params: DataGridApiFetchParams & { status?: string; customer_group_id?: string }): Promise<DataGridApiResponse<Customer>> {
+  const { pageIndex, pageSize, sorting, searchQuery, status, customer_group_id } = params;
   const sortField = sorting?.[0]?.id || '';
   const sortDirection = sorting?.[0]?.desc ? 'desc' : 'asc';
   const queryParams = new URLSearchParams({
@@ -15,6 +15,7 @@ export async function getCustomers(params: DataGridApiFetchParams & { status?: s
     ...(sortField ? { sort: sortField, dir: sortDirection } : {}),
     ...(searchQuery ? { query: searchQuery } : {}),
     ...(status ? { status } : {}),
+    ...(customer_group_id ? { customer_group_id } : {}),
   });
   const response = await apiFetch(`/api/v1/order-management/customers?${queryParams.toString()}`);
   if (!response.ok) throw new Error('Failed to fetch customers');
@@ -85,7 +86,11 @@ export async function getCustomerSalesAgentsSelect(): Promise<CustomerSalesAgent
 export const CUSTOMER_SELECT_PAGE_SIZE = 50;
 
 /** A customers-select option; `salesAgentId` lets a caller disable "already on this agent". */
-export type CustomerSelectOption = SearchableSelectOption & { salesAgentId?: string | null };
+export type CustomerSelectOption = SearchableSelectOption & {
+  salesAgentId?: string | null;
+  customerGroupId?: string | null;
+  customerGroupName?: string | null;
+};
 
 /**
  * One page of customers for the contact card's "Add customers" and the sales agent tab's
@@ -102,6 +107,7 @@ export type CustomerSelectOption = SearchableSelectOption & { salesAgentId?: str
 export async function searchCustomersSelect(
   query: string,
   pageIndex = 0,
+  options?: { companyScope?: 'grants' },
 ): Promise<CustomerSelectOption[]> {
   type Row = {
     id: string;
@@ -110,12 +116,16 @@ export async function searchCustomersSelect(
     sales_agent_id?: string | null;
     sales_agent_code?: string | null;
     sales_agent_name?: string | null;
+    customer_group_id?: string | null;
+    customer_group_name?: string | null;
+    company_name?: string | null;
   };
   const search = new URLSearchParams({
     limit: String(CUSTOMER_SELECT_PAGE_SIZE),
     offset: String(pageIndex * CUSTOMER_SELECT_PAGE_SIZE),
   });
   if (query.trim()) search.set('query', query.trim());
+  if (options?.companyScope) search.set('company_scope', options.companyScope);
   const response = await apiFetch(`/api/v1/order-management/customers/select?${search.toString()}`);
   if (!response.ok) {
     throw new Error(await extractApiError(response, 'Failed to load customers'));
@@ -123,11 +133,15 @@ export async function searchCustomersSelect(
   const rows = ((await response.json()) as { data?: Row[] }).data ?? [];
   return rows.map((c) => ({
     value: c.id,
-    label: `${c.customer_code} - ${c.customer_name}`,
+    label: options?.companyScope && c.company_name
+      ? `${c.company_name} · ${c.customer_code} - ${c.customer_name}`
+      : `${c.customer_code} - ${c.customer_name}`,
     description: c.sales_agent_code
       ? `${c.sales_agent_code} - ${c.sales_agent_name ?? ''}`.replace(/ - $/, '')
       : 'No sales agent',
     salesAgentId: c.sales_agent_id ?? null,
+    customerGroupId: c.customer_group_id ?? null,
+    customerGroupName: c.customer_group_name ?? null,
   }));
 }
 

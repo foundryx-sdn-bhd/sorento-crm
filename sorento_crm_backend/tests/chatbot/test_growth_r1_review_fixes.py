@@ -281,7 +281,7 @@ def _run_ladder(*, validator, ladder, po_response=NO_ROWS, parser=None):
         session_block={"session_vars": {"variables": {}}},
         entities_names=None,
         services=AnswerServices(mcp_probe=mcp_probe, family_fetch=lambda q: {"data": []}),
-        contact_id="437264483",
+        contact_id="900000008",
         space_id="364817",
         crossdomain_ladder=ladder,
         granted=["purchase_orders.placed"],  # the PO rung is per contact (8 Sep 2026)

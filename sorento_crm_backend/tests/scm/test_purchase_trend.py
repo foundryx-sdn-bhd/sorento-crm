@@ -31,7 +31,13 @@ def _u() -> str:
     return str(uuid.uuid4())
 
 
-def _world(db, company_id=None):
+def _first_of(as_of: date, months_back: int) -> date:
+    """The first of the month `months_back` before `as_of`'s month."""
+    total = as_of.year * 12 + as_of.month - 1 - months_back
+    return date(total // 12, total % 12 + 1, 1)
+
+
+def _world(db, company_id=None, as_of=AS_OF):
     from app.models.product import Product, ProductCategory, UnitOfMeasure
     from tests._pg_fixture import unique_code
 
@@ -71,12 +77,15 @@ def _world(db, company_id=None):
             {"id": _u(), "po": poid, "p": pid, "q": qty, "c": cost,
              **({"co": company} if company else {})})
 
-    # AS_OF = 2026-08-10. Window is 3 months: recent = May..Jul, previous = Feb..Apr.
-    add_po("R1", date(2026, 7, 1), 100, 72.0, company=company_id)
-    add_po("R2", date(2026, 6, 1), 50, 70.0, company=company_id)
-    add_po("P1", date(2026, 3, 1), 300, 60.0, company=company_id)
+    # Dated off `as_of` (the endpoint reads the clock, so its test passes today). With
+    # AS_OF = 2026-08-10 the window is 3 months: recent = May..Jul (R1 Jul 1, R2 Jun 1),
+    # previous = Feb..Apr (P1 Mar 1).
+    add_po("R1", _first_of(as_of, 1), 100, 72.0, company=company_id)
+    add_po("R2", _first_of(as_of, 2), 50, 70.0, company=company_id)
+    add_po("P1", _first_of(as_of, 5), 300, 60.0, company=company_id)
     # This run's own proposal - never a purchase.
-    add_po("DRAFT", date(2026, 8, 1), 999, 1.0, status="draft_recommendation", company=company_id)
+    add_po("DRAFT", _first_of(as_of, 0), 999, 1.0, status="draft_recommendation",
+           company=company_id)
 
     run_id = _u()
     db.execute(text(
@@ -258,7 +267,8 @@ def test_a_purchase_order_under_a_different_company_is_never_counted():
 def test_the_endpoint_serves_it_and_rbac_holds(scm_app):
     app, db, gcu, gcuk = scm_app
     scope = as_company_user(app, db, gcu, gcuk)
-    w = _world(db, company_id=next(iter(scope)))
+    # The endpoint takes no `as_of`: it windows off `date.today()`, so the world does too.
+    w = _world(db, company_id=next(iter(scope)), as_of=date.today())
 
     with TestClient(app) as c:
         r = c.get(f"/api/v1/scm/reorder-runs/{w['run_id']}/purchase-trend")

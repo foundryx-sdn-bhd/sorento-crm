@@ -34,7 +34,7 @@ from app.services.sla_service import ConversationSLATrackingService
 from app.services.user_service import UserPermissionService
 from tests._pg_fixture import blank_session
 
-PHONE = "+60123456799"
+PHONE = "+60100000071"
 RESPOND_IO_ID = "10025699"
 BASE = "/api/v1/sla-management/conversation-sla-tracking"
 

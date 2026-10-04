@@ -8,11 +8,11 @@ Transcript (verbatim, observed):
     1
     -> How many units of SRTWC286-SH?
     10
-    -> SRTWC286-SH x 10: the quantity is more than what I can confirm here, ...
+    -> SRTWC286-SH x 10: 🚫 the quantity is more than what I can confirm here, ...
     2
     -> How many units of SRTWC286-SH?              <- the defect
     3
-    -> SRTWC286-SH x 3: the quantity is more than what I can confirm here, ...
+    -> SRTWC286-SH x 3: 🚫 the quantity is more than what I can confirm here, ...
 
 Rulings:
 1. A which-one pick list is numbered ("1. SRTWC286-SH"), like the other pickers
@@ -59,7 +59,7 @@ OWNER_FAMILY = [
     "SRTWC286-SH-UF",
 ]
 
-TOO_BIG = "the quantity is more than what I can confirm here. Please refer to your salesman."
+TOO_BIG = "🚫 the quantity is more than what I can confirm here. Please refer to your salesman."
 
 
 def _tool(plan) -> tuple[list[dict[str, Any]], str]:
@@ -320,12 +320,14 @@ def test_the_family_pick_with_a_quantity_is_numbered_too():
     assert text == _numbered("SRTWC286 x 88: which one?", OWNER_FAMILY[:3])
 
 
-def test_more_than_ten_numbers_ten_and_keeps_the_others_line():
+def test_more_than_ten_numbers_every_one():
+    """PICKER-NO-CAP (owner, 2 Oct 2026): no cut at ten, and no "others" line when
+    every match is listed."""
     codes = [f"SRTX1-{i:02d}" for i in range(12)]
     lines = task_mod.pick_question("SRTX1", codes).splitlines()
     assert lines[1] == "1. SRTX1-00"
-    assert lines[10] == "10. SRTX1-09"
-    assert lines[11] == "and 2 others, reply with the full code."
+    assert lines[12] == "12. SRTX1-11"
+    assert len(lines) == 13
 
 
 def test_the_dealer_did_you_mean_list_is_numbered():

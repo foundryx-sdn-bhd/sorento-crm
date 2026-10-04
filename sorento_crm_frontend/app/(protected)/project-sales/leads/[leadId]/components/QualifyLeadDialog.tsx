@@ -118,6 +118,8 @@ export function QualifyLeadDialog({
                   value={developerPartyId}
                   onChange={setDeveloperPartyId}
                   clearable
+                  loadError={developers.error}
+                  onRetry={() => void developers.refetch()}
                   options={(developers.data?.data ?? []).map((party) => ({
                     value: party.id,
                     label: party.name,
@@ -141,6 +143,8 @@ export function QualifyLeadDialog({
                     setTemplateId('');
                   }}
                   clearable
+                  loadError={types.error}
+                  onRetry={() => void types.refetch()}
                   options={(types.data ?? []).map((type) => ({
                     value: type.id,
                     label: type.name,
@@ -157,6 +161,8 @@ export function QualifyLeadDialog({
                   onChange={setTemplateId}
                   clearable
                   disabled={!typeId}
+                  loadError={templates.error}
+                  onRetry={() => void templates.refetch()}
                   options={(templates.data ?? []).map((template) => ({
                     value: template.id,
                     label: template.name,

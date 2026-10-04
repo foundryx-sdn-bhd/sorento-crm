@@ -1,5 +1,5 @@
 """Order management schemas."""
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
 from datetime import datetime
 from decimal import Decimal
@@ -45,6 +45,8 @@ class CustomerCreate(CustomerBase):
     # Who sells to this customer (`sales_agents.id`). Optional: most of the 6,397 existing
     # rows have never had one set. `None` on create is the same as omitting it.
     sales_agent_id: Optional[str] = None
+    account_level: Optional[int] = Field(default=None, ge=1, le=9)
+    customer_group_id: Optional[str] = None
 
 
 class CustomerUpdate(BaseModel):
@@ -55,6 +57,10 @@ class CustomerUpdate(BaseModel):
     # `null` clears the assignment (exclude_unset in the service keeps that distinct
     # from "field omitted, leave alone").
     sales_agent_id: Optional[str] = None
+    # `null` clears the level; omitted leaves it alone.
+    account_level: Optional[int] = Field(default=None, ge=1, le=9)
+    # `null` clears the group; omitted leaves it alone.
+    customer_group_id: Optional[str] = None
 
 
 class CustomerSimple(BaseModel):
@@ -76,6 +82,9 @@ class CustomerResponse(CustomerBase):
     sales_agent_id: Optional[str] = None
     sales_agent_code: Optional[str] = None
     sales_agent_name: Optional[str] = None
+    account_level: Optional[int] = None
+    customer_group_id: Optional[str] = None
+    customer_group_name: Optional[str] = None
     # Shown as columns on a sales agent's Customers tab.
     region: Optional[str] = None
     market_segment_code: Optional[str] = None
@@ -215,6 +224,10 @@ class OrderResponse(OrderBase):
     # single-order GET / PUT; defaults False on list rows (the edit form reads the
     # single GET). See PLAN-complaint-do-auto-fulfilment.md.
     remarks_cs_locked: bool = False
+    # The fields an AutoCount-owned DO (`doc_key` set) takes only from AutoCount, so the edit
+    # form shows them read-only (DO-OWNERSHIP-GUARD). Stamped on the single-order GET / PUT
+    # like `remarks_cs_locked`; empty on list rows and on every row AutoCount does not own.
+    autocount_owned_fields: list[str] = []
     created_at: datetime
     updated_at: datetime
     deleted_at: Optional[datetime] = None
@@ -225,7 +238,7 @@ class OrderResponse(OrderBase):
     customer: Optional[CustomerSimple] = None
     order_status: Optional[OrderStatusSimple] = None
     lines: Optional[list["OrderLineResponse"]] = []
-    
+
     @field_validator('company_id', mode='before')
     @classmethod
     def _company_id_to_str(cls, v):
@@ -266,6 +279,8 @@ class BulkImportResponse(BaseModel):
     created: int = 0
     updated: int = 0
     errors: list[str] = []
+    # Rows that updated an AutoCount-owned DO name the AutoCount fields left untouched.
+    warnings: list[str] = []
 
 
 class BulkDeleteOrdersRequest(BaseModel):

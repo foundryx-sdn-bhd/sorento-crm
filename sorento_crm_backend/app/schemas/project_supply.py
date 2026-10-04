@@ -457,6 +457,12 @@ class ConfirmException(BaseModel):
     message: str
 
 
+class ConfirmedLine(BaseModel):
+    project_line_id: str
+    line_no: Optional[int] = None
+    item_code: Optional[str] = None
+
+
 class ConfirmResult(BaseModel):
     #: None only when every named line was already fulfilled and nothing was written
     #: (#1362 item 3).
@@ -469,6 +475,12 @@ class ConfirmResult(BaseModel):
     #: `lines_undecided > 0` is a normal, deliberate outcome, not a warning.
     lines_decided: int = 0
     lines_undecided: int = 0
+    #: The lines this press froze (payload order) and how many covered lines were carried
+    #: forward untouched. `lines_decided == len(lines_confirmed) + lines_carried`.
+    lines_confirmed: List[ConfirmedLine] = []
+    lines_carried: int = 0
+    #: The covered lines this press took OUT of the confirmation (staged rejections).
+    lines_withdrawn: List[ConfirmedLine] = []
     #: The physical movements this confirmation raised, and how many it could NOT write
     #: (`PLAN-scm-cs-planning-uat.md` section E). The transfer write is best-effort so a
     #: failure cannot fail a promise already made, but a movement nobody was told about is
@@ -551,6 +563,10 @@ class ConfirmManyOrderBody(BaseModel):
     #: refusal alongside a batch (owner ruling 23 Sep 2026,
     #: `PLAN-board-reject-on-confirmed-line.md`).
     rejected_line_ids: List[str] = Field(default_factory=list)
+    #: Scope this order's press to exactly these mirror line ids: a line outside the list is
+    #: neither confirmed, held back nor echoed, and a staged rejection outside it is left
+    #: alone. What a Preview showed is what Confirm sends.
+    only_line_ids: Optional[List[str]] = None
 
 
 class ConfirmManyBody(BaseModel):
@@ -564,6 +580,31 @@ class ConfirmManyBody(BaseModel):
     #: the only shape the board had before this slice: opened at `?orders=...&batch=<id>`,
     #: every order on it belonging to that one batch. Absent on every ordinary board Confirm.
     batch_id: Optional[str] = None
+    #: Run every order exactly as a real press and roll it back instead of committing; each
+    #: ok order then answers with the order inquiry rows and transfers it would raise.
+    preview: bool = False
+
+
+class PreviewInquiryRow(BaseModel):
+    line_no: Optional[int] = None
+    item_code: Optional[str] = None
+    verb: str
+    #: True when this press raised the row; False when it only settles a row an earlier
+    #: revision already raised.
+    is_new: bool = True
+    qty: Decimal
+    delivery_date: Optional[date] = None
+    stock_location: Optional[str] = None
+    note: Optional[str] = None
+
+
+class PreviewTransfer(BaseModel):
+    line_no: Optional[int] = None
+    is_new: bool = True
+    kind: str
+    qty: Decimal
+    from_location: Optional[str] = None
+    to_location: Optional[str] = None
 
 
 class ConfirmManyOrderResult(BaseModel):
@@ -573,10 +614,17 @@ class ConfirmManyOrderResult(BaseModel):
 
     pso_id: str
     ok: bool
+    #: True on a preview: nothing below was committed.
+    preview: Optional[bool] = None
+    inquiry_rows: Optional[List[PreviewInquiryRow]] = None
+    transfers: Optional[List[PreviewTransfer]] = None
     decision_revision: Optional[int] = None
     inquiry_rows_created: Optional[int] = None
     lines_decided: Optional[int] = None
     lines_undecided: Optional[int] = None
+    lines_confirmed: Optional[List[ConfirmedLine]] = None
+    lines_carried: Optional[int] = None
+    lines_withdrawn: Optional[List[ConfirmedLine]] = None
     #: The movements this order's confirmation raised, and how many could NOT be written -
     #: the same pair the single-order `ConfirmResult` carries. The board's toast reads "N
     #: lines confirmed, T transfers proposed", and T comes from here.

@@ -136,13 +136,14 @@ class TestAcP43ContractV21:
 
 class TestAcP04EndStateDeprecatedFieldsRemoved:
     """AC-P0-4's own end state, which belongs to S4: once the contract says
-    2.1, the three deprecated fields are REMOVED from the schemas, so a
-    payload naming any of them fails validation (extra=forbid) with a
-    field-named error, never accepted-with-a-warning and never retryable.
+    2.1, the three deprecated fields are REMOVED from the schemas. Owner
+    decision 1 Oct 2026: a payload naming any of them is DROPPED (the name is
+    logged by the ingest route), never refused, never retryable, and the field
+    reaches no column.
     Today (S0's contract) they are still accepted-and-warned - see
     tests/test_master_ingest.py::TestRetryableVsFatal."""
 
-    def test_customer_credit_limit_fails_validation_not_accepted(self, env):
+    def test_customer_credit_limit_is_dropped_not_written(self, env):
         from app.services.master_ingest_service import IngestOutcome, MasterIngestService
 
         svc = MasterIngestService(env.db, integration_id=None, company_id=env.company_a)
@@ -158,10 +159,9 @@ class TestAcP04EndStateDeprecatedFieldsRemoved:
             ],
         )
         record = result.records[0]
-        assert record.outcome is IngestOutcome.FAILED, record.errors
-        assert "credit_limit" in record.errors
+        assert record.outcome is IngestOutcome.CREATED, record.errors
 
-    def test_customer_payment_terms_days_fails_validation_not_accepted(self, env):
+    def test_customer_payment_terms_days_is_dropped_not_written(self, env):
         from app.services.master_ingest_service import IngestOutcome, MasterIngestService
 
         svc = MasterIngestService(env.db, integration_id=None, company_id=env.company_a)
@@ -177,10 +177,9 @@ class TestAcP04EndStateDeprecatedFieldsRemoved:
             ],
         )
         record = result.records[0]
-        assert record.outcome is IngestOutcome.FAILED, record.errors
-        assert "payment_terms_days" in record.errors
+        assert record.outcome is IngestOutcome.CREATED, record.errors
 
-    def test_supplier_payment_terms_code_fails_validation_not_accepted(self, env):
+    def test_supplier_payment_terms_code_is_dropped_not_written(self, env):
         from app.services.master_ingest_service import IngestOutcome, MasterIngestService
 
         svc = MasterIngestService(env.db, integration_id=None, company_id=env.company_a)
@@ -196,8 +195,7 @@ class TestAcP04EndStateDeprecatedFieldsRemoved:
             ],
         )
         record = result.records[0]
-        assert record.outcome is IngestOutcome.FAILED, record.errors
-        assert "payment_terms_code" in record.errors
+        assert record.outcome is IngestOutcome.CREATED, record.errors
 
 
 class TestAcP42SupersedeIdempotency:

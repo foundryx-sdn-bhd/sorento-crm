@@ -79,6 +79,14 @@ class Settings(BaseSettings):
     environment: str = "development"
     debug: bool = False
 
+    # DEV-LOGIN-BYPASS (app/services/dev_login.py): passwordless sign-in for LOCAL test
+    # copies. Off by default; the app refuses to start with it on outside a dev ENVIRONMENT.
+    # DEV_AUTO_LOGIN_USERS is a comma list of existing user emails, first = default.
+    # DEV_AUTO_LOGIN_SECRET (16+ chars) is shared with the frontend SERVER only.
+    dev_auto_login: bool = False  # DEV_AUTO_LOGIN
+    dev_auto_login_users: str = ""  # DEV_AUTO_LOGIN_USERS
+    dev_auto_login_secret: str = ""  # DEV_AUTO_LOGIN_SECRET
+
     # Complaint <-> DO auto-fulfilment: which Complaint-team tiers (agent `complaint`,
     # set `complaint`) receive the replacement-DO-delivered email/in-app. Comma list,
     # e.g. "1,2" (Tier 1 + Tier 2) or "1" (Tier 1 only). COMPLAINT_DO_DELIVERED_NOTIFY_TIERS
@@ -146,11 +154,13 @@ class Settings(BaseSettings):
     # environment variable makes each flip a deploy. The two settings below stay here:
     # they are deployment properties of THIS box, not owner decisions.
     #
-    # The longest a turn waits for its contact's earlier turns. Past it the turn is failed
-    # at stage `queued` with today's error reply rather than holding the request open: n8n's
-    # HTTP node waits 60 s, so a wait that outlives that would turn one stuck turn into a
-    # stuck n8n execution as well. CHATBOT_QUEUE_WAIT_SECONDS.
-    chatbot_queue_wait_seconds: float = 45.0
+    # The longest a turn waits behind a predecessor that is still ALIVE (heart-beating; a
+    # dead one is walked past within `dispatch.ALIVE_TTL_SECONDS`). Past it the turn runs
+    # anyway, possibly out of order (CHATBOT-QUEUE-FIX, 1 Oct). The waiter's own reply
+    # rides n8n's same 90 s turn budget, so the value is capped at
+    # `dispatch.max_queue_wait_seconds()` (90 - 35 parser - 15 lane - 10 margin = 30 s);
+    # a higher env value is clamped there, never honoured. CHATBOT_QUEUE_WAIT_SECONDS.
+    chatbot_queue_wait_seconds: float = 30.0
     # Optional worker offload (AC-703). OFF by default: in-process is simpler and the
     # measured trigger for moving the turn off the API threads (beyond ~250 concurrent) has
     # not arrived. When true the request enqueues on the `chat` queue and waits for the

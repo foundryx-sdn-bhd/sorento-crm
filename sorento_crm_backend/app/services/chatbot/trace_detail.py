@@ -208,6 +208,22 @@ def _reveals(records: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+#: The `customer_scope` event's fields, in the order the panel prints them. Every scope
+#: decision on a turn writes one (CHATBOT-SELFREF-SCOPE R4): the engine's gate, screen
+#: and scoped-to-links pass, the fetch clamp and refusal, the tier-probe refusal, and the
+#: B2 re-route - so a refusal explains itself on the trace.
+_CUSTOMER_SCOPE_FIELDS = (
+    "decision", "refused", "reason", "ids", "dropped", "kept", "typed", "self_reference", "tool", "offer_passed",
+)
+
+
+def _customer_scope(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {"at": e.get("at"), **{k: e.get(k) for k in _CUSTOMER_SCOPE_FIELDS if e.get(k) is not None}}
+        for e in _kind_records(records, "customer_scope")
+    ]
+
+
 def _decay(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [
         {
@@ -403,6 +419,7 @@ def compose_trace_detail(row: ChatbotTurn, db: Session | None = None) -> dict[st
         "tool": _tool(records),
         "crossdomain": _crossdomain(records),
         "reveals": _reveals(records),
+        "customer_scope": _customer_scope(records),
         "session": _session(records),
         "apply": _apply(records),
         "memory": _memory(records),

@@ -1,3 +1,5 @@
+# Copy .env.example to .env (beside this file) and fill in every value before
+# `docker compose up`: POSTGRES_USER, POSTGRES_PASSWORD and JWT_SECRET are required.
 version: '3.8'
 
 services:
@@ -6,10 +8,10 @@ services:
     ports:
       - "${API_PORT:-8000}:${API_PORT:-8000}"
     environment:
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/sorento_crm
-      - DIRECT_URL=postgresql://postgres:postgres@db:5432/sorento_crm
+      - DATABASE_URL=postgresql://${POSTGRES_USER:?required}:${POSTGRES_PASSWORD:?required}@db:5432/sorento_crm
+      - DIRECT_URL=postgresql://${POSTGRES_USER:?required}:${POSTGRES_PASSWORD:?required}@db:5432/sorento_crm
       - REDIS_URL=redis://redis:6379/0
-      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
+      - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET in .env}
       - JWT_ALGORITHM=HS256
       - API_HOST=0.0.0.0
       - API_PORT=${API_PORT:-8000}
@@ -35,8 +37,8 @@ services:
   db:
     image: postgres:15-alpine
     environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_USER=${POSTGRES_USER:?required}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?required}
       - POSTGRES_DB=sorento_crm
     ports:
       - "5432:5432"

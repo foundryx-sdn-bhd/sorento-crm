@@ -1,0 +1,13 @@
+*Customer:* ACME HARDWARE SDN BHD [A/C I]
+*Product:* all
+*Delivery date:* 01/08/2026 to 31/08/2026
+
+*Total:* Qty 640, RM 52,400.00
+24/08 to 30/08: Qty 600, RM 49,900.00
+17/08 to 23/08: Qty 4, RM 0.00
+10/08 to 16/08: Qty 33, RM 2,500.00
+03/08 to 09/08: Qty 3, RM 0.00
+
+*Drill down:*
+1. By product
+2. Delivery orders

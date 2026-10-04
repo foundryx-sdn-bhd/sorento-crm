@@ -24,7 +24,7 @@ if (!window.matchMedia) {
 const listAwaitingAcceptance = vi.fn();
 const assignLead = vi.fn();
 const nudgeLeadAssignee = vi.fn();
-const getUsersSelect = vi.fn();
+const getUserLookup = vi.fn();
 
 vi.mock('next/navigation', () => ({
   usePathname: () => '/project-sales/lead-acceptance',
@@ -45,7 +45,7 @@ vi.mock('../../_shared/services/leadAcceptanceService', () => ({
 }));
 
 vi.mock('@/services/userSelectService', () => ({
-  getUsersSelect: (...args: unknown[]) => getUsersSelect(...args),
+  getUserLookup: (...args: unknown[]) => getUserLookup(...args),
 }));
 
 vi.mock('@/lib/toast', () => ({
@@ -134,9 +134,9 @@ beforeEach(() => {
   });
   assignLead.mockResolvedValue(row());
   nudgeLeadAssignee.mockResolvedValue(row());
-  getUsersSelect.mockResolvedValue([
-    { id: 'u-ali', name: 'Ali', email: 'ali@x.my' },
-    { id: 'u-siti', name: 'Siti', email: 'siti@x.my' },
+  getUserLookup.mockResolvedValue([
+    { id: 'u-ali', name: 'Ali' },
+    { id: 'u-siti', name: 'Siti' },
   ]);
 });
 

@@ -60,7 +60,6 @@ class StockAskAgentCount(BaseModel):
     code: str
     name: str
     open: int
-    needs_attention: int
 
 
 class StockAskMessage(BaseModel):

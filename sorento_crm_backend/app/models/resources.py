@@ -1,6 +1,6 @@
 """Resource management models."""
-from sqlalchemy import BigInteger, Boolean, Column, Date, DateTime, ForeignKey, Index, Integer, String, Text, event
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, Column, Date, DateTime, ForeignKey, Index, Integer, String, Text, event
+from sqlalchemy.dialects.postgresql import ARRAY, UUID, JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
@@ -202,6 +202,9 @@ class Attachment(Base, CompanyScopedMixin):
     # uploaded together share a tag. Notification helpers read this back to
     # coalesce per-attachment n8n callbacks into a single outbox email.
     upload_batch_id = Column(String(36), nullable=True)
+    # Regions chosen at upload for a Packing List file ('west' / 'east'); NULL for every other
+    # file. Read by the external packing-list create when its payload names none.
+    regions = Column(ARRAY(Text), nullable=True)
 
     attachment_type = relationship(
         "AttachmentType",
@@ -211,6 +214,10 @@ class Attachment(Base, CompanyScopedMixin):
     directory = relationship("AttachmentDirectory", back_populates="attachments")
 
     __table_args__ = (
+        CheckConstraint(
+            "regions IS NULL OR (cardinality(regions) >= 1 AND regions <@ ARRAY['west','east']::text[])",
+            name="ck_attachments_regions",
+        ),
         Index("ix_attachments_entity_type_entity_id", "entity_type", "entity_id"),
         Index("ix_attachments_uploaded_by", "uploaded_by"),
         Index("ix_attachments_is_deleted", "is_deleted"),

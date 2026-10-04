@@ -35,7 +35,7 @@ export default function SupplierForm({ supplierId, onSuccess }: SupplierFormProp
   const router = useRouter();
   const isEditMode = !!supplierId;
   const { data: supplier, isLoading: isLoadingSupplier } = useSupplier(supplierId || null);
-  const { data: countries } = useCountrySelectQuery();
+  const { data: countries, error: countriesError, refetch: refetchCountries } = useCountrySelectQuery();
   const createMutation = useCreateSupplier();
   const updateMutation = useUpdateSupplier();
 
@@ -347,6 +347,8 @@ export default function SupplierForm({ supplierId, onSuccess }: SupplierFormProp
                         clearable
                         placeholder="Search country..."
                         emptyMessage="No country found."
+                        loadError={countriesError}
+                        onRetry={() => void refetchCountries()}
                         options={(countries ?? []).map((c) => ({
                           value: c.id,
                           label: c.name,

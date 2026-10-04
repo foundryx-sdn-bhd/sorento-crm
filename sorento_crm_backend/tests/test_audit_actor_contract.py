@@ -121,7 +121,7 @@ def test_ac08_staff_bearer_session_write_carries_full_actor():
         contact = _seed_contact(db)
         staff = _seed_user(db, name="Staff One", contact=contact)
         db.commit()
-        session_row = mint_session(db, staff.id, remember=True, user_agent="ZZT-Agent/1.0")
+        session_row = mint_session(db, staff.id, user_agent="ZZT-Agent/1.0")
 
         test_app = _rename_app(db, get_current_user, is_async=True)
         with TestClient(test_app) as client:
@@ -396,7 +396,7 @@ def test_ac12_bearer_session_through_current_user_or_api_key_records_user_id(is_
         target = _seed_user(db, name="AC12 Target")
         staff = _seed_user(db, name="AC12 Staff")
         db.commit()
-        session_row = mint_session(db, staff.id, remember=True)
+        session_row = mint_session(db, staff.id)
 
         test_app = _rename_app(db, get_current_user_or_api_key, is_async=is_async)
         with TestClient(test_app) as client:
@@ -491,7 +491,7 @@ def test_impersonation_of_a_user_credits_admin_as_real_user_and_keeps_target_cre
         db.add(UserRoleAssignment(user_id=admin.id, role_id=role.id))
         target = _seed_user(db, name="Impersonation Target")
         db.commit()
-        admin_session = mint_session(db, admin.id, remember=True)
+        admin_session = mint_session(db, admin.id)
         db.add(
             ImpersonationSession(
                 id=str(uuid.uuid4()),
@@ -578,7 +578,7 @@ def test_api_call_log_actor_is_user_prefixed_id():
     with blank_session() as db:
         staff = _seed_user(db, name="ApiLog Staff")
         db.commit()
-        session_row = mint_session(db, staff.id, remember=True)
+        session_row = mint_session(db, staff.id)
         token = session_row.token
 
         bind = db.get_bind()

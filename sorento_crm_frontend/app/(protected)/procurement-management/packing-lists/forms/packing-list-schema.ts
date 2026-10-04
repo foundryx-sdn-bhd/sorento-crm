@@ -82,6 +82,7 @@ export const packingListSchema = clearanceSchema.extend({
   shipping_container_number: z.string().optional(),
   invoice_number: z.string().optional(),
   shipment_status: z.string().default('in_transit'),
+  regions: z.array(z.enum(['west', 'east'])).min(1, 'Pick at least one region'),
   shipment_lines: z.array(shipmentLineSchema).default([]),
 });
 

@@ -11,6 +11,10 @@ import { buildDataGridParams, codedError, extractApiError, type CodedError } fro
 import type { DataGridApiResponse } from '@/components/ui/data-grid';
 import type {
   AutocountComparePullResult,
+  CompareMapping,
+  CompareMappingBody,
+  CompareMappingKind,
+  CompareMappingsResponse,
   AutocountPull,
   AutocountPullCompareSource,
   AutocountPullEntity,
@@ -104,6 +108,25 @@ export async function comparePull(
     body: JSON.stringify(source ? { filename, rows, source } : { filename, rows }),
   });
   if (!response.ok) throw new Error(await extractApiError(response, 'Could not compare the file.'));
+  return response.json();
+}
+
+export async function getCompareMappings(): Promise<CompareMappingsResponse> {
+  const response = await apiFetch('/api/v1/autocount/pulls/compare-mappings');
+  if (!response.ok) throw new Error(await extractApiError(response, 'Could not load the compare mapping.'));
+  return response.json();
+}
+
+export async function saveCompareMapping(
+  kind: CompareMappingKind,
+  body: CompareMappingBody,
+): Promise<CompareMapping> {
+  const response = await apiFetch(`/api/v1/autocount/pulls/compare-mappings/${kind}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw new Error(await extractApiError(response, 'Could not save the compare mapping.'));
   return response.json();
 }
 

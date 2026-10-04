@@ -20,7 +20,8 @@
  *      Returns the active brands of the NAMED company, independent of the
  *      caller's active-company scope (an admin edits scopes for companies they
  *      are not currently switched into). Omitting `company_id` keeps today's
- *      behaviour exactly. Permission unchanged: master_data.brands.view.
+ *      behaviour exactly. Open to any signed-in user since NS-SHARED-LOOKUPS (1 Oct 2026);
+ *      the company must still be one the caller can reach.
  *
  * 2. Read - the scopes ride the existing user payload, no dedicated GET
  *

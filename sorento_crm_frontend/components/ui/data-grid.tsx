@@ -131,6 +131,16 @@ export interface DataGridProps<TData extends object> {
   emptyMessage?: ReactNode | string;
   emptyAction?: never;
   /**
+   * The list query's `error` (NEVER-STUCK-UI S3, lever L2). With no rows on screen, a
+   * failed read never renders `emptyMessage`: a refusal renders the inline no-access
+   * state, anything else renders the message and a Retry calling `onRetry`. Rows already
+   * on screen (a failed background refetch) stay. Every list passes it:
+   * `error={query.error} onRetry={() => query.refetch()}`.
+   */
+  error?: unknown;
+  /** Refetch the list. Pair it with `error`. */
+  onRetry?: () => void;
+  /**
    * Optional row grouping. Return a label when `row` starts a new group, or
    * null/undefined otherwise; the grid draws a divider row above it.
    *

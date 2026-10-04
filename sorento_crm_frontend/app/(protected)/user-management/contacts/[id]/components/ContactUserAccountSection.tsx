@@ -53,7 +53,11 @@ export default function ContactUserAccountSection({ contact }: { contact: Respon
   const [linking, setLinking] = useState(false);
   const [linkError, setLinkError] = useState<string | null>(null);
 
-  const { data: unlinkedUsers } = useQuery({
+  const {
+    data: unlinkedUsers,
+    error: unlinkedUsersError,
+    refetch: refetchUnlinkedUsers,
+  } = useQuery({
     queryKey: ['unlinked-users'],
     queryFn: () => getUsersSelect({ status: 'ACTIVE', unlinked: true }),
     enabled: linkPickerOpen,
@@ -129,6 +133,8 @@ export default function ContactUserAccountSection({ contact }: { contact: Respon
                   value={pickedUserId}
                   onChange={setPickedUserId}
                   clearable
+                  loadError={unlinkedUsersError}
+                  onRetry={() => void refetchUnlinkedUsers()}
                   options={(unlinkedUsers ?? []).map((u) => ({
                     value: u.id,
                     label: u.name || u.email || 'Unnamed user',

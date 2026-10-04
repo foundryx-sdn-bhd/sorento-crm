@@ -322,3 +322,24 @@ def from_wire(raw: Any) -> Pending | None:
         payload=dict(payload) if isinstance(payload, dict) else {},
         asked_at_turn=raw.get("asked_at_turn"),
     )
+
+
+def without_escalation(question: Any) -> tuple[Any, list[dict[str, Any]] | None]:
+    """ESCALATION-CONTROL: `question` with every escalation part taken out, and the
+    options that went (`escalation_control.strip_text`, `apply.apply`'s barred entry).
+
+    An escalation offer kind goes whole; a roster keeps its business options and loses
+    its member (routing) options, its `escalate_offered` stamp and its team."""
+    if question is None:
+        return None, None
+    if question.kind in ESCALATION_OFFER_KINDS:
+        return None, [o for o in (question.options or []) if isinstance(o, dict)]
+    members = [o for o in (question.options or []) if isinstance(o, dict) and o.get("entity_type") == "member"]
+    payload = dict(question.payload or {})
+    offered = payload.pop("escalate_offered", None) is True
+    if not members and not offered:
+        return question, None
+    kept = [o for o in (question.options or []) if not (isinstance(o, dict) and o.get("entity_type") == "member")]
+    if not kept:
+        return None, members
+    return replace(question, options=kept, payload=payload, team=None), members

@@ -206,7 +206,7 @@ class TestToolPick:
                         entities=[], top_selling={"rank_by": "quantity", "top_n": 5},
                     )
                 },
-                "contact": {"id": 437264483},
+                "contact": {"id": 900000008},
                 "access": {"attributes": [GRANT]},
             },
         }
@@ -302,10 +302,20 @@ class TestArgs:
         assert "Name of" not in reply, "rows print the code only"
         assert reply.endswith(ITEM_OFFER)
 
-    def test_named_n_above_one_hundred_is_capped(self, session_factory, monkeypatch, route) -> None:
+    def test_named_n_past_one_hundred_is_not_capped(self, session_factory, monkeypatch, route) -> None:
+        """TOP-N-UNCAP (owner, 30 Sep 2026): "100, 200" - the named N goes out as named."""
         _seed_contact(session_factory, variables={})
-        _reply, captured = _turn(session_factory, monkeypatch, _ts(top_n=250), "top 250 by quantity")
-        assert _calls(captured)[0]["n"] == 100
+        reply, captured = _turn(session_factory, monkeypatch, _ts(top_n=250), "top 250 by quantity")
+        assert _calls(captured)[0]["n"] == 250
+        assert "at most" not in reply
+
+    def test_named_n_past_the_ceiling_asks_the_ceiling_and_says_so(self, session_factory, monkeypatch, route) -> None:
+        _seed_contact(session_factory, variables={})
+        reply, captured = _turn(session_factory, monkeypatch, _ts(top_n=1500), "top 1500 by quantity")
+        assert _calls(captured)[0]["n"] == 1000
+        assert reply.startswith(
+            "I can list at most the top 1,000 in one reply.\n\n"
+        ), reply[:200]
 
     def test_param_mapping_and_date_default(self, session_factory, monkeypatch, route) -> None:
         """AC-1953 as built: dates, the resolved customer, the channel, the basis and the
@@ -1059,6 +1069,8 @@ class TestParser:
         assert prompt_mod.SEMANTIC_PARSER_PROMPT.removesuffix(
             prompt_mod.MEMORY_ADDENDUM
         ).removesuffix(
+            prompt_mod.ACCOUNT_LEDGER_ADDENDUM
+        ).removesuffix(
             prompt_mod.PO_SPO_WAREHOUSE_ADDENDUM
         ).removesuffix(
             prompt_mod.ESCALATION_CONFIRMATION_ADDENDUM
@@ -1087,3 +1099,135 @@ class TestParser:
         assert "top_selling" in contracts_mod.Focus.model_fields
         focus = Focus(status="top_selling", top_selling={"rank_by": "amount", "top_n": 5})
         assert focus_from_wire(focus_to_wire(focus)).top_selling == {"rank_by": "amount", "top_n": 5}
+
+
+# --------------------------------------------------------------------------- #
+# TOP-N-UNCAP (owner, 30 Sep 2026): a long ranking leaves as ordered WhatsApp parts
+# --------------------------------------------------------------------------- #
+
+
+class TestLongRankingParts:
+    def _send_texts(self, result) -> list[str]:
+        return [
+            a["text"] for a in result.as_dict()["actions"] if isinstance(a, dict) and a.get("kind") == "send_message"
+        ]
+
+    def test_top_200_is_every_row_in_ordered_parts(self, session_factory, monkeypatch, route) -> None:
+        import re
+
+        route.codes = [f"SRTWC{i:04d}" for i in range(1, 201)]
+        _seed_contact(session_factory, variables={})
+        result, captured = _run_turn(
+            session_factory, monkeypatch, qf=_ts(top_n=200), text_body="top 200 by quantity",
+            msg_id=f"ZZT-top-selling-{uuid.uuid4().hex[:10]}", attributes=[GRANT],
+        )
+        assert _calls(captured)[0]["n"] == 200
+        texts = self._send_texts(result)
+        assert len(texts) > 1, texts
+        for k, text in enumerate(texts, start=1):
+            assert len(text) <= 4096, (k, len(text))
+            assert f"({k}/{len(texts)})" in text.split("\n")[:3], text[:80]
+        rows = [line for t in texts for line in t.split("\n") if re.match(r"^\d+\. SRTWC\d{4}: ", line)]
+        assert [int(r.split(".", 1)[0]) for r in rows] == list(range(1, 201))
+        assert texts[-1].rstrip().endswith(ITEM_OFFER)
+        # The parts ARE the reply: nothing lost, nothing added, and the whole text is
+        # still what the turn records.
+        assert "\n\n".join(texts) == (result.reply or {}).get("text")
+        actions = [a for a in result.as_dict()["actions"] if a.get("kind") == "send_message"]
+        assert all(a["result_set"] is None and a["quick_replies"] is None for a in actions[:-1])
+
+    def test_past_the_ceiling_the_note_opens_part_one(self, session_factory, monkeypatch, route) -> None:
+        route.codes = [f"SRTWC{i:04d}" for i in range(1, 1201)]
+        _seed_contact(session_factory, variables={})
+        result, captured = _run_turn(
+            session_factory, monkeypatch, qf=_ts(top_n=1500), text_body="top 1500 by quantity",
+            msg_id=f"ZZT-top-selling-{uuid.uuid4().hex[:10]}", attributes=[GRANT],
+        )
+        assert _calls(captured)[0]["n"] == 1000
+        texts = self._send_texts(result)
+        assert len(texts) > 1
+        assert texts[0].startswith(
+            f"I can list at most the top 1,000 in one reply.\n\n(1/{len(texts)})\n"
+        ), texts[0][:200]
+        assert all(len(t) <= 4096 for t in texts)
+        assert "\n1000. SRTWC1000: " in texts[-1] and "SRTWC1001" not in texts[-1]
+
+    def test_top_5_is_one_message_as_before(self, session_factory, monkeypatch, route) -> None:
+        _seed_contact(session_factory, variables={})
+        result, _captured = _run_turn(
+            session_factory, monkeypatch, qf=_ts(top_n=5), text_body="top 5 by quantity",
+            msg_id=f"ZZT-top-selling-{uuid.uuid4().hex[:10]}", attributes=[GRANT],
+        )
+        texts = self._send_texts(result)
+        assert len(texts) == 1
+        assert texts[0] == (result.reply or {}).get("text")
+        assert not texts[0].startswith("(1/")
+
+
+class TestSplitMarkedMessage:
+    def test_a_complete_run_splits_and_a_note_rides_part_one(self) -> None:
+        from app.services.chatbot.engine import split_marked_message
+
+        text = "A note.\n\n(1/2)\n*Top*\n1. A\n\n(2/2)\n2. B\nReply."
+        assert split_marked_message(text) == ["A note.\n\n(1/2)\n*Top*\n1. A", "(2/2)\n2. B\nReply."]
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "plain reply",
+            "no first marker\n\n(2/2)\nrest",
+            "(1/3)\nfirst\n\n(2/3)\nsecond",  # a part missing
+            "(1/2)\nfirst\n\n(3/2)\nwrong",
+        ],
+    )
+    def test_anything_else_goes_out_whole(self, text: str) -> None:
+        from app.services.chatbot.engine import split_marked_message, split_send_actions
+
+        assert split_marked_message(text) == [text]
+        action = {"kind": "send_message", "text": text, "quick_replies": "a,b", "result_set": [1]}
+        assert split_send_actions([action]) == [action]
+
+    def test_quick_replies_and_result_set_ride_the_last_part(self) -> None:
+        from app.services.chatbot.engine import split_send_actions
+
+        attach = {"kind": "send_attachments", "attachments_src": []}
+        action = {"kind": "send_message", "text": "(1/2)\na\n\n(2/2)\nb", "quick_replies": "x", "result_set": [1], "dry_run": False}
+        out = split_send_actions([action, attach])
+        assert out == [
+            {"kind": "send_message", "text": "(1/2)\na", "quick_replies": None, "result_set": None, "dry_run": False},
+            {"kind": "send_message", "text": "(2/2)\nb", "quick_replies": "x", "result_set": [1], "dry_run": False},
+            attach,
+        ]
+
+
+def test_complete_result_splits_its_send_actions_too() -> None:
+    """`/complete` serialises through `CompleteResult`, the other path n8n executes."""
+    from app.services.chatbot.engine import CompleteResult
+
+    action = {"kind": "send_message", "text": "(1/2)\na\n\n(2/2)\nb", "quick_replies": None, "result_set": None}
+    out = CompleteResult(turn_id="t", actions=[action]).as_dict()["actions"]
+    assert [a["text"] for a in out] == ["(1/2)\na", "(2/2)\nb"]
+
+
+class TestConsoleShowsTheParts:
+    """The console shows what the customer gets: a split reply is one bubble PER PART,
+    in order, never the whole text once (TOP-N-UNCAP, 30 Sep 2026)."""
+
+    def test_a_split_reply_is_one_bubble_per_part(self) -> None:
+        from app.services.chatbot.console_service import _customer_texts
+
+        whole = "note\n\n(1/2)\n*Top*\n1. A\n\n(2/2)\n2. B\nReply."
+        body = {
+            "reply": {"text": whole},
+            "actions": [
+                {"kind": "send_message", "text": "note\n\n(1/2)\n*Top*\n1. A"},
+                {"kind": "send_message", "text": "(2/2)\n2. B\nReply."},
+            ],
+        }
+        assert _customer_texts(body) == ("note\n\n(1/2)\n*Top*\n1. A", ["(2/2)\n2. B\nReply."])
+
+    def test_an_unsplit_reply_is_unchanged(self) -> None:
+        from app.services.chatbot.console_service import _customer_texts
+
+        body = {"reply": {"text": "one"}, "actions": [{"kind": "send_message", "text": "one"}, {"kind": "send_message", "text": "two"}]}
+        assert _customer_texts(body) == ("one", ["two"])

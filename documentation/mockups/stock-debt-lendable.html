@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Stock Debt: far-dated landed pins lend to nearer orders (mockup)</title>
+<style>
+/* Tokens copied from sorento_crm_frontend/css/config.reui.css (light theme), same as
+   documentation/mockups/do-pull/index.html */
+:root{
+  --background:#fff;--foreground:#09090b;--card:#fff;--muted:#f4f4f5;--muted-fg:#71717a;
+  --border:#ececee;--primary:#3b82f6;--primary-fg:#fff;--primary-soft:#eff6ff;--primary-line:#bfdbfe;
+  --secondary:#f4f4f5;--destructive:#dc2626;--destructive-soft:#fef2f2;--destructive-line:#fecaca;
+  --success:#15803d;--success-soft:#f0fdf4;--success-line:#bbf7d0;--warning:#a16207;--warning-soft:#fefce8;--warning-line:#fde68a;--info:#7c3aed;--info-soft:#f5f3ff;
+  --radius:8px;--page:#f7f7f8;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--foreground);font:14px/1.45 Inter,ui-sans-serif,system-ui,sans-serif}
+h1{font-size:22px;margin:0 0 4px}
+.doc{max-width:1400px;margin:0 auto;padding:16px}
+.intro{color:var(--muted-fg);font-size:13px;margin:0 0 12px;max-width:900px}
+.nav{position:sticky;top:0;z-index:5;background:var(--page);padding:8px 0 10px;border-bottom:1px solid var(--border);margin-bottom:16px;display:flex;flex-wrap:wrap;gap:6px}
+.nav a{font-size:12px;text-decoration:none;border:1px solid var(--border);background:#fff;border-radius:999px;padding:3px 10px;color:var(--muted-fg)}
+section{margin:0 0 34px}
+section>h2{font-size:15px;margin:0 0 4px}
+section>.why{font-size:12.5px;color:var(--muted-fg);margin:0 0 12px;max-width:900px}
+.row{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start}
+.note{font-size:12px;color:var(--muted-fg);border-left:2px solid var(--border);padding:2px 0 2px 10px;margin:8px 0 0;max-width:900px}
+.note.q{border-left-color:var(--warning);color:var(--foreground)}
+.nb{display:inline-block;min-width:18px;height:18px;border-radius:9px;background:var(--foreground);color:#fff;font-size:11px;line-height:18px;text-align:center;margin-right:6px}
+
+/* frames */
+.desk{width:1280px;flex:none;background:#fff;border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.desk .screen{height:760px;overflow:auto;background:rgba(9,9,11,.5);position:relative}
+.cap{font-size:11px;color:var(--muted-fg);text-align:center;padding:6px;border-top:1px solid var(--border);background:#fff}
+.phone{width:375px;flex:none;background:#fff;border:1px solid var(--border);border-radius:16px;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+.phone .screen{height:812px;overflow:auto;background:rgba(9,9,11,.5)}
+
+/* the lightbox (Dialog, sm:max-w-[95vw], max-h-[85vh]) */
+.dlg{background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.12);display:flex;flex-direction:column;overflow:hidden}
+.desk .dlg{position:absolute;left:32px;right:32px;top:24px;max-height:700px}
+.phone .dlg{position:absolute;left:0;right:0;top:0;bottom:0;border-radius:0;max-height:none}
+.dlg .hd{border-bottom:1px solid var(--border);padding:16px 40px 16px 24px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;position:relative}
+.phone .dlg .hd{padding:14px 40px 12px 16px;flex-wrap:wrap}
+.dlg .hd h3{margin:0;font-size:15px;font-weight:600}
+.dlg .hd h3 small{font-size:12px;font-weight:400;color:var(--muted-fg);margin-left:8px}
+.dlg .hd .d{font-size:12px;color:var(--muted-fg);margin:2px 0 0}
+.dlg .x{position:absolute;right:16px;top:14px;color:var(--muted-fg);font-size:16px}
+.dlg .bd{padding:16px 24px;overflow:auto}
+.phone .dlg .bd{padding:12px 16px}
+.tabs{display:inline-flex;background:var(--secondary);border-radius:8px;padding:3px;gap:2px;margin-bottom:12px}
+.tabs span{padding:4px 12px;border-radius:6px;font-size:13px;color:var(--muted-fg)}
+.tabs span.on{background:#fff;color:var(--foreground);box-shadow:0 1px 2px rgba(0,0,0,.06)}
+.panel{border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:14px}
+.panel .ph{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600}
+.panel .ph input{height:30px;width:220px;border:1px solid var(--border);border-radius:6px;padding:0 8px;font:12.5px Inter,system-ui;background:#fff}
+table{border-collapse:collapse;width:100%;font-size:12.5px;table-layout:fixed}
+th,td{padding:7px 10px;border-bottom:1px solid var(--border);text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+th{font-size:11.5px;color:var(--muted-fg);font-weight:500;background:#fafafa}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+tr.tot td{font-weight:600;background:#fafafa}
+a.lnk{color:var(--primary);text-decoration:none;font-weight:500}
+.mut{color:var(--muted-fg)}
+.pill{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:2px 8px;font-size:11.5px;font-weight:600;text-transform:capitalize}
+.pill.short{background:#fee2e2;color:#991b1b}
+.pill.pinned{background:#e0f2fe;color:#075985}
+.pill.covered{background:#d1fae5;color:#065f46}
+.pill.late{background:#fef3c7;color:#92400e}
+.pill.ob{background:#ede9fe;color:#5b21b6}
+.btn{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border:1px solid var(--border);background:#fff;border-radius:6px;font-size:13px;color:var(--foreground);white-space:nowrap}
+.btn.sm{height:28px;font-size:12.5px}
+.btn.primary{background:var(--primary);color:var(--primary-fg);border-color:var(--primary);font-weight:500}
+.btn.disabled{opacity:.5}
+.preview{border:1px solid var(--primary-line);background:var(--primary-soft);border-radius:10px;padding:12px 14px;margin-bottom:14px}
+.preview h4{margin:0 0 2px;font-size:13px}
+.preview .d{font-size:12px;color:var(--muted-fg);margin:0 0 10px}
+.preview .so{background:#fff;border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin:0 0 8px}
+.preview .so .t{font-weight:600;font-size:12.5px;margin-bottom:4px}
+.preview .so .ln{font-size:12.5px;padding:2px 0;display:flex;gap:8px;align-items:baseline}
+.preview .so .ln .k{min-width:84px;color:var(--muted-fg);font-size:11.5px}
+.preview .ft{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:6px}
+.preview .skip{font-size:12px;color:var(--warning)}
+.result{border:1px solid var(--success-line);background:var(--success-soft);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:12.5px}
+.result b{display:block;margin-bottom:2px}
+.cell{display:inline-block;min-width:56px;text-align:right;padding:2px 6px;border-radius:4px;font-variant-numeric:tabular-nums}
+.cell.red{background:#fee2e2;color:#991b1b}.cell.amber{background:#fef3c7;color:#92400e}.cell.green{background:#d1fae5;color:#065f46}
+.mini{font-size:12.5px;border-collapse:collapse;table-layout:auto}
+.mini th,.mini td{padding:5px 8px}
+</style>
+</head>
+<body>
+<div class="doc">
+<h1>Stock Debt: a far-dated landed pin lends to nearer orders (STOCK-DEBT-LENDABLE)</h1>
+<p class="intro">Product SRTSS8710, book Project, 30 Sep 2026. SO381065 (due 29 Mar 2027) holds 88 on hand at BRW-BB because its own SPO was received; SO396071 (due 1 Sep 2026) reads Short 32. Under option B the 88 is <em>lendable</em>: the line is due at or beyond today + lead time + 14 days, the same window the fulfilment board uses to name a borrow donor. Nearer lines draw it first; SO381065 keeps its claim as a planned re-buy and reads <b>Order back</b>. The view filters (date range, book) never change this: they only hide rows. Everything on this page is static HTML at 1280 and 375; the two new things are the status pill / Covered by wording and the Rebalance button with its Preview.</p>
+<p class="note q"><b>Owner ruling on this mock (30 Sep 2026): "don't need rebalance step, this is a dashboard view only."</b> Sections 4 and 5 and the Rebalance button in sections 2, 3 and 6 are superseded: the page stays read-only. Sections 1 to 3 and 6 stand for the status pill and the Covered by wording.</p>
+<div class="nav"><a href="#s1">1 Board row, before and after</a><a href="#s2">2 Cell Sep 26, Demand tab</a><a href="#s3">3 Cell Mar 27, the lending line</a><a href="#s4">4 Rebalance: Preview</a><a href="#s5">5 Rebalance: after Confirm</a><a href="#s6">6 Phone (375)</a></div>
+
+<section id="s1">
+<h2>1. Board row, before and after (nothing new on the board itself)</h2>
+<p class="why">The month cells are the ordinary balance. The lend moves 88 from a pin nobody could touch into the walk, so Sep 26, Oct 26 and Dec 26 improve and Mar 27 books the order-back. No new column, no new control on the board.</p>
+<table class="mini" style="background:#fff;border:1px solid var(--border);border-radius:8px">
+<tr><th></th><th class="n">Sep 26</th><th class="n">Oct 26</th><th class="n">Nov 26</th><th class="n">Dec 26</th><th class="n">Jan 27</th><th class="n">Feb 27</th><th class="n">Mar 27</th></tr>
+<tr><td>SRTSS8710 today (main)</td><td><span class="cell red">-76</span></td><td><span class="cell red">-29</span></td><td><span class="cell green">0</span></td><td><span class="cell amber">-207</span></td><td><span class="cell green">0</span></td><td><span class="cell green">0</span></td><td><span class="cell green">0</span></td></tr>
+<tr><td>SRTSS8710 with the lend</td><td><span class="cell red">-44</span></td><td><span class="cell green">0</span></td><td><span class="cell green">0</span></td><td><span class="cell amber">-180</span></td><td><span class="cell green">0</span></td><td><span class="cell green">0</span></td><td><span class="cell amber">-88</span></td></tr>
+</table>
+<p class="note">Sep 26: -76 + 32 = -44 (SO396071 covered; the other Sep shortfalls stay). Oct 26: -29 + 29 = 0. Dec 26: -207 + 27 = -180 (the last 27 of the 88). Mar 27: -88, amber because March can still be bought for; that is the order-back.</p>
+</section>
+
+<section id="s2">
+<h2>2. Cell Sep 26 · Demand tab: the receiving line</h2>
+<p class="why">The existing cell dialog. SO396071 now reads <b>covered</b>, Covered by says where the stock came from and whose it was: <em>On hand BRW-BB (from SO381065)</em>. The header gets one button, <b>Rebalance</b>, enabled because this cell holds at least one lend. Supply tab unchanged.</p>
+<div class="row">
+<div class="desk"><div class="screen">
+  <div class="dlg">
+    <div class="hd">
+      <div><h3>Product · SRTSS8710 <small>Sep 26 · -44</small></h3><p class="d">Stainless steel sink 871 (double bowl)</p></div>
+      <div><span class="btn primary sm">Rebalance</span></div>
+      <span class="x">✕</span>
+    </div>
+    <div class="bd">
+      <div class="tabs"><span class="on">Demand (143)</span><span>Supply (100)</span></div>
+      <div class="panel">
+        <div class="ph"><span>Demand</span><input placeholder="Search SO, agent or bin…"></div>
+        <table>
+          <colgroup><col style="width:130px"><col style="width:100px"><col style="width:100px"><col style="width:110px"><col style="width:90px"><col style="width:90px"><col style="width:100px"><col style="width:90px"><col style="width:260px"><col style="width:120px"></colgroup>
+          <tr><th>Sales order</th><th>Agent</th><th>Bin</th><th>Due</th><th class="n">Ordered</th><th class="n">Delivered</th><th class="n">Outstanding</th><th class="n">Assigned</th><th>Covered by</th><th>Status</th></tr>
+          <tr><td><a class="lnk">SO396071</a></td><td>LEENA</td><td>BRW-BB</td><td>01/09/2026</td><td class="n">32</td><td class="n">0</td><td class="n">32</td><td class="n">32</td><td><span class="mut">On hand BRW-BB (from SO381065)</span></td><td><span class="pill covered">covered</span></td></tr>
+          <tr><td><a class="lnk">SO398120</a></td><td>JEREMY</td><td>BRW-BB</td><td>14/09/2026</td><td class="n">60</td><td class="n">0</td><td class="n">60</td><td class="n">16</td><td><span class="mut">On hand BRW-BB</span></td><td><span class="pill short">short 44</span></td></tr>
+          <tr><td><a class="lnk">SO401877</a></td><td>LEENA</td><td>BRW-BB</td><td>22/09/2026</td><td class="n">51</td><td class="n">0</td><td class="n">51</td><td class="n">51</td><td><span class="mut">On hand BRW-BB</span></td><td><span class="pill covered">covered</span></td></tr>
+          <tr class="tot"><td>Total</td><td></td><td></td><td></td><td class="n">143</td><td class="n">0</td><td class="n">143</td><td class="n">99</td><td></td><td>Short 44</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</div><div class="cap">1280 · cell Sep 26 after the lend. One line of the 88 landed for SO381065 reached SO396071; a second on-hand entry keeps its plain "On hand BRW-BB" wording, so a reader can tell free stock from lent stock on one row.</div></div>
+</div>
+<p class="note">Rebalance is the page's one CTA, in the header (DESIGN-LANGUAGE section 6). It is disabled with the title "Nothing to rebalance in this cell" when no line here lends or receives.</p>
+</section>
+
+<section id="s3">
+<h2>3. Cell Mar 27 · Demand tab: the lending line</h2>
+<p class="why">SO381065 keeps its claim. The new status <b>Order back 88</b> (violet, distinct from short/pinned) says the 88 were lent and are to be re-bought for 29 Mar 2027. Covered by lists who has them. Had only part of the 88 been lent, the rest would still read <em>pinned</em> on the same row: "pinned · order back 61".</p>
+<div class="row">
+<div class="desk"><div class="screen">
+  <div class="dlg">
+    <div class="hd">
+      <div><h3>Product · SRTSS8710 <small>Mar 27 · -88</small></h3><p class="d">Stainless steel sink 871 (double bowl)</p></div>
+      <div><span class="btn primary sm">Rebalance</span></div>
+      <span class="x">✕</span>
+    </div>
+    <div class="bd">
+      <div class="tabs"><span class="on">Demand (88)</span><span>Supply (0)</span></div>
+      <div class="panel">
+        <div class="ph"><span>Demand</span><input placeholder="Search SO, agent or bin…"></div>
+        <table>
+          <colgroup><col style="width:130px"><col style="width:100px"><col style="width:100px"><col style="width:110px"><col style="width:90px"><col style="width:90px"><col style="width:100px"><col style="width:90px"><col style="width:300px"><col style="width:140px"></colgroup>
+          <tr><th>Sales order</th><th>Agent</th><th>Bin</th><th>Due</th><th class="n">Ordered</th><th class="n">Delivered</th><th class="n">Outstanding</th><th class="n">Assigned</th><th>Covered by</th><th>Status</th></tr>
+          <tr><td><a class="lnk">SO381065</a></td><td>LEENA</td><td>BRW-BB</td><td>29/03/2027</td><td class="n">88</td><td class="n">0</td><td class="n">88</td><td class="n">0</td><td><span class="mut">Lent to SO396071 (32) · SO402118 (29) · SO404890 (27)</span></td><td><span class="pill ob">order back 88</span></td></tr>
+          <tr class="tot"><td>Total</td><td></td><td></td><td></td><td class="n">88</td><td class="n">0</td><td class="n">88</td><td class="n">0</td><td></td><td>Short 88</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</div><div class="cap">1280 · cell Mar 27. The footer still foots with the cell: Short 88 is the order-back the month books.</div></div>
+</div>
+<p class="note">Status rules, in order: <b>short</b> when the line is short beyond what it lent (the pill then reads "short N · order back M", the two halves adding up to the shortfall: "short 12 · order back 88"), <b>order back</b> when something was lent, <b>pinned</b>, <b>late</b>, <b>covered</b>. A non-lendable pin (due inside today + lead + 14, undated, TBA, no bin) is exactly today's behaviour.</p>
+</section>
+
+<section id="s4">
+<h2>4. Rebalance · Preview (read-only)</h2>
+<p class="why">Pressing Rebalance runs the board's own machinery for each receiving sales order and shows what it would write, nothing written yet: one Borrow per receiving line (the same order_borrow component the fulfilment board's Confirm posts) and the order-back Buy the donor gets at its own required date. The planner then presses Confirm N orders, or Cancel. Same permission as the board's Confirm.</p>
+<div class="row">
+<div class="desk"><div class="screen">
+  <div class="dlg">
+    <div class="hd">
+      <div><h3>Product · SRTSS8710 <small>Sep 26 · -44</small></h3><p class="d">Stainless steel sink 871 (double bowl)</p></div>
+      <div><span class="btn sm disabled">Rebalance</span></div>
+      <span class="x">✕</span>
+    </div>
+    <div class="bd">
+      <div class="preview">
+        <h4>Rebalance preview · 3 sales orders, 88 units from SO381065</h4>
+        <p class="d">Nothing is written until you press Confirm. Each sales order is confirmed on its own, the way the fulfilment board does it; one order's refusal never stops the others.</p>
+        <div class="so">
+          <div class="t">SO396071 line 3 · LEENA · due 01/09/2026</div>
+          <div class="ln"><span class="k">Borrow</span><span>32 on hand at BRW-BB from SO381065 line 1 (LEENA, due 29 Mar 2027); its debt lands in Mar 2027</span></div>
+          <div class="ln"><span class="k">Order back</span><span>32 for SO381065 line 1 at 29/03/2027 (order inquiry row, verb Order back)</span></div>
+        </div>
+        <div class="so">
+          <div class="t">SO402118 line 2 · JEREMY · due 10/10/2026</div>
+          <div class="ln"><span class="k">Borrow</span><span>29 on hand at BRW-BB from SO381065 line 1 (LEENA, due 29 Mar 2027); its debt lands in Mar 2027</span></div>
+          <div class="ln"><span class="k">Order back</span><span>29 for SO381065 line 1 at 29/03/2027</span></div>
+        </div>
+        <div class="so">
+          <div class="t">SO404890 line 5 · LEENA · due 03/12/2026</div>
+          <div class="ln"><span class="k">Borrow</span><span>27 on hand at BRW-BB from SO381065 line 1 (LEENA, due 29 Mar 2027); its debt lands in Mar 2027</span></div>
+          <div class="ln"><span class="k">Buy</span><span>180: only 27 of 207 can be covered from stock; the rest is bought (amend reason: Rebalance from Stock Debt)</span></div>
+          <div class="ln"><span class="k">Order back</span><span>27 for SO381065 line 1 at 29/03/2027</span></div>
+        </div>
+        <div class="skip">Not previewed: SO405511 line 1 (14 lent) is not adopted onto fulfilment planning yet, so there is no line to confirm. Adopt it on the board first.</div>
+        <div class="ft"><span class="btn sm">Cancel</span><span class="btn primary sm">Confirm 3 orders</span></div>
+      </div>
+      <div class="tabs"><span class="on">Demand (143)</span><span>Supply (100)</span></div>
+      <div class="panel">
+        <div class="ph"><span>Demand</span><input placeholder="Search SO, agent or bin…"></div>
+        <table>
+          <colgroup><col style="width:130px"><col style="width:100px"><col style="width:100px"><col style="width:110px"><col style="width:90px"><col style="width:90px"><col style="width:100px"><col style="width:90px"><col style="width:260px"><col style="width:120px"></colgroup>
+          <tr><th>Sales order</th><th>Agent</th><th>Bin</th><th>Due</th><th class="n">Ordered</th><th class="n">Delivered</th><th class="n">Outstanding</th><th class="n">Assigned</th><th>Covered by</th><th>Status</th></tr>
+          <tr><td><a class="lnk">SO396071</a></td><td>LEENA</td><td>BRW-BB</td><td>01/09/2026</td><td class="n">32</td><td class="n">0</td><td class="n">32</td><td class="n">32</td><td><span class="mut">On hand BRW-BB (from SO381065)</span></td><td><span class="pill covered">covered</span></td></tr>
+          <tr><td><a class="lnk">SO398120</a></td><td>JEREMY</td><td>BRW-BB</td><td>14/09/2026</td><td class="n">60</td><td class="n">0</td><td class="n">60</td><td class="n">16</td><td><span class="mut">On hand BRW-BB</span></td><td><span class="pill short">short 44</span></td></tr>
+          <tr class="tot"><td>Total</td><td></td><td></td><td></td><td class="n">143</td><td class="n">0</td><td class="n">143</td><td class="n">99</td><td></td><td>Short 44</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</div><div class="cap">1280 · the Preview sits inline above the tabs (PR #1395's shape), the Rebalance button greys out while it is open. The transfers of the WHOLE product are listed, not only this cell's: a lend is one transfer wherever it is looked at from.</div></div>
+</div>
+<p class="note q">Q1. The Preview lists every lend of the product (all three receiving orders), even when the cell pressed only shows one of them. Recommendation: yes; a rebalance of one product is one decision, and pressing it from the Sep cell and again from the Oct cell would be two revisions for one move.</p>
+<p class="note q">Q2. A receiving line partly lent (SO404890: 27 of 207) is posted as Borrow 27 + Buy 180 with a server-written amend reason, which is what a planner amending on the board would post. The board's own ladder would instead say Buy 207 (a step covers the whole unit or nothing). Recommendation: post the split, since the lend is the point; the Preview says so on the row.</p>
+</section>
+
+<section id="s5">
+<h2>5. Rebalance · after Confirm</h2>
+<p class="why">The result names what the server wrote, per order, and the cell reloads: the receiving lines now read <b>pinned</b> (a confirmed hold), and SO381065's row in Mar 27 keeps <b>order back 88</b> with the three order-back rows now real on the order inquiry worklist.</p>
+<div class="row">
+<div class="desk"><div class="screen">
+  <div class="dlg">
+    <div class="hd">
+      <div><h3>Product · SRTSS8710 <small>Sep 26 · -44</small></h3><p class="d">Stainless steel sink 871 (double bowl)</p></div>
+      <div><span class="btn sm disabled" title="Nothing to rebalance in this cell">Rebalance</span></div>
+      <span class="x">✕</span>
+    </div>
+    <div class="bd">
+      <div class="result"><b>Rebalanced 3 sales orders · 3 order-back rows raised for SO381065</b>SO396071 revision 4 · SO402118 revision 2 · SO404890 revision 7 (Borrow 27 + Buy 180). Order-back rows: Order back 32, 29 and 27 for SO381065 line 1 at 29/03/2027, on the order inquiry worklist.</div>
+      <div class="tabs"><span class="on">Demand (143)</span><span>Supply (100)</span></div>
+      <div class="panel">
+        <div class="ph"><span>Demand</span><input placeholder="Search SO, agent or bin…"></div>
+        <table>
+          <colgroup><col style="width:130px"><col style="width:100px"><col style="width:100px"><col style="width:110px"><col style="width:90px"><col style="width:90px"><col style="width:100px"><col style="width:90px"><col style="width:260px"><col style="width:120px"></colgroup>
+          <tr><th>Sales order</th><th>Agent</th><th>Bin</th><th>Due</th><th class="n">Ordered</th><th class="n">Delivered</th><th class="n">Outstanding</th><th class="n">Assigned</th><th>Covered by</th><th>Status</th></tr>
+          <tr><td><a class="lnk">SO396071</a></td><td>LEENA</td><td>BRW-BB</td><td>01/09/2026</td><td class="n">32</td><td class="n">0</td><td class="n">32</td><td class="n">32</td><td><span class="mut">On hand BRW-BB</span></td><td><span class="pill pinned">pinned</span></td></tr>
+          <tr><td><a class="lnk">SO398120</a></td><td>JEREMY</td><td>BRW-BB</td><td>14/09/2026</td><td class="n">60</td><td class="n">0</td><td class="n">60</td><td class="n">16</td><td><span class="mut">On hand BRW-BB</span></td><td><span class="pill short">short 44</span></td></tr>
+          <tr class="tot"><td>Total</td><td></td><td></td><td></td><td class="n">143</td><td class="n">0</td><td class="n">143</td><td class="n">99</td><td></td><td>Short 44</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</div><div class="cap">1280 · after Confirm. One order refusing (a stale line, somebody confirmed it a moment earlier) is listed under the result with the server's reason, the others still land; the same per-order behaviour as the board's Confirm all.</div></div>
+</div>
+</section>
+
+<section id="s6">
+<h2>6. Phone (375)</h2>
+<p class="why">The dialog is full-screen at 375. The Rebalance button drops under the title; the Preview stacks; the grid scrolls sideways as it does today.</p>
+<div class="row">
+<div class="phone"><div class="screen">
+  <div class="dlg">
+    <div class="hd">
+      <div style="flex:1 1 100%"><h3>Product · SRTSS8710 <small>Sep 26 · -44</small></h3><p class="d">Stainless steel sink 871 (double bowl)</p></div>
+      <div><span class="btn primary sm">Rebalance</span></div>
+      <span class="x">✕</span>
+    </div>
+    <div class="bd">
+      <div class="preview">
+        <h4>Rebalance preview · 3 sales orders</h4>
+        <p class="d">88 units from SO381065. Nothing is written until Confirm.</p>
+        <div class="so">
+          <div class="t">SO396071 line 3 · due 01/09/2026</div>
+          <div class="ln"><span class="k">Borrow</span><span>32 at BRW-BB from SO381065 line 1</span></div>
+          <div class="ln"><span class="k">Order back</span><span>32 for SO381065 at 29/03/2027</span></div>
+        </div>
+        <div class="so">
+          <div class="t">SO402118 line 2 · due 10/10/2026</div>
+          <div class="ln"><span class="k">Borrow</span><span>29 at BRW-BB from SO381065 line 1</span></div>
+          <div class="ln"><span class="k">Order back</span><span>29 for SO381065 at 29/03/2027</span></div>
+        </div>
+        <div class="so">
+          <div class="t">SO404890 line 5 · due 03/12/2026</div>
+          <div class="ln"><span class="k">Borrow</span><span>27 at BRW-BB from SO381065 line 1</span></div>
+          <div class="ln"><span class="k">Buy</span><span>180, the rest of 207</span></div>
+          <div class="ln"><span class="k">Order back</span><span>27 for SO381065 at 29/03/2027</span></div>
+        </div>
+        <div class="ft"><span class="btn sm">Cancel</span><span class="btn primary sm">Confirm 3 orders</span></div>
+      </div>
+      <div class="tabs"><span class="on">Demand (143)</span><span>Supply (100)</span></div>
+      <div class="panel" style="overflow:auto">
+        <table style="min-width:900px">
+          <tr><th>Sales order</th><th>Bin</th><th>Due</th><th class="n">Outstanding</th><th class="n">Assigned</th><th>Covered by</th><th>Status</th></tr>
+          <tr><td><a class="lnk">SO396071</a></td><td>BRW-BB</td><td>01/09/2026</td><td class="n">32</td><td class="n">32</td><td><span class="mut">On hand BRW-BB (from SO381065)</span></td><td><span class="pill covered">covered</span></td></tr>
+          <tr><td><a class="lnk">SO398120</a></td><td>BRW-BB</td><td>14/09/2026</td><td class="n">60</td><td class="n">16</td><td><span class="mut">On hand BRW-BB</span></td><td><span class="pill short">short 44</span></td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</div><div class="cap">375 · Preview open</div></div>
+</div>
+</section>
+</div>
+</body>
+</html>

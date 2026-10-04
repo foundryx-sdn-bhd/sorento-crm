@@ -5,6 +5,8 @@ const PORTAL_BASE_URL =
 
 export default defineConfig({
   testDir: './e2e',
+  // The never-stuck smoke has its own config (playwright.never-stuck.config.ts).
+  testIgnore: 'never-stuck.smoke.spec.ts',
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: 0,

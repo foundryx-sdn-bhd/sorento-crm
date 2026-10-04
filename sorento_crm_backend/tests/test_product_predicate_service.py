@@ -946,6 +946,28 @@ def test_attachment_type_label_resolves_through_the_alias_lookup_set(db):
     assert out["require"]["attachment_type"] == "Product Photos"
 
 
+def test_attachment_type_label_resolves_through_the_type_description(db):
+    """ATTACHMENT-MULTI tester re-run (2 Oct 2026, step 5): with no alias row, "photo"
+    reached the HAS leg and was answered "I don't know 'photo' as a document type", while
+    the entity resolver reads the same word as Product Photos off the type's DESCRIPTION
+    (dev's own wording). The leg reads it the same way - but only among the types products
+    actually carry, so an internal class that mentions the word never wins."""
+    photos = _attachment_type(db, "Product Photos")
+    photos.description = "Product Photos, Photo, Image, Pictures by Marketing"
+    internal = _attachment_type(db, "Shipment Line")
+    internal.description = "Shipment line photo taken at receiving"
+    db.flush()
+    with_photo = _product(db, "ZZT-DESC-A", "SORENTO ITEM WITH PHOTO")
+    _product(db, "ZZT-DESC-B", "SORENTO ITEM WITHOUT PHOTO")
+    _attach(db, with_photo, photos)
+
+    out = resolve_product_set(db, require={"attachment_type": "photo"})
+
+    assert out.get("unrecognized_terms") in (None, []), out.get("unrecognized_terms")
+    assert out["require"]["attachment_type"] == "Product Photos"
+    assert [cand["product_code"] for cand in out["candidates"]] == ["ZZT-DESC-A"]
+
+
 def test_attachment_type_unknown_word_is_unrecognized_with_empty_or_missing_set(db):
     """AC-1312 / AC-1314: an alias word that resolves through NEITHER an empty
     `attachment_type_alias` set NOR a missing one is reported unrecognized, never a

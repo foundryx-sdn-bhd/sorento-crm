@@ -1,7 +1,7 @@
 """Canonical shapes for the DOCUMENTS the ESB pushes: sales and purchase orders.
 
 The masters' rules all hold here (`canonical_masters`): canonical rather than
-AutoCount, `extra="forbid"`, related records addressed by reference rather than
+AutoCount, unknown keys dropped and logged, related records addressed by reference rather than
 by a Sorento id. Three things are different, and each is a property of a
 document rather than of a master:
 
@@ -31,9 +31,10 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Annotated, Any, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.schemas.canonical_masters import _Canonical
+from app.schemas.ingest_extras import INGEST_MODEL_CONFIG, note_unknown_fields
 from app.utils.rtf import strip_rtf
 
 #: Each entry of `from_so_numbers` (V4) - length-capped like every other
@@ -54,7 +55,13 @@ class _SalesOrderExternalRef(BaseModel):
     the OTHER book's document - none of them a join key here.
     """
 
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    model_config = INGEST_MODEL_CONFIG
+
+    @model_validator(mode="before")
+    @classmethod
+    def _note_unknown(cls, data):
+        note_unknown_fields(cls, data)
+        return data
 
     db: str = Field(..., min_length=1, max_length=100)
     doc_key: Optional[int] = None
@@ -65,7 +72,13 @@ class _SalesOrderExternalRef(BaseModel):
 class _CanonicalLine(BaseModel):
     """Shared line rules. Not `_Canonical`: a line has no `source_doc_no`."""
 
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    model_config = INGEST_MODEL_CONFIG
+
+    @model_validator(mode="before")
+    @classmethod
+    def _note_unknown(cls, data):
+        note_unknown_fields(cls, data)
+        return data
 
     # AutoCount's DtlKey. The upsert key within the document, which is what lets
     # a line keep its Sorento id - and therefore its allocations - across syncs.
@@ -244,6 +257,12 @@ class CanonicalSalesOrder(_CanonicalDocument):
     # which carries `PO.Ref` for the same reason: a field AutoCount already prints that
     # this contract had never accepted before.
     ref: Optional[str] = Field(None, max_length=255)
+    # AutoCount `SO.Transferable` (PLAN-so-transferable.md). AutoCount prints `T`/`F`, which
+    # Pydantic's lax bool already reads, case-insensitive, alongside its other fixed boolean
+    # words (`true`/`false`, `yes`/`no`, `1`/`0`, ...); anything outside that set fails the
+    # record rather than guessing whether an order is demand. Absent or null leaves the
+    # stored value alone, so an ESB build that does not send it blanks nothing.
+    transferable: Optional[bool] = None
     lines: list[CanonicalSalesOrderLine] = Field(default_factory=list, max_length=2000)
 
     @field_validator("internal_note", mode="before")
@@ -397,7 +416,13 @@ class CanonicalBillingDocumentLine(BaseModel):
     rather than holding the document back (a billing document is money).
     """
 
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    model_config = INGEST_MODEL_CONFIG
+
+    @model_validator(mode="before")
+    @classmethod
+    def _note_unknown(cls, data):
+        note_unknown_fields(cls, data)
+        return data
 
     # AutoCount DtlKey: the line's identity within its document across re-pushes.
     source_ref: str = Field(..., min_length=1, max_length=255)

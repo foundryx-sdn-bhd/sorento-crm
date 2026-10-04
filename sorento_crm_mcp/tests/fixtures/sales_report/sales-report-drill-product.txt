@@ -1,0 +1,16 @@
+*By product*, delivery date 01/07/2026 to 30/09/2026
+1. PRD-A101: Qty 12, RM 5,200.00
+2. PRD-A102: Qty 12, RM 4,800.00
+3. PRD-B210: Qty 40, RM 3,900.00
+4. PRD-B211: Qty 6, RM 3,100.00
+5. PRD-C330: Qty 10, RM 2,950.00
+6. PRD-C331: Qty 6, RM 2,700.00
+7. PRD-D405: Qty 20, RM 2,450.00
+8. PRD-D406: Qty 8, RM 2,300.00
+9. PRD-E512: Qty 4, RM 2,100.00
+10. PRD-E513: Qty 12, RM 1,950.00
+and 61 more
+*Total:* Qty 685, RM 58,700.00
+
+*Drill down:*
+11. Delivery orders

@@ -168,6 +168,40 @@ jobs:
               )
           PY
 
+  # The repo is public: fail on a real Malaysian mobile number or lorry plate,
+  # or a tracked raw capture (.playwright-mcp/, *.har, *.rdb), in any tracked
+  # file. Stdlib only, a few seconds. Fake values to use instead are listed in
+  # scripts/pii_guard.py. Same `if` as the alembic gate, so it runs on docs-only
+  # changes too (docs are where evidence captures land).
+  pii-guard:
+    name: PII guard (fast gate)
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.label.name == 'ci'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: No personal data in tracked files
+        run: python3 scripts/pii_guard.py
+
+  # Secret scan over the PR's commits (the action's default on pull_request),
+  # rules in .gitleaks.toml. Runs on push and on a ci-labelled PR; never on
+  # merge_group or workflow_dispatch (the release).
+  gitleaks:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.label.name == 'ci')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Scan commits for secrets
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7  # v2.3.9
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml
+          GITLEAKS_VERSION: 8.30.1
+
   # Which areas a change touches, so the multi-minute jobs below only run
   # when the code they test can have changed. Before this, every job ran on
   # every PR regardless of what it changed, which is the main reason CI
@@ -243,13 +277,33 @@ jobs:
   #    (a PR's file list names them); the job drops what the checkout does
   #    not hold, and the ci_excluded.txt entries, before it runs pytest.
   #
+  # 5. Import-based selection (CI-SPEED, owner decision 1 Oct 2026):
+  #    changed test files alone missed the test that broke the 1 Oct
+  #    release (tests/test_ingest_parity_security_fixes.py imports
+  #    app/services/shipping_order_ingest_service.py, changed by #1411, and
+  #    first ran in the release). When a PR changes backend code
+  #    (`backend_code`: .py under app/, scripts/, or a non-test helper
+  #    under tests/), step "Select backend tests by import" runs
+  #    sorento_crm_backend/scripts/ci_select_tests.py over a sparse
+  #    checkout: every test file that references a changed module, or a
+  #    module that imports one (one level), joins the changed test files
+  #    in `backend_tests` (tests/scm/ only when the SCM shards do not run
+  #    anyway). When the selection's estimated cost (per-file sums of the
+  #    committed .test_durations, a file without history at the median
+  #    file) exceeds 3600 CPU-s it sets `backend_full=true` instead: the
+  #    six main shards and the SCM shards then run on that PR, and
+  #    `test-backend-changed` steps aside. The script prints the list.
+  #    Asserted by tests/test_ci_select_tests.py (the script) and
+  #    tests/test_ci_docs_only_filter.py (the step and the job gating).
+  #
   # This job does not run on a push to main at all (see the `push` trigger
   # comment): nothing downstream of it does either, so there is nothing to
   # classify.
   #
   # Plain `gh api` over the file list (the PR's files, or the compare of
-  # the push / merge-queue range), no third-party action and no checkout:
-  # it is one HTTP call and it finishes in seconds. The step is asserted by
+  # the push / merge-queue range), no third-party action, and a checkout
+  # only for point 5: the classification is one HTTP call and it finishes
+  # in seconds. The step is asserted by
   # sorento_crm_backend/tests/test_ci_docs_only_filter.py, which extracts
   # this step's `run` block out of this file and executes it with a stub
   # `gh` (real `jq` over a canned API payload) for docs-only, mixed, rename
@@ -277,7 +331,11 @@ jobs:
       mcp: ${{ steps.filter.outputs.mcp }}
       scm: ${{ steps.filter.outputs.scm }}
       docs_only: ${{ steps.filter.outputs.docs_only }}
-      backend_tests: ${{ steps.filter.outputs.backend_tests }}
+      # The import-based selection when the PR changes backend code (step
+      # `select`), else the changed test files alone. Ignored when
+      # backend_full is true: the shards run instead.
+      backend_tests: ${{ steps.select.outputs.tests || steps.filter.outputs.backend_tests }}
+      backend_full: ${{ steps.select.outputs.full == 'true' }}
     steps:
       - name: Detect changed areas
         id: filter
@@ -367,7 +425,7 @@ jobs:
           # off a PR the full shards run and the changed-files job must not.
           if [ "$docs_only" = "true" ]; then
             for area in backend frontend mcp scm; do echo "$area=false"; done | tee -a "$GITHUB_OUTPUT"
-            echo "backend_tests=" >> "$GITHUB_OUTPUT"
+            printf '%s\n' "backend_tests=" "backend_code=" >> "$GITHUB_OUTPUT"
             echo "docs-only change: no service area counts as changed"
             exit 0
           fi
@@ -376,7 +434,7 @@ jobs:
           # areas.
           if [ "$EVENT" = "workflow_dispatch" ] && [ "$SKIP_TESTS" = "true" ]; then
             for area in backend frontend mcp scm; do echo "$area=false"; done | tee -a "$GITHUB_OUTPUT"
-            echo "backend_tests=" >> "$GITHUB_OUTPUT"
+            printf '%s\n' "backend_tests=" "backend_code=" >> "$GITHUB_OUTPUT"
             echo "release with skip_tests=true: no test job runs"
             exit 0
           fi
@@ -386,12 +444,16 @@ jobs:
           # failure must never turn into an all-flags-false green run.
           if [ "$EVENT" != "pull_request" ] || [ -n "$why" ]; then
             for area in backend frontend mcp scm; do echo "$area=true"; done | tee -a "$GITHUB_OUTPUT"
-            echo "backend_tests=" >> "$GITHUB_OUTPUT"
+            printf '%s\n' "backend_tests=" "backend_code=" >> "$GITHUB_OUTPUT"
             echo "${why:-$EVENT is not a pull_request}: every area counts as changed"
             exit 0
           fi
+          # A here-string, not `printf | grep -q`: grep -q exits on its first
+          # match, and a printf still writing the rest of the list then dies
+          # of SIGPIPE, which pipefail turns into a false flag (scm=false on
+          # run 37140058013, CI-SCM-FILTER-RACE).
           flag() {
-            if printf '%s\n' "$files" | grep -Eq "$2"; then echo "$1=true"; else echo "$1=false"; fi
+            if grep -Eq "$2" <<< "$files"; then echo "$1=true"; else echo "$1=false"; fi
           }
           # SCM_RE: what makes the SCM shards run on a PR. The scm API,
           # service, module, model and schema files, the SCM tests, an scm
@@ -419,6 +481,40 @@ jobs:
                             | { grep -Ev '^sorento_crm_backend/tests/scm/' || true; } \
                             | tr '\n' ' ' | sed 's/ $//')
           echo "backend_tests=$backend_tests" | tee -a "$GITHUB_OUTPUT"
+          # BACKEND_CODE_RE: the backend .py modules this PR changes (app/,
+          # scripts/, and the non-test helpers under tests/), for the
+          # import-based selection in the next step (point 5 of the job
+          # comment). Same shell-safe character class as BACKEND_TESTS_RE.
+          BACKEND_CODE_RE='^sorento_crm_backend/(app|scripts|tests)/([A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+\.py$'
+          backend_code=$(printf '%s\n' "$files" | { grep -E "$BACKEND_CODE_RE" || true; } \
+                           | { grep -Ev "$BACKEND_TESTS_RE" || true; } \
+                           | tr '\n' ' ' | sed 's/ $//')
+          echo "backend_code=$backend_code" | tee -a "$GITHUB_OUTPUT"
+
+      # Only on a PR that changes backend code: the selection reads the
+      # backend sources, and nothing else in this job needs a checkout.
+      # Sparse: app/, scripts/ and tests/ are all the script parses.
+      - name: Checkout backend sources for test selection
+        if: steps.filter.outputs.backend_code != ''
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            sorento_crm_backend/app
+            sorento_crm_backend/scripts
+            sorento_crm_backend/tests
+
+      # Point 5 of the job comment. Stdlib-only script on the runner's own
+      # python3; it prints the selection, so the job log shows what runs.
+      - name: Select backend tests by import
+        id: select
+        if: steps.filter.outputs.backend_code != ''
+        env:
+          BACKEND_CODE: ${{ steps.filter.outputs.backend_code }}
+          BACKEND_TESTS: ${{ steps.filter.outputs.backend_tests }}
+          SCM: ${{ steps.filter.outputs.scm }}
+        run: |
+          printf '%s\n' $BACKEND_CODE $BACKEND_TESTS \
+            | python3 sorento_crm_backend/scripts/ci_select_tests.py --root sorento_crm_backend --scm "$SCM"
 
   validate-backend:
     name: Validate backend imports
@@ -618,7 +714,7 @@ jobs:
   test-backend-scm:
     name: Backend test suite - SCM (Postgres, xdist)
     needs: [changes]
-    if: needs.changes.outputs.scm == 'true'
+    if: needs.changes.outputs.scm == 'true' || needs.changes.outputs.backend_full == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -803,8 +899,8 @@ jobs:
   # tests/test_migration_*.py is the one case loadfile cannot cover: several of
   # those files run real DDL through `pg_session` against tables that OTHER
   # files' tests also touch, so the collision is cross-file, not within one
-  # file. Those tests run in a dedicated serial step below, after this step,
-  # on shard 2 only.
+  # file. Those tests run in a dedicated serial step below, on the `serial`
+  # matrix entry only.
   #
   # Never on a `pull_request` event (owner ruling 2026-09-29, fast PR gate):
   # six shards at ~15 min each were ~60% of a PR run's ~190 job-minutes on
@@ -814,10 +910,15 @@ jobs:
   # ruleset's required status check accepts, so listing these six as
   # required blocks nothing on the PR and gates the queue for real. The
   # test files a PR changes do run on the PR: `test-backend-changed` below.
+  # One exception (CI-SPEED, 1 Oct 2026): a PR whose import-based selection
+  # exceeds 3600 estimated CPU-s (`backend_full`, point 5 of `changes`) runs these six
+  # shards, and the SCM shards, instead of the changed-files job.
   test-backend:
     name: Backend test suite (Postgres, xdist)
     needs: [changes]
-    if: needs.changes.outputs.backend == 'true' && github.event_name != 'pull_request'
+    if: >-
+      needs.changes.outputs.backend == 'true'
+      && (github.event_name != 'pull_request' || needs.changes.outputs.backend_full == 'true')
     runs-on: ubuntu-latest
     # The suite is CPU-bound (~3 s of CPU per test across 9k tests) and a
     # standard runner has 4 vCPUs, so one job takes ~29 min no matter how the
@@ -833,10 +934,18 @@ jobs:
     # duration, so a brand-new test does not need a manual refresh to be
     # balanced correctly. Refresh the committed file when the longest shard
     # drifts more than ~3 min above the shortest.
+    #
+    # The seventh entry, `serial`, runs no xdist pass: it holds the two
+    # serial steps (tests/test_migration_*.py and `-m serial_ddl`, ~2.5 min
+    # plus ~1.5 min of setup) that used to ride on shard 1 after its xdist
+    # pass, which made shard 1 the release's critical path by that much on
+    # top of its own imbalance (CI-SPEED, run 36875899060: shard 1 43.8 min,
+    # shards 2-6 14-22 min). On its own runner it finishes long before any
+    # balanced shard, so it is off the critical path whatever the balance.
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6]
+        shard: [1, 2, 3, 4, 5, 6, serial]
     services:
       postgres:
         # pgvector image, not plain postgres: the embedding tables need the
@@ -937,6 +1046,7 @@ jobs:
       # documentation/reference/PR-CHECKLIST.md ("Test cost") to justify a new
       # slow test rather than discovering it three weeks later as wall clock.
       - name: Run backend suite under xdist (executing gate)
+        if: matrix.shard != 'serial'
         working-directory: sorento_crm_backend
         run: |
           IGNORES=$(grep -vE '^\s*#|^\s*$' tests/ci_excluded.txt | sed 's|^|--ignore=|' | tr '\n' ' ')
@@ -966,7 +1076,7 @@ jobs:
       # result. Refresh when the longest shard drifts more than ~3 min above
       # the shortest; a small drift is not worth the churn.
       - name: Upload backend shard durations artifact
-        if: always()
+        if: always() && matrix.shard != 'serial'
         uses: actions/upload-artifact@v4
         with:
           name: test-durations-${{ matrix.shard }}
@@ -976,7 +1086,8 @@ jobs:
           # default and silently uploads nothing ("No files were found").
           include-hidden-files: true
 
-      # Migration tests run serially, outside the xdist pool, on one shard only.
+      # Migration tests run serially, outside the xdist pool, on the `serial`
+      # matrix entry only (no xdist pass runs there).
       #
       # Some of them (324, 325, 354, 370, 375_user_discontinued_scopes, 395, 400,
       # 422, 443) run real ALTER TABLE / DROP against shared tables through
@@ -987,15 +1098,15 @@ jobs:
       # `ALTER TABLE projects.order_inquiry_rows DROP COLUMN` deadlocked against
       # tests/test_order_inquiry_place_on_po.py's SELECT on another worker and
       # Postgres killed the DDL side. The whole migration set is a few seconds of
-      # test time, so it runs here serially, after the xdist pool has drained,
-      # with nothing else on the database. Run 35945594213 (2026-09-24, uneven
-      # count-based split across 4 shards) measured shard 1 as the shortest at
-      # 9:03 against shard 2's 19:34, so shard 1 is where these two serial
-      # steps land now that the matrix is rebalanced to 6 shards. Glob rather
+      # test time, so it runs here serially, with nothing else on the database.
+      # It rode on shard 1 from 2026-09-24 (then the shortest shard) until
+      # CI-SPEED (2026-10-01) gave it its own entry: by then shard 1 was the
+      # longest, and these steps added 2.5 min to the release's critical
+      # path (run 36875899060: 1:54 migrations + 0:37 serial_ddl). Glob rather
       # than a list: a future migration test with DDL is covered without
       # anyone remembering to register it.
       - name: Run migration tests serially (executing gate)
-        if: matrix.shard == 1
+        if: matrix.shard == 'serial'
         working-directory: sorento_crm_backend
         run: |
           python -m pytest -q -p no:cacheprovider -p no:xdist --durations=10 \
@@ -1006,14 +1117,14 @@ jobs:
       # TestMigration473WidensTheSourceCheck holds an AccessExclusiveLock on the
       # SHARED `scm.order_link_claim` (DROP CONSTRAINT / ADD CONSTRAINT on a plain
       # `engine.connect()`), and nothing about its filename says so. Same cycle as
-      # issue #987, same treatment, no shard but this one.
+      # issue #987, same treatment, on the `serial` entry only.
       #
       # `-m serial_ddl` over the whole tree rather than a path list: a future test
       # that marks itself is picked up without anyone remembering to register it
-      # here. Collection of tests/ costs about 25 seconds, and shard 1 has the
-      # headroom.
+      # here. Collection of tests/ costs about 25 seconds, on a runner that
+      # does nothing else.
       - name: Run view/DDL tests serially (executing gate)
-        if: matrix.shard == 1
+        if: matrix.shard == 'serial'
         working-directory: sorento_crm_backend
         run: |
           IGNORES=$(grep -vE '^\s*#|^\s*$' tests/ci_excluded.txt | sed 's|^|--ignore=|' | tr '\n' ' ')
@@ -1031,10 +1142,8 @@ jobs:
   # gate, `changes` and validate-backend's collect-only. `changes` lists the
   # changed `tests/**/test_*.py` files (`backend_tests`, point 4 of its
   # comment); this job runs exactly those, on the same Postgres + Redis
-  # bootstrap as the shards. Serial (`-p no:xdist`): a PR changes a few
-  # files, and one process at a time is what makes a changed
-  # tests/test_migration_*.py or a `serial_ddl` test safe to run here
-  # without the shards' two-pass split. The list is trimmed first: a deleted
+  # bootstrap as the shards (in the shards' two-pass split, see below).
+  # The list is trimmed first: a deleted
   # or renamed-away path is in the PR's file list but not in the checkout,
   # and a ci_excluded.txt entry asserts against business data an empty
   # database does not hold (that file says why); either would fail pytest on
@@ -1044,10 +1153,21 @@ jobs:
   # Off a PR the list is empty by construction and the full shards cover
   # every file, so this job is skipped there; the label gating and the area
   # flags are untouched.
+  #
+  # Since CI-SPEED (1 Oct 2026) the list is the import-based selection
+  # (point 5 of `changes`): the changed test files plus every test file
+  # that imports a changed backend module, up to 3600 estimated CPU-s (above that the
+  # shards run instead and this job skips). So the run step splits like the
+  # shards: tests/scm and the rest in separate sessions, xdist `--dist
+  # loadfile` for the bulk, then the `serial_ddl` and tests/test_migration_*.py
+  # files serially.
   test-backend-changed:
     name: Backend changed tests (Postgres)
     needs: [changes]
-    if: github.event_name == 'pull_request' && needs.changes.outputs.backend_tests != ''
+    if: >-
+      github.event_name == 'pull_request'
+      && needs.changes.outputs.backend_tests != ''
+      && needs.changes.outputs.backend_full != 'true'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -1099,7 +1219,8 @@ jobs:
             rel="${path#sorento_crm_backend/}"
             if [ ! -f "$path" ]; then
               dropped="$dropped  $rel (not in the checkout: deleted or renamed away)"$'\n'
-            elif printf '%s\n' "$excluded" | grep -qxF "$rel"; then
+            # Here-string, not a pipe: see flag() in job `changes`.
+            elif grep -qxF "$rel" <<< "$excluded"; then
               dropped="$dropped  $rel (listed in tests/ci_excluded.txt)"$'\n'
             else
               run="$run $rel"
@@ -1157,7 +1278,33 @@ jobs:
         env:
           FILES: ${{ steps.select.outputs.files }}
         run: |
-          python -m pytest -q -p no:cacheprovider -p no:xdist --durations=10 $FILES
+          # The shards' split. tests/scm and the rest run as separate pytest
+          # sessions, as on the shards: several main-tree files import
+          # `tests.scm.conftest` by module name, and in one session with
+          # tests/scm files that import keeps pytest from registering it as
+          # tests/scm's conftest (`fixture 'scm_app' not found`; #1411's
+          # selection hit it). Per tree: xdist `--dist loadfile` for
+          # everything but `serial_ddl`, then `serial_ddl` serially; then
+          # tests/test_migration_*.py serially. Exit 5 (nothing collected,
+          # e.g. no `serial_ddl` test in the list) is not a failure; every
+          # pass runs even after one fails, and the job fails on any.
+          main=""; scm=""; migrations=""
+          for f in $FILES; do
+            case "$f" in
+              tests/test_migration_*.py) migrations="$migrations $f" ;;
+              tests/scm/*) scm="$scm $f" ;;
+              *) main="$main $f" ;;
+            esac
+          done
+          rc=0
+          run() { python -m pytest -q -p no:cacheprovider "$@" || { r=$?; [ "$r" -eq 5 ] || rc=$r; }; }
+          for pool in "$main" "$scm"; do
+            [ -n "$pool" ] || continue
+            run -n auto --dist loadfile --durations=20 -m "not serial_ddl" $pool
+            run -p no:xdist --durations=10 -m serial_ddl $pool
+          done
+          [ -z "$migrations" ] || run -p no:xdist --durations=10 $migrations
+          exit "$rc"
 
   validate-frontend:
     name: Validate frontend (vitest)

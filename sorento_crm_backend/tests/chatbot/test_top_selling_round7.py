@@ -36,6 +36,7 @@ import pytest
 
 from app.services.chatbot import engine as engine_mod
 from app.services.company_scope import DEFAULT_COMPANY_ID
+from tests.chatbot._turn_helpers import do_window
 from tests.chatbot import test_outstanding_lane as outstanding_lane
 from tests.chatbot.test_engine import CONTACT_ID
 from tests.chatbot.test_outstanding_lane import (
@@ -394,8 +395,9 @@ class TestR1CarriedEntities:
         is dropped with its note, never looked up as a customer."""
         c = console_factory()
         _ranked_by_jayden(c)
+        # Dated: a dateless DO list ask asks which period first (DO-ASK-SIMPLIFY, owner 4 Oct 2026).
         text, captured = c.say(
-            _report(None, domain_in_message=True, entities=[_carried("Jayden", "sales_agent")]), "show me the orders"
+            _report(None, domain_in_message=True, entities=[_carried("Jayden", "sales_agent")], **do_window()), "show me the orders"
         )
         _clean(text.replace("Here are the orders I found", ""), "show me the orders")
         assert "Jayden" not in c.asked_tokens(), c.tokens
@@ -645,7 +647,8 @@ class TestR3BasisWords:
         """Round 5 R5: "can show me the DO" asks for the delivery orders, not a basis."""
         c = console_factory()
         _bottom_water_closet(c)
-        text, captured = c.say(_report(None, document=["DO"], domain_in_message=True), "can show me the DO")
+        # Dated: a dateless DO list ask asks which period first (DO-ASK-SIMPLIFY, owner 4 Oct 2026).
+        text, captured = c.say(_report(None, document=["DO"], domain_in_message=True, **do_window()), "can show me the DO")
         assert _calls(captured) == [], captured
         (args,) = _calls(captured, ORDERS)
         assert "category_ids" not in args, args

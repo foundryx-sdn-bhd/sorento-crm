@@ -554,7 +554,7 @@ def test_f1_an_eta_ask_never_says_it_did_not_understand_eta(chat, world, attrs):
     # token was not code-shaped, so the counted set listed both in the ETA row shape.
     # The has/no incoming stamps are not asserted: this file's stubs do not answer the
     # picker probe, so `_human` (which bans "None") is not run on the pick list.
-    assert "incoming search needs to be more specific" in text, text
+    assert "Which product do you mean? Please choose:" in text, text
     assert "have stock" not in text.lower(), text
 
 
@@ -582,7 +582,7 @@ def test_f1_each_row_of_a_multi_product_eta_answer_has_the_single_product_struct
     # than one code is the pick list (`gate.REQUIRE_SPECIFIC_DOMAINS`). Before: the digit
     # token was not code-shaped, so the counted set listed both in the ETA row shape.
     multi = chat.say(M1, _v1())
-    assert "incoming search needs to be more specific" in multi, multi
+    assert "Which product do you mean? Please choose:" in multi, multi
     assert _codes_listed(multi, world) == {"SRTKS65502", "SRTKS65502-BL"}, multi
 
 
@@ -809,7 +809,7 @@ def test_replay_the_owners_seven_messages(chat, world):
     # it was the counted set in the ETA row shape. See
     # `test_f1_an_eta_ask_never_says_it_did_not_understand_eta`.
     assert "did not understand" not in one and "not recorded yet" not in one, one
-    assert "incoming search needs to be more specific" in one, one
+    assert "Which product do you mean? Please choose:" in one, one
     assert _codes_listed(one, world) == {"SRTKS65502", "SRTKS65502-BL"}, one
     # 2 and 3: the code's variants, in the price structure.
     assert _codes_listed(two, world) == {"SRTWCX8840-S"} and "*List Price:*" in two, two

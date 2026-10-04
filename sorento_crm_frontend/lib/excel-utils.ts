@@ -86,9 +86,23 @@ export function resolveImportSheetName(filename: string, sheetNames: string[]): 
 }
 
 /**
- * Parse Excel file and return data as array of objects
+ * Pick a sheet by its configured name, case-insensitive. Unlike `resolveImportSheetName` this
+ * never falls back to a `Template` sheet or to the only sheet: a workbook without the named
+ * sheet is an error that names the sheets it does have.
  */
-export async function parseExcelFile(file: File): Promise<any[]> {
+export function resolveNamedSheet(sheetNames: string[], sheetName: string): string {
+  const wanted = sheetName.trim().toLowerCase();
+  const found = sheetNames.find((n) => n.trim().toLowerCase() === wanted);
+  if (found) return found;
+  throw new Error(`Sheet '${sheetName}' not found (found sheets: ${sheetNames.join(', ')}).`);
+}
+
+/**
+ * Parse Excel file and return data as array of objects. With `{ sheetName }` the named sheet
+ * is read (delivery order compare); without it the products / stock rule of
+ * `resolveImportSheetName` applies.
+ */
+export async function parseExcelFile(file: File, options?: { sheetName?: string }): Promise<any[]> {
   const xlsx = await getXLSX();
 
   return new Promise((resolve, reject) => {
@@ -98,7 +112,9 @@ export async function parseExcelFile(file: File): Promise<any[]> {
       try {
         const data = new Uint8Array(e.target?.result as ArrayBuffer);
         const workbook = xlsx.read(data, { type: 'array' });
-        const sheetName = resolveImportSheetName(file.name, workbook.SheetNames);
+        const sheetName = options?.sheetName
+          ? resolveNamedSheet(workbook.SheetNames, options.sheetName)
+          : resolveImportSheetName(file.name, workbook.SheetNames);
         const worksheet = workbook.Sheets[sheetName];
         const jsonData = xlsx.utils.sheet_to_json(worksheet);
         resolve(jsonData);

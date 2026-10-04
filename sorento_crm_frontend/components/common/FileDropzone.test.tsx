@@ -158,4 +158,12 @@ describe('FileDropzone', () => {
 
     expect(click).toHaveBeenCalled();
   });
+
+  it('a long title wraps instead of truncating', () => {
+    const long = 'Order Listing (macro), sheet Master with a very long configured sheet name';
+    render(<FileDropzone files={[]} onFilesChange={vi.fn()} title={long} />);
+    const title = screen.getByText(long);
+    expect(title.className).toMatch(/\bbreak-words\b/);
+    expect(title.className).not.toMatch(/\btruncate\b/);
+  });
 });

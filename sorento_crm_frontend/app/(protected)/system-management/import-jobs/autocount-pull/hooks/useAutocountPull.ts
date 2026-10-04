@@ -9,9 +9,11 @@ import {
   confirmPull,
   discardPull,
   downloadPullXlsx,
+  getCompareMappings,
   getCurrentPull,
   getPull,
   getPullRows,
+  saveCompareMapping,
   startPull,
   startPullErrorMessage,
 } from '../services/autocountPullService';
@@ -23,6 +25,8 @@ import {
   type AutocountPullPhase,
   type AutocountPullRowsQuery,
   type AutocountPullScope,
+  type CompareMappingBody,
+  type CompareMappingKind,
 } from '../types/autocountPull.types';
 
 /**
@@ -175,6 +179,32 @@ export function useComparePull(jobId: string) {
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : 'Could not compare the file.');
+    },
+  });
+}
+
+const COMPARE_MAPPINGS_KEY = ['autocount-compare-mappings'];
+
+export function useCompareMappings(enabled = true) {
+  return useQuery({
+    queryKey: COMPARE_MAPPINGS_KEY,
+    queryFn: getCompareMappings,
+    enabled,
+    staleTime: 60_000,
+  });
+}
+
+export function useSaveCompareMapping() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ kind, body }: { kind: CompareMappingKind; body: CompareMappingBody }) =>
+      saveCompareMapping(kind, body),
+    onSuccess: () => {
+      toast.success('Mapping saved.');
+      queryClient.invalidateQueries({ queryKey: COMPARE_MAPPINGS_KEY });
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Could not save the mapping.');
     },
   });
 }

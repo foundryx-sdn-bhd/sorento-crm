@@ -47,7 +47,11 @@ export default function MemberMarketSegmentEditor({
   userId: string;
 }) {
   const { data: assigned = EMPTY, isLoading } = useMemberMarketSegments(teamId, userId);
-  const { data: catalog = EMPTY_CATALOG } = useMarketSegments(true);
+  const {
+    data: catalog = EMPTY_CATALOG,
+    error: catalogError,
+    refetch: refetchCatalog,
+  } = useMarketSegments(true);
   const setSegments = useSetMemberMarketSegments(teamId, userId);
 
   const [open, setOpen] = useState(false);
@@ -127,6 +131,8 @@ export default function MemberMarketSegmentEditor({
               value={draft}
               onChange={setDraft}
               options={options}
+              loadError={catalogError}
+              onRetry={() => void refetchCatalog()}
               placeholder="All contacts"
               emptyMessage="No matching segment."
               disabled={setSegments.isPending}

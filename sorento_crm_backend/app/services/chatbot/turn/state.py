@@ -151,6 +151,10 @@ class Focus:
     # somewhere; `turn/apply._top_selling_rules` is its one writer. One slot, not four
     # fields: every key lives and dies with the one ask.
     top_selling: dict[str, Any] | None = None
+    # LOWSTOCK-FILTER-ASK: the question `required_fields` left open (the slot it returned),
+    # read and consumed by `required_fields.reply_verdict` on the NEXT message only. One
+    # turn long: a lane that asks again hands back a fresh one.
+    required_ask: dict[str, Any] | None = None
     # Ported from PR #1118 (not merged) for chatbot-stock-ask-v2 S3: what the
     # conversation still OWES (Focus.tasks, D21). A tuple of `turn/task.py::Task`, at
     # most one per kind. Its own axis rather than a flag on `products`, because
@@ -189,6 +193,23 @@ class Profile:
     # rest of the profile so the stock ask can refer them to their salesman instead of
     # offering a team. Default OFF: an unresolved contact keeps today's behaviour.
     stock_availability_only: bool = False
+    # ESCALATION-CONTROL (owner, 30 Sep 2026): may this contact be offered, or force, a
+    # hand-off to a person: `respond_contacts.escalation_allowed`, the one per-contact
+    # switch (`turn_runtime._escalation_allowed`). Default ON: an unresolved contact keeps
+    # today's behaviour.
+    escalation_allowed: bool = True
+
+
+def offers_escalation(profile: "Profile | None") -> bool:
+    """The ONE check every bot-initiated escalation offer site reads: no offer to staff
+    (`is_staff_profile`, #1262 slice 11) and none to a contact whose escalation is
+    barred (ESCALATION-CONTROL). A missing profile still offers (the old default)."""
+    return not is_staff_profile(profile) and not escalation_barred(profile)
+
+
+def escalation_barred(profile: "Profile | None") -> bool:
+    """ESCALATION-CONTROL: this contact may not be offered, nor force, a hand-off."""
+    return getattr(profile, "escalation_allowed", True) is False
 
 
 def is_staff_profile(profile: "Profile | None") -> bool:
@@ -238,6 +259,7 @@ def focus_to_wire(focus: Focus) -> dict[str, Any]:
     wire["set_page"] = focus.set_page
     wire["set_clarify"] = focus.set_clarify
     wire["top_selling"] = dict(focus.top_selling) if focus.top_selling else None
+    wire["required_ask"] = dict(focus.required_ask) if focus.required_ask else None
     # Ported from PR #1118 (not merged): the open tasks travel INSIDE the focus, not
     # on a session key of their own - the focus is the context, and a second key
     # could disagree with it.
@@ -297,6 +319,8 @@ def focus_from_wire(raw: Any) -> Focus:
     focus.set_clarify = clarify if isinstance(clarify, dict) else None
     top_selling = raw.get("top_selling")
     focus.top_selling = dict(top_selling) if isinstance(top_selling, dict) else None
+    required_ask = raw.get("required_ask")
+    focus.required_ask = dict(required_ask) if isinstance(required_ask, dict) else None
     tasks = raw.get("tasks")
     if isinstance(tasks, list):
         # Ported from PR #1118 (not merged): a focus persisted before this slice

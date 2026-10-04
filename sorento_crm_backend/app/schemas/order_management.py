@@ -10,9 +10,10 @@ contract"; AC-1110 to AC-1119).
 from __future__ import annotations
 
 from datetime import date
+from datetime import date as _date
 from typing import List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 
 #: Every quantity below is a WHOLE unit. The columns behind them are `Numeric(15,4)`,
@@ -166,115 +167,77 @@ class OutstandingReportResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# sales report - confirmed vs outstanding sales, by month
-# (`documentation/plans/chatbot/PLAN-chatbot-sales-report.md` "Backend contract";
-# `documentation/plans/chatbot/chatbot-sales-report-acceptance-criteria.md`
-# AC-1620 to AC-1632)
+# sales report - delivered sales by DO date (lane SALES-REPORT, PR #1401;
+# `documentation/plans/chatbot/selfref-scope-acceptance-criteria.md` AC-SR-20 to 26)
 # ---------------------------------------------------------------------------
-#: Money fields are `float`, never `Decimal` (captain ruling, S2 fix round): a
-#: `Decimal` field serialises through `model_dump(mode="json")` as a STRING
-#: (`"1234.50"`), which is not the contract - money must be a JSON NUMBER,
-#: rounded to 2 places by the service before it reaches this schema. Quantities
-#: are `int`, same as `OutstandingSOBlock` above.
-class SalesReportProductRow(BaseModel):
-    """The By product group, for a CUSTOMER-subject report (S6)."""
-
-    product_code: Optional[str] = None
-    ordered_qty: int
-    ordered_value: float
-    confirmed_qty: int
-    confirmed_value: float
-    outstanding_qty: int
-    outstanding_value: float
+#: Money fields are `float`, never `Decimal`: a `Decimal` serialises through
+#: `model_dump(mode="json")` as a STRING, and money is a JSON NUMBER, rounded to 2
+#: places by the service before it reaches this schema. Quantities are `int`.
+class SalesReportFigures(BaseModel):
+    qty: int
+    amount: float
 
 
-class SalesReportCustomerRow(BaseModel):
-    """As `SalesReportProductRow`, for a PRODUCT-subject report."""
+class SalesReportPeriod(BaseModel):
+    """One day, week (Monday to Sunday) or month with a delivery, clipped to the window."""
 
+    model_config = ConfigDict(populate_by_name=True)
+
+    from_: date = Field(alias="from")
+    to: date
+    qty: int
+    amount: float
+
+
+class SalesReportRow(BaseModel):
+    """One ranked drill row. `date` only on a delivery order row; `customer_name` only on a
+    delivery order row when the scope holds more than one account."""
+
+    rank: int
+    name: Optional[str] = None
+    qty: int
+    amount: float
+    date: Optional[_date] = None
     customer_name: Optional[str] = None
-    ordered_qty: int
-    ordered_value: float
-    confirmed_qty: int
-    confirmed_value: float
-    outstanding_qty: int
-    outstanding_value: float
 
 
-class SalesReportMonth(BaseModel):
-    """One month bucket (S3: `required_date`, else the SO's `order_date`).
+class SalesReportOption(BaseModel):
+    """A drill-down the reply offers (`key` is the `group_by` it re-runs with)."""
 
-    `by_product` / `by_customer` follow the report's SUBJECT (AC-1628): a
-    customer-subject ask carries `by_product`, a product-subject ask carries
-    `by_customer`, both named carries NEITHER - the route strips whichever key
-    the subject does not want (`None` here is not asked, an empty list would be
-    asked-and-nobody, a different fact).
-    """
-
-    month: str
-    so_count: int
-    ordered_qty: int
-    ordered_value: float
-    confirmed_qty: int
-    confirmed_value: float
-    outstanding_qty: int
-    outstanding_value: float
-    by_product: Optional[List[SalesReportProductRow]] = None
-    by_customer: Optional[List[SalesReportCustomerRow]] = None
-
-
-class SalesReportSORow(BaseModel):
-    """One SO, lines rolled up over the WHOLE filtered window (AC-1629) - no
-    `product_code` (unlike `OutstandingSORow`): the plan's own contract table
-    for `so_rows[]` never names one, and the presenter's detail reply (S1)
-    never prints a Product line for this report."""
-
-    so_number: str
-    customer_name: Optional[str] = None
-    location: Optional[str] = None
-    order_date: Optional[date] = None
-    ordered_qty: int
-    ordered_value: float
-    confirmed_qty: int
-    confirmed_value: float
-    outstanding_qty: int
-    outstanding_value: float
-    #: S19/AC-1633: the SO's own DISTINCT matched product codes, comma joined -
-    #: present ONLY when a `product_code` filter was given (absent otherwise,
-    #: never an empty string). The presenter reads it absent-safe so an OLD
-    #: body (deployed before this field existed) still renders.
-    product_codes: Optional[str] = None
+    key: str
+    label: str
 
 
 class SalesReportResponse(BaseModel):
-    """`GET /api/v1/order-management/sales-report`.
+    """`GET /api/v1/order-management/sales-report` (AC-SR-23).
 
-    `so_rows` is `None` (and the route strips the key entirely) unless the
-    caller asked `detail=so` (captain ruling, S2 fix round): a big dealer is
-    1,230 SOs, so the service never computes or sends them unasked - the SAME
-    "declared but stripped by the route when unset" pattern
-    `OutstandingReportResponse.so`/`do` already use above.
-
-    Every field is declared on purpose - `response_model` silently drops any
-    field the schema does not name (LESSONS-LEARNT.md).
+    Every field is declared on purpose - `response_model` silently drops any field the
+    schema does not name (LESSONS-LEARNT.md).
     """
 
+    status: str
+    message: Optional[str] = None
+    basis: str
     customer_name: Optional[str] = None
+    customer_count: int
     product_code: Optional[str] = None
-    #: S19: the DISTINCT product codes matched by `product_code`'s prefix rule
-    #: THAT HAVE ROWS in the filtered report, sorted ascending. `[]` when no
-    #: product filter was given (AC-1631, AC-1633).
+    #: Every code the `product_code` prefix covers, sorted. `[]` without a product filter.
     product_codes: List[str] = []
     channel: Optional[str] = None
-    # Echo only (S9), same contract as `OutstandingReportResponse`'s route-level
-    # `location_token` handling - never filters, always present on this report's
-    # body (AC-1631), unlike the outstanding route where it is tacked onto the
-    # body only when given.
+    channel_shown: bool
+    #: Echo only: the location word the caller resolved into `warehouse_codes`.
     location_token: Optional[str] = None
     warehouse_codes: List[str] = []
     date_from: Optional[date] = None
     date_to: Optional[date] = None
-    months: List[SalesReportMonth] = []
-    so_rows: Optional[List[SalesReportSORow]] = None
+    grain: str
+    total: SalesReportFigures
+    periods: List[SalesReportPeriod] = []
+    group_by: Optional[str] = None
+    rows: List[SalesReportRow] = []
+    more: int = 0
+    options: List[SalesReportOption] = []
+
 
 
 class TopSellingRow(BaseModel):

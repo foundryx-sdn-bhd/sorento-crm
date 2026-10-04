@@ -103,6 +103,37 @@ class TestComposeTraceDetailUnit:
             assert shelf in memory_entry, f"memory record missing shelf {shelf!r}: {memory_entry!r}"
             assert "writer" in memory_entry[shelf], memory_entry[shelf]
 
+    def test_customer_scope_events_are_listed_with_reason_and_ids(self) -> None:
+        """CHATBOT-SELFREF-SCOPE R4: every `customer_scope` event, in order, with the
+        fields the panel prints; a `False` rides through, an absent field is left out."""
+        at = datetime.now(timezone.utc).isoformat()
+        row = ChatbotTurn(
+            id=str(uuid.uuid4()),
+            contact_respond_id=_contact("scope"),
+            message_id="ZZT-trace-scope-1",
+            ingress="console",
+            trace=[
+                _trace_record("received"),
+                {
+                    "kind": "customer_scope", "at": at, "refused": "customer_not_permitted",
+                    "reason": "typed_word_matched_only_other_customers", "typed": ["water tap"],
+                    "dropped": ["f1"], "self_reference": True,
+                },
+                {"kind": "customer_scope", "at": at, "decision": "scoped_to_links", "ids": ["a"], "self_reference": False},
+            ],
+        )
+
+        detail = trace_detail_mod.compose_trace_detail(row)
+
+        assert detail["customer_scope"] == [
+            {
+                "at": at, "refused": "customer_not_permitted",
+                "reason": "typed_word_matched_only_other_customers", "dropped": ["f1"],
+                "typed": ["water tap"], "self_reference": True,
+            },
+            {"at": at, "decision": "scoped_to_links", "ids": ["a"], "self_reference": False},
+        ]
+
     def test_prompt_text_key_present_as_string_capped_at_64kb(self) -> None:
         huge = "x" * 100_000
         row = ChatbotTurn(

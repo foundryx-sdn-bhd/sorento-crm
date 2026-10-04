@@ -16,6 +16,10 @@ from app.services.chatbot.turn.plan import Plan
 
 _LANE_BRANCH: dict[str, str] = {
     "escalation": "out_of_scope",
+    # ESCALATION-CONTROL: a barred contact's forced hand-off keeps the escalation arm's
+    # branch kind (the wire contract has no new kind); the engine answers it with the
+    # salesperson referral before `_run_escalation_arm` could hand anything over.
+    "escalation_barred": "out_of_scope",
     "escalation_declined": "escalation_declined",
     # A decline over a NON-escalation offer (a did-you-mean roster's own attached
     # escalate sentence, a detail offer) finishes under the SAME branch kind as an

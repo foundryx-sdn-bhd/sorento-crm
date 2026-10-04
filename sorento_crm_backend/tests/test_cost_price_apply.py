@@ -10,6 +10,7 @@ TEST-FIRST: nothing under test exists yet - see the module docstring of
 """
 from __future__ import annotations
 
+from datetime import date, timedelta
 from decimal import Decimal
 
 from tests.fixtures.cost_price.taiyang_shapes import LETTERHEAD_TEXT, simple_price_list_workbook
@@ -64,8 +65,11 @@ def test_apply_writes_one_cost_row_per_line_with_set_dates_and_source(cost_price
     e.as_user(user)
     e.seed_settings(cost_price_verification_enabled=False)
 
+    # Relative, never a literal: "2026-10-01" stopped being the future on that day
+    # (TEST-DATEBOMB-1001).
+    start_date = (date.today() + timedelta(days=30)).isoformat()
     _, product, uploaded = _upload_one_changed_line(
-        e, current=100, new=110, start_date="2026-10-01"
+        e, current=100, new=110, start_date=start_date
     )
     set_id = uploaded["id"]
     line = e.lines(set_id).json()["data"][0]
@@ -78,7 +82,7 @@ def test_apply_writes_one_cost_row_per_line_with_set_dates_and_source(cost_price
     row = rows[0]
     assert row.unit_cost == Decimal("110.00")
     assert row.currency == "CNY"
-    assert str(row.start_date) == "2026-10-01"
+    assert str(row.start_date) == start_date
     assert row.end_date is None
 
     link = e.db.query(ProductSupplier).filter_by(product_id=product.id).one()

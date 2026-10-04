@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sales report mock v4</title>
+<style>
+  :root { --bg: #e5ddd5; --in: #ffffff; --out: #dcf8c6; --ink: #111; --muted: #556; --note: #fff4cc; --ans: #e6f4ea; --page: #f2f2f2; --head: #075e54; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg: #1d2a30; --in: #24343b; --out: #054d44; --ink: #e9edef; --muted: #aab; --note: #3a3220; --ans: #1f3326; --page: #111b21; --head: #0b3d36; }
+  }
+  :root[data-theme="dark"] { --bg: #1d2a30; --in: #24343b; --out: #054d44; --ink: #e9edef; --muted: #aab; --note: #3a3220; --ans: #1f3326; --page: #111b21; --head: #0b3d36; }
+  body { margin: 0; background: var(--page); font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: var(--ink); }
+  header { padding: 16px; background: var(--head); color: #fff; }
+  header h1 { margin: 0; font-size: 18px; font-weight: 600; }
+  header p { margin: 4px 0 0; font-size: 13px; opacity: .92; }
+  main { max-width: 760px; margin: 0 auto; padding: 16px; }
+  section { margin: 0 0 28px; }
+  h2 { font-size: 15px; margin: 0 0 8px; }
+  .chat { background: var(--bg); border-radius: 10px; padding: 12px; }
+  .msg { max-width: 88%; margin: 6px 0; padding: 8px 10px; border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.35; box-shadow: 0 1px 0 rgba(0,0,0,.08); }
+  .out { background: var(--out); margin-left: auto; }
+  .in { background: var(--in); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
+  .note, .answer { padding: 8px 10px; font-size: 13px; margin: 8px 0 0; border-radius: 4px; }
+  .note { background: var(--note); border-left: 4px solid #e0b100; }
+  .answer { background: var(--ans); border-left: 4px solid #1a7f37; }
+  .q { font-weight: 600; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  td, th { border-bottom: 1px solid rgba(127,127,127,.3); padding: 6px 4px; text-align: left; vertical-align: top; }
+  .wrap { overflow-x: auto; }
+  code { font-size: 12px; overflow-wrap: anywhere; }
+  footer { max-width: 760px; margin: 0 auto 32px; padding: 0 16px; font-size: 12px; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Sales report on WhatsApp (v4, approved): one account, July to September</h1>
+  <p>PR #1401, mock v4, approved by the owner on 2 Oct 2026 with Q1 to Q5 answered (a). Same structure as v3 (continuous numbering, a drill keeps the period, the existing open-question rule). The owner reviewed this layout on a real account from the dev copy; the committed copy uses MADE-UP names, product codes, DO numbers and figures (real data is not cleared for GitHub).</p>
+</header>
+<main>
+
+<section>
+  <h2>The case (made-up)</h2>
+  <p class="note">Account <b>ACME HARDWARE SDN BHD [A/C I]</b>, one retail segment. The contact is linked to this one account only. Window 01/07/2026 to 30/09/2026: 15 delivery orders (replacement DOs left out, Q2), warehouses WH-A, WH-B and REPAIR. Nothing delivered in September.</p>
+</section>
+
+<section>
+  <h2>1. Default reply: "my sales July to September" (more than a month: by month)</h2>
+  <div class="chat">
+    <div class="msg out">my sales from July to September</div>
+    <div class="msg in"><b>Customer:</b> ACME HARDWARE SDN BHD [A/C I]
+<b>Product:</b> all
+<b>Delivery date:</b> 01/07/2026 to 30/09/2026
+
+<b>Total:</b> Qty 685, RM 58,700.00
+Aug 2026: Qty 640, RM 52,400.00
+Jul 2026: Qty 45, RM 6,300.00
+
+<b>Drill down:</b>
+1. By product
+2. Delivery orders</div>
+  </div>
+  <p class="note">Grain from the window, in code: today = the day, a week = by day, a month = by week, longer = by month, latest first. A period with no delivery does not print. No Channel line (one segment). No Location line (nothing named, policy not narrower than every warehouse). "By customer" is not offered: the scope is one account.</p>
+</section>
+
+<section>
+  <h2>2. "1": By product, same window, top 10 then "and N more"</h2>
+  <div class="chat">
+    <div class="msg out">1</div>
+    <div class="msg in"><b>By product</b>, delivery date 01/07/2026 to 30/09/2026
+1. PRD-A101: Qty 12, RM 5,200.00
+2. PRD-A102: Qty 12, RM 4,800.00
+3. PRD-B210: Qty 40, RM 3,900.00
+4. PRD-B211: Qty 6, RM 3,100.00
+5. PRD-C330: Qty 10, RM 2,950.00
+6. PRD-C331: Qty 6, RM 2,700.00
+7. PRD-D405: Qty 20, RM 2,450.00
+8. PRD-D406: Qty 8, RM 2,300.00
+9. PRD-E512: Qty 4, RM 2,100.00
+10. PRD-E513: Qty 12, RM 1,950.00
+and 61 more
+<b>Total:</b> Qty 685, RM 58,700.00
+
+<b>Drill down:</b>
+11. Delivery orders</div>
+  </div>
+  <p class="answer"><span class="q">Q1 (a).</span> A DO's amount is its DOC total once (legacy import, which writes the DOC total on every line) or the sum of its lines (AutoCount). A product's amount is its share of each DO total, weighted by qty x unit price x (1 - discount), so the product rows add up to the same Total.</p>
+</section>
+
+<section>
+  <h2>3. "DO": the delivery order list, latest first</h2>
+  <div class="chat">
+    <div class="msg out">DO</div>
+    <div class="msg in"><b>Delivery orders</b>, 01/07/2026 to 30/09/2026
+1. DO-0824, 28/08/2026: Qty 40, RM 0.00
+2. DO-0823, 27/08/2026: Qty 70, RM 15,800.00
+3. DO-0822, 27/08/2026: Qty 64, RM 9,600.00
+4. DO-0821, 27/08/2026: Qty 90, RM 4,100.00
+5. DO-0820, 27/08/2026: Qty 75, RM 4,300.00
+6. DO-0819, 27/08/2026: Qty 95, RM 11,200.00
+7. DO-0818, 27/08/2026: Qty 50, RM 2,600.00
+8. DO-0817, 27/08/2026: Qty 116, RM 2,300.00
+9. DO-0816, 19/08/2026: Qty 4, RM 0.00
+10. DO-0815, 11/08/2026: Qty 30, RM 2,500.00
+and 5 more
+<b>Total:</b> Qty 685, RM 58,700.00
+
+<b>Drill down:</b>
+11. By product</div>
+  </div>
+  <p class="answer"><span class="q">Q2 (a).</span> Replacement DOs (number starting REP) are left out of the report. A DO with a real qty but no price in the import (DO-0824) stays in at RM 0.00. One account in scope, so no account name on a row.</p>
+</section>
+
+<section>
+  <h2>4. A drill keeps the period: "my sales in August" (a month: by week), then "by product"</h2>
+  <div class="chat">
+    <div class="msg out">my sales in August</div>
+    <div class="msg in"><b>Customer:</b> ACME HARDWARE SDN BHD [A/C I]
+<b>Product:</b> all
+<b>Delivery date:</b> 01/08/2026 to 31/08/2026
+
+<b>Total:</b> Qty 640, RM 52,400.00
+24/08 to 30/08: Qty 600, RM 49,900.00
+17/08 to 23/08: Qty 4, RM 0.00
+10/08 to 16/08: Qty 33, RM 2,500.00
+03/08 to 09/08: Qty 3, RM 0.00
+
+<b>Drill down:</b>
+1. By product
+2. Delivery orders</div>
+    <div class="msg out">by product</div>
+    <div class="msg in"><b>By product</b>, delivery date 01/08/2026 to 31/08/2026
+(top 10 of August, same row format)
+<b>Total:</b> Qty 640, RM 52,400.00
+
+<b>Drill down:</b>
+11. Delivery orders</div>
+  </div>
+  <p class="note">Weeks run Monday to Sunday, clipped to the window; only weeks with a delivery print. The drill prints one total per row over the whole period of the ask (v2 annotation 2).</p>
+</section>
+
+<section>
+  <h2>5. No delivery in the window: "my sales in September"</h2>
+  <div class="chat">
+    <div class="msg out">my sales in September</div>
+    <div class="msg in"><b>Customer:</b> ACME HARDWARE SDN BHD [A/C I]
+<b>Product:</b> all
+<b>Delivery date:</b> 01/09/2026 to 30/09/2026
+
+No sales found.</div>
+  </div>
+  <p class="note">A final answer on the asker's own account: nothing offered, nothing armed, no escalation.</p>
+</section>
+
+<section>
+  <h2>6. A location outside the contact's policy is refused</h2>
+  <div class="chat">
+    <div class="msg out">my sales at REPAIR this quarter</div>
+    <div class="msg in">Sorry, REPAIR isn't one of the locations you can check.</div>
+    <div class="msg out">my sales at WH-A this quarter</div>
+    <div class="msg in"><b>Customer:</b> ACME HARDWARE SDN BHD [A/C I]
+<b>Product:</b> all
+<b>Location:</b> WH-A
+<b>Delivery date:</b> 01/07/2026 to 30/09/2026
+
+<b>Total:</b> (WH-A lines only, by month)
+
+<b>Drill down:</b>
+1. By product
+2. Delivery orders</div>
+  </div>
+  <p class="answer"><span class="q">Q3 (a).</span> Shown for a contact whose stock visibility policy allows WH-A and WH-B only. The policy is the one the stock ask uses (<code>stock_visibility.resolve_policy</code>); DO lines filter on <code>order_lines.warehouse_id</code>.</p>
+</section>
+
+<section>
+  <h2>7. A contact whose policy allows no warehouse at all</h2>
+  <div class="chat">
+    <div class="msg out">my sales this quarter</div>
+    <div class="msg in"><b>Customer:</b> ACME HARDWARE SDN BHD [A/C I]
+<b>Product:</b> all
+<b>Delivery date:</b> 01/07/2026 to 30/09/2026
+
+No sales found.</div>
+  </div>
+  <p class="answer"><span class="q">Q4 (a).</span> Policy <code>warehouse_ids = []</code> means "no location" (<code>stock_visibility.warehouse_criterion</code>), so no DO line qualifies and the reply is the same as an empty window.</p>
+</section>
+
+<section>
+  <h2>8. Unchanged from v3</h2>
+  <p class="answer">Two segments: the Channel line prints and "project only" narrows it (v3 section 5). Out-of-range pick re-asks the same options (v3 section 8). Another ask while the drill is open is a new ask and drops the offer (v3 section 7). Typed "by product" / "DO" / "delivery orders" pick the same option as the number.</p>
+</section>
+
+<section>
+  <h2>Reuse list (each element and where it comes from)</h2>
+  <div class="wrap"><table>
+    <tr><th>Element</th><th>Reuses</th></tr>
+    <tr><td>Header lines (Customer, Product, Channel, Location, date)</td><td><code>sorento_crm_mcp/sorento_crm_mcp/presenters.py::_sales_report</code>, names via <code>outstanding_report_service._customer_echo</code></td></tr>
+    <tr><td>Row format "CODE: Qty q, RM v"</td><td><code>presenters.py::_top_selling_row</code>, money via <code>_money</code></td></tr>
+    <tr><td>DO population (DO date, not cancelled, not deleted)</td><td><code>orders</code> + <code>order_lines</code>, the rows the outstanding report's DO block reads</td></tr>
+    <tr><td>Report service and route body</td><td><code>app/services/sales_report_service.py::sales_report</code>, ranking via <code>_rank_breakdown</code></td></tr>
+    <tr><td>Channel from segments</td><td><code>app/services/scm/demand_class.py::class_of</code> over <code>customers.market_segment_code</code></td></tr>
+    <tr><td>Location cap, refusal, empty policy</td><td><code>app/services/stock_visibility.py::resolve_policy</code> and <code>warehouse_criterion</code></td></tr>
+    <tr><td>Drill-down options as the open question</td><td><code>turn/compose.py::_lane_question</code>, kind in <code>contracts.DETAIL_OFFER_KINDS</code>, answered by <code>turn/apply.py::_answer_outstanding</code></td></tr>
+    <tr><td>Typed picks ("by product", "DO")</td><td><code>turn/decide.py::_positions_by_label</code>, <code>picked_positions</code></td></tr>
+    <tr><td>Out-of-range re-ask</td><td><code>lanes/business/__init__.py::_outstanding_detail_reoffer</code></td></tr>
+    <tr><td>Own-account miss with no escalation</td><td><code>fetch._sales_report_output</code></td></tr>
+  </table></div>
+</section>
+
+</main>
+<footer>All names, codes, DO numbers and figures on this page are made up. Bold in a bubble is WhatsApp <code>*bold*</code>. v3 stays at <code>documentation/mockups/sales-report-drilldown.html</code>.</footer>
+</body>
+</html>

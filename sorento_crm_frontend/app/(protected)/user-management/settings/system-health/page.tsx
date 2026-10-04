@@ -53,7 +53,11 @@ const SystemHealthSettingsPage = () => {
     [settings.healthNotifyUserIds],
   );
 
-  const { data: users } = useQuery({
+  const {
+    data: users,
+    error: usersError,
+    refetch: refetchUsers,
+  } = useQuery({
     queryKey: ['health-notify-user-select'],
     queryFn: () => getUsersSelect(),
     staleTime: 5 * 60 * 1000,
@@ -258,6 +262,8 @@ const SystemHealthSettingsPage = () => {
               value={userIds}
               onChange={setUserIds}
               emptyMessage="No users found."
+              loadError={usersError}
+              onRetry={() => void refetchUsers()}
               className="w-[260px]"
               renderTrigger={() => (
                 <Button

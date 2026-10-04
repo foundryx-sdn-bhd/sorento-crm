@@ -509,3 +509,78 @@ describe('fulfilmentPlanningService: saved decisions (S4)', () => {
     await expect(deleteLineDraft(KEY)).rejects.toThrow('Backend said no');
   });
 });
+
+/**
+ * FULFIL-CONFIRM-SCOPE v2 (P3): Preview posts the SAME body Confirm would post, with
+ * `preview: true`, to the same route, and hands back the server's per-order answer untouched.
+ */
+describe('previewConfirmMany', () => {
+  const apiFetch = vi.fn();
+
+  async function load() {
+    vi.doMock('@/lib/api', () => ({ apiFetch: (...args: unknown[]) => apiFetch(...args) }));
+    vi.doMock('@/lib/api-client', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('@/lib/api-client')>();
+      return { ...actual, extractApiError: vi.fn(async () => 'Backend said no') };
+    });
+    return import('./fulfilmentPlanningService');
+  }
+
+  const body = {
+    orders: [{ pso_id: 'pso-1', lines: [] as never[], batch_id: null }],
+    batch_id: null,
+  };
+
+  it('posts the confirm body plus preview: true to confirm-all and returns the parsed result', async () => {
+    const answer = {
+      results: [
+        {
+          pso_id: 'pso-1',
+          ok: true,
+          preview: true,
+          decision_revision: 2,
+          lines_confirmed: [],
+          lines_carried: 1,
+          lines_held_back: [],
+          lines_fulfilled_skipped: 0,
+          inquiry_rows: [
+            {
+              line_no: 6,
+              item_code: 'SRTWT6808',
+              verb: 'ORDER',
+              qty: '239',
+              delivery_date: '2026-09-01',
+              stock_location: 'BRW-IB',
+              note: null,
+            },
+          ],
+          transfers: [],
+        },
+      ],
+    };
+    apiFetch.mockResolvedValue({ ok: true, json: async () => answer } as Response);
+    const { previewConfirmMany } = await load();
+
+    const result = await previewConfirmMany(body);
+
+    const [url, init] = apiFetch.mock.calls[0];
+    expect(url).toBe('/api/v1/project-sales/fulfilment-planning/confirm-all');
+    expect(init.method).toBe('POST');
+    expect(init.headers).toMatchObject({ 'Content-Type': 'application/json' });
+    expect(JSON.parse(init.body)).toEqual({ ...body, preview: true });
+    expect(result).toEqual(answer);
+  });
+
+  it('does not mutate the caller body and reports a refusal through extractApiError', async () => {
+    apiFetch.mockResolvedValue({
+      ok: false,
+      headers: { get: () => 'application/json' },
+      json: async () => ({}),
+    } as unknown as Response);
+    const { previewConfirmMany } = await load();
+    const before = JSON.stringify(body);
+
+    await expect(previewConfirmMany(body)).rejects.toThrow('Backend said no');
+    expect(JSON.stringify(body)).toBe(before);
+  });
+});

@@ -11,6 +11,11 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
+import { SearchableMultiSelect } from '@/components/common/SearchableMultiSelect';
+import {
+  DEFAULT_PACKING_LIST_REGIONS,
+  PACKING_LIST_REGION_OPTIONS,
+} from '@/lib/packing-list-regions';
 import { FileDropzone } from '@/components/common/FileDropzone';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -60,6 +65,8 @@ export default function AttachmentUploadDialog({
   const [entityType, setEntityType] = useState<string>(propEntityType || '');
   const [entityId, setEntityId] = useState<string>(propEntityId || '');
   const [accessLevels, setAccessLevels] = useState<string[]>([]);
+  // Packing List type only; West preselected, never emptied.
+  const [regions, setRegions] = useState<string[]>([...DEFAULT_PACKING_LIST_REGIONS]);
   // Only relevant when the caller left `defaultDirectoryId` unset OR passed root (a screen
   // with no folder context of its own, e.g. Packing Lists' Upload supplier documents, or the
   // Files browser at "All attachments") - a caller that DID pass a real folder id (opened from
@@ -87,7 +94,11 @@ export default function AttachmentUploadDialog({
   const showFolderPicker = defaultDirectoryId == null;
   const { data: directoryTree = [] } = useDirectoryTree(false, { enabled: showFolderPicker });
   const directoryOptions = showFolderPicker ? flattenDirectoryOptions(directoryTree) : [];
-  const { data: accessTypeOptions = [] } = useContactAccessTypes();
+  const {
+    data: accessTypeOptions = [],
+    error: accessTypesError,
+    refetch: refetchAccessTypes,
+  } = useContactAccessTypes();
   const defaultAccessLevels = accessTypeOptions.length > 0 ? accessTypeOptions.map((o) => o.code) : ['dealer', 'end_user'];
   // Phase 2: real uploader wired into the Upload Activity drawer. The
   // startSession `uploader` closure runs uploadMutation.mutateAsync for each
@@ -101,8 +112,14 @@ export default function AttachmentUploadDialog({
   const uploadManager = useUploadManager();
 
   const selectedType = attachmentTypes.find((type: AttachmentType) => type.id === selectedTypeId);
+  // Never carry a previous opening's choice over: every opening starts on West only.
+  useEffect(() => {
+    if (open) setRegions([...DEFAULT_PACKING_LIST_REGIONS]);
+  }, [open]);
+
   // Field linkage is now opt-in per attachment type (admin toggle), not a
   // hardcoded product-photo name check.
+  const showRegions = selectedType?.code === 'packing_list';
   const showFieldLinkageSection = !propEntityType && !!selectedType?.supports_field_linkage;
 
   const { data: fieldLinkageSchema } = useFieldLinkageSchema(
@@ -263,6 +280,7 @@ export default function AttachmentUploadDialog({
       entityType: entityType || propEntityType || undefined,
       entityId: entityId || propEntityId || undefined,
       accessLevels: [...accessLevels],
+      regions: showRegions ? [...regions] : undefined,
       directoryId: showFolderPicker ? selectedDirectoryId || undefined : (defaultDirectoryId ?? undefined),
       targetEntityType:
         showFieldLinkageSection && targetEntityType ? targetEntityType : null,
@@ -309,6 +327,7 @@ export default function AttachmentUploadDialog({
           entityType: snapshot.entityType,
           entityId: snapshot.entityId,
           accessLevels: snapshot.accessLevels,
+          regions: snapshot.regions,
           directoryId: snapshot.directoryId,
           targetEntityType: snapshot.targetEntityType,
           targetFieldKeys: snapshot.targetFieldKeys,
@@ -345,6 +364,7 @@ export default function AttachmentUploadDialog({
                 setSelectedTypeId(value);
                 setSelectedFiles([]);
                 setValidationError('');
+                setRegions([...DEFAULT_PACKING_LIST_REGIONS]);
                 // Linked-fields section only applies to product photos; reset it
                 // whenever the type changes so a stale selection can't leak.
                 setTargetEntityType('');
@@ -523,10 +543,28 @@ export default function AttachmentUploadDialog({
             </div>
           )}
 
+          {showRegions && (
+            <div className="space-y-2">
+              <Label htmlFor="attachment-regions">
+                Regions <span className="text-destructive">*</span>
+              </Label>
+              <SearchableMultiSelect
+                id="attachment-regions"
+                value={regions}
+                onChange={(next) => {
+                  if (next.length > 0) setRegions(next);
+                }}
+                options={PACKING_LIST_REGION_OPTIONS}
+              />
+            </div>
+          )}
+
           <div className="space-y-2" data-guide-target="resource-management.files.access-levels">
             <Label>Access Levels</Label>
             <AccessLevelsMultiSelect
               options={accessTypeOptions}
+              loadError={accessTypesError}
+              onRetry={() => void refetchAccessTypes()}
               value={accessLevels}
               onChange={setAccessLevels}
             />

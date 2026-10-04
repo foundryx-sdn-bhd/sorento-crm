@@ -30,6 +30,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 const useComparePull = vi.fn();
 vi.mock('../hooks/useAutocountPull', () => ({
   useComparePull: (...a: unknown[]) => useComparePull(...a),
+  // DO-COMPARE-SIM: the tab also reads the saved compare mapping; these tests do not care.
+  useCompareMappings: () => ({ data: undefined, isLoading: false }),
+  useSaveCompareMapping: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 const generateExcelFile = vi.fn();

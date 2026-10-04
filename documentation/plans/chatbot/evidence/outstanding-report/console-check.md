@@ -10,7 +10,7 @@ Backend :8085 (worktree `chatbot-outstanding-report`, tip `f48473439`), MCP :876
 prints the lane path). DB flipped to `sorento_ai_automation_0907` (the prod copy) for the run
 only; `sorento_crm_backend/.env`'s `DATABASE_URL`/`DIRECT_URL` restored to `sorento_osr_ci`
 afterwards (`.env` is untracked - `git status` shows nothing). `ENABLE_SCHEDULER` was already
-`false` in that file. Contact `437264483` (the file's own default), granted
+`false` in that file. Contact `900000008` (the file's own default), granted
 `sales_orders.outstanding` via `contact_field_reveal_service.set_granted_keys` (left in place,
 dev DB, per the standing instruction) - it already held `inventory.sellable` and
 `purchase_orders.placed` from earlier lanes.
@@ -24,7 +24,7 @@ dev DB, per the standing instruction) - it already held `inventory.sellable` and
 
     venv/bin/python scripts/chatbot_console_check.py \
         tests/chatbot/console_cases/2026-09-13-outstanding-report.yaml \
-        --base-url http://127.0.0.1:8085 --api-key test --contact 437264483
+        --base-url http://127.0.0.1:8085 --api-key test --contact 900000008
 
 Ran twice per `documentation/agents/chatbot-verification.md`'s own convention (a chatbot prompt
 change ships as an unlabelled `ai_prompt_versions` row until the owner moves the `production`
@@ -230,7 +230,7 @@ by pid; `lsof -i :8085 -i :8766 -sTCP:LISTEN` empty afterwards.
 
 Same recipe: backend :8085 + MCP :8766, `PYTHONPATH` pinned to the lane's own `sorento_crm_mcp`,
 `.env` flipped to `sorento_ai_automation_0907` (+ `AI_ASSISTANT_MCP_URL` override, restored
-after), `ENABLE_SCHEDULER` already `false`. Contact `437264483` still holds
+after), `ENABLE_SCHEDULER` already `false`. Contact `900000008` still holds
 `sales_orders.outstanding` from run 1-2 (confirmed via `granted_keys` before this run).
 `mcp_tools.restricted_fields` for `crm_outstanding_report` re-confirmed unchanged (still carries
 the key).
@@ -342,13 +342,13 @@ ran the content 513 had just published already matched - one FULL version (v13,
   header shows the sibling code `SRTWT02-A` - the same pre-existing resolver-substitution
   observation as finding 2, unrelated to this lane's six fixes).
 
-**AC-1140 no-key case: not exercised.** Added `contact: "438930735"` (12 prior `chatbot.turns`
+**AC-1140 no-key case: not exercised.** Added `contact: "900000052"` (12 prior `chatbot.turns`
 rows, confirmed via `granted_keys` to hold no reveal keys at all) for a bare "SRTWT7445
 outstanding" ask. The turn failed with `KeyError: 'custom_fields'` before reaching any lane
 code - the script borrows the contact's own stored envelope, and every OTHER contact checked
-(`445239409`, `445239415`, `477071889`, `477071892`, `477071888`, `423755030`, `423882401`) has
+(`900000063`, `900000056`, `900000059`, `900000106`, `900000101`, `900000071`, `900000089`) has
 a stored envelope missing the `contact.custom_fields` key the engine's `is_human_intervened`
-read expects; only `437264483` (already granted the key) carries a usable envelope. This is a
+read expects; only `900000008` (already granted the key) carries a usable envelope. This is a
 console-check data/script limitation, not an S4 code finding - left in the case file for
 whenever a real non-granted contact with a usable envelope is available.
 
@@ -389,7 +389,7 @@ processes killed by pid; `lsof -i :8085 -i :8766 -sTCP:LISTEN` empty afterwards.
 
 Same recipe: backend :8085 + MCP :8766, `PYTHONPATH` pinned to the lane's own `sorento_crm_mcp`,
 `.env` flipped to `sorento_ai_automation_0907` (+ `AI_ASSISTANT_MCP_URL` override, restored
-after), `ENABLE_SCHEDULER` already `false`. Contact `437264483` still holds
+after), `ENABLE_SCHEDULER` already `false`. Contact `900000008` still holds
 `sales_orders.outstanding` (re-confirmed via `granted_keys` before this run).
 
 **Migration body changed, so `alembic upgrade` alone would not re-run it** (this DB's
@@ -511,7 +511,7 @@ confirmed untouched (other lanes' own pre-existing listeners only).
 
 Same recipe: backend :8085 + MCP :8766, `PYTHONPATH` pinned to the lane's own `sorento_crm_mcp`,
 `.env` flipped to `sorento_ai_automation_0907` (+ `AI_ASSISTANT_MCP_URL` override, restored
-after), `ENABLE_SCHEDULER` already `false`. Contact `437264483` still holds
+after), `ENABLE_SCHEDULER` already `false`. Contact `900000008` still holds
 `sales_orders.outstanding` (re-confirmed via `granted_keys`). `alembic_version` already
 `514_chatbot_outstanding_vocab`; FULL v15 (`8615d49a-42be-4090-95ea-aa8a6ea0ac81`) still present
 with `do_outstanding`/`outstanding_both` - the coder's own fix commit did not change the prompt
@@ -588,7 +588,7 @@ Lane backend merged with main at tip `e166e15fe`. First console-run attempt (no 
 TPM rate limit (429) running 12 cases back-to-back (from log: `chatbot.turns.error` showed 
 `Rate limit reached for gpt-5.4-mini...200000, Used 190807, Requested 15577`); re-run spaced with 
 `--sleep-seconds 8` per case below. Same recipe: backend :8085, `PYTHONPATH` pinned to lane MCP, 
-`.env` flipped to `sorento_ai_automation_0907`, contact `437264483` holds `sales_orders.outstanding`, 
+`.env` flipped to `sorento_ai_automation_0907`, contact `900000008` holds `sales_orders.outstanding`, 
 console check pinned to v15 (`8615d49a-42be-4090-95ea-aa8a6ea0ac81`).
 
 ### Case file: 2026-09-14-outstanding-owner-rounds.yaml (spaced re-run)

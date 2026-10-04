@@ -138,6 +138,15 @@ class AttachmentBase(BaseModel):
     target_entity_type: Optional[str] = None
     target_field_keys: Optional[list[str]] = None
     upload_batch_id: Optional[str] = None
+    #: Packing List uploads only ('west' / 'east'); NULL otherwise.
+    regions: Optional[list[str]] = None
+
+    @field_validator("regions")
+    @classmethod
+    def _check_regions(cls, v):
+        from app.schemas.regions import normalize_regions
+
+        return normalize_regions(v)
 
 
 def _validate_field_linkage_template(target_entity_type, target_field_keys):

@@ -525,9 +525,10 @@ class TestAcP04SupplierAddressBlockAndDeprecatedFields:
             str(my.id),
         )
 
-    def test_customer_deprecated_fields_fail_validation_never_retryable(self, db):
+    def test_customer_deprecated_fields_are_dropped_never_retryable(self, db):
         # Superseded 2026-09-06 (S4, AC-P0-4/D15 end state) - see the class
-        # docstring.
+        # docstring. Owner decision 1 Oct 2026: an undeclared key is dropped (name
+        # logged by the route), never refused, so the record lands without it.
         set_company_scope(db, frozenset({DEFAULT_COMPANY_ID}))
         code = _code("CUSTD")
         svc = _esb(db, DEFAULT_COMPANY_ID)
@@ -544,14 +545,12 @@ class TestAcP04SupplierAddressBlockAndDeprecatedFields:
             ],
         )
         record = result.records[0]
-        assert record.outcome is IngestOutcome.FAILED, record.errors
-        assert "credit_limit" in record.errors
-        assert "payment_terms_days" in record.errors
+        assert record.outcome is IngestOutcome.CREATED, record.errors
         assert result.retryable == 0
 
-    def test_supplier_payment_terms_code_fails_validation_never_retryable(self, db):
+    def test_supplier_payment_terms_code_is_dropped_never_retryable(self, db):
         # Superseded 2026-09-06 (S4, AC-P0-4/D15 end state) - see the class
-        # docstring.
+        # docstring. Dropped, not refused (owner decision, 1 Oct 2026).
         set_company_scope(db, frozenset({DEFAULT_COMPANY_ID}))
         code = _code("SUPD")
         svc = _esb(db, DEFAULT_COMPANY_ID)
@@ -567,8 +566,7 @@ class TestAcP04SupplierAddressBlockAndDeprecatedFields:
             ],
         )
         record = result.records[0]
-        assert record.outcome is IngestOutcome.FAILED, record.errors
-        assert "payment_terms_code" in record.errors
+        assert record.outcome is IngestOutcome.CREATED, record.errors
         assert result.retryable == 0
 
 

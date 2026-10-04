@@ -1,0 +1,949 @@
+{
+  "_comment": "Known never-stuck failures, from the baseline run of 1 Oct 2026. Each names the audit (documentation/reports/AUDIT-never-stuck-2026-10-01.md) row or lever whose fix lane will close it. Each tolerates only its listed problem kinds (any other kind on that route still fails); reported every night; delete an entry once its route passes. route \"*\" = every route of that persona.",
+  "failures": [
+    {
+      "persona": "admin",
+      "route": "/master-data-management/products/[id]/edit",
+      "kinds": [
+        "still loading"
+      ],
+      "audit": "S3 / appendix J (skeleton forever on an error; lane NS-BOUNDARIES)",
+      "reason": "still loading after 15s: spinner in \"Edit Product\""
+    },
+    {
+      "persona": "admin",
+      "route": "/procurement-management/cost-price-uploads/[id]",
+      "kinds": [
+        "still loading"
+      ],
+      "audit": "row 36 (skeleton forever on any error; lane NS-BOUNDARIES)",
+      "reason": "still loading after 15s: skeleton in <main>"
+    },
+    {
+      "persona": "admin",
+      "route": "/project-sales/[projectId]/quotation-documents/new",
+      "kinds": [
+        "still loading"
+      ],
+      "audit": "S3 / appendix J (skeleton forever on an error; lane NS-BOUNDARIES)",
+      "reason": "still loading after 15s: skeleton in \"New quotation\""
+    },
+    {
+      "persona": "admin",
+      "route": "/system-management/automation/[id]",
+      "kinds": [
+        "still loading"
+      ],
+      "audit": "row 35 (skeleton forever on any error; lane NS-BOUNDARIES)",
+      "reason": "still loading after 15s: skeleton in \"Automation\""
+    },
+    {
+      "persona": "admin",
+      "route": "/system-management/email-templates/[id]",
+      "kinds": [
+        "still loading"
+      ],
+      "audit": "row 35 (skeleton forever on any error; lane NS-BOUNDARIES)",
+      "reason": "still loading after 15s: skeleton in \"Email Template\""
+    },
+    {
+      "persona": "admin",
+      "route": "/ticket-management/tickets/[id]",
+      "kinds": [
+        "still loading"
+      ],
+      "audit": "row 17 (tickets: empty / skeleton forever, no gate; lane NS-GRID + NS-ACCESS)",
+      "reason": "still loading after 15s: skeleton in <main>"
+    },
+    {
+      "persona": "admin",
+      "route": "/user-management/teams/[id]",
+      "kinds": [
+        "still loading"
+      ],
+      "audit": "S3 / appendix J (skeleton forever on an error; lane NS-BOUNDARIES)",
+      "reason": "still loading after 15s: skeleton in \"Team members\""
+    },
+    {
+      "persona": "admin",
+      "route": "/workflow-forms-management/definitions/[id]",
+      "kinds": [
+        "still loading"
+      ],
+      "audit": "S3 / appendix J (skeleton forever on an error; lane NS-BOUNDARIES)",
+      "reason": "still loading after 15s: skeleton in \"Edit workflow form\""
+    },
+    {
+      "persona": "admin",
+      "route": "/workflow-forms-management/submissions/[id]",
+      "kinds": [
+        "still loading"
+      ],
+      "audit": "row 18 (submission page skeletons forever; lane NS-BOUNDARIES)",
+      "reason": "still loading after 15s: skeleton in \"Submission\""
+    },
+    {
+      "persona": "restricted",
+      "route": "/complaint-management/complaint-resolutions/[id]",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "S3 + S4.4 (page with no RequireAccess renders a 403 as empty / not found; audit section 1, 295 of 400 pages; lane NS-ACCESS)",
+      "reason": "refusal rendered as empty (\"not found\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/complaint-management/complaint-root-causes/[id]",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "S3 + S4.4 (page with no RequireAccess renders a 403 as empty / not found; audit section 1, 295 of 400 pages; lane NS-ACCESS)",
+      "reason": "refusal rendered as empty (\"not found\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/complaint-management/complaints",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "L2 (DataGrid renders a failed load as \"No data available\"; lane NS-GRID)",
+      "reason": "refusal rendered as empty (\"No data available\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/complaint-management/complaints/[id]",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "S3 + S4.4 (page with no RequireAccess renders a 403 as empty / not found; audit section 1, 295 of 400 pages; lane NS-ACCESS)",
+      "reason": "refusal rendered as empty (\"not found\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/complaint-management/complaints/[id]/edit",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "S3 + S4.4 (page with no RequireAccess renders a 403 as empty / not found; audit section 1, 295 of 400 pages; lane NS-ACCESS)",
+      "reason": "refusal rendered as empty (\"No products yet. Click “Add product”.\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/forms-management/forms/[id]",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "S3 + S4.4 (page with no RequireAccess renders a 403 as empty / not found; audit section 1, 295 of 400 pages; lane NS-ACCESS)",
+      "reason": "refusal rendered as empty (\"not found\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/forms-management/forms/[id]/edit",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "S3 + S4.4 (page with no RequireAccess renders a 403 as empty / not found; audit section 1, 295 of 400 pages; lane NS-ACCESS)",
+      "reason": "refusal rendered as empty (\"No attachment\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/forms-management/forms/new",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "L5 / L10, row 20 shape (contact-access-types picker refused and shown empty; lane NS-PICKERS + NS-LOOKUPS)",
+      "reason": "refusal rendered as empty (\"No attachment\") after a 403 on /api/v1/user-management/contact-access-types; flaps with render timing"
+    },
+    {
+      "persona": "restricted",
+      "route": "/integration-management/integrations",
+      "kinds": [
+        "raw permission text"
+      ],
+      "audit": "row 16 (integrations: raw permission string, menu ungated; lane NS-ACCESS)",
+      "reason": "raw permission text on screen: \"Permission required:...\""
+    },
+    {
+      "persona": "restricted",
+      "route": "/inventory-management/stock/[productId]/[warehouseId]",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "S3 + S4.4 (page with no RequireAccess renders a 403 as empty / not found; audit section 1, 295 of 400 pages; lane NS-ACCESS)",
+      "reason": "refusal rendered as empty (\"not found\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/marketing-management/promotions",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "L2 (DataGrid renders a failed load as \"No data available\"; lane NS-GRID)",
+      "reason": "refusal rendered as empty (\"No data available\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/marketing-management/promotions/[id]",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "S3 + S4.4 (page with no RequireAccess renders a 403 as empty / not found; audit section 1, 295 of 400 pages; lane NS-ACCESS)",
+      "reason": "refusal rendered as empty (\"not found\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/master-data-management/brands/[id]",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "S3 + S4.4 (page with no RequireAccess renders a 403 as empty / not found; audit section 1, 295 of 400 pages; lane NS-ACCESS)",
+      "reason": "refusal rendered as empty (\"not found\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/master-data-management/certificates",
+      "kinds": [
+        "still loading"
+      ],
+      "audit": "S3 / appendix J (skeleton forever on an error; lane NS-BOUNDARIES)",
+      "reason": "still loading after 15s: skeleton in \"Certificates\""
+    },
+    {
+      "persona": "restricted",
+      "route": "/master-data-management/certificates/[id]",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "S3 + S4.4 (page with no RequireAccess renders a 403 as empty / not found; audit section 1, 295 of 400 pages; lane NS-ACCESS)",
+      "reason": "refusal rendered as empty (\"not found\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/master-data-management/countries",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "S3 + S4.4 (page with no RequireAccess renders a 403 as empty / not found; audit section 1, 295 of 400 pages; lane NS-ACCESS)",
+      "reason": "refusal rendered as empty (\"No countries yet. Add one to set on a supplier.\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/master-data-management/flyer-spec-proposals",
+      "kinds": [
+        "raw permission text"
+      ],
+      "audit": "L3 / S4.3 (403 shown as the raw backend string; lane NS-SESSION helpers + NS-ACCESS)",
+      "reason": "raw permission text on screen: \"Permission required:...\""
+    },
+    {
+      "persona": "restricted",
+      "route": "/master-data-management/lookup-sets",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "S3 + S4.4 (page with no RequireAccess renders a 403 as empty / not found; audit section 1, 295 of 400 pages; lane NS-ACCESS)",
+      "reason": "refusal rendered as empty (\"No lookup sets yet. Click \"Add lookup set\" to create one.\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/master-data-management/lookup-sets/[id]",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "S3 + S4.4 (page with no RequireAccess renders a 403 as empty / not found; audit section 1, 295 of 400 pages; lane NS-ACCESS)",
+      "reason": "refusal rendered as empty (\"Not found\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/master-data-management/product-categories/[id]",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "S3 + S4.4 (page with no RequireAccess renders a 403 as empty / not found; audit section 1, 295 of 400 pages; lane NS-ACCESS)",
+      "reason": "refusal rendered as empty (\"not found\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/master-data-management/product-sets",
+      "kinds": [
+        "still loading",
+        "raw permission text"
+      ],
+      "audit": "L3 / S4.3 (403 shown as the raw backend string; lane NS-SESSION helpers + NS-ACCESS)",
+      "reason": "still loading after 15s: skeleton in \"Product Sets\" ; raw permission text on screen: \"Permission required:...\""
+    },
+    {
+      "persona": "restricted",
+      "route": "/master-data-management/product-sets/[id]",
+      "kinds": [
+        "raw permission text"
+      ],
+      "audit": "L3 / S4.3 (403 shown as the raw backend string; lane NS-SESSION helpers + NS-ACCESS)",
+      "reason": "raw permission text on screen: \"Permission required:...\""
+    },
+    {
+      "persona": "restricted",
+      "route": "/master-data-management/product-sets/proposals",
+      "kinds": [
+        "raw permission text"
+      ],
+      "audit": "L3 / S4.3 (403 shown as the raw backend string; lane NS-SESSION helpers + NS-ACCESS)",
+      "reason": "raw permission text on screen: \"Permission required:...\""
+    },
+    {
+      "persona": "restricted",
+      "route": "/master-data-management/product-specifications",
+      "kinds": [
+        "raw permission text"
+      ],
+      "audit": "L3 / S4.3 (403 shown as the raw backend string; lane NS-SESSION helpers + NS-ACCESS)",
+      "reason": "raw permission text on screen: \"Permission required:...\""
+    },
+    {
+      "persona": "restricted",
+      "route": "/master-data-management/product-specifications/[specKey]",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "S3 + S4.4 (page with no RequireAccess renders a 403 as empty / not found; audit section 1, 295 of 400 pages; lane NS-ACCESS)",
+      "reason": "refusal rendered as empty (\"not found\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/master-data-management/products",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "L2 (DataGrid renders a failed load as \"No data available\"; lane NS-GRID)",
+      "reason": "refusal rendered as empty (\"No data available\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/master-data-management/products/[id]/edit",
+      "kinds": [
+        "still loading"
+      ],
+      "audit": "S3 / appendix J (skeleton forever on an error; lane NS-BOUNDARIES)",
+      "reason": "still loading after 15s: spinner in \"Edit Product\""
+    },
+    {
+      "persona": "restricted",
+      "route": "/master-data-management/sales-agents",
+      "kinds": [
+        "still loading",
+        "raw permission text"
+      ],
+      "audit": "L3 / S4.3 (403 shown as the raw backend string; lane NS-SESSION helpers + NS-ACCESS)",
+      "reason": "still loading after 15s: skeleton in \"Sales Agents\" ; raw permission text on screen: \"Permission required:...\""
+    },
+    {
+      "persona": "restricted",
+      "route": "/master-data-management/sales-agents/[id]",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "S3 + S4.4 (page with no RequireAccess renders a 403 as empty / not found; audit section 1, 295 of 400 pages; lane NS-ACCESS)",
+      "reason": "refusal rendered as empty (\"not found\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/master-data-management/spec-verification",
+      "kinds": [
+        "raw permission text"
+      ],
+      "audit": "L3 / S4.3 (403 shown as the raw backend string; lane NS-SESSION helpers + NS-ACCESS)",
+      "reason": "raw permission text on screen: \"Permission required:...\""
+    },
+    {
+      "persona": "restricted",
+      "route": "/master-data-management/units-of-measure",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "L2 (DataGrid renders a failed load as \"No data available\"; lane NS-GRID)",
+      "reason": "refusal rendered as empty (\"No data available\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/master-data-management/units-of-measure/[id]",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "S3 + S4.4 (page with no RequireAccess renders a 403 as empty / not found; audit section 1, 295 of 400 pages; lane NS-ACCESS)",
+      "reason": "refusal rendered as empty (\"not found\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/order-management/branches",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "S3 + S4.4 (page with no RequireAccess renders a 403 as empty / not found; audit section 1, 295 of 400 pages; lane NS-ACCESS)",
+      "reason": "refusal rendered as empty (\"No branches yet\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/order-management/customers/[id]/edit",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "S3 + S4.4 (page with no RequireAccess renders a 403 as empty / not found; audit section 1, 295 of 400 pages; lane NS-ACCESS)",
+      "reason": "refusal rendered as empty (\"No sales agent\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/order-management/customers/new",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "S3 + S4.4 (page with no RequireAccess renders a 403 as empty / not found; audit section 1, 295 of 400 pages; lane NS-ACCESS)",
+      "reason": "refusal rendered as empty (\"No sales agent\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/procurement-management/cost-price-uploads/[id]",
+      "kinds": [
+        "still loading"
+      ],
+      "audit": "row 36 (skeleton forever on any error; lane NS-BOUNDARIES)",
+      "reason": "still loading after 15s: skeleton in <main>"
+    },
+    {
+      "persona": "restricted",
+      "route": "/procurement-management/packing-lists",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "L2 (DataGrid renders a failed load as \"No data available\"; lane NS-GRID)",
+      "reason": "refusal rendered as empty (\"No data available\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/procurement-management/purchase-requests",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "L2 (DataGrid renders a failed load as \"No data available\"; lane NS-GRID)",
+      "reason": "refusal rendered as empty (\"No data available\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/procurement-management/sponsorship-forms",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "L2 (DataGrid renders a failed load as \"No data available\"; lane NS-GRID)",
+      "reason": "refusal rendered as empty (\"No data available\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/procurement-management/sponsorship-forms/report",
+      "kinds": [
+        "raw permission text"
+      ],
+      "audit": "L3 / S4.3 (403 shown as the raw backend string; lane NS-SESSION helpers + NS-ACCESS)",
+      "reason": "raw permission text on screen: \"Permission required:...\""
+    },
+    {
+      "persona": "restricted",
+      "route": "/resource-management/attachment-directories",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "L2 (DataGrid renders a failed load as \"No data available\"; lane NS-GRID)",
+      "reason": "refusal rendered as empty (\"No data available\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/resource-management/attachments",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "L2 (DataGrid renders a failed load as \"No data available\"; lane NS-GRID)",
+      "reason": "refusal rendered as empty (\"No data available\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/resource-management/attachments/[id]",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "S3 + S4.4 (page with no RequireAccess renders a 403 as empty / not found; audit section 1, 295 of 400 pages; lane NS-ACCESS)",
+      "reason": "refusal rendered as empty (\"not found\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/resource-management/trash",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "S3 + S4.4 (page with no RequireAccess renders a 403 as empty / not found; audit section 1, 295 of 400 pages; lane NS-ACCESS)",
+      "reason": "refusal rendered as empty (\"No deleted folders\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/sales/customer-asks",
+      "kinds": [
+        "raw permission text"
+      ],
+      "audit": "L3 / S4.3 (403 shown as the raw backend string; lane NS-SESSION helpers + NS-ACCESS)",
+      "reason": "raw permission text on screen: \"Permission required:...\""
+    },
+    {
+      "persona": "restricted",
+      "route": "/sales/opportunities",
+      "kinds": [
+        "still loading"
+      ],
+      "audit": "S3 / appendix J (skeleton forever on an error; lane NS-BOUNDARIES)",
+      "reason": "still loading after 15s: skeleton in \"Opportunities\""
+    },
+    {
+      "persona": "restricted",
+      "route": "/sales/opportunities/[id]",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "S3 + S4.4 (page with no RequireAccess renders a 403 as empty / not found; audit section 1, 295 of 400 pages; lane NS-ACCESS)",
+      "reason": "refusal rendered as empty (\"not found\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/sales/targets",
+      "kinds": [
+        "still loading",
+        "raw permission text"
+      ],
+      "audit": "L3 / S4.3 (403 shown as the raw backend string; lane NS-SESSION helpers + NS-ACCESS)",
+      "reason": "still loading after 15s: skeleton in \"Targets\" ; raw permission text on screen: \"Permission required:...\""
+    },
+    {
+      "persona": "restricted",
+      "route": "/sales/targets/[id]",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "S3 + S4.4 (page with no RequireAccess renders a 403 as empty / not found; audit section 1, 295 of 400 pages; lane NS-ACCESS)",
+      "reason": "refusal rendered as empty (\"not found\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/sales/teams",
+      "kinds": [
+        "still loading",
+        "raw permission text"
+      ],
+      "audit": "L3 / S4.3 (403 shown as the raw backend string; lane NS-SESSION helpers + NS-ACCESS)",
+      "reason": "still loading after 15s: skeleton in \"Sales teams\" ; raw permission text on screen: \"Permission required:...\""
+    },
+    {
+      "persona": "restricted",
+      "route": "/sales/teams/[id]",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "S3 + S4.4 (page with no RequireAccess renders a 403 as empty / not found; audit section 1, 295 of 400 pages; lane NS-ACCESS)",
+      "reason": "refusal rendered as empty (\"not found\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/sales/yearly-comparison",
+      "kinds": [
+        "raw permission text"
+      ],
+      "audit": "L3 / S4.3 (403 shown as the raw backend string; lane NS-SESSION helpers + NS-ACCESS)",
+      "reason": "raw permission text on screen: \"Permission required:...\""
+    },
+    {
+      "persona": "restricted",
+      "route": "/sla-management/conversation-sla-tracking",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "L2 (DataGrid renders a failed load as \"No data available\"; lane NS-GRID)",
+      "reason": "refusal rendered as empty (\"No data available\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/sla-management/escalation-logs",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "L2 (DataGrid renders a failed load as \"No data available\"; lane NS-GRID)",
+      "reason": "refusal rendered as empty (\"No data available\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/sla-management/message-snippets",
+      "kinds": [
+        "raw permission text",
+        "refusal rendered as empty"
+      ],
+      "audit": "L3 / S4.3 (403 shown as the raw backend string; lane NS-SESSION helpers + NS-ACCESS)",
+      "reason": "raw permission text on screen: \"Permission required:...\" ; refusal rendered as empty (\"No snippets yet. Add one and it appears in the ticket composer.\") after a"
+    },
+    {
+      "persona": "restricted",
+      "route": "/system-management/ai-assistant/prompts/[name]",
+      "kinds": [
+        "raw permission text"
+      ],
+      "audit": "L3 / S4.3 (403 shown as the raw backend string; lane NS-SESSION helpers + NS-ACCESS)",
+      "reason": "raw permission text on screen: \"Permission required:...\""
+    },
+    {
+      "persona": "restricted",
+      "route": "/system-management/api-call-logs",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "L2 (DataGrid renders a failed load as \"No data available\"; lane NS-GRID)",
+      "reason": "refusal rendered as empty (\"No data available\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/system-management/automation",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "L2 (DataGrid renders a failed load as \"No data available\"; lane NS-GRID)",
+      "reason": "refusal rendered as empty (\"No data available\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/system-management/automation/[id]",
+      "kinds": [
+        "still loading",
+        "refusal rendered as empty"
+      ],
+      "audit": "row 35 (skeleton forever on any error; lane NS-BOUNDARIES)",
+      "reason": "still loading after 15s: skeleton in \"Automation\" ; refusal rendered as empty (\"No recipients configured. Edit the automation to add some.\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/system-management/chat-history",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "S3 + S4.4 (page with no RequireAccess renders a 403 as empty / not found; audit section 1, 295 of 400 pages; lane NS-ACCESS)",
+      "reason": "refusal rendered as empty (\"No messages in this range. Widen the date range or clear filters - chat history is\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/system-management/email-outbox",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "L2 (DataGrid renders a failed load as \"No data available\"; lane NS-GRID)",
+      "reason": "refusal rendered as empty (\"No data available\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/system-management/email-templates",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "L2 (DataGrid renders a failed load as \"No data available\"; lane NS-GRID)",
+      "reason": "refusal rendered as empty (\"No data available\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/system-management/email-templates/[id]",
+      "kinds": [
+        "still loading"
+      ],
+      "audit": "row 35 (skeleton forever on any error; lane NS-BOUNDARIES)",
+      "reason": "still loading after 15s: skeleton in \"Email Template\""
+    },
+    {
+      "persona": "restricted",
+      "route": "/system-management/email-theme",
+      "kinds": [
+        "still loading"
+      ],
+      "audit": "S3 / appendix J (skeleton forever on an error; lane NS-BOUNDARIES)",
+      "reason": "still loading after 15s: skeleton in \"Email Theme\""
+    },
+    {
+      "persona": "restricted",
+      "route": "/system-management/outgoing-mails",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "L2 (DataGrid renders a failed load as \"No data available\"; lane NS-GRID)",
+      "reason": "refusal rendered as empty (\"No data available\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/system-management/respond-contacts",
+      "kinds": [
+        "raw permission text",
+        "refusal rendered as empty"
+      ],
+      "audit": "L3 / S4.3 (403 shown as the raw backend string; lane NS-SESSION helpers + NS-ACCESS)",
+      "reason": "raw permission text on screen: \"Permission required:...\" ; refusal rendered as empty (\"No Respond.io contacts yet. They appear here once a contact messages us o"
+    },
+    {
+      "persona": "restricted",
+      "route": "/system-management/respond-outbox",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "L2 (DataGrid renders a failed load as \"No data available\"; lane NS-GRID)",
+      "reason": "refusal rendered as empty (\"No data available\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/system-management/respond-workspaces",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "S3 + S4.4 (page with no RequireAccess renders a 403 as empty / not found; audit section 1, 295 of 400 pages; lane NS-ACCESS)",
+      "reason": "refusal rendered as empty (\"No Respond.io workspaces configured. Add one to start syncing contacts.\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/system-management/translations",
+      "kinds": [
+        "raw permission text",
+        "refusal rendered as empty"
+      ],
+      "audit": "L3 / S4.3 (403 shown as the raw backend string; lane NS-SESSION helpers + NS-ACCESS)",
+      "reason": "raw permission text on screen: \"Permission required:...\" ; refusal rendered as empty (\"No translations yet. Upload a supplier document to add one.\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/ticket-management/tickets",
+      "kinds": [
+        "still loading"
+      ],
+      "audit": "row 17 (tickets: empty / skeleton forever, no gate; lane NS-GRID + NS-ACCESS)",
+      "reason": "still loading after 15s: skeleton in \"Tickets\""
+    },
+    {
+      "persona": "restricted",
+      "route": "/ticket-management/tickets/[id]",
+      "kinds": [
+        "still loading"
+      ],
+      "audit": "row 17 (tickets: empty / skeleton forever, no gate; lane NS-GRID + NS-ACCESS)",
+      "reason": "still loading after 15s: skeleton in <main>"
+    },
+    {
+      "persona": "restricted",
+      "route": "/user-management/access-agents",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "L2 (DataGrid renders a failed load as \"No data available\"; lane NS-GRID)",
+      "reason": "refusal rendered as empty (\"No data available\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/user-management/access-agents/[id]",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "S3 + S4.4 (page with no RequireAccess renders a 403 as empty / not found; audit section 1, 295 of 400 pages; lane NS-ACCESS)",
+      "reason": "refusal rendered as empty (\"not found\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/user-management/contact-access-agents",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "L2 (DataGrid renders a failed load as \"No data available\"; lane NS-GRID)",
+      "reason": "refusal rendered as empty (\"No data available\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/user-management/contact-access-types",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "S3 + S4.4 (page with no RequireAccess renders a 403 as empty / not found; audit section 1, 295 of 400 pages; lane NS-ACCESS)",
+      "reason": "refusal rendered as empty (\"No access types. Add one to get started.\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/user-management/contacts",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "L2 (DataGrid renders a failed load as \"No data available\"; lane NS-GRID)",
+      "reason": "refusal rendered as empty (\"No data available\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/user-management/contacts/[id]",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "row 15 (contact detail: false not-found on a refusal; lane NS-BOUNDARIES)",
+      "reason": "refusal rendered as empty (\"not found\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/user-management/contacts/[id]/access",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "row 15 (contact detail: false not-found on a refusal; lane NS-BOUNDARIES)",
+      "reason": "refusal rendered as empty (\"not found\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/user-management/contacts/[id]/chat",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "row 15 (contact detail: false not-found on a refusal; lane NS-BOUNDARIES)",
+      "reason": "refusal rendered as empty (\"not found\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/user-management/contacts/[id]/chatbot",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "row 15 (contact detail: false not-found on a refusal; lane NS-BOUNDARIES)",
+      "reason": "refusal rendered as empty (\"not found\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/user-management/contacts/[id]/routing",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "row 15 (contact detail: false not-found on a refusal; lane NS-BOUNDARIES)",
+      "reason": "refusal rendered as empty (\"not found\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/user-management/onboarding-requests",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "S3 + S4.4 (page with no RequireAccess renders a 403 as empty / not found; audit section 1, 295 of 400 pages; lane NS-ACCESS)",
+      "reason": "refusal rendered as empty (\"No onboarding requests yet. Create one to get started.\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/user-management/settings",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "row 12 (settings layout renders defaults on a failed read; lane NS-BOUNDARIES)",
+      "reason": "refusal rendered as empty (\"No image set.\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/user-management/settings/search-ranking",
+      "kinds": [
+        "raw permission text"
+      ],
+      "audit": "L3 / S4.3 (403 shown as the raw backend string; lane NS-SESSION helpers + NS-ACCESS)",
+      "reason": "raw permission text on screen: \"Permission required:...\""
+    },
+    {
+      "persona": "restricted",
+      "route": "/user-management/settings/spec-visibility",
+      "kinds": [
+        "raw permission text"
+      ],
+      "audit": "row 12 (settings layout renders defaults on a failed read; lane NS-BOUNDARIES)",
+      "reason": "raw permission text on screen: \"Permission required:...\""
+    },
+    {
+      "persona": "restricted",
+      "route": "/user-management/settings/stock-visibility",
+      "kinds": [
+        "raw permission text"
+      ],
+      "audit": "row 12 (settings layout renders defaults on a failed read; lane NS-BOUNDARIES)",
+      "reason": "raw permission text on screen: \"Permission required:...\""
+    },
+    {
+      "persona": "restricted",
+      "route": "/user-management/teams",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "S3 + S4.4 (page with no RequireAccess renders a 403 as empty / not found; audit section 1, 295 of 400 pages; lane NS-ACCESS)",
+      "reason": "refusal rendered as empty (\"No teams yet. Create a team to get started.\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/user-management/teams/[id]",
+      "kinds": [
+        "still loading"
+      ],
+      "audit": "S3 / appendix J (skeleton forever on an error; lane NS-BOUNDARIES)",
+      "reason": "still loading after 15s: skeleton in \"Team members\""
+    },
+    {
+      "persona": "restricted",
+      "route": "/user-management/users",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "L2 (DataGrid renders a failed load as \"No data available\"; lane NS-GRID)",
+      "reason": "refusal rendered as empty (\"No data available\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/user-management/users/[id]",
+      "kinds": [
+        "still loading"
+      ],
+      "audit": "row 11 (user detail layout: skeleton forever on a non-404 error; lane NS-BOUNDARIES)",
+      "reason": "still loading after 15s: skeleton in \"User\""
+    },
+    {
+      "persona": "restricted",
+      "route": "/workflow-forms-management/definitions",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "L2 (DataGrid renders a failed load as \"No data available\"; lane NS-GRID)",
+      "reason": "refusal rendered as empty (\"No data available\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/workflow-forms-management/definitions/[id]",
+      "kinds": [
+        "still loading"
+      ],
+      "audit": "S3 / appendix J (skeleton forever on an error; lane NS-BOUNDARIES)",
+      "reason": "still loading after 15s: skeleton in \"Edit workflow form\""
+    },
+    {
+      "persona": "restricted",
+      "route": "/workflow-forms-management/forms/[definitionId]/submissions",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "L2 (DataGrid renders a failed load as \"No data available\"; lane NS-GRID)",
+      "reason": "refusal rendered as empty (\"No data available\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/workflow-forms-management/submissions",
+      "kinds": [
+        "refusal rendered as empty"
+      ],
+      "audit": "L2 (DataGrid renders a failed load as \"No data available\"; lane NS-GRID)",
+      "reason": "refusal rendered as empty (\"No data available\") after a 403"
+    },
+    {
+      "persona": "restricted",
+      "route": "/workflow-forms-management/submissions/[id]",
+      "kinds": [
+        "still loading"
+      ],
+      "audit": "row 18 (submission page skeletons forever; lane NS-BOUNDARIES)",
+      "reason": "still loading after 15s: skeleton in \"Submission\""
+    }
+  ]
+}

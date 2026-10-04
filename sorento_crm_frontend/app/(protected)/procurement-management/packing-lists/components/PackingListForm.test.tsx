@@ -155,3 +155,24 @@ describe('PackingListForm - a save keeps the lines with their factory', () => {
     });
   });
 });
+
+describe('PackingListForm - regions (review round 1)', () => {
+  it('sends the record\'s regions back on Update', async () => {
+    state.packingList = { ...mixedContainer(), regions: ['east'] };
+    render(<PackingListForm packingListId="pl-1" />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Update' }));
+
+    await waitFor(() => expect(state.update).toHaveBeenCalled());
+    expect(state.update.mock.calls[0][0].data.regions).toEqual(['east']);
+  });
+
+  it('defaults a record with no regions to West only on Update', async () => {
+    render(<PackingListForm packingListId="pl-1" />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Update' }));
+
+    await waitFor(() => expect(state.update).toHaveBeenCalled());
+    expect(state.update.mock.calls[0][0].data.regions).toEqual(['west']);
+  });
+});

@@ -153,6 +153,8 @@ export function PriceFloorsListClient() {
       table={table}
       recordCount={rows.length}
       isLoading={floors.isLoading}
+      error={floors.error}
+      onRetry={() => void floors.refetch()}
       onRowClick={(row: PriceFloorRule) =>
         router.push(`/project-sales/price-floors/${row.id}`)
       }

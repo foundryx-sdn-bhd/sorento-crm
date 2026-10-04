@@ -17,7 +17,7 @@ vi.mock('next/navigation', () => ({
   usePathname: () => '/project-sales/fulfilment-planning',
   // R-J (List is now the default view): every spec here exercises the GRID matrix, so
   // `?view=grid` is seeded rather than clicking the Grid button in each test.
-  useSearchParams: () => new URLSearchParams('view=grid'),
+  useSearchParams: () => new URLSearchParams('view=grid&scope=all'),
 }));
 
 vi.mock('@/lib/listing-column-preferences/useListingColumnPreferences', () => ({
@@ -30,6 +30,7 @@ vi.mock('@/lib/listing-column-preferences/useListingColumnPreferences', () => ({
 const getPlanningBoard = vi.fn();
 const confirmSupply = vi.fn();
 const confirmMany = vi.fn();
+const previewConfirmMany = vi.fn();
 
 vi.mock('../../_shared/services/fulfilmentPlanningService', () => ({
   getPlanningBoard: (...args: unknown[]) => getPlanningBoard(...args),
@@ -40,6 +41,7 @@ vi.mock('../../_shared/services/fulfilmentPlanningService', () => ({
   getSupply: vi.fn(),
   confirmSupply: (...args: unknown[]) => confirmSupply(...args),
   confirmMany: (...args: unknown[]) => confirmMany(...args),
+  previewConfirmMany: (...args: unknown[]) => previewConfirmMany(...args),
   putLineDraft: vi.fn().mockResolvedValue({
     decision: { verdict: 'approved' },
     saved_by: 'Test Planner',
@@ -218,8 +220,47 @@ function renderPanel(
   );
 }
 
+/**
+ * FULFIL-CONFIRM-SCOPE v2: Confirm is only offered after a Preview, so a test that used to press
+ * the confirm dialog now previews first. The default preview answer echoes the lines the body
+ * names (line number read off the fixture's `pl-<so>-<line_no>` ids), with no purchase rows.
+ */
+function defaultPreview(body: {
+  orders: { pso_id: string; lines: { project_line_id: string }[]; rejected_line_ids?: string[] }[];
+}) {
+  return Promise.resolve({
+    results: body.orders.map((order) => ({
+      pso_id: order.pso_id,
+      ok: true,
+      preview: true,
+      decision_revision: 1,
+      lines_confirmed: order.lines.map((line) => ({
+        project_line_id: line.project_line_id,
+        line_no: Number(line.project_line_id.split('-').pop()),
+        item_code: null,
+      })),
+      lines_carried: 0,
+      lines_held_back: [],
+      lines_withdrawn: (order.rejected_line_ids ?? []).map((id) => ({
+        project_line_id: id,
+        line_no: null,
+        item_code: null,
+      })),
+      lines_fulfilled_skipped: 0,
+      inquiry_rows: [],
+      transfers: [],
+    })),
+  });
+}
+
+async function pressPreviewThenConfirm() {
+  await waitFor(() => expect(screen.getByTestId('board-confirm')).toBeEnabled());
+  fireEvent.click(screen.getByTestId('board-confirm'));
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
+  previewConfirmMany.mockImplementation(defaultPreview);
 });
 
 describe('AC-B2: the board loads a batch it names itself, no batch= needed', () => {
@@ -280,8 +321,7 @@ describe('AC-B3: two orders, two batches', () => {
       expect(screen.getByTestId('board-confirm')).toHaveTextContent('Confirm (2)'),
     );
 
-    fireEvent.click(await screen.findByTestId('board-confirm'));
-    fireEvent.click(await screen.findByRole('button', { name: 'Confirm' }));
+    await pressPreviewThenConfirm();
 
     await waitFor(() => expect(confirmMany).toHaveBeenCalledTimes(1));
     const [body] = confirmMany.mock.calls[0];
@@ -348,8 +388,7 @@ describe('AC-B6: an applied batch skips only its own order', () => {
       expect(screen.getByTestId('board-confirm')).toHaveTextContent('Confirm (2)'),
     );
 
-    fireEvent.click(await screen.findByTestId('board-confirm'));
-    fireEvent.click(await screen.findByRole('button', { name: 'Confirm' }));
+    await pressPreviewThenConfirm();
 
     await waitFor(() => expect(confirmMany).toHaveBeenCalledTimes(1));
     const [body] = confirmMany.mock.calls[0];
@@ -430,8 +469,7 @@ describe('B1: the confirm-all body never lets a body-level batch_id contradict a
       expect(screen.getByTestId('board-confirm')).toHaveTextContent('Confirm (2)'),
     );
 
-    fireEvent.click(await screen.findByTestId('board-confirm'));
-    fireEvent.click(await screen.findByRole('button', { name: 'Confirm' }));
+    await pressPreviewThenConfirm();
 
     await waitFor(() => expect(confirmMany).toHaveBeenCalledTimes(1));
     const [body] = confirmMany.mock.calls[0];
@@ -500,8 +538,7 @@ describe('S1: a URL-applied batch and a board-pending batch on the same order', 
       expect(screen.getByTestId('board-confirm')).toHaveTextContent('Confirm (1)'),
     );
 
-    fireEvent.click(await screen.findByTestId('board-confirm'));
-    fireEvent.click(await screen.findByRole('button', { name: 'Confirm' }));
+    await pressPreviewThenConfirm();
 
     await waitFor(() => expect(confirmMany).toHaveBeenCalledTimes(1));
     const [body] = confirmMany.mock.calls[0];
@@ -732,8 +769,7 @@ describe("S4: a covered line's staged reject on a batched order does not ride al
       expect(screen.getByTestId('board-confirm')).toHaveTextContent('Confirm (1)'),
     );
 
-    fireEvent.click(screen.getByTestId('board-confirm'));
-    fireEvent.click(await screen.findByRole('button', { name: 'Confirm' }));
+    await pressPreviewThenConfirm();
 
     await waitFor(() => expect(confirmMany).toHaveBeenCalledTimes(1));
     const [body] = confirmMany.mock.calls[0];
@@ -769,8 +805,7 @@ describe("S4: a covered line's staged reject on a batched order does not ride al
       expect(screen.getByTestId('board-confirm')).toHaveTextContent('Confirm (1)'),
     );
 
-    fireEvent.click(screen.getByTestId('board-confirm'));
-    fireEvent.click(await screen.findByRole('button', { name: 'Confirm' }));
+    await pressPreviewThenConfirm();
 
     await waitFor(() => expect(confirmMany).toHaveBeenCalledTimes(1));
 

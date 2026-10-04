@@ -45,7 +45,11 @@ export default function MemberBrandEditor({
   userId: string;
 }) {
   const { data: assigned = EMPTY, isLoading } = useMemberBrands(teamId, userId);
-  const { data: catalog = EMPTY_CATALOG } = useBrandSelectQuery();
+  const {
+    data: catalog = EMPTY_CATALOG,
+    error: catalogError,
+    refetch: refetchCatalog,
+  } = useBrandSelectQuery();
   const setBrands = useSetMemberBrands(teamId, userId);
 
   const [open, setOpen] = useState(false);
@@ -134,6 +138,8 @@ export default function MemberBrandEditor({
               value={draft}
               onChange={setDraft}
               options={options}
+              loadError={catalogError}
+              onRetry={() => void refetchCatalog()}
               placeholder="All brands"
               emptyMessage="No matching brand."
               disabled={setBrands.isPending}

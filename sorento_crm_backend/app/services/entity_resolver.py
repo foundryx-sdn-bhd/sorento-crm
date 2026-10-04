@@ -19,10 +19,14 @@ Design notes
 """
 from __future__ import annotations
 
+import collections
+import copy
+import functools
 import logging
 import re
 import time
 import uuid
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any, Callable, Iterable, Optional
@@ -30,7 +34,7 @@ from typing import Any, Callable, Iterable, Optional
 from functools import reduce
 from operator import add
 
-from sqlalchemy import and_, case, func, or_, text
+from sqlalchemy import and_, case, func, or_, text, true
 from sqlalchemy.orm import Session
 
 from app.models.base import UNSET, get_company_scope
@@ -1370,8 +1374,19 @@ def _probe_transporter(db: Session, tokens: list[str]) -> dict[str, list[Resolve
     return result
 
 
-def _probe_inbound_shipment(db: Session, tokens: list[str]) -> dict[str, list[ResolvedEntity]]:
-    """Exact match across shipment_number / container / BOL / SO ref / invoice."""
+def _region_overlap_clause(regions):
+    """Shipment serves one of `regions` (packing list regions); None = no filter."""
+    if regions is None:
+        return true()
+    return InboundShipment.regions.overlap(sorted(regions))
+
+
+def _probe_inbound_shipment(
+    db: Session, tokens: list[str], regions=None
+) -> dict[str, list[ResolvedEntity]]:
+    """Exact match across shipment_number / container / BOL / SO ref / invoice.
+
+    `regions` (a contact's packing list regions) hides shipments outside them; None = all."""
     result: dict[str, list[ResolvedEntity]] = {t: [] for t in tokens}
     if not tokens:
         return result
@@ -1403,6 +1418,7 @@ def _probe_inbound_shipment(db: Session, tokens: list[str]) -> dict[str, list[Re
                 _ws_insensitive_lower(InboundShipment.invoice_number).in_(normalized),
             ),
             InboundShipment.shipment_status != _DRAFT_SHIPMENT_STATUS,
+            _region_overlap_clause(regions),
         )
         .all()
     )
@@ -1932,7 +1948,9 @@ def _prefix_probe_customer_order(db: Session, token: str) -> list[ResolvedEntity
     ]
 
 
-def _prefix_probe_inbound_shipment(db: Session, token: str) -> list[ResolvedEntity]:
+def _prefix_probe_inbound_shipment(
+    db: Session, token: str, regions=None
+) -> list[ResolvedEntity]:
     rows = (
         db.query(
             InboundShipment.id,
@@ -1952,6 +1970,7 @@ def _prefix_probe_inbound_shipment(db: Session, token: str) -> list[ResolvedEnti
                 _norm_prefix(InboundShipment.invoice_number, token),
             ),
             InboundShipment.shipment_status != _DRAFT_SHIPMENT_STATUS,
+            _region_overlap_clause(regions),
         )
         .limit(PREFIX_LIMIT)
         .all()
@@ -2676,6 +2695,7 @@ def _tier2_fuzzy_lookup(
     db: Session,
     token: str,
     allowed_entity_types: Optional[frozenset[str]] = None,
+    regions=None,
 ) -> list[ResolvedEntity]:
     """Run Tier-2 prefix probes for a single token and return combined candidates.
 
@@ -2687,7 +2707,7 @@ def _tier2_fuzzy_lookup(
         if allowed_entity_types is not None and produces.isdisjoint(allowed_entity_types):
             continue
         try:
-            combined.extend(probe(db, token))
+            combined.extend(_memo_tier2(probe, db, token, regions))
         except Exception:
             logger.exception("Tier-2 probe %s failed for token=%s", probe.__name__, token)
     return combined
@@ -2732,7 +2752,9 @@ def _chat_visible_product_ids(db: Session, product_ids: Iterable[str]) -> set[st
     The trigram and embedding tiers read raw SQL over tables the predicate does
     not join, so they re-check their product hits here through the ORM - one
     bounded IN query, company-scoped like every other product read - instead of
-    each carrying a hand-written copy of the rule.
+    each carrying a hand-written copy of the rule. The same ORM read carries the contact's
+    brand scope (the session criterion, CONTACT-BRAND-SCOPE), so an out-of-scope id is
+    dropped here too.
     """
     ids = [str(p) for p in product_ids if p]
     if not ids:
@@ -2761,7 +2783,7 @@ def _tier3_embedding_lookup(
         return []
 
     try:
-        query_vec = _embed_text_chunks([token])[0]
+        query_vec = _memo_embedding(token, _embed_text_chunks)
     except Exception:
         logger.exception("Tier-3 query embedding failed for token=%s", token)
         return []
@@ -4725,6 +4747,106 @@ def _apply_entity_pins(
             raise EntityPinMismatch(orig_key, raw_pin)
 
 
+# --------------------------------------------------------------------------- #
+# Per-request memo
+# --------------------------------------------------------------------------- #
+# One resolve request can ask the same question of the database several times: the
+# cross-type expansion re-runs the Tier-1 / Tier-2 probes the tiers above it just ran,
+# and `references._resolve_input`'s all-types fallback runs a token the primary pass
+# could not resolve through the whole pipeline again - embedding it a second time, an
+# OpenAI round trip. Measured (CHAT-SLOW-MISS, 4 Oct 2026): one missing code in a
+# three-code stock ask was probed three times and embedded twice in one request.
+#
+# The memo holds each (probe, token) answer and each query vector for the life of ONE
+# request (`resolve_memo()`), and hands back copies: callers mutate what they get
+# (`match_tier`, company attribution). It never outlives the request, so it cannot
+# serve a stale row.
+_RESOLVE_MEMO: ContextVar[Optional[dict]] = ContextVar("entity_resolver_memo", default=None)
+
+
+class resolve_memo:
+    """Share probe answers across every resolve pass inside this block. Nests."""
+
+    def __enter__(self):
+        self._token = _RESOLVE_MEMO.set({}) if _RESOLVE_MEMO.get() is None else None
+        return self
+
+    def __exit__(self, *exc):
+        if self._token is not None:
+            _RESOLVE_MEMO.reset(self._token)
+        return False
+
+
+def _with_resolve_memo(fn):
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        with resolve_memo():
+            return fn(*args, **kwargs)
+
+    return wrapper
+
+
+def _memo_key(probe, token: str, regions) -> tuple:
+    return (probe, token, None if regions is None else frozenset(regions))
+
+
+def _memo_tier1(probe, db: Session, tokens: list[str], regions) -> dict[str, list[ResolvedEntity]]:
+    """`probe(db, tokens)` (Tier-1, batched), asking the database only for tokens it
+    has not already answered for in this request."""
+    memo = _RESOLVE_MEMO.get()
+    if memo is None:
+        return _call_tier1(probe, db, tokens, regions)
+    todo = [t for t in tokens if _memo_key(probe, t, regions) not in memo]
+    if todo:
+        fresh = _call_tier1(probe, db, todo, regions)
+        # A batch maps its rows back by NORMALISED code, so of two spellings of one code
+        # ("SRT-5764", "srt5764") only one gets the row. Asked alone, each would find it:
+        # such a token's batched answer is not its answer, so it is not remembered.
+        folded = collections.Counter(_alnum_casefold(t) for t in todo)
+        for t in todo:
+            if folded[_alnum_casefold(t)] == 1:
+                memo[_memo_key(probe, t, regions)] = copy.deepcopy(fresh.get(t, []))
+    out: dict[str, list[ResolvedEntity]] = {}
+    for t in tokens:
+        key = _memo_key(probe, t, regions)
+        out[t] = copy.deepcopy(memo[key]) if key in memo else fresh.get(t, [])
+    return out
+
+
+def _call_tier1(probe, db: Session, tokens: list[str], regions) -> dict[str, list[ResolvedEntity]]:
+    if probe is _probe_inbound_shipment:
+        return probe(db, tokens, regions=regions)
+    return probe(db, tokens)
+
+
+def _memo_tier2(probe, db: Session, token: str, regions) -> list[ResolvedEntity]:
+    """`probe(db, token)` (Tier-2, one token), once per request."""
+    memo = _RESOLVE_MEMO.get()
+    key = _memo_key(probe, token, regions)
+    if memo is None or key not in memo:
+        hits = (
+            probe(db, token, regions=regions)
+            if probe is _prefix_probe_inbound_shipment
+            else probe(db, token)
+        )
+        if memo is None:
+            return hits
+        memo[key] = copy.deepcopy(hits)
+    return copy.deepcopy(memo[key])
+
+
+def _memo_embedding(token: str, embed) -> list[float]:
+    """The query vector for `token`, embedded once per request."""
+    memo = _RESOLVE_MEMO.get()
+    key = ("embedding", token)
+    if memo is None:
+        return embed([token])[0]
+    if key not in memo:
+        memo[key] = list(embed([token])[0])
+    return memo[key]
+
+
+@_with_resolve_memo
 def resolve_references(
     db: Session,
     query_or_tokens: str | list[str],
@@ -4737,8 +4859,12 @@ def resolve_references(
     domain_hint: Optional[str] = None,
     entity_pins: Optional[dict[str, str]] = None,
     raw_tokens: Optional[list[str]] = None,
+    regions=None,
 ) -> ResolutionResult:
     """Main entry point.
+
+    `regions` (a contact's packing list regions) hides inbound shipments outside them from the
+    exact and prefix probes; None = no filter.
 
     Runs three tiers in order, stopping per-token as soon as a tier yields a match:
 
@@ -4854,7 +4980,7 @@ def resolve_references(
             else:
                 probe_tokens = tokens
             try:
-                hits = probe(db, probe_tokens)
+                hits = _memo_tier1(probe, db, probe_tokens, regions)
             except Exception:
                 logger.exception("Tier-1 probe %s failed", probe.__name__)
                 continue
@@ -4902,7 +5028,9 @@ def resolve_references(
                     ambiguous_tokens.add(tok)
             if per_token[tok]:
                 continue
-            candidates = _tier2_fuzzy_lookup(db, tok, allowed_entity_types=tok_allowed)
+            candidates = _tier2_fuzzy_lookup(
+                db, tok, allowed_entity_types=tok_allowed, regions=regions
+            )
             if _scope_attachment_types and any(
                 c.entity_type == "attachment_type" for c in candidates
             ):
@@ -5006,7 +5134,7 @@ def resolve_references(
                     # fallback path clears `allowed` so this is a no-op there.
                     continue
                 try:
-                    hits = probe(db, [tok]).get(tok, [])
+                    hits = _memo_tier1(probe, db, [tok], regions).get(tok, [])
                 except Exception:
                     logger.exception("Cross-type tier-1 probe %s failed", probe.__name__)
                     continue
@@ -5025,7 +5153,7 @@ def resolve_references(
                     if allowed is not None and produces.isdisjoint(allowed):
                         continue
                     try:
-                        hits = probe(db, tok)
+                        hits = _memo_tier2(probe, db, tok, regions)
                     except Exception:
                         logger.exception("Cross-type tier-2 probe %s failed", probe.__name__)
                         continue
@@ -5143,6 +5271,9 @@ def resolve_references(
         ][:_ALTERNATIVES_CAP]
 
     _apply_company_scope(db, resolutions)
+    if regions is not None:
+        # Tier 3 (embedding) and any raw tier are not region aware.
+        _drop_hidden_shipments(db, resolutions, regions)
 
     # Entity pins run LAST, against the token's own SCOPED matches - see
     # `_apply_entity_pins` for the single-rule contract.
@@ -5228,6 +5359,21 @@ def _dedupe_preserve_order(values: Iterable[Optional[str]]) -> list[str]:
         seen.add(key)
         out.append(s)
     return out
+
+
+def _drop_out_of_scope_product_hits(db: Session, hits: list[ResolvedEntity]) -> list[ResolvedEntity]:
+    """CONTACT-BRAND-SCOPE: the phrase search reads embedding rows with raw SQL, so a product
+    hit outside the session's brand scope is dropped here by one ORM re-check (the session
+    criterion hides the product row). An unscoped session returns `hits` untouched."""
+    from app.models.base import get_brand_scope
+
+    if not get_brand_scope(db):
+        return hits
+    codes = [h.canonical_code for h in hits if h.entity_type == "product" and h.canonical_code]
+    if not codes:
+        return hits
+    seen = {str(c) for (c,) in db.query(Product.product_code).filter(Product.product_code.in_(codes)).all()}
+    return [h for h in hits if h.entity_type != "product" or str(h.canonical_code) in seen]
 
 
 RAG_MIN_SIMILARITY = 0.20
@@ -5356,6 +5502,8 @@ def _rag_resolve_phrase(
             )
         )
 
+    out = _drop_out_of_scope_product_hits(db, out)
+
     # Substring re-rank: embedding similarity on short product/customer codes is
     # noisy - the top-K above similarity threshold is often a mix of relevant
     # and completely unrelated codes that happen to share token shape. When ANY
@@ -5374,12 +5522,42 @@ def _rag_resolve_phrase(
     return out
 
 
+def _drop_hidden_shipments(db: Session, aggregated: list, regions) -> None:
+    """Remove every inbound_shipment match (and alternative) this contact's `regions` do not
+    serve. Keyed on the shipment uuid; a match with no uuid is dropped (fail closed)."""
+    ids = {
+        str(m.uuid)
+        for tr in aggregated
+        for m in list(tr.matches) + list(getattr(tr, "alternatives", None) or [])
+        if m.entity_type == "inbound_shipment" and m.uuid
+    }
+    visible = set()
+    if ids:
+        visible = {
+            str(i)
+            for (i,) in db.query(InboundShipment.id)
+            .filter(InboundShipment.id.in_(ids), _region_overlap_clause(regions))
+            .all()
+        }
+
+    def _keep(m) -> bool:
+        return m.entity_type != "inbound_shipment" or (m.uuid is not None and str(m.uuid) in visible)
+
+    for tr in aggregated:
+        tr.matches = [m for m in tr.matches if _keep(m)]
+        if getattr(tr, "alternatives", None):
+            tr.alternatives = [m for m in tr.alternatives if _keep(m)]
+        if len(tr.matches) < 2:
+            tr.ambiguous = False
+
+
 def resolve_entities_to_filters(
     db: Session,
     entities: Optional[list[str]],
     *,
     allowed_entity_types: Iterable[str],
     max_candidates: int = 8,
+    regions=None,
 ) -> EntityFilterBuckets:
     """Resolve a free-text `entities` bag via pure-RAG top-k vector search.
 
@@ -5417,7 +5595,7 @@ def resolve_entities_to_filters(
         #      Catches semantic phrasings ("fira ventures" → "FIRA VENTURE
         #      ENTERPRISE SDN BHD") that pure substring would miss.
         substring_hits = _tier2_fuzzy_lookup(
-            db, phrase, allowed_entity_types=allowed_set
+            db, phrase, allowed_entity_types=allowed_set, regions=regions
         )
         if substring_hits:
             ambiguous = len(substring_hits) > 1
@@ -5469,6 +5647,8 @@ def resolve_entities_to_filters(
     # tiers above are raw SQL, so without this a list tool would filter stock /
     # orders by another company's canonical codes.
     _apply_company_scope(db, aggregated)
+    if regions is not None:
+        _drop_hidden_shipments(db, aggregated, regions)
 
     result = ResolutionResult(
         tokens=[tr.token for tr in aggregated],

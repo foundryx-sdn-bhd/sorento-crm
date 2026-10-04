@@ -24,6 +24,7 @@ from typing import Any, Mapping
 
 from app.services.chatbot import jsc
 from app.services.chatbot.tail.reply_ladder import sanitize_em_dash, seal, strip_undefined
+from app.services.chatbot.turn.task import REFER_TO_SALESMAN
 
 # Earliest wins, matched case-insensitively.
 MARKERS = (
@@ -32,6 +33,9 @@ MARKERS = (
     "Did you mean",  # D1 single-token code mode and D1 multi-token
     "Here are the closest matches:",  # D1 numbered mode and D2 numbered mode
     "Would you like me to escalate",  # catch-all: the frozen phrase, on every offer branch
+    # ESCALATION-CONTROL (owner ruling Q2): a blocked contact's miss carries the salesman
+    # line where the offer would be, and the block goes above it the same way.
+    REFER_TO_SALESMAN,
 )
 
 

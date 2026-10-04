@@ -38,7 +38,7 @@ pool rung), `PLAN-so-book-diff-replanning.md` (planning changes), `PLAN-project-
 7. Explanatory sentences ("Borrowed x for SOxx line xx; xxx goes short by xxx", "242 lines ahead
    wanting ...") go into tooltips.
 8. Reserve/borrow must see the whole ownership group: BRW-BB, MWH-BB, DC1-BB are one "BB", owned
-   by the BB salespersons (TERA, JEREMY, CINDY LEE, JAY, BRENDON, ERIC NG, JENNIFER, JOHNSON,
+   by the BB salespersons (TERA, JEREMY, CONTACT W, JAY, BRENDON, CONTACT Y, CONTACT O, CONTACT AA,
    CASSANDRA). Cross-location borrow only for small quantities; same-location borrow from other
    SOs is the norm; and the donor list must surface the SAME AGENT's other SOs (even higher
    ranked), because the agent can authorise CS to move stock between her own orders.

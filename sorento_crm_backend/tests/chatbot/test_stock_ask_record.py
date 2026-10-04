@@ -78,11 +78,13 @@ def test_ac_sa501_a_live_turn_writes_one_open_row_per_answered_product(
     reply = out.reply["text"]
 
     rows = _by_code(session_factory)
-    assert set(rows) == {"ZZTSA4-BIG", "ZZTSA4-INS", "ZZTSA4-INC", "ZZTSA4-NOI"}
+    # CUSTOMER-ASKS-REFER-ONLY (1 Oct 2026): B3's line does not refer the dealer to the
+    # salesman, so it is answered but not a Customer ask.
+    assert set(rows) == {"ZZTSA4-BIG", "ZZTSA4-INS", "ZZTSA4-NOI"}
+    assert "ZZTSA4-INC x 150: ❌ ETA 19/10/2026." in reply
     expected = {
         "ZZTSA4-BIG": ("too_big", 300, f"ZZTSA4-BIG x 300: {TOO_BIG}"),
         "ZZTSA4-INS": ("in_stock", 50, f"ZZTSA4-INS x 50: {IN_STOCK}"),
-        "ZZTSA4-INC": ("incoming", 150, "ZZTSA4-INC x 150: no stock at the moment, ETA 19/10/2026."),
         "ZZTSA4-NOI": ("no_incoming", 20, f"ZZTSA4-NOI x 20: {NO_INCOMING}"),
     }
     for code, (branch, qty, line) in expected.items():
@@ -135,7 +137,7 @@ def test_ac_sa501_a_chat_console_turn_writes_console_rows_on_the_asks_tab_and_po
     assert out.error is None, out.error
 
     rows = _by_code(session_factory)
-    assert set(rows) == {"ZZTSA4-BIG", "ZZTSA4-INS", "ZZTSA4-NOI", "ZZTSA4-INC"}
+    assert set(rows) == {"ZZTSA4-BIG", "ZZTSA4-INS", "ZZTSA4-NOI"}
     for code, row in rows.items():
         assert row.source == "console", code
         assert row.customer_id == dealer.customer_id
@@ -148,10 +150,10 @@ def test_ac_sa501_a_chat_console_turn_writes_console_rows_on_the_asks_tab_and_po
     db.info["company_scope"] = None
     tab = stock_ask_service.list_for_customer(db, dealer.customer_id, page=1, limit=50)
     assert {r.source for r in tab["data"]} == {"console"}
-    assert len(tab["data"]) == 4
+    assert len(tab["data"]) == 3
     portal = stock_ask_service.list_for_agent(db, agent.id, page=1, limit=50)
     assert {r.source for r in portal["data"]} == {"console"}
-    assert len(portal["data"]) == 4
+    assert len(portal["data"]) == 3
 
 
 def test_ac_sa501_a_console_reply_is_never_sent_to_whatsapp(
@@ -180,7 +182,7 @@ def test_ac_sa501_toggle_off_still_records_every_ask(session_factory, monkeypatc
     dealer = LiveDealer(session_factory, monkeypatch, stub_access, notify=False)
     dealer.ask_all_four()
     rows = _by_code(session_factory)
-    assert len(rows) == 4
+    assert len(rows) == 3
     assert dealer.jobs == []
 
 
@@ -188,7 +190,7 @@ def test_ac_sa502_reasons_at_write(session_factory, monkeypatch, stub_access):
     dealer = LiveDealer(session_factory, monkeypatch, stub_access, notify=False)
     dealer.ask_all_four()
     rows = _by_code(session_factory)
-    assert rows["ZZTSA4-INC"].notify_skip_reason == "not_notified_branch"
+    assert "ZZTSA4-INC" not in rows
     for code in ("ZZTSA4-BIG", "ZZTSA4-INS", "ZZTSA4-NOI"):
         assert rows[code].notify_skip_reason == "toggle_off", code
     assert all(r.notified_agent is False for r in rows.values())
@@ -200,7 +202,7 @@ def test_ac_sa502_b3_is_not_notified_even_with_the_toggle_on(
     dealer = LiveDealer(session_factory, monkeypatch, stub_access, notify=True)
     dealer.ask_all_four()
     rows = _by_code(session_factory)
-    assert rows["ZZTSA4-INC"].notify_skip_reason == "not_notified_branch"
+    assert "ZZTSA4-INC" not in rows
     assert {f["ask_id"] for f in dealer.notified} == {
         rows[c].id for c in ("ZZTSA4-BIG", "ZZTSA4-INS", "ZZTSA4-NOI")
     }
@@ -219,7 +221,7 @@ def test_ac_sa502_a_sent_notification_flips_notified_agent(
     for code in ("ZZTSA4-BIG", "ZZTSA4-INS", "ZZTSA4-NOI"):
         assert rows[code].notified_agent is True, code
         assert rows[code].notify_skip_reason is None, code
-    assert rows["ZZTSA4-INC"].notified_agent is False
+    assert "ZZTSA4-INC" not in rows
     assert len(_FakeRespond.sent) == 3
 
 
@@ -257,11 +259,10 @@ def test_ac_sa503_a_contact_with_no_customer_still_gets_a_row(
     dealer = LiveDealer(session_factory, monkeypatch, stub_access, notify=True, with_customer=False)
     dealer.ask_all_four()
     rows = _by_code(session_factory)
-    assert len(rows) == 4
+    assert len(rows) == 3
     for code in ("ZZTSA4-BIG", "ZZTSA4-INS", "ZZTSA4-NOI"):
         assert rows[code].customer_id is None
         assert rows[code].notify_skip_reason == "no_customer", code
-    assert rows["ZZTSA4-INC"].notify_skip_reason == "not_notified_branch"
     assert dealer.jobs == []
 
 
@@ -290,7 +291,7 @@ def test_ac_sa512_deleting_a_customer_removes_its_asks(
 ):
     dealer = LiveDealer(session_factory, monkeypatch, stub_access, notify=False)
     dealer.ask_all_four()
-    assert len(_asks(session_factory)) == 4
+    assert len(_asks(session_factory)) == 3
     db = session_factory()
     db.info["company_scope"] = None
     db.execute(text("DELETE FROM respond_contact_customers WHERE customer_id = :c"), {"c": dealer.customer_id})
@@ -358,13 +359,15 @@ def test_security_the_dealer_name_is_one_short_line_in_the_agent_message(
         assert "x" * 101 not in sent
 
 
-def test_ac_sa501_a_reply_still_owing_a_quantity_records_and_notifies_nothing(
+def test_avail_mode_replies_a_mixed_reply_records_the_answered_ask_now_and_the_owed_one_once_later(
     session_factory, monkeypatch, stub_access
 ):
-    """Reviewer blocker (PR #1333): "ZZTSA4-INS 50 and ZZTSA4-BIG" is answered with a
-    quantity question, not with INS's line, so INS is not an answered ask yet. It is
-    recorded (once) on the turn that answers it."""
-    from tests.chatbot._r9_engine_console import product, stock
+    """AVAIL-MODE-REPLIES rule 5 (owner, 2 Oct 2026) supersedes the PR #1333 rule this test
+    used to pin: "ZZTSA4-INS 50 and ZZTSA4-BIG" now answers INS at once beside the quantity
+    question for BIG, so INS is an ask on THIS turn. BIG, still owed a quantity, is no row
+    at all (not a stray `referred` one) until the turn that answers it, and then exactly
+    one. Reviewer B2: three rows were written across the two turns."""
+    from tests.chatbot._r9_engine_console import product, reply, stock
 
     dealer = LiveDealer(session_factory, monkeypatch, stub_access, notify=True)
     out = dealer.say(
@@ -372,9 +375,17 @@ def test_ac_sa501_a_reply_still_owing_a_quantity_records_and_notifies_nothing(
         stock(product("ZZTSA4-INS", 50), product("ZZTSA4-BIG")),
     )
     assert out.error is None, out.error
-    assert "ZZTSA4-INS x 50:" not in (out.reply or {}).get("text", "")
-    assert _asks(session_factory) == []
-    assert dealer.notified == []
+    assert "ZZTSA4-INS x 50:" in (out.reply or {}).get("text", "")
+    assert [(a.product_code, a.branch, a.quantity) for a in _asks(session_factory)] == [
+        ("ZZTSA4-INS", "in_stock", 50)
+    ]
+
+    out = dealer.say("300", reply(demand_qty=300))
+    assert out.error is None, out.error
+    assert sorted((a.product_code, a.branch, a.quantity) for a in _asks(session_factory)) == [
+        ("ZZTSA4-BIG", "too_big", 300),
+        ("ZZTSA4-INS", "in_stock", 50),
+    ]
 
 
 def test_review_a_failed_enqueue_is_written_on_the_row(session_factory, monkeypatch, stub_access):

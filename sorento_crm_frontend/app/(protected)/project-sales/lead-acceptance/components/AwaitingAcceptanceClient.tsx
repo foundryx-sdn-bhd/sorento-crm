@@ -325,9 +325,11 @@ export function AwaitingAcceptanceClient() {
                           value={ownerFilter}
                           onChange={setOwnerFilter}
                           clearable
+                          loadError={users.error}
+                          onRetry={() => void users.refetch()}
                           options={(users.data ?? []).map((user) => ({
                             value: user.id,
-                            label: user.name || user.email || 'Unnamed user',
+                            label: user.name || 'Unnamed user',
                           }))}
                           placeholder="Anyone"
                         />

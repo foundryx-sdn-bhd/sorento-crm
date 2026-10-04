@@ -218,7 +218,11 @@ const UserProfileEditDialog = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- form is stable; guard prevents loops
   }, [open, isSuperadmin, user?.id, companiesFetched, userCompanies]);
 
-  const { data: superiorUsers } = useQuery({
+  const {
+    data: superiorUsers,
+    error: superiorUsersError,
+    refetch: refetchSuperiorUsers,
+  } = useQuery({
     queryKey: ['users-select'],
     queryFn: async () => {
       const response = await apiFetch('/api/user-management/users/select');
@@ -542,6 +546,8 @@ const UserProfileEditDialog = ({
                   placeholder="Copy roles from another user (optional)"
                   emptyMessage="No user found."
                   triggerClassName="w-full"
+                  loadError={superiorUsersError}
+                  onRetry={() => void refetchSuperiorUsers()}
                   options={(superiorUsers || [])
                     .filter((u: { id: string }) => u.id !== user?.id)
                     .map((u: { id: string; name?: string | null; email: string }) => ({

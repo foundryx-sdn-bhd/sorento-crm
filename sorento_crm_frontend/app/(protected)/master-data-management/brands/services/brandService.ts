@@ -3,9 +3,9 @@ import type { Brand, BrandFormData } from '../types/brand.types';
 import type { DataGridApiFetchParams, DataGridApiResponse } from '@/components/ui/data-grid';
 
 export async function getBrands(
-  params: DataGridApiFetchParams,
+  params: DataGridApiFetchParams & { companyScope?: 'grants' },
 ): Promise<DataGridApiResponse<Brand>> {
-  const { pageIndex, pageSize, sorting, searchQuery } = params;
+  const { pageIndex, pageSize, sorting, searchQuery, companyScope } = params;
   const sortField = sorting?.[0]?.id || '';
   const sortDirection = sorting?.[0]?.desc ? 'desc' : 'asc';
 
@@ -14,6 +14,7 @@ export async function getBrands(
     limit: String(pageSize),
     ...(sortField ? { sort: sortField, dir: sortDirection } : {}),
     ...(searchQuery ? { query: searchQuery } : {}),
+    ...(companyScope ? { company_scope: companyScope } : {}),
   });
 
   const response = await apiFetch(`/api/v1/master-data/brands?${queryParams.toString()}`);

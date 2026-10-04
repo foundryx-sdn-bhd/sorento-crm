@@ -269,7 +269,7 @@ def test_ac07_mint_session_default_auth_method_is_password():
         user = User(id=str(uuid.uuid4()), email=f"{unique_code('m1')}@x.com".lower(), name="M", status="ACTIVE")
         db.add(user)
         db.commit()
-        row = mint_session(db, user.id, remember=True)
+        row = mint_session(db, user.id)
         assert row.auth_method == "password"
 
 
@@ -281,7 +281,7 @@ def test_ac07_mint_session_accepts_each_contract_value(method: str):
         user = User(id=str(uuid.uuid4()), email=f"{unique_code('m2')}@x.com".lower(), name="M", status="ACTIVE")
         db.add(user)
         db.commit()
-        row = mint_session(db, user.id, remember=True, auth_method=method)
+        row = mint_session(db, user.id, auth_method=method)
         assert row.auth_method == method
 
 
@@ -293,7 +293,7 @@ def test_ac07_mint_session_unknown_auth_method_raises_value_error():
         db.add(user)
         db.commit()
         with pytest.raises(ValueError):
-            mint_session(db, user.id, remember=True, auth_method="carrier_pigeon")
+            mint_session(db, user.id, auth_method="carrier_pigeon")
 
 
 def test_ac07_login_route_creates_session_with_auth_method_password():

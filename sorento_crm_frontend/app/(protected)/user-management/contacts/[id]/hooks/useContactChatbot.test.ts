@@ -43,6 +43,7 @@ const SAVED_PROFILE = {
   notify_salesman: true,
   packing_list_allowed: false,
   eta_offset_applied: true,
+  escalation_allowed: true,
 };
 
 beforeEach(() => {

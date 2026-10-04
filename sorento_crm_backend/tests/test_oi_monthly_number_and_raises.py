@@ -53,6 +53,12 @@ from ._pg_fixture import blank_session
 MARKER = "zzt-oi-monthno"
 MY_TZ = ZoneInfo("Asia/Kuala_Lumpur")
 
+
+def _oi_prefix_now() -> str:
+    """`OI-YYMM-` for today's Malaysia date - the month a header minted now carries."""
+    return datetime.now(timezone.utc).astimezone(MY_TZ).strftime("OI-%y%m-")
+
+
 _MIGRATION_PATH = (
     Path(__file__).resolve().parents[1]
     / "alembic"
@@ -270,20 +276,24 @@ class TestMonthlyNumber:
             db.commit()
 
             service = ProjectOrderInquiryService(db)
+            # `ensure_inquiry` mints off the clock (Malaysia day), so the expected month is
+            # read from the clock too - either side of the call, should it straddle midnight.
+            # Hard-coding "OI-2609-" went red on 1 Oct 2026 (TEST-DATEBOMB-1001).
+            before = _oi_prefix_now()
             header = service.ensure_inquiry(pso, actor_user_id=actor_1)
             db.commit()
-            minted_in_september = header.inquiry_no
-            assert minted_in_september.startswith(
-                "OI-2609-"
-            ), f"expected the dated format, got {minted_in_september!r}"
+            minted = header.inquiry_no
+            assert minted.startswith(
+                (before, _oi_prefix_now())
+            ), f"expected the dated format, got {minted!r}"
 
-            # A reconfirm the following month.
-            header.raised_at = datetime(2026, 9, 5)
+            # A reconfirm the following month: the header now reads as raised last month.
+            header.raised_at = header.raised_at.replace(day=1) - timedelta(days=5)
             db.commit()
             reused = service.ensure_inquiry(pso, actor_user_id=actor_2)
             db.commit()
             assert reused.id == header.id
-            assert reused.inquiry_no == minted_in_september, "never re-minted on reconfirm"
+            assert reused.inquiry_no == minted, "never re-minted on reconfirm"
 
     def test_a_preset_number_survives_a_reconfirm_without_burning_an_october_slot_AC_NO_03(
         self,
@@ -316,12 +326,17 @@ class TestMonthlyNumber:
                 "a reconfirm, even narratively in October, must not touch the number"
             )
 
-            fresh_october_header = _header(
-                db, company_id, raised_at=datetime(2026, 10, 16)
+            # The reconfirm runs on the clock, so a burned slot would be in THIS month: the
+            # fresh header is raised now too, or the guard only bit while today was October.
+            prefix = _oi_prefix_now()
+            fresh_header = _header(
+                db, company_id, raised_at=datetime.now(timezone.utc).replace(tzinfo=None)
             )
             db.commit()
-            assert fresh_october_header.inquiry_no == "OI-2610-0001", (
-                "the reconfirm above must not have consumed an October slot - a burned "
+            assert fresh_header.inquiry_no in (
+                prefix + "0001", _oi_prefix_now() + "0001"
+            ), (
+                "the reconfirm above must not have consumed this month's slot - a burned "
                 "slot would leave this at -0002"
             )
 

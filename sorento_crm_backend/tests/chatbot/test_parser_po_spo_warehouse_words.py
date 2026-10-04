@@ -92,6 +92,7 @@ class TestTheAddendumIsTaught:
 
     def test_the_addendum_stacks_between_escalation_and_memory(self) -> None:
         from app.services.chatbot_parser_prompt import (
+            ACCOUNT_LEDGER_ADDENDUM,
             ESCALATION_CONFIRMATION_ADDENDUM,
             MEMORY_ADDENDUM,
             SEMANTIC_PARSER_PROMPT,
@@ -99,9 +100,12 @@ class TestTheAddendumIsTaught:
 
         _mod, addendum = _prompt()
         assert SEMANTIC_PARSER_PROMPT.endswith(MEMORY_ADDENDUM)
-        before_memory = SEMANTIC_PARSER_PROMPT.removesuffix(MEMORY_ADDENDUM)
+        # ACCOUNT_LEDGER_ADDENDUM (ACCOUNT-LEDGER) now sits between this one and MEMORY.
+        before_memory = SEMANTIC_PARSER_PROMPT.removesuffix(MEMORY_ADDENDUM).removesuffix(
+            ACCOUNT_LEDGER_ADDENDUM
+        )
         assert before_memory.endswith(addendum), (
-            "PO_SPO_WAREHOUSE_ADDENDUM must sit directly before MEMORY_ADDENDUM"
+            "PO_SPO_WAREHOUSE_ADDENDUM must sit directly before ACCOUNT_LEDGER_ADDENDUM"
         )
         assert before_memory.removesuffix(addendum).endswith(ESCALATION_CONFIRMATION_ADDENDUM), (
             "PO_SPO_WAREHOUSE_ADDENDUM must stack directly after ESCALATION_CONFIRMATION_ADDENDUM"

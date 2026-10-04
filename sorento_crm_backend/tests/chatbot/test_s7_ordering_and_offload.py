@@ -14,7 +14,11 @@ carrying `reinject_envelope` (AC-705) exists on the separate, unmerged
 `feat/chatbot-turn-engine-s2b` worktree - that is a different function for a different AC and
 is untouched here; do not assume it lands as part of this file going green.
 
-**The contract this file locks in for the coder** (the plan's prose, made concrete):
+**The contract this file locks in for the coder** (the plan's prose, made concrete).
+SUPERSEDED IN PART by CHATBOT-QUEUE-FIX (1 Oct 2026, `tests/chatbot/test_queue_fix_1oct.py`):
+the shared `running` key, `mark_running` and the stall-grace repair are gone, replaced by a
+per-ticket heartbeat key (`dispatch.alive_key`, `dispatch.start_heartbeat`); a `QueueWait`
+no longer fails the turn, it runs it. The bullets below are the original S7 contract:
 
 * Redis keys, per contact: `chatbot:seq:{contact}` (INCR'd ticket counter, 1h TTL),
   `chatbot:done:{contact}` (last-completed ticket, absent == 0), `chatbot:running:{contact}`
@@ -112,11 +116,14 @@ def _done_key(contact: str) -> str:
 
 
 def _running_key(contact: str) -> str:
+    """Retired by CHATBOT-QUEUE-FIX; kept so the assertions that it is never left set hold."""
     return f"chatbot:running:{contact}"
 
 
 def _clear_contact_keys(client, contact: str) -> None:
     client.delete(_seq_key(contact), _done_key(contact), _running_key(contact))
+    for key in client.scan_iter(f"chatbot:alive:{contact}:*"):
+        client.delete(key)
 
 
 def _envelope_for(contact: str, message_id: str, *, ingress: str = "webhook") -> Envelope:
@@ -262,7 +269,7 @@ class TestOrderingFlagDefaultOffBypassesTickets:
 
         from app.services.chatbot import dispatch  # noqa: F401 - may not exist yet (RED)
 
-        for name in ("contact_ticket", "wait_for_turn", "mark_running", "mark_done"):
+        for name in ("contact_ticket", "start_heartbeat", "wait_for_turn", "mark_done"):
             monkeypatch.setattr(dispatch, name, lambda *a, **k: pytest.fail(
                 f"dispatch.{name} was called with the ordering flag OFF"
             ))
@@ -393,62 +400,64 @@ class TestStalledCounterRepair:
     """AC-710 / H30 / H31."""
 
     def test_stalled_counter_is_repaired(self, redis_client, monkeypatch) -> None:
+        """A predecessor that died holding its ticket is walked past once its liveness
+        lapses (CHATBOT-QUEUE-FIX: per-ticket heartbeat, not a shared `running` key)."""
         from app.services.chatbot import dispatch
 
-        monkeypatch.setattr(dispatch, "STALL_GRACE_SECONDS", 0.2, raising=False)
+        monkeypatch.setattr(dispatch, "ALIVE_TTL_SECONDS", 0.3, raising=False)
+        monkeypatch.setattr(dispatch, "HEARTBEAT_INTERVAL_SECONDS", 0.05, raising=False)
         monkeypatch.setattr(dispatch, "POLL_INTERVAL_SECONDS", 0.02, raising=False)
 
         contact = "ZZT-contact-s7-stall"
         _clear_contact_keys(redis_client, contact)
-        redis_client.set(_seq_key(contact), 2)
-        # Ticket 1's predecessor never marked itself running (or died and its key was
-        # reaped) - `chatbot:running:{contact}` is simply absent from the start.
-        assert redis_client.exists(_running_key(contact)) == 0
-        redis_client.delete(_done_key(contact))
+        dispatch.contact_ticket(redis_client, contact)  # ticket 1: dies, never released
+        ticket = dispatch.contact_ticket(redis_client, contact)
+        beat = dispatch.start_heartbeat(redis_client, contact, ticket)
+        try:
+            started = time.monotonic()
+            dispatch.wait_for_turn(redis_client, contact, ticket=ticket, timeout_s=5)
+            elapsed = time.monotonic() - started
+        finally:
+            beat.stop()
 
-        started = time.monotonic()
-        dispatch.wait_for_turn(redis_client, contact, ticket=2, timeout_s=5)
-        elapsed = time.monotonic() - started
-
-        assert elapsed >= dispatch.STALL_GRACE_SECONDS, (
-            "must wait out the grace window before repairing, not repair instantly"
-        )
         assert elapsed < 2.0, "must not wait anywhere near the full timeout to self-heal"
         assert redis_client.get(_done_key(contact)) == "1", (
-            "the stalled predecessor's ticket must be repaired to done=ticket-1"
+            "the dead predecessor's ticket must be settled to done=ticket-1"
         )
         _clear_contact_keys(redis_client, contact)
 
-    def test_queue_wait_timeout_is_failed_turn(
-        self, real_contacts, stub_engine_seams, monkeypatch, redis_client
+    def test_queue_wait_timeout_runs_the_turn(
+        self, real_contacts, stub_engine_seams, stub_parser, monkeypatch, redis_client
     ) -> None:
+        """CHATBOT-QUEUE-FIX (prod 1 Oct, tickets 2 and 4 of contact 900000081): a
+        predecessor still alive past the cap no longer fails this turn with the generic
+        error. The turn runs, and the trace says it waited out the budget."""
         _enable_ordering(monkeypatch, queue_wait_seconds=0.3)
+        stub_parser()
         from app.services.chatbot import dispatch
 
-        # Keep the stall repair from firing before the (shorter) queue-wait timeout does:
-        # a running predecessor is present for the whole window, so the ONLY way out is
-        # the timeout, never the repair.
-        monkeypatch.setattr(dispatch, "STALL_GRACE_SECONDS", 10.0, raising=False)
         monkeypatch.setattr(dispatch, "POLL_INTERVAL_SECONDS", 0.02, raising=False)
 
         contact = real_contacts("queue-timeout")
         redis_client.set(_seq_key(contact), 1)  # this run's ticket becomes 2
-        redis_client.set(_running_key(contact), 1)  # ticket 1 looks genuinely in progress
+        redis_client.set(dispatch.alive_key(contact, 1), 1, ex=30)  # ticket 1 genuinely alive
         redis_client.delete(_done_key(contact))  # ticket 1 never finishes
 
         result = engine_mod.run_turn(
             _envelope_for(contact, "ZZT-msg-queue-timeout"), session_factory=SessionLocal
         )
 
-        assert result.status == "failed"
-        assert result.stage == "queued"
-        assert [a["kind"] for a in result.actions] == ["send_message"]
-        assert result.actions[0]["text"] == engine_mod.GENERIC_ERROR_REPLY
-
+        assert result.status != "failed", (result.status, result.stage)
+        assert engine_mod.GENERIC_ERROR_REPLY not in [
+            a.get("text") for a in result.actions if a.get("kind") == "send_message"
+        ]
         row = SessionLocal().query(ChatbotTurn).filter(ChatbotTurn.id == result.turn_id).first()
-        assert row is not None, "a queued-timeout must still leave a recorded row, never a 500"
-        assert row.status == "failed"
-        assert row.stage == "queued"
+        assert row is not None
+        queued = [r for r in (row.trace or []) if r.get("stage") == "queued"]
+        assert queued and queued[0]["facts"].get("timed_out") is True, queued
+        # Ticket 2 finished but ticket 1 is still alive: `done` must not pass ticket 1.
+        assert redis_client.get(_done_key(contact)) in (None, "0")
+        redis_client.delete(dispatch.alive_key(contact, 1))
 
 
 class TestFailureReleasesOrdering:

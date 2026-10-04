@@ -1,0 +1,51 @@
+{
+  "status": "ok",
+  "message": null,
+  "basis": "delivered",
+  "customer_name": "ACME HARDWARE SDN BHD [A/C I], BETA TRADING SDN BHD",
+  "customer_count": 2,
+  "product_code": null,
+  "product_codes": [],
+  "channel": null,
+  "channel_shown": false,
+  "location_token": null,
+  "warehouse_codes": [],
+  "date_from": "2026-09-01",
+  "date_to": "2026-09-30",
+  "grain": "month",
+  "total": {
+    "qty": 13,
+    "amount": 1100.0
+  },
+  "periods": [],
+  "group_by": "delivery_order",
+  "rows": [
+    {
+      "rank": 1,
+      "name": "DO-0910",
+      "qty": 5,
+      "amount": 500.0,
+      "date": "2026-09-15",
+      "customer_name": "BETA TRADING SDN BHD"
+    },
+    {
+      "rank": 2,
+      "name": "DO-0905",
+      "qty": 8,
+      "amount": 600.0,
+      "date": "2026-09-05",
+      "customer_name": "ACME HARDWARE SDN BHD [A/C I]"
+    }
+  ],
+  "more": 0,
+  "options": [
+    {
+      "key": "customer",
+      "label": "By customer"
+    },
+    {
+      "key": "product",
+      "label": "By product"
+    }
+  ]
+}

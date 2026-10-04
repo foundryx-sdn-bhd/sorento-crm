@@ -1,0 +1,47 @@
+{
+  "status": "ok",
+  "message": null,
+  "basis": "delivered",
+  "customer_name": "ACME HARDWARE SDN BHD [A/C I], BETA TRADING SDN BHD",
+  "customer_count": 2,
+  "product_code": null,
+  "product_codes": [],
+  "channel": "project",
+  "channel_shown": true,
+  "location_token": "WH-A",
+  "warehouse_codes": [
+    "WH-A"
+  ],
+  "date_from": "2026-07-01",
+  "date_to": "2026-09-30",
+  "grain": "month",
+  "total": {
+    "qty": 20,
+    "amount": 2000.0
+  },
+  "periods": [
+    {
+      "from": "2026-08-01",
+      "to": "2026-08-31",
+      "qty": 20,
+      "amount": 2000.0
+    }
+  ],
+  "group_by": null,
+  "rows": [],
+  "more": 0,
+  "options": [
+    {
+      "key": "customer",
+      "label": "By customer"
+    },
+    {
+      "key": "product",
+      "label": "By product"
+    },
+    {
+      "key": "delivery_order",
+      "label": "Delivery orders"
+    }
+  ]
+}

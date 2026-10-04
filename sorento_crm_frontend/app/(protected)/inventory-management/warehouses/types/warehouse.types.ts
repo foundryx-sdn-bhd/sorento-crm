@@ -5,6 +5,8 @@ export interface Warehouse {
   location: string | null;
   manager_id?: string | null;
   is_active: boolean;
+  /** Set on a `company_scope=grants` read. */
+  company_name?: string | null;
   created_at: Date;
   updated_at: Date | null;
   zones_count?: number;

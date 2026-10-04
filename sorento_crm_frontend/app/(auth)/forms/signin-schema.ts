@@ -10,7 +10,6 @@ export const getSigninSchema = () => {
       .string()
       .min(6, { message: 'Password must be at least 6 characters long.' })
       .min(1, { message: 'Password is required.' }),
-    rememberMe: z.boolean().optional(),
   });
 };
 

@@ -1047,7 +1047,7 @@ property of the box, not a decision the owner makes:
 | `CHATBOT_TURN_ON_WORKER` | `false` | the turn runs on the `chat` RQ queue instead of the API thread; the request still waits for it and answers the same body |
 
 Two more knobs, both with defaults that do not need touching for the promote:
-`CHATBOT_QUEUE_WAIT_SECONDS` (45) and `CHATBOT_TURN_WAIT_SECONDS` (60).
+`CHATBOT_QUEUE_WAIT_SECONDS` (45; 30 and capped since CHATBOT-QUEUE-FIX, 1 Oct 2026) and `CHATBOT_TURN_WAIT_SECONDS` (60).
 
 **Nothing changes in n8n until the owner turns Ordering on.** That is the
 whole cutover: today `sorento-dispatcher` pops one contact per second and serialises the

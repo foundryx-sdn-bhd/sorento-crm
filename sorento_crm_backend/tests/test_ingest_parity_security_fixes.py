@@ -108,9 +108,16 @@ class TestSec1AdoptionPathReceivedGuard:
         is never erased): the surviving AutoCount line must carry the
         group's received quantity FORWARD (D26) rather than reset it -
         `quantity_received` 5, `line_status` open, `receipt_status` pending -
-        and no row on this spo_number may end up with a receipt LOWER than
-        it held before the push. The old assertions (row untouched by id,
-        `received_locked` warning, outcome `updated`) belonged to the
+        and no LIVE row on this spo_number may end up with a receipt LOWER
+        than it held before the push. Revised 2026-10-01 (D33, SPO-XLSX-
+        SUPERSEDE #1411): without a `.delete` grant the superseded row is
+        RETIRED, and its `quantity_received` is zeroed on purpose, because
+        the receipt now lives on the replacement line and a retired row that
+        kept it was counted twice. The receipt is not erased: it is frozen
+        into the retired row's `stated_received`, and the live rows still
+        hold exactly the 5 received, no more and no less. The old assertions
+        (row untouched by id, `received_locked` warning, outcome `updated`)
+        belonged to the
         adopt-in-place ladder this shape no longer takes - see 1(b) for that
         property, now pinned against a spo_number with a ref row present.
         """
@@ -151,7 +158,7 @@ class TestSec1AdoptionPathReceivedGuard:
                     "lines": [
                         {
                             "source_ref": f"DK-{spo_number}-L1",
-                            "product_ref": product_ref,
+                            "product_ref": product_ref, "product_code": product_ref[3:],
                             "qty_ordered": "10",
                             "qty_received": "0",
                         }
@@ -166,8 +173,9 @@ class TestSec1AdoptionPathReceivedGuard:
         rows = (
             db.execute(
                 text(
-                    "SELECT allocated_quantity, quantity_received, line_status, "
-                    "receipt_status, source_ref FROM spo_allocations WHERE spo_number = :n"
+                    "SELECT allocated_quantity, quantity_received, stated_received, "
+                    "line_status, receipt_status, source_ref, retired_at "
+                    "FROM spo_allocations WHERE spo_number = :n"
                 ),
                 {"n": spo_number},
             )
@@ -182,11 +190,27 @@ class TestSec1AdoptionPathReceivedGuard:
         assert line["line_status"] == "open", line
         assert line["receipt_status"] == "pending", line
 
-        for r in rows:
+        live = [r for r in rows if r["retired_at"] is None]
+        retired = [r for r in rows if r["retired_at"] is not None]
+        for r in live:
             assert r["quantity_received"] >= 5, (
-                "no row on this spo_number may end up with a lower receipt "
+                "no live row on this spo_number may end up with a lower receipt "
                 f"than it held before the push - {r}"
             )
+        # Conserved, not doubled: the live rows hold exactly what was received.
+        assert sum(r["quantity_received"] for r in live) == 5, rows
+
+        # D33: the superseded xlsx row is retired, its receipt carried onto the
+        # AutoCount line above and frozen into `stated_received` before the zero.
+        assert len(retired) == 1, rows
+        old = retired[0]
+        assert old["source_ref"] is None, old
+        assert old["line_status"] == "closed", old
+        assert old["quantity_received"] == 0, old
+        assert old["stated_received"] >= 5, (
+            "the retired row must keep the receipt it held as its stated figure - "
+            f"{old}"
+        )
 
     def test_sec_1b_adoption_path_with_a_ref_row_present_never_erases_a_received_quantity(
         self, db
@@ -257,7 +281,7 @@ class TestSec1AdoptionPathReceivedGuard:
                     "lines": [
                         {
                             "source_ref": f"DK-{spo_number}-L1",
-                            "product_ref": product_ref,
+                            "product_ref": product_ref, "product_code": product_ref[3:],
                             "qty_ordered": "10",
                             "qty_received": "0",
                         }
@@ -309,7 +333,7 @@ class TestSec2ForwardMatchIsPostCommit:
                     "lines": [
                         {
                             "source_ref": f"DK-{spo_number}-L1",
-                            "product_ref": product_ref,
+                            "product_ref": product_ref, "product_code": product_ref[3:],
                             "qty_ordered": "5",
                         }
                     ],

@@ -33,6 +33,7 @@ from app.services.chatbot.turn.apply import apply
 from app.services.chatbot.turn.state import Focus, Profile, State
 from tests.chatbot._turn_helpers import build_policy, entity, verdict
 from tests.chatbot.conftest import validating_resolve_entity
+from tests.chatbot._turn_helpers import do_window
 from tests.chatbot.test_engine import _parser_output
 from tests.chatbot.test_outstanding_lane import REPORT_HIT, _present_response, _report_route_body
 from tests.chatbot.test_samantha_26sep_r3_brand_carry import CHENG_HUAT_UUID, _Chat
@@ -109,7 +110,8 @@ def _check_stock() -> dict[str, Any]:
 
 
 def _do_list(customer: str, brand: str = "sorento") -> dict[str, Any]:
-    return _order_ask(entities=[_brand(brand), _customer(customer)], document=["DO"], status=None)
+    # Dated: a dateless DO list ask asks which period first (DO-ASK-SIMPLIFY, owner 4 Oct 2026).
+    return _order_ask(entities=[_brand(brand), _customer(customer)], document=["DO"], status=None, **do_window())
 
 
 #: The owner's messages, verbatim and in order, with the parser's reading of each and
@@ -138,13 +140,30 @@ OWNER_TURNS: list[tuple[str, dict[str, Any], str]] = [
 ]
 
 
+#: DO-ASK-SIMPLIFY rule 2: every DO field is a per-contact reveal; this contact is an
+#: existing one, which the seed migration granted every DO field.
+_DO_REVEALS = (
+    "delivery_orders.status",
+    "delivery_orders.pickup_time",
+    "delivery_orders.transporter",
+    "delivery_orders.driver",
+    "delivery_orders.lorry_plate",
+    "delivery_orders.order_number",
+    "delivery_orders.customer",
+    "delivery_orders.order_date",
+    "delivery_orders.delivery_date",
+    "delivery_orders.warehouse",
+    "delivery_orders.products",
+)
+
+
 class _Replay(_Chat):
     """`_Chat` (real `engine.run_turn`, one contact, session carried between turns) with
     the two customers the owner named and a per-tool MCP double: the outstanding report
     and the orders list go through the real presenter, anything else is a miss."""
 
     def __init__(self, session_factory, monkeypatch):
-        super().__init__(session_factory, monkeypatch, attributes=["sales_orders.outstanding"], tool_body={})
+        super().__init__(session_factory, monkeypatch, attributes=["sales_orders.outstanding", *_DO_REVEALS], tool_body={})
         from app.services.chatbot import engine as engine_mod
         from app.services.chatbot.lanes.business.services import AnswerServices  # noqa: F401
 

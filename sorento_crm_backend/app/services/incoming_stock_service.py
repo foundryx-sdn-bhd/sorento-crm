@@ -14,7 +14,10 @@ This service enforces the rules from next_agents/incoming_stock_enquiries.txt:
 - The response DOES expose:
     * product_code, product_name
     * shipment_number, shipping_container_number, estimated_arrival_date, batch_number
-    * warehouse_code, warehouse_name, allocated_quantity (aggregated per warehouse)
+    * warehouse_code, warehouse_name, allocated_quantity (aggregated per warehouse; in the
+      emitted `warehouse_allocations` list it is what is STILL TO COME per warehouse -
+      allocated less what that warehouse's allocations already received - and a warehouse
+      with nothing left is omitted, see `_warehouse_allocations_for(outstanding_only=True)`)
     * attachment filename / file_path / mime_type (only when present)
     * remaining_incoming_quantity (computed server-side)
     * unallocated_quantity (computed server-side - the GAP only, never the shipped base;
@@ -30,7 +33,7 @@ from collections import defaultdict
 from datetime import date, datetime
 from typing import Any, Optional
 
-from sqlalchemy import and_, case, func, or_
+from sqlalchemy import and_, case, func, or_, true
 from sqlalchemy.orm import Session
 
 from app.models.inventory import Warehouse
@@ -52,6 +55,7 @@ from app.services.field_access import GATED_FIELDS, NON_CLEARANCE_KEYS
 CLEARANCE_KEYS = tuple(k for k in GATED_FIELDS["incoming_stock"] if k not in NON_CLEARANCE_KEYS)
 from app.services.identifier_resolver import resolve_identifier
 from app.services.company_scope import stamp_lookup_companies
+from app.services.contact_brand_scope import product_in_scope_clauses
 from app.services.fuzzy_resolver import resolve_via_embedding_then_ilike
 # Header OR any line: a container filled by two factories has no header supplier,
 # so the header alone would hide it from both of them.
@@ -90,6 +94,14 @@ def _not_draft_shipment_filter():
     equivalent guard - see the note there.
     """
     return InboundShipment.shipment_status != _DRAFT_SHIPMENT_STATUS
+
+
+def _region_filter(regions):
+    """Filter clause: the shipment serves at least one of `regions`. `None` = no filter
+    (staff, bare API key), so the clause is always safe to AND in."""
+    if regions is None:
+        return true()
+    return InboundShipment.regions.overlap(sorted(regions))
 
 
 def _unallocated_quantity(
@@ -167,7 +179,7 @@ def _attachment_payload(attachment: Optional[Attachment]) -> Optional[dict[str, 
 
 
 def earliest_packing_list_shipment(
-    db: Session, product_ids: list[str]
+    db: Session, product_ids: list[str], regions=None
 ) -> dict[str, tuple[str, date, str]]:
     """R5 (chatbot stock ask v2 S3): the earliest still-incoming shipment WITH a
     packing list, for each product id, at ANY location (AC-SA304 to AC-SA309).
@@ -199,7 +211,9 @@ def earliest_packing_list_shipment(
         .filter(
             InboundShipmentLine.product_id.in_(product_ids),
             _not_draft_shipment_filter(),
+            _region_filter(regions),
             _still_incoming_filter(),
+            *product_in_scope_clauses(db, InboundShipmentLine.product_id),
             InboundShipment.attachment_id.isnot(None),
             InboundShipment.estimated_arrival_date.isnot(None),
         )
@@ -224,14 +238,19 @@ def earliest_packing_list_shipment(
 class IncomingStockService:
     """User-facing incoming-stock retrieval."""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, regions=None):
         self.db = db
+        # The regions the asking contact may be told about; None = no contact, no filter.
+        self.regions = regions
 
     # ------------------------------------------------------------------
     # Shared helpers
     # ------------------------------------------------------------------
     def _warehouse_allocations_for(
-        self, shipment_product_pairs: list[tuple[str, str]]
+        self,
+        shipment_product_pairs: list[tuple[str, str]],
+        *,
+        outstanding_only: bool = False,
     ) -> dict[tuple[str, str], list[dict[str, Any]]]:
         """Aggregate allocated_quantity by warehouse for each (shipment_id, product_id) pair.
 
@@ -246,6 +265,14 @@ class IncomingStockService:
         away from this file for exactly that reason). A line AutoCount stopped naming is
         not allocated supply for this container any more than it is anywhere else, so
         counting it here credited coverage that no longer exists and understated the gap.
+
+        `outstanding_only` (D35, SPO-XLSX-SUPERSEDE round 2) is the list the caller SHOWS:
+        each allocation counts only what is still to come on it - `allocated - max(received,
+        stated_received)`, nothing at all once the line is closed or fully received - and a
+        warehouse left at 0 is dropped. Without it a container with one warehouse's share
+        already in read "Incoming 4, BRW-IB (22), BRW-NTC (77)". The default (full allocated
+        totals) stays the base of the unallocated-gap arithmetic, which measures against
+        `quantity_shipped` and so needs the undecremented allocation.
         """
         if not shipment_product_pairs:
             return {}
@@ -253,13 +280,30 @@ class IncomingStockService:
 
         shipment_ids = list({sid for sid, _ in shipment_product_pairs})
         product_ids = list({pid for _, pid in shipment_product_pairs})
+        if outstanding_only:
+            received = func.greatest(
+                func.coalesce(SPOAllocation.quantity_received, 0),
+                func.coalesce(SPOAllocation.stated_received, 0),
+            )
+            quantity = case(
+                (
+                    or_(
+                        SPOAllocation.line_status == "closed",
+                        SPOAllocation.receipt_status.in_(spo_supply.RECEIVED_RECEIPT_STATUSES),
+                    ),
+                    0,
+                ),
+                else_=func.greatest(SPOAllocation.allocated_quantity - received, 0),
+            )
+        else:
+            quantity = SPOAllocation.allocated_quantity
         rows = (
             self.db.query(
                 SPOAllocation.inbound_shipment_id,
                 SPOAllocation.product_id,
                 Warehouse.warehouse_code,
                 Warehouse.warehouse_name,
-                func.coalesce(func.sum(SPOAllocation.allocated_quantity), 0).label("allocated_qty"),
+                func.coalesce(func.sum(quantity), 0).label("allocated_qty"),
             )
             .join(Warehouse, Warehouse.id == SPOAllocation.warehouse_id)
             .filter(
@@ -279,6 +323,8 @@ class IncomingStockService:
         )
         result: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
         for shipment_id, product_id, wh_code, wh_name, qty in rows:
+            if outstanding_only and int(qty or 0) <= 0:
+                continue
             key = (str(shipment_id), str(product_id))
             result[key].append(
                 {
@@ -413,6 +459,7 @@ class IncomingStockService:
             .filter(
                 _still_incoming_filter(),
                 _not_draft_shipment_filter(),
+                _region_filter(self.regions),
                 *product_filters,
                 *date_filters,
             )
@@ -451,6 +498,7 @@ class IncomingStockService:
 
         pairs = [(str(r.shipment_id), str(r.product_id)) for r in rows]
         warehouse_map = self._warehouse_allocations_for(pairs)
+        outstanding_map = self._warehouse_allocations_for(pairs, outstanding_only=True)
         allocated_by_line = _allocated_by_line(rows, warehouse_map)
         attachment_map = self._attachments_for_shipments(
             [str(r.shipment_id) for r in rows]
@@ -488,7 +536,7 @@ class IncomingStockService:
                         ship_allocations,
                         allocated_by_line.get(str(r.id)),
                     ),
-                    "warehouse_allocations": ship_allocations,
+                    "warehouse_allocations": outstanding_map.get((str(r.shipment_id), pkey), []),
                     "attachment": attachment_map.get(str(r.shipment_id)),
                 }
             )
@@ -534,6 +582,7 @@ class IncomingStockService:
                 .filter(
                     _still_incoming_filter(),
                     _not_draft_shipment_filter(),
+                    _region_filter(self.regions),
                     InboundShipmentLine.product_id.in_(candidate_ids),
                 )
                 .distinct()
@@ -571,7 +620,7 @@ class IncomingStockService:
                 func.count(func.distinct(InboundShipmentLine.product_id)).label("distinct_products"),
                 func.sum(_remaining_expr()).label("total_remaining"),
             )
-            .filter(_still_incoming_filter())
+            .filter(_still_incoming_filter(), *product_in_scope_clauses(self.db, InboundShipmentLine.product_id))
             .group_by(InboundShipmentLine.shipment_id)
             .subquery()
         )
@@ -588,7 +637,7 @@ class IncomingStockService:
                 incoming_lines.c.total_remaining,
             )
             .join(incoming_lines, incoming_lines.c.sid == InboundShipment.id)
-            .filter(_not_draft_shipment_filter())
+            .filter(_not_draft_shipment_filter(), _region_filter(self.regions))
         )
 
         if shipment_ids:
@@ -695,7 +744,7 @@ class IncomingStockService:
                 "pagination": {"total": 0, "page": page, "limit": limit},
             }
 
-        line_filters = [_still_incoming_filter()]
+        line_filters = [_still_incoming_filter(), *product_in_scope_clauses(self.db, InboundShipmentLine.product_id)]
         if resolved_pids:
             line_filters.append(InboundShipmentLine.product_id.in_(resolved_pids))
 
@@ -753,7 +802,12 @@ class IncomingStockService:
                 InboundShipmentLine,
                 InboundShipmentLine.shipment_id == InboundShipment.id,
             )
-            .filter(_not_draft_shipment_filter(), *line_filters, *shipment_filters)
+            .filter(
+                _not_draft_shipment_filter(),
+                _region_filter(self.regions),
+                *line_filters,
+                *shipment_filters,
+            )
             .distinct()
         )
         total = ship_q.count()
@@ -823,6 +877,7 @@ class IncomingStockService:
 
         pairs = [(str(r.shipment_id), str(r.product_id)) for r in line_rows]
         warehouse_map = self._warehouse_allocations_for(pairs)
+        outstanding_map = self._warehouse_allocations_for(pairs, outstanding_only=True)
         allocated_by_line = _allocated_by_line(line_rows, warehouse_map)
         attachment_map = self._attachments_for_shipments(page_ship_ids)
 
@@ -841,7 +896,9 @@ class IncomingStockService:
                         allocations,
                         allocated_by_line.get(str(r.id)),
                     ),
-                    "warehouse_allocations": allocations,
+                    "warehouse_allocations": outstanding_map.get(
+                        (skey, str(r.product_id)), []
+                    ),
                 }
             )
 
@@ -883,19 +940,24 @@ class IncomingStockService:
                 "bill_of_lading_number",
                 "invoice_number",
             ),
+            extra_filters=(_not_draft_shipment_filter(), _region_filter(self.regions)),
         )
         if resolved is None or not resolved:
             return {"data": None, "empty": True}
-        # If multiple shipments match a business code we want the first (numbers are unique).
-        shipment_uuid = resolved[0]
-
+        # A business code can name several shipments; the region filter picks among them,
+        # so an ambiguous ref resolves to the one this contact may see.
         shipment = (
             self.db.query(InboundShipment)
-            .filter(InboundShipment.id == shipment_uuid, _not_draft_shipment_filter())
+            .filter(
+                InboundShipment.id.in_(resolved),
+                _not_draft_shipment_filter(),
+                _region_filter(self.regions),
+            )
             .first()
         )
         if not shipment:
             return {"data": None, "empty": True}
+        shipment_uuid = shipment.id
 
         remaining = _remaining_expr().label("remaining_incoming")
         line_rows = (
@@ -939,6 +1001,7 @@ class IncomingStockService:
 
         pairs = [(str(shipment_uuid), str(r.product_id)) for r in line_rows]
         warehouse_map = self._warehouse_allocations_for(pairs)
+        outstanding_map = self._warehouse_allocations_for(pairs, outstanding_only=True)
 
         # S4/AC-D6: a product's own allocation is APPORTIONED across its own lines (the
         # same `(created_at, id)` order and the same `_apportion` `refresh_shipment_line_
@@ -966,7 +1029,9 @@ class IncomingStockService:
                     "product_name": r.product_name,
                     "remaining_incoming_quantity": int(r.remaining_incoming or 0),
                     "unallocated_quantity": gap if allocations and gap > 0 else None,
-                    "warehouse_allocations": allocations,
+                    "warehouse_allocations": outstanding_map.get(
+                        (str(shipment_uuid), str(r.product_id)), []
+                    ),
                 }
             )
 
@@ -995,13 +1060,18 @@ class IncomingStockService:
                 "bill_of_lading_number",
                 "invoice_number",
             ),
+            extra_filters=(_not_draft_shipment_filter(), _region_filter(self.regions)),
         )
         if resolved is None or not resolved:
             return None
         row = (
             self.db.query(InboundShipment.shipment_number, Attachment)
             .outerjoin(Attachment, Attachment.id == InboundShipment.attachment_id)
-            .filter(InboundShipment.id == resolved[0], _not_draft_shipment_filter())
+            .filter(
+                InboundShipment.id.in_(resolved),
+                _not_draft_shipment_filter(),
+                _region_filter(self.regions),
+            )
             .first()
         )
         if not row:

@@ -645,6 +645,13 @@ export interface ConfirmException {
 }
 
 /** `POST /project-sales/sales-orders/{pso_id}/confirm`. */
+/** One line a confirmation froze, as the server echoes it (FULFIL-CONFIRM-SCOPE). */
+export interface ConfirmedLine {
+  project_line_id: string;
+  line_no?: number | null;
+  item_code?: string | null;
+}
+
 export interface ConfirmResult {
   /** Null only when every named line was already fulfilled and nothing was written (#1362). */
   revision_no: number | null;
@@ -668,6 +675,10 @@ export interface ConfirmResult {
    * at the same quantity survives a reconfirm with its state and its approval intact.
    */
   transfers_kept?: number | null;
+  /** The lines this press froze, in payload order, and how many covered lines rode forward. */
+  lines_confirmed?: ConfirmedLine[] | null;
+  lines_carried?: number | null;
+  lines_withdrawn?: ConfirmedLine[] | null;
   /** How many of the confirmed lines were flagged as a suspected system problem (R10). */
   suspected_issues?: number | null;
   /**
@@ -2509,6 +2520,8 @@ export interface ConfirmManyOrderBody {
   /** This order's own half of `ConfirmSupplyBody.rejected_line_ids` (owner ruling 23 Sep
    * 2026). Same rule, same refusal alongside a batch. */
   rejected_line_ids?: string[];
+  /** Scope this order's press to exactly these mirror line ids (what a Preview showed). */
+  only_line_ids?: string[];
 }
 
 export interface ConfirmManyBody {
@@ -2520,16 +2533,50 @@ export interface ConfirmManyBody {
    * batch. Absent on an ordinary Confirm.
    */
   batch_id?: string | null;
+  /** Run the press and roll it back: the answer names what it WOULD raise (FULFIL-CONFIRM-SCOPE v2). */
+  preview?: boolean;
+}
+
+/** One order inquiry row a previewed press would raise. */
+export interface PreviewInquiryRow {
+  line_no?: number | null;
+  item_code?: string | null;
+  verb: string;
+  /** False: the row already exists and is only settled by this press. */
+  is_new?: boolean;
+  qty: string | number;
+  delivery_date?: string | null;
+  stock_location?: string | null;
+  note?: string | null;
+}
+
+/** One stock transfer a previewed press would propose. */
+export interface PreviewTransfer {
+  line_no?: number | null;
+  kind: string;
+  is_new?: boolean;
+  qty: string | number;
+  from_location?: string | null;
+  to_location?: string | null;
 }
 
 /** One order's outcome. `ok` decides which half is populated. */
 export interface ConfirmManyOrderResult {
+  /** True on a preview: nothing below was committed. */
+  preview?: boolean | null;
+  inquiry_rows?: PreviewInquiryRow[] | null;
+  /** The covered lines this press took out of the confirmation. */
+  lines_withdrawn?: ConfirmedLine[] | null;
+  transfers?: PreviewTransfer[] | null;
   pso_id: string;
   ok: boolean;
   decision_revision?: number | null;
   inquiry_rows_created?: number | null;
   lines_decided?: number | null;
   lines_undecided?: number | null;
+  /** The lines this order's press froze, and how many covered lines rode forward. */
+  lines_confirmed?: ConfirmedLine[] | null;
+  lines_carried?: number | null;
   /**
    * The movements this order's confirmation raised, the same figure the single-order
    * `ConfirmResult` already carries. Optional because a server that predates the field

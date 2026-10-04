@@ -529,7 +529,9 @@ class TestFieldValidationAC9:
 
 # =================================================================== AC-SB-10
 class TestExtraKeyAC10:
-    def test_unknown_extra_key_fails(self, env):
+    def test_unknown_extra_key_is_dropped_not_refused(self, env):
+        """Owner decision, 1 Oct 2026: an unknown key is dropped (its name logged), never
+        refused - it used to fail the record (`extra="forbid"`)."""
         record = _sb_record(
             item_code=env.product.product_code,
             location_code=env.wh_active.warehouse_code,
@@ -539,7 +541,7 @@ class TestExtraKeyAC10:
         res = env.post(INGEST_SB, [record])
         assert res.status_code == 200, res.text
         entry = res.json()["records"][0]
-        assert entry["outcome"] == "failed", entry
+        assert entry["outcome"] == "created", entry
 
     def test_item_description_and_uom_code_are_accepted_and_ignored(self, env):
         record = _sb_record(

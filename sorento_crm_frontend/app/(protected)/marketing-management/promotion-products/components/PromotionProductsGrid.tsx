@@ -21,7 +21,7 @@ interface PromotionProductsGridProps {
 }
 
 export default function PromotionProductsGrid({ promotionId }: PromotionProductsGridProps) {
-  const { data: products, isLoading } = usePromotionProducts(promotionId);
+  const { data: products, isLoading, error, refetch } = usePromotionProducts(promotionId);
 
   const columns = useMemo<ColumnDef<PromotionProduct>[]>(
     () => [
@@ -100,6 +100,8 @@ export default function PromotionProductsGrid({ promotionId }: PromotionProducts
           table={table}
           recordCount={products?.length || 0}
           isLoading={isLoading}
+          error={error}
+          onRetry={() => void refetch()}
           tableLayout={{ columnsVisibility: true }}
         >
           <DataGridTable />

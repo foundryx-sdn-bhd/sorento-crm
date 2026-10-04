@@ -18,6 +18,9 @@ class ContactCustomerLinkResponse(BaseModel):
     sales_agent_id: Optional[str] = None
     sales_agent_code: Optional[str] = None
     sales_agent_name: Optional[str] = None
+    # The customer's company: a contact page reads every granted company, so each row says which.
+    company_id: Optional[str] = None
+    company_name: Optional[str] = None
     created_at: datetime
 
 

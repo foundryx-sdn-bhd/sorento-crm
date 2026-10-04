@@ -110,7 +110,7 @@ vi.mock('../../_shared/services/leadAcceptanceService', () => ({
 }));
 
 vi.mock('@/services/userSelectService', () => ({
-  getUsersSelect: vi.fn(async () => []),
+  getUserLookup: vi.fn(async () => []),
 }));
 
 vi.mock('@/lib/toast', () => ({

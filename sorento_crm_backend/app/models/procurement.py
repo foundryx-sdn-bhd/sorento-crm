@@ -1,6 +1,6 @@
 """Procurement models."""
-from sqlalchemy import BigInteger, Column, String, Boolean, DateTime, ForeignKey, Text, Integer, Numeric, Index, Date, Computed, UniqueConstraint, text
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy import BigInteger, CheckConstraint, Column, String, Boolean, DateTime, ForeignKey, Text, Integer, Numeric, Index, Date, Computed, UniqueConstraint, text
+from sqlalchemy.dialects.postgresql import ARRAY, UUID, JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
@@ -151,6 +151,8 @@ class InboundShipment(Base, CompanyScopedMixin):
     updated_at = Column(DateTime(timezone=False), server_default=func.now(), onupdate=func.now(), nullable=False)
     attachment_id = Column(UUID(as_uuid=False), ForeignKey("attachments.id", ondelete="SET NULL"), nullable=True)
     access_levels = Column(JSONB, nullable=False, server_default='["dealer","end_user"]')
+    # Which regions this packing list serves: 'west' / 'east' (REGION-PACKING-LIST).
+    regions = Column(ARRAY(Text), nullable=False, server_default=text("'{west}'"))
     synced_to_excel = Column(Boolean, default=False, server_default="false", nullable=False)
     last_synced_to_excel = Column(DateTime(timezone=False), nullable=True)
 
@@ -283,7 +285,11 @@ class InboundShipment(Base, CompanyScopedMixin):
         Index("ix_inbound_shipments_container_number", "shipping_container_number"),
         # "Which containers are still open" drives the tracking poll (~77/day).
         Index("ix_inbound_shipments_eta_delay_date", "eta_delay_date"),
-        # No `CheckConstraint` here on purpose, even though one exists on the shared
+        CheckConstraint(
+            "cardinality(regions) >= 1 AND regions <@ ARRAY['west','east']::text[]",
+            name="ck_inbound_shipments_regions",
+        ),
+        # No other `CheckConstraint` here on purpose, even though one exists on the shared
         # local/prod database (`inbound_shipments_shipment_status_check`, added outside any
         # migration in this repo - see `coverage_service.py`'s note). Several existing
         # `blank_session()` tests drive this column through values that constraint would

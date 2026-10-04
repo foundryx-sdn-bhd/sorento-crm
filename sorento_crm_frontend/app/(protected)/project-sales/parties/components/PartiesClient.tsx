@@ -265,6 +265,8 @@ export function PartiesClient() {
         onRowClick={(row) => router.push(`/project-sales/parties/${row.id}`)}
         recordCount={rows.length}
         isLoading={parties.isLoading}
+        error={parties.error}
+        onRetry={() => void parties.refetch()}
         isPlaceholderData={parties.isPlaceholderData}
         // Pinned, never the pathname default: the fallback keys column preferences on
         // the current URL, so any route carrying an id would write one preferences row

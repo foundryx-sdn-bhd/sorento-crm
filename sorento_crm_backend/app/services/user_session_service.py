@@ -4,10 +4,10 @@ Mirrors the contact portal's device-trust model (``portal_service.resolve_token`
 for internal CRM users. The opaque token is the credential; the DB row is the
 source of truth for validity, so revocation and expiry are instant.
 
-Lifetimes (see PLAN-staff-rolling-sessions-fastapi-auth.md):
- - remember-me checked  → ``rolling=True``, 30-day window re-extended on use,
-    write throttled to ~once/day via the 29-day threshold.
- - remember-me unchecked → ``rolling=False``, fixed 8h, never slides.
+Lifetime (see PLAN-staff-rolling-sessions-fastapi-auth.md): every sign-in, email or
+phone, mints a 30-day window re-extended on use, write throttled to ~once/day via the
+29-day threshold. No remember-me choice and no absolute cap, exactly like the portal.
+Rows minted before that rule carry ``rolling=False`` (fixed 8h) and simply lapse.
 
 ``last_seen_at`` is updated on a separate ~10-minute throttle so the "your devices"
 list stays fresh without a write on every request.
@@ -24,7 +24,6 @@ from app.models.user_session import UserSession
 
 REMEMBER_TTL = timedelta(days=30)
 SLIDE_THRESHOLD = timedelta(days=29)  # throttle the rolling write to ~once/active-day
-SHORT_TTL = timedelta(hours=8)        # remember-me unchecked: one shift, no slide
 LAST_SEEN_THROTTLE = timedelta(minutes=10)
 
 # Reason codes surfaced to the FE so the api-client 401 interceptor can decide to
@@ -34,7 +33,7 @@ REASON_REVOKED = "session_revoked"
 REASON_EXPIRED = "session_expired"
 
 # How a session was minted (identity S0, AC-07). Mirrors `ck_user_sessions_auth_method`.
-AUTH_METHODS = ("password", "phone_otp", "portal_link", "impersonation")
+AUTH_METHODS = ("password", "phone_otp", "portal_link", "impersonation", "dev_login")
 
 
 class SessionAuthError(Exception):
@@ -55,7 +54,6 @@ def mint_session(
     db: Session,
     user_id: str,
     *,
-    remember: bool,
     user_agent: Optional[str] = None,
     ip_address: Optional[str] = None,
     auth_method: str = "password",
@@ -71,8 +69,8 @@ def mint_session(
     row = UserSession(
         token=secrets.token_urlsafe(48),
         user_id=user_id,
-        rolling=remember,
-        expires_at=now + (REMEMBER_TTL if remember else SHORT_TTL),
+        rolling=True,
+        expires_at=now + REMEMBER_TTL,
         last_seen_at=now,
         user_agent=(user_agent or None),
         ip_address=(ip_address or None),

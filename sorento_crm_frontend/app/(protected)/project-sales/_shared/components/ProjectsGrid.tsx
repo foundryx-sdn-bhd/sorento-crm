@@ -41,6 +41,7 @@ export function ProjectsGrid({
   projects,
   total,
   isLoading,
+  error,
   isFetching,
   isPlaceholderData,
   pagination,
@@ -57,6 +58,7 @@ export function ProjectsGrid({
   projects: Project[];
   total: number;
   isLoading?: boolean;
+  error?: unknown;
   isFetching?: boolean;
   /**
    * True while the list query is answering from the PREVIOUS page. The grid dims
@@ -300,6 +302,8 @@ export function ProjectsGrid({
       onRowClick={rowHref ? undefined : (row) => router.push(`/project-sales/${row.id}`)}
       recordCount={total}
       isLoading={isLoading}
+      error={error}
+      onRetry={onRefresh}
       isPlaceholderData={isPlaceholderData}
       listingKey={listingKey}
       tableLayout={{ width: 'fixed', columnsResizable: true, columnsVisibility: true }}

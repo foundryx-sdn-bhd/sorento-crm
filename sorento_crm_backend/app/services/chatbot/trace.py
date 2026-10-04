@@ -291,9 +291,14 @@ def understood_summary(qf: dict[str, Any]) -> str:
     return " ".join(parts)
 
 
-def routed_why(branch_kind: str, qf: dict[str, Any], access_allowed: bool) -> str:
+def routed_why(branch_kind: str, qf: dict[str, Any], access_allowed: bool, *, lane: str | None = None) -> str:
     """One sentence naming the reason this lane won, from state only."""
     escalation = qf.get("escalation") if isinstance(qf.get("escalation"), dict) else {}
+    if branch_kind == "out_of_scope" and lane == "escalation_barred":
+        return (
+            "Escalation withheld: the customer asked for a person, but this contact may not "
+            "escalate, so they are referred to their salesman and nothing is handed over."
+        )
     if branch_kind == "access_denied":
         return "Routed to the refusal: this contact is not granted the agent the turn needs."
     if branch_kind == "out_of_scope":

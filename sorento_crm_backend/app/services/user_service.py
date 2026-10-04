@@ -171,6 +171,18 @@ def member_serves_brand(member_brand_codes, brand_code: Optional[str]) -> bool:
     return not codes or wanted in codes
 
 
+
+# Roles that do not make someone staff: a portal contact signs in with `portal_user` (or no
+# role at all, `user_contact_link.py`), and `guest` grants nothing. The shared people lookup
+# answers staff and lists staff (NS-SHARED-LOOKUPS).
+NON_STAFF_ROLE_SLUGS = frozenset({"portal_user", "guest"})
+
+
+def _holds_staff_role():
+    return User.role_assignments.any(
+        UserRoleAssignment.role.has(UserRole.slug.notin_(NON_STAFF_ROLE_SLUGS))
+    )
+
 class UserService:
     """Service for user operations."""
     
@@ -347,6 +359,44 @@ class UserService:
             "pagination": {"total": total, "page": page, "limit": limit},
             "empty": total == 0
         }
+
+    def is_staff(self, user_id: str) -> bool:
+        """Holds a role other than the portal / guest ones, and is not an integration account."""
+        return (
+            self.db.query(User.id)
+            .filter(User.id == str(user_id), User.is_integration == False, _holds_staff_role())  # noqa: E712
+            .first()
+            is not None
+        )
+
+    def list_user_lookup(
+        self,
+        query: Optional[str] = None,
+        respond_synced: bool = False,
+        include_inactive: bool = False,
+    ) -> list:
+        """Active, non-trashed users for the shared people picker, ordered by name.
+
+        Staff only: a portal contact (no role, or only ``portal_user`` / ``guest``) and an
+        integration act-as account are not people anyone assigns work to.
+        ``query`` matches the NAME only: this list is open to every signed-in user, and
+        matching email would let anyone probe whether an address belongs to a colleague.
+        ``respond_synced`` narrows to users linked to a Respond.io agent.
+        ``include_inactive`` is for filters over past records (who raised it, who it was
+        assigned to): someone who has left still owns those rows. Trashed users stay out.
+        """
+        q = self.db.query(User).filter(
+            User.is_trashed == False,  # noqa: E712
+            User.is_integration == False,  # noqa: E712
+            _holds_staff_role(),
+        )
+        if not include_inactive:
+            q = q.filter(User.status == UserStatus.ACTIVE.value)
+        if query:
+            q = q.filter(User.name.ilike(f"%{query}%"))
+        if respond_synced:
+            q = q.filter(User.respond_synced == "successful", User.respond_user_id.isnot(None))
+        return q.order_by(User.name.asc().nullslast(), User.id.asc()).all()
 
     def list_users_select(
         self,

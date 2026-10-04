@@ -55,6 +55,7 @@ Screens are designed at 375px first (a salesperson's phone), then checked at 128
 
 1. Staff open the same `/signin` they use today. The form is exactly today's (Email, Password,
    Forgot Password?, Remember me, Continue); under it a divider reads "or Log in with" above one
+   [Superseded by SIGNIN-ALWAYS-SLIDE, 30 Sep 2026: the Remember me checkbox is removed; every sign-in is the 30-day sliding session. See `signin-always-slide-30sep-acceptance-criteria.md`.]
    round phone button.
 2. A staff member who prefers the phone taps the phone button, types their number (any common form:
    `012-345 6789`, `+60123456789`, `60123456789`), taps Continue, gets a WhatsApp code, types it in

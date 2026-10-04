@@ -56,7 +56,7 @@ def _payload(*, attributes=(GRANT,), **qf):
         "tier_gate": None,
         "ctx": {
             "parse": {"output": _qf(order_status="sales_analysis", entities=[], **qf)},
-            "contact": {"id": 437264483},
+            "contact": {"id": 900000008},
             "access": {"attributes": list(attributes)},
         },
     }
@@ -268,3 +268,32 @@ class TestInvoicedBasis:
         from app.services.chatbot.lanes.business import fetch
 
         assert "invoiced" in fetch.SALES_ANALYSIS_BASES
+
+
+class TestANon2xxIsAnErrorOnTheTrace:
+    def test_b3_a_403_from_the_route_is_an_error_fragment_and_on_the_trace(self, session_factory) -> None:
+        """CHATBOT-SELFREF-SCOPE B3: the MCP client stamps a 403 with its status, the
+        presenter answers an error envelope, and the lane records it as a tool ERROR
+        (`kind: error`, never `has_result: true` with a friendly line) with the envelope,
+        status and the route's own code on the `tool` trace event."""
+        from app.services.chatbot.lanes.business import run_fetch
+        from app.services.chatbot.trace import TurnTrace
+
+        route_403 = {
+            "success": False, "message": "Permission required", "code": "PERMISSION_DENIED",
+            "error": "GET /api/v1/sales/analysis returned HTTP 403: PERMISSION_DENIED",
+            "http_error": "GET /api/v1/sales/analysis returned HTTP 403: PERMISSION_DENIED",
+            "status_code": 403, "path": "/api/v1/sales/analysis", "method": "GET",
+        }
+        call, captured = _capturing_mcp(_present_response()(TOOL, json.dumps(route_403)))
+        trace = TurnTrace()
+        fragment = run_fetch(_payload(), services=FetchServices(mcp_call=call), trace=trace)
+        assert captured and captured[0][0] == TOOL
+        assert fragment["kind"] == "error", fragment
+        assert "HTTP 403" in fragment["error"] and "PERMISSION_DENIED" in fragment["error"], fragment
+        assert (fragment.get("fetch") or {}).get("has_result") is not True
+        assert "Could not run the sales report" not in json.dumps(fragment)
+        (tool_event,) = [e for e in trace.events if e.get("kind") == "tool"]
+        assert tool_event["envelope"]["status_code"] == 403
+        assert "HTTP 403" in tool_event["envelope"]["error"]
+        assert tool_event["envelope"]["detail"]["code"] == "PERMISSION_DENIED"

@@ -183,9 +183,11 @@ def test_agents_list_counts(w):
     assert set(by_code) == {w["a"].sales_agent, w["b"].sales_agent}  # the idle agent has no open ask
     a = by_code[w["a"].sales_agent]
     assert a["agent_id"] == w["a"].id and "name" in a
-    assert (a["open"], a["needs_attention"]) == (4, 3)  # the incoming row counts (Q5 (a)); done rows never do
+    assert a["open"] == 4  # the incoming row counts (Q5 (a)); done rows never do
+    # CUSTOMER-ASKS-REFER-ONLY (1 Oct 2026): one Open list, so no "needs attention" split.
+    assert "needs_attention" not in a
     b = by_code[w["b"].sales_agent]
-    assert (b["open"], b["needs_attention"]) == (2, 1)
+    assert b["open"] == 2
 
     plain = _call(w, [VIEW], "me", "get", "/agents")
     assert plain.status_code == 200, plain.text
@@ -267,7 +269,7 @@ def test_team_leader_agents_list_counts_members_with_zero_open(led):
     )
     w["db"].commit()
     by_code = {r["code"]: r for r in _call(w, [VIEW], "me", "get", "/agents").json()}
-    assert (by_code[idle.sales_agent]["open"], by_code[idle.sales_agent]["needs_attention"]) == (0, 0)
+    assert by_code[idle.sales_agent]["open"] == 0
 
 
 def test_a_leader_of_an_inactive_team_is_nobodys_leader(w):

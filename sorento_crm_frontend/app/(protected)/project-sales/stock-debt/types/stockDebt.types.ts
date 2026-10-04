@@ -58,6 +58,11 @@ export interface StockDebtRow {
   category_code: string | null;
   /** Sum of every month's balance plus `tba` + `undated` + `unlocated` (R9, AC-5). */
   total: number;
+  /** BRW pool on hand, open PO and open SPO quantity, and dealer outstanding (negative). */
+  pool_on_hand: number;
+  pool_po_qty: number;
+  pool_incoming_qty: number;
+  dealer_outstanding: number;
 }
 
 /**
@@ -71,6 +76,10 @@ export interface StockDebtTotals {
   undated: number;
   unlocated: number;
   total: number;
+  pool_on_hand: number;
+  pool_po_qty: number;
+  pool_incoming_qty: number;
+  dealer_outstanding: number;
 }
 
 /** One entry of the toolbar's supplier select (AC-7): never an id on screen, only `name`. */
@@ -118,8 +127,12 @@ export interface StockDebtListResponse {
   sheet_counts: StockDebtSheetCounts;
 }
 
-/** How a demand line ended up in a cell (AC-S2-7). */
-export type StockDebtDemandStatus = 'covered' | 'late' | 'short' | 'pinned';
+/**
+ * How a demand line ended up in a cell (AC-S2-7). `order_back` (STOCK-DEBT-LENDABLE, owner
+ * 30 Sep 2026): the line lent its landed goods to nearer lines and is owed a re-buy for
+ * them at its own date; `lent_qty` says how much.
+ */
+export type StockDebtDemandStatus = 'covered' | 'late' | 'short' | 'pinned' | 'order_back';
 
 /** One sales-order line due in the cell's month (or in its TBA / undated bucket). */
 export interface StockDebtDemandLine {
@@ -162,6 +175,12 @@ export interface StockDebtDemandLine {
    * above.
    */
   assigned_from?: StockDebtAssignedFrom[];
+  /**
+   * STOCK-DEBT-LENDABLE: what nearer lines took of this line's lendable landed goods -
+   * the "order back N" the status pill prints. 0 (or absent, on an older fixture) on a
+   * line that lent nothing.
+   */
+  lent_qty?: number;
 }
 
 /**
@@ -180,6 +199,22 @@ export interface StockDebtAssignedFromOnHand {
   spo_number: null;
   spo_line_number: null;
   qty: number;
+  /** STOCK-DEBT-LENDABLE: the sales order whose landed goods this take was LENT from
+   *  ("On hand BRW-BB (from SO381065)"). Null on free stock at the same bin. */
+  lent_from_so_number?: string | null;
+}
+
+/**
+ * STOCK-DEBT-LENDABLE: one receiver of this line's lendable landed goods - "Lent to
+ * SO396071 (32)". Not a source (nothing was assigned by it); listed under Covered by so
+ * the far line says where its goods went, linking the receiving order.
+ */
+export interface StockDebtAssignedFromLent {
+  kind: 'lent';
+  ref: string;
+  qty: number;
+  so_number: string;
+  sales_order_id: string | null;
 }
 
 export interface StockDebtAssignedFromDocument {
@@ -199,7 +234,10 @@ export interface StockDebtAssignedFromDocument {
   po_line_id?: string | null;
 }
 
-export type StockDebtAssignedFrom = StockDebtAssignedFromOnHand | StockDebtAssignedFromDocument;
+export type StockDebtAssignedFrom =
+  | StockDebtAssignedFromOnHand
+  | StockDebtAssignedFromDocument
+  | StockDebtAssignedFromLent;
 
 /** What a supply event is: stock already held, a shipment arriving, or a PO on order. */
 export type StockDebtSupplyKind = 'on_hand' | 'spo' | 'po';

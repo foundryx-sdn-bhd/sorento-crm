@@ -19,6 +19,8 @@ import { contactActions } from '../actions';
 import { ContactImpersonateDialog } from '../components/ContactImpersonateDialog';
 import type { RespondContact } from '../types/contact.types';
 import { formatDateTimeInMalaysia } from '@/lib/helpers';
+import { isNotFound } from '@/lib/api-client';
+import { QueryErrorState } from '@/components/common/LoadErrorState';
 
 /**
  * The contact's read-only record metadata, in the page header.
@@ -118,7 +120,7 @@ export default function ContactLayout({
     setActiveTab(found ?? 'general');
   }, [navRoutes, pathname]);
 
-  const { data: contact, isLoading } = useContactQuery(id);
+  const { data: contact, isLoading, error, refetch, isFetching } = useContactQuery(id);
 
 
   // Tabs are routes, so the click must carry the list position (page/sort/search)
@@ -131,7 +133,10 @@ export default function ContactLayout({
   };
 
 
-  const notFound = !isLoading && !contact;
+  // Only a 404 is "not found"; a refusal or a fault is not (NEVER-STUCK-UI S3).
+  const notFound = isNotFound(error);
+  // A background refetch that fails over a contact already shown keeps showing it.
+  const failed = !!error && !contact;
 
   return (
     <ContactProvider contact={contact} isLoading={isLoading} contactId={id}>
@@ -159,6 +164,15 @@ export default function ContactLayout({
               Back to contacts
             </Button>
           </div>
+        ) : failed ? (
+          // Before the hero and tabs, which all wait on `contact`: drawing them
+          // would leave the Profile tab on its skeleton forever (lever L9).
+          <QueryErrorState
+            error={error}
+            title="Could not load this contact"
+            onRetry={() => void refetch()}
+            retrying={isFetching}
+          />
         ) : (
           <>
             <ContactHero

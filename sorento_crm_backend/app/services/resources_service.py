@@ -2,7 +2,7 @@
 import logging
 import re
 from sqlalchemy.orm import Session
-from sqlalchemy import func, or_
+from sqlalchemy import and_, func, or_
 from typing import Any, Optional, List
 
 logger = logging.getLogger(__name__)
@@ -600,6 +600,7 @@ class AttachmentService:
         direct_access_only: Optional[bool] = None,
         visible_attachment_type_ids: Optional[set[str]] = None,
         company: Optional[str] = None,
+        contact_regions: Optional[frozenset] = None,
     ):
         """List attachments. Filter by directory_id when provided. Search by filename when query is provided. is_deleted=True returns trash.
 
@@ -654,6 +655,7 @@ class AttachmentService:
             direct_access_only=direct_access_only,
             visible_attachment_type_ids=visible_attachment_type_ids,
             company=company,
+            contact_regions=contact_regions,
             with_joinedload=True,
         )
         if q is None:
@@ -778,6 +780,7 @@ class AttachmentService:
         visible_attachment_type_ids: Optional[set[str]] = None,
         company: Optional[str] = None,
         with_joinedload: bool = False,
+        contact_regions: Optional[frozenset] = None,
     ):
         """Build the filtered + sorted attachments query shared by ``list_attachments``
         and ``neighbours`` so the two can never drift.
@@ -878,6 +881,36 @@ class AttachmentService:
                 func.trim(func.split_part(Attachment.mime_type, ";", 1))
             )
             q = q.filter(base_mime.in_(sorted(wanted_mimes)))
+        if contact_regions is not None:
+            # A contact never sees the file of a packing list outside its regions. A file is
+            # linked to a shipment through `inbound_shipments.attachment_id` OR an
+            # `entity_attachment_links` row; the linked shipments' regions decide. An
+            # unlinked file falls back to its own `regions` (NULL = visible). Core tables:
+            # the company scope must not make a shipment of another company read as unlinked.
+            from sqlalchemy import Text, cast, exists, select
+            from app.models.entity_attachment import EntityAttachmentLink
+            from app.models.procurement import InboundShipment
+
+            ship = InboundShipment.__table__
+            link = EntityAttachmentLink.__table__
+            via_link = exists(
+                select(link.c.id).where(
+                    link.c.attachment_id == Attachment.id,
+                    link.c.entity_type == "inbound_shipment",
+                    link.c.entity_id == cast(ship.c.id, Text),
+                ).correlate_except(link)
+            )
+            linked = (
+                select(ship.c.id)
+                .where(or_(ship.c.attachment_id == Attachment.id, via_link))
+                .correlate_except(ship)
+            )
+            visible = linked.where(ship.c.regions.overlap(sorted(contact_regions)))
+            own = or_(
+                Attachment.regions.is_(None),
+                Attachment.regions.overlap(sorted(contact_regions)),
+            )
+            q = q.filter(or_(exists(visible), and_(~exists(linked), own)))
         if direct_access_only:
             if visible_attachment_type_ids is not None:
                 # A contact was resolved and holds per-contact grants, so the

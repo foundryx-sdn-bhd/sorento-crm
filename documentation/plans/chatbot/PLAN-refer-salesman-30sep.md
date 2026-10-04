@@ -1,6 +1,8 @@
 # PLAN: one "refer to your salesman" wording, and every such reply is a Customer ask (REFER-SALESMAN)
 
 Status: Built, in review on PR #1386 (small fix track: no auth/RBAC change, no new ingest surface; one additive migration on `stock_asks`)
+
+**Amended 1 Oct 2026 (`PLAN-customer-asks-refer-only-1oct.md`, owner ruling):** rows are written for refer replies ONLY (B3 `incoming` no longer), and whether a reply refers is no longer read off its text (`refer_asks.refers` is gone): the presenter stamps `refers_to_salesman` on each stock ask line, and every backend composer prints the line through `turn/refer.py`, which marks the turn. The rule now covers every contact, so ESCALATION-CONTROL's barred replies (#1406) are rows too.
 Owner ruling: 30 Sep 2026, WhatsApp transcript review.
 UAC: `refer-salesman-30sep-acceptance-criteria.md` alongside.
 

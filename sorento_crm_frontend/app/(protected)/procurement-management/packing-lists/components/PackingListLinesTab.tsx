@@ -38,6 +38,9 @@ const numMeta = { headerClassName: 'text-end', cellClassName: 'text-end tabular-
 
 type SourceLink = { proforma_invoice_id: string; pi_number: string; qty: number };
 
+/** One shared empty map, so a container with no invoice links keeps a stable reference. */
+const NO_INVOICES_BY_LINE: Record<string, SourceLink[]> = {};
+
 /**
  * One grid row, in EITHER mode - the draft while editing, the stored line otherwise.
  *
@@ -172,12 +175,16 @@ export function PackingListLinesTab() {
     suppliers,
     supplierNameById,
     sourceInvoices,
+    canReadScm,
   } = usePackingListRecord();
 
   const packingListId = packingList?.id ?? null;
-  const consolidated = useConsolidatedPackingList(packingListId);
+  // Both are SCM reads, which 403 without SCM read: not asked for at all then, so the tab
+  // still works and no permission toast lands on it (PL-TABS-ACCESS).
+  const scmShipmentId = canReadScm ? packingListId : null;
+  const consolidated = useConsolidatedPackingList(scmShipmentId);
   // R25 (lane C, slice C3): every line's photos in one read, not one per row.
-  const linePhotos = useShipmentLinePhotos(packingListId);
+  const linePhotos = useShipmentLinePhotos(scmShipmentId);
 
   const {
     value: searchInput,
@@ -185,7 +192,14 @@ export function PackingListLinesTab() {
     debouncedValue: search,
   } = useDebouncedSearch();
 
-  const invoicesByLine = sourceInvoices?.by_shipment_line ?? {};
+  // Memoised, never a fresh `{}` per render: without SCM read `sourceInvoices` is undefined,
+  // and a new object here rebuilt `viewRows` on every render, which re-rendered the grid in
+  // an endless loop (the page pegged a core, and no tab click could ever commit: the
+  // packing-list "hang", PL-TABS-ACCESS).
+  const invoicesByLine = useMemo(
+    () => sourceInvoices?.by_shipment_line ?? NO_INVOICES_BY_LINE,
+    [sourceInvoices],
+  );
 
   /** Brand per line, off the SAME `build()` JSON the Split card and the download both read -
    *  the only place a shipment line's brand is available on the wire (AC-G6: what she sees
@@ -920,7 +934,9 @@ export function PackingListLinesTab() {
       });
     }
 
-    return cols;
+    // From PI and Photos are SCM reads (and Photos an SCM upload): without SCM read they
+    // would only ever say "none" and offer an action that 403s (PL-TABS-ACCESS).
+    return canReadScm ? cols : cols.filter((c) => c.id !== 'from_pi' && c.id !== 'photos');
     // `footerTotals` and `linePhotos.data` deliberately absent: both are fresh references on
     // every render for reasons that have nothing to do with an edit (a query result, and in
     // at least one test double, a fresh object literal per call) - the footer and Photos
@@ -929,7 +945,7 @@ export function PackingListLinesTab() {
     // `setLineField` and `removeLine` are stable (`useCallback`, empty deps, in
     // `packing-list-context.tsx`) so they cost nothing as dependencies here.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editing, suppliers, supplierNameById, setLineField, removeLine, packingListId]);
+  }, [editing, suppliers, supplierNameById, setLineField, removeLine, packingListId, canReadScm]);
 
   const table = useReactTable({
     data: rows,

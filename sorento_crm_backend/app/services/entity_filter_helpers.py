@@ -56,6 +56,7 @@ def resolve_or_empty(
     entities: Optional[list[str]],
     *,
     allowed_entity_types: Iterable[str] = DEFAULT_ALLOWED_TYPES,
+    regions=None,
 ) -> Optional[EntityFilterBuckets]:
     """Resolve `entities` to filter buckets, or return None when the caller passed nothing.
 
@@ -69,6 +70,7 @@ def resolve_or_empty(
         db,
         entities,
         allowed_entity_types=tuple(allowed_entity_types),
+        regions=regions,
     )
 
 

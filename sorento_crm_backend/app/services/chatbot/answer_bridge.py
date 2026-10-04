@@ -101,7 +101,7 @@ from app.services.chatbot.tail import scope_block
 from app.services.chatbot.turn import compose as turn_compose
 from app.services.chatbot.turn import fetch as run_fetch
 from app.services.chatbot.turn import pending
-from app.services.chatbot.turn.state import is_staff_profile
+from app.services.chatbot.turn.state import escalation_barred, is_staff_profile, offers_escalation
 
 # AC-1691's umbrella: no roster is ever asked with fewer than two options, in any
 # domain and for any entity kind - `narrow.decide`'s own rule for every other roster
@@ -267,7 +267,8 @@ def apply_crossdomain_hit(
         result = _prefix_zero_note(result)
         from dataclasses import replace
 
-        is_staff = is_staff_profile(profile)
+        # ESCALATION-CONTROL: staff and a barred contact alike get no offer.
+        is_staff = not offers_escalation(profile)
         text = _apply_crossdomain_render(answer.text, result, answered=True, include_offer=not is_staff)
         if text == answer.text:
             return answer
@@ -326,6 +327,7 @@ def apply_silent_company_offer(
     turn_id: str | None = None,
     db: Any = None,
     ctx: Any = None,
+    profile: Any = None,
 ) -> turn_compose.Answer:
     """Hand pass 11, defect 3 (multi-company HIT parity): a HIT in ONE of several
     searched companies still offers to escalate to the SILENT company's own team -
@@ -366,6 +368,9 @@ def apply_silent_company_offer(
     searched; a HIT's sentence names none, so the honest offer is the single one.
     """
     try:
+        if escalation_barred(profile):
+            # ESCALATION-CONTROL: a barred contact is offered no team, silent or not.
+            return answer
         if not answer.text or not isinstance(envelope, Mapping):
             return answer
         if answer.question is not None:
@@ -1592,7 +1597,15 @@ def _miss_triggers(
         maybe_fetch = raw_fragment.get("fetch")
         fetch_item = maybe_fetch if isinstance(maybe_fetch, dict) else None
 
-    via_resolver_exit = payload.get("_exit_kind") == "not_found"
+    # SO-NUMBER-ASK: the lane answered the SO words the resolver could not place, and its
+    # reply already names the ones no SO answered (`lanes/business/run_fetch`'s
+    # `so_numbers` arm), so the resolver's own exit is no miss of its own.
+    so_status_answered = isinstance(fetch_item, Mapping) and fetch_item.get("so_status") is True
+    # LOWSTOCK-FILTER-ASK (owner hand test, 3 Oct 2026, turn 4a90dd1d): a low stock
+    # report ran and said its own line; a word the resolver missed on the same turn
+    # never turns that reply into "Could not find inventory".
+    low_stock_answered = isinstance(fetch_item, Mapping) and fetch_item.get("low_stock_report") is True
+    via_resolver_exit = payload.get("_exit_kind") == "not_found" and not (so_status_answered or low_stock_answered)
     via_error_fragment = fragment_outcome == "not_found"
     # R5 (AC-1699, AC-1702): a THIRD trigger - the resolver settled a real subject,
     # the fetch genuinely ran for it, and the tool came back with zero rows. This
@@ -1685,6 +1698,17 @@ def answer_for(
             **resolved,
             "unresolved_tokens": [*(resolved.get("unresolved_tokens") or []), *extra_unplaced],
         }
+    # SO-NUMBER-ASK: a linked contact's customer-scope rows (`engine._scoped_compatible`,
+    # `scope: True`) are not what the message asked about. On a miss over a word nobody
+    # could place ("status of SO422056") they printed a Customer/Product/Dates header and
+    # a "customer: <link> (+11 more)" bullet above the miss line, as if the dealer had
+    # named their own accounts. The miss is about the word, so only the word is named.
+    if resolved.get("unresolved_tokens") and gate.get("compatible_entities"):
+        gate["compatible_entities"] = [
+            e
+            for e in gate["compatible_entities"]
+            if not (isinstance(e, dict) and e.get("scope"))
+        ]
     # D4 (hand pass 9): a bare positional pick's own verdict names no team of its
     # own - the customer typed "1", not the original ask - so `turn_runtime.
     # lane_parse_output`'s own generic fallback (`DEFAULT_SUGGESTED_TEAM`,
@@ -1772,7 +1796,12 @@ def answer_for(
     if miss_gate is None:
         miss_gate = _breakdown_gate(gate, raw_fragment)
     not_found = answer_mod.not_found_error_message(
-        full_payload, parser=parser, resolved=resolved, gate=miss_gate, profile=profile
+        full_payload,
+        parser=parser,
+        resolved=resolved,
+        gate=miss_gate,
+        profile=profile,
+        granted_keys=((ctx.get("access") or {}).get("attributes") if isinstance(ctx, Mapping) else None),
     )
     offer = miss_mod.run_miss_lane(
         not_found,
@@ -1837,6 +1866,8 @@ def answer_for(
             combine_rows
             and len(combine_rows) >= _MIN_ROSTER_OPTIONS
             and db is not None
+            # ESCALATION-CONTROL: no routing roster for a barred contact.
+            and not escalation_barred(profile)
             and _cs_offer_eligible(producers.get("escalate-catalog"), routing=(parser or {}).get("routing") or {}, gate=gate)
         ):
             from app.services.chatbot.tail import member_offer as member_mod
@@ -1883,6 +1914,13 @@ def answer_for(
                 question = _replace_q(question, team=None, payload=stripped_payload)
         else:
             question = None
+    if escalation_barred(profile) and question is not None:
+        # ESCALATION-CONTROL: a barred contact's roster is still ASKED (a clarifying
+        # question, not an offer); its escalation half goes, and an escalation offer
+        # goes whole.
+        from app.services.chatbot.escalation_control import strip_pending
+
+        question, _dropped = strip_pending(question)
     if combined_member_rows and question is not None:
         member_options = [o for o in question.options if o.get("entity_type") == "member"]
         if member_options and any(o.get("entity_type") != "member" for o in question.options):
@@ -1941,7 +1979,7 @@ def answer_for(
         )
     # #1262 slice 11 (F8): same audience gate as the HIT-side ladder rung above.
     text = _apply_crossdomain_render(
-        text, crossdomain_result, include_offer=not is_staff_profile(profile)
+        text, crossdomain_result, include_offer=offers_escalation(profile)
     )
     if dealer_stock_ask:
         # Owner ruling 26 Sep 2026 (hand test F1): a dealer's stock ask never offers

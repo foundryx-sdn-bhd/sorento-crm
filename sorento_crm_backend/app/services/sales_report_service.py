@@ -587,6 +587,15 @@ def _category_echo(db: Session, ids: Optional[list[str]]) -> Optional[str]:
     return _names_in_order(db, ProductCategory.id, ProductCategory.category_name, ids)
 
 
+#: The one technical safety ceiling on a named top-selling N (owner, 30 Sep 2026: "remove
+#: the cap, there is a use case of 100, 200", superseding the 26 Sep "1 to 100"). Not a
+#: product limit: it bounds one query and one WhatsApp reply (measured 30 Sep 2026 with
+#: 9-character codes: 1000 rows render as 41,264 to 46,273 characters, 11 to 12 messages). The route 422s past it, the chatbot lane asks for it and says
+#: so (`lanes/business`), and the MCP presenter (which cannot import the backend) keeps a
+#: copy pinned equal by a test.
+TOP_SELLING_N_CEILING = 1000
+
+
 def top_selling(
     db: Session,
     *,

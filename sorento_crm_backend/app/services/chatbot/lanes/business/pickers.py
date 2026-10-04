@@ -89,14 +89,24 @@ def annotate_incoming(gate: dict[str, Any] | None, *, probe: Any) -> dict[str, A
     answers = _probe_rows(probe)
     if answers is None:
         answers = []
+    if any(jsc.truthy(a) and jsc.get(jsc.get(a, "flags"), "dealer_view") is True for a in answers):
+        # AVAIL-MODE-REPLIES (cloud live-parser pass at 2ff7f5e9, "eta SRTWC286"): a dealer
+        # is told nothing about a variant's incoming before picking it, and the dealer view
+        # lists every asked code ("CODE: No ETA" included), so every line read "has
+        # incoming". The roster stays as the gate wrote it.
+        out["escalate_message"] = jsc.js_string(jsc.get(out, "gate_clarification") or "")
+        out["is_clarification"] = False
+        out["incoming_by_code"] = {}
+        return out
     has_incoming: set[str] = set()
     for a in answers:
         code = jsc.get(a, "title") if jsc.truthy(a) else a
         if jsc.get(jsc.get(a, "flags"), "dealer_view") is True and isinstance(code, str):
-            # PR #1329 fix round 2: a dealer's incoming line is "<code>\nETA: <dates>" in
-            # the title, with no field (the MCP presenter's `_incoming_dealer`). The whole
-            # title matched no code, so every roster line read "no incoming".
-            code = code.split("\n", 1)[0]
+            # PR #1329 fix round 2: a dealer's incoming line is "<code>: ETA <dates>" in
+            # the title, with no field (the MCP presenter's `_incoming_dealer`;
+            # AVAIL-MODE-REPLIES made it one line, the older form was "<code>\nETA: ...").
+            # The whole title matched no code, so every roster line read "no incoming".
+            code = re.split(r"\n|:\s+(?:\u2705\s*)?ETA\b|:\s+No ETA", code, maxsplit=1)[0]
         if not jsc.truthy(code) and jsc.truthy(a) and isinstance(jsc.get(a, "fields"), list):
             field = jsc.find(
                 jsc.get(a, "fields"),

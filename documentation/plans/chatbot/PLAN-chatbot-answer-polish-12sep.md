@@ -35,7 +35,7 @@ pointed at :8080. No frontend change, so no dev server.
    location ... but PO is placed"; detailed prints "No incoming and no stock", as if the
    product were unknown. Reproduced on the lane stack: the console contact's
    `stock_visibility_policies` row (prod copy of 7 Sep, and the API's own
-   `GET /inventory/stock-visibility/contacts/437264483`) carries
+   `GET /inventory/stock-visibility/contacts/900000008`) carries
    `hide_zero_locations = true`; flipping it to false makes detailed print the BRW row at
    0 and the same zero sentence as compact. The screenshot's toggle reads off with the
    Save button lit, which is the unsaved-draft shape. Beyond the setting, the two modes

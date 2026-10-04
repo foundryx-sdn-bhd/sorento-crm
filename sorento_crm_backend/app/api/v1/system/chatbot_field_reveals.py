@@ -90,7 +90,12 @@ def set_contact_field_reveals(
     _require_contact(db, respond_contact_id)
 
     allowed = {item["key"] for item in service.field_reveal_keys()}
-    unknown = sorted(set(payload.granted) - allowed)
+    # A key the contact already holds but this build does not know (seeded by another
+    # lane's migration, merge order) comes back from the screen on every save. It is
+    # tolerated and left untouched (`set_granted_keys` only writes known keys); only a
+    # NEW unknown key is refused.
+    held = set(service.granted_keys(db, respond_contact_id))
+    unknown = sorted(set(payload.granted) - allowed - held)
     if unknown:
         raise handle_unprocessable(
             f"Unknown field reveal key(s): {', '.join(unknown)}. "
@@ -98,6 +103,9 @@ def set_contact_field_reveals(
         )
 
     granted = service.set_granted_keys(
-        db, respond_contact_id, payload.granted, actor_id=str(current_user.get("id") or "")
+        db,
+        respond_contact_id,
+        [key for key in payload.granted if key in allowed],
+        actor_id=str(current_user.get("id") or ""),
     )
     return ContactFieldRevealsResponse(granted=granted)

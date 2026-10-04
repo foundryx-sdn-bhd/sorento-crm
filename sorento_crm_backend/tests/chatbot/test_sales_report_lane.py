@@ -90,47 +90,60 @@ from tests.chatbot.test_engine import _parser_output
 
 SALES_REPORT_DENIAL = "Sales report is not enabled for your account."
 
-# The route's own response shape (PLAN "Backend contract"), a HIT: one month, both a
-# `by_product` breakdown and a populated `so_rows[]` so either detail-pick assertion
-# (this file's) has something to read off the same fixture.
+# The route's own response shape since the delivered basis (lane SALES-REPORT, PR #1401,
+# AC-SR-23): `total`, `periods[]`, and the drill `options[]`. One account, so no "By customer".
+# `_capturing_mcp` pushes it through the real presenter, exactly as production does.
 SALES_REPORT_HIT: dict[str, Any] = {
+    "status": "ok",
+    "message": None,
+    "basis": "delivered",
     "customer_name": CUSTOMER_NAME,
+    "customer_count": 1,
     "product_code": None,
-    "channel": "dealer",
+    "product_codes": [],
+    "channel": None,
+    "channel_shown": False,
     "location_token": None,
     "warehouse_codes": [],
     "date_from": None,
     "date_to": None,
-    "months": [
-        {
-            "month": "2026-09",
-            "so_count": 1,
-            "ordered_value": 100.0, "ordered_qty": 10,
-            "confirmed_value": 60.0, "confirmed_qty": 6,
-            "outstanding_value": 40.0, "outstanding_qty": 4,
-            "by_product": [
-                {
-                    "product_code": PRODUCT_CODE,
-                    "ordered_value": 100.0, "ordered_qty": 10,
-                    "confirmed_value": 60.0, "confirmed_qty": 6,
-                    "outstanding_value": 40.0, "outstanding_qty": 4,
-                },
-            ],
-        },
-    ],
-    "so_rows": [
-        {
-            "so_number": "SO1", "customer_name": CUSTOMER_NAME, "location": "BRW-IB",
-            "order_date": "2026-09-01",
-            "ordered_value": 100.0, "ordered_qty": 10,
-            "confirmed_value": 60.0, "confirmed_qty": 6,
-            "outstanding_value": 40.0, "outstanding_qty": 4,
-        },
+    "grain": "month",
+    "total": {"qty": 10, "amount": 100.0},
+    "periods": [{"from": "2026-09-01", "to": "2026-09-30", "qty": 10, "amount": 100.0}],
+    "group_by": None,
+    "rows": [],
+    "more": 0,
+    "options": [
+        {"key": "product", "label": "By product"},
+        {"key": "delivery_order", "label": "Delivery orders"},
     ],
 }
 
-#: The same body with NOTHING open (AC-1658): no months at all.
-SALES_REPORT_MISS: dict[str, Any] = {**SALES_REPORT_HIT, "months": [], "so_rows": []}
+#: The same body for several accounts: By customer joins the options.
+SALES_REPORT_HIT_MULTI: dict[str, Any] = {
+    **SALES_REPORT_HIT,
+    "customer_count": 2,
+    "options": [
+        {"key": "customer", "label": "By customer"},
+        {"key": "product", "label": "By product"},
+        {"key": "delivery_order", "label": "Delivery orders"},
+    ],
+}
+
+#: The same body with NOTHING delivered (AC-1658): no periods, no options.
+SALES_REPORT_MISS: dict[str, Any] = {
+    **SALES_REPORT_HIT,
+    "total": {"qty": 0, "amount": 0.0},
+    "periods": [],
+    "options": [],
+}
+
+#: A refused body (AC-SR-25): a location outside the contact's policy. Arms nothing.
+SALES_REPORT_REFUSED: dict[str, Any] = {
+    **SALES_REPORT_MISS,
+    "status": "refused",
+    "message": "Sorry, REPAIR isn't one of the locations you can check.",
+}
 
 
 # --------------------------------------------------------------------------- #
@@ -148,7 +161,7 @@ class TestToolPickSalesVsOutstanding:
             "tier_gate": None,
             "ctx": {
                 "parse": {"output": _qf(order_status=order_status, entities=[])},
-                "contact": {"id": 437264483},
+                "contact": {"id": 900000008},
                 "access": {"attributes": attributes},
             },
         }
@@ -281,7 +294,7 @@ class TestChannelFromParserOnly:
                 "parse": {
                     "output": _qf(order_status="sales_report", entities=[], sales_channel=sales_channel)
                 },
-                "contact": {"id": 437264483},
+                "contact": {"id": 900000008},
                 "access": {"attributes": list(attributes)},
             },
         }
@@ -414,10 +427,11 @@ class TestHitArmsSalesReportDetail:
         stored = _session_of(session_factory)
         open_question = stored.get("open_question") or {}
         assert open_question.get("kind") == "sales_report_detail", open_question
+        # AC-SR-28: the offer is the envelope's own `options` (one account, so no By
+        # customer), never a regex over the reply text.
         options = open_question.get("options") or []
-        assert len(options) == 1, options
-        assert options[0].get("label") == "Sales order list", options[0]
-        assert options[0].get("payload", {}).get("value") == "so", options[0]
+        assert [o.get("label") for o in options] == ["By product", "Delivery orders"], options
+        assert [o.get("payload", {}).get("value") for o in options] == ["product", "delivery_order"], options
         filters_out = open_question.get("payload", {}).get("filters") or {}
         assert filters_out.get("tool") == "crm_sales_report", (
             f"tester's own naming choice (module docstring): the stored filter set "
@@ -445,8 +459,15 @@ _KIND_ROWS = {
         {"idx": 2, "label": "Delivery order list", "value": "do"},
     ],
     "sales_report_detail": [
-        {"idx": 1, "label": "Sales order list", "value": "so"},
+        {"idx": 1, "label": "By product", "value": "product"},
+        {"idx": 2, "label": "Delivery orders", "value": "delivery_order"},
     ],
+}
+#: What a pick of position 1 re-runs the tool with, per kind: the outstanding report's
+#: `detail` argument, the sales report's `group_by` (`detail=so` is retired, AC-SR-23).
+_KIND_PICK_ARG = {
+    "outstanding_detail": ("detail", "so"),
+    "sales_report_detail": ("group_by", "product"),
 }
 _PRODUCT_MATCH = {PRODUCT_CODE: {"uuid": PRODUCT_UUID, "entity_type": "product", "canonical_code": PRODUCT_CODE}}
 
@@ -495,7 +516,7 @@ def _seed_open_detail(
 
 class TestDetailOfferLifecycle:
     @pytest.mark.parametrize("kind", KINDS)
-    def test_a_pick_reruns_the_kinds_own_tool_with_detail_so(
+    def test_a_pick_reruns_the_kinds_own_tool_with_its_pick_argument(
         self, session_factory, monkeypatch, kind: str
     ) -> None:
         _seed_open_detail(session_factory, kind)
@@ -515,7 +536,10 @@ class TestDetailOfferLifecycle:
         assert captured, (kind, "the detail pick must re-run the tool")
         name, args = captured[0]
         assert name == _KIND_TOOL[kind], (kind, name)
-        assert args.get("detail") == "so", (kind, args)
+        arg, value = _KIND_PICK_ARG[kind]
+        assert args.get(arg) == value, (kind, args)
+        if kind == "sales_report_detail":
+            assert "detail" not in args, ("`detail=so` is retired", args)
 
     @pytest.mark.parametrize("kind", KINDS)
     def test_offer_survives_a_pick(self, session_factory, monkeypatch, kind: str) -> None:
@@ -530,7 +554,9 @@ class TestDetailOfferLifecycle:
             attributes=_KIND_ATTRS[kind], matches=_PRODUCT_MATCH,
             mcp_response=_KIND_MOCK_HIT[kind],
         )
-        assert captured1 and captured1[0][1].get("detail") == "so", (kind, captured1)
+        assert captured1 and captured1[0][1].get(_KIND_PICK_ARG[kind][0]) == _KIND_PICK_ARG[kind][1], (
+            kind, captured1,
+        )
         # Session-shape port: `pending`/`variables` -> `open_question` (see
         # test_outstanding_lane.py's module docstring).
         open_question = _session_of(session_factory).get("open_question") or {}
@@ -693,6 +719,7 @@ class TestRefinementAndNewAsk:
         name, args = captured[0]
         assert name == _KIND_TOOL[kind], (kind, name)
         assert "detail" not in args, (kind, args)
+        assert "group_by" not in args, (kind, "a date-only refinement re-runs the default report", args)
         stored = _session_of(session_factory)
         assert (stored.get("open_question") or {}).get("kind") == kind, (kind, stored.get("open_question"))
 
@@ -1054,7 +1081,7 @@ class TestHeaderSkipped:
             mcp_response=SALES_REPORT_HIT,
         )
         reply = (result.reply or {}).get("text") or ""
-        assert reply.startswith("Customer:"), (
+        assert reply.startswith("*Customer:*"), (
             f"the report's own header must be the first thing in the reply: {reply!r}"
         )
         assert "Dates: all dates" not in reply, (
@@ -1180,6 +1207,7 @@ class TestParserPromptAndContractsTeachSalesReport:
         so `SALES_REPORT_ADDENDUM` is the tail of the one body that exists once those are
         stripped, checked by `.removesuffix` rather than a bare `.endswith`."""
         from app.services.chatbot_parser_prompt import (
+            ACCOUNT_LEDGER_ADDENDUM,
             ESCALATION_CONFIRMATION_ADDENDUM,
             SELF_REFERENCE_ADDENDUM,
             KNOWN_BRANDS_ADDENDUM,
@@ -1203,11 +1231,11 @@ class TestParserPromptAndContractsTeachSalesReport:
         # 8 on PR #833), the #1262 pair, `TOP_SELLING_ADDENDUM`, then
         # ESCALATION_CONFIRMATION_ADDENDUM (#1323), then MEMORY_ADDENDUM stacked after this
         # one, newest outermost, so they come off first.
-        assert SEMANTIC_PARSER_PROMPT.removesuffix(MEMORY_ADDENDUM).removesuffix(PO_SPO_WAREHOUSE_ADDENDUM).endswith(
+        assert SEMANTIC_PARSER_PROMPT.removesuffix(MEMORY_ADDENDUM).removesuffix(ACCOUNT_LEDGER_ADDENDUM).removesuffix(PO_SPO_WAREHOUSE_ADDENDUM).endswith(
             ESCALATION_CONFIRMATION_ADDENDUM
         )
         assert (
-            SEMANTIC_PARSER_PROMPT.removesuffix(MEMORY_ADDENDUM).removesuffix(PO_SPO_WAREHOUSE_ADDENDUM)
+            SEMANTIC_PARSER_PROMPT.removesuffix(MEMORY_ADDENDUM).removesuffix(ACCOUNT_LEDGER_ADDENDUM).removesuffix(PO_SPO_WAREHOUSE_ADDENDUM)
             .removesuffix(ESCALATION_CONFIRMATION_ADDENDUM).removesuffix(SELF_REFERENCE_ADDENDUM)
             .removesuffix(TOP_SELLING_ADDENDUM)
             .removesuffix(KNOWN_BRANDS_ADDENDUM)
@@ -1231,6 +1259,7 @@ class TestParserPromptAndContractsTeachSalesReport:
         `SEMANTIC_PARSER_PROMPT_SLIM` stays retired on this lane (see
         `test_the_addendum_is_appended_to_the_single_body` above) - one body, not two."""
         from app.services.chatbot_parser_prompt import (
+            ACCOUNT_LEDGER_ADDENDUM,
             KNOWN_BRANDS_ADDENDUM,
             LOW_STOCK_ADDENDUM,
             ESCALATION_CONFIRMATION_ADDENDUM,
@@ -1247,7 +1276,7 @@ class TestParserPromptAndContractsTeachSalesReport:
         )
 
         assert (
-            SEMANTIC_PARSER_PROMPT.removesuffix(MEMORY_ADDENDUM).removesuffix(PO_SPO_WAREHOUSE_ADDENDUM)
+            SEMANTIC_PARSER_PROMPT.removesuffix(MEMORY_ADDENDUM).removesuffix(ACCOUNT_LEDGER_ADDENDUM).removesuffix(PO_SPO_WAREHOUSE_ADDENDUM)
             .removesuffix(ESCALATION_CONFIRMATION_ADDENDUM).removesuffix(SELF_REFERENCE_ADDENDUM)
             .removesuffix(TOP_SELLING_ADDENDUM)
             .removesuffix(KNOWN_BRANDS_ADDENDUM)
@@ -1294,7 +1323,8 @@ class TestChannelSurvivesPickAndRefinement:
         assert args.get("channel") == "project", (
             "the stored channel must survive a pick of the detail offer", args,
         )
-        assert args.get("detail") == "so", args
+        assert args.get("group_by") == "product", args
+        assert "detail" not in args, args
 
     def test_a_dates_only_refinement_carries_the_stored_channel(self, session_factory, monkeypatch) -> None:
         _seed_open_detail(session_factory, "sales_report_detail", channel="project")

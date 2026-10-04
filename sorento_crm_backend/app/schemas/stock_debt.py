@@ -22,7 +22,9 @@ from pydantic import BaseModel, Field
 from app.schemas.export_split import ExportSplit as ExportSplit
 
 Tone = Literal["red", "amber", "green"]
-DemandStatus = Literal["covered", "late", "short", "pinned"]
+#: `order_back` (STOCK-DEBT-LENDABLE, 30 Sep 2026): the line lent its landed goods to
+#: nearer lines and is owed a re-buy for them at its own date.
+DemandStatus = Literal["covered", "late", "short", "pinned", "order_back"]
 SupplyKind = Literal["on_hand", "spo", "po"]
 #: `book` (R1/AC-8): `all` (default) spans flagged project bins AND the site pools in one
 #: read; `project` reproduces the pre-24-Sep view (flagged bins only); `retail` is pools
@@ -71,6 +73,11 @@ class StockDebtRow(BaseModel):
     #: the screen and the workbook both, so `undated`/`unlocated` are no longer folded in
     #: here - they still ride on the row, unchanged, just not in this figure).
     total: float = 0.0
+    #: Auxiliary columns: BRW pool on hand, open PO, open SPO, and dealer outstanding.
+    pool_on_hand: float = 0.0
+    pool_po_qty: float = 0.0
+    pool_incoming_qty: float = 0.0
+    dealer_outstanding: float = 0.0
 
 
 class StockDebtPagination(BaseModel):
@@ -93,6 +100,10 @@ class StockDebtTotals(BaseModel):
     undated: float
     unlocated: float
     total: float
+    pool_on_hand: float = 0.0
+    pool_po_qty: float = 0.0
+    pool_incoming_qty: float = 0.0
+    dealer_outstanding: float = 0.0
 
 
 class StockDebtSupplier(BaseModel):
@@ -140,6 +151,23 @@ class StockDebtAssignedFromOnHand(BaseModel):
     spo_number: Optional[str] = None
     spo_line_number: Optional[int] = None
     qty: float
+    #: STOCK-DEBT-LENDABLE: the sales order whose landed goods this take was LENT from
+    #: ("On hand BRW-BB (from SO381065)"). `None` on free stock at the same bin, which is
+    #: then a separate entry.
+    lent_from_so_number: Optional[str] = None
+
+
+class StockDebtAssignedFromLent(BaseModel):
+    """STOCK-DEBT-LENDABLE: one receiver of this line's lendable landed goods - "Lent to
+    SO396071 (32)". Not a source (nothing was assigned to this line by it); listed under
+    Covered by so the far line says where its goods went and the reader can open the
+    receiving order."""
+
+    kind: Literal["lent"]
+    ref: str
+    qty: float
+    so_number: str
+    sales_order_id: Optional[str] = None
 
 
 class StockDebtAssignedFromDocument(BaseModel):
@@ -166,7 +194,11 @@ class StockDebtAssignedFromDocument(BaseModel):
 #: Discriminated on `kind` (the same idiom `price_tag.TagLayerPropsDoc` already uses) so an
 #: on-hand entry's wire shape never grows the two OI keys a document entry always carries.
 StockDebtAssignedFrom = Annotated[
-    Union[StockDebtAssignedFromOnHand, StockDebtAssignedFromDocument],
+    Union[
+        StockDebtAssignedFromOnHand,
+        StockDebtAssignedFromDocument,
+        StockDebtAssignedFromLent,
+    ],
     Field(discriminator="kind"),
 ]
 
@@ -196,6 +228,9 @@ class StockDebtDemandLine(BaseModel):
     sales_order_id: Optional[str] = None
     #: R29: `assigned_source` (free text) replaced by one LINKED entry per source.
     assigned_from: List[StockDebtAssignedFrom] = []
+    #: STOCK-DEBT-LENDABLE: what nearer lines took of this line's lendable landed goods -
+    #: the "order back N" the status pill prints. 0 on every line that lent nothing.
+    lent_qty: float = 0.0
 
 
 class StockDebtAssignedTo(BaseModel):
@@ -286,3 +321,4 @@ class StockDebtExportIn(BaseModel):
     supplier_ids: List[str] = []
     book: Book = "all"
     split: ExportSplit = "none"
+    show_aux: bool = False

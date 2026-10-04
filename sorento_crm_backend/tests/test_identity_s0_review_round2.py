@@ -141,7 +141,7 @@ def test_job_enqueued_behind_current_user_or_api_key_carries_the_user_in_meta(mo
     with blank_session() as db:
         staff = _seed_user(db, name="R2 Enqueuer")
         db.commit()
-        session_row = mint_session(db, staff.id, remember=True)
+        session_row = mint_session(db, staff.id)
 
         test_app = FastAPI()
         test_app.add_middleware(LoggingMiddleware)
