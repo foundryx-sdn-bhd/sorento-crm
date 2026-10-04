@@ -40,6 +40,11 @@ ME = "8f0f4e0e-0000-4000-8000-00000000ab01"
 SOMEBODY_ELSE = "8f0f4e0e-0000-4000-8000-00000000ab02"
 MY_OPEN_CONTACT = "10025904"
 A_CONTACT_I_DID_NOT_OPEN = "999888777"
+# The read timeout also bounds the wait for the response HEADERS, which a loaded CI
+# runner (xdist under load) delayed past 3s once (PR #1466, run 37149035956: ReadTimeout
+# before the stream opened). No test relies on it to stop reading - `_read_frames` stops
+# on its frame count or its own deadline - so slack here only lengthens a failure.
+CLIENT_TIMEOUT = httpx.Timeout(10.0, read=15.0)
 
 
 @pytest.fixture(scope="module")
@@ -172,7 +177,7 @@ def test_the_stream_refuses_a_caller_with_no_session(base_url, events):
 
 
 def test_an_event_for_me_arrives_as_a_frame(base_url, signed_in, events):
-    with httpx.Client(timeout=httpx.Timeout(10.0, read=3.0)) as client:
+    with httpx.Client(timeout=CLIENT_TIMEOUT) as client:
         with client.stream("GET", f"{base_url}{PATH}") as response:
             assert response.status_code == 200
             assert response.headers["content-type"].startswith("text/event-stream")
@@ -192,7 +197,7 @@ def test_an_event_for_me_arrives_as_a_frame(base_url, signed_in, events):
 
 
 def test_an_event_for_a_contact_i_have_open_arrives(base_url, signed_in, events):
-    with httpx.Client(timeout=httpx.Timeout(10.0, read=3.0)) as client:
+    with httpx.Client(timeout=CLIENT_TIMEOUT) as client:
         with client.stream(
             "GET", f"{base_url}{PATH}", params={"contacts": MY_OPEN_CONTACT}
         ) as response:
@@ -210,7 +215,7 @@ def test_an_event_for_a_contact_i_have_open_arrives(base_url, signed_in, events)
 def test_somebody_elses_work_never_reaches_me(base_url, signed_in, events):
     """Filtered server-side: a stream that fanned everything to everybody would
     leak who is talking to whom and would scale with total traffic."""
-    with httpx.Client(timeout=httpx.Timeout(10.0, read=3.0)) as client:
+    with httpx.Client(timeout=CLIENT_TIMEOUT) as client:
         with client.stream(
             "GET", f"{base_url}{PATH}", params={"contacts": MY_OPEN_CONTACT}
         ) as response:
@@ -230,7 +235,7 @@ def test_somebody_elses_work_never_reaches_me(base_url, signed_in, events):
 def test_a_disconnect_releases_the_subscription(base_url, signed_in, events):
     """AC-K2: when nothing is open, nothing is held - no subscription left
     behind by a closed drawer or a navigated-away tab."""
-    with httpx.Client(timeout=httpx.Timeout(10.0, read=3.0)) as client:
+    with httpx.Client(timeout=CLIENT_TIMEOUT) as client:
         with client.stream("GET", f"{base_url}{PATH}") as response:
             _wait_for_subscription(events)
             assert events.active_subscriptions == 1
@@ -247,7 +252,7 @@ def test_a_quiet_stream_sends_a_heartbeat(base_url, signed_in, events, monkeypat
     monkeypatch.setattr(conversation_events, "HEARTBEAT_SECONDS", 0.1)
     monkeypatch.setattr(conversation_events, "POLL_SECONDS", 0.02)
 
-    with httpx.Client(timeout=httpx.Timeout(10.0, read=3.0)) as client:
+    with httpx.Client(timeout=CLIENT_TIMEOUT) as client:
         with client.stream("GET", f"{base_url}{PATH}") as response:
             frames = _read_frames(response, expected=99, timeout=1.5)
 

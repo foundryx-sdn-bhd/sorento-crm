@@ -42,6 +42,7 @@ from app.models.procurement import InboundShipment
 from app.services.chatbot.lanes.business.fetch import ORDER_TOOLS as ORDER_TOOLS_LOCAL
 from app.services.company_scope import DEFAULT_COMPANY_ID
 from tests._pg_fixture import unique_code
+from tests.chatbot._turn_helpers import do_window
 from tests.chatbot.test_engine import _parser_output
 from tests.chatbot.test_engine_company_scope import _seed_product
 from tests.chatbot.test_rearch_r5_production_decides import _mcp_double, _seed_contact_and_get
@@ -596,6 +597,8 @@ class TestGroupFHitHeaderNamesLedgers:
             document=[],
             status=None,
             order_status=None,
+            # Dated: a dateless DO list ask asks which period first (DO-ASK-SIMPLIFY, owner 4 Oct 2026).
+            **do_window(),
         )
 
         order_number = unique_code("ORD")
@@ -620,11 +623,12 @@ class TestGroupFHitHeaderNamesLedgers:
         assert "here are the" in said.lower() or order_number in said, (
             f"test setup sanity, a real HIT reply: {said!r}"
         )
-        for name in names:
-            assert name in said, (
-                f"the HIT reply's own header must name every ledger the pick "
-                f"covers: {said!r}"
-            )
+        # DO-ASK-SIMPLIFY rule 1 (owner, 2 Oct 2026) replaces "name every ledger": the
+        # header names each group once (owner, 2 Oct: group names only, no count). These three names carry
+        # no bracketed ledger marker, so they are three families, not one.
+        assert "Customer: ZZT BATHIDEA MARKETING - IBORN, ZZT BATHIDEA MARKETING - CERAMIC, ZZT BATHIDEA MARKETING - A/C I" in said, (
+            f"the HIT reply's header must name each group once, no count: {said!r}"
+        )
         assert option_code not in said, (
             f"no customer CODE must ever reach the reply text, header included: "
             f"{said!r}"
@@ -706,6 +710,8 @@ class TestGroupFHitHeaderNamesLedgers:
             document=[],
             status=None,
             order_status=None,
+            # Dated: a dateless DO list ask asks which period first (DO-ASK-SIMPLIFY, owner 4 Oct 2026).
+            **do_window(),
         )
 
         order_number = unique_code("ORD")
@@ -727,9 +733,9 @@ class TestGroupFHitHeaderNamesLedgers:
         assert result.status == "done", result.error
         said = _said(result)
 
-        assert the_name in said, (
-            f"the HIT reply's own header must name the single ledger the pick "
-            f"covers: {said!r}"
+        # CUSTOMER-GROUP ruling (b): an ungrouped ledger prints its own full name.
+        assert "Customer: ZZT BATH IDEA (KEMAMAN OUTLET)\n" in said, (
+            f"the HIT reply's own header must name the single ledger the pick covers: {said!r}"
         )
         assert option_code not in said, (
             f"no customer CODE must ever reach the reply text, header included: "

@@ -1796,7 +1796,12 @@ def answer_for(
     if miss_gate is None:
         miss_gate = _breakdown_gate(gate, raw_fragment)
     not_found = answer_mod.not_found_error_message(
-        full_payload, parser=parser, resolved=resolved, gate=miss_gate, profile=profile
+        full_payload,
+        parser=parser,
+        resolved=resolved,
+        gate=miss_gate,
+        profile=profile,
+        granted_keys=((ctx.get("access") or {}).get("attributes") if isinstance(ctx, Mapping) else None),
     )
     offer = miss_mod.run_miss_lane(
         not_found,

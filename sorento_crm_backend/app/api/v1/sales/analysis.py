@@ -357,6 +357,11 @@ def _prepare(
     )
     download_id = str(download.id)
     answer["download_id"] = download_id
+    from app.models.base import get_brand_scope
+
+    brand_scope = get_brand_scope(db)
+    # CONTACT-BRAND-SCOPE: the worker opens a fresh session; unscoped sends nothing extra.
+    scope_kwargs = {"brand_ids": sorted(brand_scope)} if brand_scope else {}
     try:
         queue_service.enqueue_job(
             generate_report_xlsx,
@@ -368,6 +373,7 @@ def _prepare(
             queue_name=settings.report_export_queue,
             job_timeout=600,
             company_grants=[company_id],
+            **scope_kwargs,
         )
     except Exception:  # noqa: BLE001 - the text still goes; the file is said not to
         log.exception("sales_analysis: could not queue the workbook for %s", download_id)

@@ -297,12 +297,32 @@ def _attach_images_anthropic(
 # spelling would go stale the first time someone picks a new one. Instead: send the
 # normal shape, read the parameter name out of the 400, adapt, retry. Bounded so a
 # genuinely broken request cannot loop.
+#
+# The ceiling goes out as `max_completion_tokens`, which every OpenAI chat model accepts;
+# sending `max_tokens` first cost every gpt-5.4-mini call a refused round trip
+# (CHAT-SLOW-MISS). What a model does refuse is remembered per model for the life of the
+# process, so the 400 is paid once rather than on every call.
 _MAX_PARAM_RETRIES = 4
+_CEILING_SPELLINGS = {"max_completion_tokens": "max_tokens", "max_tokens": "max_completion_tokens"}
+_OPENAI_REJECTED_PARAMS: dict[str, set[str]] = {}
+
+
+def _adapt(attempt: dict, param: str) -> None:
+    """Drop `param`, or move the ceiling to its other spelling."""
+    value = attempt.pop(param)
+    other = _CEILING_SPELLINGS.get(param)
+    if other is not None:
+        attempt[other] = value
 
 
 def _create_chat_completion(client, kwargs: dict) -> Any:
     """`client.chat.completions.create`, adapting to a model's parameter dialect."""
     attempt = dict(kwargs)
+    if "max_tokens" in attempt:
+        attempt["max_completion_tokens"] = attempt.pop("max_tokens")
+    rejected = _OPENAI_REJECTED_PARAMS.setdefault(str(attempt.get("model")), set())
+    for param in [p for p in attempt if p in rejected]:
+        _adapt(attempt, param)
     for _ in range(_MAX_PARAM_RETRIES):
         try:
             return client.chat.completions.create(**attempt)
@@ -310,16 +330,28 @@ def _create_chat_completion(client, kwargs: dict) -> Any:
             param = getattr(exc, "param", None) or _unsupported_param(str(exc))
             if not param or param not in attempt:
                 raise
-            if param == "max_tokens":
-                attempt["max_completion_tokens"] = attempt.pop("max_tokens")
-            else:
-                # Nothing to rename it to - the model wants its own default.
-                attempt.pop(param)
+            # Only a refusal of the parameter itself is a fact about the model. A 400
+            # that merely NAMES a parameter (context length on `messages`, a bad
+            # schema on `response_format`) fails this call alone, as it always did.
+            if _is_unsupported(exc, param):
+                rejected.add(param)
+            _adapt(attempt, param)
             logger.info("openai: model rejected %r, retrying without it", param)
     return client.chat.completions.create(**attempt)
 
 
 _UNSUPPORTED_PARAM_RE = re.compile(r"[Uu]nsupported parameter: '([a-z_]+)'|'([a-z_]+)' is not supported")
+_UNSUPPORTED_CODES = frozenset({"unsupported_parameter", "unsupported_value"})
+
+
+def _is_unsupported(exc: Exception, param: str) -> bool:
+    """True when the 400 says the model does not take `param` at all."""
+    message = str(exc)
+    return (
+        getattr(exc, "code", None) in _UNSUPPORTED_CODES
+        or _unsupported_param(message) == param
+        or f"nsupported value: '{param}'" in message
+    )
 
 
 def _unsupported_param(message: str) -> str | None:
