@@ -1011,13 +1011,19 @@ def test_c3_a_real_agent_word_is_still_a_sales_agent(console) -> None:
 
 
 def test_kill_the_message_words_do_not_set_the_measure(console) -> None:
-    """measure null + rank_by quantity + "by quantity" in the text -> amount: the lane follows the parser."""
-    _text, calls = console.say(
-        _rank(_e("sorento", "brand"), measure=None, rank_by="quantity", **THIS_YEAR),
+    """The message WORDS never set the measure, only the parser's keys do: measure and rank_by
+    both null with quantity words in the text asks the metric; rank_by quantity runs as qty."""
+    text, calls = console.say(
+        _rank(_e("sorento", "brand"), measure=None, rank_by=None, **THIS_YEAR),
         "top 3 salesman for sorento this year by quantity",
     )
+    assert calls == [] and text.strip() == "By quantity or by amount?", (text, calls)
+    _text, calls = console.say(
+        _rank(_e("sorento", "brand"), measure=None, rank_by="quantity", **THIS_YEAR),
+        "top 3 salesman for sorento this year",
+    )
     (args,) = calls
-    assert args["measure"] == "amount", args
+    assert args["measure"] == "qty", args
 
 
 def test_kill_a_top_selling_verdict_for_the_owner_message_is_not_rerouted(console, monkeypatch) -> None:

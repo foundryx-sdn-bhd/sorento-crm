@@ -302,6 +302,7 @@ def test_g_a_refine_never_asks_the_held_frame_has_both(console) -> None:
 
 
 def test_g_a_ranking_settled_by_answers_is_refined_without_asking(console) -> None:
+    _seed_wt(console)
     console.say(_sorento_wc(), OWNER_MESSAGE)
     console.say(_answer_keys(rank_by="quantity"), "qty")
     _text, calls = console.say(_answer_keys(basis="outstanding"), "outstanding")
@@ -318,6 +319,7 @@ def test_g_a_ranking_settled_by_answers_is_refined_without_asking(console) -> No
 
 
 def test_h_a_metric_reply_with_no_key_asks_again_then_gives_up(console) -> None:
+    _seed_wt(console)
     console.say(_sorento_wc(), OWNER_MESSAGE)
     text, calls = console.say(_reply(), "whatever")
     assert calls == [] and METRIC_Q in text, (text, calls)
@@ -327,6 +329,7 @@ def test_h_a_metric_reply_with_no_key_asks_again_then_gives_up(console) -> None:
 
 
 def test_h_a_basis_reply_with_no_key_asks_again_then_gives_up(console) -> None:
+    _seed_wt(console)
     console.say(_sorento_wc(), OWNER_MESSAGE)
     console.say(_answer_keys(rank_by="quantity"), "qty")
     text, calls = console.say(_reply(), "whatever")
@@ -337,6 +340,7 @@ def test_h_a_basis_reply_with_no_key_asks_again_then_gives_up(console) -> None:
 
 
 def test_h_a_miss_then_an_answer_still_runs(console) -> None:
+    _seed_wt(console)
     console.say(_sorento_wc(), OWNER_MESSAGE)
     text, calls = console.say(_reply(), "whatever")
     assert METRIC_Q in text and calls == []
