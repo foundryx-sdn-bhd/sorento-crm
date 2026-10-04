@@ -1,0 +1,429 @@
+"""LLM-TEST-COST: record/replay cassettes at the `llm_provider` seam, `cached_tokens`
+on the parser's usage and trace, and the optional base-URL / model override.
+
+Red first (PLAN-llm-test-cost-4oct.md). No network: every "live" call here is a stub
+client returning a REAL `openai` `ChatCompletion`, so a recorded cassette round-trips
+through the same pydantic type production sees.
+"""
+from __future__ import annotations
+
+import json
+import os
+import stat
+import types
+from pathlib import Path
+from typing import Any
+
+import pytest
+from openai.types import CreateEmbeddingResponse
+from openai.types.chat import ChatCompletion
+
+from app.services import llm_cassette
+from app.services import llm_provider
+from app.services.llm_provider import OpenAIProvider
+
+SECRET = "sk-test-SECRET-never-in-a-file"
+PII_TEXT = "Mr Fake Person +60 12-000 0000 asks for stock of ZZT-1"
+
+
+def _completion(content: str = '{"ok": true}', cached: int | None = 0) -> ChatCompletion:
+    usage: dict[str, Any] = {"prompt_tokens": 1000, "completion_tokens": 10, "total_tokens": 1010}
+    if cached is not None:
+        usage["prompt_tokens_details"] = {"cached_tokens": cached}
+    return ChatCompletion.model_validate(
+        {
+            "id": "chatcmpl-fake",
+            "object": "chat.completion",
+            "created": 1,
+            "model": "gpt-fake",
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": "stop",
+                    "message": {"role": "assistant", "content": content},
+                }
+            ],
+            "usage": usage,
+        }
+    )
+
+
+class _Client:
+    """A stand-in for `openai.OpenAI`: counts calls, can be told to explode."""
+
+    def __init__(self, completion: ChatCompletion | None = None, explode: bool = False) -> None:
+        self.calls: list[dict] = []
+        self.embed_calls: list[dict] = []
+        outer = self
+
+        class _Completions:
+            def create(inner, **kwargs):
+                outer.calls.append(kwargs)
+                if explode:
+                    raise AssertionError("a live call was made")
+                return completion or _completion()
+
+        class _Embeddings:
+            def create(inner, **kwargs):
+                outer.embed_calls.append(kwargs)
+                if explode:
+                    raise AssertionError("a live call was made")
+                return CreateEmbeddingResponse.model_validate(
+                    {
+                        "object": "list",
+                        "model": kwargs["model"],
+                        "data": [{"object": "embedding", "index": 0, "embedding": [0.25, 0.5]}],
+                        "usage": {"prompt_tokens": 2, "total_tokens": 2},
+                    }
+                )
+
+        self.chat = types.SimpleNamespace(completions=_Completions())
+        self.embeddings = _Embeddings()
+
+
+@pytest.fixture(autouse=True)
+def _clean_env(monkeypatch, tmp_path):
+    for name in ("LLM_CASSETTE_MODE", "LLM_CASSETTE_DIR", "LLM_BASE_URL", "LLM_MODEL_OVERRIDE"):
+        monkeypatch.delenv(name, raising=False)
+    llm_provider._OPENAI_REJECTED_PARAMS.clear()
+    yield
+    llm_provider._OPENAI_REJECTED_PARAMS.clear()
+
+
+@pytest.fixture
+def cassette_dir(monkeypatch, tmp_path) -> Path:
+    path = tmp_path / "cassettes"
+    monkeypatch.setenv("LLM_CASSETTE_DIR", str(path))
+    return path
+
+
+def _provider(monkeypatch, client: _Client) -> OpenAIProvider:
+    provider = OpenAIProvider(SECRET, default_model="gpt-fake")
+    monkeypatch.setattr(provider, "_client", lambda **_kw: client)
+    return provider
+
+
+MESSAGES = [
+    {"role": "system", "content": "static system prompt"},
+    {"role": "user", "content": PII_TEXT},
+]
+SCHEMA = {"type": "object", "properties": {"ok": {"type": "boolean"}}, "required": ["ok"], "additionalProperties": False}
+
+
+def _chat(provider: OpenAIProvider, **overrides: Any):
+    kwargs: dict[str, Any] = {
+        "model": "gpt-fake",
+        "temperature": 0.0,
+        "max_tokens": 50,
+        "json_schema": SCHEMA,
+        "json_schema_name": "parse",
+    }
+    kwargs.update(overrides)
+    messages = kwargs.pop("messages", MESSAGES)
+    return provider.chat(messages, **kwargs)
+
+
+def _files(path: Path) -> list[Path]:
+    return sorted(p for p in path.rglob("*") if p.is_file()) if path.exists() else []
+
+
+# --------------------------------------------------------------------------- #
+# Mode switch
+# --------------------------------------------------------------------------- #
+
+
+class TestModeOff:
+    def test_unset_mode_calls_live_every_time_and_writes_nothing(self, monkeypatch, cassette_dir):
+        client = _Client()
+        provider = _provider(monkeypatch, client)
+        _chat(provider)
+        _chat(provider)
+        assert len(client.calls) == 2
+        assert _files(cassette_dir) == []
+
+    def test_explicit_off_is_the_same_as_unset(self, monkeypatch, cassette_dir):
+        monkeypatch.setenv("LLM_CASSETTE_MODE", "off")
+        client = _Client()
+        _chat(_provider(monkeypatch, client))
+        assert len(client.calls) == 1
+        assert _files(cassette_dir) == []
+
+    def test_an_unknown_mode_is_refused_not_ignored(self, monkeypatch, cassette_dir):
+        monkeypatch.setenv("LLM_CASSETTE_MODE", "replya")
+        client = _Client()
+        with pytest.raises(ValueError, match="LLM_CASSETTE_MODE"):
+            _chat(_provider(monkeypatch, client))
+        assert client.calls == []
+
+
+class TestRecord:
+    def test_record_calls_live_once_and_writes_one_private_file(self, monkeypatch, cassette_dir):
+        monkeypatch.setenv("LLM_CASSETTE_MODE", "record")
+        client = _Client()
+        result = _chat(_provider(monkeypatch, client))
+        assert len(client.calls) == 1
+        assert result.content == '{"ok": true}'
+        files = _files(cassette_dir)
+        assert len(files) == 1
+        mode = stat.S_IMODE(files[0].stat().st_mode)
+        assert mode == 0o600, oct(mode)
+
+    def test_the_file_carries_no_secret_and_no_request_text(self, monkeypatch, cassette_dir):
+        monkeypatch.setenv("LLM_CASSETTE_MODE", "record")
+        _chat(_provider(monkeypatch, _Client()))
+        body = _files(cassette_dir)[0].read_text(encoding="utf-8")
+        assert SECRET not in body
+        assert PII_TEXT not in body
+        assert "static system prompt" not in body
+
+    def test_a_response_echoing_the_api_key_is_never_written(self, monkeypatch, cassette_dir):
+        monkeypatch.setenv("LLM_CASSETTE_MODE", "record")
+        client = _Client(completion=_completion(content=f"leak {SECRET}"))
+        with pytest.raises(llm_cassette.CassetteError):
+            _chat(_provider(monkeypatch, client))
+        assert _files(cassette_dir) == []
+
+
+class TestReplay:
+    def test_replay_returns_the_recording_without_a_live_call(self, monkeypatch, cassette_dir):
+        monkeypatch.setenv("LLM_CASSETTE_MODE", "record")
+        recorded = _chat(_provider(monkeypatch, _Client(completion=_completion(cached=768))))
+
+        monkeypatch.setenv("LLM_CASSETTE_MODE", "replay")
+        live = _Client(explode=True)
+        replayed = _chat(_provider(monkeypatch, live))
+
+        assert live.calls == []
+        assert replayed.content == recorded.content
+        assert replayed.prompt_tokens == recorded.prompt_tokens == 1000
+        assert replayed.cached_tokens == 768
+        # `raw` is the provider-native object the agent loop reads tool calls back from.
+        assert isinstance(replayed.raw, ChatCompletion)
+        assert replayed.raw.choices[0].finish_reason == "stop"
+
+    def test_a_miss_names_the_key_and_never_calls_live(self, monkeypatch, cassette_dir):
+        monkeypatch.setenv("LLM_CASSETTE_MODE", "replay")
+        live = _Client(explode=True)
+        with pytest.raises(llm_cassette.CassetteMiss) as excinfo:
+            _chat(_provider(monkeypatch, live))
+        assert live.calls == []
+        expected_key = llm_cassette.chat_key(
+            {
+                "model": "gpt-fake",
+                "messages": MESSAGES,
+                "response_format": {
+                    "type": "json_schema",
+                    "json_schema": {"name": "parse", "schema": SCHEMA, "strict": True},
+                },
+            }
+        )
+        assert expected_key in str(excinfo.value)
+        assert "LLM_CASSETTE_MODE=record" in str(excinfo.value)
+
+    def test_replay_needs_no_api_key(self, monkeypatch, cassette_dir):
+        monkeypatch.setenv("LLM_CASSETTE_MODE", "record")
+        _chat(_provider(monkeypatch, _Client()))
+        monkeypatch.setenv("LLM_CASSETTE_MODE", "replay")
+        provider = OpenAIProvider("", default_model="gpt-fake")
+        monkeypatch.setattr(provider, "_client", lambda **_kw: (_ for _ in ()).throw(AssertionError("client built")))
+        assert _chat(provider).content == '{"ok": true}'
+
+    def test_embeddings_replay_too(self, monkeypatch, cassette_dir):
+        monkeypatch.setenv("LLM_CASSETTE_MODE", "record")
+        assert _provider(monkeypatch, _Client()).embed("hello") == [0.25, 0.5]
+        monkeypatch.setenv("LLM_CASSETTE_MODE", "replay")
+        live = _Client(explode=True)
+        assert _provider(monkeypatch, live).embed("hello") == [0.25, 0.5]
+        with pytest.raises(llm_cassette.CassetteMiss):
+            _provider(monkeypatch, live).embed("a different text")
+        assert live.embed_calls == []
+
+
+class TestKey:
+    BASE = {"model": "m", "messages": MESSAGES, "response_format": {"type": "json_object"}}
+
+    def test_model_messages_schema_and_tools_each_change_the_key(self):
+        base = llm_cassette.chat_key(self.BASE)
+        assert llm_cassette.chat_key({**self.BASE, "model": "m2"}) != base
+        assert llm_cassette.chat_key({**self.BASE, "messages": MESSAGES[:1]}) != base
+        assert llm_cassette.chat_key({**self.BASE, "response_format": {"type": "text"}}) != base
+        assert llm_cassette.chat_key({**self.BASE, "tools": [{"type": "function"}]}) != base
+
+    def test_temperature_and_ceiling_do_not(self):
+        base = llm_cassette.chat_key(self.BASE)
+        assert llm_cassette.chat_key({**self.BASE, "temperature": 1.0, "max_tokens": 9}) == base
+
+    def test_dict_order_does_not(self):
+        reordered = {"response_format": self.BASE["response_format"], "messages": MESSAGES, "model": "m"}
+        assert llm_cassette.chat_key(reordered) == llm_cassette.chat_key(self.BASE)
+
+
+class TestStorage:
+    def test_default_dir_is_outside_the_repository(self, monkeypatch):
+        repo_root = Path(__file__).resolve().parents[2]
+        default = llm_cassette.cassette_dir()
+        assert repo_root not in default.resolve().parents
+
+    def test_a_dir_inside_the_repository_is_refused(self, monkeypatch):
+        inside = Path(__file__).resolve().parent / "llm_cassettes_should_not_exist"
+        monkeypatch.setenv("LLM_CASSETTE_DIR", str(inside))
+        monkeypatch.setenv("LLM_CASSETTE_MODE", "record")
+        with pytest.raises(llm_cassette.CassetteError, match="inside the repository"):
+            _chat(_provider(monkeypatch, _Client()))
+        assert not inside.exists()
+
+
+class TestOtherProviders:
+    def test_replay_refuses_a_provider_it_does_not_cover(self, monkeypatch, cassette_dir):
+        monkeypatch.setenv("LLM_CASSETTE_MODE", "replay")
+        provider = llm_provider.AnthropicProvider("k", default_model="claude-x")
+        with pytest.raises(llm_cassette.CassetteError, match="anthropic"):
+            provider.chat([{"role": "user", "content": "hi"}])
+        provider = llm_provider.GeminiProvider("k", default_model="gemini-x")
+        with pytest.raises(llm_cassette.CassetteError, match="gemini"):
+            provider.chat([{"role": "user", "content": "hi"}])
+
+
+class TestChatbotSeam:
+    def test_a_miss_through_llm_call_is_raised_at_once_never_retried(self, monkeypatch, cassette_dir):
+        from app.services.chatbot import llm_call
+
+        monkeypatch.setenv("LLM_CASSETTE_MODE", "replay")
+        slept: list[float] = []
+        monkeypatch.setattr(llm_call, "_sleep", slept.append)
+        with pytest.raises(llm_cassette.CassetteMiss):
+            llm_call.chat("openai", "", "gpt-fake", MESSAGES, json_schema=SCHEMA)
+        assert slept == []
+
+
+# --------------------------------------------------------------------------- #
+# cached_tokens
+# --------------------------------------------------------------------------- #
+
+
+class TestCachedTokens:
+    def test_openai_reads_prompt_tokens_details(self, monkeypatch):
+        result = _chat(_provider(monkeypatch, _Client(completion=_completion(cached=31744))))
+        assert result.cached_tokens == 31744
+
+    def test_absent_details_read_as_zero(self, monkeypatch):
+        result = _chat(_provider(monkeypatch, _Client(completion=_completion(cached=None))))
+        assert result.cached_tokens == 0
+
+    def test_parser_usage_carries_cached_tokens(self, monkeypatch):
+        from app.services.chatbot import llm_call
+        from app.services.chatbot.head import parser as parser_mod
+
+        emission = {key: None for key in parser_mod.DECLARED_KEYS}
+        result = llm_provider.ChatResult(
+            content=json.dumps(emission),
+            prompt_tokens=33000,
+            completion_tokens=200,
+            total_tokens=33200,
+            cached_tokens=32000,
+        )
+        monkeypatch.setattr(llm_call, "chat", lambda *a, **k: result)
+        config = parser_mod.ParserConfig(
+            system_prompt="s", prompt_version=1, provider="openai", model="m", api_key="k"
+        )
+        out = parser_mod.parse(config, "user block")
+        assert out.usage["cached_tokens"] == 32000
+
+
+# --------------------------------------------------------------------------- #
+# Cache friendliness: the static part is a stable prefix
+# --------------------------------------------------------------------------- #
+
+
+class TestStablePrefix:
+    def test_parser_messages_put_the_variable_block_last(self, monkeypatch):
+        from app.services.chatbot import llm_call
+        from app.services.chatbot.head import parser as parser_mod
+
+        seen: list[dict] = []
+
+        def fake_chat(provider, key, model, messages, **kwargs):
+            seen.append({"messages": messages, **kwargs})
+            raise RuntimeError("stop here")
+
+        monkeypatch.setattr(llm_call, "chat", fake_chat)
+        config = parser_mod.ParserConfig(
+            system_prompt="S", prompt_version=1, provider="openai", model="m", api_key="k"
+        )
+        for block in ("first user block", "second user block"):
+            with pytest.raises(parser_mod.ParserError):
+                parser_mod.parse(config, block)
+        first, second = seen
+        assert first["messages"][:-1] == second["messages"][:-1]
+        assert first["messages"][-1]["role"] == "user"
+        assert first["messages"][-1] != second["messages"][-1]
+        assert json.dumps(first["json_schema"], sort_keys=False) == json.dumps(
+            second["json_schema"], sort_keys=False
+        )
+
+    def test_the_date_sits_at_the_tail_of_the_system_prompt(self):
+        """Two days' prompts share at least 95% of their text as a common prefix, so a
+        date change re-bills only the tail, not the whole 32k-token system prompt."""
+        from app.services.ai_prompt_registry import _substitute
+        from app.services.chatbot_parser_prompt import SEMANTIC_PARSER_PROMPT
+
+        monday = _substitute(SEMANTIC_PARSER_PROMPT, {"current_date": "Monday, 05 October 2026"})
+        tuesday = _substitute(SEMANTIC_PARSER_PROMPT, {"current_date": "Tuesday, 06 October 2026"})
+        common = len(os.path.commonprefix([monday, tuesday]))
+        assert common / len(monday) >= 0.95, common / len(monday)
+
+
+# --------------------------------------------------------------------------- #
+# LLM_BASE_URL / LLM_MODEL_OVERRIDE
+# --------------------------------------------------------------------------- #
+
+
+class TestOverrides:
+    def _capture_ctor(self, monkeypatch) -> list[dict]:
+        import openai
+
+        built: list[dict] = []
+
+        class _FakeOpenAI:
+            def __init__(self, **kwargs):
+                built.append(kwargs)
+                self.chat = _Client().chat
+
+        monkeypatch.setattr(openai, "OpenAI", _FakeOpenAI)
+        return built
+
+    def test_unset_leaves_the_client_and_model_alone(self, monkeypatch):
+        built = self._capture_ctor(monkeypatch)
+        provider = OpenAIProvider(SECRET, default_model="gpt-fake")
+        client_calls: list[dict] = []
+        provider.chat(MESSAGES, model="gpt-fake")
+        assert "base_url" not in built[0]
+        assert built[0]["api_key"] == SECRET
+
+    def test_base_url_reaches_the_client_when_set(self, monkeypatch):
+        monkeypatch.setenv("LLM_BASE_URL", "http://cheap-model.invalid/v1")
+        built = self._capture_ctor(monkeypatch)
+        OpenAIProvider(SECRET, default_model="gpt-fake").chat(MESSAGES)
+        assert built[0]["base_url"] == "http://cheap-model.invalid/v1"
+
+    def test_model_override_replaces_the_model_on_the_wire(self, monkeypatch):
+        monkeypatch.setenv("LLM_MODEL_OVERRIDE", "cheap-model-1")
+        client = _Client()
+        _chat(_provider(monkeypatch, client), model="gpt-fake")
+        assert client.calls[0]["model"] == "cheap-model-1"
+
+
+# --------------------------------------------------------------------------- #
+# Runner default: replay unless --live
+# --------------------------------------------------------------------------- #
+
+
+class TestRunnerMode:
+    def test_runner_defaults_to_replay(self, monkeypatch):
+        assert llm_cassette.runner_mode(live=False, record=False) == "replay"
+        assert llm_cassette.runner_mode(live=True, record=False) == "off"
+        assert llm_cassette.runner_mode(live=False, record=True) == "record"
+
+    def test_live_and_record_together_are_refused(self):
+        with pytest.raises(ValueError):
+            llm_cassette.runner_mode(live=True, record=True)
