@@ -161,6 +161,69 @@ class TestSoIngestStoresTheOrderName:
         assert env.header("sales_orders", ref)["debtor_name"] == "Beta"
 
 
+    def test_a_push_without_a_name_freezes_the_master_name_on_a_new_order(self, env):
+        """DEBTOR-CODE-LINK: every SO carries the name it was issued under from the start, so
+        a later rename of the customer (master push) never rewrites it on old orders."""
+        code = unique_code(MARKER)
+        master = _customer(env.db, env.company_a, code=code, name="NAME-AT-ISSUE")
+        ref = f"{MARKER}-SO-{uuid.uuid4().hex[:8]}"
+
+        res = env.post(INGEST_SO, [_so_record(env, ref=ref, customer_code=code)])
+        assert res.status_code == 200, res.text
+        env.db.execute(
+            text("UPDATE customers SET customer_name = 'NAME-RENAMED' WHERE id = :i"),
+            {"i": str(master.id)},
+        )
+
+        assert env.header("sales_orders", ref)["debtor_name"] == "NAME-AT-ISSUE"
+
+    def test_a_push_without_a_name_fills_a_missing_order_name_from_the_master(self, env):
+        code = unique_code(MARKER)
+        _customer(env.db, env.company_a, code=code, name="NAME-MASTER")
+        ref = f"{MARKER}-SO-{uuid.uuid4().hex[:8]}"
+        env.post(INGEST_SO, [_so_record(env, ref=ref, customer_code=code, customer_name="Issued")])
+        env.db.execute(
+            text("UPDATE sales_orders SET debtor_name = NULL WHERE source_ref = :r"), {"r": ref}
+        )
+
+        env.post(INGEST_SO, [_so_record(env, ref=ref, customer_code=code)])
+
+        assert env.header("sales_orders", ref)["debtor_name"] == "NAME-MASTER"
+
+
+class TestManualSoCreateStoresTheOrderName:
+    def test_a_manual_so_carries_the_customer_name_it_was_created_under(self, monkeypatch):
+        from types import SimpleNamespace
+
+        from app.services.numbering_service import NumberingService
+        from app.services.scm.sales_order_service import SalesOrderService
+
+        register_company_scope_listeners()
+        with blank_session() as session:
+            set_company_scope(session, frozenset({DEFAULT_COMPANY_ID}))
+            code = unique_code(MARKER)
+            master = _customer(session, DEFAULT_COMPANY_ID, code=code, name="NAME-MANUAL")
+            monkeypatch.setattr(
+                NumberingService, "get_next_number", lambda self, *a, **k: unique_code("SO")
+            )
+            data = SimpleNamespace(
+                customer_code=code,
+                sales_agent_id=None,
+                requested_delivery_date=None,
+                order_type="stock",
+                priority="normal",
+                lines=[],
+            )
+
+            created = SalesOrderService(session).create(data, user_id=None)
+
+            stored = session.execute(
+                text("SELECT debtor_name FROM sales_orders WHERE id = :i"), {"i": str(created["id"])}
+            ).scalar()
+            assert stored == "NAME-MANUAL"
+            assert _master_name(session, str(master.id)) == "NAME-MANUAL"
+
+
 # ============================================================ screens (AC-03..05)
 @pytest.fixture()
 def db():
