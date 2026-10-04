@@ -116,8 +116,8 @@ def test_incoming_rows_under_a_stock_miss_read_in_the_reply_language(
 @pytest.mark.parametrize(
     "lang,expected",
     [
-        ("ms", "*Kod Produk:* SRTWC286\n*Stock:* none\n*Incoming:* none\n\n*Kod Produk:* SRTWC287\n*Stock:* none\n*Incoming:* none"),
-        ("zh", "*产品代码:* SRTWC286\n*Stock:* none\n*Incoming:* none\n\n*产品代码:* SRTWC287\n*Stock:* none\n*Incoming:* none"),
+        ("ms", "*Kod Produk:* SRTWC286\n*Stok:* tiada\n*Masuk:* tiada\n\n*Kod Produk:* SRTWC287\n*Stok:* tiada\n*Masuk:* tiada"),
+        ("zh", "*产品代码:* SRTWC286\n*库存:* 无\n*到货:* 无\n\n*产品代码:* SRTWC287\n*库存:* 无\n*到货:* 无"),
     ],
 )
 def test_no_stock_and_no_incoming_reads_in_the_reply_language(lang, expected):
@@ -214,7 +214,7 @@ def test_a_stock_section_with_a_no_stock_line_then_the_incoming_block():
     english = _block(items=[_INCOMING_ITEM], missing=[{"code": "SRTWC286", "_n": "SRTWC286", "uuid": "u1"}])
     assert "*Product Code:* SRTWC286\n*Stock:* none\n*Container:* SEGU4008631" in english
     out = _loc("ms").reply(english)
-    assert "*Kod Produk:* SRTWC286\n*Stock:* none\n*Kontena:* SEGU4008631" in out
+    assert "*Kod Produk:* SRTWC286\n*Stok:* tiada\n*Kontena:* SEGU4008631" in out
     assert "Product Code" not in out
 
 
