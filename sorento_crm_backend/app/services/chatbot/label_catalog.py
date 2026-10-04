@@ -36,6 +36,12 @@ LABELS: dict[str, dict[str, str]] = {
     "System Location": {"ms": "Lokasi Sistem", "zh": "系统位置"},
     "Quantity On Hand": {"ms": "Kuantiti Ada", "zh": "现有数量"},
     "Outstanding": {"ms": "Tertunggak", "zh": "未交货"},
+    # The card block lines of a zero-stock reply (`*Incoming:* none`, `*Stock:* 0`, `*PO:* <no>`).
+    "Incoming": {"ms": "Masuk", "zh": "到货"},
+    "Stock": {"ms": "Stok", "zh": "库存"},
+    "PO": {"ms": "PO", "zh": "PO"},
+    "SPO": {"ms": "SPO", "zh": "SPO"},
+    "none": {"ms": "tiada", "zh": "无"},
     "Total": {"ms": "Jumlah", "zh": "总数"},
     "Stock summary for the requested products.": {
         "ms": "Ringkasan stok untuk produk yang diminta.",
@@ -577,6 +583,9 @@ DIRECT_ONLY = frozenset({"I have {names}.", "{code} has no {types}."})
 #: Report value words `Localizer.lines` translates after a catalogued label. An explicit set, never
 #: "any catalog key", so data that happens to read like a label (a status named "Status") is safe.
 VALUE_WORDS = frozenset({"all", "Amount", "Quantity", "Ordered", "Delivered (transferred to DO)"})
+#: The card block labels after which the standalone value `none` is translated; on any other label
+#: `none` is data and stays.
+NONE_LABELS = frozenset({"Incoming", "Stock", "PO", "SPO"})
 RANGE = "{from} to {to}"
 #: A `{token}` matches at most this many characters of one line, and a line longer than
 #: `_INLINE_LINE_MAX` gets `lines()` only (the inline pass is skipped for it).
@@ -751,6 +760,8 @@ class Localizer:
             head, found, value = rest[len(left) :].partition(sep)
             if not found or head not in self.table or _BREAKDOWN_VALUE.match(value):
                 continue  # a breakdown row (`5 (O/S: 2)`) whose name collides with a label is data
+            if value == "none" and head in NONE_LABELS and "none" in self.table:
+                value = self.table["none"]
             return prefix + left + self.table[head] + sep + self._value(value)
         return line
 
