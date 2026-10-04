@@ -394,6 +394,9 @@ class AccessAgent(Base):
     description = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     assign_to_new_internal_contacts = Column(Boolean, default=False, nullable=False)
+    # The parser prompt names this agent (`{{agents}}`; owner Q-B, 2 Oct 2026, migration
+    # `pdyn_0006_agents_in_prompt`).
+    in_parser_prompt = Column(Boolean, default=False, server_default="false", nullable=False)
     created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=False), server_default=func.now(), onupdate=func.now(), nullable=False)
     synced_to_excel = Column(Boolean, default=False, nullable=False)

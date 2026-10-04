@@ -32,10 +32,11 @@ def test_tool_is_in_the_read_only_allow_list() -> None:
     assert TOOL in CHATBOT_READ_ONLY_TOOLS
 
 
-def test_mcp_tool_domain_is_order() -> None:
+def test_mcp_tool_domain_is_sales() -> None:
+    # R7 (PLAN-prompt-dynamic-30sep D9): the ranking answers from the `sales` domain.
     from app.services.mcp_tool_domains import CHATBOT_TOOL_DOMAINS
 
-    assert CHATBOT_TOOL_DOMAINS.get(TOOL) == "order"
+    assert CHATBOT_TOOL_DOMAINS.get(TOOL) == "sales"
 
 
 def test_migration_appends_the_tool_to_the_order_row() -> None:

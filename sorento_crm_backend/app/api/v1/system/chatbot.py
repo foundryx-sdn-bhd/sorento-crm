@@ -790,6 +790,19 @@ def prompt_blocks_status(
             published_at=None,
         )
 
+    from app.services.chatbot_prompt_vars import is_wording_layer
+
+    if is_wording_layer(published.template):
+        # PLAN-prompt-dynamic-30sep D1: this version's lists render from the rows on every
+        # turn, so it can never disagree with them.
+        return PromptBlocksStatus(
+            stale=False,
+            current_hash=current_hash,
+            published_hash=current_hash,
+            published_version=published.version,
+            published_at=published.created_at,
+        )
+
     published_hash = (published.config_json or {}).get("blocks_hash")
     if not published_hash:
         # Published before the blocks carried a hash of their own (or by hand, body

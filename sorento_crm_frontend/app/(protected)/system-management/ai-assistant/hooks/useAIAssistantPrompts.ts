@@ -5,6 +5,7 @@ import {
   dryRunPrompt,
   getPromptVersion,
   getPromptVersions,
+  getRegistryVariables,
   listPromptKeys,
   saveVersion,
   setAgentModel,
@@ -75,5 +76,15 @@ export function useSetAgentModel(name: string) {
 export function useDryRun(name: string) {
   return useMutation({
     mutationFn: (payload: DryRunPayload) => dryRunPrompt(name, payload),
+  });
+}
+
+/** The key's registry variables with their live text (R5a chips + wired panel). */
+export function useRegistryVariables(name: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ['ai-prompts', name, 'registry-variables'],
+    queryFn: () => getRegistryVariables(name),
+    enabled: !!name && enabled,
+    staleTime: 30_000,
   });
 }

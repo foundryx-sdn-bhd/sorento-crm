@@ -51,6 +51,9 @@ class PromptVersionsResponse(BaseModel):
     active: bool
     activates_in: Optional[str] = None
     variables: list[str] = Field(default_factory=list)
+    # PLAN-prompt-dynamic-30sep D1: tokens `render` fills from registry tables itself.
+    # The editor draws each as a chip rather than as raw `{{...}}` text.
+    registry_variables: list[str] = Field(default_factory=list)
     labels: dict[str, Optional[int]] = Field(default_factory=dict)
     versions: list[PromptVersionRow] = Field(default_factory=list)
     # Slice E: the code fallback, always present - a key with no saved
@@ -122,3 +125,16 @@ class DryRunResponse(BaseModel):
     token_usage: dict[str, int] = Field(default_factory=dict)
     tool_calls: list[DryRunToolCall] = Field(default_factory=list)
     used_overrides: dict[str, str] = Field(default_factory=dict)
+
+
+class RegistryVariableRow(BaseModel):
+    """One source on the editor's "Wired to this agent" panel and one chip's metadata."""
+
+    name: str
+    label: str
+    source: str
+    href: str
+    count: int
+    last_changed: Optional[datetime] = None
+    rendered: str
+    used: bool = False

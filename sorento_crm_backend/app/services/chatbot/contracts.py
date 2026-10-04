@@ -466,6 +466,15 @@ SALES_REPORT_GROUP_BYS: tuple[str, ...] = ("customer", "product", "delivery_orde
 # (PLAN-retail-sales-reports-26sep S1, #1269) is gated by the same key.
 SALES_FIGURE_STATUSES: tuple[str, ...] = ("sales_report", "top_selling", "sales_analysis")
 
+# PLAN-prompt-dynamic-30sep D9 (owner, 30 Sep 2026: "better own sales domain otherwise
+# jumble up with order"): a SALES_FIGURE_STATUSES ask is the `sales` domain
+# (`turn_runtime._report_status_means_order_domain` maps it). Every sales ask ran under
+# `order` until then, so the seams that treated a sales ask the order way (the customer
+# scope, the brand strip, the ranking's own reading) read this pair instead of `order`
+# alone. The order-only reports (outstanding, delivered, the DO list) stay `order`-only.
+SALES_DOMAIN = "sales"
+ORDER_OR_SALES_DOMAINS: frozenset[str] = frozenset({"order", SALES_DOMAIN})
+
 # --------------------------------------------------------------------------- #
 # Session state (R2: every key compile-current-state writes, nothing dropped)
 # --------------------------------------------------------------------------- #
