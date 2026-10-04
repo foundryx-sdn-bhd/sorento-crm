@@ -153,7 +153,14 @@ def _resolve_entity(db: Session) -> ResolveEntityFn:
         """
         from app.api.v1.system.references import ResolveReferenceRequest, resolve_reference_post
         from app.config import settings
+        from app.services.chatbot.contracts import SALES_DOMAIN
 
+        if body.get("domain") == SALES_DOMAIN:
+            # R7 (PLAN-prompt-dynamic-30sep D9): the resolver has no `sales` domain of its
+            # own (it is the chatbot's), and a word it does not know as an entity type is
+            # tried as a document type. Every sales ask resolved as `order` until it had
+            # its own domain, so it still does.
+            body = {**body, "domain": "order"}
         principal = {"id": getattr(settings, "external_api_key_act_as_user_id", None)}
         return resolve_reference_post(
             ResolveReferenceRequest(**body), current_user=principal, db=db

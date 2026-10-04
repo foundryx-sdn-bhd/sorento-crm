@@ -97,7 +97,11 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # prompt without MEMORY_ADDENDUM to 44,883 est. tokens and the whole prompt to 45,399
 # (crew design review round: "supplier_category" only when BOTH are named);
 # CEILING is 45,399 - 512 = 44,887 so both assertions hold.
-CEILING = 44_887
+# Seventh re-pin, 4 Oct 2026 (PROMPT-DYNAMIC merged over LOWSTOCK-SEMANTIC, PLAN-prompt-dynamic-30sep
+# D9): main 690d41fc measures 44,883 without MEMORY_ADDENDUM; the owner's `sales` domain row adds one
+# domain line to the policy blocks (+88): 44,971 without MEMORY_ADDENDUM and 45,487 with it;
+# CEILING is 45,487 - 512 = 44,975 so both assertions hold. Nothing else grew.
+CEILING = 44_975
 # The memory addendum on its own, bounded separately so this PR's growth stays bounded.
 # 26 Sep baseline (lane d89110c0): 339 est. tokens. Round 4 (baf4c813, 28 Sep: the history
 # question in any wording, the number re-run, commercial_request) took it to 512, which is

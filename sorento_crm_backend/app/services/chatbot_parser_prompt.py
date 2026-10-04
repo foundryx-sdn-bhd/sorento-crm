@@ -804,7 +804,9 @@ def domain_line(row: "Mapping[str, object]") -> str:
     """
     intents = ", ".join(row["intents"] or []) or "(none)"
     words = ", ".join(row["switch_words"] or []) or "(none)"
-    parts = [f'Domain {row["name"]} ("{row["label"]}"): intents {intents}. Switch words: {words}.']
+    # A quote in the label would close the quotes it is rendered in (security pass 2, F2).
+    label = str(row["label"] or "").replace('"', "'")
+    parts = [f'Domain {row["name"]} ("{label}"): intents {intents}. Switch words: {words}.']
     narrowing = row["narrowing"] or {}
     if narrowing:
         clauses = "; ".join(f"{kind} narrows {narrowing[kind]}" for kind in sorted(narrowing))
@@ -907,7 +909,9 @@ def specification_lines(db: "Session") -> list[str]:
             continue
         data_type = (row.data_type or "").lower()
         own = ", ".join(synonyms.get("_self") or [])
-        head = f'Specification {row.spec_key} ("{row.label}")'
+        # A quote in the label would close the quotes it is rendered in (security pass 2, F2).
+        label = (row.label or "").replace('"', "'")
+        head = f'Specification {row.spec_key} ("{label}")'
         if data_type == "numeric":
             unit = f" in {row.unit}" if row.unit else ""
             worded = [

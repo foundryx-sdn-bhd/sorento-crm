@@ -29,3 +29,15 @@ describe('promptVars', () => {
     expect(v.missing).toEqual(['current_date']);
   });
 });
+
+describe('validateVars with registry variables (PROMPT-DYNAMIC)', () => {
+  it('treats registry tokens as known and never as missing', () => {
+    const v = validateVars('x {{domains}} {{current_date}}', ['current_date'], ['domains', 'statuses']);
+    expect(v.unknown).toEqual([]);
+    expect(v.missing).toEqual([]);
+  });
+
+  it('still flags a token that is neither declared nor a registry variable', () => {
+    expect(validateVars('{{nope}} {{current_date}}', ['current_date'], ['domains']).unknown).toEqual(['nope']);
+  });
+});
