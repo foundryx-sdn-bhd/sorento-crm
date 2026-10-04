@@ -18,8 +18,8 @@ fail "already linked to another source" (crew E2E, 4 Oct).
 - Owner 4 Oct ~11:25: several rows per code -> update the first one; documents follow the name on
   the document, so documents are out of scope. Sales agent still goes to every same-code row (#1468).
 - Crew 4 Oct: Q2 (a) keep the stored ref and warn `ref_mismatch`; Q3 (a) keep each ref's prefix.
-- Owner pending: Q1 (first = oldest created_at, then lowest id), Q4 (name clash keeps the old name
-  + warns). Built on (a).
+- Owner 4 Oct: Q1 (a) first = oldest created_at, ties to the lowest id.
+- Owner pending: Q4 (name clash keeps the old name + warns). Built on (a).
 
 ## Design (simplest thing that works)
 

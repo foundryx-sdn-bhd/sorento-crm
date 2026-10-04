@@ -98,7 +98,7 @@ AutoKey, switching it to `AccNo` makes new links code-form from day one; optiona
 
 - Q1 "First" row: (a) oldest `created_at`, then lowest id (b) the row that already holds an
   AutoCount ref, else (a). Recommendation (a): it is what the owner asked for and it does not
-  depend on refs at all. Owner to answer; building on (a).
+  depend on refs at all. **Answered (a), owner 4 Oct**: the oldest created row, ties to the lowest id.
 - Q2 Pushed ref differs from the stored one: **answered (a), crew 4 Oct**: keep stored + warn
   `ref_mismatch`.
 - Q3 Converted ref prefix: **answered (a), crew 4 Oct**: keep the existing prefix. The script
