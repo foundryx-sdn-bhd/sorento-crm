@@ -90,7 +90,7 @@ import SlaTrackingChatRecords from './SlaTrackingChatRecords';
 const TICKET: InterventionTicketDetail = {
   id: 't1',
   contact_name: 'Aisyah Rahman',
-  contact_phone: '+60 12-334 5566',
+  contact_phone: '+60 12-000 0553',
   respond_io_id: '10025531',
   source_message_id: '123',
   source_message_text: 'Yes, please connect me to a person.',

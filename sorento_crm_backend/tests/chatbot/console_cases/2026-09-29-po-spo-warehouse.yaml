@@ -29,7 +29,7 @@
 # `pending_kind` and `parser`. The sort ORDER of the rows is graded BY EYE from the printed
 # reply (the grader has no row-order assertion): "latest PO" must print the newest PO Date
 # first, "biggest quantity first" the largest SPO Quantity first.
-contact: "437264483"
+contact: "900000008"
 
 cases:
   - name: PO to BRW filters the open PO book by warehouse

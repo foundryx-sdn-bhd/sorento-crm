@@ -1,3 +1,5 @@
+# Copy .env.example to .env (beside this file) and fill in every value before
+# `docker compose up`: POSTGRES_USER, POSTGRES_PASSWORD and JWT_SECRET are required.
 version: '3.8'
 
 services:
@@ -6,15 +8,15 @@ services:
     image: postgres:15-alpine
     container_name: sorento_crm_db
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cirnah-Xuspin-tafry1}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:-sorento_ai_automation}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:?set POSTGRES_USER in .env}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -30,11 +32,11 @@ services:
     container_name: sorento_crm_backend
     environment:
       # Database
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-sorento_crm}
-      DIRECT_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-sorento_crm}
+      DATABASE_URL: postgresql://${POSTGRES_USER:?set POSTGRES_USER in .env}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-sorento_crm}
+      DIRECT_URL: postgresql://${POSTGRES_USER:?set POSTGRES_USER in .env}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-sorento_crm}
       
       # JWT Authentication
-      JWT_SECRET: ${JWT_SECRET:-change-me-in-production-please-use-strong-secret}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
       JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
       
       # API Server
@@ -124,13 +126,13 @@ volumes:
 #    Create a .env file in the root directory (sorento_crm/) with:
 #
 #    # Database
-#    POSTGRES_USER=postgres
-#    POSTGRES_PASSWORD=postgres
+#    POSTGRES_USER=<set me>
+#    POSTGRES_PASSWORD=<set me>
 #    POSTGRES_DB=sorento_crm
 #    POSTGRES_PORT=5432
 #
 #    # Backend
-#    JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
+#    JWT_SECRET=<set me>
 #    JWT_ALGORITHM=HS256
 #    CORS_ORIGINS=http://localhost,http://localhost:80
 #    ENVIRONMENT=production
@@ -145,8 +147,8 @@ volumes:
 #    BACKEND_PORT=8000
 #
 #    # AWS S3 (if using file attachments)
-#    AWS_ACCESS_KEY_ID=your-access-key
-#    AWS_SECRET_ACCESS_KEY=your-secret-key
+#    AWS_ACCESS_KEY_ID=<set me>
+#    AWS_SECRET_ACCESS_KEY=<set me>
 #    AWS_REGION=us-east-1
 #    AWS_S3_BUCKET=your-bucket-name
 #

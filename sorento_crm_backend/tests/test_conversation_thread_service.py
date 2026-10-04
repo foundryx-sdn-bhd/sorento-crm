@@ -33,7 +33,7 @@ def db():
 
 
 CONTACT = svc.ThreadContact(
-    respond_io_id="ZZT445239386",
+    respond_io_id="ZZT900000080",
     phone_number="+60100000001",
     first_name="Zzt",
     last_name="Tester",

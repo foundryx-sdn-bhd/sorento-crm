@@ -20,7 +20,7 @@
 # MKT7820SS-GM-DIY sits at zero on hand in production (round 1's own case); before the
 # fix it was missing from the reply, which carried only the two products with stock.
 
-contact: "437264483"
+contact: "900000008"
 
 cases:
   - name: "7820 stock lists every MKT7820SS product, zero on hand included"

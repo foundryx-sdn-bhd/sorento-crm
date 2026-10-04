@@ -21,7 +21,7 @@ Two gaps:
    `get_next_assignee(agent_id, team_id)` = pure round-robin. There is no way to
    route a specific salesman's forms to a specific CS PIC. The business need
    (reference spreadsheet): each salesman (a `respond_contact`) is handled by a
-   designated CS person - AMIRUL/LEENA/JENNIFER→AISHAH, BRENDON/ERIC→MARYAM, etc.
+   designated CS person - contact-u/LEENA/contact-o→AISHAH, BRENDON/ERIC→MARYAM, etc.
    Many salesmen → one CS; one salesman → exactly one CS per use_case.
 
 ## Solution summary

@@ -128,7 +128,7 @@ Measured with the stored `chatbot.turns` parser output replayed through `resolve
 | R10 | "which zzqx has cert" fell back to "Try a product type such as a class or product type I know." | `_common_class_labels` returned nothing under the live contact scope | the query runs against `product_specifications` under the request's scope and falls back to the registry's known class names when the scoped query is empty; never an empty list in the sentence |
 | R12 | "which sorento bidet has cert" (parser variant: ONE product entity "Sorento bidet") answered "Here's what you want: ... Couldn't find: 'Sorento bidet' (product). But no certificate matched these." | the entity folded to the token "Sorentobidet" (0 matches); HAS found SRTWT5875 (qualifying 1) but the answer half still listed the unresolved token as not found and took the miss copy | when `predicate.qualifying_total > 0`, an unresolved WORD token is the set's description, never a "Couldn't find" item; the set answer renders |
 | R13 | "which item has PPS cert" (parser variant: attachment_type raw "PPS cert") answered "I don't know 'item pps' as a product type" live, while the deterministic replay of the same stored parser output returned a clean predicate (940, no unrecognised terms) | the live resolve body carries `understand_phrase: true`, so the HAS branch let the MODEL phrase reader (`derive_search_inputs(allow_model=True)`) contribute free terms, and it produced "item pps"; the replay had no model key and read deterministically | the HAS branch reads bindings with `allow_model=False` only (the model read stays on the spec_fallback path where it was built); and predicate_words are stripped word by word, so a phrase such as "PPS cert" removes both words from the remainder |
-| R11 | "any shower set on promo" → "You have no access levels configured to get promotions." | console contact 482766833 has no access levels; a data prerequisite of the promotion domain | verification uses a contact with access levels for the promotion case; not a lane change |
+| R11 | "any shower set on promo" → "You have no access levels configured to get promotions." | console contact 900000105 has no access levels; a data prerequisite of the promotion domain | verification uses a contact with access levels for the promotion case; not a lane change |
 
 ## Security review findings (11 Sep 2026), rules adopted
 
@@ -328,7 +328,7 @@ Every fix red first, then green, then kill-tested; tests in
   fetch; N3 comment restored; N4 stale "more" wording removed; N5 rewrapped; N6 the dead
   `spec_asked` write removed.
 
-## Owner hand test round 2, 26 Sep 2026 (contact 487555417, W1 to W6)
+## Owner hand test round 2, 26 Sep 2026 (contact 900000039, W1 to W6)
 
 Turns 5, 9, 10 of the owner's run: "whici sorento wash basin has stock" answered "2,306
 products" (every Sorento product), "which sorento wall hung basin has stock?" answered "144
@@ -366,7 +366,7 @@ then green, then kill-tested; tests in `tests/chatbot/test_attribute_asks_round2
 
 ## Owner hand test of round 2, 26 Sep 2026 13:07Z (round 3, W1 to W6)
 
-The owner's run on console :3084 (contact 487555417), verbatim on the PR: "the message too
+The owner's run on console :3084 (contact 900000039), verbatim on the PR: "the message too
 long already, i prefer it to be line by line ... it needs to be vertical, don't use |, and
 why when i say 10, it gives some other answer, and ... when i ask which basin has cert, it
 gives weird answer, what does sorento (default) mean". Tests in
@@ -392,7 +392,7 @@ gives weird answer, what does sorento (default) mean". Tests in
 
 ## Owner console test of round 3, 27 Sep 2026 00:03 to 00:07 MYT (round 4, R1 to R7)
 
-Console :3084, head 1683cb2f1, contact 487555417. The owner, verbatim on the PR: "i want
+Console :3084, head 1683cb2f1, contact 900000039. The owner, verbatim on the PR: "i want
 weights as brand preference instead of switch, ... Brand, product type needs to be line by
 line, label needs to be bold, ... bruh i said 10 but it come out so many, then the ask about
 gunmetal wash basin means what ah, so it got match or not? ... i clarify if it is tap or wash

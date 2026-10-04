@@ -7,8 +7,8 @@ describe('attachmentUploaderLabel', () => {
     input: Parameters<typeof attachmentUploaderLabel>;
     expected: string;
   }> = [
-    { name: 'contact upload', input: ['Eric Ng', 'contact'], expected: 'by Eric Ng (contact)' },
-    { name: 'staff upload', input: ['Darren Lee', 'staff'], expected: 'by Darren Lee (staff)' },
+    { name: 'contact upload', input: ['CONTACT Y', 'contact'], expected: 'by CONTACT Y (contact)' },
+    { name: 'staff upload', input: ['CONTACT X Lee', 'staff'], expected: 'by CONTACT X Lee (staff)' },
     // Unresolved role but a name is present (e.g. legacy row) - render the bare
     // name rather than guessing a role.
     { name: 'name with no role', input: ['Cindy', null], expected: 'Cindy' },
@@ -21,7 +21,7 @@ describe('attachmentUploaderLabel', () => {
     { name: 'whitespace-only name', input: ['   ', 'staff'], expected: 'Unknown' },
     { name: 'both missing', input: [null, null], expected: 'Unknown' },
     // Name is trimmed before use.
-    { name: 'name with surrounding whitespace', input: ['  Eric Ng  ', 'contact'], expected: 'by Eric Ng (contact)' },
+    { name: 'name with surrounding whitespace', input: ['  CONTACT Y  ', 'contact'], expected: 'by CONTACT Y (contact)' },
   ];
 
   it.each(cases)('$name -> "$expected"', ({ input, expected }) => {

@@ -24,6 +24,7 @@ import { DataGridColumnHeader } from '@/components/ui/data-grid-column-header';
 import { DataGridPagination } from '@/components/ui/data-grid-pagination';
 import { DataGridTable } from '@/components/ui/data-grid-table';
 import { Input } from '@/components/ui/input';
+import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { Skeleton } from '@/components/ui/skeleton';
 
 import { useDeferredRowAction, useRowPending } from '@/hooks/useDeferredRowAction';
@@ -35,7 +36,7 @@ import { useTranslations, useUpdateTranslation } from '../hooks/useTranslations'
 import type { Translation } from '../types/translation.types';
 
 /**
- * A translation's English cell, editable in place: type, blur (or Enter) saves.
+ * A translation's target cell, editable in place: type, blur (or Enter) saves.
  * Editing here writes `source: 'manual'` server-side regardless of what it was
  * before (R16) - the badge on the same row reflects that the moment the save lands,
  * it does not wait for a full refetch.
@@ -73,15 +74,31 @@ function TargetTextCell({
         if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
       }}
       disabled={disabled}
-      aria-label={`English for ${row.source_text}`}
+      aria-label={`Translation for ${row.source_text}`}
       className="h-8"
     />
   );
 }
 
+const LANGUAGE_NAMES: Record<string, string> = { en: 'English', ms: 'Malay', zh: 'Chinese' };
+
+/** The supplier memory reads Chinese into English; the chatbot wording reads English into
+ * Malay or Chinese. The filter is by the language a row translates into. */
+const LANGUAGE_OPTIONS = [
+  { value: 'en', label: 'Into English' },
+  { value: 'ms', label: 'Into Malay' },
+  { value: 'zh', label: 'Into Chinese' },
+];
+
+function languagePair(row: Translation): string {
+  const name = (code: string) => LANGUAGE_NAMES[code] ?? code;
+  return `${name(row.source_lang)} to ${name(row.target_lang)}`;
+}
+
 export default function TranslationsList() {
   const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: 25 });
   const [sorting, setSorting] = useState<SortingState>([]);
+  const [targetLang, setTargetLang] = useState('');
   const {
     value: searchQuery,
     setValue: setSearchQuery,
@@ -91,13 +108,14 @@ export default function TranslationsList() {
 
   useEffect(() => {
     setPagination((p) => ({ ...p, pageIndex: 0 }));
-  }, [debouncedSearch, sorting]);
+  }, [debouncedSearch, sorting, targetLang]);
 
   const { data, isLoading, isFetching, isPlaceholderData, isError, error } = useTranslations({
     pageIndex: pagination.pageIndex,
     pageSize: pagination.pageSize,
     sorting,
     searchQuery: debouncedSearch,
+    targetLang,
   });
   const updateTranslation = useUpdateTranslation();
   // Delete asks nothing (D7): the row dims and a toast counts down with Cancel.
@@ -126,8 +144,20 @@ export default function TranslationsList() {
         meta: { headerTitle: 'Source', skeleton: <Skeleton className="h-5 w-40" /> },
       },
       {
+        id: 'language',
+        header: ({ column }) => <DataGridColumnHeader title="Language" column={column} />,
+        cell: ({ row }) => (
+          <span className="block truncate text-muted-foreground" title={languagePair(row.original)}>
+            {languagePair(row.original)}
+          </span>
+        ),
+        enableSorting: false,
+        size: 150,
+        meta: { headerTitle: 'Language' },
+      },
+      {
         accessorKey: 'target_text',
-        header: ({ column }) => <DataGridColumnHeader title="English" column={column} />,
+        header: ({ column }) => <DataGridColumnHeader title="Translation" column={column} />,
         cell: ({ row }) => (
           <TargetTextCell
             row={row.original}
@@ -139,7 +169,7 @@ export default function TranslationsList() {
         ),
         enableSorting: false,
         size: 260,
-        meta: { headerTitle: 'English' },
+        meta: { headerTitle: 'Translation' },
       },
       {
         accessorKey: 'source',
@@ -253,15 +283,25 @@ export default function TranslationsList() {
       >
         <Card>
           <CardHeader className="flex items-center justify-between gap-3">
-            <CardHeading>
+            <CardHeading className="flex w-full flex-col gap-2 sm:flex-row sm:items-center">
               <ListSearchInput
                 value={searchQuery}
                 onChange={setSearchQuery}
                 isSettling={isSearchInFlight(debouncedSearchSettling, isFetching, debouncedSearch)}
                 placeholder="Search translations..."
                 aria-label="Search translations"
-                className="w-64"
+                className="w-full sm:w-64"
               />
+              <div className="w-full sm:w-48" data-testid="translations-language-filter">
+                <SearchableSelect
+                  value={targetLang}
+                  onChange={setTargetLang}
+                  options={LANGUAGE_OPTIONS}
+                  placeholder="All languages"
+                  clearable
+                  size="sm"
+                />
+              </div>
             </CardHeading>
           </CardHeader>
 

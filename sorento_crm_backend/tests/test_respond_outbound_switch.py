@@ -147,7 +147,7 @@ def test_a_database_failure_never_silently_allows_the_send(db):
 
     with patch.object(mod, "contact_for_identifier", side_effect=RuntimeError("db down")):
         with pytest.raises(RuntimeError):
-            mod.assert_outbound_enabled("437264483", db=db)
+            mod.assert_outbound_enabled("900000008", db=db)
 
 
 # --------------------------------------------------------------------------
@@ -358,10 +358,10 @@ def test_every_public_sender_delegates_to_the_chokepoint(path):
     with patch.object(
         type(client), "_post_contact_message", return_value={"messageId": 1}
     ) as chokepoint:
-        _send_calls(client, "437264483")[path]()
+        _send_calls(client, "900000008")[path]()
 
     assert chokepoint.call_count == 1, f"{path} did not delegate to the chokepoint"
-    assert chokepoint.call_args.args[0] == "437264483", (
+    assert chokepoint.call_args.args[0] == "900000008", (
         f"{path} must hand the identifier to the chokepoint, or the guard "
         "checks the wrong contact"
     )
@@ -380,7 +380,7 @@ def test_no_public_sender_reaches_httpx_on_its_own(path):
     with patch.object(
         type(client), "_post_contact_message", return_value={}
     ), patch.object(mod.httpx, "Client", return_value=http):
-        _send_calls(client, "437264483")[path]()
+        _send_calls(client, "900000008")[path]()
 
     assert not http.__enter__.called, (
         f"{path} opened its own httpx client instead of delegating the POST"
@@ -398,7 +398,7 @@ def test_each_sender_keeps_its_own_timeout(path, expected_timeout):
     with patch.object(
         type(client), "_post_contact_message", return_value={}
     ) as chokepoint:
-        _send_calls(client, "437264483")[path]()
+        _send_calls(client, "900000008")[path]()
 
     assert chokepoint.call_args.kwargs["timeout"] == expected_timeout
 
@@ -461,7 +461,7 @@ def test_the_chokepoint_requires_an_api_key(db):
     client.api_key = None
 
     with pytest.raises(ValueError):
-        client.send_message("437264483", "hello")
+        client.send_message("900000008", "hello")
 
 
 def test_non_message_endpoints_stay_ungated(db):

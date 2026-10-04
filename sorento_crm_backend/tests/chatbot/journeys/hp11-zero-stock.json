@@ -1,11 +1,11 @@
 {
   "name": "hp11-zero-stock",
-  "source": "Hand pass 11 owner console, 21 Sep 2026 (real production, contact_respond_id 437264483). Turn 'check stock srtwc6022': the stock rows print (SRTWC6022-SH-UF, BRW, on hand 0, O/S 5, discontinued; SRTWC6022-SH-UF-NEW on hand 0), then 'No stock for SRTWC6022-SH-UF-NEW.' + 'But there is INCOMING stock (ETA) for the requested products:' + the incoming rows (container IAAU1697450, ETA 2026-09-09, qty 9, BRW) + 'Would you like me to escalate to warehouse team?'. The lane today prints the stock summary only and never climbs the ladder on a hit whose rows all read 0 - see test_rearch_r11_zero_stock_ladder.py for the measured cause (`answer.py::crossdomain_zeroset`/`_rows_all_zero` on origin/main, never reached from a HIT on the lane).",
+  "source": "Hand pass 11 owner console, 21 Sep 2026 (real production, contact_respond_id 900000008). Turn 'check stock srtwc6022': the stock rows print (SRTWC6022-SH-UF, BRW, on hand 0, O/S 5, discontinued; SRTWC6022-SH-UF-NEW on hand 0), then 'No stock for SRTWC6022-SH-UF-NEW.' + 'But there is INCOMING stock (ETA) for the requested products:' + the incoming rows (container IAAU1697450, ETA 2026-09-09, qty 9, BRW) + 'Would you like me to escalate to warehouse team?'. The lane today prints the stock summary only and never climbs the ladder on a hit whose rows all read 0 - see test_rearch_r11_zero_stock_ladder.py for the measured cause (`answer.py::crossdomain_zeroset`/`_rows_all_zero` on origin/main, never reached from a HIT on the lane).",
   "cases": [
     {
       "name": "zero-stock-hit-climbs-to-incoming",
       "cold": true,
-      "contact": "437264483",
+      "contact": "900000008",
       "turns": [
         {
           "text": "check stock srtwc6022",

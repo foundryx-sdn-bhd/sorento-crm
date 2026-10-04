@@ -1,7 +1,7 @@
 # S1 browser evidence - spec visibility policy (Phase 1, mocked FE)
 
 Verified with `agent-browser@0.27.0`, session `spec-vis-s1`, against http://localhost:3082
-(FE) / :8082 (BE, real - see AC-4 note). Logged in as `tehjayson@gmail.com`. Contact used:
+(FE) / :8082 (BE, real - see AC-4 note). Logged in as `person38@example.com`. Contact used:
 "~ Zilin" (`0ca0f43d-514d-4e9a-92ef-8487d93c4215`).
 
 **Nav note:** `/user-management/contacts` is NOT reachable from the left sidebar - its only

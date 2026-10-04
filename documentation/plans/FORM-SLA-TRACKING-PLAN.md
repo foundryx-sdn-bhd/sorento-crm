@@ -163,10 +163,10 @@ Empty state guides admin to Form SLA Configuration page.
 End-to-end run via Playwright MCP - login, configure 5 stages (one per form, plus stock_inquiry chain stage 2), exercise all 4 forms:
 
 - **Complaint**: submit → tracker spawned → `technical_team_response` → responded → `approved` → resolved.
-- **Stock inquiry chain**: submit → `project_sales` stage tracker (assignee = jayson@foundryx.my). `project_sales_approve` → stage 1 resolved + **stage 2 auto-spawned** for `purchasing` team set with new tier-1 assignee. `purchasing_respond` → stage 2 responded. `purchasing_decide` → stage 2 resolved.
+- **Stock inquiry chain**: submit → `project_sales` stage tracker (assignee = person18@example.com). `project_sales_approve` → stage 1 resolved + **stage 2 auto-spawned** for `purchasing` team set with new tier-1 assignee. `purchasing_respond` → stage 2 responded. `purchasing_decide` → stage 2 resolved.
 - **Purchase request reject (UI)**: Reject button visible on draft, AlertDialog mandatory reason, confirm → `approval_status=rejected`, comments persisted, SLA tracker resolved. "Change to pending approval" → resubmit; status flips back to pending.
-- **Sponsorship form reject (UI)**: same flow with different team set (`project_sales_cc`), different tier-1 assignee (hasni@sorento.com.my).
-- **Email**: 5/5 in-app sent, 3/5 emails sent (jayson@foundryx.my x2 stages + magen@sorento.com.my). 2 email failures were SMTP DNS errors from local network - not code issue. Web-push fails are expected (VAPID not configured).
+- **Sponsorship form reject (UI)**: same flow with different team set (`project_sales_cc`), different tier-1 assignee (person15@example.com).
+- **Email**: 5/5 in-app sent, 3/5 emails sent (person18@example.com x2 stages + person23@example.com). 2 email failures were SMTP DNS errors from local network - not code issue. Web-push fails are expected (VAPID not configured).
 - **Portal**: tested via `PortalService.submit_draft` end-to-end - backfill confirmed for SI-20260510-0001 and SI-20260510-0002.
 
 ## Gotchas hit during build (do not re-tread)

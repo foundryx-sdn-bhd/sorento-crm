@@ -799,7 +799,7 @@ def _tracking_row(env) -> Order:
     row = Order(
         order_number="ZZDO-0001", company_id=env.company, order_date=date(2026, 9, 26),
         actual_delivery_date=date(2026, 9, 28), pickup_time="14:30", transporter="ZZ TRANS",
-        driver_name="Ali", lorry_plate="WXX 1234", checker="Chong", trips=2, delivery_days=1,
+        driver_name="Ali", lorry_plate="PLATE-41", checker="Chong", trips=2, delivery_days=1,
         kpi_warning=False, customer_ref="iPad ref", salesman="SEAN", warehouse="BRW",
         delivery_remarks="dr", delivery_remarks_cs="drcs", remarks_cs="rcs",
         order_status_id=env.new_status, debtor_code="OLD", debtor_name="Old name",

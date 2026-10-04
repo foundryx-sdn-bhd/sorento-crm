@@ -30,7 +30,7 @@ from app.schemas.sla import ConversationSLATrackingCreate, ConversationSLATracki
 from app.services.sla_service import ConversationSLATrackingService
 from tests._pg_fixture import blank_session
 
-PHONE = "+60123456701"
+PHONE = "+60100000004"
 BASE = "/api/v1/sla-management/conversation-sla-tracking"
 
 

@@ -61,7 +61,7 @@ logger = logging.getLogger(__name__)
 # A ticket may run once `done >= ticket - 1`. `done` only ever moves through `_settle`, which
 # walks it forward over every ticket whose alive key is GONE - finished, or dead and lapsed -
 # and stops at the first one that is still alive. That one rule replaces three that failed
-# on prod (contact 423729104, 1 Oct):
+# on prod (contact 900000081, 1 Oct):
 #
 # * The old single `running` key was overwritten by every new ticket, so a waiter read its
 #   OWN stamp as a live predecessor and the dead-predecessor repair could never fire.

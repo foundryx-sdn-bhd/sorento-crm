@@ -43,6 +43,7 @@ def generate_report_xlsx(
     view: Optional[dict],
     user_id: str,
     company_grants=NO_COMPANY_SNAPSHOT,
+    brand_ids=None,
 ) -> dict:
     """Render a report to a workbook, store it, and update the download row.
 
@@ -62,6 +63,11 @@ def generate_report_xlsx(
 
     db = SessionLocal()
     set_company_scope(db, None)
+    if brand_ids:
+        # CONTACT-BRAND-SCOPE: the requesting contact's brands (a fresh session carries none).
+        from app.models.base import set_brand_scope
+
+        set_brand_scope(db, frozenset(str(b) for b in brand_ids))
     svc = DownloadService(db)
     try:
         svc.mark_processing(download_id)

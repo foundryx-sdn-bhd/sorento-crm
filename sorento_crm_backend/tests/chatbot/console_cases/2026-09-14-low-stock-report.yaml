@@ -20,14 +20,14 @@
 # OpenAI calls enough to stay under the TPM 429 the lessons log records.
 #
 # ═══ GRANT THE KEY BEFORE THE RUN ═══
-# Contact 437264483 must hold `scm.low_stock_report` (Contacts > Access > Field reveals,
+# Contact 900000008 must hold `scm.low_stock_report` (Contacts > Access > Field reveals,
 # or `contact_field_reveal_service.set_granted_keys`) or every turn answers the refusal
 # line and the whole file reads as red. Grant `purchase_orders.supplier` too if the
 # Supplier column is meant to be in the workbook (AC-47); without it the column is
 # omitted, which is correct behaviour, not a failure.
 #
 # ═══ RATE LIMIT: 5 ASKS PER CONTACT PER 10 MINUTES ═══
-# This file makes 4 asks from contact 437264483, so it fits. Do NOT add a fifth case
+# This file makes 4 asks from contact 900000008, so it fits. Do NOT add a fifth case
 # without clearing the bucket first, or the extra turn answers a rate-limit refusal that
 # reads as a feature failure:
 #
@@ -80,7 +80,7 @@
 # LOWSTOCK-FILTER-ASK (2 Oct 2026): a low stock ask with no category now ASKS the category
 # and runs nothing (`2026-10-02-lowstock-filter-ask.yaml`). The run turns below say "all
 # categories" so they still run; the cold "reorder report" case now expects the question.
-contact: "437264483"
+contact: "900000008"
 
 cases:
   - name: low stock report journey - bare ask, location scope, product + horizon

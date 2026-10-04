@@ -659,8 +659,10 @@ class TestStructuralCoverage:
         # 46: the chatbot memory read (below) and the contact -> customers read
         # (`/contacts/{contact_id}/customers`, PLAN-contact-customers-29sep D2, under
         # contacts.view) each joined the package on the same day. 44 since the two
-        # reference catalogs opened to every signed-in user (NS-SHARED-LOOKUPS).
-        assert len(gated_paths) == 44
+        # reference catalogs opened to every signed-in user (NS-SHARED-LOOKUPS). 45 with the
+        # per-contact accessible brands read (`/contacts/{contact_id}/brands`,
+        # CONTACT-BRAND-SCOPE, under contacts.view).
+        assert len(gated_paths) == 45
         assert gated_paths == {
             "/api/v1/user-management/teams/",
             "/api/v1/user-management/teams/{team_id}",
@@ -685,6 +687,7 @@ class TestStructuralCoverage:
             "/api/v1/user-management/contacts/{contact_id}/cs-routing",
             "/api/v1/user-management/contacts/{contact_id}/customers",
             "/api/v1/user-management/contacts/{contact_id}/market-segments",
+            "/api/v1/user-management/contacts/{contact_id}/brands",
             # --- The chatbot media PR, and deliberately NOT on the `contacts.view`
             # its path siblings above take: reading a contact's media gates is
             # reading who may send the bot images and voice notes and how much of

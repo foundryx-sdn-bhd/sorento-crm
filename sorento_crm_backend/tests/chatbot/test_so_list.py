@@ -11,7 +11,7 @@ Owner rulings on the behaviour card (2 Oct 2026):
 
 Seeded with crew's dev rows (sorento_cagent_stack, 2 Oct 2026): HANLIM's 17 SOs in Sep 2026
 (the newest 15 as crew listed them, plus two more), cancelled SO418652, and a contact linked
-to customers in several groups (crew's "CONTACT B", 437264483). `sales_orders.debtor_name` is
+to customers in several groups (crew's "CONTACT B", 900000008). `sales_orders.debtor_name` is
 empty on dev, so the rows are seeded without one and the names come from the customer.
 
 One real `engine.run_turn` per turn (the `test_customer_scope_lane.py` harness).

@@ -1,0 +1,547 @@
+{
+  "turns": [
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow",
+        "hidden_spec_keys": [
+          "board_thickness",
+          "thickness"
+        ]
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1061691@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1061691,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1778483994,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000091"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000091",
+          "id": 900000091,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000091",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000017\", \"firstName\": \"ZZT\", \"lastName\": \"Ng\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": "zzt-agent-1061691@example.invalid",
+              "firstName": "ZZT-agent",
+              "id": 1061691,
+              "lastName": "",
+              "role": "user"
+            },
+            "countryCode": "MY",
+            "created_at": 1778483994,
+            "email": null,
+            "firstName": "ZZT-900000091",
+            "id": 900000091,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000091",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "9020e7f6-fb6d-42a4-aa81-a8c418f53f9e",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxNjQxOTExNzkVAgASGBQzQThEQ0QxOTZDNDg0RjIyNkI3MQA=",
+            "contactId": 900000091,
+            "message": {
+              "text": "Pls send srtwf07c promotion",
+              "type": "text"
+            },
+            "messageId": 1789374217000000,
+            "timestamp": 1789374217000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message"
+        ],
+        "branch_kind": "check_promotion",
+        "canned": [],
+        "entity_ids": [],
+        "focus_after": null,
+        "pending": {
+          "kind": "tier_pick",
+          "option_labels": [
+            "dealer",
+            "office",
+            "end user"
+          ]
+        },
+        "text": "Which access level do you need for srtwf07c?\n1. Office - has promotion\n2. Dealer - has promotion\n3. End user - has promotion\nReply with the number(s), e.g. \"1\", \"1 and 2\", or \"all\".",
+        "tools": []
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [],
+            "resolved": false,
+            "token": "srtwf07c"
+          }
+        ],
+        "tokens": [
+          "srtwf07c"
+        ],
+        "unresolved_tokens": [
+          "srtwf07c"
+        ]
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 17,
+        "recorded_at": "2026-09-14T17:23:41.200102+09:00",
+        "turn_id": "0f88e25a-73e7-4d2a-b231-a5e8bf55d007"
+      },
+      "tool_results": [],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "promotion",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "srtwf07c"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_promotion",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to get the promotion for SRTWF07C"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow",
+        "hidden_spec_keys": [
+          "board_thickness",
+          "thickness"
+        ]
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1061691@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1061691,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1778483994,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000091"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000091",
+          "id": 900000091,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000091",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000017\", \"firstName\": \"ZZT\", \"lastName\": \"Ng\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": "zzt-agent-1061691@example.invalid",
+              "firstName": "ZZT-agent",
+              "id": 1061691,
+              "lastName": "",
+              "role": "user"
+            },
+            "countryCode": "MY",
+            "created_at": 1778483994,
+            "email": null,
+            "firstName": "ZZT-900000091",
+            "id": 900000091,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000091",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "9fc45b82-b947-4f91-b685-03d32fe8e813",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxNjQxOTExNzkVAgASGBQzQTY5QTdGQzcxQUE5Q0Q2NzkxQgA=",
+            "contactId": 900000091,
+            "message": {
+              "text": "1",
+              "type": "text"
+            },
+            "messageId": 1789374240000000,
+            "timestamp": 1789374240000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message",
+          "send_attachments"
+        ],
+        "branch_kind": "check_promotion",
+        "canned": [],
+        "entity_ids": [
+          "0a75b2e9-a436-4dcb-af1c-4b73cd8778c3",
+          "462c9f19-ecee-4a2d-9168-42b972a5475b",
+          "746d72b7-bfb4-4ccf-a15b-7a291856dcc5",
+          "966f001b-78db-466b-965e-8b1f43abe34a",
+          "e265f3b5-0e0d-4b1b-a601-781b75f695fd"
+        ],
+        "focus_after": null,
+        "pending": null,
+        "text": "I found 2 promotions for srtwf07c. I have attached the file(s) below.\n\n1. *Promotion:* UPDATED SORENTO A3 FLYER  2026 OFFICE_21072026.pdf\n*Start Date:* 2026-06-01\n*End Date:* 2026-09-30\n\n2. *Promotion:* SORENTO A3 FLYER_OFFICE USE_11062026.pdf\n*Start Date:* 2026-06-01\n*End Date:* 2026-09-30\n\n_Data last updated: 21/07/2026 10:50:09_",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "contact_id",
+              "date_mode",
+              "is_active",
+              "product_ids",
+              "promotion_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_marketing_promotions_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [],
+        "tokens": [],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 17,
+        "recorded_at": "2026-09-14T17:24:04.207819+09:00",
+        "turn_id": "38c9eb2d-459c-46b9-bd6c-c4bf480b7f8f"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 5,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 5,
+              "unmapped_types": []
+            },
+            "access_levels": [
+              "Sorento Office",
+              "Mocha Office",
+              "Cabana Office"
+            ],
+            "contact_id": "900000091",
+            "date_mode": null,
+            "is_active": null,
+            "product_ids": [
+              "966f001b-78db-466b-965e-8b1f43abe34a"
+            ],
+            "promotion_ids": [
+              "462c9f19-ecee-4a2d-9168-42b972a5475b",
+              "746d72b7-bfb4-4ccf-a15b-7a291856dcc5",
+              "e265f3b5-0e0d-4b1b-a601-781b75f695fd",
+              "0a75b2e9-a436-4dcb-af1c-4b73cd8778c3"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "attachments": [
+              {
+                "attachmentType": "Promotion",
+                "filename": "UPDATED SORENTO A3 FLYER  2026 (OFFICE)_21072026.pdf",
+                "mimeType": "application/pdf",
+                "uploadedAt": "2026-07-21T10:16:42.020223",
+                "url": "https://cdn-sorento.com/promotion/7832d8f6-a30e-4794-ba84-8edabcd4f493/UPDATED SORENTO A3 FLYER  2026 OFFICE_21072026.pdf"
+              },
+              {
+                "attachmentType": "Promotion",
+                "filename": "@ SORENTO A3 FLYER_OFFICE USE_11062026.pdf",
+                "mimeType": "application/pdf",
+                "uploadedAt": "2026-07-07T10:54:04.074561",
+                "url": "https://cdn-sorento.com/promotion/9451c419-ddc1-42d0-ab53-79f9ef1082ec/SORENTO A3 FLYER_OFFICE USE_11062026.pdf"
+              }
+            ],
+            "fallback_used": false,
+            "has_result": true,
+            "intro": "I have attached the file(s) below.",
+            "items": [
+              {
+                "fields": [
+                  {
+                    "label": "Promotion",
+                    "value": "UPDATED SORENTO A3 FLYER  2026 OFFICE_21072026.pdf"
+                  },
+                  {
+                    "label": "Start Date",
+                    "value": "2026-06-01"
+                  },
+                  {
+                    "label": "End Date",
+                    "value": "2026-09-30"
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "UPDATED SORENTO A3 FLYER  2026 OFFICE_21072026.pdf"
+              },
+              {
+                "fields": [
+                  {
+                    "label": "Promotion",
+                    "value": "SORENTO A3 FLYER_OFFICE USE_11062026.pdf"
+                  },
+                  {
+                    "label": "Start Date",
+                    "value": "2026-06-01"
+                  },
+                  {
+                    "label": "End Date",
+                    "value": "2026-09-30"
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SORENTO A3 FLYER_OFFICE USE_11062026.pdf"
+              }
+            ],
+            "last_updated_at": "2026-07-21T10:50:09.865201",
+            "result_type": "promotions"
+          },
+          "tool": "crm_marketing_promotions_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [
+          "Office"
+        ],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": null,
+        "entities": [],
+        "entity_op": "reuse",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": null,
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "casual",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [
+          1
+        ],
+        "reference_target": "dym",
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to select access level 1"
+      }
+    }
+  ]
+}

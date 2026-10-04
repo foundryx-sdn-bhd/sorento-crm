@@ -2,7 +2,7 @@
 
 Run from sorento_crm_backend with SORENTO_ENV_FILE=.env.browse.
 Writes: an admin login, an integration key (printed for the MCP server), the chatbot
-contact 437264483 (access agent + low stock + supplier reveal keys + a borrowable
+contact 900000008 (access agent + low stock + supplier reveal keys + a borrowable
 envelope), categories / suppliers / brands mirroring the owner's cases.
 """
 from __future__ import annotations
@@ -21,7 +21,7 @@ from app.database import engine  # noqa: E402
 
 DEFAULT_COMPANY_ID = "00000000-0000-0000-0000-000000000001"
 SPACE_ID = "364817"
-CONTACT = "437264483"
+CONTACT = "900000008"
 ADMIN_EMAIL = "cloud.admin@example.com"
 ADMIN_PASSWORD = os.environ["CLOUD_ADMIN_PASSWORD"]  # throwaway, sandbox DB only
 

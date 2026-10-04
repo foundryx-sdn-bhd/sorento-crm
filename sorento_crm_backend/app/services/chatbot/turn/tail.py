@@ -34,6 +34,7 @@ def session_payload(state: State, answer: Any, ctx: Any) -> dict[str, Any]:
         "ideation": getattr(ctx, "ideation", None),
         "access_levels": getattr(ctx, "access_levels", []) or [],
         "contains_flyer": bool(getattr(ctx, "contains_flyer", False)),
+        "reply_language": getattr(ctx, "reply_language", None),
     }
 
 

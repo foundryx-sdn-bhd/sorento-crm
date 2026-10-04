@@ -8,7 +8,7 @@
   "mode": "uac",
   "test_run_id": "reg-2026-09-07-10e541b9-biz-attach-d",
   "contact": {
-   "id": 437264483,
+   "id": 900000008,
    "firstName": "Jayson",
    "lastName": "",
    "phone": "+60123456789",
@@ -32,7 +32,7 @@
   "message": {
    "event_type": "message.received",
    "contact": {
-    "id": 437264483,
+    "id": 900000008,
     "firstName": "Jayson",
     "lastName": "",
     "phone": "+60123456789",
@@ -55,7 +55,7 @@
    },
    "message": {
     "messageId": 1788760216889,
-    "contactId": 437264483,
+    "contactId": 900000008,
     "channelId": 453209,
     "traffic": "incoming",
     "timestamp": 1788760216889,
@@ -72,7 +72,7 @@
   "is_test": true,
   "ctx": {
    "contact": {
-    "id": 437264483,
+    "id": 900000008,
     "firstName": "Jayson",
     "lastName": "",
     "phone": "+60123456789",
@@ -96,7 +96,7 @@
    "text": {
     "event_type": "message.received",
     "contact": {
-     "id": 437264483,
+     "id": 900000008,
      "firstName": "Jayson",
      "lastName": "",
      "phone": "+60123456789",
@@ -119,7 +119,7 @@
     },
     "message": {
      "messageId": 1788760216889,
-     "contactId": 437264483,
+     "contactId": 900000008,
      "channelId": 453209,
      "traffic": "incoming",
      "timestamp": 1788760216889,
@@ -130,7 +130,7 @@
     }
    },
    "session": {
-    "respond_io_id": "437264483",
+    "respond_io_id": "900000008",
     "session_vars": {
      "variables": {},
      "user_response": "I read Sorento, SRTWC8349-RL (product) and SRT86-MBT (product) from that photo.\n\nHere's what you want:\n• product: SRT86-MBT (+1 more)\n\nBut no incoming matched these.\nBut here are the stock details for the requested products:\n\n- *Product Code:* SRTWC8349-RL-HP\n*Total:* 97\n*BRW:* 73\n*MWH:* 24\n\n- *Product Code:* SRT86-MBT\n*Total:* 0\n⚠️  *(PRODUCT DISCONTINUED)*\n\nWould you like me to escalate to purchasing team?"

@@ -169,7 +169,7 @@ def _seed_tracking_row(db, ids: dict):
     row = Order(
         order_number="ZZDO-0001", company_id=DEFAULT_COMPANY_ID, order_date=date(2026, 9, 26),
         actual_delivery_date=date(2026, 9, 28), pickup_time="14:30", transporter="ZZ TRANS",
-        driver_name="Ali", lorry_plate="WXX 1234", checker="Chong", trips=2, delivery_days=1,
+        driver_name="Ali", lorry_plate="PLATE-41", checker="Chong", trips=2, delivery_days=1,
         kpi_warning=False, customer_ref="iPad ref", salesman="SEAN", warehouse="BRW",
         delivery_remarks="dr", delivery_remarks_cs="drcs", remarks_cs="rcs",
         order_status_id=ids["new_status"], debtor_code="OLD", debtor_name="Old name",

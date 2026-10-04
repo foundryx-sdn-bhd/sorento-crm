@@ -1,7 +1,7 @@
 """Issue #1323, second recorded case: a company named as a FILTER is not the company pick.
 
 Owner hand test on the Samantha copy (PR #1301 head 9f9bbb97, parser v40), 28 Sep 2026
-11:42 MYT, console contact 487555417 (owner, verbatim): "the escalation hit again, you
+11:42 MYT, console contact 900000039 (owner, verbatim): "the escalation hit again, you
 see i am just trying to search with bmocha brand, and it triggers escalation".
 
 1. "delivery order brand sorento cheng huat sentul" answered the Sorento DO list and
