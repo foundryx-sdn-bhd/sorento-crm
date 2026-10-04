@@ -243,6 +243,7 @@ DATASET = reg.Dataset(
     date_bases=(reg.DateBasis("order_date", "DO date", Order.order_date),),
     base=_base,
     company_column=Order.company_id,
+    product_id_column=OrderLine.product_id,
 )
 
 

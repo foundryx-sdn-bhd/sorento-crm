@@ -254,6 +254,8 @@ export function PriceFloorDialog({
                   value={categoryId}
                   onChange={setCategoryId}
                   disabled={isEdit}
+                  loadError={categories.error}
+                  onRetry={() => void categories.refetch()}
                   options={(categories.data ?? []).map((row) => ({
                     value: row.id,
                     label: row.category_name,

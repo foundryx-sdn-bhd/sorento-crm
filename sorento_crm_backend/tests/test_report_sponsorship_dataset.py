@@ -193,11 +193,11 @@ def test_the_catalog_holds_the_plan_mapping(db):
 
 
 def test_sales_agent_comes_from_the_linked_contact(db):
-    contact = _contact(db, name="Eric Ng")
+    contact = _contact(db, name="CONTACT Y")
     _form(db, "0001", approved_at=datetime(2026, 1, 5), requested_by="typed name",
           requested_by_contact_id=contact.id)
 
-    assert _row(_run(db), "0001")["sales_agent"] == "Eric Ng"
+    assert _row(_run(db), "0001")["sales_agent"] == "CONTACT Y"
 
 
 def test_sales_agent_uses_the_contact_first_and_last_name_when_it_has_no_name(db):
@@ -208,9 +208,9 @@ def test_sales_agent_uses_the_contact_first_and_last_name_when_it_has_no_name(db
 
 
 def test_sales_agent_falls_back_to_the_typed_name(db):
-    _form(db, "0003", approved_at=datetime(2026, 1, 7), requested_by="Amirul")
+    _form(db, "0003", approved_at=datetime(2026, 1, 7), requested_by="CONTACT U")
 
-    assert _row(_run(db), "0003")["sales_agent"] == "Amirul"
+    assert _row(_run(db), "0003")["sales_agent"] == "CONTACT U"
 
 
 def test_a_form_with_no_requestor_at_all_is_still_counted(db):
@@ -393,7 +393,7 @@ def test_switching_the_date_basis_moves_a_form_between_months(db):
         approved_at=datetime(2026, 4, 20),
         request_date=date(2026, 1, 15),
         submitted_at=datetime(2026, 1, 16),
-        requested_by="Amirul",
+        requested_by="CONTACT U",
         total_project_value=Decimal("500.00"),
     )
 
@@ -404,8 +404,8 @@ def test_switching_the_date_basis_moves_a_form_between_months(db):
 
     assert _row(approved, "0300")["month"] == "2026-04"
     assert _row(form_date, "0300")["month"] == "2026-01"
-    assert approved.layouts.summary.cells["Amirul"].keys() == {"2026-04"}
-    assert form_date.layouts.summary.cells["Amirul"].keys() == {"2026-01"}
+    assert approved.layouts.summary.cells["CONTACT U"].keys() == {"2026-04"}
+    assert form_date.layouts.summary.cells["CONTACT U"].keys() == {"2026-01"}
 
 
 def test_a_late_evening_utc_approval_lands_in_the_malaysian_month(db):
@@ -419,7 +419,7 @@ def test_a_late_evening_utc_approval_lands_in_the_malaysian_month(db):
         db,
         "0310",
         approved_at=datetime(2026, 7, 31, 17, 30),
-        requested_by="Amirul",
+        requested_by="CONTACT U",
         total_project_value=Decimal("500.00"),
     )
 
@@ -429,13 +429,13 @@ def test_a_late_evening_utc_approval_lands_in_the_malaysian_month(db):
 
     assert row["month"] == "2026-08"
     assert row["approved_at"] == "2026-08-01"
-    assert result.layouts.summary.cells["Amirul"].keys() == {"2026-08"}
+    assert result.layouts.summary.cells["CONTACT U"].keys() == {"2026-08"}
 
 
 def test_a_malaysian_new_year_approval_is_not_pushed_out_of_the_period(db):
     """31 Dec 2025 17:00 UTC is 1 Jan 2026 in Kuala Lumpur: inside a 2026 period, and the
     period predicate has to agree with the month bucket or a form falls between them."""
-    _form(db, "0311", approved_at=datetime(2025, 12, 31, 17, 0), requested_by="Amirul")
+    _form(db, "0311", approved_at=datetime(2025, 12, 31, 17, 0), requested_by="CONTACT U")
 
     view = _view_with_columns(["request_number", "sales_agent", "month"])
     assert _row(_run(db, view=view), "0311")["month"] == "2026-01"
@@ -452,7 +452,7 @@ def test_the_year_list_reads_the_malaysian_year_too(db):
 def test_a_date_basis_that_is_a_plain_date_is_left_alone(db):
     """`request_date` is a DATE: it carries no time to shift, and shifting it would move
     every form back a day."""
-    _form(db, "0313", request_date=date(2026, 1, 1), requested_by="Amirul")
+    _form(db, "0313", request_date=date(2026, 1, 1), requested_by="CONTACT U")
 
     view = _view_with_columns(["request_number", "month", "request_date"])
     row = _row(_run(db, {"date_basis": "request_date"}, view=view), "0313")

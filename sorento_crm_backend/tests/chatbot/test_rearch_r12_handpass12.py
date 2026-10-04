@@ -108,6 +108,7 @@ from app.services.chatbot.lanes.business.fetch import ORDER_TOOLS as ORDER_TOOLS
 from app.services.chatbot.lanes.business.services import AnswerServices
 from app.services.company_scope import DEFAULT_COMPANY_ID
 from tests._pg_fixture import unique_code
+from tests.chatbot._turn_helpers import do_window
 from tests.chatbot.test_engine import CONTACT_ID, _parser_output
 from tests.chatbot.test_engine_company_scope import _seed_product
 from tests.chatbot.test_rearch_r5_production_decides import _mcp_double, _seed_contact_and_get
@@ -555,6 +556,8 @@ class TestGroupARememberedOrderFacetsNotUsedOutsideOrderDomain:
             document=["DO"],
             status="delivered",
             order_status=None,
+            # Dated: a dateless DO list ask asks which period first (DO-ASK-SIMPLIFY, owner 4 Oct 2026).
+            **do_window(),
             routing={
                 "suggested_team": "customer_service",
                 "suggested_agent": "order_enquiries",
@@ -614,6 +617,8 @@ class TestGroupARememberedOrderFacetsNotUsedOutsideOrderDomain:
             document=[],
             status=None,
             order_status=None,
+            # Dated: a dateless DO list ask asks which period first (DO-ASK-SIMPLIFY, owner 4 Oct 2026).
+            **do_window(),
             routing={
                 "suggested_team": "customer_service",
                 "suggested_agent": "order_enquiries",
@@ -1476,6 +1481,8 @@ class TestGroupFCustomerPickHeaderNamesEveryLedgerNotACode:
             document=[],
             status=None,
             order_status=None,
+            # Dated: a dateless DO list ask asks which period first (DO-ASK-SIMPLIFY, owner 4 Oct 2026).
+            **do_window(),
         )
 
         def _call(name: str, args: dict[str, Any]) -> str:
@@ -1495,11 +1502,12 @@ class TestGroupFCustomerPickHeaderNamesEveryLedgerNotACode:
         assert result.status == "done", result.error
         said = _said(result)
 
-        for name in names:
-            assert name in said, (
-                f"the reply must name every ledger the pick covers ({names!r}), owner "
-                f"ruling 'print the 3 customer names': {said!r}"
-            )
+        # DO-ASK-SIMPLIFY rule 1 (owner, 2 Oct 2026) replaces "print the 3 customer names":
+        # the header names each group once (owner, 2 Oct: group names only, no count). These names carry no
+        # bracketed ledger marker, so they are three families to `ledger_family_key`.
+        assert f"Customer: {', '.join(names)}" in said, (
+            f"the miss header must name each group once, no count: {said!r}"
+        )
         assert option_code not in said, f"no customer CODE must ever reach the reply text: {said!r}"
 
         # captain ruling 21 Sep: contract 36 keeps the customer roster open across a miss

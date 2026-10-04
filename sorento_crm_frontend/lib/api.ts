@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 
 import { impersonationStore } from '@/lib/impersonation-store';
+import { REQUEST_TIMED_OUT_MESSAGE } from '@/lib/api-client';
 import {
   IMPERSONATION_ENDED_HEADER,
   endSessionAndRedirect,
@@ -103,6 +104,84 @@ function _attachRevisionHeader(
     init: _withHeader(init, REVISION_HEADER, String(revision)),
     fencedEntityId: entityId,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Request deadlines (NEVER-STUCK-UI S2.1).
+//
+// A bare `fetch` waits as long as the browser lets it, which for a stalled proxy or
+// keep-alive connection is forever: the query stays `pending` and the screen is a
+// skeleton that never ends. Every apiFetch therefore gets a budget for the server to
+// ANSWER (response headers). Reading the body is not on the clock, so an export that has
+// started downloading or an event stream that has connected is never cut off.
+// ---------------------------------------------------------------------------
+export const API_READ_TIMEOUT_MS = 30_000;
+/** Writes and the AI chat: the server may do real work before it answers. */
+export const API_WRITE_TIMEOUT_MS = 120_000;
+/** A FormData body: the upload itself happens before the server can answer. */
+export const API_UPLOAD_TIMEOUT_MS = 600_000;
+
+/** `RequestInit` plus our own per-call budget. `timeoutMs` is never forwarded to fetch. */
+export type ApiFetchInit = RequestInit & {
+  /** Milliseconds the server has to answer. Defaults by method and body, see above. */
+  timeoutMs?: number;
+};
+
+/**
+ * A GET that builds a file before it answers (an Excel or PDF export) gets the write
+ * budget: the server does the whole build before the first byte, so 30s is too short for
+ * a large one. Matched by path so every export, present and future, is covered in one
+ * place rather than by each service remembering a `timeoutMs`.
+ */
+const _FILE_BUILD_PATH = /\/(export|download|pdf)(\b|[/?.])|\.(xlsx|pdf|csv)(\?|$)/i;
+
+function _defaultTimeoutMs(url: unknown, init: RequestInit | undefined): number {
+  if (init?.body instanceof FormData) return API_UPLOAD_TIMEOUT_MS;
+  const request = typeof Request !== 'undefined' && url instanceof Request ? url : null;
+  const method = (init?.method || request?.method || 'GET').toUpperCase();
+  if (method !== 'GET' && method !== 'HEAD') return API_WRITE_TIMEOUT_MS;
+  const path = request ? request.url : url;
+  if (typeof path === 'string' && _FILE_BUILD_PATH.test(path)) return API_WRITE_TIMEOUT_MS;
+  return API_READ_TIMEOUT_MS;
+}
+
+/**
+ * `fetch` with a deadline on the answer. The caller's own signal still works and still
+ * rejects with its own AbortError; only our deadline becomes the readable timeout error.
+ */
+async function _fetchWithDeadline(
+  url: RequestInfo,
+  init: RequestInit | undefined,
+  timeoutMs: number,
+): Promise<Response> {
+  const controller = new AbortController();
+  const callerSignal =
+    init?.signal ?? (typeof Request !== 'undefined' && url instanceof Request ? url.signal : undefined);
+  let timedOut = false;
+  const onCallerAbort = () => controller.abort(callerSignal?.reason);
+  if (callerSignal) {
+    if (callerSignal.aborted) controller.abort(callerSignal.reason);
+    else callerSignal.addEventListener('abort', onCallerAbort, { once: true });
+  }
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort(new DOMException(REQUEST_TIMED_OUT_MESSAGE, 'TimeoutError'));
+  }, timeoutMs);
+  try {
+    // The caller-abort listener stays after the answer arrives, so a caller can still
+    // cancel the body (an event stream, a download); only the deadline stops here.
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (error) {
+    callerSignal?.removeEventListener('abort', onCallerAbort);
+    if (timedOut && !callerSignal?.aborted) {
+      const timeoutError = new Error(REQUEST_TIMED_OUT_MESSAGE);
+      timeoutError.name = 'TimeoutError';
+      throw timeoutError;
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -266,8 +345,11 @@ function _sessionEndingResponse(): Response {
  */
 export async function apiFetch(
   input: string | Request,
-  init?: RequestInit,
+  apiInit?: ApiFetchInit,
 ): Promise<Response> {
+  const { timeoutMs: callerTimeoutMs, ...rest } = apiInit ?? {};
+  let init: RequestInit | undefined = apiInit ? rest : undefined;
+  const timeoutMs = callerTimeoutMs ?? _defaultTimeoutMs(input, init);
   let url = input;
   // Use empty string for relative paths (nginx will proxy), or explicit URL for direct backend access
   let apiUrl = process.env.NEXT_PUBLIC_API_URL || '';
@@ -587,7 +669,7 @@ export async function apiFetch(
   const fenced = _attachRevisionHeader(url, init);
   init = fenced.init;
   const sentViewAs = impersonationStore.getState()?.targetUser.id ?? null;
-  let response = await fetch(url as RequestInfo, init);
+  let response = await _fetchWithDeadline(url as RequestInfo, init, timeoutMs);
   // Browser-side: a 401 with a session-dead reason code means our session was
   // revoked/expired server-side → refresh once, else sign out and bounce to /signin.
   if (isBrowserApiCall && response.status === 401 && (await _isSessionDead(response.clone()))) {
@@ -597,7 +679,7 @@ export async function apiFetch(
     if (fresh && fresh !== failedToken && !isSessionEnding()) {
       if (method === 'GET' || method === 'HEAD') {
         init = _withHeader(init, 'Authorization', `Bearer ${fresh}`);
-        response = await fetch(url as RequestInfo, init);
+        response = await _fetchWithDeadline(url as RequestInfo, init, timeoutMs);
         if (response.status === 401 && (await _isSessionDead(response.clone()))) {
           endSessionAndRedirect();
         }

@@ -55,7 +55,7 @@ export default function TeamPendingList() {
     setPagination((prev) => ({ ...prev, pageIndex: 0 }));
   }, [assigneeFilter, teamFilter, search]);
 
-  const { data, isLoading, isPlaceholderData, isFetching, refetch } = useTeamPendingSLA({
+  const { data, isLoading, isPlaceholderData, isFetching, refetch, error } = useTeamPendingSLA({
     page: pagination.pageIndex + 1,
     limit: pagination.pageSize,
     assignee: assigneeFilter !== ALL ? assigneeFilter : undefined,
@@ -264,6 +264,8 @@ export default function TeamPendingList() {
         tableLayout={{ width: 'fixed', columnsResizable: true, columnsVisibility: true }}
         recordCount={total}
         isLoading={isLoading}
+        error={error}
+        onRetry={() => void refetch()}
         isPlaceholderData={isPlaceholderData}
         emptyMessage="No open tasks across your teams."
       >

@@ -36,6 +36,7 @@ from app.services.chatbot.lanes.business.fetch import (
     entity_ids_transformer,
 )
 from app.services.chatbot_parser_prompt import (
+    ACCOUNT_LEDGER_ADDENDUM,
     GROWTH_R1_ADDENDUM,
     KNOWN_BRANDS_ADDENDUM,
     LAST_COST_ADDENDUM,
@@ -104,7 +105,7 @@ def _parse_output(**overrides: Any) -> dict[str, Any]:
 def _tool_args(parse_output: dict[str, Any], *, tool: str, entities: list[dict] | None = None) -> dict:
     """The MCP arguments a turn with this parse would send, through both real steps."""
     semantic_input = _fetch_semantic_input(
-        parse_output, tier_gate=None, contact_id="437264483", space_id=None
+        parse_output, tier_gate=None, contact_id="900000008", space_id=None
     )
     return entity_ids_transformer(
         {"tool": tool, "semantic_input": semantic_input, "entities": entities or []}
@@ -176,7 +177,7 @@ class TestBothPublishedBodiesCarryTheVocabulary:
         stacked after the live text, so `GROWTH_R1_ADDENDUM` is still exactly the tail
         once the later ones are off."""
         for body in (SEMANTIC_PARSER_PROMPT,):
-            assert body.removesuffix(MEMORY_ADDENDUM).removesuffix(PO_SPO_WAREHOUSE_ADDENDUM).removesuffix(
+            assert body.removesuffix(MEMORY_ADDENDUM).removesuffix(ACCOUNT_LEDGER_ADDENDUM).removesuffix(PO_SPO_WAREHOUSE_ADDENDUM).removesuffix(
                 ESCALATION_CONFIRMATION_ADDENDUM
             ).removesuffix(SELF_REFERENCE_ADDENDUM).removesuffix(TOP_SELLING_ADDENDUM).removesuffix(
                 KNOWN_BRANDS_ADDENDUM

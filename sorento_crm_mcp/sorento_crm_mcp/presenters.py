@@ -423,19 +423,34 @@ def _orders_list(rows: list[dict], b: _Builder) -> None:
             o.get("order_number"),
             [
                 ("company_name", "Company", o.get("company_name")),
-                ("Order Number", o.get("order_number")),
-                ("Customer", o.get("debtor_name")),
-                ("Order Date", o.get("order_date")),
-                ("Actual Delivery Date", o.get("actual_delivery_date")),
-                ("Status", o.get("order_status")),
-                ("Pickup Time", o.get("pickup_time")),
-                ("Transporter", o.get("transporter")),
-                ("Driver", o.get("driver_name")),
-                ("Lorry Plate", o.get("lorry_plate")),
-                ("Warehouse", wh),
-                ("Products", prods),
+                ("order_number", "Order Number", o.get("order_number")),
+                ("debtor_name", "Customer", o.get("debtor_name")),
+                ("order_date", "Order Date", o.get("order_date")),
+                ("actual_delivery_date", "Actual Delivery Date", o.get("actual_delivery_date")),
+                ("order_status", "Status", o.get("order_status")),
+                ("pickup_time", "Pickup Time", o.get("pickup_time")),
+                ("transporter", "Transporter", o.get("transporter")),
+                ("driver_name", "Driver", o.get("driver_name")),
+                ("lorry_plate", "Lorry Plate", o.get("lorry_plate")),
+                ("warehouse", "Warehouse", wh),
+                ("products", "Products", prods),
             ],
         )
+    # DO-ASK-SIMPLIFY rule 2 (owner, 2 Oct 2026; every printed field since the 3 Oct hand
+    # test): each DO field is a per-contact reveal, hidden from a contact without the grant.
+    # The MCP stays unfiltered; the chatbot's `output_structurer` is the gate. The Company
+    # line (multi-company installs only) is not a DO field and is never gated.
+    b.restrict("order_number", "delivery_orders.order_number")
+    b.restrict("debtor_name", "delivery_orders.customer")
+    b.restrict("order_date", "delivery_orders.order_date")
+    b.restrict("actual_delivery_date", "delivery_orders.delivery_date")
+    b.restrict("order_status", "delivery_orders.status")
+    b.restrict("pickup_time", "delivery_orders.pickup_time")
+    b.restrict("transporter", "delivery_orders.transporter")
+    b.restrict("driver_name", "delivery_orders.driver")
+    b.restrict("lorry_plate", "delivery_orders.lorry_plate")
+    b.restrict("warehouse", "delivery_orders.warehouse")
+    b.restrict("products", "delivery_orders.products")
 
 
 def _orders_so_outstanding(rows: list[dict], b: _Builder) -> None:
@@ -613,22 +628,31 @@ def _po_last_cost(rows: list[dict], b: _Builder) -> None:
 
 def _orders_by_product(rows: list[dict], b: _Builder) -> None:
     for o in rows:
-        prods = ", ".join(
-            f"{m.get('product_code')} ({_qty(m.get('quantity'))})"
-            + (f" @ {m.get('warehouse_code')}" if _filled(m.get("warehouse_code")) else "")
-            for m in (o.get("matched_products") or [])
+        matched = o.get("matched_products") or []
+        prods = ", ".join(f"{m.get('product_code')} ({_qty(m.get('quantity'))})" for m in matched)
+        # DO-ASK-SIMPLIFY (owner hand test 3 Oct 2026): the warehouse is its own switched
+        # field, never folded into Products ("X (1) @ BRW"), so the Warehouse reveal hides it.
+        whs = ", ".join(
+            dict.fromkeys(str(m.get("warehouse_code")) for m in matched if _filled(m.get("warehouse_code")))
         )
         b.item(
             o.get("order_number"),
             [
                 ("company_name", "Company", o.get("company_name")),
-                ("Order Number", o.get("order_number")),
-                ("Customer", o.get("debtor_name")),
-                ("Order Date", o.get("order_date")),
-                ("Actual Delivery Date", o.get("actual_delivery_date")),
-                ("Products", prods),
+                ("order_number", "Order Number", o.get("order_number")),
+                ("debtor_name", "Customer", o.get("debtor_name")),
+                ("order_date", "Order Date", o.get("order_date")),
+                ("actual_delivery_date", "Actual Delivery Date", o.get("actual_delivery_date")),
+                ("warehouse", "Warehouse", whs),
+                ("products", "Products", prods),
             ],
         )
+    b.restrict("order_number", "delivery_orders.order_number")
+    b.restrict("debtor_name", "delivery_orders.customer")
+    b.restrict("order_date", "delivery_orders.order_date")
+    b.restrict("actual_delivery_date", "delivery_orders.delivery_date")
+    b.restrict("warehouse", "delivery_orders.warehouse")
+    b.restrict("products", "delivery_orders.products")
 
 
 # ---------------------------------------------------------------------------
@@ -944,10 +968,13 @@ def _incoming_dealer(rows: list[dict], b: _Builder) -> None:
         if not isinstance(row, dict):
             continue
         etas = [e for e in row.get("etas") or [] if _filled(e)]
-        when = f"ETA: {', '.join(etas)}" if etas else "ETA: not confirmed yet"
+        # Owner hand test, 3 Oct 2026: an ETA is a tick and its dates, none is "No ETA".
+        when = f"{STOCK_YES} ETA {', '.join(etas)}" if etas else "No ETA"
         code = row.get("product_code")
+        # AVAIL-MODE-REPLIES rule 3 (owner, 2 Oct 2026): one compact line per product,
+        # "<code>: ETA <dates>", never the code with the ETA on a line of its own.
         # `dealer_view` tells the engine's zero-stock ladder this line is a whole answer.
-        b.raw_item(f"{code}\n{when}" if _filled(code) else when, [], {"dealer_view": True})
+        b.raw_item(f"{code}: {when}" if _filled(code) else when, [], {"dealer_view": True})
 
 
 def _without_repeats(b: _Builder, start: int) -> None:
@@ -1409,8 +1436,9 @@ def _stock_compact(payload: dict, b: _Builder) -> None:
             fields.append({"key": "product_code", "label": "Product Code", "value": code_field})
         total = _stock_int(entry.get("total_on_hand"))
         # D1 (owner console pass, 8 Sep 2026): with `include_sellable` the Total and every
-        # warehouse line carry an "(O/S: n)" suffix - the product's open SO on the Total
-        # (the unlocated remainder lives there only), the warehouse's own on its line. The
+        # warehouse line carry an "(O/S: n)" suffix - the open SO on the warehouses the
+        # contact may see on the Total (STOCK-TOTAL-OS-SCOPE: never a hidden warehouse's,
+        # never a line with no warehouse), the warehouse's own on its line. The
         # suffix is a `granted_value` on a keyed, RESTRICTED field: the CRM's field drop
         # swaps it in under `inventory.sellable` and strips it otherwise, so the plain
         # number is what an ungranted contact reads and nothing is dropped. Without
@@ -1462,10 +1490,19 @@ def _availability_label(entry: dict) -> Optional[str]:
 #: `incoming` is handled separately in `_availability_line` - it is the only branch
 #: whose sentence carries a date. REFER-SALESMAN (30 Sep 2026): the verdict is its own
 #: sentence and the refer is exactly `REFER_TO_SALESMAN`, on the same line.
+#
+#: AVAIL-MODE-REPLIES (owner, 2 Oct 2026): got stock / no stock read as a tick and a cross,
+#: never as words. `too_big` keeps its words behind a blocked mark (owner v2 note 1): it
+#: says nothing about our stock either way, so it is never a tick or a cross.
+STOCK_YES = "\u2705"
+STOCK_NO = "\u274c"
+STOCK_BLOCKED = "\U0001F6AB"
 _AVAILABILITY_TAILS = {
-    "too_big": f"the quantity is more than what I can confirm here. {REFER_TO_SALESMAN}",
-    "in_stock": f"yes, we have stock. {REFER_TO_SALESMAN}",
-    "no_incoming": f"no stock and no incoming at the moment. {REFER_TO_SALESMAN}",
+    "too_big": f"{STOCK_BLOCKED} the quantity is more than what I can confirm here. {REFER_TO_SALESMAN}",
+    "in_stock": f"{STOCK_YES} {REFER_TO_SALESMAN}",
+    # REFER-ONLY-FIXES (owner, 3 Oct 2026): `no_incoming` is reached only with no stock
+    # (`stock_ask_branch.branch`: some stock is `in_stock`), so the line says both.
+    "no_incoming": f"{STOCK_NO} No stock and no incoming. {REFER_TO_SALESMAN}",
 }
 
 
@@ -1484,7 +1521,19 @@ def _availability_tail(entry: dict) -> str:
     """The sentence after "<code> x <Q>:" for one answered entry."""
     branch = entry.get("branch")
     if branch == "incoming":
-        return f"no stock at the moment, ETA {entry.get('eta')}."
+        return f"{STOCK_NO} ETA {entry.get('eta')}."
+    available = entry.get("available_qty")
+    if (
+        branch == "in_stock"
+        and isinstance(available, int)
+        and not isinstance(available, bool)
+        and available >= 1
+    ):
+        # AVAIL-MODE-REPLIES rule 2: some stock, short of the asked quantity, the ask
+        # within the category max. The backend sets `available_qty` in that case only
+        # (`inventory_service._apply_stock_visibility`), so it is the one figure of ours
+        # this mode ever prints.
+        return f"{STOCK_YES} {available} available. {REFER_TO_SALESMAN}"
     # Nit, review round 1: an unknown or missing branch is unreachable today
     # (`products.category_id` is NOT NULL, so `inventory_service.py` never
     # leaves `branch` unset) - but if a fallback is kept, `too_big` is the one
@@ -1496,13 +1545,15 @@ def _stamp_refers(entries: Any) -> Any:
     """CUSTOMER-ASKS-REFER-ONLY (owner ruling 1 Oct 2026): each answered entry carries
     `refers_to_salesman`, read off the tail this presenter printed for it, so the backend's
     Customer asks writer logs exactly the lines that referred the dealer (B3 `incoming`
-    does not). Only once every entry is answered, the same rule `_stock_availability`
-    prints the lines by; a reply still owing a quantity printed no tail at all."""
+    does not). Per entry with a branch, the same rule `_stock_availability` prints the
+    lines by; an entry still owing its quantity printed no tail and is not stamped."""
     if not isinstance(entries, list):
         return entries
     rows = [e for e in entries if isinstance(e, dict)]
-    if not rows or any(e.get("needs_quantity") for e in rows):
+    if not rows:
         return entries
+    # AVAIL-MODE-REPLIES rule 5: an answered line is printed even while another product
+    # still owes its quantity, so it is stamped on that turn too.
     return [
         {**e, "refers_to_salesman": _availability_tail(e).endswith(REFER_TO_SALESMAN)}
         if isinstance(e, dict) and e.get("branch")
@@ -1517,19 +1568,19 @@ def _stock_availability(payload: dict, b: _Builder) -> None:
     `fields` stays empty on purpose - this mode exists so a dealer is never told a
     quantity or a location of ours, and an empty field list is the only shape that
     cannot carry one. The item TITLE carries the whole answer (`_availability_line`)
-    once every entry has a branch; while any entry is still missing its quantity, the
-    title stays the bare product code and `_availability_intro` asks instead
-    (unchanged from before S3 - the "how many units" question is #1118's
-    `turn/task.py::StockQtyTask.question()` territory once a task is open, not this
-    slice's scope, R1/AC-SA310).
+    for every entry with a branch; an entry still missing its quantity keeps the bare
+    product code and `_availability_intro` asks (the backend's
+    `turn/task.py::StockQtyTask.question()` names the products once a task is open).
     """
     entries = _availability_entries(payload)
-    show_answer = bool(entries) and not any(e.get("needs_quantity") for e in entries)
     for entry in entries:
         label = _availability_label(entry)
         if not label:
             continue
-        title = _availability_line(entry) if show_answer else label
+        # AVAIL-MODE-REPLIES rule 5 (owner, 2 Oct 2026): a product with its answer
+        # (a branch) prints that answer even while another product still owes its
+        # quantity; one still owed stays its bare code for the question to name.
+        title = _availability_line(entry) if entry.get("branch") and not entry.get("needs_quantity") else label
         b.raw_item(
             title,
             [],
@@ -2253,6 +2304,12 @@ def _outstanding_envelope(report: dict) -> dict:
 #: The three lines the low stock report can answer with (AC-61). Written here, once, and
 #: handed to the lane verbatim: one writer, one wording.
 _LOW_STOCK_PENDING = "Preparing the low stock report - it will be sent here when ready."
+#: A test turn's pending (the console, `dry_run`): the route never hands it to the worker,
+#: so nothing is pushed; the file still lands in My Downloads.
+_LOW_STOCK_PENDING_DRY_RUN = (
+    "Preparing the low stock report - test turn: it will be in My Downloads, "
+    "nothing is sent to WhatsApp."
+)
 #: Both busy lines NAME the report (console round 3, defect C): "a plan is already running"
 #: alone left the reader - and the console assertion - guessing which plan, and the two
 #: busies have different fixes (wait a minute vs wait ten).
@@ -2354,7 +2411,8 @@ def _low_stock_envelope(payload: dict) -> dict:
         return {"result_type": "low_stock_report", "response": busy_line,
                 "attachments": [], "has_result": True}
     if status == "pending":
-        return {"result_type": "low_stock_report", "response": _LOW_STOCK_PENDING,
+        line = _LOW_STOCK_PENDING_DRY_RUN if payload.get("dry_run") is True else _LOW_STOCK_PENDING
+        return {"result_type": "low_stock_report", "response": line,
                 "attachments": [], "has_result": True}
     # Unknown / error / a raw error body: the error line verbatim, never pending and never
     # the generic inventory miss.

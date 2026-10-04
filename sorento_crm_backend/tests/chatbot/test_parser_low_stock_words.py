@@ -91,6 +91,7 @@ class TestBothPublishedBodiesCarryTheVocabulary:
         lane A, migration `mem_0002_parser_memory`) after that, so it comes off first of
         all."""
         from app.services.chatbot_parser_prompt import (
+            ACCOUNT_LEDGER_ADDENDUM,
             ESCALATION_CONFIRMATION_ADDENDUM,
             SELF_REFERENCE_ADDENDUM,
             KNOWN_BRANDS_ADDENDUM,
@@ -110,7 +111,7 @@ class TestBothPublishedBodiesCarryTheVocabulary:
         _mod, addendum = _prompt()
         for name, body in _bodies().items():
             assert (
-                body.removesuffix(MEMORY_ADDENDUM).removesuffix(PO_SPO_WAREHOUSE_ADDENDUM)
+                body.removesuffix(MEMORY_ADDENDUM).removesuffix(ACCOUNT_LEDGER_ADDENDUM).removesuffix(PO_SPO_WAREHOUSE_ADDENDUM)
                 .removesuffix(ESCALATION_CONFIRMATION_ADDENDUM).removesuffix(SELF_REFERENCE_ADDENDUM)
                 .removesuffix(TOP_SELLING_ADDENDUM)
                 .removesuffix(KNOWN_BRANDS_ADDENDUM)
@@ -134,6 +135,7 @@ class TestBothPublishedBodiesCarryTheVocabulary:
         makes both of them wrong in a way whose failure message points at the wrong
         constant."""
         from app.services.chatbot_parser_prompt import (
+            ACCOUNT_LEDGER_ADDENDUM,
             KNOWN_BRANDS_ADDENDUM,
             LAST_COST_ADDENDUM,
             ESCALATION_CONFIRMATION_ADDENDUM,
@@ -151,7 +153,7 @@ class TestBothPublishedBodiesCarryTheVocabulary:
         _mod, addendum = _prompt()
         for name, body in _bodies().items():
             assert (
-                body.removesuffix(MEMORY_ADDENDUM).removesuffix(PO_SPO_WAREHOUSE_ADDENDUM)
+                body.removesuffix(MEMORY_ADDENDUM).removesuffix(ACCOUNT_LEDGER_ADDENDUM).removesuffix(PO_SPO_WAREHOUSE_ADDENDUM)
                 .removesuffix(ESCALATION_CONFIRMATION_ADDENDUM).removesuffix(SELF_REFERENCE_ADDENDUM)
                 .removesuffix(TOP_SELLING_ADDENDUM)
                 .removesuffix(KNOWN_BRANDS_ADDENDUM)

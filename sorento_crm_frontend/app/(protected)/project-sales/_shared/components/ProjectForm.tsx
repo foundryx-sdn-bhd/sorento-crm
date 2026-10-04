@@ -277,6 +277,8 @@ export function ProjectForm(props: ProjectFormProps) {
                 value={developerId}
                 onChange={setDeveloperId}
                 clearable
+                loadError={developers.error}
+                onRetry={() => void developers.refetch()}
                 options={(developers.data?.data ?? []).map((party) => ({
                   value: party.id,
                   label: party.name,
@@ -301,6 +303,8 @@ export function ProjectForm(props: ProjectFormProps) {
                   if (next !== typeId) setTemplateId('');
                 }}
                 clearable
+                loadError={types.error}
+                onRetry={() => void types.refetch()}
                 options={(types.data ?? []).map((type) => ({
                   value: type.id,
                   label: type.name,
@@ -366,6 +370,8 @@ export function ProjectForm(props: ProjectFormProps) {
                 value={templateId}
                 onChange={setTemplateId}
                 clearable
+                loadError={templates.error}
+                onRetry={() => void templates.refetch()}
                 options={(templates.data ?? []).map((template) => ({
                   value: template.id,
                   label: template.name,
@@ -479,6 +485,8 @@ export function ProjectForm(props: ProjectFormProps) {
                 value={architectId}
                 onChange={setArchitectId}
                 clearable
+                loadError={architects.error}
+                onRetry={() => void architects.refetch()}
                 options={(architects.data?.data ?? []).map((party) => ({
                   value: party.id,
                   label: party.name,
@@ -494,6 +502,8 @@ export function ProjectForm(props: ProjectFormProps) {
                 value={mainContractorId}
                 onChange={setMainContractorId}
                 clearable
+                loadError={contractors.error}
+                onRetry={() => void contractors.refetch()}
                 options={(contractors.data?.data ?? []).map((party) => ({
                   value: party.id,
                   label: party.name,
@@ -510,6 +520,8 @@ export function ProjectForm(props: ProjectFormProps) {
               id="project-brands"
               value={brandIds}
               onChange={setBrandIds}
+              loadError={brands.error}
+              onRetry={() => void brands.refetch()}
               options={(brands.data ?? []).map((brand) => ({
                 value: brand.id,
                 label: brand.brand_name,
@@ -532,6 +544,8 @@ export function ProjectForm(props: ProjectFormProps) {
                 value={ownerUserId}
                 onChange={setOwnerUserId}
                 disabled={!canManageOwner}
+                loadError={users.error}
+                onRetry={() => void users.refetch()}
                 options={(users.data ?? []).map((user) => ({
                   value: user.id,
                   label: user.name || 'Unnamed user',

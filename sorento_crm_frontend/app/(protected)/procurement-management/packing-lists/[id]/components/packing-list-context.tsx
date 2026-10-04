@@ -191,6 +191,8 @@ export function PackingListProvider({
       // The Container card's own select (S5) - null reads as the tenant default, the same
       // convention every other clearable id field here uses.
       container_size_id: packingList.container_size_id ?? '',
+      // The draft holds strings only, so the region codes ride as one comma-joined value.
+      regions: (packingList.regions?.length ? packingList.regions : ['west']).join(','),
     };
     for (const cp of checkpoints) next[cp.field] = toDateInput(record[cp.field]);
     for (const f of CLEARANCE_ATTRIBUTE_FIELDS) next[f.name] = toInput(record[f.name]);
@@ -327,6 +329,7 @@ export function PackingListProvider({
       forwarder_order_ref: orNull(draft.forwarder_order_ref),
       notes: orNull(draft.notes),
       container_size_id: orNull(draft.container_size_id),
+      regions: (draft.regions ?? '').split(',').filter(Boolean),
       shipment_lines: draftLines.map((line) => ({
         // Which row this is. A converted draft can hold two lines of one product from one
         // supplier (the supplier's own carton split), so `_upsert_shipment_lines` claims by

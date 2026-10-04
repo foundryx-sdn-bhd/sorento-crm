@@ -39,7 +39,7 @@ from app.services.user_service import UserPermissionService
 from app.tasks.notification_tasks import _enqueue_email_for_delivery, _resolve_event_key
 from tests._pg_fixture import blank_session
 
-PHONE = "+60123456780"
+PHONE = "+60100000079"
 BASE = "/api/v1/sla-management/conversation-sla-tracking"
 CHANNELS = "/api/v1/notifications/preferences/channels"
 ME = "/api/v1/user-management/users/me"

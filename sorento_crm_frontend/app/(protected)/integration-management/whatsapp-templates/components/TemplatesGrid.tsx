@@ -51,7 +51,7 @@ export default function TemplatesGrid() {
   const [statusFilter, setStatusFilter] = useState<TemplateStatus | 'all'>('all');
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
 
-  const { data, isLoading, isPlaceholderData, isFetching, refetch, isRefetching } = useQuery({
+  const { data, isLoading, isPlaceholderData, isFetching, refetch, isRefetching, error } = useQuery({
     ...LIST_QUERY_OPTIONS,
     queryKey: [
       'whatsapp-templates',
@@ -179,6 +179,8 @@ export default function TemplatesGrid() {
       table={table}
       recordCount={data?.pagination.total || 0}
       isLoading={isLoading}
+      error={error}
+      onRetry={() => void refetch()}
       isPlaceholderData={isPlaceholderData}
       tableLayout={{
         width: 'fixed',

@@ -211,23 +211,23 @@ def world(db):
     policy_id = _policy(db)
     base = datetime(2026, 8, 10, 8, 0, 0)
 
-    mine = _contact(db, name="ZZT Mine", phone="+60111000001", respond_io_id="zzt-io-1")
+    mine = _contact(db, name="ZZT Mine", phone="+60110000001", respond_io_id="zzt-io-1")
     unassigned = _contact(
-        db, name="ZZT Unassigned", phone="+60111000002", respond_io_id="zzt-io-2"
+        db, name="ZZT Unassigned", phone="+60110000002", respond_io_id="zzt-io-2"
     )
     mentioned = _contact(
-        db, name="ZZT Mentioned", phone="+60111000003", respond_io_id="zzt-io-3"
+        db, name="ZZT Mentioned", phone="+60110000003", respond_io_id="zzt-io-3"
     )
     stranger = _contact(
-        db, name="ZZT Stranger", phone="+60111000004", respond_io_id="zzt-io-4"
+        db, name="ZZT Stranger", phone="+60110000004", respond_io_id="zzt-io-4"
     )
 
     for idx, (rio, phone) in enumerate(
         [
-            ("zzt-io-1", "+60111000001"),
-            ("zzt-io-2", "+60111000002"),
-            ("zzt-io-3", "+60111000003"),
-            ("zzt-io-4", "+60111000004"),
+            ("zzt-io-1", "+60110000001"),
+            ("zzt-io-2", "+60110000002"),
+            ("zzt-io-3", "+60110000003"),
+            ("zzt-io-4", "+60110000004"),
         ]
     ):
         _message(
@@ -326,11 +326,11 @@ def test_a_form_sla_stage_is_not_a_conversation_ticket(client, db, world):
 
 
 def test_mentioned_tab_orders_by_the_newest_mentioning_note(client, db, world):
-    late = _contact(db, name="ZZT Late", phone="+60111000005", respond_io_id="zzt-io-5")
+    late = _contact(db, name="ZZT Late", phone="+60110000005", respond_io_id="zzt-io-5")
     _message(
         db,
         respond_io_id="zzt-io-5",
-        phone="+60111000005",
+        phone="+60110000005",
         text_body="oldest message of all",
         sent_at=datetime(2026, 8, 1, 0, 0, 0),
     )
@@ -382,7 +382,7 @@ def test_row_carries_the_snippet_counts_and_my_ticket_id(client, db, world):
     )
     assert row["contact_ref"] == "zzt-io-1"
     assert row["respond_io_id"] == "zzt-io-1"
-    assert row["phone"] == "+60111000001"
+    assert row["phone"] == "+60110000001"
     assert row["last_message_snippet"] == "hello from zzt-io-1"
     assert row["last_message_at"].startswith("2026-08-10T08:00:00")
     assert row["last_message_direction"] == "incoming"

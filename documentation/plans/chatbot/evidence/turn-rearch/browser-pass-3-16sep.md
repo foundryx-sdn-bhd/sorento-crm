@@ -20,14 +20,14 @@ off-screen no-op was hit.
 
 | # | Step | Result | Evidence |
 |---|------|--------|----------|
-| 1 | Console, contact Justin: Reset then 12-turn chain (stock / incoming / incoming-pick "1" / photo / photo-pick "2" / delivery roster / delivery-pick "1" / hello / "1" again / outstanding for chin chun / pick "4" / "yes" to escalate) | **10 of 12 turns PASS, 2 FAIL** | See breakdown below. |
+| 1 | Console, contact CONTACT N: Reset then 12-turn chain (stock / incoming / incoming-pick "1" / photo / photo-pick "2" / delivery roster / delivery-pick "1" / hello / "1" again / outstanding for chin chun / pick "4" / "yes" to escalate) | **10 of 12 turns PASS, 2 FAIL** | See breakdown below. |
 | 2 | Settings > Chatbot: exactly one Save button; Move Dealer down; toggle Episode recall; Save once; reload; both persisted; restored | **PASS, full pass** - both prior pass-2 defects (2 Save buttons, broken "Move down") are fixed | See below. |
 | 3 | Console "trace" link on the last turn | **PASS** - both prior pass-2 defects (dead-end trace link, missing Sent panel) are fixed | See below. |
 | 4 | 375px: console chain's first two turns + Settings page Save | **PASS** | See below. |
 
-## Step 1 detail - Console, contact Justin (12-turn chain)
+## Step 1 detail - Console, contact CONTACT N (12-turn chain)
 
-Reset clicked first (cleared any prior transcript); contact combobox set to "Justin" via the
+Reset clicked first (cleared any prior transcript); contact combobox set to "CONTACT N" via the
 searchable combobox (types + click, no Radix trap here) before Reset, and it persisted across
 the whole chain.
 
@@ -113,7 +113,7 @@ throughout, including for Settings (tab bar needed an explicit `scrollintoview` 
 with the "clicks must clear the fixed header / off-screen click is a no-op" lesson, not a product
 defect).
 
-- Console, contact Justin (session-local, no cross-viewport carryover needed): sent
+- Console, contact CONTACT N (session-local, no cross-viewport carryover needed): sent
   `check stock srtwc286` (same real 46-row stock table as desktop, wraps cleanly, no horizontal
   clipping - screenshot `pass3-step4-mobile-turn1.png`) and `delivery to hanlim` (same 6-name
   customer roster, chip buttons stacked one per line, full tappable width, composer and Support

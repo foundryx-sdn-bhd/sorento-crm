@@ -99,8 +99,9 @@ class ChatbotEntityKindBody(BaseModel):
     # security S3): the number reaches `gate.py`'s own `reps = list(bases.values())
     # [:cap]` AND its forward probe list `cust_probe_entities`, so an unbounded cap is
     # an unbounded printed roster and an unbounded MCP probe payload. 50 is the
-    # ceiling, enforced here because this route is the only writer.
-    roster_cap: int = Field(default=10, ge=2, le=50)
+    # ceiling, enforced here because this route is the only writer. PICKER-NO-CAP
+    # (owner, 2 Oct 2026): a new kind starts AT the ceiling, so no picker is cut at 10.
+    roster_cap: int = Field(default=50, ge=2, le=50)
 
 
 class ChatbotEntityKindResponse(ChatbotEntityKindBody):
@@ -247,7 +248,7 @@ def _kind_out(row: ChatbotEntityKind) -> ChatbotEntityKindResponse:
         default_narrowing=row.default_narrowing,
         family_grouping=row.family_grouping,
         base_property_words=dict(row.base_property_words or {}),
-        roster_cap=int(row.roster_cap or 10),
+        roster_cap=int(row.roster_cap or 50),
     )
 
 

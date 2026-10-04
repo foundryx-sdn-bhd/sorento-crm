@@ -19,6 +19,11 @@ import {
 import { SEARCH_DEBOUNCE_MS } from '@/hooks/useDebouncedSearch';
 import { isInsideOpenDialog } from '@/components/common/floatingAncestry';
 import { PopoverScrollLock } from '@/components/common/PopoverScrollLock';
+import {
+  SelectLoadFailure,
+  hasLoadError,
+  selectLoadFailurePlaceholder,
+} from '@/components/common/SelectLoadFailure';
 
 export type SearchableSelectOption = {
   value: string;
@@ -106,6 +111,15 @@ export type SearchableSelectProps = {
   'aria-label'?: string;
   placeholder?: string;
   emptyMessage?: string;
+  /**
+   * The options query's `error` (NEVER-STUCK-UI S3, lever L5). Set, the menu says "no
+   * access" or "could not load" with a Retry instead of "No results found.", and an empty
+   * trigger says so too. Async mode (`fetchOptions`) catches its own rejections and needs
+   * no prop.
+   */
+  loadError?: unknown;
+  /** Refetch the options; shown as Retry next to a non-refusal `loadError`. */
+  onRetry?: () => void;
   disabled?: boolean;
   className?: string;
   triggerClassName?: string;
@@ -163,6 +177,8 @@ export function SearchableSelect({
   size,
   placeholder = 'Select...',
   emptyMessage = 'No results found.',
+  loadError,
+  onRetry,
   disabled = false,
   className,
   triggerClassName,
@@ -216,6 +232,7 @@ export function SearchableSelect({
 
   // Async state
   const [asyncOptions, setAsyncOptions] = React.useState<SearchableSelectOption[]>([]);
+  const [asyncError, setAsyncError] = React.useState<unknown>(null);
   const [loading, setLoading] = React.useState(false);
   const [query, setQuery] = React.useState(initialQuery);
   const lastQueryRef = React.useRef<string>('\u0000'); // sentinel: never equals a real query
@@ -232,11 +249,14 @@ export function SearchableSelect({
       try {
         const items = await fetchOptions(q, 0);
         if (lastQueryRef.current !== q) return; // stale
+        setAsyncError(null);
         setAsyncOptions(items);
         setPage(0);
         setHasMore(paginated && items.length >= pageSize);
-      } catch {
+      } catch (error) {
         if (lastQueryRef.current !== q) return;
+        // A failed read is not an empty list (L5): keep the error so the menu says so.
+        setAsyncError(error ?? new Error('These options could not be loaded.'));
         setAsyncOptions([]);
         setHasMore(false);
       } finally {
@@ -323,6 +343,12 @@ export function SearchableSelect({
     return Array.from(map.entries());
   }, [visibleOptions]);
 
+  const failure = hasLoadError(loadError) ? loadError : isAsync ? asyncError : null;
+  const failed = hasLoadError(failure);
+  const retryFailure = hasLoadError(loadError)
+    ? onRetry
+    : () => void runFetch(query);
+
   const misconfigured = !isAsync && options === undefined;
   const isDisabled = disabled || misconfigured;
   const showClear = clearable && !!value && !isDisabled;
@@ -384,7 +410,9 @@ export function SearchableSelect({
               ? renderTriggerLabel
                 ? renderTriggerLabel(selected)
                 : selected.label
-              : placeholder}
+              : hasLoadError(loadError)
+                ? selectLoadFailurePlaceholder(loadError)
+                : placeholder}
           </span>
           {showClear ? (
             <span
@@ -445,6 +473,8 @@ export function SearchableSelect({
               <div className="flex items-center gap-2 px-3 py-3 text-sm text-muted-foreground">
                 <Loader2 className="size-4 animate-spin" /> Searching...
               </div>
+            ) : failed ? (
+              <SelectLoadFailure error={failure} onRetry={retryFailure} />
             ) : visibleOptions.length === 0 && !createLabel ? (
               <CommandEmpty>{emptyMessage}</CommandEmpty>
             ) : null}

@@ -370,12 +370,12 @@ def test_render_availability_answer():
 
     assert yes["intro"] == ""
     assert yes["items"][0]["title"] == (
-        "SRTBF11201-NEW x 50: yes, we have stock. Please refer to your salesman."
+        "SRTBF11201-NEW x 50: ✅ Please refer to your salesman."
     )
     assert yes["items"][0]["flags"] == {"needs_quantity": False, "branch": "in_stock"}
     assert no["intro"] == ""
     assert no["items"][0]["title"] == (
-        "SRTBF11201-NEW x 50: the quantity is more than what I can confirm here. "
+        "SRTBF11201-NEW x 50: 🚫 the quantity is more than what I can confirm here. "
         "Please refer to your salesman."
     )
     assert no["items"][0]["flags"] == {"needs_quantity": False, "branch": "too_big"}
@@ -390,7 +390,7 @@ def test_render_availability_incoming_names_the_eta():
         )
     )
 
-    assert out["items"][0]["title"] == "SRTBF11201-NEW x 50: no stock at the moment, ETA 19/10/2026."
+    assert out["items"][0]["title"] == "SRTBF11201-NEW x 50: ❌ ETA 19/10/2026."
 
 
 def test_render_availability_several_products_that_disagree():

@@ -64,7 +64,7 @@ export default function EmailTemplatesList() {
     [pagination, query],
   );
 
-  const { data, isLoading, isPlaceholderData, isFetching, refetch } = useEmailTemplates(params);
+  const { data, isLoading, isPlaceholderData, isFetching, refetch, error } = useEmailTemplates(params);
   const rows = data?.data ?? [];
   const total = data?.pagination?.total ?? 0;
   // Delete asks nothing (D7): the row dims and a toast counts down with Cancel.
@@ -204,6 +204,8 @@ export default function EmailTemplatesList() {
       table={table}
       recordCount={total}
       isLoading={isLoading}
+      error={error}
+      onRetry={() => void refetch()}
       isPlaceholderData={isPlaceholderData}
       onRowClick={(t) => t?.id && router.push(`/system-management/email-templates/${t.id}`)}
       tableLayout={{ width: 'fixed', columnsResizable: true, columnsVisibility: true }}

@@ -42,6 +42,14 @@ class IdeationTurnRequest(BaseModel):
             "copy - this is what makes the draft accumulate across turns."
         ),
     )
+    ask_reply: bool = Field(
+        False,
+        description=(
+            "True when this message answers the bot's ask-back for an idea (the previous "
+            "turn's status was ask_idea). A reply with still no idea in it then ends the ask "
+            "with a clear message (status ask_idea_gave_up) instead of asking again."
+        ),
+    )
     is_test: bool = Field(
         False,
         description=(
@@ -70,6 +78,9 @@ class IdeationTurnResponse(BaseModel):
     status: str
     reply_text: str
     link: str | None = None
+    language: str | None = Field(
+        None, description="The language the reply was written in (en, ms or zh)."
+    )
     session_vars: dict[str, Any] = Field(default_factory=dict)
     offered_media: list[IdeationOfferedMedia] = Field(
         default_factory=list,

@@ -218,6 +218,8 @@ export function TasksPanel({ project }: { project: Project }) {
                         key={task.id}
                         task={task}
                         statuses={statuses}
+                        statusError={graph.error}
+                        onRetryStatuses={() => void graph.refetch()}
                         showPhase={phase === 'all'}
                         onMove={(status) => setMoving({ task, status })}
                         onEdit={() => setEditing(task)}
@@ -339,6 +341,8 @@ function TaskCategorySection({
 function TaskRow({
   task,
   statuses,
+  statusError,
+  onRetryStatuses,
   showPhase,
   onMove,
   onEdit,
@@ -347,6 +351,8 @@ function TaskRow({
 }: {
   task: ProjectTask;
   statuses: Status[];
+  statusError?: unknown;
+  onRetryStatuses?: () => void;
   showPhase: boolean;
   onMove: (status: Status) => void;
   onEdit: () => void;
@@ -406,7 +412,7 @@ function TaskRow({
       </div>
 
       <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-        {task.can_edit && statuses.length > 0 ? (
+        {task.can_edit && (statuses.length > 0 || Boolean(statusError)) ? (
           <div className="w-full sm:w-40">
             <SearchableSelect
               value={task.status_id ?? ''}
@@ -416,6 +422,8 @@ function TaskRow({
                 if (status) onMove(status);
               }}
               options={statuses.map((status) => ({ value: status.id, label: status.label }))}
+              loadError={statusError}
+              onRetry={onRetryStatuses}
               placeholder="No status"
               aria-label={`Status of ${task.name}`}
             />

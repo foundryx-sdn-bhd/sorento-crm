@@ -831,14 +831,10 @@ def test_customer_ids_echo_the_resolved_names_in_the_header(client, db):
 
 
 def test_customer_header_dedupes_ledger_names(client, db):
-    """AC-1163 (R19, owner ruling, 13 Sep 2026, live trace): a FULLSHUN outstanding ask
-    printed "FULLSHUN SANITARYWARE SDN BHD" five times among 14 ledger names - one
-    company, several `customers` rows (one per ledger/branch), and `_customer_echo`
-    joins EVERY MATCHED ROW's name with no dedupe at all. The fix is DISTINCT names, in
-    FIRST-SEEN order (the order `customer_ids` arrived in - never alphabetical, which
-    `ORDER BY customer_name` gives today and which would put the asterisked SHOWCASE
-    name first). The asterisk is real ledger data and is never stripped or
-    transformed."""
+    """AC-1163 (R19, 13 Sep 2026): DISTINCT ledger names, first-seen order. Briefly reversed
+    on 2 Oct 2026 for CUSTOMER-GROUP, then restored by the owner's ruling (b) the same day:
+    "we shouldn't do automated process like this, very dangerous". Only an explicit customer
+    group joins ledgers; an ungrouped ledger prints its own name, identical names once."""
     plain_1 = customer(db, company_id=DEFAULT_COMPANY_ID, name="FULLSHUN SANITARYWARE SDN BHD")
     plain_2 = customer(db, company_id=DEFAULT_COMPANY_ID, name="FULLSHUN SANITARYWARE SDN BHD")
     plain_3 = customer(db, company_id=DEFAULT_COMPANY_ID, name="FULLSHUN SANITARYWARE SDN BHD")
@@ -861,6 +857,38 @@ def test_customer_header_dedupes_ledger_names(client, db):
         "*FULLSHUN SANITARYWARE SDN BHD (SHOWCASE), "
         "FULLSHUN SANITARYWARE SDN BHD [A/C III]"
     ), resp.json()
+
+
+def test_customer_header_names_the_customer_group_on_the_route(client, db):
+    """CUSTOMER-GROUP: six HANLIM ledgers in one group -> the group name, once, no count."""
+    from sqlalchemy import text
+
+    gid = str(uuid.uuid4())
+    db.execute(
+        text(
+            "INSERT INTO customer_groups (id, company_id, name, created_at, updated_at) "
+            "VALUES (:i, :c, 'HANLIM TRADING SDN BHD', now(), now())"
+        ),
+        {"i": gid, "c": DEFAULT_COMPANY_ID},
+    )
+    ids = []
+    for name in (
+        "HANLIM TRADING SDN BHD [A/C I]",
+        "HANLIM TRADING SDN BHD [A/C II]",
+        "HANLIM TRADING SDN BHD [A/C III]",
+        "HANLIM TRADING SDN BHD [A/C IV]",
+        "HANLIM TRADING SDN BHD",
+        "HANLIM TRADING SDN BHD (CERAMIC & ELLECI)",
+    ):
+        row = customer(db, company_id=DEFAULT_COMPANY_ID, name=name)
+        db.execute(text("UPDATE customers SET customer_group_id = :g WHERE id = :c"), {"g": gid, "c": row.id})
+        ids.append(row.id)
+    db.commit()
+
+    resp = client.get(BASE, params={"customer_ids": ",".join(ids), "scope": "so"})
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["customer_name"] == "HANLIM TRADING SDN BHD", resp.json()
 
 
 def test_fractional_quantities_round_to_whole_units(client, db):

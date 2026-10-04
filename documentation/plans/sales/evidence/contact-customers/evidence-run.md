@@ -4,7 +4,7 @@ Lane CONTACT-CUSTOMERS, PR #1366, 29 Sep 2026, agent-browser 0.27.0 (headless Ch
 session `lane-cc`) against the cloud sandbox stack: backend `uvicorn --reload` on :8000 over
 the throwaway `sorento_ci` database (bootstrap_env, all 24 modules installed), frontend
 `npm run dev` on :3000, signed in as a seeded superadmin. Seed rows: contact "Mr Lim (Hanlim)"
-60129990001; customers 300-H001 HANLIM HARDWARE (KL) and 300-H002 HANLIM HARDWARE (JB) on
+60120000518; customers 300-H001 HANLIM HARDWARE (KL) and 300-H002 HANLIM HARDWARE (JB) on
 SEAN I, 300-H003 HANLIM AC & TRADING and 300-D001 DELUXE HOME CENTER with no agent; agents
 SEAN I (Sean) and LCL (Lee CL).
 
@@ -15,7 +15,7 @@ back) after the sidebar walk.
 
 ## Contact side (Profile tab, Customers card)
 
-1. Internal Users > row 60129990001 opens Contact Details. Profile tab shows the "Customers"
+1. Internal Users > row 60120000518 opens Contact Details. Profile tab shows the "Customers"
    card after Contact Information: heading, "Add customer" select, empty state "No customers
    linked" / "Link the customer accounts this contact belongs to". No Primary, no Suggested.
 2. Add customer opened: options `300-D001 - DELUXE HOME CENTER  No sales agent`, `300-H001 -
@@ -42,7 +42,7 @@ back) after the sidebar walk.
 
 8. After re-linking Mr Lim to 300-H002 (POST 201; `GET /customers/{id}/linked-contacts`
    returned the one row), the Details tab shows Contact Information with "Sales Agent: SEAN I -
-   Sean", then "WhatsApp contacts": `Mr Lim (Hanlim) | 60129990001 | 29/09/2026`, before
+   Sean", then "WhatsApp contacts": `Mr Lim (Hanlim) | 60120000518 | 29/09/2026`, before
    Opportunities. The name is a link to the contact record (followed in step 9).
 
 ## 375px

@@ -335,7 +335,7 @@ class TestConsoleMediaTurnPendingThenDonePoll:
 
         db = session_factory()
         usage = ContactMediaUsage(
-            id=str(uuid.uuid4()), respond_io_id="437264483", modality="image",
+            id=str(uuid.uuid4()), respond_io_id="900000008", modality="image",
             message_id="wamid.REAL-CUSTOMER-MESSAGE", media_ordinal=0, period_key="2026-09",
             outcome="extract",
         )

@@ -45,7 +45,7 @@ a document Sorento has already sent a customer:
 | Unpriced-but-quoted | `rate only` / `RATE ONLY` in the total column | ✗ |
 | Grand total | `TOTAL AMOUNT … 696923`, under the money column | ✗ (was a toolbar chip) |
 | Terms | 8 numbered clauses | ✗ |
-| Sign-off | "We trust the above prices are to your satisfaction", Thank You, BASER RAMLI, 019-3508781 | ✗ |
+| Sign-off | "We trust the above prices are to your satisfaction", Thank You, BASER CONTACT P, 019-0000506 | ✗ |
 
 **The sample is ONE sheet with bands.** Other projects (the client's example: townhouse /
 guard house / reception) split those bands into separate tabs. Both are the same shape: a

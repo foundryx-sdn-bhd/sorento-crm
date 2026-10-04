@@ -256,6 +256,9 @@ def primary_customer(db: Session, contact_pk: str) -> tuple[Any, Any] | None:
             RespondContactCustomer.contact_id == contact_pk,
             RespondContactCustomer.is_primary.is_(True),
         )
+        # Earliest-linked primary first: one primary per company, so a contact tied to two
+        # companies needs a fixed answer, not whichever row Postgres returns.
+        .order_by(RespondContactCustomer.created_at, RespondContactCustomer.id)
         .first()
     )
 

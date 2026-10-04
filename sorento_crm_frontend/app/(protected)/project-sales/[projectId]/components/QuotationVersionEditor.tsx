@@ -474,6 +474,8 @@ export function QuotationVersionEditor({
         kind: 'select',
         placeholder: 'PCS',
         options: uomOptions,
+        loadError: uoms.error,
+        onRetry: () => void uoms.refetch(),
         resolveSelected: (_line, draft) =>
           uomOptions.find((option) => option.value === draft.uom),
       },
@@ -563,7 +565,7 @@ export function QuotationVersionEditor({
         },
       },
     ],
-    [fetchProducts, fillFromProduct, openPreview, uomOptions],
+    [fetchProducts, fillFromProduct, openPreview, uomOptions, uoms.error, uoms.refetch],
   );
 
   /**

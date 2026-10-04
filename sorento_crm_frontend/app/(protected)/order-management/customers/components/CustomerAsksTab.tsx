@@ -25,7 +25,7 @@ import { useCustomerAsksQuery, useUpdateAskMutation } from '../hooks/useCustomer
 export function CustomerAsksTab({ customerId }: { customerId: string }) {
   const canEdit = useHasPermission('order_management.customers.edit');
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 20 });
-  const { data, isLoading, isPlaceholderData } = useCustomerAsksQuery(customerId, pagination);
+  const { data, isLoading, isPlaceholderData, error, refetch } = useCustomerAsksQuery(customerId, pagination);
   const { mutate: updateAsk } = useUpdateAskMutation(customerId);
   const rows = data?.data ?? [];
   const total = data?.pagination?.total ?? 0;
@@ -163,6 +163,8 @@ export function CustomerAsksTab({ customerId }: { customerId: string }) {
       table={table}
       recordCount={total}
       isLoading={isLoading}
+      error={error}
+      onRetry={() => void refetch()}
       isPlaceholderData={isPlaceholderData}
       listingKey="order_management.customers.view::stock_asks"
       tableLayout={{ width: 'fixed', columnsResizable: true }}

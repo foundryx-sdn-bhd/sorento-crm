@@ -161,6 +161,8 @@ def _ideate_extractor_fallback() -> str:
         "collecting). 'none' otherwise.\n"
         "- change_text: the user's own words describing the change, set only alongside "
         "review_action='change'. Empty string otherwise.\n"
+        "- language: the language the user's message is written in - 'en', 'ms' (Malay) "
+        "or 'zh' (Chinese); null when it is none of these or cannot be told.\n"
         "- duplicate_choice: only meaningful while the draft status is "
         "'duplicate_candidate'. 'vote' on an explicit vote for the existing idea shown to "
         "the user. 'separate' on an explicit 'keep mine separate'. 'none' when the message "
@@ -170,11 +172,13 @@ def _ideate_extractor_fallback() -> str:
         "correct for a message that ignores the choice.\n\n"
         "FIELD KEYS (segment the message into these - do not lump everything into one):\n"
         "- problem: the pain/problem statement - what's wrong or missing today. The one "
-        "REQUIRED field; every draft has one from its very first message. On the FIRST "
-        "message of a new draft (status 'new') ALWAYS emit problem: when the user only "
+        "REQUIRED field. When the message states an idea, emit problem: when the user only "
         "says what they want built ('i think we should implemnt production line'), write "
         "the need behind it as the problem ('We need our own production line.'), never a "
-        "copy of their message.\n"
+        "copy of their message. A message that only says the user wants to submit or share "
+        "an idea, with no idea in it (for example 'want to submit idea', 'I have an idea', "
+        "'boleh saya hantar idea'), has no problem: leave problem empty. Never invent a "
+        "problem for a message that names no idea.\n"
         "- proposed_solution: what the user wants built / how to solve it.\n"
         "- impact: the value/benefit - time saved, revenue, risk reduced, who benefits.\n"
         "- department: the team/department the idea concerns (e.g. operations, sales, CS) - "
@@ -987,7 +991,8 @@ PROMPT_KEYS: dict[str, PromptKeySpec] = {
     # --- S3: the composed WhatsApp reply for an ideate turn, written from FACTS
     #     the shared-service response carries. shared-service's own template text
     #     is the fallback when the composed reply fails a deterministic check
-    #     (R5). See `ideation_turn_service.compose_ideate_reply`. ---
+    #     (R5). Now only the access-denied reply uses it:
+    #     `ideation_turn_service.compose_ideate_denial_reply`. ---
     "ideate_reply": PromptKeySpec(
         name="ideate_reply",
         role="Ideate reply composer - point-form WhatsApp reply from intake facts",

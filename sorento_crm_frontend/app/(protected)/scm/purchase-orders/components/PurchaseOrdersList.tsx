@@ -165,7 +165,7 @@ export default function PurchaseOrdersList() {
   // it, until AutoCount is integrated.
   const [uploadOpen, setUploadOpen] = useState(false);
 
-  const { data, isLoading, isPlaceholderData, isFetching, refetch } = usePurchaseOrders({
+  const { data, isLoading, isPlaceholderData, isFetching, refetch, error } = usePurchaseOrders({
     pageIndex: pagination.pageIndex,
     pageSize: pagination.pageSize,
     sorting,
@@ -477,6 +477,8 @@ export default function PurchaseOrdersList() {
         table={table}
         recordCount={data?.pagination.total || 0}
         isLoading={isLoading}
+        error={error}
+        onRetry={() => void refetch()}
         isPlaceholderData={isPlaceholderData}
         tableLayout={{ width: 'fixed', columnsResizable: true, columnsVisibility: true }}
         emptyMessage={emptyMessage}

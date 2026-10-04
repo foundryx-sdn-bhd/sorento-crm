@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import and_, desc, or_
+from sqlalchemy import and_, desc
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -283,19 +283,16 @@ def get_upload_activity(
     ]
 
     # ---- pull user's recent attachments ------------------------------------
+    # Untyped attachments are never sent to n8n (owner rule, 2 Oct 2026), so they
+    # would sit on "Processing" for the same reason: leave them out too.
     attachments_filter = [
         Attachment.uploaded_by == user_id,
         Attachment.created_at >= cutoff,
         Attachment.is_deleted.is_(False),
+        Attachment.attachment_type_id.isnot(None),
     ]
     if excluded_type_ids:
-        # NULL-safe: untyped attachments must stay in the feed (NOT IN drops NULLs).
-        attachments_filter.append(
-            or_(
-                Attachment.attachment_type_id.is_(None),
-                ~Attachment.attachment_type_id.in_(excluded_type_ids),
-            )
-        )
+        attachments_filter.append(~Attachment.attachment_type_id.in_(excluded_type_ids))
     attachments: List[Attachment] = (
         db.query(Attachment)
         .filter(and_(*attachments_filter))

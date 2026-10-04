@@ -133,6 +133,7 @@ export function useUploadAttachment() {
       entityType,
       entityId,
       accessLevels,
+      regions,
       directoryId,
       targetEntityType,
       targetFieldKeys,
@@ -144,6 +145,7 @@ export function useUploadAttachment() {
       entityType?: string;
       entityId?: string;
       accessLevels?: string[];
+      regions?: string[];
       directoryId?: string | null;
       targetEntityType?: string | null;
       targetFieldKeys?: string[] | null;
@@ -155,6 +157,7 @@ export function useUploadAttachment() {
         entityType,
         entityId,
         accessLevels,
+        regions,
         directoryId,
         targetEntityType,
         targetFieldKeys,

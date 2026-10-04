@@ -83,7 +83,11 @@ const PermissionList = () => {
   } = useDebouncedSearch();
 
   // Role select query
-  const { data: roleList } = useRoleSelectQuery();
+  const {
+    data: roleList,
+    error: roleListError,
+    refetch: refetchRoleList,
+  } = useRoleSelectQuery();
 
   // Fetch permissions from the server API
   const fetchPermissions = async ({
@@ -119,7 +123,7 @@ const PermissionList = () => {
   };
 
   // Permissions query
-  const { data, isLoading, isPlaceholderData, isFetching } = useQuery({
+  const { data, isLoading, isPlaceholderData, isFetching, error, refetch } = useQuery({
     ...LIST_QUERY_OPTIONS,
     queryKey: [
       'user-permissions',
@@ -336,6 +340,8 @@ const PermissionList = () => {
         recordCount={data?.pagination.total || 0}
         isLoading={isLoading}
         isPlaceholderData={isPlaceholderData}
+        error={error}
+        onRetry={() => void refetch()}
         tableLayout={{
           columnsResizable: true,
           columnsPinnable: true,
@@ -371,6 +377,8 @@ const PermissionList = () => {
                       value={selectedRole || 'all'}
                       placeholder="Filter by role"
                       triggerClassName="w-full"
+                      loadError={roleListError}
+                      onRetry={() => void refetchRoleList()}
                       options={[
                         { value: 'all', label: 'All roles' },
                         ...(roleList ?? []).map((role: UserRole) => ({

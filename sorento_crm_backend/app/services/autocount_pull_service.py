@@ -41,6 +41,7 @@ ENTITY_PERMISSIONS = {
     "products": "master_data.products.autocount_pull",
     "stock_balances": "inventory.stock.autocount_pull",
     "delivery_orders": "order_management.orders.autocount_pull",
+    "goods_receive_notes": "procurement.grn.autocount_pull",
 }
 
 #: Entity name -> the `import_jobs.job_type` a pull of it is stored under.
@@ -48,11 +49,16 @@ JOB_TYPES = {
     "products": "autocount_products_pull",
     "stock_balances": "autocount_stock_pull",
     "delivery_orders": "autocount_delivery_orders_pull",
+    "goods_receive_notes": "autocount_grn_pull",
 }
 
-#: The flat scope keys a delivery-orders build accepts (DO-PULL-SS contract): a day window,
-#: or one document by number; none = the gateway's own default (the last 31 MYT days).
+#: The flat scope keys a document build accepts (DO-PULL-SS / GRN-PULL-SS contract): a day
+#: window, or one document by number; none = the gateway's own default (the last 31 MYT days).
 SCOPE_KEYS = ("fromDay", "toDay", "docNo")
+
+#: The entities whose snapshot is a set of AutoCount DOCUMENTS read by DocDate: they take a
+#: `scope`, run the doc ingest, and compare against two files (lines and headers).
+DOCUMENT_ENTITIES = ("delivery_orders", "goods_receive_notes")
 
 #: D3 (small-fix track, browser e2e run 3): "date of the apply" is the LOCAL calendar day,
 #: same convention every other module in this file's neighbourhood uses for a user-facing
@@ -65,6 +71,7 @@ APPLY_JOB_TYPES = {
     "products": "autocount_products_apply",
     "stock_balances": "autocount_stock_apply",
     "delivery_orders": "autocount_delivery_orders_apply",
+    "goods_receive_notes": "autocount_grn_apply",
 }
 
 #: A pull is visible on the review page (rows / download / compare) once the preview has
@@ -418,7 +425,7 @@ def serialize(job: ImportJob, db: Session) -> dict:
         "compare_sources": pull.get("compare_sources"),
         "window": (
             dict(zip(("fromDay", "toDay"), pull_window(pull)))
-            if pull.get("entity") == "delivery_orders" else None
+            if pull.get("entity") in DOCUMENT_ENTITIES else None
         ),
         "apply_job_id": apply_job_id,
         "apply_status": apply_status,
@@ -819,6 +826,63 @@ def build_delivery_orders_workbook(mapped_rows: list[dict]) -> bytes:
             row.get("debtor_name"), row.get("item_code"), row.get("description"),
             row.get("location"), row.get("qty"), row.get("uom"), row.get("unit_price"),
             row.get("sub_total"),
+        ])
+    _neutralize_formula_cells(sheet)
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
+
+
+def map_goods_receive_note_rows(rows: list[dict]) -> list[dict]:
+    """AC-GP-50: one row per GRN LINE, in the shape of the "DETAIL LISTING" sheet the
+    checker exports today; `from_doc_no` is AutoCount's `FromDocNo` (the sheet's `Our PO
+    No.`), else the hand-typed `OurPONo`. A `Details` row with no `ItemCode` is not a line."""
+    out: list[dict] = []
+    for rec in rows:
+        if not isinstance(rec, dict):
+            continue
+        for line in rec.get("Details") or []:
+            if not isinstance(line, dict):
+                continue
+            item_code = _cell_text(line.get("ItemCode"))
+            if not item_code:
+                continue
+            out.append({
+                "doc_no": _cell_text(rec.get("DocNo")) or "",
+                "doc_date": _iso_day(_cell_text(rec.get("DocDate"))),
+                "creditor_code": _cell_text(rec.get("CreditorCode")),
+                "creditor_name": _cell_text(rec.get("CreditorName")),
+                "item_code": item_code,
+                "description": _cell_text(line.get("Description")),
+                "location": _cell_text(line.get("Location")),
+                "qty": _number(line.get("Qty")),
+                "uom": _cell_text(line.get("UOM")),
+                "from_doc_no": _cell_text(line.get("FromDocNo")) or _cell_text(line.get("OurPONo")),
+            })
+    return out
+
+
+_GOODS_RECEIVE_NOTES_TEMPLATE_HEADER = (
+    "Doc No", "Doc Date", "Creditor Code", "Creditor Name", "Our PO No.", "Item Code",
+    "Description", "Location", "Qty", "UOM",
+)
+
+
+def build_goods_receive_notes_workbook(mapped_rows: list[dict]) -> bytes:
+    """AC-GP-51: the DETAIL LISTING's own column names, one row per GRN line."""
+    import io
+
+    import openpyxl
+
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    sheet.title = "AutoCount pull"
+    sheet.append(list(_GOODS_RECEIVE_NOTES_TEMPLATE_HEADER))
+    for row in mapped_rows:
+        sheet.append([
+            row.get("doc_no"), row.get("doc_date"), row.get("creditor_code"),
+            row.get("creditor_name"), row.get("from_doc_no"), row.get("item_code"),
+            row.get("description"), row.get("location"), row.get("qty"), row.get("uom"),
         ])
     _neutralize_formula_cells(sheet)
     buffer = io.BytesIO()

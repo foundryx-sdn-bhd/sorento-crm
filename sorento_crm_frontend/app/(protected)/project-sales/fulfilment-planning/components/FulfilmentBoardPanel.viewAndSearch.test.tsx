@@ -54,7 +54,7 @@ describe('contributionMatchesSearch (AC-P3): SO number, customer, agent code, it
   });
 
   it('matches the sales agent code', () => {
-    expect(contributionMatchesSearch(contribution({ agent_code: 'JUSTIN' }), 'justin')).toBe(
+    expect(contributionMatchesSearch(contribution({ agent_code: 'CONTACT N' }), 'CONTACT N')).toBe(
       true,
     );
   });

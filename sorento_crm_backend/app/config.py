@@ -79,6 +79,14 @@ class Settings(BaseSettings):
     environment: str = "development"
     debug: bool = False
 
+    # DEV-LOGIN-BYPASS (app/services/dev_login.py): passwordless sign-in for LOCAL test
+    # copies. Off by default; the app refuses to start with it on outside a dev ENVIRONMENT.
+    # DEV_AUTO_LOGIN_USERS is a comma list of existing user emails, first = default.
+    # DEV_AUTO_LOGIN_SECRET (16+ chars) is shared with the frontend SERVER only.
+    dev_auto_login: bool = False  # DEV_AUTO_LOGIN
+    dev_auto_login_users: str = ""  # DEV_AUTO_LOGIN_USERS
+    dev_auto_login_secret: str = ""  # DEV_AUTO_LOGIN_SECRET
+
     # Complaint <-> DO auto-fulfilment: which Complaint-team tiers (agent `complaint`,
     # set `complaint`) receive the replacement-DO-delivered email/in-app. Comma list,
     # e.g. "1,2" (Tier 1 + Tier 2) or "1" (Tier 1 only). COMPLAINT_DO_DELIVERED_NOTIFY_TIERS

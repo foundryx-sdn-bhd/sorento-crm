@@ -184,6 +184,8 @@ export function LeadWizardDialog({ onDone }: { onDone: () => void }) {
                     value={developerPartyId}
                     onChange={setDeveloperPartyId}
                     clearable
+                    loadError={developers.error}
+                    onRetry={() => void developers.refetch()}
                     options={(developers.data?.data ?? []).map((party) => ({
                       value: party.id,
                       label: party.name,
@@ -338,6 +340,8 @@ export function LeadWizardDialog({ onDone }: { onDone: () => void }) {
                     value={ownerUserId}
                     onChange={setOwnerUserId}
                     clearable
+                    loadError={users.error}
+                    onRetry={() => void users.refetch()}
                     options={(users.data ?? []).map((user) => ({
                       value: user.id,
                       label: user.name || 'Unnamed user',

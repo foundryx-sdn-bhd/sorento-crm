@@ -30,7 +30,7 @@ def _entry(**over):
 def test_too_big_sentence():
     line = _availability_line(_entry(product_code="CWCX604", requested_qty=300, branch="too_big"))
     assert line == (
-        "CWCX604 x 300: the quantity is more than what I can confirm here. "
+        "CWCX604 x 300: 🚫 the quantity is more than what I can confirm here. "
         "Please refer to your salesman."
     )
 
@@ -46,20 +46,20 @@ def test_too_big_sentence_identical_when_cap_unset():
 
 def test_in_stock_sentence():
     line = _availability_line(_entry(product_code="SRT5674", requested_qty=50, branch="in_stock"))
-    assert line == "SRT5674 x 50: yes, we have stock. Please refer to your salesman."
+    assert line == "SRT5674 x 50: ✅ Please refer to your salesman."
 
 
 def test_incoming_sentence_names_the_eta():
     line = _availability_line(
         _entry(product_code="SRTW2000", requested_qty=150, branch="incoming", eta="19/10/2026")
     )
-    assert line == "SRTW2000 x 150: no stock at the moment, ETA 19/10/2026."
+    assert line == "SRTW2000 x 150: ❌ ETA 19/10/2026."
 
 
 def test_no_incoming_sentence():
     line = _availability_line(_entry(product_code="SRT5674", requested_qty=150, branch="no_incoming"))
     assert line == (
-        "SRT5674 x 150: no stock and no incoming at the moment. Please refer to your salesman."
+        "SRT5674 x 150: ❌ No stock and no incoming. Please refer to your salesman."
     )
 
 
@@ -82,8 +82,8 @@ def test_asked_order_multi_product_reply_reads_line_by_line():
     ]
     lines = [_availability_line(e) for e in entries]
     assert lines == [
-        "SRT5674 x 50: yes, we have stock. Please refer to your salesman.",
-        "CWCX604 x 300: the quantity is more than what I can confirm here. "
+        "SRT5674 x 50: ✅ Please refer to your salesman.",
+        "CWCX604 x 300: 🚫 the quantity is more than what I can confirm here. "
         "Please refer to your salesman.",
     ]
 
@@ -126,6 +126,8 @@ def test_every_refer_line_ends_with_the_one_refer_sentence():
     """AC-RS01 / AC-RS03: no "to proceed", no "salesperson", no name, on any branch."""
     for branch in ("too_big", "in_stock", "no_incoming"):
         line = _availability_line(_entry(product_code="SRT1", requested_qty=3, branch=branch))
-        assert line.endswith(". Please refer to your salesman."), line
+        # AVAIL-MODE-REPLIES: the in-stock verdict is now the tick alone, so the refer
+        # sentence follows it rather than a full stop.
+        assert re.search(r"(\.|✅) Please refer to your salesman\.$", line), line
         assert "to proceed" not in line and "salesperson" not in line
         assert line.count("Please refer") == 1

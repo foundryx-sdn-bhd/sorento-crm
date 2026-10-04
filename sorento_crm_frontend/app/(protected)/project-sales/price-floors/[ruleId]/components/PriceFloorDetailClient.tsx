@@ -173,6 +173,8 @@ export function PriceFloorDetailClient({ ruleId }: { ruleId: string }) {
                     <SearchableSelect
                       value={categoryId}
                       onChange={setCategoryId}
+                      loadError={categories.error}
+                      onRetry={() => void categories.refetch()}
                       options={categoryOptions}
                       placeholder="Pick a category"
                     />

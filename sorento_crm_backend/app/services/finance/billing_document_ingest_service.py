@@ -537,9 +537,9 @@ class BillingDocumentIngestService(MasterRefResolver):
         return entity_id
 
     def _product(self, line: CanonicalBillingDocumentLine, warnings: list[str]) -> Optional[str]:
-        entity_id = self._by_ref(Product, line.product_ref)
-        if entity_id is None and line.product_code:
-            entity_id = self._resolve_by_code(Product, line.product_code)
+        # PRODUCT-REF-COLLISION (owner ruling 3 Oct): product identity is the
+        # code only; the ref is never consulted for a product.
+        entity_id = self._resolve_by_code(Product, line.product_code) if line.product_code else None
         if entity_id is None and (line.product_ref or line.product_code):
             warnings.append(WARN_PRODUCT_UNRESOLVED)
         return entity_id

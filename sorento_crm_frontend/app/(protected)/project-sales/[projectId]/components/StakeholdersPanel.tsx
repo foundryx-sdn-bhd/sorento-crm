@@ -491,6 +491,8 @@ function StakeholderFormDialog({
                   value={partyId}
                   onChange={setPartyId}
                   clearable
+                  loadError={parties.error}
+                  onRetry={() => void parties.refetch()}
                   options={(parties.data?.data ?? []).map((party) => ({
                     value: party.id,
                     label: party.name,

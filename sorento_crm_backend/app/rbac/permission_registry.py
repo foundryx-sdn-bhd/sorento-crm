@@ -245,6 +245,7 @@ PERMISSION_REGISTRY.extend(_crud("procurement", "spo_allocations", "SPO Allocati
 PERMISSION_REGISTRY.append({"slug": "procurement.spo_allocations.import", "name": "Import SPO Allocations", "description": "Permission to import SPO allocations."})
 PERMISSION_REGISTRY.extend(_crud("procurement", "grn", "GRN"))
 PERMISSION_REGISTRY.append({"slug": "procurement.grn.import", "name": "Import GRN", "description": "Permission to import GRN."})
+PERMISSION_REGISTRY.append({"slug": "procurement.grn.autocount_pull", "name": "Pull Goods Receive Notes from AutoCount", "description": "Permission to pull a goods receive notes snapshot from AutoCount and review/confirm it."})
 PERMISSION_REGISTRY.extend(_crud("procurement", "picking_lines", "Picking Lines"))
 PERMISSION_REGISTRY.extend(_crud("procurement", "stock_inquiries", "Stock Inquiries"))
 PERMISSION_REGISTRY.extend([
@@ -537,12 +538,12 @@ PERMISSION_REGISTRY.extend([
     {
         "slug": "system.translations.view",
         "name": "View Translations",
-        "description": "View the Chinese-English translation memory.",
+        "description": "View the Chinese-English translation memory and the wording the chatbot uses in its replies.",
     },
     {
         "slug": "system.translations.edit",
         "name": "Edit Translations",
-        "description": "Correct a translation or remove one from the memory.",
+        "description": "Correct a translation or remove one from the memory, and edit the wording the chatbot uses in its replies.",
     },
 ])
 
@@ -662,6 +663,11 @@ PERMISSION_REGISTRY.extend([
         "slug": "ideation.board.view",
         "name": "View the Ideas board",
         "description": "View the Ideas board and open individual ideas.",
+    },
+    {
+        "slug": "ideation.ideas.manage",
+        "name": "Manage ideas",
+        "description": "Triage ideas: move status, edit, merge, reorder, archive, delete and promote to a business requirement.",
     },
 ])
 

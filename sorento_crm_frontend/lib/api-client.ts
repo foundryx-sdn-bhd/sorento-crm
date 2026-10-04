@@ -129,20 +129,47 @@ function statusOf(error: unknown): number | undefined {
   return typeof status === 'number' ? status : undefined;
 }
 
-/** The backend's 403 `detail` prefixes (`dependencies.py`, `modules/runtime/guards.py`),
- *  for errors built by plain `extractApiError`, which carry no status. */
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : '';
+}
+
+/** What `apiFetch` throws when the server has not answered within the request's budget. */
+export const REQUEST_TIMED_OUT_MESSAGE = 'The server took too long to answer.';
+
+/** The backend's 403 `detail` prefixes (`dependencies.py`, `modules/runtime/guards.py`,
+ *  `scm/import_mapping.py`), for errors built by plain `extractApiError`, which carry no
+ *  status. */
 const ACCESS_DENIED_PREFIXES = [
   'Permission required:',
   'One of these permissions required', // covers the "(module may be disabled)" variant
-  'Module not enabled:',
+  'Module not enabled', // `Module not enabled: x` and `Module not enabled for <doc type>`
   'One of these modules must be enabled:',
+];
+
+/** `get_current_user` 401 details (`dependencies.py`, `user_session_service.py`) and the
+ *  message `extractApiError` gives a bodiless 401. */
+const SIGNED_OUT_MESSAGES = [
+  'Not signed in or session expired',
+  'Authentication required',
+  'Session expired',
+  'Session was revoked',
+  'Session not found',
+  'Account is not active',
+  'Invalid token',
 ];
 
 /** The backend refused this read: render `AccessDenied`, never an error card or "not found". */
 export function isAccessDenied(error: unknown): boolean {
   if (statusOf(error) === 403) return true;
-  const msg = error instanceof Error ? error.message : '';
+  const msg = errorMessage(error);
   return ACCESS_DENIED_PREFIXES.some((p) => msg.startsWith(p));
+}
+
+/** A 401 from the session check. */
+export function isSignedOut(error: unknown): boolean {
+  if (statusOf(error) === 401) return true;
+  const msg = errorMessage(error);
+  return SIGNED_OUT_MESSAGES.some((p) => msg.startsWith(p));
 }
 
 /** The record does not exist. Only a 404 says so; a refusal or a 500 does not. */
@@ -150,10 +177,32 @@ export function isNotFound(error: unknown): boolean {
   return statusOf(error) === 404;
 }
 
+/** The request outlived its `apiFetch` budget. */
+export function isTimedOut(error: unknown): boolean {
+  return errorMessage(error) === REQUEST_TIMED_OUT_MESSAGE;
+}
+
 /** React Query `retry` for a record read: one retry for a fault, none for an answer
  *  that will not change (a refusal or a missing record). */
 export function retryUnlessRefused(failureCount: number, error: unknown): boolean {
   return failureCount < 1 && !isAccessDenied(error) && !isNotFound(error);
+}
+
+/**
+ * A failure that asking again will not fix (401 / 403 / 404), or one that already cost the
+ * user a full timeout. Never retried automatically: the screen shows its final state and
+ * the user's own Retry is the next step. A status-less error that reads "<thing> not found"
+ * counts as a 404 here (retrying it is pointless) even though `isNotFound`, which decides
+ * what a detail page SAYS, only trusts a real status.
+ */
+export function isRefused(error: unknown): boolean {
+  return (
+    isAccessDenied(error) ||
+    isSignedOut(error) ||
+    isNotFound(error) ||
+    /\bnot found\b/i.test(errorMessage(error)) ||
+    isTimedOut(error)
+  );
 }
 
 /**

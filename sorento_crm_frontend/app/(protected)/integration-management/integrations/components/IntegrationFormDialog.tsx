@@ -56,7 +56,12 @@ export function IntegrationFormDialog({
 
   // This SearchableSelect is static-options only, so the roster is fetched
   // once and filtered client-side rather than searched server-side.
-  const { data: users, isLoading: usersLoading } = useQuery({
+  const {
+    data: users,
+    isLoading: usersLoading,
+    error: usersError,
+    refetch: refetchUsers,
+  } = useQuery({
     queryKey: ['users-select', 'integration-principal'],
     queryFn: () => getUsersSelect({ status: 'ACTIVE' }),
     enabled: open,
@@ -171,6 +176,8 @@ export function IntegrationFormDialog({
             <Label>Acts as user</Label>
             <SearchableSelect
               options={userOptions}
+              loadError={usersError}
+              onRetry={() => void refetchUsers()}
               value={actAsUserId ?? ''}
               onChange={(v) => setActAsUserId(v || null)}
               placeholder={usersLoading ? 'Loading users…' : 'Select the principal'}

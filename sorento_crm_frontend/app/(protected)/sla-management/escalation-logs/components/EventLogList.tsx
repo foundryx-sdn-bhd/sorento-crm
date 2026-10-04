@@ -37,7 +37,7 @@ export default function EventLogList() {
   const [assignedTo, setAssignedTo] = useState('__all__');
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
 
-  const { data, isLoading, isPlaceholderData, refetch, isFetching } = useEventLogs({
+  const { data, isLoading, isPlaceholderData, refetch, isFetching, error } = useEventLogs({
     pageIndex: pagination.pageIndex,
     pageSize: pagination.pageSize,
     sorting,
@@ -50,7 +50,11 @@ export default function EventLogList() {
     setPagination((prev) => ({ ...prev, pageIndex: 0 }));
   }, [trackingId, eventType, assignedTo]);
 
-  const { data: respondUsers } = useQuery({
+  const {
+    data: respondUsers,
+    error: respondUsersError,
+    refetch: refetchRespondUsers,
+  } = useQuery({
     queryKey: ['user-lookup', 'respond-synced', 'with-inactive'],
     queryFn: () => getUserLookup({ respond_synced: true, include_inactive: true }),
     staleTime: 1000 * 60 * 5,
@@ -140,6 +144,8 @@ export default function EventLogList() {
   return (
     <DataGrid table={table} recordCount={data?.pagination.total || 0} isLoading={isLoading}
       isPlaceholderData={isPlaceholderData}
+      error={error}
+      onRetry={() => void refetch()}
       tableLayout={{ width: 'fixed', columnsResizable: true, columnsVisibility: true }}
     >
       <Card>
@@ -181,6 +187,8 @@ export default function EventLogList() {
                   <SearchableSelect
                     value={assignedTo}
                     onChange={(value) => setAssignedTo(value)}
+                    loadError={respondUsersError}
+                    onRetry={() => void refetchRespondUsers()}
                     options={[
                       { value: '__all__', label: 'All assignees' },
                       ...(respondUsers || []).map((user: UserLookupItem) => ({

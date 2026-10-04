@@ -25,9 +25,9 @@ import type { Warehouse, WarehouseFormData } from '../types/warehouse.types';
 import type { DataGridApiFetchParams, DataGridApiResponse } from '@/components/ui/data-grid';
 
 export async function getWarehouses(
-  params: DataGridApiFetchParams & { is_active?: boolean },
+  params: DataGridApiFetchParams & { is_active?: boolean; companyScope?: 'grants' },
 ): Promise<DataGridApiResponse<Warehouse>> {
-  const { pageIndex, pageSize, sorting, searchQuery, is_active } = params;
+  const { pageIndex, pageSize, sorting, searchQuery, is_active, companyScope } = params;
   const sortField = sorting?.[0]?.id || '';
   const sortDirection = sorting?.[0]?.desc ? 'desc' : 'asc';
   const queryParams = new URLSearchParams({
@@ -36,6 +36,7 @@ export async function getWarehouses(
     ...(sortField ? { sort: sortField, dir: sortDirection } : {}),
     ...(searchQuery ? { query: searchQuery } : {}),
     ...(is_active !== undefined ? { is_active: String(is_active) } : {}),
+    ...(companyScope ? { company_scope: companyScope } : {}),
   });
   const response = await apiFetch(`/api/v1/inventory/warehouses?${queryParams.toString()}`);
   if (!response.ok) throw new Error('Failed to fetch warehouses');

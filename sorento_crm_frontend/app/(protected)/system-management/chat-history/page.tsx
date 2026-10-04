@@ -129,7 +129,7 @@ export default function ChatHistoryPage() {
   // `contact_id` would mean to the endpoint.
   const listEnabled = !failedTurnsOnly || (failedLoaded && failedContactIds.length > 0);
 
-  const { data, isLoading, isPlaceholderData } = useQuery({
+  const { data, isLoading, isPlaceholderData, error, refetch } = useQuery({
     ...LIST_QUERY_OPTIONS,
     queryKey: ['chat-history', filters, searchQuery, pagination, sorting, groupBy],
     queryFn: () =>
@@ -422,6 +422,8 @@ export default function ChatHistoryPage() {
           table={table}
           recordCount={listEnabled ? (data?.pagination.total ?? 0) : 0}
           isLoading={isLoading || (failedTurnsOnly && failedLoading)}
+          error={error}
+          onRetry={() => void refetch()}
           isPlaceholderData={isPlaceholderData}
           onRowClick={(row: ChatMessageRow) => setSelected(row)}
           standardToolbar={false}

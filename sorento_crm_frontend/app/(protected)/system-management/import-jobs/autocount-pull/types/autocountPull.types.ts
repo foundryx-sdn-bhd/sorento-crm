@@ -7,7 +7,20 @@
 /** The entities a pull can be started for; the values match the backend route param.
  *  `delivery_orders` (PLAN-autocount-do-pull-crm-30sep.md) previews and applies through the
  *  DO ingest and reviews on this same page. */
-export type AutocountPullEntity = 'products' | 'stock_balances' | 'delivery_orders';
+export type AutocountPullEntity =
+  | 'products'
+  | 'stock_balances'
+  | 'delivery_orders'
+  | 'goods_receive_notes';
+
+/** The entities whose snapshot is a set of AutoCount documents read by DocDate
+ *  (PLAN-autocount-grn-pull-crm-02oct.md): they take a DocDate scope, run the doc ingest,
+ *  and compare against two files, one of lines and one of documents. */
+export const DOCUMENT_ENTITIES: readonly AutocountPullEntity[] = ['delivery_orders', 'goods_receive_notes'];
+
+export function isDocumentEntity(entity: AutocountPullEntity): boolean {
+  return DOCUMENT_ENTITIES.includes(entity);
+}
 
 /** The permission slug that gates each entity's pull (backend `ENTITY_PERMISSIONS`). One
  *  place, so a list cannot wire the shared action with the wrong slug (review blocker 2). */
@@ -15,6 +28,7 @@ export const AUTOCOUNT_PULL_PERMISSION: Record<AutocountPullEntity, string> = {
   products: 'master_data.products.autocount_pull',
   stock_balances: 'inventory.stock.autocount_pull',
   delivery_orders: 'order_management.orders.autocount_pull',
+  goods_receive_notes: 'procurement.grn.autocount_pull',
 };
 
 /** The flat scope a delivery-orders build takes (DO-PULL-SS contract): a day window, or one
@@ -123,7 +137,18 @@ export interface DeliveryOrderPullCounts {
   with_warnings: number;
 }
 
-export type AutocountPullCounts = ProductPullCounts | StockPullCounts | DeliveryOrderPullCounts;
+/** `goods_receive_notes` (AC-GP-10/13): the DO counters plus how many GRN lines the preview
+ *  linked to a PO or SPO line and how many it could not. */
+export interface GoodsReceiveNotePullCounts extends DeliveryOrderPullCounts {
+  lines_linked: number;
+  lines_unlinked: number;
+}
+
+export type AutocountPullCounts =
+  | ProductPullCounts
+  | StockPullCounts
+  | DeliveryOrderPullCounts
+  | GoodsReceiveNotePullCounts;
 
 export interface AutocountPullCompareSummary {
   filename: string;
@@ -255,7 +280,26 @@ export interface DeliveryOrderExcelRow {
   sub_total: number | null;
 }
 
-export type AutocountPullExcelRow = ProductExcelRow | StockExcelRow | DeliveryOrderExcelRow;
+/** The Excel-view row shape for `goods_receive_notes`: one row per GRN LINE, in the shape of
+ *  the "DETAIL LISTING" sheet (AC-GP-50); `from_doc_no` is the sheet's "Our PO No.". */
+export interface GoodsReceiveNoteExcelRow {
+  doc_no: string;
+  doc_date: string | null;
+  creditor_code: string | null;
+  creditor_name: string | null;
+  item_code: string;
+  description: string | null;
+  location: string | null;
+  qty: number | null;
+  uom: string | null;
+  from_doc_no: string | null;
+}
+
+export type AutocountPullExcelRow =
+  | ProductExcelRow
+  | StockExcelRow
+  | DeliveryOrderExcelRow
+  | GoodsReceiveNoteExcelRow;
 
 export interface AutocountPullRowsQuery {
   pageIndex: number;
@@ -265,7 +309,11 @@ export interface AutocountPullRowsQuery {
 
 // ---- DO compare mapping (DO-COMPARE-SIM) ------------------------------------------------
 
-export type CompareMappingKind = 'order_listing' | 'order_tracking';
+export type CompareMappingKind =
+  | 'order_listing'
+  | 'order_tracking'
+  | 'grn_detail_listing'
+  | 'grn_listing';
 
 export interface CompareMappingColumn {
   excel_header: string;

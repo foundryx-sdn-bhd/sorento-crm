@@ -47,7 +47,7 @@ export default function SLAPoliciesList() {
     setPagination((prev) => ({ ...prev, pageIndex: 0 }));
   }, [statusFilter, searchQuery]);
 
-  const { data, isLoading, isPlaceholderData, refetch, isFetching } = useSLAPolicies({
+  const { data, isLoading, isPlaceholderData, refetch, isFetching, error } = useSLAPolicies({
     pageIndex: pagination.pageIndex,
     pageSize: pagination.pageSize,
     sorting,
@@ -151,6 +151,8 @@ export default function SLAPoliciesList() {
       table={table}
       recordCount={data?.pagination.total || 0}
       isLoading={isLoading}
+      error={error}
+      onRetry={() => void refetch()}
       isPlaceholderData={isPlaceholderData}
       onRowClick={handleRowClick}
       standardToolbar={false}

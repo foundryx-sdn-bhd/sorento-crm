@@ -47,8 +47,10 @@ from app.models.job import ImportJob, JobStatus
 from app.services import import_outcome_codes as codes
 from app.services.autocount_doc_ingest_service import (
     DELIVERY_ORDERS_ENTITY,
+    GOODS_RECEIVE_NOTES_ENTITY,
     WARN_ADOPTED,
     AutocountDocIngestService,
+    run_grn_receipt_hook,
 )
 from app.services.autocount_pull_service import (
     MAX_DELIVERY_ORDER_DOCS,
@@ -191,6 +193,8 @@ def preview_autocount_pull(db_job_id: str) -> None:
                 counts = _preview_stock(db, job, pull)
             elif entity == DELIVERY_ORDERS_ENTITY:
                 counts = _preview_delivery_orders(db, job, pull)
+            elif entity == GOODS_RECEIVE_NOTES_ENTITY:
+                counts = _preview_goods_receive_notes(db, job, pull)
             else:
                 raise UnsupportedPullEntity(f"Unknown pull entity {entity!r}.")
         except Exception as exc:  # noqa: BLE001 - one job's failure, reported on the job
@@ -249,6 +253,8 @@ def apply_autocount_pull(db_job_id: str) -> None:
                 summary = _apply_stock(db, job, snapshot_id, pull_job_id)
             elif entity == DELIVERY_ORDERS_ENTITY:
                 summary = _apply_delivery_orders(db, job, snapshot_id)
+            elif entity == GOODS_RECEIVE_NOTES_ENTITY:
+                summary = _apply_goods_receive_notes(db, job, snapshot_id)
             else:
                 raise UnsupportedPullEntity(f"Unknown pull entity {entity!r}.")
         except Exception as exc:  # noqa: BLE001 - one job's failure, reported on the job
@@ -676,6 +682,11 @@ _DO_WARNING_TEXT = {
     "stale_ignored": "older than what is stored, ignored",
     "restored": "restored after a deletion sweep",
     "legacy_links_released": "an old line's link released",
+    # GRN (GRN-PULL-CRM plan 1.3).
+    "po_line_unresolved": "PO / SPO line not found",
+    "purchase_order_unresolved": "PO / SPO not found",
+    "over_receipt": "received more than the order line has left",
+    "item_not_on_order": "item not on the named PO / SPO",
 }
 
 
@@ -716,13 +727,24 @@ def _ingest_rows(rows: list[dict]) -> list[dict]:
     ]
 
 
-def _tally_delivery_orders(outcome_writer: ImportOutcome, rows: list[dict], result) -> dict:
+#: How a document entity names itself on a pull's row message and outcome row.
+_DOC_LABEL = {DELIVERY_ORDERS_ENTITY: ("DO", "order", "tracking kept"),
+              GOODS_RECEIVE_NOTES_ENTITY: ("GRN", "grn", "Excel GRN kept")}
+
+
+def _tally_delivery_orders(outcome_writer: ImportOutcome, rows: list[dict], result,
+                           entity: str = DELIVERY_ORDERS_ENTITY, *,
+                           record_unchanged: bool = False) -> dict:
     """One `import_job_rows` row per document the ingest would create, update or adopt,
     and per failed or retryable one; `unchanged` writes no row (the AC-PP-3 rule). Returns
-    the neutral tally both the preview counts and the apply summary are built from."""
+    the neutral tally both the preview counts and the apply summary are built from. Serves
+    both document entities (`entity` names the label); the line link counters are summed
+    for every document the ingest wrote or left unchanged."""
+    label, entity_type, adopted_kept = _DOC_LABEL[entity]
     tally = {
         "created": 0, "updated": 0, "adopted": 0, "unchanged": 0, "failed": 0,
         "retryable": 0, "lines_deleted": 0, "with_warnings": 0,
+        "lines_linked": 0, "lines_unlinked": 0,
     }
     for raw, record in zip(rows, result.records):
         raw = raw if isinstance(raw, dict) else {}
@@ -746,12 +768,16 @@ def _tally_delivery_orders(outcome_writer: ImportOutcome, rows: list[dict], resu
         if has_warning and record.outcome != IngestOutcome.UNCHANGED:
             tally["with_warnings"] += 1
         suffix = _do_warning_suffix(warnings)
+        if record.outcome in (IngestOutcome.CREATED, IngestOutcome.UPDATED, IngestOutcome.UNCHANGED):
+            tally["lines_linked"] += int(lines.get("linked", 0) or 0)
+            tally["lines_unlinked"] += int(lines.get("unlinked", 0) or 0)
 
         if record.outcome == IngestOutcome.CREATED:
             tally["created"] += 1
             outcome_writer.success(
-                message=f"DO created: {doc_no} ({lines.get('created', 0)} line(s)){suffix}",
-                value=doc_no, identity=identity, entity_id=record.entity_id, entity_type="order",
+                message=f"{label} created: {doc_no} ({lines.get('created', 0)} line(s)){suffix}",
+                value=doc_no, identity=identity, entity_id=record.entity_id,
+                entity_type=entity_type,
             )
         elif record.outcome == IngestOutcome.UPDATED:
             deleted = int(lines.get("deleted", 0) or 0)
@@ -759,22 +785,31 @@ def _tally_delivery_orders(outcome_writer: ImportOutcome, rows: list[dict], resu
             if WARN_ADOPTED in warnings:
                 tally["adopted"] += 1
                 message = (
-                    f"DO adopted by number: {doc_no}: tracking kept, "
+                    f"{label} adopted by number: {doc_no}: {adopted_kept}, "
                     f"{lines.get('adopted', 0)} line(s) kept, {lines.get('created', 0)} created, "
                     f"{deleted} deleted{suffix}"
                 )
             else:
                 tally["updated"] += 1
                 message = (
-                    f"DO updated: {doc_no}: {lines.get('created', 0)} line(s) created, "
+                    f"{label} updated: {doc_no}: {lines.get('created', 0)} line(s) created, "
                     f"{lines.get('updated', 0)} updated, {deleted} deleted{suffix}"
                 )
             outcome_writer.updated(
                 message=message, value=doc_no, identity=identity,
-                entity_id=record.entity_id, entity_type="order",
+                entity_id=record.entity_id, entity_type=entity_type,
             )
         elif record.outcome == IngestOutcome.UNCHANGED:
             tally["unchanged"] += 1
+            if record_unchanged:
+                # Apply only (GRN-PULL-CRM e2e gap 4): the job's own columns count an
+                # unchanged document as skipped (`_apply_progress_counts`), so the outcome
+                # rows and the envelope say the same. The preview's Changes tab still shows
+                # only what Confirm would change (AC-PP-3).
+                outcome_writer.skip(
+                    code=codes.UNCHANGED, message=f"{label} unchanged: {doc_no}",
+                    value=doc_no, identity=identity,
+                )
         elif record.outcome == IngestOutcome.RETRYABLE:
             tally["retryable"] += 1
             outcome_writer.fail(
@@ -863,8 +898,11 @@ def _apply_delivery_orders(db, job: ImportJob, snapshot_id: str) -> dict:
     job.skipped_rows = final["skipped"]
 
     outcome_writer = ImportOutcome(job.id)
-    tally = _tally_delivery_orders(outcome_writer, records, result)
-    outcome_writer.flush()
+    tally = _tally_delivery_orders(outcome_writer, records, result, record_unchanged=True)
+    # The job page's Outcome card reads this envelope (GRN-PULL-CRM e2e gap 4: without it a
+    # fresh apply read "ran before per-row outcome capture existed").
+    job.result = outcome_writer.finalize(
+        f"Delivery orders applied: {len(records)} document(s).", total_rows=len(records))
     return {
         "total": len(result.records),
         "created": tally["created"],
@@ -1046,3 +1084,105 @@ def _first_error_code(errors: Optional[dict]) -> str:
     if not errors:
         return codes.ROW_ERROR
     return str(next(iter(errors)))[:64]
+
+
+# ================================================================ goods receive notes
+
+
+def _doc_date_order(row) -> tuple:
+    """(DocDate, DocKey) for the GRN batch order (plan 1.3 rule 12): an earlier receipt takes
+    its PO / SPO lines first, whatever order the snapshot serves documents in."""
+    if not isinstance(row, dict):
+        return ("", 0)
+    doc_key = str(row.get("DocKey") or "").strip()
+    # DocDate is AutoCount's ISO text (`2026-10-01T00:00:00`): ordered as text it orders as a
+    # date; a numeric DocKey sent as a string still orders by its value.
+    return (str(row.get("DocDate") or "")[:10], int(doc_key) if doc_key.isdigit() else 0)
+
+
+def _preview_goods_receive_notes(db, job: ImportJob, pull: dict) -> dict:
+    """AC-GP-10..14: the GRN ingest's own dry run over every snapshot document in DocDate
+    order - the verdicts and PO / SPO line links Confirm will get - nothing written. The DO
+    preview's shape plus the line link counters; warnings never block Confirm."""
+    client = FoundryxAutocountClient(db)
+    header, rows, warnings = fetch_verified_snapshot(
+        client, snapshot_id=pull.get("snapshot_id"), company_code=pull.get("company_code")
+    )
+    pull["warnings"] = warnings
+
+    job_id = str(job.job_id)
+    _publish_preview_progress(job_id, 0, len(rows))
+    ingest = _do_ingest(db, job, header=header, rows=rows)
+    records = sorted(_ingest_rows(rows), key=_doc_date_order)
+    result = ingest.ingest(
+        GOODS_RECEIVE_NOTES_ENTITY, records, dry_run=True,
+        on_progress=lambda processed, total: _publish_preview_progress(job_id, processed, total),
+    )
+
+    outcome_writer = ImportOutcome(job.id)
+    tally = _tally_delivery_orders(outcome_writer, records, result, GOODS_RECEIVE_NOTES_ENTITY)
+    outcome_writer.flush()
+
+    pull["confirm_blocked_reason"] = None
+    return {
+        "received": len(rows),
+        "created": tally["created"],
+        "updated": tally["updated"],
+        "adopted": tally["adopted"],
+        "unchanged": tally["unchanged"],
+        "lines_to_delete": tally["lines_deleted"],
+        "failed": tally["failed"],
+        "retryable": tally["retryable"],
+        "with_warnings": tally["with_warnings"],
+        "lines_linked": tally["lines_linked"],
+        "lines_unlinked": tally["lines_unlinked"],
+    }
+
+
+def _apply_goods_receive_notes(db, job: ImportJob, snapshot_id: str) -> dict:
+    """AC-GP-40: re-verifies the SAME snapshot, then the GRN ingest for real in DocDate
+    order, one commit for the batch, then the GRN receipt hook the push route runs
+    (`run_grn_receipt_hook`): the SPO lines the batch linked, moved or released get their
+    received quantity recomputed."""
+    client = FoundryxAutocountClient(db)
+    header, rows, warnings = fetch_verified_snapshot(
+        client, snapshot_id=snapshot_id, company_code=_company_code(db, job.company_id)
+    )
+    ingest = _do_ingest(db, job, header=header, rows=rows)
+    records = sorted(_ingest_rows(rows), key=_doc_date_order)
+    job_id = str(job.job_id)
+    _publish_apply_progress(job_id, [], len(records))
+    result = ingest.ingest(
+        GOODS_RECEIVE_NOTES_ENTITY, records,
+        on_progress=lambda processed, total: _publish_apply_progress(
+            job_id, ingest.live_records, total
+        ),
+    )
+    db.commit()
+    run_grn_receipt_hook(db, ingest)
+
+    final = _apply_progress_counts(result.records)
+    job.total_rows = len(records)
+    job.processed_rows = final["processed"]
+    job.successful_rows = final["successful"]
+    job.failed_rows = final["failed"]
+    job.skipped_rows = final["skipped"]
+
+    outcome_writer = ImportOutcome(job.id)
+    tally = _tally_delivery_orders(outcome_writer, records, result, GOODS_RECEIVE_NOTES_ENTITY,
+                                   record_unchanged=True)
+    job.result = outcome_writer.finalize(
+        f"Goods receipt notes applied: {len(records)} document(s).", total_rows=len(records))
+    return {
+        "total": len(result.records),
+        "created": tally["created"],
+        "updated": tally["updated"],
+        "adopted": tally["adopted"],
+        "unchanged": tally["unchanged"],
+        "failed": tally["failed"],
+        "retryable": tally["retryable"],
+        "lines_deleted": tally["lines_deleted"],
+        "with_warnings": tally["with_warnings"],
+        "lines_linked": tally["lines_linked"],
+        "lines_unlinked": tally["lines_unlinked"],
+    }

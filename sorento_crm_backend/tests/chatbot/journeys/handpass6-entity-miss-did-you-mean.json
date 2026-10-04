@@ -1,6 +1,6 @@
 {
   "name": "handpass6-entity-miss-did-you-mean",
-  "source": "hand pass 6 owner console turns 08:58:48 and 13:59:05 (contact_respond_id 437264483, 17 Sep 2026). Ruling R-c: an entity miss offers did-you-mean neighbours (trigram) - 'check stock srttwc286' / 'stock for strwc286' must mention SRTWC286 (roster or silent resolve), never the bare 'I could not find X' + escalate offer. Measured pre-fix (real reply text, both turns): 'I could not find srttwc286.' / 'I could not find strwc286.' followed only by an escalate offer, SRTWC286 never named.",
+  "source": "hand pass 6 owner console turns 08:58:48 and 13:59:05 (contact_respond_id 900000008, 17 Sep 2026). Ruling R-c: an entity miss offers did-you-mean neighbours (trigram) - 'check stock srttwc286' / 'stock for strwc286' must mention SRTWC286 (roster or silent resolve), never the bare 'I could not find X' + escalate offer. Measured pre-fix (real reply text, both turns): 'I could not find srttwc286.' / 'I could not find strwc286.' followed only by an escalate offer, SRTWC286 never named.",
   "cases": [
     {
       "name": "srttwc286-typo-mentions-srtwc286",

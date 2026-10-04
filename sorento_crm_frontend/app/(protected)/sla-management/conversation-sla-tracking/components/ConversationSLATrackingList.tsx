@@ -121,7 +121,7 @@ export default function ConversationSLATrackingList() {
     resolvedByFilter,
   ]);
 
-  const { data, isLoading, isPlaceholderData, isFetching } = useConversationSLATracking({
+  const { data, isLoading, isPlaceholderData, isFetching, error, refetch } = useConversationSLATracking({
     pageIndex: pagination.pageIndex,
     pageSize: pagination.pageSize,
     sorting,
@@ -132,7 +132,11 @@ export default function ConversationSLATrackingList() {
     resolved_by: resolvedByFilter,
   });
 
-  const { data: respondUsers } = useQuery({
+  const {
+    data: respondUsers,
+    error: respondUsersError,
+    refetch: refetchRespondUsers,
+  } = useQuery({
     queryKey: ['user-lookup', 'respond-synced', 'with-inactive'],
     queryFn: () => getUserLookup({ respond_synced: true, include_inactive: true }),
     staleTime: 1000 * 60 * 5,
@@ -555,6 +559,8 @@ export default function ConversationSLATrackingList() {
       recordCount={data?.pagination.total || 0}
       isLoading={isLoading}
       isPlaceholderData={isPlaceholderData}
+      error={error}
+      onRetry={() => void refetch()}
       rowHref={rowHref}
       rowPending={rowPending}
     >
@@ -584,6 +590,8 @@ export default function ConversationSLATrackingList() {
                       setAssignedToFilter(value);
                       setPagination((prev) => ({ ...prev, pageIndex: 0 }));
                     }}
+                    loadError={respondUsersError}
+                    onRetry={() => void refetchRespondUsers()}
                     options={[
                       { value: '__all__', label: 'All assignees' },
                       ...(respondUsers || []).map((user: UserLookupItem) => ({

@@ -163,7 +163,7 @@ export function OrderInquiryHeadersList() {
     ],
   );
 
-  const { data, isLoading, isPlaceholderData, isFetching, refetch } =
+  const { data, isLoading, isPlaceholderData, isFetching, refetch, error } =
     useOrderInquiryHeaders(params);
 
   // Raised by, Agent, Project options (AC-HL-05, W; B1/B2 reviewer, fix round 22 Sep
@@ -468,6 +468,8 @@ export function OrderInquiryHeadersList() {
       recordCount={data?.total || 0}
       isLoading={isLoading}
       isPlaceholderData={isPlaceholderData}
+      error={error}
+      onRetry={() => void refetch()}
       tableLayout={{ width: 'fixed', columnsResizable: true, columnsVisibility: true }}
       emptyMessage={emptyMessage}
       rowHref={detailHref}
@@ -519,6 +521,8 @@ export function OrderInquiryHeadersList() {
                       value={raisedByFilter}
                       onChange={setRaisedByFilter}
                       options={filterOptions.raisedBy}
+                      loadError={usersQuery.error}
+                      onRetry={() => void usersQuery.refetch()}
                       placeholder="Anyone"
                       clearable
                     />

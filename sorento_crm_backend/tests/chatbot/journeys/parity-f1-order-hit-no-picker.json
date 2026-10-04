@@ -1,6 +1,6 @@
 {
   "name": "parity-f1-order-hit-no-picker",
-  "source": "chatbot-answer-half-reattach-acceptance-criteria.md AC-1690, AC-1696 (F1, hand pass 8, 20 Sep 2026 findings table): 'delivery for srtwc286' must answer AT ONCE with no product picker (a family token is a silent prefix filter outside gate.REQUIRE_SPECIFIC_DOMAINS, AC-1690), opening with the scope block 'Customer: all customers' / 'Product: srtwc286' / 'Dates: all dates' and 'Here are the orders I found.' (AC-1696), dates rendered dd/mm/yyyy not an ISO 'T00:00:00' stamp. Contact 437264483 (owner's own hand-pass contact).",
+  "source": "chatbot-answer-half-reattach-acceptance-criteria.md AC-1690, AC-1696 (F1, hand pass 8, 20 Sep 2026 findings table): 'delivery for srtwc286' must answer AT ONCE with no product picker (a family token is a silent prefix filter outside gate.REQUIRE_SPECIFIC_DOMAINS, AC-1690), opening with the scope block 'Customer: all customers' / 'Product: srtwc286' / 'Dates: all dates' and 'Here are the orders I found.' (AC-1696), dates rendered dd/mm/yyyy not an ISO 'T00:00:00' stamp. Contact 900000008 (owner's own hand-pass contact).",
   "cases": [
     {
       "name": "delivery-for-srtwc286-answers-at-once",

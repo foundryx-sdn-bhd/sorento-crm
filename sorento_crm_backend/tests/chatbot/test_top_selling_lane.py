@@ -206,7 +206,7 @@ class TestToolPick:
                         entities=[], top_selling={"rank_by": "quantity", "top_n": 5},
                     )
                 },
-                "contact": {"id": 437264483},
+                "contact": {"id": 900000008},
                 "access": {"attributes": [GRANT]},
             },
         }
@@ -1068,6 +1068,8 @@ class TestParser:
             assert needle in text, needle
         assert prompt_mod.SEMANTIC_PARSER_PROMPT.removesuffix(
             prompt_mod.MEMORY_ADDENDUM
+        ).removesuffix(
+            prompt_mod.ACCOUNT_LEDGER_ADDENDUM
         ).removesuffix(
             prompt_mod.PO_SPO_WAREHOUSE_ADDENDUM
         ).removesuffix(

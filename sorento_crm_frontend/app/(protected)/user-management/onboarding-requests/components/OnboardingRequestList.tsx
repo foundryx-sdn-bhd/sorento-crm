@@ -113,7 +113,7 @@ export function OnboardingRequestList() {
     statusKey: statusFilter === 'all' ? undefined : statusFilter,
   };
 
-  const { data, isLoading, isPlaceholderData, refetch, isFetching } = useOnboardingRequests(listParams);
+  const { data, isLoading, isPlaceholderData, refetch, isFetching, error } = useOnboardingRequests(listParams);
 
   // A selection that survives a page or filter change points at rows that are
   // no longer on screen, which is what makes a bulk action act on the wrong set.
@@ -265,6 +265,8 @@ export function OnboardingRequestList() {
       table={table}
       recordCount={total}
       isLoading={isLoading}
+      error={error}
+      onRetry={() => void refetch()}
       isPlaceholderData={isPlaceholderData}
       // An empty queue and a filter that matched nothing need different words:
       // "create one to get started" is wrong advice when there are requests,

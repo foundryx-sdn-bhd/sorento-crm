@@ -169,7 +169,7 @@ def _seed_tracking_row(db, ids: dict):
     row = Order(
         order_number="ZZDO-0001", company_id=DEFAULT_COMPANY_ID, order_date=date(2026, 9, 26),
         actual_delivery_date=date(2026, 9, 28), pickup_time="14:30", transporter="ZZ TRANS",
-        driver_name="Ali", lorry_plate="WXX 1234", checker="Chong", trips=2, delivery_days=1,
+        driver_name="Ali", lorry_plate="PLATE-41", checker="Chong", trips=2, delivery_days=1,
         kpi_warning=False, customer_ref="iPad ref", salesman="SEAN", warehouse="BRW",
         delivery_remarks="dr", delivery_remarks_cs="drcs", remarks_cs="rcs",
         order_status_id=ids["new_status"], debtor_code="OLD", debtor_name="Old name",
@@ -668,6 +668,27 @@ class TestConfirmAndApply:
         assert sorted(r["value"] for r in written) == ["ZZDO-0001", "ZZDO-0002"]
         assert {r["outcome"] for r in written} == {"created"}
 
+    def test_dp_20c_apply_job_carries_the_outcome_envelope(self, task_db, monkeypatch):
+        """GRN-PULL-CRM crew e2e gap 4, same defect on the DO apply: the job page's Outcome
+        card reads `import_jobs.result.breakdown`."""
+        db, factory = task_db
+        fake = _FakeFoundryX()
+        _patch_foundryx(monkeypatch, fake, db)
+        _seed_masters(db)
+        job_id = _prepare_do_apply(db, fake, rows=_do_rows())
+        _run_apply(monkeypatch, factory, job_id)
+        result = db.execute(text("SELECT result FROM import_jobs WHERE id = :id"),
+                            {"id": str(job_id)}).scalar()
+        assert result and set(result["breakdown"]) == {"successful", "skipped", "failed"}
+        assert result["counts"]["successful"] == 2
+        # Round 2: the same snapshot again is two unchanged documents, listed as skipped rows,
+        # and the envelope agrees with the job's own columns.
+        from tests.test_autocount_pull_goods_receive_notes import _assert_outcome_agrees
+
+        again = _prepare_do_apply(db, fake, rows=_do_rows())
+        _run_apply(monkeypatch, factory, again)
+        _assert_outcome_agrees(db, again, skipped=2)
+
     def test_dp_21_apply_adopts_and_keeps_tracking_columns(self, task_db, monkeypatch):
         db, factory = task_db
         fake = _FakeFoundryX()
@@ -711,7 +732,10 @@ class TestConfirmAndApply:
         counts = row["metadata"]["autocount_apply"]["counts"]
         assert counts["unchanged"] == 2 and counts["created"] == 0 and counts["updated"] == 0
         assert {o["order_number"]: o["updated_at"] for o in _orders(db, 900001, 900002)} == stamps
-        assert _job_rows(db, second) == []
+        # GRN-PULL-CRM e2e gap 4 (crew, 2 Oct): an unchanged document is listed as a skipped
+        # "Already up to date" row on the apply, so the Outcome card matches skipped_rows.
+        assert sorted((r["outcome"], r["code"], r["value"]) for r in _job_rows(db, second)) == [
+            ("skipped", "unchanged", "ZZDO-0001"), ("skipped", "unchanged", "ZZDO-0002")]
 
     def test_dp_23_expired_snapshot_fails_and_writes_nothing(self, task_db, monkeypatch):
         db, factory = task_db

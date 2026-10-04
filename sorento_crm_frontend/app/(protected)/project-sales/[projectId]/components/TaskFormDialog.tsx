@@ -141,6 +141,8 @@ export function TaskFormDialog({
                   value={assignee}
                   onChange={setAssignee}
                   clearable
+                  loadError={users.error}
+                  onRetry={() => void users.refetch()}
                   options={(users.data ?? []).map((user) => ({
                     value: user.id,
                     label: user.name || 'Unnamed user',

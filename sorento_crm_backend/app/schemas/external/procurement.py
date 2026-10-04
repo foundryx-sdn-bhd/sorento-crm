@@ -8,6 +8,7 @@ from typing import Any, List, Optional, Union
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.schemas.regions import normalize_regions
 from app.schemas.procurement import (
     InboundShipmentResponse,
     refuse_missing_sponsorship_unit_prices,
@@ -35,6 +36,13 @@ class PackingListHeader(BaseModel):
     total_items_shipped: Optional[int] = None
     total_cartons: Optional[int] = None
     notes: Optional[str] = None
+    #: 'west' / 'east'. Precedence on create: this, else the attachment's, else West only.
+    regions: Optional[List[str]] = None
+
+    @field_validator("regions")
+    @classmethod
+    def _check_regions(cls, v):
+        return normalize_regions(v)
 
 
 class PackingListProduct(BaseModel):

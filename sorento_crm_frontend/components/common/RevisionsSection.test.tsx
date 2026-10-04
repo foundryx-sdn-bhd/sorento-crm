@@ -125,9 +125,9 @@ describe('RevisionsSection', () => {
             // The scalar pair stays populated with the newest stage; the list is
             // what must drive the render.
             voided_stage_code: 'approval',
-            voided_assignee_name: 'Li Juan',
+            voided_assignee_name: 'CONTACT AC',
             voided_stages: [
-              { stage_code: 'approval', assignee_name: 'Li Juan' },
+              { stage_code: 'approval', assignee_name: 'CONTACT AC' },
               { stage_code: 'project_sales', assignee_name: 'Mei Ling' },
             ],
           }),
@@ -140,7 +140,7 @@ describe('RevisionsSection', () => {
       .map((el) => el.textContent ?? '');
     expect(lines).toHaveLength(2);
     // Pluralised, and the label leads the first line only.
-    expect(lines[0]).toBe('Voided stages: Approval · Li Juan');
+    expect(lines[0]).toBe('Voided stages: Approval · CONTACT AC');
     expect(lines[1]).toBe('Project Sales · Mei Ling');
   });
 

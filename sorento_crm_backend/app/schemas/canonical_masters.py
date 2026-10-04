@@ -153,6 +153,10 @@ class CanonicalCustomer(_Canonical):
     # sent (no reference table - AutoCount states none for it).
     market_segment_code: Optional[str] = Field(None, max_length=50)
     region: Optional[str] = Field(None, max_length=80)
+    # AutoCount `Debtor.SalesAgent`. Absent or blank = untouched; an unknown code leaves the
+    # agent as it was with warning `agent_unresolved`. A known one is set on the linked ledger
+    # and every same-code ledger of the company.
+    sales_agent_code: Optional[str] = Field(None, max_length=100)
 
 
 class CanonicalSalesAgent(_Canonical):
@@ -190,6 +194,9 @@ class CanonicalProduct(_Canonical):
     category_code: Optional[str] = Field(None, max_length=100)
     uom_code: Optional[str] = Field(None, max_length=100)
     brand_code: Optional[str] = Field(None, max_length=100)
+    # AutoCount ItemType (ITEM-TYPE-CRM). Back-created like brand_code; absent or
+    # blank leaves the stored link untouched.
+    item_type_code: Optional[str] = Field(None, max_length=100)
     # CRM-owned (PLAN D14, price-tag-feedback-r2). Overwrites the stored value
     # only when non-empty; empty/absent leaves a manually entered barcode
     # untouched - see `master_ingest_service._product_columns`.

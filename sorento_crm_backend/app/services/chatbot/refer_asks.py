@@ -90,7 +90,7 @@ def referred_entries(
             }
         )
 
-    # 1. A dealer incoming reply: one line per product, "<code>\nETA: <dates>".
+    # 1. A dealer incoming reply: one line per product, "<code>: ETA <dates>".
     for envelope in envelopes:
         for item in _figures(envelope):
             flags = jsc.get(item, "flags")
@@ -125,11 +125,21 @@ def referred_entries(
     if out:
         return out
 
-    # 4. Whatever the plan resolved for this turn.
+    # 4. Whatever the plan resolved for this turn, except a product the stock ask itself
+    #    answered or still owes a quantity (AVAIL-MODE-REPLIES, reviewer B2): it is
+    #    recorded by the stock ask, on the turn that answers it, and only there.
+    in_stock_block = {
+        _key(row.get("product_code"))
+        for envelope in envelopes
+        for row in (envelope.get("stock_availability") or [])
+        if isinstance(row, dict) and row.get("product_code")
+    }
     for spec in getattr(plan, "fetch", None) or []:
         for entity in getattr(spec, "entities", None) or []:
             code = _entity_code(entity)
-            if code:
+            if code and _key(code) in in_stock_block:
+                named[0] = True  # named, and the stock ask's to record
+            elif code:
                 add(code, branch=BRANCH_REFERRED, answer=text)
     if out:
         return out
@@ -165,13 +175,22 @@ def _figures(envelope: dict[str, Any]) -> list[Any]:
     return []
 
 
+#: AVAIL-MODE-REPLIES: the dealer's ETA line is "<code>: ✅ ETA <dates>" or "<code>: No ETA"
+#: (owner hand test, 3 Oct 2026); "<code>: ETA <dates>" is the form before it.
+_ONE_LINE_ETA = re.compile(r"^(?P<code>.+?):\s+(?P<when>(?:\u2705\s*)?ETA\b.*|No ETA)$")
+
+
 def _dealer_line(title: Any) -> tuple[str, str]:
-    """`"<code>\\nETA: <dates>"` -> (code, "ETA: <dates>"); a title with no code (the
-    `/shipments` route) -> ("", the line)."""
+    """`"<code>: ETA <dates>"` -> (code, "ETA <dates>"); a title with no code (the
+    `/shipments` route) -> ("", the line). The two-line `"<code>\\nETA: <dates>"` an older
+    presenter printed still reads the same way."""
     lines = [ln.strip() for ln in str(title or "").splitlines() if ln.strip()]
     if not lines:
         return "", ""
     if len(lines) == 1:
+        one = _ONE_LINE_ETA.match(lines[0])
+        if one:
+            return one.group("code").strip(), one.group("when").strip()
         return ("", lines[0]) if lines[0].upper().startswith("ETA") else (lines[0], "")
     return lines[0], " ".join(lines[1:])
 

@@ -788,6 +788,17 @@ describe('the edit draft, which now lives above every tab', () => {
     expect(Object.keys(data)).not.toContain('insurance_rate');
   });
 
+  it('sends the packing list regions on save (review round 1)', async () => {
+    state.packingList = mixedContainer({ regions: ['east', 'west'] });
+    await renderTab(<DetailsPage />);
+    fireEvent.click(screen.getByRole('button', { name: /^edit$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Save packing list$/i }));
+
+    await waitFor(() => expect(updatePackingList).toHaveBeenCalledTimes(1));
+    const { data } = updatePackingList.mock.calls[0][0];
+    expect([...data.regions].sort()).toEqual(['east', 'west']);
+  });
+
   it('edits the measurements on the lines tab and sends them', async () => {
     routerState.pathname = '/procurement-management/packing-lists/pl-1/lines';
     await renderTab(<LinesPage />);

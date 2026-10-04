@@ -48,11 +48,21 @@ _OUTCOME = {
 _MALAYSIA = timezone(timedelta(hours=8))
 
 
-def outcome_phrase(branch: str, *, cap_unset: bool = False, category_name: Optional[str] = None) -> str:
+def outcome_phrase(
+    branch: str,
+    *,
+    cap_unset: bool = False,
+    category_name: Optional[str] = None,
+    available_qty: Optional[int] = None,
+    quantity: Any = None,
+) -> str:
     """R8's outcome slot. B1 with no X set on the product or its category reads "no cap set
-    for <category>" so the agent knows why the bot would not answer."""
+    for <category>" so the agent knows why the bot would not answer. AVAIL-MODE-REPLIES
+    rule 2: a short in-stock answer reads "in stock, <N> of <Q> available"."""
     if branch == "too_big" and cap_unset:
         return f"no cap set for {category_name or 'this category'}"
+    if branch == "in_stock" and isinstance(available_qty, int) and available_qty >= 1:
+        return f"in stock, {available_qty} of {quantity} available"
     return _OUTCOME.get(branch, branch)
 
 
@@ -219,6 +229,7 @@ def after_answered_turn(
             "branch": ask.branch,
             "cap_unset": bool(entry.get("cap_unset")),
             "category_name": entry.get("category_name"),
+            "available_qty": entry.get("available_qty"),
             "asked_at": moment.isoformat(),
         }
         from app.tasks.stock_ask_tasks import notify_salesman as notify_job
@@ -455,6 +466,8 @@ def notify_salesman(db: Session, facts: dict[str, Any]) -> dict[str, Any]:
             facts.get("branch") or "",
             cap_unset=bool(facts.get("cap_unset")),
             category_name=facts.get("category_name"),
+            available_qty=facts.get("available_qty"),
+            quantity=facts.get("quantity"),
         ),
         "customer_name": customer.customer_name,
         "contact_name": _contact_label(dealer),
@@ -532,20 +545,25 @@ def _family_names_by_contact(db: Session, contact_ids: set[str]) -> dict[str, st
         return {}
     from app.models.access import RespondContactCustomer
     from app.models.order import Customer
-    from app.services.ledger_family import ledger_family_key, ledger_family_label
+    from app.services.customer_group_service import family_overrides
+    from app.services.ledger_family import customer_groups, ledger_family_key, ledger_family_label
 
     keys: dict[str, set[str]] = {}
     labels: dict[str, str] = {}
-    for contact_id, name in (
+    rows = (
         db.query(RespondContactCustomer.contact_id, Customer.customer_name)
         .join(Customer, Customer.id == RespondContactCustomer.customer_id)
         .filter(RespondContactCustomer.contact_id.in_(contact_ids))
-    ):
-        key = ledger_family_key(name or "")
-        if not key:
-            continue
-        keys.setdefault(contact_id, set()).add(key)
-        labels.setdefault(contact_id, ledger_family_label(name))
+        .all()
+    )
+    # The office's customer groups win over the name rule (CUSTOMER-GROUP).
+    with customer_groups(family_overrides(db)):
+        for contact_id, name in rows:
+            key = ledger_family_key(name or "")
+            if not key:
+                continue
+            keys.setdefault(contact_id, set()).add(key)
+            labels.setdefault(contact_id, ledger_family_label(name))
     return {cid: labels[cid] for cid, found in keys.items() if len(found) == 1}
 
 

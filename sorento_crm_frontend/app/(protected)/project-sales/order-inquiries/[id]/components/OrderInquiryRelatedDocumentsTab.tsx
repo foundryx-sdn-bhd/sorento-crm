@@ -187,6 +187,8 @@ function relatedSpoColumns(): ColumnDef<OrderInquiryRelatedSpo>[] {
 interface RelatedDocumentsGridProps<TRow extends object> {
   rows: TRow[];
   isLoading: boolean;
+  error?: unknown;
+  onRetry?: () => void;
   columns: ColumnDef<TRow>[];
   getRowId: (row: TRow) => string;
   searchOf: (row: TRow) => string;
@@ -198,6 +200,8 @@ interface RelatedDocumentsGridProps<TRow extends object> {
 function RelatedDocumentsGrid<TRow extends object>({
   rows,
   isLoading,
+  error,
+  onRetry,
   columns,
   getRowId,
   searchOf,
@@ -232,6 +236,8 @@ function RelatedDocumentsGrid<TRow extends object>({
       table={table}
       recordCount={table.getFilteredRowModel().rows.length}
       isLoading={isLoading}
+      error={error}
+      onRetry={onRetry}
       tableLayout={{ width: 'fixed', columnsResizable: true, columnsVisibility: true }}
       emptyMessage={rows.length === 0 ? emptyTitle : 'No document matches that search.'}
       listingKey={listingKey}
@@ -265,15 +271,21 @@ function RelatedDocumentsGrid<TRow extends object>({
 export function OrderInquiryRelatedPurchaseOrdersTab({
   rows,
   isLoading,
+  error,
+  onRetry,
 }: {
   rows: OrderInquiryRelatedPurchaseOrder[];
   isLoading: boolean;
+  error?: unknown;
+  onRetry?: () => void;
 }) {
   const columns = useMemo(() => relatedPoColumns(), []);
   return (
     <RelatedDocumentsGrid
       rows={rows}
       isLoading={isLoading}
+      error={error}
+      onRetry={onRetry}
       columns={columns}
       getRowId={(row) => row.po_id}
       searchOf={(row) => `${row.po_number} ${row.supplier_name ?? ''}`}
@@ -287,15 +299,21 @@ export function OrderInquiryRelatedPurchaseOrdersTab({
 export function OrderInquiryRelatedSposTab({
   rows,
   isLoading,
+  error,
+  onRetry,
 }: {
   rows: OrderInquiryRelatedSpo[];
   isLoading: boolean;
+  error?: unknown;
+  onRetry?: () => void;
 }) {
   const columns = useMemo(() => relatedSpoColumns(), []);
   return (
     <RelatedDocumentsGrid
       rows={rows}
       isLoading={isLoading}
+      error={error}
+      onRetry={onRetry}
       columns={columns}
       getRowId={(row) => row.spo_number}
       searchOf={(row) => `${row.spo_number} ${row.supplier_name ?? ''}`}

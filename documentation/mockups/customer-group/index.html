@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Customer groups (mockup v1)</title>
+<style>
+/* Tokens copied from sorento_crm_frontend/css/config.reui.css (light theme), same set as documentation/mockups/sales-asks-todo */
+:root{
+  --background:#fff;--foreground:#09090b;--card:#fff;--muted:#f4f4f5;--muted-fg:#71717a;
+  --border:#ececee;--primary:#3b82f6;--primary-fg:#fff;--primary-soft:#eff6ff;--primary-line:#bfdbfe;
+  --secondary:#f4f4f5;--destructive:#dc2626;--destructive-soft:#fef2f2;
+  --success:#15803d;--success-soft:#f0fdf4;--info:#7c3aed;--info-soft:#f5f3ff;
+  --radius:8px;--page:#f7f7f8;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--foreground);font:14px/1.45 Inter,ui-sans-serif,system-ui,sans-serif}
+h1{font-size:22px;margin:0 0 4px}
+.doc{max-width:1400px;margin:0 auto;padding:16px}
+.intro{color:var(--muted-fg);font-size:13px;margin:0 0 12px;max-width:900px}
+.navl{position:sticky;top:0;z-index:5;background:var(--page);padding:8px 0 10px;border-bottom:1px solid var(--border);margin-bottom:16px;display:flex;flex-wrap:wrap;gap:6px}
+.navl a{font-size:12px;text-decoration:none;border:1px solid var(--border);background:#fff;border-radius:999px;padding:3px 10px;color:var(--muted-fg)}
+section{margin:0 0 34px}
+section>h2{font-size:15px;margin:0 0 4px}
+section>.why{font-size:12.5px;color:var(--muted-fg);margin:0 0 12px;max-width:900px}
+.row{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start}
+.note{font-size:12px;color:var(--muted-fg);border-left:2px solid var(--border);padding:2px 0 2px 10px;margin:8px 0 0;max-width:900px}
+.phone{width:375px;flex:none;background:#fff;border:1px solid var(--border);border-radius:16px;overflow:hidden}
+.phone .screen{height:760px;overflow:auto;background:#fff;padding:14px}
+.cap{font-size:11px;color:var(--muted-fg);text-align:center;padding:6px;border-top:1px solid var(--border);background:#fff}
+.desk{width:1280px;max-width:100%;flex:none;background:#fff;border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.desk .screen{height:720px;overflow:auto;display:flex;background:#fff}
+.sidebar{width:240px;flex:none;border-right:1px solid var(--border);padding:16px 12px;font-size:13px}
+.sidebar .brand{font-weight:700;font-size:18px;padding:0 8px 18px}
+.sidebar .grp{font-size:10.5px;letter-spacing:.06em;color:var(--muted-fg);padding:10px 8px 6px}
+.sidebar .it{padding:6px 8px;border-radius:6px}
+.sidebar .it.sub{padding-left:30px;color:var(--muted-fg)}
+.sidebar .it.on{background:var(--muted);color:var(--primary);font-weight:500}
+.sidebar .new{font-size:10px;background:var(--primary-soft);color:var(--primary);border-radius:4px;padding:0 4px;margin-left:4px}
+.main{flex:1;min-width:0;padding:22px 26px;position:relative}
+.pagehead{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px}
+.pagehead .t{font-size:22px;font-weight:600}
+.btn{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 10px;border:1px solid var(--border);background:#fff;border-radius:6px;font-size:13px;white-space:nowrap;cursor:default}
+.btn.primary{background:var(--primary);color:#fff;border-color:var(--primary);font-weight:500}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--muted-fg)}
+.btn.sm{height:28px;font-size:12.5px}
+.btn.pending{background:var(--destructive-soft);color:var(--destructive);border-color:#fecaca}
+.card{border:1px solid var(--border);border-radius:12px;background:#fff}
+.card .hd{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.card .hd .ttl{font-weight:600}
+.card .bd{padding:14px 16px}
+.search{height:32px;border:1px solid var(--border);border-radius:6px;padding:0 10px;display:flex;align-items:center;color:var(--muted-fg);width:260px;font-size:13px}
+.sel{height:32px;border:1px solid var(--border);border-radius:6px;padding:0 10px;display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13px;min-width:180px}
+.sel .x{color:var(--muted-fg)}
+table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:13px}
+th{text-align:left;font-weight:500;color:var(--muted-fg);padding:9px 12px;border-bottom:1px solid var(--border);background:#fafafa;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+td{padding:9px 12px;border-bottom:1px solid var(--border);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+tr.dim td{opacity:.45}
+td a,.lnk{color:var(--primary);font-weight:500;text-decoration:none}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.badge{display:inline-flex;align-items:center;gap:5px;border-radius:6px;padding:1px 7px;font-size:12px;font-weight:500}
+.badge.ok{background:var(--success-soft);color:var(--success)}
+.badge.ok:before{content:"";width:6px;height:6px;border-radius:3px;background:currentColor}
+.badge.info{background:var(--info-soft);color:var(--info)}
+.badge.sec{background:var(--secondary);color:var(--foreground)}
+.mut{color:var(--muted-fg)}
+.foot{display:flex;justify-content:space-between;align-items:center;padding:10px 16px;font-size:12.5px;color:var(--muted-fg)}
+.tabs{display:flex;gap:18px;border-bottom:1px solid var(--border);margin:16px 0 12px;font-size:13.5px}
+.tabs span{padding:8px 0;color:var(--muted-fg)}
+.tabs span.on{color:var(--foreground);border-bottom:2px solid var(--primary);font-weight:500}
+.meta{display:flex;gap:28px;flex-wrap:wrap;margin-top:10px}
+.f{display:flex;flex-direction:column;gap:2px}
+.f .l{font-size:12px;color:var(--muted-fg)}
+.f .v{font-size:14px;font-weight:500}
+.inp{height:34px;border:1px solid var(--primary);box-shadow:0 0 0 3px var(--primary-soft);border-radius:6px;padding:0 10px;display:flex;align-items:center;font-size:14px;min-width:340px}
+.recnav{display:inline-flex;gap:4px;align-items:center;color:var(--muted-fg);font-size:12.5px}
+.recnav .b{width:28px;height:28px;border:1px solid var(--border);border-radius:6px;display:grid;place-items:center}
+.overlay{position:absolute;inset:0;background:rgba(9,9,11,.35);display:grid;place-items:center}
+.modal{width:440px;background:#fff;border-radius:12px;border:1px solid var(--border);box-shadow:0 10px 30px rgba(0,0,0,.15)}
+.modal .hd{padding:16px;border-bottom:1px solid var(--border);font-weight:600}
+.modal .bd{padding:16px}
+.modal .ft{padding:12px 16px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px}
+.lbl{font-size:13px;font-weight:500;margin-bottom:6px}
+.pop{position:absolute;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.12);width:380px;font-size:13px;z-index:3}
+.pop .o{padding:7px 10px;display:flex;justify-content:space-between;gap:8px}
+.pop .o.hl{background:var(--muted)}
+.pop .o .d{color:var(--muted-fg);font-size:12px}
+.grid2{display:grid;grid-template-columns:2fr 1fr;gap:20px}
+.toast{position:absolute;right:20px;bottom:20px;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.12);padding:10px 14px;display:flex;gap:14px;align-items:center;font-size:13px}
+.chat{width:375px;background:#efeae2;border-radius:12px;padding:14px;font-size:13.5px}
+.bubble{background:#fff;border-radius:8px;padding:8px 10px;margin:6px 0;max-width:300px;white-space:pre-line}
+.bubble.me{background:#d9fdd3;margin-left:auto}
+.map td,.map th{white-space:normal}
+.mlist{display:flex;flex-direction:column;gap:8px}
+.mcard{border:1px solid var(--border);border-radius:10px;padding:10px 12px}
+.mcard .r{display:flex;justify-content:space-between;gap:8px}
+</style>
+</head>
+<body>
+<div class="doc">
+<h1>Customer groups - mockup v1</h1>
+<p class="intro">Lane CUSTOMER-GROUP. Owner answers 2 Oct: a <b>customer_groups</b> table per company, each customer row points at at most one group, seeded from the name rule for the 796 families that hold a numbered account (527 in Sorento, 269 in Mocha; CASH / SHOPEE / LAZADA hold no numbered account so the filter drops them with no skip list), no auto-assign on import, a Customer Groups page plus the customer list / detail / form. All rows below are real rows from the shared dev DB (Sorento company). Every screen is a copy of the Sales Agents list / detail / Customers tab, which already do exactly this for <code>customers.sales_agent_id</code>.</p>
+<div class="navl">
+  <a href="#s1">1 Groups list</a><a href="#s2">2 Add group</a><a href="#s3">3 Group detail</a><a href="#s4">4 Rename in place</a><a href="#s5">5 Add / remove ledgers</a><a href="#s6">6 Customer detail</a><a href="#s7">7 Customer form</a><a href="#s8">8 Customers list</a><a href="#s9">9 375px</a><a href="#s10">10 Chatbot</a><a href="#map">Component map</a>
+</div>
+
+<!-- 1 -->
+<section id="s1">
+<h2>1. Customer Groups list (new page, Order Management &gt; Customer Groups)</h2>
+<p class="why">Sidebar entry right under Customers, gated by the existing <code>order_management.customers.view</code> (no new permission). Search by group name. Ledgers = member rows; Accounts = the numbered account levels held inside the group. Row click / name link opens the group.</p>
+<div class="desk"><div class="screen">
+  <div class="sidebar"><div class="brand">Sorento</div><div class="grp">ORDER MANAGEMENT</div>
+    <div class="it sub">Delivery Orders</div><div class="it sub">Delivery Order Status</div><div class="it sub">Customers</div><div class="it sub on">Customer Groups<span class="new">new</span></div><div class="it sub">Customer Branches</div></div>
+  <div class="main">
+    <div class="pagehead"><div class="t">Customer Groups</div><span class="btn primary">+ Add group</span></div>
+    <div class="card">
+      <div class="hd"><span class="search">Search groups</span></div>
+      <table>
+        <colgroup><col style="width:46%"><col style="width:14%"><col style="width:20%"><col style="width:20%"></colgroup>
+        <thead><tr><th>Group</th><th class="num">Ledgers</th><th>Accounts</th><th>Updated</th></tr></thead>
+        <tbody>
+          <tr><td><a>1 LIVING DEPOT SDN BHD</a></td><td class="num">6</td><td>A/C 1 to 4</td><td class="mut">2 Oct 2026</td></tr>
+          <tr><td><a>4 SMART PLUS SDN BHD</a></td><td class="num">4</td><td>A/C 1 to 3</td><td class="mut">2 Oct 2026</td></tr>
+          <tr><td><a>A CRAFT IDEA SDN BHD</a></td><td class="num">6</td><td>A/C 1 to 3</td><td class="mut">2 Oct 2026</td></tr>
+          <tr><td><a>CHIN CHUN HARDWARE SDN BHD</a></td><td class="num">7</td><td>A/C 1 to 4</td><td class="mut">2 Oct 2026</td></tr>
+          <tr><td><a>CHIN CHUN HOMEMART SDN BHD</a></td><td class="num">5</td><td>A/C 1, 3, 4</td><td class="mut">2 Oct 2026</td></tr>
+          <tr><td><a>DELUXE CERAMIC MARKETING SDN BHD</a></td><td class="num">6</td><td>A/C 1 to 3</td><td class="mut">2 Oct 2026</td></tr>
+          <tr><td><a>DELUXE HOME CENTRE SDN BHD</a></td><td class="num">13</td><td>A/C 1, 3, 4</td><td class="mut">2 Oct 2026</td></tr>
+          <tr><td><a>FULLSHUN SANITARYWARE SDN BHD</a></td><td class="num">14</td><td>A/C 1 to 4</td><td class="mut">2 Oct 2026</td></tr>
+          <tr><td><a>HANLIM TRADING SDN BHD</a></td><td class="num">6</td><td>A/C 1 to 4</td><td class="mut">2 Oct 2026</td></tr>
+          <tr><td><a>JUBIN BMS SDN BHD</a></td><td class="num">13</td><td>A/C 1, 3, 4</td><td class="mut">2 Oct 2026</td></tr>
+          <tr><td><a>JUBIN KEMUNING SDN BHD</a></td><td class="num">3</td><td>A/C 1</td><td class="mut">2 Oct 2026</td></tr>
+          <tr><td><a>KBO LOGISTICS &amp; SUPPLY SDN BHD</a></td><td class="num">12</td><td>A/C 1 to 4</td><td class="mut">2 Oct 2026</td></tr>
+        </tbody>
+      </table>
+      <div class="foot"><span>1 to 50 of 527</span><span>&lsaquo; 1 2 3 &hellip; 11 &rsaquo;</span></div>
+    </div>
+  </div>
+</div><div class="cap">1280px - DataGrid, fixed layout, resizable columns</div></div>
+<p class="note">Empty state (search with no hit): heading "No customer groups" + hint, no button (one CTA per page, in the header).</p>
+</section>
+
+<!-- 2 -->
+<section id="s2">
+<h2>2. Add group (modal)</h2>
+<p class="why">Name only. Unique per company, case-insensitive; a clash shows inline "A group with this name already exists". Saving lands on the new group's page so ledgers can be added there.</p>
+<div class="desk"><div class="screen"><div class="main" style="background:#fff">
+  <div class="pagehead"><div class="t">Customer Groups</div><span class="btn primary">+ Add group</span></div>
+  <div class="overlay"><div class="modal">
+    <div class="hd">Add customer group</div>
+    <div class="bd"><div class="lbl">Name</div><div class="inp" style="min-width:0">KEDAI PAPAN HENG CHOON (UTARA) SDN BHD</div></div>
+    <div class="ft"><span class="btn">Cancel</span><span class="btn primary">Create group</span></div>
+  </div></div>
+</div></div><div class="cap">FormDialogScaffold modal - real case: (M) and (UTARA) are two legal entities the name rule merges</div></div>
+</section>
+
+<!-- 3 -->
+<section id="s3">
+<h2>3. Group detail - HANLIM TRADING SDN BHD</h2>
+<p class="why">Mirrors SalesAgentDetail: header card (name, ledger count, prev/next, Edit, Delete), then a line tab strip with one tab, Ledgers (code, name, account level, status), searchable, paged. Code links to the customer.</p>
+<div class="desk"><div class="screen"><div class="main">
+  <div class="pagehead"><div class="t">Customer Group</div><span class="btn ghost">&larr; Back to customer groups</span></div>
+  <div class="card"><div class="bd">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+      <div><div style="font-size:18px;font-weight:600">HANLIM TRADING SDN BHD</div><div class="mut" style="font-size:13px">6 ledgers &middot; Account 1 to 4</div></div>
+      <div style="display:flex;gap:8px;align-items:center"><span class="recnav"><span class="b">&lsaquo;</span>9 of 527<span class="b">&rsaquo;</span></span><span class="btn">Edit</span><span class="btn">Delete</span></div>
+    </div>
+    <div class="meta"><div class="f"><span class="l">Company</span><span class="v">Sorento</span></div><div class="f"><span class="l">Created</span><span class="v">2 Oct 2026 (seeded from the name rule)</span></div></div>
+  </div></div>
+  <div class="tabs"><span class="on">Ledgers 6</span></div>
+  <div class="card">
+    <div class="hd"><span class="search">Search ledgers</span><span class="btn primary">Add ledgers</span></div>
+    <table>
+      <colgroup><col style="width:16%"><col style="width:46%"><col style="width:16%"><col style="width:14%"><col style="width:8%"></colgroup>
+      <thead><tr><th>Code</th><th>Name</th><th>Account level</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        <tr><td><a>300-H030</a></td><td>HANLIM TRADING SDN BHD</td><td class="mut">-</td><td><span class="badge ok">Active</span></td><td><span class="btn ghost sm" title="Remove from group">&#8854;</span></td></tr>
+        <tr><td><a>300-H118</a></td><td>HANLIM TRADING SDN BHD (CERAMIC &amp; ELLECI)</td><td class="mut">-</td><td><span class="badge ok">Active</span></td><td><span class="btn ghost sm">&#8854;</span></td></tr>
+        <tr><td><a>300-H030</a></td><td>HANLIM TRADING SDN BHD [A/C I]</td><td><span class="badge info">Account 1</span></td><td><span class="badge ok">Active</span></td><td><span class="btn ghost sm">&#8854;</span></td></tr>
+        <tr><td><a>300-H070</a></td><td>HANLIM TRADING SDN BHD [A/C II]</td><td><span class="badge info">Account 2</span></td><td><span class="badge ok">Active</span></td><td><span class="btn ghost sm">&#8854;</span></td></tr>
+        <tr><td><a>300-H118</a></td><td>HANLIM TRADING SDN BHD [A/C III]</td><td><span class="badge info">Account 3</span></td><td><span class="badge ok">Active</span></td><td><span class="btn ghost sm">&#8854;</span></td></tr>
+        <tr><td><a>300-H119</a></td><td>HANLIM TRADING SDN BHD [A/C IV]</td><td><span class="badge info">Account 4</span></td><td><span class="badge ok">Active</span></td><td><span class="btn ghost sm">&#8854;</span></td></tr>
+      </tbody>
+    </table>
+    <div class="foot"><span>1 to 6 of 6</span><span></span></div>
+  </div>
+</div></div><div class="cap">1280px - Delete group = deferred 10s countdown (no confirm); members fall back to the name rule</div></div>
+<p class="note">Empty Ledgers tab: heading "No ledgers in this group" + hint, the Add ledgers button stays in the card header.</p>
+</section>
+
+<!-- 4 -->
+<section id="s4">
+<h2>4. Rename in place (Edit)</h2>
+<p class="why">View and edit are the same layout: Edit swaps the name for an input in the header card; Save / Cancel replace Edit / Delete. The chatbot reads the new name on the next message (it is read per turn, nothing cached).</p>
+<div class="desk"><div class="screen" style="height:220px"><div class="main">
+  <div class="card"><div class="bd">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+      <div><div class="lbl">Name</div><div class="inp">HANLIM TRADING SDN BHD</div></div>
+      <div style="display:flex;gap:8px"><span class="btn">Cancel</span><span class="btn primary">Save</span></div>
+    </div>
+  </div></div>
+</div></div><div class="cap">Editing state of the header card</div></div>
+</section>
+
+<!-- 5 -->
+<section id="s5">
+<h2>5. Add / remove ledgers - JUBIN BMS SDN BHD (seeded collision)</h2>
+<p class="why">The name rule put JUBIN BMS (NS) and (KLANG) into the (1990) family: 13 ledgers, two "A/C I" rows. Staff remove the two strangers (deferred 5s, Cancel in the toast, no confirm), then Add ledgers picks from a server-searched customer multi-select; a row already in another group shows that group and moving it is explicit.</p>
+<div class="desk"><div class="screen"><div class="main">
+  <div class="card"><div class="bd" style="display:flex;justify-content:space-between;align-items:center"><div><div style="font-size:18px;font-weight:600">JUBIN BMS SDN BHD</div><div class="mut" style="font-size:13px">13 ledgers &middot; Account 1, 3, 4</div></div><div style="display:flex;gap:8px"><span class="btn">Edit</span><span class="btn">Delete</span></div></div></div>
+  <div class="tabs"><span class="on">Ledgers 13</span></div>
+  <div class="card" style="position:relative">
+    <div class="hd"><span class="search">Search ledgers</span><span class="btn primary">Add ledgers</span></div>
+    <div class="pop" style="right:16px;top:50px">
+      <div class="o" style="border-bottom:1px solid var(--border)"><span class="mut">Search customers: jubin</span></div>
+      <div class="o hl"><span>&#9745; JUBIN BMS (1990) SHAH ALAM (WAREHOUSE)</span><span class="d">300-J109 &middot; no group</span></div>
+      <div class="o"><span>&#9744; JUBIN KEMUNING SDN BHD [A/C I]</span><span class="d">in JUBIN KEMUNING SDN BHD</span></div>
+      <div class="o" style="justify-content:flex-end;border-top:1px solid var(--border)"><span class="btn primary sm">Add 1 ledger</span></div>
+    </div>
+    <table>
+      <colgroup><col style="width:16%"><col style="width:46%"><col style="width:16%"><col style="width:14%"><col style="width:8%"></colgroup>
+      <thead><tr><th>Code</th><th>Name</th><th>Account level</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        <tr><td><a>DBR-2c18a2aa52</a></td><td>JUBIN BMS</td><td class="mut">-</td><td><span class="badge ok">Active</span></td><td><span class="btn ghost sm">&#8854;</span></td></tr>
+        <tr><td><a>300-J108</a></td><td>JUBIN BMS (1990) SDN BHD</td><td class="mut">-</td><td><span class="badge ok">Active</span></td><td><span class="btn ghost sm">&#8854;</span></td></tr>
+        <tr><td><a>300-J108</a></td><td>JUBIN BMS (1990) SDN BHD [A/C I]</td><td><span class="badge info">Account 1</span></td><td><span class="badge ok">Active</span></td><td><span class="btn ghost sm">&#8854;</span></td></tr>
+        <tr><td><a>300-J109</a></td><td>JUBIN BMS (1990) SDN BHD [A/C III]</td><td><span class="badge info">Account 3</span></td><td><span class="badge ok">Active</span></td><td><span class="btn ghost sm">&#8854;</span></td></tr>
+        <tr><td><a>300-J110</a></td><td>JUBIN BMS (1990) SDN BHD [A/C IV]</td><td><span class="badge info">Account 4</span></td><td><span class="badge ok">Active</span></td><td><span class="btn ghost sm">&#8854;</span></td></tr>
+        <tr><td><a>300-J110</a></td><td>JUBIN BMS (1990) SDN BHD (SRT)</td><td class="mut">-</td><td><span class="badge ok">Active</span></td><td><span class="btn ghost sm">&#8854;</span></td></tr>
+        <tr class="dim"><td><a>300-J006</a></td><td>JUBIN BMS (KLANG) SDN BHD</td><td class="mut">-</td><td><span class="badge ok">Active</span></td><td><span class="btn pending sm">4s</span></td></tr>
+        <tr class="dim"><td><a>300-J002</a></td><td>JUBIN BMS (NS) SDN BHD [A/C I]</td><td><span class="badge info">Account 1</span></td><td><span class="badge ok">Active</span></td><td><span class="btn pending sm">5s</span></td></tr>
+      </tbody>
+    </table>
+    <div class="foot"><span>1 to 8 of 13 (sorted by name)</span><span></span></div>
+  </div>
+  <div class="toast"><span>Removing 2 ledgers from JUBIN BMS SDN BHD</span><span class="btn sm">Cancel</span></div>
+</div></div><div class="cap">Remove = useDeferredRowAction (5s reversible); Add = SearchableMultiSelect via useCustomerMultiPicker</div></div>
+</section>
+
+<!-- 6 -->
+<section id="s6">
+<h2>6. Customer detail - Group field + Group ledgers section</h2>
+<p class="why">Details tab of 300-H070 HANLIM TRADING SDN BHD [A/C II]: "Group" sits under Account level in the Contact Information card (links to the group). Below the cards, a "Group ledgers" card lists the sibling ledgers. No group: field says "No group", and the section shows heading "Not in a group" + hint.</p>
+<div class="desk"><div class="screen"><div class="main">
+  <div class="tabs" style="margin-top:0"><span class="on">Details</span><span>Branches</span><span>Asks</span></div>
+  <div class="grid2">
+    <div class="card"><div class="hd"><span class="ttl">Contact Information</span></div><div class="bd" style="display:flex;flex-direction:column;gap:12px">
+      <div class="f"><span class="l">Email</span><span class="v">-</span></div>
+      <div class="f"><span class="l">Phone</span><span class="v">-</span></div>
+      <div class="f"><span class="l">Sales Agent</span><span class="v">No sales agent assigned</span></div>
+      <div class="f"><span class="l">Account level</span><span class="v">Account 2</span></div>
+      <div class="f"><span class="l">Group</span><span class="v"><span class="lnk">HANLIM TRADING SDN BHD</span></span></div>
+    </div></div>
+    <div class="card"><div class="hd"><span class="ttl">Additional Information</span></div><div class="bd"><div class="f"><span class="l">Status</span><span class="v"><span class="badge ok">Active</span></span></div></div></div>
+  </div>
+  <div class="card" style="margin-top:20px">
+    <div class="hd"><span class="ttl">Group ledgers</span><span class="lnk" style="font-size:13px">Open group</span></div>
+    <table>
+      <colgroup><col style="width:18%"><col style="width:60%"><col style="width:22%"></colgroup>
+      <thead><tr><th>Code</th><th>Name</th><th>Account level</th></tr></thead>
+      <tbody>
+        <tr><td><a>300-H030</a></td><td>HANLIM TRADING SDN BHD</td><td class="mut">-</td></tr>
+        <tr><td><a>300-H118</a></td><td>HANLIM TRADING SDN BHD (CERAMIC &amp; ELLECI)</td><td class="mut">-</td></tr>
+        <tr><td><a>300-H030</a></td><td>HANLIM TRADING SDN BHD [A/C I]</td><td><span class="badge info">Account 1</span></td></tr>
+        <tr style="background:var(--primary-soft)"><td>300-H070</td><td>HANLIM TRADING SDN BHD [A/C II] <span class="mut">(this ledger)</span></td><td><span class="badge info">Account 2</span></td></tr>
+        <tr><td><a>300-H118</a></td><td>HANLIM TRADING SDN BHD [A/C III]</td><td><span class="badge info">Account 3</span></td></tr>
+        <tr><td><a>300-H119</a></td><td>HANLIM TRADING SDN BHD [A/C IV]</td><td><span class="badge info">Account 4</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div></div><div class="cap">CustomerDetail.tsx Details tab, existing Card + table</div></div>
+</section>
+
+<!-- 7 -->
+<section id="s7">
+<h2>7. Customer form - Group select</h2>
+<p class="why">Edit form of 300-C043 CHIN CHUN HOMEMART SDN BHD: new "Group" SearchableSelect next to Account level, clearable, server-searched over this company's groups. Real case: one owner, two names - staff can put HOMEMART into CHIN CHUN HARDWARE SDN BHD, which the name rule never could.</p>
+<div class="desk"><div class="screen" style="height:330px"><div class="main" style="position:relative">
+  <div class="card"><div class="hd"><span class="ttl">Details</span></div><div class="bd" style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+    <div><div class="lbl">Account level</div><div class="sel"><span>Not a numbered account</span><span class="x">&#9662;</span></div></div>
+    <div style="position:relative"><div class="lbl">Group</div><div class="sel" style="border-color:var(--primary)"><span>CHIN CHUN HOMEMART SDN BHD</span><span class="x">&times; &#9662;</span></div>
+      <div class="pop" style="top:62px;left:0;width:100%">
+        <div class="o" style="border-bottom:1px solid var(--border)"><span class="mut">chin chun</span></div>
+        <div class="o hl"><span>CHIN CHUN HARDWARE SDN BHD</span><span class="d">7 ledgers</span></div>
+        <div class="o"><span>CHIN CHUN HOMEMART SDN BHD</span><span class="d">5 ledgers</span></div>
+      </div></div>
+  </div></div>
+</div></div><div class="cap">CustomerForm.tsx (modal), SearchableSelect clearable</div></div>
+</section>
+
+<!-- 8 -->
+<section id="s8">
+<h2>8. Customers list - Group column + Group filter</h2>
+<p class="why">New "Group" column (truncate + title) and a "Group" filter (SearchableSelect, clearable) beside search. Hidden-by-default is not needed: column preferences already let staff hide it.</p>
+<div class="desk"><div class="screen" style="height:330px"><div class="main">
+  <div class="card">
+    <div class="hd"><div style="display:flex;gap:8px"><span class="search">Search customers</span><div class="sel"><span>Group: HANLIM TRADING SDN BHD</span><span class="x">&times;</span></div></div></div>
+    <table>
+      <colgroup><col style="width:14%"><col style="width:40%"><col style="width:30%"><col style="width:16%"></colgroup>
+      <thead><tr><th>Code</th><th>Name</th><th>Group</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td><a>300-H030</a></td><td>HANLIM TRADING SDN BHD [A/C I]</td><td>HANLIM TRADING SDN BHD</td><td><span class="badge ok">Active</span></td></tr>
+        <tr><td><a>300-H070</a></td><td>HANLIM TRADING SDN BHD [A/C II]</td><td>HANLIM TRADING SDN BHD</td><td><span class="badge ok">Active</span></td></tr>
+        <tr><td><a>300-H118</a></td><td>HANLIM TRADING SDN BHD [A/C III]</td><td>HANLIM TRADING SDN BHD</td><td><span class="badge ok">Active</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div></div><div class="cap">CustomersList.tsx - only the column and filter are new</div></div>
+</section>
+
+<!-- 9 -->
+<section id="s9">
+<h2>9. 375px</h2>
+<p class="why">Groups list and group detail at phone width: same DataGrid, horizontally scrolled inside its card (the existing DataGrid behaviour), header actions wrap under the title.</p>
+<div class="row">
+  <div class="phone"><div class="screen">
+    <div class="pagehead"><div class="t" style="font-size:19px">Customer Groups</div><span class="btn primary sm">+ Add group</span></div>
+    <div class="search" style="width:100%;margin-bottom:10px">Search groups</div>
+    <div class="card" style="overflow:auto"><table style="width:460px"><colgroup><col style="width:60%"><col style="width:16%"><col style="width:24%"></colgroup>
+      <thead><tr><th>Group</th><th class="num">Ledgers</th><th>Accounts</th></tr></thead>
+      <tbody><tr><td><a>CHIN CHUN HARDWARE SDN BHD</a></td><td class="num">7</td><td>A/C 1 to 4</td></tr>
+      <tr><td><a>HANLIM TRADING SDN BHD</a></td><td class="num">6</td><td>A/C 1 to 4</td></tr>
+      <tr><td><a>JUBIN BMS SDN BHD</a></td><td class="num">13</td><td>A/C 1, 3, 4</td></tr></tbody></table></div>
+  </div><div class="cap">375 - list</div></div>
+  <div class="phone"><div class="screen">
+    <div class="pagehead"><div class="t" style="font-size:19px">Customer Group</div><span class="btn ghost sm">&larr; Back</span></div>
+    <div class="card"><div class="bd"><div style="font-size:16px;font-weight:600">HANLIM TRADING SDN BHD</div><div class="mut" style="font-size:13px">6 ledgers &middot; Account 1 to 4</div>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><span class="recnav"><span class="b">&lsaquo;</span>9 of 527<span class="b">&rsaquo;</span></span><span class="btn sm">Edit</span><span class="btn sm">Delete</span></div></div></div>
+    <div class="tabs"><span class="on">Ledgers 6</span></div>
+    <div class="card" style="overflow:auto"><div class="hd"><span class="search" style="width:100%">Search ledgers</span><span class="btn primary sm">Add ledgers</span></div>
+      <table style="width:560px"><colgroup><col style="width:22%"><col style="width:52%"><col style="width:26%"></colgroup>
+      <thead><tr><th>Code</th><th>Name</th><th>Account level</th></tr></thead>
+      <tbody><tr><td><a>300-H030</a></td><td>HANLIM TRADING SDN BHD [A/C I]</td><td>Account 1</td></tr>
+      <tr><td><a>300-H070</a></td><td>HANLIM TRADING SDN BHD [A/C II]</td><td>Account 2</td></tr></tbody></table></div>
+  </div><div class="cap">375 - detail</div></div>
+</div>
+</section>
+
+<!-- 10 -->
+<section id="s10">
+<h2>10. Chatbot - what changes</h2>
+<p class="why">Header and roster lines read the GROUP name when the ledger has one, the name rule otherwise. HANLIM reads the same as today; CHIN CHUN HOMEMART moved into the HARDWARE group reads as one customer; JUBIN BMS (NS) taken out of the (1990) group stops being merged with it.</p>
+<div class="chat">
+  <div class="bubble me">stock for chin chun</div>
+  <div class="bubble">Which customer?
+1. CHIN CHUN HARDWARE SDN BHD
+2. CHIN CHUN HARDWARE AND TIMBER TRADING</div>
+  <div class="bubble me">1</div>
+  <div class="bubble">*CHIN CHUN HARDWARE SDN BHD* (12 accounts)
+...</div>
+</div>
+<p class="note">Illustrative roster (exact roster depends on the contact scope; not a recorded run). Before (name rule only): three lines - HARDWARE SDN BHD, HOMEMART SDN BHD, HARDWARE AND TIMBER TRADING. The "(12 accounts)" = 7 HARDWARE + 5 HOMEMART ledgers after staff put HOMEMART in the HARDWARE group (example of a staff edit, not seeded).</p>
+</section>
+
+<!-- map -->
+<section id="map">
+<h2>Component map (every element reuses an existing component)</h2>
+<div class="card"><table class="map">
+<colgroup><col style="width:34%"><col style="width:66%"></colgroup>
+<thead><tr><th>Element</th><th>Reuses (repo path, under sorento_crm_frontend/)</th></tr></thead>
+<tbody>
+<tr><td>Sidebar entry "Customer Groups"</td><td>config/menu.config.tsx (Order Management children, next to Customers / Customer Branches), permission order_management.customers.view</td></tr>
+<tr><td>Page header, back link</td><td>components/common/PageHeader.tsx, components/common/BackToList.tsx</td></tr>
+<tr><td>Groups list grid, search, pager</td><td>components/ui/data-grid*.tsx, components/common/ListSearchInput.tsx, hooks/useDebouncedSearch, hooks/useListStateFromUrl; template app/(protected)/master-data-management/sales-agents/components/SalesAgentsList.tsx</td></tr>
+<tr><td>Add group modal</td><td>components/common/FormDialogScaffold.tsx</td></tr>
+<tr><td>Group detail header card, Edit in place, prev/next, Delete</td><td>components/ui/card.tsx, components/common/DetailActions.tsx, components/common/RecordNavigation.tsx, components/common/DeferredActionButton.tsx; template sales-agents/[id]/components/SalesAgentDetail.tsx</td></tr>
+<tr><td>Ledgers tab (line tabs), Add ledgers, Remove</td><td>components/ui/tabs.tsx (variant line), components/common/SearchableMultiSelect.tsx, app/(protected)/order-management/customers/hooks/useCustomerMultiPicker.ts, hooks/useDeferredRowAction.tsx; template sales-agents/[id]/components/SalesAgentCustomersTab.tsx</td></tr>
+<tr><td>Account level / status pills</td><td>components/ui/badge.tsx (as CustomerDetail and SalesAgentCustomersTab)</td></tr>
+<tr><td>Customer detail Group field + Group ledgers card</td><td>app/(protected)/order-management/customers/components/CustomerDetail.tsx (existing Card + table)</td></tr>
+<tr><td>Customer form Group select</td><td>app/(protected)/order-management/customers/components/CustomerForm.tsx, components/common/SearchableSelect.tsx (clearable)</td></tr>
+<tr><td>Customers list Group column + filter</td><td>app/(protected)/order-management/customers/components/CustomersList.tsx, components/common/SearchableSelect.tsx</td></tr>
+</tbody></table></div>
+</section>
+</div>
+</body>
+</html>

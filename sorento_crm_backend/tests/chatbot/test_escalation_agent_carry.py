@@ -437,7 +437,7 @@ class TestAC1784RosterEscalateOfferCarriesTheMintingTurnsAgent:
     def test_ac_1784_bare_yes_over_a_roster_escalate_offer_carries_the_minting_turns_agent(
         self, session_factory, stub_parser, stub_access, monkeypatch
     ) -> None:
-        _seed_contact(session_factory, phone="+60000001784")
+        _seed_contact(session_factory, phone="+60900000022")
         stub_parser(_yes_verdict())
         stub_access()
         bodies = _capture_next_assignee(monkeypatch)
@@ -502,7 +502,7 @@ class TestAC1785SingleTeamTeamPickCarriesTheMintingTurnsAgentNotTheDefault:
     def test_ac_1785_single_team_team_pick_carries_the_minting_turns_agent(
         self, session_factory, stub_parser, stub_access, monkeypatch
     ) -> None:
-        _seed_contact(session_factory, phone="+60000001785")
+        _seed_contact(session_factory, phone="+60900000015")
         _seed_product(session_factory, code="ZZTSC07")
         _stub_incoming_probe_empty(monkeypatch)
         bodies = _capture_next_assignee(monkeypatch)
@@ -587,7 +587,7 @@ class TestAC1786MultiTeamPickCarriesThePickedOptionsOwnAgent:
     def test_ac_1786_picking_option_two_by_number_carries_option_twos_agent(
         self, session_factory, stub_parser, stub_access, monkeypatch
     ) -> None:
-        _seed_contact(session_factory, phone="+60000001786")
+        _seed_contact(session_factory, phone="+60900000014")
         bodies = _capture_next_assignee(monkeypatch)
         _capture_sla(monkeypatch)
         self._plant_multi_team_pending(session_factory)
@@ -786,7 +786,7 @@ class TestAC1791AccessCheckedAgainstTheCarriedAgent:
     def test_ac_1791_a_contact_granted_only_the_carried_agent_is_allowed_on_the_yes_turn(
         self, session_factory, stub_parser, monkeypatch
     ) -> None:
-        _seed_contact(session_factory, phone="+60000001791")
+        _seed_contact(session_factory, phone="+60900000012")
         self._plant_roster_offer(session_factory)
         stub_parser(_yes_verdict())
         calls = self._spy_access(monkeypatch, allowed_agent="incoming_stock_enquiries")
@@ -801,7 +801,7 @@ class TestAC1791AccessCheckedAgainstTheCarriedAgent:
     def test_ac_1791_a_contact_granted_only_the_default_agent_is_denied_on_the_yes_turn(
         self, session_factory, stub_parser, monkeypatch
     ) -> None:
-        _seed_contact(session_factory, phone="+60000001792")
+        _seed_contact(session_factory, phone="+60900000021")
         self._plant_roster_offer(session_factory)
         stub_parser(_yes_verdict())
         calls = self._spy_access(monkeypatch, allowed_agent=DEFAULT_SUGGESTED_AGENT)
@@ -830,7 +830,7 @@ class TestAC1792OfferPayloadCarriesTheAgent:
     def test_ac_1792_single_team_team_pick_stores_the_agent_on_pending_payload(
         self, session_factory, stub_parser, stub_access, monkeypatch
     ) -> None:
-        _seed_contact(session_factory, phone="+60000001793")
+        _seed_contact(session_factory, phone="+60900000010")
         _seed_product(session_factory, code="ZZTSC08")
         _stub_incoming_probe_empty(monkeypatch)
         stub_parser(
@@ -859,7 +859,7 @@ class TestAC1792OfferPayloadCarriesTheAgent:
     def test_ac_1792_multi_team_team_pick_stores_the_agent_on_each_option_and_none_on_the_hold(
         self, session_factory, stub_parser, stub_access, monkeypatch
     ) -> None:
-        _seed_contact(session_factory, phone="+60000001794")
+        _seed_contact(session_factory, phone="+60900000018")
         _seed_product(session_factory, code="ZZTSC09")
         _stub_incoming_probe_empty(monkeypatch)
         stub_parser(
@@ -1014,7 +1014,7 @@ class TestAC1794SlaBodyCarriesTheSameAgentCodeAsNextAssignee:
     def test_ac_1794_sla_body_and_next_assignee_body_agree_on_agent_code(
         self, session_factory, stub_parser, stub_access, monkeypatch
     ) -> None:
-        _seed_contact(session_factory, phone="+60000001795")
+        _seed_contact(session_factory, phone="+60900000013")
         _seed_product(session_factory, code="ZZTSC10")
         _stub_incoming_probe_empty(monkeypatch)
         stub_parser(
@@ -1122,7 +1122,7 @@ class TestAC1799SixMoreMintSitesStampTheAgent:
         `_option_payload`'s "company" branch plus this fix's own top-level stamp
         build), and turn 2 answers "1" for real through `engine.run_turn`, all the
         way to the captured `/external/next-assignee` body."""
-        _seed_contact(session_factory, phone="+60000001799")
+        _seed_contact(session_factory, phone="+60900000016")
         _write_open_question(
             session_factory,
             open_question={
@@ -1661,7 +1661,7 @@ class TestAC1804And1805And1806BrandCarriedToNextAssignee:
             monkeypatch,
             stub_parser,
             stub_access,
-            phone="+60000001804",
+            phone="+60900000019",
             product_code="ZZTSC-SRT",
             brand_code="sorento",
         )
@@ -1682,7 +1682,7 @@ class TestAC1804And1805And1806BrandCarriedToNextAssignee:
             monkeypatch,
             stub_parser,
             stub_access,
-            phone="+60000001805",
+            phone="+60900000023",
             product_code="ZZTSC-MCH",
             brand_code="mocha",
         )
@@ -1703,7 +1703,7 @@ class TestAC1804And1805And1806BrandCarriedToNextAssignee:
             monkeypatch,
             stub_parser,
             stub_access,
-            phone="+60000001806",
+            phone="+60900000011",
             product_code="ZZTSC-NOBRAND",
             brand_code=None,
         )
@@ -1832,7 +1832,7 @@ class TestAC1807And1808PhotoMissEscalationCarriesTheBrand:
             monkeypatch,
             stub_parser,
             stub_access,
-            phone="+60000001807",
+            phone="+60900000017",
             product_code="ZZTPH-MCH",
             brand_code="mocha",
         )
@@ -1855,7 +1855,7 @@ class TestAC1807And1808PhotoMissEscalationCarriesTheBrand:
             monkeypatch,
             stub_parser,
             stub_access,
-            phone="+60000001808",
+            phone="+60900000020",
             product_code="ZZTPH-SRT",
             brand_code="sorento",
         )

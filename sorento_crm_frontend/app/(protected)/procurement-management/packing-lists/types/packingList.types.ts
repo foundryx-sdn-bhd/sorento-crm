@@ -89,6 +89,8 @@ export interface PackingList extends ClearanceFields {
   total_items_shipped?: number | null;
   total_cartons?: number | null;
   notes?: string | null;
+  /** 'west' / 'east'; never empty. */
+  regions?: string[];
   /**
    * The container's own paperwork and its costs, as the workbook prints them.
    *
@@ -221,6 +223,8 @@ export interface PackingListFormData {
   total_items_shipped?: number;
   total_cartons?: number;
   notes?: string | null;
+  /** Omitted on create = West only; on update omitted = unchanged. Never empty. */
+  regions?: string[];
   attachment_id?: string | null;
   seal_number?: string | null;
   shipper?: string | null;

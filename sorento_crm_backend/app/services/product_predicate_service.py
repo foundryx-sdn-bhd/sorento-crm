@@ -137,6 +137,39 @@ def _attachment_type_row(db: Session, label: str) -> AttachmentType | None:
     )
 
 
+def _product_type_by_description(db: Session, label: str) -> AttachmentType | None:
+    """The ONE product-facing attachment type whose name, code or description carries the
+    customer's word (ATTACHMENT-MULTI tester re-run, 2 Oct 2026).
+
+    The entity resolver already reads "photo" as Product Photos off the description
+    ("Product Photos, Photo, Image, Pictures by Marketing" on dev); this leg did not, so
+    the HAS path answered "I don't know 'photo' as a document type". Only types products
+    actually carry are candidates (the same set `_attachment_type_names_on_file` names), so
+    an internal class whose description mentions the word never wins, and two candidates
+    are no answer at all.
+    """
+    word = label.strip()
+    if len(word) < 3:
+        return None
+    pattern = f"%{word}%"
+    rows = (
+        db.query(AttachmentType)
+        .join(Attachment, Attachment.attachment_type_id == AttachmentType.id)
+        .join(ProductAttachment, ProductAttachment.attachment_id == Attachment.id)
+        .filter(
+            or_(
+                AttachmentType.type_name.ilike(pattern),
+                AttachmentType.code.ilike(pattern),
+                AttachmentType.description.ilike(pattern),
+            )
+        )
+        .distinct()
+        .limit(2)
+        .all()
+    )
+    return rows[0] if len(rows) == 1 else None
+
+
 def _attachment_type_names_on_file(db: Session) -> list[str]:
     """Every PRODUCT-FACING `AttachmentType.type_name` on file, sorted (second
     console pass, AC-1329): only types that actually appear in
@@ -224,6 +257,8 @@ def _leg_attachment_type(db: Session, value: Any, access_levels: list[str] | Non
         aliased_label = _lookup_resolve(db, "attachment_type_alias", label)
         if aliased_label:
             row = _attachment_type_row(db, aliased_label)
+    if row is None:
+        row = _product_type_by_description(db, label)
     if row is None:
         raise _UnrecognizedLabel(
             label, extra={"attachment_types_on_file": _attachment_type_names_on_file(db)}

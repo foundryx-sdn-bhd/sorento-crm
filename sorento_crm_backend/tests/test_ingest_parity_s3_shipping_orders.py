@@ -184,7 +184,7 @@ class TestAcP32ExtractContainerNumberAndLinking:
                     "lines": [
                         {
                             "source_ref": f"DK-{spo_number}-L1",
-                            "product_ref": product_ref,
+                            "product_ref": product_ref, "product_code": product_ref[3:],
                             "qty_ordered": "5",
                         }
                     ],
@@ -255,12 +255,12 @@ class TestAcP34ForwardMatchOnceAndReceivedGuard:
                     "lines": [
                         {
                             "source_ref": f"DK-{spo_number}-L1",
-                            "product_ref": product_ref,
+                            "product_ref": product_ref, "product_code": product_ref[3:],
                             "qty_ordered": "5",
                         },
                         {
                             "source_ref": f"DK-{spo_number}-L2",
-                            "product_ref": product_ref,
+                            "product_ref": product_ref, "product_code": product_ref[3:],
                             "qty_ordered": "3",
                         },
                     ],
@@ -297,7 +297,7 @@ class TestAcP34ForwardMatchOnceAndReceivedGuard:
                     "spo_number": spo_number,
                     "status": "open",
                     "lines": [
-                        {"source_ref": line_ref, "product_ref": product_ref, "qty_ordered": "10"}
+                        {"source_ref": line_ref, "product_ref": product_ref, "product_code": product_ref[3:], "qty_ordered": "10"}
                     ],
                 }
             ],
@@ -320,7 +320,7 @@ class TestAcP34ForwardMatchOnceAndReceivedGuard:
                     "spo_number": spo_number,
                     "status": "open",
                     "lines": [
-                        {"source_ref": line_ref, "product_ref": product_ref, "qty_ordered": "3"}
+                        {"source_ref": line_ref, "product_ref": product_ref, "product_code": product_ref[3:], "qty_ordered": "3"}
                     ],
                 }
             ],
@@ -370,7 +370,7 @@ class TestAcP35AdoptionAndCloseSweepAcrossSources:
                     "lines": [
                         {
                             "source_ref": f"DK-{spo_number}-L1",
-                            "product_ref": product_ref,
+                            "product_ref": product_ref, "product_code": product_ref[3:],
                             "warehouse_code": warehouse.warehouse_code,
                             "qty_ordered": "20",
                         }
@@ -415,7 +415,7 @@ class TestAcP35AdoptionAndCloseSweepAcrossSources:
                     "lines": [
                         {
                             "source_ref": f"DK-{spo_number}-L1",
-                            "product_ref": product_ref,
+                            "product_ref": product_ref, "product_code": product_ref[3:],
                             "qty_ordered": "8",
                         }
                     ],
@@ -450,7 +450,7 @@ class TestAcP36StatusOptionalOnShippingOrders:
             "source_ref": f"DK-{spo_number}",
             "spo_number": spo_number,
             "lines": [
-                {"source_ref": f"DK-{spo_number}-L1", "product_ref": product_ref, "qty_ordered": "5"}
+                {"source_ref": f"DK-{spo_number}-L1", "product_ref": product_ref, "product_code": product_ref[3:], "qty_ordered": "5"}
             ],
         }
         result = svc.ingest("shipping_orders", [record])
@@ -481,7 +481,7 @@ class TestAcP37DocFamilyAcceptsFlagOrPrefix:
                     "lines": [
                         {
                             "source_ref": f"DK-{po_number}-L1",
-                            "product_ref": product_ref,
+                            "product_ref": product_ref, "product_code": product_ref[3:],
                             "qty_ordered": "5",
                         }
                     ],
@@ -614,7 +614,7 @@ class TestAcP38XlsxVsEsbParity:
             esb_lines.append(
                 {
                     "source_ref": f"DK-{spo_number}-L{i}",
-                    "product_ref": product_ref,
+                    "product_ref": product_ref, "product_code": product_ref[3:],
                     "warehouse_code": warehouse_b.warehouse_code,
                     "qty_ordered": str(line["qty"]),
                 }

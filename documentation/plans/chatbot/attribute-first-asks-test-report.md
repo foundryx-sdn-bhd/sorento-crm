@@ -2,8 +2,8 @@
 
 Plan: `PLAN-attribute-first-asks.md`. UAC: `attribute-first-asks-acceptance-criteria.md`.
 Branch `feat/chatbot-attribute-first-asks`. Lane backend on the restored prod copy
-(`sorento_ai_automation`, dump 2026-09-10, migration 511), MCP on 8765, console contact 482766833
-(promotion case: 438930735, which has access levels).
+(`sorento_ai_automation`, dump 2026-09-10, migration 511), MCP on 8765, console contact 900000105
+(promotion case: 900000052, which has access levels).
 
 ## Pytest (Phase 2, red first then green)
 
@@ -91,7 +91,7 @@ Baseline (main, detached checkout of d6cb5b624 with the lane venv, 11 Sep 2026):
 | which basin has photo | I don't know 'photo' as a document type. Types I know: Certification, Product Photos, Product Videos, Technical Specifications. |
 | which sink has incoming | 52 kitchen sinks have incoming stock. Showing 5. |
 | which bathroom accessory has stock | 837 bathroom accessories have stock. Showing 5. (pass 5: "Couldn't find a a match with stock.") |
-| any shower set on promo (contact 438930735) | Which access level do you need for shower set? |
+| any shower set on promo (contact 900000052) | Which access level do you need for shower set? |
 
 Multi-turn sequences (`pass6-sequences.yaml` in the session scratchpad, three cases):
 
@@ -125,7 +125,7 @@ Owner observations on the local stack that are DATA or configuration, not lane d
 | which item has PPS cert | 940 products have PPS certificates. Showing 5. |
 | which basin has photo | I don't know 'photo' as a document type. Types I know: Certification, Product Photos, Product Videos, Technical Specifications. |
 | which sink has incoming | 47 kitchen sinks have incoming stock. Showing 5. |
-| any shower set on promo (contact 438930735) | Which access level do you need for shower set? (existing promotion flow) |
+| any shower set on promo (contact 900000052) | Which access level do you need for shower set? (existing promotion flow) |
 | which tap has cert / more / more | Showing 5. / Showing 6 to 10. / Showing 11 to 15. |
 
 Every page rendered five distinct products. Full transcript in the session scratchpad `console-run-4.txt`.
@@ -142,7 +142,7 @@ Every page rendered five distinct products. Full transcript in the session scrat
 | which item has PPS cert | 940 products have certificates. Showing 5. | correct set; header to gain "PPS" (polish) |
 | which basin has photo | I don't know 'photo' as a document type. Types I know: ... | clarify; list to be product-facing only (polish) |
 | which sink has incoming | 47 kitchen sinks have incoming stock. Showing 5. | set answer |
-| any shower set on promo (contact 438930735) | Which access level do you need for shower set? 1. Dealer - has promotion | the promotion domain keeps its existing access-level flow |
+| any shower set on promo (contact 900000052) | Which access level do you need for shower set? 1. Dealer - has promotion | the promotion domain keeps its existing access-level flow |
 | more, more (after the tap answer) | Showing 6 to 10. / Showing 11 to 15. | paging |
 
 Pass 3 (after the polish commit) showed two regressions. "which sorento bidet has cert" (single

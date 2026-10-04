@@ -97,7 +97,8 @@ const MODE_OPTIONS: SearchableSelectOption[] = STOCK_VISIBILITY_MODE_ORDER.map((
 
 /** `CODE - name`, so a warehouse is legible and no UUID ever reaches the screen. */
 function warehouseLabel(warehouse: StockVisibilityWarehouse): string {
-  return warehouse.name ? `${warehouse.code} - ${warehouse.name}` : warehouse.code;
+  const label = warehouse.name ? `${warehouse.code} - ${warehouse.name}` : warehouse.code;
+  return warehouse.company_name ? `${warehouse.company_name} · ${label}` : label;
 }
 
 function toOption(warehouse: StockVisibilityWarehouse): SearchableMultiSelectOption {

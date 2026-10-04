@@ -70,6 +70,23 @@ logging.basicConfig(
 if settings.debug:
     logging.getLogger('app.dependencies').setLevel(logging.DEBUG)
 
+# DEV-LOGIN-BYPASS: crash at import (never just warn) when DEV_AUTO_LOGIN is on anywhere but
+# a local uvicorn run, and log a loud banner when it is legitimately active.
+from app.services.dev_login import (
+    assert_safe_startup as _assert_dev_login_safe,
+    running_in_container as _running_in_container,
+    running_under_gunicorn as _running_under_gunicorn,
+)
+
+_assert_dev_login_safe(
+    enabled=settings.dev_auto_login,
+    environment=settings.environment,
+    environment_explicit="environment" in settings.model_fields_set,
+    secret=settings.dev_auto_login_secret,
+    under_gunicorn=_running_under_gunicorn(),
+    in_container=_running_in_container(),
+)
+
 # Create FastAPI app
 app = FastAPI(
     title="Sorento CRM API",

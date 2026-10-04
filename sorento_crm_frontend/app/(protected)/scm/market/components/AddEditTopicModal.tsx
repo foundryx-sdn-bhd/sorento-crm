@@ -96,7 +96,12 @@ export function AddEditTopicModal({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
 
-  const { data: categoryOptions, isLoading: categoriesLoading } = useCategoryOptions();
+  const {
+    data: categoryOptions,
+    isLoading: categoriesLoading,
+    error: categoriesError,
+    refetch: refetchCategories,
+  } = useCategoryOptions();
 
   useEffect(() => {
     if (!open) return;
@@ -180,6 +185,8 @@ export function AddEditTopicModal({
                 value={form.category_ref}
                 onChange={(v) => set('category_ref', v)}
                 options={categoryChoices}
+                loadError={categoriesError}
+                onRetry={() => void refetchCategories()}
                 disabled={categoriesLoading}
                 placeholder={categoriesLoading ? 'Loading categories…' : 'Any category'}
                 emptyMessage="No categories found."

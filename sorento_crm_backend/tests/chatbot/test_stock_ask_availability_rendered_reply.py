@@ -56,14 +56,14 @@ def test_answered_reply_carries_no_intro_and_no_numbering():
             "SRT-TOOBIG",
             250,
             "too_big",
-            "the quantity is more than what I can confirm here. Please refer to "
+            "🚫 the quantity is more than what I can confirm here. Please refer to "
             "your salesman.",
         ),
         _entry(
             "SRT-INSTOCK",
             5,
             "in_stock",
-            "yes, we have stock. Please refer to your salesman.",
+            "\u2705 Please refer to your salesman.",
         ),
     ]
     out = fetch.output_structurer(_availability_envelope(entries), {"semantic_input": {}})
@@ -74,9 +74,9 @@ def test_answered_reply_carries_no_intro_and_no_numbering():
     assert "1. SRT-TOOBIG" not in out["response"]
     assert "2. SRT-INSTOCK" not in out["response"]
     assert out["response"] == (
-        "SRT-TOOBIG x 250: the quantity is more than what I can confirm here. "
+        "SRT-TOOBIG x 250: 🚫 the quantity is more than what I can confirm here. "
         "Please refer to your salesman.\n\n"
-        "SRT-INSTOCK x 5: yes, we have stock. Please refer to your salesman."
+        "SRT-INSTOCK x 5: \u2705 Please refer to your salesman."
     )
 
 
@@ -89,7 +89,7 @@ def test_ac_sa312_rendered_reply_has_no_digit_of_ours():
             "SRT-BIG",
             42,
             "too_big",
-            "the quantity is more than what I can confirm here. Please refer to "
+            "🚫 the quantity is more than what I can confirm here. Please refer to "
             "your salesman.",
         ),
         _entry("SRT-ETA", 7, "incoming", "no stock at the moment, ETA 19/10/2026."),

@@ -1,6 +1,6 @@
 """CHATBOT-QUEUE-FIX item 7: the parser LLM call has a hard time budget.
 
-Prod 1 Oct, contact 423729104, turn a45f (ticket 3): stage `understood` (the parser call)
+Prod 1 Oct, contact 900000081, turn a45f (ticket 3): stage `understood` (the parser call)
 took 230,475 ms while every other turn's parse took 2.6-4.1 s. The call had no timeout at
 all (the old `head/parser.py` comment said so), so the OpenAI SDK's 600 s default and its
 two silent retries applied, and the contact's queue slot was held for almost four minutes.

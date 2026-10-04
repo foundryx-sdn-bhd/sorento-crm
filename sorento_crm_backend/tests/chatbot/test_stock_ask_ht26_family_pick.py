@@ -84,15 +84,15 @@ def test_t3_top_level_demand_qty_is_carried_too():
     assert reply.pick["payload"]["stock_qty"] == 88
 
 
-def test_more_than_ten_matches_lists_ten_and_counts_the_rest():
+def test_more_than_ten_matches_lists_every_one():
+    """PICKER-NO-CAP (owner, 2 Oct 2026): no cut at ten, every match is numbered."""
     codes = [f"SRTX1-{i:02d}" for i in range(12)]
     reply = task_mod.after_reply(
         (), ht.envelopes(*[ht.row(c) for c in codes]), asked=[ht.asked("srtx1")]
     )
     lines = reply.text.splitlines()
     assert lines[0] == "SRTX1 matches 12 products. Which one?"
-    assert lines[1:11] == task_mod.numbered(codes[:10])
-    assert lines[11] == "and 2 others, reply with the full code."
+    assert lines[1:] == task_mod.numbered(codes)
 
 
 def test_t4_exact_code_wins_over_its_siblings():

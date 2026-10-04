@@ -826,6 +826,7 @@ class InboundShipmentService:
         shipment_status: Optional[str] = None,
         sort_field: str = "created_at",
         sort_dir: str = "asc",
+        region: Optional[str] = None,
     ):
         """Build the filtered + sorted inbound-shipment query shared by
         ``list_shipments`` and ``neighbours`` so the two can never drift.
@@ -852,6 +853,10 @@ class InboundShipmentService:
                 # Supplier filter supplied but resolved to nothing -> empty set.
                 return q.filter(InboundShipment.id.is_(None)), True
             filters.append(shipment_supplier_predicate(supplier_ids))
+
+        region_norm = (region or "").strip().lower()
+        if region_norm:
+            filters.append(InboundShipment.regions.contains([region_norm]))
 
         status_norm = (shipment_status or "").strip().lower()
         if status_norm and status_norm != "all":
@@ -919,13 +924,15 @@ class InboundShipmentService:
         supplier_id: Optional[str] = None,
         shipment_status: Optional[str] = None,
         sort_field: str = "created_at",
-        sort_dir: str = "asc"
+        sort_dir: str = "asc",
+        region: Optional[str] = None,
     ):
         """List inbound shipments."""
         q, empty = self._build_list_query(
             query=query,
             supplier_id=supplier_id,
             shipment_status=shipment_status,
+            region=region,
             sort_field=sort_field,
             sort_dir=sort_dir,
         )
@@ -1182,6 +1189,20 @@ class InboundShipmentService:
             received_totals[key] = max(received_totals.get(key, 0), int(stated or 0))
         return received_totals
 
+    def open_shipment_ids(self, company_id: Optional[str] = None) -> list[str]:
+        """Shipments with at least one line whose stored status is not `received`,
+        oldest first: the only ones whose stored figures can still be behind a
+        receipt (the nightly refresh and `refresh_container_received.py --all-open`).
+        `company_id` narrows explicitly, independent of the session's scope."""
+        not_received = exists().where(
+            InboundShipmentLine.shipment_id == InboundShipment.id,
+            func.coalesce(InboundShipmentLine.line_status, "") != "received",
+        )
+        query = self.db.query(InboundShipment.id).filter(not_received)
+        if company_id:
+            query = query.filter(InboundShipment.company_id == company_id)
+        return [str(row[0]) for row in query.order_by(InboundShipment.created_at, InboundShipment.id).all()]
+
     def refresh_shipment_line_statuses(self, shipment_id: str) -> None:
         """Recompute and persist line_status for all lines of this shipment (for n8n/API).
 
@@ -1209,6 +1230,31 @@ class InboundShipmentService:
         lines = list(shipment.shipment_lines)
         if not lines:
             return
+        figures = self.compute_shipment_line_figures(shipment)
+        for line in lines:
+            # Self-heal: a line belongs to the company of the container it hangs off,
+            # and an earlier company-less write may have stamped it with the incumbent
+            # company instead. Put it back, or the next scoped read loses it again.
+            if shipment.company_id and line.company_id != shipment.company_id:
+                line.company_id = shipment.company_id
+            alloc, recv, status = figures[str(line.id)]
+            line.spo_allocated_quantity = alloc
+            line.quantity_received = recv
+            line.line_status = status
+        all_lines_received = all((line.line_status or "").strip().lower() == "received" for line in lines)
+        if all_lines_received:
+            shipment.shipment_status = "fully_received"
+        elif (shipment.shipment_status or "").strip().lower() in ("received", "fully_received"):
+            shipment.shipment_status = "in_transit"
+        self.db.commit()
+
+    def compute_shipment_line_figures(self, shipment: InboundShipment) -> dict[str, tuple[int, int, str]]:
+        """`line id -> (spo_allocated_quantity, quantity_received, line_status)` as
+        `refresh_shipment_line_statuses` would store them, without writing anything
+        (the dry run of `scripts/oneoff/refresh_container_received.py` prints these
+        beside the stored figures)."""
+        shipment_id = shipment.id
+        lines = list(shipment.shipment_lines)
         totals_alloc = (
             self.db.query(SPOAllocation.product_id, func.sum(SPOAllocation.allocated_quantity).label("total"))
             .filter(SPOAllocation.inbound_shipment_id == shipment_id)
@@ -1232,25 +1278,16 @@ class InboundShipmentService:
                 _apportion(received_by_product.get(product_id, 0), product_lines)
             )
 
+        figures: dict[str, tuple[int, int, str]] = {}
         for line in lines:
-            # Self-heal: a line belongs to the company of the container it hangs off,
-            # and an earlier company-less write may have stamped it with the incumbent
-            # company instead. Put it back, or the next scoped read loses it again.
-            if shipment.company_id and line.company_id != shipment.company_id:
-                line.company_id = shipment.company_id
             alloc = alloc_by_line.get(str(line.id), 0)
             recv = recv_by_line.get(str(line.id), 0)
-            line.spo_allocated_quantity = alloc
-            line.quantity_received = recv
-            line.line_status = compute_inbound_shipment_line_status(
-                line.quantity_shipped or 0, alloc, recv
+            figures[str(line.id)] = (
+                alloc,
+                recv,
+                compute_inbound_shipment_line_status(line.quantity_shipped or 0, alloc, recv),
             )
-        all_lines_received = all((line.line_status or "").strip().lower() == "received" for line in lines)
-        if all_lines_received:
-            shipment.shipment_status = "fully_received"
-        elif (shipment.shipment_status or "").strip().lower() in ("received", "fully_received"):
-            shipment.shipment_status = "in_transit"
-        self.db.commit()
+        return figures
 
     def _attach_capacity(self, shipment: InboundShipment) -> InboundShipment:
         """The fill gauge, computed onto the ORM object rather than stored (S5, ruling 1).
@@ -1599,6 +1636,8 @@ class InboundShipmentService:
                 )
             # Update-in-place path: rewrite header + replace lines.
             shipment_dict = shipment_data.model_dump(exclude={"shipment_lines"})
+            # Regions stated by the upload (payload, else the attachment's) apply like any other
+            # field; none stated (None) leaves the container's own, via the `is not None` loop.
             shipment_dict["shipment_status"] = _normalize_inbound_shipment_status(
                 shipment_dict.get("shipment_status")
             )
@@ -1710,6 +1749,8 @@ class InboundShipmentService:
             shipment_dict.get("shipment_status")
         )
         shipment_dict["created_by"] = created_by
+        if shipment_dict.get("regions") is None:
+            shipment_dict.pop("regions", None)  # the column default (West only)
         if not (shipment_dict.get("shipment_number") or "").strip():
             # The create form no longer asks for one: a shipment number is ours to issue,
             # and asking somebody to invent a unique string before they have typed anything
@@ -1775,6 +1816,8 @@ class InboundShipmentService:
         shipment = self.get_shipment(shipment_id)
 
         update_data = shipment_data.model_dump(exclude_unset=True, exclude={"shipment_lines"})
+        if update_data.get("regions") is None:
+            update_data.pop("regions", None)  # NOT NULL: an explicit null leaves it alone
         if "shipment_status" in update_data:
             update_data["shipment_status"] = _normalize_inbound_shipment_status(
                 update_data.get("shipment_status")

@@ -22,23 +22,12 @@ from app.schemas.projects import (
     QuotationSignPageResponse,
 )
 from app.services import project_quotation_document_service as svc
+from app.services.client_ip import client_ip
 from app.services.error_handler import handle_internal_error
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-
-def _client_ip(request: Request) -> str | None:
-    """The caller's address as best we can tell behind a proxy.
-
-    Recorded because a signature without any provenance is weaker evidence than one with it. The
-    left-most XFF entry is the original client; the rest are hops.
-    """
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip() or None
-    return request.client.host if request.client else None
 
 
 @router.get("/{token}", response_model=QuotationSignPageResponse)
@@ -79,7 +68,7 @@ async def accept_quotation(
             signer_name=payload.signer_name,
             mode=payload.mode,
             image_data_uri=payload.image_data_uri,
-            ip_address=_client_ip(request),
+            ip_address=client_ip(request),
             user_agent=request.headers.get("user-agent"),
             gps_lat=payload.gps_lat,
             gps_lng=payload.gps_lng,

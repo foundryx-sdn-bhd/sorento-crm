@@ -7,7 +7,8 @@
  * "New Template" button opens TagTemplateDialog.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { toast } from '@/lib/toast';
 import { useRouter } from 'next/navigation';
 import {
   ColumnDef,
@@ -42,6 +43,7 @@ export function TagTemplatesList() {
 
   const [templates, setTemplates] = useState<TagTemplate[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<unknown>(null);
   const [pagination, setPagination] = useState<PaginationState>({
     pageIndex: 0,
     pageSize: 50,
@@ -49,11 +51,23 @@ export function TagTemplatesList() {
   const [createOpen, setCreateOpen] = useState(false);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
 
+  // Whether rows are on screen, read by the load callback without re-creating it.
+  const hasRowsRef = useRef(false);
+
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
       const data = await listTemplates();
       setTemplates(data);
+      hasRowsRef.current = data.length > 0;
+      setLoadError(null);
+    } catch (e) {
+      // Rows already on screen stay (a refresh after a delete or create failed); the grid
+      // shows the failure only in place of no rows, so a refresh failure is said here.
+      setLoadError(e);
+      if (hasRowsRef.current) {
+        toast.error(e instanceof Error ? e.message : 'Could not refresh the templates.');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -282,6 +296,8 @@ export function TagTemplatesList() {
             table={table}
             recordCount={templates.length}
             isLoading={isLoading}
+            error={loadError}
+            onRetry={() => void fetchData()}
             tableLayout={{ width: 'fixed', columnsResizable: true }}
             rowPending={rowPending}
             onRowClick={(row) =>

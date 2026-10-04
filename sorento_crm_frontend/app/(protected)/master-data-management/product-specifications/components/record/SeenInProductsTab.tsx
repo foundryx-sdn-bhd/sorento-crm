@@ -70,7 +70,7 @@ export function SeenInProductsTab({
     setPagination((p) => ({ ...p, pageIndex: 0 }));
   }, [query, valueFilter, classFilter, sourceFilter]);
 
-  const { data, isLoading, isFetching, isPlaceholderData } = useSpecKeyProductsQuery(specKey, {
+  const { data, isLoading, isFetching, isPlaceholderData, error, refetch } = useSpecKeyProductsQuery(specKey, {
     value: valueFilter,
     q: query || undefined,
     classLabel: classFilter,
@@ -197,6 +197,8 @@ export function SeenInProductsTab({
         table={table}
         recordCount={total}
         isLoading={isLoading}
+        error={error}
+        onRetry={() => void refetch()}
         isPlaceholderData={isPlaceholderData}
         rowHref={productHref}
         tableLayout={{ width: 'fixed', columnsResizable: true }}

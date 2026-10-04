@@ -96,7 +96,7 @@ export default function ApiCallLogsPage() {
     [dateFrom, dateTo, source, outcome, correlationId, searchQuery, pagination, sorting],
   );
 
-  const { data, isLoading, isFetching, isPlaceholderData } = useQuery({
+  const { data, isLoading, isFetching, isPlaceholderData, error, refetch } = useQuery({
     ...LIST_QUERY_OPTIONS,
     queryKey: ['apiCallLogs', filters],
     queryFn: () => getApiCallLogs(filters),
@@ -264,6 +264,8 @@ export default function ApiCallLogsPage() {
         table={table}
         recordCount={total}
         isLoading={isLoading}
+        error={error}
+        onRetry={() => void refetch()}
         isPlaceholderData={isPlaceholderData}
         tableLayout={{ width: 'fixed', columnsResizable: true }}
         onRowClick={(row) => setSelected(row)}

@@ -62,6 +62,9 @@ class WarehouseResponse(WarehouseBase):
     stock_count: Optional[int] = 0
     # Resolved for display: the UI must never show a bare UUID.
     pool_warehouse_code: Optional[str] = None
+    # Set only on a `company_scope=grants` read, so a picker can tag each row.
+    company_id: Optional[str] = None
+    company_name: Optional[str] = None
     
     class Config:
         from_attributes = True
@@ -253,6 +256,9 @@ class StockAvailabilityEntry(BaseModel):
     category_name: Optional[str] = None
     eta: Optional[str] = None
     packing_list: Optional[StockAvailabilityPackingList] = None
+    # AVAIL-MODE-REPLIES rule 2 (owner, 2 Oct 2026): how many are available, set ONLY on
+    # an `in_stock` answer short of `requested_qty` within the category max.
+    available_qty: Optional[int] = None
 
 
 class StockBalanceListResponse(ListResponse[StockResponse]):

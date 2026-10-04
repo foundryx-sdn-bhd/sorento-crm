@@ -102,7 +102,7 @@ export default function StockBalanceGrid() {
   });
   const warehouses: Warehouse[] = warehousesData?.data ?? [];
 
-  const { data, isLoading, isPlaceholderData, isFetching } = useStockBalance({
+  const { data, isLoading, isPlaceholderData, isFetching, error, refetch } = useStockBalance({
     pageIndex: pagination.pageIndex,
     pageSize: pagination.pageSize,
     sorting,
@@ -269,6 +269,8 @@ export default function StockBalanceGrid() {
       table={table}
       recordCount={total}
       isLoading={isLoading}
+      error={error}
+      onRetry={() => void refetch()}
       isPlaceholderData={isPlaceholderData}
       onRowClick={handleRowClick}
       standardToolbar={false}

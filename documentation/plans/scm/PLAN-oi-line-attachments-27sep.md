@@ -39,7 +39,7 @@ handover email purchasing receives carries those files as real attachments, name
   storage reference (`metadata_json.extra_attachments`, `email_outbox_tasks._attachments_for`,
   used by the container request email); only the automation hop does not forward them.
 - **Provider:** plain SMTP (`notification_email.send_mime_email`). The sending mailbox is the
-  Google Workspace account ai@sorento.com.my, whose limit is 25 MB per message including
+  Google Workspace account person2@example.com, whose limit is 25 MB per message including
   base64 overhead (about 4/3). No cap exists in code today.
 - **Permissions:** there is no separate "edit OI line" slug. The board's own writes (the
   confirm that raises OI lines) are gated `projects.projects.edit`; reads `projects.projects.view`.

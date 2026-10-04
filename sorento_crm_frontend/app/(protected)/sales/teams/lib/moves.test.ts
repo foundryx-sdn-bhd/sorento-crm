@@ -8,7 +8,7 @@ import type { SalesTeamAgentOption } from '../types/salesTeam.types';
 
 const options: SalesTeamAgentOption[] = [
   { id: 'ali', code: 'ALI', label: 'ALI - Ali Hassan', team_id: 'north', team_name: 'North' },
-  { id: 'sean', code: 'SEAN I', label: 'SEAN I - Sean Lee', team_id: 'central', team_name: 'Central' },
+  { id: 'sean', code: 'SEAN I', label: 'SEAN I - CONTACT AE', team_id: 'central', team_name: 'Central' },
   { id: 'raj', code: 'RAJ', label: 'RAJ - Raj Kumar', team_id: null, team_name: null },
 ];
 
@@ -28,7 +28,7 @@ describe('agentsMovingIn', () => {
 
 describe('agentOptionLabel', () => {
   it('says which team the agent is in now, or that they have none', () => {
-    expect(agentOptionLabel(options[1], 'north')).toBe('SEAN I - Sean Lee (now in Central)');
+    expect(agentOptionLabel(options[1], 'north')).toBe('SEAN I - CONTACT AE (now in Central)');
     expect(agentOptionLabel(options[2], 'north')).toBe('RAJ - Raj Kumar (no team)');
     expect(agentOptionLabel(options[0], 'north')).toBe('ALI - Ali Hassan');
   });

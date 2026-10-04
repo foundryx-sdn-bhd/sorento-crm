@@ -17,12 +17,14 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { isSearchInFlight, useDebouncedSearch } from '@/hooks/useDebouncedSearch';
 import { ListSearchInput } from '@/components/common/ListSearchInput';
 import { usePullRows } from '../hooks/useAutocountPull';
-import type {
-  AutocountPullEntity,
-  AutocountPullExcelRow,
-  DeliveryOrderExcelRow,
-  ProductExcelRow,
-  StockExcelRow,
+import {
+  isDocumentEntity,
+  type AutocountPullEntity,
+  type AutocountPullExcelRow,
+  type DeliveryOrderExcelRow,
+  type GoodsReceiveNoteExcelRow,
+  type ProductExcelRow,
+  type StockExcelRow,
 } from '../types/autocountPull.types';
 
 export interface PullExcelViewTabProps {
@@ -39,6 +41,7 @@ const EXCEL_VIEW_LISTING_KEY: Record<AutocountPullEntity, string> = {
   products: 'master_data.products.autocount_pull::excel-view',
   stock_balances: 'inventory.stock.autocount_pull::excel-view',
   delivery_orders: 'order_management.orders.autocount_pull::excel-view',
+  goods_receive_notes: 'procurement.grn.autocount_pull::excel-view',
 };
 
 function textCell<T>(pick: (row: T) => string | null | undefined) {
@@ -55,12 +58,12 @@ function textCell<T>(pick: (row: T) => string | null | undefined) {
 /** `digits` null = the number at its own precision (a quantity: 2.5 m stays "2.5", never a
  *  rounded "3" that no longer matches the checker's sheet, review S5); a money column keeps
  *  two decimals. */
-function numberCell(
-  pick: (row: DeliveryOrderExcelRow) => number | null | undefined,
+function numberCell<T extends { qty: number | null } = DeliveryOrderExcelRow>(
+  pick: (row: T) => number | null | undefined,
   digits: number | null = 2,
 ) {
   return function NumberCell({ row }: { row: { original: AutocountPullExcelRow } }) {
-    const value = pick(row.original as DeliveryOrderExcelRow);
+    const value = pick(row.original as unknown as T);
     if (value == null) return <span className="tabular-nums">-</span>;
     return <span className="tabular-nums">{digits == null ? String(value) : value.toFixed(digits)}</span>;
   };
@@ -153,6 +156,81 @@ export const DELIVERY_ORDER_COLUMNS: ColumnDef<AutocountPullExcelRow>[] = [
     cell: numberCell((r) => r.sub_total),
     size: 110,
     meta: { headerTitle: 'Sub Total', skeleton: <Skeleton className="h-4 w-14" /> },
+  },
+];
+
+/** One row per GRN LINE, the "DETAIL LISTING" sheet's columns in its order (AC-GP-50);
+ *  "Our PO No." is the PO or SPO the line was received against. */
+export const GOODS_RECEIVE_NOTE_COLUMNS: ColumnDef<AutocountPullExcelRow>[] = [
+  {
+    id: 'doc_no',
+    header: ({ column }) => <DataGridColumnHeader title="Doc No" column={column} />,
+    cell: textCell<GoodsReceiveNoteExcelRow>((r) => r.doc_no),
+    size: 140,
+    meta: { headerTitle: 'Doc No', skeleton: <Skeleton className="h-4 w-20" /> },
+  },
+  {
+    id: 'doc_date',
+    header: ({ column }) => <DataGridColumnHeader title="Doc Date" column={column} />,
+    cell: textCell<GoodsReceiveNoteExcelRow>((r) => formatExcelDay(r.doc_date)),
+    size: 110,
+    meta: { headerTitle: 'Doc Date', skeleton: <Skeleton className="h-4 w-16" /> },
+  },
+  {
+    id: 'creditor_code',
+    header: ({ column }) => <DataGridColumnHeader title="Creditor Code" column={column} />,
+    cell: textCell<GoodsReceiveNoteExcelRow>((r) => r.creditor_code),
+    size: 120,
+    meta: { headerTitle: 'Creditor Code', skeleton: <Skeleton className="h-4 w-16" /> },
+  },
+  {
+    id: 'creditor_name',
+    header: ({ column }) => <DataGridColumnHeader title="Creditor Name" column={column} />,
+    cell: textCell<GoodsReceiveNoteExcelRow>((r) => r.creditor_name),
+    size: 220,
+    meta: { headerTitle: 'Creditor Name', skeleton: <Skeleton className="h-4 w-32" /> },
+  },
+  {
+    id: 'from_doc_no',
+    header: ({ column }) => <DataGridColumnHeader title="Our PO No." column={column} />,
+    cell: textCell<GoodsReceiveNoteExcelRow>((r) => r.from_doc_no),
+    size: 150,
+    meta: { headerTitle: 'Our PO No.', skeleton: <Skeleton className="h-4 w-20" /> },
+  },
+  {
+    id: 'item_code',
+    header: ({ column }) => <DataGridColumnHeader title="Item Code" column={column} />,
+    cell: textCell<GoodsReceiveNoteExcelRow>((r) => r.item_code),
+    size: 140,
+    meta: { headerTitle: 'Item Code', skeleton: <Skeleton className="h-4 w-20" /> },
+  },
+  {
+    id: 'description',
+    header: ({ column }) => <DataGridColumnHeader title="Description" column={column} />,
+    cell: textCell<GoodsReceiveNoteExcelRow>((r) => r.description),
+    size: 260,
+    meta: { headerTitle: 'Description', skeleton: <Skeleton className="h-4 w-40" /> },
+  },
+  {
+    id: 'location',
+    header: ({ column }) => <DataGridColumnHeader title="Location" column={column} />,
+    cell: textCell<GoodsReceiveNoteExcelRow>((r) => r.location),
+    size: 110,
+    meta: { headerTitle: 'Location', skeleton: <Skeleton className="h-4 w-14" /> },
+  },
+  {
+    id: 'qty',
+    header: ({ column }) => <DataGridColumnHeader title="Qty" column={column} />,
+    cell: numberCell<GoodsReceiveNoteExcelRow>((r) => r.qty, null),
+    size: 90,
+    meta: { headerTitle: 'Qty', skeleton: <Skeleton className="h-4 w-10" /> },
+  },
+  {
+    id: 'uom',
+    header: ({ column }) => <DataGridColumnHeader title="UOM" column={column} />,
+    cell: textCell<GoodsReceiveNoteExcelRow>((r) => r.uom),
+    size: 80,
+    meta: { headerTitle: 'UOM', skeleton: <Skeleton className="h-4 w-10" /> },
   },
 ];
 
@@ -318,7 +396,9 @@ export function PullExcelViewTab({ jobId, entity }: PullExcelViewTabProps) {
         ? PRODUCT_COLUMNS
         : entity === 'delivery_orders'
           ? DELIVERY_ORDER_COLUMNS
-          : STOCK_COLUMNS,
+          : entity === 'goods_receive_notes'
+            ? GOODS_RECEIVE_NOTE_COLUMNS
+            : STOCK_COLUMNS,
     [entity],
   );
   const total = data?.pagination?.total ?? 0;
@@ -359,7 +439,7 @@ export function PullExcelViewTab({ jobId, entity }: PullExcelViewTabProps) {
               onChange={setSearchInput}
               isSettling={isSearchInFlight(searchSettling, isFetching, search)}
               placeholder={
-                entity === 'delivery_orders' ? 'Search by doc no or item code…' : 'Search by item code…'
+                isDocumentEntity(entity) ? 'Search by doc no or item code…' : 'Search by item code…'
               }
               className="w-full"
             />

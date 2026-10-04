@@ -624,7 +624,9 @@ def _assert_no_quantity_anywhere(body, forbidden_numbers):
     offending_keys = [
         path
         for path, key, _ in _walk(body)
-        if key not in _ALLOWED_NUMERIC_KEYS
+        # AVAIL-MODE-REPLIES rule 2: `available_qty` is a declared key; its VALUE is still
+        # checked against the forbidden numbers below.
+        if key not in _ALLOWED_NUMERIC_KEYS | {"available_qty"}
         and any(word in key for word in _QUANTITY_WORDS)
     ]
     assert not offending_keys, f"quantity-shaped keys leaked: {offending_keys}"
@@ -664,6 +666,7 @@ def test_availability_needs_quantity_no_leak(db):
             "category_name": None,
             "eta": None,
             "packing_list": None,
+            "available_qty": None,
         }
     ]
     assert "stock_summary" not in result
@@ -708,8 +711,11 @@ def test_availability_no_ignores_disallowed_warehouses(db):
     )
 
     entry = result["stock_availability"][0]
-    assert entry["branch"] != "in_stock"
-    _assert_no_quantity_anywhere(result, {40, 500})
+    # AVAIL-MODE-REPLIES rule 2 (owner, 2 Oct 2026): 40 allowed, Q 50 within X is "got
+    # stock, 40 available" - never the 500 in the location the dealer may not see.
+    assert entry["branch"] == "in_stock"
+    assert entry["available_qty"] == 40
+    _assert_no_quantity_anywhere(result, {500})
 
 
 def test_availability_says_no_for_a_product_with_no_stock(db):
@@ -742,6 +748,7 @@ def test_availability_says_no_for_a_product_with_no_stock(db):
             "category_name": category.category_name,
             "eta": None,
             "packing_list": None,
+            "available_qty": None,
         }
     ]
     _assert_no_quantity_anywhere(result, {500})
@@ -797,6 +804,7 @@ def test_availability_still_asks_for_a_product_with_no_stock(db):
             "category_name": None,
             "eta": None,
             "packing_list": None,
+            "available_qty": None,
         }
     ]
     _assert_no_quantity_anywhere(result, {500})
@@ -2074,7 +2082,10 @@ def test_availability_ignores_hide_zero_locations(db):
     )
 
     assert yes["stock_availability"][0]["branch"] == "in_stock"
-    assert no["stock_availability"][0]["branch"] != "in_stock"
+    assert yes["stock_availability"][0]["available_qty"] is None
+    # AVAIL-MODE-REPLIES rule 2: 41 against 40 is short, so it names the 40.
+    assert no["stock_availability"][0]["branch"] == "in_stock"
+    assert no["stock_availability"][0]["available_qty"] == 40
     # Still no location named, flag or no flag.
     assert "warehouse_codes" not in yes["stock_visibility"]
 
@@ -2505,13 +2516,13 @@ def test_excluded_warehouse_ids_round_trip_on_every_tier(client, db):
         assert saved.status_code == 200, saved.json()
         override = saved.json()["override"]
         assert override["excluded_warehouses"] == [
-            {"id": brw.id, "code": "ZZTBRW", "name": "Warehouse"}
+            {"id": brw.id, "code": "ZZTBRW", "name": "Warehouse", "company_name": "Sorento"}
         ]
         assert override["warehouses"] is None
 
         read_back = client.get(path).json()["override"]
         assert read_back["excluded_warehouses"] == [
-            {"id": brw.id, "code": "ZZTBRW", "name": "Warehouse"}
+            {"id": brw.id, "code": "ZZTBRW", "name": "Warehouse", "company_name": "Sorento"}
         ]
         assert read_back["warehouses"] is None
 
@@ -2552,7 +2563,7 @@ def test_the_response_model_declares_excluded_warehouses(client, db):
     ).json()
 
     assert body["override"]["excluded_warehouses"] == [
-        {"id": brw.id, "code": "ZZTBRW", "name": "Warehouse"}
+        {"id": brw.id, "code": "ZZTBRW", "name": "Warehouse", "company_name": "Sorento"}
     ]
 
 

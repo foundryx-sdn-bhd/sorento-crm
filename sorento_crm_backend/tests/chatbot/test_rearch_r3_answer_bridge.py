@@ -466,8 +466,7 @@ def _incoming_gate_payload() -> dict[str, Any]:
     labels = ["SRTWC286-1", "SRTWC286-2"]
     return {
         "gate_clarification": (
-            "incoming search needs to be more specific. Multiple matches found. Please "
-            "choose:\n" + "\n".join(f"{i + 1}. {label}" for i, label in enumerate(labels))
+            "Which product do you mean? Please choose:\n" + "\n".join(f"{i + 1}. {label}" for i, label in enumerate(labels))
         ),
         "compatible_entities": [
             {"uuid": f"prod-uuid-{i + 1}", "entity_type": "product", "code": label}

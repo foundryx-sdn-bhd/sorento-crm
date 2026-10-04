@@ -94,7 +94,9 @@ class TestGetMappings:
             DEFAULT_MAPPINGS, FIELDS_BY_KIND, KINDS, TRANSFORMS,
         )
 
-        assert KINDS == ("order_listing", "order_tracking")
+        # The two GRN kinds joined in GRN-PULL-CRM (plan 1.5); their pins live in
+        # test_autocount_pull_goods_receive_notes.py.
+        assert KINDS == ("order_listing", "order_tracking", "grn_detail_listing", "grn_listing")
         assert TRANSFORMS == ("text", "number", "money", "date", "percent_text",
                               "percent_fraction", "cancel_flag")
         assert tuple(FIELDS_BY_KIND["order_listing"]) == tuple(f for _, _, f in DEFAULT_LISTING)
@@ -192,6 +194,7 @@ class TestFieldTransformPairs:
             "debtor_code": ("text",), "doc_date": ("date",), "qty": ("number",),
             "unit_price": ("money",), "total_ex": ("money",),
             "discount": ("percent_text", "percent_fraction"), "cancel": ("cancel_flag",),
+            "creditor_code": ("text",), "source_doc": ("text",),
         }
 
     @pytest.mark.parametrize("kind,field,transform", [

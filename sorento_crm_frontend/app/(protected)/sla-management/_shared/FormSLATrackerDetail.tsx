@@ -125,7 +125,11 @@ export default function FormSLATrackerDetail({
   const [tierStartedLocal, setTierStartedLocal] = useState('');
   const [initiatedLocal, setInitiatedLocal] = useState('');
 
-  const { data: usersSelect = [] } = useQuery({
+  const {
+    data: usersSelect = [],
+    error: usersSelectError,
+    refetch: refetchUsersSelect,
+  } = useQuery({
     queryKey: ['user-lookup', 'form-sla-test-override'],
     queryFn: () => getUserLookup(),
     enabled: assigneeDialogOpen && canTestOverride,
@@ -704,6 +708,8 @@ export default function FormSLATrackerDetail({
             <SearchableSelect
               value={selectedAssigneeId}
               onChange={setSelectedAssigneeId}
+              loadError={usersSelectError}
+              onRetry={() => void refetchUsersSelect()}
               options={[
                 { value: '', label: 'No assignee' },
                 ...usersSelect.map((user) => ({

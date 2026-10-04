@@ -41,7 +41,7 @@ export default function ScheduledTasksList() {
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 50 });
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
 
-  const { data, isLoading, refetch, isFetching } = useScheduledTasks();
+  const { data, isLoading, refetch, isFetching, error } = useScheduledTasks();
   const tasks = data?.data ?? [];
   const total = data?.pagination?.total ?? 0;
 
@@ -171,6 +171,8 @@ export default function ScheduledTasksList() {
       table={table}
       recordCount={total}
       isLoading={isLoading}
+      error={error}
+      onRetry={() => void refetch()}
       onRowClick={(task) => task?.id && router.push(`/system-management/scheduled-tasks/${task.id}`)}
       tableLayout={{ width: 'fixed', columnsResizable: true, columnsVisibility: true }}
     >

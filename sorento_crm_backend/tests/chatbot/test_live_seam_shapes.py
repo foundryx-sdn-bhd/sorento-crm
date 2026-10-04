@@ -228,8 +228,8 @@ class TestCrossDomainProbeCrossesTheRealSeam:
                     (r["token"], r) for r in RESOLVED["resolutions"]
                 )
             ],
-            "semantic_input": {"contact_id": "437264483", "space_id": "364817"},
-            "contact_id": "437264483",
+            "semantic_input": {"contact_id": "900000008", "space_id": "364817"},
+            "contact_id": "900000008",
         }
         structured = fetch_mod.output_structurer(STOCK_ENVELOPE, trigger)
         validated = answer_mod.validator(structured, semantic_parser=PARSER)
@@ -242,7 +242,7 @@ class TestCrossDomainProbeCrossesTheRealSeam:
             session_block={"session_vars": {"variables": {}}},
             entities_names=None,
             services=services,
-            contact_id="437264483",
+            contact_id="900000008",
             space_id="364817",
         )
 
@@ -386,7 +386,7 @@ class TestFamilyFetchCrossesTheRealProductService:
             gate=gate,
             services=answer_services_for(scoped_factory),
             build_result={"has_result": False},
-            contact_id="437264483",
+            contact_id="900000008",
             space_id="364817",
             execution_id="zzt-family",
         )
@@ -531,8 +531,8 @@ class TestACustomerIsLabelledByItsName:
         trigger = {
             "tool": "crm_order_management_orders_list",
             "entities": entities,
-            "semantic_input": {"contact_id": "437264483", "space_id": "364817"},
-            "contact_id": "437264483",
+            "semantic_input": {"contact_id": "900000008", "space_id": "364817"},
+            "contact_id": "900000008",
         }
         envelope = {
             "result_type": "orders",

@@ -278,6 +278,8 @@ class OrderInquiryRowOut(BaseModel):
     #: figures rather than a sentence the screen has to parse back.
     previous_qty: Optional[str] = None
     previous_delivery_date: Optional[date] = None
+    #: OI-PRODUCT-FOLLOW: the item code before a product change moved the row ("was X").
+    previous_item_code: Optional[str] = None
 
 
 class UploadJobScope(BaseModel):
@@ -500,6 +502,8 @@ class OrderInquiryWorklistRow(BaseModel):
     #: figures rather than a sentence the screen has to parse back.
     previous_qty: Optional[str] = None
     previous_delivery_date: Optional[date] = None
+    #: OI-PRODUCT-FOLLOW: the item code before a product change moved the row ("was X").
+    previous_item_code: Optional[str] = None
     #: A replan met this row's only coverage already fully received and could not carry
     #: it forward (`PLAN-oi-replan-received-links.md` S2, AC-RL-16): its `qty`/
     #: `delivery_date`/`links` stand as history, and the fresh need is a separate row.

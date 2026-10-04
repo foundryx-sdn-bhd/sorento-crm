@@ -325,6 +325,19 @@ def _scoping_from(requires: list, *, gate: Any, resolved: Any) -> list:
     """
     seen: list = []
     out: list = []
+    # ATTACHMENT-MULTI R5: the resolver's `canonical_code` for a document type is
+    # `code or type_name`, and twelve dev types carry a slug code (`packing_list`). The stamp
+    # names the type, so the human `type_name` rides along - only where it differs from the
+    # code, so every type with no code (every product type on dev today) is byte-identical.
+    type_name_by_uuid: dict[Any, Any] = {}
+    description_by_uuid: dict[Any, Any] = {}
+    for match in _flat_matches(resolved):
+        display = jsc.get(match, "display")
+        uuid = jsc.get(match, "uuid")
+        if jsc.truthy(uuid) and jsc.truthy(jsc.get(display, "type_name")):
+            type_name_by_uuid.setdefault(uuid, jsc.get(display, "type_name"))
+        if jsc.truthy(uuid) and jsc.truthy(jsc.get(display, "description")):
+            description_by_uuid.setdefault(uuid, jsc.get(display, "description"))
 
     def take(entity: Any) -> None:
         entity_type = jsc.nullish_str(jsc.get(entity, "entity_type"))
@@ -335,7 +348,11 @@ def _scoping_from(requires: list, *, gate: Any, resolved: Any) -> list:
         code = jsc.get(entity, "code")
         if code is None:
             code = jsc.get(entity, "canonical_code")
-        out.append({"uuid": uuid, "entity_type": entity_type, "code": code if code is not None else None})
+        row = {"uuid": uuid, "entity_type": entity_type, "code": code if code is not None else None}
+        type_name = type_name_by_uuid.get(uuid)
+        if entity_type == "attachment_type" and jsc.truthy(type_name) and type_name != code:
+            row["type_name"] = type_name
+        out.append(row)
 
     compatible = jsc.get(gate, "compatible_entities")
     for entity in (compatible if isinstance(compatible, list) else []):
@@ -343,6 +360,18 @@ def _scoping_from(requires: list, *, gate: Any, resolved: Any) -> list:
     if len(out) == 0:
         for match in _flat_matches(resolved):
             take(match)
+    # A several-type ask stamps per type, and the MCP presenter prints a type's DESCRIPTION
+    # when it has one ("Product Photos, Photo, Image, Pictures by Marketing" on dev), so the
+    # annotator needs both spellings to know which row is which type. Only on such an ask,
+    # so every single-type plan stays byte-equal.
+    if sum(1 for row in out if row["entity_type"] == "attachment_type") > 1:
+        for row in out:
+            if row["entity_type"] != "attachment_type":
+                continue
+            if jsc.truthy(type_name_by_uuid.get(row["uuid"])):
+                row["type_name"] = type_name_by_uuid[row["uuid"]]
+            if jsc.truthy(description_by_uuid.get(row["uuid"])):
+                row["description"] = description_by_uuid[row["uuid"]]
     return out
 
 
@@ -993,6 +1022,20 @@ def _annotate(
 
         ambiguous_codes: list = []
         ambiguous_uuids: list = []
+        # ATTACHMENT-MULTI R2: with two or more asked types "has" is per (product, type) - a
+        # photo-only product must not read "has Technical Specifications". One list per
+        # asked type, in ask order; a row whose type is none of them counts for none.
+        asked_types = _asked_types(xf) if (full and uuid_keyed) else []
+        has_by_type: list[list] = [[] for _ in asked_types]
+
+        def _credit(owner: Any, type_value: str) -> None:
+            if owner not in has:
+                has.append(owner)
+            type_key = _norm(type_value)
+            for index, asked in enumerate(asked_types):
+                if type_key in asked["keys"] and owner not in has_by_type[index]:
+                    has_by_type[index].append(owner)
+
         for answer in answers:
             type_value = jsc.nullish_str(_field_val(answer, _ATTACHMENT_TYPE_RE)).strip()
             if type_value == "" or type_value == _EMPTY_VALUE:
@@ -1008,16 +1051,14 @@ def _annotate(
             company = _norm(_field_val(answer, _COMPANY_RE))
             composite = by_composite.get(f"{code}|{company}")
             if jsc.truthy(composite):
-                if composite not in has:
-                    has.append(composite)
+                _credit(composite, type_value)
                 continue
             # No company match. Exactly ONE owner means nothing to disambiguate; more than
             # one and the code's identity is UNKNOWN from this row, so it is marked ambiguous
             # rather than guessing every owner "has" (F1). The render goes BARE.
             owners = by_code.get(code) or []
             if len(owners) == 1:
-                if owners[0] not in has:
-                    has.append(owners[0])
+                _credit(owners[0], type_value)
                 continue
             if len(owners) > 1:
                 if code not in ambiguous_codes:
@@ -1032,6 +1073,13 @@ def _annotate(
             dym_ambiguous_codes = list(ambiguous_codes)
             dym_ambiguous_uuids = list(ambiguous_uuids)
             meta["ok"] = True
+            if len(asked_types) > 1:
+                # Emitted ONLY for a several-type ask, so every single-type capture of this
+                # node stays byte-equal; `build_suggest_offer` strips it with `_DYM_CTRL_KEYS`.
+                out["dym_has_by_type"] = [
+                    {"type": asked["name"], "has": has_by_type[index]}
+                    for index, asked in enumerate(asked_types)
+                ]
     else:
         meta["reason"] = "unknown_predicate"
 
@@ -1077,6 +1125,39 @@ def _annotate(
 _TYPE_SCOPES: frozenset[str] = frozenset({"attachment_type", "certificate"})
 
 
+def _scoping_entities(transform: Any) -> list:
+    """The plan's trailing run of type-scoped entities - the scoping `_dym_plan` appends
+    after the candidates (`[*cands, *scoping]`), in the order the gate kept them."""
+    run: list = []
+    for entity in reversed(jsc.array(jsc.get(transform, "dym_probe_entities"))):
+        if _norm(jsc.get(entity, "entity_type")) not in _TYPE_SCOPES:
+            break
+        run.append(entity)
+    run.reverse()
+    return run
+
+
+def _asked_types(transform: Any) -> list[dict[str, Any]]:
+    """`[{name, keys}]` per asked attachment type, or `[]` when the probe was scoped by
+    anything other than plain attachment types (a certificate keeps its family stamp).
+
+    `name` is the human `type_name` (R5), never a slug code; `keys` are the spellings an
+    answer row's "Attachment Type" field can carry for it - the presenter prints the
+    description when the type has one, else the name.
+    """
+    out: list[dict[str, Any]] = []
+    for entity in _scoping_entities(transform):
+        if _norm(jsc.get(entity, "entity_type")) != "attachment_type":
+            return []
+        code = jsc.nullish_str(jsc.get(entity, "code")).strip()
+        name = jsc.nullish_str(jsc.get(entity, "type_name")).strip() or code
+        if not name:
+            return []
+        description = jsc.get(entity, "description")
+        out.append({"name": name, "keys": {k for k in (_norm(name), _norm(code), _norm(description)) if k}})
+    return out
+
+
 def _scoping_type_name(transform: Any) -> str:
     """The document type the probe was scoped to, off the plan's own `dym_probe_entities`.
 
@@ -1099,7 +1180,9 @@ def _scoping_type_name(transform: Any) -> str:
             continue
         if entity_type == "certificate":
             return "certificate"
-        code = jsc.nullish_str(jsc.get(entity, "code")).strip()
+        code = jsc.nullish_str(jsc.get(entity, "type_name")).strip() or jsc.nullish_str(
+            jsc.get(entity, "code")
+        ).strip()
         if code:
             return code
     return ""

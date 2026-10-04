@@ -15,6 +15,8 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { SearchableMultiSelect } from '@/components/common/SearchableMultiSelect';
+import { PACKING_LIST_REGION_OPTIONS } from '@/lib/packing-list-regions';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   useCreatePackingList,
@@ -90,6 +92,7 @@ export default function PackingListForm({
       shipping_container_number: '',
       invoice_number: '',
       shipment_status: 'in_transit',
+      regions: ['west'],
       shipment_lines: [{ product_id: '', quantity_shipped: 1 }],
       ...emptyClearance(),
     },
@@ -173,6 +176,7 @@ export default function PackingListForm({
       shipping_container_number: packingList.shipping_container_number ?? '',
       invoice_number: packingList.invoice_number ?? '',
       shipment_status: packingList.shipment_status ?? 'in_transit',
+      regions: (packingList.regions?.length ? packingList.regions : ['west']) as ('west' | 'east')[],
       shipment_lines:
         packingList.shipment_lines?.length && packingList.shipment_lines.length > 0
           ? packingList.shipment_lines.map((l) => ({
@@ -202,6 +206,7 @@ export default function PackingListForm({
         shipping_container_number: data.shipping_container_number || undefined,
         invoice_number: data.invoice_number || undefined,
         shipment_status: data.shipment_status || 'in_transit',
+        regions: data.regions,
         shipment_lines: data.shipment_lines
           ?.filter((l) => l.product_id && l.quantity_shipped > 0)
           .map((l) => ({
@@ -318,6 +323,25 @@ export default function PackingListForm({
                     <FormLabel>Estimated Arrival Date</FormLabel>
                     <FormControl>
                       <Input type="date" {...field} value={field.value || ''} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="regions"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Regions</FormLabel>
+                    <FormControl>
+                      <SearchableMultiSelect
+                        value={field.value ?? []}
+                        onChange={(next) => {
+                          if (next.length > 0) field.onChange(next);
+                        }}
+                        options={PACKING_LIST_REGION_OPTIONS}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

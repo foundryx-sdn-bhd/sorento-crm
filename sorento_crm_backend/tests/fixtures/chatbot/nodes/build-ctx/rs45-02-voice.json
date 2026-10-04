@@ -84,7 +84,7 @@
                   "type": "attachment",
                   "attachment": {
                     "type": "audio",
-                    "url": "https://cdn.chatapi.net/whatsapp_business/453209/900000009/fake-note.opus",
+                    "url": "https://cdn.example.invalid/fake-note.opus",
                     "mimeType": "audio/ogg",
                     "fileName": "note.ogg",
                     "size": 23456
@@ -162,11 +162,11 @@
                     "type": "text",
                     "attachment": {
                       "type": "text",
-                      "url": "https://cdn.chatapi.net/whatsapp_business/453209/900000009/fake-note.opus",
+                      "url": "https://cdn.example.invalid/fake-note.opus",
                       "mimeType": "audio/ogg",
                       "fileName": "note.ogg",
                       "size": 23456,
-                      "source_url": "https://cdn.chatapi.net/whatsapp_business/453209/900000009/fake-note.opus",
+                      "source_url": "https://cdn.example.invalid/fake-note.opus",
                       "source_type": "audio"
                     },
                     "text": "check srtwb7096"
@@ -264,11 +264,11 @@
                     "type": "text",
                     "attachment": {
                       "type": "text",
-                      "url": "https://cdn.chatapi.net/whatsapp_business/453209/900000009/fake-note.opus",
+                      "url": "https://cdn.example.invalid/fake-note.opus",
                       "mimeType": "audio/ogg",
                       "fileName": "note.ogg",
                       "size": 23456,
-                      "source_url": "https://cdn.chatapi.net/whatsapp_business/453209/900000009/fake-note.opus",
+                      "source_url": "https://cdn.example.invalid/fake-note.opus",
                       "source_type": "audio"
                     },
                     "text": "check srtwb7096"
@@ -371,11 +371,11 @@
                   "type": "text",
                   "attachment": {
                     "type": "text",
-                    "url": "https://cdn.chatapi.net/whatsapp_business/453209/900000009/fake-note.opus",
+                    "url": "https://cdn.example.invalid/fake-note.opus",
                     "mimeType": "audio/ogg",
                     "fileName": "note.ogg",
                     "size": 23456,
-                    "source_url": "https://cdn.chatapi.net/whatsapp_business/453209/900000009/fake-note.opus",
+                    "source_url": "https://cdn.example.invalid/fake-note.opus",
                     "source_type": "audio"
                   },
                   "text": "check srtwb7096"
@@ -449,11 +449,11 @@
               "type": "text",
               "attachment": {
                 "type": "text",
-                "url": "https://cdn.chatapi.net/whatsapp_business/453209/900000009/fake-note.opus",
+                "url": "https://cdn.example.invalid/fake-note.opus",
                 "mimeType": "audio/ogg",
                 "fileName": "note.ogg",
                 "size": 23456,
-                "source_url": "https://cdn.chatapi.net/whatsapp_business/453209/900000009/fake-note.opus",
+                "source_url": "https://cdn.example.invalid/fake-note.opus",
                 "source_type": "audio"
               },
               "text": "check srtwb7096"
@@ -916,11 +916,11 @@
                   "type": "text",
                   "attachment": {
                     "type": "text",
-                    "url": "https://cdn.chatapi.net/whatsapp_business/453209/900000009/fake-note.opus",
+                    "url": "https://cdn.example.invalid/fake-note.opus",
                     "mimeType": "audio/ogg",
                     "fileName": "note.ogg",
                     "size": 23456,
-                    "source_url": "https://cdn.chatapi.net/whatsapp_business/453209/900000009/fake-note.opus",
+                    "source_url": "https://cdn.example.invalid/fake-note.opus",
                     "source_type": "audio"
                   },
                   "text": "check srtwb7096"
@@ -1194,11 +1194,11 @@
                       "type": "text",
                       "attachment": {
                         "type": "text",
-                        "url": "https://cdn.chatapi.net/whatsapp_business/453209/900000009/fake-note.opus",
+                        "url": "https://cdn.example.invalid/fake-note.opus",
                         "mimeType": "audio/ogg",
                         "fileName": "note.ogg",
                         "size": 23456,
-                        "source_url": "https://cdn.chatapi.net/whatsapp_business/453209/900000009/fake-note.opus",
+                        "source_url": "https://cdn.example.invalid/fake-note.opus",
                         "source_type": "audio"
                       },
                       "text": "check srtwb7096"
@@ -1611,11 +1611,11 @@
                   "type": "text",
                   "attachment": {
                     "type": "text",
-                    "url": "https://cdn.chatapi.net/whatsapp_business/453209/900000009/fake-note.opus",
+                    "url": "https://cdn.example.invalid/fake-note.opus",
                     "mimeType": "audio/ogg",
                     "fileName": "note.ogg",
                     "size": 23456,
-                    "source_url": "https://cdn.chatapi.net/whatsapp_business/453209/900000009/fake-note.opus",
+                    "source_url": "https://cdn.example.invalid/fake-note.opus",
                     "source_type": "audio"
                   },
                   "text": "check srtwb7096"
@@ -1889,11 +1889,11 @@
                       "type": "text",
                       "attachment": {
                         "type": "text",
-                        "url": "https://cdn.chatapi.net/whatsapp_business/453209/900000009/fake-note.opus",
+                        "url": "https://cdn.example.invalid/fake-note.opus",
                         "mimeType": "audio/ogg",
                         "fileName": "note.ogg",
                         "size": 23456,
-                        "source_url": "https://cdn.chatapi.net/whatsapp_business/453209/900000009/fake-note.opus",
+                        "source_url": "https://cdn.example.invalid/fake-note.opus",
                         "source_type": "audio"
                       },
                       "text": "check srtwb7096"
@@ -3108,11 +3108,11 @@
                 "type": "text",
                 "attachment": {
                   "type": "text",
-                  "url": "https://cdn.chatapi.net/whatsapp_business/453209/900000009/fake-note.opus",
+                  "url": "https://cdn.example.invalid/fake-note.opus",
                   "mimeType": "audio/ogg",
                   "fileName": "note.ogg",
                   "size": 23456,
-                  "source_url": "https://cdn.chatapi.net/whatsapp_business/453209/900000009/fake-note.opus",
+                  "source_url": "https://cdn.example.invalid/fake-note.opus",
                   "source_type": "audio"
                 },
                 "text": "check srtwb7096"
@@ -3386,11 +3386,11 @@
                     "type": "text",
                     "attachment": {
                       "type": "text",
-                      "url": "https://cdn.chatapi.net/whatsapp_business/453209/900000009/fake-note.opus",
+                      "url": "https://cdn.example.invalid/fake-note.opus",
                       "mimeType": "audio/ogg",
                       "fileName": "note.ogg",
                       "size": 23456,
-                      "source_url": "https://cdn.chatapi.net/whatsapp_business/453209/900000009/fake-note.opus",
+                      "source_url": "https://cdn.example.invalid/fake-note.opus",
                       "source_type": "audio"
                     },
                     "text": "check srtwb7096"

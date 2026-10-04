@@ -60,7 +60,7 @@ export default function PickingLinesList() {
     [pagination.pageIndex, pagination.pageSize, sortField, sortDir, searchQuery],
   );
 
-  const { data, isLoading, isPlaceholderData, refetch, isFetching } = useQuery({
+  const { data, isLoading, isPlaceholderData, refetch, isFetching, error } = useQuery({
     ...LIST_QUERY_OPTIONS,
     queryKey: ['picking-lines', params],
     queryFn: () => getPickingLines(params),
@@ -163,6 +163,8 @@ export default function PickingLinesList() {
       table={table}
       recordCount={data?.pagination?.total ?? 0}
       isLoading={isLoading}
+      error={error}
+      onRetry={() => void refetch()}
       isPlaceholderData={isPlaceholderData}
       standardToolbar={false}
       tableLayout={{ columnsVisibility: true }}
