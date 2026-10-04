@@ -1423,12 +1423,10 @@ def render(
     *,
     label: str = "production",
     override_version_id: str | None = None,
-    hidden_tags: frozenset[str] = frozenset(),
     **variables: object,
 ) -> tuple[str, int | None]:
     """Resolve then substitute ``{{var}}``. Raises ``ValueError`` if a declared
-    variable for the key was not supplied (UAC B3). ``hidden_tags`` renders the registry
-    lists for an audience missing those `PROMPT_GATES` tags (empty: the full lists)."""
+    variable for the key was not supplied (UAC B3)."""
     spec = PROMPT_KEYS.get(name)
     declared = set(spec.variables) if spec else set()
     missing = declared - set(variables.keys())
@@ -1443,7 +1441,7 @@ def render(
         if wanted:
             # Never raises and never leaves a token unfilled: a failing reader falls back
             # to its last good text (see `render_values_safe`).
-            values.update(chatbot_prompt_vars.render_values_safe(db, wanted, hidden_tags))
+            values.update(chatbot_prompt_vars.render_values_safe(db, wanted))
     return _substitute(rp.text, values), rp.version
 
 

@@ -9,20 +9,23 @@ existing version is touched; the owner publishes it himself.
 
 Where the markers go. `alembic/data/chatbot_semantic_parser.prod-20261001.tagged.txt` is
 the owner's text of 1 Oct 2026 (`...prod-20261001.txt`) with the markers in place: the
-marker spec, read here and by the render tests. Each marker is anchored to its line of
-that text and carried onto the production template line by line:
+marker spec, read here and by the render tests. Only the heavy instruction blocks are
+wrapped (owner ruling 5 Oct 2026: the classification vocabulary, the domain enum, domain
+words, status values and intent names, stays for every audience), and each gated domain
+has a one-line `{{#without tag}}` stub that a contact without the grant sees instead.
+Each marker is anchored to its line of that text and carried onto the production
+template line by line:
   * a line the template still has as it was: the marker goes onto it;
   * a line whose list #1405 swapped for a registry `{{variable}}`: a marker pair around the
-    swapped list is dropped (the variable renders per audience instead, `chatbot_prompt_vars`)
-    and a pair outside it is kept, at the same place;
+    swapped list is dropped and a pair outside it is kept, at the same place;
   * anything else (an owner edit under a marker, a pair cut by a variable): fail closed.
 The gated section headings (`GATED_HEADINGS`) must all be in the template before, and none
 may survive the no-grant render after.
 
 Proven before insert: rendering the result for all gated grants equals
-`with_account_block(production template)` plus the low stock block, byte for byte; every tag is present; the no-grant render
-carries no gated heading and no low stock block. Any check failing: nothing is written, a
-WARNING is logged and `apply` returns None.
+`with_account_block(production template)` plus the low stock block, byte for byte; every
+tag is present; the no-grant render carries no gated heading and no low stock block. Any
+check failing: nothing is written, a WARNING is logged and `apply` returns None.
 
 Nothing is written without a `production` label (a blank database). Idempotent: does
 nothing when a version built from the same production template exists. Downgrade deletes
@@ -76,6 +79,10 @@ MESSAGE = (
 )
 
 _MARKER_RE = re.compile(r"\{\{\s*#only\s+([A-Za-z0-9_]+)\s*\}\}|\{\{\s*/only\s*\}\}")
+#: A stub kept only for a contact WITHOUT the grant, on lines of its own; carried as ONE
+#: insertion (it is not in the source text at all).
+_STUB_RE = re.compile(r"^\{\{#without ([A-Za-z0-9_]+)\}\}\n.*?\n\{\{/without\}\}\n", re.M | re.S)
+_ANY_RE = re.compile(f"{_STUB_RE.pattern}|{_MARKER_RE.pattern}", re.M | re.S)
 _TOKEN_RE = re.compile(r"\{\{\s*[a-z_]+\s*\}\}")
 
 
@@ -93,7 +100,13 @@ def _insertions(source: str, tagged: str) -> list[dict]:
     removed = 0
     pieces: list[str] = []
     cursor = 0
-    for seq, m in enumerate(_MARKER_RE.finditer(tagged)):
+    for seq, m in enumerate(_ANY_RE.finditer(tagged)):
+        if m.group(1):  # a whole stub: its own pair, placed like an own-line open marker
+            pieces.append(tagged[cursor : m.start()])
+            out.append({"off": m.start() - removed, "text": m.group(0), "pair": seq, "seq": seq, "back": False})
+            removed += m.end() - m.start()
+            cursor = m.end()
+            continue
         line_start = tagged.rfind("\n", 0, m.start()) + 1
         nl = tagged.find("\n", m.end())
         line_end = len(tagged) if nl == -1 else nl + 1
@@ -101,7 +114,7 @@ def _insertions(source: str, tagged: str) -> list[dict]:
         start, end = (line_start, line_end) if own else (m.start(), m.end())
         if start < cursor:
             raise _Refuse("two markers share a line with one alone on it")
-        if m.group(1):
+        if m.group(2):
             pair = seq
             stack.append(seq)
         else:
@@ -176,7 +189,13 @@ def _carry(source: str, tagged: str, template: str) -> str:
     for item in ins:
         by_pair.setdefault(item["pair"], []).append(item)
     keep: list[dict] = []
-    for pair, (opener, closer) in by_pair.items():
+    for pair, items in by_pair.items():
+        if len(items) == 1:  # a stub
+            if placed[items[0]["seq"]] is None:
+                raise _Refuse(f"a stub at source line {anchor(items[0])[0] + 1} falls inside a registry variable")
+            keep.append(items[0])
+            continue
+        opener, closer = items
         a, b = contained.get(opener["seq"]), contained.get(closer["seq"])
         if a and b and a[0] == b[0] and _in_list(a[1], b[1], a[2], a[3], a[4]):
             continue  # the pair sits in a list a registry variable now renders
@@ -240,7 +259,7 @@ def build(template: str) -> str:
     from app.services import chatbot_prompt_vars
     from app.services.prompt_gates import PROMPT_GATES, render_for_audience
 
-    if _MARKER_RE.search(template):
+    if _MARKER_RE.search(template) or "{{#without" in template:
         raise _Refuse("the production template already carries audience markers")
     missing = [title for title, _ in GATED_HEADINGS if title not in template]
     if missing:

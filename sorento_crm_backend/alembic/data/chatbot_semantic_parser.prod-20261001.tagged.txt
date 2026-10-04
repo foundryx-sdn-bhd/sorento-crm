@@ -43,7 +43,7 @@ The user block may also carry a "Current subject:" line: what the conversation i
 right now, as the assistant has it (domains, customers, products, document, status, date
 window). It is CONTEXT for reading a short message, never something to repeat back: emit
 only what the CURRENT message itself says.
-  - A message that names ONLY a domain ("promotion", "stock", "incoming",{{#only purchase_order}} "PO",{{/only}}
+  - A message that names ONLY a domain ("promotion", "stock", "incoming", "PO",
     "outstanding") is a DOMAIN SWITCH about the SAME subject: set domain_hint to the new
     domain and emit no entities of its own, so the current subject's entities are the ones
     it is asked about. entity_op stays your own call ("reuse" when the message names no
@@ -76,19 +76,15 @@ intent_hint = a short lowercase snake_case phrase naming what the user wants.
   - get_resource_attachment
   - get_portal_link (when the curent message mentions complaint, stock inquiry, product inquiry, purchase request, sponsorship form)
   - check_goods_receive
-{{#only spo_allocation}}
   - check_spo
-{{/only}}
   - submit_idea - the user is proposing an idea / feature request / improvement (see IDEATION)
-{{#only purchase_cost}}
   - check_po_cost - what we paid a supplier for something (see LAST PURCHASE COST)
-{{/only}}
-domain_hint = ONE of: master_products | product_attachment | promotion | forms | inventory | order | incoming | portal_link | resource_attachment | goods_receive |{{#only spo_allocation}} spo_allocation |{{/only}} ideate |{{#only purchase_cost}} purchase_cost |{{/only}} null
+domain_hint = ONE of: master_products | product_attachment | promotion | forms | inventory | order | incoming | portal_link | resource_attachment | goods_receive | spo_allocation | ideate | purchase_cost | null
 
 
 == DOMAIN IN MESSAGE ==
 domain_in_message is true when THIS message itself carries a DOMAIN or STATUS word -
-stock, incoming, ETA, delivery, order, outstanding, DO, SO,{{#only purchase_order}} PO,{{/only}}{{#only purchase_cost}} purchase cost,{{/only}} promo,
+stock, incoming, ETA, delivery, order, outstanding, DO, SO, PO, purchase cost, promo,
 price, spec, photo, catalogue, certificate, forms, shipment, GRN - in any language.
 It is false when the message only names entities, a date window or a place, and leans
 on the previous turn for what is being asked. It is about the WORDS of this message,
@@ -184,10 +180,8 @@ domain_hint and intent_hint to null.
     → complaint, stock inquiry, product inquiry, purchase request, sponsorship form.
   goods_receive / check_goods_receive
     → GR, GRN, goods receive.
-{{#only spo_allocation}}
   spo_allocation / check_spo
     → SPO, SPO allocation.
-{{/only}}
   ideate / submit_idea
     → the user PROPOSES something that does not exist yet: an idea, a suggestion, a
       feature request, an improvement, a wish for how the system/product/process
@@ -417,6 +411,9 @@ any lead-in: a short alphanumeric run that looks like part of a product code ("w
 "7445", "kt1861", "srtwt") is entities [{"raw":"<the token>","hint":"product"}] with
 entity_op "replace_combine", never "reuse" and never left out.
   - "how about wc286" -> entities [{"raw":"wc286","hint":"product"}]
+{{#without purchase_order}}
+Purchase orders: "PO" or "purchase order" is domain_hint "purchase_order", intent_hint "check_po"; emit it, the system answers or declines.
+{{/without}}
 {{#only purchase_order}}
   - "all wc286 purchase order" -> entities [{"raw":"wc286","hint":"product"}],
     message_type "business_query", domain_hint "purchase_order", intent_hint "check_po".
@@ -588,7 +585,7 @@ reference_positions is ONLY positions into the previous result set. A normal ent
 two are independent and can both be present. When no positional reference is made, reference_positions = [].
 
 A BARE NUMBER - or a number that only follows a lead-in word ("for", "number", "item") with nothing else naming it - that is no larger than the previous turn's own record count is a POSITION, not an entity, even when some of those same positions were already answered on an earlier turn (the roster stays on screen until its own topic changes). Never emit it as a product/customer entity guess.
-  - Previous response listed 10 products (positions 1 to 10); "okay how about stock, incoming{{#only purchase_order}} and PO{{/only}} for 7" -> reference_positions [7], entities [] (never {"raw":"7","hint":"product"}).
+  - Previous response listed 10 products (positions 1 to 10); "okay how about stock, incoming and PO for 7" -> reference_positions [7], entities [] (never {"raw":"7","hint":"product"}).
 reference_positions is ONLY ever set when "Previous response" actually offered a numbered list to answer - a message read with no such list open names no position at all, whatever number it contains.
 
 == REFERENCE TARGET (which set a positional reply means) ==
@@ -656,11 +653,11 @@ carry it over from prior state.
   - null -> DEFAULT. No delivery-status qualifier in the current message -> return all.
 Never infer from context; only the current message's explicit words.
 A STATUS VALUE MEANS THE ORDER DOMAIN. Whenever you set "status" to a value at all -
-"outstanding", "so_outstanding", "do_outstanding", "outstanding_both", "delivered"{{#only sales}}, "sales_report"{{/only}} - the
-message is asking about ORDER PAPER, and it is the outstanding report that answers it{{#only sales}} ("sales_report" is answered by the sales report instead; either way the domain is the same){{/only}}.
+"outstanding", "so_outstanding", "do_outstanding", "outstanding_both", "delivered", "sales_report" - the
+message is asking about ORDER PAPER, and it is the outstanding report that answers it ("sales_report" is answered by the sales report instead; either way the domain is the same).
 NEVER emit domain_hint "inventory" with a status set: "outstanding" is stock that has
 been ordered and not delivered, which no stock-on-hand reading can answer. A document
-word moves the domain to that document's own ({{#only purchase_order}}"PO" -> purchase_order, {{/only}}"SPO" ->
+word moves the domain to that document's own ("PO" -> purchase_order, "SPO" ->
 incoming); with no document named it is "order".
   - "Total outstanding SRTWC8518-SH" -> status "outstanding", document [], domain_hint
     "order", intent_hint "check_order" (NOT inventory / check_stock)
@@ -698,14 +695,12 @@ Only a status word sets this. A plain "show me Sorento promotions" → null, NOT
 
 == DOCUMENT ==
 "document" is WHICH KIND OF PAPER the message is about, as a list of codes from this
-closed set and nothing else: "SO" (sales order), "DO" (delivery order),{{#only purchase_order}} "PO" (purchase
-order),{{/only}} "SPO" (supplier{{#only purchase_order}} purchase order{{/only}} / shipment), "GRN" (goods receive note). Read it
+closed set and nothing else: "SO" (sales order), "DO" (delivery order), "PO" (purchase
+order), "SPO" (supplier purchase order / shipment), "GRN" (goods receive note). Read it
 from the CURRENT message's own words, in any language; never carry it over. Default [].
   - "sales order", "SO", "sales orders" -> ["SO"]
   - "delivery order", "DO", "delivery orders", "DO list" -> ["DO"]
-{{#only purchase_order}}
   - "purchase order", "PO" -> ["PO"]
-{{/only}}
   - "SPO", "shipment", "container" -> ["SPO"]
   - "GRN", "goods receive", "goods received note" -> ["GRN"]
   - "both", "SO and DO", "sales order and delivery order" -> ["SO", "DO"]
@@ -734,6 +729,9 @@ them, as {"domain": "<domain name>", "intent": "<intent_hint for that domain, or
 The domain names are the ones listed in the domain block at the end of this prompt.
   - "incoming and stock for 7445" -> asks [{"domain":"incoming","intent":"check_incoming"},
     {"domain":"inventory","intent":"check_stock"}], domain_hint "incoming"
+{{#without purchase_cost}}
+Last purchase cost: "purchase cost" is domain_hint "purchase_cost", intent_hint "check_po_cost"; emit it, the system answers or declines.
+{{/without}}
 {{#only purchase_cost}}
   - "purchase cost and stock for SRTWC286" -> asks
     [{"domain":"purchase_cost","intent":"check_po_cost"},
@@ -786,8 +784,8 @@ false.
     "suggested_agent": "general_enquiries|order_enquiries|incoming_stock_enquiries|marketing_form|it_support"
   },
   "escalation": { "is_escalation_confirmation": false, "company_pick": "string_or_null — ONLY per COMPANY-NAME REPLY ON AN ESCALATION OFFER, else null" },
-  "document": [], the papers the message named: SO|DO{{#only purchase_order}}|PO{{/only}}|SPO|GRN codes, else []
-  "status": "outstanding|delivered{{#only sales}}|sales_report{{/only}}|null — the delivery/order status axis from the current message only, else null{{#only sales}}; it is sales_report on exactly the turns order_status is sales_report (see SALES REPORT below){{/only}}",
+  "document": [], the papers the message named: SO|DO|PO|SPO|GRN codes, else []
+  "status": "outstanding|delivered|sales_report|null — the delivery/order status axis from the current message only, else null; it is sales_report on exactly the turns order_status is sales_report (see SALES REPORT below)",
   "asks": [] one {"domain","intent"} per domain the message names, ONLY when it names more than one; see ASKS
   "topic_reset": false, true only when the message drops the current subject for a new one; see TOPIC RESET
   "anaphora": { "backward_reference": false }
@@ -795,7 +793,7 @@ false.
 Return exactly one JSON object.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-TWO MORE OUTPUT KEYS, AND THE SO /{{#only purchase_order}} PO /{{/only}} SPO VOCABULARY
+TWO MORE OUTPUT KEYS, AND THE SO / PO / SPO VOCABULARY
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Everything below is IN ADDITION to the OUTPUT object above. Emit these two keys on every
@@ -829,7 +827,7 @@ the same as "outstanding", which is a DO already created and not yet delivered.
   - "SO outstanding", "outstanding SO", "outstanding sales order", "ordered but no DO",
     "no DO yet", "belum DO", "belum keluar DO", "还没出DO", "未出DO" -> "so_outstanding"
   - "outstanding DO", "not delivered yet", "belum hantar" -> "outstanding" (unchanged)
-  - "outstanding SO", "SO outstanding", "outstanding sales order" is order_status "so_outstanding" under domain_hint "order" / intent_hint "check_order"{{#only purchase_order}}, NEVER purchase_order / check_po; check_po needs a PO or supplier word{{/only}}.
+  - "outstanding SO", "SO outstanding", "outstanding sales order" is order_status "so_outstanding" under domain_hint "order" / intent_hint "check_order", NEVER purchase_order / check_po; check_po needs a PO or supplier word.
 The full set is now: outstanding|delivered|so_outstanding|do_outstanding|outstanding_both|null. Order domain only, and
 still only from the current message's explicit words.
 
@@ -938,16 +936,19 @@ from us.
 "DO", "SO", "delivery order", "sales order" and a customer's name are NEVER
 purchase_order: those stay domain_hint "order", intent_hint "check_order".
 {{/only}}
-{{#only purchase_order}}"PO" or "purchase order" ALONE, with or without a product, is purchase_order.{{/only}}{{#only purchase_cost}} It is NEVER
+"PO" or "purchase order" ALONE, with or without a product, is purchase_order. It is NEVER
 purchase_cost: only the words of COST ("cost", "last purchase cost", "how much did we pay")
-make a message purchase_cost.{{/only}}
+make a message purchase_cost.
 {{#only purchase_order}}
   - "stock, incoming and PO" -> asks [{"domain":"inventory","intent":"check_stock"},
     {"domain":"incoming","intent":"check_incoming"},
     {"domain":"purchase_order","intent":"check_po"}], domain_hint "inventory" - the FIRST
 {{/only}}
-{{#only purchase_order}}    of the asks, never the last one{{/only}}{{#only purchase_cost}} and never purchase_cost{{/only}}{{#only purchase_order}}.{{/only}}
+    of the asks, never the last one and never purchase_cost.
 
+{{#without spo_allocation}}
+Last in: "last in" or "SPO" is domain_hint "spo_allocation", intent_hint "check_spo"; emit it, the system answers or declines.
+{{/without}}
 {{#only spo_allocation}}
 == SPO LAST RECEIPT: intent_hint "check_spo", domain_hint "spo_allocation" ==
 "when did this last come in, and how much" is a receiving question, not a stock question.
@@ -987,7 +988,7 @@ The same holds for the SPO / last-in ask: "last in for SRTWC8517" names a PRODUC
 
 == A NEW QUESTION IS NEVER A "YES" ==
 When the previous reply offered to escalate ("Would you like me to escalate to ... team?")
-and the current message ASKS SOMETHING - a product, stock,{{#only purchase_order}} a PO,{{/only}} an SO, a last-in, with or
+and the current message ASKS SOMETHING - a product, stock, a PO, an SO, a last-in, with or
 without a code - it is a business_query. Set escalation.is_escalation_confirmation = FALSE
 and emit the entity the customer named THIS turn.
 {{#only purchase_order}}
@@ -1025,10 +1026,13 @@ selling-price question - it is what WE PAID, not what WE CHARGE.
 exactly as PRICE TERMINOLOGY already states - "cost" alone is the everyday word for
 the SELLING price, not a signal for this domain.
 {{/only}}
-{{#only purchase_cost}}The same code-is-the-product rule as{{/only}}{{#only purchase_order}} PO /{{/only}}{{#only purchase_cost}} SPO applies: "last purchase cost for
-SRTWC8517" names a PRODUCT, never an order.{{/only}}
+The same code-is-the-product rule as PO / SPO applies: "last purchase cost for
+SRTWC8517" names a PRODUCT, never an order.
 
 
+{{#without low_stock_report}}
+Low stock report: "low stock" is intent_hint "low_stock_report", domain_hint "inventory"; emit it, the system answers or declines.
+{{/without}}
 {{#only low_stock_report}}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 LOW STOCK REPORT
@@ -1052,6 +1056,9 @@ quantity.
 {{/only}}
 
 
+{{#without sales}}
+Asks about sales: sales report, sales analysis, top selling are order_status "sales_report", "sales_analysis", "top_selling", domain_hint "order"; emit them, the system answers or declines.
+{{/without}}
 {{#only sales}}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 SALES REPORT
@@ -1613,7 +1620,7 @@ figures, by a first-person word used as the asker's own account (not the company
 "we" or "us" as the ASKER'S BUSINESS ("what did we order") is self_reference true. "do
 you / can you" about Sorento itself stays the company rule: false.
 false when the message names another party ("outstanding for hanlim") or no one ("list
-outstanding DO"{{#only sales}}, "top selling items"{{/only}}). Never guess: no first-person word about an account,
+outstanding DO", "top selling items"). Never guess: no first-person word about an account,
 no true. A name in the message stays an entity exactly as anywhere else.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1652,7 +1659,7 @@ product codes captioned "Check stocks level" over an open "Would you like me to 
 to warehouse team?" is a stock question: is_escalation_confirmation false, the codes
 as entities with current_message true, intent_hint "check_stock", domain_hint
 "inventory", domain_in_message true. That question runs, and the offer stays open for
-the person to answer later. {{#only purchase_order}}"PO for SRTWC8517", {{/only}}"delivery to hanlim", "price of
+the person to answer later. "PO for SRTWC8517", "delivery to hanlim", "price of
 SRTWC286" over an open offer are the same: false.
 FALSE for a decline ("no thanks", "tak apa", "it's okay"), which is is_affirmative false
 as the AFFIRMATION rule says. With NO offer open there is nothing to confirm: false, and
@@ -1697,22 +1704,16 @@ Domain master_products ("product information"): intents check_product. Switch wo
 Domain product_attachment ("product attachments"): intents check_product_attachment. Switch words: (none). attachment_type narrows narrow_by_type; product narrows narrow_by_tier. Escalates to marketing_product.
 Domain promotion ("promotions"): intents check_promotion. Switch words: promo, promos, promotion, promotions, promosi. product narrows narrow_by_tier; tier narrows narrow_by_tier. Takes a date window. Escalates to marketing_promotion.
 Domain forms ("forms"): intents get_forms. Switch words: (none). form narrows must_narrow_one. Escalates to marketing_form.
-Domain inventory ("stock"): intents check_stock{{#only low_stock_report}}, low_stock_report{{/only}}. Switch words: stock, stocks, inventory, stok, qty, quantity{{#only low_stock_report}}, low stock, reorder report, below level{{/only}}. product narrows list_all. Takes a date window. Escalates to warehouse.
+Domain inventory ("stock"): intents check_stock, low_stock_report. Switch words: stock, stocks, inventory, stok, qty, quantity{{#only low_stock_report}}, low stock, reorder report, below level{{/only}}. product narrows list_all. Takes a date window. Escalates to warehouse.
 Domain order ("orders"): intents check_order. Switch words: order, orders, outstanding, tempahan, delivery, deliveries, deliver, delivered, penghantaran, hantar, dihantar. customer narrows must_narrow_one; order narrows narrow_to_code; product narrows list_all. Takes a date window. Escalates to customer_service.
 Domain incoming ("incoming stock"): intents check_incoming. Switch words: incoming, eta, shipment, shipments, arriving, container, containers. product narrows narrow_to_code. Takes a date window. Escalates to purchasing.
 Domain portal_link ("this request"): intents get_portal_link. Switch words: (none).
 Domain resource_attachment ("resource attachments"): intents get_resource_attachment. Switch words: (none). Takes a date window.
 Domain goods_receive ("goods receive"): intents check_goods_receive. Switch words: (none).
-{{#only spo_allocation}}
 Domain spo_allocation ("last in"): intents check_spo. Switch words: spo. product narrows narrow_to_code.
-{{/only}}
 Domain ideate ("ideas"): intents submit_idea. Switch words: (none).
-{{#only purchase_order}}
 Domain purchase_order ("outstanding purchase orders"): intents check_po. Switch words: po. product narrows narrow_to_code. Takes a date window. Escalates to purchasing.
-{{/only}}
-{{#only purchase_cost}}
 Domain purchase_cost ("last purchase cost"): intents check_po_cost. Switch words: (none). product narrows narrow_by_type. Escalates to purchasing.
-{{/only}}
 
 Entity kind attachment: resolver attachments. Did-you-mean off. Default narrowing not_applicable.
 Entity kind attachment_type: resolver attachment_types. Did-you-mean on. Default narrowing narrow_by_type.

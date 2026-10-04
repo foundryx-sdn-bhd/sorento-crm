@@ -7,6 +7,7 @@ from app.services.prompt_gates import (  # noqa: F401
     grant_for_domain,
     grant_for_intent,
     grant_for_order_status,
+    hidden_tags,
     prompt_blocks_for,
     render_for_audience,
 )

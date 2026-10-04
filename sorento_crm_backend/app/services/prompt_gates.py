@@ -9,7 +9,10 @@ in `run_fetch` / the engine stays the control.
 
 A template marks a gated span `{{#only <tag>}}...{{/only}}`: on lines of their own for a
 block, or around a span inside a shared line. `render_for_audience` keeps the span for a
-contact holding the row's grant and removes it (markers included) otherwise. An unknown,
+contact holding the row's grant and removes it (markers included) otherwise. The inverse,
+`{{#without <tag>}}...{{/without}}`, is kept only for a contact WITHOUT the grant: the
+one-line stub that tells the parser a gated domain still exists (owner ruling 5 Oct 2026:
+the trim strips the heavy blocks, never the classification vocabulary). An unknown,
 nested or unbalanced marker keeps its text, drops the marker and logs a warning.
 """
 from __future__ import annotations
@@ -33,8 +36,9 @@ class PromptGate:
     refused_domains: tuple[str, ...] = ()
     refused_intents: tuple[str, ...] = ()
     refused_order_statuses: tuple[str, ...] = ()
-    # The domain words (and switch words) that name this gate's domain or intent: the
-    # registry lists (`chatbot_prompt_vars`) leave them out for a contact without the grant.
+    # The domain words that name this gate's domain or intent (word -> domain). The
+    # registry lists keep them for every audience (owner ruling 5 Oct 2026: the trim never
+    # strips classification vocabulary); this is the map, read by the field reveals card.
     words: tuple[str, ...] = ()
 
 
@@ -133,12 +137,21 @@ def grant_for_order_status(status: str | None) -> str | None:
     return None
 
 
+def hidden_tags(grants: Iterable[str] | None) -> frozenset[str]:
+    """The tags a contact holding `grants` does not see (None is no grants): what makes two
+    contacts' prompts differ, so the parser's prompt cache key carries it."""
+    held = set(grants or ())
+    return frozenset(g.tag for g in PROMPT_GATES if g.grant not in held)
+
+
 def prompt_blocks_for(grant: str) -> list[str]:
     """Every block title a grant removes from the prompt, in table order."""
     return [title for gate in PROMPT_GATES if gate.grant == grant for title in gate.blocks]
 
 
-_MARKER_RE = re.compile(r"\{\{\s*#only\s+([A-Za-z0-9_]+)\s*\}\}|\{\{\s*/only\s*\}\}")
+_MARKER_RE = re.compile(
+    r"\{\{\s*#(only|without)\s+([A-Za-z0-9_]+)\s*\}\}|\{\{\s*/(only|without)\s*\}\}"
+)
 
 
 @dataclass
@@ -146,6 +159,7 @@ class _Marker:
     start: int
     end: int
     tag: str | None  # None for a close marker
+    kind: str = "only"  # "only" | "without"
 
 
 def _line_bounds(text: str, marker: _Marker) -> tuple[int, int] | None:
@@ -162,11 +176,13 @@ def _line_bounds(text: str, marker: _Marker) -> tuple[int, int] | None:
 
 def render_for_audience(template: str, grants: Iterable[str] | None) -> str:
     """The template as a contact holding `grants` is shown it. None means no grants."""
-    if "{{" not in template or "only" not in template:
+    if "{{" not in template or ("only" not in template and "without" not in template):
         return template
     held = set(grants or ())
     markers = [
-        _Marker(m.start(), m.end(), m.group(1) if m.group(1) else None)
+        _Marker(m.start(), m.end(), m.group(2), m.group(1))
+        if m.group(1)
+        else _Marker(m.start(), m.end(), None, m.group(3))
         for m in _MARKER_RE.finditer(template)
     ]
     if not markers:
@@ -182,13 +198,17 @@ def render_for_audience(template: str, grants: Iterable[str] | None) -> str:
             stack.append(marker)
             continue
         if not stack:
-            logger.warning("prompt_gates: stray {{/only}} at offset %s dropped", marker.start)
+            logger.warning("prompt_gates: stray {{/%s}} at offset %s dropped", marker.kind, marker.start)
             keep.append(marker)
             continue
         opener = stack.pop()
+        if opener.kind != marker.kind:
+            logger.warning("prompt_gates: {{#%s}} closed by {{/%s}} keeps its block", opener.kind, marker.kind)
+            keep.extend((opener, marker))
+            continue
         pairs.append((opener, marker))
     for opener in stack:
-        logger.warning("prompt_gates: unclosed {{#only %s}} keeps its block", opener.tag)
+        logger.warning("prompt_gates: unclosed {{#%s %s}} keeps its block", opener.kind, opener.tag)
         keep.append(opener)
     for a_open, a_close in pairs:
         for b_open, b_close in pairs:
@@ -198,12 +218,12 @@ def render_for_audience(template: str, grants: Iterable[str] | None) -> str:
     deletions: list[tuple[int, int]] = []
     for opener, closer in pairs:
         if opener.start in nested:
-            logger.warning("prompt_gates: nested {{#only %s}} keeps its block", opener.tag)
+            logger.warning("prompt_gates: nested {{#%s %s}} keeps its block", opener.kind, opener.tag)
             keep.extend((opener, closer))
         elif opener.tag not in _GRANT_BY_TAG:
             logger.warning("prompt_gates: unknown tag %r keeps its block", opener.tag)
             keep.extend((opener, closer))
-        elif _GRANT_BY_TAG[opener.tag] in held:
+        elif (_GRANT_BY_TAG[opener.tag] in held) == (opener.kind == "only"):
             keep.extend((opener, closer))
         else:
             open_line = _line_bounds(template, opener)
