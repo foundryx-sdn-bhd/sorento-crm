@@ -58,7 +58,7 @@ FIELD_REVEAL_KEYS: tuple[tuple[str, str], ...] = (
     ("delivery_orders.warehouse", "DO warehouse"),
     ("delivery_orders.products", "DO products"),
     ("inventory.sellable", "Outstanding SO on stock answers"),
-    ("purchase_orders.placed", "PO placed (on order) on stock answers"),
+    ("purchase_orders.placed", "Purchase orders (PO asks, and PO on stock answers)"),
     ("purchase_orders.supplier", "PO supplier"),
     ("purchase_orders.cost", "Last purchase cost"),
     ("sales_orders.outstanding", "Sales order outstanding"),
@@ -87,13 +87,18 @@ DEFAULT_ON_KEYS: frozenset[str] = frozenset(
 )
 
 
-def field_reveal_keys() -> list[dict[str, str]]:
+def field_reveal_keys() -> list[dict[str, Any]]:
     """Every restricted key that exists, with its label, sorted by key.
 
     Sourced from the `FIELD_REVEAL_KEYS` literal above, not from `mcp_tools` - see the
     module docstring for why a live query cannot be used here.
     """
-    return [{"key": key, "label": label} for key, label in sorted(FIELD_REVEAL_KEYS)]
+    from app.services.chatbot.prompt_gates import prompt_blocks_for
+
+    return [
+        {"key": key, "label": label, "prompt_blocks": prompt_blocks_for(key)}
+        for key, label in sorted(FIELD_REVEAL_KEYS)
+    ]
 
 
 def granted_keys_for(db: Session, respond_contact_ids: list[str]) -> dict[str, list[str]]:

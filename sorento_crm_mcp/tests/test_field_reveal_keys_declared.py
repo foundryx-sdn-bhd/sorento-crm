@@ -113,7 +113,7 @@ def test_the_two_growth_r1_keys_are_declared_exactly_where_expected():
     }
     assert dict(specs_by_name["crm_procurement_po_placed_list"].restricted_fields) == {
         "purchase_orders.supplier": "PO supplier",
-        "purchase_orders.placed": "PO placed (on order) on stock answers",
+        "purchase_orders.placed": "Purchase orders (PO asks, and PO on stock answers)",
     }
 
 

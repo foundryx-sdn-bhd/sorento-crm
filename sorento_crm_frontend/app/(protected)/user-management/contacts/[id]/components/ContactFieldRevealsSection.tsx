@@ -106,6 +106,11 @@ export default function ContactFieldRevealsSection({ contactId }: { contactId: s
           >
             <div className="min-w-0">
               <p className="text-sm font-medium truncate">{item.label}</p>
+              {item.prompt_blocks && item.prompt_blocks.length > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Also removes from the chatbot prompt: {item.prompt_blocks.join(', ')}
+                </p>
+              )}
               {on ? (
                 <Badge variant="success" appearance="light" size="sm" className="mt-0.5">
                   Revealed

@@ -1357,7 +1357,7 @@ CATALOG: tuple[ToolSpec, ...] = (
             # rung of a stock answer without it), NOT by a presenter `restrict` - the
             # direct PO ask keeps its own (supplier-only) gating. Declared here so the
             # Contacts > Access > Field reveals card lists it.
-            ("purchase_orders.placed", "PO placed (on order) on stock answers"),
+            ("purchase_orders.placed", "Purchase orders (PO asks, and PO on stock answers)"),
         ),
     ),
     # --- procurement: the last SPO line per product (A6, chatbot-growth-r1; reworded

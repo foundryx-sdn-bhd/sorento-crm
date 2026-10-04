@@ -7,6 +7,8 @@ from pydantic import BaseModel
 class FieldRevealKey(BaseModel):
     key: str
     label: str
+    # Prompt blocks this key also removes from the parser prompt (`PROMPT_GATES`).
+    prompt_blocks: list[str] = []
 
 
 class FieldRevealKeysResponse(BaseModel):
