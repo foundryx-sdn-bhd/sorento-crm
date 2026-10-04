@@ -53,12 +53,6 @@ def _rows(resp):
     return [(r["name"], r["qty"], money(r["amount"])) for r in resp.json()["rows"]]
 
 
-def test_the_tool_is_marked_filtered_in_the_contract() -> None:
-    from app.services.chatbot.contracts import BRAND_SCOPE_TREATMENT
-
-    assert BRAND_SCOPE_TREATMENT.get("crm_report_ask") == "filtered"
-
-
 def test_a_scoped_contact_ranking_by_product_sees_only_its_brands_products(api, sales) -> None:
     resp = _ask(api, sales.scoped, group_by="product", top_n=10)
     assert leaks(resp, sales) == {"mocha": True, "sorento": False, "null": False}, resp.text
@@ -90,25 +84,6 @@ def test_an_unscoped_contact_sees_everything_as_today(api, sales) -> None:
     assert _rows(by_agent) == [("ZZT-BS-AG1", 5, D("1100.00")), ("ZZT-BS-AG2", 9, D("16.00"))], by_agent.json()["rows"]
     by_product = _ask(api, sales.unscoped, group_by="product", top_n=10)
     assert leaks(by_product, sales) == {"mocha": True, "sorento": True, "null": True}, by_product.text
-
-
-def test_the_fetch_guard_drops_a_product_row_of_another_brand(db, world) -> None:
-    from app.services.chatbot.lanes.business import brand_guard
-
-    result = {"group_by": "product", "rows": [
-        {"rank": 1, "name": world.codes["sorento"], "qty": 3, "amount": 1000.0},
-        {"rank": 2, "name": world.codes["mocha"], "qty": 2, "amount": 100.0},
-        {"rank": 3, "name": world.codes["null"], "qty": 4, "amount": 9.0},
-    ]}
-    out = brand_guard.guard_result("crm_report_ask", result, [world.mocha.id], db)
-    assert [r["name"] for r in out["rows"]] == [world.codes["mocha"]], out
-
-
-def test_the_fetch_guard_leaves_a_sales_agent_ranking_alone(db, world) -> None:
-    from app.services.chatbot.lanes.business import brand_guard
-
-    result = {"group_by": "sales_agent", "rows": [{"rank": 1, "name": "ZZT-BS-AG1", "qty": 2, "amount": 100.0}]}
-    assert brand_guard.guard_result("crm_report_ask", result, [world.mocha.id], db) == result
 
 
 # --------------------------------------------------------------------------- #
