@@ -28,10 +28,38 @@ import mimetypes
 from typing import Any, Mapping
 
 from app.services.chatbot import jsc
+from app.services.chatbot import required_fields as rf
 
 logger = logging.getLogger(__name__)
 
 TOOL_NAME = "crm_ideation_turn"
+
+ASK_NAME = "ideation"
+ASK_QUESTION = "What is the idea? Tell me the problem or what you would like built."
+
+
+def _resolve_problem(_db: Any, word: str, _extras: dict[str, Any]) -> rf.Resolved:
+    text = (word or "").strip()
+    return rf.Resolved("ok", text, text) if text else rf.Resolved("unknown")
+
+
+#: The one required field is the idea. The core turn decides (`ask_idea`) and speaks in the
+#: user's language. The question, `cancelled` and `give_up` texts are the helper's required
+#: fallbacks and are never shown: the lane never passes a reply to `rf.collect`, so a "cancel"
+#: reply reaches the core as an answer and gets the core's own give-up line.
+IDEATION_ASK = rf.register(rf.AskType(
+    name=ASK_NAME,
+    fields=(rf.FieldSpec(
+        name="problem", noun="idea", question=ASK_QUESTION, resolve=_resolve_problem, allow_all=False,
+    ),),
+    reroute={
+        "message_type": "business_query",
+        "intent_hint": "submit_idea",
+        "domain_hint": "ideate",
+    },
+    cancelled="Okay, I have dropped that idea.",
+    give_up="I could not get the idea. Send it in one message when you are ready.",
+))
 
 
 def build_arguments(ctx: Mapping[str, Any]) -> dict[str, Any]:
@@ -57,6 +85,19 @@ def build_arguments(ctx: Mapping[str, Any]) -> dict[str, Any]:
     name = jsc.get(jsc.get(ctx, "contact"), "firstName")
     if jsc.truthy(name):
         body["submitter_name"] = name
+
+    # The answering turn of an open ideation ask: the reply text is the message, and the core
+    # turn knows it is the answer to its own ask-back.
+    slot = jsc.get(qf, "required_ask")
+    reply_text = jsc.get(qf, "required_ask_reply")
+    if (
+        isinstance(slot, dict)
+        and slot.get("ask") == ASK_NAME
+        and isinstance(reply_text, str)
+        and reply_text.strip()
+    ):
+        body["ask_reply"] = True
+        body["message_text"] = reply_text
 
     # ONLY when a media menu is outstanding. No menu open means the field is omitted and
     # the turn routes normally.
@@ -106,8 +147,7 @@ def build_reply(result: Mapping[str, Any]) -> dict[str, Any]:
     shapes. `ideate_status` defaults to `'error'`, which is the JS's own fallback and the
     reason a tool that answers without a status still reads as a failure on the trace.
 
-    No raw ``link`` append (AC-1216): the composed reply (S3's
-    ``compose_ideate_reply``, or its shared-service template fallback) already
+    No raw ``link`` append (AC-1216): the capture turn's reply copy already
     carries the link itself, deliberately, via the facts block - appending it again
     here would risk a doubled URL rather than fixing a missing one.
     """
@@ -186,7 +226,13 @@ def run(
     # it, and a live turn that omitted it would be one more shape to read as "live".
     result = call_ideation_tool(**build_arguments(ctx), is_test=dry_run)
     reply = build_reply(result)
+    # The core turn decided to ask for the idea: open the slot so the next short reply comes
+    # back here. The reply shown stays the tool's own localised text.
+    required_ask = None
+    if reply["ideate_status"] == "ask_idea":
+        required_ask = rf.collect(None, IDEATION_ASK, given={}).slot
     return {
+        "required_ask": required_ask,
         "item": {**reply, "outcome_fragment": {"build-ideate-reply": reply}},
         "reply_extras": {
             "manualResponse": reply["manualResponse"],

@@ -1833,14 +1833,17 @@ _DRAFT_OWN_KEYS: frozenset[str] = frozenset({"entities", "intent_hint", "domain_
 
 
 def open_ideation_draft(ideation: Any) -> bool:
-    """Is an idea draft open on this contact's session?
+    """Is an idea draft (or a held similar-ideas list) open on this contact's session?
 
-    The five-key `ideation` pointer with a `draft_id` on it. The intake tool is the
-    pointer's only writer and pops it the moment a draft closes (`complete`,
-    `duplicate` - `ideation_turn_service._TERMINAL_STATUSES`), so its presence IS the
-    open draft; nothing here reads a status word.
+    An old-flow pointer carries a `draft_id`; the intake tool pops it the moment a draft
+    closes. A one-message capture turn that offered the user's similar ideas leaves a
+    pointer with `status == "similar_offered"` instead, and a bare "2" or "NEW" must stay
+    in the ideate lane exactly as it does for an open draft. Any other status word is
+    not read.
     """
-    return isinstance(ideation, dict) and bool(ideation.get("draft_id"))
+    return isinstance(ideation, dict) and (
+        bool(ideation.get("draft_id")) or ideation.get("status") == "similar_offered"
+    )
 
 
 def _continues_open_draft(

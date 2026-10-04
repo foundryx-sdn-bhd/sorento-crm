@@ -20,12 +20,15 @@ import httpx
 from fastapi import Response
 from sqlalchemy.orm import Session
 
+from app.models.user import User
 from app.services.error_handler import AppException
 from app.services.ideation_embed_service import (
     IdeationEmbedNotConfigured,
     IdeationEmbedUpstreamError,
     _TIMEOUT_SECONDS,
     _resolve_embed_config,
+    user_ideas_manage,
+    user_phone,
     mint_embed_assertion,
     post_embed_session,
 )
@@ -38,8 +41,11 @@ _REFRESH_MARGIN_SECONDS = 30
 _DEFAULT_TOKEN_TTL_SECONDS = 300
 
 # Keyed by (user id, connection id, ss base URL): a token is only valid for the connection it was
-# minted on, so a changed workspace config can never reuse an old one (AC-A-12).
-_cache: dict[tuple[str, str, str], tuple[str, float]] = {}
+# minted on, so a changed workspace config can never reuse an old one (AC-A-12). The entry also
+# stores the claims it was minted with (phone, ideas_manage): a hit needs them unchanged, so a
+# changed link or a changed manage grant never reuses an old token, and flipping back re-mints.
+_Claims = tuple[str, bool]
+_cache: dict[tuple[str, str, str], tuple[str, float, _Claims]] = {}
 _cache_lock = threading.Lock()
 
 
@@ -91,14 +97,23 @@ def get_embed_token(db: Session, user: dict[str, Any], *, force_refresh: bool = 
         raise IdeationEmbedNotConfigured("ideation embed not configured for this deployment")
     assert config.base_url and config.connection_id and config.secret
 
+    phone = user_phone(db, user)
+    ideas_manage = user_ideas_manage(db, user)
     key = _cache_key(user, config)
+    claims: _Claims = (phone or "", ideas_manage)
     if not force_refresh:
         with _cache_lock:
             hit = _cache.get(key)
-        if hit and hit[1] - _REFRESH_MARGIN_SECONDS > time.time():
+        if hit and hit[2] == claims and hit[1] - _REFRESH_MARGIN_SECONDS > time.time():
             return hit[0]
 
-    assertion = mint_embed_assertion(user, secret=config.secret, connection_id=config.connection_id)
+    assertion = mint_embed_assertion(
+        user,
+        secret=config.secret,
+        connection_id=config.connection_id,
+        phone=phone,
+        ideas_manage=ideas_manage,
+    )
     data = post_embed_session(
         config.base_url, {"connection_id": config.connection_id, "assertion": assertion}
     )
@@ -106,7 +121,7 @@ def get_embed_token(db: Session, user: dict[str, Any], *, force_refresh: bool = 
     if not token:
         raise IdeationEmbedUpstreamError("embed session response missing token")
     with _cache_lock:
-        _cache[key] = (token, _expiry_epoch(data.get("expires_at")))
+        _cache[key] = (token, _expiry_epoch(data.get("expires_at")), claims)
     return token
 
 
@@ -220,8 +235,6 @@ def relay(resp: httpx.Response) -> Response:
 
 def user_for_requester(db: Session, user_id: str) -> dict[str, Any]:
     """The `user` dict an assertion needs, for a pending action committing as its requester."""
-    from app.models.user import User
-
     from app.models.user import UserStatus
 
     row = db.query(User).filter(User.id == str(user_id)).first()
