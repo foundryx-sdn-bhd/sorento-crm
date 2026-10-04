@@ -631,8 +631,11 @@ class TestAcP06AuditEmbeddingUpdatedAtAndAgentSource:
         )
         assert create_rows == 1
 
+        # A phone change, not a rename: the masters push never renames a customer
+        # (DEBTOR-CODE-LINK, owner decision 4 Oct 2026).
         svc.ingest(
-            "customers", [{"source_ref": f"DK-{code}", "code": code, "name": "Audit Me Updated"}]
+            "customers",
+            [{"source_ref": f"DK-{code}", "code": code, "name": "Audit Me", "phone_number": "0100000001"}],
         )
         update_rows = (
             db.query(AuditLog)
@@ -663,7 +666,10 @@ class TestAcP06AuditEmbeddingUpdatedAtAndAgentSource:
         code = _code("UPDAT")
         svc = _esb(db, DEFAULT_COMPANY_ID)
         svc.ingest("customers", [{"source_ref": f"DK-{code}", "code": code, "name": "V1"}])
-        svc.ingest("customers", [{"source_ref": f"DK-{code}", "code": code, "name": "V2"}])
+        svc.ingest(
+            "customers",
+            [{"source_ref": f"DK-{code}", "code": code, "name": "V1", "phone_number": "0100000002"}],
+        )
 
         updated_at = db.execute(
             text("SELECT updated_at FROM customers WHERE customer_code = :c"), {"c": code}
@@ -927,11 +933,21 @@ class TestAcP07ManualVsEsbParity:
 
         set_company_scope(db, frozenset({DEFAULT_COMPANY_ID}))
         CustomerService(db).update_customer(
-            manual.id, CustomerUpdate(customer_name="Test Sdn Bhd (Updated)", is_active=False)
+            manual.id, CustomerUpdate(phone_number="0199999999", is_active=False)
         )
+        # The masters push never renames (DEBTOR-CODE-LINK), so the update compared here is a
+        # phone + active change on both channels.
         esb.ingest(
             "customers",
-            [{"source_ref": f"DK-{code}", "code": code, "name": "Test Sdn Bhd (Updated)", "is_active": False}],
+            [
+                {
+                    "source_ref": f"DK-{code}",
+                    "code": code,
+                    "name": "Test Sdn Bhd",
+                    "phone_number": "0199999999",
+                    "is_active": False,
+                }
+            ],
         )
 
         columns = _mapped_columns(Customer)
