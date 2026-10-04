@@ -640,7 +640,7 @@ class TestContract129FiveKeySessionUnchanged:
         _run_spec_hit(
             session_factory, monkeypatch, stub_parser, stub_access, phone="+60900000027", code="SRTKS8650A"
         )
-        five = {"focus", "open_question", "ideation", "access_levels", "contains_flyer"}
+        five = {"focus", "open_question", "ideation", "access_levels", "contains_flyer", "reply_language"}
         assert set(SessionVars.model_fields) == five
 
         after_turn1 = _session_vars(session_factory)

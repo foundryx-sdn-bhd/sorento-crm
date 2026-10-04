@@ -404,6 +404,7 @@ class TestDryRun:
             "ideation",
             "access_levels",
             "contains_flyer",
+            "reply_language",
         }
 
     def test_every_action_carries_dry_run_true(

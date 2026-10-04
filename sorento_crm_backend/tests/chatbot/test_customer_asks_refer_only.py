@@ -238,6 +238,10 @@ def test_guard_no_backend_composer_prints_the_refer_line_except_through_the_help
             # Writes a Customer asks row's answer summary for a line already printed (and the
             # turn already marked) by the composer; it builds no reply.
             "app/services/chatbot/refer_asks.py",
+            # CHAT-LANGUAGE: the label catalog's verdict keys are the presenter's own lines,
+            # matched to re-word a line already printed in the dealer's language; it builds
+            # no reply of its own.
+            "app/services/chatbot/label_catalog.py",
         ):
             continue
         source = path.read_text(encoding="utf-8", errors="ignore")
