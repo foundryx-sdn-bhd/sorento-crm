@@ -295,3 +295,13 @@ def test_tp4_cursor_pages_older_rows(client, db, respond_reads):
     assert second.status_code == 200, second.text
     assert sorted(_ids(second.json())) == sorted(stored[:3]), "second page is the older 3"
     assert respond_reads == [], "list_messages called: the panel read went to Respond.io"
+
+
+def test_tp5_unknown_tracking_id_is_404(client, db, respond_reads):
+    """An unknown ticket id answers 404, not a 500."""
+    _seed(db)
+
+    r = client.get(f"{BASE}/{uuid.uuid4()}/conversation")
+
+    assert r.status_code == 404, r.text
+    assert respond_reads == []

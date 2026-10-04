@@ -5892,9 +5892,13 @@ class ConversationSLATrackingService:
 
         Items run oldest to newest and carry ``source: local`` when stored rows
         exist; one live Respond page is read only when the contact has no stored
-        rows. ``cursor`` maps to ``before`` (a message id, older rows).
+        rows. ``cursor`` maps to ``before`` (a message id, older rows). No
+        Respond.io call on the newest page when stored rows exist; a ``cursor``
+        read past the oldest stored row makes one throttled older read
+        (``_fill_older_if_needed``); the delta read is queued after the response.
+        An unknown tracking id raises 404 from ``get_tracking``.
         """
-        tracking = self.get_tracking(tracking_id)
+        tracking = self.get_tracking(tracking_id, load_event_logs=False)
         return self._thread_page_for_contact(
             self._thread_contact_for_tracking(tracking),
             before=cursor,

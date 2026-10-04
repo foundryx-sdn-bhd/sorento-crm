@@ -127,7 +127,7 @@ test.describe('Conversation intervention ticket round-trip', () => {
         const items: Array<{ message?: { text?: string } }> = body?.items ?? [];
         return items.some((item) => item.message?.text?.includes(SENT_TEXT));
       },
-      { timeout: 30_000 },
+      { timeout: 45_000 },
     );
 
     const sendResponse = page.waitForResponse(

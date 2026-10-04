@@ -2164,8 +2164,10 @@ async def get_sla_tracking_conversation(
 
     Local-first: the page comes from ``chat_histories`` (``cursor`` is a message
     id and pages OLDER rows, same as ``before`` on ``.../conversation/page``).
-    No Respond.io call is made on the request path when stored rows exist; the
-    one delta read is queued after the response by ``chat_thread_sync_service``.
+    No Respond.io call on the newest page when stored rows exist; a ``cursor``
+    read past the oldest stored row makes one throttled older read
+    (``_fill_older_if_needed``); the delta read is queued after the response by
+    ``chat_thread_sync_service``.
     The service method is synchronous, so this ``async def`` route hands it to
     ``run_in_threadpool`` rather than blocking the event loop.
     """
