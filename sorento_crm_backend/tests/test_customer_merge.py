@@ -336,11 +336,11 @@ class TestPlan:
 
     def test_name_mismatch_lists_retired_names_of_another_business(self, db):
         code = _code("NM")
-        _seed(db, code, "Chin Chun Hardware Sdn. Bhd.", OLD)
-        _seed(db, code, "CHIN CHUN HARDWARE SDN BHD (M)", MID)
-        _seed(db, code, "HOMEMART SDN BHD", NEW)
+        _seed(db, code, "Alpha Bravo Hardware Sdn. Bhd.", OLD)
+        _seed(db, code, "ALPHA BRAVO HARDWARE SDN BHD (M)", MID)
+        _seed(db, code, "CHARLIEMART SDN BHD", NEW)
         g = _group(customer_merge.plan(db, codes=[code]), code)
-        assert g.name_mismatch == ["HOMEMART SDN BHD"]
+        assert g.name_mismatch == ["CHARLIEMART SDN BHD"]
 
     def test_plan_csv_has_one_row_per_group(self, db, tmp_path):
         code = _code("CSV")
@@ -361,10 +361,10 @@ class TestNameMismatchHold:
     @pytest.mark.parametrize(
         "a, b",
         [
-            ("Chin Chun Hardware Sdn. Bhd.", "CHIN CHUN HARDWARE SDN BHD"),
-            ("CHIN-CHUN HARDWARE (M) SDN BHD", "chin chun hardware"),
-            ("W-PLY & DESIGN SDN BHD", "W-PLY ENTERPRISE"),
-            ("UNIMAX SANITARIO BERHAD", "Unimax Sanitario Trading"),
+            ("Alpha Bravo Hardware Sdn. Bhd.", "ALPHA BRAVO HARDWARE SDN BHD"),
+            ("ALPHA-BRAVO HARDWARE (M) SDN BHD", "alpha bravo hardware"),
+            ("F-PLY & DESIGN SDN BHD", "F-PLY ENTERPRISE"),
+            ("DELTA SANITARY BERHAD", "Delta Sanitary Trading"),
         ],
     )
     def test_same_core_name(self, a, b):
@@ -373,10 +373,10 @@ class TestNameMismatchHold:
     @pytest.mark.parametrize(
         "a, b",
         [
-            ("CHIN CHUN HARDWARE", "HOMEMART SDN BHD"),
-            ("UNIMAX SANITARIO", "LIVINGMART"),
-            ("W-PLY", "ASIANEKA & DILOOMA"),
-            ("INSAMADU", "IOI BUSINESS HOTEL"),
+            ("ALPHA BRAVO HARDWARE", "CHARLIEMART SDN BHD"),
+            ("DELTA SANITARY", "ECHOMART"),
+            ("F-PLY", "GOLF & HOTEL-X"),
+            ("INDIAWORKS", "JULIET BUSINESS HOTEL"),
         ],
     )
     def test_different_core_name(self, a, b):
@@ -384,8 +384,8 @@ class TestNameMismatchHold:
 
     def test_another_business_under_a_dealer_code_is_held(self, db):
         code = _dealer_code("HD")
-        survivor = _seed(db, code, "CHIN CHUN HARDWARE SDN BHD", OLD)
-        other = _seed(db, code, "HOMEMART SDN BHD", NEW)
+        survivor = _seed(db, code, "ALPHA BRAVO HARDWARE SDN BHD", OLD)
+        other = _seed(db, code, "CHARLIEMART SDN BHD", NEW)
         g = _group(customer_merge.plan(db, codes=[code]), code)
         assert g.held == "name_mismatch"
         result = customer_merge.apply(db, run_id="run-hd", codes=[code])
@@ -394,8 +394,8 @@ class TestNameMismatchHold:
 
     def test_a_held_group_merges_when_released(self, db):
         code = _dealer_code("HR")
-        _seed(db, code, "CHIN CHUN HARDWARE SDN BHD", OLD)
-        other = _seed(db, code, "HOMEMART SDN BHD", NEW)
+        _seed(db, code, "ALPHA BRAVO HARDWARE SDN BHD", OLD)
+        other = _seed(db, code, "CHARLIEMART SDN BHD", NEW)
         result = customer_merge.apply(
             db, run_id="run-hr", codes=[code], releases=[(DEFAULT_COMPANY_ID, code)]
         )
@@ -403,8 +403,8 @@ class TestNameMismatchHold:
 
     def test_same_core_name_under_a_dealer_code_merges(self, db):
         code = _dealer_code("HS")
-        _seed(db, code, "Chin Chun Hardware Sdn. Bhd.", OLD)
-        other = _seed(db, code, "CHIN CHUN HARDWARE (M) SDN BHD", NEW)
+        _seed(db, code, "Alpha Bravo Hardware Sdn. Bhd.", OLD)
+        other = _seed(db, code, "ALPHA BRAVO HARDWARE (M) SDN BHD", NEW)
         g = _group(customer_merge.plan(db, codes=[code]), code)
         assert g.held == "" and g.name_mismatch == []
         customer_merge.apply(db, run_id="run-hs", codes=[code])
@@ -419,8 +419,8 @@ class TestNameMismatchHold:
 
     def test_release_column_is_read_from_the_csv(self, db, tmp_path):
         code = _dealer_code("RL")
-        _seed(db, code, "CHIN CHUN HARDWARE", OLD)
-        _seed(db, code, "HOMEMART", NEW)
+        _seed(db, code, "ALPHA BRAVO HARDWARE", OLD)
+        _seed(db, code, "CHARLIEMART", NEW)
         path = tmp_path / "plan.csv"
         customer_merge.write_plan_csv(customer_merge.plan(db, codes=[code]), path)
         lines = path.read_text().strip().splitlines()

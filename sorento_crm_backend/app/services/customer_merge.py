@@ -377,12 +377,12 @@ def normalise_name(name: Optional[str]) -> str:
 
     1. case-insensitive;
     2. parenthesised parts dropped: `(M)`, `(KTN)`;
-    3. everything from the first `&` dropped: `W-PLY & DESIGN` -> `W-PLY`, so an `& ...`
+    3. everything from the first `&` dropped: `F-PLY & DESIGN` -> `F-PLY`, so an `& ...`
        variant counts as the same company only when the core before it matches;
-    4. punctuation becomes a space: `CHIN-CHUN` = `CHIN CHUN`, `SDN. BHD.` = `SDN BHD`;
+    4. punctuation becomes a space: `ALPHA-BRAVO` = `ALPHA BRAVO`, `SDN. BHD.` = `SDN BHD`;
     5. noise words dropped: SDN, BHD, BERHAD, ENTERPRISE, ENT, TRADING, CO, COMPANY, PLT, M, THE.
 
-    `Chin Chun Hardware Sdn. Bhd.` -> `chin chun hardware`; `HOMEMART SDN BHD` -> `homemart`.
+    `Alpha Bravo Hardware Sdn. Bhd.` -> `alpha bravo hardware`; `CHARLIEMART SDN BHD` -> `charliemart`.
     """
     import re
 
