@@ -307,3 +307,18 @@ def test_driver_fields_in_tracked_text_hold_only_placeholders():
                     continue
                 bad.append(f"{rel}:{text.count(chr(10), 0, m.start()) + 1}")
     assert not bad, f"{len(bad)} driver values are not placeholders:\n" + "\n".join(sorted(set(bad))[:60])
+
+
+def test_an_invalid_my_number_under_a_phone_key_is_not_flagged():
+    # "+60" followed by 0 is no Malaysian number at all (a national number never
+    # starts with 0), so a test placeholder in that shape is not personal data.
+    mod = _load_module()
+    rng = random.Random(9)
+    sub = _random_subscriber(rng)
+    for text in (
+        'phone="+600000' + sub[:5] + '"',
+        '{"phone_number": "+6000' + sub + '"}',
+    ):
+        assert mod.scan_text(text) == [], text
+    # a real-looking landline-shaped value under a phone key is still flagged
+    assert _kinds(mod.scan_text('{"phone": "+604' + sub + '1"}')) == ["phone"]
