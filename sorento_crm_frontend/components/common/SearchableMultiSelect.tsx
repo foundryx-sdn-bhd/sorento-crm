@@ -19,6 +19,11 @@ import {
 } from '@/components/common/select-trigger-variants';
 import { isInsideOpenDialog } from '@/components/common/floatingAncestry';
 import { PopoverScrollLock } from '@/components/common/PopoverScrollLock';
+import {
+  SelectLoadFailure,
+  hasLoadError,
+  selectLoadFailurePlaceholder,
+} from '@/components/common/SelectLoadFailure';
 
 export type SearchableMultiSelectOption = {
   value: string;
@@ -59,6 +64,10 @@ export type SearchableMultiSelectProps = {
   id?: string;
   placeholder?: string;
   emptyMessage?: string;
+  /** The options query's `error`; see the same prop on `SearchableSelect` (lever L5). */
+  loadError?: unknown;
+  /** Refetch the options; shown as Retry next to a non-refusal `loadError`. */
+  onRetry?: () => void;
   disabled?: boolean;
   className?: string;
   triggerClassName?: string;
@@ -79,6 +88,12 @@ export type SearchableMultiSelectProps = {
     open: boolean;
     disabled: boolean;
   }) => React.ReactNode;
+  /**
+   * Show a clear-all X in the trigger while something is chosen (parity with
+   * `SearchableSelect.clearable`). Opt-in: the chips' own X and the list's "Clear all"
+   * already empty it, so existing callers are untouched.
+   */
+  clearable?: boolean;
   /** Notified whenever the search text changes, in both modes. */
   onSearchChange?: (query: string) => void;
   /**
@@ -111,12 +126,15 @@ export function SearchableMultiSelect({
   id,
   placeholder = 'Select...',
   emptyMessage = 'No results found.',
+  loadError,
+  onRetry,
   disabled = false,
   className,
   triggerClassName,
   renderTriggerLabel,
   renderOption,
   renderTrigger,
+  clearable = false,
   onSearchChange,
   createOption,
 }: SearchableMultiSelectProps) {
@@ -143,6 +161,7 @@ export function SearchableMultiSelect({
   // own popover-open state has to gate it directly rather than only through this flag.
 
   const [asyncOptions, setAsyncOptions] = React.useState<SearchableMultiSelectOption[]>([]);
+  const [asyncError, setAsyncError] = React.useState<unknown>(null);
   const [loading, setLoading] = React.useState(false);
   const [query, setQuery] = React.useState('');
   const lastQueryRef = React.useRef<string>(' ');
@@ -155,9 +174,12 @@ export function SearchableMultiSelect({
       try {
         const items = await fetchOptions(q);
         if (lastQueryRef.current !== q) return;
+        setAsyncError(null);
         setAsyncOptions(items);
-      } catch {
+      } catch (error) {
         if (lastQueryRef.current !== q) return;
+        // A failed read is not an empty list (L5): keep the error so the menu says so.
+        setAsyncError(error ?? new Error('These options could not be loaded.'));
         setAsyncOptions([]);
       } finally {
         if (lastQueryRef.current === q) setLoading(false);
@@ -256,6 +278,10 @@ export function SearchableMultiSelect({
     }
   };
 
+  const failure = hasLoadError(loadError) ? loadError : isAsync ? asyncError : null;
+  const failed = hasLoadError(failure);
+  const retryFailure = hasLoadError(loadError) ? onRetry : () => void runFetch(query);
+
   const misconfigured = !isAsync && options === undefined;
   const isDisabled = disabled || misconfigured;
 
@@ -318,7 +344,7 @@ export function SearchableMultiSelect({
             <span className="min-w-0 flex-1 text-left">{renderTriggerLabel(chosen)}</span>
           ) : chosen.length === 0 ? (
             <span className="min-w-0 flex-1 text-left text-muted-foreground break-words">
-              {placeholder}
+              {hasLoadError(loadError) ? selectLoadFailurePlaceholder(loadError) : placeholder}
             </span>
           ) : (
             // `min-w-0` is what actually makes the chips wrap inside the
@@ -352,7 +378,23 @@ export function SearchableMultiSelect({
               ))}
             </span>
           )}
-          <ChevronDown className="mt-0.5 size-4 shrink-0 self-start opacity-60 -me-0.5" />
+          {clearable && value.length > 0 && !isDisabled ? (
+            <span
+              role="button"
+              tabIndex={-1}
+              aria-label="Clear selection"
+              className="mt-0.5 shrink-0 self-start rounded-sm opacity-60 hover:opacity-100"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onChange([]);
+              }}
+            >
+              <X className="size-4" />
+            </span>
+          ) : (
+            <ChevronDown className="mt-0.5 size-4 shrink-0 self-start opacity-60 -me-0.5" />
+          )}
         </button>
         )}
       </PopoverTrigger>
@@ -416,6 +458,8 @@ export function SearchableMultiSelect({
               <div className="flex items-center gap-2 px-3 py-3 text-sm text-muted-foreground">
                 <Loader2 className="size-4 animate-spin" /> Searching...
               </div>
+            ) : failed ? (
+              <SelectLoadFailure error={failure} onRetry={retryFailure} />
             ) : visibleOptions.length === 0 && !createLabel ? (
               <CommandEmpty>{emptyMessage}</CommandEmpty>
             ) : null}

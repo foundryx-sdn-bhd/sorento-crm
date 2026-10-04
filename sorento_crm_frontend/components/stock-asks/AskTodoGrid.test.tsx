@@ -148,36 +148,37 @@ describe('AskTodoGrid columns (AC-ST306)', () => {
   });
 });
 
-describe('AskTodoGrid groups (AC-ST306)', () => {
-  it('lists the groups as full-width section rows in order, with their rows under them', () => {
+describe('AskTodoGrid groups (CUSTOMER-ASKS-REFER-ONLY)', () => {
+  it('lists Open then Done today as full-width section rows, every open ask under Open', () => {
     setup();
     const rows = bodyRows();
     const idx = (label: string) => rows.findIndex((r) => rowText(r) === label);
-    const needs = idx('Needs attention');
-    const today = idx('Today');
+    const open = idx('Open');
     const doneToday = idx('Done today');
-    expect(needs).toBeGreaterThan(-1);
-    expect(today).toBeGreaterThan(needs);
-    expect(doneToday).toBeGreaterThan(today);
-    for (const at of [needs, today, doneToday]) {
+    expect(open).toBe(0);
+    expect(doneToday).toBeGreaterThan(open);
+    expect(idx('Needs attention')).toBe(-1);
+    expect(idx('Today')).toBe(-1);
+    for (const at of [open, doneToday]) {
       const cells = within(rows[at]).getAllByRole('cell');
       expect(cells).toHaveLength(1);
       expect((cells[0] as HTMLTableCellElement).colSpan).toBeGreaterThan(1);
+      expect(rows[at].className).not.toContain('text-destructive');
+      expect(rows[at].innerHTML).not.toContain('text-destructive');
     }
     const at = (name: string) => rows.findIndex((r) => rowText(r).includes(name));
-    expect(at('Customer old')).toBeGreaterThan(needs);
-    expect(at('Customer old')).toBeLessThan(today);
-    expect(at('Zed Trading')).toBeGreaterThan(today);
-    expect(at('Abe Trading')).toBeGreaterThan(today);
-    expect(at('Zed Trading')).toBeLessThan(doneToday);
+    // Oldest first by default, old and new days in one list.
+    expect(at('Customer old')).toBeGreaterThan(open);
+    expect(at('Zed Trading')).toBeGreaterThan(at('Customer old'));
+    expect(at('Abe Trading')).toBeGreaterThan(at('Zed Trading'));
+    expect(at('Abe Trading')).toBeLessThan(doneToday);
     expect(at('Customer done1')).toBeGreaterThan(doneToday);
   });
 
   it('omits an empty group', () => {
     setup({ payload: { ...PAYLOAD, open: [NEW_A], done_today: [] } });
     const labels = bodyRows().map(rowText);
-    expect(labels).toContain('Today');
-    expect(labels).not.toContain('Needs attention');
+    expect(labels).toContain('Open');
     expect(labels).not.toContain('Done today');
   });
 
@@ -218,7 +219,7 @@ describe('AskTodoGrid actions (AC-ST306)', () => {
 
   it('a click on a section row opens nothing', () => {
     const { onOpen } = setup();
-    fireEvent.click(bodyRows().find((r) => rowText(r) === 'Needs attention')!);
+    fireEvent.click(bodyRows().find((r) => rowText(r) === 'Open')!);
     expect(onOpen).not.toHaveBeenCalled();
   });
 });

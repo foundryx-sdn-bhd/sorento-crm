@@ -16,16 +16,14 @@ import {
   type AskTodoPayload,
 } from '@/lib/stock-asks-todo';
 import type { LandingSort } from '@/app/(auth)/portal/lib/landing-fields';
-import { cn } from '@/lib/utils';
 
-type GroupKey = 'needs_attention' | 'today' | 'done_today';
+type GroupKey = 'open' | 'done_today';
 interface GridRow {
   ask: StockAsk;
   group: GroupKey;
 }
 const GROUP_LABEL: Record<GroupKey, string> = {
-  needs_attention: 'Needs attention',
-  today: 'Today',
+  open: 'Open',
   done_today: 'Done today',
 };
 
@@ -196,9 +194,7 @@ export function AskTodoGrid({
       tableLayout={{ width: 'fixed', columnsResizable: true }}
       onRowClick={(r: GridRow) => onOpen(r.ask)}
       renderGroupHeader={(row: GridRow, previous: GridRow | null) =>
-        previous && previous.group === row.group ? null : (
-          <span className={cn(row.group === 'needs_attention' && 'text-destructive')}>{GROUP_LABEL[row.group]}</span>
-        )
+        previous && previous.group === row.group ? null : <span>{GROUP_LABEL[row.group]}</span>
       }
     >
       <DataGridTable />

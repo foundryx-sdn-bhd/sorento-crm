@@ -886,6 +886,8 @@ export function ProformaInvoiceDetail({ id }: { id: string }) {
                   value={line.uom}
                   onChange={(v: string) => patchLine(line.key, { uom: v })}
                   options={uomSelectOptions}
+                  loadError={uoms.error}
+                  onRetry={() => void uoms.refetch()}
                   placeholder="Search a UoM"
                   emptyMessage="No UoM found."
                   size="sm"

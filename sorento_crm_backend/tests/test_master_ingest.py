@@ -1,6 +1,6 @@
 """Phase C - master data ingest (UAC Group B, masters half).
 
-  AC-AC-11  canonical shapes; unknown fields rejected, not silently ignored
+  AC-AC-11  canonical shapes; unknown fields dropped and their names logged (owner, 1 Oct 2026)
   AC-AC-12  idempotent on the source reference; created vs updated distinguished
   AC-AC-13  per-record structured errors, machine-readable
   AC-AC-15  masters quarantine, they do not block: valid rows persist
@@ -67,12 +67,14 @@ def _wh(code="ZZT-WH-01", name="Main", ref=None, **extra):
 
 
 class TestCanonicalShape:
-    def test_unknown_fields_are_rejected_not_ignored(self, svc):
-        # AC-AC-11. Silently dropping a field the ESB believed it sent is how a
-        # mapping bug survives to production looking like a Sorento data loss.
+    def test_unknown_fields_are_dropped_not_refused(self, svc):
+        # AC-AC-11, as amended by the owner (1 Oct 2026): an unknown key is dropped and
+        # its NAME logged once per request by the ingest route (`app.schemas.ingest_extras`),
+        # never refused - refusing failed every record the day the shared service mapped a
+        # new AutoCount column, and forced the two repos to deploy in a fixed order.
         result = svc.ingest("warehouses", [_wh(**{"DocKey": "leaked-autocount-name"})])
-        assert result.failed == 1
-        assert "DocKey" in str(result.records[0].errors)
+        assert result.failed == 0
+        assert result.created == 1
 
     def test_missing_required_field_is_a_validation_failure(self, svc):
         result = svc.ingest("warehouses", [{"source_ref": "DK-1"}])
@@ -155,27 +157,27 @@ class TestCustomerColumnsFixRound2BugB:
     (never written) was the fix through S0-S3; superseded 2026-09-06 by S4's
     contract 2.1 end state (AC-P0-4/D15), which REMOVES both fields from
     `CanonicalCustomer` entirely - the raw-SQL bug this class guards against
-    is now structurally impossible, since `extra="forbid"` rejects the
-    payload before any column-building code runs at all.
+    is still structurally impossible: the fields are undeclared, so the schema
+    drops them (owner decision, 1 Oct 2026) before any column-building code runs.
     """
 
-    def test_credit_limit_and_payment_terms_days_fail_validation(self, db, svc):
+    def test_credit_limit_and_payment_terms_days_are_dropped_never_written(self, db, svc):
         result = svc.ingest(
             "customers",
             [_customer(credit_limit="15000.50", payment_terms_days=30)],
         )
 
         record = result.records[0]
-        assert record.outcome is IngestOutcome.FAILED, record.errors
-        assert "credit_limit" in record.errors
-        assert "payment_terms_days" in record.errors
+        assert record.outcome is IngestOutcome.CREATED, record.errors
+        # Dropped before the column builder runs: the row lands with only the
+        # declared columns (customers holds neither of these fields).
         row = db.execute(
             text(
                 "SELECT customer_code, customer_name FROM customers "
                 "WHERE customer_code = 'ZZT-CUST-01'"
             )
         ).first()
-        assert row is None, "a failed record must write nothing"
+        assert row is not None
 
 
 class TestSEC3IntegrityConflictNamesTheConstraint:
@@ -292,14 +294,14 @@ class TestQuarantineNotBlock:
 
 
 class TestRetryableVsFatal:
-    def test_payment_terms_code_fails_validation_not_retryable(self, db, svc):
+    def test_payment_terms_code_is_dropped_not_retryable(self, db, svc):
         # Superseded 2026-09-06 (ingest-parity-standardisation S4, AC-P0-4/D15
         # end state): `payment_terms_code` was accepted-and-warned
         # `deprecated_field` through S0-S3 (the docstring this test used to
         # carry said so explicitly); S4's contract 2.1 cutover REMOVES the
-        # field from `CanonicalSupplier` entirely, so `extra="forbid"` now
-        # rejects it with a field-named error - `FAILED`, never retryable,
-        # never a silent accept.
+        # field from `CanonicalSupplier` entirely. Owner decision 1 Oct 2026: an
+        # undeclared key is dropped (name logged), never refused - so the record
+        # lands, never retryable, and the field reaches no column.
         result = svc.ingest(
             "suppliers",
             [
@@ -313,13 +315,11 @@ class TestRetryableVsFatal:
         )
         assert result.retryable == 0
         record = result.records[0]
-        assert record.outcome is IngestOutcome.FAILED, record.errors
-        assert "payment_terms_code" in record.errors
+        assert record.outcome is IngestOutcome.CREATED, record.errors
 
-    def test_payment_terms_code_fails_validation_on_an_update_too(self, db, svc):
-        # Superseded 2026-09-06, same reason as the test above - an update
-        # payload naming the removed field is rejected exactly like a create
-        # one, and the already-existing row is left untouched.
+    def test_payment_terms_code_is_dropped_on_an_update_too(self, db, svc):
+        # Same as the test above for an update payload: the removed field is
+        # dropped, the update applies, and no second row appears.
         svc.ingest(
             "suppliers",
             [{"source_ref": "DK-S1", "code": "ZZT-SUP-1", "name": "Acme"}],
@@ -336,8 +336,7 @@ class TestRetryableVsFatal:
             ],
         )
         record = result.records[0]
-        assert record.outcome is IngestOutcome.FAILED, record.errors
-        assert "payment_terms_code" in record.errors
+        assert record.outcome is not IngestOutcome.FAILED, record.errors
         assert db.execute(
             text("SELECT count(*) FROM suppliers WHERE supplier_code LIKE 'ZZT-%'")
         ).scalar() == 1

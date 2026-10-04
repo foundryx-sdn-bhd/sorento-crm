@@ -19,6 +19,7 @@ from app.api.v1.projects import (
     samples_pos,
     schedules,
     so_line_attachments,
+    status_graphs,
     stock_debt,
     tasks,
     types,
@@ -47,6 +48,8 @@ router.include_router(tasks.router, tags=["project-tasks"])
 # revision history) plus their own /config surface.
 router.include_router(quotations.router, tags=["project-quotations"])
 router.include_router(quotation_documents.router, tags=["project-quotations"])
+# Read-only project / task / lead status graphs for salespeople (never-stuck L10).
+router.include_router(status_graphs.router, tags=["project-status-graphs"])
 # Samples and customer POs mount at the root for the same reason: both are nested
 # under a project for listing but addressed directly for editing.
 router.include_router(samples_pos.router, tags=["project-samples-pos"])

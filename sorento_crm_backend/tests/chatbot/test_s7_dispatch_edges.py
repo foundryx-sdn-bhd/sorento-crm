@@ -5,12 +5,12 @@ Covers, each naming its AC:
 
 * AC-703 - the offload timeout arm: the RQ job is stopped on timeout and the row is closed
   `failed` at `queued`; and the race where the worker finishes first is left untouched.
-* AC-705 - `mark_done` / `_advance_done` monotonicity: an out-of-order release never rewinds
-  `done`.
+* AC-705 - `mark_done` monotonicity: an out-of-order release never rewinds `done` (and,
+  since CHATBOT-QUEUE-FIX, never passes a live predecessor).
 * AC-705 / AC-710 - a redis outage during `contact_ticket` and during `wait_for_turn` degrades
   to an unordered but COMPLETED turn, never a hang and never a failure caused only by redis;
-  `QueueWait` itself (the real per-contact timeout) is a different thing and still fails the
-  turn, so the outage guard must not swallow it too.
+  `QueueWait` itself (the real per-contact timeout) is a different thing; since
+  CHATBOT-QUEUE-FIX it runs the turn anyway and records `timed_out` on `queued`.
 * H6 / AC-701 - `/complete` answers 410 `CHATBOT_S7_MODE_OWNS_THE_TAIL` through the FULL
   `app.main` app, with a real issued `X-API-Key` and a role holding exactly
   `integration.chat_turn.submit`, when `system_settings.chatbot_ordering_enabled` is on;
@@ -239,7 +239,7 @@ class TestOffloadTimeoutArm:
 
 
 # --------------------------------------------------------------------------- #
-# AC-705: `mark_done` / `_advance_done` monotonicity
+# AC-705: `mark_done` monotonicity
 # --------------------------------------------------------------------------- #
 
 
@@ -253,45 +253,24 @@ class TestMarkDoneMonotonicity:
         client = _redis_client()
         try:
             _clear_contact_keys(client, contact)
+            t1 = dispatch.contact_ticket(client, contact)
+            t2 = dispatch.contact_ticket(client, contact)
 
-            # Ticket 2 finishes FIRST (e.g. it was fast, or ticket 1 stalled and a waiter
-            # already repaired the counter past it).
-            dispatch.mark_done(client, contact, 2)
+            # Ticket 2 finishes FIRST while ticket 1 is still alive: `done` stays put
+            # (CHATBOT-QUEUE-FIX: a release never passes a live predecessor).
+            dispatch.mark_done(client, contact, t2)
+            assert client.get(_done_key(contact)) in (None, "0")
+
+            # Ticket 1 finishes LATE: `done` walks over both.
+            dispatch.mark_done(client, contact, t1)
             assert client.get(_done_key(contact)) == "2"
 
-            # Ticket 1 - an EARLIER turn - finishes LATE, after ticket 2 already advanced
-            # `done`. This must be a no-op on the counter.
-            dispatch.mark_done(client, contact, 1)
-
-            assert client.get(_done_key(contact)) == "2", (
-                "an out-of-order release must never pull `done` backwards, or every ticket "
-                "already let through by ticket 2's advance would be stranded again"
-            )
-            # `mark_done` unconditionally clears `running`, whether or not the CAS moved
-            # anything - it is the same "this ticket is no longer being worked" fact either
-            # way.
+            # A repeated, stale release is a no-op and never pulls `done` backwards.
+            dispatch.mark_done(client, contact, t1)
+            assert client.get(_done_key(contact)) == "2"
+            assert client.exists(dispatch.alive_key(contact, t1)) == 0
+            assert client.exists(dispatch.alive_key(contact, t2)) == 0
             assert client.exists(_running_key(contact)) == 0
-        finally:
-            _clear_contact_keys(client, contact)
-            client.close()
-
-    def test_advance_done_alone_is_also_monotone(self) -> None:
-        """The primitive underneath `mark_done`, isolated: a lower target is simply ignored."""
-        contact = "ZZT-contact-s7-advance-done-monotone"
-        client = _redis_client()
-        try:
-            _clear_contact_keys(client, contact)
-            dispatch._advance_done(client, contact, 5)
-            assert client.get(_done_key(contact)) == "5"
-
-            dispatch._advance_done(client, contact, 3)
-            assert client.get(_done_key(contact)) == "5"
-
-            dispatch._advance_done(client, contact, 5)  # equal target: also a no-op raise
-            assert client.get(_done_key(contact)) == "5"
-
-            dispatch._advance_done(client, contact, 7)  # a genuinely higher target still moves
-            assert client.get(_done_key(contact)) == "7"
         finally:
             _clear_contact_keys(client, contact)
             client.close()
@@ -313,12 +292,13 @@ class TestRedisOutageDuringOrdering:
     and it does not depend on `chatbot_completed_lanes`.
     """
 
-    def test_queuewait_is_not_swallowed_by_the_outage_guard(
+    def test_queuewait_is_not_swallowed_and_the_turn_still_runs(
         self, real_contacts, stub_engine_seams, monkeypatch
     ) -> None:
-        """`QueueWait` is a `RuntimeError`, not one of `dispatch.ORDERING_ERRORS`. It must
-        propagate out of the same guard the two tests above show swallowing a redis error,
-        and fail the turn at stage `queued` (AC-710)."""
+        """`QueueWait` is a `RuntimeError`, not one of `dispatch.ORDERING_ERRORS`, so the
+        outage guard does not treat it as a redis blip. Since CHATBOT-QUEUE-FIX it does not
+        fail the turn either: the turn runs, its `queued` record says it timed out, and
+        the ticket is released."""
         monkeypatch.setattr(parser_mod, "parse", lambda config, user_block: _parser_output())
         _enable_ordering(monkeypatch)
         contact = real_contacts("queuewait-not-swallowed")
@@ -335,11 +315,10 @@ class TestRedisOutageDuringOrdering:
             session_factory=SessionLocal,
         )
 
-        assert result.status == "failed", (
-            "a genuine QueueWait must still fail the turn - the outage guard is for redis "
-            "errors, not for the ordering timeout itself"
-        )
-        assert result.stage == "queued"
+        assert result.status != "failed", (result.status, result.stage)
+        row = SessionLocal().query(ChatbotTurn).filter(ChatbotTurn.id == result.turn_id).first()
+        queued = [r for r in (row.trace or []) if r.get("stage") == "queued"]
+        assert queued and queued[0]["facts"].get("timed_out") is True, queued
 
         # And the ticket must still have been released, same as any other mid-turn failure.
         client = _redis_client()

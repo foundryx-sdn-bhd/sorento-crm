@@ -160,6 +160,8 @@ export function PurchaseOrderDialog({
                 value={issuerId}
                 onChange={setIssuerId}
                 clearable
+                loadError={parties.error}
+                onRetry={() => void parties.refetch()}
                 options={(parties.data?.data ?? []).map((party) => ({
                   value: party.id,
                   label: party.name,

@@ -15,18 +15,25 @@ from app.services.error_handler import AppException
 
 router = APIRouter()
 
+# The catalog's write slug, shared with the market-segment catalog
+# (`market_segments.py`). Until 1 Oct 2026 the three writes below took only
+# `get_current_user`, so any signed-in user could add or delete an access type.
+MANAGE = "user_management.reference_data.manage"
+
 
 def _service(db: Session) -> ContactAccessTypeService:
     return ContactAccessTypeService(db)
 
 
-# Takes the low-privilege `reference_data.view` slug rather than the
-# `access_agents.view` used by the admin reads below, precisely so the cross-module
-# consumers (marketing promotions, forms, resource-management files, master-data
-# brands and products) keep working without an `access_agents.view` grant.
+# Open to any signed-in user (owner ruling 1 Oct 2026, never-stuck L10): the
+# cross-module consumers (marketing promotions, forms, resource-management files,
+# master-data brands and products, contact dialogs) are pickers, and the rows are a
+# catalog (code, name, description, sort order), no personal data. It was gated on
+# `reference_data.view` until then, which left those pickers silently empty. The admin
+# reads below keep `access_agents.view`; every write needs `reference_data.manage`.
 @router.get("/", response_model=list)
 async def list_contact_access_types(
-    current_user: dict = Depends(require_permission("user_management.reference_data.view")),
+    current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """List active contact access types for use in access_levels (promotions, attachments). Returns [{code, name, description, sort_order}]."""
@@ -76,7 +83,7 @@ async def get_contact_access_type(
 @router.post("/", response_model=ContactAccessTypeResponse, status_code=status.HTTP_201_CREATED)
 async def create_contact_access_type(
     data: ContactAccessTypeCreate,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(MANAGE)),
     db: Session = Depends(get_db),
 ):
     """Create a new contact access type."""
@@ -92,7 +99,7 @@ async def create_contact_access_type(
 async def update_contact_access_type(
     code: str,
     data: ContactAccessTypeUpdate,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(MANAGE)),
     db: Session = Depends(get_db),
 ):
     """Update a contact access type."""
@@ -107,7 +114,7 @@ async def update_contact_access_type(
 @router.delete("/{code}", status_code=status.HTTP_200_OK)
 async def delete_contact_access_type(
     code: str,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(MANAGE)),
     db: Session = Depends(get_db),
 ):
     """Delete a contact access type."""

@@ -34,7 +34,7 @@ const ROOTS = ['app/(protected)', 'app/components/common', 'components'];
 const PAGE_HEADER = 'components/common/PageHeader.tsx';
 
 /**
- * The four `<h1>` that are not page titles, each for a reason a sweep must not
+ * The five `<h1>` that are not page titles, each for a reason a sweep must not
  * erase.
  */
 const H1_EXEMPT = new Set([
@@ -48,6 +48,10 @@ const H1_EXEMPT = new Set([
   // heading on screen and it has no trail to sit under, because the page the
   // user asked for never rendered.
   'app/components/common/AccessDenied.tsx',
+  // The app-wide crash screen (`app/global-error.tsx`). It replaces the ROOT
+  // layout, so there is no app chrome, no PageHeader and no trail: the only
+  // heading on a page that could not start.
+  'components/common/GlobalErrorView.tsx',
 ]);
 
 /** Every `.ts`/`.tsx` under the scanned roots, tests excluded. */

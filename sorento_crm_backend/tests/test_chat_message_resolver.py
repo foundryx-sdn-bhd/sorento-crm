@@ -47,11 +47,11 @@ class FakeClient:
         return self.responses.get(key, {})
 
 
-def _row(db, *, message_id="m1", respond_ts=None, attempts=0, type="outgoing", contact_id="445239409"):
+def _row(db, *, message_id="m1", respond_ts=None, attempts=0, type="outgoing", contact_id="900000063"):
     row = ChatHistory(
         channel="whatsapp",
         contact_id=contact_id,
-        phone_number="+60165622487",
+        phone_number="+60160000517",
         message="hi",
         sent_at=NOW,
         type=type,
@@ -104,7 +104,7 @@ def test_fetches_row_with_respond_ts_but_no_delivery_status(db):
     _row(db, message_id="m1", respond_ts=NOW)
     client = FakeClient({"m1": {"timestamp": 1784519974000, "status": "delivered"}})
     svc.resolve_pending(db, client=client, limit=10, now=NOW)
-    assert client.calls == [("445239409", "m1")]
+    assert client.calls == [("900000063", "m1")]
 
 
 def test_skips_rows_without_message_id(db):

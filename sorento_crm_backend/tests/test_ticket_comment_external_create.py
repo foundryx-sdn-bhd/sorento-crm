@@ -30,8 +30,8 @@ from app.models.user import User
 from tests._external_auth import external_permissions_granted
 from tests._pg_fixture import blank_session
 
-RESPOND_IO_ID = "437264483"
-PHONE = "+60166753328"
+RESPOND_IO_ID = "900000008"
+PHONE = "+60160000509"
 AGENT_RESPOND_ID = "971724"
 URL = f"/api/v1/external/chat-history/{RESPOND_IO_ID}/comments"
 

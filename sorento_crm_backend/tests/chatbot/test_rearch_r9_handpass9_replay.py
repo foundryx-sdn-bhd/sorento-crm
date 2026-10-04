@@ -1,5 +1,5 @@
 """R9 RED tests, PR #952 chatbot turn engine re-architecture - hand pass 9 (owner
-console, 20 Sep 2026 21:55-22:42 MYT, contact 437264483, clone DB
+console, 20 Sep 2026 21:55-22:42 MYT, contact 900000008, clone DB
 `sorento_ai_automation_rearch`, :8081 @ 19d5f7789 v39). Written by tester 42 BEFORE the
 coder's next pass, per the captain's brief. Every scenario replays a RECORDED parser
 verdict pulled from `chatbot.turns` by id (psql SELECT against the clone, read-only) -
@@ -188,7 +188,8 @@ class TestPhotoRosterStaysAnswerableAndNamesThePickedProduct:
             f"(answer.py:2661-2821) always includes one bullet per RESOLVED entity "
             f"type, product included: {reply2!r}"
         )
-        assert "• attachment_type: Product Photos" in reply2, reply2
+        # ATTACHMENT-MULTI Q5 (a): the kind is said in words, never `attachment_type`.
+        assert "• attachment type: Product Photos" in reply2, reply2
 
     def test_d2_a_second_different_position_still_resolves_after_the_first_pick(
         self, session_factory, monkeypatch

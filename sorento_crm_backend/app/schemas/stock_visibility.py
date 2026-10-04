@@ -19,6 +19,7 @@ class StockVisibilityWarehouse(BaseModel):
     id: str
     code: str
     name: Optional[str] = None
+    company_name: Optional[str] = None
 
 
 class StockVisibilityPolicyOut(BaseModel):

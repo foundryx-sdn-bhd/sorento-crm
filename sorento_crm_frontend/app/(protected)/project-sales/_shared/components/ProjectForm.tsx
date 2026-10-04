@@ -23,7 +23,7 @@ import { FormSection } from '@/components/common/FormSection';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { SearchableMultiSelect } from '@/components/common/SearchableMultiSelect';
 import { useHasPermission } from '@/hooks/usePermissions';
-import { getUsersSelect } from '@/services/userSelectService';
+import { getUserLookup } from '@/services/userSelectService';
 import { useBrandSelectQuery } from '@/app/(protected)/master-data-management/shared/hooks/use-brand-select-query';
 import {
   CLASH_MIN_CHARS,
@@ -122,8 +122,8 @@ export function ProjectForm(props: ProjectFormProps) {
   const brands = useBrandSelectQuery();
   const fetchLeadOptions = useFetchLeadOptions();
   const users = useQuery({
-    queryKey: ['users-select', 'project-owner'],
-    queryFn: () => getUsersSelect({ status: 'ACTIVE' }),
+    queryKey: ['user-lookup', 'project-owner'],
+    queryFn: () => getUserLookup(),
   });
 
   // The title the user last checked; editing the field clears it, so a result never
@@ -277,6 +277,8 @@ export function ProjectForm(props: ProjectFormProps) {
                 value={developerId}
                 onChange={setDeveloperId}
                 clearable
+                loadError={developers.error}
+                onRetry={() => void developers.refetch()}
                 options={(developers.data?.data ?? []).map((party) => ({
                   value: party.id,
                   label: party.name,
@@ -301,6 +303,8 @@ export function ProjectForm(props: ProjectFormProps) {
                   if (next !== typeId) setTemplateId('');
                 }}
                 clearable
+                loadError={types.error}
+                onRetry={() => void types.refetch()}
                 options={(types.data ?? []).map((type) => ({
                   value: type.id,
                   label: type.name,
@@ -366,6 +370,8 @@ export function ProjectForm(props: ProjectFormProps) {
                 value={templateId}
                 onChange={setTemplateId}
                 clearable
+                loadError={templates.error}
+                onRetry={() => void templates.refetch()}
                 options={(templates.data ?? []).map((template) => ({
                   value: template.id,
                   label: template.name,
@@ -479,6 +485,8 @@ export function ProjectForm(props: ProjectFormProps) {
                 value={architectId}
                 onChange={setArchitectId}
                 clearable
+                loadError={architects.error}
+                onRetry={() => void architects.refetch()}
                 options={(architects.data?.data ?? []).map((party) => ({
                   value: party.id,
                   label: party.name,
@@ -494,6 +502,8 @@ export function ProjectForm(props: ProjectFormProps) {
                 value={mainContractorId}
                 onChange={setMainContractorId}
                 clearable
+                loadError={contractors.error}
+                onRetry={() => void contractors.refetch()}
                 options={(contractors.data?.data ?? []).map((party) => ({
                   value: party.id,
                   label: party.name,
@@ -510,6 +520,8 @@ export function ProjectForm(props: ProjectFormProps) {
               id="project-brands"
               value={brandIds}
               onChange={setBrandIds}
+              loadError={brands.error}
+              onRetry={() => void brands.refetch()}
               options={(brands.data ?? []).map((brand) => ({
                 value: brand.id,
                 label: brand.brand_name,
@@ -532,9 +544,11 @@ export function ProjectForm(props: ProjectFormProps) {
                 value={ownerUserId}
                 onChange={setOwnerUserId}
                 disabled={!canManageOwner}
+                loadError={users.error}
+                onRetry={() => void users.refetch()}
                 options={(users.data ?? []).map((user) => ({
                   value: user.id,
-                  label: user.name || user.email || 'Unnamed user',
+                  label: user.name || 'Unnamed user',
                 }))}
                 placeholder="Select a salesperson"
               />

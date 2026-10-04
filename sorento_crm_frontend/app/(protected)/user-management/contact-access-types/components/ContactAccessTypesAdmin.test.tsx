@@ -32,6 +32,13 @@ vi.mock('../services/contactAccessTypeService', () => ({
   deleteContactAccessType: vi.fn(),
   getContactAccessTypes: vi.fn(),
   getContactAccessType: vi.fn(),
+  CONTACT_ACCESS_TYPE_PERMS: { manage: 'user_management.reference_data.manage' },
+}));
+
+// The caller's grants. Writes need `reference_data.manage` (NS-SHARED-LOOKUPS).
+let granted = new Set<string>(['user_management.reference_data.manage']);
+vi.mock('@/hooks/usePermissions', () => ({
+  useHasPermission: (slug: string) => granted.has(slug),
 }));
 
 import ContactAccessTypesAdmin from './ContactAccessTypesAdmin';
@@ -60,6 +67,7 @@ function render() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  granted = new Set(['user_management.reference_data.manage']);
   getAllContactAccessTypes.mockResolvedValue(ROWS);
   updateContactAccessType.mockResolvedValue(ROWS[0]);
   createContactAccessType.mockResolvedValue(ROWS[0]);
@@ -106,5 +114,26 @@ describe('ContactAccessTypesAdmin - no Portal forms column or field (AC-M3)', ()
 
     await waitFor(() => expect(createContactAccessType).toHaveBeenCalled());
     expect(createContactAccessType.mock.calls[0][0]).not.toHaveProperty('portal_form_types');
+  });
+});
+
+describe('ContactAccessTypesAdmin - writes need reference_data.manage (NS-SHARED-LOOKUPS)', () => {
+  it('a reader without the write slug sees the list and no Add, Edit or Delete', async () => {
+    granted = new Set();
+    render();
+    await screen.findByText('Dealer');
+
+    expect(screen.queryByRole('button', { name: /add type/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull();
+  });
+
+  it('a holder of the write slug gets Add, Edit and Delete', async () => {
+    render();
+    await screen.findByText('Dealer');
+
+    expect(screen.getByRole('button', { name: /add type/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Edit' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeTruthy();
   });
 });

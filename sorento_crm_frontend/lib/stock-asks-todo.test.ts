@@ -57,43 +57,30 @@ function shape(out: ReturnType<typeof bucketTodo>) {
   }));
 }
 
-describe('bucketTodo (AC-ST303)', () => {
-  it('builds Needs attention then Today, ONE day group per section, oldest first, and counts', () => {
+describe('bucketTodo (CUSTOMER-ASKS-REFER-ONLY: one Open section)', () => {
+  it('builds ONE Open section, oldest first, whatever the day, and counts', () => {
     const done = [ask('e', '2026-09-20T01:00:00Z', { state: 'done', done_at: '2026-09-29T02:00:00Z', done_by: 'Sean' })];
     const out = bucketTodo(payload([JUST_BEFORE, AT_START, YESTERDAY, LAST_WEEK], done), ASC);
-    expect(out.counts).toEqual({ open: 4, needs_attention: 3, done_today: 1 });
+    expect(out.counts).toEqual({ open: 4, done_today: 1 });
     expect(shape(out)).toEqual([
-      {
-        key: 'needs_attention',
-        label: 'Needs attention',
-        // No per-day sub-groups: every open ask before today_start sits in one group, oldest first
-        // (22 Sep 05:00Z, 27 Sep 20:00Z, 28 Sep 15:59Z).
-        days: [{ ids: ['d', 'c', 'a'] }],
-      },
-      { key: 'today', label: 'Today', days: [{ ids: ['b'] }] },
+      // No Needs attention / Today split (owner ruling 1 Oct 2026): every open ask in one group,
+      // oldest first (22 Sep 05:00Z, 27 Sep 20:00Z, 28 Sep 15:59Z, 28 Sep 16:00Z).
+      { key: 'open', label: 'Open', days: [{ ids: ['d', 'c', 'a', 'b'] }] },
     ]);
     expect(out.done.map((a) => a.id)).toEqual(['e']);
   });
 
-  it('splits at today_start exactly: 15:59Z is Needs attention, 16:00Z is Today', () => {
-    expect(shape(bucketTodo(payload([JUST_BEFORE]), ASC)).map((s) => s.key)).toEqual(['needs_attention']);
-    expect(shape(bucketTodo(payload([AT_START]), ASC)).map((s) => s.key)).toEqual(['today']);
+  it('does not split at today_start', () => {
+    expect(shape(bucketTodo(payload([JUST_BEFORE, AT_START]), ASC)).map((s) => s.key)).toEqual(['open']);
   });
 
-  it('omits a section that has no open row', () => {
+  it('has no section when nothing is open', () => {
     expect(bucketTodo(payload([]), ASC).sections).toEqual([]);
-    const out = bucketTodo(payload([LAST_WEEK, AT_START]), ASC);
-    expect(out.sections.map((s) => [s.key, s.days.length])).toEqual([
-      ['needs_attention', 1],
-      ['today', 1],
-    ]);
-    expect(bucketTodo(payload([AT_START]), ASC).sections.map((s) => s.key)).toEqual(['today']);
   });
 
   it('treats a created_at with no zone as UTC (the backend sends naive UTC)', () => {
-    const out = bucketTodo(payload([ask('n1', '2026-09-28T15:59:00'), ask('n2', '2026-09-28T16:00:00')]), ASC);
-    expect(out.counts.needs_attention).toBe(1);
-    expect(shape(out).find((s) => s.key === 'today')!.days[0].ids).toEqual(['n2']);
+    const out = bucketTodo(payload([ask('n2', '2026-09-28T16:00:00'), ask('n1', '2026-09-28T15:59:00')]), ASC);
+    expect(shape(out)[0].days[0].ids).toEqual(['n1', 'n2']);
   });
 
   it('counts an incoming and a console ask like any other (Q5 (a))', () => {
@@ -105,7 +92,7 @@ describe('bucketTodo (AC-ST303)', () => {
   });
 });
 
-describe('bucketTodo sort inside a section (AC-ST303, AC-ST304)', () => {
+describe('bucketTodo sort inside the Open section (AC-ST303, AC-ST304)', () => {
   const day = (id: string, hour: number, over: Partial<StockAsk> = {}) =>
     ask(id, `2026-09-29T0${hour}:00:00Z`, over);
   const rows = [
@@ -127,10 +114,10 @@ describe('bucketTodo sort inside a section (AC-ST303, AC-ST304)', () => {
     expect(ids({ key: 'created_at', dir: 'desc' })).toEqual(['r3', 'r2', 'r1']);
   });
 
-  it('sorts inside a section only: Needs attention stays before Today whatever the sort', () => {
+  it('a newest-first sort reorders the whole Open list, across days', () => {
     const out = bucketTodo(payload([AT_START, LAST_WEEK, YESTERDAY]), { key: 'created_at', dir: 'desc' });
-    expect(out.sections.map((s) => s.key)).toEqual(['needs_attention', 'today']);
-    expect(out.sections[0].days[0].asks.map((a) => a.id)).toEqual(['c', 'd']);
+    expect(out.sections.map((s) => s.key)).toEqual(['open']);
+    expect(out.sections[0].days[0].asks.map((a) => a.id)).toEqual(['b', 'c', 'd']);
   });
 });
 

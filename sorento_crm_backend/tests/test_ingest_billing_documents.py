@@ -759,8 +759,10 @@ class TestValidation:
         )
         out = {r["source_ref"]: r for r in res.json()["records"]}
         assert out[f"{MARKER}:IV:G1"]["outcome"] == "created"
+        # Owner decision, 1 Oct 2026: an unknown key is dropped (name logged), never
+        # refused, so the record carrying `surprise` lands like the good one.
+        assert out[f"{MARKER}:IV:E1"]["outcome"] == "created", out[f"{MARKER}:IV:E1"]
         for ref in (
-            f"{MARKER}:IV:E1",
             f"{MARKER}:IV:N1",
             f"{MARKER}:IV:T1",
             f"{MARKER}:IV:M1",
@@ -770,7 +772,6 @@ class TestValidation:
         ):
             assert out[ref]["outcome"] == "failed", ref
             assert out[ref]["errors"], ref
-        assert "surprise" in out[f"{MARKER}:IV:E1"]["errors"]
         assert any("quantity" in k for k in out[f"{MARKER}:IV:N1"]["errors"])
         assert any("total" in k for k in out[f"{MARKER}:IV:T1"]["errors"]) or any(
             "total" in v for v in out[f"{MARKER}:IV:T1"]["errors"].values()
@@ -778,7 +779,7 @@ class TestValidation:
         assert "lines" in out[f"{MARKER}:IV:M1"]["errors"]
         assert "document_type" in out[f"{MARKER}:IV:Y1"]["errors"]
         assert "status" in out[f"{MARKER}:IV:S1"]["errors"]
-        assert env.counts()["docs"] == 1
+        assert env.counts()["docs"] == 2
 
     def test_negative_quantity_is_allowed_on_a_credit_note(self, env):
         cn = _minimal(f"{MARKER}:CN:NEG", document_type="credit_note")

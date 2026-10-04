@@ -9,7 +9,8 @@
  *
  *   GET    /sales-orders            list (page/limit/sort/dir/query/status/priority/source,
                                    date_from/date_to/customer_code/outstanding/sales_agent_id,
-                                   demand_class: project | retail | unclassified)
+                                   demand_class: project | retail | unclassified,
+                                   transferable: yes | no | unknown)
  *   GET    /sales-orders/agents     sales-agent options for the Agent filter/select. Gated on
  *                                   `scm.dashboard.view` - the same read permission as this
  *                                   whole router - rather than the sales-agents master's own
@@ -62,6 +63,8 @@ export interface SalesOrderListQuery {
   /** The planning class: 'project' | 'retail' | 'unclassified' (demand_class IS NULL).
    *  Omit for all. */
   demandClass?: string | null;
+  /** AutoCount's Transferable flag: 'yes' | 'no' | 'unknown' (never stated). Omit for all. */
+  transferable?: string | null;
 }
 
 /**
@@ -137,6 +140,7 @@ export async function getSalesOrders(
       outstanding: params.outstanding ? 'true' : undefined,
       sales_agent_id: params.salesAgentId || undefined,
       demand_class: params.demandClass || undefined,
+      transferable: params.transferable || undefined,
     },
   );
   const res = await apiFetch(`${BASE}?${sp.toString()}`);

@@ -55,7 +55,7 @@ export default function ImportFieldAliasesList() {
   const [docType, setDocType] = useState<ImportFieldAliasDocType>(() =>
     initialDocType(searchParams.get('doc_type')),
   );
-  const { data: groups, isLoading } = useImportFieldAliases(docType);
+  const { data: groups, isLoading, error, refetch } = useImportFieldAliases(docType);
   const [addOpen, setAddOpen] = useState(false);
   const removal = useDeferredRowAction({
     actionKey: 'import_field_alias.forget',
@@ -171,6 +171,8 @@ export default function ImportFieldAliasesList() {
         table={table}
         recordCount={groups?.length ?? 0}
         isLoading={isLoading}
+        error={error}
+        onRetry={() => void refetch()}
         tableLayout={{ width: 'fixed', columnsResizable: true }}
       >
         <Card>

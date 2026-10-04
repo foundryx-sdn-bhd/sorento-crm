@@ -18,7 +18,7 @@ import { useListStateFromUrl } from '@/hooks/useListStateFromUrl';
 import { useResetPageOnFilterChange } from '@/hooks/useResetPageOnFilterChange';
 import { buildDetailSearch } from '@/lib/listNavQuery';
 import { Switch } from '@/components/ui/switch';
-import { useStatusGraph } from '@/app/(protected)/system-management/status-graphs/hooks/useStatusGraphs';
+import { useProjectStatusGraph } from '@/app/(protected)/project-sales/_shared/hooks/useProjectStatusGraph';
 import {
   useChangeProjectStatus,
   useProjectParties,
@@ -32,6 +32,7 @@ import { DeliveryScheduleUploadDialog } from '../../[projectId]/components/Deliv
 import { PageHeader } from '@/components/common/PageHeader';
 import { isSearchInFlight, useDebouncedSearch } from '@/hooks/useDebouncedSearch';
 import { ListSearchInput } from '@/components/common/ListSearchInput';
+import { ListLoadFailure } from '@/components/common/ListLoadFailure';
 
 type StartAction = 'upload-po' | 'upload-schedule' | null;
 
@@ -102,7 +103,7 @@ export function PipelineClient() {
     onlyCritical,
   ]);
 
-  const graph = useStatusGraph('project', null, false);
+  const graph = useProjectStatusGraph('project');
   const developers = useProjectParties({ party_type: 'developer', limit: 200 });
   const types = useProjectTypes();
   const move = useChangeProjectStatus();
@@ -352,7 +353,12 @@ export function PipelineClient() {
         </div>
       )}
 
-      {view === 'board' && !projects.isLoading && total === 0 ? (
+      {view === 'board' && !projects.isLoading && projects.error && total === 0 ? (
+        // A failed read is not "no projects registered yet" (lever L2).
+        <div className="rounded-lg border px-4 py-6 text-sm">
+          <ListLoadFailure error={projects.error} onRetry={() => void projects.refetch()} />
+        </div>
+      ) : view === 'board' && !projects.isLoading && total === 0 ? (
         hasFilters ? (
           <EmptyState
             title="No projects match these filters"
@@ -381,6 +387,7 @@ export function PipelineClient() {
           projects={rows}
           total={total}
           isLoading={projects.isLoading}
+          error={projects.error}
           isFetching={projects.isFetching}
           isPlaceholderData={projects.isPlaceholderData}
           pagination={pagination}

@@ -43,7 +43,7 @@ export default function PromotionTypesList() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<PromotionType | null>(null);
 
-  const { data, isLoading, refetch, isFetching } = usePromotionTypes();
+  const { data, isLoading, refetch, isFetching, error } = usePromotionTypes();
   // Delete asks nothing (D7): the row dims and a toast counts down with Cancel.
   // Promotions of a deleted type become unclassified and follow the default
   // type, which is what the server does whichever way the delete arrives.
@@ -203,6 +203,8 @@ export default function PromotionTypesList() {
       table={table}
       recordCount={rows.length}
       isLoading={isLoading}
+      error={error}
+      onRetry={() => void refetch()}
       rowPending={rowPending}
       tableLayout={{ width: 'fixed', columnsResizable: true, columnsVisibility: true }}
       emptyMessage="No promotion types yet. Add one to control what happens to a promotion after it ends."

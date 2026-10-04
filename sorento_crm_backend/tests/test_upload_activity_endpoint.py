@@ -69,9 +69,15 @@ def _add_attachment(
     batch_id: str | None = None,
     created_at: datetime | None = None,
     attachment_type_id: str | None = None,
+    untyped: bool = False,
 ) -> str:
+    """Typed by default: an untyped attachment never reaches the drawer (owner
+    rule, 2 Oct 2026), so a test about how a row renders needs a type. Pass
+    ``untyped=True`` to build one of the rows the drawer leaves out."""
     from app.models.resources import Attachment
 
+    if attachment_type_id is None and not untyped:
+        attachment_type_id = _add_attachment_type(db, f"Type {uuid.uuid4().hex[:8]}")
     attachment_id = str(uuid.uuid4())
     db.add(
         Attachment(
@@ -152,7 +158,7 @@ def test_returns_empty_when_no_attachments(client):
 def test_stock_list_uploads_excluded_from_feed(client):
     """Stock List replacements are background reference-data uploads - they
     never get an n8n 'linked' callback, so they must not appear in the drawer
-    (they'd be stuck on Processing forever). Untyped uploads still show.
+    (they'd be stuck on Processing forever). Other typed uploads still show.
 
     The exclusion is now driven by `triggers_n8n_webhook`, not by the type NAME
     (migration 318), so the type has to opt out explicitly. On a real database
@@ -165,7 +171,7 @@ def test_stock_list_uploads_excluded_from_feed(client):
         filename="stock balance - Macro Version.xlsx",
         attachment_type_id=stock_type_id,
     )
-    _add_attachment(db, filename="receipt.pdf")  # untyped - must remain visible
+    _add_attachment(db, filename="receipt.pdf")  # typed, opted in - must remain visible
 
     r = c.get("/api/v1/resource-management/upload-activity")
     assert r.status_code == 200, r.text
@@ -173,6 +179,28 @@ def test_stock_list_uploads_excluded_from_feed(client):
     filenames = [f["filename"] for s in sessions for f in s["files"]]
     assert "receipt.pdf" in filenames
     assert "stock balance - Macro Version.xlsx" not in filenames
+
+
+def test_untyped_uploads_excluded_from_feed(client):
+    """Owner rule (2 Oct 2026): an attachment with no type is never sent to
+    n8n, so nothing about it may appear in upload activity either. The
+    loading-plan stock list is the case that surfaced it: stored untyped, it sat
+    on "Processing" forever waiting for an n8n reply that is not coming.
+    """
+    c, db = client
+    _add_attachment(db, filename="supplier stock list.xlsx", untyped=True)
+    batch = str(uuid.uuid4())
+    _add_attachment(db, filename="untyped-in-batch.pdf", batch_id=batch, untyped=True)
+    _add_attachment(db, filename="typed-in-batch.pdf", batch_id=batch)
+    _add_attachment(db, filename="brochure.pdf")
+
+    r = c.get("/api/v1/resource-management/upload-activity")
+    assert r.status_code == 200, r.text
+    filenames = [f["filename"] for s in r.json()["sessions"] for f in s["files"]]
+    assert "supplier stock list.xlsx" not in filenames
+    assert "untyped-in-batch.pdf" not in filenames
+    assert "typed-in-batch.pdf" in filenames
+    assert "brochure.pdf" in filenames
 
 
 def test_single_attachment_renders_as_single_session(client):
@@ -422,3 +450,50 @@ def test_error_message_column_wins_over_payload_error(client):
     file = r.json()["sessions"][0]["files"][0]
     assert file["error_code"] == "DUPLICATE_PACKING_LIST"
     assert file["error_message"].startswith("Container TEMU1234567 (shipment date")
+
+
+def test_resubmit_refuses_an_untyped_attachment(client, monkeypatch):
+    """Resubmit's no-prior-log fallback must not claim a send for an untyped
+    file: the webhook helper skips it (owner rule, 2 Oct 2026), so the honest
+    answer is a 400, and still no n8n log row."""
+    from app.models.integration import IntegrationLog
+
+    monkeypatch.setattr(
+        "app.api.v1.resources.attachments.get_n8n_attachment_webhook_url",
+        lambda _db: "https://n8n.test/hook",
+    )
+    c, db = client
+    aid = _add_attachment(db, filename="supplier stock list.xlsx", untyped=True)
+
+    r = c.post(f"/api/v1/resource-management/attachments/{aid}/resubmit")
+
+    assert r.status_code == 400, r.text
+    assert "no attachment type" in r.text
+    assert (
+        db.query(IntegrationLog)
+        .filter(IntegrationLog.business_table == "attachments", IntegrationLog.business_id == aid)
+        .count()
+        == 0
+    )
+
+
+def test_resubmit_refuses_an_untyped_attachment_with_a_legacy_log(client, monkeypatch):
+    """An untyped file sent to n8n before the rule still has its log; resubmit
+    must not take the legacy-log branch and force-resend it."""
+    from app.services.integration_service import IntegrationLogService
+
+    sent = []
+    monkeypatch.setattr(
+        IntegrationLogService,
+        "send_webhook_for_log",
+        lambda self, *a, **k: sent.append(a) or (True, None),
+    )
+    c, db = client
+    aid = _add_attachment(db, filename="old untyped.xlsx", untyped=True)
+    _add_log(db, attachment_id=aid, status="pending")
+
+    r = c.post(f"/api/v1/resource-management/attachments/{aid}/resubmit")
+
+    assert r.status_code == 400, r.text
+    assert "no attachment type" in r.text
+    assert sent == []

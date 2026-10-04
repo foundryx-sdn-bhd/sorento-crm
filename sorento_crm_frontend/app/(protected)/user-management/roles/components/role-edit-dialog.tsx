@@ -59,8 +59,16 @@ const RoleEditDialog = ({
   const [isAssigningUser, setIsAssigningUser] = useState(false);
   const [unassigningUserId, setUnassigningUserId] = useState<string | null>(null);
   const { data: permissionList } = usePermissionSelectQuery();
-  const { data: roleList } = useRoleSelectQuery();
-  const { data: usersSelect } = useQuery({
+  const {
+    data: roleList,
+    error: roleListError,
+    refetch: refetchRoleList,
+  } = useRoleSelectQuery();
+  const {
+    data: usersSelect,
+    error: usersSelectError,
+    refetch: refetchUsersSelect,
+  } = useQuery({
     queryKey: ['users-select'],
     queryFn: async () => {
       const response = await apiFetch('/api/user-management/users/select');
@@ -483,6 +491,8 @@ const RoleEditDialog = ({
                       placeholder="Select user to assign"
                       emptyMessage="No user found."
                       triggerClassName="w-full sm:w-[22rem]"
+                      loadError={usersSelectError}
+                      onRetry={() => void refetchUsersSelect()}
                       options={(usersSelect ?? []).map(
                         (user: { id: string; name?: string | null; email?: string | null }) => ({
                           value: user.id,
@@ -511,6 +521,8 @@ const RoleEditDialog = ({
                   onChange={copyPermissionsFromRole}
                   disabled={isCopyingPermissions || !roleList?.length}
                   placeholder="Select a role to copy from"
+                  loadError={roleListError}
+                  onRetry={() => void refetchRoleList()}
                   options={(roleList ?? []).map((sourceRole: UserRole) => ({
                     value: sourceRole.id,
                     label: sourceRole.name,

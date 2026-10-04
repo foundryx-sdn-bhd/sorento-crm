@@ -59,13 +59,13 @@ def test_cs_pic_recipient_resolves_active_cs_tracker_assignee():
         assigned_to_id="agnes",
         initiated_at=1,
     )
-    pic = SimpleNamespace(id="agnes", name="Agnes", email="cust-care2@sorento.com.my", is_trashed=False)
+    pic = SimpleNamespace(id="agnes", name="Agnes", email="person9@example.com", is_trashed=False)
     db = _query_returning({ConversationSLATracking: [tracker], User: [pic]})
     recips = automation_recipients.resolve_recipients(
         db, {"include_assigned_cs_pic": True}, source_id="ed46d5e7-d871-5921-b065-69e87db348fd"
     )
     assert recips == [
-        {"email": "cust-care2@sorento.com.my", "name": "Agnes", "user_id": "agnes"}
+        {"email": "person9@example.com", "name": "Agnes", "user_id": "agnes"}
     ]
 
 

@@ -12,7 +12,7 @@
  * NAVIGATION: sidebar only (SLA Management -> Conversation SLA Tracking), never deep-link
  * (project memory feedback_playwright_via_sidebar).
  *
- * SEED: a dedicated tracker for contact "E2E SLA Verify" (+60111000999) must exist,
+ * SEED: a dedicated tracker for contact "E2E SLA Verify" (+60110000557) must exist,
  * tier 1, unresolved, unresponded. Seeded out-of-band before the run so real customer
  * trackers are never mutated.
  *

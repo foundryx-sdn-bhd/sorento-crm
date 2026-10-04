@@ -360,7 +360,9 @@ class TestFieldValidationAC6:
     def test_oversize_code_name_and_unknown_key_each_fail_their_own_record(self, env):
         too_long_code = _record(code="C" * 51)
         too_long_name = _record(name="N" * 151)
-        unknown_key = _record(logo_url="https://not-allowed.example/logo.png")
+        unknown_key = _record(
+            name=f"{MARKER} Brand Unknown Key", logo_url="https://not-allowed.example/logo.png"
+        )
         good = _record()
 
         res = env.post(INGEST_BRANDS, [too_long_code, too_long_name, unknown_key, good])
@@ -371,8 +373,8 @@ class TestFieldValidationAC6:
         assert "code" in by_ref[too_long_code["source_ref"]].get("errors", {})
         assert by_ref[too_long_name["source_ref"]]["outcome"] == "failed"
         assert "name" in by_ref[too_long_name["source_ref"]].get("errors", {})
-        assert by_ref[unknown_key["source_ref"]]["outcome"] == "failed"
-        assert "logo_url" in by_ref[unknown_key["source_ref"]].get("errors", {})
+        # Owner decision, 1 Oct 2026: an unknown key is dropped, never refused.
+        assert by_ref[unknown_key["source_ref"]]["outcome"] == "created"
         assert by_ref[good["source_ref"]]["outcome"] == "created"
 
 

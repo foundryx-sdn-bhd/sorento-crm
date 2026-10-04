@@ -1766,7 +1766,7 @@ async def get_outstanding_report(
 
 
 # ---------------------------------------------------------------------------
-# sales report - confirmed vs outstanding sales, by month. A SEPARATE router,
+# sales report - delivered sales by DO date (lane SALES-REPORT). A SEPARATE router,
 # no prefix (mounted directly by `app/api/v1/order_management/__init__.py`),
 # the same reason `outstanding_report_router` above is one: the plan/UAC pin
 # the path at `/order-management/sales-report`, not
@@ -1798,8 +1798,9 @@ async def get_sales_report(
     channel: Optional[str] = Query(
         None,
         description=(
-            "dealer | project - filters sales_orders.demand_class ('retail' / 'project'). "
-            "Absent = all, including null-class SOs. Any other value is 422."
+            "dealer | project - the account's market segment class (project / contract = "
+            "project, any other segment = dealer); an account with no segment is in every "
+            "channel. Ignored when the scoped accounts span only one class. Any other value is 422."
         ),
     ),
     warehouse_codes: Optional[list[str]] = Query(
@@ -1823,14 +1824,17 @@ async def get_sales_report(
     date_from: Optional[str] = Query(
         None,
         description=(
-            "Filters on the SAME bucket date each row uses (required_date, else the SO's "
-            "order_date). Same flexible formats as the orders list route."
+            "Filters on the DO's own date (orders.order_date). Same flexible formats as the "
+            "orders list route. One bound alone is open-ended on the other side."
         ),
     ),
     date_to: Optional[str] = Query(None, description="Same flexible formats as date_from."),
-    detail: Optional[str] = Query(
+    group_by: Optional[str] = Query(
         None,
-        description="so - adds so_rows[], one row per SO rolled up over the whole filtered window.",
+        description=(
+            "customer | product | delivery_order | sales_agent - adds rows[], ranked by amount "
+            "(delivery orders latest first), top 10 with `more` the rest. Any other value is 422."
+        ),
     ),
     contact_id: Optional[str] = Query(
         None,
@@ -1848,19 +1852,14 @@ async def get_sales_report(
     current_user: dict = Depends(require_permission_with_api_key("order_management.orders.view")),
     db: Session = Depends(get_db),
 ):
-    """Confirmed vs outstanding sales, by month (`documentation/plans/chatbot/
-    PLAN-chatbot-sales-report.md`, AC-1620 to AC-1632).
-
-    `so_rows` is ABSENT from the body entirely unless `detail=so` was asked
-    (captain ruling, S2 fix round: a big dealer is 1,230 SOs, so the service
-    never computes or sends them unasked) - `response_model` is declared for
-    the OpenAPI schema and to validate every other declared field is present,
-    but the actual response is built by hand (bypassing FastAPI's automatic
-    serialization), the same pattern `get_outstanding_report` above uses for
-    its own `so`/`do`/breakdown keys, so that omission is possible.
+    """Delivered sales by DO date (`documentation/plans/chatbot/selfref-scope-acceptance-
+    criteria.md` AC-SR-20 to AC-SR-26): `total`, `periods[]` at the window's grain, and with
+    `group_by` a ranked `rows[]`, plus the drill-down `options[]` the reply offers. With a
+    contact, the contact's stock visibility policy caps the locations: a named location
+    outside it is answered `status: refused`.
     """
     from app.services.error_handler import AppException
-    from app.services.sales_report_service import sales_report
+    from app.services.sales_report_delivered import GROUP_BYS, delivered_sales_report
 
     # S7: the SUBJECT is a product, a customer, or both - but never nothing.
     # A contact identity defers this check until the customer scope is known below: a
@@ -1935,6 +1934,15 @@ async def get_sales_report(
                 code="sales_report_not_enabled",
             )
 
+    group_by_norm = (group_by or "").strip().lower() or None
+    if group_by_norm is not None and group_by_norm not in GROUP_BYS:
+        raise AppException(
+            422,
+            f"Unknown group_by value '{group_by}'",
+            detail="allowed: " + ", ".join(GROUP_BYS),
+            code="unknown_group_by",
+        )
+
     channel_norm = (channel or "").strip().lower() or None
     if channel_norm is not None and channel_norm not in ("dealer", "project"):
         raise AppException(
@@ -1956,6 +1964,14 @@ async def get_sales_report(
     )
     if scoped_customer_ids is not None:
         resolved_customer_ids = scoped_customer_ids
+        if group_by_norm == "sales_agent":
+            # Fix round 1, security N1: a customer-scoped contact asks about its own
+            # accounts; a ranking of the company's sales agents is staff information.
+            raise AppException(
+                403,
+                "That breakdown is not available for your account.",
+                code="group_by_not_allowed",
+            )
     if _no_subject and not scoped_customer_ids:
         raise _needs_subject()
     resolved_warehouse_codes = _normalize_entities(warehouse_codes)
@@ -1971,47 +1987,32 @@ async def get_sales_report(
                 code="too_many_values",
             )
 
-    data = sales_report(
+    # AC-SR-25: a contact's own stock visibility policy caps the locations it may be told
+    # about (`stock_visibility.resolve_policy`, the stock route's own resolver).
+    policy = None
+    if contact_id and space_id:
+        from app.services.stock_visibility import resolve_policy
+
+        policy = resolve_policy(db, resolved_contact_id, space_id) if resolved_contact_id else None
+
+    parsed_from = _parse_flex_date(date_from)
+    parsed_to = _parse_flex_date(date_to, end_of_day=True)
+    data = delivered_sales_report(
         db,
         product_code=product_code,
         customer_query=None if scoped_customer_ids is not None else customer_query,
         customer_ids=resolved_customer_ids,
         channel=channel_norm,
         warehouse_codes=resolved_warehouse_codes,
-        date_from=_parse_flex_date(date_from),
-        date_to=_parse_flex_date(date_to, end_of_day=True),
-        detail=detail,
+        location_token=location_token,
+        date_from=parsed_from.date() if parsed_from else None,
+        date_to=parsed_to.date() if parsed_to else None,
+        group_by=group_by_norm,
+        policy=policy,
+        capped_by_policy=bool(contact_id and space_id),
     )
-    # S9: echo only, never filters - added to the dict the SAME way the
-    # outstanding route tacks it onto its body, except this report's schema
-    # declares the field (AC-1631 wants it present on every response, not just
-    # when given), so it travels through `SalesReportResponse` normally instead
-    # of being appended to `body` after validation.
-    data["location_token"] = location_token.strip() if (location_token or "").strip() else None
-
     validated = SalesReportResponse(**data)
-    body = validated.model_dump(mode="json")
-    if data.get("so_rows") is None:
-        body.pop("so_rows", None)
-    # R13/AC-1628's rule, applied per month rather than once at the top level
-    # (the outstanding report's subject never changes mid-response, but this
-    # report's breakdown key does the same "None here is not asked" job
-    # nested inside months[] instead of at the response root).
-    for month in body.get("months", []):
-        if month.get("by_product") is None:
-            month.pop("by_product", None)
-        if month.get("by_customer") is None:
-            month.pop("by_customer", None)
-    # R-B2 (reviewer finding, Phase 3 fix round): echo `detail` onto the body the
-    # SAME way `get_outstanding_report` above echoes its own (`if detail in
-    # ("so", "do"): body["detail"] = detail`) - the MCP presenter's dispatcher
-    # reads `data.get("detail") == "so"` to pick `_sales_report_detail` over
-    # `_sales_report` without re-deriving it from `so_rows`'s mere presence.
-    # Only "so" is a valid value on this route (unlike the outstanding report's
-    # "so" / "do" scopes), so the key is absent, never `null`, when unset.
-    if detail == "so":
-        body["detail"] = detail
-    return JSONResponse(content=body)
+    return JSONResponse(content=validated.model_dump(mode="json", by_alias=True))
 
 
 # ---------------------------------------------------------------------------

@@ -825,7 +825,7 @@ export default function OrderForm({ orderId, onSuccess }: OrderFormProps) {
                         <FormItem>
                           <FormLabel>Lorry Plate</FormLabel>
                           <FormControl>
-                            <Input placeholder="VCG1678" {...field} value={field.value || ''} />
+                            <Input placeholder="ABC 1234" {...field} value={field.value || ''} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>

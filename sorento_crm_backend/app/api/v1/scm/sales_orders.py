@@ -105,6 +105,11 @@ def list_sales_orders(
         description="Keep only this planning class: project | retail | unclassified "
                     "(demand_class IS NULL). Omit for all.",
     ),
+    transferable: Optional[str] = Query(
+        None,
+        description="AutoCount's Transferable flag: yes | no | unknown (never stated). "
+                    "Omit for all.",
+    ),
     db: Session = Depends(get_db),
     _user: dict = Depends(_READ),
 ):
@@ -123,7 +128,7 @@ def list_sales_orders(
         page, limit, sort, dir, query, status, priority, source,
         date_from=date_from, date_to=date_to, customer_code=customer_code,
         outstanding=outstanding, sales_agent_id=sales_agent_id,
-        demand_class=demand_class,
+        demand_class=demand_class, transferable=transferable,
     )
     out["data"] = svc.with_planning_state(
         svc.with_planning_changes(

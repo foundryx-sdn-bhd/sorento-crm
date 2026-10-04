@@ -1,7 +1,7 @@
 'use client';
 
 import { use, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { MoveLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -16,6 +16,9 @@ import { CustomerBranchesTab } from '../../components/CustomerBranchesTab';
 export default function EditCustomerPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const qs = searchParams.toString();
+  const querySuffix = qs ? `?${qs}` : '';
   const [tab, setTab] = useState<CustomerTab>('details');
   const tabs = useCustomerTabs();
 
@@ -26,7 +29,7 @@ export default function EditCustomerPage({ params }: { params: Promise<{ id: str
           title="Edit Customer"
           actions={
             <Button asChild variant="outline">
-              <Link href={`/order-management/customers/${id}`}>
+              <Link href={`/order-management/customers/${id}${querySuffix}`}>
                 <MoveLeft /> Back to customer
               </Link>
             </Button>
@@ -48,7 +51,7 @@ export default function EditCustomerPage({ params }: { params: Promise<{ id: str
             <CustomerForm
               customerId={id}
               onSuccess={() => {
-                router.push(`/order-management/customers/${id}`);
+                router.push(`/order-management/customers/${id}${querySuffix}`);
               }}
             />
           </TabsContent>

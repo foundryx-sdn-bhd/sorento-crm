@@ -1065,3 +1065,56 @@ describe('location rule', () => {
     resolveSave({ effective: own, override: own });
   });
 });
+
+describe('CONTACT-COMPANYLESS AC7 - the company reads on every location', () => {
+  const MOCHA_WH = {
+    id: '9f2c1d84-1b3a-4a0e-9b21-8c1f0d4e7a09',
+    code: 'MOCHA-WH',
+    name: 'Mocha Site',
+    company_name: 'Mocha',
+  } as StockVisibilityWarehouse;
+  const SORENTO_WH = {
+    id: '9f2c1d84-1b3a-4a0e-9b21-8c1f0d4e7a08',
+    code: 'BRW',
+    name: 'Rawang Main Warehouse',
+    company_name: 'Sorento',
+  } as StockVisibilityWarehouse;
+
+  it('prefixes the company on a saved chip, even when every chip is one company', async () => {
+    const own = policy('compact', [SORENTO_WH, MOCHA_WH], 'contact');
+    respondWith(() => ({ effective: own, override: own }));
+
+    renderSection(CONTACT_SCOPE);
+    await waitForCard();
+
+    expect(chipLabels()).toEqual([
+      'Sorento · BRW - Rawang Main Warehouse',
+      'Mocha · MOCHA-WH - Mocha Site',
+    ]);
+  });
+
+  it('prefixes the company on a search result, and on the Dealer pool fill', async () => {
+    const own = policy('compact', [], 'contact');
+    respondWith(() => ({ effective: own, override: own }));
+    service.searchStockVisibilityWarehouses.mockResolvedValue([MOCHA_WH]);
+    service.getDealerPoolWarehouses.mockResolvedValue([SORENTO_WH, MOCHA_WH]);
+
+    renderSection(CONTACT_SCOPE);
+    await waitForCard();
+
+    fireEvent.change(screen.getByLabelText('Search locations'), { target: { value: 'mocha' } });
+    await waitFor(() =>
+      expect(screen.getAllByTestId('location-result').map((el) => el.textContent)).toEqual([
+        'Mocha · MOCHA-WH - Mocha Site',
+      ]),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /dealer pool/i }));
+    await waitFor(() =>
+      expect(chipLabels()).toEqual([
+        'Sorento · BRW - Rawang Main Warehouse',
+        'Mocha · MOCHA-WH - Mocha Site',
+      ]),
+    );
+  });
+});

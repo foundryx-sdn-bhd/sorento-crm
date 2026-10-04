@@ -301,6 +301,8 @@ export default function AutomationForm({ open, onOpenChange, automation, onSaved
             <SearchableSelect
               value={emailTemplateId}
               onChange={setEmailTemplateId}
+              loadError={templates.error}
+              onRetry={() => void templates.refetch()}
               options={(templates.data?.data ?? []).map((t) => ({
                 value: t.id,
                 label: `${t.name} (${t.code})`,

@@ -1,0 +1,933 @@
+{
+  "turns": [
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow",
+        "hidden_spec_keys": [
+          "board_thickness",
+          "thickness"
+        ]
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1177555@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1177555,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1782546255,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000059"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000059",
+          "id": 900000059,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000059",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.900000000000030\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": "zzt-agent-1177555@example.invalid",
+              "firstName": "ZZT-agent",
+              "id": 1177555,
+              "lastName": "",
+              "role": "user"
+            },
+            "countryCode": "MY",
+            "created_at": 1782546255,
+            "email": null,
+            "firstName": "ZZT-900000059",
+            "id": 900000059,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000059",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "951ba5d9-9d3b-4f46-9724-5f933e641218",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxNjIyOTExNzgVAgASGCBBQzVGRjlBNDJBOTQzRjY4MUZEOTdDMDI1RUIwN0MyOAA=",
+            "contactId": 900000059,
+            "message": {
+              "text": "Srtkt1934 stock",
+              "type": "text"
+            },
+            "messageId": 1789375514000000,
+            "timestamp": 1789375514000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message",
+          "send_attachments"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "31107c15-9f11-41a0-8925-0648935ae9ce",
+          "446969d4-df5b-465b-b996-a6e790694e7e",
+          "4f4c67e5-a357-4f65-8d63-61b11384bf8a",
+          "50f5137f-eed0-447c-a242-961793cef786"
+        ],
+        "focus_after": null,
+        "pending": null,
+        "text": "Stock details found for the requested products.\n\n1. *Company:* Sorento\n*Product Code:* SRTKT1934SS-DIY\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 35\n*Outstanding:* 0\n\n2. *Company:* Mocha\n*Product Code:* SRTKT1934SS-DIY\n*Warehouse:* MERU\n*System Location:* MOCHA-WH\n*Quantity On Hand:* 32\n\n3. *Company:* Sorento\n*Product Code:* SRTKT1934SS-GM-DIY\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 207\n*Outstanding:* 0\n\n4. *Company:* Mocha\n*Product Code:* SRTKT1934SS-GM-DIY\n*Warehouse:* MERU\n*System Location:* MOCHA-WH\n*Quantity On Hand:* 24\n\n_Data last updated: 14/09/2026 11:27:04_",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "contact_id",
+              "date_mode",
+              "include_sellable",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_inventory_stock_balance_list"
+          }
+        ]
+      },
+      "received_session_vars": {
+        "respond_io_id": "900000059",
+        "session_vars": {
+          "user_response": "I have attached the file(s) below.\n\n1. *Product Code:* SRTKS7646-NEW\n*Container:* CMAU9233271\n*ETA:* 2026-08-16\n*Incoming Quantity:* 20\n*Warehouse Allocations:* BRW (20)",
+          "variables": {
+            "access_levels": [],
+            "contains_flyer": false,
+            "date_filter_end": null,
+            "date_filter_start": null,
+            "date_mode": null,
+            "domain_hint": "incoming",
+            "dym_candidates": [],
+            "dym_offer": null,
+            "entities": [
+              {
+                "canonical_code": "SRTKS7646-NEW",
+                "current_message": true,
+                "hint": "product",
+                "ordinal": 1,
+                "raw": "SRTKS7646-NEW",
+                "uuid": "4e2867e7-2016-4fd6-9f98-51d21afd34b1"
+              }
+            ],
+            "escalation": {
+              "is_escalation_confirmation": false
+            },
+            "ideation": null,
+            "intent_hint": "check_incoming",
+            "last_result_set": [
+              {
+                "attachment_type": null,
+                "entity_type": "product",
+                "filename": null,
+                "idx": 1,
+                "label": "SRTKS7646-NEW",
+                "product": "SRTKS7646-NEW",
+                "uuid": "4e2867e7-2016-4fd6-9f98-51d21afd34b1"
+              },
+              {
+                "attachment_type": null,
+                "entity_type": "product",
+                "filename": null,
+                "idx": 2,
+                "label": "SRTKS7646",
+                "product": "SRTKS7646",
+                "uuid": "70b9eed6-d4e9-4c44-9ae8-a65c342cef75"
+              }
+            ],
+            "match_mode": "and",
+            "message_type": "business_query",
+            "pending": null,
+            "picker_domain": "incoming",
+            "picker_last_result_set": [
+              {
+                "attachment_type": null,
+                "entity_type": "product",
+                "filename": null,
+                "idx": 1,
+                "label": "SRTKS7646-NEW",
+                "product": "SRTKS7646-NEW",
+                "uuid": "4e2867e7-2016-4fd6-9f98-51d21afd34b1"
+              },
+              {
+                "attachment_type": null,
+                "entity_type": "product",
+                "filename": null,
+                "idx": 2,
+                "label": "SRTKS7646",
+                "product": "SRTKS7646",
+                "uuid": "70b9eed6-d4e9-4c44-9ae8-a65c342cef75"
+              }
+            ],
+            "picker_selection_context": "disambiguation",
+            "query_brands": [],
+            "requested_attributes": [
+              "estimated_arrival_date"
+            ],
+            "response": "Previous turn (incoming): returned 1 records",
+            "routing": {
+              "suggested_agent": "incoming_stock_enquiries",
+              "suggested_team": "purchasing"
+            },
+            "routing_brand": "sorento",
+            "routing_brand_source": "resolved",
+            "routing_companies": [
+              {
+                "brand_code": "sorento",
+                "codes": [
+                  "SRTKS7646-NEW"
+                ],
+                "company_id": "00000000-0000-0000-0000-000000000001",
+                "company_name": "Sorento",
+                "labels": [
+                  "SRTKS7646-NEW"
+                ]
+              }
+            ],
+            "routing_company": "00000000-0000-0000-0000-000000000001",
+            "routing_roster_plan": null,
+            "selection_context": "disambiguation",
+            "user_goal": "trying to select the first option from the pending offer"
+          }
+        }
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "Srtkt1934",
+                "entity_type": "product",
+                "uuid": "31107c15-9f11-41a0-8925-0648935ae9ce"
+              }
+            ],
+            "resolved": true,
+            "token": "Srtkt1934"
+          }
+        ],
+        "tokens": [
+          "Srtkt1934"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 17,
+        "recorded_at": "2026-09-14T17:45:18.208446+09:00",
+        "turn_id": "b9c36160-efe3-4953-89d5-9c50f0fda2c2"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 4,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 4,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "contact_id": "900000059",
+            "date_mode": null,
+            "include_sellable": true,
+            "is_active": null,
+            "product_ids": [
+              "31107c15-9f11-41a0-8925-0648935ae9ce",
+              "4f4c67e5-a357-4f65-8d63-61b11384bf8a",
+              "50f5137f-eed0-447c-a242-961793cef786",
+              "446969d4-df5b-465b-b996-a6e790694e7e"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "attachments": [],
+            "fallback_used": false,
+            "has_result": true,
+            "intro": "Stock details found for the requested products.",
+            "items": [
+              {
+                "fields": [
+                  {
+                    "key": "company_name",
+                    "label": "Company",
+                    "value": "Sorento"
+                  },
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "SRTKT1934SS-DIY"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "BUKIT RAJA"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "BRW"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 35
+                  },
+                  {
+                    "key": "open_so_qty",
+                    "label": "Outstanding",
+                    "value": 0
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTKT1934SS-DIY"
+              },
+              {
+                "fields": [
+                  {
+                    "key": "company_name",
+                    "label": "Company",
+                    "value": "Mocha"
+                  },
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "SRTKT1934SS-DIY"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "MERU"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "MOCHA-WH"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 32
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTKT1934SS-DIY"
+              },
+              {
+                "fields": [
+                  {
+                    "key": "company_name",
+                    "label": "Company",
+                    "value": "Sorento"
+                  },
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "SRTKT1934SS-GM-DIY"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "BUKIT RAJA"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "BRW"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 207
+                  },
+                  {
+                    "key": "open_so_qty",
+                    "label": "Outstanding",
+                    "value": 0
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTKT1934SS-GM-DIY"
+              },
+              {
+                "fields": [
+                  {
+                    "key": "company_name",
+                    "label": "Company",
+                    "value": "Mocha"
+                  },
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "SRTKT1934SS-GM-DIY"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "MERU"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "MOCHA-WH"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 24
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTKT1934SS-GM-DIY"
+              }
+            ],
+            "last_updated_at": "2026-09-14T11:27:04.915238",
+            "lookup_companies": [
+              {
+                "id": "38db4f20-ab6b-4bd0-a6fc-3a6728f0dee2",
+                "name": "Mocha"
+              },
+              {
+                "id": "00000000-0000-0000-0000-000000000001",
+                "name": "Sorento"
+              }
+            ],
+            "restricted_fields": {
+              "open_so_qty": "inventory.sellable"
+            },
+            "result_type": "stock",
+            "stock_visibility": {
+              "hide_zero_locations": false,
+              "mode": "detailed",
+              "source": "contact",
+              "warehouse_codes": [
+                "BRW",
+                "MOCHA-WH",
+                "MWH"
+              ]
+            }
+          },
+          "tool": "crm_inventory_stock_balance_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "inventory",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "Srtkt1934"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_stock",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to check stock for Srtkt1934"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow",
+        "hidden_spec_keys": [
+          "board_thickness",
+          "thickness"
+        ]
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1177555@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1177555,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1782546255,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000059"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000059",
+          "id": 900000059,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000059",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.900000000000030\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": "zzt-agent-1177555@example.invalid",
+              "firstName": "ZZT-agent",
+              "id": 1177555,
+              "lastName": "",
+              "role": "user"
+            },
+            "countryCode": "MY",
+            "created_at": 1782546255,
+            "email": null,
+            "firstName": "ZZT-900000059",
+            "id": 900000059,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000059",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "990abf12-c8c1-4923-bbbf-83ca70b7e298",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxNjIyOTExNzgVAgASGCBBQzZBNjQ0NUE2MjVBQTc2NkM3NDc3NUY5RTg3OTM2MQA=",
+            "contactId": 900000059,
+            "message": {
+              "text": "mub206 stock",
+              "type": "text"
+            },
+            "messageId": 1789378751000000,
+            "timestamp": 1789378751000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message",
+          "send_attachments"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "ca0d891c-a639-4336-8d79-83c62e320167",
+          "e0608957-7f4b-4bbd-825f-82f79fdc3894"
+        ],
+        "focus_after": null,
+        "pending": null,
+        "text": "Stock details found for the requested products.\n\n1. *Company:* Sorento\n*Product Code:* MUB206\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n2. *Company:* Mocha\n*Product Code:* MUB206\n*Warehouse:* MERU\n*System Location:* MOCHA-WH\n*Quantity On Hand:* 8\n\n_Data last updated: 14/09/2026 17:25:40_",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "contact_id",
+              "date_mode",
+              "include_sellable",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_inventory_stock_balance_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "mub206",
+                "entity_type": "product",
+                "uuid": "ca0d891c-a639-4336-8d79-83c62e320167"
+              }
+            ],
+            "resolved": true,
+            "token": "mub206"
+          }
+        ],
+        "tokens": [
+          "mub206"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 17,
+        "recorded_at": "2026-09-14T18:39:15.202315+09:00",
+        "turn_id": "f2e9d05b-3613-47b0-8159-3489cbfc8550"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 2,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 2,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "contact_id": "900000059",
+            "date_mode": null,
+            "include_sellable": true,
+            "is_active": null,
+            "product_ids": [
+              "e0608957-7f4b-4bbd-825f-82f79fdc3894",
+              "ca0d891c-a639-4336-8d79-83c62e320167"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "attachments": [],
+            "fallback_used": false,
+            "has_result": true,
+            "intro": "Stock details found for the requested products.",
+            "items": [
+              {
+                "fields": [
+                  {
+                    "key": "company_name",
+                    "label": "Company",
+                    "value": "Sorento"
+                  },
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "MUB206"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "BUKIT RAJA"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "BRW"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 0
+                  },
+                  {
+                    "key": "open_so_qty",
+                    "label": "Outstanding",
+                    "value": 0
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "MUB206"
+              },
+              {
+                "fields": [
+                  {
+                    "key": "company_name",
+                    "label": "Company",
+                    "value": "Mocha"
+                  },
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "MUB206"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "MERU"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "MOCHA-WH"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 8
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "MUB206"
+              }
+            ],
+            "last_updated_at": "2026-09-14T17:25:40.036011",
+            "lookup_companies": [
+              {
+                "id": "38db4f20-ab6b-4bd0-a6fc-3a6728f0dee2",
+                "name": "Mocha"
+              },
+              {
+                "id": "00000000-0000-0000-0000-000000000001",
+                "name": "Sorento"
+              }
+            ],
+            "restricted_fields": {
+              "open_so_qty": "inventory.sellable"
+            },
+            "result_type": "stock",
+            "stock_visibility": {
+              "hide_zero_locations": false,
+              "mode": "detailed",
+              "source": "contact",
+              "warehouse_codes": [
+                "BRW",
+                "MOCHA-WH",
+                "MWH"
+              ]
+            }
+          },
+          "tool": "crm_inventory_stock_balance_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "inventory",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "mub206"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_stock",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to check stock for mub206"
+      }
+    }
+  ]
+}

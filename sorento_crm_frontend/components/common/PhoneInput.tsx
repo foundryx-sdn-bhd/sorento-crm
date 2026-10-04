@@ -8,8 +8,8 @@
  * `SearchableSelect`, like every select in the system), the number on the
  * right as the national significant number (no trunk "0", since the dial code
  * is shown beside it), formatted for the chosen country as it is typed. The value in
- * and out is E.164 (`+60166753328`); `normalisePhone` is what turns "0166753328",
- * "60166753328" or "+60 16-675 3328" into that same value. The backend still
+ * and out is E.164 (`+60160000509`); `normalisePhone` is what turns "0160000509",
+ * "60160000509" or "+60 16-000 0509" into that same value. The backend still
  * normalises what it receives - this is the first line, not the only one.
  *
  * An incomplete number shows the error state once the field is left (or when
@@ -50,7 +50,7 @@ export type NormalisedPhone = {
  * Normalise whatever was typed or pasted against `country`. A leading "+" or
  * "00" means international; so does a run of digits that starts with the
  * country's own calling code and only makes a valid number read that way
- * ("60166753328" in Malaysia).
+ * ("60160000509" in Malaysia).
  */
 export function normalisePhone(raw: string, country: CountryCode): NormalisedPhone {
   const trimmed = raw.trim();
@@ -79,12 +79,12 @@ export function normalisePhone(raw: string, country: CountryCode): NormalisedPho
 
   // The dial code sits beside the field, so the field shows the national
   // significant number without the trunk "0" (owner ruling, 29 Sep 2026:
-  // "16-675 3328", not "016-675 3328"). A half-typed "+65 9" in a Malaysia
+  // "16-000 0509", not "016-000 0509"). A half-typed "+65 9" in a Malaysia
   // field keeps its "+" until it resolves, or the "+60" beside it would lie.
   let display = typed;
   if (callingCode === shownCode) {
     const nsn = valid && number ? number.nationalNumber : (typer.getNationalNumber() ?? '');
-    // The national format is the per-country one ("016-675 3328"); it only
+    // The national format is the per-country one ("016-000 0509"); it only
     // formats right with the trunk prefix present, so format first, then drop it.
     const formatted =
       valid && number
@@ -109,7 +109,7 @@ function nationalPrefix(country: CountryCode): string {
   return plan?.nationalPrefix?.() ?? '';
 }
 
-/** "016-675 3328" to "16-675 3328": drop the digits in front of the national significant number. */
+/** "016-000 0509" to "16-000 0509": drop the digits in front of the national significant number. */
 function withoutTrunkPrefix(formatted: string, nsn: string): string {
   const extra = formatted.replace(/\D/g, '').length - nsn.length;
   if (!nsn) return '';

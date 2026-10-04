@@ -210,6 +210,8 @@ export function SeriesDetailClient({ seriesId }: { seriesId: string }) {
                       id="series-brand"
                       value={brandId}
                       onChange={setBrandId}
+                      loadError={brands.error}
+                      onRetry={() => void brands.refetch()}
                       options={brandOptions}
                       placeholder="Any brand"
                       emptyMessage="No brands found"
@@ -222,6 +224,8 @@ export function SeriesDetailClient({ seriesId }: { seriesId: string }) {
                   <SearchableMultiSelect
                     value={categoryIds}
                     onChange={setCategoryIds}
+                    loadError={categories.error}
+                    onRetry={() => void categories.refetch()}
                     options={categoryOptions}
                     placeholder="No categories"
                     emptyMessage="No categories found"

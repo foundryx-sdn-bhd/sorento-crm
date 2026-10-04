@@ -414,7 +414,7 @@ class TestEntityIdsTransformer:
                 {"uuid": "7136ea6b-1699-46ec-8e8e-f60c8bb64311", "entity_type": "customer", "code": "B"},
             ],
             "tool": "crm_master_products_list",
-            "semantic_input": {"contact_id": 487555417, "space_id": "ignored-by-the-hardcode"},
+            "semantic_input": {"contact_id": 900000039, "space_id": "ignored-by-the-hardcode"},
         }
         out = fetch.entity_ids_transformer(trigger)
 
@@ -435,10 +435,10 @@ class TestEntityIdsTransformer:
         """`String(x ?? '').trim()` - int and a space-padded string both fold to the trimmed
         string form, per the JS's own measured-over-24-executions comment."""
         fetch = _import_fetch()
-        for raw in (487555417, "487555417 ", " 487555417"):
+        for raw in (900000039, "900000039 ", " 900000039"):
             trigger = {"entities": [], "tool": "x", "semantic_input": {"contact_id": raw, "space_id": "s"}}
             out = fetch.entity_ids_transformer(trigger)
-            assert out["contact_id"] == "487555417"
+            assert out["contact_id"] == "900000039"
 
     def test_space_id_is_hard_coded_364817(self):
         """The ONE deliberate hard-code the JS keeps (a single-tenant confirmed decision) -

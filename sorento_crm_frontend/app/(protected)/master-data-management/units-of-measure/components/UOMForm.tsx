@@ -34,7 +34,7 @@ export default function UOMForm({ uomId, onSuccess }: UOMFormProps) {
   const router = useRouter();
   const isEditMode = !!uomId;
   const { data: uom, isLoading: isLoadingUOM } = useUOM(uomId || null);
-  const { data: baseUOMs } = useUOMSelectQuery();
+  const { data: baseUOMs, error: baseUOMsError, refetch: refetchBaseUOMs } = useUOMSelectQuery();
   const createMutation = useCreateUOM();
   const updateMutation = useUpdateUOM();
 
@@ -162,6 +162,8 @@ export default function UOMForm({ uomId, onSuccess }: UOMFormProps) {
                         value={field.value || '__none__'}
                         onChange={(value) => field.onChange(value === '__none__' ? null : value)}
                         placeholder="Select base UOM"
+                        loadError={baseUOMsError}
+                        onRetry={() => void refetchBaseUOMs()}
                         options={[
                           // Explicit "no base UOM" row rather than a clear button: Radix could not
                           // hold an empty value either, and the wording carries meaning here.

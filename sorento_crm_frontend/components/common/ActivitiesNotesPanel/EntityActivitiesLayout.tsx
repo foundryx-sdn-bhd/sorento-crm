@@ -33,7 +33,7 @@ import {
   RichTextEditor,
   extractMentionedUserIds,
 } from '@/components/ui/rich-text-editor';
-import { getUsersSelect } from '@/services/userSelectService';
+import { getUserLookup } from '@/services/userSelectService';
 import {
   Tabs,
   TabsContent,
@@ -344,7 +344,7 @@ function ActivitiesTab({
           onChange={setDraft}
           placeholder="Share an update… Use **bold**, *italic*, lists, links, @mention."
           minHeight={120}
-          mentionUsersFetcher={getUsersSelect}
+          mentionUsersFetcher={() => getUserLookup()}
         />
         <div className="flex justify-end">
           <Button size="sm" disabled={!htmlToText(draft) || posting} onClick={submit}>

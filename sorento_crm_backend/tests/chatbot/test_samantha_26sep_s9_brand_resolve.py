@@ -31,6 +31,7 @@ from app.services.chatbot.lanes.business import fetch as fetch_mod
 from app.services.chatbot.lanes.business import gate as gate_mod
 from app.services.chatbot.lanes.business.services import FetchServices, ResolveGateServices
 from app.services.company_scope import DEFAULT_COMPANY_ID
+from tests.chatbot._turn_helpers import do_window
 from tests.chatbot.conftest import set_chatbot_switches, validating_resolve_entity
 from tests.chatbot.test_engine import CONTACT_ID, _envelope, _parser_output, stub_access  # noqa: F401
 
@@ -763,6 +764,8 @@ class TestB1OrdersListAskGetsTheBrand:
             domain_hint="order",
             intent_hint="check_order",
             order_status="delivered",
+            # Dated: a dateless DO list ask asks which period first (DO-ASK-SIMPLIFY, owner 4 Oct 2026).
+            **do_window(),
             entities=[
                 {"raw": "Sorento", "hint": "brand", "canonical_code": None, "current_message": True, "confident": True},
                 {

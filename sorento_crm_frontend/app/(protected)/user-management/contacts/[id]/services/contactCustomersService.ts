@@ -23,6 +23,8 @@ export interface ContactCustomerLink {
   customer_id: string;
   customer_code: string;
   customer_name: string;
+  /** The customer's company: the contact page reads every granted company. */
+  company_name?: string | null;
   is_active: boolean;
   source: string;
   sales_agent_id: string | null;

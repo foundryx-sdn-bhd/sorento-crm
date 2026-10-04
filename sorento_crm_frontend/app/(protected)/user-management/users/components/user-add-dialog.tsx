@@ -86,7 +86,11 @@ const UserAddDialog = ({
   // Fetch available roles. Guarded against a non-array response (a test's
   // generic `apiFetch` stub, say) - this query has no `enabled: open` gate, so
   // it fires the moment the component mounts, dialog closed or not.
-  const { data: roleListRaw } = useRoleSelectQuery();
+  const {
+    data: roleListRaw,
+    error: roleListError,
+    refetch: refetchRoleList,
+  } = useRoleSelectQuery();
   const roleList: UserRole[] = useMemo(
     () => (Array.isArray(roleListRaw) ? (roleListRaw as UserRole[]) : []),
     [roleListRaw],
@@ -135,7 +139,11 @@ const UserAddDialog = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- form is stable; contact.id read fresh on open
   }, [open, contact?.id]);
 
-  const { data: superiorUsers } = useQuery({
+  const {
+    data: superiorUsers,
+    error: superiorUsersError,
+    refetch: refetchSuperiorUsers,
+  } = useQuery({
     queryKey: ['users-select', 'active'],
     queryFn: () => getUsersSelect({ status: 'ACTIVE' }),
     enabled: open,
@@ -454,6 +462,8 @@ const UserAddDialog = ({
                     placeholder="Copy roles from another user (optional)"
                     emptyMessage="No active user found."
                     triggerClassName="w-full"
+                    loadError={superiorUsersError}
+                    onRetry={() => void refetchSuperiorUsers()}
                     options={(superiorUsers || []).map((u) => ({
                       value: u.id,
                       label: u.name || u.email || 'Unnamed user',
@@ -479,6 +489,8 @@ const UserAddDialog = ({
                       <SearchableMultiSelect
                         value={field.value ?? []}
                         onChange={(v) => field.onChange(v)}
+                        loadError={roleListError}
+                        onRetry={() => void refetchRoleList()}
                         options={roleList.map((role: UserRole) => ({
                           value: role.id,
                           label: role.name,
@@ -544,6 +556,8 @@ const UserAddDialog = ({
                           placeholder="None"
                           emptyMessage="No active user found."
                           triggerClassName="w-full"
+                          loadError={superiorUsersError}
+                          onRetry={() => void refetchSuperiorUsers()}
                           options={[
                             { value: '__none__', label: 'None' },
                             ...(superiorUsers || []).map((superior) => ({

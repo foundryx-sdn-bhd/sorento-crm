@@ -621,6 +621,8 @@ class SalesOrderService:
             # (often blank, since AutoCount rarely states one); this is the answer people
             # actually asked for on this screen.
             "demand_class": so.demand_class,
+            # AutoCount's Transferable flag; None when the source never stated it.
+            "is_transferable": so.is_transferable,
             "created_at": so.created_at.isoformat() if so.created_at else "",
         }
 
@@ -1237,7 +1239,8 @@ class SalesOrderService:
              date_from: Optional[date] = None, date_to: Optional[date] = None,
              customer_code: Optional[str] = None, outstanding: bool = False,
              sales_agent_id: Optional[str] = None,
-             demand_class: Optional[str] = None) -> dict:
+             demand_class: Optional[str] = None,
+             transferable: Optional[str] = None) -> dict:
         q = self.db.query(SalesOrder).options(
             joinedload(SalesOrder.lines).joinedload(SalesOrderLine.product),
             joinedload(SalesOrder.lines).joinedload(SalesOrderLine.warehouse),
@@ -1295,6 +1298,14 @@ class SalesOrderService:
                 q = q.filter(SalesOrder.demand_class == demand_class)
             else:
                 q = q.filter(text("false"))
+        # AutoCount's Transferable flag (SO-TRANSFERABLE), same "matches nothing" rule.
+        # `unknown` is the NULL the source never stated, kept apart from `yes`.
+        if transferable:
+            column = SalesOrder.is_transferable
+            q = q.filter(
+                {"yes": column.is_(True), "no": column.is_(False),
+                 "unknown": column.is_(None)}.get(transferable, text("false"))
+            )
         if outstanding:
             # The SAME rule the netting reads, so "still owed" cannot mean one thing on this
             # screen and another in the plan. Only when asked for: an unticked box must not

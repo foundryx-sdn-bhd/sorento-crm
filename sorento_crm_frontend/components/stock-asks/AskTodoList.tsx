@@ -11,7 +11,6 @@ import type { StockAsk } from '@/lib/stock-asks';
 import { DEFAULT_ASK_SORT, bucketTodo, type AskTodoPayload } from '@/lib/stock-asks-todo';
 import type { LandingSort } from '@/app/(auth)/portal/lib/landing-fields';
 import type { ListBoardViewMode } from '@/hooks/useListBoardViewPreference';
-import { cn } from '@/lib/utils';
 
 export interface AskTodoListProps {
   payload: AskTodoPayload | null;
@@ -41,8 +40,7 @@ export interface AskTodoListProps {
 /**
  * The salesperson's to-do of their customers' asks, shared by the portal Customer asks tab and
  * Sales > Customer asks in the CRM. Presentational: the mount fetches, owns the toolbar, the
- * sort persistence and the opened card. Cards or the DataGrid, in three groups: Needs
- * attention, Today, Done today.
+ * sort persistence and the opened card. Cards or the DataGrid, in two groups: Open, Done today.
  */
 export function AskTodoList({
   payload,
@@ -130,10 +128,7 @@ export function AskTodoList({
 
       {sections.map((section) => (
         <section key={section.key} aria-labelledby={`ask-section-${section.key}`} className="space-y-2">
-          <h2
-            id={`ask-section-${section.key}`}
-            className={cn('text-sm font-semibold', section.key === 'needs_attention' && 'text-destructive')}
-          >
+          <h2 id={`ask-section-${section.key}`} className="text-sm font-semibold">
             {section.label}
           </h2>
           <ul className="space-y-2.5">

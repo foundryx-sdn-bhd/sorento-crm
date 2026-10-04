@@ -14,6 +14,37 @@ from sorento_crm_mcp.settings import Settings
 logger = logging.getLogger(__name__)
 
 
+def http_error_body(text: str, *, status_code: int, path: str, method: str) -> str:
+    """A non-2xx answer, as the JSON the model and the presenters read.
+
+    CHATBOT-SELFREF-SCOPE B3 (production, 30 Sep 2026): the route's 403 body used to ride
+    through verbatim, and `presenters._sales_analysis_envelope` rendered it as "Could not
+    run the sales report right now." with `has_result: true` and no `error`, so the turn
+    trace showed a successful tool call with nothing to explain the refusal. The body's
+    own keys are kept (`detail`, `message`, `code`, an `error` the route already named)
+    and the HTTP status is stamped beside them: `status_code` (int), `error` (set only
+    when the body carried none) and `http_error` (always, the one-line summary a trace
+    reader wants). `present_response` turns a body carrying `status_code >= 400` into an
+    error envelope for every presenter tool.
+    """
+    try:
+        parsed = json.loads(text)
+    except (TypeError, ValueError):
+        parsed = None
+    detail: Any = parsed if isinstance(parsed, (dict, list)) else (text or "")[:1000]
+    body: dict[str, Any] = dict(parsed) if isinstance(parsed, dict) else {"detail": detail}
+    reason = ""
+    if isinstance(parsed, dict):
+        reason = str(parsed.get("code") or parsed.get("message") or parsed.get("detail") or parsed.get("error") or "")
+    summary = f"{method} {path} returned HTTP {status_code}" + (f": {reason[:200]}" if reason else "")
+    body.setdefault("error", summary)
+    body["http_error"] = summary
+    body["status_code"] = int(status_code)
+    body["path"] = path
+    body["method"] = method
+    return json.dumps(body)
+
+
 class CRMClient:
     """Thin async client with X-API-Key and response size guard."""
 
@@ -171,5 +202,6 @@ class CRMClient:
                 r.status_code,
                 text[:400].replace("\n", " "),
             )
+            return http_error_body(text, status_code=r.status_code, path=rendered, method=method_upper)
 
         return text

@@ -34,6 +34,8 @@ from app.services import autocount_pull_service as pull_service
 from app.services.autocount_pull_compare import (
     compare_delivery_order_headers,
     compare_delivery_orders,
+    compare_goods_receive_note_headers,
+    compare_goods_receive_notes,
     compare_products,
     compare_stock,
     window_excel_rows,
@@ -85,9 +87,15 @@ class PullStartBody(BaseModel):
         return cleaned or None
 
     @model_validator(mode="after")
-    def _scope_only_for_delivery_orders(self):
-        if self.scope and self.entity != "delivery_orders":
-            raise ValueError("scope is accepted for delivery_orders only")
+    def _scope_only_for_documents(self):
+        if self.scope and self.entity not in pull_service.DOCUMENT_ENTITIES:
+            raise ValueError("scope is accepted for delivery_orders and goods_receive_notes only")
+        # GRN-PULL-SS (ss#107): the gateway answers a goods-receive-notes build with no
+        # scope 422, so the CRM refuses it here, in words, instead of relaying that.
+        if self.entity == "goods_receive_notes":
+            scope = self.scope or {}
+            if not (scope.get("docNo") or (scope.get("fromDay") and scope.get("toDay"))):
+                raise ValueError("a goods receive notes pull needs a From day and a To day")
         return self
 
 
@@ -270,15 +278,31 @@ class CompareMappingBody(BaseModel):
     columns: list[CompareMappingColumn] = Field(max_length=compare_mapping.MAX_COLUMNS)
 
 
+def _pullable_entities(db: Session, user: dict) -> set[str]:
+    """The document entities whose pull the caller may run (their mapping kinds are theirs)."""
+    allowed = set()
+    for entity in pull_service.DOCUMENT_ENTITIES:
+        try:
+            _require_entity_permission(db, user, entity)
+        except AppException:
+            continue
+        allowed.add(entity)
+    return allowed
+
+
 # Declared before `/{job_id}` so `compare-mappings` is never read as a job id.
 @router.get("/compare-mappings")
 def list_compare_mappings(
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """The saved (or default) sheet + column mapping of each compare workbook kind."""
-    _require_entity_permission(db, current_user, "delivery_orders")
-    return {"items": compare_mapping.list_mappings(db)}
+    """The saved (or default) sheet + column mapping of each compare workbook kind the caller
+    may pull (a kind is guarded by its entity's pull permission); 403 when none."""
+    allowed = _pullable_entities(db, current_user)
+    if not allowed:
+        _require_entity_permission(db, current_user, "delivery_orders")
+    return {"items": [m for m in compare_mapping.list_mappings(db)
+                      if compare_mapping.ENTITY_BY_KIND[m["kind"]] in allowed]}
 
 
 @router.put("/compare-mappings/{kind}")
@@ -288,7 +312,9 @@ def save_compare_mapping(
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    _require_entity_permission(db, current_user, "delivery_orders")
+    if kind not in compare_mapping.ENTITY_BY_KIND:
+        raise AppException(status_code=404, message=f"Unknown mapping kind '{kind}'.", code="UNKNOWN_KIND")
+    _require_entity_permission(db, current_user, compare_mapping.ENTITY_BY_KIND[kind])
     saved = compare_mapping.save_mapping(
         db, kind, body.sheet_name, [c.model_dump() for c in body.columns], current_user["id"]
     )
@@ -331,6 +357,8 @@ def get_pull_rows(
         mapped = [pull_service.map_product_row(r) for r in rows]
     elif entity == "delivery_orders":
         mapped = pull_service.map_delivery_order_rows(rows)
+    elif entity == "goods_receive_notes":
+        mapped = pull_service.map_goods_receive_note_rows(rows)
     else:
         fed = pull_service.classify_stock_rows(db, str(job.company_id), rows)["fed"]
         mapped = [pull_service.map_stock_row(r) for r in fed]
@@ -358,6 +386,10 @@ def download_pull(
     elif entity == "delivery_orders":
         body = pull_service.build_delivery_orders_workbook(
             pull_service.map_delivery_order_rows(rows)
+        )
+    elif entity == "goods_receive_notes":
+        body = pull_service.build_goods_receive_notes_workbook(
+            pull_service.map_goods_receive_note_rows(rows)
         )
     else:
         fed = pull_service.classify_stock_rows(db, str(job.company_id), rows)["fed"]
@@ -389,20 +421,24 @@ def compare_pull(
     extra: dict[str, Any] = {}
     if entity == "products":
         if body.source:
-            raise AppException(status_code=422, message="source is for delivery_orders only", code="INVALID_BODY")
+            raise AppException(status_code=422, message="source is for delivery_orders and goods_receive_notes only", code="INVALID_BODY")
         result = compare_products(body.rows, pull_rows)
         source = None
-    elif entity == "delivery_orders":
-        # Owner decision 30 Sep: two files, each compared inside the pulled DocDate window
-        # (the macro files hold extra days); a row outside it is ignored, never reported.
+    elif entity in pull_service.DOCUMENT_ENTITIES:
+        # Owner decision 30 Sep (DO) and Q5 a, 2 Oct (GRN): two files, each compared inside
+        # the pulled DocDate window (the files hold extra days); a row outside it is
+        # ignored, never reported.
         source = body.source or "lines"
         from_day, to_day = pull_service.pull_window(pull_service._pull_meta(job))
-        mapping = compare_mapping.get_mapping(db, compare_mapping.KIND_BY_SOURCE[source])
+        mapping = compare_mapping.get_mapping(db, compare_mapping.kind_for(entity, source))
         rows_in_window, ignored = window_excel_rows(body.rows, from_day, to_day, mapping)
-        if source == "headers":
-            result = compare_delivery_order_headers(rows_in_window, pull_rows, mapping)
-        else:
-            result = compare_delivery_orders(rows_in_window, pull_rows, mapping)
+        compare = {
+            ("delivery_orders", "lines"): compare_delivery_orders,
+            ("delivery_orders", "headers"): compare_delivery_order_headers,
+            ("goods_receive_notes", "lines"): compare_goods_receive_notes,
+            ("goods_receive_notes", "headers"): compare_goods_receive_note_headers,
+        }[(entity, source)]
+        result = compare(rows_in_window, pull_rows, mapping)
         extra = {
             "source": source,
             "window": {"fromDay": from_day, "toDay": to_day},
@@ -411,7 +447,7 @@ def compare_pull(
         }
     else:
         if body.source:
-            raise AppException(status_code=422, message="source is for delivery_orders only", code="INVALID_BODY")
+            raise AppException(status_code=422, message="source is for delivery_orders and goods_receive_notes only", code="INVALID_BODY")
         fed = pull_service.classify_stock_rows(db, str(job.company_id), pull_rows)["fed"]
         result = compare_stock(body.rows, fed)
         source = None

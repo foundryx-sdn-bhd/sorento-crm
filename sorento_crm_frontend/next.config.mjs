@@ -24,8 +24,12 @@ const nextConfig = {
   },
   // lucide-react is on Next's built-in optimizePackageImports list; @remixicon/react is not,
   // so its barrel imports would otherwise pull the whole icon set into every dev compile.
+  // proxyTimeout: the rewrite proxy below (dev, or a NEVER_STUCK_API_PROXY build) cuts a
+  // request at 30s by default and the browser gets a bare 500, while a slow chatbot turn
+  // can legitimately take longer than that.
   experimental: {
     optimizePackageImports: ['@remixicon/react'],
+    proxyTimeout: 120000,
   },
   compiler: {
     removeConsole: process.env.NODE_ENV === 'production' ? {
@@ -48,8 +52,10 @@ const nextConfig = {
     .filter(Boolean),
   // Proxy API requests to FastAPI backend in development
   async rewrites() {
-    // Only apply rewrites in development mode
-    if (process.env.NODE_ENV === 'development') {
+    // Only apply rewrites in development mode. NEVER_STUCK_API_PROXY=1 at BUILD time turns
+    // them on for a production build too: the nightly never-stuck smoke runs `next start`
+    // with no reverse proxy in front (production has one; rewrites are baked in at build).
+    if (process.env.NODE_ENV === 'development' || process.env.NEVER_STUCK_API_PROXY === '1') {
       return [
         // The rewrite param drops a trailing slash, and FastAPI 307s a list route without
         // one, so '/x/' must be forwarded as '/x/' or the two loop.

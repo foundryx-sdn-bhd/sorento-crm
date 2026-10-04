@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import require_permission
+from app.dependencies import get_current_user, require_permission
 from app.schemas.market_segment import (
     MarketSegmentCreate,
     MarketSegmentResponse,
@@ -26,7 +26,10 @@ def _service(db: Session) -> MarketSegmentService:
 @router.get("/", response_model=list[MarketSegmentResponse])
 async def list_market_segments(
     active_only: bool = False,
-    current_user: dict = Depends(require_permission("user_management.reference_data.view")),
+    # Any signed-in user (owner ruling 1 Oct 2026, never-stuck L10): contact and
+    # team-member segment pickers read it, and the rows are catalog config, no
+    # personal data. Every write below keeps `reference_data.manage`.
+    current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """List market segments (all by default; ``active_only=true`` for pickers)."""

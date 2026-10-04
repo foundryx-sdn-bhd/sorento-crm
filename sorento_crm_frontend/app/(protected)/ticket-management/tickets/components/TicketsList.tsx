@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { toast } from '@/lib/toast';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import type { ColumnDef, PaginationState, RowSelectionState } from '@tanstack/react-table';
 import { useReactTable, getCoreRowModel } from '@tanstack/react-table';
-import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -60,6 +60,9 @@ export default function TicketsList() {
     pageSize: PAGE_SIZE,
   });
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<unknown>(null);
+  // Whether rows are on screen, read by the load effect without becoming a dependency.
+  const hasRowsRef = useRef(false);
   const {
     value: search,
     setValue: setSearch,
@@ -98,6 +101,7 @@ export default function TicketsList() {
     if (mode !== 'list') return;
     let cancelled = false;
     setLoading(true);
+    setLoadError(null);
     const filters: TicketListFilters & { page: number; limit: number } = {
       page: pagination.pageIndex + 1,
       limit: pagination.pageSize,
@@ -112,9 +116,16 @@ export default function TicketsList() {
         if (cancelled) return;
         setRows(res.data);
         setTotal(res.pagination.total);
+        hasRowsRef.current = res.data.length > 0;
       })
-      .catch((e: Error) => {
-        if (!cancelled) toast.error(e.message);
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        // Rows on screen stay (a refresh after a bulk action failed); the grid shows the
+        // failure only in place of no rows, so a failure over rows is said in a toast.
+        setLoadError(e);
+        if (hasRowsRef.current) {
+          toast.error(e instanceof Error ? e.message : 'Could not refresh the tickets.');
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -354,6 +365,8 @@ export default function TicketsList() {
           table={table}
           recordCount={total}
           isLoading={loading}
+          error={loadError}
+          onRetry={() => setReloadTick((t) => t + 1)}
           rowHref={rowHref}
           listingKey="tickets.tickets.view"
           emptyMessage="No tickets match these filters."

@@ -50,7 +50,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { useHasPermission } from '@/hooks/usePermissions';
-import { getUsersSelect } from '@/services/userSelectService';
+import { getUserLookup } from '@/services/userSelectService';
 import { toast } from '@/lib/toast';
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import SlaTrackingChatRecords from './SlaTrackingChatRecords';
@@ -148,9 +148,13 @@ export default function ConversationSLATrackingDetail({
   const [reopenInitiated, setReopenInitiated] = useState('');
   const [reopenResetResponded, setReopenResetResponded] = useState(true);
 
-  const { data: usersSelect = [] } = useQuery({
-    queryKey: ['users-select', 'sla-test-override'],
-    queryFn: () => getUsersSelect(),
+  const {
+    data: usersSelect = [],
+    error: usersSelectError,
+    refetch: refetchUsersSelect,
+  } = useQuery({
+    queryKey: ['user-lookup', 'sla-test-override'],
+    queryFn: () => getUserLookup(),
     enabled: assigneeDialogOpen && canSlaTestOverride,
     staleTime: 1000 * 60 * 5,
   });
@@ -464,12 +468,14 @@ export default function ConversationSLATrackingDetail({
             <SearchableSelect
               value={selectedAssigneeId}
               onChange={setSelectedAssigneeId}
+              loadError={usersSelectError}
+              onRetry={() => void refetchUsersSelect()}
               options={[
                 { value: '', label: 'No assignee' },
                 ...usersSelect.map((user) => ({
                   value: user.id,
-                  label: user.name || user.email || 'Unnamed user',
-                  searchText: `${user.name ?? ''} ${user.email ?? ''}`.trim(),
+                  label: user.name || 'Unnamed user',
+                  searchText: user.name ?? '',
                 })),
               ]}
               placeholder="No assignee"

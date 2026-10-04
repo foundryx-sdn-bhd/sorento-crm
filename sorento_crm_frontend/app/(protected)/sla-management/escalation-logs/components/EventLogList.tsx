@@ -24,7 +24,7 @@ import { DataGridTable } from '@/components/ui/data-grid-table';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
-import { apiFetch } from '@/lib/api';
+import { getUserLookup, type UserLookupItem } from '@/services/userSelectService';
 import { formatDateTime } from '@/lib/helpers';
 import { useEventLogs } from '../hooks/useEventLogs';
 import type { ConversationSLAEventLog } from '../types/eventLog.types';
@@ -37,7 +37,7 @@ export default function EventLogList() {
   const [assignedTo, setAssignedTo] = useState('__all__');
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
 
-  const { data, isLoading, isPlaceholderData, refetch, isFetching } = useEventLogs({
+  const { data, isLoading, isPlaceholderData, refetch, isFetching, error } = useEventLogs({
     pageIndex: pagination.pageIndex,
     pageSize: pagination.pageSize,
     sorting,
@@ -50,15 +50,13 @@ export default function EventLogList() {
     setPagination((prev) => ({ ...prev, pageIndex: 0 }));
   }, [trackingId, eventType, assignedTo]);
 
-  const { data: respondUsers } = useQuery({
-    queryKey: ['respond-synced-users'],
-    queryFn: async () => {
-      const response = await apiFetch('/api/user-management/users/select?respond_synced=successful');
-      if (!response.ok) {
-        throw new Error('Failed to fetch respond synced users');
-      }
-      return response.json();
-    },
+  const {
+    data: respondUsers,
+    error: respondUsersError,
+    refetch: refetchRespondUsers,
+  } = useQuery({
+    queryKey: ['user-lookup', 'respond-synced', 'with-inactive'],
+    queryFn: () => getUserLookup({ respond_synced: true, include_inactive: true }),
     staleTime: 1000 * 60 * 5,
   });
 
@@ -146,6 +144,8 @@ export default function EventLogList() {
   return (
     <DataGrid table={table} recordCount={data?.pagination.total || 0} isLoading={isLoading}
       isPlaceholderData={isPlaceholderData}
+      error={error}
+      onRetry={() => void refetch()}
       tableLayout={{ width: 'fixed', columnsResizable: true, columnsVisibility: true }}
     >
       <Card>
@@ -187,11 +187,13 @@ export default function EventLogList() {
                   <SearchableSelect
                     value={assignedTo}
                     onChange={(value) => setAssignedTo(value)}
+                    loadError={respondUsersError}
+                    onRetry={() => void refetchRespondUsers()}
                     options={[
                       { value: '__all__', label: 'All assignees' },
-                      ...(respondUsers || []).map((user: { id: string; name?: string | null; respond_user_id?: string | null; email: string }) => ({
+                      ...(respondUsers || []).map((user: UserLookupItem) => ({
                         value: user.respond_user_id || user.id,
-                        label: user.name || user.email,
+                        label: user.name || 'Unnamed user',
                       })),
                     ]}
                     placeholder="Assigned to"

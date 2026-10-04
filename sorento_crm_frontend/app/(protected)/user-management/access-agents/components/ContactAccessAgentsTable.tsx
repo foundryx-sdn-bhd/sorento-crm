@@ -25,7 +25,7 @@ interface ContactAccessAgentsTableProps {
 }
 
 export default function ContactAccessAgentsTable({ accessAgentId }: ContactAccessAgentsTableProps) {
-  const { data: contactAccesses, isLoading, isPlaceholderData } = useContactAccessAgents(accessAgentId);
+  const { data: contactAccesses, isLoading, isPlaceholderData, error, refetch } = useContactAccessAgents(accessAgentId);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingContactAccess, setEditingContactAccess] = useState<ContactAgentAccess | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -151,6 +151,8 @@ export default function ContactAccessAgentsTable({ accessAgentId }: ContactAcces
             table={table}
             recordCount={contactAccesses?.length || 0}
             isLoading={isLoading}
+            error={error}
+            onRetry={() => void refetch()}
             isPlaceholderData={isPlaceholderData}
             onRowClick={handleEdit}
             emptyMessage={

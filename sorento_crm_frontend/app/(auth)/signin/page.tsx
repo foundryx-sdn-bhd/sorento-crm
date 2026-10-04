@@ -28,6 +28,7 @@ import { LoaderCircleIcon } from 'lucide-react';
 import { getSigninSchema, SigninSchemaType } from '../forms/signin-schema';
 import { toAbsoluteUrl } from '@/lib/helpers';
 import { PhoneSignIn } from './components/phone-signin';
+import { DevLoginPicker } from './components/dev-login-picker';
 
 type SigninMode = 'email' | 'phone';
 
@@ -261,6 +262,12 @@ export default function Page() {
           onBusyChange={setPhoneBusy}
         />
       )}
+
+      <DevLoginPicker
+        onSignedIn={goToLandingUrl}
+        onError={setError}
+        disabled={isProcessing || phoneBusy}
+      />
 
       {mode === 'email' ? (
         <>

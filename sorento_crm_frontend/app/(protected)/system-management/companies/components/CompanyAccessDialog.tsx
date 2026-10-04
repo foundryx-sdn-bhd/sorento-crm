@@ -141,7 +141,11 @@ function UsersTab({ companyId }: { companyId: string }) {
   const [selected, setSelected] = useState('');
 
   // Full user catalogue for the picker (shared user-select service).
-  const { data: allUsers = [] } = useQuery({
+  const {
+    data: allUsers = [],
+    error: allUsersError,
+    refetch: refetchAllUsers,
+  } = useQuery({
     queryKey: ['users-select', 'company-access'],
     queryFn: () => getUsersSelect(),
   });
@@ -175,6 +179,8 @@ function UsersTab({ companyId }: { companyId: string }) {
           value={selected}
           onChange={handleAdd}
           options={options}
+          loadError={allUsersError}
+          onRetry={() => void refetchAllUsers()}
           placeholder="Select a user to grant access…"
           emptyMessage="No users available"
           triggerClassName="mt-1"

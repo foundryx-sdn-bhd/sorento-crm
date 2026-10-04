@@ -257,6 +257,26 @@ export async function saveContactFact(
 }
 
 /**
+ * One option per stored value. A value that exists in several companies lists every company,
+ * sorted and joined with ", ", before ` · ` and the label: `Mocha, Sorento · CABANA`. The
+ * contact belongs to no one company, so every option says which.
+ */
+function optionsByValue(
+  rows: { value: string; label: string; company?: string | null }[],
+): SearchableMultiSelectOption[] {
+  const merged = new Map<string, { label: string; companies: Set<string> }>();
+  for (const row of rows) {
+    const entry = merged.get(row.value) ?? { label: row.label, companies: new Set<string>() };
+    if (row.company) entry.companies.add(row.company);
+    merged.set(row.value, entry);
+  }
+  return Array.from(merged, ([value, { label, companies }]) => ({
+    value,
+    label: companies.size ? `${Array.from(companies).sort().join(', ')} · ${label}` : label,
+  }));
+}
+
+/**
  * Server-searched product options for the "Usual products" fact (Add fact modal).
  *
  * Real endpoint, not a mock (`/api/v1/master-data/products/select`, LESSONS-LEARNT: a
@@ -264,30 +284,54 @@ export async function saveContactFact(
  * the human-readable value the fact stores, so no id/label split is needed.
  */
 export async function searchUsualProductOptions(query: string): Promise<SearchableMultiSelectOption[]> {
-  const products = await getProductsForLineSelect(query);
-  return products.map((product) => ({
-    value: product.product_code,
-    label: product.product_name
-      ? `${product.product_code} - ${product.product_name}`
-      : product.product_code,
-  }));
+  const products = await getProductsForLineSelect(query, { companyScope: 'grants' });
+  return optionsByValue(
+    products.map((product) => ({
+      value: product.product_code,
+      label: product.product_name
+        ? `${product.product_code} - ${product.product_name}`
+        : product.product_code,
+      company: product.company_name,
+    })),
+  );
 }
 
 /** Server-searched brand names for "Usual brands" - stored as the brand NAME, not an id
  * (contract section 4: "list of brand names"). */
 export async function searchUsualBrandOptions(query: string): Promise<SearchableMultiSelectOption[]> {
-  const result = await getBrands({ pageIndex: 0, pageSize: 20, sorting: [], searchQuery: query });
-  return result.data.map((brand) => ({ value: brand.brand_name, label: brand.brand_name }));
+  const result = await getBrands({
+    pageIndex: 0,
+    pageSize: 20,
+    sorting: [],
+    searchQuery: query,
+    companyScope: 'grants',
+  });
+  return optionsByValue(
+    result.data.map((brand) => ({
+      value: brand.brand_name,
+      label: brand.brand_name,
+      company: brand.company_name,
+    })),
+  );
 }
 
 /** Server-searched warehouse names for "Usual sites" - stored as the warehouse NAME
  * (contract section 4: "list of warehouse names"). */
 export async function searchUsualSiteOptions(query: string): Promise<SearchableMultiSelectOption[]> {
-  const result = await getWarehouses({ pageIndex: 0, pageSize: 20, sorting: [], searchQuery: query });
-  return result.data
-    .filter((warehouse) => warehouse.warehouse_name)
-    .map((warehouse) => ({
-      value: warehouse.warehouse_name as string,
-      label: warehouse.warehouse_name as string,
-    }));
+  const result = await getWarehouses({
+    pageIndex: 0,
+    pageSize: 20,
+    sorting: [],
+    searchQuery: query,
+    companyScope: 'grants',
+  });
+  return optionsByValue(
+    result.data
+      .filter((warehouse) => warehouse.warehouse_name)
+      .map((warehouse) => ({
+        value: warehouse.warehouse_name as string,
+        label: warehouse.warehouse_name as string,
+        company: warehouse.company_name,
+      })),
+  );
 }

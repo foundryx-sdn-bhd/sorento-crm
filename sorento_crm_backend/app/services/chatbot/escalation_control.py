@@ -15,8 +15,8 @@ from dataclasses import replace
 from typing import Any
 
 from app.services.chatbot.dealer_stock import refers_to_salesman
+from app.services.chatbot.turn import refer
 from app.services.chatbot.turn.pending import without_escalation as strip_pending
-from app.services.chatbot.turn.task import REFER_TO_SALESMAN
 
 
 def barred_reply(profile: Any = None) -> str:
@@ -24,8 +24,9 @@ def barred_reply(profile: Any = None) -> str:
 
     Owner ruling, 30 Sep 2026: the dealer line the stock ask already prints,
     `turn/task.py::REFER_TO_SALESMAN` ("Please refer to your salesman."), never a
-    second wording and never the salesperson's name (REFER-SALESMAN AC-RS02)."""
-    return REFER_TO_SALESMAN
+    second wording and never the salesperson's name (REFER-SALESMAN AC-RS02). Printed
+    through `turn/refer.py`, so the turn is marked for Customer asks."""
+    return refer.sentence()
 
 
 def strip_text(text: str, question: Any, profile: Any) -> tuple[str, Any, bool]:

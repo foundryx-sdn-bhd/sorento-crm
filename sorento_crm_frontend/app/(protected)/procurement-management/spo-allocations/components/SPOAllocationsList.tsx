@@ -231,7 +231,7 @@ export default function SPOAllocationsList() {
     setWarehouseFilter(state.filters.warehouse_id ?? '');
   });
 
-  const { data, isLoading, isPlaceholderData, isFetching, refetch } = useSPODocuments({
+  const { data, isLoading, isPlaceholderData, isFetching, refetch, error } = useSPODocuments({
     pageIndex: pagination.pageIndex,
     pageSize: pagination.pageSize,
     sorting,
@@ -448,6 +448,8 @@ export default function SPOAllocationsList() {
       table={table}
       recordCount={data?.pagination.total || 0}
       isLoading={isLoading}
+      error={error}
+      onRetry={() => void refetch()}
       isPlaceholderData={isPlaceholderData}
       tableLayout={{ width: 'fixed', columnsResizable: true, columnsVisibility: true }}
       emptyMessage={emptyMessage}

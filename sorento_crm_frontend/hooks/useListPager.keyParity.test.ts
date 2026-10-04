@@ -761,6 +761,7 @@ const CASES: ParityCase[] = [
       outstanding: true,
       salesAgentId: 'agent-1',
       demandClass: 'project',
+      transferable: 'no',
     };
     return {
       name: 'SCM sales orders',
@@ -775,6 +776,7 @@ const CASES: ParityCase[] = [
         outstanding: 'true',
         sales_agent_id: listParams.salesAgentId,
         demand_class: listParams.demandClass,
+        transferable: listParams.transferable,
       }),
       pagerKey: (s: URLSearchParams) => salesOrdersPagerQuery.listQueryKey(parseDetailSearch(s)),
     };

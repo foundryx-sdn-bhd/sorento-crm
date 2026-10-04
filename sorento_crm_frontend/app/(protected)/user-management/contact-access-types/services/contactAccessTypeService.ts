@@ -29,6 +29,12 @@ export interface ContactAccessTypeAdmin {
 
 const base = '/api/user-management/contact-access-types';
 
+/**
+ * Mirrors `MANAGE` in `app/api/v1/user_management/contact_access_types.py`: every write on
+ * the catalog. The active-type list (`getContactAccessTypes`) is open to any signed-in user.
+ */
+export const CONTACT_ACCESS_TYPE_PERMS = { manage: 'user_management.reference_data.manage' } as const;
+
 export async function getContactAccessTypes(): Promise<ContactAccessTypeOption[]> {
   const response = await apiFetch(base);
   if (!response.ok) throw new Error(await extractApiError(response, 'Failed to fetch contact access types'));

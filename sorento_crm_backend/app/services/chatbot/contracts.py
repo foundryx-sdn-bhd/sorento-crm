@@ -78,6 +78,80 @@ UNDOMAINED_CHATBOT_TOOLS: tuple[str, ...] = (
 )
 
 # --------------------------------------------------------------------------- #
+# Brand scope (CONTACT-BRAND-SCOPE, AC-16/AC-17). Every tool the chatbot can call and every
+# MCP catalogue tool names how a brand-scoped contact's result is treated:
+#   "filtered"    - the tool can return product rows; the fetch output guard drops every
+#                   list item naming a product outside the contact's brands.
+#   "no_products" - the tool never returns a product (nothing to drop).
+# `tests/chatbot/test_brand_scope_contract.py` fails when a tool is missing from this map,
+# so a new tool cannot ship without a decision.
+# --------------------------------------------------------------------------- #
+
+BrandScopeTreatment = Literal["filtered", "no_products"]
+
+# Keys, beyond `product_code` / `item_code` / `product_id`, that NAME a product in a `filtered`
+# tool's rows. Per tool, never global: `code` is a customer code on the customer tools, and
+# the analytics tools put the product in `group_key` (complaint analytics lower-cases it).
+# A key not named here is not looked up as a product.
+BRAND_SCOPE_PRODUCT_KEYS: dict[str, tuple[str, ...]] = {
+    "crm_top_selling_report": ("code",),
+    "crm_order_analytics": ("group_key",),
+    "crm_complaint_analytics": ("group_key",),
+}
+
+BRAND_SCOPE_TREATMENT: dict[str, BrandScopeTreatment] = {
+    "crm_certificates_list": "filtered",
+    "crm_complaint_analytics": "filtered",
+    "crm_complaint_close": "no_products",
+    "crm_complaints_list": "filtered",
+    "crm_forms_management_forms_list": "filtered",
+    "crm_ideation_turn": "no_products",
+    "crm_incoming_stock_by_product": "filtered",
+    "crm_incoming_stock_list": "filtered",
+    "crm_incoming_stock_shipments": "filtered",
+    "crm_inventory_stock_balance_list": "filtered",
+    "crm_inventory_warehouses_list": "no_products",
+    "crm_it_support_ticket_create": "no_products",
+    "crm_lookup_resolve": "filtered",
+    "crm_low_stock_report": "filtered",
+    "crm_marketing_promotion_attachments_list": "filtered",
+    "crm_marketing_promotion_products_list": "filtered",
+    "crm_marketing_promotions_list": "filtered",
+    "crm_master_brands_list": "no_products",
+    "crm_master_customers_list": "no_products",
+    "crm_master_product_attachments_list": "filtered",
+    "crm_master_product_categories_list": "no_products",
+    "crm_master_products_list": "filtered",
+    "crm_master_units_of_measure_list": "no_products",
+    "crm_order_analytics": "filtered",
+    "crm_order_cancel": "no_products",
+    "crm_order_management_orders_by_product_list": "filtered",
+    "crm_order_management_orders_list": "filtered",
+    "crm_outstanding_report": "filtered",
+    "crm_portal_link_get": "no_products",
+    "crm_procurement_po_last_cost_list": "filtered",
+    "crm_procurement_po_placed_list": "filtered",
+    "crm_procurement_spo_allocations_last_receipt_list": "filtered",
+    "crm_project_detail": "filtered",
+    "crm_project_forecast": "filtered",
+    "crm_project_quotations_list": "filtered",
+    "crm_projects_list": "filtered",
+    "crm_purchase_request_approve": "no_products",
+    "crm_purchase_request_reject": "no_products",
+    "crm_resource_attachments_catalogue": "filtered",
+    "crm_resource_attachments_current_stock_list": "filtered",
+    "crm_resource_attachments_list": "filtered",
+    "crm_sales_analysis": "filtered",
+    "crm_sales_report": "filtered",
+    "crm_sla_conversation_event_logs_list": "no_products",
+    "crm_sla_conversation_tracking_dashboard": "no_products",
+    "crm_sla_conversation_tracking_list": "no_products",
+    "crm_system_tool_capabilities_summary": "no_products",
+    "crm_top_selling_report": "filtered",
+    "user_guides_read": "no_products",
+}
+
+# --------------------------------------------------------------------------- #
 # Parser vocabularies (AC-109). Values are the parser prompt's own OUTPUT block.
 # --------------------------------------------------------------------------- #
 
@@ -380,6 +454,11 @@ PendingKind = Literal[PENDING_KINDS]  # type: ignore[valid-type]
 # caller inspecting the stored session state, not for this re-run decision.
 DETAIL_OFFER_KINDS: tuple[str, ...] = ("outstanding_detail", "sales_report_detail")
 
+#: The sales report's drill-downs (lane SALES-REPORT, AC-SR-28): the values a
+#: `sales_report_detail` option carries, each the `group_by` its pick re-runs with. Read
+#: ONLY for that kind - the outstanding report's so/do/both picks are untouched.
+SALES_REPORT_GROUP_BYS: tuple[str, ...] = ("customer", "product", "delivery_order", "sales_agent")
+
 # PLAN-chatbot-top-x-hot-selling-24sep.md "Lane wiring (S4)" point 5: the `order_status`
 # values that read sales figures under the `sales_orders.sales_report` reveal key (the
 # owner's access ruling, 26 Sep 2026: no new key). The engine's grant-before-roster
@@ -581,6 +660,9 @@ class Focus(BaseModel):
     # PLAN-chatbot-top-x-hot-selling-24sep.md "Lane wiring (S4)" point 8: the top selling
     # ask's own axes while `status == "top_selling"` (`turn/state.py::Focus.top_selling`).
     top_selling: dict[str, Any] | None = None
+    # LOWSTOCK-FILTER-ASK: the question `required_fields` left open, one turn long
+    # (`turn/state.py::Focus.required_ask`).
+    required_ask: dict[str, Any] | None = None
     # Ported from PR #1118 (feat/chatbot-dealer-stock-verdict, not merged, owner ruling
     # 24 Sep 2026) for chatbot-stock-ask-v2 S3: the open tasks, carried INSIDE the
     # focus rather than on a session key of their own. Declared here because this
@@ -595,9 +677,10 @@ class Focus(BaseModel):
 
 
 class SessionVars(BaseModel):
-    """The five-key session shape (AC-1504). Byte-compatible hazard (contract 129,
-    "the five-key session shape must stay byte-compatible for #930's parked lane and for
-    live contacts mid-conversation at deploy"): exactly these five keys, nothing more.
+    """The session shape (AC-1504), five keys plus `reply_language` (CHAT-LANGUAGE).
+    Byte-compatible hazard (contract 129, "the five-key session shape must stay
+    byte-compatible for #930's parked lane and for live contacts mid-conversation at
+    deploy"): the new key is optional and defaults to None, so an old row still reads.
 
     `extra = "forbid"` for the same H15 reason `LegacyVariables` carries it - nothing
     outside this list may leak into a customer's session.
@@ -610,6 +693,8 @@ class SessionVars(BaseModel):
     ideation: dict[str, Any] | None = None
     access_levels: list[str] = Field(default_factory=list)
     contains_flyer: bool = False
+    # CHAT-LANGUAGE: the language the last decided reply was in, carried to the next turn.
+    reply_language: Literal["en", "ms", "zh"] | None = None
 
 
 # The widths the `chatbot.turns` columns actually have. Validated on the way IN so an

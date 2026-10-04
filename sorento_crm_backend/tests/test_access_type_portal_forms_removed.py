@@ -20,7 +20,16 @@ BASE = "/api/v1/user-management/contact-access-types/"
 
 
 @pytest.fixture(autouse=True)
-def _clear_overrides():
+def _clear_overrides(monkeypatch):
+    # The writes are gated on `user_management.reference_data.manage` since NS-SHARED-LOOKUPS
+    # (they took only sign-in before); this caller is the catalog admin holding it.
+    from app.services.user_service import UserPermissionService
+
+    monkeypatch.setattr(
+        UserPermissionService,
+        "check_user_has_permission",
+        lambda self, uid, slug: slug == "user_management.reference_data.manage",
+    )
     yield
     app.dependency_overrides.clear()
 

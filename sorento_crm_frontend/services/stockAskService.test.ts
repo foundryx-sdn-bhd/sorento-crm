@@ -65,7 +65,7 @@ describe('getCustomerAsksTodo', () => {
 
 describe('listAskAgents', () => {
   it('GETs /api/v1/sales/customer-asks/agents', async () => {
-    const agents = [{ agent_id: 'a1', code: 'SEAN I', name: 'Sean Ibrahim', open: 4, needs_attention: 2 }];
+    const agents = [{ agent_id: 'a1', code: 'SEAN I', name: 'Sean Ibrahim', open: 4 }];
     apiFetch.mockResolvedValue(jsonResponse(agents));
     await expect(listAskAgents()).resolves.toEqual(agents);
     expect(apiFetch.mock.calls[0][0]).toBe('/api/v1/sales/customer-asks/agents');

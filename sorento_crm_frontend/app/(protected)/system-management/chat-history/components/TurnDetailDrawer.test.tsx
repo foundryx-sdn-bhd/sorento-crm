@@ -96,6 +96,16 @@ function fullDetail(): TurnDetail {
       granted: [],
       dropped: ['inventory.sellable'],
     },
+    customer_scope: [
+      {
+        at: '2026-09-30T12:00:00Z',
+        refused: 'customer_not_permitted',
+        reason: 'typed_word_matched_only_other_customers',
+        typed: ['water tap'],
+        dropped: ['ffffffff-0000-0000-0000-00000000000f'],
+        self_reference: true,
+      },
+    ],
     session: {
       before: { domain_hint: 'master_products' },
       after: { domain_hint: 'master_products', new_key: 'x' },
@@ -154,6 +164,7 @@ function openAllSections() {
     'section-tool-trigger',
     'section-crossdomain-trigger',
     'section-reveals-trigger',
+    'section-customer-scope-trigger',
     'section-session-trigger',
   ]) {
     fireEvent.click(screen.getByTestId(testId));
@@ -177,6 +188,29 @@ describe('TurnDetailDrawer', () => {
     expect(screen.getByText('crm_incoming_stock_list')).toBeInTheDocument();
     expect(screen.getAllByText('inventory.sellable').length).toBeGreaterThan(0);
     expect(screen.getByText('new_key')).toBeInTheDocument();
+  });
+
+  it('CHATBOT-SELFREF-SCOPE R4: a customer scope refusal explains itself in its own panel', () => {
+    turnState = { data: detailTurn(fullDetail()), isLoading: false, isError: false };
+    render(<TurnDetailDrawer turnId="ZZT-turn-detail-1" onOpenChange={vi.fn()} />);
+
+    fireEvent.click(screen.getByTestId('section-customer-scope-trigger'));
+
+    const panel = screen.getByTestId('section-customer-scope');
+    expect(within(panel).getByText('refused')).toBeInTheDocument();
+    expect(within(panel).getByText('typed_word_matched_only_other_customers')).toBeInTheDocument();
+    expect(within(panel).getByText('water tap')).toBeInTheDocument();
+    expect(within(panel).getByText('self-reference')).toBeInTheDocument();
+    expect(within(panel).getByText('dropped: 1')).toBeInTheDocument();
+  });
+
+  it('a trace with no customer scope decision shows the panel empty, not absent', () => {
+    turnState = { data: detailTurn(emptyDetail()), isLoading: false, isError: false };
+    render(<TurnDetailDrawer turnId="ZZT-turn-detail-1" onOpenChange={vi.fn()} />);
+
+    fireEvent.click(screen.getByTestId('section-customer-scope-trigger'));
+
+    expect(screen.getByText('No customer scope decision this turn.')).toBeInTheDocument();
   });
 
   it('browser pass finding (16 Sep 2026): a trace with a sent stage renders a dedicated Sent panel with its summary, not just a row buried in Stages', () => {

@@ -119,13 +119,13 @@ const STATUSES = [
   is_system: false,
 }));
 
-vi.mock('@/app/(protected)/system-management/status-graphs/hooks/useStatusGraphs', () => ({
-  useStatusGraph: () => ({ data: { statuses: STATUSES, transitions: [] } }),
+vi.mock('@/app/(protected)/project-sales/_shared/hooks/useProjectStatusGraph', () => ({
+  useProjectStatusGraph: () => ({ data: { statuses: STATUSES, transitions: [] } }),
 }));
 
 vi.mock('@/services/userSelectService', () => ({
-  getUsersSelect: vi.fn(async () => [
-    { id: 'u-siti', name: 'Siti', email: 'siti@example.com' },
+  getUserLookup: vi.fn(async () => [
+    { id: 'u-siti', name: 'Siti' },
   ]),
 }));
 

@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
-import { getUsersSelect } from '@/services/userSelectService';
+import { getUserLookup } from '@/services/userSelectService';
 import type { Status } from '@/app/(protected)/system-management/status-graphs/types/statusGraph.types';
 import { useTaskMutations } from '../../_shared/hooks/useProjects';
 import type { Project, ProjectTask } from '../../_shared/types/project.types';
@@ -49,8 +49,8 @@ export function TaskStatusDialog({
   const applied = React.useRef(false);
 
   const users = useQuery({
-    queryKey: ['users-select', 'task-escalation'],
-    queryFn: () => getUsersSelect({ status: 'ACTIVE' }),
+    queryKey: ['user-lookup', 'task-escalation'],
+    queryFn: () => getUserLookup(),
     enabled: requires === 'escalated_to_user_id',
   });
 
@@ -111,10 +111,11 @@ export function TaskStatusDialog({
                   id="task-escalate-to"
                   value={escalateTo}
                   onChange={setEscalateTo}
+                  loadError={users.error}
+                  onRetry={() => void users.refetch()}
                   options={(users.data ?? []).map((user) => ({
                     value: user.id,
-                    label: user.name || user.email || 'Unnamed user',
-                    description: user.name ? (user.email ?? undefined) : undefined,
+                    label: user.name || 'Unnamed user',
                   }))}
                   placeholder="Select a person"
                   emptyMessage="No active users found"

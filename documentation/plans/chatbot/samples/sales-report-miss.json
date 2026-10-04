@@ -1,12 +1,25 @@
 {
-  "customer_name": null,
-  "product_code": "SRTWT9999",
+  "status": "ok",
+  "message": null,
+  "basis": "delivered",
+  "customer_name": "ACME HARDWARE SDN BHD [A/C I]",
+  "customer_count": 1,
+  "product_code": null,
   "product_codes": [],
   "channel": null,
+  "channel_shown": false,
   "location_token": null,
   "warehouse_codes": [],
-  "date_from": null,
-  "date_to": null,
-  "months": [],
-  "so_rows": []
+  "date_from": "2026-09-01",
+  "date_to": "2026-09-30",
+  "grain": "month",
+  "total": {
+    "qty": 0,
+    "amount": 0.0
+  },
+  "periods": [],
+  "group_by": null,
+  "rows": [],
+  "more": 0,
+  "options": []
 }

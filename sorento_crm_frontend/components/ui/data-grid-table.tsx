@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import type { DragEndEvent } from '@dnd-kit/core';
 import { arrayMove } from '@dnd-kit/sortable';
 import { Checkbox } from '@/components/ui/checkbox';
+import { ListLoadFailure } from '@/components/common/ListLoadFailure';
 import { useDataGrid } from '@/components/ui/data-grid';
 import { DataGridTableDnd } from '@/components/ui/data-grid-table-dnd';
 import { Cell, Column, flexRender, Header, HeaderGroup, Row, Table } from '@tanstack/react-table';
@@ -1061,6 +1062,7 @@ function DataGridTableBodyRowCell<TData>({
 function DataGridTableEmpty() {
   const { table, props } = useDataGrid();
   const totalColumns = table.getAllColumns().length;
+  const failed = props.error != null && props.error !== false;
 
   return (
     <tr>
@@ -1082,7 +1084,11 @@ function DataGridTableEmpty() {
           data-slot="data-grid-empty"
           className="sticky start-0 flex w-fit flex-col items-start gap-3 px-4 py-6 text-start"
         >
-          <span>{props.emptyMessage || 'No data available'}</span>
+          {failed ? (
+            <ListLoadFailure error={props.error} onRetry={props.onRetry} />
+          ) : (
+            <span>{props.emptyMessage || 'No data available'}</span>
+          )}
         </div>
       </td>
     </tr>

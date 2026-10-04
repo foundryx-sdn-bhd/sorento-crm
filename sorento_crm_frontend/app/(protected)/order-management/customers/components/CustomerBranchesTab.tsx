@@ -17,7 +17,7 @@ import type { Branch } from '../../branches/types/branch.types';
  */
 export function CustomerBranchesTab({ customerId }: { customerId: string }) {
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 20 });
-  const { data, isLoading, isPlaceholderData } = useBranches({
+  const { data, isLoading, isPlaceholderData, error, refetch } = useBranches({
     pageIndex: pagination.pageIndex,
     pageSize: pagination.pageSize,
     sorting: [{ id: 'branch_code', desc: false }],
@@ -97,6 +97,8 @@ export function CustomerBranchesTab({ customerId }: { customerId: string }) {
       table={table}
       recordCount={total}
       isLoading={isLoading}
+      error={error}
+      onRetry={() => void refetch()}
       isPlaceholderData={isPlaceholderData}
       listingKey="order_management.branches.view::customer"
       tableLayout={{ width: 'fixed', columnsResizable: true }}

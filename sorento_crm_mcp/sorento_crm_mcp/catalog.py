@@ -536,6 +536,11 @@ CATALOG: tuple[ToolSpec, ...] = (
             "this tool does no suffix matching. `product_codes` - exact product codes. `date_from` / "
             "`date_to` (YYYY-MM-DD) narrow which sales orders the plan counts as demand. Omit any of "
             "them to plan everything.\n\n"
+            "WORKBOOK FILTERS (the plan still covers the whole scope above; these narrow the file): "
+            "`categories` - exact category codes; `suppliers` - exact supplier names, one per value; "
+            "`split` - none | supplier | category | supplier_category, one Low/All sheet pair per "
+            "group. Settle them with the user BEFORE calling. `dry_run` (a test turn): the file "
+            "is built but never sent to the contact.\n\n"
             "REQUIRED: pass BOTH `contact_id` (Respond.io contact id) and `space_id` - the report is "
             "per-contact, and the call is refused without them.\n\n"
             "COMPANY SCOPE: the plan is built for the contact's own company, resolved from the "
@@ -546,6 +551,7 @@ CATALOG: tuple[ToolSpec, ...] = (
         (
             "warehouse_codes", "product_codes", "date_from", "date_to",
             "contact_id", "space_id",
+            "categories", "suppliers", "split", "dry_run",
         ),
         # GET, and therefore `read_only` stays at its default False - "every GET tool is
         # read-only by definition and does NOT set this" (see `ToolSpec.read_only`). The
@@ -626,7 +632,22 @@ CATALOG: tuple[ToolSpec, ...] = (
         # here for the Contacts > Access > Field reveals card; the actual gate is the
         # chatbot lane's own redirect (`lanes/business/__init__.py::run_fetch`) plus
         # `_orders_so_outstanding`'s `b.restrict` in the presenter.
-        restricted_fields=(("sales_orders.outstanding", "Sales order outstanding"),),
+        # DO-ASK-SIMPLIFY rule 2 (owner, 2 Oct 2026): the DO list's logistics fields are
+        # per-contact reveals, gated by `output_structurer` off `_orders_list`'s restrict.
+        restricted_fields=(
+            ("sales_orders.outstanding", "Sales order outstanding"),
+            ("delivery_orders.status", "DO status"),
+            ("delivery_orders.pickup_time", "DO pickup time"),
+            ("delivery_orders.transporter", "DO transporter"),
+            ("delivery_orders.driver", "DO driver"),
+            ("delivery_orders.lorry_plate", "DO lorry plate"),
+            ("delivery_orders.order_number", "DO order number"),
+            ("delivery_orders.customer", "DO customer"),
+            ("delivery_orders.order_date", "DO order date"),
+            ("delivery_orders.delivery_date", "DO delivery date"),
+            ("delivery_orders.warehouse", "DO warehouse"),
+            ("delivery_orders.products", "DO products"),
+        ),
     ),
     ToolSpec(
         "crm_order_management_orders_by_product_list",
@@ -668,8 +689,17 @@ CATALOG: tuple[ToolSpec, ...] = (
         related_tools=("crm_order_management_orders_list", "crm_incoming_stock_by_product", "crm_outstanding_report"),
         escalation_team="sales",
         # S2 (security review, 13 Sep 2026): same gate as the sibling
-        # `crm_order_management_orders_list` above - see its own comment.
-        restricted_fields=(("sales_orders.outstanding", "Sales order outstanding"),),
+        # `crm_order_management_orders_list` above - see its own comment. DO-ASK-SIMPLIFY
+        # (owner hand test 3 Oct 2026): the DO fields this list prints are reveals too.
+        restricted_fields=(
+            ("sales_orders.outstanding", "Sales order outstanding"),
+            ("delivery_orders.order_number", "DO order number"),
+            ("delivery_orders.customer", "DO customer"),
+            ("delivery_orders.order_date", "DO order date"),
+            ("delivery_orders.delivery_date", "DO delivery date"),
+            ("delivery_orders.warehouse", "DO warehouse"),
+            ("delivery_orders.products", "DO products"),
+        ),
     ),
     ToolSpec(
         "crm_outstanding_report",
@@ -738,36 +768,37 @@ CATALOG: tuple[ToolSpec, ...] = (
     ToolSpec(
         "crm_sales_report",
         (
-            "Confirmed (transferred to DO) vs OUTSTANDING sales, by month, for a customer, a "
-            "product, or both - reads sales_order_lines only (the DO table's own money is "
-            "unusable). Returns `months[]`, latest first, each with `so_count`, ordered / "
-            "confirmed / outstanding value and quantity, and a breakdown by the OTHER axis "
-            "(`by_product` on a customer subject, `by_customer` on a product subject, neither "
-            "when both are named).\n\n"
+            "DELIVERED sales (delivery orders, by DO date) for a customer, a product, or both. "
+            "Returns `total` {qty, amount}, `periods[]` latest first (`grain` day when the window "
+            "is at most 7 days, week Monday to Sunday when at most 31, else month; only periods "
+            "with a delivery), and `options[]`, the drill-downs the reply offers. A legacy DO "
+            "counts its document total once, an AutoCount DO its line totals; cancelled, deleted "
+            "and replacement (REP...) DOs never count.\n\n"
             "SUBJECT: a product, a customer, or both - at least one of `product_code` / "
             "`customer_ids` / `customer_query` is REQUIRED (422 `subject_required` otherwise). "
-            "`product_code` is exact, case-insensitive, no sibling-code expansion. "
+            "`product_code` is a PREFIX, case-insensitive (at least 3 characters). "
             "`customer_query` - partial match on customer NAME only. `customer_ids` - canonical "
             "customer UUIDs (csv/JSON/repeated).\n\n"
-            "FILTERS: `channel` - dealer | project (sales_orders.demand_class 'retail' / "
-            "'project'); absent = all, including null-class SOs. `warehouse_codes` - exact "
-            "warehouse codes (csv/JSON/repeated); resolve a location TOKEN yourself first, this "
-            "tool does no suffix matching. `location_token` (max 32 chars) - the raw location "
-            "word, echoed back so the header reads 'IB (BRW-IB, MWH-IB)'. `date_from`/`date_to` "
-            "filter on the SAME bucket date each line uses (required_date, else the SO's own "
-            "order_date); omit both for every month. `detail` = so - render the numbered sales "
-            "order list instead of the month blocks (`view=render`), one row per SO rolled up "
-            "over the whole filtered window.\n\n"
+            "FILTERS: `channel` - dealer | project (the account's market segment class; an "
+            "account with no segment is in every channel; ignored when the accounts span one "
+            "class). `warehouse_codes` - exact warehouse codes (csv/JSON/repeated); resolve a "
+            "location TOKEN yourself first, this tool does no suffix matching. `location_token` "
+            "(max 32 chars) - the raw location word, echoed back so the header reads "
+            "'IB (BRW-IB, MWH-IB)'. `date_from`/`date_to` filter on the DO date; omit both for "
+            "every month. `group_by` = customer | product | delivery_order | sales_agent - adds "
+            "`rows[]` ranked by amount (delivery orders latest first), top 10 with `more` the "
+            "rest (`view=render` prints the drill).\n\n"
             "Use crm_outstanding_report instead for the SO-backlog / DO-pending question; this "
             "tool is for a SALES REPORT / sales performance / 'how much did X buy' question.\n\n"
             "COMPANY SCOPE: optionally pass `contact_id` (Respond.io contact id) + `space_id` to scope "
-            "results to that contact's company/companies; omit both for all-company results."
+            "results to that contact's company/companies and its stock visibility locations (a "
+            "named location outside them answers `status: refused`); omit both for all-company results."
         ),
         "/api/v1/order-management/sales-report",
         (),
         (
             "product_code", "customer_query", "customer_ids", "channel", "warehouse_codes",
-            "location_token", "date_from", "date_to", "detail",
+            "location_token", "date_from", "date_to", "group_by",
             "contact_id", "space_id",
         ),
         domain="orders",
@@ -1551,7 +1582,8 @@ CATALOG: tuple[ToolSpec, ...] = (
             "respond.io contact id) and `message_text` (what they just said), plus `session_vars` "
             "carrying the `ideation` pointer from the previous turn (null on the first). Optionally "
             "`submitter_name`, `media_selection` when a photo menu is open (comma-joined positions, "
-            "or 'all'), `is_new_idea` to start a fresh draft over an open one, and `is_test` "
+            "or 'all'), `is_new_idea` to start a fresh draft over an open one, `ask_reply` (true when "
+            "the message answers the bot's ask-back for an idea), and `is_test` "
             "for a test turn (the idea is stored hidden from the board, no session state is "
             "persisted). RETURNS "
             "`{status, reply_text, link?, session_vars}` - `reply_text` is what to "
@@ -1574,6 +1606,7 @@ CATALOG: tuple[ToolSpec, ...] = (
             "media_selection",
             "is_new_idea",
             "is_test",
+            "ask_reply",
         ),
         module="chatbot",
         external=True,

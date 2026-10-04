@@ -45,7 +45,7 @@ from app.services.sla_service import ConversationSLATrackingService
 from app.services.user_service import UserPermissionService
 from tests._pg_fixture import blank_session
 
-PHONE = "+60127770021"
+PHONE = "+60120000545"
 RESPOND_IO_ID = "zzt-note-io-1"
 TICKET_BASE = "/api/v1/sla-management/conversation-sla-tracking"
 INBOX_BASE = "/api/v1/sla-management/conversations"
@@ -273,7 +273,7 @@ def test_a_note_on_this_contact_does_not_leak_into_another_contacts_thread(clien
     db.add(
         RespondContact(
             id=other,
-            phone_number="+60127770029",
+            phone_number="+60120000546",
             name="ZZT Other",
             respond_io_id="zzt-note-io-9",
             session_vars={},

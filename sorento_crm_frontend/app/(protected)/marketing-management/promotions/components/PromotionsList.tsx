@@ -60,7 +60,11 @@ export default function PromotionsList() {
   const listQueryToolsEnabled =
     modulesLoading || enabledModuleKeys == null || enabledModuleKeys.has('marketing');
 
-  const { data: accessTypeOptions = [] } = useContactAccessTypes();
+  const {
+    data: accessTypeOptions = [],
+    error: accessTypesError,
+    refetch: refetchAccessTypes,
+  } = useContactAccessTypes();
   const accessLevelNameMap = useMemo(() => {
     const m = new Map<string, string>();
     accessTypeOptions.forEach((o) => m.set(o.code, o.name || o.code));
@@ -110,7 +114,7 @@ export default function PromotionsList() {
    * so the pager's rebuilt key never matched: every promotion opened fired a
    * second request and paged whatever THAT returned.
    */
-  const { data, isLoading, isPlaceholderData, refetch, isFetching } = usePromotions({
+  const { data, isLoading, isPlaceholderData, refetch, isFetching, error } = usePromotions({
     pageIndex: pagination.pageIndex,
     pageSize: pagination.pageSize,
     sorting,
@@ -379,6 +383,8 @@ export default function PromotionsList() {
       recordCount={data?.pagination.total || 0}
       isLoading={isLoading}
       isPlaceholderData={isPlaceholderData}
+      error={error}
+      onRetry={() => void refetch()}
       rowHref={rowHref}
       standardToolbar={false}
     >
@@ -436,6 +442,8 @@ export default function PromotionsList() {
                         <SearchableSelect
                           value={filterAccessLevel}
                           onChange={setFilterAccessLevel}
+                          loadError={accessTypesError}
+                          onRetry={() => void refetchAccessTypes()}
                           options={[
                             { value: 'all', label: 'All' },
                             ...accessTypeOptions.map((opt) => ({

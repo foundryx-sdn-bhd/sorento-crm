@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import hmac
 import logging
+from contextlib import contextmanager, nullcontext
 from datetime import datetime
 from typing import Optional, Tuple
 
@@ -45,7 +46,14 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.models.base import UNSET, CompanyScope, set_company_scope
+from app.models.base import (
+    UNSET,
+    CompanyScope,
+    company_scope,
+    get_company_scope,
+    set_brand_scope,
+    set_company_scope,
+)
 from app.models.company import Company, UserCompany
 from app.models.user import User
 from app.models.user_session import UserSession
@@ -241,6 +249,23 @@ def _resolve_api_key_scope(db: Session, request: Request) -> CompanyScope:
     return resolve_contact_company_scope(db, contact_id, space_id)
 
 
+def _resolve_api_key_brand_scope(db: Session, request: Request):
+    """CONTACT-BRAND-SCOPE: the calling contact's accessible brands, or None (unscoped).
+
+    Only the X-API-Key + contact_id + space_id shape carries a contact; a staff session, a
+    portal token or a key with no contact identity is untouched."""
+    api_key = request.headers.get("X-API-Key")
+    if not api_key or not _api_key_valid(api_key):
+        return None
+    contact_id = (request.query_params.get("contact_id") or "").strip()
+    space_id = (request.query_params.get("space_id") or "").strip()
+    if not contact_id or not space_id:
+        return None
+    from app.services.contact_brand_scope import contact_brand_scope
+
+    return contact_brand_scope(db, contact_id, space_id)
+
+
 def _portal_token_value(request: Request) -> Optional[str]:
     """The portal/public-view token, wherever that surface puts it.
 
@@ -337,8 +362,10 @@ async def apply_company_scope(
 ) -> CompanyScope:
     """Router-level dependency: resolve + stamp the company scope onto the request
     session so the ``do_orm_execute`` filter enforces isolation for every route."""
+    brand_scope = None
     try:
         scope = resolve_company_scope(request, db)
+        brand_scope = _resolve_api_key_brand_scope(db, request)
     except Exception as exc:  # noqa: BLE001 - resolver must never 500 the request
         logger.warning("company scope resolver failed; falling back to UNSET (fail-closed): %s", exc)
         scope = UNSET
@@ -349,4 +376,64 @@ async def apply_company_scope(
     if not hasattr(db, "info"):
         return scope
     set_company_scope(db, scope)
+    set_brand_scope(db, brand_scope)
     return scope
+
+
+# --------------------------------------------------------------------------- #
+# Grants widening (CONTACT-COMPANYLESS)                                         #
+# --------------------------------------------------------------------------- #
+def grants_scope_value(db: Session, user_id: str) -> CompanyScope:
+    """The active scope plus every company ``user_id`` is granted (never less than today)."""
+    current = get_company_scope(db)
+    if current is None:
+        return None
+    base = current if isinstance(current, frozenset) else frozenset()
+    return base | frozenset(resolve_user_grant_ids(db, str(user_id)))
+
+
+@contextmanager
+def grants_scope(db: Session, user_id: str):
+    """Run a read under the active scope widened to every company ``user_id`` is granted.
+
+    For pages that are not about one company (the contact detail page). Restores the
+    prior scope on exit. The active scope came from the same grants, so this never
+    reaches beyond them.
+    """
+    with company_scope(db, grants_scope_value(db, user_id)):
+        yield db
+
+
+def grants_requested(request: Request, current_user: dict, flag: Optional[str]) -> bool:
+    """True for a staff session that sent ``?company_scope=grants``.
+
+    An integration / X-API-Key caller ignores the flag and keeps the scope it was resolved
+    with. ``current_user`` is the EFFECTIVE user (the impersonated one during view-as), so
+    the widening follows the grants of whoever the request acts as.
+    """
+    if flag != "grants" or request.headers.get("X-API-Key"):
+        return False
+    return current_user.get("auth_method") not in {"api_key", "integration_api_key"}
+
+
+def widen_if_requested(db: Session, request: Request, current_user: dict, flag: Optional[str]):
+    """``grants_scope`` when ``grants_requested``, else a no-op context."""
+    if grants_requested(request, current_user, flag):
+        return grants_scope(db, current_user["id"])
+    return nullcontext(db)
+
+
+def company_name_map(db: Session) -> dict[str, str]:
+    """``company id -> name`` for tagging rows read under ``grants_scope``."""
+    return {str(r[0]): r[1] for r in db.query(Company.id, Company.name).all()}
+
+
+def tag_company(rows, names: dict[str, str]) -> None:
+    """Give each ORM row or dict a ``company_name`` next to its ``company_id``."""
+    for row in rows:
+        cid = row.get("company_id") if isinstance(row, dict) else getattr(row, "company_id", None)
+        name = names.get(str(cid)) if cid else None
+        if isinstance(row, dict):
+            row["company_name"] = name
+        else:
+            setattr(row, "company_name", name)

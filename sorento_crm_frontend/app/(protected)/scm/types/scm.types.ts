@@ -499,6 +499,10 @@ export interface SalesOrder {
   /** The planning class this order was classified into, or `null` when nobody has ever
    *  said. Distinct from `order_type_label` - see `lib/demandClass.ts`. */
   demand_class?: 'project' | 'retail' | null;
+  /** AutoCount's `Transferable` flag, read-only (AutoCount owns it). `false` = not confirmed
+   *  for the queue yet, so Stock Debt and the fulfilment ladder skip the order; `null` = the
+   *  source never said (counted). */
+  is_transferable?: boolean | null;
   /** The purchase orders its lines wait on. Present on the LIST, absent on a single read. */
   linked_purchase_orders?: LinkedPurchaseOrder[];
   awaiting_purchase_orders?: number;

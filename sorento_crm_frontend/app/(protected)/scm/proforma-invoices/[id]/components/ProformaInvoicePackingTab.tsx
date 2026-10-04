@@ -186,7 +186,7 @@ export function ProformaInvoicePackingTab({
       proformaInvoicePackingQueryKey(invoice.id),
     ],
   });
-  const { data, isLoading } = useProformaInvoicePacking(invoice);
+  const { data, isLoading, error, refetch } = useProformaInvoicePacking(invoice);
   // ONE array when there is nothing to show, never a fresh `[]` per render: TanStack reads
   // `data` by identity and `autoResetPageIndex` writes its own state when that identity
   // changes, which is a render loop with a clean console
@@ -417,6 +417,8 @@ export function ProformaInvoicePackingTab({
       table={table}
       recordCount={rows.length}
       isLoading={false}
+      error={error}
+      onRetry={() => void refetch()}
       tableLayout={{ width: 'fixed', columnsResizable: true }}
       emptyMessage="No packing rows on this file."
       listingKey={LISTING_KEY}

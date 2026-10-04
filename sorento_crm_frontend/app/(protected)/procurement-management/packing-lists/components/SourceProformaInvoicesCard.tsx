@@ -33,7 +33,7 @@ export function SourceProformaInvoicesCard({
    *  source for a date the header already knows. */
   convertedOn?: string | Date | null;
 }) {
-  const { data, isLoading } = usePackingListSourceInvoices(packingListId);
+  const { data, isLoading, isError, error } = usePackingListSourceInvoices(packingListId);
   const invoices = data?.invoices ?? [];
 
   const columns = useMemo<ColumnDef<PackingListSourceInvoice>[]>(
@@ -168,6 +168,23 @@ export function SourceProformaInvoicesCard({
         </CardHeader>
         <CardContent>
           <Skeleton className="h-20 w-full rounded-lg" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // The read is silent (no toast), so its failure is reported here. Falling through to the
+  // empty state would tell the reader the container has no proforma invoice behind it.
+  if (isError) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Source proforma invoices</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-destructive">
+            {error instanceof Error ? error.message : 'Failed to load the source proforma invoices'}
+          </p>
         </CardContent>
       </Card>
     );

@@ -88,7 +88,7 @@ export default function IntegrationLogsList() {
   );
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
 
-  const { data, isLoading, isPlaceholderData, isFetching, refetch, isRefetching } = useIntegrationLogs({
+  const { data, isLoading, isPlaceholderData, isFetching, refetch, isRefetching, error } = useIntegrationLogs({
     pageIndex: pagination.pageIndex,
     pageSize: pagination.pageSize,
     sorting,
@@ -291,6 +291,8 @@ export default function IntegrationLogsList() {
       table={table}
       recordCount={data?.pagination.total || 0}
       isLoading={isLoading}
+      error={error}
+      onRetry={() => void refetch()}
       isPlaceholderData={isPlaceholderData}
       tableLayout={{ width: 'fixed', columnsResizable: true, columnsVisibility: true }}
       rowHref={(row) => {

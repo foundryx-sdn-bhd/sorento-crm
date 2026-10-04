@@ -24,14 +24,16 @@ import { isCompareFullMatch } from '../types/compareMatch';
 import { PullChangesTab } from './PullChangesTab';
 import { PullExcelViewTab } from './PullExcelViewTab';
 import { PullCompareTab } from './PullCompareTab';
-import type {
-  AutocountPull,
-  AutocountPullEntity,
-  AutocountPullPhase,
-  AutocountPullScope,
-  DeliveryOrderPullCounts,
-  ProductPullCounts,
-  StockPullCounts,
+import {
+  isDocumentEntity,
+  type AutocountPull,
+  type AutocountPullEntity,
+  type AutocountPullPhase,
+  type AutocountPullScope,
+  type DeliveryOrderPullCounts,
+  type GoodsReceiveNotePullCounts,
+  type ProductPullCounts,
+  type StockPullCounts,
 } from '../types/autocountPull.types';
 
 const PHASE_LABEL: Record<AutocountPullPhase, string> = {
@@ -61,6 +63,7 @@ const ENTITY_LABEL: Record<AutocountPullEntity, string> = {
   products: 'AutoCount products pull',
   stock_balances: 'AutoCount stock pull',
   delivery_orders: 'AutoCount delivery orders pull',
+  goods_receive_notes: 'AutoCount goods receipt notes pull',
 };
 
 /** Known `pull.warnings` codes only - an unrecognised code renders nothing rather than a
@@ -127,6 +130,16 @@ function deliveryOrderCounters(counts: DeliveryOrderPullCounts) {
   ];
 }
 
+/** The DO counters plus the GRN lines the preview linked to a PO / SPO line and the ones it
+ *  could not (AC-GP-13). */
+function goodsReceiveNoteCounters(counts: GoodsReceiveNotePullCounts) {
+  return [
+    ...deliveryOrderCounters(counts),
+    { label: 'Lines linked to PO / SPO', value: counts.lines_linked },
+    { label: 'Lines not linked', value: counts.lines_unlinked },
+  ];
+}
+
 /** dd/MM/yyyy for a `YYYY-MM-DD` scope day - text, never a Date (a day has no zone). */
 function formatScopeDay(day: string): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(day);
@@ -139,8 +152,9 @@ function formatScopeDay(day: string): string {
 function scopeLine(
   scope: AutocountPullScope | null | undefined,
   window?: { fromDay: string | null; toDay: string | null } | null,
+  docLabel = 'DO',
 ): string {
-  if (scope?.docNo) return `Scope: DO ${scope.docNo}`;
+  if (scope?.docNo) return `Scope: ${docLabel} ${scope.docNo}`;
   const fromDay = scope?.fromDay || window?.fromDay;
   const toDay = scope?.toDay || window?.toDay;
   if (fromDay || toDay) {
@@ -204,7 +218,11 @@ export function AutocountPullReview({ jobId }: AutocountPullReviewProps) {
 
   const handlePullAgain = async () => {
     try {
-      const newPull = await startMutation.mutateAsync(pull.entity);
+      // A document pull asks again for the window it covered: the GRN gateway refuses a
+      // build with no scope (ss#107), and the same days are what "again" means anyway.
+      const newPull = await startMutation.mutateAsync(
+        isDocumentEntity(pull.entity) && pull.scope ? { entity: pull.entity, scope: pull.scope } : pull.entity,
+      );
       router.push(`/system-management/import-jobs/${newPull.job_id}`);
     } catch (error) {
       toast.error(startPullErrorMessage(error));
@@ -217,7 +235,9 @@ export function AutocountPullReview({ jobId }: AutocountPullReviewProps) {
       ? productCounters(counts as ProductPullCounts)
       : pull.entity === 'delivery_orders'
         ? deliveryOrderCounters(counts as DeliveryOrderPullCounts)
-        : stockCounters(counts as StockPullCounts)
+        : pull.entity === 'goods_receive_notes'
+          ? goodsReceiveNoteCounters(counts as GoodsReceiveNotePullCounts)
+          : stockCounters(counts as StockPullCounts)
     : [];
   const downloadLabel = pull.entity === 'stock_balances' ? 'Download Stock List' : 'Download xlsx';
   const summaryLine = compareSummaryLine(pull);
@@ -238,8 +258,10 @@ export function AutocountPullReview({ jobId }: AutocountPullReviewProps) {
               {formatSnapshotTime(pull.header?.expiresAt)}
             </span>
           )}
-          {pull.entity === 'delivery_orders' && (
-            <span className="text-xs text-muted-foreground">{scopeLine(pull.scope, pull.window)}</span>
+          {isDocumentEntity(pull.entity) && (
+            <span className="text-xs text-muted-foreground">
+              {scopeLine(pull.scope, pull.window, pull.entity === 'goods_receive_notes' ? 'GRN' : 'DO')}
+            </span>
           )}
           <span className="grow" />
           {(pull.phase === 'review' || pull.phase === 'confirmed') && (

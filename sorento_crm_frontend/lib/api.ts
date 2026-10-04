@@ -1,6 +1,14 @@
 import { NextRequest } from 'next/server';
 
 import { impersonationStore } from '@/lib/impersonation-store';
+import { REQUEST_TIMED_OUT_MESSAGE } from '@/lib/api-client';
+import {
+  IMPERSONATION_ENDED_HEADER,
+  endSessionAndRedirect,
+  endViewAsLocally,
+  isSessionEnding,
+  isSignedInShell,
+} from '@/lib/session-end';
 import {
   REVISION_HEADER,
   clearRememberedRevisions,
@@ -99,6 +107,84 @@ function _attachRevisionHeader(
 }
 
 // ---------------------------------------------------------------------------
+// Request deadlines (NEVER-STUCK-UI S2.1).
+//
+// A bare `fetch` waits as long as the browser lets it, which for a stalled proxy or
+// keep-alive connection is forever: the query stays `pending` and the screen is a
+// skeleton that never ends. Every apiFetch therefore gets a budget for the server to
+// ANSWER (response headers). Reading the body is not on the clock, so an export that has
+// started downloading or an event stream that has connected is never cut off.
+// ---------------------------------------------------------------------------
+export const API_READ_TIMEOUT_MS = 30_000;
+/** Writes and the AI chat: the server may do real work before it answers. */
+export const API_WRITE_TIMEOUT_MS = 120_000;
+/** A FormData body: the upload itself happens before the server can answer. */
+export const API_UPLOAD_TIMEOUT_MS = 600_000;
+
+/** `RequestInit` plus our own per-call budget. `timeoutMs` is never forwarded to fetch. */
+export type ApiFetchInit = RequestInit & {
+  /** Milliseconds the server has to answer. Defaults by method and body, see above. */
+  timeoutMs?: number;
+};
+
+/**
+ * A GET that builds a file before it answers (an Excel or PDF export) gets the write
+ * budget: the server does the whole build before the first byte, so 30s is too short for
+ * a large one. Matched by path so every export, present and future, is covered in one
+ * place rather than by each service remembering a `timeoutMs`.
+ */
+const _FILE_BUILD_PATH = /\/(export|download|pdf)(\b|[/?.])|\.(xlsx|pdf|csv)(\?|$)/i;
+
+function _defaultTimeoutMs(url: unknown, init: RequestInit | undefined): number {
+  if (init?.body instanceof FormData) return API_UPLOAD_TIMEOUT_MS;
+  const request = typeof Request !== 'undefined' && url instanceof Request ? url : null;
+  const method = (init?.method || request?.method || 'GET').toUpperCase();
+  if (method !== 'GET' && method !== 'HEAD') return API_WRITE_TIMEOUT_MS;
+  const path = request ? request.url : url;
+  if (typeof path === 'string' && _FILE_BUILD_PATH.test(path)) return API_WRITE_TIMEOUT_MS;
+  return API_READ_TIMEOUT_MS;
+}
+
+/**
+ * `fetch` with a deadline on the answer. The caller's own signal still works and still
+ * rejects with its own AbortError; only our deadline becomes the readable timeout error.
+ */
+async function _fetchWithDeadline(
+  url: RequestInfo,
+  init: RequestInit | undefined,
+  timeoutMs: number,
+): Promise<Response> {
+  const controller = new AbortController();
+  const callerSignal =
+    init?.signal ?? (typeof Request !== 'undefined' && url instanceof Request ? url.signal : undefined);
+  let timedOut = false;
+  const onCallerAbort = () => controller.abort(callerSignal?.reason);
+  if (callerSignal) {
+    if (callerSignal.aborted) controller.abort(callerSignal.reason);
+    else callerSignal.addEventListener('abort', onCallerAbort, { once: true });
+  }
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort(new DOMException(REQUEST_TIMED_OUT_MESSAGE, 'TimeoutError'));
+  }, timeoutMs);
+  try {
+    // The caller-abort listener stays after the answer arrives, so a caller can still
+    // cancel the body (an event stream, a download); only the deadline stops here.
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (error) {
+    callerSignal?.removeEventListener('abort', onCallerAbort);
+    if (timedOut && !callerSignal?.aborted) {
+      const timeoutError = new Error(REQUEST_TIMED_OUT_MESSAGE);
+      timeoutError.name = 'TimeoutError';
+      throw timeoutError;
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Cached client-side auth token.
 //
 // Every apiFetch needs a Bearer JWT from /api/auth/token. That route is pure
@@ -112,6 +198,12 @@ let _cachedToken: string | null = null;
 let _cachedTokenExp = 0; // epoch seconds; 0 = unknown
 let _tokenInFlight: Promise<string | null> | null = null;
 const _TOKEN_REFRESH_MARGIN_S = 60; // refetch this many seconds before exp
+/**
+ * A token read that never answers used to hold `_tokenInFlight` forever, and every
+ * apiFetch awaited that same promise: the whole app spun with nothing failing.
+ */
+export const TOKEN_FETCH_TIMEOUT_MS = 10_000;
+export { SIGN_OUT_CAP_MS } from '@/lib/session-end';
 
 function _decodeJwtExp(token: string): number {
   try {
@@ -134,8 +226,22 @@ async function getCachedAuthToken(basePath: string): Promise<string | null> {
   if (_tokenInFlight) return _tokenInFlight;
 
   _tokenInFlight = (async () => {
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(), TOKEN_FETCH_TIMEOUT_MS);
     try {
-      const res = await fetch(`${basePath}/api/auth/token`, { credentials: 'include' });
+      const res = await fetch(`${basePath}/api/auth/token`, {
+        credentials: 'include',
+        signal: abort.signal,
+      });
+      // 401 = the NextAuth cookie holds no usable session (gone, undecodable, or
+      // overwritten by another localhost copy). Inside the signed-in shell, sending
+      // the call without a bearer only earns a code-less 401 that nothing acts on,
+      // so end the session here. A public page (unsubscribe link) has no session
+      // to end and its call needs none. Anything else (500, timeout) is transient.
+      if (res.status === 401) {
+        if (isSignedInShell()) endSessionAndRedirect();
+        return null;
+      }
       if (!res.ok) return null;
       const data = await res.json().catch(() => null);
       const token: string | null = data?.token ?? null;
@@ -152,6 +258,7 @@ async function getCachedAuthToken(basePath: string): Promise<string | null> {
     } catch {
       return null;
     } finally {
+      clearTimeout(timer);
       _tokenInFlight = null;
     }
   })();
@@ -188,34 +295,44 @@ export async function revokeCurrentSession(): Promise<void> {
 // NextAuth is just a cookie-holder now; FastAPI owns session validity. When a
 // session is revoked (logout-all, password change, admin force-logout) or
 // expires (30 days with no activity), the NextAuth cookie is still "valid" but FastAPI
-// returns 401 with a specific reason code. Without this, the user sees a
-// logged-in shell where every call fails. We gate strictly on the reason code
+// returns 401 with a specific reason code. We gate strictly on the reason code
 // so an RBAC 403 or an incidental 401 from one endpoint never logs everyone out.
+//
+// Before giving up, re-read the cookie once: the tab may hold a cached token
+// that died while the user signed in again elsewhere. A newer token replays a
+// read; a write is NOT replayed, because the newer token may be another user's
+// and the user never meant that write to run as them - it returns the 401 and
+// the next submit carries the new token. The same (dead) token ends the session
+// through `endSessionAndRedirect`.
 // ---------------------------------------------------------------------------
 const _SESSION_DEAD_CODES = new Set(['session_revoked', 'session_expired', 'session_invalid']);
-let _signingOut = false;
 
-async function _maybeForceSignOut(clonedResponse: Response): Promise<void> {
-  if (_signingOut) return;
-  try {
-    const data = await clonedResponse.json().catch(() => null);
-    const code: string | undefined = data?.detail?.code ?? data?.code;
-    if (!code || !_SESSION_DEAD_CODES.has(code)) return;
-    _signingOut = true;
-    clearCachedAuthToken();
-    const loc = window.location;
-    const callbackUrl = `${loc.pathname}${loc.search}${loc.hash}`;
-    const basePath = process.env.NEXT_PUBLIC_BASE_PATH || '';
-    try {
-      const { signOut } = await import('next-auth/react');
-      await signOut({ redirect: false });
-    } catch {
-      /* fall through to hard redirect */
-    }
-    window.location.href = `${basePath}/signin?callbackUrl=${encodeURIComponent(callbackUrl)}`;
-  } catch {
-    /* never let the interceptor throw into the caller */
+async function _isSessionDead(clonedResponse: Response): Promise<boolean> {
+  const data = await clonedResponse.json().catch(() => null);
+  const code: string | undefined = data?.detail?.code ?? data?.code;
+  return !!code && _SESSION_DEAD_CODES.has(code);
+}
+
+/** Read the cookie again, skipping a cache that still holds the token that just failed. */
+async function _refreshAuthToken(basePath: string, failedToken: string): Promise<string | null> {
+  if (_cachedToken === failedToken) {
+    _cachedToken = null;
+    _cachedTokenExp = 0;
   }
+  return getCachedAuthToken(basePath);
+}
+
+function _bearerOf(init: RequestInit | undefined): string | null {
+  const value = init?.headers ? new Headers(init.headers as HeadersInit).get('Authorization') : null;
+  return value?.startsWith('Bearer ') ? value.slice('Bearer '.length) : null;
+}
+
+/** What apiFetch answers, without touching the network, once the session is ending. */
+function _sessionEndingResponse(): Response {
+  return new Response(
+    JSON.stringify({ detail: { code: 'session_ending', message: 'Your session has ended. Please sign in again.' } }),
+    { status: 401, headers: { 'Content-Type': 'application/json' } },
+  );
 }
 
 /**
@@ -228,8 +345,11 @@ async function _maybeForceSignOut(clonedResponse: Response): Promise<void> {
  */
 export async function apiFetch(
   input: string | Request,
-  init?: RequestInit,
+  apiInit?: ApiFetchInit,
 ): Promise<Response> {
+  const { timeoutMs: callerTimeoutMs, ...rest } = apiInit ?? {};
+  let init: RequestInit | undefined = apiInit ? rest : undefined;
+  const timeoutMs = callerTimeoutMs ?? _defaultTimeoutMs(input, init);
   let url = input;
   // Use empty string for relative paths (nginx will proxy), or explicit URL for direct backend access
   let apiUrl = process.env.NEXT_PUBLIC_API_URL || '';
@@ -389,9 +509,17 @@ export async function apiFetch(
         // Extract JWT token from NextAuth and send in Authorization header
         // NextAuth stores JWT encrypted in cookies, so we need to get the raw token
         if (typeof window !== 'undefined') {
+          // The session is on its way to /signin: answer at once, no request storm
+          // (and re-try the navigation if it was cancelled).
+          if (isSessionEnding()) {
+            endSessionAndRedirect();
+            return _sessionEndingResponse();
+          }
           try {
             // For client-side: get a cached (deduped) JWT from the Next.js API.
             const token = await getCachedAuthToken(basePath);
+            // The token read itself may have found the session gone.
+            if (!token && isSessionEnding()) return _sessionEndingResponse();
 
             {
               if (token) {
@@ -534,19 +662,34 @@ export async function apiFetch(
     }
   }
 
+  const isBrowserApiCall =
+    typeof window !== 'undefined' && typeof url === 'string' && url.includes('/api/v1/');
+
   init = _attachImpersonationHeader(url, init);
   const fenced = _attachRevisionHeader(url, init);
   init = fenced.init;
-  const response = await fetch(url as RequestInfo, init);
+  const sentViewAs = impersonationStore.getState()?.targetUser.id ?? null;
+  let response = await _fetchWithDeadline(url as RequestInfo, init, timeoutMs);
   // Browser-side: a 401 with a session-dead reason code means our session was
-  // revoked/expired server-side → sign out and bounce to /signin.
-  if (
-    response.status === 401 &&
-    typeof window !== 'undefined' &&
-    typeof url === 'string' &&
-    url.includes('/api/v1/')
-  ) {
-    void _maybeForceSignOut(response.clone());
+  // revoked/expired server-side → refresh once, else sign out and bounce to /signin.
+  if (isBrowserApiCall && response.status === 401 && (await _isSessionDead(response.clone()))) {
+    const failedToken = _bearerOf(init);
+    const fresh = failedToken ? await _refreshAuthToken(basePath, failedToken) : null;
+    const method = (init?.method ?? 'GET').toUpperCase();
+    if (fresh && fresh !== failedToken && !isSessionEnding()) {
+      if (method === 'GET' || method === 'HEAD') {
+        init = _withHeader(init, 'Authorization', `Bearer ${fresh}`);
+        response = await _fetchWithDeadline(url as RequestInfo, init, timeoutMs);
+        if (response.status === 401 && (await _isSessionDead(response.clone()))) {
+          endSessionAndRedirect();
+        }
+      }
+    } else {
+      endSessionAndRedirect();
+    }
+  }
+  if (isBrowserApiCall && sentViewAs && response.headers.get(IMPERSONATION_ENDED_HEADER) === '1') {
+    endViewAsLocally(sentViewAs);
   }
   // The revision fence, both directions (UAC C-bis). A read of a revisable list
   // or record records what the screen is about to show; a refusal against a

@@ -78,8 +78,8 @@ vi.mock('../../_shared/hooks/useProjects', () => ({
 }));
 
 let graphFixture: StatusGraph;
-vi.mock('@/app/(protected)/system-management/status-graphs/hooks/useStatusGraphs', () => ({
-  useStatusGraph: () => ({ data: graphFixture }),
+vi.mock('@/app/(protected)/project-sales/_shared/hooks/useProjectStatusGraph', () => ({
+  useProjectStatusGraph: () => ({ data: graphFixture }),
 }));
 
 import { ProjectDetailClient } from './ProjectDetailClient';

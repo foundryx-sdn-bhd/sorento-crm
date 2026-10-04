@@ -74,7 +74,7 @@ import { useAttachmentTypes } from '../../attachment-types/hooks/useAttachmentTy
 import { useCompany } from '@/app/providers/CompanyProvider';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { Calendar } from '@/components/ui/calendar';
-import { getUsersSelect, type UserSelectItem } from '@/services/userSelectService';
+import { getUserLookup, type UserLookupItem } from '@/services/userSelectService';
 import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { CalendarDays } from 'lucide-react';
@@ -166,9 +166,13 @@ export default function AttachmentsInFolderPanel({
   const uploadedAtFrom = uploadedRange?.from ? format(uploadedRange.from, 'yyyy-MM-dd') : '';
   const uploadedAtTo = uploadedRange?.to ? format(uploadedRange.to, 'yyyy-MM-dd') : '';
 
-  const { data: usersSelect = [] as UserSelectItem[] } = useQuery({
-    queryKey: ['users-select', 'attachment-filter'],
-    queryFn: () => getUsersSelect({ status: 'ACTIVE' }),
+  const {
+    data: usersSelect = [] as UserLookupItem[],
+    error: usersSelectError,
+    refetch: refetchUsersSelect,
+  } = useQuery({
+    queryKey: ['user-lookup', 'attachment-filter'],
+    queryFn: () => getUserLookup(),
     staleTime: 5 * 60 * 1000,
   });
   const { data: attachmentTypesData } = useAttachmentTypes({
@@ -254,7 +258,7 @@ export default function AttachmentsInFolderPanel({
   const isSearching = searchQuery.trim().length > 0;
   const recursive = (isSearching || hasActiveFilter) && !thisFolderOnly;
 
-  const { data, isLoading, isPlaceholderData, isFetching } = useDriveContents({
+  const { data, isLoading, isPlaceholderData, isFetching, error, refetch } = useDriveContents({
     pageIndex: pagination.pageIndex,
     pageSize: pagination.pageSize,
     sorting,
@@ -982,6 +986,8 @@ export default function AttachmentsInFolderPanel({
         recordCount={data?.pagination.total || 0}
         isLoading={isLoading}
         isPlaceholderData={isPlaceholderData}
+        error={error}
+        onRetry={() => void refetch()}
         onRowClick={(row) => openItem(row)}
         listingKey="resource-management.files.view::unified-drive"
         tableLayout={{
@@ -1162,11 +1168,13 @@ export default function AttachmentsInFolderPanel({
                           setUploadedBy(v);
                           setPagination((p) => ({ ...p, pageIndex: 0 }));
                         }}
+                        loadError={usersSelectError}
+                        onRetry={() => void refetchUsersSelect()}
                         options={[
                           { value: '__all__', label: 'All users' },
                           ...usersSelect.map((u) => ({
                             value: u.id,
-                            label: u.name?.trim() || u.email || 'Unnamed user',
+                            label: u.name?.trim() || 'Unnamed user',
                           })),
                         ]}
                         placeholder="All users"

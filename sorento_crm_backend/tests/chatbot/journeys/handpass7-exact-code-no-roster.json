@@ -1,11 +1,11 @@
 {
   "name": "handpass7-exact-code-no-roster",
-  "source": "hand pass 7 owner console turn 19 Sep 2026 21:55:43 MYT (contact_respond_id 437264483): 'ETA srtwc8518-SH' - measured live against :8081 today it STILL rosters ('Which product do you mean? 1. SRTWC8518-SH - has incoming ...') even though the customer's own text IS the exact code of option 1. Ruling R-e: an exact product code answers straight away, no roster. Contrast case ('incoming for srtwc286', cold, no bare SRTWC286 code in this clone's catalog - only ten -SH-suffixed variants, measured via psql) is the retained-correct behaviour: it must still roster, so the coder's fix does not over-correct into never rostering again. Contact 440987225 confirmed to reach both turns with no permission refusal (measured live 19 Sep 2026).",
+  "source": "hand pass 7 owner console turn 19 Sep 2026 21:55:43 MYT (contact_respond_id 900000008): 'ETA srtwc8518-SH' - measured live against :8081 today it STILL rosters ('Which product do you mean? 1. SRTWC8518-SH - has incoming ...') even though the customer's own text IS the exact code of option 1. Ruling R-e: an exact product code answers straight away, no roster. Contrast case ('incoming for srtwc286', cold, no bare SRTWC286 code in this clone's catalog - only ten -SH-suffixed variants, measured via psql) is the retained-correct behaviour: it must still roster, so the coder's fix does not over-correct into never rostering again. Contact 900000010 confirmed to reach both turns with no permission refusal (measured live 19 Sep 2026).",
   "cases": [
     {
       "name": "exact-code-answers-directly-no-roster",
       "cold": true,
-      "contact": "440987225",
+      "contact": "900000010",
       "turns": [
         {
           "text": "ETA srtwc8518-SH",
@@ -20,7 +20,7 @@
     {
       "name": "no-exact-code-in-catalog-still-rosters",
       "cold": true,
-      "contact": "440987225",
+      "contact": "900000010",
       "turns": [
         {
           "text": "incoming for srtwc286",

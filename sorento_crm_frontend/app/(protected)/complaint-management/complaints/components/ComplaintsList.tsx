@@ -29,7 +29,7 @@ import { SearchableMultiSelect } from '@/components/common/SearchableMultiSelect
 import { useComplaintRootCausesSelect } from '../../complaint-root-causes/hooks/useComplaintRootCauses';
 import { useComplaintResolutionsSelect } from '../../complaint-resolutions/hooks/useComplaintResolutions';
 import { Skeleton } from '@/components/ui/skeleton';
-import { getUsersSelect } from '@/services/userSelectService';
+import { getUserLookup } from '@/services/userSelectService';
 import { useComplaints, useExportComplaintPdf } from '../hooks/useComplaints';
 import { complaintStatusPillClass, complaintStatusLabel } from '@/lib/complaint-status';
 import type { Complaint } from '../types/complaint.types';
@@ -93,7 +93,7 @@ export default function ComplaintsList() {
     resolutionFilter.join(','),
   ]);
 
-  const { data, isLoading, isPlaceholderData, refetch, isFetching } = useComplaints({
+  const { data, isLoading, isPlaceholderData, refetch, isFetching, error } = useComplaints({
     pageIndex: pagination.pageIndex,
     pageSize: pagination.pageSize,
     sorting,
@@ -108,15 +108,27 @@ export default function ComplaintsList() {
     resolution_ids: resolutionFilter.length ? resolutionFilter : undefined,
   });
 
-  const { data: respondSyncedUsers = [] } = useQuery({
-    queryKey: ['users-select', 'respond_synced', 'successful'],
-    queryFn: () => getUsersSelect({ respond_synced: 'successful' }),
+  const {
+    data: respondSyncedUsers = [],
+    error: respondSyncedUsersError,
+    refetch: refetchRespondSyncedUsers,
+  } = useQuery({
+    queryKey: ['user-lookup', 'respond-synced', 'with-inactive'],
+    queryFn: () => getUserLookup({ respond_synced: true, include_inactive: true }),
     staleTime: 60_000,
   });
   const assigneeOptions = respondSyncedUsers.filter((u) => u.respond_user_id);
   // Active-only master data, the same source the complaint form's pickers use.
-  const { data: rootCauseOptions = [] } = useComplaintRootCausesSelect();
-  const { data: resolutionOptions = [] } = useComplaintResolutionsSelect();
+  const {
+    data: rootCauseOptions = [],
+    error: rootCauseError,
+    refetch: refetchRootCauses,
+  } = useComplaintRootCausesSelect();
+  const {
+    data: resolutionOptions = [],
+    error: resolutionError,
+    refetch: refetchResolutions,
+  } = useComplaintResolutionsSelect();
 
   const filtersActiveCount =
     (assignedToFilter !== '__all__' ? 1 : 0) +
@@ -397,6 +409,8 @@ export default function ComplaintsList() {
       recordCount={data?.pagination.total || 0}
       isLoading={isLoading}
       isPlaceholderData={isPlaceholderData}
+      error={error}
+      onRetry={() => void refetch()}
       rowHref={rowHref}
       standardToolbar={false}
       tableLayout={{ width: 'fixed', columnsResizable: true, columnsVisibility: true }}
@@ -425,12 +439,14 @@ export default function ComplaintsList() {
                     <SearchableSelect
                       value={assignedToFilter}
                       onChange={setAssignedToFilter}
+                      loadError={respondSyncedUsersError}
+                      onRetry={() => void refetchRespondSyncedUsers()}
                       options={[
                         { value: '__all__', label: 'All assignees' },
                         { value: '__unassigned__', label: 'Unassigned' },
                         ...assigneeOptions.map((u) => ({
                           value: u.respond_user_id!,
-                          label: u.name || u.email || 'Unnamed user',
+                          label: u.name || 'Unnamed user',
                         })),
                       ]}
                       placeholder="All assignees"
@@ -460,6 +476,8 @@ export default function ComplaintsList() {
                     <SearchableMultiSelect
                       value={rootCauseFilter}
                       onChange={setRootCauseFilter}
+                      loadError={rootCauseError}
+                      onRetry={() => void refetchRootCauses()}
                       options={rootCauseOptions.map((rc) => ({
                         value: rc.id,
                         label: rc.name,
@@ -473,6 +491,8 @@ export default function ComplaintsList() {
                     <SearchableMultiSelect
                       value={resolutionFilter}
                       onChange={setResolutionFilter}
+                      loadError={resolutionError}
+                      onRetry={() => void refetchResolutions()}
                       options={resolutionOptions.map((r) => ({
                         value: r.id,
                         label: r.name,

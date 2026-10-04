@@ -31,7 +31,7 @@ import { Progress } from '@/components/ui/progress';
 import { useConversationSLATracking } from '../hooks/useConversationSLATracking';
 import type { ConversationSLATracking } from '../types/conversationSLATracking.types';
 import { formatDateTime, formatDuration, formatDurationWithSeconds, parseDateTimeAsUTC } from '@/lib/helpers';
-import { apiFetch } from '@/lib/api';
+import { getUserLookup, type UserLookupItem } from '@/services/userSelectService';
 import { buildDetailSearch } from '@/lib/listNavQuery';
 import { CONVERSATION_SLA_TRACKING_PATH } from '../lib/historyLinks';
 import { slaHandler } from '../lib/slaHandler';
@@ -121,7 +121,7 @@ export default function ConversationSLATrackingList() {
     resolvedByFilter,
   ]);
 
-  const { data, isLoading, isPlaceholderData, isFetching } = useConversationSLATracking({
+  const { data, isLoading, isPlaceholderData, isFetching, error, refetch } = useConversationSLATracking({
     pageIndex: pagination.pageIndex,
     pageSize: pagination.pageSize,
     sorting,
@@ -132,15 +132,13 @@ export default function ConversationSLATrackingList() {
     resolved_by: resolvedByFilter,
   });
 
-  const { data: respondUsers } = useQuery({
-    queryKey: ['respond-synced-users'],
-    queryFn: async () => {
-      const response = await apiFetch('/api/user-management/users/select?respond_synced=successful');
-      if (!response.ok) {
-        throw new Error('Failed to fetch respond synced users');
-      }
-      return response.json();
-    },
+  const {
+    data: respondUsers,
+    error: respondUsersError,
+    refetch: refetchRespondUsers,
+  } = useQuery({
+    queryKey: ['user-lookup', 'respond-synced', 'with-inactive'],
+    queryFn: () => getUserLookup({ respond_synced: true, include_inactive: true }),
     staleTime: 1000 * 60 * 5,
   });
 
@@ -561,6 +559,8 @@ export default function ConversationSLATrackingList() {
       recordCount={data?.pagination.total || 0}
       isLoading={isLoading}
       isPlaceholderData={isPlaceholderData}
+      error={error}
+      onRetry={() => void refetch()}
       rowHref={rowHref}
       rowPending={rowPending}
     >
@@ -590,11 +590,13 @@ export default function ConversationSLATrackingList() {
                       setAssignedToFilter(value);
                       setPagination((prev) => ({ ...prev, pageIndex: 0 }));
                     }}
+                    loadError={respondUsersError}
+                    onRetry={() => void refetchRespondUsers()}
                     options={[
                       { value: '__all__', label: 'All assignees' },
-                      ...(respondUsers || []).map((user: { id: string; name?: string | null; respond_user_id?: string | null; email: string }) => ({
+                      ...(respondUsers || []).map((user: UserLookupItem) => ({
                         value: user.respond_user_id || user.id,
-                        label: user.name || user.email,
+                        label: user.name || 'Unnamed user',
                       })),
                     ]}
                     placeholder="Assignee"

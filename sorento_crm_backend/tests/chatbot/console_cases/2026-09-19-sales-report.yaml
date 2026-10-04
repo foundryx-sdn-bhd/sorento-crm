@@ -21,7 +21,7 @@
 # sales-report/` (new directory, following the `evidence/outstanding-report/` precedent).
 #
 # PREREQUISITES before this file is run:
-# - The contact below (437264483, the same contact the outstanding-report console files use)
+# - The contact below (900000008, the same contact the outstanding-report console files use)
 #   holds the NEW per-contact field-reveal key `sales_orders.sales_report` (Contacts > Access >
 #   "Sales report" - S10). It is a fresh key; nothing grants it by default.
 # - Migration `519_chatbot_sales_report_vocab.py` has run (already present in this worktree at
@@ -39,7 +39,7 @@
 #   `scripts/chatbot_console_check.py`). The trace line that WOULD show `tool=crm_sales_report
 #   args={"channel": "dealer", ...}` is only printed by `--say` mode (`_run_ad_hoc`), never by a
 #   YAML case run (`_run_cases`). So "tool X called with arg Y" in the captain's list is graded
-#   here by PROXY through the presenter's own header echo (the `Channel:` / `Delivery date:`
+#   here by PROXY through the presenter's own header echo (the `Channel:` / `Required date (or order date):`
 #   lines are built from exactly those tool args, per AC-1603/AC-1623/AC-1625) rather than
 #   directly. A direct assertion would need a new `expect.tool_name` / `expect.tool_args` key on
 #   the runner - out of this file's scope to add.
@@ -80,32 +80,34 @@
 # envelope-borrowing needs one) and (b) does NOT hold `sales_orders.sales_report`, verified via
 # Contacts > Access or `contact_field_reveal_service.list_granted_keys` right before the run.
 
-contact: "437264483"
+contact: "900000008"
+
+# Sales report v4 (lane SALES-REPORT, PR #1401, mock documentation/mockups/sales-report/index.html):
+# the reply is the delivered basis by DO date - bold header lines, `*Total:*` plus one line per
+# period, then the numbered `*Drill down:*` options (By customer when several accounts, By
+# product when several products, Delivery orders). A pick re-runs the report with `group_by`.
+# The retired SO-basis lines (Sales orders / Ordered / Confirmed (DO) / Outstanding, the
+# `*_By product_*` blocks, "Reply 1 for the sales order list." and the SO list) are gone, so
+# every expectation below moved to the new lines. The Channel line prints only when the
+# scoped accounts span more than one segment class, so it is not asserted on hanlim's data.
 
 cases:
-  - name: Journey 1-4 - dealer sales report for hanlim, SO list, date narrow, product narrow
+  - name: Journey 1-4 - dealer sales report for hanlim, first drill-down, date narrow, product narrow
     cold: true
     turns:
-      # 1. "give me the dealer sales report for hanlim" - Journey step 1-2. No date named =
-      # all dates. Header in order Customer/Product/Channel/Location/Delivery date (AC-1601),
-      # at least one month block (AC-1602), By product (customer subject, S6/AC-1604), closing
-      # offer line (AC-1605), offer armed under its own kind (AC-1654, S11).
+      # 1. "give me the dealer sales report for hanlim" - no date named = all dates. Header in
+      # order Customer/Product/(Channel)/Delivery date, the Total and period lines, the drill
+      # offer armed under its own kind.
       - text: "give me the dealer sales report for hanlim"
         expect:
           branch_kind: business_query
           reply_contains:
-            - "Customer:"
-            - |-
-              Product: all
-              Channel: Dealer
-              Location: all
-              Delivery date: all
-            - "Sales orders:"
-            - "Ordered: RM"
-            - "Confirmed (DO): RM"
-            - "Outstanding: RM"
-            - "*_By product_*"
-            - "Reply 1 for the sales order list."
+            - "*Customer:*"
+            - "*Product:* all"
+            - "*Delivery date:* all"
+            - "*Total:* Qty"
+            - "*Drill down:*"
+            - "Delivery orders"
           reply_not_contains:
             - "Which customer do you mean?"
             - "Outstanding for which document?"
@@ -113,101 +115,88 @@ cases:
           pending_kind: sales_report_detail
           no_uuid: true
 
-      # 2. "1" - the detail offer answered. One numbered item per SO (AC-1606), no by-product
-      # breakdown heading in a detail reply, offer stays sticky (AC-1655).
+      # 2. "1" - the first drill-down (By customer over hanlim's ledgers, else By product): the
+      # ranked rows and the Total, and the offer stays open with the remaining options.
       - text: "1"
         expect:
           branch_kind: business_query
-          reply_contains: ["*SO Number:*", "*Location:*", "*Order Date:*", "*Confirmed (DO):*"]
-          reply_not_contains: ["*_By product_*", "*_By customer_*"]
+          reply_contains: [", delivery date all", "*Total:* Qty", "*Drill down:*"]
+          reply_not_contains: ["*SO Number:*", "Reply 1 for the sales order list."]
           pending_kind: sales_report_detail
           no_uuid: true
 
-      # 3. "june 2026 only" - a refinement narrows the SAME ask (customer/channel carried,
-      # AC-1656) to one named month, so the block title itself is assertable for once
-      # ("*_Jun 2026_*", not any month). Offer re-arms.
+      # 3. "june 2026 only" - a refinement narrows the SAME ask to one named month: a 30 day
+      # window is week grain, so the period lines are weeks. Offer re-arms.
       - text: "june 2026 only"
         expect:
           branch_kind: business_query
           reply_contains:
-            - "*_Jun 2026_*"
-            - "Delivery date: 01/06/2026 to 30/06/2026"
-            - "Channel: Dealer"
-            - "Reply 1 for the sales order list."
-          reply_not_contains: ["Delivery date: all", "Outstanding for which document?"]
+            - "*Delivery date:* 01/06/2026 to 30/06/2026"
+            - "*Total:* Qty"
+            - "*Drill down:*"
+          reply_not_contains: ["*Delivery date:* all", "Outstanding for which document?"]
           pending_kind: sales_report_detail
           no_uuid: true
 
-      # 4. A product refinement on top - both customer AND product now named. SRTWT7445
-      # covers a whole family on the live DB (2+ codes), so S20 prints By product only (not
-      # the old "neither heading at all", which only holds for a single-code product).
-      # Prior filters (channel, narrowed date) stay carried.
+      # 4. A product refinement on top - customer AND product now named, prior filters carried.
       - text: "only SRTWT7445"
         expect:
           branch_kind: business_query
           reply_contains:
-            - "Product: SRTWT7445"
-            - "Delivery date: 01/06/2026 to 30/06/2026"
-            - "Channel: Dealer"
-            - "*_By product_*"
-          reply_not_contains: ["*_By customer_*"]
+            - "*Product:* SRTWT7445"
+            - "*Delivery date:* 01/06/2026 to 30/06/2026"
+          reply_not_contains: ["*Product:* all"]
           pending_kind: sales_report_detail
           no_uuid: true
 
   - name: S18 - a product-only ask with no date defaults to the current calendar year
     cold: true
     turns:
-      # Journey step 5. Product only (no customer) over a family (SRTWT7445 covers 2+ codes)
-      # = BOTH breakdowns (S20); no date named defaults to the CURRENT YEAR (S18), unlike a
-      # customer ask which stays "all".
+      # Product only (no customer), no date named: defaults to the CURRENT YEAR (S18), unlike
+      # a customer ask which stays "all". A year is month grain.
       - text: "sales report for SRTWT7445"
         expect:
           branch_kind: business_query
           reply_contains:
-            - "Product: SRTWT7445"
-            - "Channel: all"
-            # Current calendar year (Malaysia time), today is 19 Sep 2026. BUMP EVERY JANUARY.
-            - "Delivery date: 01/01/2026 to 31/12/2026"
-            - "*_By product_*"
-            - "*_By customer_*"
-          reply_not_contains: ["Delivery date: all"]
+            - "*Product:* SRTWT7445"
+            # Current calendar year (Malaysia time). BUMP EVERY JANUARY.
+            - "*Delivery date:* 01/01/2026 to 31/12/2026"
+            - "*Total:* Qty"
+            - "*Drill down:*"
+          reply_not_contains: ["*Delivery date:* all"]
           no_uuid: true
 
   - name: S18 - saying "all dates" turns the current-year default off
     cold: true
     turns:
-      # Journey step 5's escape hatch: naming "all dates" defeats the product-only default.
       - text: "sales report for SRTWT7445 all dates"
         expect:
           branch_kind: business_query
-          reply_contains: ["Product: SRTWT7445", "Delivery date: all"]
-          reply_not_contains: ["Delivery date: 01/01/2026 to 31/12/2026"]
+          reply_contains: ["*Product:* SRTWT7445", "*Delivery date:* all"]
+          reply_not_contains: ["*Delivery date:* 01/01/2026 to 31/12/2026"]
           no_uuid: true
 
-  - name: Journey 6 - project sales report for hanlim sets Channel Project
+  - name: Journey 6 - project sales report for hanlim keeps the project channel
     cold: true
     turns:
+      # The Channel line prints only when hanlim's accounts span two segment classes; when it
+      # prints it says Project, never Retail.
       - text: "project sales report for hanlim"
         expect:
           branch_kind: business_query
-          reply_contains: ["Channel: Project"]
-          reply_not_contains: ["Channel: Dealer", "Channel: all", "Which customer do you mean?"]
+          reply_contains: ["*Customer:*", "*Total:* Qty"]
+          reply_not_contains: ["*Channel:* Retail", "*Channel:* all", "Which customer do you mean?"]
           no_uuid: true
 
   - name: FUZZY - how much did hanlim buy this year reaches the sales report, not the orders list
     cold: true
     turns:
-      # Proxy for "tool = crm_sales_report, dates = current year": the sales-report presenter's
-      # OWN labels ("Sales orders:", "Confirmed (DO): RM") are absent from every other business
-      # answer shape, and the current-year window is explicit in the message itself (not S18's
-      # default), so it must reach the route regardless of subject shape.
       - text: "how much did hanlim buy this year"
         expect:
           branch_kind: business_query
           reply_contains:
-            - "Sales orders:"
-            - "Confirmed (DO): RM"
-            - "Delivery date: 01/01/2026 to 31/12/2026"
+            - "*Total:* Qty"
+            - "*Delivery date:* 01/01/2026 to 31/12/2026"
           reply_not_contains:
             - "Sales order outstanding"
             - "Delivery order outstanding"
@@ -218,78 +207,56 @@ cases:
   - name: "SECOND DEFECT - dealer/project never turns a product-code token into a customer"
     cold: true
     turns:
-      # Second defect (owner live testing, 19 Sep 2026, after S19): "dealer Srt5674-N
-      # August total sale quantity" answered the GENERIC "no order ... matched" miss
-      # with NO TOOL CALL AT ALL - the parser hinted "Srt5674-N" as a CUSTOMER (the
-      # word "dealer" sits in front of it), the resolver's own fallback then found it
-      # as a PRODUCT, and a pre-fetch miss gate refused the turn before the report
-      # ever ran. Fix A (resolve_gate.py's if3_miss) plus fix B (the prompt wording)
-      # must both land: the report itself must run, Channel: Dealer, an Aug 2026
-      # block, never the generic miss text. "Srt5674-N" also covers a family (SRT5674-N,
-      # SRT5674-NL) on the live DB, so S20 prints BOTH breakdowns - By product (with the
-      # SRT5674-N row the original defect's own August sales sit on) then By customer.
+      # Second defect (owner live testing, 19 Sep 2026, after S19): "dealer Srt5674-N August
+      # total sale quantity" answered the GENERIC "no order ... matched" miss with NO TOOL CALL
+      # AT ALL. The report itself must run over August (a 31 day window: week grain), never
+      # the generic miss text.
       - text: "dealer Srt5674-N August total sale quantity"
         expect:
           branch_kind: business_query
           reply_contains:
-            - "Channel: Dealer"
-            - "*_Aug 2026_*"
-            - "*_By product_*"
-            - "SRT5674-N:"
-            - "*_By customer_*"
+            - "*Product:* SRT5674-N"
+            - "*Delivery date:* 01/08/2026 to 31/08/2026"
+            - "*Total:* Qty"
           reply_not_contains: ["matched these", "No sales found."]
           no_uuid: true
 
   - name: "S19 - a product family stem covers its siblings (Srt5674 also matches SRT5674-N)"
     cold: true
     turns:
-      # Owner ruling S19, live testing 19 Sep 2026: this exact message answered "No sales
-      # found." before the prefix fix because every August sale sat on the sibling
-      # SRT5674-N, never the bare SRT5674 code. Must now find August and print the
-      # comma-separated family form of the Product header line (AC-1633, second fix
-      # round: the bracket form this case originally asserted was replaced by the
-      # owner's own follow-up ruling the same day - "it should just be comma
-      # separated"). Also proves Finding 3 (domain_hint forced to "order" for a
-      # report order_status): this same phrasing, on the FULL prompt, sometimes came
-      # back domain_hint "master_products" and answered the product-master listing
-      # instead - the deterministic post-LLM correction must still land the report.
-      # Two SEPARATE needles, not one joined string: the live product master carries
-      # more siblings than just SRT5674-N (e.g. SRT5674-BL sorts between them), so
-      # pinning the exact adjacent pair would be a data assumption, not a contract one.
+      # Owner ruling S19: the stem prints the comma-separated family on the Product line.
       - text: "Srt5674 August total sale quantity"
         expect:
           branch_kind: business_query
           reply_contains:
-            - "Product: SRT5674,"
+            - "*Product:* SRT5674,"
             - "SRT5674-N"
-            - "*_Aug 2026_*"
+            - "*Delivery date:* 01/08/2026 to 31/08/2026"
           reply_not_contains: ["No sales found."]
           no_uuid: true
 
   - name: "TRAP - dealer inside an outstanding ask is not read as a channel word"
     cold: true
     turns:
-      # S8 is explicit that the outstanding report is unchanged by this lane: "dealer" binds
-      # NOTHING there. This must still land on the outstanding scope question, never on
-      # crm_sales_report (no Channel line at all - the outstanding presenter has none).
+      # The outstanding report is unchanged by this lane: "dealer" binds NOTHING there. This
+      # must still land on the outstanding scope question, never on crm_sales_report.
       - text: "dealer outstanding quantity for hanlim"
         expect:
           branch_kind: business_query
           reply_contains: ["Outstanding for which document?"]
           reply_not_contains:
-            - "Sales orders:"
-            - "Confirmed (DO):"
-            - "*_By product_*"
-            - "*_By customer_*"
-            - "Channel: Dealer"
-            - "Channel: Project"
+            - "*Total:* Qty"
+            - "*Drill down:*"
+            - "*Delivery date:*"
+            - "*Channel:* Retail"
+            - "*Channel:* Project"
           pending_kind: outstanding_scope
           no_uuid: true
 
   - name: "DENIAL - a contact without sales_orders.sales_report is refused before any fetch"
     # AC-1651/Journey step 7. Replace the contact id below (see the header PREREQUISITES note)
     # with a real, stored contact that has never been granted the key.
-    contact: "445239415"
+    contact: "900000056"
     cold: true
     turns:
       - text: "give me the dealer sales report for hanlim"
@@ -297,8 +264,8 @@ cases:
           reply_contains: ["Sales report is not enabled for your account."]
           reply_not_contains:
             - "Which customer do you mean?"
-            - "Customer:"
-            - "Product:"
-            - "Delivery date:"
-            - "Sales orders:"
+            - "*Customer:*"
+            - "*Product:*"
+            - "*Delivery date:*"
+            - "*Total:*"
           no_uuid: true

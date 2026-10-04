@@ -1,0 +1,111 @@
+{
+  "status": "ok",
+  "message": null,
+  "basis": "delivered",
+  "customer_name": "ACME HARDWARE SDN BHD [A/C I]",
+  "customer_count": 1,
+  "product_code": null,
+  "product_codes": [],
+  "channel": null,
+  "channel_shown": false,
+  "location_token": null,
+  "warehouse_codes": [],
+  "date_from": "2026-07-01",
+  "date_to": "2026-09-30",
+  "grain": "month",
+  "total": {
+    "qty": 685,
+    "amount": 58700.0
+  },
+  "periods": [],
+  "group_by": "product",
+  "rows": [
+    {
+      "rank": 1,
+      "name": "PRD-A101",
+      "qty": 12,
+      "amount": 5200.0,
+      "date": null,
+      "customer_name": null
+    },
+    {
+      "rank": 2,
+      "name": "PRD-A102",
+      "qty": 12,
+      "amount": 4800.0,
+      "date": null,
+      "customer_name": null
+    },
+    {
+      "rank": 3,
+      "name": "PRD-B210",
+      "qty": 40,
+      "amount": 3900.0,
+      "date": null,
+      "customer_name": null
+    },
+    {
+      "rank": 4,
+      "name": "PRD-B211",
+      "qty": 6,
+      "amount": 3100.0,
+      "date": null,
+      "customer_name": null
+    },
+    {
+      "rank": 5,
+      "name": "PRD-C330",
+      "qty": 10,
+      "amount": 2950.0,
+      "date": null,
+      "customer_name": null
+    },
+    {
+      "rank": 6,
+      "name": "PRD-C331",
+      "qty": 6,
+      "amount": 2700.0,
+      "date": null,
+      "customer_name": null
+    },
+    {
+      "rank": 7,
+      "name": "PRD-D405",
+      "qty": 20,
+      "amount": 2450.0,
+      "date": null,
+      "customer_name": null
+    },
+    {
+      "rank": 8,
+      "name": "PRD-D406",
+      "qty": 8,
+      "amount": 2300.0,
+      "date": null,
+      "customer_name": null
+    },
+    {
+      "rank": 9,
+      "name": "PRD-E512",
+      "qty": 4,
+      "amount": 2100.0,
+      "date": null,
+      "customer_name": null
+    },
+    {
+      "rank": 10,
+      "name": "PRD-E513",
+      "qty": 12,
+      "amount": 1950.0,
+      "date": null,
+      "customer_name": null
+    }
+  ],
+  "more": 61,
+  "options": [
+    {
+      "key": "delivery_order",
+      "label": "Delivery orders"
+    }
+  ]
+}

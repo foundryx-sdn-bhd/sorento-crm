@@ -241,6 +241,114 @@ CHATBOT_REPLY_HANDOVER_SALESPERSON = {
     "zh": "{{salesperson}}负责您的账户。我已把您的请求转给{{team}}团队交给{{salesperson}}，我们会尽快回复您。",
 }
 
+# --------------------------------------------------------------------------- #
+# IDEATION-CAPTURE (PLAN-ideation-capture-02oct.md section 4a): the replies of the
+# one-message ideation turn. Rendered by `ideation_capture_replies.render_reply`.
+# The idea number, title, links and the missing-field names (English in every
+# language, owner: "exact") are tokens filled by code; the numbered similar-idea
+# lines are built in code between the lead and the reply line.
+# --------------------------------------------------------------------------- #
+IDEATION_CAPTURE_NO_ACCESS = {
+    "en": (
+        "You need a CRM login with Ideas access to submit ideas here. Please ask your "
+        "Sorento contact for one."
+    ),
+    "ms": (
+        "Anda perlukan log masuk CRM dengan akses Idea untuk menghantar idea di sini. "
+        "Sila minta daripada orang perhubungan Sorento anda."
+    ),
+    "zh": "您需要拥有 Ideas 权限的 CRM 登录账号，才能在这里提交创意。请向您的 Sorento 联系人申请。",
+}
+IDEATION_CAPTURE_UNCONFIGURED = {
+    "en": (
+        "Idea capture isn't set up here yet, so I couldn't log that. Please try again "
+        "later or reach out to the team."
+    ),
+    "ms": (
+        "Penghantaran idea belum disediakan di sini, jadi saya tidak dapat merekodkannya. "
+        "Sila cuba lagi nanti atau hubungi pasukan kami."
+    ),
+    "zh": "这里还没有开通创意提交功能，所以我无法记录。请稍后再试，或联系我们的团队。",
+}
+IDEATION_CAPTURE_ASK_IDEA = {
+    "en": "Sure, what's your idea? Tell me what you'd like changed, in one message.",
+    "ms": "Boleh! Apakah idea anda? Beritahu saya apa yang anda mahu ubah, dalam satu mesej.",
+    "zh": "好的！您的创意是什么？请用一条消息告诉我您想改进什么。",
+}
+#: The ask-back was answered twice without an idea in it: a statement, not another question.
+IDEATION_CAPTURE_GIVE_UP = {
+    "en": (
+        "I still couldn't find an idea in that. When you're ready, send your idea in one "
+        "message, for example what you'd like changed."
+    ),
+    "ms": (
+        "Saya masih tidak menjumpai idea dalam mesej itu. Bila anda sudah bersedia, hantar "
+        "idea anda dalam satu mesej, contohnya apa yang anda mahu ubah."
+    ),
+    "zh": "我还是没能从中找到创意。准备好后，请用一条消息发送您的创意，例如您想改进什么。",
+}
+IDEATION_CAPTURE_SIMILAR_OFFERED = {
+    "en": "You already have ideas like this:",
+    "ms": "Anda sudah ada idea yang serupa:",
+    "zh": "您已经有类似的创意：",
+}
+IDEATION_CAPTURE_SIMILAR_OFFERED_REPLY = {
+    "en": "Reply a number to edit that one, or NEW to log this as a new idea.",
+    "ms": "Balas dengan nombor untuk mengedit idea itu, atau NEW untuk merekod sebagai idea baharu.",
+    "zh": "回复编号即可编辑该创意，或回复 NEW 记录为新创意。",
+}
+IDEATION_CAPTURE_SIMILAR_OFFERED_SEE_ALL = {
+    "en": "See all your ideas: {{link}}",
+    "ms": "Lihat semua idea anda: {{link}}",
+    "zh": "查看您的全部创意：{{link}}",
+}
+IDEATION_CAPTURE_SIMILAR_PICKED = {
+    "en": "Open {{idea_number}} to add this: {{link}}",
+    "ms": "Buka {{idea_number}} untuk menambah ini: {{link}}",
+    "zh": "打开 {{idea_number}} 补充这些内容：{{link}}",
+}
+#: No CRM base URL to build a link from: point at the page instead of a blank link.
+IDEATION_CAPTURE_SIMILAR_PICKED_NO_LINK = {
+    "en": "Open {{idea_number}} in the CRM Ideas page to add this.",
+    "ms": "Buka {{idea_number}} di halaman Idea CRM untuk menambah ini.",
+    "zh": "请在 CRM 的创意页面打开 {{idea_number}} 补充这些内容。",
+}
+IDEATION_CAPTURE_COMPLETE = {
+    "en": (
+        "Idea {{idea_number}} is in: {{title}}\n"
+        "Open it to add what I didn't catch: {{missing}}.\n"
+        "{{link}}"
+    ),
+    "ms": (
+        "Idea {{idea_number}} sudah diterima: {{title}}\n"
+        "Buka untuk menambah apa yang saya tidak tangkap: {{missing}}.\n"
+        "{{link}}"
+    ),
+    "zh": (
+        "创意 {{idea_number}} 已收到：{{title}}\n"
+        "打开它补充我没有记录到的内容：{{missing}}。\n"
+        "{{link}}"
+    ),
+}
+#: Created, but no safe CRM link could be built: a DIFFERENT sentence, not the one
+#: above with a blank link (the same two-key rule as `escalate_offer`).
+IDEATION_CAPTURE_COMPLETE_NO_LINK = {
+    "en": "Idea {{idea_number}} is in: {{title}}",
+    "ms": "Idea {{idea_number}} sudah diterima: {{title}}",
+    "zh": "创意 {{idea_number}} 已收到：{{title}}",
+}
+IDEATION_CAPTURE_ERROR = {
+    "en": "Sorry, I couldn't save that idea just now. Please try again in a moment.",
+    "ms": "Maaf, saya tidak dapat menyimpan idea itu sekarang. Sila cuba lagi sebentar nanti.",
+    "zh": "抱歉，我暂时无法保存这个创意，请稍后再试。",
+}
+
+IDEATION_CAPTURE_CONFIG_ERROR = {
+    "en": "Idea capture isn't set up correctly here, so I couldn't save that. Please let your Sorento contact know.",
+    "ms": "Penangkapan idea tidak disediakan dengan betul di sini, jadi saya tidak dapat menyimpannya. Sila maklumkan kepada wakil Sorento anda.",
+    "zh": "此处的创意收集设置不正确，所以我无法保存。请告知您的 Sorento 联系人。",
+}
+
 #: `short name -> (per-language text, declared {{tokens}})`, expanded below into one
 #: registry key per language: `chatbot_reply_<name>` (English) and
 #: `chatbot_reply_<name>.ms` / `.zh`.
@@ -262,6 +370,25 @@ FALLBACK_REPLY_COPY: dict[str, tuple[dict[str, str], tuple[str, ...]]] = {
     "carried_episode": (CHATBOT_REPLY_CARRIED_EPISODE, ("day", "subject")),
     "carried_usual": (CHATBOT_REPLY_CARRIED_USUAL, ("products",)),
     "handover_salesperson": (CHATBOT_REPLY_HANDOVER_SALESPERSON, ("salesperson", "team")),
+    "ideation_capture_no_access": (IDEATION_CAPTURE_NO_ACCESS, ()),
+    "ideation_capture_unconfigured": (IDEATION_CAPTURE_UNCONFIGURED, ()),
+    "ideation_capture_ask_idea": (IDEATION_CAPTURE_ASK_IDEA, ()),
+    "ideation_capture_give_up": (IDEATION_CAPTURE_GIVE_UP, ()),
+    "ideation_capture_similar_offered": (IDEATION_CAPTURE_SIMILAR_OFFERED, ()),
+    "ideation_capture_similar_offered_reply": (IDEATION_CAPTURE_SIMILAR_OFFERED_REPLY, ()),
+    "ideation_capture_similar_offered_see_all": (IDEATION_CAPTURE_SIMILAR_OFFERED_SEE_ALL, ("link",)),
+    "ideation_capture_similar_picked": (IDEATION_CAPTURE_SIMILAR_PICKED, ("idea_number", "link")),
+    "ideation_capture_similar_picked_no_link": (
+        IDEATION_CAPTURE_SIMILAR_PICKED_NO_LINK,
+        ("idea_number",),
+    ),
+    "ideation_capture_complete": (
+        IDEATION_CAPTURE_COMPLETE,
+        ("idea_number", "title", "missing", "link"),
+    ),
+    "ideation_capture_complete_no_link": (IDEATION_CAPTURE_COMPLETE_NO_LINK, ("idea_number", "title")),
+    "ideation_capture_error": (IDEATION_CAPTURE_ERROR, ()),
+    "ideation_capture_config_error": (IDEATION_CAPTURE_CONFIG_ERROR, ()),
 }
 
 #: The languages the new templates carry (plan 7.2). English is the bare key.

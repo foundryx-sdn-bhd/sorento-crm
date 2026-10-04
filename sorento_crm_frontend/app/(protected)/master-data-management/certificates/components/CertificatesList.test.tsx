@@ -202,16 +202,21 @@ describe('CertificatesList - states', () => {
     expect(screen.getByText(/No data available/i)).toBeInTheDocument();
   });
 
-  it('degrades to the empty state (no crash) when the query errored', () => {
+  it('shows the load failure with a Retry (never "No data") when the query errored', () => {
+    // NEVER-STUCK-UI S3 lever L2: a failed read is not an empty list.
+    const refetch = vi.fn();
     hooks.useCertificates.mockReturnValue({
       data: undefined,
       isLoading: false,
       isFetching: false,
       error: new Error('Failed to fetch certificates'),
-      refetch: vi.fn(),
+      refetch,
     });
     renderList();
-    expect(screen.getByText(/No data available/i)).toBeInTheDocument();
+    expect(screen.queryByText(/No data available/i)).not.toBeInTheDocument();
+    expect(screen.getByText('Failed to fetch certificates')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /^Retry$/ }));
+    expect(refetch).toHaveBeenCalled();
     // Toolbar is still usable so the user can retry / widen the filter. The empty
     // state no longer repeats the offer: one CTA per page (PR #1336), so exactly one.
     expect(screen.getAllByRole('button', { name: /Add Certificate/i })).toHaveLength(1);

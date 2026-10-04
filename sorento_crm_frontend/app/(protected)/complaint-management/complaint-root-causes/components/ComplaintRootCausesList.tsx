@@ -39,7 +39,7 @@ export default function ComplaintRootCausesList() {
   const [rowToDelete, setRowToDelete] = useState<ComplaintRootCause | null>(null);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
 
-  const { data, isLoading, isPlaceholderData } = useComplaintRootCauses({
+  const { data, isLoading, isPlaceholderData, error, refetch } = useComplaintRootCauses({
     pageIndex: 0,
     pageSize: 100,
     sorting: [{ id: 'name', desc: false }],
@@ -201,6 +201,8 @@ export default function ComplaintRootCausesList() {
         table={table}
         recordCount={filtered.length}
         isLoading={isLoading}
+        error={error}
+        onRetry={() => void refetch()}
         isPlaceholderData={isPlaceholderData}
         onRowClick={(row) =>
           router.push(`/complaint-management/complaint-root-causes/${row.id}`)

@@ -33,6 +33,7 @@ from typing import Any
 import pytest
 
 from app.services.chatbot import engine as engine_mod
+from tests.chatbot._turn_helpers import do_window
 from tests.chatbot import test_outstanding_lane as outstanding_lane
 from tests.chatbot.test_engine import CONTACT_ID, _envelope
 from tests.chatbot.test_outstanding_lane import _resolve_services, _wire_business_services
@@ -227,6 +228,7 @@ class TestR1TheSoldWords:
     def test_the_prompt_teaches_every_phrase(self) -> None:
         from app.services.chatbot_parser_prompt import (
             ESCALATION_CONFIRMATION_ADDENDUM,
+            ACCOUNT_LEDGER_ADDENDUM,
             MEMORY_ADDENDUM,
             PO_SPO_WAREHOUSE_ADDENDUM,
             SELF_REFERENCE_ADDENDUM,
@@ -240,7 +242,7 @@ class TestR1TheSoldWords:
         for words in ('"best selling", "hot selling", "top items", "most sold"', '"worst 100 hot selling bathtub"',
                       '"fanny water closet" -> {raw: "fanny", hint: "sales_agent"}', '"can show me the DO"'):
             assert words in TOP_SELLING_ADDENDUM, words
-        assert SEMANTIC_PARSER_PROMPT.removesuffix(MEMORY_ADDENDUM).removesuffix(PO_SPO_WAREHOUSE_ADDENDUM).removesuffix(
+        assert SEMANTIC_PARSER_PROMPT.removesuffix(MEMORY_ADDENDUM).removesuffix(ACCOUNT_LEDGER_ADDENDUM).removesuffix(PO_SPO_WAREHOUSE_ADDENDUM).removesuffix(
             ESCALATION_CONFIRMATION_ADDENDUM
         ).removesuffix(SELF_REFERENCE_ADDENDUM).endswith(
             TOP_SELLING_ADDENDUM
@@ -307,7 +309,8 @@ class TestR2TheMetricAnswer:
 
     def test_a_new_ask_naming_no_option_still_leaves(self, console) -> None:
         turn1, _ = console(_ask(top_n=100), "top 100 sold item", {})
-        turn2, captured = console(_fresh_order("all"), "show me the orders of last week please", turn1.session_vars)
+        # Dated: a dateless DO list ask asks which period first (DO-ASK-SIMPLIFY, owner 4 Oct 2026).
+        turn2, captured = console({**_fresh_order("all"), **do_window()}, "show me the orders of last week please", turn1.session_vars)
         assert _calls(captured) == []
         assert _calls(captured, ORDERS), captured
 

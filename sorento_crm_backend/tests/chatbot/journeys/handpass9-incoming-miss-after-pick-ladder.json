@@ -1,11 +1,11 @@
 {
   "name": "handpass9-incoming-miss-after-pick-ladder",
-  "source": "hand pass 9 owner console, 20 Sep 2026 21:55-22:42 MYT (contact_respond_id 437264483). Turn 0c192960-6dde-4ac3-9f56-e0f74a1d84f9 'incomign for srtwc286' -> 10-option incoming roster (1. SRTWC286-SH-200 no incoming ... 8. SRTWC286-SH-NEW-P has incoming ...), correct. Turn 139f5282-4968-4802-bd11-501de55bca50 '1' (SRTWC286-SH-200, no incoming) -> DEFECT D4: 'No matching results found. | Stock summary for the requested products. | 1. *Product Code:* SRTWC286-SH-200 ...' - no breakdown bullet, no 'But no incoming matched these.' sentence, no 'No incoming for X.' line. Production copy (owner's own paste for a comparable live miss, SRTWT5844-GM) is the full ladder: 'Here's what you want: | • product: X | But no incoming matched these. | No incoming for X. | But here are the stock details for the requested products: | - ... | Would you like me to escalate to purchasing team?'. The FRESH-ask 'incoming X' miss already runs this exact ladder (test_rearch_r5_production_decides.py::TestIncomingMissLadderProduct, AC-1705, measured green) - this defect is the SAME ladder failing to run on the AFTER-A-PICK path only. Turn f1f5e61d-8121-4a61-817b-e470b9f5d7dc '8' -> incoming rows for SRTWC286-SH-NEW-P, correct (control, kept as-is).",
+  "source": "hand pass 9 owner console, 20 Sep 2026 21:55-22:42 MYT (contact_respond_id 900000008). Turn 0c192960-6dde-4ac3-9f56-e0f74a1d84f9 'incomign for srtwc286' -> 10-option incoming roster (1. SRTWC286-SH-200 no incoming ... 8. SRTWC286-SH-NEW-P has incoming ...), correct. Turn 139f5282-4968-4802-bd11-501de55bca50 '1' (SRTWC286-SH-200, no incoming) -> DEFECT D4: 'No matching results found. | Stock summary for the requested products. | 1. *Product Code:* SRTWC286-SH-200 ...' - no breakdown bullet, no 'But no incoming matched these.' sentence, no 'No incoming for X.' line. Production copy (owner's own paste for a comparable live miss, SRTWT5844-GM) is the full ladder: 'Here's what you want: | • product: X | But no incoming matched these. | No incoming for X. | But here are the stock details for the requested products: | - ... | Would you like me to escalate to purchasing team?'. The FRESH-ask 'incoming X' miss already runs this exact ladder (test_rearch_r5_production_decides.py::TestIncomingMissLadderProduct, AC-1705, measured green) - this defect is the SAME ladder failing to run on the AFTER-A-PICK path only. Turn f1f5e61d-8121-4a61-817b-e470b9f5d7dc '8' -> incoming rows for SRTWC286-SH-NEW-P, correct (control, kept as-is).",
   "cases": [
     {
       "name": "picking-a-no-incoming-family-member-runs-the-full-ladder",
       "cold": true,
-      "contact": "437264483",
+      "contact": "900000008",
       "turns": [
         {
           "text": "incomign for srtwc286",
@@ -33,7 +33,7 @@
     {
       "name": "picking-a-has-incoming-family-member-still-works-control",
       "cold": true,
-      "contact": "437264483",
+      "contact": "900000008",
       "turns": [
         {
           "text": "incomign for srtwc286",

@@ -3,7 +3,7 @@
 Lane stack: backend `venv/bin/uvicorn app.main:app --reload --port 8081` against a
 private DB copy (`sorento_ai_automation_tg`, bootstrapped via `scripts/bootstrap_env.py`
 + every catalog module installed for the default tenant); FE `PORT=3081 npm run dev`
-with `FASTAPI_INTERNAL_URL=http://localhost:8081`. Logged in as `tehjayson@gmail.com`
+with `FASTAPI_INTERNAL_URL=http://localhost:8081`. Logged in as `person38@example.com`
 (admin role, seeded directly since the private DB starts with no users).
 
 ## Setup

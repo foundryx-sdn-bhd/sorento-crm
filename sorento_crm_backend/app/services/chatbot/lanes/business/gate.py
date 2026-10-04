@@ -37,13 +37,14 @@ from functools import cmp_to_key
 from typing import Any
 
 from app.services.chatbot import jsc
+from app.services.ledger_family import apart_from_group, customer_group_of, group_key, ledger_family_key
 
 # PLAN-chatbot-answer-half-reattach.md "Roster cap" (owner ruling 20 Sep 2026):
 # `roster_caps=None` (the parameter never supplied at all) means the CALLER predates
 # `chatbot_entity_kinds.roster_cap` entirely - a raw `disallowed-entity-gate` port-
 # replay fixture (`tests/chatbot/test_replay.py`) or a hand-built low-level test with
 # no opinion on the feature - and gets `legacy_default` back: 10 for the customer
-# picker (`test_rearch_r3_roster_cap.py::test_a_missing_customer_key_or_none_means_10`
+# picker (`test_rearch_r3_roster_cap.py::test_a_missing_customer_key_means_50_and_none_means_10`
 # - a widening from the old literal 8, never a narrowing, so no recorded capture with
 # 8 or fewer real matches moves), uncapped for the product/attachment one (that arm
 # had NO ceiling at all before this column existed, and one port-replay capture in
@@ -51,9 +52,10 @@ from app.services.chatbot import jsc
 # default would be a port-fidelity regression `test_replay.py` has no signed
 # divergence for). A caller that DOES supply a mapping - `resolve_gate.run`, reached
 # from the real turn engine, which always builds one from every seeded
-# `chatbot_entity_kinds` row - gets that mapping honoured for real, `10` (the
-# column's own server default) for any kind missing from it.
-_DEFAULT_ROSTER_CAP = 10
+# `chatbot_entity_kinds` row - gets that mapping honoured for real, `50` (the
+# column's own server default since PICKER-NO-CAP, owner 2 Oct 2026, and the S3
+# ceiling) for any kind missing from it.
+_DEFAULT_ROSTER_CAP = 50
 
 
 def _roster_cap(
@@ -344,11 +346,16 @@ def _display_name(match: Any) -> str | None:
 def _cust_base(match: Any) -> str:
     """`_custBase` - the family GROUPING KEY, never customer copy."""
     name = _cust_name(match) or jsc.js_string(jsc.get(match, "canonical_code") or "")
+    # A customer group the turn holds for this name wins over the name rule.
+    group = customer_group_of(name)
+    if group is not None:
+        return group_key(group)
     base = name.upper()
     base = _BRACKET_OR_PAREN.sub(" ", base)
     base = _LEGAL_FORM.sub(" ", base)
     base = _NON_ALNUM_UPPER.sub(" ", base)
-    return base.strip()
+    # An ungrouped row beside a group of the same key: apart or joined, by the ONE switch.
+    return apart_from_group(base.strip())
 
 
 def run_gate(  # noqa: PLR0912, PLR0915 - one JS node, one function; splitting it hides the order
@@ -924,10 +931,10 @@ def run_gate(  # noqa: PLR0912, PLR0915 - one JS node, one function; splitting i
                 )
             )
             found_line = f"Found: {', '.join(found_codes)}.\n" if found_codes else ""
-            gate_clarification = (
-                f"{found_line}{domain} search needs to be more specific. Multiple matches "
-                f"found. Please choose:\n{numbered}"
-            )
+            # ATTACHMENT-MULTI (owner ruling 2 Oct 2026, Q3 (a)): one plain question, the
+            # customer picker's own wording, never the domain key ("product_attachment
+            # search needs to be more specific" reached customers 41 times on dev).
+            gate_clarification = f"{found_line}Which product do you mean? Please choose:\n{numbered}"
 
         # FIX A: when prompting, the selectable set comes from the token-filtered,
         # exact-deduped `specific_options` - NOT from the unfiltered `entities` union.
@@ -1006,7 +1013,7 @@ def run_gate(  # noqa: PLR0912, PLR0915 - one JS node, one function; splitting i
             cust_pin_kept = True
         if not pick_applied and not cust_pinned and len(bases) > 1:
             # `legacy_default=10`: a widening from the old hard-coded eight-item slice,
-            # per `test_a_missing_customer_key_or_none_means_10`.
+            # per `test_a_missing_customer_key_means_50_and_none_means_10`.
             reps = list(bases.values())[: _roster_cap(roster_caps, "customer", legacy_default=10)]
             # FORWARD PROBE INPUT: keep a merged list - the candidates PLUS everything
             # else that resolved - so the probe can ask "does this customer have a
@@ -1360,12 +1367,37 @@ def run_gate(  # noqa: PLR0912, PLR0915 - one JS node, one function; splitting i
             for m in flat:
                 if jsc.truthy(m) and jsc.truthy(jsc.get(m, "uuid")):
                     dc_name_by_uuid[jsc.get(m, "uuid")] = jsc.get(jsc.get(m, "display"), "type_name")
-            dc_keep = [
-                e
-                for e in dc_type_matches
-                if _dc_norm(e.get("code")) in dc_wanted
-                or _dc_norm(dc_name_by_uuid.get(e.get("uuid"))) in dc_wanted
-            ]
+            def _dc_named(e: dict[str, Any]) -> bool:
+                return (
+                    _dc_norm(e.get("code")) in dc_wanted
+                    or _dc_norm(dc_name_by_uuid.get(e.get("uuid"))) in dc_wanted
+                )
+
+            # ATTACHMENT-MULTI (2 Oct 2026): judged PER CUSTOMER WORD. A word that resolved to
+            # exactly one class already named it and keeps it: judged across every word at
+            # once, "photo and technical specifications" kept only the specs - "photo" is not
+            # spelt "Product Photos" - so the fetch never asked for the photo. A word that
+            # matched several classes keeps only the ones named, and none when it named none
+            # ("list" beside "container status"), which is the old rule. A type row no
+            # resolution claims shares one group, which is the old whole-set rule exactly.
+            dc_token_by_uuid: dict[Any, str] = {}
+            for res in jsc.array(resolver.get("resolutions")):
+                for m in jsc.array(jsc.get(res, "matches")):
+                    if jsc.truthy(m) and jsc.truthy(jsc.get(m, "uuid")):
+                        dc_token_by_uuid.setdefault(
+                            jsc.get(m, "uuid"), jsc.nullish_str(jsc.get(res, "token")).strip().lower()
+                        )
+            dc_groups: dict[Any, list[dict[str, Any]]] = {}
+            for e in dc_type_matches:
+                dc_groups.setdefault(dc_token_by_uuid.get(e.get("uuid")), []).append(e)
+            dc_keep = []
+            dc_any_named = False
+            for group in dc_groups.values():
+                named = [e for e in group if _dc_named(e)]
+                dc_any_named = dc_any_named or len(named) > 0
+                dc_keep.extend(named if named else (group if len(group) == 1 else []))
+            if not dc_any_named:
+                dc_keep = []
             if len(dc_keep) > 0:
                 dc_keep_uuids = {e["uuid"] for e in dc_keep}
                 compatible_entities = [
@@ -1515,7 +1547,7 @@ def run_gate(  # noqa: PLR0912, PLR0915 - one JS node, one function; splitting i
                 df_lines = []
                 for t in df_lost:
                     h = _df_hint_of(t)
-                    df_lines.append(f'"{jsc.js_string(_df_raw_of(t))}"' + (f" ({h})" if h else ""))
+                    df_lines.append(f'"{jsc.js_string(_df_raw_of(t))}"' + (f" ({h.replace('_', ' ')})" if h else ""))
                 gate_clarification = f"Couldn't find: {', '.join(df_lines)}.\n\n{gate_clarification}"
                 out["gate_clarification"] = gate_clarification
 

@@ -19,10 +19,10 @@ if (!window.matchMedia) {
   });
 }
 
-const getUsersSelect = vi.fn();
+const getUserLookup = vi.fn();
 
 vi.mock('@/services/userSelectService', () => ({
-  getUsersSelect: (...args: unknown[]) => getUsersSelect(...args),
+  getUserLookup: (...args: unknown[]) => getUserLookup(...args),
 }));
 
 vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
@@ -81,12 +81,12 @@ function renderDialog(props: Partial<React.ComponentProps<typeof AssignLeadDialo
 
 beforeEach(() => {
   vi.clearAllMocks();
-  getUsersSelect.mockResolvedValue([{ id: 'u-ali', name: 'Ali', email: 'ali@x.my' }]);
+  getUserLookup.mockResolvedValue([{ id: 'u-ali', name: 'Ali' }]);
 });
 
 describe('AssignLeadDialog', () => {
   it('waits for the people list before offering a choice', async () => {
-    getUsersSelect.mockReturnValue(new Promise(() => {}));
+    getUserLookup.mockReturnValue(new Promise(() => {}));
     renderDialog();
 
     expect(await screen.findByLabelText('Loading people')).toBeDisabled();

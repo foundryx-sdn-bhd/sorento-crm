@@ -38,7 +38,7 @@ export default function PromotionAttachmentsList() {
   } = useDebouncedSearch();
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
 
-  const { data, isLoading, isPlaceholderData, refetch, isFetching } = usePromotionAttachments({
+  const { data, isLoading, isPlaceholderData, refetch, isFetching, error } = usePromotionAttachments({
     pageIndex: pagination.pageIndex,
     pageSize: pagination.pageSize,
     sorting,
@@ -122,6 +122,8 @@ export default function PromotionAttachmentsList() {
       table={table}
       recordCount={data?.pagination.total || 0}
       isLoading={isLoading}
+      error={error}
+      onRetry={() => void refetch()}
       isPlaceholderData={isPlaceholderData}
       onRowClick={handleRowClick}
       standardToolbar={false}

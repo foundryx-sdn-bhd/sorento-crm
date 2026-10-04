@@ -102,7 +102,7 @@ export default function AutomationsList() {
     [pagination, query],
   );
 
-  const { data, isLoading, isPlaceholderData, isFetching, refetch } = useAutomations(params);
+  const { data, isLoading, isPlaceholderData, isFetching, refetch, error } = useAutomations(params);
   const rows = data?.data ?? [];
   const total = data?.pagination?.total ?? 0;
   // Delete asks nothing (D7): the row dims and a toast counts down with Cancel.
@@ -278,6 +278,8 @@ export default function AutomationsList() {
       table={table}
       recordCount={total}
       isLoading={isLoading}
+      error={error}
+      onRetry={() => void refetch()}
       isPlaceholderData={isPlaceholderData}
       onRowClick={(t) => t?.id && router.push(`/system-management/automation/${t.id}`)}
       tableLayout={{ width: 'fixed', columnsResizable: true, columnsVisibility: true }}

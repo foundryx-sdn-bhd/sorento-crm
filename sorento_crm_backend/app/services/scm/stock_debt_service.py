@@ -59,7 +59,12 @@ from app.services.company_scope import build_company_predicate
 from app.services.error_handler import AppException
 from app.services.project_supply_service import ProjectSupplyService, held_qty_expr
 from app.services.scm import order_link_service, sales_agent_service, spo_supply
-from app.services.scm.demand import demand_qty, is_open_demand, plan_qty
+from app.services.scm.demand import (
+    demand_qty,
+    is_open_demand,
+    is_transferable_order,
+    plan_qty,
+)
 from app.services.scm.front_planning_engine import (
     DEFAULT_LEAD_TIME_DAYS,
     later_order_can_wait,
@@ -299,6 +304,12 @@ def book_so_pins(
     return out
 
 
+AUX_KEYS = ("pool_on_hand", "pool_po_qty", "pool_incoming_qty", "dealer_outstanding")
+AUX_EXPORT_HEADERS = [
+    "BRW On Hand Qty", "BRW PO Qty", "BRW Incoming Qty", "Dealer O/standing Qty",
+]
+
+
 class StockDebtService:
     def __init__(self, db: Session):
         self.db = db
@@ -382,6 +393,11 @@ class StockDebtService:
         )
         filtered.sort(key=lambda row: self._sort_key(row[5], row[1]))
 
+        # The four auxiliary columns reuse the board's own readers (no new arithmetic), once
+        # over every filtered product; they read the pool and the open book, so `book` and
+        # the supplier filter do not move them.
+        aux = self._aux_maps([row[0] for row in filtered], date_from, date_to)
+
         data_rows = []
         for product_id, code, name, category_code, supplier, result in filtered:
             months = self._months_on_axis(result, axis, product_id)
@@ -407,6 +423,10 @@ class StockDebtService:
                     "supplier_name": supplier["name"],
                     "category_code": category_code,
                     "total": total,
+                    "pool_on_hand": aux["on_hand"].get(product_id, 0.0),
+                    "pool_po_qty": aux["po"].get(product_id, 0.0),
+                    "pool_incoming_qty": aux["spo"].get(product_id, 0.0),
+                    "dealer_outstanding": aux["dealer"].get(product_id, 0.0),
                 }
             )
 
@@ -424,6 +444,43 @@ class StockDebtService:
             "totals": totals,
             "suppliers": suppliers,
             "sheet_counts": sheet_counts,
+        }
+
+    def _aux_maps(
+        self,
+        product_ids: List[str],
+        date_from: Optional[date],
+        date_to: Optional[date],
+    ) -> Dict[str, Dict[str, float]]:
+        """`{on_hand, po, spo, dealer}` -> `{product_id: qty}` for the four auxiliary
+        columns, read by the same functions the summary order sheet uses."""
+        from app.services.scm import site_pool_supply, summary_order_service
+
+        if not product_ids:
+            return {"on_hand": {}, "po": {}, "spo": {}, "dealer": {}}
+        db = self.db
+        demand = summary_order_service._demand_aggregates(
+            db, product_ids, horizon_start=date_from, horizon=date_to
+        )
+        return {
+            "on_hand": {
+                k: float(v)
+                for k, v in summary_order_service._pool_on_hand_map(db, product_ids).items()
+            },
+            "po": {
+                k: float(v["qty"])
+                for k, v in site_pool_supply.open_po_by_product(db, product_ids).items()
+            },
+            "spo": {
+                k: float(v["qty"])
+                for k, v in site_pool_supply.open_spo_by_product(db, product_ids).items()
+            },
+            # `dealer_qty` is the positive outstanding; shown NEGATIVE here, and 0 stays a
+            # plain 0 (never -0).
+            "dealer": {
+                k: (-float(v["dealer_qty"]) if v["dealer_qty"] else 0.0)
+                for k, v in demand.items()
+            },
         }
 
     def cell(
@@ -729,6 +786,7 @@ class StockDebtService:
                 self._demand_span(ids),
                 SalesOrder.status == "open",
                 is_open_demand(),
+                is_transferable_order(),
             )
             .distinct()
             .all()
@@ -1193,6 +1251,7 @@ class StockDebtService:
                 self._demand_span(warehouse_ids),
                 SalesOrder.status == "open",
                 is_open_demand(),
+                is_transferable_order(),
                 *extra_clauses,
             )
             .all()
@@ -2000,6 +2059,7 @@ class StockDebtService:
         return {
             "months": months, "tba": tba, "undated": undated, "unlocated": unlocated,
             "total": total,
+            **{key: sum(row[key] for row in data_rows) for key in AUX_KEYS},
         }
 
     @staticmethod
@@ -2050,6 +2110,7 @@ class StockDebtService:
         supplier_ids: Optional[Sequence[str]] = None,
         book: str = "all",
         split: str = "none",
+        show_aux: bool = False,
     ) -> Tuple[bytes, str, str, Dict[str, int]]:
         """The workbook for the CURRENT filters (AC-17): `(bytes, content_type, filename,
         {"rows": n, "sheets": m})`, the same tuple shape `low_stock_report_service.
@@ -2069,10 +2130,10 @@ class StockDebtService:
         )
         if listing["pagination"]["total"] > MAX_LOW_STOCK_ROWS:
             raise AppException(422, "Narrow the filters first")
-        return self._render_workbook(listing, split=split)
+        return self._render_workbook(listing, split=split, show_aux=show_aux)
 
     def _render_workbook(
-        self, listing: Dict[str, Any], *, split: str
+        self, listing: Dict[str, Any], *, split: str, show_aux: bool = False
     ) -> Tuple[bytes, str, str, Dict[str, int]]:
         from openpyxl import Workbook
         from openpyxl.utils import get_column_letter
@@ -2087,10 +2148,11 @@ class StockDebtService:
         # here or in `Total`).
         columns = (
             ["Product", "Name", "Category", "Supplier"]
+            + (AUX_EXPORT_HEADERS if show_aux else [])
             + [_export_month_label(key) for key in axis]
             + ["TBA", "Total"]
         )
-        widths = [16, 30, 14, 24] + [10] * len(axis) + [10, 12]
+        widths = [16, 30, 14, 24] + ([12] * 4 if show_aux else []) + [10] * len(axis) + [10, 12]
         width_map = {
             get_column_letter(index + 1): width for index, width in enumerate(widths)
         }
@@ -2116,8 +2178,8 @@ class StockDebtService:
             ws = wb.active if index == 0 else wb.create_sheet()
             ws.title = key if split == "none" else unique_sheet_title(key, used_titles)
             sheet_count += 1
-            data = [self._export_row(row, axis) for row in group_rows]
-            data.append(self._export_total_row(group_rows, axis))
+            data = [self._export_row(row, axis, show_aux) for row in group_rows]
+            data.append(self._export_total_row(group_rows, axis, show_aux))
             write_sheet(ws, columns, data, width_map)
 
         buf = BytesIO()
@@ -2130,7 +2192,7 @@ class StockDebtService:
         )
 
     @staticmethod
-    def _export_row(row: dict, axis: Sequence[str]) -> tuple:
+    def _export_row(row: dict, axis: Sequence[str], show_aux: bool = False) -> tuple:
         """One product, in the export's own column order (AC-13). `Name` prints blank when
         `list()` has already nulled it (AC-9); every other blank prints as `""`, never a
         bare 0 that would read as a fact somebody measured.
@@ -2150,13 +2212,16 @@ class StockDebtService:
             _xlsx_safe_text(row["product_name"] or ""),
             _xlsx_safe_text(row["category_code"] or ""),
             _xlsx_safe_text(row["supplier_name"] or ""),
+            *([row[key] for key in AUX_KEYS] if show_aux else []),
             *[balances.get(key, 0.0) for key in axis],
             row["tba"],
             row["total"],
         )
 
     @staticmethod
-    def _export_total_row(rows: List[dict], axis: Sequence[str]) -> tuple:
+    def _export_total_row(
+        rows: List[dict], axis: Sequence[str], show_aux: bool = False
+    ) -> tuple:
         """The sheet's OWN Total footer (R5): summed over the rows THIS sheet carries, so
         a buyer reading one supplier's tab foots it without opening the others. R17: no
         "No date"/"No location" columns to foot any more."""
@@ -2169,6 +2234,7 @@ class StockDebtService:
             total += row["total"]
         return (
             "Total", "", "", "",
+            *([sum(row[key] for row in rows) for key in AUX_KEYS] if show_aux else []),
             *[month_sums[key] for key in axis],
             tba, total,
         )

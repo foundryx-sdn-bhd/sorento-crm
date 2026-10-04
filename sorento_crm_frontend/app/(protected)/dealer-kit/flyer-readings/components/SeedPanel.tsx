@@ -75,7 +75,12 @@ export function SeedPanel({
   const [pageId, setPageId] = useState('');
   const [result, setResult] = useState<FlyerSeedResult | null>(null);
 
-  const { data: pages, isLoading: pagesLoading } = useQuery({
+  const {
+    data: pages,
+    isLoading: pagesLoading,
+    error: pagesError,
+    refetch: refetchPages,
+  } = useQuery({
     ...LIST_QUERY_OPTIONS,
     queryKey: ['dealer-kit', 'pages'],
     queryFn: listPages,
@@ -218,6 +223,8 @@ export function SeedPanel({
               value={pageId}
               onChange={setPageId}
               options={pageOptions}
+              loadError={pagesError}
+              onRetry={() => void refetchPages()}
               disabled={pagesLoading}
               placeholder={pagesLoading ? 'Loading brochures' : 'Choose a brochure'}
               emptyMessage="No brochure to seed into yet"

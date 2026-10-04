@@ -4,7 +4,7 @@ Creates:
 - AccessAgent(code='it_support')
 - Team(name='IT Admin Tier 1')
 - AgentTeam(agent=it_support, code='it_admin', tier=1, team=<tier-1 team>)
-- TeamMember(team=<tier-1>, user=<tehjayson@gmail.com>) - only when that user
+- TeamMember(team=<tier-1>, user=<person38@example.com>) - only when that user
   exists in the target environment (dev/staging convenience). Production
   installs without that seed user simply skip the member; admin can add
   members through the existing User Management → Teams UI.
@@ -26,7 +26,7 @@ branch_labels = None
 depends_on = None
 
 
-SEED_DEV_USER_EMAIL = "tehjayson@gmail.com"
+SEED_DEV_USER_EMAIL = "person38@example.com"
 AGENT_CODE = "it_support"
 AGENT_NAME = "IT Support"
 TEAM_NAME = "IT Admin Tier 1"

@@ -31,7 +31,8 @@ USE_CASE = "stock_ask_salesman"
 #: R6: B1, B2 and B4 notify the agent; B3 (`incoming`) never does, and neither do the
 #: REFER-SALESMAN branches (30 Sep 2026: the rule adds rows to the Customer asks view only).
 NOTIFIED_BRANCHES = frozenset({"too_big", "in_stock", "no_incoming"})
-#: The stock ask's own branches: each carries the dealer's quantity.
+#: The stock ask's own branches: each carries the dealer's quantity. Answered is not logged:
+#: only an entry whose reply referred the customer is a row (`refer_entries`).
 ANSWERED_BRANCHES = frozenset({"too_big", "in_stock", "incoming", "no_incoming"})
 #: REFER-SALESMAN: a dealer's incoming ETA reply, and every other refer reply. No quantity
 #: is owed; a declined did-you-mean may still carry one.
@@ -47,11 +48,21 @@ _OUTCOME = {
 _MALAYSIA = timezone(timedelta(hours=8))
 
 
-def outcome_phrase(branch: str, *, cap_unset: bool = False, category_name: Optional[str] = None) -> str:
+def outcome_phrase(
+    branch: str,
+    *,
+    cap_unset: bool = False,
+    category_name: Optional[str] = None,
+    available_qty: Optional[int] = None,
+    quantity: Any = None,
+) -> str:
     """R8's outcome slot. B1 with no X set on the product or its category reads "no cap set
-    for <category>" so the agent knows why the bot would not answer."""
+    for <category>" so the agent knows why the bot would not answer. AVAIL-MODE-REPLIES
+    rule 2: a short in-stock answer reads "in stock, <N> of <Q> available"."""
     if branch == "too_big" and cap_unset:
         return f"no cap set for {category_name or 'this category'}"
+    if branch == "in_stock" and isinstance(available_qty, int) and available_qty >= 1:
+        return f"in stock, {available_qty} of {quantity} available"
     return _OUTCOME.get(branch, branch)
 
 
@@ -87,6 +98,16 @@ def answered_entries(entries: Iterable[Any]) -> list[dict[str, Any]]:
         elif branch in ANSWERED_BRANCHES and has_qty:
             out.append(entry)
     return out
+
+
+def refer_entries(entries: Iterable[Any]) -> list[dict[str, Any]]:
+    """CUSTOMER-ASKS-REFER-ONLY (owner ruling 1 Oct 2026): the answered entries whose reply
+    referred the customer to their salesman - the only ones Customer asks logs. The flag is
+    set where the line was printed: the MCP presenter stamps a stock ask line from its own
+    tail (so B3 `incoming`, "no stock at the moment, ETA ...", is never logged), and
+    `chatbot/refer_asks.py` stamps every other refer reply. An entry without the flag is not
+    guessed at."""
+    return [e for e in answered_entries(entries) if e.get("refers_to_salesman") is True]
 
 
 def answer_line(reply_text: str, entry: dict[str, Any]) -> str:
@@ -126,7 +147,8 @@ def after_answered_turn(
     other dry run). `source` is `live` or `console` (owner ruling 28 Sep 2026: a console
     turn records and notifies too, and its rows say so on the Asks tab and portal page).
 
-    S5: one `stock_asks` row per answered entry, state open, with the exact line the dealer
+    S5: one `stock_asks` row per answered entry that referred the customer to their
+    salesman (`refer_entries`; CUSTOMER-ASKS-REFER-ONLY), state open, with the exact line the dealer
     was sent (a REFER-SALESMAN entry brings its own `answer_summary`, and its `product_id`
     is resolved by code within the ask's company when the entry has none). S4: one
     `notify_salesman` job per B1 / B2 / B4 row when the contact's toggle is on and a customer
@@ -137,7 +159,7 @@ def after_answered_turn(
     from app.models.stock_ask import StockAsk
     from app.services.contact_customer_service import resolve_customer
 
-    answered = answered_entries(entries)
+    answered = refer_entries(entries)
     if not answered:
         return []
     moment = now or datetime.now(timezone.utc)
@@ -207,6 +229,7 @@ def after_answered_turn(
             "branch": ask.branch,
             "cap_unset": bool(entry.get("cap_unset")),
             "category_name": entry.get("category_name"),
+            "available_qty": entry.get("available_qty"),
             "asked_at": moment.isoformat(),
         }
         from app.tasks.stock_ask_tasks import notify_salesman as notify_job
@@ -443,6 +466,8 @@ def notify_salesman(db: Session, facts: dict[str, Any]) -> dict[str, Any]:
             facts.get("branch") or "",
             cap_unset=bool(facts.get("cap_unset")),
             category_name=facts.get("category_name"),
+            available_qty=facts.get("available_qty"),
+            quantity=facts.get("quantity"),
         ),
         "customer_name": customer.customer_name,
         "contact_name": _contact_label(dealer),
@@ -520,20 +545,25 @@ def _family_names_by_contact(db: Session, contact_ids: set[str]) -> dict[str, st
         return {}
     from app.models.access import RespondContactCustomer
     from app.models.order import Customer
-    from app.services.ledger_family import ledger_family_key, ledger_family_label
+    from app.services.customer_group_service import family_overrides
+    from app.services.ledger_family import customer_groups, ledger_family_key, ledger_family_label
 
     keys: dict[str, set[str]] = {}
     labels: dict[str, str] = {}
-    for contact_id, name in (
+    rows = (
         db.query(RespondContactCustomer.contact_id, Customer.customer_name)
         .join(Customer, Customer.id == RespondContactCustomer.customer_id)
         .filter(RespondContactCustomer.contact_id.in_(contact_ids))
-    ):
-        key = ledger_family_key(name or "")
-        if not key:
-            continue
-        keys.setdefault(contact_id, set()).add(key)
-        labels.setdefault(contact_id, ledger_family_label(name))
+        .all()
+    )
+    # The office's customer groups win over the name rule (CUSTOMER-GROUP).
+    with customer_groups(family_overrides(db)):
+        for contact_id, name in rows:
+            key = ledger_family_key(name or "")
+            if not key:
+                continue
+            keys.setdefault(contact_id, set()).add(key)
+            labels.setdefault(contact_id, ledger_family_label(name))
     return {cid: labels[cid] for cid, found in keys.items() if len(found) == 1}
 
 
@@ -865,7 +895,8 @@ def todo_for_agent(
     db: Session, agent_id: Optional[str | Iterable[str]], *, now: Optional[datetime] = None, with_agent: bool = False
 ) -> dict[str, Any]:
     """The to-do read (plan 3.2): open asks oldest first (capped), and what was cleared today.
-    `agent_id=None` is every agent (view_all). Grouping happens on the client from `today_start`."""
+    `agent_id=None` is every agent (view_all). One Open list (CUSTOMER-ASKS-REFER-ONLY);
+    `today_start` is the Done today window's start."""
     from app.models.stock_ask import StockAsk
 
     start = today_start_utc(now or datetime.utcnow())
@@ -896,32 +927,28 @@ def agent_counts(
     *,
     agent_ids: Optional[Iterable[str]] = None,
     include_idle: bool = False,
-    now: Optional[datetime] = None,
 ) -> list[dict[str, Any]]:
     """The Agent select's lines, counted over the SAME rows the to-do shows: each agent's
     `_agent_scope` (so a customer-less ask reached through a contact link counts for every agent
-    it belongs to), open, every branch; needs attention = asked before today. `agent_ids` None is
-    every agent. Agents with no open ask are left out, unless `include_idle` (a team leader sees
-    every current member, 0 allowed). One small query per agent: an agent list is tens."""
-    from sqlalchemy import case, func
+    it belongs to), open, every branch. One Open count (CUSTOMER-ASKS-REFER-ONLY, 1 Oct 2026:
+    the to-do has no "needs attention" split any more). `agent_ids` None is every agent. Agents
+    with no open ask are left out, unless `include_idle` (a team leader sees every current
+    member, 0 allowed). One small query per agent: an agent list is tens."""
+    from sqlalchemy import func
 
     from app.models.sales_agent import SalesAgent
     from app.models.stock_ask import StockAsk
 
-    start = today_start_utc(now or datetime.utcnow())
     query = db.query(SalesAgent)
     if agent_ids is not None:
         query = query.filter(SalesAgent.id.in_(list(agent_ids)))
     out = []
     for agent in query.all():
-        opened, attention = (
+        opened = (
             _agent_scope(db, agent.id)
             .filter(StockAsk.state == "open")
-            .with_entities(
-                func.count(StockAsk.id),
-                func.coalesce(func.sum(case((StockAsk.created_at < start, 1), else_=0)), 0),
-            )
-            .one()
+            .with_entities(func.count(StockAsk.id))
+            .scalar()
         )
         if not opened and not include_idle:
             continue
@@ -930,8 +957,7 @@ def agent_counts(
                 "agent_id": str(agent.id),
                 "code": agent.sales_agent,
                 "name": agent.person_label or agent.sales_agent,
-                "open": int(opened),
-                "needs_attention": int(attention),
+                "open": int(opened or 0),
             }
         )
     return sorted(out, key=lambda r: r["code"])

@@ -20,11 +20,13 @@ import { useCompareMappings, useComparePull } from '../hooks/useAutocountPull';
 import { CompareMappingDialog } from './CompareMappingDialog';
 import { isCompareFullMatch } from '../types/compareMatch';
 import { buildCompareRows, type CompareRow } from './compareRows';
-import type {
-  AutocountComparePullResult,
-  AutocountPullCompareSource,
-  AutocountPullCompareSummary,
-  AutocountPullEntity,
+import {
+  isDocumentEntity,
+  type AutocountComparePullResult,
+  type AutocountPullCompareSource,
+  type AutocountPullCompareSummary,
+  type AutocountPullEntity,
+  type CompareMappingKind,
 } from '../types/autocountPull.types';
 
 export interface PullCompareTabProps {
@@ -41,18 +43,21 @@ const COMPARE_LISTING_KEY: Record<AutocountPullEntity, string> = {
   products: 'master_data.products.autocount_pull::compare',
   stock_balances: 'inventory.stock.autocount_pull::compare',
   delivery_orders: 'order_management.orders.autocount_pull::compare',
+  goods_receive_notes: 'procurement.grn.autocount_pull::compare',
 };
 
-/** The two macro files a delivery-orders pull is compared with (owner decision 30 Sep, mock
- *  section 2). `Overall Tracking` is not compared (owner Q6): AutoCount has none of it. */
-const DO_SOURCES: Array<{
+interface CompareSourceEntry {
   source: AutocountPullCompareSource;
   title: string;
   ariaLabel: string;
   unit: string;
   /** The saved mapping this file is read with. */
-  kind: 'order_listing' | 'order_tracking';
-}> = [
+  kind: CompareMappingKind;
+}
+
+/** The two macro files a delivery-orders pull is compared with (owner decision 30 Sep, mock
+ *  section 2). `Overall Tracking` is not compared (owner Q6): AutoCount has none of it. */
+const DO_SOURCES: CompareSourceEntry[] = [
   {
     source: 'lines',
     title: 'Order Listing (macro)',
@@ -69,8 +74,38 @@ const DO_SOURCES: Array<{
   },
 ];
 
+/** The two files a GRN pull is compared with (owner Q5 a, 2 Oct): the "DETAIL LISTING"
+ *  export (lines) and the "GRN Listing" macro, read from its `Master` sheet by name. */
+const GRN_SOURCES: CompareSourceEntry[] = [
+  {
+    source: 'lines',
+    title: 'Detail Listing',
+    ariaLabel: 'GRN Detail Listing sheet to compare',
+    unit: 'lines',
+    kind: 'grn_detail_listing',
+  },
+  {
+    source: 'headers',
+    title: 'GRN Listing (macro)',
+    ariaLabel: 'GRN Listing sheet to compare',
+    unit: 'documents',
+    kind: 'grn_listing',
+  },
+];
+
+const NO_SOURCES: CompareSourceEntry[] = [];
+
+const SOURCES_BY_ENTITY: Record<AutocountPullEntity, CompareSourceEntry[]> = {
+  products: NO_SOURCES,
+  stock_balances: NO_SOURCES,
+  delivery_orders: DO_SOURCES,
+  goods_receive_notes: GRN_SOURCES,
+};
+
 function noun(entity: AutocountPullEntity): string {
-  return entity === 'delivery_orders' ? 'delivery order lines and documents' : 'items';
+  if (entity === 'delivery_orders') return 'delivery order lines and documents';
+  if (entity === 'goods_receive_notes') return 'GRN lines and documents';
+  return 'items';
 }
 
 function summaryHeadline(
@@ -105,7 +140,7 @@ function summaryHeadline(
   if (summary.only_in_excel) parts.push(`${summary.only_in_excel} only in your Excel`);
   if (summary.only_in_pull) parts.push(`${summary.only_in_pull} only in AutoCount`);
   const advisory =
-    entity === 'delivery_orders'
+    isDocumentEntity(entity)
       ? ' Confirm applies the AutoCount pull as it is; the differences are for you to check.'
       : '';
   return {
@@ -141,25 +176,26 @@ type SourceResults = Partial<Record<AutocountPullCompareSource, AutocountCompare
  * cut to the pulled DocDate window, one headline and one grid grouped by a Source column.
  */
 export function PullCompareTab({ jobId, entity, window }: PullCompareTabProps) {
-  const isDeliveryOrders = entity === 'delivery_orders';
-  const sources = isDeliveryOrders ? DO_SOURCES : [];
+  // Delivery orders and goods receive notes: two files, one dropzone each.
+  const isDocument = isDocumentEntity(entity);
+  const sources = SOURCES_BY_ENTITY[entity];
   const [files, setFiles] = useState<Partial<Record<AutocountPullCompareSource | 'single', File[]>>>({});
   const [single, setSingle] = useState<AutocountComparePullResult | null>(null);
   const [results, setResults] = useState<SourceResults>({});
   const compareMutation = useComparePull(jobId);
-  const mappings = useCompareMappings(isDeliveryOrders);
+  const mappings = useCompareMappings(isDocument);
   const [mappingOpen, setMappingOpen] = useState(false);
-  const hintFor = (kind: 'order_listing' | 'order_tracking'): string => {
+  const hintFor = (kind: CompareMappingKind): string => {
     const headers = mappings.data?.items.find((m) => m.kind === kind)?.columns.map((c) => c.excel_header);
     return headers?.length
-      ? `Columns read: ${headers.join(', ')}. Drop the .xlsm here, or click to browse.`
-      : 'Drop the .xlsm here, or click to browse.';
+      ? `Columns read: ${headers.join(', ')}. Drop the file here, or click to browse.`
+      : 'Drop the file here, or click to browse.';
   };
-  const mappedHeaders = (kind: 'order_listing' | 'order_tracking'): Set<string> | null => {
+  const mappedHeaders = (kind: CompareMappingKind): Set<string> | null => {
     const items = mappings.data?.items.find((m) => m.kind === kind)?.columns;
     return items ? new Set(items.map((c) => c.excel_header.trim().toLowerCase())) : null;
   };
-  const sheetFor = (kind: 'order_listing' | 'order_tracking'): string =>
+  const sheetFor = (kind: CompareMappingKind): string =>
     mappings.data?.items.find((m) => m.kind === kind)?.sheet_name ?? 'Master';
   const accept = entity === 'products' ? '.xlsx,.xls' : '.xlsx,.xls,.xlsm';
 
@@ -174,13 +210,13 @@ export function PullCompareTab({ jobId, entity, window }: PullCompareTabProps) {
       clearResult();
       return;
     }
-    if (isDeliveryOrders && mappings.isLoading) {
+    if (isDocument && mappings.isLoading) {
       clearResult();
       toast.error('The mapping is still loading. Try again in a moment.');
       return;
     }
     try {
-      const entry = DO_SOURCES.find((d) => d.source === source);
+      const entry = sources.find((d) => d.source === source);
       const rows = entry
         ? await parseExcelFile(file, { sheetName: sheetFor(entry.kind) })
         : await parseExcelFile(file);
@@ -209,7 +245,7 @@ export function PullCompareTab({ jobId, entity, window }: PullCompareTabProps) {
 
   const columns = useMemo<ColumnDef<CompareRow>[]>(() => {
     const base: ColumnDef<CompareRow>[] = [];
-    if (isDeliveryOrders) {
+    if (isDocument) {
       base.push({
         accessorKey: 'doc_no',
         header: ({ column }) => <DataGridColumnHeader title="Doc No" column={column} />,
@@ -231,7 +267,7 @@ export function PullCompareTab({ jobId, entity, window }: PullCompareTabProps) {
       ),
       size: 140,
     });
-    if (entity === 'stock_balances' || isDeliveryOrders) {
+    if (entity === 'stock_balances' || isDocument) {
       base.push({
         accessorKey: 'location',
         header: ({ column }) => <DataGridColumnHeader title="Location" column={column} />,
@@ -271,7 +307,7 @@ export function PullCompareTab({ jobId, entity, window }: PullCompareTabProps) {
         size: 220,
       },
     );
-    if (isDeliveryOrders) {
+    if (isDocument) {
       base.push({
         accessorKey: 'source',
         header: ({ column }) => <DataGridColumnHeader title="Source" column={column} />,
@@ -280,18 +316,18 @@ export function PullCompareTab({ jobId, entity, window }: PullCompareTabProps) {
       });
     }
     return base;
-  }, [entity, isDeliveryOrders]);
+  }, [entity, isDocument]);
 
   // Differences + only_in_excel + only_in_pull, formatted and labelled - the SAME array the
   // grid's recordCount and the download both use (CT-4). Delivery orders: the lines file's
   // rows first, then the headers file's, each labelled by its Source.
   const rows = useMemo<CompareRow[]>(() => {
-    if (!isDeliveryOrders) return single ? buildCompareRows(single, entity) : [];
-    return DO_SOURCES.flatMap(({ source }) => {
+    if (!isDocument) return single ? buildCompareRows(single, entity) : [];
+    return sources.flatMap(({ source }) => {
       const result = results[source];
       return result ? buildCompareRows(result, entity, source) : [];
     });
-  }, [single, results, entity, isDeliveryOrders]);
+  }, [single, results, entity, isDocument, sources]);
 
   const table = useReactTable({
     columns,
@@ -305,15 +341,15 @@ export function PullCompareTab({ jobId, entity, window }: PullCompareTabProps) {
   const handleDownloadDifferences = async () => {
     if (rows.length === 0) return;
     const cols: ColumnOption[] = [
-      ...(isDeliveryOrders ? [{ key: 'doc_no', label: 'Doc No', selected: true } satisfies ColumnOption] : []),
+      ...(isDocument ? [{ key: 'doc_no', label: 'Doc No', selected: true } satisfies ColumnOption] : []),
       { key: 'item_code', label: 'Item Code', selected: true },
-      ...(entity === 'stock_balances' || isDeliveryOrders
+      ...(entity === 'stock_balances' || isDocument
         ? [{ key: 'location', label: 'Location', selected: true } satisfies ColumnOption]
         : []),
       { key: 'field', label: 'Difference', selected: true },
       { key: 'excel', label: 'Your Excel', selected: true },
       { key: 'pull', label: 'AutoCount pull', selected: true },
-      ...(isDeliveryOrders ? [{ key: 'source', label: 'Source', selected: true } satisfies ColumnOption] : []),
+      ...(isDocument ? [{ key: 'source', label: 'Source', selected: true } satisfies ColumnOption] : []),
     ];
     // No UUID in the filename the user sees (cursor rule) - the entity, not the job id.
     await generateExcelFile(rows, cols, `autocount-${entity}-differences.xlsx`);
@@ -322,12 +358,12 @@ export function PullCompareTab({ jobId, entity, window }: PullCompareTabProps) {
   // Delivery orders: one headline over the files on screen - each result's own
   // `source_summary` added up (the server's combined `summary` still counts a file that was
   // since removed or failed to parse). A result without one falls back to its `summary`.
-  const onScreen = isDeliveryOrders
-    ? DO_SOURCES.map(({ source }) => results[source]).filter(
+  const onScreen = isDocument
+    ? sources.map(({ source }) => results[source]).filter(
         (r): r is AutocountComparePullResult => Boolean(r),
       )
     : [];
-  const latest: { summary: AutocountPullCompareSummary } | null = isDeliveryOrders
+  const latest: { summary: AutocountPullCompareSummary } | null = isDocument
     ? onScreen.length
       ? {
           summary: onScreen
@@ -344,14 +380,14 @@ export function PullCompareTab({ jobId, entity, window }: PullCompareTabProps) {
         }
       : null
     : single;
-  const differencesCount = isDeliveryOrders
-    ? DO_SOURCES.reduce((n, { source }) => n + (results[source]?.differences.length ?? 0), 0)
+  const differencesCount = isDocument
+    ? sources.reduce((n, { source }) => n + (results[source]?.differences.length ?? 0), 0)
     : single?.differences.length ?? 0;
   const headline = latest ? summaryHeadline(latest.summary, differencesCount, entity) : null;
   const windowLine =
-    isDeliveryOrders && (window?.fromDay || window?.toDay)
+    isDocument && (window?.fromDay || window?.toDay)
       ? `Compared inside the pulled window only, ${formatDay(window?.fromDay) || 'start'} to ${formatDay(window?.toDay) || 'today'}, by document number and line. Rows outside the window are ignored.`
-      : isDeliveryOrders
+      : isDocument
         ? 'Compared by document number and line.'
         : null;
 
@@ -378,7 +414,7 @@ export function PullCompareTab({ jobId, entity, window }: PullCompareTabProps) {
 
   return (
     <div className="space-y-4">
-      {isDeliveryOrders && (
+      {isDocument && (
         <div className="flex justify-end">
           <Button variant="outline" size="sm" onClick={() => setMappingOpen(true)}>
             <Settings2 className="size-4" />
@@ -386,7 +422,7 @@ export function PullCompareTab({ jobId, entity, window }: PullCompareTabProps) {
           </Button>
         </div>
       )}
-      {isDeliveryOrders ? (
+      {isDocument ? (
         <div className="grid gap-4 sm:grid-cols-2">
           {sources.map((entry) => {
             const result = results[entry.source];
@@ -440,7 +476,7 @@ export function PullCompareTab({ jobId, entity, window }: PullCompareTabProps) {
         </div>
       )}
 
-      {isDeliveryOrders && (
+      {isDocument && (
         <>
           {windowLine && <p className="text-xs text-muted-foreground">{windowLine}</p>}
           {compareMutation.isPending && <p className="text-sm text-muted-foreground">Comparing…</p>}
@@ -480,8 +516,12 @@ export function PullCompareTab({ jobId, entity, window }: PullCompareTabProps) {
           </Card>
         </DataGrid>
       )}
-      {isDeliveryOrders && mappingOpen && (
-        <CompareMappingDialog open={mappingOpen} onOpenChange={setMappingOpen} />
+      {isDocument && mappingOpen && (
+        <CompareMappingDialog
+          open={mappingOpen}
+          onOpenChange={setMappingOpen}
+          entity={entity === 'goods_receive_notes' ? 'goods_receive_notes' : 'delivery_orders'}
+        />
       )}
     </div>
   );

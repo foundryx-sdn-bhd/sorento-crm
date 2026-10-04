@@ -7,9 +7,15 @@ from app.dependencies import (
     require_any_permission_with_api_key,
     require_permission,
     require_permission_with_api_key,
+    require_session_or_api_key_permission,
 )
 from app.services.product_service import ProductCategoryService
-from app.schemas.product import ProductCategoryCreate, ProductCategoryUpdate, ProductCategoryResponse
+from app.schemas.product import (
+    ProductCategoryCreate,
+    ProductCategoryResponse,
+    ProductCategorySelectItem,
+    ProductCategoryUpdate,
+)
 from app.schemas.common import ListResponse, MAX_PAGE_LIMIT
 from app.services.error_handler import handle_internal_error
 from app.services.uuid_list_param import parse_uuid_list
@@ -113,10 +119,12 @@ async def get_categories(
         raise handle_internal_error(str(e))
 
 
-@router.get("/select", response_model=List[ProductCategoryResponse])
+@router.get("/select", response_model=List[ProductCategorySelectItem])
 async def get_categories_select(
     query: Optional[str] = Query(None),
-    current_user: dict = Depends(require_permission_with_api_key("master_data.product_categories.view")),
+    # Any signed-in user (owner ruling 1 Oct 2026, never-stuck L10); an API key still
+    # needs the slug. The list, detail and write routes keep their slugs.
+    current_user: dict = Depends(require_session_or_api_key_permission("master_data.product_categories.view")),
     db: Session = Depends(get_db)
 ):
     """Get product categories for select dropdowns."""

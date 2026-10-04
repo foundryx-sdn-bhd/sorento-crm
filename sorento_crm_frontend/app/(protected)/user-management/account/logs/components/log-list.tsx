@@ -96,7 +96,7 @@ const LogList = () => {
   };
 
   // Users query
-  const { data, isLoading, isPlaceholderData, isFetching } = useQuery({
+  const { data, isLoading, isPlaceholderData, isFetching, error, refetch } = useQuery({
     ...LIST_QUERY_OPTIONS,
     queryKey: [
       'system-logs',
@@ -263,6 +263,8 @@ const LogList = () => {
       table={table}
       recordCount={data?.pagination.total || 0}
       isLoading={isLoading}
+      error={error}
+      onRetry={() => void refetch()}
       isPlaceholderData={isPlaceholderData}
       tableLayout={{
         columnsPinnable: true,

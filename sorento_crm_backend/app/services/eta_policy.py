@@ -54,10 +54,28 @@ class ContactEtaRules:
     offset_applied: bool
     #: Attach the shipment's packing list.
     packing_list_allowed: bool
+    #: The packing list regions this contact may be told about (already expanded).
+    regions: frozenset[str] = frozenset({"west"})
 
 
 #: An unresolved contact: the switch's own default for the ETA, and no file.
-UNRESOLVED = ContactEtaRules(offset_applied=True, packing_list_allowed=False)
+UNRESOLVED = ContactEtaRules(
+    offset_applied=True, packing_list_allowed=False, regions=frozenset({"west"})
+)
+
+
+def visible_regions(held: Iterable[str]) -> frozenset[str]:
+    """Expand a contact's held regions: `east` held means {east, west}, else {west}."""
+    return frozenset({"east", "west"}) if "east" in set(held or ()) else frozenset({"west"})
+
+
+def contact_regions(db: Session, resolved_contact_id: Optional[str]) -> frozenset[str]:
+    """The packing list regions this contact may be told about: West only for every contact.
+
+    Another lane (ACCESS-MODEL) repoints this body at `effective_access(...).regions`;
+    the signature must stay.
+    """
+    return frozenset({"west"})
 
 
 def rules_for_contact(db: Session, resolved_contact_id: Optional[str]) -> ContactEtaRules:
@@ -65,6 +83,8 @@ def rules_for_contact(db: Session, resolved_contact_id: Optional[str]) -> Contac
     if not resolved_contact_id:
         return UNRESOLVED
     from app.models.access import RespondContact
+
+    regions = visible_regions(contact_regions(db, resolved_contact_id))
 
     row = (
         db.query(RespondContact.chatbot_eta_offset_applied, RespondContact.packing_list_allowed)
@@ -78,6 +98,7 @@ def rules_for_contact(db: Session, resolved_contact_id: Optional[str]) -> Contac
         offset_applied=row[0] is not False,
         # NOT NULL default false; `is True` keeps the fail-closed reading.
         packing_list_allowed=row[1] is True,
+        regions=regions,
     )
 
 
@@ -359,13 +380,24 @@ def _told(node: dict[str, Any]) -> Optional[str]:
     return _iso(node.get("eta_delay_date")) or _iso(node.get("estimated_arrival_date"))
 
 
-def dealer_view(payload: Any) -> Any:
-    """One row per product - `{"product_code", "etas"}`, the ETAs distinct and sorted -
-    in the order the products first appear, plus `dealer_view`. No salesperson name:
-    the presenter closes with the one refer sentence (REFER-SALESMAN, 30 Sep 2026).
+def _ddmmyyyy(iso: str) -> str:
+    try:
+        return date.fromisoformat(iso).strftime("%d/%m/%Y")
+    except ValueError:
+        return iso
+
+
+def dealer_view(payload: Any, asked: Optional[list[str]] = None) -> Any:
+    """One row per product - `{"product_code", "etas"}`, the ETAs distinct, sorted and
+    told as dd/mm/yyyy (AVAIL-MODE-REPLIES, the stock ask's own ETA format) - in the
+    order the products first appear, plus `dealer_view`. No salesperson name: the
+    presenter closes with the one refer sentence (REFER-SALESMAN, 30 Sep 2026).
     Handles `/list` (shipment rows with `lines`), `/by-product` (product rows with
     `shipments`) and `/shipments` (no product: one row, code None). A single-row payload
-    (`/shipments/{id}/...`) is not a chat answer and passes through."""
+    (`/shipments/{id}/...`) is not a chat answer and passes through.
+
+    `asked`: the product codes the dealer asked about. One with no shipment is still a
+    row, with no ETA ("CODE: No ETA", owner hand test 3 Oct 2026), never a miss."""
     if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
         return payload
     etas: dict[Optional[str], set[str]] = {}
@@ -382,7 +414,15 @@ def dealer_view(payload: Any) -> Any:
             dates = etas.setdefault(code, set())
             if eta:
                 dates.add(eta)
-    rows = [{"product_code": code, "etas": sorted(dates)} for code, dates in etas.items()]
+    seen = {str(code).casefold() for code in etas if code}
+    for code in asked or []:
+        if code and str(code).casefold() not in seen:
+            seen.add(str(code).casefold())
+            etas[code] = set()
+    rows = [
+        {"product_code": code, "etas": [_ddmmyyyy(d) for d in sorted(dates)]}
+        for code, dates in etas.items()
+    ]
     out = {
         key: payload[key]
         for key in ("resolved_entities", "lookup_companies")

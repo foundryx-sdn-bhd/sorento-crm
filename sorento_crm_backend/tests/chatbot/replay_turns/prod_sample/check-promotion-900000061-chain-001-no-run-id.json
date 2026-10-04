@@ -1,0 +1,827 @@
+{
+  "turns": [
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": null,
+          "countryCode": "MY",
+          "created_at": 1778415976,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000061"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": "zzt-900000061@example.invalid",
+          "firstName": "ZZT-900000061",
+          "id": 900000061,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000061",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000016\", \"firstName\": \"ZZT\", \"lastName\": \"Loo\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": null,
+              "firstName": "ZZT-agent",
+              "id": null,
+              "lastName": ""
+            },
+            "countryCode": "MY",
+            "created_at": 1778415976,
+            "email": "zzt-900000061@example.invalid",
+            "firstName": "ZZT-900000061",
+            "id": 900000061,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000061",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "2d07ad3a-c77d-4d9a-9f57-372eb7e26085",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxNjc3MDExNzgVAgASGBQzQUIzMTRCMzgxRjY0MTc1OUY2RgA=",
+            "contactId": 900000061,
+            "message": {
+              "text": "Cbmc5875-BL STOCK",
+              "type": "text"
+            },
+            "messageId": 1789197371000000,
+            "timestamp": 1789197371000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message",
+          "send_attachments"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "d4a5a0b2-563f-42de-a261-55e35a55002e"
+        ],
+        "focus_after": null,
+        "pending": null,
+        "text": "Stock details found for the requested products.\n\n1. *Product Code:* CBMC5875-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 0\n*Outstanding:* 1\n\n_Data last updated: 11/09/2026 17:26:05_\nStock is 0 at every location, no incoming and nothing on order for CBMC5875-BL.\n\nWould you like me to escalate to purchasing team?",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "contact_id",
+              "date_mode",
+              "include_sellable",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_inventory_stock_balance_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "Cbmc5875-BL",
+                "entity_type": "product",
+                "uuid": "d4a5a0b2-563f-42de-a261-55e35a55002e"
+              }
+            ],
+            "resolved": true,
+            "token": "Cbmc5875-BL"
+          }
+        ],
+        "tokens": [
+          "Cbmc5875-BL"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 11,
+        "recorded_at": "2026-09-12T16:16:17.216429+09:00",
+        "turn_id": "8944823a-227f-48ec-956b-9ace3d6050b0"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 1,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 1,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "contact_id": "900000061",
+            "date_mode": null,
+            "include_sellable": true,
+            "is_active": null,
+            "product_ids": [
+              "d4a5a0b2-563f-42de-a261-55e35a55002e"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "attachments": [],
+            "fallback_used": false,
+            "has_result": true,
+            "intro": "Stock details found for the requested products.",
+            "items": [
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "CBMC5875-BL"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "BUKIT RAJA"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "BRW"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 0
+                  },
+                  {
+                    "key": "open_so_qty",
+                    "label": "Outstanding",
+                    "value": 1
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "CBMC5875-BL"
+              }
+            ],
+            "last_updated_at": "2026-09-11T17:26:05.676888",
+            "restricted_fields": {
+              "open_so_qty": "inventory.sellable"
+            },
+            "result_type": "stock",
+            "stock_visibility": {
+              "hide_zero_locations": false,
+              "mode": "detailed",
+              "source": "default",
+              "warehouse_codes": null
+            }
+          },
+          "tool": "crm_inventory_stock_balance_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "inventory",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "Cbmc5875-BL"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_stock",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to check stock for Cbmc5875-BL"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": null,
+          "countryCode": "MY",
+          "created_at": 1778415976,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000061"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": "zzt-900000061@example.invalid",
+          "firstName": "ZZT-900000061",
+          "id": 900000061,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000061",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000016\", \"firstName\": \"ZZT\", \"lastName\": \"Loo\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": null,
+              "firstName": "ZZT-agent",
+              "id": null,
+              "lastName": ""
+            },
+            "countryCode": "MY",
+            "created_at": 1778415976,
+            "email": "zzt-900000061@example.invalid",
+            "firstName": "ZZT-900000061",
+            "id": 900000061,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000061",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "723dbab9-0e56-4fe8-90ac-0bc8468e5744",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxNjc3MDExNzgVAgASGBQzQTRBRDVDRjVGNTQ0RTc3MzAxQQA=",
+            "contactId": 900000061,
+            "message": {
+              "text": "Cbf66410 promotion packages",
+              "type": "text"
+            },
+            "messageId": 1789197599000000,
+            "timestamp": 1789197599000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message"
+        ],
+        "branch_kind": "check_promotion",
+        "canned": [],
+        "entity_ids": [],
+        "focus_after": null,
+        "pending": {
+          "kind": "tier_pick",
+          "option_labels": [
+            "dealer",
+            "office",
+            "end user"
+          ]
+        },
+        "text": "Which access level do you need for Cbf66410?\n1. Office - has promotion\n2. Dealer - has promotion\n3. End user - has promotion\nReply with the number(s), e.g. \"1\", \"1 and 2\", or \"all\".",
+        "tools": []
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [],
+            "resolved": false,
+            "token": "Cbf66410"
+          }
+        ],
+        "tokens": [
+          "Cbf66410"
+        ],
+        "unresolved_tokens": [
+          "Cbf66410"
+        ]
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 11,
+        "recorded_at": "2026-09-12T16:20:05.273372+09:00",
+        "turn_id": "27393e88-30e5-415e-bd11-d5482f632216"
+      },
+      "tool_results": [],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "promotion",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "Cbf66410"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_promotion",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to check promotion packages for Cbf66410"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": null,
+          "countryCode": "MY",
+          "created_at": 1778415976,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000061"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": "zzt-900000061@example.invalid",
+          "firstName": "ZZT-900000061",
+          "id": 900000061,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000061",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000016\", \"firstName\": \"ZZT\", \"lastName\": \"Loo\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": null,
+              "firstName": "ZZT-agent",
+              "id": null,
+              "lastName": ""
+            },
+            "countryCode": "MY",
+            "created_at": 1778415976,
+            "email": "zzt-900000061@example.invalid",
+            "firstName": "ZZT-900000061",
+            "id": 900000061,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000061",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "c2b74ce1-58c0-4ec3-80fd-31c5105fab28",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxNjc3MDExNzgVAgASGBQzQUQwREVDMERFMTA2N0FCNkM4MwA=",
+            "contactId": 900000061,
+            "message": {
+              "text": "2",
+              "type": "text"
+            },
+            "messageId": 1789197621000000,
+            "timestamp": 1789197621000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message",
+          "send_attachments"
+        ],
+        "branch_kind": "check_promotion",
+        "canned": [],
+        "entity_ids": [
+          "23d64834-1a70-441a-ac69-8df89630181c",
+          "2a0c28ec-714a-41e1-8c00-6cd96e1c7b5a",
+          "9b6b752c-3552-4eee-afaa-9a09729da2e8",
+          "a31bd759-9715-4b31-8fa2-e02f8a25356b",
+          "bf68dba5-435f-43f4-ac6f-96c4f73ac1b4",
+          "c9b5ad20-c0a6-4b6c-88d5-682a7d3d09c6"
+        ],
+        "focus_after": null,
+        "pending": null,
+        "text": "I found 2 promotions for Cbf66410. I have attached the file(s) below.\n\n1. *Promotion:* CABANA BATHROOM FURNITURE PROMO_07082026 DEALER USE.pdf\n*Start Date:* 2026-08-07\n*End Date:* 2026-11-07\n\n2. *Promotion:* CABANA COMBINE PROMO DEALER_08072026.pdf\n\n_Data last updated: 11/08/2026 10:36:23_",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "contact_id",
+              "date_mode",
+              "is_active",
+              "product_ids",
+              "promotion_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_marketing_promotions_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [],
+        "tokens": [],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 11,
+        "recorded_at": "2026-09-12T16:20:26.200827+09:00",
+        "turn_id": "e29f127a-f425-41ac-8633-c47a6057b5ee"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 6,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 6,
+              "unmapped_types": []
+            },
+            "access_levels": [
+              "Sorento Dealer",
+              "Mocha Dealer",
+              "Cabana Dealer"
+            ],
+            "contact_id": "900000061",
+            "date_mode": null,
+            "is_active": null,
+            "product_ids": [
+              "c9b5ad20-c0a6-4b6c-88d5-682a7d3d09c6"
+            ],
+            "promotion_ids": [
+              "9b6b752c-3552-4eee-afaa-9a09729da2e8",
+              "2a0c28ec-714a-41e1-8c00-6cd96e1c7b5a",
+              "23d64834-1a70-441a-ac69-8df89630181c",
+              "bf68dba5-435f-43f4-ac6f-96c4f73ac1b4",
+              "a31bd759-9715-4b31-8fa2-e02f8a25356b"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "attachments": [
+              {
+                "attachmentType": "Promotion",
+                "filename": "CABANA BATHROOM FURNITURE PROMO_07082026 (DEALER USE).pdf",
+                "mimeType": "application/pdf",
+                "uploadedAt": "2026-08-11T10:35:26.281188",
+                "url": "https://cdn-sorento.com/promotion/c862d214-c10c-4acd-acc6-2e9eb0f52501/CABANA BATHROOM FURNITURE PROMO_07082026 DEALER USE.pdf"
+              },
+              {
+                "attachmentType": "Promotion",
+                "filename": "@ CABANA COMBINE PROMO (DEALER)_08072026.pdf",
+                "mimeType": "application/pdf",
+                "uploadedAt": "2026-07-08T17:33:10.868012",
+                "url": "https://cdn-sorento.com/promotion/0e3451c3-5cbe-41c2-b94a-0caef09042cb/CABANA COMBINE PROMO DEALER_08072026.pdf"
+              }
+            ],
+            "fallback_used": false,
+            "has_result": true,
+            "intro": "I have attached the file(s) below.",
+            "items": [
+              {
+                "fields": [
+                  {
+                    "label": "Promotion",
+                    "value": "CABANA BATHROOM FURNITURE PROMO_07082026 DEALER USE.pdf"
+                  },
+                  {
+                    "label": "Start Date",
+                    "value": "2026-08-07"
+                  },
+                  {
+                    "label": "End Date",
+                    "value": "2026-11-07"
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "CABANA BATHROOM FURNITURE PROMO_07082026 DEALER USE.pdf"
+              },
+              {
+                "fields": [
+                  {
+                    "label": "Promotion",
+                    "value": "CABANA COMBINE PROMO DEALER_08072026.pdf"
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "CABANA COMBINE PROMO DEALER_08072026.pdf"
+              }
+            ],
+            "last_updated_at": "2026-08-11T10:36:23.183484",
+            "result_type": "promotions"
+          },
+          "tool": "crm_marketing_promotions_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [
+          "Dealer"
+        ],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": null,
+        "entities": [],
+        "entity_op": "reuse",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": null,
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [
+          2
+        ],
+        "reference_target": "dym",
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to select access level 2"
+      }
+    }
+  ]
+}

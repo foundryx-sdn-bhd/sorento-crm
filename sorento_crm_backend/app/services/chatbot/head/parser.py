@@ -39,12 +39,11 @@ from app.services.chatbot_reply_copy import CHATBOT_TURN_ERROR_REPLY as PARSER_E
 
 PARSER_MAX_TOKENS = 2048
 
-# NOT bounded by a per-call timeout, and deliberately not pretending to be (issue #656;
-# the plan's Capacity section carries the same note). The timeout table names 8 s, but `llm_provider.LLMProvider.chat` has no
-# timeout parameter at all - each provider builds its own SDK client - so wiring one means
-# changing that shared signature and all three implementations, which is core work outside
-# this slice. A declared-but-unapplied constant is worse than none: it reads as a
-# guarantee. Follow-up: add `timeout` to `LLMProvider.chat` and pass the plan's value here.
+# Bounded in `llm_call.chat`, not here (CHATBOT-QUEUE-FIX, prod turn a45f spent 230 s in
+# this call): every attempt carries `llm_call.ATTEMPT_TIMEOUT_SECONDS` with the SDK's own
+# retries off, the whole call stops at `llm_call.CALL_DEADLINE_SECONDS`, and a timeout is
+# raised as `llm_call.TimedOut`, a `RateLimited`, so it lands in the `rate_limited` arm
+# below and the dealer reads `RATE_LIMITED_REPLY`.
 
 
 class ParserError(RuntimeError):
@@ -178,6 +177,10 @@ def _build_json_schema() -> dict[str, Any]:
                         # parse. Required like every other key: strict mode.
                         "spec_key": string_or_null,
                         "spec_value": {"type": ["string", "number", "boolean", "null"]},
+                        # ACCOUNT-LEDGER: the numbered account the message names for a
+                        # customer ("Soon Heng account 1" -> 1); null otherwise. Required
+                        # like every key here (strict mode).
+                        "account": {"type": ["integer", "null"]},
                     },
                     "required": [
                         "raw",
@@ -189,6 +192,7 @@ def _build_json_schema() -> dict[str, Any]:
                         "quantity",
                         "spec_key",
                         "spec_value",
+                        "account",
                     ],
                 },
             },
@@ -860,6 +864,9 @@ def parse(config: ParserConfig, user_block: str) -> ParsedOutput:
             max_tokens=PARSER_MAX_TOKENS,
             json_schema=PARSE_OUTPUT_JSON_SCHEMA,
             json_schema_name=PARSE_OUTPUT_SCHEMA_NAME,
+            # One cache bucket per published prompt version: every parse on it shares
+            # the same static prefix (OpenAI only; the others ignore it).
+            prompt_cache_key=f"{PROMPT_KEY}:v{config.prompt_version or 'fallback'}",
         )
     except llm_call.RateLimited as exc:
         raise ParserError(f"parser provider call failed: {exc}", rate_limited=True) from exc
@@ -872,6 +879,9 @@ def parse(config: ParserConfig, user_block: str) -> ParsedOutput:
         "prompt_tokens": int(getattr(result, "prompt_tokens", 0) or 0),
         "completion_tokens": int(getattr(result, "completion_tokens", 0) or 0),
         "total_tokens": int(getattr(result, "total_tokens", 0) or 0),
+        # The prompt-cache hit (LLM-TEST-COST): how much of `prompt_tokens` was billed
+        # at the cached rate.
+        "cached_tokens": int(getattr(result, "cached_tokens", 0) or 0),
     }
     try:
         content = (result.content or "").strip()

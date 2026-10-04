@@ -42,8 +42,7 @@ export function AssignLeadDialog({
 
   const options = (users.data ?? []).map((user) => ({
     value: user.id,
-    label: user.name || user.email || 'Unnamed user',
-    description: user.name ? (user.email ?? undefined) : undefined,
+    label: user.name || 'Unnamed user',
   }));
   const pending = busy || Boolean(submitting);
 
@@ -81,6 +80,8 @@ export function AssignLeadDialog({
                 id="assign-lead-owner"
                 value={ownerUserId}
                 onChange={setOwnerUserId}
+                loadError={users.error}
+                onRetry={() => void users.refetch()}
                 options={options}
                 disabled={users.isLoading}
                 placeholder={users.isLoading ? 'Loading people' : 'Search people'}

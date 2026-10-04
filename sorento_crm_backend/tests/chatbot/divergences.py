@@ -616,6 +616,37 @@ DIVERGENCES: list[Divergence] = [
             ("ctx_resolved", "ctx", "gate", "gate_debug", "allowed_lookup"),
         ),
     ),
+    # ATTACHMENT-MULTI (owner ruling 2 Oct 2026, Q3 (a)): the require-specific picker asks
+    # "Which product do you mean? Please choose:" instead of "incoming search needs to be
+    # more specific. Multiple matches found. Please choose:". `rg-15123789` is the one graded
+    # whole-sub capture that re-runs the gate over a picker, so its header text moves in the
+    # gate's own `gate_clarification` and in every copy of it downstream (the picker lines
+    # are rendered after the header, so `escalate_message` moves with it). It also carries
+    # pass 4 item F's retype and AC-1526's stamp map (the group entry below), so those paths
+    # are kept here: `find()` returns the first match.
+    Divergence(
+        node="sub-resolve-and-gate",
+        fixture="rg-15123789",
+        hazard="ATTACHMENT-MULTI picker header + owner console pass 4, item F + AC-1526",
+        reason=(
+            "the picker header is the owner's plain question now; every other byte of the "
+            "sub's output is unchanged (pass 4 item F's and AC-1526's own paths as below)."
+        ),
+        strip_paths=(
+            ("ctx_resolved", "ctx", "parse", "output", "entities"),
+            ("ctx_resolved", "ctx", "parse", "output", "shipment_hint_retyped"),
+            ("ctx_resolved", "ctx", "parse", "output", "domain_dropped_with_shipment_hint"),
+            ("incoming_by_code",),
+            ("annotate_incoming", "incoming_by_code"),
+            ("gate_clarification",),
+            ("escalate_message",),
+            ("gate", "gate_clarification"),
+            ("ctx_resolved", "gate_clarification"),
+            ("ctx_resolved", "ctx", "gate", "gate_clarification"),
+            ("annotate_incoming", "gate_clarification"),
+            ("annotate_incoming", "escalate_message"),
+        ),
+    ),
     # OWNER CONSOLE PASS 4, item F (6 Sep 2026): a container-hinted token that the
     # resolver answers with PRODUCTS and no shipment is retyped `product` before the
     # gate runs. Five graded `resolve-exit-offer` captures carry that shape, and on
@@ -661,7 +692,6 @@ DIVERGENCES: list[Divergence] = [
             ),
         )
         for name in (
-            "rg-15123789",
             "rg-15128371",
             "rg-15192977",
             "rs8-t2-picker",

@@ -31,7 +31,7 @@ const BLANK: ChatbotEntityKindInput = {
   default_narrowing: 'optional_filter',
   family_grouping: null,
   base_property_words: {},
-  roster_cap: 10,
+  roster_cap: ROSTER_CAP_MAX,
 };
 
 export interface ChatbotEntityKindModalProps {

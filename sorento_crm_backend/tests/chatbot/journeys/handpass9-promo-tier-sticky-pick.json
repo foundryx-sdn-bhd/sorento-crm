@@ -1,11 +1,11 @@
 {
   "name": "handpass9-promo-tier-sticky-pick",
-  "source": "hand pass 9 owner console, 20 Sep 2026 21:55-22:42 MYT (contact_respond_id 437264483). Turn ad1777a8-a768-4d13-a2dd-4db76b4be114 'promo for srtwc286' -> tier roster (1. Office, 2. Dealer, 3. End user, each 'has promotion'), correct. Turn 99c14381-0fbd-4d30-8f29-c8587410bdfd '1' -> Office promotion files, tool args crm_marketing_promotions_list access_levels=['Sorento Office','Mocha Office','Cabana Office'], correct. Turn 25dcef1d-decc-407b-a6eb-08d8112ee814 '2' -> DEFECT D3: the SAME three Office files repeat verbatim, tool args STILL access_levels=['Sorento Office','Mocha Office','Cabana Office'] (measured via psql, byte-identical to turn 1's own args) - owner: 'the picker is not really sticky, I want to choose 2, 4 also cannot'. OWNER RULING: same stickiness as the product/photo roster (contract 36) - a second pick over the SAME still-open tier roster must re-run with the SECOND tier's own access levels. `tier_pick` is deliberately excluded from `pending.ROSTER_KINDS` today (test_rearch_r3_answer_bridge.py::TestStickyRosterContract36::test_tier_pick_is_not_a_roster_kind_by_contract_but_a_pick_is_still_a_pending) - this ruling supersedes that assumption.",
+  "source": "hand pass 9 owner console, 20 Sep 2026 21:55-22:42 MYT (contact_respond_id 900000008). Turn ad1777a8-a768-4d13-a2dd-4db76b4be114 'promo for srtwc286' -> tier roster (1. Office, 2. Dealer, 3. End user, each 'has promotion'), correct. Turn 99c14381-0fbd-4d30-8f29-c8587410bdfd '1' -> Office promotion files, tool args crm_marketing_promotions_list access_levels=['Sorento Office','Mocha Office','Cabana Office'], correct. Turn 25dcef1d-decc-407b-a6eb-08d8112ee814 '2' -> DEFECT D3: the SAME three Office files repeat verbatim, tool args STILL access_levels=['Sorento Office','Mocha Office','Cabana Office'] (measured via psql, byte-identical to turn 1's own args) - owner: 'the picker is not really sticky, I want to choose 2, 4 also cannot'. OWNER RULING: same stickiness as the product/photo roster (contract 36) - a second pick over the SAME still-open tier roster must re-run with the SECOND tier's own access levels. `tier_pick` is deliberately excluded from `pending.ROSTER_KINDS` today (test_rearch_r3_answer_bridge.py::TestStickyRosterContract36::test_tier_pick_is_not_a_roster_kind_by_contract_but_a_pick_is_still_a_pending) - this ruling supersedes that assumption.",
   "cases": [
     {
       "name": "second-tier-pick-over-the-same-roster-uses-the-second-tiers-access-levels",
       "cold": true,
-      "contact": "437264483",
+      "contact": "900000008",
       "turns": [
         {
           "text": "promo for srtwc286",

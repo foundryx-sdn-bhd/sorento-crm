@@ -102,9 +102,9 @@ describe('ChatbotEntityKindModal - AC-1711 roster cap', () => {
     );
   });
 
-  it('a new kind defaults roster_cap to 10', () => {
+  it('a new kind defaults roster_cap to the ceiling, 50 (PICKER-NO-CAP)', () => {
     renderModal({ entityKindCode: null });
     const field = screen.getByLabelText(/Roster cap/i) as HTMLInputElement;
-    expect(field).toHaveValue(10);
+    expect(field).toHaveValue(50);
   });
 });

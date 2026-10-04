@@ -499,6 +499,7 @@ class ShippingOrderIngestService(MasterRefResolver):
                 self._supersede_xlsx_rows(
                     payload, unmatched, supersede_pool, counts, force_closed,
                     container_number=container_number, warnings=warnings,
+                    fallback_blocked_products={key[0] for key in esb_group_keys},
                 )
             )
 
@@ -1052,6 +1053,7 @@ class ShippingOrderIngestService(MasterRefResolver):
         *,
         container_number: Optional[str] = None,
         warnings: Optional[list[str]] = None,
+        fallback_blocked_products: frozenset | set = frozenset(),
     ) -> list[SPOAllocation]:
         """D25a/D25c/D26/D26a/D27/D30: an Excel-era group REPLACED by the pushed lines.
 
@@ -1078,7 +1080,12 @@ class ShippingOrderIngestService(MasterRefResolver):
         counterpart, or refused by D26a's group-total guard) for the caller to
         hand to the ordinary leftover sweep.
         """
-        plan = shipping_order_rules.plan_xlsx_supersede(unmatched, supersede_pool)
+        plan = shipping_order_rules.plan_xlsx_supersede(
+            unmatched,
+            supersede_pool,
+            # Review B1: the D31 fallback runs only on a product's FIRST push.
+            fallback_blocked_products=fallback_blocked_products,
+        )
         by_id = {str(row.id): row for row in supersede_pool}
         kept = [by_id[row_id] for row_id in plan.kept_row_ids if row_id in by_id]
 
@@ -1098,6 +1105,7 @@ class ShippingOrderIngestService(MasterRefResolver):
             if group.dropped_shipment_ids and warnings is not None:
                 warnings.append(WARN_SHIPMENT_MERGED)
             target: Optional[SPOAllocation] = None
+            group_rows: list[SPOAllocation] = []
             for line_plan in group.lines:
                 values = dict(unmatched[line_plan.index])
                 allocated = int(values.get("allocated_quantity") or 0)
@@ -1140,6 +1148,7 @@ class ShippingOrderIngestService(MasterRefResolver):
                     self.shipment_ids_touched.add(str(row.inbound_shipment_id))
                 counts["created"] += 1
                 consumed.add(line_plan.index)
+                group_rows.append(row)
                 if target is None:
                     target = row
                     # S5 (`PLAN-oi-replan-received-links.md`): the superseded
@@ -1186,11 +1195,35 @@ class ShippingOrderIngestService(MasterRefResolver):
                 if row.inbound_shipment_id:
                     self.shipment_ids_touched.add(str(row.inbound_shipment_id))
             if target is not None:
+                if group.split_receipts:
+                    # D32: a product-level fallback group's lines sit in
+                    # different locations, so its GRN picks are split over them
+                    # by capacity rather than all landing on the first line.
+                    shipping_order_rules.repoint_picking_lines_by_capacity(
+                        self.db,
+                        [str(row.id) for row in removing],
+                        [
+                            (str(row.id), row.warehouse_id, row.allocated_quantity)
+                            for row in group_rows
+                        ],
+                        company_id=self.company_id,
+                    )
                 shipping_order_rules.repoint_allocation_dependants(
                     self.db,
                     [str(row.id) for row in removing],
                     str(target.id),
                     company_id=self.company_id,
+                )
+            if target is not None:
+                # D33: proven before anything is deleted or zeroed - a failure
+                # raises inside this record's savepoint and the push lands
+                # nothing for this document.
+                shipping_order_rules.assert_supersede_conserved(
+                    self.db,
+                    [str(row.id) for row in removing],
+                    sum(int(row.quantity_received or 0) for row in removing),
+                    sum(line_plan.carried_received for line_plan in group.lines),
+                    sum(int(row.quantity_received or 0) for row in group_rows),
                 )
             # S7 (D30): read BEFORE the rows go, so the trail names what was
             # actually taken out of the picture and with which quantities.
@@ -1208,6 +1241,7 @@ class ShippingOrderIngestService(MasterRefResolver):
                 # no longer read as outstanding supply, and annotated so the
                 # next reader can see which document replaced them.
                 note = f"superseded by {payload.source_ref}"
+                retired_at = datetime.now(timezone.utc)
                 for row in removing:
                     row.line_status = LINE_CLOSED
                     # APPENDED, never overwritten (through the same helper the
@@ -1215,9 +1249,36 @@ class ShippingOrderIngestService(MasterRefResolver):
                     # wrote on this row is the only record of why it exists,
                     # and the row is being kept precisely so that record
                     # survives.
+                    # D33: the receipt figure about to be zeroed is its own
+                    # FRAGMENT, added only while the row still holds one, so a
+                    # second pass over an already-retired row (received 0) adds
+                    # nothing and `append_note`'s fragment dedupe holds.
                     row.allocation_notes = shipping_order_rules.append_note(
-                        row.allocation_notes, note
+                        row.allocation_notes,
+                        f"{note}; received {int(row.quantity_received)} carried"
+                        if row.quantity_received
+                        else note,
                     )
+                    # D33 (SPO-XLSX-SUPERSEDE round 2): the row is RETIRED, not
+                    # merely closed. Its receipt now lives on the replacement
+                    # lines (carried above, picks moved), so it keeps none of
+                    # its own - left in place it stayed visible (R2) and was
+                    # counted a second time in the PL's "SPO allocated" - and
+                    # `retired_at` takes it out of the GRN pool (D34), so a
+                    # future GRN cannot FIFO onto it. The trail logged below
+                    # and the note above keep the old figure.
+                    # Frozen into the DECLARED column first (security review
+                    # N1, the D28d freeze): a structured record of what the row
+                    # held. Every reader that floors by `stated_received` (D35)
+                    # or draws capacity (D34) skips a retired row, so nothing
+                    # counts it a second time.
+                    held = int(row.quantity_received or 0)
+                    if held > int(row.stated_received or 0):
+                        row.stated_received = held
+                    row.quantity_received = 0
+                    row.receipt_status = RECEIPT_PENDING
+                    if row.retired_at is None:
+                        row.retired_at = retired_at
                 action = "closed"
                 if warnings is not None:
                     warnings.append(WARN_SUPERSEDED_CLOSED_ONLY)

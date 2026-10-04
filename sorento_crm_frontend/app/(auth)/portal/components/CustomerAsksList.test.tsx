@@ -166,13 +166,13 @@ beforeEach(() => {
 });
 
 describe('CustomerAsksList (portal to-do body)', () => {
-  it('renders the to-do from getCustomerAsksTodo as cards: two sections, no counts, no day headings', async () => {
+  it('renders the to-do from getCustomerAsksTodo as cards: one Open section, no counts, no day headings', async () => {
     render(<CustomerAsksList search="" />);
     expect(await screen.findByText('Hock Lee Trading')).toBeInTheDocument();
     showCards();
     expect(getCustomerAsksTodo).toHaveBeenCalled();
     expect(screen.queryByTestId('ask-todo-counts')).toBeNull();
-    expect(screen.getAllByRole('heading').map((h) => h.textContent)).toEqual(['Needs attention', 'Today']);
+    expect(screen.getAllByRole('heading').map((h) => h.textContent)).toEqual(['Open']);
     const card = cardOf('Hock Lee Trading').textContent!.replace(/\s+/g, ' ');
     expect(card).toContain('Asked: SRT5674 x 150');
     expect(card).toContain('Answered: No stock and no incoming at the moment. Please refer to your salesman.');

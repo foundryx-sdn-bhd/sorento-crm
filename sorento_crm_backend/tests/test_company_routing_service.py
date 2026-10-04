@@ -80,7 +80,7 @@ def test_contact_tagged_one_company_resolves_to_it(db):
     """AC-A1 step (b)."""
     mocha = _mocha(db)
     ws = _workspace(db)
-    contact = _contact(db, phone="+60199000001", respond_io_id="ZZT-rio-1", workspace=ws)
+    contact = _contact(db, phone="+60190000001", respond_io_id="ZZT-rio-1", workspace=ws)
     _tag(db, contact, mocha)
 
     got = resolve_routing_company(db, contact_id="ZZT-rio-1", space_id=SPACE_ID)
@@ -95,11 +95,11 @@ def test_phone_only_resolves_the_same_company_as_id_only(db):
     """AC-A2 - the guarantee that makes n8n's phone-only body work unchanged."""
     mocha = _mocha(db)
     ws = _workspace(db)
-    contact = _contact(db, phone="+60199000002", respond_io_id="ZZT-rio-2", workspace=ws)
+    contact = _contact(db, phone="+60190000002", respond_io_id="ZZT-rio-2", workspace=ws)
     _tag(db, contact, mocha)
 
     by_id = resolve_routing_company(db, contact_id="ZZT-rio-2", space_id=SPACE_ID)
-    by_phone = resolve_routing_company(db, phone="+60199000002")
+    by_phone = resolve_routing_company(db, phone="+60190000002")
 
     assert by_phone.company_id == by_id.company_id == str(mocha.id)
     assert by_phone.source == "contact"
@@ -108,10 +108,10 @@ def test_phone_only_resolves_the_same_company_as_id_only(db):
 def test_phone_matches_without_plus_prefix(db):
     """The lookup reuses the integration candidate list, so 60... finds +60...."""
     mocha = _mocha(db)
-    contact = _contact(db, phone="+60199000003", respond_io_id="ZZT-rio-3")
+    contact = _contact(db, phone="+60190000003", respond_io_id="ZZT-rio-3")
     _tag(db, contact, mocha)
 
-    got = resolve_routing_company(db, phone="60199000003")
+    got = resolve_routing_company(db, phone="60190000003")
 
     assert got.company_id == str(mocha.id)
     assert got.source == "contact"
@@ -120,7 +120,7 @@ def test_phone_matches_without_plus_prefix(db):
 def test_internal_contact_id_also_resolves(db):
     """Internal callers pass respond_contacts.id, not the Respond.io id."""
     mocha = _mocha(db)
-    contact = _contact(db, phone="+60199000004", respond_io_id="ZZT-rio-4")
+    contact = _contact(db, phone="+60190000004", respond_io_id="ZZT-rio-4")
     _tag(db, contact, mocha)
 
     got = resolve_routing_company(db, contact_id=str(contact.id))
@@ -134,12 +134,12 @@ def test_internal_contact_id_also_resolves(db):
 def test_multi_company_contact_falls_to_default_and_flags(db):
     """AC-A3 - never an arbitrary pick."""
     mocha = _mocha(db)
-    contact = _contact(db, phone="+60199000005", respond_io_id="ZZT-rio-5")
+    contact = _contact(db, phone="+60190000005", respond_io_id="ZZT-rio-5")
     _tag(db, contact, mocha)
     sorento = db.query(Company).filter(Company.id == DEFAULT_COMPANY_ID).one()
     _tag(db, contact, sorento)
 
-    got = resolve_routing_company(db, phone="+60199000005")
+    got = resolve_routing_company(db, phone="+60190000005")
 
     assert got.company_id == DEFAULT_COMPANY_ID
     assert got.source == "default"
@@ -148,9 +148,9 @@ def test_multi_company_contact_falls_to_default_and_flags(db):
 
 def test_untagged_contact_falls_to_default(db):
     """AC-A4 - the safety net that keeps a shared channel routable."""
-    _contact(db, phone="+60199000006", respond_io_id="ZZT-rio-6")
+    _contact(db, phone="+60190000006", respond_io_id="ZZT-rio-6")
 
-    got = resolve_routing_company(db, phone="+60199000006")
+    got = resolve_routing_company(db, phone="+60190000006")
 
     assert got.company_id == DEFAULT_COMPANY_ID
     assert got.company_code == "SRT"
@@ -183,11 +183,11 @@ def test_body_company_code_wins(db):
     )
     db.add(other)
     db.flush()
-    contact = _contact(db, phone="+60199000007", respond_io_id="ZZT-rio-7")
+    contact = _contact(db, phone="+60190000007", respond_io_id="ZZT-rio-7")
     _tag(db, contact, mocha)
 
     got = resolve_routing_company(
-        db, company_code=other.code, phone="+60199000007"
+        db, company_code=other.code, phone="+60190000007"
     )
 
     assert got.company_id == str(other.id)
@@ -211,11 +211,11 @@ def test_unknown_company_code_falls_through_to_the_contact(db):
     than a typo, and ignoring it would misroute a correctly-tagged Mocha contact.
     """
     mocha = _mocha(db)
-    contact = _contact(db, phone="+60199000008", respond_io_id="ZZT-rio-8")
+    contact = _contact(db, phone="+60190000008", respond_io_id="ZZT-rio-8")
     _tag(db, contact, mocha)
 
     got = resolve_routing_company(
-        db, company_code="ZZT-NO-SUCH-COMPANY", phone="+60199000008"
+        db, company_code="ZZT-NO-SUCH-COMPANY", phone="+60190000008"
     )
 
     assert got.company_id == str(mocha.id)
@@ -240,7 +240,7 @@ def test_resolution_never_raises(db):
         def query(self, *a, **k):
             raise RuntimeError("database on fire")
 
-    got = resolve_routing_company(Boom(), phone="+60199000009")
+    got = resolve_routing_company(Boom(), phone="+60190000009")
 
     assert got.company_id == DEFAULT_COMPANY_ID
     assert got.source == "default"
@@ -254,11 +254,11 @@ def test_space_id_mismatch_still_resolves_via_phone(db):
     """Phone is the authoritative fallback, so a wrong space_id does not strand n8n."""
     mocha = _mocha(db)
     ws = _workspace(db)
-    contact = _contact(db, phone="+60199000010", respond_io_id="ZZT-rio-10", workspace=ws)
+    contact = _contact(db, phone="+60190000010", respond_io_id="ZZT-rio-10", workspace=ws)
     _tag(db, contact, mocha)
 
     got = resolve_routing_company(
-        db, contact_id="ZZT-rio-10", space_id="ZZT-wrong-space", phone="+60199000010"
+        db, contact_id="ZZT-rio-10", space_id="ZZT-wrong-space", phone="+60190000010"
     )
 
     assert got.company_id == str(mocha.id)

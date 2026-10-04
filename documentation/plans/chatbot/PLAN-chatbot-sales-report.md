@@ -31,7 +31,7 @@ Customer: HANLIM TRADING SDN BHD, HANLIM TRADING SDN BHD [A/C I]
 Product: all
 Channel: Dealer
 Location: all
-Delivery date: all
+Required date (or order date): all
 
 *_Sep 2026_*
 Sales orders: 31
@@ -83,7 +83,7 @@ codes also prints `*_By product_*`, By product first when both lists print:
 Product: SRT5674, SRT5674-N
 Channel: all
 Location: all
-Delivery date: all
+Required date (or order date): all
 
 *_Sep 2026_*
 Sales orders: 12

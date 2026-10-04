@@ -563,14 +563,21 @@ def _ai_trace_sweep_tick():
 def _spo_container_relink_sweep_tick():
     """APScheduler tick: relink SPO allocations whose shipment arrived after
     they did (S5, review re-check, 2026-09-06). Owns its own DB session;
-    best-effort and never raises."""
+    best-effort and never raises. Then refreshes the stored received figures
+    of every container not yet fully received (SPO-DEDUPE-ALL), after the
+    relink so a newly linked allocation counts the same night."""
     try:
-        from app.services.rules.shipping_order_rules import nightly_relink_all_containers
+        from app.services.rules.shipping_order_rules import (
+            nightly_refresh_open_containers,
+            nightly_relink_all_containers,
+        )
 
         with scheduler_session("spo_container_relink_sweep") as db:
             relinked = nightly_relink_all_containers(db)
             if relinked:
                 db.commit()
+            refreshed = nightly_refresh_open_containers(db)
+            logger.info("SPO container sweep: relinked %s, refreshed %s open containers", relinked, refreshed)
     except Exception as e:
         logger.error("SPO container relink sweep tick failed: %s", e, exc_info=True)
 

@@ -69,9 +69,17 @@ export default function ProductForm({ productId, initialProduct, onSuccess }: Pr
   const { data: productFromQuery } = useProduct(productId || null);
   /** Use initialProduct when passed (from Edit page); otherwise use query result */
   const product = initialProduct ?? productFromQuery;
-  const { data: categories } = useProductCategorySelectQuery();
-  const { data: brands } = useBrandSelectQuery();
-  const { data: uoms } = useUOMSelectQuery();
+  const {
+    data: categories,
+    error: categoriesError,
+    refetch: refetchCategories,
+  } = useProductCategorySelectQuery();
+  const {
+    data: brands,
+    error: brandsError,
+    refetch: refetchBrands,
+  } = useBrandSelectQuery();
+  const { data: uoms, error: uomsError, refetch: refetchUoms } = useUOMSelectQuery();
   const createMutation = useCreateProduct();
   const updateMutation = useUpdateProduct();
   const canViewChatbotLimits = useHasPermission('master_data.chatbot_stock_limits.view');
@@ -390,6 +398,8 @@ export default function ProductForm({ productId, initialProduct, onSuccess }: Pr
                             onChange={field.onChange}
                             placeholder="Search category..."
                             emptyMessage="No category found."
+                            loadError={categoriesError}
+                            onRetry={() => void refetchCategories()}
                             options={[
                               ...(categories ?? []).map((cat) => ({
                                 value: cat.id,
@@ -431,6 +441,8 @@ export default function ProductForm({ productId, initialProduct, onSuccess }: Pr
                             onChange={(v) => field.onChange(v === '__none__' ? null : v)}
                             placeholder="Search brand..."
                             emptyMessage="No brand found."
+                            loadError={brandsError}
+                            onRetry={() => void refetchBrands()}
                             options={[
                               { value: '__none__', label: 'None' },
                               ...(brands ?? []).map((brand) => ({
@@ -688,6 +700,8 @@ export default function ProductForm({ productId, initialProduct, onSuccess }: Pr
                           value={field.value || ''}
                           onChange={field.onChange}
                           placeholder="Select base UOM"
+                          loadError={uomsError}
+                          onRetry={() => void refetchUoms()}
                           options={[
                             ...(uoms ?? []).map((uom) => ({
                               value: uom.id,

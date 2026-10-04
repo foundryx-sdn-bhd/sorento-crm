@@ -17,7 +17,14 @@ from app.database import get_db
 from app.dependencies import get_current_user, require_permission, require_any_permission
 from app.models.auth import VerificationToken
 from app.schemas.common import ListResponse, MAX_PAGE_LIMIT
-from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserSelectResponse, UserRoleResponse
+from app.schemas.user import (
+    UserCreate,
+    UserLookupItem,
+    UserResponse,
+    UserRoleResponse,
+    UserSelectResponse,
+    UserUpdate,
+)
 from app.services.error_handler import AppException, handle_internal_error
 from app.services.notification_service import NotificationService
 from app.services.product_discontinued_scope_service import serialize_scopes
@@ -160,6 +167,58 @@ async def get_users_select(
         logger = logging.getLogger(__name__)
         logger.error(f"Error in get_users_select: {str(e)}")
         logger.error(f"Traceback: {traceback.format_exc()}")
+        raise handle_internal_error(str(e))
+
+
+@router.get(
+    "/lookup",
+    response_model=list[UserLookupItem],
+    response_model_exclude_none=True,
+)
+async def get_users_lookup(
+    query: Optional[str] = Query(None, description="Matches the name only, never the email."),
+    respond_synced: bool = Query(
+        False,
+        description="Only users linked to a Respond.io agent, each with its respond_user_id.",
+    ),
+    include_inactive: bool = Query(
+        False,
+        description="Also deactivated staff, for filters over past records. Never for assigning.",
+    ),
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """The shared people picker: any signed-in staff user, active staff, id + name.
+
+    Owner ruling 1 Oct 2026 (never-stuck L10, AUDIT-never-stuck-2026-10-01 section 5):
+    assigning a colleague is a normal action in every module, so owner / assignee / watcher
+    pickers must not need ``user_management.users.view``. That slug still guards
+    ``/select``, which carries email and Respond.io state and filters by phone for the user
+    admin screens. Read-only; nothing here changes who may write.
+    """
+    service = UserService(db)
+    # A portal contact holds a session too (identity S0, phone sign-in); staff names and
+    # Respond.io ids are not theirs to list.
+    if not service.is_staff(current_user["id"]):
+        raise AppException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            message="The people list is for staff accounts.",
+            code="people_lookup_staff_only",
+        )
+    try:
+        users = service.list_user_lookup(
+            query=query, respond_synced=respond_synced, include_inactive=include_inactive
+        )
+        return [
+            UserLookupItem(
+                id=user.id,
+                name=user.name,
+                respond_user_id=user.respond_user_id if respond_synced else None,
+            )
+            for user in users
+        ]
+    except Exception as e:
+        logger.error("Error in get_users_lookup: %s", e)
         raise handle_internal_error(str(e))
 
 

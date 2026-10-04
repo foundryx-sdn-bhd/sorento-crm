@@ -1,0 +1,132 @@
+name: Never-stuck smoke (nightly)
+
+# Guard G4 of documentation/reports/AUDIT-never-stuck-2026-10-01.md: open every app route
+# as an admin, a restricted user and an expired session, and fail on anything still loading
+# after 15 s, an expired session not on sign-in within 5 s, a refusal rendered as empty, or
+# raw permission text. Standard: documentation/reference/NEVER-STUCK-UI.md.
+#
+# Nightly and by hand only. Never on a PR or a push: about 1100 page visits plus a
+# production frontend build is too slow and too costly for every change (CI cap). One job,
+# and it skips itself when main has not moved since the last successful run.
+#
+# Failures are reported in the run's summary page (new failures first, then known failures
+# that now pass), with screenshots in the `never-stuck-report` artifact. A scheduled run
+# that fails emails the owner through GitHub's standard workflow-failure notice.
+on:
+  schedule:
+    # 02:47 Malaysia time (18:47 UTC), off the hour so it does not queue behind :00 crons.
+    - cron: "47 18 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Run even if main has not moved since the last successful run"
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: never-stuck-nightly
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  smoke:
+    name: Never-stuck smoke (all routes x 3 personas)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    services:
+      postgres:
+        # pgvector image, not plain postgres: bootstrap_env creates the `vector` extension.
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: sorento
+          POSTGRES_PASSWORD: sorento
+          POSTGRES_DB: sorento_smoke
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://sorento:sorento@localhost:5432/sorento_smoke
+      REDIS_URL: redis://localhost:6379/0
+      # A fresh database has no business data; every PDF / render path stays off.
+      DEALER_KIT_RENDER_TESTS: skip
+    steps:
+      - name: Skip when main has not moved since the last green run
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          if [ "$FORCE" = "true" ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          last=$(gh api "repos/${{ github.repository }}/actions/workflows/never-stuck-nightly.yml/runs?branch=main&status=success&per_page=1" \
+            --jq '.workflow_runs[0].head_sha // ""' || echo "")
+          if [ -n "$last" ] && [ "$last" = "${{ github.sha }}" ]; then
+            echo "main is still at $last, which last passed; nothing to smoke." | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: sorento_crm_backend/requirements.txt
+
+      - name: Install backend dependencies
+        if: steps.gate.outputs.run == 'true'
+        working-directory: sorento_crm_backend
+        run: pip install -r requirements.txt
+
+      - name: Set up Node
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: sorento_crm_frontend/package-lock.json
+
+      - name: Install frontend dependencies and chromium
+        if: steps.gate.outputs.run == 'true'
+        working-directory: sorento_crm_frontend
+        run: |
+          npm ci --force
+          npx playwright install --with-deps chromium
+
+      - name: Run the smoke
+        if: steps.gate.outputs.run == 'true'
+        env:
+          BACKEND_PYTHON: python
+        run: ./scripts/never-stuck-smoke.sh
+
+      - name: Upload report
+        if: always() && steps.gate.outputs.run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: never-stuck-report
+          path: |
+            sorento_crm_frontend/playwright-report/never-stuck
+            sorento_crm_frontend/test-results/never-stuck
+            sorento_crm_frontend/e2e/.never-stuck/*.log
+          retention-days: 14
+          include-hidden-files: true

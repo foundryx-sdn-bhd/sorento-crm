@@ -53,10 +53,16 @@ def create_and_send_webhook(
     """
     # A type n8n does not intake must not be sent: it would never be answered,
     # and the unanswered log is what leaves the upload-activity drawer showing
-    # "Processing" forever. Admin-controlled per type (migration 318).
-    if attachment_type is not None and not getattr(
-        attachment_type, "triggers_n8n_webhook", True
-    ):
+    # "Processing" forever. Admin-controlled per type (migration 318). An
+    # untyped attachment (e.g. the loading-plan stock list) is never sent either:
+    # n8n has nothing to file it under (owner rule, 2 Oct 2026).
+    if attachment_type is None:
+        logger.debug(
+            "Skipping n8n webhook for attachment %s: no attachment type",
+            getattr(attachment, "id", None),
+        )
+        return
+    if not getattr(attachment_type, "triggers_n8n_webhook", True):
         logger.debug(
             "Skipping n8n webhook for attachment %s: type %s does not trigger it",
             getattr(attachment, "id", None),

@@ -48,11 +48,21 @@ export function usePackingListHistory(packingListId: string | null) {
  * the Documents list are four readings of the same link rows, and four fetches of it would
  * be four chances for them to disagree.
  */
-export function usePackingListSourceInvoices(packingListId: string | null) {
+export function usePackingListSourceInvoices(
+  packingListId: string | null,
+  { enabled = true }: { enabled?: boolean } = {},
+) {
   return useQuery({
     queryKey: ['packing-lists', 'source-proforma-invoices', packingListId],
     queryFn: () => getPackingListSourceInvoices(packingListId as string),
-    enabled: !!packingListId,
+    // False for a user without SCM read, for whom the endpoint 403s (PL-TABS-ACCESS).
+    enabled: !!packingListId && enabled,
+    // A 403 is an answer, so retrying it only doubles the wait; anything else gets the
+    // app's one retry. Silent because it is read for every tab: the failure is reported
+    // where the invoices would be (the card, Documents), not as a toast on Lines.
+    retry: (failureCount, error) =>
+      failureCount < 1 && !error.message.startsWith('Permission required:'),
+    meta: { silent: true },
   });
 }
 
@@ -70,6 +80,7 @@ export function packingListsListQueryKey(params: PackingListsListParams): QueryK
     params.searchQuery,
     params.supplier_id,
     params.shipment_status,
+    params.region,
   ];
 }
 
@@ -84,6 +95,7 @@ export function packingListsListParamsFromUrl(
     searchQuery: params.searchQuery,
     supplier_id: params.filters.supplier_id,
     shipment_status: params.filters.shipment_status,
+    region: params.filters.region,
   };
 }
 

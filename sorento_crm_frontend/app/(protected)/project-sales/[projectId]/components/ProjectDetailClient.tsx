@@ -30,7 +30,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ConfirmDeleteDialog } from '@/components/common/ConfirmDeleteDialog';
 import { DetailActionsMenu } from '@/components/common/DetailActionsMenu';
 import DetailActions from '@/components/common/DetailActions';
-import { useStatusGraph } from '@/app/(protected)/system-management/status-graphs/hooks/useStatusGraphs';
+import { useProjectStatusGraph } from '@/app/(protected)/project-sales/_shared/hooks/useProjectStatusGraph';
 import {
   projectsPagerQuery,
   useChangeProjectStatus,
@@ -93,7 +93,7 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
     requestedTab && TABS.some((tab) => tab.id === requestedTab) ? requestedTab : 'overview';
 
   const { data: project, isLoading, isError, error } = useProject(projectId);
-  const graph = useStatusGraph('project', project?.template_id ?? null, false);
+  const graph = useProjectStatusGraph('project', project?.template_id ?? null);
   const move = useChangeProjectStatus();
   const remove = useDeleteProject();
   const [confirmDelete, setConfirmDelete] = React.useState(false);

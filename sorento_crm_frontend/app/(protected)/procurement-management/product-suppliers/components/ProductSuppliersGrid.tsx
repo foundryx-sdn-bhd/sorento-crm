@@ -47,7 +47,7 @@ export default function ProductSuppliersGrid() {
     setPagination((p) => ({ ...p, pageIndex: 0 }));
   }, [searchQuery]);
 
-  const { data, isLoading, isPlaceholderData, refetch, isFetching } = useQuery({
+  const { data, isLoading, isPlaceholderData, refetch, isFetching, error } = useQuery({
     ...LIST_QUERY_OPTIONS,
     queryKey: ['product-suppliers', pagination, sorting, searchQuery],
     queryFn: () => getProductSuppliers({
@@ -119,6 +119,8 @@ export default function ProductSuppliersGrid() {
       table={table}
       recordCount={data?.pagination.total || 0}
       isLoading={isLoading}
+      error={error}
+      onRetry={() => void refetch()}
       isPlaceholderData={isPlaceholderData}
       standardToolbar={false}
       tableLayout={{ columnsVisibility: true }}

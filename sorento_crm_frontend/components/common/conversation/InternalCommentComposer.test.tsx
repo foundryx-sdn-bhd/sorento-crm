@@ -12,10 +12,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import InternalCommentComposer, { activeMentionFragment } from './InternalCommentComposer';
 
-const getUsersSelect = vi.fn();
+const getUserLookup = vi.fn();
 
 vi.mock('@/services/userSelectService', () => ({
-  getUsersSelect: (...a: unknown[]) => getUsersSelect(...a),
+  getUserLookup: (...a: unknown[]) => getUserLookup(...a),
 }));
 
 function renderComposer(props: Partial<React.ComponentProps<typeof InternalCommentComposer>> = {}) {
@@ -43,10 +43,10 @@ function type(value: string) {
 
 beforeEach(() => {
   vi.useRealTimers();
-  getUsersSelect.mockReset();
-  getUsersSelect.mockResolvedValue([
-    { id: 'u-1', name: 'Team Lead', email: 'lead@test.com' },
-    { id: 'u-2', name: 'Warehouse Sam', email: 'sam@test.com' },
+  getUserLookup.mockReset();
+  getUserLookup.mockResolvedValue([
+    { id: 'u-1', name: 'Team Lead' },
+    { id: 'u-2', name: 'Warehouse Sam' },
   ]);
 });
 
@@ -90,11 +90,10 @@ describe('InternalCommentComposer', () => {
   });
 
   it('more matches than the window shows draw a keep-typing footer', async () => {
-    (getUsersSelect as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+    (getUserLookup as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
       Array.from({ length: 12 }, (_, i) => ({
         id: `u${i}`,
         name: `User ${String.fromCharCode(65 + i)}`,
-        email: `u${i}@x.com`,
       })),
     );
     renderComposer();
@@ -109,7 +108,7 @@ describe('InternalCommentComposer', () => {
 
     await waitFor(() => expect(screen.getByTestId('mention-typeahead')).toBeInTheDocument());
     await waitFor(() =>
-      expect(getUsersSelect).toHaveBeenCalledWith(expect.objectContaining({ query: '@Te'.slice(1) })),
+      expect(getUserLookup).toHaveBeenCalledWith(expect.objectContaining({ query: '@Te'.slice(1) })),
     );
     expect(await screen.findByRole('option', { name: 'Team Lead' })).toBeInTheDocument();
   });
@@ -196,7 +195,7 @@ describe('InternalCommentComposer', () => {
   it('error state: says the people lookup failed instead of vanishing', async () => {
     // FINDING 12: a failed lookup closed the typeahead with no explanation, so
     // "@" simply stopped working.
-    getUsersSelect.mockRejectedValue(new Error('Failed to load users'));
+    getUserLookup.mockRejectedValue(new Error('Failed to load users'));
     renderComposer();
     type('@Te');
 

@@ -50,6 +50,10 @@ class RespondContactResponse(RespondContactBase):
     respond_io_id: Optional[str] = None
     access_type_codes: List[str] = []
     access_types: List[RespondContactAccessTypeRef] = []
+    # Linked customer codes, sorted; filled by the list endpoint (one query per page).
+    customer_codes: List[str] = []
+    # CONTACT-BRAND-SCOPE: the brands the contact may see, `[{id, brand_name}]`; empty = all.
+    brands: List[dict] = []
     workspace_name: Optional[str] = None
     workspace_space_id: Optional[str] = None
     # Read-only mirror of respond_contacts.outbound_enabled so the contacts grid
@@ -72,6 +76,10 @@ class RespondContactResponse(RespondContactBase):
     chatbot_eta_offset_applied: bool = True
     # ESCALATION-CONTROL: may the chatbot hand this contact to a person. Default on.
     escalation_allowed: bool = True
+    # CONTACT-BULK-ACCESS (UAC A2.1): `chatbot_profile.tier` flattened, and whether the
+    # contact holds the `purchase_orders.cost` reveal (filled by the list only; null on detail).
+    chatbot_tier: Optional[str] = None
+    cost_visible: Optional[bool] = None
     # Identity S3 1.7. List rows: linked_user_id/name only (one batched query per
     # page - see `ContactService.list_contacts`). Detail additionally carries
     # is_salesperson/suggested_role_slug and the full linked_user. Both the id/name
@@ -120,6 +128,22 @@ class UserSelectResponse(BaseModel):
     email: Optional[str] = None  # a phone-only user has none (identity S0)
     respond_user_id: Optional[str] = None
     respond_synced: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class UserLookupItem(BaseModel):
+    """People picker row for any signed-in user (never-stuck L10, owner ruling 1 Oct 2026).
+
+    Id and name only. ``respond_user_id`` is present only when the caller asked for
+    Respond.io-synced users (the SLA and complaint assignee filters key on it); the route
+    drops it otherwise. No email, phone or account state: those stay behind
+    ``user_management.users.view`` on ``/users/select``.
+    """
+    id: str
+    name: Optional[str] = None
+    respond_user_id: Optional[str] = None
 
     class Config:
         from_attributes = True

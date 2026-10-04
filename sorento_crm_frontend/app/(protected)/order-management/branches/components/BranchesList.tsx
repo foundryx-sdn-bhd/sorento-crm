@@ -62,7 +62,7 @@ export default function BranchesList() {
   useResetPageOnFilterChange(setPagination, [searchQuery, book, inCrm]);
 
   const { data: books } = useBranchBooks();
-  const { data, isLoading, isPlaceholderData, refetch, isFetching } = useBranches({
+  const { data, isLoading, isPlaceholderData, refetch, isFetching, error } = useBranches({
     pageIndex: pagination.pageIndex,
     pageSize: pagination.pageSize,
     sorting,
@@ -181,6 +181,8 @@ export default function BranchesList() {
       table={table}
       recordCount={total}
       isLoading={isLoading}
+      error={error}
+      onRetry={() => void refetch()}
       isPlaceholderData={isPlaceholderData}
       listingKey={BRANCHES_LISTING_KEY}
       tableLayout={{ width: 'fixed', columnsResizable: true, columnsVisibility: true }}

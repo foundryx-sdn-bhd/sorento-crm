@@ -37,22 +37,22 @@
               "value": "true"
             }
           ],
-          "firstName": "ZZT-437264483",
-          "id": 437264483,
+          "firstName": "ZZT-900000008",
+          "id": 900000008,
           "lastName": "",
-          "phone": "+60437264483"
+          "phone": "+60900000008"
         },
         "ingress": "console",
         "is_test": true,
         "media": null,
         "message": {
           "contact": {
-            "id": 437264483
+            "id": 900000008
           },
           "event_type": "message.received",
           "message": {
             "channelId": 453209,
-            "contactId": 437264483,
+            "contactId": 900000008,
             "message": {
               "text": "I have an idea for you - please add a dark mode to the dealer portal",
               "type": "text"
@@ -110,12 +110,12 @@
         {
           "tool": "crm_ideation_turn",
           "args": {
-            "respond_io_id": "437264483",
+            "respond_io_id": "900000008",
             "message_text": "I have an idea for you - please add a dark mode to the dealer portal",
             "session_vars": {
               "ideation": null
             },
-            "submitter_name": "ZZT-437264483",
+            "submitter_name": "ZZT-900000008",
             "is_test": true
           },
           "envelope": {

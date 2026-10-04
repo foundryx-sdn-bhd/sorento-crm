@@ -1,0 +1,111 @@
+{
+  "status": "ok",
+  "message": null,
+  "basis": "delivered",
+  "customer_name": "ACME HARDWARE SDN BHD [A/C I]",
+  "customer_count": 1,
+  "product_code": null,
+  "product_codes": [],
+  "channel": null,
+  "channel_shown": false,
+  "location_token": null,
+  "warehouse_codes": [],
+  "date_from": "2026-07-01",
+  "date_to": "2026-09-30",
+  "grain": "month",
+  "total": {
+    "qty": 685,
+    "amount": 58700.0
+  },
+  "periods": [],
+  "group_by": "delivery_order",
+  "rows": [
+    {
+      "rank": 1,
+      "name": "DO-0824",
+      "qty": 40,
+      "amount": 0.0,
+      "date": "2026-08-28",
+      "customer_name": null
+    },
+    {
+      "rank": 2,
+      "name": "DO-0823",
+      "qty": 70,
+      "amount": 15800.0,
+      "date": "2026-08-27",
+      "customer_name": null
+    },
+    {
+      "rank": 3,
+      "name": "DO-0822",
+      "qty": 64,
+      "amount": 9600.0,
+      "date": "2026-08-27",
+      "customer_name": null
+    },
+    {
+      "rank": 4,
+      "name": "DO-0821",
+      "qty": 90,
+      "amount": 4100.0,
+      "date": "2026-08-27",
+      "customer_name": null
+    },
+    {
+      "rank": 5,
+      "name": "DO-0820",
+      "qty": 75,
+      "amount": 4300.0,
+      "date": "2026-08-27",
+      "customer_name": null
+    },
+    {
+      "rank": 6,
+      "name": "DO-0819",
+      "qty": 95,
+      "amount": 11200.0,
+      "date": "2026-08-27",
+      "customer_name": null
+    },
+    {
+      "rank": 7,
+      "name": "DO-0818",
+      "qty": 50,
+      "amount": 2600.0,
+      "date": "2026-08-27",
+      "customer_name": null
+    },
+    {
+      "rank": 8,
+      "name": "DO-0817",
+      "qty": 116,
+      "amount": 2300.0,
+      "date": "2026-08-27",
+      "customer_name": null
+    },
+    {
+      "rank": 9,
+      "name": "DO-0816",
+      "qty": 4,
+      "amount": 0.0,
+      "date": "2026-08-19",
+      "customer_name": null
+    },
+    {
+      "rank": 10,
+      "name": "DO-0815",
+      "qty": 30,
+      "amount": 2500.0,
+      "date": "2026-08-11",
+      "customer_name": null
+    }
+  ],
+  "more": 5,
+  "options": [
+    {
+      "key": "product",
+      "label": "By product"
+    }
+  ]
+}

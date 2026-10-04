@@ -53,8 +53,13 @@ export function useFulfilmentSuppliers() {
   });
 }
 
-export function useContainerSizes() {
-  return useQuery({ queryKey: [...KEY, 'container-sizes'], queryFn: getContainerSizes, ...cold });
+export function useContainerSizes({ enabled = true }: { enabled?: boolean } = {}) {
+  return useQuery({
+    queryKey: [...KEY, 'container-sizes'],
+    queryFn: getContainerSizes,
+    ...cold,
+    enabled,
+  });
 }
 
 export function useSupplierStock(supplierId: string | null) {

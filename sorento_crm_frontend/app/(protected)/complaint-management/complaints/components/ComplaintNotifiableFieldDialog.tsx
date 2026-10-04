@@ -41,6 +41,8 @@ interface ComplaintNotifiableFieldDialogProps {
   /** Current FK value on the complaint (null when unset). */
   value: string | null | undefined;
   options: { id: string; name: string }[];
+  loadError?: unknown;
+  onRetry?: () => void;
   /** Save the picked id on the complaint. */
   onUpdate: (id: string | null) => Promise<unknown>;
   /** Save then send the Respond.io update message to the contact. */
@@ -62,6 +64,8 @@ export default function ComplaintNotifiableFieldDialog({
   kind,
   value,
   options,
+  loadError,
+  onRetry,
   onUpdate,
   onUpdateAndReply,
   canReply,
@@ -99,6 +103,8 @@ export default function ComplaintNotifiableFieldDialog({
             id={`complaint-${kind}-select`}
             value={selected}
             onChange={(v) => setSelected(v)}
+            loadError={loadError}
+            onRetry={onRetry}
             options={[
               { value: UNSET, label: ' - None - ' },
               ...options.map((opt) => ({ value: opt.id, label: opt.name })),

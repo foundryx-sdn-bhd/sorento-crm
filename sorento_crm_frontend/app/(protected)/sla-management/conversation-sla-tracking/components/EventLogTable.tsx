@@ -38,6 +38,7 @@ import { useConversationSLAEventLogs, useDeleteConversationSLAEventLog } from '.
 import { formatDateTime, formatDuration, parseDateTimeAsUTC } from '@/lib/helpers';
 import type { ConversationSLAEventLog } from '../types/conversationSLATracking.types';
 import { useQuery } from '@tanstack/react-query';
+import { getUserLookup } from '@/services/userSelectService';
 import { apiFetch } from '@/lib/api';
 
 function toYYYYMMDD(d: Date): string {
@@ -120,7 +121,13 @@ export default function EventLogTable({ trackingId, agentCode, teamSetCode }: Ev
   const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({});
   const deleteMutation = useDeleteConversationSLAEventLog();
 
-  const { data: eventLogsResponse, isLoading, isPlaceholderData } = useConversationSLAEventLogs(trackingId, {
+  const {
+    data: eventLogsResponse,
+    isLoading,
+    isPlaceholderData,
+    error,
+    refetch,
+  } = useConversationSLAEventLogs(trackingId, {
     page: pagination.pageIndex + 1,
     limit: pagination.pageSize,
     sort: sorting?.[0]?.id || 'event_at',
@@ -138,17 +145,17 @@ export default function EventLogTable({ trackingId, agentCode, teamSetCode }: Ev
     setPagination((prev) => ({ ...prev, pageIndex: 0 }));
   }, [eventTypeFilter, dateFrom, dateTo, assignedToFilter]);
 
-  const { data: respondUsers } = useQuery({
-    queryKey: ['respond-synced-users'],
-    queryFn: async () => {
-      const response = await apiFetch('/api/user-management/users/select?respond_synced=successful');
-      if (!response.ok) throw new Error('Failed to fetch users');
-      return response.json();
-    },
+  const {
+    data: respondUsers,
+    error: respondUsersError,
+    refetch: refetchRespondUsers,
+  } = useQuery({
+    queryKey: ['user-lookup', 'respond-synced', 'with-inactive'],
+    queryFn: () => getUserLookup({ respond_synced: true, include_inactive: true }),
     staleTime: 1000 * 60 * 5,
   });
 
-  const users = Array.isArray(respondUsers) ? respondUsers : respondUsers?.data ?? [];
+  const users = respondUsers ?? [];
 
   const { data: currentUser } = useQuery({
     queryKey: ['account-profile'],
@@ -331,6 +338,8 @@ export default function EventLogTable({ trackingId, agentCode, teamSetCode }: Ev
         recordCount={totalCount}
         isLoading={isLoading}
         isPlaceholderData={isPlaceholderData}
+        error={error}
+        onRetry={() => void refetch()}
         tableLayout={{ columnsVisibility: true }}
         standardToolbar={false}
       >
@@ -396,11 +405,13 @@ export default function EventLogTable({ trackingId, agentCode, teamSetCode }: Ev
                           setAssignedToFilter(v);
                           setPagination((prev) => ({ ...prev, pageIndex: 0 }));
                         }}
+                        loadError={respondUsersError}
+                        onRetry={() => void refetchRespondUsers()}
                         options={[
                           { value: '__all__', label: 'All' },
-                          ...users.map((u: { id: string; name?: string; email?: string }) => ({
+                          ...users.map((u) => ({
                             value: u.id,
-                            label: u.name || u.email || u.id,
+                            label: u.name || 'Unnamed user',
                           })),
                         ]}
                         placeholder="All"

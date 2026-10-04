@@ -37,6 +37,7 @@ from typing import Optional
 from fastapi import APIRouter, Body, Depends, Path, Query, status
 from sqlalchemy.orm import Session
 
+from app.schemas.ingest_extras import collect_unknown_fields
 from app.api.v1.external.company_anchor import resolve_company_anchor
 from app.api.v1.external.permissions import require_external_permission_for_path
 from app.dependencies import get_external_api_user
@@ -60,6 +61,8 @@ from app.services.autocount_doc_ingest_service import (
     AutocountDocIngestService,
     AutocountDocReadService,
     parse_deletion_body,
+    link_waiting_grn_lines,
+    run_grn_receipt_hook as _run_grn_receipt_hook,
 )
 from app.services.document_ingest_service import (
     DOCUMENT_ENTITIES,
@@ -255,12 +258,10 @@ SUPPORTED_ENTITIES = (
 # "2.3" (autocount-brands-ingest): `brands` joins ENTITY_SPECS as a
 # first-class master, with its own INGEST/READ/DELETE permission slugs -
 # additive, an ESB on 2.2 simply never sees `brands` in `entities`.
-# "2.4" (ingest-products-code-wins, SR0): a product whose stored reference is
-# under the SAME source system as the incoming push now resolves by item
-# code instead of failing as a conflict (`ref_mismatch`, stored reference
-# kept). `/{entity}/deletions` gains an optional `codes` map for the same
-# reason, only ever read for `products`. Both additive: an ESB still on 2.3
-# sends no `codes` and simply keeps hitting the old conflict.
+# "2.4" (ingest-products-code-wins, SR0): `/{entity}/deletions` gains an
+# optional `codes` map, only read for `products`. Since PRODUCT-REF-COLLISION
+# (3 Oct) products are matched by code alone and `codes` is the only way a
+# product deletion resolves.
 # "2.5" (ingest-stock-balances-2-5, Foundryx SR5): `stock_balances` joins as a
 # new push entity - upsert `stock.quantity_on_hand` for a (item_code,
 # location_code) pair, and `/{entity}/deletions` zeroes it rather than
@@ -501,6 +502,11 @@ def _run_shipping_order_forward_match_hook(
     except Exception:  # noqa: BLE001 - best-effort, the ingest already succeeded
         db.rollback()
         logger.warning("ingest.shipping_order_forward_match_hook_failed", exc_info=True)
+    # AutoCount GRN lines are never forward-matched (one row per DtlKey); the ones waiting
+    # for these SPOs link through the GRN ingest's own resolver (GRN-PULL-CRM e2e gap 1).
+    link_waiting_grn_lines(
+        db, company_id=service.company_id, numbers=set(service.spo_numbers_touched)
+    )
 
 
 def _run_shipping_order_book_repair_hook(
@@ -737,30 +743,6 @@ def _book(payload: dict) -> str:
     return book
 
 
-def _run_grn_receipt_hook(db: Session, service) -> None:
-    """An AutoCount GRN write moved picking lines that point at SPO allocations (a carried
-    Excel link released, a cancel, an exact link): recompute those allocations' receipt the
-    way an approved Excel GRN does. After the batch commit, best effort, like the others."""
-    touched = getattr(service, "touched_allocation_ids", set())
-    if not touched:
-        return
-    try:
-        from app.services.procurement_service import InboundShipmentService, PickingHeaderService
-
-        allocations = db.query(SPOAllocation).filter(SPOAllocation.id.in_(list(touched))).all()
-        proc = PickingHeaderService(db)
-        shipment_ids = proc._sync_received_for_allocations(
-            allocations, released=getattr(service, "released_allocation_ids", set())
-        )
-        db.commit()
-        inbound = InboundShipmentService(db)
-        for shipment_id in shipment_ids:
-            inbound.refresh_shipment_line_statuses(shipment_id)
-    except Exception:  # noqa: BLE001 - the ingest itself already committed
-        db.rollback()
-        logger.warning("ingest.grn_receipt_hook_failed", exc_info=True)
-
-
 def _cancel_vanished(entity: str, payload: dict, dry_run: bool, db: Session, current_user: dict):
     """Contract 2.7 deletions: the sweep's vanished DocKeys for a DocDate range, cancelled in
     place and never deleted (plan 1.10)."""
@@ -924,10 +906,21 @@ def ingest_masters(
         company_id=company_id,
         **extra,
     )
-    try:
-        result = service.ingest(entity, records, dry_run=dry_run)
-    except UnsupportedIngestEntity as exc:
-        raise AppException(status_code=404, message=str(exc), code="UNKNOWN_ENTITY")
+    # Unknown payload keys are dropped by every canonical schema (owner decision, 1 Oct
+    # 2026); their NAMES, never their values, are logged once for the whole request so a
+    # field the ESB believes it sends is not lost silently.
+    with collect_unknown_fields() as unknown_fields:
+        try:
+            result = service.ingest(entity, records, dry_run=dry_run)
+        except UnsupportedIngestEntity as exc:
+            raise AppException(status_code=404, message=str(exc), code="UNKNOWN_ENTITY")
+    if unknown_fields:
+        logger.info(
+            "ingest.unknown_fields entity=%s integration=%s fields=%s",
+            entity,
+            current_user.get("integration_id"),
+            ",".join(sorted(unknown_fields)),
+        )
 
     if dry_run:
         # The service has already rolled back; this is the second of two locks

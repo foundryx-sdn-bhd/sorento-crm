@@ -34,7 +34,7 @@ export default function PublicHolidaysList() {
   const [selectedHoliday, setSelectedHoliday] = useState<PublicHoliday | null>(null);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
 
-  const { data, isLoading, isPlaceholderData, refetch, isFetching } = usePublicHolidays({
+  const { data, isLoading, isPlaceholderData, refetch, isFetching, error } = usePublicHolidays({
     pageIndex: pagination.pageIndex,
     pageSize: pagination.pageSize,
     sorting,
@@ -139,6 +139,8 @@ export default function PublicHolidaysList() {
         table={table}
         recordCount={data?.pagination.total || 0}
         isLoading={isLoading}
+        error={error}
+        onRetry={() => void refetch()}
         isPlaceholderData={isPlaceholderData}
         tableLayout={{ columnsVisibility: true }}
       >

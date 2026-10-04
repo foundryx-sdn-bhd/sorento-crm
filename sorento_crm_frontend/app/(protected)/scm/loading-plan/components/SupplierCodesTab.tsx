@@ -136,8 +136,16 @@ export function SupplierCodesTab({
   documentLabel: string;
   statementAsOf: string | null;
 }) {
-  const { data: rows = [] } = useUnmatchedSupplierCodes(planId || null);
-  const { data: aliases = [] } = useSupplierCodeAliases(supplierId || null);
+  const {
+    data: rows = [],
+    error: unmatchedError,
+    refetch: refetchUnmatched,
+  } = useUnmatchedSupplierCodes(planId || null);
+  const {
+    data: aliases = [],
+    error: aliasesError,
+    refetch: refetchAliases,
+  } = useSupplierCodeAliases(supplierId || null);
   const match = useMatchSupplierCodeInPlace();
   const dismiss = useDismissSupplierCodeInPlace();
   const undo = useUndoSupplierCodeDecision();
@@ -561,6 +569,8 @@ export function SupplierCodesTab({
           <DataGrid
             table={needsTable}
             recordCount={visibleRows.length}
+            error={unmatchedError}
+            onRetry={() => void refetchUnmatched()}
             // Column personalisation OFF, as the old panel did: unset, the grid keys saved
             // widths on the URL, which here carries a supplier id.
             listingKey=""
@@ -599,6 +609,8 @@ export function SupplierCodesTab({
           <DataGrid
             table={rememberedTable}
             recordCount={visibleRemembered.length}
+            error={aliasesError}
+            onRetry={() => void refetchAliases()}
             listingKey=""
             tableLayout={{ width: 'fixed', columnsResizable: true }}
             rowPending={rowPending}

@@ -32,7 +32,7 @@ from app.services.sla_service import ConversationSLATrackingService
 from tests._event_bus_fake import FakeEventTransport
 from tests._pg_fixture import blank_session
 
-PHONE = "+60123456799"
+PHONE = "+60100000071"
 RESPOND_IO_ID = "10025990"
 INGEST_URL = "/api/v1/external/chat-history/messages"
 

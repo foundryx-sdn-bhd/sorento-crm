@@ -1,0 +1,2277 @@
+{
+  "turns": [
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": null,
+          "countryCode": "MY",
+          "created_at": 1772720674,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": "end_user"
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000070"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000070",
+          "id": 900000070,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000070",
+          "profilePic": null,
+          "status": "open",
+          "tags": []
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000022\", \"firstName\": \"ZZT\", \"lastName\": \"Ramli\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": null,
+              "firstName": "ZZT-agent",
+              "id": null,
+              "lastName": ""
+            },
+            "countryCode": "MY",
+            "created_at": 1772720674,
+            "email": null,
+            "firstName": "ZZT-900000070",
+            "id": 900000070,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000070",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "df41f07a-65ad-4563-97c3-398a8dc7b76a",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxOTM1MDg3ODEVAgASGCBBQ0Q2MTZCODJERjdGQkNGN0QzNEUxOEE1NTVEQzk0RQA=",
+            "contactId": 900000070,
+            "message": {
+              "text": "Do you have sorento children wc?",
+              "type": "text"
+            },
+            "messageId": 1789023677000000,
+            "timestamp": 1789023677000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message",
+          "send_attachments"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "19dbc02d-2e88-44d6-ad30-661777756b49",
+          "3cfcaab7-f632-489e-a7d3-0e06cafd44c9",
+          "3f72d883-027c-4850-a81c-ec4f416bd55b",
+          "6e58c03b-09c6-4f90-8002-5acec0ed92f6",
+          "6f95eec7-53af-4c4b-867a-d18df7a5a847",
+          "7611f6fc-0bba-48b5-ac6d-3bb4f2843185",
+          "79c1570f-41de-4dca-805c-0f5f3a48fcfe",
+          "90a7ba93-30e2-4a09-87e7-11beddfeb6c2",
+          "bec9795f-4c8a-427a-b05d-cb33c50030f7",
+          "d6c16107-a961-4781-91f3-ecde12324126"
+        ],
+        "focus_after": null,
+        "pending": null,
+        "text": "Here are the matching products.\n\n1. *Product Code:* ACC-SRT1023\n*Description:* SORENTO OUTLET FLUSHING FITTING  ACC-SRT1023 USE FOR SRTWC190\n*List Price:* MYR 0.00\n*Dimensions:* Not defined\n*Specs:* Product class: Water Closet, Brand: SORENTO\n\n2. *Product Code:* ACC-SRT1024\n*Description:* SORENTO SEAT COVER DISPLAY RACKING  ACC-SRT1024\n*List Price:* MYR 0.00\n*Dimensions:* Not defined\n*Specs:* Product class: Water Closet, Type: toilet_seat, Brand: SORENTO\n\n3. *Product Code:* GBH\n*Description:* TRIVOLLA I CLOSE-COUPLED WC C/W TOP PUSH DUAL FLUSH FITTING MEDIUM DUTY SEAT COVER & STRAIGHT\n*List Price:* MYR 0.00\n*Dimensions:* Not defined\n*Specs:* Product class: Water Closet, Type: toilet_seat, Brand: SORENTO\n\n4. *Product Code:* SRTWC0303\n*Description:* SORENTO ONE PIECE WC SIPHNOIC WASH DOWN SRTWC0303\n*List Price:* MYR 0.00\n*Dimensions:* Not defined\n*Specs:* Product class: Water Closet, Type: one_piece, Flush type: washdown, Brand: SORENTO\n\n5. *Product Code:* SRTWC180-BL\n*Description:* SORENTO  SERENE  AUTO INDUCTION INTELLIGENT TOILET (300MM )  SRTWC180-BL\n*List Price:* MYR 5500.00\n*Dimensions:* Not defined\n*Specs:* Product class: Water Closet, Intelligent / smart toilet: True, Length: 300 mm, Brand: SORENTO, Finish or colour: black\n\n6. *Product Code:* SRTWC0309\n*Description:* SORENTO ONE PIECE WC 250MM S TRAP SRTWC0309\n*List Price:* MYR 0.00\n*Dimensions:* Not defined\n*Specs:* Product class: Water Closet, Trap: s_trap, Type: one_piece, Length: 250 mm, Brand: SORENTO\n\n7. *Product Code:* SRTWC180-MW\n*Description:* SORENTO  SERENE  AUTO INDUCTION INTELLIGENT TOILET (300MM )  SRTWC180-MW\n*List Price:* MYR 5500.00\n*Dimensions:* Not defined\n*Specs:* Product class: Water Closet, Intelligent / smart toilet: True, Length: 300 mm, Brand: SORENTO\n\n8. *Product Code:* ACC-SRT1026\n*Description:* SORENTO PUSH BUTTON  FITTING FOR SRTWC193 & SRTWC192 USE ONLY ACC-SRT1026\n*List Price:* MYR 350.00\n*Dimensions:* Not defined\n*Specs:* Product class: Water Closet, Brand: SORENTO\n\n9. *Product Code:* ACC-SRT1025\n*Description:* SORENTO VALVE FITTING FOR SRTWC193 & SRTWC192 USE ONLY ACC-SRT1025\n*List Price:* MYR 180.00\n*Dimensions:* Not defined\n*Specs:* Product class: Water Closet, Brand: SORENTO\n\n10. *Product Code:* SRTWC180-BL-NEW\n*Description:* SORENTO  SERENE  AUTO INDUCTION INTELLIGENT TOILET (300MM )  SRTWC180-BL-NEW\n*List Price:* MYR 5500.00\n*Dimensions:* Not defined\n*Specs:* Product class: Water Closet, Intelligent / smart toilet: True, Length: 300 mm, Brand: SORENTO\n\n_Data last updated: 04/09/2026 18:58:44_\n\n_Matched on: Water Closet and brand: SORENTO._\n\nP/S: if the spec you're after isn't shown above, just ask me for the *product catalogue* and I'll pull it up for you \ud83d\ude0a",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "contact_id",
+              "date_mode",
+              "include_specs",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_master_products_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "sorento children wc",
+                "entity_type": "product",
+                "uuid": "19dbc02d-2e88-44d6-ad30-661777756b49"
+              }
+            ],
+            "resolved": true,
+            "token": "sorento children wc"
+          }
+        ],
+        "tokens": [
+          "sorento children wc"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 9,
+        "recorded_at": "2026-09-10T16:01:23.286886+09:00",
+        "turn_id": "096f7cb6-35b6-4388-bdf0-fecb45eb4920"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 10,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 10,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "contact_id": "900000070",
+            "date_mode": null,
+            "include_specs": true,
+            "is_active": null,
+            "product_ids": [
+              "6f95eec7-53af-4c4b-867a-d18df7a5a847",
+              "90a7ba93-30e2-4a09-87e7-11beddfeb6c2",
+              "7611f6fc-0bba-48b5-ac6d-3bb4f2843185",
+              "6e58c03b-09c6-4f90-8002-5acec0ed92f6",
+              "19dbc02d-2e88-44d6-ad30-661777756b49",
+              "3cfcaab7-f632-489e-a7d3-0e06cafd44c9",
+              "79c1570f-41de-4dca-805c-0f5f3a48fcfe",
+              "3f72d883-027c-4850-a81c-ec4f416bd55b",
+              "d6c16107-a961-4781-91f3-ecde12324126",
+              "bec9795f-4c8a-427a-b05d-cb33c50030f7"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "attachments": [],
+            "fallback_used": false,
+            "has_result": true,
+            "intro": "Here are the matching products.",
+            "items": [
+              {
+                "fields": [
+                  {
+                    "label": "Product Code",
+                    "value": "ACC-SRT1023"
+                  },
+                  {
+                    "label": "Description",
+                    "value": "SORENTO OUTLET FLUSHING FITTING  ACC-SRT1023 USE FOR SRTWC190"
+                  },
+                  {
+                    "label": "List Price",
+                    "value": "MYR 0.00"
+                  },
+                  {
+                    "label": "Dimensions",
+                    "value": "Not defined"
+                  },
+                  {
+                    "key": "spec:class",
+                    "label": "Product class",
+                    "value": "Water Closet"
+                  },
+                  {
+                    "key": "spec:brand",
+                    "label": "Brand",
+                    "value": "SORENTO"
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "ACC-SRT1023"
+              },
+              {
+                "fields": [
+                  {
+                    "label": "Product Code",
+                    "value": "ACC-SRT1024"
+                  },
+                  {
+                    "label": "Description",
+                    "value": "SORENTO SEAT COVER DISPLAY RACKING  ACC-SRT1024"
+                  },
+                  {
+                    "label": "List Price",
+                    "value": "MYR 0.00"
+                  },
+                  {
+                    "label": "Dimensions",
+                    "value": "Not defined"
+                  },
+                  {
+                    "key": "spec:class",
+                    "label": "Product class",
+                    "value": "Water Closet"
+                  },
+                  {
+                    "key": "spec:product_type",
+                    "label": "Type",
+                    "value": "toilet_seat"
+                  },
+                  {
+                    "key": "spec:brand",
+                    "label": "Brand",
+                    "value": "SORENTO"
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "ACC-SRT1024"
+              },
+              {
+                "fields": [
+                  {
+                    "label": "Product Code",
+                    "value": "GBH"
+                  },
+                  {
+                    "label": "Description",
+                    "value": "TRIVOLLA I CLOSE-COUPLED WC C/W TOP PUSH DUAL FLUSH FITTING MEDIUM DUTY SEAT COVER & STRAIGHT"
+                  },
+                  {
+                    "label": "List Price",
+                    "value": "MYR 0.00"
+                  },
+                  {
+                    "label": "Dimensions",
+                    "value": "Not defined"
+                  },
+                  {
+                    "key": "spec:class",
+                    "label": "Product class",
+                    "value": "Water Closet"
+                  },
+                  {
+                    "key": "spec:product_type",
+                    "label": "Type",
+                    "value": "toilet_seat"
+                  },
+                  {
+                    "key": "spec:brand",
+                    "label": "Brand",
+                    "value": "SORENTO"
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "GBH"
+              },
+              {
+                "fields": [
+                  {
+                    "label": "Product Code",
+                    "value": "SRTWC0303"
+                  },
+                  {
+                    "label": "Description",
+                    "value": "SORENTO ONE PIECE WC SIPHNOIC WASH DOWN SRTWC0303"
+                  },
+                  {
+                    "label": "List Price",
+                    "value": "MYR 0.00"
+                  },
+                  {
+                    "label": "Dimensions",
+                    "value": "Not defined"
+                  },
+                  {
+                    "key": "spec:class",
+                    "label": "Product class",
+                    "value": "Water Closet"
+                  },
+                  {
+                    "key": "spec:product_type",
+                    "label": "Type",
+                    "value": "one_piece"
+                  },
+                  {
+                    "key": "spec:flush_type",
+                    "label": "Flush type",
+                    "value": "washdown"
+                  },
+                  {
+                    "key": "spec:brand",
+                    "label": "Brand",
+                    "value": "SORENTO"
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTWC0303"
+              },
+              {
+                "fields": [
+                  {
+                    "label": "Product Code",
+                    "value": "SRTWC180-BL"
+                  },
+                  {
+                    "label": "Description",
+                    "value": "SORENTO  SERENE  AUTO INDUCTION INTELLIGENT TOILET (300MM )  SRTWC180-BL"
+                  },
+                  {
+                    "label": "List Price",
+                    "value": "MYR 5500.00"
+                  },
+                  {
+                    "label": "Dimensions",
+                    "value": "Not defined"
+                  },
+                  {
+                    "key": "spec:class",
+                    "label": "Product class",
+                    "value": "Water Closet"
+                  },
+                  {
+                    "key": "spec:is_smart",
+                    "label": "Intelligent / smart toilet",
+                    "value": true
+                  },
+                  {
+                    "key": "spec:dim_length",
+                    "label": "Length",
+                    "value": "300 mm"
+                  },
+                  {
+                    "key": "spec:brand",
+                    "label": "Brand",
+                    "value": "SORENTO"
+                  },
+                  {
+                    "key": "spec:finish",
+                    "label": "Finish or colour",
+                    "value": "black"
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTWC180-BL"
+              },
+              {
+                "fields": [
+                  {
+                    "label": "Product Code",
+                    "value": "SRTWC0309"
+                  },
+                  {
+                    "label": "Description",
+                    "value": "SORENTO ONE PIECE WC 250MM S TRAP SRTWC0309"
+                  },
+                  {
+                    "label": "List Price",
+                    "value": "MYR 0.00"
+                  },
+                  {
+                    "label": "Dimensions",
+                    "value": "Not defined"
+                  },
+                  {
+                    "key": "spec:class",
+                    "label": "Product class",
+                    "value": "Water Closet"
+                  },
+                  {
+                    "key": "spec:trap_type",
+                    "label": "Trap",
+                    "value": "s_trap"
+                  },
+                  {
+                    "key": "spec:product_type",
+                    "label": "Type",
+                    "value": "one_piece"
+                  },
+                  {
+                    "key": "spec:dim_length",
+                    "label": "Length",
+                    "value": "250 mm"
+                  },
+                  {
+                    "key": "spec:brand",
+                    "label": "Brand",
+                    "value": "SORENTO"
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTWC0309"
+              },
+              {
+                "fields": [
+                  {
+                    "label": "Product Code",
+                    "value": "SRTWC180-MW"
+                  },
+                  {
+                    "label": "Description",
+                    "value": "SORENTO  SERENE  AUTO INDUCTION INTELLIGENT TOILET (300MM )  SRTWC180-MW"
+                  },
+                  {
+                    "label": "List Price",
+                    "value": "MYR 5500.00"
+                  },
+                  {
+                    "label": "Dimensions",
+                    "value": "Not defined"
+                  },
+                  {
+                    "key": "spec:class",
+                    "label": "Product class",
+                    "value": "Water Closet"
+                  },
+                  {
+                    "key": "spec:is_smart",
+                    "label": "Intelligent / smart toilet",
+                    "value": true
+                  },
+                  {
+                    "key": "spec:dim_length",
+                    "label": "Length",
+                    "value": "300 mm"
+                  },
+                  {
+                    "key": "spec:brand",
+                    "label": "Brand",
+                    "value": "SORENTO"
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTWC180-MW"
+              },
+              {
+                "fields": [
+                  {
+                    "label": "Product Code",
+                    "value": "ACC-SRT1026"
+                  },
+                  {
+                    "label": "Description",
+                    "value": "SORENTO PUSH BUTTON  FITTING FOR SRTWC193 & SRTWC192 USE ONLY ACC-SRT1026"
+                  },
+                  {
+                    "label": "List Price",
+                    "value": "MYR 350.00"
+                  },
+                  {
+                    "label": "Dimensions",
+                    "value": "Not defined"
+                  },
+                  {
+                    "key": "spec:class",
+                    "label": "Product class",
+                    "value": "Water Closet"
+                  },
+                  {
+                    "key": "spec:brand",
+                    "label": "Brand",
+                    "value": "SORENTO"
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "ACC-SRT1026"
+              },
+              {
+                "fields": [
+                  {
+                    "label": "Product Code",
+                    "value": "ACC-SRT1025"
+                  },
+                  {
+                    "label": "Description",
+                    "value": "SORENTO VALVE FITTING FOR SRTWC193 & SRTWC192 USE ONLY ACC-SRT1025"
+                  },
+                  {
+                    "label": "List Price",
+                    "value": "MYR 180.00"
+                  },
+                  {
+                    "label": "Dimensions",
+                    "value": "Not defined"
+                  },
+                  {
+                    "key": "spec:class",
+                    "label": "Product class",
+                    "value": "Water Closet"
+                  },
+                  {
+                    "key": "spec:brand",
+                    "label": "Brand",
+                    "value": "SORENTO"
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "ACC-SRT1025"
+              },
+              {
+                "fields": [
+                  {
+                    "label": "Product Code",
+                    "value": "SRTWC180-BL-NEW"
+                  },
+                  {
+                    "label": "Description",
+                    "value": "SORENTO  SERENE  AUTO INDUCTION INTELLIGENT TOILET (300MM )  SRTWC180-BL-NEW"
+                  },
+                  {
+                    "label": "List Price",
+                    "value": "MYR 5500.00"
+                  },
+                  {
+                    "label": "Dimensions",
+                    "value": "Not defined"
+                  },
+                  {
+                    "key": "spec:class",
+                    "label": "Product class",
+                    "value": "Water Closet"
+                  },
+                  {
+                    "key": "spec:is_smart",
+                    "label": "Intelligent / smart toilet",
+                    "value": true
+                  },
+                  {
+                    "key": "spec:dim_length",
+                    "label": "Length",
+                    "value": "300 mm"
+                  },
+                  {
+                    "key": "spec:brand",
+                    "label": "Brand",
+                    "value": "SORENTO"
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTWC180-BL-NEW"
+              }
+            ],
+            "last_updated_at": "2026-09-04T18:58:44.072258",
+            "result_type": "products",
+            "spec_vocabulary": {
+              "brand": "Brand",
+              "class": "Product class",
+              "dim_length": "Length",
+              "finish": "Finish or colour",
+              "flush_type": "Flush type",
+              "is_smart": "Intelligent / smart toilet",
+              "product_type": "Type",
+              "trap_type": "Trap"
+            }
+          },
+          "tool": "crm_master_products_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "master_products",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "sorento children wc"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_product",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": "specific",
+        "top_n": null,
+        "user_goal": "trying to check whether Sorento children wc is available as a product"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": null,
+          "countryCode": "MY",
+          "created_at": 1772720674,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": "end_user"
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000070"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000070",
+          "id": 900000070,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000070",
+          "profilePic": null,
+          "status": "open",
+          "tags": []
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000022\", \"firstName\": \"ZZT\", \"lastName\": \"Ramli\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": null,
+              "firstName": "ZZT-agent",
+              "id": null,
+              "lastName": ""
+            },
+            "countryCode": "MY",
+            "created_at": 1772720674,
+            "email": null,
+            "firstName": "ZZT-900000070",
+            "id": 900000070,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000070",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "0acc4063-8a0c-41eb-8a3c-63c47fb19a8e",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxOTM1MDg3ODEVAgASGCBBQ0QwRTQ0N0RDOTFCMTU1MTU3MDE2MzczN0E5NkZENwA=",
+            "contactId": 900000070,
+            "message": {
+              "text": "Can i have technical drawing for srtwc203",
+              "type": "text"
+            },
+            "messageId": 1789024229000000,
+            "timestamp": 1789024229000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message",
+          "send_attachments"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "759e8bb0-0895-40ca-98eb-74870303cf3e",
+          "fb0b2adf-71c4-4336-a20c-8cd4aff1f1b4"
+        ],
+        "focus_after": null,
+        "pending": null,
+        "text": "I have attached the file(s) below.\n\n1. *Product Code:* SRTWC203-BLUE\n*Attachment Type:* Technical Specifications\n*File Name:* SRTWC201-2-3_TD.jpg\n\n_Data last updated: 14/05/2026 16:05:39_",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "attachment_type_ids",
+              "contact_id",
+              "date_mode",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_master_product_attachments_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "srtwc203",
+                "entity_type": "product",
+                "uuid": "759e8bb0-0895-40ca-98eb-74870303cf3e"
+              }
+            ],
+            "resolved": true,
+            "token": "srtwc203"
+          },
+          {
+            "matches": [
+              {
+                "canonical_code": "technical drawing",
+                "entity_type": "attachment_type",
+                "uuid": "fb0b2adf-71c4-4336-a20c-8cd4aff1f1b4"
+              }
+            ],
+            "resolved": true,
+            "token": "technical drawing"
+          }
+        ],
+        "tokens": [
+          "srtwc203",
+          "technical drawing"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 9,
+        "recorded_at": "2026-09-10T16:10:35.212401+09:00",
+        "turn_id": "81287cd3-1712-43fd-b41f-b80aacebcaa7"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 2,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 2,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "attachment_type_ids": [
+              "759e8bb0-0895-40ca-98eb-74870303cf3e"
+            ],
+            "contact_id": "900000070",
+            "date_mode": null,
+            "is_active": null,
+            "product_ids": [
+              "fb0b2adf-71c4-4336-a20c-8cd4aff1f1b4"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "attachments": [
+              {
+                "attachmentType": "Technical Specifications",
+                "filename": "SRTWC201_2_3_TD.jpg",
+                "mimeType": "image/jpeg",
+                "uploadedAt": "2026-05-14T16:05:39.022750",
+                "url": "https://cdn-sorento.com/technical_specifications/e6e8ba15-5c1b-4ca4-82f8-366f03b5363c/SRTWC201_2_3_TD.jpg"
+              }
+            ],
+            "fallback_used": false,
+            "has_result": true,
+            "intro": "I have attached the file(s) below.",
+            "items": [
+              {
+                "fields": [
+                  {
+                    "label": "Product Code",
+                    "value": "SRTWC203-BLUE"
+                  },
+                  {
+                    "label": "Attachment Type",
+                    "value": "Technical Specifications"
+                  },
+                  {
+                    "label": "File Name",
+                    "value": "SRTWC201-2-3_TD.jpg"
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTWC203-BLUE"
+              }
+            ],
+            "last_updated_at": "2026-05-14T16:05:39.022750",
+            "result_type": "product_attachments"
+          },
+          "tool": "crm_master_product_attachments_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "product_attachment",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "srtwc203"
+          },
+          {
+            "canonical_code": "technical drawing",
+            "confident": true,
+            "current_message": true,
+            "hint": "attachment_type",
+            "raw": "technical drawing"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_product_attachment",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to get a technical drawing for srtwc203"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": null,
+          "countryCode": "MY",
+          "created_at": 1772720674,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": "end_user"
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000070"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000070",
+          "id": 900000070,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000070",
+          "profilePic": null,
+          "status": "open",
+          "tags": []
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000022\", \"firstName\": \"ZZT\", \"lastName\": \"Ramli\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": null,
+              "firstName": "ZZT-agent",
+              "id": null,
+              "lastName": ""
+            },
+            "countryCode": "MY",
+            "created_at": 1772720674,
+            "email": null,
+            "firstName": "ZZT-900000070",
+            "id": 900000070,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000070",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "5a9c5bb8-69cb-4951-873f-2b6adc10a02c",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxOTM1MDg3ODEVAgASGCBBQzI1M0EzNUNBNjU2OEVDNTNEREIxMzIzRDc1NDNBQgA=",
+            "contactId": 900000070,
+            "message": {
+              "text": "Can i have the specification for srtwc 203",
+              "type": "text"
+            },
+            "messageId": 1789024613000000,
+            "timestamp": 1789024613000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message",
+          "send_attachments"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "fb0b2adf-71c4-4336-a20c-8cd4aff1f1b4"
+        ],
+        "focus_after": null,
+        "pending": null,
+        "text": "Here are the matching products.\n\n1. *Product Code:* SRTWC203-BLUE\n*Description:* SORENTO ONE PIECE WASH DOWN WC (BABY WC) S TRAP 200MM   SRTWC203-BLUE\n*List Price:* MYR 800.00\n*Dimensions:* Not defined\n*Specs:* Product class: Water Closet, Trap: s_trap, Type: one_piece, Flush type: washdown, Trap outlet length: 200 mm, Brand: SORENTO\n\n_Data last updated: 04/09/2026 18:58:44_\n\nP/S: if the spec you're after isn't shown above, just ask me for the *product catalogue* and I'll pull it up for you \ud83d\ude0a",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "contact_id",
+              "date_mode",
+              "include_specs",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_master_products_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "srtwc 203",
+                "entity_type": "product",
+                "uuid": "fb0b2adf-71c4-4336-a20c-8cd4aff1f1b4"
+              }
+            ],
+            "resolved": true,
+            "token": "srtwc 203"
+          }
+        ],
+        "tokens": [
+          "srtwc 203"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 9,
+        "recorded_at": "2026-09-10T16:16:57.249813+09:00",
+        "turn_id": "5c0a052b-df45-4250-ab01-03de2e4a5f54"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 1,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 1,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "contact_id": "900000070",
+            "date_mode": null,
+            "include_specs": true,
+            "is_active": null,
+            "product_ids": [
+              "fb0b2adf-71c4-4336-a20c-8cd4aff1f1b4"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "attachments": [],
+            "fallback_used": false,
+            "has_result": true,
+            "intro": "Here are the matching products.",
+            "items": [
+              {
+                "fields": [
+                  {
+                    "label": "Product Code",
+                    "value": "SRTWC203-BLUE"
+                  },
+                  {
+                    "label": "Description",
+                    "value": "SORENTO ONE PIECE WASH DOWN WC (BABY WC) S TRAP 200MM   SRTWC203-BLUE"
+                  },
+                  {
+                    "label": "List Price",
+                    "value": "MYR 800.00"
+                  },
+                  {
+                    "label": "Dimensions",
+                    "value": "Not defined"
+                  },
+                  {
+                    "key": "spec:class",
+                    "label": "Product class",
+                    "value": "Water Closet"
+                  },
+                  {
+                    "key": "spec:trap_type",
+                    "label": "Trap",
+                    "value": "s_trap"
+                  },
+                  {
+                    "key": "spec:product_type",
+                    "label": "Type",
+                    "value": "one_piece"
+                  },
+                  {
+                    "key": "spec:flush_type",
+                    "label": "Flush type",
+                    "value": "washdown"
+                  },
+                  {
+                    "key": "spec:trap_length",
+                    "label": "Trap outlet length",
+                    "value": "200 mm"
+                  },
+                  {
+                    "key": "spec:brand",
+                    "label": "Brand",
+                    "value": "SORENTO"
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTWC203-BLUE"
+              }
+            ],
+            "last_updated_at": "2026-09-04T18:58:44.101717",
+            "result_type": "products",
+            "spec_vocabulary": {
+              "brand": "Brand",
+              "class": "Product class",
+              "flush_type": "Flush type",
+              "product_type": "Type",
+              "trap_length": "Trap outlet length",
+              "trap_type": "Trap"
+            }
+          },
+          "tool": "crm_master_products_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "master_products",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "srtwc 203"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_product",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to get the full specification for srtwc 203"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": null,
+          "countryCode": "MY",
+          "created_at": 1772720674,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": "end_user"
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000070"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000070",
+          "id": 900000070,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000070",
+          "profilePic": null,
+          "status": "open",
+          "tags": []
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000022\", \"firstName\": \"ZZT\", \"lastName\": \"Ramli\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": null,
+              "firstName": "ZZT-agent",
+              "id": null,
+              "lastName": ""
+            },
+            "countryCode": "MY",
+            "created_at": 1772720674,
+            "email": null,
+            "firstName": "ZZT-900000070",
+            "id": 900000070,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000070",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "8ceab26d-84a3-4e07-aceb-a72d41a59361",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxOTM1MDg3ODEVAgASGCBBQzExNEI5Q0QyN0I1REVCNzhFMjFEMThFODM4MDY0QwA=",
+            "contactId": 900000070,
+            "message": {
+              "text": "Tq",
+              "type": "text"
+            },
+            "messageId": 1789024662000000,
+            "timestamp": 1789024662000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message"
+        ],
+        "branch_kind": "low_signal",
+        "canned": [],
+        "entity_ids": [],
+        "focus_after": null,
+        "pending": null,
+        "text": "You\u2019re welcome! Happy to help.",
+        "tools": []
+      },
+      "resolutions": {
+        "resolutions": [],
+        "tokens": [],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 9,
+        "recorded_at": "2026-09-10T16:17:47.218377+09:00",
+        "turn_id": "013ce647-fb41-47cd-a3c0-e4f8656ec06c"
+      },
+      "tool_results": [],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": null,
+        "entities": [],
+        "entity_op": "reuse",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": null,
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "casual",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to thank the assistant"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": null,
+          "countryCode": "MY",
+          "created_at": 1772720674,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": "end_user"
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000070"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000070",
+          "id": 900000070,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000070",
+          "profilePic": null,
+          "status": "open",
+          "tags": []
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000022\", \"firstName\": \"ZZT\", \"lastName\": \"Ramli\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": null,
+              "firstName": "ZZT-agent",
+              "id": null,
+              "lastName": ""
+            },
+            "countryCode": "MY",
+            "created_at": 1772720674,
+            "email": null,
+            "firstName": "ZZT-900000070",
+            "id": 900000070,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000070",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "537b2870-cee9-4a47-b50a-600f53eb2c14",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxOTM1MDg3ODEVAgASGCBBQ0NENUNEOEYwQTY4RDY4NDg3RkM3RjVGMzUyMDU1OQA=",
+            "contactId": 900000070,
+            "message": {
+              "text": "SRTWB7098 SEMI-RECESSED BASIN stock available?",
+              "type": "text"
+            },
+            "messageId": 1789027217000000,
+            "timestamp": 1789027217000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message",
+          "send_attachments"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "292fc6c3-b2e4-4013-ab81-80b445eaf074",
+          "3e844cfa-5e60-4eab-9768-4fa1eeaa44a9",
+          "783a2349-6f44-4f30-8d6c-acfb82c6eaa6",
+          "891d7257-2672-474a-a89c-1a0b13f3ab17",
+          "9865c348-7dca-4812-8888-94b092116230",
+          "9e6c9496-8174-4289-a591-274b61566375",
+          "bd74b189-e4d1-46ee-a6e5-13625e721f91",
+          "d9d8e031-83ae-475e-a5de-9bb54d157f72",
+          "f8a1a259-11e3-4d3a-987b-7967480395ad",
+          "fc4f387c-25d6-40b3-8914-24f46c55c014"
+        ],
+        "focus_after": null,
+        "pending": null,
+        "text": "Stock details found for the requested products.\n\n1. *Product Code:* BRBC22149W-1-ENG\n*Warehouse:* WH3 (PSM)\n*System Location:* WH3\n*Quantity On Hand:* 8\n*Outstanding:* 0\n\n2. *Product Code:* BRBC22149W-1-ENG\n*Warehouse:* WH3 (PSM)\n*System Location:* WH3-NTC\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n3. *Product Code:* BRBC22332W-ENG\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 1\n*Outstanding:* 0\n\n4. *Product Code:* SRTWB1264\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 70\n*Outstanding:* 0\n\n5. *Product Code:* SRTWB1264\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-BB\n*Quantity On Hand:* 1\n*Outstanding:* 0\n\n6. *Product Code:* SRTWB1264\n*Warehouse:* MERU\n*System Location:* MWH\n*Quantity On Hand:* 77\n*Outstanding:* 0\n\n7. *Product Code:* SRTWB1264\n*Warehouse:* WH3 (PSM)\n*System Location:* WH3-BB\n*Quantity On Hand:* 34\n*Outstanding:* 0\n\n8. *Product Code:* SRTWB7018\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 12\n*Outstanding:* 0\n\n9. *Product Code:* SRTWB7018\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-BB\n*Quantity On Hand:* 27\n*Outstanding:* 917\n\n10. *Product Code:* SRTWB7018\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-NTC\n*Quantity On Hand:* 10\n*Outstanding:* 10\n\n11. *Product Code:* SRTWB7018\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SMC\n*Quantity On Hand:* 0\n*Outstanding:* 25\n\n12. *Product Code:* SRTWB7018\n*Warehouse:* BERSATU (PORT KLANG)\n*System Location:* DC1\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n13. *Product Code:* SRTWB7018\n*Warehouse:* BERSATU (PORT KLANG)\n*System Location:* DC1-BB\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n14. *Product Code:* SRTWB7018\n*Warehouse:* BERSATU (PORT KLANG)\n*System Location:* DC1-NTC\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n15. *Product Code:* SRTWB7018\n*Warehouse:* MERU\n*System Location:* MWH\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n16. *Product Code:* SRTWB7018\n*Warehouse:* MERU\n*System Location:* MWH-BB\n*Quantity On Hand:* 200\n*Outstanding:* 0\n\n17. *Product Code:* SRTWB7099\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 1\n*Outstanding:* 3\n\n18. *Product Code:* SRTWB7099\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-BB\n*Quantity On Hand:* 0\n*Outstanding:* 925\n\n19. *Product Code:* SRTWB7099\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-IB\n*Quantity On Hand:* 0\n*Outstanding:* 1092\n\n20. *Product Code:* SRTWB7099\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-IR\n*Quantity On Hand:* 0\n*Outstanding:* 168\n\n21. *Product Code:* SRTWB7099\n*Warehouse:* BERSATU (PORT KLANG)\n*System Location:* DC1-BB\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n22. *Product Code:* SRTWB7099\n*Warehouse:* BERSATU (PORT KLANG)\n*System Location:* DC1-IR\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n23. *Product Code:* SRTWB7099\n*Warehouse:* MERU\n*System Location:* MWH\n*Quantity On Hand:* 70\n*Outstanding:* 0\n\n24. *Product Code:* SRTWB7099\n*Warehouse:* MERU\n*System Location:* MWH-BB\n*Quantity On Hand:* 49\n*Outstanding:* 0\n\n25. *Product Code:* SRTWB7099\n*Warehouse:* MERU\n*System Location:* MWH-IB\n*Quantity On Hand:* 320\n*Outstanding:* 0\n\n26. *Product Code:* SRTWB7099\n*Warehouse:* MERU\n*System Location:* MWH-IR\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n27. *Product Code:* SRTWB7099\n*Warehouse:* WH3 (PSM)\n*System Location:* WH3-BB\n*Quantity On Hand:* 93\n*Outstanding:* 0\n\n28. *Product Code:* SRTWB7099\n*Warehouse:* WH3 (PSM)\n*System Location:* WH3-IB\n*Quantity On Hand:* 267\n*Outstanding:* 0\n\n29. *Product Code:* SRTWB7099\n*Warehouse:* WH3 (PSM)\n*System Location:* WH3-IR\n*Quantity On Hand:* 70\n*Outstanding:* 0\n\n_Data last updated: 10/09/2026 11:11:07_\n\n_Matched on: Wash Basin and mounting: Semi Recessed._",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "contact_id",
+              "date_mode",
+              "include_sellable",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_inventory_stock_balance_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "SRTWB7098 SEMI-RECESSED BASIN",
+                "entity_type": "product",
+                "uuid": "292fc6c3-b2e4-4013-ab81-80b445eaf074"
+              }
+            ],
+            "resolved": true,
+            "token": "SRTWB7098 SEMI-RECESSED BASIN"
+          }
+        ],
+        "tokens": [
+          "SRTWB7098 SEMI-RECESSED BASIN"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 9,
+        "recorded_at": "2026-09-10T17:00:23.272973+09:00",
+        "turn_id": "2e2fd3c3-feef-4cb7-8d46-a6957e053374"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 10,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 10,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "contact_id": "900000070",
+            "date_mode": null,
+            "include_sellable": true,
+            "is_active": null,
+            "product_ids": [
+              "d9d8e031-83ae-475e-a5de-9bb54d157f72",
+              "292fc6c3-b2e4-4013-ab81-80b445eaf074",
+              "9e6c9496-8174-4289-a591-274b61566375",
+              "9865c348-7dca-4812-8888-94b092116230",
+              "fc4f387c-25d6-40b3-8914-24f46c55c014",
+              "bd74b189-e4d1-46ee-a6e5-13625e721f91",
+              "891d7257-2672-474a-a89c-1a0b13f3ab17",
+              "3e844cfa-5e60-4eab-9768-4fa1eeaa44a9",
+              "783a2349-6f44-4f30-8d6c-acfb82c6eaa6",
+              "f8a1a259-11e3-4d3a-987b-7967480395ad"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "bytes": 15181,
+            "head": "{\"result_type\": \"stock\", \"intro\": \"Stock details found for the requested products.\", \"items\": [{\"title\": \"BRBC22149W-1-ENG\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"BRBC22149W-1-ENG\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"WH3 (PSM)\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"WH3\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 8}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"BRBC22149W-1-ENG\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"BRBC22149W-1-ENG\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"WH3 (PSM)\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"WH3-NTC\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 0}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"BRBC22332W-ENG\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"BRBC22332W-ENG\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"BUKIT RAJA\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"BRW\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 1}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWB1264\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWB1264\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"BUKIT RAJA\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"BRW\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 70}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWB1264\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWB1264\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"BUKIT RAJA\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"BRW-BB\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 1}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWB1264\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWB1264\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"MERU\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"MWH\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 77}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWB1264\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWB1264\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"WH3 (PSM)\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"WH3-BB\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 34}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWB7018\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWB7018\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"BUKIT RAJA\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"BRW\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 12}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWB7018\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWB7018\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"BUKIT RAJA\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"BRW-BB\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 27}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 917}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWB7018\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWB7018\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"BUKIT RAJA\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"BRW-NTC\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 10}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 10}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWB7018\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWB7018\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"BUKIT RAJA\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"BRW-SMC\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 0}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 25}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWB7018\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWB7018\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"BERSATU (PORT KLANG)\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"DC1\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 0}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWB7018\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWB7018\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"BERSATU (PORT KLANG)\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"DC1-BB\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 0}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWB7018\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWB7018\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"BERSATU (PORT KLANG)\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"DC1-NTC\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 0}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWB7018\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWB7018\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"MERU\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"MWH\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 0}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWB7018\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWB7018\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"MERU\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"MWH-BB\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 200}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expi",
+            "truncated": true
+          },
+          "tool": "crm_inventory_stock_balance_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "inventory",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": false,
+            "current_message": true,
+            "hint": "product",
+            "raw": "SRTWB7098 SEMI-RECESSED BASIN"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_stock",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to check stock availability for SRTWB7098 SEMI-RECESSED BASIN"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "Incoming Stock Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": null,
+          "countryCode": "MY",
+          "created_at": 1772720674,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": "end_user"
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000070"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000070",
+          "id": 900000070,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000070",
+          "profilePic": null,
+          "status": "open",
+          "tags": []
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000022\", \"firstName\": \"ZZT\", \"lastName\": \"Ramli\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": null,
+              "firstName": "ZZT-agent",
+              "id": null,
+              "lastName": ""
+            },
+            "countryCode": "MY",
+            "created_at": 1772720674,
+            "email": null,
+            "firstName": "ZZT-900000070",
+            "id": 900000070,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000070",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "1e8df736-712c-4f87-adf0-2c31e530fbcf",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxOTM1MDg3ODEVAgASGCBBQzQzNkQwMTI1QTc1QTY4MUM5OEE2NzJCMkVFMzUxQwA=",
+            "contactId": 900000070,
+            "message": {
+              "text": "Any incoming shipment for srtwb7098",
+              "type": "text"
+            },
+            "messageId": 1789027373000000,
+            "timestamp": 1789027373000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message",
+          "send_attachments"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "d41ba239-e664-4a82-af30-ec5bc08d926c"
+        ],
+        "focus_after": null,
+        "pending": {
+          "kind": "team_pick",
+          "option_labels": [
+            "stock"
+          ]
+        },
+        "text": "I have attached the file(s) below.\n\n1. *Product Code:* SRTWB7098\n*Container:* TRHU5925954\n*ETA:* 2026-09-14\n*Incoming Quantity:* 200\n\ud83d\udea9  *(PENDING ALLOCATION)*",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "contact_id",
+              "date_mode",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_incoming_stock_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "srtwb7098",
+                "entity_type": "product",
+                "uuid": "d41ba239-e664-4a82-af30-ec5bc08d926c"
+              }
+            ],
+            "resolved": true,
+            "token": "srtwb7098"
+          }
+        ],
+        "tokens": [
+          "srtwb7098"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 9,
+        "recorded_at": "2026-09-10T17:02:58.239726+09:00",
+        "turn_id": "22c10d77-38e5-41a7-8fb3-63fea4d5bc7d"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 1,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 1,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "contact_id": "900000070",
+            "date_mode": null,
+            "is_active": null,
+            "product_ids": [
+              "d41ba239-e664-4a82-af30-ec5bc08d926c"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "attachments": [
+              {
+                "attachmentType": null,
+                "filename": "TRHU5925954.xlsx",
+                "mimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "url": "https://cdn-sorento.com/packing_list/7901cb42-535b-4c47-a692-b16121756759/TRHU5925954.xlsx"
+              }
+            ],
+            "field_access": {
+              "denied": [
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "eta_delay_date",
+                  "label": "ETA Delay",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "inspection_date",
+                  "label": "CIDB Inspection",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "approval_date",
+                  "label": "CIDB Approval",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "gatepass_date",
+                  "label": "Gatepass",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "warehouse_arrival_date",
+                  "label": "Warehouse Arrival",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "informed_collection_date",
+                  "label": "Collection Informed",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "collection_date",
+                  "label": "Collection",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "loading_date",
+                  "label": "Loading",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "etc_date",
+                  "label": "ETC",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "etd_date",
+                  "label": "ETD",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "liner_code",
+                  "label": "Liner",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "china_forwarder",
+                  "label": "China Forwarder",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "malaysia_forwarder",
+                  "label": "Malaysia Forwarder",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "consignee",
+                  "label": "Consignee",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "delivery_warehouse",
+                  "label": "Delivery Warehouse",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "free_days_available",
+                  "label": "Free Days Available",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "loc",
+                  "label": "Location",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "stacked",
+                  "label": "Stacked",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "coa_permit_no",
+                  "label": "COA Permit No.",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "source_sheet",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                }
+              ],
+              "note": "These fields are omitted because this caller may not see them. Absent does NOT mean the value is unknown or not yet reached."
+            },
+            "field_vocabulary": {
+              "approval_date": "CIDB Approval",
+              "china_forwarder": "China Forwarder",
+              "coa_permit_no": "COA Permit No.",
+              "collection_date": "Collection",
+              "consignee": "Consignee",
+              "delivery_warehouse": "Delivery Warehouse",
+              "estimated_arrival_date": "ETA",
+              "eta_delay_date": "ETA Delay",
+              "etc_date": "ETC",
+              "etd_date": "ETD",
+              "free_days_available": "Free Days Available",
+              "gatepass_date": "Gatepass",
+              "informed_collection_date": "Collection Informed",
+              "inspection_date": "CIDB Inspection",
+              "liner_code": "Liner",
+              "loading_date": "Loading",
+              "loc": "Location",
+              "malaysia_forwarder": "Malaysia Forwarder",
+              "stacked": "Stacked",
+              "warehouse_arrival_date": "Warehouse Arrival"
+            },
+            "has_result": true,
+            "intro": "I have attached the file(s) below.",
+            "items": [
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "SRTWB7098"
+                  },
+                  {
+                    "key": "shipping_container_number",
+                    "label": "Container",
+                    "value": "TRHU5925954"
+                  },
+                  {
+                    "key": "estimated_arrival_date",
+                    "label": "ETA",
+                    "value": "2026-09-14"
+                  },
+                  {
+                    "key": "remaining_incoming_quantity",
+                    "label": "Incoming Quantity",
+                    "value": 200
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": true
+                },
+                "title": "SRTWB7098"
+              }
+            ],
+            "last_updated_at": null,
+            "result_type": "incoming_stock"
+          },
+          "tool": "crm_incoming_stock_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "incoming",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "srtwb7098"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_incoming",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": "specific",
+        "top_n": null,
+        "user_goal": "trying to check incoming shipment for srtwb7098"
+      }
+    }
+  ]
+}

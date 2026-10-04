@@ -149,6 +149,30 @@ class Brand(Base, CompanyScopedMixin):
     )
 
 
+class ItemType(Base, CompanyScopedMixin):
+    """AutoCount `Item.ItemType` (MISC, PROJECT, WASTE, KITCHEN SINK, OMEX, ...) as
+    reference data, the brand rule exactly: back-created code = name = raw value by
+    the products ingest when a pushed `item_type_code` does not exist yet
+    (`product_rules.ensure_reference`). PLAN-item-type-crm-3oct.md D1."""
+    __tablename__ = "item_types"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    item_type_code = Column(String(50), nullable=False)
+    item_type_name = Column(String(150), nullable=False)
+    description = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True, server_default=text("true"), nullable=False)
+    created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=False), nullable=True)
+
+    __table_args__ = (
+        Index(
+            "uq_item_types_company_item_type_code",
+            "company_id", "item_type_code",
+            unique=True,
+        ),
+    )
+
+
 class UnitOfMeasure(Base, CompanyScopedMixin):
     __tablename__ = "units_of_measure"
     
@@ -213,6 +237,12 @@ class Product(Base, CompanyScopedMixin):
     remark = Column(Text, nullable=True)
     category_id = Column(UUID(as_uuid=False), ForeignKey("product_categories.id"), nullable=False)
     brand_id = Column(UUID(as_uuid=False), ForeignKey("brands.id", ondelete="SET NULL"), nullable=True)
+    # AutoCount ItemType (migration item_type_0001). Set only by the products ingest.
+    # Unrelated to `item_type` below, the CRM's own product/bundle/service/other enum.
+    item_type_id = Column(
+        UUID(as_uuid=False), ForeignKey("item_types.id", ondelete="SET NULL"), nullable=True,
+        index=True,
+    )
     # Self-referential variant graph. A variant points at its (longest existing
     # boundary-prefix) parent product; a base has variant_of_id IS NULL. Deleting
     # a parent SET-NULLs its children (never blocks) - derivation re-anchors them

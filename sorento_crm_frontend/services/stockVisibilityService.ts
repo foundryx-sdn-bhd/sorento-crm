@@ -121,6 +121,8 @@ export interface StockVisibilityWarehouse {
   id: string;
   code: string;
   name: string | null;
+  /** The location's company, set when the read spans every granted company. */
+  company_name?: string | null;
 }
 
 export interface StockVisibilityPolicy {
@@ -248,10 +250,16 @@ interface WarehouseListRow {
   id: string;
   warehouse_code: string;
   warehouse_name?: string | null;
+  company_name?: string | null;
 }
 
 function toWarehouseRef(row: WarehouseListRow): StockVisibilityWarehouse {
-  return { id: row.id, code: row.warehouse_code, name: row.warehouse_name ?? null };
+  return {
+    id: row.id,
+    code: row.warehouse_code,
+    name: row.warehouse_name ?? null,
+    company_name: row.company_name ?? undefined,
+  };
 }
 
 async function fetchWarehouses(
@@ -271,7 +279,7 @@ export async function searchStockVisibilityWarehouses(
   return fetchWarehouses(
     buildDataGridParams(
       { pageIndex: 0, pageSize: 200, searchQuery: query, sorting: [{ id: 'warehouse_code', desc: false }] },
-      { is_active: true },
+      { is_active: true, company_scope: 'grants' },
     ),
     'Failed to load locations',
   );
@@ -282,7 +290,7 @@ export async function getDealerPoolWarehouses(): Promise<StockVisibilityWarehous
   return fetchWarehouses(
     buildDataGridParams(
       { pageIndex: 0, pageSize: 200, sorting: [{ id: 'warehouse_code', desc: false }] },
-      { segment: 'dealer', is_active: true },
+      { segment: 'dealer', is_active: true, company_scope: 'grants' },
     ),
     'Failed to load the dealer pool',
   );

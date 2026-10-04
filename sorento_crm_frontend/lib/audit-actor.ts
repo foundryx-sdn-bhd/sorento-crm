@@ -22,6 +22,7 @@ const AUTH_METHOD_LABELS: Record<string, string> = {
   portal_token: 'Portal token',
   api_key: 'API key',
   impersonation: 'Impersonation',
+  dev_login: 'Dev sign-in',
 };
 
 /** Actor kind in words; null for legacy / unset rows (the caller hides the row). */

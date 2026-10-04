@@ -1,0 +1,13 @@
+*Customer:* ACME HARDWARE SDN BHD [A/C I], BETA TRADING SDN BHD
+*Product:* all
+*Channel:* Project
+*Location:* WH-A
+*Delivery date:* 01/07/2026 to 30/09/2026
+
+*Total:* Qty 20, RM 2,000.00
+Aug 2026: Qty 20, RM 2,000.00
+
+*Drill down:*
+1. By customer
+2. By product
+3. Delivery orders

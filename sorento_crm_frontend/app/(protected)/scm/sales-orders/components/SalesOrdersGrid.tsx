@@ -49,6 +49,7 @@ import { formatMyrExact } from '@/app/(protected)/project-sales/_shared/lib/mone
 import { buildPlanActions, PLAN_PERMISSION } from '../lib/planActions';
 import { formatStatusLabel } from '@/lib/status-badge';
 import { demandClassBadge } from '../../lib/demandClass';
+import { TRANSFERABLE_FILTER_OPTIONS, transferableBadge } from '../../lib/transferable';
 import { salesOrderPlannedBadge } from '../../lib/salesOrderPlanned';
 import {
   SALES_ORDER_STATUS_FILTER_OPTIONS,
@@ -217,6 +218,7 @@ type SalesOrdersFilters = {
   customer_code?: string;
   sales_agent_id?: string;
   demand_class?: string;
+  transferable?: string;
   outstanding?: true;
 };
 
@@ -303,6 +305,8 @@ export default function SalesOrdersGrid({ salesAgentId, listingKey }: SalesOrder
   // The planning class the classification agents resolved - `order_type_label` is the ERP
   // document type and is blank on almost every row, so it never answered this question.
   const demandClassFilter = viewFilters?.demand_class ?? '';
+  // AutoCount's Transferable flag (SO-TRANSFERABLE): yes | no | unknown.
+  const transferableFilter = viewFilters?.transferable ?? '';
   // Never surfaced while pinned: the pin already wins in `effectiveAgentId`, and a stored
   // agent filter from the unpinned list has nothing to say inside one agent's own record.
   const agentFilter = pinnedToAgent ? '' : (viewFilters?.sales_agent_id ?? '');
@@ -323,6 +327,7 @@ export default function SalesOrdersGrid({ salesAgentId, listingKey }: SalesOrder
       if (merged.customer_code) cleaned.customer_code = merged.customer_code;
       if (merged.sales_agent_id) cleaned.sales_agent_id = merged.sales_agent_id;
       if (merged.demand_class) cleaned.demand_class = merged.demand_class;
+      if (merged.transferable) cleaned.transferable = merged.transferable;
       if (merged.outstanding) cleaned.outstanding = true;
       setViewFilters(Object.keys(cleaned).length ? cleaned : null);
       setPagination((p) => ({ ...p, pageIndex: 0 }));
@@ -361,7 +366,7 @@ export default function SalesOrdersGrid({ salesAgentId, listingKey }: SalesOrder
   // A pinned agent wins over the filter, which is not offered while it is pinned.
   const effectiveAgentId = salesAgentId ?? (agentFilter || null);
 
-  const { data, isLoading, isPlaceholderData, isFetching, refetch } = useSalesOrders({
+  const { data, isLoading, isPlaceholderData, isFetching, refetch, error } = useSalesOrders({
     pageIndex: pagination.pageIndex,
     pageSize: pagination.pageSize,
     sorting,
@@ -375,6 +380,7 @@ export default function SalesOrdersGrid({ salesAgentId, listingKey }: SalesOrder
     outstanding: outstandingOnly,
     salesAgentId: effectiveAgentId,
     demandClass: demandClassFilter || null,
+    transferable: transferableFilter || null,
     // One fetch, with the remembered view already applied (AC-B3).
     enabled: !isViewPrefsLoading,
   });
@@ -411,6 +417,7 @@ export default function SalesOrdersGrid({ salesAgentId, listingKey }: SalesOrder
           outstanding: outstandingOnly ? 'true' : undefined,
           sales_agent_id: effectiveAgentId || undefined,
           demand_class: demandClassFilter || undefined,
+          transferable: transferableFilter || undefined,
         },
       ),
     [
@@ -427,6 +434,7 @@ export default function SalesOrdersGrid({ salesAgentId, listingKey }: SalesOrder
       effectiveAgentId,
       outstandingOnly,
       demandClassFilter,
+      transferableFilter,
     ],
   );
 
@@ -592,6 +600,24 @@ export default function SalesOrdersGrid({ salesAgentId, listingKey }: SalesOrder
         },
         size: 140,
         meta: { headerTitle: 'Type' },
+      },
+      {
+        // AutoCount's Transferable flag (SO-TRANSFERABLE). Read-only everywhere: AutoCount
+        // owns it. Not sortable - the route has no sort key for it, and the filter is how a
+        // buyer finds the F orders.
+        accessorKey: 'is_transferable',
+        header: ({ column }) => <DataGridColumnHeader title="Transferable" column={column} />,
+        cell: ({ row }) => {
+          const flag = transferableBadge(row.original.is_transferable);
+          return (
+            <Badge variant={flag.variant} appearance="light" size="md">
+              {flag.label}
+            </Badge>
+          );
+        },
+        size: 120,
+        enableSorting: false,
+        meta: { headerTitle: 'Transferable' },
       },
       {
         accessorKey: 'priority',
@@ -894,7 +920,8 @@ export default function SalesOrdersGrid({ salesAgentId, listingKey }: SalesOrder
     (customerFilter ? 1 : 0) +
     (agentFilter ? 1 : 0) +
     (outstandingOnly ? 1 : 0) +
-    (demandClassFilter ? 1 : 0);
+    (demandClassFilter ? 1 : 0) +
+    (transferableFilter ? 1 : 0);
 
   // The chip's plain-words label (PLAN-listing-view-memory). Every axis states a NAME, never
   // a raw code or id; an axis whose name has not resolved yet (the customer/agent list still
@@ -911,6 +938,10 @@ export default function SalesOrdersGrid({ salesAgentId, listingKey }: SalesOrder
     if (demandClassFilter) {
       const label = optionLabel(DEMAND_CLASS_FILTER_OPTIONS, demandClassFilter);
       if (label) parts.push(label);
+    }
+    if (transferableFilter) {
+      const label = optionLabel(TRANSFERABLE_FILTER_OPTIONS, transferableFilter);
+      if (label) parts.push(`Transferable: ${label}`);
     }
     if (dateFrom && dateTo) parts.push(`Dates ${fmtDate(dateFrom)} to ${fmtDate(dateTo)}`);
     else if (dateFrom) parts.push(`Dates from ${fmtDate(dateFrom)}`);
@@ -934,6 +965,7 @@ export default function SalesOrdersGrid({ salesAgentId, listingKey }: SalesOrder
     priorityFilter,
     sourceFilter,
     demandClassFilter,
+    transferableFilter,
     dateFrom,
     dateTo,
     customerFilter,
@@ -969,6 +1001,8 @@ export default function SalesOrdersGrid({ salesAgentId, listingKey }: SalesOrder
         table={table}
         recordCount={data?.pagination.total || 0}
         isLoading={isLoading || isViewPrefsLoading}
+        error={error}
+        onRetry={() => void refetch()}
         isPlaceholderData={isPlaceholderData}
         emptyMessage={emptyMessage}
         // The whole row opens the order. The SO-number link stays a real anchor so
@@ -1077,6 +1111,19 @@ export default function SalesOrdersGrid({ salesAgentId, listingKey }: SalesOrder
                         onChange={(v) => applyFilters({ demand_class: v || undefined })}
                         options={DEMAND_CLASS_FILTER_OPTIONS}
                         placeholder="All types"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="so-transferable" className="mb-1 block">
+                        Transferable
+                      </Label>
+                      <SearchableSelect
+                        id="so-transferable"
+                        value={transferableFilter}
+                        onChange={(v) => applyFilters({ transferable: v || undefined })}
+                        options={TRANSFERABLE_FILTER_OPTIONS}
+                        placeholder="All"
+                        clearable
                       />
                     </div>
                     <div>

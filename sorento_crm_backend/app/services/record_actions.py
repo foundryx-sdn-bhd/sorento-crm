@@ -991,6 +991,20 @@ def _unassign_customer_sales_agent(db: Session, payload: dict):
     )
 
 
+def _delete_customer_group(db: Session, payload: dict):
+    from app.services.customer_group_service import CustomerGroupService
+
+    return CustomerGroupService(db).delete_group(_entity_id(payload))
+
+
+def _remove_customer_from_group(db: Session, payload: dict):
+    from app.services.customer_group_service import CustomerGroupService
+
+    return CustomerGroupService(db).remove_customer(
+        _entity_id(payload), payload.get("customer_group_id")
+    )
+
+
 def _remove_spec_visibility_policy(db: Session, payload: dict):
     from app.services.error_handler import handle_not_found, handle_validation_error
     from app.services.field_access import resolve_contact_id
@@ -1296,6 +1310,30 @@ register(
         window=WINDOW_REVERSIBLE,
         permission="master_data.sales_agents.edit",
         label="Unassign customer",
+    )
+)
+
+register(
+    FormAction(
+        key="customer_group.delete",
+        entity_types=("customer_group",),
+        execute=_delete_customer_group,
+        # Hard delete: the ledgers keep existing with no group (FK ON DELETE SET NULL).
+        window=WINDOW_DESTRUCTIVE,
+        permission="order_management.customers.delete",
+        label="Delete customer group",
+    )
+)
+
+register(
+    FormAction(
+        key="customer.remove_from_group",
+        entity_types=("customer",),
+        execute=_remove_customer_from_group,
+        # Reversible: the ledger can be added back from the group page.
+        window=WINDOW_REVERSIBLE,
+        permission="order_management.customers.edit",
+        label="Remove from group",
     )
 )
 
@@ -2171,5 +2209,77 @@ register(
         window=WINDOW_DESTRUCTIVE,
         permission="user_management.contacts.edit",
         label="Delete fact",
+    )
+)
+
+
+# --------------------------------------------------------------------------------------
+# Ideas (IDEATION-IN-CRM): the ss call is made as the user who started the action, because
+# the ss comment and idea rules (own-or-moderator, scope) are decided per embed principal.
+# --------------------------------------------------------------------------------------
+
+
+def _requester(db: Session, payload: dict) -> dict:
+    from app.services.ideation_gateway_service import user_for_requester
+
+    return user_for_requester(db, str(payload["requested_by_id"]))
+
+
+def _archive_idea(db: Session, payload: dict):
+    from app.services.ideation_gateway_service import call_ss, require_uuid, ss_path
+
+    user = _requester(db, payload)
+    idea_id = require_uuid(_entity_id(payload), "idea")
+    return call_ss(db, user, "POST", ss_path("embed", "ideas", idea_id, "status"), json={"status": "archived"})
+
+
+def _delete_idea(db: Session, payload: dict):
+    from app.services.ideation_gateway_service import call_ss, require_uuid, ss_path
+
+    user = _requester(db, payload)
+    idea_id = require_uuid(_entity_id(payload), "idea")
+    return call_ss(db, user, "DELETE", ss_path("embed", "ideas", idea_id))
+
+
+def _delete_idea_comment(db: Session, payload: dict):
+    from app.services.ideation_gateway_service import call_ss, require_uuid, ss_path
+
+    user = _requester(db, payload)
+    idea_id = require_uuid(payload.get("idea_id"), "idea")
+    comment_id = require_uuid(_entity_id(payload), "comment")
+    return call_ss(db, user, "DELETE", ss_path("embed", "ideas", idea_id, "comments", comment_id))
+
+
+register(
+    FormAction(
+        key="idea.archive",
+        entity_types=("idea",),
+        execute=_archive_idea,
+        window=WINDOW_REVERSIBLE,
+        permission="ideation.ideas.manage",
+        label="Archive idea",
+    )
+)
+
+register(
+    FormAction(
+        key="idea.delete",
+        entity_types=("idea",),
+        execute=_delete_idea,
+        window=WINDOW_DESTRUCTIVE,
+        permission="ideation.ideas.manage",
+        label="Delete idea",
+    )
+)
+
+register(
+    FormAction(
+        key="idea_comment.delete",
+        entity_types=("idea_comment",),
+        execute=_delete_idea_comment,
+        window=WINDOW_DESTRUCTIVE,
+        # Any viewer may park the delete of a comment; ss decides whether it is theirs to delete.
+        permission="ideation.board.view",
+        label="Delete comment",
     )
 )

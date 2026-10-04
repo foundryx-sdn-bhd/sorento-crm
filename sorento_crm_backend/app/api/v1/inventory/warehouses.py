@@ -1,9 +1,15 @@
 """Warehouses API routes."""
-from fastapi import APIRouter, Depends, Query, HTTPException, status, Body
+from fastapi import APIRouter, Depends, Query, HTTPException, Request, status, Body
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from typing import Optional
+from typing import Literal, Optional
+from app.services.company_scope_resolver import (
+    company_name_map,
+    grants_requested,
+    tag_company,
+    widen_if_requested,
+)
 from app.database import get_db
 from app.dependencies import get_current_user, get_current_user_or_api_key, require_permission
 from app.services.inventory_service import WarehouseService
@@ -45,22 +51,30 @@ async def get_warehouses(
     ),
     sort: Optional[str] = Query(None, description="Sort field: warehouse_code|warehouse_name|location|is_active|fulfilment_planning|created_at|updated_at|zones_count|stock_count"),
     dir: Optional[str] = Query("asc", description="asc|desc"),
+    company_scope: Optional[Literal["grants"]] = Query(
+        None,
+        description="`grants` reads every company the caller is granted (staff sessions only) and tags each row with its company.",
+    ),
+    request: Request = None,
     current_user: dict = Depends(get_current_user_or_api_key),
     db: Session = Depends(get_db)
 ):
     """Get warehouses with pagination, search, and sort. Use is_active=true for active-only."""
     try:
         service = WarehouseService(db)
-        result = service.list_warehouses(
-            page=page,
-            limit=limit,
-            query=query,
-            warehouse_ids=parse_uuid_list(warehouse_ids, param_name="warehouse_ids"),
-            is_active=is_active,
-            segment=segment,
-            sort_field=sort,
-            sort_dir=dir,
-        )
+        with widen_if_requested(db, request, current_user, company_scope):
+            result = service.list_warehouses(
+                page=page,
+                limit=limit,
+                query=query,
+                warehouse_ids=parse_uuid_list(warehouse_ids, param_name="warehouse_ids"),
+                is_active=is_active,
+                segment=segment,
+                sort_field=sort,
+                sort_dir=dir,
+            )
+            if grants_requested(request, current_user, company_scope):
+                tag_company(result["data"], company_name_map(db))
         return result
     except Exception as e:
         raise handle_internal_error(str(e))

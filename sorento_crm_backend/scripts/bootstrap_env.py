@@ -839,6 +839,31 @@ def seed_reference_data() -> None:
             db.close()
 
 
+def seed_n8n_sales_reports_grant() -> None:
+    """Replay `selfref_0001_n8n_sales_view`'s grant (CHATBOT-SELFREF-SCOPE B1).
+
+    `sales.reports.view` on the `integration_n8n` role is a migration-body seed, and a
+    create_all database never runs it, so the chatbot's `crm_sales_analysis` call would
+    be 403 on a fresh install exactly as it was in production. Calls the migration's own
+    function rather than restating the SQL (the 311 precedent); idempotent, and a database
+    without the role yet grants nothing and fails nothing.
+    """
+    import importlib.util
+    from pathlib import Path
+
+    from app.database import engine
+
+    versions = Path(__file__).resolve().parent.parent / "alembic" / "versions"
+    spec = importlib.util.spec_from_file_location(
+        "_selfref_0001_grant", versions / "selfref_0001_n8n_sales_view.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    with engine.begin() as conn:
+        module.grant_sales_reports_view(conn)
+    log.info("integration_n8n: sales.reports.view granted")
+
+
 # This project names revisions descriptively ("313_purchase_request_pic") rather
 # than with alembic's 12-char hashes, and plenty of them run past alembic's own
 # ``version_num VARCHAR(32)``. The long-lived databases were widened at some point
@@ -912,6 +937,7 @@ def main() -> int:
     create_views()
     if not args.skip_seed:
         seed_reference_data()
+        seed_n8n_sales_reports_grant()
         seed_scm_module_data()
         seed_fulfilment_planning_flags()
         seed_customer_import_aliases()

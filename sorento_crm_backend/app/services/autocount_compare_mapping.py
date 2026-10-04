@@ -14,12 +14,15 @@ from sqlalchemy.orm import Session
 from app.models.autocount_compare_mapping import AutocountCompareMapping
 from app.services.error_handler import AppException
 
-KINDS = ("order_listing", "order_tracking")
+KINDS = ("order_listing", "order_tracking", "grn_detail_listing", "grn_listing")
 TRANSFORMS = ("text", "number", "money", "date", "percent_text", "percent_fraction", "cancel_flag")
 FIELDS_BY_KIND: dict[str, tuple[str, ...]] = {
     "order_listing": ("doc_no", "doc_date", "item_code", "location", "qty", "unit_price",
                       "discount", "total_ex"),
     "order_tracking": ("doc_no", "doc_date", "debtor_code", "cancel"),
+    # GRN-PULL-CRM plan 1.5: the GRN "DETAIL LISTING" (lines) and "GRN Listing" macro (headers).
+    "grn_detail_listing": ("doc_no", "doc_date", "item_code", "location", "qty", "source_doc"),
+    "grn_listing": ("doc_no", "doc_date", "creditor_code", "source_doc", "cancel"),
 }
 #: The transforms that read each field sensibly; a pairing outside this table is refused.
 TRANSFORMS_BY_FIELD: dict[str, tuple[str, ...]] = {
@@ -27,13 +30,23 @@ TRANSFORMS_BY_FIELD: dict[str, tuple[str, ...]] = {
     "debtor_code": ("text",), "doc_date": ("date",), "qty": ("number",),
     "unit_price": ("money",), "total_ex": ("money",),
     "discount": ("percent_text", "percent_fraction"), "cancel": ("cancel_flag",),
+    "creditor_code": ("text",), "source_doc": ("text",),
 }
 REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
     "order_listing": ("doc_no", "item_code"),
     "order_tracking": ("doc_no",),
+    "grn_detail_listing": ("doc_no", "item_code"),
+    "grn_listing": ("doc_no",),
 }
-#: The `kind` a compare `source` reads.
-KIND_BY_SOURCE = {"lines": "order_listing", "headers": "order_tracking"}
+#: The `kind` a compare `source` reads, per pull entity.
+KIND_BY_ENTITY_SOURCE = {
+    "delivery_orders": {"lines": "order_listing", "headers": "order_tracking"},
+    "goods_receive_notes": {"lines": "grn_detail_listing", "headers": "grn_listing"},
+}
+KIND_BY_SOURCE = KIND_BY_ENTITY_SOURCE["delivery_orders"]
+#: The pull entity whose permission guards a kind's mapping.
+ENTITY_BY_KIND = {kind: entity for entity, kinds in KIND_BY_ENTITY_SOURCE.items()
+                  for kind in kinds.values()}
 MAX_COLUMNS = 100
 
 
@@ -52,7 +65,26 @@ DEFAULT_MAPPINGS: dict[str, dict] = {
         ("Doc. No.", "text", "doc_no"), ("Date", "date", "doc_date"),
         ("Debtor Code", "text", "debtor_code"), ("Cancel", "cancel_flag", "cancel"),
     ))},
+    # "DETAIL LISTING ddmmyyyy.xlsx": one sheet named `Sheet`; `Our PO No.` is AutoCount's
+    # line `FromDocNo` (crew read of the owner's file, 2 Oct).
+    "grn_detail_listing": {"sheet_name": "Sheet", "columns": _cols((
+        ("Doc No", "text", "doc_no"), ("Doc Date", "date", "doc_date"),
+        ("Item Code", "text", "item_code"), ("Location", "text", "location"),
+        ("Qty", "number", "qty"), ("Our PO No.", "text", "source_doc"),
+    ))},
+    # "GRN Listing - Macro Version dd.mm.yyyy.xlsm": `Master` BY NAME - the workbook's active
+    # sheet is `Template` (10 documents of 27), which the Excel importer reads today.
+    "grn_listing": {"sheet_name": "Master", "columns": _cols((
+        ("Doc. No.", "text", "doc_no"), ("Date", "date", "doc_date"),
+        ("Creditor Code", "text", "creditor_code"), ("Transfer From", "text", "source_doc"),
+        ("Cancelled", "cancel_flag", "cancel"),
+    ))},
 }
+
+
+def kind_for(entity: str, source: str) -> str:
+    """The mapping kind a pull entity's compare `source` (`lines` / `headers`) reads."""
+    return KIND_BY_ENTITY_SOURCE[entity][source]
 
 
 def _unknown_kind(kind: str) -> AppException:

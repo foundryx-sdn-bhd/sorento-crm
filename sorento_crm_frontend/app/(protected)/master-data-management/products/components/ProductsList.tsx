@@ -215,8 +215,16 @@ const ProductsList = () => {
     { enabled: !isReloadRef.current },
   );
 
-  const { data: categories } = useProductCategorySelectQuery();
-  const { data: brands } = useBrandSelectQuery();
+  const {
+    data: categories,
+    error: categoriesError,
+    refetch: refetchCategories,
+  } = useProductCategorySelectQuery();
+  const {
+    data: brands,
+    error: brandsError,
+    refetch: refetchBrands,
+  } = useBrandSelectQuery();
 
   // Deep link from a "products discontinued" notification - restrict the list to
   // exactly the products reported in that batch.
@@ -905,6 +913,8 @@ const ProductsList = () => {
                     value={selectedCategory || 'all'}
                     onChange={handleCategorySelection}
                     placeholder="Category"
+                    loadError={categoriesError}
+                    onRetry={() => void refetchCategories()}
                     options={[
                       { value: 'all', label: 'All categories' },
                       ...(categories ?? []).map((cat) => ({
@@ -917,6 +927,8 @@ const ProductsList = () => {
                     value={selectedBrand || 'all'}
                     onChange={handleBrandSelection}
                     placeholder="Brand"
+                    loadError={brandsError}
+                    onRetry={() => void refetchBrands()}
                     options={[
                       { value: 'all', label: 'All brands' },
                       ...(brands ?? []).map((brand) => ({

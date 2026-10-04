@@ -3,18 +3,22 @@
 import { Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 
+import RequireAccess from '@/app/components/common/RequireAccess';
 import SpoPlannerTable from '../../components/SpoPlannerTable';
-import { usePackingListRecord } from '../components/packing-list-context';
+import { SCM_READ_PERMISSION, usePackingListRecord } from '../components/packing-list-context';
 
 /** Turning what was packed into shipping orders against the open POs behind it. */
 export default function PackingListSpoPage() {
   // `useSearchParams` needs a Suspense boundary above it, or the whole route opts out of
   // static rendering (Next's own `missing-suspense-with-csr-bailout`). The fallback is the
   // planner with no `?edit=`, which is what the page renders for every other visit anyway.
+  // The tab is not offered without SCM read; this answers a deep link (PL-TABS-ACCESS).
   return (
-    <Suspense fallback={<PackingListSpoPlanner editPurchaseOrderId={null} />}>
-      <PackingListSpoPlannerFromUrl />
-    </Suspense>
+    <RequireAccess permission={SCM_READ_PERMISSION}>
+      <Suspense fallback={<PackingListSpoPlanner editPurchaseOrderId={null} />}>
+        <PackingListSpoPlannerFromUrl />
+      </Suspense>
+    </RequireAccess>
   );
 }
 

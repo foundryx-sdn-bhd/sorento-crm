@@ -12,14 +12,14 @@ import {
   getFilteredRowModel,
   getPaginationRowModel,
 } from '@tanstack/react-table';
-import { Plus, Upload } from 'lucide-react';
+import { FolderMinus, FolderPlus, Plus, Upload, UserCog } from 'lucide-react';
 import { Badge, BadgeDot } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardFooter, CardHeader, CardTable } from '@/components/ui/card';
 import { DataGrid } from '@/components/ui/data-grid';
 import { DataGridColumnHeader } from '@/components/ui/data-grid-column-header';
 import { DataGridListToolbar } from '@/components/ui/data-grid-list-toolbar';
-import { buildSelectColumn } from '@/components/ui/data-grid-select-column';
+import { buildSelectColumn, selectedRowIds } from '@/components/ui/data-grid-select-column';
 import { DataGridPagination } from '@/components/ui/data-grid-pagination';
 import { DataGridTable } from '@/components/ui/data-grid-table';
 import { Label } from '@/components/ui/label';
@@ -27,9 +27,14 @@ import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useImportJobDrawer } from '@/components/upload-activity';
 import { useCustomers } from '../hooks/useCustomers';
+import { searchCustomerGroupsSelect } from '../../customer-groups/services/customerGroupService';
 import { buildDetailSearch } from '@/lib/listNavQuery';
 import type { Customer } from '../types/customer.types';
 import { CustomerRowActions } from '../actions';
+import { useDeferredBulkAction } from '@/hooks/useDeferredBulkAction';
+import { useHasPermission } from '@/hooks/usePermissions';
+import { BulkSetCustomerGroupDialog } from './BulkSetCustomerGroupDialog';
+import { BulkSetSalesAgentDialog } from './BulkSetSalesAgentDialog';
 import { CustomerImportDialog } from './CustomerImportDialog';
 import {
   importCustomers,
@@ -54,6 +59,7 @@ export default function CustomersList() {
     reset: resetSearch,
   } = useDebouncedSearch();
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [groupFilter, setGroupFilter] = useState<{ id: string; name: string } | null>(null);
 
   // Back hands the list its own query string back, and the pager keeps
   // rewriting it, so the list reads it (S3-01). One hook, every list.
@@ -62,21 +68,43 @@ export default function CustomersList() {
     setSorting(state.sorting);
     resetSearch(state.searchQuery);
     setStatusFilter(state.filters.status ?? 'all');
+    // The URL carries the id only; the name is re-read once the filter popover opens.
+    setGroupFilter((prev) =>
+      state.filters.customer_group_id
+        ? { id: state.filters.customer_group_id, name: prev?.name ?? 'Selected group' }
+        : null,
+    );
   });
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  const canSetSalesAgent = useHasPermission('master_data.sales_agents.edit');
+  const [agentDialogOpen, setAgentDialogOpen] = useState(false);
+  const canEditCustomers = useHasPermission('order_management.customers.edit');
+  const [groupDialogOpen, setGroupDialogOpen] = useState(false);
+  // Remove from group asks nothing (D7): a countdown with Cancel, the selection clears
+  // once the removals have settled.
+  const removeFromGroup = useDeferredBulkAction({
+    actionKey: 'customer.remove_from_group',
+    entityType: 'customer',
+    verb: 'Removing',
+    pastVerb: 'removed from their group',
+    describe: (count) => `${count} customer${count === 1 ? '' : 's'}`,
+    invalidateKeys: [['customers'], ['customer-groups']],
+    onFinished: () => setRowSelection({}),
+  });
 
-  const { data, isLoading, isPlaceholderData, refetch, isFetching } = useCustomers({
+  const { data, isLoading, isPlaceholderData, refetch, isFetching, error } = useCustomers({
     pageIndex: pagination.pageIndex,
     pageSize: pagination.pageSize,
     sorting,
     searchQuery,
     status: statusFilter === 'all' ? undefined : statusFilter,
+    customer_group_id: groupFilter?.id,
   });
 
   // Reset selection whenever the result set changes.
   useEffect(() => {
     setRowSelection({});
-  }, [searchQuery, statusFilter, pagination.pageIndex, pagination.pageSize, sorting]);
+  }, [searchQuery, statusFilter, groupFilter, pagination.pageIndex, pagination.pageSize, sorting]);
 
   // Page one when a filter CHANGES, never on mount - the mount run used to stamp
   // page 1 over the page `useListStateFromUrl` had just restored from the URL.
@@ -93,7 +121,10 @@ export default function CustomersList() {
         sorting,
         searchQuery,
       },
-      { status: statusFilter === 'all' ? undefined : statusFilter },
+      {
+        status: statusFilter === 'all' ? undefined : statusFilter,
+        customer_group_id: groupFilter?.id,
+      },
     );
     const qs = search ? `?${search}` : '';
     return `/order-management/customers/${row.id}${qs}`;
@@ -151,6 +182,22 @@ export default function CustomersList() {
         meta: { headerTitle: 'Sales Agent', skeleton: <Skeleton className="h-4 w-28" /> },
       },
       {
+        accessorKey: 'customer_group_name',
+        header: ({ column }) => <DataGridColumnHeader title="Group" column={column} />,
+        // A joined column: not in the backend sort map, so not sortable.
+        enableSorting: false,
+        cell: ({ row }) =>
+          row.original.customer_group_name ? (
+            <span className="block truncate" title={row.original.customer_group_name}>
+              {row.original.customer_group_name}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">-</span>
+          ),
+        size: 200,
+        meta: { headerTitle: 'Group', skeleton: <Skeleton className="h-4 w-28" /> },
+      },
+      {
         accessorKey: 'is_active',
         header: ({ column }) => <DataGridColumnHeader title="Status" column={column} />,
         cell: ({ row }) => (
@@ -197,6 +244,11 @@ export default function CustomersList() {
     columnResizeMode: 'onChange',
   });
 
+  // Remove only touches the selected customers that sit in a group, so that is its N.
+  const groupedCount = table
+    .getSelectedRowModel()
+    .rows.filter((r) => r.original.customer_group_id).length;
+
   // The one offer this listing makes, in both places it belongs: the
   // toolbar, and the empty state's next step (S5-06).
   const listPrimaryAction = (
@@ -211,6 +263,8 @@ export default function CustomersList() {
       table={table}
       recordCount={data?.pagination.total || 0}
       isLoading={isLoading}
+      error={error}
+      onRetry={() => void refetch()}
       isPlaceholderData={isPlaceholderData}
       rowHref={rowHref}
       tableLayout={{ columnsVisibility: true }}
@@ -230,8 +284,8 @@ export default function CustomersList() {
             }
             filters={{
               kind: 'custom',
-              active: statusFilter !== 'all',
-              activeCount: statusFilter !== 'all' ? 1 : 0,
+              active: statusFilter !== 'all' || groupFilter !== null,
+              activeCount: (statusFilter !== 'all' ? 1 : 0) + (groupFilter ? 1 : 0),
               content: (
                 <div className="space-y-4">
                   <div>
@@ -251,13 +305,42 @@ export default function CustomersList() {
                       triggerClassName="mt-1"
                     />
                   </div>
-                  {statusFilter !== 'all' && (
+                  <div>
+                    <Label>Group</Label>
+                    <SearchableSelect
+                      aria-label="Group"
+                      value={groupFilter?.id ?? ''}
+                      onChange={(v) => {
+                        if (!v) setGroupFilter(null);
+                        setPagination((p) => ({ ...p, pageIndex: 0 }));
+                      }}
+                      onOptionChange={(opt) =>
+                        setGroupFilter(opt ? { id: opt.value, name: opt.label } : null)
+                      }
+                      fetchOptions={async (query) =>
+                        (await searchCustomerGroupsSelect(query)).map((g) => ({
+                          value: g.id,
+                          label: g.name,
+                          description: `${g.ledger_count} ${g.ledger_count === 1 ? 'ledger' : 'ledgers'}`,
+                        }))
+                      }
+                      selectedOption={
+                        groupFilter ? { value: groupFilter.id, label: groupFilter.name } : undefined
+                      }
+                      placeholder="All groups"
+                      emptyMessage="No groups match."
+                      triggerClassName="mt-1"
+                      clearable
+                    />
+                  </div>
+                  {(statusFilter !== 'all' || groupFilter) && (
                     <div className="flex justify-end">
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => {
                           setStatusFilter('all');
+                          setGroupFilter(null);
                           setPagination((p) => ({ ...p, pageIndex: 0 }));
                         }}
                       >
@@ -280,8 +363,58 @@ export default function CustomersList() {
               },
             ]}
             primaryAction={listPrimaryAction}
+            bulkActions={[
+              ...(canSetSalesAgent
+                ? [
+                    {
+                      key: 'set-sales-agent',
+                      label: `Set sales agent (${selectedRowIds(table).length})`,
+                      icon: UserCog,
+                      onClick: () => setAgentDialogOpen(true),
+                    },
+                  ]
+                : []),
+              ...(canEditCustomers
+                ? [
+                    {
+                      key: 'set-customer-group',
+                      label: `Set customer group (${selectedRowIds(table).length})`,
+                      icon: FolderPlus,
+                      onClick: () => setGroupDialogOpen(true),
+                    },
+                    {
+                      key: 'remove-from-group',
+                      label: `Remove from group (${groupedCount})`,
+                      icon: FolderMinus,
+                      disabled: removeFromGroup.isStarting || groupedCount === 0,
+                      onClick: () =>
+                        removeFromGroup.run(
+                          table
+                            .getSelectedRowModel()
+                            .rows.filter((r) => r.original.customer_group_id)
+                            .map((r) => ({
+                              id: r.id,
+                              payload: { customer_group_id: r.original.customer_group_id },
+                            })),
+                        ),
+                    },
+                  ]
+                : []),
+            ]}
           />
         </CardHeader>
+        <BulkSetSalesAgentDialog
+          open={agentDialogOpen}
+          onOpenChange={setAgentDialogOpen}
+          customerIds={selectedRowIds(table)}
+          onDone={() => setRowSelection({})}
+        />
+        <BulkSetCustomerGroupDialog
+          open={groupDialogOpen}
+          onOpenChange={setGroupDialogOpen}
+          customerIds={selectedRowIds(table)}
+          onDone={() => setRowSelection({})}
+        />
         <CustomerImportDialog
           open={importDialogOpen}
           onOpenChange={setImportDialogOpen}

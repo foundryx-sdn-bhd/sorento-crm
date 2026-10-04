@@ -43,6 +43,11 @@ ALLOWED = {
     # `turn.memory.write_episode_for_reset` (the SAME writer the live engine calls, so a
     # backfilled frame and a live one can never disagree, AC-MEM029) and needs it directly.
     "scripts/backfill_chatbot_episodes.py",
+    # CHATBOT-QUEUE-FIX hand test (1 Oct 2026): replays the per-contact queue incident
+    # against a redis by driving `dispatch` directly. A dry-run turn takes no ticket
+    # (engine H57), so there is no route through `/chat/turn` that exercises the queue.
+    # Not core, not on any request path.
+    "scripts/chatbot_queue_replay.py",
     # Chatbot memory lane A S2 (contract section 4/5): the contact's memory/facts
     # surface is a `user_management.contacts` route, so it cannot live under
     # `app/services/chatbot/`, yet its vocabulary, precedence and row-lock rules

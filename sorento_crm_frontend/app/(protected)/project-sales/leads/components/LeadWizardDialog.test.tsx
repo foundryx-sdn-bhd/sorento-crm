@@ -24,7 +24,7 @@ if (!window.matchMedia) {
 
 const createLead = vi.fn();
 const assignLead = vi.fn();
-const getUsersSelect = vi.fn();
+const getUserLookup = vi.fn();
 
 vi.mock('../../_shared/services/projectService', () => ({
   createLead: (...args: unknown[]) => createLead(...args),
@@ -59,7 +59,7 @@ vi.mock('../../_shared/services/leadAcceptanceService', () => ({
 }));
 
 vi.mock('@/services/userSelectService', () => ({
-  getUsersSelect: (...args: unknown[]) => getUsersSelect(...args),
+  getUserLookup: (...args: unknown[]) => getUserLookup(...args),
 }));
 
 vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
@@ -128,7 +128,7 @@ beforeEach(() => {
     lead_code: 'LEAD-000001',
     owner_name: 'Ali',
   });
-  getUsersSelect.mockResolvedValue([{ id: 'u-ali', name: 'Ali', email: 'ali@x.my' }]);
+  getUserLookup.mockResolvedValue([{ id: 'u-ali', name: 'Ali' }]);
 });
 
 describe('LeadWizardDialog', () => {
@@ -213,7 +213,7 @@ describe('LeadWizardDialog', () => {
     next();
 
     const owner = await screen.findByLabelText('Leave with marketing for now');
-    await waitFor(() => expect(getUsersSelect).toHaveBeenCalled());
+    await waitFor(() => expect(getUserLookup).toHaveBeenCalled());
     await waitFor(() =>
       expect(screen.getByRole('option', { name: 'Ali' })).toBeInTheDocument(),
     );

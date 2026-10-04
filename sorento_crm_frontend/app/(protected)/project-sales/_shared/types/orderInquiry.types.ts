@@ -288,6 +288,9 @@ export interface OrderInquiryAckFields {
    */
   previous_qty?: string | null;
   previous_delivery_date?: string | null;
+  /** OI-PRODUCT-FOLLOW: the item code before a Confirm moved the row onto the SO line's
+   * new product - the "was X" under the Product cell. */
+  previous_item_code?: string | null;
 }
 
 export interface OrderInquiryRow extends OrderInquiryAckFields {

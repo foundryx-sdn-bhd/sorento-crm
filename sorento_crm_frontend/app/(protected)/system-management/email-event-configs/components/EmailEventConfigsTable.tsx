@@ -31,7 +31,7 @@ function _toIntOrNull(value: string): number | null | undefined {
 }
 
 export default function EmailEventConfigsTable() {
-  const { data, isLoading } = useEmailEventConfigs();
+  const { data, isLoading, error, refetch } = useEmailEventConfigs();
   const updateMut = useUpdateEmailEventConfig();
   const [drafts, setDrafts] = useState<Record<string, OverrideDraft>>({});
 
@@ -226,6 +226,8 @@ export default function EmailEventConfigsTable() {
           <DataGrid
             table={table}
             recordCount={(data ?? []).length}
+            error={error}
+            onRetry={() => void refetch()}
             listingKey="system.email_event_configs.view"
             emptyMessage="No email events configured."
             tableLayout={{ width: 'fixed', columnsResizable: true }}

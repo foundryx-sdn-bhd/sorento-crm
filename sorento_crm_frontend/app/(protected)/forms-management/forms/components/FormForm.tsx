@@ -42,7 +42,11 @@ export default function FormForm({ formId, onSuccess }: FormFormProps) {
   const { data: form, isLoading: isLoadingForm } = useFormQuery(formId || null);
   const createMutation = useCreateForm();
   const updateMutation = useUpdateForm();
-  const { data: accessTypeOptions = [] } = useContactAccessTypes();
+  const {
+    data: accessTypeOptions = [],
+    error: accessTypesError,
+    refetch: refetchAccessTypes,
+  } = useContactAccessTypes();
   const defaultAccessLevels = useMemo(() => accessTypeOptions.map((opt) => opt.code), [accessTypeOptions]);
 
   // The form record fills the fields through `values`, not a reset scheduled in
@@ -271,6 +275,8 @@ export default function FormForm({ formId, onSuccess }: FormFormProps) {
                     <FormControl>
                       <AccessLevelsMultiSelect
                         options={accessTypeOptions}
+                        loadError={accessTypesError}
+                        onRetry={() => void refetchAccessTypes()}
                         value={field.value ?? []}
                         onChange={field.onChange}
                       />

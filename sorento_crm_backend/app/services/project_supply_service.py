@@ -126,7 +126,7 @@ from app.services.scm.spo_conversion_service import (
     SOURCE_SYSTEM as CRM_SPO_SOURCE_SYSTEM,
 )
 from app.services.scm import sales_agent_service
-from app.services.scm.demand import demand_qty, is_open_demand
+from app.services.scm.demand import demand_qty, is_open_demand, is_transferable_order
 from app.services.scm.group_netting import GroupNetting
 from app.services.scm.planning_predicate import (
     OUTSIDE_FULFILMENT_PLANNING,
@@ -4159,6 +4159,7 @@ class ProjectSupplyService:
                 SalesOrderLine.warehouse_id.in_(warehouse_ids),
                 SalesOrder.status == "open",
                 is_open_demand(),
+                is_transferable_order(),
             )
             .all()
         )
@@ -6648,6 +6649,7 @@ class ProjectSupplyService:
                 SalesOrderLine.id == donor_core_line_id,
                 SalesOrder.status == "open",
                 is_open_demand(),
+                is_transferable_order(),
             )
             .first()
         )
@@ -9594,6 +9596,7 @@ class ProjectSupplyService:
                 SalesOrderLine.warehouse_id.in_(wids),
                 SalesOrder.status == "open",
                 is_open_demand(),
+                is_transferable_order(),
             )
             .all()
         )
@@ -10496,6 +10499,7 @@ class ProjectSupplyService:
                 SalesOrderLine.warehouse_id.in_(list(warehouse_ids)),
                 SalesOrder.status == "open",
                 is_open_demand(),
+                is_transferable_order(),
             )
             .group_by(SalesOrderLine.product_id, SalesOrderLine.warehouse_id)
             .all()

@@ -602,16 +602,24 @@ def test_a_source_ref_linked_in_another_company_creates_a_new_row_in_this_one(en
     new_id = str(by_company[env.company_a]["id"])
     assert new_id != str(theirs.id)
 
-    # After the push: the ingest linked this source_ref to the NEW row it
-    # just created in A, so a read under A now finds it - the ref did not
-    # start resolving to B's row, it started resolving to A's own new one.
+    # After the push: products carry no reference written by ingest (owner
+    # ruling 2, 3 Oct), so the ref still resolves to nothing under A - it did
+    # not start resolving to B's row either.
     after_read = env.client.post(
         "/api/v1/external/read/products",
         json={"companyCode": env.company_a_code, "source_refs": [source_ref]},
     )
     assert after_read.status_code == 200, after_read.text
-    assert after_read.json()["not_found"] == [], after_read.text
-    assert after_read.json()["records"][0]["entity_id"] == new_id, after_read.text
+    assert source_ref in after_read.json()["not_found"], after_read.text
+    b_refs = env.db.execute(
+        text(
+            "SELECT count(*) FROM integration_references "
+            "WHERE entity_type = 'products' AND entity_id = :i AND source_ref = :r"
+        ),
+        {"i": str(theirs.id), "r": source_ref},
+    ).scalar()
+    assert b_refs == 1, "B's own reference is untouched"
+    assert new_id != str(theirs.id)
 
 
 def test_read_reports_another_companys_row_as_not_found(env):

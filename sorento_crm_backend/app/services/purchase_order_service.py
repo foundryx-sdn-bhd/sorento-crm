@@ -37,6 +37,7 @@ from typing import Any, Optional
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
+from app.services.contact_brand_scope import product_in_scope_clauses
 from app.models.inventory import Warehouse
 from app.models.procurement import PurchaseOrder, PurchaseOrderLine, SPOAllocation, Supplier
 from app.models.product import Product
@@ -357,6 +358,8 @@ def purchase_orders_placed_summary(
     q = _scoped(_scoped(q, _p_line), _p_po)
     if product_ids:
         q = q.filter(PurchaseOrderLine.product_id.in_(product_ids))
+    # CONTACT-BRAND-SCOPE: a column-only aggregate, where the session criterion cannot reach.
+    q = q.filter(*product_in_scope_clauses(db, PurchaseOrderLine.product_id))
     if warehouse_ids:
         q = q.filter(PurchaseOrderLine.warehouse_id.in_(warehouse_ids))
     q = _apply_expected_date_window(q, expected_date_from, expected_date_to)
@@ -370,6 +373,7 @@ def purchase_orders_placed_summary(
         func.sum(_spo_delta()), func.count(SPOAllocation.id)
     )
     spo_q = _scoped(spo_q, _p_spo)
+    spo_q = spo_q.filter(*product_in_scope_clauses(db, SPOAllocation.product_id))
     spo_q = _apply_spo_expected_date_window(spo_q, expected_date_from, expected_date_to)
     spo_qty, spo_count = spo_q.one()
     return {

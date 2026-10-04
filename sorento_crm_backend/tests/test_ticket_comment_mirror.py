@@ -30,7 +30,7 @@ from app.services.ticket_comment_service import (
 )
 from tests._pg_fixture import blank_session
 
-PHONE = "+60123456780"
+PHONE = "+60100000079"
 RESPOND_IO_ID = "10025599"
 
 
