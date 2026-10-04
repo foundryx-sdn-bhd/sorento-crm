@@ -136,10 +136,8 @@ FIELDS_ADDED: dict[str, list[str]] = {
 FIELD_NOTES: dict[str, str] = {
     "products": (
         "name is transitional, maps to description when description is absent. "
-        "v2.4: a product push resolves by code (case/whitespace-insensitive) when its "
-        "own source_ref misses but the row is already linked under this same source "
-        "system - the record updates, the STORED reference is kept as-is, and the "
-        "verdict carries the ref_mismatch warning."
+        "Products are matched by company and code (case/whitespace-insensitive). "
+        "source_ref is accepted but not used for matching and not stored."
     ),
     # Both entities get the SAME sentence (D24's shape is one note per
     # entity, not per field) - from_so_external means the identical thing on
@@ -152,16 +150,13 @@ FIELD_NOTES: dict[str, str] = {
         "from_so_external is the cross-book case of from_so_line_ref: the sales order "
         "lives in another database and is recorded raw, never resolved into a Sorento id"
     ),
-    # v2.4: the deletions-only `codes` fallback above does not extend to
-    # reads - `/external/read/products` stays reference-only, so a product
-    # linked under a document-minted reference is not found there by an
-    # item-code reference.
+    # PRODUCT-REF-COLLISION (owner ruling 3 Oct): product refs are no longer
+    # kept, so a read by ref finds no product.
     "products_deletions": (
-        "codes is a source_ref -> code map read only when its own source_ref "
-        "misses and the matched product is unlinked or already under this same "
-        "source system (same ref_mismatch rule as the products push above). "
-        "/external/read/products stays reference-only: a product linked under a "
-        "document-minted reference is not found there by an item-code reference."
+        "products resolve by codes (source_ref -> code map) only; a record with no "
+        "code is not_found. source_ref is never used for matching. "
+        "/external/read/products by source_ref returns not_found: product refs are "
+        "no longer kept."
     ),
     "stock_balances": (
         "upserts stock.quantity_on_hand only, resolved by (item_code, location_code) "

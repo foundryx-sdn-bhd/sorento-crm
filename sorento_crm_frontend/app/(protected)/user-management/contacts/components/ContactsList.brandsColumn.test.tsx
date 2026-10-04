@@ -55,7 +55,7 @@ vi.mock('next/navigation', () => ({
 vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }));
 
 const BASE_ROW = {
-  phone_number: '+60123456701',
+  phone_number: '+60120000701',
   respond_io_id: '10025901',
   outbound_enabled: true,
   access_type_codes: ['end_user'],
@@ -79,7 +79,7 @@ const SCOPED = {
 const OPEN = {
   ...BASE_ROW,
   id: 'contact-open',
-  phone_number: '+60123456702',
+  phone_number: '+60120000702',
   name: 'Open Olive',
   first_name: 'Open',
   last_name: 'Olive',
@@ -114,13 +114,13 @@ afterEach(() => cleanup());
 describe('ContactsList - Brands column (AC-3)', () => {
   it('has a "Brands" column header', async () => {
     renderList();
-    await screen.findByText('+60123456701');
+    await screen.findByText('+60120000701');
     expect(screen.getByText('Brands')).toBeInTheDocument();
   });
 
   it('shows the brand names of a scoped contact, never an id', async () => {
     renderList();
-    const row = (await screen.findByText('+60123456701')).closest('tr') as HTMLElement;
+    const row = (await screen.findByText('+60120000701')).closest('tr') as HTMLElement;
     expect(within(row).getByText(/Mocha/)).toBeInTheDocument();
     expect(within(row).getByText(/Cabana/)).toBeInTheDocument();
     expect(row.textContent).not.toContain('11111111-1111');
@@ -128,7 +128,7 @@ describe('ContactsList - Brands column (AC-3)', () => {
 
   it('shows "All" for a contact with no brand scope', async () => {
     renderList();
-    const row = (await screen.findByText('+60123456702')).closest('tr') as HTMLElement;
+    const row = (await screen.findByText('+60120000702')).closest('tr') as HTMLElement;
     expect(within(row).getByText(/^All$/)).toBeInTheDocument();
     expect(within(row).queryByText(/Mocha/)).not.toBeInTheDocument();
   });
