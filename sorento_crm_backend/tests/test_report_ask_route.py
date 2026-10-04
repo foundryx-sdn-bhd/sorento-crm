@@ -531,6 +531,32 @@ def test_ac_re_16_another_companys_so_lines_are_not_counted(client, db):
     assert body["total"]["qty"] == 10 and money(body["total"]["amount"]) == D("100.00"), body["total"]
 
 
+def test_a_brand_name_shared_across_companies_counts_only_the_contacts_own_company(client, db):
+    """Both ids of one brand name go in `brand_ids`; the contact is granted company A only, so only
+    company A's lines are counted (guard: the route restricts to the contact's companies)."""
+    mocha = seed_mocha(db)
+    brand_a = _brand(db, "ZZT SHARED NAME")
+    brand_b = Brand(id=str(uuid.uuid4()), brand_code=unique_code("BR")[:50], brand_name="ZZT SHARED NAME",
+                    company_id=mocha.id)
+    db.add(brand_b)
+    db.flush()
+    prod_a = _prod(db, unique_code("ZZTBA", alpha=True), brand=brand_a)
+    prod_b = product(db, company_id=mocha.id, code=unique_code("ZZTBB", alpha=True))
+    prod_b.brand_id = brand_b.id
+    db.flush()
+    cust = seed_customer(db, name=unique_code("Cust"))
+    mocha_cust = seed_customer(db, name=unique_code("MochaCust"), company_id=mocha.id)
+    seed_so_line(db, cust=cust, prod=prod_a, wh=warehouse(db, company_id=DEFAULT_COMPANY_ID), qty=10, total="100.00")
+    seed_so_line(db, cust=mocha_cust, prod=prod_b, wh=warehouse(db, company_id=mocha.id), qty=500,
+                 total="5000.00", company_id=mocha.id)
+    db.commit()
+    ids = [brand_a.id, brand_b.id]
+    body = _ok(client, _full(db), group_by="product", top_n=10, brand_ids=ids)
+    assert [r["name"] for r in body["rows"]] == [prod_a.product_code], body["rows"]
+    total = _ok(client, _full(db), brand_ids=ids)["total"]
+    assert total["qty"] == 10 and money(total["amount"]) == D("100.00"), total
+
+
 # ================================================================ AC-RE-17: empty resolution
 
 
