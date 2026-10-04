@@ -1,13 +1,12 @@
 # PLAN: AutoCount GRN ingest fills the header SPO number (GRN-HEADER-SPO)
 
-Status: **built, in review on PR #1484** (small fix track: backend only, no migration, no auth/RBAC change, no new
-ingest surface). UAC: `grn-header-spo-04oct-acceptance-criteria.md`.
+Status: **built, in review on PR #1484** (small fix track: backend only, no migration, no
+auth/RBAC change, no new ingest surface). UAC: `grn-header-spo-04oct-acceptance-criteria.md`.
 
 ## Problem (owner, 4 Oct)
 
 AutoCount-fed GRNs show header "SPO Number" = "-" (GR-2026/10-0008 on prod) although the
-AutoCount user typed the SPO at the GRN header and the lines are allocated correctly
-(SPO-2026/09-0118). The header field is `picking_headers.spo_number`
+lines are allocated correctly (SPO-2026/09-0118). The header field is `picking_headers.spo_number`
 (`be/app/models/procurement.py:674`, shown by `GRNDetail.tsx:207-208`); the AutoCount ingest
 never writes it (`_parse` header keys and `_apply_grn` in
 `be/app/services/autocount_doc_ingest_service.py`).
