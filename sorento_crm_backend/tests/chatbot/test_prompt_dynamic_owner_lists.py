@@ -52,12 +52,17 @@ def _seeded(db) -> None:
     pv.clear_cache()
 
 
+# `serial_ddl`: each test that applies pdyn_0004 or pdyn_0006 runs ALTER TABLE / CREATE TABLE / DROP on the SHARED real schema, which
+# takes ACCESS EXCLUSIVE locks and can deadlock with other xdist workers (CI shard 1 saw it
+# on the crew SQL tests). It leaves the pool and runs in the `-p no:xdist` serial_ddl step.
+@pytest.mark.serial_ddl
 def test_domain_words_render_the_owner_curated_list_from_the_table():
     with pg_session() as db:
         _seeded(db)
         assert pv.render_value(db, "domain_words") == _owner("stock, incoming, ETA", " - in any language")
 
 
+@pytest.mark.serial_ddl
 def test_statuses_render_only_the_rows_tagged_for_the_bullets():
     with pg_session() as db:
         _seeded(db)
@@ -66,6 +71,7 @@ def test_statuses_render_only_the_rows_tagged_for_the_bullets():
         assert "so_outstanding" not in out and "sales_report" not in out
 
 
+@pytest.mark.serial_ddl
 def test_status_values_and_status_field_values_are_the_owner_subsets():
     with pg_session() as db:
         _seeded(db)
@@ -74,6 +80,7 @@ def test_status_values_and_status_field_values_are_the_owner_subsets():
         assert pv.render_value(db, "order_status_values").startswith("outstanding|delivered|so_outstanding")
 
 
+@pytest.mark.serial_ddl
 def test_with_the_seeds_the_owner_file_swaps_these_lists_and_still_renders_byte_identical():
     source = SNAPSHOT.read_text(encoding="utf-8")
     with pg_session() as db:
@@ -97,6 +104,7 @@ def test_with_the_seeds_the_owner_file_swaps_these_lists_and_still_renders_byte_
         assert ai_prompt_registry._substitute(template, values) == source
 
 
+@pytest.mark.serial_ddl
 def test_the_migration_is_idempotent_and_never_overrides_an_owner_edit():
     mod = _migration()
     with pg_session() as db:
@@ -238,6 +246,7 @@ def _put_agents(db, codes: list[str], active: bool = True) -> None:
         )
 
 
+@pytest.mark.serial_ddl
 def test_agents_render_the_flagged_rows_only_and_give_the_owner_line():
     mod = _agents_migration()
     with pg_session() as db:
@@ -251,6 +260,7 @@ def test_agents_render_the_flagged_rows_only_and_give_the_owner_line():
         assert '"suggested_agent": "' + pv.render_value(db, "agents") + '"' in owner_line
 
 
+@pytest.mark.serial_ddl
 def test_an_inactive_flagged_agent_stays_out():
     mod = _agents_migration()
     with pg_session() as db:
@@ -263,6 +273,7 @@ def test_an_inactive_flagged_agent_stays_out():
         assert "it_support" not in pv.render_value(db, "agents").split("|")
 
 
+@pytest.mark.serial_ddl
 def test_the_agents_seed_never_overrides_an_owner_edit():
     mod = _agents_migration()
     with pg_session() as db:

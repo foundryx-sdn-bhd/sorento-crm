@@ -260,6 +260,10 @@ def test_the_stale_banner_is_quiet_for_a_wording_layer_production():
         assert prompt_blocks_status(current_user={}, db=db).stale is False
 
 
+# `serial_ddl`: this test (drops chatbot_status_words) runs ALTER TABLE / CREATE TABLE / DROP on the SHARED real schema, which
+# takes ACCESS EXCLUSIVE locks and can deadlock with other xdist workers (CI shard 1 saw it
+# on the crew SQL tests). It leaves the pool and runs in the `-p no:xdist` serial_ddl step.
+@pytest.mark.serial_ddl
 def test_the_seed_works_on_a_table_built_from_the_model():
     """CI (run 36797594354): `scripts.bootstrap_env` builds `chatbot_status_words` with
     `create_all` from the ORM model, whose `id` default is Python-side only, so the

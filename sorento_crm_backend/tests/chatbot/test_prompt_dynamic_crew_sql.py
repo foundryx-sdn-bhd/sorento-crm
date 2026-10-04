@@ -110,6 +110,11 @@ def test_the_sql_carries_no_dash_characters():
     assert "\u2014" not in raw and "\u2013" not in raw
 
 
+# `serial_ddl`: the SQL under test runs ALTER TABLE ... ADD COLUMN IF NOT EXISTS, CREATE TABLE
+# IF NOT EXISTS and a DO block inserting into ai_prompt_versions on the SHARED real schema.
+# Inside the xdist pool that deadlocked with other workers (CI shard 1, uq_ai_prompt_versions_name_version),
+# so these leave the pool and run in the `-p no:xdist` serial_ddl step of deploy.yml.
+@pytest.mark.serial_ddl
 def test_on_tables_shaped_like_the_file_the_sql_swaps_and_renders_the_file():
     with pg_session() as db:
         _seed_registries_to_the_file(db)
@@ -127,6 +132,7 @@ def test_on_tables_shaped_like_the_file_the_sql_swaps_and_renders_the_file():
         assert _render(db, row) == _expected()
 
 
+@pytest.mark.serial_ddl
 def test_the_sql_agrees_with_the_python_migration_wherever_it_decides():
     """Every list the SQL swaps, the Python transform swaps on the same tables; every list
     the SQL keeps, it keeps for a reason the report names (no SQL renderer, or a differing
@@ -142,6 +148,7 @@ def test_the_sql_agrees_with_the_python_migration_wherever_it_decides():
                 assert (variable, "replaced") in py, variable
 
 
+@pytest.mark.serial_ddl
 def test_on_tables_that_differ_the_sql_keeps_the_list_and_still_renders_the_file():
     with pg_session() as db:
         _run_sql(db)
@@ -151,6 +158,7 @@ def test_on_tables_that_differ_the_sql_keeps_the_list_and_still_renders_the_file
         assert _render(db, row) == _expected()
 
 
+@pytest.mark.serial_ddl
 def test_the_sql_is_idempotent_unlabelled_and_leaves_other_versions_alone():
     with pg_session() as db:
         db.execute(
@@ -171,6 +179,7 @@ def test_the_sql_is_idempotent_unlabelled_and_leaves_other_versions_alone():
         assert not db.query(AIPromptLabel).filter(AIPromptLabel.version_id == _row(db).id).count()
 
 
+@pytest.mark.serial_ddl
 def test_the_python_migration_skips_once_the_sql_has_run():
     """Crew copies that later run alembic must not get a second copy."""
     path = BACKEND / "alembic" / "versions" / "pdyn_0003_prod_identical.py"
@@ -193,6 +202,7 @@ def _put_owner_text(db, template: str) -> None:
     )
 
 
+@pytest.mark.serial_ddl
 @pytest.mark.parametrize("shape", ["exact", "crlf_and_trailing_newline"])
 def test_the_lookup_sql_finds_the_owner_text_on_the_database_and_renders_it(shape):
     """The hand-postable variant (crew-migration comment 5923683902) carries no text: it
@@ -207,6 +217,7 @@ def test_the_lookup_sql_finds_the_owner_text_on_the_database_and_renders_it(shap
         assert not db.query(AIPromptLabel).filter(AIPromptLabel.version_id == row.id).count()
 
 
+@pytest.mark.serial_ddl
 def test_the_lookup_sql_writes_nothing_when_the_owner_text_is_not_on_the_database():
     with pg_session() as db:
         _run_sql(db, _gen().build_sql(lookup=True))
@@ -223,6 +234,7 @@ def test_the_lookup_comment_is_small_and_sql_only():
     assert len(body) < 12000  # the pdyn_0004 statements plus the DO block, still posted by hand
 
 
+@pytest.mark.serial_ddl
 def test_the_dev_seed_puts_the_owner_text_verbatim_then_the_variable_version_renders_it():
     """Crew, 1 Oct 2026: the crew copy holds no version with the owner's text, so the full
     SQL inserts it verbatim (unlabelled, 'prod snapshot 1 Oct (dev seed)') and builds the
@@ -255,6 +267,7 @@ def test_the_generated_access_level_updates_only_fill_a_null_sort_order():
             assert "sort_order IS NULL" in ln, ln
 
 
+@pytest.mark.serial_ddl
 def test_the_crew_sql_also_swaps_the_order_domain_status_values():
     with pg_session() as db:
         _run_sql(db)

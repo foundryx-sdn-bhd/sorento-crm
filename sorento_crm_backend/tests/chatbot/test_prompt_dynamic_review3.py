@@ -55,6 +55,10 @@ def _load(revision: str):
     return module
 
 
+# `serial_ddl`: this test (drops and re-adds the lane's columns and table) runs ALTER TABLE / CREATE TABLE / DROP on the SHARED real schema, which
+# takes ACCESS EXCLUSIVE locks and can deadlock with other xdist workers (CI shard 1 saw it
+# on the crew SQL tests). It leaves the pool and runs in the `-p no:xdist` serial_ddl step.
+@pytest.mark.serial_ddl
 def test_the_lane_migrations_run_in_alembic_order_on_a_database_without_the_new_column_or_table():
     order = _pdyn_in_upgrade_order()
     assert order.index("pdyn_0004_prompt_lists") < order.index("pdyn_0002_wording_layer")
