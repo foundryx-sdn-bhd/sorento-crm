@@ -58,4 +58,6 @@ totals sum the four, Q6 Dealer O/standing printed NEGATIVE.
 ## Layout
 
 - **AC-13** Usable at 1280px and 375px; Product column stays pinned; aux columns have
-  explicit `size`, right-aligned numbers, same number format as month cells.
+  explicit `size`, right-aligned numbers with thousands separators and NO leading `+`
+  (quantities, not balances: "780", "1,425"; Dealer O/standing "-47"), unlike the signed month
+  cells. Same on the footer totals (lead ruling after review, 4 Oct 2026).
