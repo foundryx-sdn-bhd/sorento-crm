@@ -629,6 +629,13 @@ class StockService:
     
     def __init__(self, db: Session):
         self.db = db
+        # The stock-visibility policy the last `list_stock` call resolved for its contact
+        # (None on the staff path). `_with_sellable` reads it so the product Total's O/S
+        # is narrowed by the same location rule the lines are (STOCK-TOTAL-OS-SCOPE).
+        self.resolved_policy = None
+        # The warehouses the question itself narrowed to (`warehouse_ids` AND the singular
+        # `warehouse_id`), None when it named none. Read beside `resolved_policy`.
+        self.requested_warehouse_ids: Optional[set[str]] = None
     
     def list_stock(
         self,
@@ -698,6 +705,7 @@ class StockService:
         resolved_contact_id = None
         if contact_id:
             policy = resolve_policy(self.db, contact_id, space_id)
+            self.resolved_policy = policy
             # Chatbot stock ask v2 S3, R7: the SAME internal id `resolve_policy`
             # itself resolves `contact_id`/`space_id` against - resolved again here
             # (one cheap extra lookup) so `_apply_stock_visibility` can read that
@@ -886,6 +894,16 @@ class StockService:
                 )
                 return payload
             q = q.filter(Stock.warehouse_id.in_(resolved_wh_ids))
+
+        # Both narrowings filter the rows (ANDed), so the Total's O/S answers the same set.
+        if warehouse_ids:
+            self.requested_warehouse_ids = {str(w) for w in warehouse_ids}
+        if resolved_wh_ids is not None:
+            named = {str(w) for w in resolved_wh_ids}
+            self.requested_warehouse_ids = (
+                named if self.requested_warehouse_ids is None
+                else self.requested_warehouse_ids & named
+            )
 
         if product_id:
             resolved_pid = _resolve_stock_product_id(self.db, product_id)
@@ -1190,7 +1208,26 @@ class StockService:
         rows = self.db.query(Warehouse.warehouse_code, Warehouse.id).filter(Warehouse.warehouse_code.in_(codes)).all()
         return {str(code): str(wid) for code, wid in rows}
 
-    def on_hand_total_by_product(self, product_ids: list[str]) -> dict[str, int]:
+    def visible_warehouse_ids(self, policy) -> dict[str, str]:
+        """`{warehouse_id: warehouse_code}` for the active warehouses a stock-visibility
+        policy lets the contact see, narrowed to the ones the question named
+        (`requested_warehouse_ids`): the same `warehouse_criterion` + active + requested
+        filters the location lines are read through, so a total built on this set covers
+        exactly the lines the reply can name."""
+        from app.services.stock_visibility import warehouse_criterion
+
+        rows = (
+            self.db.query(Warehouse.id, Warehouse.warehouse_code)
+            .filter(Warehouse.is_active.is_(True), warehouse_criterion(policy, Warehouse.id))
+            .all()
+        )
+        return {
+            str(wid): code
+            for wid, code in rows
+            if self.requested_warehouse_ids is None or str(wid) in self.requested_warehouse_ids
+        }
+
+    def on_hand_total_by_product(self, product_ids: list[str], policy=None) -> dict[str, int]:
         """`quantity_on_hand` summed over EVERY warehouse row of each product (review round
         2, S2): the per-product "Available" line must never be a sum over the returned
         PAGE, which is short of the truth for a product held in more warehouses than the
@@ -1207,6 +1244,10 @@ class StockService:
         pred = build_company_predicate(Stock, get_company_scope(self.db))
         if pred is not None:
             q = q.filter(pred)
+        if policy is not None:
+            # Under a contact's policy the total covers the locations it may see, never a
+            # hidden one (STOCK-TOTAL-OS-SCOPE): the same rule the rows were filtered by.
+            q = q.filter(Stock.warehouse_id.in_(list(self.visible_warehouse_ids(policy))))
         return {str(pid): int(qty or 0) for pid, qty in q.group_by(Stock.product_id).all()}
 
     def no_feed_company_ids(self) -> set[str]:
@@ -1277,7 +1318,8 @@ class StockService:
         each - "Sellable 0 (oversold by 80)" against a warehouse holding 20, which is
         arithmetic the customer can see is wrong. The plan is explicit: per warehouse
         where the SO line has one, and the remainder (lines with no `warehouse_id`) on
-        the PRODUCT TOTAL row only, never spread across the warehouse rows. A0 measured
+        the PRODUCT TOTAL row only, never spread across the warehouse rows (under a
+        contact's policy it is not shown at all, STOCK-TOTAL-OS-SCOPE). A0 measured
         that remainder at 0.8% of open lines, which is why it is a small correction and
         not a redesign - but a small correction applied to every row is still wrong on
         every row.
@@ -1547,6 +1589,7 @@ class StockService:
         )
         from app.services.eta_policy import rules_for_contact, visible_eta
         from app.services.stock_ask_branch import branch as compute_branch
+        from app.services.stock_ask_branch import short_of
         from app.services.stock_ask_limits import effective as effective_limits
 
         # SEC-S1 (security review, round 1, kept from #1118): `warehouse_criterion` is only HALF of what
@@ -1687,6 +1730,9 @@ class StockService:
                 "category_name": None,
                 "eta": None,
                 "packing_list": None,
+                # AVAIL-MODE-REPLIES rule 2: set only on an `in_stock` answer short of
+                # the ask (within X); the one figure of ours this mode ever returns.
+                "available_qty": None,
             }
             if ask is not None and product is not None and category is not None:
                 x, y = effective_limits(product, category)
@@ -1716,6 +1762,7 @@ class StockService:
                 )
                 shipment_date = shipment[1] if shipment else None
                 entry["branch"] = compute_branch(ask, x, net_available, shipment_date)
+                entry["available_qty"] = short_of(ask, x, net_available)
                 entry["cap_unset"] = cap_unset
                 entry["category_name"] = category.category_name
                 if entry["branch"] == "incoming" and shipment is not None:

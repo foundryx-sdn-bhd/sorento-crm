@@ -65,7 +65,11 @@ def _product(db, *, brand_id: str, category_id: str, uom_id: str, noun: str, pre
     # alpha: the rounds built on this world send digit-only code tokens ("65502 eta") and
     # assert an exact result set; a hex suffix can spell those digits and the substring
     # match that then lists this product is correct app behaviour, not a defect.
-    code = unique_code(prefix, alpha=True)[:50]
+    # The "Z" stops the same thing across the join: the resolver folds the separators
+    # away, so a bathtub "ZZT-ZZR3T-apdcadcp" read "zzr3tapdcadcp" and matched "tap"
+    # whenever its random suffix began "ap" (CI on PR #1435). The suffix's letters are
+    # a to p, so with a "Z" in front no word a round searches can form across it.
+    code = unique_code(f"{prefix}-Z", alpha=True)[:50]
     row = Product(
         id=str(uuid.uuid4()),
         product_code=code,

@@ -94,7 +94,7 @@ def apply_reconciliation(
             options = [
                 {
                     "position": i + 1,
-                    "label": f"{raw} ({k})",
+                    "label": f"{raw} ({k.replace('_', ' ')})",
                     # #1262 slice 7 (F1b): the label above is display only - `apply.py`'s
                     # pick arm falls back to it when neither `code` nor a uuid is on the
                     # option, which is how the PRINTED "Sorento (customer)" ended up

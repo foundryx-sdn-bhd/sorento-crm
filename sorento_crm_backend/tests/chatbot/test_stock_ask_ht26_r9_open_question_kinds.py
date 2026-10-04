@@ -548,12 +548,15 @@ def test_g_0818_round_4_all_is_point_form_and_one_number_is_every_line(
 ):
     """08:18Z (round 4 console test, rulings 1 and 2, and the 08:33Z correction:
     "tia" is a typo of "tiga", a quantity the parser reads)."""
+    from app.services.chatbot.turn.apply import STOCK_PICK_NOT_ALL
+
     c = EngineConsole(session_factory, monkeypatch, stub_access, phone="+60000009106")
     assert c.say("check stock srtwc286", stock(product("srtwc286"))) == LIST
-    assert c.say(
-        "all",
-        reply(reference_positions=list(range(1, 11)), open_question_answer=answer("pick", picked=list(range(1, 11)))),
-    ) == _point_form(OWNER_FAMILY)
+    every = reply(reference_positions=list(range(1, 11)), open_question_answer=answer("pick", picked=list(range(1, 11))))
+    # AVAIL-MODE-REPLIES (owner, 2 Oct 2026, Q4 (b)) supersedes ruling 1 for the bare
+    # word: "all" is refused and the list stays open; every number typed out is a pick.
+    assert c.say("all", every) == STOCK_PICK_NOT_ALL
+    assert c.say("1,2,3,4,5,6,7,8,9,10", every) == _point_form(OWNER_FAMILY)
     assert c.say("tia", reply(demand_qty=3, open_question_answer=answer("all", qty_for_all=3))) == _answered(
         *[(code, 3) for code in OWNER_FAMILY]
     )
@@ -662,7 +665,8 @@ MULTI_PICK = [
     ("yang kedua dan ketiga", [2, 3]),
     ("一和三", [1, 3]),
     ("di er ge he di san ge", [2, 3]),
-    ("all", list(range(1, 11))),
+    # AVAIL-MODE-REPLIES: a bare "all" is refused (S30, S34); every number is a pick.
+    ("1,2,3,4,5,6,7,8,9,10", list(range(1, 11))),
 ]
 
 

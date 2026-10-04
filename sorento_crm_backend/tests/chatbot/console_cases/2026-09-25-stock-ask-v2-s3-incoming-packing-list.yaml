@@ -128,7 +128,7 @@ cases:
         expect:
           branch_kind: business_query
           reply_contains:
-            - "SA318D x 150: no stock at the moment, ETA 19/10/2026."
+            - "SA318D x 150: ❌ ETA 19/10/2026."
           reply_not_contains:
             - "Data last updated"
           no_uuid: true

@@ -1,0 +1,89 @@
+# Console case: the low stock report settles its product category before any run
+# (LOWSTOCK-FILTER-ASK).
+#
+# `documentation/plans/chatbot/lowstock-filter-ask-behaviour-card.md`, "Ruled behaviour".
+# NOT collected by pytest. Run against a lane backend with the worker up:
+#
+#   venv/bin/python scripts/chatbot_console_check.py \
+#       tests/chatbot/console_cases/2026-10-02-lowstock-filter-ask.yaml \
+#       --base-url http://127.0.0.1:8000 --sleep-seconds 15
+#
+# Contact 437264483 must hold `scm.low_stock_report` and `purchase_orders.supplier`.
+# Rate limit: 5 runs per contact per 10 minutes. This file starts 4 runs (the asking turns
+# start none); clear the bucket before a re-run inside the window:
+#   redis-cli -n <db> del rate_limit:v1:low_stock_report:<respond_contacts.id>
+#
+# A run turn passes on any of: ready (with the "Category: ..." filter line), pending, busy.
+# All three carry "low stock report". The filter line is asserted only where the reply is
+# ready, so it is graded by eye on a pending/busy answer (the pushed file carries it).
+contact: "437264483"
+
+cases:
+  - name: the owner's example runs at once, scoped to Sorento taps
+    cold: true
+    turns:
+      - text: "Sorento water tap low stock list"
+        expect:
+          branch_kind: business_query
+          reply_contains:
+            - "low stock report"
+          reply_not_contains:
+            - "Which product category"
+            - "not enabled for your account"
+          no_uuid: true
+
+  - name: a bare ask asks the category and runs nothing, then the reply runs it
+    cold: true
+    turns:
+      - text: "low stock report"
+        expect:
+          branch_kind: business_query
+          reply_contains:
+            - "Which product category? Reply with a category (e.g. water tap) or \"all\"."
+          no_uuid: true
+      - text: "water closet"
+        expect:
+          branch_kind: business_query
+          reply_contains:
+            - "low stock report"
+          no_uuid: true
+
+  - name: all runs the whole book
+    cold: true
+    turns:
+      - text: "low stock report"
+        expect:
+          reply_contains:
+            - "Which product category"
+      - text: "all"
+        expect:
+          reply_contains:
+            - "low stock report"
+          no_uuid: true
+
+  - name: an unknown word is said, twice ends the ask
+    cold: true
+    turns:
+      - text: "low stock report"
+        expect:
+          reply_contains:
+            - "Which product category"
+      - text: "spaceship"
+        expect:
+          reply_contains:
+            - "I don't know 'spaceship' as a category."
+      - text: "rocket"
+        expect:
+          reply_contains:
+            - "I still can't place 'rocket'."
+
+  - name: a grouping in the message is taken, nothing asked
+    cold: true
+    turns:
+      - text: "low stock water closet by supplier"
+        expect:
+          reply_contains:
+            - "low stock report"
+          reply_not_contains:
+            - "Which product category"
+          no_uuid: true

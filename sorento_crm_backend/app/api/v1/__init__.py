@@ -2,6 +2,7 @@
 from fastapi import APIRouter, Depends
 from app.api.v1 import (
     auth,
+    dev_login,
     audit,
     master_data,
     order_management,
@@ -24,6 +25,7 @@ from app.api.v1 import (
     list_query,
     workflow_forms,
     lookup,
+    ideation,
     activities,
     tickets,
     downloads,
@@ -49,6 +51,8 @@ api_router = APIRouter()
 
 # Include all module routers
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
+# DEV-LOGIN-BYPASS: 404 unless every guard in app/services/dev_login.py holds.
+api_router.include_router(dev_login.router, prefix="/auth", tags=["auth"])
 # Auth endpoints: /login, /signup, /reset-password, /change-password, /verify-email
 # App Store / module lifecycle (not behind base system router guard; uses its own permissions)
 api_router.include_router(modules_runtime.router, prefix="/system/modules", tags=["system-modules"])
@@ -190,6 +194,13 @@ api_router.include_router(
     integrations.ideation_embed.router,
     prefix="/integrations/ideation",
     tags=["integrations"],
+)
+# Ideas gateway (IDEATION-IN-CRM): CRM routes over the ss embed API, as the calling user.
+api_router.include_router(
+    ideation.router,
+    prefix="/ideation",
+    tags=["ideation"],
+    dependencies=[Depends(require_module_enabled_with_api_key("base"))],
 )
 # Alias so /api/v1/integration-management/integration-logs/* works when requests hit backend directly (e.g. nginx)
 api_router.include_router(

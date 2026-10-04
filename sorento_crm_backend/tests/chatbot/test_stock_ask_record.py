@@ -81,7 +81,7 @@ def test_ac_sa501_a_live_turn_writes_one_open_row_per_answered_product(
     # CUSTOMER-ASKS-REFER-ONLY (1 Oct 2026): B3's line does not refer the dealer to the
     # salesman, so it is answered but not a Customer ask.
     assert set(rows) == {"ZZTSA4-BIG", "ZZTSA4-INS", "ZZTSA4-NOI"}
-    assert "ZZTSA4-INC x 150: no stock at the moment, ETA 19/10/2026." in reply
+    assert "ZZTSA4-INC x 150: ❌ ETA 19/10/2026." in reply
     expected = {
         "ZZTSA4-BIG": ("too_big", 300, f"ZZTSA4-BIG x 300: {TOO_BIG}"),
         "ZZTSA4-INS": ("in_stock", 50, f"ZZTSA4-INS x 50: {IN_STOCK}"),
@@ -359,13 +359,15 @@ def test_security_the_dealer_name_is_one_short_line_in_the_agent_message(
         assert "x" * 101 not in sent
 
 
-def test_ac_sa501_a_reply_still_owing_a_quantity_records_and_notifies_nothing(
+def test_avail_mode_replies_a_mixed_reply_records_the_answered_ask_now_and_the_owed_one_once_later(
     session_factory, monkeypatch, stub_access
 ):
-    """Reviewer blocker (PR #1333): "ZZTSA4-INS 50 and ZZTSA4-BIG" is answered with a
-    quantity question, not with INS's line, so INS is not an answered ask yet. It is
-    recorded (once) on the turn that answers it."""
-    from tests.chatbot._r9_engine_console import product, stock
+    """AVAIL-MODE-REPLIES rule 5 (owner, 2 Oct 2026) supersedes the PR #1333 rule this test
+    used to pin: "ZZTSA4-INS 50 and ZZTSA4-BIG" now answers INS at once beside the quantity
+    question for BIG, so INS is an ask on THIS turn. BIG, still owed a quantity, is no row
+    at all (not a stray `referred` one) until the turn that answers it, and then exactly
+    one. Reviewer B2: three rows were written across the two turns."""
+    from tests.chatbot._r9_engine_console import product, reply, stock
 
     dealer = LiveDealer(session_factory, monkeypatch, stub_access, notify=True)
     out = dealer.say(
@@ -373,9 +375,17 @@ def test_ac_sa501_a_reply_still_owing_a_quantity_records_and_notifies_nothing(
         stock(product("ZZTSA4-INS", 50), product("ZZTSA4-BIG")),
     )
     assert out.error is None, out.error
-    assert "ZZTSA4-INS x 50:" not in (out.reply or {}).get("text", "")
-    assert _asks(session_factory) == []
-    assert dealer.notified == []
+    assert "ZZTSA4-INS x 50:" in (out.reply or {}).get("text", "")
+    assert [(a.product_code, a.branch, a.quantity) for a in _asks(session_factory)] == [
+        ("ZZTSA4-INS", "in_stock", 50)
+    ]
+
+    out = dealer.say("300", reply(demand_qty=300))
+    assert out.error is None, out.error
+    assert sorted((a.product_code, a.branch, a.quantity) for a in _asks(session_factory)) == [
+        ("ZZTSA4-BIG", "too_big", 300),
+        ("ZZTSA4-INS", "in_stock", 50),
+    ]
 
 
 def test_review_a_failed_enqueue_is_written_on_the_row(session_factory, monkeypatch, stub_access):

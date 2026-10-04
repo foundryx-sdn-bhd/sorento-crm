@@ -150,8 +150,8 @@ cases:
           # sentence) - SA318A is too_big because Q(250) > X(200), SA318B is too_big
           # because its category's X is unset (reads as 0).
           reply_contains:
-            - "SA318A x 250: the quantity is more than what I can confirm here. Please refer to your salesman."
-            - "SA318B x 20: the quantity is more than what I can confirm here. Please refer to your salesman."
+            - "SA318A x 250: 🚫 the quantity is more than what I can confirm here. Please refer to your salesman."
+            - "SA318B x 20: 🚫 the quantity is more than what I can confirm here. Please refer to your salesman."
           # Round 2 review, Blocking 1 (AC-SA312): production always sets
           # `last_updated_at`, and only a DB with a BULK_IMPORT ledger row exercises
           # this - the round 1 evidence's seeded DB had none, so the footer went
@@ -255,7 +255,7 @@ cases:
         expect:
           branch_kind: business_query
           reply_contains:
-            - "SA318C x 50: yes, we have stock. Please refer to your salesman."
+            - "SA318C x 50: ✅ Please refer to your salesman."
           reply_not_contains:
             - "Data last updated"
           no_uuid: true
@@ -355,7 +355,7 @@ cases:
         expect:
           branch_kind: business_query
           reply_contains:
-            - "SA318E x 150: no stock and no incoming at the moment. Please refer to your salesman."
+            - "SA318E x 150: ❌ No stock and no incoming. Please refer to your salesman."
           reply_not_contains:
             - "Data last updated"
           no_uuid: true

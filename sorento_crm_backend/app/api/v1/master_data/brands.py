@@ -1,12 +1,18 @@
 """Brands API routes."""
-from fastapi import APIRouter, Depends, Query, HTTPException, status
+from fastapi import APIRouter, Depends, Query, HTTPException, Request, status
 from sqlalchemy.orm import Session
-from typing import Optional, List
+from typing import Literal, Optional, List
 from app.database import get_db
 from app.dependencies import (
     require_permission,
     require_permission_with_api_key,
     require_session_or_api_key_permission,
+)
+from app.services.company_scope_resolver import (
+    company_name_map,
+    grants_requested,
+    tag_company,
+    widen_if_requested,
 )
 from app.services.product_service import BrandService
 from app.schemas.product import BrandCreate, BrandResponse, BrandSelectItem, BrandUpdate
@@ -93,19 +99,27 @@ async def get_brands(
         None,
         description="Filter to the brands of these product UUIDs (repeated / csv / JSON array).",
     ),
+    company_scope: Optional[Literal["grants"]] = Query(
+        None,
+        description="`grants` reads every company the caller is granted (staff sessions only) and tags each row with its company.",
+    ),
+    request: Request = None,
     current_user: dict = Depends(require_permission_with_api_key("master_data.brands.view")),
     db: Session = Depends(get_db)
 ):
     """Get brands with pagination and search."""
     try:
         service = BrandService(db)
-        result = service.list_brands(
-            page=page,
-            limit=limit,
-            query=query,
-            brand_ids=parse_uuid_list(brand_ids, param_name="brand_ids"),
-            product_ids=parse_uuid_list(product_ids, param_name="product_ids"),
-        )
+        with widen_if_requested(db, request, current_user, company_scope):
+            result = service.list_brands(
+                page=page,
+                limit=limit,
+                query=query,
+                brand_ids=parse_uuid_list(brand_ids, param_name="brand_ids"),
+                product_ids=parse_uuid_list(product_ids, param_name="product_ids"),
+            )
+            if grants_requested(request, current_user, company_scope):
+                tag_company(result["data"], company_name_map(db))
         return result
     except Exception as e:
         raise handle_internal_error(str(e))

@@ -17,6 +17,7 @@ incoming_stock_service.py` for the implementation.
 """
 from __future__ import annotations
 
+import uuid
 from datetime import date
 from typing import Optional
 
@@ -109,6 +110,7 @@ def _for_contact(
     eta_from: Optional[date] = None,
     eta_to: Optional[date] = None,
     paged: Optional[tuple[int, int]] = None,
+    asked: Optional[list[str]] = None,
 ):
     """One gate for every incoming route: the contact's ETA offset and packing list rule
     (`eta_policy.apply_to_incoming`), then the per-field reveals. Both read the SAME
@@ -137,8 +139,44 @@ def _for_contact(
         # PR #1329 fix round: a dealer is told each product once and its distinct ETAs -
         # after the reveals, so a date the contact may not see is not told. Who to ask
         # is the presenter's one refer sentence (REFER-SALESMAN).
-        result = dealer_view(result)
+        # AVAIL-MODE-REPLIES: every product the dealer asked about is told, one with no
+        # shipment as "No ETA" - unless a date window was asked, where no
+        # row only means none in that window.
+        windowed = eta_from is not None or eta_to is not None
+        result = dealer_view(result, asked=None if windowed else _asked_codes(db, asked))
     return result
+
+
+def _asked_codes(db: Session, tokens: Optional[list[str]]) -> list[str]:
+    """The product codes a request named, in its order: each token is a product id or a
+    code (the routes accept both)."""
+    from app.models.product import Product
+    from sqlalchemy import func, or_
+
+    wanted = [str(t).strip() for t in tokens or [] if t and str(t).strip()]
+    if not wanted:
+        return []
+    ids = []
+    for token in wanted:
+        try:
+            ids.append(str(uuid.UUID(token)))
+        except ValueError:
+            continue
+    matches = [func.lower(Product.product_code).in_([t.lower() for t in wanted])]
+    if ids:
+        matches.append(Product.id.in_(ids))
+    rows = db.query(Product.id, Product.product_code).filter(or_(*matches)).all()
+    by_token: dict[str, str] = {}
+    for pid, code in rows:
+        if code:
+            by_token.setdefault(str(pid), code)
+            by_token.setdefault(code.lower(), code)
+    out: list[str] = []
+    for token in wanted:
+        code = by_token.get(token) or by_token.get(token.lower())
+        if code and code not in out:
+            out.append(code)
+    return out
 
 
 #: A contact id no row carries: `apply_field_access` treats a contact that named nobody
@@ -255,6 +293,7 @@ def get_incoming_for_product(
             eta_from=eta_from,
             eta_to=eta_to,
             paged=paged,
+            asked=resolved_product_filter,
         )
     except Exception as e:
         raise handle_internal_error(str(e))
@@ -452,6 +491,7 @@ def get_incoming_list(
                 eta_from=eta_from,
                 eta_to=eta_to,
                 paged=paged,
+                asked=flat_product_ids,
             )
         return apply_field_access(
             db,

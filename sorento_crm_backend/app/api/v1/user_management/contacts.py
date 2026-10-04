@@ -1,9 +1,10 @@
 """Respond contacts API routes."""
 from fastapi import APIRouter, Depends, Query, status, HTTPException, Body, Request
 from sqlalchemy.orm import Session
-from typing import Literal, Optional
-from pydantic import BaseModel, ConfigDict
+from typing import Annotated, Literal, Optional
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 import logging
+import uuid
 import httpx
 from app.database import get_db
 from app.dependencies import get_current_user, require_permission
@@ -20,12 +21,14 @@ from app.services.user_contact_link import (
 from app.schemas.user import RespondContactResponse, RespondContactCreate, RespondContactUpdate, ContactAgentAccessResponse
 from app.schemas.common import ListResponse
 from app.schemas.market_segment import MarketSegmentCodesUpdate
+from app.schemas.contact_brand import ContactBrandsResponse, ContactBrandsUpdate
 from app.schemas.contact_customer import (
     ContactCustomerLinkCreate,
     ContactCustomerLinksResponse,
     ContactCustomersResponse,
 )
 from app.services import contact_customer_service
+from app.services.company_scope_resolver import company_name_map, grants_scope
 from app.services.error_handler import handle_internal_error, handle_not_found
 
 logger = logging.getLogger(__name__)
@@ -96,6 +99,15 @@ async def get_contacts(
     chatbot_memory_level: Optional[Literal["own"]] = Query(None),
     # `none` lists the contacts with no linked customer (bulk Link customers worklist).
     customers: Optional[Literal["none"]] = Query(None),
+    # CONTACT-BULK-ACCESS (UAC A2.3): access filters, each optional.
+    access_type: Optional[str] = Query(None),
+    tier: Optional[Literal["dealer", "office", "end_user", "none"]] = Query(None),
+    cost: Optional[Literal["yes", "no"]] = Query(None),
+    escalation: Optional[Literal["yes", "no"]] = Query(None),
+    packing_list: Optional[Literal["yes", "no"]] = Query(None),
+    stock: Optional[Literal["yes", "no"]] = Query(None),
+    customer_id: Optional[uuid.UUID] = Query(None),
+    access_differs_from: Optional[str] = Query(None),
     current_user: dict = Depends(require_permission("user_management.contacts.view")),
     db: Session = Depends(get_db)
 ):
@@ -114,6 +126,16 @@ async def get_contacts(
             own_memory_level_only=chatbot_memory_level == "own",
             include_linked_users=can_view_users,
             no_customers_only=customers == "none",
+            access_filters={
+                "access_type": access_type,
+                "tier": tier,
+                "cost": cost,
+                "escalation": escalation,
+                "packing_list": packing_list,
+                "stock": stock,
+                "customer_id": str(customer_id) if customer_id else None,
+                "access_differs_from": access_differs_from,
+            },
         )
         return result
     except HTTPException:
@@ -149,6 +171,62 @@ class PortalLinkSendResponse(BaseModel):
     portal_url: str
     reused: bool
     sent: bool
+
+
+class BulkCopyAccessRequest(BaseModel):
+    """CONTACT-BULK-ACCESS (UAC A1): copy one contact's access set to many contacts."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    source_contact_id: str
+    # Duplicates are collapsed (the 500 cap counts unique ids); the list itself is bounded too.
+    target_contact_ids: list[Annotated[str, Field(max_length=64)]] = Field(..., min_length=1, max_length=1000)
+    dry_run: bool = True
+
+    @field_validator("target_contact_ids")
+    @classmethod
+    def _at_most_500(cls, ids: list[str]) -> list[str]:
+        from app.services.contact_access_copy_service import MAX_TARGETS
+
+        if len(dict.fromkeys(ids)) > MAX_TARGETS:
+            raise ValueError(f"At most {MAX_TARGETS} contacts per copy.")
+        return ids
+
+
+@router.post("/bulk-copy-access", status_code=status.HTTP_200_OK)
+def bulk_copy_contact_access(
+    body: BulkCopyAccessRequest,
+    current_user: dict = Depends(require_permission("user_management.contacts.edit")),
+    db: Session = Depends(get_db),
+):
+    """Preview (`dry_run`) or apply a copy of the source's access set to every target.
+
+    One result row per target in request order: changed / unchanged / skipped / failed. Each
+    target is saved on its own, so one failure never blocks or undoes the others. Linked
+    customers are never copied. Contract: PLAN-contact-bulk-access-3oct.md."""
+    from app.services import contact_access_copy_service
+
+    try:
+        source = db.query(RespondContact).filter(RespondContact.id == body.source_contact_id).first()
+        if source is None:
+            raise handle_not_found("Contact", body.source_contact_id)
+        result = contact_access_copy_service.copy_access(
+            db,
+            source,
+            body.target_contact_ids,
+            dry_run=body.dry_run,
+            actor_id=str(current_user.get("id") or "") or None,
+        )
+        # A dry run wrote nothing (no savepoint was opened); `get_db` never commits.
+        if not body.dry_run:
+            db.commit()
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error in bulk_copy_contact_access: {e}", exc_info=True)
+        raise handle_internal_error(str(e))
 
 
 @router.post("/bulk-sync", status_code=status.HTTP_200_OK)
@@ -363,7 +441,9 @@ async def get_contact_chatbot_memory(
         current_user["id"], _CHATBOT_EPISODES_VIEW
     )
     try:
-        return ContactService(db).get_chatbot_memory(contact_id, include_episodes=can_view_episodes)
+        # Same grants as the facts PUT, so a CRM fact reads the same on every company.
+        with grants_scope(db, current_user["id"]):
+            return ContactService(db).get_chatbot_memory(contact_id, include_episodes=can_view_episodes)
     except HTTPException:
         raise
     except Exception as e:
@@ -396,9 +476,12 @@ async def put_contact_chatbot_fact(
         current_user["id"], _CHATBOT_EPISODES_VIEW
     )
     try:
-        return ContactService(db).set_contact_fact(
-            contact_id, key, body.value, user_id=current_user["id"], include_episodes=can_view_episodes
-        )
+        # Usual brands / sites are validated against the master lists of every company the
+        # editor is granted, not only the active one: a contact belongs to no one company.
+        with grants_scope(db, current_user["id"]):
+            return ContactService(db).set_contact_fact(
+                contact_id, key, body.value, user_id=current_user["id"], include_episodes=can_view_episodes
+            )
     except HTTPException:
         raise
     except Exception as e:
@@ -722,6 +805,41 @@ async def set_contact_market_segments(
         raise handle_internal_error(str(e))
 
 
+@router.get("/{contact_id}/brands", response_model=ContactBrandsResponse)
+async def get_contact_brands(
+    contact_id: str,
+    current_user: dict = Depends(require_permission("user_management.contacts.view")),
+    db: Session = Depends(get_db),
+):
+    """The brands this contact may see through the chatbot / MCP. Empty = every brand."""
+    try:
+        from app.services.contact_brand_scope import get_contact_brands as read
+
+        return read(db, contact_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise handle_internal_error(str(e))
+
+
+@router.put("/{contact_id}/brands", response_model=ContactBrandsResponse)
+async def set_contact_brands(
+    contact_id: str,
+    payload: ContactBrandsUpdate,
+    current_user: dict = Depends(require_permission("user_management.contacts.edit")),
+    db: Session = Depends(get_db),
+):
+    """Replace the contact's accessible brands (empty = clear, every brand)."""
+    try:
+        from app.services.contact_brand_scope import set_contact_brands as write
+
+        return write(db, contact_id, payload.brand_ids)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise handle_internal_error(str(e))
+
+
 @router.get("/{contact_id}/attachment-types")
 async def get_contact_attachment_types(
     contact_id: str,
@@ -779,8 +897,10 @@ async def get_contact_customers(
 ):
     """The customer accounts this contact belongs to."""
     try:
-        _require_contact(db, contact_id)
-        return contact_customer_service.contact_customers_payload(db, contact_id)
+        # A contact belongs to no one company: read every company the caller is granted.
+        with grants_scope(db, current_user["id"]):
+            _require_contact(db, contact_id)
+            return contact_customer_service.contact_customers_payload(db, contact_id)
     except HTTPException:
         raise
     except Exception as e:
@@ -804,27 +924,30 @@ async def link_contact_customers(
     unknown or hidden id answers 404 and links none. An already-linked customer is a no-op
     that answers its existing row. Rows come back in request order."""
     try:
-        _require_contact(db, contact_id)
-        customers = []
-        for customer_id in dict.fromkeys(payload.customer_ids):
-            customer = contact_customer_service.get_customer_in_scope(db, customer_id)
-            if customer is None:
-                # Unknown and out-of-scope are the same answer: scope hides the row.
-                raise handle_not_found("Customer", customer_id)
-            customers.append(customer)
-        linked_by = str(current_user.get("id") or current_user.get("sub") or "") or None
-        links = [
-            contact_customer_service.link_customer(
-                db, contact_id, customer.id, customer=customer, linked_by=linked_by
-            )
-            for customer in customers
-        ]
-        db.commit()
-        rows = []
-        for link, customer in zip(links, customers):
-            db.refresh(link)
-            rows.append(contact_customer_service.link_row(link, customer))
-        return {"data": rows}
+        # Every id resolves under the caller's grants; the link keeps the customer's own company.
+        with grants_scope(db, current_user["id"]):
+            _require_contact(db, contact_id)
+            customers = []
+            for customer_id in dict.fromkeys(payload.customer_ids):
+                customer = contact_customer_service.get_customer_in_scope(db, customer_id)
+                if customer is None:
+                    # Unknown and out-of-scope are the same answer: scope hides the row.
+                    raise handle_not_found("Customer", customer_id)
+                customers.append(customer)
+            linked_by = str(current_user.get("id") or current_user.get("sub") or "") or None
+            links = [
+                contact_customer_service.link_customer(
+                    db, contact_id, customer.id, customer=customer, linked_by=linked_by
+                )
+                for customer in customers
+            ]
+            db.commit()
+            rows = []
+            names = company_name_map(db)
+            for link, customer in zip(links, customers):
+                db.refresh(link)
+                rows.append(contact_customer_service.link_row(link, customer, names))
+            return {"data": rows}
     except HTTPException:
         db.rollback()
         raise

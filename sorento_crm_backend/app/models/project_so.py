@@ -1098,6 +1098,11 @@ class OrderInquiryRow(Base, CompanyScopedMixin):
     #: looked", not "every value this row ever held".
     previous_qty = Column(Numeric(15, 4), nullable=True)
     previous_delivery_date = Column(Date, nullable=True)
+    #: OI-PRODUCT-FOLLOW (`PLAN-oi-product-follow-2oct.md` R1): the item code the row
+    #: carried before the last settle-in-place moved it onto the SO line's new product,
+    #: the "was X" beside the new code. Same writer and same overwrite rule as the two
+    #: columns above.
+    previous_item_code = Column(String(120), nullable=True)
     created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
     #: PLAN-scm-supplied-with-companions.md section 3.2. DERIVED, never typed - the one
     #: writer is `ProjectOrderInquiryService.derive_bundles`. How much of THIS row's

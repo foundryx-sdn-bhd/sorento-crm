@@ -935,10 +935,10 @@ def run_gate(  # noqa: PLR0912, PLR0915 - one JS node, one function; splitting i
                 )
             )
             found_line = f"Found: {', '.join(found_codes)}.\n" if found_codes else ""
-            gate_clarification = (
-                f"{found_line}{domain} search needs to be more specific. Multiple matches "
-                f"found. Please choose:\n{numbered}"
-            )
+            # ATTACHMENT-MULTI (owner ruling 2 Oct 2026, Q3 (a)): one plain question, the
+            # customer picker's own wording, never the domain key ("product_attachment
+            # search needs to be more specific" reached customers 41 times on dev).
+            gate_clarification = f"{found_line}Which product do you mean? Please choose:\n{numbered}"
 
         # FIX A: when prompting, the selectable set comes from the token-filtered,
         # exact-deduped `specific_options` - NOT from the unfiltered `entities` union.
@@ -1371,12 +1371,37 @@ def run_gate(  # noqa: PLR0912, PLR0915 - one JS node, one function; splitting i
             for m in flat:
                 if jsc.truthy(m) and jsc.truthy(jsc.get(m, "uuid")):
                     dc_name_by_uuid[jsc.get(m, "uuid")] = jsc.get(jsc.get(m, "display"), "type_name")
-            dc_keep = [
-                e
-                for e in dc_type_matches
-                if _dc_norm(e.get("code")) in dc_wanted
-                or _dc_norm(dc_name_by_uuid.get(e.get("uuid"))) in dc_wanted
-            ]
+            def _dc_named(e: dict[str, Any]) -> bool:
+                return (
+                    _dc_norm(e.get("code")) in dc_wanted
+                    or _dc_norm(dc_name_by_uuid.get(e.get("uuid"))) in dc_wanted
+                )
+
+            # ATTACHMENT-MULTI (2 Oct 2026): judged PER CUSTOMER WORD. A word that resolved to
+            # exactly one class already named it and keeps it: judged across every word at
+            # once, "photo and technical specifications" kept only the specs - "photo" is not
+            # spelt "Product Photos" - so the fetch never asked for the photo. A word that
+            # matched several classes keeps only the ones named, and none when it named none
+            # ("list" beside "container status"), which is the old rule. A type row no
+            # resolution claims shares one group, which is the old whole-set rule exactly.
+            dc_token_by_uuid: dict[Any, str] = {}
+            for res in jsc.array(resolver.get("resolutions")):
+                for m in jsc.array(jsc.get(res, "matches")):
+                    if jsc.truthy(m) and jsc.truthy(jsc.get(m, "uuid")):
+                        dc_token_by_uuid.setdefault(
+                            jsc.get(m, "uuid"), jsc.nullish_str(jsc.get(res, "token")).strip().lower()
+                        )
+            dc_groups: dict[Any, list[dict[str, Any]]] = {}
+            for e in dc_type_matches:
+                dc_groups.setdefault(dc_token_by_uuid.get(e.get("uuid")), []).append(e)
+            dc_keep = []
+            dc_any_named = False
+            for group in dc_groups.values():
+                named = [e for e in group if _dc_named(e)]
+                dc_any_named = dc_any_named or len(named) > 0
+                dc_keep.extend(named if named else (group if len(group) == 1 else []))
+            if not dc_any_named:
+                dc_keep = []
             if len(dc_keep) > 0:
                 dc_keep_uuids = {e["uuid"] for e in dc_keep}
                 compatible_entities = [
@@ -1526,7 +1551,7 @@ def run_gate(  # noqa: PLR0912, PLR0915 - one JS node, one function; splitting i
                 df_lines = []
                 for t in df_lost:
                     h = _df_hint_of(t)
-                    df_lines.append(f'"{jsc.js_string(_df_raw_of(t))}"' + (f" ({h})" if h else ""))
+                    df_lines.append(f'"{jsc.js_string(_df_raw_of(t))}"' + (f" ({h.replace('_', ' ')})" if h else ""))
                 gate_clarification = f"Couldn't find: {', '.join(df_lines)}.\n\n{gate_clarification}"
                 out["gate_clarification"] = gate_clarification
 

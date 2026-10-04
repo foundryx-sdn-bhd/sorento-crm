@@ -41,7 +41,7 @@ from tests.chatbot.test_engine import stub_access  # noqa: F401 - a pytest fixtu
 
 INCOMING = "crm_incoming_stock_list"
 STOCK = "crm_inventory_stock_balance_list"
-FAMILY_HEAD = "incoming search needs to be more specific. Multiple matches found. Please choose:"
+FAMILY_HEAD = "Which product do you mean? Please choose:"
 
 
 # =============================================================================== #

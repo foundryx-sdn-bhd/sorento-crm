@@ -49,6 +49,11 @@ REAL_ETA = date(2026, 9, 3)
 TOLD_ETA = "2026-09-08"
 LATER_REAL_ETA = date(2026, 9, 15)
 LATER_TOLD_ETA = "2026-09-20"
+
+
+def dealer_date(iso: str) -> str:
+    """A date as the dealer view tells it (AVAIL-MODE-REPLIES: dd/mm/yyyy); staff keep ISO."""
+    return date.fromisoformat(iso).strftime("%d/%m/%Y")
 SALESPERSON = "ZZT Sean Lim"
 
 
@@ -279,7 +284,7 @@ INCOMING = _v("incoming", "check_incoming")
 def _dealer_reply(etas: list[str]) -> str:
     # REFER-SALESMAN (30 Sep 2026): the one refer sentence, with or without a salesperson
     # on the customer; the name is never printed.
-    return f"{CODE}\nETA: {', '.join(etas)}\n\nPlease refer to your salesman."
+    return f"{CODE}: \u2705 ETA {', '.join(dealer_date(e) for e in etas)}\n\nPlease refer to your salesman."
 
 
 # --------------------------------------------------------- the dealer stock ask

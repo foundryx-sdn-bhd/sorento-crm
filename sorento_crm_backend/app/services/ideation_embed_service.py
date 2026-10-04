@@ -43,6 +43,7 @@ _EMBED_IDEAS_PATH = "/embed/ideas"
 _ASSERTION_AUDIENCE = "ideation-embed"
 _ASSERTION_TTL_SECONDS = 120  # short-lived - exchanged immediately for an embed token
 _TIMEOUT_SECONDS = 15
+_FALLBACK_DISPLAY_NAME = "Sorento staff"
 
 
 class IdeationEmbedNotConfigured(Exception):
@@ -140,7 +141,8 @@ def mint_embed_assertion(user: dict[str, Any], *, secret: str, connection_id: st
         "iss": "sorento",
         "sub": str(user.get("id") or ""),
         "email": user.get("email"),
-        "name": user.get("name"),
+        # The display name other readers see on a comment (AC-A-07): never the email.
+        "name": (user.get("name") or "").strip() or _FALLBACK_DISPLAY_NAME,
         "connection_id": connection_id,
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(seconds=_ASSERTION_TTL_SECONDS)).timestamp()),

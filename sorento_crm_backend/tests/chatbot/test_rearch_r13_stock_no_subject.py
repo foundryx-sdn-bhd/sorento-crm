@@ -382,7 +382,11 @@ class TestT3LowStockReportStillRunsWithNoEntities:
     `low_stock_report` on purpose (PLAN-low-stock-report S6, owner ruling 14 Sep
     2026): a bare "low stock report" runs every site-pool warehouse and every
     admitted product. The new refusal must be keyed on the SAME intent set, so this
-    ask still reaches its tool with no entities at all."""
+    ask still reaches its tool with no entities at all.
+
+    LOWSTOCK-FILTER-ASK (owner ruling, 2 Oct 2026): a low stock ask now settles its
+    product category before it runs, so the whole-book ask is "... all categories"; a
+    bare "low stock report" asks the category (`test_low_stock_filter_ask.py`)."""
 
     def test_a_scopeless_low_stock_report_still_calls_its_tool(
         self, session_factory, monkeypatch
@@ -406,7 +410,7 @@ class TestT3LowStockReportStillRunsWithNoEntities:
             session_factory,
             monkeypatch,
             qf=_stock_ask_verdict(intent_hint="low_stock_report"),
-            text_body="low stock report",
+            text_body="low stock report all categories",
             msg_id="zzt-r13-t3-lowstock",
             mcp_call=mcp_call,
             attributes=["scm.low_stock_report"],

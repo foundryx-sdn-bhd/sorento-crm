@@ -785,11 +785,12 @@ def _group(rows: list[dict[str, Any]], token: str) -> list[dict[str, Any]]:
     ]
 
 
-def numbered(labels: list[str]) -> list[str]:
+def numbered(labels: list[str], start: int = 1) -> list[str]:
     """One "1. CODE" line per option, the format every other picker prints
     (`turn/compose.py::compose_question`). Owner ruling 26 Sep 2026 (round 3 hand test):
-    a which-one list is numbered, "like the other pickers"."""
-    return [f"{i}. {label}" for i, label in enumerate(labels, 1)]
+    a which-one list is numbered, "like the other pickers". `start` is where a list
+    sharing a message with the lists before it carries on (AVAIL-MODE-REPLIES)."""
+    return [f"{i}. {label}" for i, label in enumerate(labels, start)]
 
 
 def pick_question(
@@ -799,6 +800,7 @@ def pick_question(
     count: int | None = None,
     *,
     recognised: bool = True,
+    start: int = 1,
 ) -> str:
     """The family pick (owner hand test 26 Sep, slice 2, the scout's wording), one
     numbered code per line. A number is read as a position only while this question is
@@ -824,7 +826,7 @@ def pick_question(
         if total > len(labels)
         else []
     )
-    return "\n".join([head, *numbered(labels), *tail])
+    return "\n".join([head, *numbered(labels, start), *tail])
 
 
 def after_reply(
@@ -845,12 +847,14 @@ def after_reply(
     * An exact code wins. A typed token that IS a product's code keeps that product and
       drops the siblings the resolver's family grouping added ("SRTWC286-SH" also placed
       its nine SRTWC286-SH-* variants).
-    * A family is a pick, not a task. When the whole reply is one typed token's family
-      with no exact code among it ("srtwc286" placed ten SRTWC286-SH* products) and every
-      entry still needs a quantity, no task opens: the reply asks which one, the typed
-      quantity rides on the pick, and a bare number cannot be read against ten slots.
-    * Otherwise the task's own question replaces the presenter's bare one, so the
-      dealer reads which products still need a quantity.
+    * A family is a pick, not a task. A typed token whose rows are a family with no exact
+      code among it ("srtwc286" placed ten SRTWC286-SH* products) is asked which one, the
+      typed quantity riding on the pick; a bare number cannot be read against ten slots.
+      AVAIL-MODE-REPLIES rule 5: that holds per token in a message that also names other
+      codes, one pick at a time (the rest queued on the pick, `NEXT_PICKS`).
+    * The other rows are answered now when they carry a quantity (the presenter printed
+      their lines); the ones still owed one stay in the task, whose own question replaces
+      the presenter's bare one, so the dealer reads which products still need it.
     """
     block = _availability_block(envelopes)
     if block is None:
@@ -882,53 +886,164 @@ def after_reply(
         if len(_group(rows, token)) > 1
         and not any((_row_label(row) or "").casefold() == token for row in rows)
     ]
-    if (
-        len(families) == 1
-        and all(row.get("needs_quantity") is True for row in rows)
-        and len(_group(rows, families[0][1])) == len(rows)
-    ):
-        shown, _token, entity = families[0]
-        options = []
-        for row in rows:
-            key, label = row.get("product_id"), _row_label(row)
-            if not key or not label:
-                continue
+    # AVAIL-MODE-REPLIES rule 5 (owner, 2 Oct 2026): one message may name exact codes,
+    # vague ones (a family, no exact code among it) and codes found nowhere. Every vague
+    # token gets its which-one list in the SAME question (owner v2 note 3, Q3 (b)), the
+    # numbering running on from one list to the next so no two options share a number.
+    # The rows outside every family are answered now when they carry a quantity, and
+    # only the ones still owed one stay in the task.
+    options: list[dict[str, Any]] = []
+    groups: list[dict[str, Any]] = []
+    in_family: set[int] = set()
+    for shown, token, entity in families:
+        group = [
+            row
+            for row in _group(rows, token)
+            if id(row) not in in_family and row.get("needs_quantity") is True
+        ]
+        labelled = [
+            (row, _row_label(row)) for row in group if row.get("product_id") and _row_label(row)
+        ][:MAX_SLOTS]
+        if len(labelled) < 2:
+            continue
+        in_family.update(id(row) for row in group)
+        quantity = _number(entity.get("quantity"))
+        if quantity is None and len(families) == 1:
+            quantity = _number(demand_qty)
+        start = len(options) + 1
+        for row, label in labelled:
             options.append(
                 {
                     "position": len(options) + 1,
                     "label": label,
                     "code": label,
-                    "uuid": str(key),
+                    "uuid": str(row["product_id"]),
                     "entity_type": "product",
                 }
             )
-        options = options[:MAX_SLOTS]
-        if len(options) > 1:
-            quantity = _number(entity.get("quantity"))
-            if quantity is None:
-                quantity = _number(demand_qty)
-            return StockReply(
-                tasks=others,
-                text=pick_question(shown, [o["label"] for o in options], quantity, len(rows)),
-                pick={
-                    "options": options,
-                    "payload": {
-                        "domain": "inventory",
-                        "domains": ["inventory"],
-                        "stock_pick": True,
-                        "typed": shown,
-                        "count": len(rows),
-                        "stock_qty": quantity,
-                    },
-                },
-            )
+        groups.append(
+            {
+                "typed": shown,
+                "qty": quantity,
+                "count": len(group),
+                "positions": list(range(start, len(options) + 1)),
+            }
+        )
 
-    rebuilt = _rebuilt(tasks, rows, turn_no=turn_no, named_products=named_products)
+    rest = [row for row in rows if id(row) not in in_family]
+    owed = [row for row in rest if row.get("needs_quantity") is True]
+    if groups:
+        # One question at a time (reviewer B4): the pick is asked now, and a code still
+        # owed its quantity rides on it (`OWED`), asked once every list is answered.
+        carried = [
+            {"key": str(row["product_id"]), "label": _row_label(row)}
+            for row in owed
+            if row.get("product_id") and _row_label(row)
+        ]
+        return StockReply(
+            tasks=others, text=picks_question(options, groups), pick=stock_pick(options, groups, carried)
+        )
+
+    rebuilt = _rebuilt(tasks, owed, turn_no=turn_no, named_products=named_products)
     stock = next((task for task in rebuilt if task.kind == "stock_qty"), None)
     text = None
     if stock is not None and StockQtyTask().missing(stock):
         text = StockQtyTask().question(stock)
     return StockReply(tasks=rebuilt, text=text)
+
+
+#: AVAIL-MODE-REPLIES rule 5: the lists of a several-list pick the dealer has not answered
+#: yet (`{"options", "groups"}`, the numbers kept), handed on by
+#: `turn/apply.py::_spend_stock_pick` and asked again by `engine._stock_ask_reply`.
+NEXT_PICKS = "next_picks"
+#: The pick's own quantity per code, one per list (`after_reply`), for `_spend_stock_pick`.
+QTY_BY_CODE = "qty_by_code"
+#: Codes still owed a quantity while a pick is open (`{"key", "label"}` each): asked by
+#: `engine._stock_ask_reply` once no list is left open, never beside a pick.
+OWED = "owed"
+
+
+def owed_of(tasks: tuple[Task, ...]) -> list[dict[str, Any]]:
+    """The open stock task's slots still owed a quantity, as `OWED` entries."""
+    task = next((t for t in tasks if t.kind == "stock_qty" and t.status == OPEN), None)
+    if task is None:
+        return []
+    return [{"key": slot.key, "label": slot.label} for slot in task.slots if slot.value is None]
+
+
+def with_owed(
+    tasks: tuple[Task, ...], owed: list[dict[str, Any]], *, turn_no: int
+) -> tuple[tuple[Task, ...], str | None]:
+    """The stock task asking every code still owed a quantity: the open task's own owed
+    slots and `owed`, once each in that order, and its question."""
+    slots: list[Slot] = []
+    for entry in [*owed_of(tasks), *owed]:
+        key, label = entry.get("key"), entry.get("label")
+        if key and label and all(slot.key != key for slot in slots):
+            slots.append(Slot(key=str(key), label=str(label)))
+    others = tuple(t for t in tasks if t.kind != "stock_qty")
+    if not slots:
+        return tasks, None
+    task = Task(
+        kind="stock_qty",
+        domain="inventory",
+        status=OPEN,
+        opened_at_turn=turn_no,
+        touched_at_turn=turn_no,
+        slots=tuple(slots[:MAX_SLOTS]),
+    )
+    return others + (task,), StockQtyTask().question(task)
+
+
+def picks_question(options: list[dict[str, Any]], groups: list[dict[str, Any]]) -> str:
+    """Every list of a pick in one message, each under its own header, numbered as the
+    options are (`groups[].positions`)."""
+    parts = []
+    for group in groups:
+        shown = [o for o in options if o.get("position") in group["positions"]]
+        if not shown:
+            continue
+        parts.append(
+            pick_question(
+                group["typed"],
+                [str(o["label"]) for o in shown],
+                group.get("qty"),
+                group.get("count"),
+                start=shown[0]["position"],
+            )
+        )
+    return "\n\n".join(parts)
+
+
+def stock_pick(
+    options: list[dict[str, Any]], groups: list[dict[str, Any]], owed: list[dict[str, Any]] | None = None
+) -> dict[str, Any]:
+    """The `product_pick` a which-one question is stored as. With one list it is exactly
+    the single family pick it always was; with several, `groups` keeps each list's typed
+    token, quantity and positions."""
+    quantities = [g.get("qty") for g in groups]
+    by_code = {
+        str(o["label"]).casefold(): g["qty"]
+        for g in groups
+        if g.get("qty") is not None
+        for o in options
+        if o.get("position") in g["positions"]
+    }
+    return {
+        "options": options,
+        "payload": {
+            "domain": "inventory",
+            "domains": ["inventory"],
+            "stock_pick": True,
+            "typed": groups[0]["typed"],
+            "count": groups[0]["count"] if len(groups) == 1 else len(options),
+            # A quantity is owed (`question.of_pending`) only while some list has none.
+            "stock_qty": quantities[0] if all(q is not None for q in quantities) else None,
+            "groups": groups,
+            QTY_BY_CODE: by_code,
+            OWED: list(owed or []),
+        },
+    }
 
 
 def tasks_after_reply(

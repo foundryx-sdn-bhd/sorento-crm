@@ -1102,7 +1102,8 @@ def _push_download_to_chat(db, download_id: str, *, provider: str, key: str) -> 
 def generate_low_stock_report(download_id: str, run_id: str, user_id: str, *,
                               include_supplier: bool = True, split: str = "none",
                               suppliers: Optional[list] = None,
-                              categories: Optional[list] = None) -> dict:
+                              categories: Optional[list] = None,
+                              brand_ids: Optional[list] = None) -> dict:
     """Render the run's low stock workbook, store it, and update the download row.
 
     PLAN-low-stock-report S3 (AC-36; `split` added PLAN-low-stock-export-split-25sep,
@@ -1134,6 +1135,11 @@ def generate_low_stock_report(download_id: str, run_id: str, user_id: str, *,
     ever and the buyer's row sits `processing` until it goes stale.
     """
     db = SessionLocal()
+    if brand_ids:
+        # CONTACT-BRAND-SCOPE: the requesting contact's brands; the file holds only their products.
+        from app.models.base import set_brand_scope
+
+        set_brand_scope(db, frozenset(str(b) for b in brand_ids))
     from app.models.base import UNSET, get_company_scope
     from app.models.scm import ReorderRun
     from app.services.scm.reorder_run_service import _adopt_run_company_scope

@@ -16,6 +16,9 @@ export function useCustomerMultiPicker(
   // A picker that says something other than the sales agent (the group page) words its own
   // description; omitted, the option keeps the agent text every other picker shows.
   describe?: (option: CustomerSelectOption) => string | undefined,
+  // Opt-in for a page that belongs to no one company (the contact card): search every
+  // company the user is granted, each option tagged with its company.
+  options?: { allGrantedCompanies?: boolean },
 ) {
   const [selected, setSelected] = useState<string[]>([]);
   const known = useRef(new Map<string, SearchableMultiSelectOption>());
@@ -23,9 +26,14 @@ export function useCustomerMultiPicker(
   isDisabledRef.current = isDisabled;
   const describeRef = useRef(describe);
   describeRef.current = describe;
+  const allGranted = options?.allGrantedCompanies === true;
 
   const fetchOptions = useCallback(async (query: string) => {
-    const page = await searchCustomersSelect(query, 0);
+    const page = await searchCustomersSelect(
+      query,
+      0,
+      allGranted ? { companyScope: 'grants' } : undefined,
+    );
     return page.map((row) => {
       const option: SearchableMultiSelectOption = {
         value: row.value,
@@ -36,7 +44,7 @@ export function useCustomerMultiPicker(
       known.current.set(option.value, option);
       return option;
     });
-  }, []);
+  }, [allGranted]);
 
   const selectedOptions = useMemo(
     () =>

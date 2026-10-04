@@ -797,6 +797,7 @@ _COLUMNS = (
     # the same fact as a sentence for a person; nothing parses that sentence.
     OrderInquiryRow.previous_qty.label("previous_qty"),
     OrderInquiryRow.previous_delivery_date.label("previous_delivery_date"),
+    OrderInquiryRow.previous_item_code.label("previous_item_code"),
     # AC-RL-16 (`PLAN-oi-replan-received-links.md` S3): reaches the wire so the Qty
     # cell's `redirected` mark can read it.
     OrderInquiryRow.redirected_to_pool.label("redirected_to_pool"),
@@ -2313,6 +2314,7 @@ class OrderInquiryWorklistService:
                 _qty_str(_dec(row.previous_qty)) if row.previous_qty is not None else None
             ),
             "previous_delivery_date": row.previous_delivery_date,
+            "previous_item_code": row.previous_item_code,
             # AC-RL-16: a replan could not carry this row's coverage forward - it is
             # history now, and the FE marks it and excludes it from the cards.
             "redirected_to_pool": bool(row.redirected_to_pool),

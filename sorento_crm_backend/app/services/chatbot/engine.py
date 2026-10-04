@@ -35,7 +35,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.models.base import set_company_scope
+from app.models.base import set_brand_scope, set_company_scope
 from app.models.chatbot_turn import ChatbotTurn
 from app.services.chatbot import dispatch, jsc, llm_call, media_intake, send_order, trace as trace_mod
 from app.services.chatbot.contracts import (
@@ -345,6 +345,267 @@ def _bare_roster_positions(pending: Any, message: str) -> list[int] | None:
     return positions
 
 
+#: AVAIL-MODE-REPLIES rule 4 (owner, 2 Oct 2026): a message that is nothing but "all" over
+#: an availability-mode stock pick. The parser's prompt reads "all" / "semua" over a pick as
+#: EVERY position, which is indistinguishable from "1,2,3" by then, so the engine reads the
+#: bare word itself (owner Q4 (b): only the explicit "all" is refused; every number typed
+#: out is a pick).
+_BARE_ALL = re.compile(
+    r"(?:all(?: of (?:them|it|these|those))?|every ?one|everything|semua|全部|都要)"
+    r"(?: (?:please|pls|plz))?"
+)
+
+
+def _with_repeated_codes_summed(verdict: dict[str, Any], message: str) -> dict[str, Any]:
+    """AVAIL-MODE-REPLIES (owner Q2 (a)): a code named twice in one message asks for the
+    quantities added up. The live parser merges "SRT5674 x 2, SRT5674 x 3" into ONE
+    entity carrying the last quantity (`entity_op: replace_combine`, tester-local pass on
+    7fa5d654, step 12), so the quantities are read off the message beside that code. A
+    code the parser kept as two entities is summed later (`turn_runtime._spec_quantities`)
+    and is left alone here."""
+    entities = verdict.get("entities")
+    if not isinstance(entities, list):
+        return verdict
+    products = [e for e in entities if isinstance(e, dict) and e.get("hint") in (None, "product")]
+    changed = False
+    out = []
+    for entity in entities:
+        if entity in products and entity.get("quantity") is not None:
+            codes = {
+                str(entity.get(k)).strip()
+                for k in ("raw", "canonical_code")
+                if isinstance(entity.get(k), str) and entity.get(k).strip()
+            }
+            twins = [
+                e for e in products
+                if e is not entity and codes & {str(e.get(k) or "").strip() for k in ("raw", "canonical_code")}
+            ]
+            for code in sorted(codes, key=len, reverse=True):
+                found = re.findall(
+                    rf"(?<![\w-]){re.escape(code)}(?![\w-])\s*(?:x|\*|qty|:|-|=)?\s*(\d+)", message or "", re.IGNORECASE
+                )
+                if len(found) >= 2 and not twins:
+                    entity = {**entity, "quantity": sum(int(n) for n in found)}
+                    changed = True
+                    break
+        out.append(entity)
+    if not changed:
+        return verdict
+    summed = {**verdict, "entities": out}
+    if len(products) == 1 and verdict.get("demand_qty") is not None:
+        summed["demand_qty"] = out[entities.index(products[0])]["quantity"]
+    return summed
+
+
+#: Words that make a message an ETA ask whatever else it says (the incoming domain's own
+#: switch words, `turn/policy_rows.py`, plus the Malay and Chinese a dealer types).
+_ETA_WORDS = re.compile(
+    r"\b(?:eta|incoming|arriv\w*|shipments?|containers?|coming|when|bila|sampai|tiba)\b|几时|什么时候|到货|到",
+    re.IGNORECASE,
+)
+
+
+def _as_a_stock_ask_by_its_own_words(verdict: dict[str, Any], message: str) -> dict[str, Any]:
+    """AVAIL-MODE-REPLIES (tester re-run on 2eb2a00ef): the live parser intermittently read
+    a plain "CWCX611 x 300" as `check_incoming` and the dealer was told "ETA not confirmed
+    yet". A message whose own words name a product WITH a quantity and no ETA word is a
+    stock ask, so the incoming reading is put back to stock. One prompt, read the same
+    way every time by the engine (owner: no second prompt).
+
+    The cloud live-parser pass at 2ff7f5e9 saw the same misread the other way: "srt5764 xx
+    10" read as a product-info ask (`check_product` / `master_products`), which answered
+    with the staff did-you-mean and an escalation offer. That reading is put back too."""
+    misread = {"incoming", "master_products"}
+    incoming = (
+        verdict.get("intent_hint") in ("check_incoming", "check_product")
+        or verdict.get("domain_hint") in misread
+        or any(isinstance(a, dict) and a.get("domain") in misread for a in verdict.get("asks") or [])
+    )
+    text = str(message or "")
+    if not incoming or _ETA_WORDS.search(text):
+        return verdict
+    codes = {
+        str(e.get(k)).strip()
+        for e in verdict.get("entities") or []
+        if isinstance(e, dict) and e.get("hint") in (None, "product")
+        for k in ("raw", "canonical_code")
+        if isinstance(e.get(k), str) and e.get(k).strip()
+    }
+    # Any standalone number is the quantity, wherever it sits: the live parser's second
+    # pass read "srt5764 xx 10" as the entity "srt5764" with the 10 after "xx".
+    with_qty = bool(codes) and (
+        verdict.get("demand_qty") is not None
+        or any(
+            isinstance(e, dict) and isinstance(e.get("quantity"), (int, float)) and not isinstance(e.get("quantity"), bool)
+            for e in verdict.get("entities") or []
+        )
+        or re.search(r"(?<![\w./-])\d+(?![\w./-])", text) is not None
+    )
+    if not with_qty:
+        return verdict
+    asks = [
+        {**a, "domain": "inventory"} if isinstance(a, dict) and a.get("domain") in misread else a
+        for a in verdict.get("asks") or []
+    ]
+    return {
+        **verdict,
+        "intent_hint": "check_stock",
+        "domain_hint": "inventory",
+        **({"asks": asks} if verdict.get("asks") else {}),
+    }
+
+
+def _code_like(token: str) -> bool:
+    """A typed token that can be a product code: letters AND digits ("srtwc286"). A word
+    ("xx", "basin") or a bare number ("2", "10") is not one."""
+    return any(ch.isdigit() for ch in token) and any(ch.isalpha() for ch in token)
+
+
+def _unsure_capture_as_codes(verdict: dict[str, Any]) -> dict[str, Any]:
+    """AVAIL-MODE-REPLIES (tester re-run on a5ba9dc9f, fix 1 runs 2-3): the live parser
+    intermittently read "srt5764 xx 10" as ONE unsure capture (`confident: false`, or no
+    hint), and the dealer was told 'I captured "srt5764 xx 10" but couldn't tell which
+    part is which.' instead of the did-you-mean. An availability stock / ETA turn reads
+    such a capture by its own words: each code-like word is a product, a bare number is
+    its quantity, any other word is dropped (never a product)."""
+    if verdict.get("domain_hint") not in ("inventory", "incoming") and verdict.get("intent_hint") not in (
+        "check_stock",
+        "check_incoming",
+    ):
+        return verdict
+    entities = verdict.get("entities") or []
+    out: list[Any] = []
+    changed = False
+    for e in entities:
+        unsure = (
+            isinstance(e, dict)
+            and e.get("hint") in (None, "product")
+            and (e.get("hint") is None or e.get("confident") is False or e.get("hint_confident") is False)
+        )
+        if not unsure:
+            out.append(e)
+            continue
+        words = [w for w in re.split(r"[\s,]+", str(e.get("raw") or "")) if w]
+        codes = [w for w in words if _code_like(w)]
+        numbers = [int(w) for w in words if w.isdigit()]
+        changed = True
+        qty = e.get("quantity")
+        if qty is None and len(numbers) == 1 and verdict.get("demand_qty") is None:
+            qty = numbers[0]
+        for code in codes:
+            out.append(
+                {
+                    **e,
+                    "raw": code,
+                    "canonical_code": code,
+                    "hint": "product",
+                    "confident": True,
+                    "hint_confident": True,
+                    "quantity": qty,
+                }
+            )
+    return {**verdict, "entities": out} if changed else verdict
+
+
+def _exact_codes_only(
+    parse_output: dict[str, Any],
+    resolved_kinds: dict[str, dict[str, int]],
+    resolved_candidates: dict[str, list[dict[str, Any]]],
+    compatible_entities: list[dict[str, Any]],
+    unplaced: dict[str, str],
+):
+    """AVAIL-MODE-REPLIES (owner hand test, 3 Oct 2026): an availability-access stock or
+    ETA turn answers EXACT codes only, and steers the dealer to one when they typed less.
+
+    Per product token this message (or the carried focus) names:
+    * a code matching it exactly is the product, and its family is not (the bare "eta"
+      after "srtw2000 20" listed SRTW2000-SS-CR, -A and -NL as well);
+    * else a code-like token keeps the codes it is the prefix of, the family the
+      which-one picker steers from ("srtwc286");
+    * else a code-like token is not found, and goes to the did-you-mean ("srt5764");
+    * a word or a bare number with no exact code is not a product at all: the describe /
+      semantic matches the resolver found for "xx", "10" or a "2" typed over a
+      did-you-mean listed a page of the catalogue.
+    Returns the four resolver answers, or None when nothing changes."""
+    def code_of(row: dict[str, Any]) -> str:
+        return str(row.get("canonical_code") or row.get("code") or row.get("raw") or "").strip().casefold()
+
+    tokens: list[tuple[str, str]] = []
+    for e in parse_output.get("entities") or []:
+        if not isinstance(e, dict) or e.get("hint") not in (None, "product"):
+            continue
+        typed = str(e.get("raw") or e.get("canonical_code") or "").strip()
+        if typed and typed.casefold() not in {t for t, _ in tokens}:
+            tokens.append((typed.casefold(), typed))
+    candidates = [c for c in resolved_candidates.get("product") or [] if isinstance(c, dict)]
+    if not tokens or not candidates:
+        return None
+    keep: set[str] = set()
+    per_token: dict[str, int] = {}
+    misses: dict[str, str] = {}
+    ignored: set[str] = set()
+    for fold, typed in tokens:
+        exact = [c for c in candidates if code_of(c) == fold]
+        family = [c for c in candidates if code_of(c).startswith(fold)] if _code_like(fold) else []
+        chosen = exact or family
+        if chosen:
+            keep.update(str(c.get("uuid")) for c in chosen)
+            per_token[fold] = len(chosen)
+        elif _code_like(fold):
+            misses[fold] = typed
+        else:
+            ignored.add(fold)
+    kept = [c for c in candidates if str(c.get("uuid")) in keep]
+    if len(kept) == len(candidates) and not misses and not ignored:
+        return None
+    kinds = dict(resolved_kinds)
+    for fold, _typed in tokens:
+        if fold in kinds and isinstance(kinds[fold], dict):
+            row = {k: v for k, v in kinds[fold].items() if k != "product"}
+            if per_token.get(fold):
+                row["product"] = per_token[fold]
+            kinds[fold] = row
+    compatible = [
+        e
+        for e in compatible_entities
+        if not isinstance(e, dict) or e.get("entity_type") != "product" or str(e.get("uuid")) in keep
+    ]
+    placed = {**{k: v for k, v in unplaced.items() if k not in ignored}, **misses}
+    return kinds, {**resolved_candidates, "product": kept}, compatible, placed
+
+
+def _is_bare_all(message: str) -> bool:
+    text = re.sub(r"\s+", " ", str(message or "").strip().lower()).rstrip(".!? ")
+    return bool(_BARE_ALL.fullmatch(text))
+
+
+_ORDINALS = {
+    "first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5,
+    "sixth": 6, "seventh": 7, "eighth": 8, "ninth": 9, "tenth": 10,
+}
+#: AVAIL-MODE-REPLIES (owner v2 note 2): "<qty> of <option>" over a stock pick - "2 of 3",
+#: "2 of the third one", "2 of 3rd product", "2 pcs of no 3". The number after "of" is
+#: always the option. The live parser read "2 of 3" as option 2, quantity 3 (tester-local
+#: pass on 7fa5d654, step 7), so the engine reads the shape itself, as it reads "all".
+_QTY_OF_OPTION = re.compile(
+    r"(\d+)\s*(?:pcs|pc|units?|nos|x)?\s+of\s+(?:the\s+)?(?:no\.?\s*|number\s+|#)?"
+    r"(\d+|" + "|".join(_ORDINALS) + r")(?:st|nd|rd|th)?(?:\s+(?:one|product|code|item))?",
+    re.IGNORECASE,
+)
+
+
+def _quantity_of_option(message: str) -> list[tuple[int, int]] | None:
+    """`[(option, quantity), ...]` when the message's own words pair each quantity with an
+    option ("2 of 1 and 5 of 3"), else None."""
+    pairs = []
+    for qty, option in _QTY_OF_OPTION.findall(str(message or "")):
+        position = _ORDINALS.get(option.lower()) or (int(option) if option.isdigit() else None)
+        if position is None or int(qty) < 1:
+            return None
+        pairs.append((position, int(qty)))
+    return pairs or None
+
+
 def _with_the_engine_pick(verdict: dict[str, Any], pending: Any, message: str) -> dict[str, Any]:
     """The verdict with the engine's own reading of a bare pick (`_bare_roster_positions`).
 
@@ -356,6 +617,51 @@ def _with_the_engine_pick(verdict: dict[str, Any], pending: Any, message: str) -
     all (a quantity, a top-N count - the readers before this one already settled
     those), and a reading that already agrees.
     """
+    stock_pick = pending is not None and bool((pending.payload or {}).get("stock_pick"))
+    bare = str(message or "").strip().lower().rstrip(".!")
+    if stock_pick and _BARE_POSITIONS.fullmatch(bare):
+        # Owner hand test, 3 Oct 2026 ("I thought our picker mechanism is the same and
+        # unified?"): a bare number on the list is THAT option, for a stock pick and a
+        # did-you-mean exactly as for every other picker (`_bare_roster_positions`),
+        # whatever the parser made of it (a product "2", a quantity 2). A number past the
+        # list stays the pick's quantity (`apply._stock_pick_requantified`).
+        offered_positions = {o.get("position") for o in pending.options}
+        positions = sorted({int(n) for n in re.findall(r"\d+", bare)})
+        if positions and all(p in offered_positions for p in positions):
+            return {
+                **verdict,
+                "entities": [],
+                "demand_qty": None,
+                "reference_positions": positions,
+                "open_question_answer": {"mode": "pick", "picked": positions, "items": [], "qty_for_all": None},
+                "domain_in_message": False,
+                "asks": [],
+            }
+    pairs = _quantity_of_option(message) if stock_pick else None
+    offered = {o.get("position") for o in (getattr(pending, "options", None) or [])}
+    if pairs and all(position in offered for position, _qty in pairs):
+        positions = [position for position, _qty in pairs]
+        return {
+            **verdict,
+            "reference_positions": positions,
+            "demand_qty": pairs[0][1] if len(pairs) == 1 else None,
+            "open_question_answer": {
+                "mode": "pick",
+                "picked": positions,
+                "items": [{"position": p, "code": None, "qty": q} for p, q in pairs],
+                "qty_for_all": None,
+            },
+            "domain_in_message": False,
+            "asks": [],
+        }
+    if pending is not None and (pending.payload or {}).get("stock_pick") and _is_bare_all(message):
+        # `apply._stock_pick_refuses_all` keeps the list open on exactly this reading.
+        return {
+            **verdict,
+            "reference_positions": [],
+            "open_question_answer": {"mode": "all", "picked": [], "items": [], "qty_for_all": None},
+            "broaden_axis": "all",
+        }
     positions = _bare_roster_positions(pending, message)
     if positions is None:
         return verdict
@@ -393,7 +699,7 @@ def _option_words(option: dict[str, Any]) -> set[str]:
 
 
 def _with_the_picked_axis(
-    verdict: dict[str, Any], pending: Any, positions: list[int]
+    verdict: dict[str, Any], pending: Any, positions: list[int], message: str = ""
 ) -> dict[str, Any]:
     """The roster's own axis, off the option(s) the customer picked.
 
@@ -413,6 +719,9 @@ def _with_the_picked_axis(
     * any other roster (product, customer): an entity of the roster's kind naming no
       picked option is dropped - the parser's echo of the previous pick is not a second
       subject. The picked option itself reaches the focus through `_answer_pending`.
+      MULTI-CODE-DYM Q3 (owner, 4 Oct 2026): a PRODUCT entity whose own word is in THIS
+      message ("2 and SRTWC286-SH-150?") is the customer's second subject, not an echo,
+      and stays.
     """
     matched = [o for o in pending.options if o.get("position") in positions]
     if not matched:
@@ -455,9 +764,40 @@ def _with_the_picked_axis(
             for v in (e.get("uuid"), e.get("canonical_code"), e.get("raw"), e.get("name"))
         )
 
+    from app.services.chatbot.turn.state import token_key
+
+    picked_keys = {
+        token_key(o.get(field))
+        for o in matched
+        for field in ("code", "label")
+        if o.get(field)
+    }
+    said = [w.strip(".?!:()\"'") for w in re.split(r"[\s,;/&+]+", message or "")]
+    said = [w for w in said if w]
+
+    def typed_here(e: dict[str, Any]) -> bool:
+        """The entity's word, whole, among this message's own words (a span of as many
+        words as it has): an echo of an earlier pick is not, even when a typed code
+        starts with it."""
+        raw = str(e.get("raw") or "").strip()
+        want, size = token_key(raw), len(raw.split()) or 1
+        if any(want in key for key in picked_keys):
+            # A piece of the picked code ("the srtwc286 one") names the pick itself.
+            return False
+        return bool(want) and any(
+            token_key(" ".join(said[i : i + size])) == want for i in range(len(said) - size + 1)
+        )
+
     entities = verdict.get("entities") or []
     kept_entities = [
-        e for e in entities if not (isinstance(e, dict) and e.get("hint") == kind and not names_a_pick(e))
+        e
+        for e in entities
+        if not (
+            isinstance(e, dict)
+            and e.get("hint") == kind
+            and not names_a_pick(e)
+            and not (kind == "product" and typed_here(e))
+        )
     ]
     if len(kept_entities) == len(entities):
         return verdict
@@ -516,8 +856,33 @@ def _contact_company_scope(factory: SessionFactory, contact_respond_id: str) -> 
         db.close()
 
 
-def _scoped_factory(factory: SessionFactory, scope: frozenset) -> SessionFactory:
-    """`factory`, wrapped so every session it opens is stamped with `scope`.
+def _contact_brand_scope(factory: SessionFactory, contact_respond_id: str) -> frozenset | None:
+    """The contact's accessible brands (CONTACT-BRAND-SCOPE), resolved once per turn on a
+    session of its own, the way `_contact_company_scope` resolves its companies.
+
+    None = unscoped (every brand). Fail-closed: a lookup that raised returns a scope no
+    brand matches, so the turn sees no product rather than every product."""
+    from app.services.contact_brand_scope import NO_BRAND_ID, contact_brand_scope
+
+    db = factory()
+    try:
+        return contact_brand_scope(db, contact_respond_id, default_space_id(db))
+    except Exception:  # noqa: BLE001 - a scope lookup must never fail the turn
+        logger.warning(
+            "chatbot: brand scope lookup failed for contact %s, failing closed",
+            contact_respond_id,
+            exc_info=True,
+        )
+        return frozenset({NO_BRAND_ID})
+    finally:
+        db.close()
+
+
+def _scoped_factory(
+    factory: SessionFactory, scope: frozenset, brand_scope: frozenset | None = None
+) -> SessionFactory:
+    """`factory`, wrapped so every session it opens is stamped with `scope` (and, for a
+    brand-scoped contact, `brand_scope`: the session criterion that hides other brands).
 
     The FACTORY is wrapped rather than each of the engine's ~15 `_session` call sites
     changed, because the factory is also what the lanes get (`answer_services_for`
@@ -528,6 +893,7 @@ def _scoped_factory(factory: SessionFactory, scope: frozenset) -> SessionFactory
     def open_scoped_session() -> Session:
         db = factory()
         set_company_scope(db, scope)
+        set_brand_scope(db, brand_scope)
         return db
 
     return open_scoped_session
@@ -1459,6 +1825,19 @@ def _customer_scope_gate(
                 narrowed_refusal = scope_mod.refusal_line_for(links, of_name)
     elif my_account is not None:
         ids = [c for c in ids if links.levels.get(c) == my_account] or None
+    elif in_order and not self_reference and not _names_an_order_number(entities):
+        # DO-ASK-SIMPLIFY tester pass 1: a message naming no customer ("this month",
+        # answering the period question) continues the customer the conversation already
+        # carries, kept inside the links; "my" means every link, and an order number is
+        # looked up across every own account whatever the carry.
+        link_ids = set(ids)
+        carried = [
+            str(row.get("uuid"))
+            for row in getattr(focus, "customers", None) or []
+            if isinstance(row, dict) and str(row.get("uuid")) in link_ids
+        ]
+        if carried:
+            ids = list(dict.fromkeys(carried))
     if ids is None:
         return without_customers, None, True, narrowed_refusal
     if not in_order:
@@ -1578,6 +1957,16 @@ def _screen_resolver_for_scope(
         for kind, rows in (candidates or {}).items()
     }
     return refused, compatible, candidates, dropped_ids
+
+
+def _names_an_order_number(entities: list[dict[str, Any]]) -> bool:
+    """Does this message name a DO/SO/order number (the parser's own order hints)?"""
+    return any(
+        jsc.js_string(e.get("hint") or e.get("entity_type") or "").strip().lower()
+        in ("order", "customer_order", "order_number")
+        and e.get("current_message") is not False
+        for e in entities
+    )
 
 
 def _drill_offer_subject(scope_ids: list[str] | None, focus: Any, trace: Any) -> list[str] | None:
@@ -2326,7 +2715,9 @@ def run_turn(
     # Resolved once, on a session of its own, from the same rule the X-API-Key
     # dependency uses. An unknown contact fails closed to zero rows.
     contact_scope = _contact_company_scope(session_factory, contact_respond_id)
-    session_factory = _scoped_factory(session_factory, contact_scope)
+    session_factory = _scoped_factory(
+        session_factory, contact_scope, _contact_brand_scope(session_factory, contact_respond_id)
+    )
 
     if offload is None:
         offload = bool(getattr(settings, "chatbot_turn_on_worker", False))
@@ -3848,6 +4239,26 @@ def _run_stages_body(  # noqa: PLR0915
         s7_mode = _s7_mode(db, settings_row)
         space_id_for_turn = business_services.fetch_space_id(db)
 
+        # LOWSTOCK-FILTER-ASK: an ask that left a required field open (the slot is one
+        # turn long, consumed here) reads this message as the answer unless it is plainly
+        # another ask; a fresh low stock ask takes its category / brand words off the
+        # entity list for the lane. Read before every other seam below.
+        from app.services.chatbot import required_fields
+        from app.services.chatbot.lanes.business import low_stock_ask
+
+        _message_text = jsc.js_string(jsc.get(_inner_message(envelope), "text") or "")
+        # Security S1: these keys are the ENGINE's own; one the parser emitted (the
+        # Anthropic path does not enforce the schema's additionalProperties) is dropped.
+        verdict = {k: v for k, v in verdict.items() if k not in required_fields.ENGINE_KEYS}
+        open_ask = state_in.focus.required_ask
+        state_in.focus.required_ask = None
+        verdict, required_rule = required_fields.reply_verdict(verdict, open_ask, _message_text)
+        if required_rule:
+            turn_trace.add("required_ask", {"verdict_rule": required_rule, "ask": (open_ask or {}).get("ask")})
+        if required_rule == "required_ask_answer":
+            state_in = dataclasses_replace(state_in, pending=None)
+        verdict = low_stock_ask.take_words(verdict, _message_text)
+
         # Owner retest of top selling round 4 (27 Sep 2026): inside a ranking, the message
         # is read against the question the bot asked before anything routes it.
         # R2 (round 7): read before the verdict below can change the conversation.
@@ -3880,6 +4291,61 @@ def _run_stages_body(  # noqa: PLR0915
         )
         if order_list_rule:
             turn_trace.add("order_list", {"verdict_rule": order_list_rule})
+        # SO-NUMBER-ASK: "all my sales orders" is the SO list whatever the parser read (the
+        # tester measured "okay how about all my sales order?" as an SO answer in 1 of 3
+        # runs): the words decide the document, as they decide the order list's brand above.
+        from app.services.chatbot import so_status as so_status_mod
+
+        # Cloud pass on #1435 (live parser): the SO numbers the message typed are its SO
+        # entities, never one copied off the previous card.
+        verdict, typed_so_rule = so_status_mod.typed_so_numbers_verdict(
+            verdict, jsc.js_string(jsc.get(_inner_message(envelope), "text") or "")
+        )
+        if typed_so_rule:
+            turn_trace.add("so_status", {"verdict_rule": typed_so_rule})
+        # Same pass: the report status and document the parser carried onto "1" under the
+        # outstanding offer, or onto a period answering the SO list, are not the message's.
+        if not (in_ranking_conversation or top_selling_rule or state_in.focus.status == "top_selling"):
+            verdict, carried_rule = so_status_mod.carried_status_verdict(
+                verdict,
+                jsc.js_string(jsc.get(_inner_message(envelope), "text") or ""),
+                focus_document=state_in.focus.document,
+                focus_status=state_in.focus.status,
+                pending_kind=getattr(state_in.pending, "kind", None),
+            )
+            if carried_rule:
+                turn_trace.add("so_list", {"verdict_rule": carried_rule})
+        # Never inside a top selling ranking: there "by sales order" / "SO basis" switch the
+        # ranking's basis (`_top_selling_verdict` above, round 7 R3), and the list must not
+        # take the ranking's question or its status away.
+        so_list_rule = None
+        if not (in_ranking_conversation or top_selling_rule or state_in.focus.status == "top_selling"):
+            verdict, so_list_rule = so_status_mod.so_list_verdict(
+                verdict, jsc.js_string(jsc.get(_inner_message(envelope), "text") or "")
+            )
+        if so_list_rule:
+            turn_trace.add("so_list", {"verdict_rule": so_list_rule})
+            # Owner hand test, 3 Oct 2026: over an open outstanding summary, "find all my
+            # sales order" was read as re-scoping THAT report (its detail offer and the
+            # carried `focus.status` both survived) and printed it again. An SO list ask
+            # starts its own question: the outstanding offer and status go.
+            import dataclasses as _dc
+
+            open_kind = getattr(state_in.pending, "kind", None)
+            state_in = _dc.replace(
+                state_in,
+                focus=_dc.replace(state_in.focus, status=None),
+                pending=None if open_kind in ("outstanding_detail", "outstanding_scope") else state_in.pending,
+            )
+        if not (in_ranking_conversation or top_selling_rule or state_in.focus.status == "top_selling"):
+            # The month and the "outstanding" an SO ask types, when the parser dropped them.
+            from app.services.chatbot import do_ask as _do_ask
+
+            verdict, typed_rule = so_status_mod.typed_words_verdict(
+                verdict, jsc.js_string(jsc.get(_inner_message(envelope), "text") or ""), _do_ask.today_myt()
+            )
+            if typed_rule:
+                turn_trace.add("so_list", {"verdict_rule": typed_rule})
 
         # PR #1353 fix round 3: a bare position over an open roster is read by the
         # engine, and its positions win over the parser's (turn 3f56a40d: "2" read as 1).
@@ -3889,6 +4355,23 @@ def _run_stages_body(  # noqa: PLR0915
             _stock_task_is_the_current_question,
             _stock_task_owed_a_number,
         )
+
+        if getattr(getattr(state_in, "profile", None), "stock_availability_only", False):
+            typed = jsc.js_string(jsc.get(_inner_message(envelope), "text") or "")
+            stock_ask = _as_a_stock_ask_by_its_own_words(verdict, typed)
+            if stock_ask is not verdict:
+                turn_trace.add("stock_ask_by_its_own_words", {"parser_intent": verdict.get("intent_hint")})
+                verdict = stock_ask
+            as_codes = _unsure_capture_as_codes(verdict)
+            if as_codes is not verdict:
+                turn_trace.add("unsure_capture_as_codes", {"entities": [e.get("raw") for e in as_codes["entities"] if isinstance(e, dict)]})
+                verdict = as_codes
+            summed = _with_repeated_codes_summed(
+                verdict, jsc.js_string(jsc.get(_inner_message(envelope), "text") or "")
+            )
+            if summed is not verdict:
+                turn_trace.add("repeated_code_summed", {"entities": summed.get("entities")})
+                verdict = summed
 
         owed_task = _stock_task_owed_a_number(state_in.focus)
         if owed_task is None or not _stock_task_is_the_current_question(state_in, owed_task, verdict):
@@ -3910,7 +4393,12 @@ def _run_stages_body(  # noqa: PLR0915
         # roster's axis from the option picked, never from a value the parser carried.
         roster_picks = _picks_in_the_roster_domain(state_in.pending, verdict)
         if roster_picks:
-            picked_verdict = _with_the_picked_axis(verdict, state_in.pending, roster_picks)
+            picked_verdict = _with_the_picked_axis(
+                verdict,
+                state_in.pending,
+                roster_picks,
+                jsc.js_string(jsc.get(_inner_message(envelope), "text") or ""),
+            )
             if picked_verdict is not verdict:
                 turn_trace.add(
                     "picked_axis",
@@ -4264,6 +4752,17 @@ def _run_stages_body(  # noqa: PLR0915
             unplaced_tokens = resolve_outcome.unplaced_tokens
             spec_tier = resolve_outcome.spec_tier
             resolver_payload = resolve_outcome.payload
+            # Every turn of availability access, not only a stock / ETA one: a code the
+            # dealer names on an order or outstanding turn is carried into the next one, and
+            # a bare "eta" after "srtw2000" asked its whole prefix family (tester re-run on
+            # a5ba9dc9f, fix 4).
+            if getattr(getattr(state_out, "profile", None), "stock_availability_only", False):
+                exact = _exact_codes_only(
+                    resolver_parse_output, resolved_kinds, resolved_candidates, compatible_entities, unplaced_tokens
+                )
+                if exact is not None:
+                    resolved_kinds, resolved_candidates, compatible_entities, unplaced_tokens = exact
+                    turn_trace.add("exact_codes_only", {"kept": [e.get("code") for e in compatible_entities]})
             # ACCOUNT-LEDGER Q4: staff asked a level the typed name lacks.
             staff_account_refusal = ((resolver_payload or {}).get("resolved") or {}).get("account_refusal")
             if staff_account_refusal and not (customer_scope or {}).get("enforced"):
@@ -4323,7 +4822,14 @@ def _run_stages_body(  # noqa: PLR0915
                 domains=plan.domains,
                 db=db,
             )
-            if resolved_kinds or resolved_candidates:
+            # SO-NUMBER-ASK: a plan that ASKED before the resolver ran ("Which one do you
+            # mean? 1. SO421624 2. SO999998 3. SO422057") was built without the unplaced
+            # words, so `narrow.decide`'s own "a roster never offers a token the resolver
+            # could not place" rule never saw them. Re-entering with them lets it fire.
+            # Order plans only, the lane this was measured on.
+            if resolved_kinds or resolved_candidates or (
+                unplaced_tokens and plan.ask is not None and "order" in plan.domains
+            ):
                 # The ONE re-entry the plan allows: what the resolver found goes back
                 # into APPLY, so the narrower asks about things that exist and a
                 # reconciled kind lands before anything is fetched.
@@ -4792,6 +5298,13 @@ def _run_stages_body(  # noqa: PLR0915
                 fetch=[_FetchSpec(domain=plan.domains[0], entities=[], filters={}, date_window=None)],
             )
 
+        # MULTI-CODE-DYM Q3 (owner, 4 Oct 2026): "2 and SRTWC286-SH-150" settled option 2
+        # from the roster and typed a code the resolver answered. The fetch keeps the
+        # resolver's rows for every kind it answered (`turn_runtime._entities_for`), so
+        # the settled pick rides beside them as a row of its own, or it is never fetched.
+        if "pick_plus_typed_subject" in plan.trace.rules_fired:
+            compatible_entities = _with_settled_picks(compatible_entities, state_out.focus.products)
+
         # -- E FETCH + F COMPOSE, for the turn that has something to look up --- #
         if (
             answer is None
@@ -4833,6 +5346,9 @@ def _run_stages_body(  # noqa: PLR0915
                     # what this message's token is, not the parser's hint.
                     resolved_kinds=resolved_kinds,
                     customer_scope=customer_scope,
+                    # MULTI-CODE-DYM: each unplaced token's did-you-mean, the same
+                    # candidates a lone miss of that token offers.
+                    unplaced_suggestions=_unplaced_suggestions(resolver_payload, unplaced_tokens),
                     # R6 (fix round 2): so a null `routing.suggested_team` inside the
                     # per-domain fetch context gets the same domain-aware fill this
                     # turn's own `ctx.parse.output` already got above.
@@ -5287,8 +5803,9 @@ def _run_stages_body(  # noqa: PLR0915
                     verdict,
                     turn_no=turn_no,
                 )
-                # #1262 fix lane round 7, R6: inside an order list no escalate offer and
-                # no routing picker; an empty list says so in one line.
+                # #1262 fix lane round 7, R6: inside an order list that answered, no
+                # escalate offer and no routing picker; a miss keeps its offer (owner
+                # ruling 4 Oct 2026, PICKER-ESCALATION).
                 answer = order_list_mod.list_reply(
                     answer,
                     was_open=order_list_was_open,
@@ -5306,6 +5823,12 @@ def _run_stages_body(  # noqa: PLR0915
                 answer.files.extend(_stock_ask_packing_list_files(envelopes))
                 stock_ask_entries = _stock_ask_answered_entries(envelopes)
                 record_top_selling_asked(state_out.focus, envelopes)
+                # LOWSTOCK-FILTER-ASK: a lane that asked for a required field hands its
+                # slot back; it stays open for the next message only.
+                state_out.focus.required_ask = next(
+                    (e["required_ask"] for e in envelopes or [] if isinstance(e, dict) and isinstance(e.get("required_ask"), dict)),
+                    None,
+                )
                 if (
                     (state_out.focus.top_selling or {}).get("asked")
                     and state_out.pending is not None
@@ -5314,6 +5837,15 @@ def _run_stages_body(  # noqa: PLR0915
                     # Owner retest (27 Sep 2026): the lane asked a question over a
                     # ranking still on screen, so the "2" that answers it must not
                     # pick row 2 of the old list. The question closes the list.
+                    state_out = dataclasses_replace(state_out, pending=None)
+                if (
+                    state_out.pending is not None
+                    and state_out.pending.kind in ("outstanding_detail", "outstanding_scope")
+                    and _answered_by_so_list(envelopes)
+                ):
+                    # crew-tester re-run on PR #1435 (3 Oct 2026): "1" under the summary got
+                    # the SO list's period question, and the sticky detail offer then read
+                    # "september" as narrowing the summary. The SO list answered: it closes.
                     state_out = dataclasses_replace(state_out, pending=None)
                 turn_trace.record(
                     "looked_up",
@@ -5418,6 +5950,8 @@ def _run_stages_body(  # noqa: PLR0915
             # PR #1329 (ETA policy): a dealer's incoming reply is the same, so an
             # incoming miss no longer offers the purchasing team.
             answer = _dealer_refers_to_salesman(answer)
+            if _dealer_incoming_ask(state_out, plan):
+                answer = _dealer_names_the_miss(answer, envelopes)
         elif in_ranking_conversation:
             answer = _without_escalation_offer(answer)
         return _run_answer(
@@ -5789,19 +6323,130 @@ def _stock_ask_reply(
         demand_qty=verdict.get("demand_qty"),
     )
     state_out.focus.tasks = reply.tasks
-    if not reply.text or [spec.domain for spec in fetch_plan.fetch] != ["inventory"]:
+    if [spec.domain for spec in fetch_plan.fetch] != ["inventory"]:
         return answer
-    question = (
-        turn_pending.ask(
-            "product_pick",
-            reply.pick["options"],
-            asked_at_turn=turn_no,
-            payload=reply.pick["payload"],
+    block_seen = any(
+        isinstance(envelope, dict) and envelope.get("stock_availability")
+        for envelope in envelopes or []
+    )
+    if not block_seen:
+        return answer
+    # AVAIL-MODE-REPLIES rule 5 (owner, 2 Oct 2026): ONE combined reply - the answered
+    # lines in the order asked, then the codes found nowhere, then at most one question
+    # (this reply's own, else the lists of the pick just answered that are still open).
+    text, pick = reply.text, reply.pick
+    queued = verdict.get(turn_task.NEXT_PICKS)
+    owed = [e for e in verdict.get(turn_task.OWED) or [] if isinstance(e, dict)]
+    if not pick and isinstance(queued, dict) and queued.get("groups"):
+        # The lists of the last pick the dealer has not answered, numbers kept. Pickers
+        # come first (reviewer S1): a code owed a quantity, including the one just
+        # picked, rides on them and is asked once no list is left open.
+        carried = [*owed, *turn_task.owed_of(tuple(state_out.focus.tasks or ()))]
+        state_out.focus.tasks = tuple(t for t in state_out.focus.tasks or () if t.kind != "stock_qty")
+        text = turn_task.picks_question(queued["options"], queued["groups"])
+        pick = turn_task.stock_pick(queued["options"], queued["groups"], carried)
+    elif not pick and owed:
+        # Reviewer B4: the pick is answered, so the codes owed a quantity beside it are
+        # asked now, in one question with any the picked code owes itself.
+        state_out.focus.tasks, text = turn_task.with_owed(
+            tuple(state_out.focus.tasks or ()), owed, turn_no=turn_no
         )
-        if reply.pick
+    misses = _unplaced_tokens(envelopes)
+    if not text and not misses:
+        return answer
+    parts = _stock_answer_lines(envelopes)
+    if misses:
+        parts.append(f"Couldn't find: {', '.join(misses)}.")
+    if text:
+        parts.append(text)
+    question = (
+        turn_pending.ask("product_pick", pick["options"], asked_at_turn=turn_no, payload=pick["payload"])
+        if pick
         else None
     )
-    return turn_compose.Answer(text=reply.text, question=question)
+    return dataclasses_replace(answer, text="\n\n".join(parts), question=question, sections=[])
+
+
+#: `turn/compose.py`'s once-per-turn line for a token nothing placed.
+_COMPOSE_MISS = re.compile(r"\n*I could not find [^\n]*\.[ \t]*$")
+
+
+def _dealer_names_the_miss(answer: Any, envelopes: list[dict[str, Any]]) -> Any:
+    """AVAIL-MODE-REPLIES rule 5 for a dealer's ETA ask: a code found nowhere is named as
+    "Couldn't find: X, Y." after the ETA lines and before the refer line, the same
+    sentence the stock mix uses (compose prints "I could not find X." after the refer
+    line). A reply without that line (a total miss, already named) is left as it is."""
+    text = getattr(answer, "text", "") or ""
+    misses = _unplaced_tokens(envelopes)
+    if not misses or not _COMPOSE_MISS.search(text):
+        return answer
+    from app.services.chatbot.turn import refer
+    from app.services.chatbot.turn.task import REFER_TO_SALESMAN
+
+    blocks = _COMPOSE_MISS.sub("", text).rstrip().split("\n\n")
+    line = f"Couldn't find: {', '.join(misses)}."
+    if blocks and blocks[-1].strip() == REFER_TO_SALESMAN:
+        # The refer line stays last, printed through its one helper.
+        head = "\n\n".join(b for b in blocks[:-1] if b.strip())
+        return dataclasses_replace(answer, text=refer.after("\n\n".join(p for p in (head, line) if p)))
+    return dataclasses_replace(answer, text="\n\n".join(p for p in (*blocks, line) if p.strip()))
+
+
+def _stock_answer_lines(envelopes: list[dict[str, Any]]) -> list[str]:
+    """The answered lines the presenter printed ("<code> x <Q>: ..."), in the order asked."""
+    lines: list[str] = []
+    for envelope in envelopes or []:
+        if not isinstance(envelope, dict) or not envelope.get("stock_availability"):
+            continue
+        for item in envelope.get("figures") or envelope.get("items") or envelope.get("answers") or []:
+            flags = item.get("flags") if isinstance(item, dict) else None
+            title = item.get("title") if isinstance(item, dict) else None
+            if isinstance(flags, dict) and flags.get("branch") and not flags.get("needs_quantity") and title:
+                lines.append(str(title))
+    return lines
+
+
+def _with_settled_picks(
+    compatible: list[dict[str, Any]], products: list[dict[str, Any]] | None
+) -> list[dict[str, Any]]:
+    """`compatible` plus each focus product a roster pick settled (it carries its uuid)
+    that the resolver's rows do not already hold."""
+    held = {str(e.get("uuid")) for e in compatible if isinstance(e, dict) and e.get("uuid")}
+    extra = [
+        turn_runtime._spec_row(p)
+        for p in products or []
+        if isinstance(p, dict) and p.get("uuid") and str(p.get("uuid")) not in held
+    ]
+    return [*compatible, *extra] if extra else compatible
+
+
+def _unplaced_suggestions(
+    resolver_payload: Any, unplaced: dict[str, str] | None
+) -> dict[str, list[dict[str, Any]]]:
+    """MULTI-CODE-DYM (owner, 4 Oct 2026, "treat each product code individually"): the
+    did-you-mean of every token this turn could not place, off the resolver's own answer
+    (`answer.did_you_mean_by_token`, the candidates `build_suggest_offer` shows for that
+    token asked alone). Empty when nothing is unplaced or no resolver ran; best effort, a
+    suggestion nobody could read leaves the plain "I could not find" line."""
+    if not unplaced or not isinstance(resolver_payload, dict):
+        return {}
+    from app.services.chatbot.lanes.business.answer import did_you_mean_by_token
+
+    try:
+        return did_you_mean_by_token(resolver_payload.get("resolved"), resolver_payload.get("gate"))
+    except Exception:  # noqa: BLE001 - a did-you-mean is never worth a failed turn
+        logger.warning("chatbot: the per-code did-you-mean did not read", exc_info=True)
+        return {}
+
+
+def _unplaced_tokens(envelopes: list[dict[str, Any]]) -> list[str]:
+    """The tokens this turn's fetch could place on no product, once each, as typed."""
+    out: list[str] = []
+    for envelope in envelopes or []:
+        for token in (envelope.get("unresolved") if isinstance(envelope, dict) else None) or []:
+            if isinstance(token, str) and token and token not in out:
+                out.append(token)
+    return out
 
 
 def _run_answer(
@@ -7514,13 +8159,23 @@ def _stock_ask_packing_list_files(envelopes: list[dict[str, Any]]) -> list[dict[
     return files
 
 
+def _answered_by_so_list(envelopes: list[dict[str, Any]]) -> bool:
+    """Did the SO list (`lanes/business._so_list_reply`) answer this turn?"""
+    for env in envelopes:
+        raw = env.get("raw_fragment") if isinstance(env, dict) else None
+        fetched = raw.get("fetch") if isinstance(raw, dict) else None
+        if isinstance(fetched, dict) and fetched.get("so_list") is True:
+            return True
+    return False
+
+
 def _stock_ask_answered_entries(envelopes: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Chatbot stock ask v2 S4: every `stock_availability` entry of this turn's fetch that
     carries an answer (a branch and the dealer's quantity), in the order asked.
 
-    An envelope where any product still needs a quantity was not answered at all: the
-    presenter prints no answer line then, and the reply is the quantity question. Its
-    entries become asks on the turn that answers them, once (review, PR #1333)."""
+    An entry still owing its quantity is not answered yet and becomes an ask on the turn
+    that answers it, once (review, PR #1333); since AVAIL-MODE-REPLIES the entries beside
+    it that are answered are recorded on this turn, the turn their lines were sent."""
     from app.services import stock_ask_service
 
     entries: list[dict[str, Any]] = []
@@ -7528,8 +8183,10 @@ def _stock_ask_answered_entries(envelopes: list[dict[str, Any]]) -> list[dict[st
         if not isinstance(envelope, dict):
             continue
         block = [e for e in envelope.get("stock_availability") or [] if isinstance(e, dict)]
-        if any(e.get("needs_quantity") is True for e in block):
-            continue
+        # AVAIL-MODE-REPLIES rule 5: an answered line is printed (and so recorded) even
+        # while another product owes its quantity; that product leaves the task answered
+        # by a later turn, so each entry is still recorded once. `answered_entries` keeps
+        # only the entries that carry a branch and the dealer's quantity.
         entries.extend(stock_ask_service.answered_entries(block))
     return entries
 
@@ -8418,6 +9075,7 @@ def complete_turn(  # noqa: PLR0915 - one linear pipeline, and the order IS the 
         set_company_scope(
             db, _contact_company_scope(session_factory, str(contact_respond_id or ""))
         )
+        set_brand_scope(db, _contact_brand_scope(session_factory, str(contact_respond_id or "")))
         dry_run = bool(row.is_test)
         stored_response = row.response if isinstance(row.response, dict) else {}
         ctx = fragments.get("ctx") or stored_response.get("ctx") or {}

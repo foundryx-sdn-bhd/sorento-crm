@@ -1374,8 +1374,16 @@ class DocumentIngestService(MasterRefResolver):
         or resizes an already-mirrored line otherwise leaves the mirror the board actually
         reads drifting behind the book (SO419122). A line with no mirror yet (the order
         was never adopted) is left alone, no error (AC-8).
+
+        OI-PRODUCT-FOLLOW S1: the product follows too, as the manual SO edit already does
+        (`sales_order_service.py` matched-line branch). A swap left on the old product kept
+        the board, and `auto_place_products`, sourcing what the order no longer asks for.
         """
-        if "required_date" not in values and "qty_ordered" not in values:
+        if (
+            "required_date" not in values
+            and "qty_ordered" not in values
+            and "product_id" not in values
+        ):
             return
         from app.models.project_so import ProjectSalesOrderLine
 
@@ -1390,6 +1398,8 @@ class DocumentIngestService(MasterRefResolver):
             mirror.delivery_date = core_line.required_date
         if "qty_ordered" in values:
             mirror.qty = core_line.qty_ordered
+        if "product_id" in values and core_line.product_id:
+            mirror.product_id = core_line.product_id
 
     def _sync_lines(
         self,

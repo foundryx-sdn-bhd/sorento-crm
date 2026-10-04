@@ -728,6 +728,16 @@ export function ItemCodeCell({
       <span className="block truncate font-medium" title={row.item_code ?? ''}>
         {row.item_code || <Muted>Unresolved</Muted>}
       </span>
+      {row.previous_item_code && row.previous_item_code !== row.item_code && (
+        // OI-PRODUCT-FOLLOW S3: the product a Confirm moved the row off, kept visible
+        // the way a qty/date change keeps its old value.
+        <span
+          className="block truncate text-xs text-muted-foreground"
+          title={`was ${row.previous_item_code}`}
+        >
+          was {row.previous_item_code}
+        </span>
+      )}
       {!codeOnly && row.product_name && row.product_name !== row.item_code && (
         <span className="block truncate text-xs text-muted-foreground" title={row.product_name}>
           {row.product_name}

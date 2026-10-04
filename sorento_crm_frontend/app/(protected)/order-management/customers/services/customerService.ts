@@ -107,6 +107,7 @@ export type CustomerSelectOption = SearchableSelectOption & {
 export async function searchCustomersSelect(
   query: string,
   pageIndex = 0,
+  options?: { companyScope?: 'grants' },
 ): Promise<CustomerSelectOption[]> {
   type Row = {
     id: string;
@@ -117,12 +118,14 @@ export async function searchCustomersSelect(
     sales_agent_name?: string | null;
     customer_group_id?: string | null;
     customer_group_name?: string | null;
+    company_name?: string | null;
   };
   const search = new URLSearchParams({
     limit: String(CUSTOMER_SELECT_PAGE_SIZE),
     offset: String(pageIndex * CUSTOMER_SELECT_PAGE_SIZE),
   });
   if (query.trim()) search.set('query', query.trim());
+  if (options?.companyScope) search.set('company_scope', options.companyScope);
   const response = await apiFetch(`/api/v1/order-management/customers/select?${search.toString()}`);
   if (!response.ok) {
     throw new Error(await extractApiError(response, 'Failed to load customers'));
@@ -130,7 +133,9 @@ export async function searchCustomersSelect(
   const rows = ((await response.json()) as { data?: Row[] }).data ?? [];
   return rows.map((c) => ({
     value: c.id,
-    label: `${c.customer_code} - ${c.customer_name}`,
+    label: options?.companyScope && c.company_name
+      ? `${c.company_name} · ${c.customer_code} - ${c.customer_name}`
+      : `${c.customer_code} - ${c.customer_name}`,
     description: c.sales_agent_code
       ? `${c.sales_agent_code} - ${c.sales_agent_name ?? ''}`.replace(/ - $/, '')
       : 'No sales agent',

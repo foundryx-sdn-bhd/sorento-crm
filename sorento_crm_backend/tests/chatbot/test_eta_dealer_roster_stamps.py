@@ -4,7 +4,7 @@ contact 437264483, a dealer, prompt v50).
 Turn 562961e4 "eta srtwc286": the ten-row roster stamped EVERY row "no incoming", while
 turn ca1eb616 "all" fetched ETAs for SRTWC286-SH-NEW, -NEW-200 and -NEW-P. The dealer view
 (`eta_policy.dealer_view`, presented by the MCP's `_incoming_dealer`) prints each product
-as ONE title, "<code>\\nETA: <dates>", with no field, and `pickers.annotate_incoming`
+as ONE title, "<code>: ETA <dates>" (one line since AVAIL-MODE-REPLIES), with no field, and `pickers.annotate_incoming`
 read the whole title as the code, so nothing matched.
 
 Turn a3d0d2c7 "5" (SRTWC286-SH-NEW-150, no incoming): the dealer was told "No incoming,
@@ -53,7 +53,7 @@ def dealer_item(code: str, etas: list[str]) -> dict[str, Any]:
     """One line of the MCP presenter's dealer envelope, byte for byte
     (`sorento_crm_mcp/presenters.py::_incoming_dealer`, pinned by
     `sorento_crm_mcp/tests/test_presenters.py::test_dealer_view_is_one_line_per_product_and_the_salesperson`)."""
-    return {"title": f"{code}\nETA: {', '.join(etas)}", "fields": [], "flags": {"dealer_view": True}}
+    return {"title": f"{code}: \u2705 ETA {', '.join(etas)}", "fields": [], "flags": {"dealer_view": True}}
 
 
 def dealer_envelope(etas: dict[str, list[str]]) -> dict[str, Any]:
@@ -83,9 +83,13 @@ def test_the_incoming_annotator_reads_the_code_off_a_dealer_line():
         "compatible_entities": [{"code": c, "entity_type": "product"} for c in ROSTER],
     }
     out = pickers.annotate_incoming(gate, probe=dealer_envelope(ETAS))
-    assert out["incoming_by_code"] == {c: c in ETAS for c in ROSTER}
-    assert "4. SRTWC286-SH-NEW - has incoming" in out["escalate_message"]
-    assert "5. SRTWC286-SH-NEW-150 - no incoming" in out["escalate_message"]
+    # AVAIL-MODE-REPLIES (crew, 3 Oct 2026, cloud live-parser pass at 2ff7f5e9): a dealer
+    # is told nothing about a variant's incoming before picking it, so the dealer roster
+    # is no longer stamped at all (it read "has incoming" on every line once the dealer
+    # view listed "CODE: No ETA" rows too). Supersedes this test's 29 Sep stamp.
+    assert out["incoming_by_code"] == {}
+    assert out["escalate_message"] == gate["gate_clarification"]
+    assert "incoming" not in out["escalate_message"]
 
 
 def test_a_non_dealer_title_is_still_the_whole_code():
@@ -94,7 +98,7 @@ def test_a_non_dealer_title_is_still_the_whole_code():
     assert out["incoming_by_code"] == {"A-1": True, "A-2": False}
 
 
-def test_the_dealer_roster_stamps_what_the_incoming_fetch_lists(
+def test_the_dealer_roster_lists_every_code_and_stamps_none(
     session_factory, stub_parser, stub_access, monkeypatch
 ):
     """The owner's turn 562961e4 through `engine.run_turn`: ten SRTWC286 products, the
@@ -124,9 +128,10 @@ def test_the_dealer_roster_stamps_what_the_incoming_fetch_lists(
 
     result = engine_mod.run_turn(_envelope(), session_factory=session_factory)
     text = (result.reply or {}).get("text", "")
+    # AVAIL-MODE-REPLIES (crew, 3 Oct 2026): every code listed, none stamped.
     for code in ROSTER:
-        stamp = "has incoming" if code in ETAS else "no incoming"
-        assert f"{code} - {stamp}" in text, f"{code!r} must read {stamp!r}: {text!r}"
+        assert code in text, f"{code!r} must be listed: {text!r}"
+    assert "has incoming" not in text and "no incoming" not in text, text
 
 
 # --------------------------------------------------------------------------- #

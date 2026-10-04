@@ -417,11 +417,13 @@ class TestPickerStamp:
         assert lines[HAS_PHOTO_CODE].endswith(f"- has {PHOTO_TYPE_NAME}"), lines[HAS_PHOTO_CODE]
         assert "gambar" not in (offer.get("escalate_message") or ""), offer.get("escalate_message")
 
-    def test_ac2_a_certificate_type_still_stamps_the_certificate_family_word(
+    def test_ac2_a_certificate_type_stamps_its_type_name(
         self, session_factory, monkeypatch
     ) -> None:
-        """`_CERT_PREFIX_RE`: a resolved type name starting "cert" keeps rendering
-        "certificate", exactly as the surface does today."""
+        """ATTACHMENT-MULTI R5 (tester re-run 2 Oct 2026, finding 3) supersedes #750's
+        family word here: a RESOLVED Certification type stamps "Certification", the same
+        word the found rows and the "has no" line use. The family word stays for the
+        customer's raw word alone and for a certificate-NUMBER scope (TestCertificateScopedTurn)."""
         company_id = self._seed_owner_turn(session_factory, type_name=CERT_TYPE_NAME)
         db = session_factory()
         set_company_scope(db, frozenset({company_id}))
@@ -432,8 +434,8 @@ class TestPickerStamp:
 
         assert gate.get("require_specific") is True, gate.get("gate_reason")
         lines = _picker_lines(offer.get("escalate_message"))
-        assert lines[HAS_PHOTO_CODE].endswith("- has certificate"), lines[HAS_PHOTO_CODE]
-        assert lines[NO_PHOTO_CODE].endswith("- no certificate"), lines[NO_PHOTO_CODE]
+        assert lines[HAS_PHOTO_CODE].endswith(f"- has {CERT_TYPE_NAME}"), lines[HAS_PHOTO_CODE]
+        assert lines[NO_PHOTO_CODE].endswith(f"- no {CERT_TYPE_NAME}"), lines[NO_PHOTO_CODE]
 
 
 class TestCertificateScopedTurn:

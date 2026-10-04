@@ -380,13 +380,24 @@ def _told(node: dict[str, Any]) -> Optional[str]:
     return _iso(node.get("eta_delay_date")) or _iso(node.get("estimated_arrival_date"))
 
 
-def dealer_view(payload: Any) -> Any:
-    """One row per product - `{"product_code", "etas"}`, the ETAs distinct and sorted -
-    in the order the products first appear, plus `dealer_view`. No salesperson name:
-    the presenter closes with the one refer sentence (REFER-SALESMAN, 30 Sep 2026).
+def _ddmmyyyy(iso: str) -> str:
+    try:
+        return date.fromisoformat(iso).strftime("%d/%m/%Y")
+    except ValueError:
+        return iso
+
+
+def dealer_view(payload: Any, asked: Optional[list[str]] = None) -> Any:
+    """One row per product - `{"product_code", "etas"}`, the ETAs distinct, sorted and
+    told as dd/mm/yyyy (AVAIL-MODE-REPLIES, the stock ask's own ETA format) - in the
+    order the products first appear, plus `dealer_view`. No salesperson name: the
+    presenter closes with the one refer sentence (REFER-SALESMAN, 30 Sep 2026).
     Handles `/list` (shipment rows with `lines`), `/by-product` (product rows with
     `shipments`) and `/shipments` (no product: one row, code None). A single-row payload
-    (`/shipments/{id}/...`) is not a chat answer and passes through."""
+    (`/shipments/{id}/...`) is not a chat answer and passes through.
+
+    `asked`: the product codes the dealer asked about. One with no shipment is still a
+    row, with no ETA ("CODE: No ETA", owner hand test 3 Oct 2026), never a miss."""
     if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
         return payload
     etas: dict[Optional[str], set[str]] = {}
@@ -403,7 +414,15 @@ def dealer_view(payload: Any) -> Any:
             dates = etas.setdefault(code, set())
             if eta:
                 dates.add(eta)
-    rows = [{"product_code": code, "etas": sorted(dates)} for code, dates in etas.items()]
+    seen = {str(code).casefold() for code in etas if code}
+    for code in asked or []:
+        if code and str(code).casefold() not in seen:
+            seen.add(str(code).casefold())
+            etas[code] = set()
+    rows = [
+        {"product_code": code, "etas": [_ddmmyyyy(d) for d in sorted(dates)]}
+        for code, dates in etas.items()
+    ]
     out = {
         key: payload[key]
         for key in ("resolved_entities", "lookup_companies")

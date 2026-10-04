@@ -92,6 +92,9 @@ class BrandResponse(BrandBase):
     created_at: datetime
     updated_at: Optional[datetime] = None
     product_count: Optional[int] = None
+    # Set only on a `company_scope=grants` read, so a picker can tag each row.
+    company_id: Optional[str] = None
+    company_name: Optional[str] = None
 
     class Config:
         from_attributes = True

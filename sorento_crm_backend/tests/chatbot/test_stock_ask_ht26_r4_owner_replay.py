@@ -8,11 +8,11 @@ Transcript (verbatim, observed):
     1
     -> How many units of SRTWC286-SH?
     10
-    -> SRTWC286-SH x 10: the quantity is more than what I can confirm here, ...
+    -> SRTWC286-SH x 10: 🚫 the quantity is more than what I can confirm here, ...
     2
     -> How many units of SRTWC286-SH?              <- the defect
     3
-    -> SRTWC286-SH x 3: the quantity is more than what I can confirm here, ...
+    -> SRTWC286-SH x 3: 🚫 the quantity is more than what I can confirm here, ...
 
 Rulings:
 1. A which-one pick list is numbered ("1. SRTWC286-SH"), like the other pickers
@@ -59,7 +59,7 @@ OWNER_FAMILY = [
     "SRTWC286-SH-UF",
 ]
 
-TOO_BIG = "the quantity is more than what I can confirm here. Please refer to your salesman."
+TOO_BIG = "🚫 the quantity is more than what I can confirm here. Please refer to your salesman."
 
 
 def _tool(plan) -> tuple[list[dict[str, Any]], str]:

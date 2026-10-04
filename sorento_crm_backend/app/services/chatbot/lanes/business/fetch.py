@@ -954,6 +954,15 @@ def entity_ids_transformer(
                 product_codes.append(jsc.js_string(code))
         if product_codes:
             out["product_codes"] = product_codes
+        # LOWSTOCK-FILTER-ASK: the workbook filters `run_fetch` settled before calling
+        # (`low_stock_ask.route_filters`). Absent keys keep the old whole-book call.
+        filters = jsc.get(semantic_input, "low_stock_filters")
+        if isinstance(filters, dict):
+            for key in ("categories", "suppliers"):
+                if filters.get(key):
+                    out[key] = list(filters[key])
+            if filters.get("split") and filters["split"] != "none":
+                out["split"] = filters["split"]
         # #892 (console, 14 Sep): this tool REQUIRES both ids - the route 422s without
         # them, and they drive the company scope the write needs - so it must NOT depend on
         # the shared tail below surviving a refactor or a None `semantic_input`. Carry them
@@ -1552,7 +1561,10 @@ def _fmt_value(v: Any) -> str:
     if isinstance(v, bool):
         return "Yes" if v else "No"
     if isinstance(v, str):
-        return (_fmt_ts(v) or v) if _ISO_RE.match(v) else v
+        # DO-ASK-SIMPLIFY tester pass 2: a value's own '*' (a product code "*REPLACE")
+        # would pair with the next label's bold marker and leave a stray '*' in WhatsApp.
+        # It prints as the look-alike U+2217, which WhatsApp does not read as formatting.
+        return ((_fmt_ts(v) or v) if _ISO_RE.match(v) else v).replace("*", "\u2217")
     if isinstance(v, (int, float)):
         return jsc.js_string(v)
     if isinstance(v, list):
@@ -2483,6 +2495,9 @@ def _low_stock_report_output(result: Any, *, fallback: str = _LOW_STOCK_ERROR_TE
         "field_access": None,
         "requested_attributes": [],
         "keys_served": False,
+        # The report's own terminal answer on every branch: the miss handler never
+        # answers over it (`answer_bridge._miss_triggers`, owner hand test 3 Oct 2026).
+        "low_stock_report": True,
     }
 
 

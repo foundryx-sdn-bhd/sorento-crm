@@ -79,7 +79,10 @@ def world(r3world):
     db.add(cabana)
     db.flush()
     taps = [
-        _product(db, brand_id=sorento.id, category_id=tap_category, uom_id=uom, noun="COLD TAP", prefix="ZZR4T", name=f"Sorento Cold Tap {i}")
+        # Prefix never ends in T: the alpha suffix is a-p, so "ZZR4T-ap..." spelled "TAP"
+        # once punctuation was ignored, and exchange 7's "tap" matched that one code
+        # instead of both taps (CI run 37114540099).
+        _product(db, brand_id=sorento.id, category_id=tap_category, uom_id=uom, noun="COLD TAP", prefix="ZZR4Q", name=f"Sorento Cold Tap {i}")
         for i in range(2)
     ]
     incoming_basin = _product(

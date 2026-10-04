@@ -63,6 +63,11 @@ PADDED = "2026-11-02"
 EXACT = "2026-10-28"
 
 
+def _told(iso: str) -> str:
+    """The date as the dealer view tells it (AVAIL-MODE-REPLIES: dd/mm/yyyy)."""
+    return date.fromisoformat(iso).strftime("%d/%m/%Y")
+
+
 # --------------------------------------------------------------------- fixtures
 
 
@@ -355,7 +360,8 @@ def test_stock_ask_and_incoming_agree_for_one_contact_and_product(client, db):
         contact = _contact(db, offset_applied=switch)
         told = _stock_ask_eta(db, p, contact)
         (listed,) = _list(client, p, contact)["data"][0]["etas"]
-        assert date.fromisoformat(listed).strftime("%d/%m/%Y") == told
+        # AVAIL-MODE-REPLIES: the dealer view tells dd/mm/yyyy, the stock ask's format.
+        assert listed == told
 
 
 # ============================================================== packing list gate
@@ -772,7 +778,7 @@ def test_dealer_list_is_one_row_per_product_with_deduped_padded_etas(client, db)
     _twin_shipment(db, p, eta=date(2026, 12, 1))
     body = _list(client, p, _dealer(db, salesperson="ZZT Sean"))
     assert body["dealer_view"] is True
-    assert body["data"] == [{"product_code": p.product_code, "etas": [PADDED, "2026-12-06"]}]
+    assert body["data"] == [{"product_code": p.product_code, "etas": [_told(PADDED), "06/12/2026"]}]
     # REFER-SALESMAN (30 Sep 2026): the reply never names the salesperson, so the payload
     # does not carry the name either.
     assert "salesperson_name" not in body
@@ -790,7 +796,7 @@ def test_dealer_list_carries_no_container_quantity_allocation_or_file(client, db
 def test_dealer_list_with_the_offset_off_reads_the_exact_date(client, db):
     p, _ = _seed(db)
     body = _list(client, p, _dealer(db, offset_applied=False))
-    assert body["data"][0]["etas"] == [EXACT]
+    assert body["data"][0]["etas"] == [_told(EXACT)]
 
 
 def test_dealer_by_product_is_the_same_view(client, db):
@@ -798,7 +804,7 @@ def test_dealer_by_product_is_the_same_view(client, db):
     _twin_shipment(db, p)
     body = _by_product(client, p, _dealer(db, salesperson="ZZT Sean"))
     assert body["dealer_view"] is True
-    assert body["data"] == [{"product_code": p.product_code, "etas": [PADDED]}]
+    assert body["data"] == [{"product_code": p.product_code, "etas": [_told(PADDED)]}]
 
 
 def test_a_non_dealer_contact_keeps_the_full_rows(client, db):

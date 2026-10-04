@@ -62,6 +62,7 @@ from app.services.chatbot.turn.state import (
     Focus,
     State,
     escalation_barred,
+    token_key,
 )
 
 RESET_KEEPS = {"tier", "brands"}
@@ -1069,6 +1070,32 @@ def _focus_rules(
     replaced_kinds = {kind for kind in by_kind if kind not in picked_kinds}
     for kind in replaced_kinds:
         _set_kind_field(focus, kind, by_kind[kind])
+    # MULTI-CODE-DYM Q3 (owner, 4 Oct 2026): "2 and SRTWC286-SH-150" picks one option AND
+    # names a code of its own. The typed code that is not the picked row's own word is a
+    # second subject, answered beside the pick, never dropped.
+    for kind in picked_kinds & set(by_kind) & {"product"}:
+        attr = KIND_FIELD_MAP.get(kind)
+        if not attr:
+            continue
+        picked_rows = list(getattr(focus, attr, None) or [])
+        picked_keys = {
+            token_key(value)
+            for row in picked_rows
+            if isinstance(row, dict)
+            for value in (row.get("raw"), row.get("canonical_code"))
+            if value
+        }
+        # A word inside the picked code ("the srtwc286 one" over SRTWC286-SH) is how the
+        # customer named the pick, not a second subject.
+        extras = [
+            e
+            for e in by_kind[kind]
+            if token_key(_code_of_entity(e))
+            and not any(token_key(_code_of_entity(e)) in key for key in picked_keys)
+        ]
+        if extras:
+            setattr(focus, attr, picked_rows + extras)
+            trace.rules_fired.append("pick_plus_typed_subject")
     if replaced_kinds:
         trace.rules_fired.append("replace_same_axis")
     else:
@@ -3016,6 +3043,40 @@ def _names_a_product(verdict: dict[str, Any]) -> bool:
     )
 
 
+#: AVAIL-MODE-REPLIES rule 4 (owner, 2 Oct 2026): the re-ask when a dealer answers a stock
+#: pick with "all".
+STOCK_PICK_NOT_ALL = "Please reply with the number of the code you need."
+
+
+def _stock_pick_refuses_all(state: State, verdict: dict[str, Any], decision: Any, trace: Trace):
+    """An availability-mode pick (a family which-one or a did-you-mean, `stock_pick`) never
+    accepts "all": the customer cannot ask us to return every matching code. Only the
+    explicit signal is refused (owner Q4 (b)): `decide` read the parser's "all"
+    (`broaden_axis: "all"`) as every position, or the declared answer is `mode: "all"`
+    with no position of its own. A pick that NAMES every number ("1,2,3") is a pick and is
+    answered. The same list stays open, carrying any quantity it already had, and nothing
+    is fetched."""
+    pending = state.pending
+    if not _stock_pick(pending):
+        return None
+    answer = verdict.get(OPEN_QUESTION_ANSWER)
+    declared_all = isinstance(answer, dict) and answer.get("mode") == "all"
+    if decision.why != "broaden_all" and not (declared_all and not verdict.get("reference_positions")):
+        return None
+    trace.rules_fired.append("stock_pick_all_refused")
+    trace.task_question = STOCK_PICK_NOT_ALL
+    focus = copy.deepcopy(state.focus)
+    focus.domains = ["inventory"]
+    asked = State(
+        focus=focus,
+        pending=pending,
+        profile=state.profile,
+        turn_no=state.turn_no,
+        ideation=state.ideation,
+    )
+    return asked, Plan(domains=["inventory"], fetch=[], ask=None, denied=[], trace=trace)
+
+
 def _stock_pick_requantified(state: State, verdict: dict[str, Any], trace: Trace):
     """A bare number under an open family pick ("88" under "SRTWC286 matches 10 products.
     Which one?") is the quantity, not a pick: the pick is asked again carrying it, and
@@ -3028,17 +3089,27 @@ def _stock_pick_requantified(state: State, verdict: dict[str, Any], trace: Trace
     if quantity is None or _names_a_product(verdict):
         return None
     payload = {**pending.payload, "stock_qty": quantity}
-    kept = replace(pending, payload=payload)
     trace.rules_fired.append("stock_pick_takes_quantity")
-    trace.task_question = task_mod.pick_question(
-        str(payload.get("typed") or ""),
-        [str(o.get("label")) for o in pending.options if o.get("label")],
-        quantity,
-        payload.get("count"),
-        # Round 9: a did-you-mean's typed code is one the resolver did not recognise,
-        # and a header never leads with it.
-        recognised=not payload.get("did_you_mean"),
-    )
+    groups = payload.get("groups")
+    if isinstance(groups, list) and len(groups) > 1:
+        # Several lists in one message: the number is the quantity of every list that
+        # had none (AVAIL-MODE-REPLIES), and they are asked again, numbers kept.
+        groups = [g if g.get("qty") is not None else {**g, "qty": quantity} for g in groups]
+        payload = task_mod.stock_pick(list(pending.options), groups, payload.get(task_mod.OWED))["payload"]
+        trace.task_question = task_mod.picks_question(list(pending.options), groups)
+    else:
+        trace.task_question = task_mod.pick_question(
+            str(payload.get("typed") or ""),
+            [str(o.get("label")) for o in pending.options if o.get("label")],
+            quantity,
+            payload.get("count"),
+            # Round 9: a did-you-mean's typed code is one the resolver did not recognise,
+            # and a header never leads with it.
+            recognised=not payload.get("did_you_mean"),
+            # Reviewer B3: a list handed on from a several-list pick keeps its numbers.
+            start=min((o.get("position") or 1) for o in pending.options),
+        )
+    kept = replace(pending, payload=payload)
     focus = copy.deepcopy(state.focus)
     focus.domains = ["inventory"]
     asked = State(
@@ -3071,22 +3142,65 @@ def _spend_stock_pick(
     if _stock_pick(new_state.pending):
         new_state.pending = None
     trace.rules_fired.append("stock_pick_spent")
+    labels = {str(o.get("label")).strip().casefold() for o in asked.options if o.get("label")}
+    _hand_on_unanswered_lists(asked, specs, verdict, trace)
+    owed = asked.payload.get(task_mod.OWED)
+    if isinstance(owed, list) and owed:
+        # Reviewer B4: the codes owed a quantity beside this pick, asked once no list is open.
+        verdict[task_mod.OWED] = owed
     quantity = _stated_quantity(asked.payload.get("stock_qty"))
     by_code = asked.payload.get(STOCK_QTY_BY_CODE) or {}
-    if (quantity is None and not by_code) or _message_states_a_quantity(verdict):
+    list_qty = asked.payload.get(task_mod.QTY_BY_CODE) or {}
+    if (quantity is None and not by_code and not list_qty) or _message_states_a_quantity(verdict):
         return
-    labels = {str(o.get("label")).strip().casefold() for o in asked.options if o.get("label")}
     for spec in specs:
         stamped = {}
         for e in spec.entities:
             if not isinstance(e, dict) or not e.get("uuid") or not _row_codes(e) & labels:
                 continue
             own = next((by_code[c] for c in _row_codes(e) if c in by_code), None)
+            if own is None:
+                # AVAIL-MODE-REPLIES: each list of a several-list pick carries its own
+                # typed quantity.
+                own = next((list_qty[c] for c in _row_codes(e) if c in list_qty), None)
             if own is not None or quantity is not None:
                 stamped[str(e["uuid"])] = own if own is not None else quantity
         if stamped:
             spec.filters["requested_quantities"] = stamped
             trace.rules_fired.append("stock_pick_carries_quantity")
+
+
+def _hand_on_unanswered_lists(asked: Any, specs: list[Any], verdict: dict[str, Any], trace: Trace) -> None:
+    """AVAIL-MODE-REPLIES rule 5 (owner v2 note 3): a pick that showed several lists in one
+    message and was answered for only some of them hands the others on, numbers kept, for
+    `engine._stock_ask_reply` to ask again under the answered lines."""
+    groups = asked.payload.get("groups")
+    if not isinstance(groups, list) or len(groups) < 2:
+        return
+    fetched = {
+        code
+        for spec in specs
+        for e in spec.entities
+        if isinstance(e, dict) and e.get("uuid")
+        for code in _row_codes(e)
+    }
+    by_position = {o.get("position"): o for o in asked.options}
+    open_groups = [
+        g
+        for g in groups
+        if not any(
+            str(by_position.get(p, {}).get("label") or "").strip().casefold() in fetched
+            for p in g.get("positions") or []
+        )
+    ]
+    if not open_groups or len(open_groups) == len(groups):
+        return
+    positions = {p for g in open_groups for p in g["positions"]}
+    verdict[task_mod.NEXT_PICKS] = {
+        "options": [o for o in asked.options if o.get("position") in positions],
+        "groups": open_groups,
+    }
+    trace.rules_fired.append("stock_pick_lists_still_open")
 
 
 def apply(
@@ -3224,6 +3338,9 @@ def _apply(
     decision = decide(verdict, state.focus, state.pending)
     trace.decision = decision.as_trace()
 
+    refused = _stock_pick_refuses_all(state, verdict, decision, trace)
+    if refused is not None:
+        return refused
     requantified = _stock_pick_requantified(state, verdict, trace)
     if requantified is not None:
         return requantified

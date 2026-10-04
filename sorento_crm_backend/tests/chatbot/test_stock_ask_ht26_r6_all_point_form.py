@@ -111,7 +111,27 @@ def _after_all(reading: str = "every_position") -> Console:
 # --------------------------------------------------------------------------- #
 
 
-@pytest.mark.parametrize("reading", sorted(ALL_READINGS))
+#: AVAIL-MODE-REPLIES (owner, 2 Oct 2026, Q4 (b)) supersedes ruling 1 for the EXPLICIT
+#: "all": `broaden_all` over a stock pick is refused and the list stays open
+#: (`test_explicit_all_is_refused_since_avail_mode_replies`). A pick of every position is
+#: still a pick, so the point-form rulings below keep running on that reading. Through the
+#: engine a BARE typed "all" is refused on either reading (`engine._is_bare_all`,
+#: tests/chatbot/test_avail_mode_scenarios.py S34); this Console runs apply only.
+PICK_READINGS = ["every_position"]
+
+
+def test_explicit_all_is_refused_since_avail_mode_replies():
+    from app.services.chatbot.turn.apply import STOCK_PICK_NOT_ALL
+
+    console = Console()
+    assert console.first_ask("check stock srtwc286") == LIST
+    console.say("all", ALL_READINGS["broaden_all"])
+    assert console.transcript[-1] == f"-> {STOCK_PICK_NOT_ALL}"
+    assert console.state.pending is not None
+    assert [o["code"] for o in console.state.pending.options] == OWNER_FAMILY
+
+
+@pytest.mark.parametrize("reading", PICK_READINGS)
 def test_all_opens_one_point_form_question_for_every_product(reading):
     console = _after_all(reading)
     assert console.transcript[-1] == f"-> {POINT_FORM}"
@@ -149,7 +169,7 @@ def test_one_product_still_asks_its_one_line_question():
 # --------------------------------------------------------------------------- #
 
 
-@pytest.mark.parametrize("reading", sorted(ALL_READINGS))
+@pytest.mark.parametrize("reading", PICK_READINGS)
 def test_owner_replay_one_number_applies_to_all(reading):
     console = _after_all(reading)
     text = _say_parsed(console, "10")

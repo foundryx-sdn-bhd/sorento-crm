@@ -112,6 +112,14 @@ def get_purchase_orders_placed(
     ),
     sort: Optional[str] = Query("expected_date"),
     dir: Optional[str] = Query("asc"),
+    contact_id: Optional[str] = Query(
+        None,
+        description=(
+            "The contact this is asked on behalf of. Its stock-visibility policy withholds "
+            "`location` on every row whose location that contact may not see."
+        ),
+    ),
+    space_id: Optional[str] = Query(None, description="Respond.io workspace id for `contact_id`."),
     current_user: dict = Depends(get_current_user_or_api_key),
     db: Session = Depends(get_db),
 ):
@@ -165,6 +173,18 @@ def get_purchase_orders_placed(
             dir=dir or "asc",
             limit=limit,
         )
+        if contact_id:
+            # STOCK-TOTAL-OS-SCOPE: the chatbot's on-order note must never name a location
+            # the contact's stock-visibility policy hides. The row stays (what is on order
+            # is still the answer); only its location is withheld.
+            from app.services.stock_visibility import visible_location_codes
+
+            allowed = visible_location_codes(db, contact_id, space_id)
+            if allowed is not None:
+                rows = [
+                    {**r, "location": None} if r.get("location") not in allowed else r
+                    for r in rows
+                ]
         payload: dict = {
             "data": rows,
             "pagination": {"total": len(rows), "page": 1, "limit": len(rows)},

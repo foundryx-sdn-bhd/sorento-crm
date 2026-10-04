@@ -68,7 +68,8 @@ OWN_A = "ZZT OWN A"
 def refusal(*names: str) -> str:
     """AC-CS-11: `A.` / `A and B.` / `A, B and C.` in link order."""
     joined = names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
-    return f"Sorry, that isn't under your account. I can only check on {joined}."
+    # A group name that ends in "." ("CO.SDN.BHD.") ends the sentence itself.
+    return f"Sorry, that isn't under your account. I can only check on {joined}{'' if joined.endswith('.') else '.'}"
 
 
 def _ent(raw: str, hint: str = "customer") -> dict[str, Any]:
@@ -479,8 +480,12 @@ class TestForcedToTheLinks:
         (own_id,) = _link_customers(session_factory, OWN_A)
         reply, captured = _turn(
             session_factory, monkeypatch,
-            _parser_output(domain_hint="order", intent_hint="check_order", order_status=None, entities=[]),
-            "list outstanding DO", attributes=(),
+            # DO-ASK-SIMPLIFY rules 3-4: a linked (dealer) contact's DO list needs a range.
+            _parser_output(
+                domain_hint="order", intent_hint="check_order", order_status=None, entities=[],
+                date_filter_start="2026-09-01", date_filter_end="2026-09-30",
+            ),
+            "list outstanding DO in september", attributes=(),
         )
         (args,) = _calls(captured, ORDERS)
         assert args["customer_ids"] == [own_id], args

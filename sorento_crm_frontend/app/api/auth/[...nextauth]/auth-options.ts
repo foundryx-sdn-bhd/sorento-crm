@@ -3,6 +3,12 @@ import { JWT } from 'next-auth/jwt';
 import CredentialsProvider from 'next-auth/providers/credentials';
 
 import { sessionTokenCookieName } from '@/lib/auth-cookie';
+import {
+  devLoginAllowed,
+  devLoginBackendHeaders,
+  devLoginConfigured,
+  hostFromHeaders,
+} from '@/lib/dev-login';
 
 /**
  * NextAuth is a thin shell over FastAPI-owned auth.
@@ -20,7 +26,7 @@ import { sessionTokenCookieName } from '@/lib/auth-cookie';
  * FastAPI session; FastAPI decides the real expiry and revocation.
  */
 
-function backendBaseUrl(): string {
+export function backendBaseUrl(): string {
   const url =
     process.env.FASTAPI_INTERNAL_URL?.replace(/\/$/, '') ||
     process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '');
@@ -58,6 +64,71 @@ async function fetchCompanyContext(
     console.warn('[next-auth][warn] company my-context fetch failed at login', e);
     return { company_grants: [] };
   }
+}
+
+/**
+ * DEV-LOGIN-BYPASS (PLAN-dev-login-bypass-03oct.md): passwordless sign-in for LOCAL test copies.
+ * Registered only when `devLoginConfigured()` (server-only `DEV_AUTO_LOGIN=true` and not a
+ * production build), and `authorize()` re-checks the browser Host. Takes only an email; the
+ * backend's own guards and allowlist decide, and it mints the SAME session `/auth/login` does.
+ */
+export function devLoginProvider() {
+  return CredentialsProvider({
+    id: 'dev-login',
+    name: 'Dev sign-in',
+    credentials: {
+      email: { label: 'Email', type: 'text' },
+    },
+    async authorize(credentials, req) {
+      if (!devLoginAllowed(hostFromHeaders(req?.headers))) {
+        throw new Error(JSON.stringify({ code: 404, message: 'Dev sign-in is not available.' }));
+      }
+      if (!credentials?.email) {
+        throw new Error(JSON.stringify({ code: 400, message: 'Choose a user.' }));
+      }
+
+      let res: Response;
+      try {
+        res = await fetch(`${backendBaseUrl()}/api/v1/auth/dev-login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...devLoginBackendHeaders() },
+          body: JSON.stringify({ email: credentials.email }),
+        });
+      } catch {
+        throw new Error(
+          JSON.stringify({ code: 503, message: 'Unable to reach the server. Please try again.' }),
+        );
+      }
+
+      if (!res.ok) {
+        throw new Error(
+          JSON.stringify({ code: res.status, message: 'Dev sign-in is not available.' }),
+        );
+      }
+      const data = await res.json();
+
+      return {
+        id: data.id,
+        email: data.email,
+        name: data.name || 'Anonymous',
+        avatar: data.avatar ?? null,
+        status: data.status,
+        roleId: data.role_id || (data.role_ids?.[0] ?? null),
+        roleIds: data.role_ids ?? (data.role_id ? [data.role_id] : []),
+        roleName: data.role_name ?? null,
+        apiToken: data.token,
+        homePath: data.home_path ?? null,
+      } as User;
+    },
+  });
+}
+
+const devLoginOn = devLoginConfigured();
+if (devLoginOn) {
+  console.warn(
+    '!!! DEV_AUTO_LOGIN is ACTIVE: passwordless dev sign-in is registered. It only answers on a ' +
+      'dev server bound to 127.0.0.1 for localhost hosts. Never run this in production. !!!',
+  );
 }
 
 const authOptions: NextAuthOptions = {
@@ -175,6 +246,7 @@ const authOptions: NextAuthOptions = {
         } as User;
       },
     }),
+    ...(devLoginOn ? [devLoginProvider()] : []),
   ],
   session: {
     strategy: 'jwt',

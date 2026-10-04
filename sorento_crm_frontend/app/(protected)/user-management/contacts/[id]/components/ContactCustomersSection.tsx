@@ -58,7 +58,9 @@ export default function ContactCustomersSection({ contactId }: { contactId: stri
 
   const links = useMemo(() => data?.data ?? [], [data]);
   const linkedIds = useMemo(() => new Set(links.map((l) => l.customer_id)), [links]);
-  const picker = useCustomerMultiPicker((option) => linkedIds.has(option.value));
+  const picker = useCustomerMultiPicker((option) => linkedIds.has(option.value), undefined, {
+    allGrantedCompanies: true,
+  });
 
   const ticked = links.filter((l) => selected.has(l.id));
   const allTicked = links.length > 0 && ticked.length === links.length;
@@ -144,7 +146,8 @@ export default function ContactCustomersSection({ contactId }: { contactId: stri
           <ul className="divide-y rounded-md border">
             {links.map((row) => {
               const agent = agentLabel(row.sales_agent_code, row.sales_agent_name);
-              const customer = `${row.customer_code} - ${row.customer_name}`;
+              const code = `${row.customer_code} - ${row.customer_name}`;
+              const customer = row.company_name ? `${row.company_name} · ${code}` : code;
               const counting = unlink.targetId === row.id && unlink.countdown;
               return (
                 <li

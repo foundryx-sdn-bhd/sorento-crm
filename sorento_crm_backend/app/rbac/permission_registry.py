@@ -664,6 +664,11 @@ PERMISSION_REGISTRY.extend([
         "name": "View the Ideas board",
         "description": "View the Ideas board and open individual ideas.",
     },
+    {
+        "slug": "ideation.ideas.manage",
+        "name": "Manage ideas",
+        "description": "Triage ideas: move status, edit, merge, reorder, archive, delete and promote to a business requirement.",
+    },
 ])
 
 

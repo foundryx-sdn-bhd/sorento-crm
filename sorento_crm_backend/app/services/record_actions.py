@@ -2233,3 +2233,75 @@ register(
         label="Delete fact",
     )
 )
+
+
+# --------------------------------------------------------------------------------------
+# Ideas (IDEATION-IN-CRM): the ss call is made as the user who started the action, because
+# the ss comment and idea rules (own-or-moderator, scope) are decided per embed principal.
+# --------------------------------------------------------------------------------------
+
+
+def _requester(db: Session, payload: dict) -> dict:
+    from app.services.ideation_gateway_service import user_for_requester
+
+    return user_for_requester(db, str(payload["requested_by_id"]))
+
+
+def _archive_idea(db: Session, payload: dict):
+    from app.services.ideation_gateway_service import call_ss, require_uuid, ss_path
+
+    user = _requester(db, payload)
+    idea_id = require_uuid(_entity_id(payload), "idea")
+    return call_ss(db, user, "POST", ss_path("embed", "ideas", idea_id, "status"), json={"status": "archived"})
+
+
+def _delete_idea(db: Session, payload: dict):
+    from app.services.ideation_gateway_service import call_ss, require_uuid, ss_path
+
+    user = _requester(db, payload)
+    idea_id = require_uuid(_entity_id(payload), "idea")
+    return call_ss(db, user, "DELETE", ss_path("embed", "ideas", idea_id))
+
+
+def _delete_idea_comment(db: Session, payload: dict):
+    from app.services.ideation_gateway_service import call_ss, require_uuid, ss_path
+
+    user = _requester(db, payload)
+    idea_id = require_uuid(payload.get("idea_id"), "idea")
+    comment_id = require_uuid(_entity_id(payload), "comment")
+    return call_ss(db, user, "DELETE", ss_path("embed", "ideas", idea_id, "comments", comment_id))
+
+
+register(
+    FormAction(
+        key="idea.archive",
+        entity_types=("idea",),
+        execute=_archive_idea,
+        window=WINDOW_REVERSIBLE,
+        permission="ideation.ideas.manage",
+        label="Archive idea",
+    )
+)
+
+register(
+    FormAction(
+        key="idea.delete",
+        entity_types=("idea",),
+        execute=_delete_idea,
+        window=WINDOW_DESTRUCTIVE,
+        permission="ideation.ideas.manage",
+        label="Delete idea",
+    )
+)
+
+register(
+    FormAction(
+        key="idea_comment.delete",
+        entity_types=("idea_comment",),
+        execute=_delete_idea_comment,
+        window=WINDOW_DESTRUCTIVE,
+        # Any viewer may park the delete of a comment; ss decides whether it is theirs to delete.
+        permission="ideation.board.view",
+        label="Delete comment",
+    )
+)

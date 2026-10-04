@@ -77,6 +77,9 @@
 # TestFieldRevealGateBeforeFetch::test_gate_refuses_before_fetch_without_key` - which
 # builds the `ctx.access.attributes` gate directly and additionally asserts the thing that
 # matters most and no console run could see: that NO RUN IS CREATED.
+# LOWSTOCK-FILTER-ASK (2 Oct 2026): a low stock ask with no category now ASKS the category
+# and runs nothing (`2026-10-02-lowstock-filter-ask.yaml`). The run turns below say "all
+# categories" so they still run; the cold "reorder report" case now expects the question.
 contact: "437264483"
 
 cases:
@@ -84,7 +87,7 @@ cases:
     cold: true
     turns:
       # 1. The bare ask. UAC Journey, phrasing 1: the whole estate, no scope.
-      - text: "low stock report"
+      - text: "low stock report all categories"
         expect:
           branch_kind: business_query
           reply_contains:
@@ -103,7 +106,7 @@ cases:
       # minute." If it does, re-run this case alone after turn 1's plan finishes - that is
       # correct behaviour, which is why `reply_not_contains: already running` is NOT
       # repeated on this turn.
-      - text: "low stock report BRW"
+      - text: "low stock report BRW all categories"
         expect:
           branch_kind: business_query
           reply_contains:
@@ -134,7 +137,7 @@ cases:
         expect:
           branch_kind: business_query
           reply_contains:
-            - "low stock report"
+            - "Which product category"
           reply_not_contains:
             - "not enabled for your account"
           no_uuid: true

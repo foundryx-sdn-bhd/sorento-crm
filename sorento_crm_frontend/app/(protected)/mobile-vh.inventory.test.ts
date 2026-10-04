@@ -223,7 +223,6 @@ const ALLOWLIST = new Map<string, string>([
   ['app/(auth)/view/complaint/page.tsx', 'M6 follow-up: emailed read-only view'],
   ['app/(auth)/view/request/page.tsx', 'M6 follow-up: emailed read-only view'],
   ['app/(auth)/approval/page.tsx', 'M6 follow-up: emailed approval screen'],
-  ['components/ideas/IdeationEmbed.tsx', 'M6 follow-up: embedded iframe host'],
   ['components/my-downloads/MyDownloadsDrawer.tsx', 'M6 follow-up: desktop-oriented drawer'],
   ['components/upload-activity/UploadActivityDrawer.tsx', 'M6 follow-up: desktop-oriented drawer'],
   ...FRACTIONAL_VH_FILES.map((file): [string, string] => [file, FRACTIONAL_VH_FOLLOWUP]),
@@ -276,13 +275,13 @@ describe('fixed viewport-height sweep (M6-02 / M6-03)', () => {
     }
   });
 
-  it('the allowlist matches its baseline (216 lines, 146 files)', () => {
+  it('the allowlist matches its baseline (209 lines, 144 files)', () => {
     let matchingLines = 0;
     for (const file of ALLOWLIST.keys()) {
       const lines = fs.readFileSync(file, 'utf8').split('\n');
       matchingLines += lines.filter((line) => PATTERN.test(line)).length;
     }
-    expect(ALLOWLIST.size).toBe(145);
-    expect(matchingLines).toBe(212);
+    expect(ALLOWLIST.size).toBe(144);
+    expect(matchingLines).toBe(209);
   });
 });

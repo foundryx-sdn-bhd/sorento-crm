@@ -5,6 +5,10 @@ marker: `CHIN CHUN HARDWARE SDN BHD - [A/C I]`, `HANLIM TRADING (JB) SDN BHD (SR
 of one name are one customer. `ledger_family_key` is the comparison key two such rows share;
 `ledger_family_label` is what the family is called.
 
+`group_names` / `family_words` name a list of customer rows by group only (DO-ASK-SIMPLIFY
+rule 1, owner rule 2 Oct 2026: no count, no "and N more"), for the chatbot's DO headers and
+its customer-scope refusal line alike.
+
 Core, not the chatbot package: the chatbot's narrower (`app/services/chatbot/turn/narrow.py`)
 groups a customer roster by it, and the stock-ask record (`app/services/stock_ask_service.py`)
 names a customer-less ask by it (ASKS-UX item 4). Core must never import
@@ -178,6 +182,79 @@ def customer_header_words(entries: Iterable[tuple[str, str | None]]) -> str:
         if word not in words:
             words.append(word)
     return ", ".join(words)
+
+
+def _bracket_runs(text: str) -> list[str]:
+    """Every top-level bracketed or parenthesised run in `text`, brackets included."""
+    runs: list[str] = []
+    depth = 0
+    start = 0
+    for i, ch in enumerate(text):
+        if ch in "[(":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch in "])" and depth:
+            depth -= 1
+            if depth == 0:
+                runs.append(text[start : i + 1])
+    return runs
+
+
+def _shared_label(names: list[str]) -> str:
+    """The family's name: the first row's name without the bracketed parts that tell its
+    ledgers apart ("[A/C I]", "[IBORN]"), keeping any every ledger shares, such as the
+    branch in "CHENG HUAT HARDWARE (SENTUL) SDN BHD"."""
+    first = names[0]
+    for run in _bracket_runs(first):
+        if not all(run in other for other in names[1:]):
+            first = first.replace(run, " ", 1)
+    cleaned = " ".join(first.split()).strip().strip("-").strip()
+    return cleaned or ledger_family_label(names[0])
+
+
+def _without_trailing_marker(name: str) -> str:
+    """One ledger's group name: its name without the bracketed ledger marker at its END
+    ("HANLIM TRADING SDN BHD [A/C I]", "... - [IBORN]", "... (CERAMIC & ELLECI)"); a bracket
+    inside the name ("CHENG HUAT HARDWARE (SENTUL) SDN BHD") is part of it and stays."""
+    text = " ".join(name.split()).strip().rstrip("-").strip()
+    while text.endswith(("]", ")")):
+        runs = _bracket_runs(text)
+        if not runs or not text.endswith(runs[-1]):
+            break
+        stripped = text[: -len(runs[-1])].strip().rstrip("-").strip()
+        if not stripped:
+            break
+        text = stripped
+    return text
+
+
+def group_names(names: list[str]) -> list[str]:
+    """The group (trading) names behind customer rows, each once, in first-seen order.
+
+    Owner rule (2 Oct 2026): when the chatbot names a customer company it shows the GROUP
+    NAME ONLY ("HANLIM TRADING SDN BHD"), never a ledger marker, an account count or "and N
+    more". Rows of one family (`ledger_family_key`) are one group; its name keeps the
+    brackets every row shares (the branch in "CHENG HUAT HARDWARE (SENTUL) SDN BHD") and
+    drops the ones that tell the ledgers apart.
+    """
+    families: dict[str, list[str]] = {}
+    for name in dict.fromkeys(n for n in names if n):
+        families.setdefault(ledger_family_key(name) or name, []).append(name)
+    return list(
+        dict.fromkeys(
+            _without_trailing_marker(_shared_label(rows) if len(rows) > 1 else rows[0])
+            for rows in families.values()
+        )
+    )
+
+
+def family_words(names: list[str]) -> str | None:
+    """DO-ASK-SIMPLIFY rule 1: the customer rows in scope, named once per group, comma
+    separated ("HANLIM TRADING SDN BHD"; "CHIN CHUN HARDWARE SDN BHD, JIMMY - I"). Each DO
+    row still carries its own full ledger name; only the header shortens."""
+    groups = group_names(names)
+    return ", ".join(groups) if groups else None
 
 
 _ROMAN = {"I": 1, "II": 2, "III": 3, "IV": 4, "V": 5, "VI": 6, "VII": 7, "VIII": 8, "IX": 9, "X": 10}

@@ -51,6 +51,10 @@ H_2 = "HANLIM TRADING SDN BHD [A/C II]"
 H_3 = "HANLIM TRADING SDN BHD [A/C III]"
 H_4 = "HANLIM TRADING SDN BHD [A/C IV]"
 S_1 = "SOON HENG HARDWARE CO.SDN.BHD. [A/C I]"
+#: The group names a refusal prints (DO-ASK-SIMPLIFY, owner rule 2 Oct 2026: a customer
+#: company is named by its group name only, never per ledger).
+H_GROUP = "HANLIM TRADING SDN BHD"
+S_GROUP = "SOON HENG HARDWARE CO.SDN.BHD."
 ALL = [H_BARE, H_CER, H_1, H_2, H_3, H_4, S_1]
 LEVELS = [None, None, 1, 2, 3, 4, 1]
 
@@ -120,15 +124,15 @@ class TestNamedAccountNarrowsTheLinks:
         """AC-7 (second half), Q3: no Hanlim name, nothing fetched."""
         _world(session_factory)
         reply, captured = _run(session_factory, monkeypatch, [_acct("Soon Heng", 2)], "soon heng account 2")
-        assert reply.strip() == refusal(S_1), reply
+        assert reply.strip() == refusal(S_GROUP), reply
         assert "HANLIM" not in reply
         assert captured == []
 
     def test_a_level_the_family_lacks_names_that_familys_links_only(self, session_factory, monkeypatch) -> None:
-        """Hanlim has no level 5 among the links: the refusal names the six Hanlim ledgers."""
+        """Hanlim has no level 5 among the links: the refusal names the Hanlim group (group names only, owner rule 2 Oct 2026)."""
         _world(session_factory)
         reply, captured = _run(session_factory, monkeypatch, [_acct("Hanlim", 5)], "hanlim account 5")
-        assert reply.strip() == refusal(H_BARE, H_CER, H_1, H_2, H_3, H_4), reply
+        assert reply.strip() == refusal(H_GROUP), reply
         assert "SOON HENG" not in reply
         assert captured == []
 
@@ -160,7 +164,7 @@ class TestNoAccountIsTodaysBehaviour:
     def test_foreign_word_without_account_is_still_refused_with_all_links(self, session_factory, monkeypatch) -> None:
         _world(session_factory, names=[H_1, S_1], levels=[None, None])
         reply, captured = _run(session_factory, monkeypatch, [_acct("Zzt Stranger", None)], "outstanding for stranger")
-        assert reply.strip() == refusal(H_1, S_1), reply
+        assert reply.strip() == refusal(H_GROUP, S_GROUP), reply
         assert captured == []
 
 
@@ -198,7 +202,7 @@ class TestMyAccount:
         reply, captured = _run(
             session_factory, monkeypatch, [_acct(None, 1)], "my account 1 outstanding", self_reference=True,
         )
-        assert reply.strip() == refusal(H_2, "SOON HENG HARDWARE CO.SDN.BHD. [A/C II]"), reply
+        assert reply.strip() == refusal(H_GROUP, S_GROUP), reply
         assert captured == []
 
 

@@ -256,6 +256,9 @@ class RespondContact(Base):
     # as it did before the switch existed. Flipped in bulk or per contact by
     # scripts/set_contact_outbound.py.
     outbound_enabled = Column(Boolean, nullable=False, default=True, server_default=text("true"))
+    # CONTACT-BRAND-SCOPE: the brands this contact may see. NULL or empty = every brand.
+    # Read only through app.services.contact_brand_scope.contact_brand_scope.
+    brand_ids = Column(ARRAY(UUID(as_uuid=False)), nullable=True)
     # Chatbot turn re-architecture (AC-1503): the Profile shelf, one JSONB blob
     # (tier, language, default ledgers - PLAN "Design > State"), written by explicit
     # picks (a WhatsApp pick, or the Contact > Access "Chatbot" card) and read as a

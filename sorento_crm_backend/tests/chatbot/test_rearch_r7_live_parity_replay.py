@@ -32,6 +32,7 @@ from app.services.chatbot.turn.policy import default_policy
 from app.services.chatbot.turn.state import Focus, focus_to_wire
 from app.services.company_scope import DEFAULT_COMPANY_ID
 from tests._pg_fixture import unique_code
+from tests.chatbot._turn_helpers import do_window
 from tests.chatbot.test_engine import _parser_output
 from tests.chatbot.test_engine_company_scope import _seed_product
 from tests.chatbot.test_outstanding_lane import (
@@ -207,7 +208,7 @@ class TestMissNounIsTheResolvedAttachmentLabel:
             msg_id="zzt-r7-f6-roster-1", mcp_response={"data": []}, answer_mcp_probe=answer_probe,
         )
         reply1 = (result1.reply or {}).get("text") or ""
-        assert "product_attachment search needs to be more specific" in reply1, (
+        assert "Which product do you mean? Please choose:" in reply1, (
             f"test setup sanity: an ambiguous 2-member family must raise gate.py's own "
             f"require-specific roster: {reply1!r}"
         )
@@ -651,6 +652,8 @@ class TestMultiDomainPickFetchesEveryNamedDomain:
                     {"raw": "hanlim", "hint": "customer", "canonical_code": None,
                      "current_message": True, "confident": True},
                 ],
+                # Dated: a dateless DO list ask asks which period first (DO-ASK-SIMPLIFY, owner 4 Oct 2026).
+                **do_window(),
                 asks=[{"domain": "order"}, {"domain": "incoming"}],
             ),
             text_body="orders and incoming for hanlim",

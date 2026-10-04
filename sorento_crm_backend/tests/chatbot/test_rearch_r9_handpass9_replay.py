@@ -188,7 +188,8 @@ class TestPhotoRosterStaysAnswerableAndNamesThePickedProduct:
             f"(answer.py:2661-2821) always includes one bullet per RESOLVED entity "
             f"type, product included: {reply2!r}"
         )
-        assert "• attachment_type: Product Photos" in reply2, reply2
+        # ATTACHMENT-MULTI Q5 (a): the kind is said in words, never `attachment_type`.
+        assert "• attachment type: Product Photos" in reply2, reply2
 
     def test_d2_a_second_different_position_still_resolves_after_the_first_pick(
         self, session_factory, monkeypatch

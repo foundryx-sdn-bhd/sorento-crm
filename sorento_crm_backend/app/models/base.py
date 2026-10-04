@@ -69,6 +69,24 @@ def get_company_scope(db) -> CompanyScope:
     return db.info.get(_SCOPE_KEY, UNSET)
 
 
+_BRAND_SCOPE_KEY = "brand_scope"
+
+
+def set_brand_scope(db, scope: Optional[FrozenSet[str]]) -> None:
+    """Stamp the contact's accessible brand ids on the session (None = every brand).
+
+    CONTACT-BRAND-SCOPE: ``do_orm_execute`` adds a ``Product.brand_id IN scope`` criterion
+    while a frozenset is set; None / absent adds nothing (unscoped is byte-identical)."""
+    if scope:
+        db.info[_BRAND_SCOPE_KEY] = frozenset(str(b) for b in scope)
+    else:
+        db.info.pop(_BRAND_SCOPE_KEY, None)
+
+
+def get_brand_scope(db) -> Optional[FrozenSet[str]]:
+    return db.info.get(_BRAND_SCOPE_KEY)
+
+
 @contextmanager
 def company_scope(db, scope: CompanyScope):
     """Temporarily set the company scope on ``db`` (tests + workers).
