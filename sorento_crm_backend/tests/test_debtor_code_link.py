@@ -30,7 +30,6 @@ from app.services.master_ref_resolver import WARN_REF_MISMATCH
 from tests._pg_fixture import blank_session, unique_code
 
 MARKER = "ZZDCL"
-WARN_NAME_TAKEN = "customer_name_taken"
 
 OLD = datetime(2025, 1, 1, 9, 0, 0)
 NEW = datetime(2026, 9, 1, 9, 0, 0)
@@ -187,7 +186,7 @@ class TestFirstRowByDebtorCode:
         assert _cols(db, id_low, "customer_name", "phone_number") == ("NAME-PUSHED", "0144444444")
         assert _cols(db, id_high, "customer_name", "phone_number") == ("NAME-HIGH", None)
 
-    def test_t4_name_clash_with_sibling_keeps_first_name_applies_rest_and_warns(self, db):
+    def test_t4_exact_name_row_wins_over_the_oldest_row(self, db):
         _scope(db)
         code = _code("T4")
         a = _seed(db, code, "NAME-C", OLD)
@@ -199,12 +198,13 @@ class TestFirstRowByDebtorCode:
         )
 
         assert rec.outcome is IngestOutcome.UPDATED, rec.errors
-        assert rec.entity_id == a
-        assert _cols(db, a, "customer_name", "phone_number") == ("NAME-C", "0155555555")
-        assert _cols(db, b, "customer_name", "phone_number") == ("NAME-C2", None)
-        assert WARN_NAME_TAKEN in rec.warnings
+        assert rec.entity_id == b
+        assert _cols(db, b, "lower(btrim(customer_name))", "phone_number") == ("name-c2", "0155555555")
+        assert _cols(db, a, "customer_name", "phone_number") == ("NAME-C", None)
+        assert rec.warnings in ([], [WARN_REF_MISMATCH])
+        assert "customer_name_taken" not in rec.warnings
 
-    def test_t5_name_never_picks_the_row_the_d13_reversal(self, db):
+    def test_t5_exact_name_row_gets_the_email_oldest_untouched(self, db):
         _scope(db)
         code = _code("T5")
         a = _seed(db, code, "ALPHA", OLD, email="alpha@old.example")
@@ -216,9 +216,33 @@ class TestFirstRowByDebtorCode:
         )
 
         assert rec.outcome is IngestOutcome.UPDATED, rec.errors
-        assert rec.entity_id == a
-        assert _cols(db, a, "customer_name", "email") == ("ALPHA", "pushed@new.example")
-        assert _cols(db, b, "customer_name", "email") == ("BETA", "beta@old.example")
+        assert rec.entity_id == b
+        assert _cols(db, b, "customer_name", "email") == ("BETA", "pushed@new.example")
+        assert _cols(db, a, "customer_name", "email") == ("ALPHA", "alpha@old.example")
+
+    def test_t14_same_name_under_another_code_is_never_touched(self, db):
+        _scope(db)
+        code, other_code = _code("T14"), _code("T14X")
+        other = _seed(db, other_code, "NAME-SHARED", OLD, phone_number="0100000014")
+        target = _seed(db, code, "NAME-OTHER", NEW)
+
+        _result, rec = _push(
+            db,
+            {"source_ref": f"SS:{code}", "code": code, "name": "NAME-SHARED", "phone_number": "0199999914"},
+        )
+
+        assert rec.outcome is IngestOutcome.UPDATED, rec.errors
+        assert rec.entity_id == target
+        assert _cols(db, target, "customer_code", "customer_name", "phone_number") == (
+            code,
+            "NAME-SHARED",
+            "0199999914",
+        )
+        assert _cols(db, other, "customer_code", "customer_name", "phone_number") == (
+            other_code,
+            "NAME-SHARED",
+            "0100000014",
+        )
 
     def test_t6_no_row_with_the_code_creates_and_links_the_pushed_ref(self, db):
         _scope(db)
@@ -247,12 +271,12 @@ class TestFirstRowByDebtorCode:
         # and a push into company B finds only company B's row
         _result, rec_b = _push(
             db,
-            {"source_ref": f"SS:{code}", "code": code, "name": "NAME-B", "phone_number": "0188888888"},
+            {"source_ref": f"SS:{code}", "code": code, "name": "NAME-B2", "phone_number": "0188888888"},
             company_id=company_b,
         )
         assert rec_b.outcome is IngestOutcome.UPDATED, rec_b.errors
         assert rec_b.entity_id == only_b
-        assert _cols(db, only_b, "phone_number") == ("0188888888",)
+        assert _cols(db, only_b, "customer_name", "phone_number") == ("NAME-B2", "0188888888")
         assert _cols(db, rec.entity_id, "phone_number") == ("0177777777",)
 
 
@@ -283,7 +307,7 @@ class TestPushedRefIsBookkeeping:
         _ref(db, b, ref)
 
         _result, rec = _push(
-            db, {"source_ref": ref, "code": code, "name": "NAME-A", "phone_number": "0100000009"}
+            db, {"source_ref": ref, "code": code, "name": "NAME-NEW", "phone_number": "0100000009"}
         )
 
         assert rec.outcome is IngestOutcome.UPDATED, rec.errors
@@ -306,6 +330,23 @@ class TestPushedRefIsBookkeeping:
         assert rec.outcome is IngestOutcome.UPDATED, rec.errors
         assert rec.entity_id == a
         assert _refs_of(db, a) == [ref]
+        assert rec.warnings == []
+
+    def test_t15_exact_name_row_unlinked_and_ref_free_gets_the_ref(self, db):
+        _scope(db)
+        code = _code("T15")
+        a = _seed(db, code, "NAME-A", OLD)
+        b = _seed(db, code, "NAME-B", NEW)
+        ref = f"AED_SORENTO:{code}"
+
+        _result, rec = _push(
+            db, {"source_ref": ref, "code": code, "name": "name-b", "phone_number": "0100000015"}
+        )
+
+        assert rec.outcome is IngestOutcome.UPDATED, rec.errors
+        assert rec.entity_id == b
+        assert _refs_of(db, b) == [ref]
+        assert _refs_of(db, a) == []
         assert rec.warnings == []
 
     def test_t11_renumbered_code_creates_a_new_row_and_leaves_the_old_link(self, db):
