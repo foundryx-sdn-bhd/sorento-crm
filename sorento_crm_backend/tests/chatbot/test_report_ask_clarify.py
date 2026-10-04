@@ -804,3 +804,31 @@ def test_n5_the_customer_picker_answer_asks_the_basis_before_any_fetch(session_f
     _reply, captured = _top_selling(session_factory, monkeypatch, _answer_keys(basis="delivered"), "delivered")
     (args,) = ts_calls(captured)
     assert args["customer_ids"] == [HANLIM_UUID_1] and args["basis"] == "delivered" and args["n"] == 4, args
+
+
+# --------------------------------------------------------------------------- #
+# Live browser pass: the parser filled keys the message never named
+# --------------------------------------------------------------------------- #
+
+CURRENT_ONLY_ANCHOR = (
+    "basis, measure, rank_by and sales_channel come from the CURRENT message only"
+)
+
+
+def test_the_report_ask_addendum_reads_the_ranking_keys_from_the_current_message_only() -> None:
+    """A sales ranking's `basis`, `measure` (and `rank_by`) and `sales_channel` are read like `top_n`:
+    from the CURRENT message only; a key it does not name is null and the bot asks. Prompt only."""
+    from app.services.chatbot_parser_prompt import REPORT_ASK_ADDENDUM, SEMANTIC_PARSER_PROMPT
+
+    assert REPORT_ASK_ADDENDUM in SEMANTIC_PARSER_PROMPT
+    flat = _flat(REPORT_ASK_ADDENDUM)
+    assert CURRENT_ONLY_ANCHOR in flat, "the rule's anchor phrase is missing"
+    near = flat.split(CURRENT_ONLY_ANCHOR, 1)[1][:200].lower()
+    assert "null" in near, near
+    assert "never" in near and ("carried" in near or "previous" in near or "earlier" in near), near
+
+
+def test_the_top_selling_addendum_is_untouched_by_the_current_message_rule() -> None:
+    from app.services.chatbot_parser_prompt import TOP_SELLING_ADDENDUM
+
+    assert CURRENT_ONLY_ANCHOR not in _flat(TOP_SELLING_ADDENDUM)
