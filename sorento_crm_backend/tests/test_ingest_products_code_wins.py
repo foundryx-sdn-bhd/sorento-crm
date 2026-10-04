@@ -1,4 +1,12 @@
-"""RED tests for SR0 - products resolve code-wins on ingest (contract 2.4).
+"""Products resolve code-wins on ingest (contract 2.4), updated for the 3 Oct owner
+rulings (PRODUCT-REF-COLLISION): products match by company + code ONLY. Ingest
+never reads or writes product `integration_references` rows, so the
+`ref_mismatch` warning, the reference-link-on-adopt and the other-source-system
+conflict described below no longer exist for products; the tests assert the
+code-only behaviour instead (see tests/test_product_ref_collision.py for the
+collision cases). Original SR0 notes follow.
+
+RED tests for SR0 - products resolve code-wins on ingest (contract 2.4).
 
 UAC:  documentation/plans/autocount/ingest-products-code-wins-acceptance-criteria.md
 PLAN: documentation/plans/autocount/PLAN-ingest-products-code-wins.md
@@ -390,7 +398,6 @@ class TestCodeWinsIngest:
         entry = res.json()["records"][0]
         assert entry["outcome"] == "updated", entry
         assert entry["entity_id"] == product_id, entry
-        assert "ref_mismatch" in entry.get("warnings", []), entry
 
         row = env.row("products", product_id)
         assert row["description"] == "New description"
@@ -426,7 +433,6 @@ class TestCodeWinsIngest:
         assert entry["diff"] is not None, entry
         assert entry["diff"]["list_price"]["current"] == Decimal("10.00")
         assert entry["diff"]["list_price"]["incoming"] == Decimal("25.50")
-        assert "ref_mismatch" in entry.get("warnings", []), entry
 
         row = env.row("products", product_id)
         assert row["list_price"] == Decimal("10.00")
@@ -434,7 +440,7 @@ class TestCodeWinsIngest:
         assert len(rows) == 1
         assert rows[0]["source_ref"] == ref
 
-    def test_cw3_unlinked_product_is_adopted_and_linked_without_warning(self, env):
+    def test_cw3_unlinked_product_is_adopted_by_code_and_not_linked(self, env):
         product_id, code = env.product()
         code_ref = _ref("BRA2")
 
@@ -445,10 +451,10 @@ class TestCodeWinsIngest:
         assert res.status_code == 200, res.text
         entry = res.json()["records"][0]
         assert entry["outcome"] == "updated", entry
+        assert entry["entity_id"] == product_id, entry
         assert "ref_mismatch" not in entry.get("warnings", []), entry
-        rows = env.ref_rows("products", product_id)
-        assert len(rows) == 1
-        assert rows[0]["source_ref"] == code_ref
+        # Ingest never writes a product reference (owner ruling 2, 3 Oct).
+        assert env.ref_rows("products", product_id) == []
 
     def test_cw4_ref_hit_updates_without_warning(self, env):
         ref, product_id, code = env.linked_product()
@@ -476,8 +482,6 @@ class TestCodeWinsIngest:
         assert first.status_code == 200 and second.status_code == 200
         e1, e2 = first.json()["records"][0], second.json()["records"][0]
         assert e1["outcome"] == "updated" == e2["outcome"], (e1, e2)
-        assert "ref_mismatch" in e1.get("warnings", [])
-        assert "ref_mismatch" in e2.get("warnings", [])
         rows = env.ref_rows("products", product_id)
         assert len(rows) == 1
         assert rows[0]["source_ref"] == ref
@@ -494,9 +498,11 @@ class TestCodeWinsIngest:
         entry = res.json()["records"][0]
         assert entry["outcome"] == "updated", entry
         assert entry["entity_id"] == product_id
-        assert "ref_mismatch" in entry.get("warnings", [])
 
-    def test_cw7_other_source_system_still_conflicts(self, env):
+    def test_cw7_other_source_system_ref_no_longer_conflicts_for_products(self, env):
+        # Was: another source system's ref on the code match refused the push.
+        # Products match by code only now, so the ref is irrelevant and stays
+        # exactly as it was.
         ref, product_id, code = env.linked_product(source_system="othersys")
         code_ref = _ref("BRA7")
 
@@ -504,10 +510,8 @@ class TestCodeWinsIngest:
 
         assert res.status_code == 200, res.text
         entry = res.json()["records"][0]
-        assert entry["outcome"] == "failed", entry
-        assert "source_ref" in entry.get("errors", {}), entry
-        row = env.row("products", product_id)
-        assert row["product_code"] == code
+        assert entry["outcome"] == "updated", entry
+        assert entry["entity_id"] == product_id, entry
         rows = env.ref_rows("products", product_id)
         assert len(rows) == 1
         assert rows[0]["source_ref"] == ref
@@ -546,9 +550,7 @@ class TestCodeWinsIngest:
         assert entry["outcome"] == "updated", entry
         assert entry["entity_id"] == product_a, entry
 
-        rows_a = env.ref_rows("products", product_a)
-        assert len(rows_a) == 1
-        assert rows_a[0]["source_ref"] == push_ref
+        assert env.ref_rows("products", product_a) == []
 
         row_b = env.row("products", product_b)
         assert row_b["product_code"] == shared_code
@@ -569,7 +571,6 @@ class TestCodeWinsDeletions:
         assert res.status_code == 200, res.text
         entry = res.json()["records"][0]
         assert entry["outcome"] == "deactivated", entry
-        assert entry["warnings"] == ["ref_mismatch"], entry
         row = env.row("products", product_id)
         assert row["is_discontinued"] is True
         assert row["is_active"] is True
@@ -586,7 +587,6 @@ class TestCodeWinsDeletions:
         assert res.status_code == 200, res.text
         entry = res.json()["records"][0]
         assert entry["outcome"] == "deleted", entry
-        assert entry["warnings"] == ["ref_mismatch"], entry
         assert env.row("products", product_id) is None
         assert env.ref_owner(ref) is None
 
@@ -602,7 +602,9 @@ class TestCodeWinsDeletions:
 
         assert env.row("products", product_id) is not None
 
-    def test_dl4_ref_hit_ignores_codes_and_has_no_warning(self, env):
+    def test_dl4_codes_decide_and_the_ref_holder_is_untouched(self, env):
+        # Was: a ref hit ignored `codes`. Product deletes resolve by code only
+        # now (owner ruling 1, 3 Oct): the ref's holder is never the target.
         ref, product_id, code = env.linked_product()
         other_id, other_code = env.product()
 
@@ -611,11 +613,10 @@ class TestCodeWinsDeletions:
         assert res.status_code == 200, res.text
         entry = res.json()["records"][0]
         assert entry["outcome"] in ("deleted", "deactivated"), entry
-        assert entry["entity_id"] == product_id, entry
-        assert "warnings" not in entry, entry
-        other_row = env.row("products", other_id)
-        assert other_row is not None
-        assert other_row["product_code"] == other_code
+        assert entry["entity_id"] == other_id, entry
+        holder = env.row("products", product_id)
+        assert holder is not None
+        assert holder["product_code"] == code
 
     def test_dl5_codes_ignored_for_non_product_entities(self, env):
         entity_id, code = env.other_master("suppliers")
@@ -630,17 +631,18 @@ class TestCodeWinsDeletions:
         assert row is not None
         assert row["is_active"] is True
 
-    def test_dl6_other_source_system_is_not_found(self, env):
+    def test_dl6_other_source_system_ref_does_not_block_a_code_match(self, env):
+        # Product deletes resolve by code only (AC-12): the ref, whatever source
+        # system it sits under, is irrelevant.
         ref, product_id, code = env.linked_product(source_system="othersys")
         code_ref = _ref("BRADL6")
 
         res = env.delete("products", [code_ref], codes={code_ref: code})
 
         assert res.status_code == 200, res.text
-        assert res.json()["records"][0]["outcome"] == "not_found"
-        row = env.row("products", product_id)
-        assert row is not None
-        assert row["product_code"] == code
+        entry = res.json()["records"][0]
+        assert entry["outcome"] in ("deleted", "deactivated"), entry
+        assert entry["entity_id"] == product_id, entry
 
     def test_dl7_other_company_product_is_not_found(self, env):
         ref_b, product_b, code_b = env.linked_product(company_id=env.company_b)
@@ -668,7 +670,6 @@ class TestCodeWinsDeletions:
         assert body["dry_run"] is True
         entry = body["records"][0]
         assert entry["outcome"] == "deactivated", entry
-        assert entry["warnings"] == ["ref_mismatch"], entry
 
         row = env.row("products", product_id)
         assert row["is_discontinued"] is False
@@ -730,7 +731,6 @@ class TestCodeWinsDeletions:
         assert res.status_code == 200, res.text
         entry = res.json()["records"][0]
         assert entry["outcome"] == "deleted", entry
-        assert entry["warnings"] == ["ref_mismatch"], entry
         assert env.row("products", product_id) is None
 
     def test_dl11_unlinked_product_with_dependents_is_deactivated(self, env):
@@ -743,7 +743,6 @@ class TestCodeWinsDeletions:
         assert res.status_code == 200, res.text
         entry = res.json()["records"][0]
         assert entry["outcome"] == "deactivated", entry
-        assert entry["warnings"] == ["ref_mismatch"], entry
         row = env.row("products", product_id)
         assert row is not None
         assert row["is_discontinued"] is True
@@ -808,6 +807,5 @@ class TestContractV24:
 
         field_notes = body.get("field_notes", {})
         notes_text = " ".join(str(v) for v in field_notes.values())
-        assert "ref_mismatch" in notes_text, field_notes
+        assert "matched by company and code" in notes_text, field_notes
         assert "codes" in notes_text or "code" in notes_text.lower(), field_notes
-        assert "reference-only" in notes_text or "reference only" in notes_text, field_notes

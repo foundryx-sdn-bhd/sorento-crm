@@ -158,7 +158,7 @@ class TestSec1AdoptionPathReceivedGuard:
                     "lines": [
                         {
                             "source_ref": f"DK-{spo_number}-L1",
-                            "product_ref": product_ref,
+                            "product_ref": product_ref, "product_code": product_ref[3:],
                             "qty_ordered": "10",
                             "qty_received": "0",
                         }
@@ -281,7 +281,7 @@ class TestSec1AdoptionPathReceivedGuard:
                     "lines": [
                         {
                             "source_ref": f"DK-{spo_number}-L1",
-                            "product_ref": product_ref,
+                            "product_ref": product_ref, "product_code": product_ref[3:],
                             "qty_ordered": "10",
                             "qty_received": "0",
                         }
@@ -333,7 +333,7 @@ class TestSec2ForwardMatchIsPostCommit:
                     "lines": [
                         {
                             "source_ref": f"DK-{spo_number}-L1",
-                            "product_ref": product_ref,
+                            "product_ref": product_ref, "product_code": product_ref[3:],
                             "qty_ordered": "5",
                         }
                     ],
