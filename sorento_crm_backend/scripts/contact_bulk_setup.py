@@ -802,18 +802,24 @@ def auto_links(db, path, out_dir, *, apply: bool = False, actor_id: Optional[str
             result["already_linked"] += 1
 
     actor = audit_context.AuditActor(actor_type="user", user_id=actor_id) if actor_id else None
-    plan_rows = []
+    # One pair per (contact, ledger) however many Excel rows name it.
+    pairs: dict[tuple, dict] = {}
     for a in result["auto"]:
-        customer = SimpleNamespace(id=a["customer_id"], company_id=a["company_id"], customer_code=a["debtor_code"])
         for phone in a["contacts"]:
-            status = "would link"
-            if apply:
-                before = (result["linked"], result["skipped_existing"])
-                _link_contact(db, actor, actor_id, ids[phone], customer, result,
-                              {"excel_row": a["excel_row"], "debtor_code": a["debtor_code"]})
-                status = "linked" if result["linked"] > before[0] else "existing" if result["skipped_existing"] > before[1] else "failed"
-            plan_rows.append([a["excel_row"], a["company_code"], _safe(a["debtor_code"]), _safe(a["customer_name"]),
-                              _safe(names[phone]), status])
+            pair = pairs.setdefault((ids[phone], a["customer_id"]), {"a": a, "phone": phone, "rows": set()})
+            pair["rows"].add(a["excel_row"])
+    plan_rows = []
+    for (cid, _ledger), pair in pairs.items():
+        a, phone, rows = pair["a"], pair["phone"], sorted(pair["rows"])
+        customer = SimpleNamespace(id=a["customer_id"], company_id=a["company_id"], customer_code=a["debtor_code"])
+        status = "would link"
+        if apply:
+            before = (result["linked"], result["skipped_existing"])
+            _link_contact(db, actor, actor_id, cid, customer, result,
+                          {"excel_row": rows[0], "debtor_code": a["debtor_code"]})
+            status = "linked" if result["linked"] > before[0] else "existing" if result["skipped_existing"] > before[1] else "failed"
+        plan_rows.append([";".join(str(r) for r in rows), a["company_code"], _safe(a["debtor_code"]),
+                          _safe(a["customer_name"]), _safe(names[phone]), status])
     out_dir = Path(out_dir)
     plan_path = out_dir / "auto-links-plan.csv"
     with open(plan_path, "w", newline="") as fh:
@@ -825,8 +831,8 @@ def auto_links(db, path, out_dir, *, apply: bool = False, actor_id: Optional[str
     result["counts"] = {
         "auto_rows": len({a["excel_row"] for a in result["auto"]}),
         "auto_blocks": len({(a["excel_row"], a["company_code"]) for a in result["auto"]}),
-        "auto_ledgers": len({a["customer_id"] for a in result["auto"]}),
-        "auto_pairs": sum(len(a["contacts"]) for a in result["auto"]),
+        "auto_ledgers": len({ledger for _, ledger in pairs}),
+        "auto_pairs": len(pairs),
         "already_linked": result["already_linked"],
         "needs_human": result["needs_human"],
     }
