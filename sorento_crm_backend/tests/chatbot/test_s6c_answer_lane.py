@@ -2437,7 +2437,10 @@ class TestStatusAwareMissMessageOmitsTheEtaDate:
             ],
         }
 
-        out = not_found_error_message({}, parser=parser, resolved=resolved, gate=gate)
+        # DO-ASK-SIMPLIFY security B1: the status is named only with its reveal grant.
+        out = not_found_error_message(
+            {}, parser=parser, resolved=resolved, gate=gate, granted_keys=["delivery_orders.status"]
+        )
         message = out.get("escalate_message") or ""
 
         # AC-1863: a single resolved order must be byte-identical to before the
@@ -2536,7 +2539,11 @@ class TestStatusAwareMissMessageNamesEveryResolvedOrder:
             "by_entity_type": {"customer_order": matches},
         }
         out = not_found_error_message(
-            {}, parser=self._parser("delivered"), resolved=resolved, gate=self._gate(matches)
+            {},
+            parser=self._parser("delivered"),
+            resolved=resolved,
+            gate=self._gate(matches),
+            granted_keys=["delivery_orders.status"],
         )
         message = out.get("escalate_message") or ""
 

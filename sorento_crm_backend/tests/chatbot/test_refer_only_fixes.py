@@ -27,7 +27,7 @@ from app.services.chatbot.turn.pending import ask as pending_ask
 from app.services.chatbot.turn.state import Profile
 from app.services.chatbot.turn.task import REFER_TO_SALESMAN
 
-from tests.chatbot._turn_helpers import entity, verdict
+from tests.chatbot._turn_helpers import do_window, entity, verdict
 from tests.chatbot.test_engine import _envelope, stub_access, stub_parser  # noqa: F401
 from tests.chatbot.test_escalation_agent_carry import _seed_contact, _seed_product, _stub_incoming_probe_empty
 from tests.chatbot.test_escalation_control import _make_dealer
@@ -76,6 +76,8 @@ def _order_miss(session_factory, monkeypatch, stub_parser, stub_access, *, barre
             intent_hint="check_order",
             entities=[entity("SRTWC8605-FT", hint="product", confident=True)],
             routing={"suggested_team": "customer_service", "suggested_agent": "order_enquiries"},
+            # Dated: a dateless DO list ask asks which period first (DO-ASK-SIMPLIFY, owner 4 Oct 2026).
+            **do_window(),
         )
     )
     stub_access()
@@ -93,7 +95,7 @@ class TestOrderMissForABarredContact:
     ) -> None:
         result = _order_miss(session_factory, monkeypatch, stub_parser, stub_access, barred=True)
         text = (result.reply or {}).get("text") or ""
-        assert text.endswith("But no order matched these. " + REFER_TO_SALESMAN), text
+        assert text.endswith("But no order from 01/09/2026 to 30/09/2026 matched these. Reply with another month or dates (e.g. August, or 15 Sep to 10 Oct). " + REFER_TO_SALESMAN), text
         _assert_no_staff_list(text)
         assert (result.reply or {}).get("result_set") in (None, []), result.reply
 
@@ -105,9 +107,9 @@ class TestOrderMissForABarredContact:
         result = _order_miss(session_factory, monkeypatch, stub_parser, stub_access, barred=True)
         text = (result.reply or {}).get("text") or ""
         assert text == (
-            "Customer: all customers\nProduct: SRTWC8605-FT\nDates: all dates\n\n"
+            "Customer: all customers\nProduct: SRTWC8605-FT\nDates: 01/09/2026 to 30/09/2026\n\n"
             "Here's what you want:\n• product: SRTWC8605-FT\n\n"
-            f"But no order matched these. {REFER_TO_SALESMAN}"
+            f"But no order from 01/09/2026 to 30/09/2026 matched these. Reply with another month or dates (e.g. August, or 15 Sep to 10 Oct). {REFER_TO_SALESMAN}"
         ), text
 
     def test_an_allowed_contact_still_gets_the_picker_and_the_header(

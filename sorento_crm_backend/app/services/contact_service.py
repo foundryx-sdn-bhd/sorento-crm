@@ -109,8 +109,13 @@ class ContactService:
         own_memory_level_only: bool = False,
         include_linked_users: bool = False,
         no_customers_only: bool = False,
+        access_filters: Optional[dict] = None,
     ):
         """List contacts with pagination and filtering.
+
+        ``access_filters`` (CONTACT-BULK-ACCESS, UAC A2.3): any of ``access_type``, ``tier``,
+        ``cost``, ``escalation``, ``packing_list``, ``stock``, ``customer_id``,
+        ``access_differs_from``; absent or None = no filter. See ``_apply_access_filters``.
 
         ``include_linked_users`` (S3 1.7): the caller holds `users.view`, so
         each row's `linked_user_id`/`linked_user_name` are filled from ONE
@@ -143,6 +148,8 @@ class ContactService:
                     RespondContact.last_name.ilike(like),
                 )
             )
+        if access_filters:
+            q = self._apply_access_filters(q, access_filters)
         
         total = q.count()
         
@@ -172,6 +179,7 @@ class ContactService:
         from app.services.contact_customer_service import customer_codes_by_contact
 
         codes_map = customer_codes_by_contact(self.db, [str(c.id) for c in contacts])
+        cost_ids = self._cost_visible_ids([str(c.id) for c in contacts])
 
         # Validate and convert contacts to response models
         # Explicitly convert UUID to string to ensure Pydantic validation works
@@ -183,6 +191,7 @@ class ContactService:
                 data["linked_user_id"] = linked["id"] if linked else None
                 data["linked_user_name"] = linked["name"] if linked else None
                 data["customer_codes"] = codes_map.get(str(contact.id), [])
+                data["cost_visible"] = str(contact.id) in cost_ids
                 contact_responses.append(RespondContactResponse.model_validate(data))
             except Exception as e:
                 logger.error(f"Error validating contact {contact.id}: {str(e)}", exc_info=True)
@@ -194,6 +203,94 @@ class ContactService:
             empty=total == 0
         )
     
+    COST_REVEAL_KEY = "purchase_orders.cost"
+
+    def _cost_visible_ids(self, contact_ids: list[str]) -> set[str]:
+        """The contacts among ``contact_ids`` holding the cost reveal, in one query."""
+        if not contact_ids:
+            return set()
+        from app.models.access import ContactFieldReveal
+
+        return {
+            str(cid)
+            for (cid,) in self.db.query(ContactFieldReveal.respond_contact_id).filter(
+                ContactFieldReveal.respond_contact_id.in_(contact_ids),
+                ContactFieldReveal.field_key == self.COST_REVEAL_KEY,
+                ContactFieldReveal.granted.is_(True),
+            )
+        }
+
+    def _apply_access_filters(self, q, f: dict):
+        """UAC A2.3-A2.6: each filter narrows; together they AND. `yes|no` for the switches."""
+        from app.models.access import (
+            ContactFieldReveal,
+            RespondContactCustomer,
+            respond_contact_access_types as pivot,
+        )
+
+        def yes(name: str) -> Optional[bool]:
+            value = f.get(name)
+            return None if not value else value == "yes"
+
+        if f.get("access_type"):
+            q = q.filter(
+                exists().where(
+                    pivot.c.contact_id == RespondContact.id,
+                    pivot.c.access_type_code == f["access_type"],
+                )
+            )
+        tier = f.get("tier")
+        if tier:
+            tier_value = RespondContact.chatbot_profile["tier"].astext
+            if tier == "none":
+                q = q.filter(or_(tier_value.is_(None), tier_value == ""))
+            else:
+                q = q.filter(tier_value == tier)
+        cost = yes("cost")
+        if cost is not None:
+            holds = exists().where(
+                ContactFieldReveal.respond_contact_id == RespondContact.id,
+                ContactFieldReveal.field_key == self.COST_REVEAL_KEY,
+                ContactFieldReveal.granted.is_(True),
+            )
+            q = q.filter(holds if cost else ~holds)
+        for name, column in (
+            ("escalation", RespondContact.escalation_allowed),
+            ("packing_list", RespondContact.packing_list_allowed),
+            ("stock", RespondContact.chatbot_stock_allowed),
+        ):
+            value = yes(name)
+            if value is not None:
+                q = q.filter(column.is_(value))
+        if f.get("customer_id"):
+            from app.models.base import get_company_scope
+            from app.services.company_scope import build_company_predicate
+
+            link = exists().where(
+                RespondContactCustomer.contact_id == RespondContact.id,
+                RespondContactCustomer.customer_id == f["customer_id"],
+            )
+            # Same rule as `customers=none`: only links the caller can see count.
+            predicate = build_company_predicate(RespondContactCustomer, get_company_scope(self.db))
+            if predicate is not None:
+                link = link.where(predicate)
+            q = q.filter(link)
+        if f.get("access_differs_from"):
+            from app.services.contact_access_copy_service import contacts_differing_from
+
+            from app.services.contact_access_copy_service import MAX_DIFF_CANDIDATES
+            from app.services.error_handler import handle_unprocessable
+
+            source = self.get_contact(f["access_differs_from"])
+            if q.count() > MAX_DIFF_CANDIDATES:
+                raise handle_unprocessable(
+                    f"'Access differs from' compares at most {MAX_DIFF_CANDIDATES} contacts; "
+                    "narrow the list with another filter or a search first."
+                )
+            ids = contacts_differing_from(self.db, source, q.all())
+            q = q.filter(RespondContact.id.in_(ids))
+        return q
+
     def assign_default_agents_to_contact(self, contact: RespondContact) -> None:
         """Assign all agents with assign_to_new_internal_contacts=True to this contact. Idempotent per agent (skips if access already exists).
         Sets valid_from to start of current year and valid_to to end of current year (for external-API-created contacts)."""
@@ -696,6 +793,8 @@ class ContactService:
             "outbound_enabled": bool(getattr(contact, "outbound_enabled", True)),
             # Chatbot turn re-architecture (AC-1503) - same rule as every field above.
             "chatbot_profile": chatbot_profile,
+            # CONTACT-BULK-ACCESS (UAC A2.1): flattened for the list's Tier column/filter.
+            "chatbot_tier": (chatbot_profile.get("tier") or None),
             # Chatbot memory lane A (contract section 5): null = follow the system
             # default. Must be listed explicitly, same rule as every field above.
             "chatbot_memory_level": getattr(contact, "chatbot_memory_level", None),

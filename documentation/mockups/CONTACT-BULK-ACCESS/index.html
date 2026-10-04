@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contact bulk access mock v1</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* tokens copied from sorento_crm_frontend/css/config.reui.css (light), same set as ACCESS-MODEL mock */
+:root{--background:#fff;--foreground:#09090b;--card:#fff;--primary:#3b82f6;--muted:#f4f4f5;--muted-fg:#71717a;--border:#ececee;--input:#e4e4e7;--success:#15803d;--warning:#a16207;--destructive:#dc2626;--radius:.5rem;--add:#f0fdf4;--rem:#fef2f2}
+*{box-sizing:border-box}
+body{margin:0;background:#fafafa;color:var(--foreground);font:14px/1.5 Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+.mocknav{position:sticky;top:0;z-index:50;background:#18181b;display:flex;gap:4px;padding:8px 16px;overflow-x:auto;font-size:13px;align-items:center}
+.mocknav span{color:#71717a;padding:6px 8px 6px 0;white-space:nowrap}
+.mocknav button{background:transparent;border:0;color:#a1a1aa;font:inherit;padding:6px 10px;border-radius:6px;cursor:pointer;white-space:nowrap}
+.mocknav button.on{background:#3f3f46;color:#fff}
+.mocknav label{color:#a1a1aa;margin-left:auto;white-space:nowrap;display:flex;gap:6px;align-items:center}
+.view{display:none}.view.on{display:block}
+.container{max-width:1280px;margin:0 auto;padding:20px 16px 120px}
+.crumb{font-size:12px;font-weight:500;text-transform:uppercase;letter-spacing:.04em;color:var(--muted-fg)}
+h1{font-size:20px;font-weight:600;margin:4px 0 16px}
+.card{border:1px solid var(--border);border-radius:12px;background:var(--card);box-shadow:0 1px 2px rgba(0,0,0,.05)}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border)}
+.filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--border);background:#fcfcfd}
+.input{height:32px;border:1px solid var(--input);border-radius:var(--radius);padding:0 10px;font:inherit;font-size:13px;background:#fff;min-width:0}
+.sel{max-width:100%;overflow:hidden;text-overflow:ellipsis;display:inline-flex;align-items:center;gap:6px;height:32px;border:1px solid var(--input);border-radius:var(--radius);padding:0 8px 0 10px;font-size:13px;background:#fff;white-space:nowrap;cursor:pointer;position:relative}
+.sel.set{border-color:#93c5fd;background:#eff6ff;color:#1d4ed8}
+.sel .k{color:var(--muted-fg)}.sel.set .k{color:#1d4ed8;opacity:.75}
+.sel .clr{opacity:.55;margin-left:2px}
+.btn{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:var(--radius);border:1px solid var(--input);background:#fff;font:inherit;font-size:13px;font-weight:500;cursor:pointer;white-space:nowrap}
+.btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--muted-fg)}
+.btn.dest{color:var(--destructive)}
+.btn[disabled]{opacity:.5;cursor:not-allowed}
+.bulkbar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 16px;background:#eff6ff;border-bottom:1px solid #bfdbfe;font-size:13px}
+.tablewrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;table-layout:fixed;font-size:13px}
+th{font-weight:500;color:var(--muted-fg);text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);background:#fafafa;white-space:nowrap}
+td{padding:9px 10px;border-bottom:1px solid var(--border);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+tr.sel-row td{background:#f8fbff}
+.pill{display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:999px;font-size:12px;font-weight:500;background:var(--muted);margin-right:4px}
+.pill.ok{background:#dcfce7;color:#166534}.pill.no{background:var(--muted);color:var(--muted-fg)}
+.pill.warn{background:#fef3c7;color:#92400e}.pill.err{background:#fee2e2;color:#991b1b}.pill.info{background:#e0f2fe;color:#075985}
+.dash{color:var(--muted-fg)}
+.foot{display:flex;justify-content:space-between;align-items:center;padding:10px 16px;font-size:13px;color:var(--muted-fg)}
+/* dialog */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:flex-start;justify-content:center;padding:48px 16px;z-index:40;overflow:auto}
+.dialog{background:#fff;border-radius:12px;width:100%;max-width:760px;box-shadow:0 20px 40px rgba(0,0,0,.2)}
+.dh{padding:18px 20px 6px}.dh h2{margin:0;font-size:17px;font-weight:600}.dh p{margin:4px 0 0;color:var(--muted-fg);font-size:13px}
+.db{padding:12px 20px}
+.df{display:flex;justify-content:flex-end;gap:8px;padding:12px 20px 18px;flex-wrap:wrap}
+.lbl{font-size:13px;font-weight:500;margin:0 0 6px}
+.srcsum{border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;margin-top:10px;font-size:13px}
+.srcsum dl{display:grid;grid-template-columns:150px minmax(0,1fr);gap:4px 12px;margin:0}
+.srcsum dt{color:var(--muted-fg)}.srcsum dd{margin:0}
+.note{font-size:12.5px;color:var(--muted-fg);margin-top:8px}
+.counts{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 10px}
+.target{border:1px solid var(--border);border-radius:var(--radius);margin-bottom:8px}
+.target .th{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;flex-wrap:wrap}
+.target .th .n{font-weight:500}
+.target .tb{border-top:1px solid var(--border);padding:6px 12px 8px;display:none}
+.target.open .tb{display:block}
+.chg{display:grid;grid-template-columns:120px minmax(0,1fr);gap:8px;padding:4px 0;font-size:13px}
+.chg .f{color:var(--muted-fg)}
+.add{background:var(--add);color:#166534;border-radius:4px;padding:0 4px}
+.rem{background:var(--rem);color:#991b1b;border-radius:4px;padding:0 4px;text-decoration:line-through}
+.scroll{max-height:380px;overflow:auto}
+.progress{height:6px;background:var(--muted);border-radius:99px;overflow:hidden;margin:8px 0}
+.progress i{display:block;height:100%;background:var(--primary);width:0;transition:width .3s}
+/* component map */
+[data-c]{position:relative}
+body.map [data-c]{outline:1px dashed #f59e0b;outline-offset:2px}
+body.map [data-c]:hover:after{content:attr(data-c);position:absolute;left:0;top:100%;z-index:60;background:#18181b;color:#fde68a;font-size:11px;padding:3px 6px;border-radius:4px;white-space:nowrap;pointer-events:none}
+.legend{margin-top:24px;font-size:12.5px}
+.legend table{table-layout:auto}.legend td{white-space:normal}
+code{overflow-wrap:anywhere;font-size:12px;background:var(--muted);padding:1px 4px;border-radius:4px}
+@media (max-width:640px){.srcsum dl{grid-template-columns:1fr}.chg{grid-template-columns:1fr}.dialog{max-width:100%}}
+</style>
+</head>
+<body>
+<nav class="mocknav">
+  <span>Contact bulk access v1</span>
+  <button data-v="list" class="on">1 List + filters</button>
+  <button data-v="pick">2 Copy: pick source</button>
+  <button data-v="preview">3 Preview</button>
+  <button data-v="result">4 Result</button>
+  <button data-v="check">5 Cross-check</button>
+  <label><input type="checkbox" id="mapToggle"> show component map</label>
+</nav>
+
+<div class="container">
+  <div class="crumb">User management</div>
+  <h1>Contacts</h1>
+
+  <div class="card" data-c="contacts/components/ContactsList.tsx (Card + DataGrid)">
+    <div class="toolbar" data-c="components/ui/data-grid-list-toolbar.tsx (DataGridListToolbar)">
+      <input class="input" style="width:240px" placeholder="Search contacts..." data-c="components/common/ListSearchInput.tsx">
+      <span style="flex:1"></span>
+      <button class="btn ghost">Columns</button>
+      <button class="btn ghost">Export</button>
+      <button class="btn primary">+ Add contact</button>
+    </div>
+
+    <!-- NEW: filter row in DataGridListToolbar leftActions slot; every control is SearchableSelect clearable -->
+    <div class="filters" id="filters" data-c="NEW contacts/components/ContactAccessFilters.tsx, each pick = components/common/SearchableSelect (clearable); state in URL via contacts/lib/listQuery.ts contactsListFilters">
+    </div>
+
+    <div class="bulkbar" id="bulkbar" data-c="DataGridListToolbar bulkActions (existing bar)">
+      <b id="selCount">0 selected</b>
+      <button class="btn" id="copyBtn" data-c="NEW bulk action key 'copy-access' (replaces 'copy-settings')">Copy access from contact</button>
+      <button class="btn">Link customers</button>
+      <button class="btn">Enable messaging</button>
+      <button class="btn dest">Disable messaging</button>
+      <button class="btn">Sync from Respond</button>
+      <button class="btn dest">Delete</button>
+    </div>
+
+    <div class="tablewrap">
+      <table id="grid" data-c="components/ui/data-grid-table.tsx (tableLayout fixed, columnsResizable)">
+        <colgroup>
+          <col style="width:40px"><col style="width:200px"><col style="width:140px"><col style="width:150px"><col style="width:170px">
+          <col style="width:90px"><col style="width:70px"><col style="width:100px"><col style="width:100px"><col style="width:90px">
+        </colgroup>
+        <thead><tr>
+          <th><input type="checkbox" id="selAll"></th><th>Name</th><th>Phone</th><th>Customers</th><th>Access types</th>
+          <th data-c="NEW column 'tier'">Tier</th><th data-c="NEW column 'cost' (holds purchase_orders.cost)">Cost</th>
+          <th data-c="NEW column 'escalation_allowed'">Escalation</th><th data-c="NEW column 'packing_list_allowed'">Packing list</th><th data-c="NEW column 'chatbot_stock_allowed'">Stock</th>
+        </tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <div class="foot" data-c="components/ui/data-grid-pagination.tsx"><span id="footCount"></span><span>Page 1 of 1</span></div>
+  </div>
+
+  <div class="legend card" style="padding:12px 16px">
+    <b>Component map</b> (toggle "show component map" above and hover any outlined element)
+    <table>
+      <tr><td>Filter row</td><td>NEW <code>contacts/components/ContactAccessFilters.tsx</code> in <code>DataGridListToolbar</code> <code>leftActions</code>; each control <code>components/common/SearchableSelect</code> (clearable), customer pick is the same customer search <code>BulkLinkCustomersDialog.tsx</code> uses; URL state via <code>useListStateFromUrl</code> + <code>contactsListFilters</code> (<code>contacts/lib/listQuery.ts</code>); "No customers linked" checkbox becomes the "Customer: none" option.</td></tr>
+      <tr><td>New columns</td><td><code>ContactsList.tsx</code> column defs with <code>size</code>, status as <code>components/ui/badge</code>; hideable via existing column preferences (<code>LISTING-COLUMN-PREFERENCES.md</code>).</td></tr>
+      <tr><td>Copy dialog</td><td>NEW <code>contacts/components/BulkCopyAccessDialog.tsx</code> replacing <code>BulkCopySettingsFromContactDialog.tsx</code>; shell <code>components/ui/dialog</code>; source pick <code>SearchableSelect</code> over <code>getContacts</code>; preview + apply one hook <code>useBulkCopyAccess</code> -> <code>contactService.bulkCopyAccess</code> -> POST <code>/user-management/contacts/bulk-copy-access</code>.</td></tr>
+      <tr><td>Result table</td><td>same dialog, last step; status via <code>Badge</code>; "Show only these in the list" sets the list filter <code>ids</code>.</td></tr>
+    </table>
+    <p class="note">Sample data is fictitious (public repo). Real dev rows are not reachable from the cloud sandbox; crew can swap in a real case.</p>
+  </div>
+</div>
+
+<div id="dlg"></div>
+
+<script>
+const AT={dealer:'Dealer',end_user:'End user',office:'Sorento Office'};
+const REF={id:'c0',name:'Reference: Owner, Contoh Living Sdn Bhd',phone:'+60 12-300 0001',cust:'CL001',at:['dealer','end_user'],tier:'dealer',cost:true,esc:false,pack:false,stock:true,notify:false,eta:true,
+  reveals:['purchase_orders.cost'],agents:['general_enquiries','order_enquiries','incoming_stock_enquiries','lead_time_enquiries','marketing_form']};
+const base=()=>({at:[],tier:null,cost:false,esc:true,pack:false,stock:true,notify:false,eta:true,reveals:[],agents:[]});
+const C=[REF,
+ {id:'c1',name:'Owner, Meja Indah Trading',phone:'+60 12-300 0002',cust:'MI004',...base()},
+ {id:'c2',name:'Director, Kerusi Jaya Enterprise',phone:'+60 12-300 0003',cust:'',...base(),at:['dealer']},
+ {id:'c3',name:'Owner, Almari Baru Furniture',phone:'+60 12-300 0004',cust:'AB017',...REF,id:'c3',name:'Owner, Almari Baru Furniture',phone:'+60 12-300 0004',cust:'AB017'},
+ {id:'c4',name:'Owner, Sofa Ria Home',phone:'+60 12-300 0005',cust:'SR002',...base(),at:['dealer','end_user'],tier:'dealer',cost:true,esc:true,reveals:['purchase_orders.cost','inventory.sellable'],agents:REF.agents},
+ {id:'c5',name:'Director, Tilam Sejuk Bedding',phone:'+60 12-300 0006',cust:'',...base(),missing:true},
+ {id:'c6',name:'Employee, Meja Indah Trading',phone:'+60 12-300 0007',cust:'MI004',...base(),at:['end_user'],tier:'end_user',esc:false},
+];
+let selected=new Set(['c1','c2','c3','c4','c5']);
+let filters={};
+let view='list';
+const LABEL={purchase_orders_cost:'Last purchase cost'};
+const KEY={'purchase_orders.cost':'Last purchase cost','inventory.sellable':'Outstanding SO on stock answers'};
+const yes=b=>b?'<span class="pill ok">Yes</span>':'<span class="pill no">No</span>';
+
+const FILTERS=[
+ ['access_type','Access type',['Dealer','End user','Sorento Office']],
+ ['tier','Tier',['Dealer','Office','End user','(none)']],
+ ['cost','Cost',['Visible','Hidden']],
+ ['escalation','Escalation',['Allowed','Blocked']],
+ ['packing','Packing list',['Allowed','Not allowed']],
+ ['stock','Stock checks',['Allowed','Blocked']],
+ ['customer','Customer',['(none linked)','CL001 Contoh Living','MI004 Meja Indah','AB017 Almari Baru']],
+ ['differs','Access differs from',['Reference: Owner, Contoh Living']],
+];
+function renderFilters(){
+  const el=document.getElementById('filters');
+  el.innerHTML=FILTERS.map(([k,l,opts])=>{
+    const v=filters[k];
+    return `<span class="sel ${v?'set':''}" data-k="${k}" title="SearchableSelect, clearable">`+
+      `<span class="k">${l}:</span> ${v||'Any'} ${v?'<span class="clr" data-clr="'+k+'">x</span>':'<span class="clr">&#9662;</span>'}</span>`;
+  }).join('')+(Object.keys(filters).length?'<button class="btn ghost" id="clrAll">Clear filters</button>':'');
+  el.querySelectorAll('.sel').forEach(s=>s.onclick=e=>{
+    const k=s.dataset.k;
+    if(e.target.dataset.clr){delete filters[k];return render();}
+    const opts=FILTERS.find(f=>f[0]===k)[2];
+    const cur=opts.indexOf(filters[k]);
+    filters[k]=opts[(cur+1)%opts.length];render();
+  });
+  const ca=document.getElementById('clrAll');if(ca)ca.onclick=()=>{filters={};render();};
+}
+function eqAccess(a,b){return JSON.stringify([a.at.slice().sort(),a.tier,a.cost,a.esc,a.pack,a.stock,a.notify,a.eta,a.reveals.slice().sort(),a.agents.slice().sort()])===
+  JSON.stringify([b.at.slice().sort(),b.tier,b.cost,b.esc,b.pack,b.stock,b.notify,b.eta,b.reveals.slice().sort(),b.agents.slice().sort()]);}
+function match(c){
+  const f=filters;
+  if(f.access_type&&!c.at.map(x=>AT[x]).includes(f.access_type))return false;
+  if(f.tier){const t={Dealer:'dealer',Office:'office','End user':'end_user','(none)':null}[f.tier];if(c.tier!==t)return false;}
+  if(f.cost&&(f.cost==='Visible')!==c.cost)return false;
+  if(f.escalation&&(f.escalation==='Allowed')!==c.esc)return false;
+  if(f.packing&&(f.packing==='Allowed')!==c.pack)return false;
+  if(f.stock&&(f.stock==='Allowed')!==c.stock)return false;
+  if(f.customer){if(f.customer==='(none linked)'){if(c.cust)return false}else if(!f.customer.startsWith(c.cust||'@'))return false;}
+  if(f.differs&&(c.id==='c0'||eqAccess(c,REF)))return false;
+  return true;
+}
+function renderRows(){
+  const rows=C.filter(c=>!c.gone).filter(match);
+  document.getElementById('rows').innerHTML=rows.map(c=>`<tr class="${selected.has(c.id)?'sel-row':''}">
+    <td><input type="checkbox" data-id="${c.id}" ${selected.has(c.id)?'checked':''}></td>
+    <td title="${c.name}">${c.name}</td><td>${c.phone}</td><td>${c.cust||'<span class="dash"> - </span>'}</td>
+    <td>${c.at.length?c.at.map(x=>`<span class="pill">${AT[x]}</span>`).join(''):'<span class="dash"> - </span>'}</td>
+    <td>${c.tier?{dealer:'Dealer',office:'Office',end_user:'End user'}[c.tier]:'<span class="dash"> - </span>'}</td>
+    <td>${yes(c.cost)}</td><td>${c.esc?'<span class="pill warn">Allowed</span>':'<span class="pill no">Blocked</span>'}</td>
+    <td>${yes(c.pack)}</td><td>${yes(c.stock)}</td></tr>`).join('')||
+    `<tr><td colspan="10" style="text-align:center;padding:28px;white-space:normal"><b>No contacts match these filters</b><br><span class="dash">Clear a filter to widen the list.</span></td></tr>`;
+  document.querySelectorAll('#rows input').forEach(i=>i.onchange=()=>{i.checked?selected.add(i.dataset.id):selected.delete(i.dataset.id);render();});
+  document.getElementById('footCount').textContent=rows.length+' contacts';
+  document.getElementById('selCount').textContent=selected.size+' selected';
+  document.getElementById('bulkbar').style.display=selected.size?'flex':'none';
+}
+function diff(t){
+  const out=[];
+  const set=(f,b,a)=>out.push({f,b,a});
+  const listDiff=(f,from,to,lab)=>{const add=to.filter(x=>!from.includes(x)),rem=from.filter(x=>!to.includes(x));
+    if(add.length||rem.length)out.push({f,html:[...add.map(x=>`<span class="add">+ ${lab(x)}</span>`),...rem.map(x=>`<span class="rem">${lab(x)}</span>`)].join(' ')});};
+  listDiff('Access types',t.at,REF.at,x=>AT[x]);
+  const TL={dealer:'Dealer',office:'Office',end_user:'End user'};if(t.tier!==REF.tier)set('Tier',TL[t.tier]||'(none)',TL[REF.tier]);
+  const sw=[['stock','Stock checks'],['notify','Notify salesman'],['pack','Packing list'],['eta','ETA buffer days'],['esc','Escalation']];
+  sw.forEach(([k,l])=>{if(t[k]!==REF[k])set(l,t[k]?'on':'off',REF[k]?'on':'off');});
+  listDiff('Field reveals',t.reveals,REF.reveals,x=>KEY[x]||x);
+  listDiff('Agent access',t.agents,REF.agents,x=>x);
+  return out;
+}
+function statusOf(t){if(t.id===REF.id)return'skipped';if(t.missing&&view==='result')return'failed';return diff(t).length?'changed':'unchanged';}
+const PILL={changed:'<span class="pill info">Will change</span>',unchanged:'<span class="pill no">No change</span>',skipped:'<span class="pill no">Skipped</span>',failed:'<span class="pill err">Failed</span>'};
+const RPILL={changed:'<span class="pill ok">Updated</span>',unchanged:'<span class="pill no">No change</span>',skipped:'<span class="pill no">Skipped</span>',failed:'<span class="pill err">Failed</span>'};
+function targetsHtml(result){
+  const ts=[...selected].map(id=>C.find(c=>c.id===id));
+  const st=ts.map(t=>result&&t._s?t._s:statusOf(t));
+  const cnt=k=>st.filter(s=>s===k).length;
+  const counts=result?`<div class="counts"><span class="pill ok">${cnt('changed')} updated</span><span class="pill no">${cnt('unchanged')} no change</span><span class="pill err">${cnt('failed')} failed</span></div>`
+    :`<div class="counts"><span class="pill info">${cnt('changed')} will change</span><span class="pill no">${cnt('unchanged')} already the same</span></div>`;
+  return counts+'<div class="scroll">'+ts.map((t,i)=>{
+    const d=result&&t._d?t._d:diff(t),s=st[i];
+    const body=s==='failed'?'<div class="chg"><span class="f">Reason</span><span>Contact no longer exists. Nothing was written for this contact.</span></div>'
+      :s==='unchanged'?'<div class="chg"><span class="f"></span><span class="dash">Already has the same access. Linked customers are never copied.</span></div>'
+      :d.map(x=>`<div class="chg"><span class="f">${x.f}</span><span>${x.html||`<span class="rem">${x.b}</span> <span class="add">${x.a}</span>`}</span></div>`).join('');
+    return `<div class="target ${i<2?'open':''}" data-c="BulkCopyAccessDialog target row"><div class="th"><span class="n">${t.name}</span><span>${(result?RPILL:PILL)[s]} ${s==='changed'?`<span class="dash" style="font-size:12px">${d.length} change${d.length>1?'s':''}</span>`:''}</span></div><div class="tb">${body}</div></div>`;
+  }).join('')+'</div>';
+}
+function dialog(){
+  const el=document.getElementById('dlg');
+  if(view==='list'||view==='check'){el.innerHTML='';return;}
+  const n=selected.size;
+  let body='',foot='';
+  if(view==='pick'){
+    body=`<div class="lbl">Copy access from</div>
+      <span class="sel set" style="width:100%" data-c="components/common/SearchableSelect over getContacts (selected targets excluded)">${REF.name} <span class="dash">${REF.phone}</span></span>
+      <div class="srcsum" data-c="source summary, read from the preview response 'source'"><dl>
+        <dt>Access types</dt><dd>${REF.at.map(x=>`<span class="pill">${AT[x]}</span>`).join('')}</dd>
+        <dt>Tier</dt><dd>Dealer</dd>
+        <dt>Chatbot switches</dt><dd>Stock checks on, Notify salesman off, Packing list off, ETA buffer on, Escalation off</dd>
+        <dt>Field reveals</dt><dd>Last purchase cost</dd>
+        <dt>Agent access</dt><dd>${REF.agents.length} agents</dd>
+        <dt>Not copied</dt><dd class="dash">Linked customers (${REF.cust}), companies, CS routing, media limits, memory</dd>
+      </dl></div>`;
+    foot=`<button class="btn" data-go="list">Cancel</button><button class="btn primary" data-go="preview">Preview changes</button>`;
+  } else if(view==='preview'){
+    body=`<p class="note" style="margin-top:0">Each contact ends with exactly the source's access. <span class="rem">Struck red</span> is removed, <span class="add">green</span> is added.</p>`+targetsHtml(false);
+    foot=`<button class="btn" data-go="pick">Back</button><button class="btn primary" data-go="applying">Apply to ${n} contacts</button>`;
+  } else if(view==='applying'){
+    body=`<p>Applying to ${n} contacts...</p><div class="progress"><i id="bar"></i></div><p class="note">One request; each contact is saved on its own, so one failure does not stop the rest. If the request does not answer in 60 s the dialog says so and nothing is left spinning.</p>`;
+    foot=`<button class="btn" disabled>Apply to ${n} contacts</button>`;
+  } else if(view==='result'){
+    body=targetsHtml(true);
+    foot=`<button class="btn" data-go="check">Check who still differs</button><button class="btn primary" data-go="list">Done</button>`;
+  }
+  const title={pick:'Copy access to '+n+' contacts',preview:'Preview: copy access from '+REF.name.replace('Reference: ',''),applying:'Copying access',result:'Copy finished'}[view];
+  el.innerHTML=`<div class="overlay"><div class="dialog" data-c="NEW contacts/components/BulkCopyAccessDialog.tsx (components/ui/dialog)"><div class="dh"><h2>${title}</h2></div><div class="db">${body}</div><div class="df">${foot}</div></div></div>`;
+  el.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>go(b.dataset.go));
+  el.querySelectorAll('.target .th').forEach(h=>h.onclick=()=>h.parentElement.classList.toggle('open'));
+  if(view==='applying'){setTimeout(()=>{const b=document.getElementById('bar');if(b)b.style.width='100%';},50);setTimeout(()=>go('result'),1100);}
+}
+function go(v){
+  view=v;
+  document.querySelectorAll('.mocknav button').forEach(b=>b.classList.toggle('on',b.dataset.v===v||(v==='applying'&&b.dataset.v==='result')));
+  if(v==='result'){/* apply: changed targets become the source's access */
+    [...selected].forEach(id=>{const t=C.find(c=>c.id===id);t._d=diff(t);t._s=t.missing?'failed':statusOf(t);if(t.id!==REF.id&&!t.missing){Object.assign(t,{at:[...REF.at],tier:REF.tier,cost:REF.cost,esc:REF.esc,pack:REF.pack,stock:REF.stock,notify:REF.notify,eta:REF.eta,reveals:[...REF.reveals],agents:[...REF.agents]});t._applied=true;}if(t.missing)t.gone=true;});
+  }
+  if(v==='check'){filters={differs:'Reference: Owner, Contoh Living'};}
+  if(v==='list'&&!C.some(c=>c._applied))filters={};
+  render();
+}
+let snapshot=JSON.stringify(C);
+function render(){renderFilters();renderRows();dialog();}
+document.querySelectorAll('.mocknav button').forEach(b=>b.onclick=()=>{
+  if(['pick','preview','list'].includes(b.dataset.v)){const s=JSON.parse(snapshot);s.forEach((x,i)=>Object.assign(C[i],x,{_applied:false,gone:false,_d:null,_s:null}));}
+  go(b.dataset.v);
+});
+document.getElementById('copyBtn').onclick=()=>go('pick');
+document.getElementById('selAll').onchange=e=>{C.filter(match).forEach(c=>e.target.checked?selected.add(c.id):selected.delete(c.id));render();};
+document.getElementById('mapToggle').onchange=e=>document.body.classList.toggle('map',e.target.checked);
+render();
+</script>
+</body>
+</html>

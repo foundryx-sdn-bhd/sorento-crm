@@ -465,6 +465,22 @@ def test_scm_test_change_runs_the_scm_shards_not_the_changed_files_job(tmp_path)
     assert both["scm"] == "true" and both["backend_tests"] == "sorento_crm_backend/tests/test_rbac.py"
 
 
+def test_area_flags_do_not_race_grep_q_on_a_long_file_list(tmp_path):
+    """CI-SCM-FILTER-RACE: a flag that matches the first changed path stays true.
+
+    bash's printf writes one line per write() into the pipe, and `grep -q`
+    exits on its first match. Under `-o pipefail` a printf still writing
+    when grep exits dies of SIGPIPE and the pipeline counts as false, so
+    `scm` came back false on run 37140058013 with just two paths. A list long
+    many times the pipe buffer makes that race certain.
+    """
+    filler = [f"sorento_crm_frontend/app/page_{i:05d}.tsx" for i in range(20000)]
+    out = run_step(tmp_path, "pull_request", ["sorento_crm_backend/tests/scm/test_committed_v.py", *filler])
+    assert {k: out[k] for k in ("backend", "frontend", "mcp", "scm")} == {
+        "backend": "true", "frontend": "true", "mcp": "false", "scm": "true",
+    }, out
+
+
 def test_rename_of_a_test_file_lists_both_ends(tmp_path):
     """The old path is in the PR's list too; the job drops it when it is not in the checkout."""
     out = run_step(tmp_path, "pull_request", [
@@ -494,11 +510,19 @@ def test_changed_tests_list_is_empty_on_every_early_exit(tmp_path):
 # files each case says exist.
 
 
-def run_select(tmp_path: Path, backend_tests: str, present: list[str]) -> tuple[str, str]:
-    """Run the real step in a scratch checkout; return (files output, stdout)."""
+def run_select(
+    tmp_path: Path, backend_tests: str, present: list[str], *, excluded: str | None = None,
+) -> tuple[str, str]:
+    """Run the real step in a scratch checkout; return (files output, stdout).
+
+    `excluded` replaces the workflow's own ci_excluded.txt when given.
+    """
     checkout = tmp_path / "checkout"
     (checkout / "sorento_crm_backend" / "tests").mkdir(parents=True)
-    shutil.copy(REPO / "sorento_crm_backend" / "tests" / "ci_excluded.txt", checkout / "sorento_crm_backend" / "tests")
+    if excluded is None:
+        shutil.copy(REPO / "sorento_crm_backend" / "tests" / "ci_excluded.txt", checkout / "sorento_crm_backend" / "tests")
+    else:
+        (checkout / "sorento_crm_backend" / "tests" / "ci_excluded.txt").write_text(excluded)
     for path in present:
         (checkout / path).parent.mkdir(parents=True, exist_ok=True)
         (checkout / path).write_text("def test_x():\n    pass\n")
@@ -546,6 +570,23 @@ def test_changed_tests_step_drops_a_ci_excluded_file(tmp_path):
         ["sorento_crm_backend/tests/test_rbac.py", "sorento_crm_backend/tests/test_media_job_lifecycle.py"],
     )
     assert files == "tests/test_media_job_lifecycle.py"
+    assert "tests/test_rbac.py (listed in tests/ci_excluded.txt)" in stdout
+
+
+def test_changed_tests_step_does_not_race_grep_q_on_a_long_excluded_list(tmp_path):
+    """CI-SCM-FILTER-RACE: an excluded file listed first is dropped, not run.
+
+    Same SIGPIPE race as the area flags: `grep -qxF` exits on the first line
+    while printf is still writing the rest of the list.
+    """
+    excluded = "tests/test_rbac.py\n" + "".join(f"tests/test_filler_{i:05d}.py\n" for i in range(20000))
+    files, stdout = run_select(
+        tmp_path,
+        "sorento_crm_backend/tests/test_rbac.py",
+        ["sorento_crm_backend/tests/test_rbac.py"],
+        excluded=excluded,
+    )
+    assert files == "", stdout
     assert "tests/test_rbac.py (listed in tests/ci_excluded.txt)" in stdout
 
 

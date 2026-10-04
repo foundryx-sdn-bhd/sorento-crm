@@ -27,6 +27,7 @@ from app.services.chatbot.turn.state import (
     focus_row_label,
     fold_token,
     escalation_barred,
+    token_key,
     offers_escalation,
 )
 from app.services.chatbot.turn import refer
@@ -357,6 +358,132 @@ def _routing_brand(ctx: Any) -> Any:
     return thunk() if callable(thunk) else None
 
 
+def _code_shaped(token: str) -> bool:
+    """A product code is letters AND digits ("srt5764"); a name ("chin chun") or a bare
+    number ("1") is not, and gets no escalation offer of its own."""
+    return any(c.isdigit() for c in token) and any(c.isalpha() for c in token)
+
+
+def _line_number(line: str) -> int | None:
+    """N for a numbered line ("N. *Product Code:* ...", "N. Sales orders"), else None."""
+    head, dot, _rest = line.partition(". ")
+    return int(head) if dot and head.isdigit() else None
+
+
+def _did_you_mean_per_code(
+    text: str,
+    unplaced: list[str],
+    envelopes: list[dict[str, Any]],
+    state: State,
+    policy: Policy,
+    ctx: Any,
+    *,
+    lane_asked: bool,
+) -> tuple[str, Any, bool]:
+    """MULTI-CODE-DYM: the reply's unplaced tokens, each as it would be answered alone.
+
+    A token with suggestions (`envelope["unresolved_suggestions"]`, the single-code
+    did-you-mean's own candidates and opening sentence, `answer.did_you_mean_head`) gets
+    that sentence and its numbered codes; one closing line follows the last of them, with the escalation
+    offer the single-code reply makes (none for staff, the salesman line for a barred
+    contact). Numbers run on from the reply's own numbered blocks, so no number is
+    printed twice, and a code the reply already answered or already offered is not
+    offered again. A token with no suggestion keeps "I could not find X.".
+
+    Returns the text, the question to store - one `product_pick` over every offered code
+    (AC-1691: two or more), a team offer when one code was offered with the escalation,
+    None when a lane already asked this turn's question - and whether any did-you-mean
+    was listed (when none was, the miss offer arm offers the escalation instead).
+    """
+    suggestions: dict[str, dict[str, Any]] = {}
+    for env in envelopes:
+        carried = env.get("unresolved_suggestions")
+        for raw, entry in (carried.items() if isinstance(carried, dict) else []):
+            if isinstance(entry, dict) and isinstance(entry.get("rows"), list) and entry.get("head"):
+                suggestions.setdefault(raw, entry)
+    used = {
+        token_key(code)
+        for env in envelopes
+        for code in (env.get("product_codes") or [])
+        if isinstance(code, str)
+    }
+    numbers = [b for b in (_line_number(line) for line in text.splitlines()) if b is not None]
+    n = max(numbers, default=0)
+    options: list[dict[str, Any]] = []
+    paragraphs: list[str] = []
+    plain: list[str] = []
+    for token in unplaced:
+        lines: list[str] = []
+        entry = suggestions.get(token) or {}
+        for row in entry.get("rows") or []:
+            code = row.get("code") if isinstance(row, dict) else None
+            uuid = row.get("uuid") if isinstance(row, dict) else None
+            if not code or not uuid or token_key(code) in used:
+                continue
+            used.add(token_key(code))
+            n += 1
+            lines.append(f"{n}. {code}")
+            options.append(
+                {
+                    "position": n,
+                    "label": code,
+                    "code": code,
+                    "entity_type": "product",
+                    "uuid": uuid,
+                    "uuids": [uuid],
+                    "payload": {},
+                }
+            )
+        if lines:
+            paragraphs.append(str(entry["head"]) + "\n" + "\n".join(lines))
+        else:
+            plain.append(token)
+    if not paragraphs:
+        if plain:
+            text += "\n" + f"I could not find {_join_words(plain)}."
+        return text, None, False
+
+    domain, team = None, None
+    for env in envelopes:
+        row = policy.domain(env.get("domain")) if policy else None
+        if domain is None:
+            domain = env.get("domain")
+        if row is not None and row.escalation_team_code:
+            domain, team = env.get("domain"), row.escalation_team_code
+            break
+    profile = getattr(state, "profile", None)
+    # A question already asked this turn keeps the turn: no offer is stored, so none is
+    # printed either.
+    offered = bool(team) and offers_escalation(profile) and not lane_asked
+    lead_in = "Reply with a code to continue"
+    if offered:
+        closing = f"{lead_in}, or would you like me to escalate to {_pretty_team(team)} team?"
+    elif escalation_barred(profile):
+        closing = refer.after(f"{lead_in}.", sep=" ")
+    else:
+        closing = f"{lead_in}."
+    # The codes with no suggestion follow the lists, above the one closing line - the
+    # all-miss reply's own order (`answer._unsuggested_line`).
+    unsuggested = f"\n\nI could not find {_join_words(plain)}." if plain else ""
+    text += "\n\n" + "\n\n".join(paragraphs) + unsuggested + "\n" + closing
+
+    if lane_asked:
+        return text, None, True
+    agent = getattr(ctx, "suggested_agent", None) if offered else None
+    brand = _routing_brand(ctx) if offered else None
+    if len(options) >= 2:
+        return text, pending_ask(
+            "product_pick",
+            options,
+            team=team if offered else None,
+            asked_at_turn=getattr(state, "turn_no", None),
+            payload={"domain": domain, "escalate_offered": offered, "agent": agent, "brand_code": brand},
+        ), True
+    if offered:
+        return text, _team_pick_question([domain], policy, agent=agent, brand=brand), True
+    return text, None, True
+
+
 def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: Any) -> Answer:
     sections: list[Section] = []
     seen_rows: set[tuple] = set()
@@ -572,8 +699,24 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
         for token in env.get("unresolved") or []:
             if isinstance(token, str) and token and token not in unplaced:
                 unplaced.append(token)
+    lane_question = _lane_question(envelopes, getattr(state, "turn_no", None))
+    dym_question = None
+    dym_listed = False
     if unplaced and text.strip():
-        text += "\n" + f"I could not find {_join_words(unplaced)}."
+        # MULTI-CODE-DYM (owner, 4 Oct 2026, "treat each product code individually"): a
+        # token with a did-you-mean gets the one it gets when asked alone; the rest keep
+        # this sentence.
+        carried = getattr(state, "pending", None)
+        asked_this_turn = carried is not None and carried.asked_at_turn == getattr(state, "turn_no", None)
+        text, dym_question, dym_listed = _did_you_mean_per_code(
+            text,
+            unplaced,
+            envelopes,
+            state,
+            policy,
+            ctx,
+            lane_asked=lane_question is not None or asked_this_turn,
+        )
 
     offer = None
     # ONE open question per turn, and when a lane asked one it is the lane's: a domain
@@ -581,10 +724,29 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
     # THAT answer, and an escalate offer over the top of it would leave the customer
     # looking at two numbered lists for one reply - and store the wrong roster for the
     # number they send back.
-    question = _lane_question(envelopes, getattr(state, "turn_no", None))
-    if question is None and envelopes and missed_domains and len(missed_domains) == len(envelopes):
+    # The per-code did-you-mean is this turn's question when no lane asked one, and its
+    # closing line already settled the escalation (offered, withheld or the salesman
+    # line), so the arm below adds none when one was listed.
+    question = lane_question or dym_question
+    # Which domains' teams a miss offers. Every section missed: theirs (unchanged). Some
+    # section answered but a product CODE the customer typed (letters and digits: a name
+    # or a bare number is not one) matched nothing and no did-you-mean was listed for it: the offer that code gets when asked alone (MULTI-CODE-DYM Q4,
+    # owner 4 Oct 2026), the first answering domain that has a team.
+    if dym_listed:
+        offer_domains = []
+    elif missed_domains and len(missed_domains) == len(envelopes):
+        offer_domains = missed_domains
+    elif not dym_listed and text.strip() and any(_code_shaped(t) for t in unplaced):
+        offer_domains = [
+            env.get("domain")
+            for env in envelopes
+            if policy and policy.domain(env.get("domain")) and policy.domain(env.get("domain")).escalation_team_code
+        ][:1]
+    else:
+        offer_domains = []
+    if question is None and envelopes and offer_domains:
         teams: list[str] = []
-        for domain in missed_domains:
+        for domain in offer_domains:
             row = policy.domain(domain) if policy else None
             team = row.escalation_team_code if row else None
             if team and team not in teams:
@@ -706,7 +868,7 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
                 # turn actually meant. `ctx.routing_brand` (round 4) is the SAME idiom
                 # for the brand axis.
                 question = _team_pick_question(
-                    missed_domains,
+                    offer_domains,
                     policy,
                     agent=getattr(ctx, "suggested_agent", None),
                     brand=_routing_brand(ctx),

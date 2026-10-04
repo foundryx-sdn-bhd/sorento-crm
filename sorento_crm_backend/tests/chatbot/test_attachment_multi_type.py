@@ -633,7 +633,8 @@ class TestEveryLeakIsHuman:
             "suggest_response"
         ) or ""
 
-        assert '"do12x" (customer order) - did you mean:' in text, text
+        # MULTI-CODE-DYM Q5 (owner, 4 Oct 2026): each code reads as its single-code reply.
+        assert 'Couldn\'t find "do12x" (customer order). Did you mean:' in text, text
         assert not _SNAKE_RE.findall(text), text
 
     def test_the_kind_pick_option_names_the_kind_in_words(self) -> None:
