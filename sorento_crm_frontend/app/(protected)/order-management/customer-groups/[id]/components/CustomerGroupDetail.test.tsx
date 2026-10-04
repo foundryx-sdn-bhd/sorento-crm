@@ -308,3 +308,36 @@ describe('CustomerGroupDetail', () => {
     expect(await screen.findByText('No ledgers in this group')).toBeInTheDocument();
   });
 });
+
+describe('CustomerGroupDetail agent (CUSTOMER-SALES-AGENT, AC-8)', () => {
+  it('header shows "Agent: <label>" and the Ledgers tab shows the code and name', async () => {
+    services.getCustomerGroup.mockResolvedValue({
+      ...GROUP, name: 'GRP-1 TRADING',
+      sales_agent_label: 'AGENT-A',
+      sales_agent_mixed: false,
+    });
+    services.getCustomerGroupCustomers.mockResolvedValue(
+      page([
+        { ...LEDGERS[0], sales_agent_code: 'AGENT-A I', sales_agent_name: 'Person A' },
+        { ...LEDGERS[1], sales_agent_code: 'AGENT-A III', sales_agent_name: null },
+      ] as unknown as typeof LEDGERS),
+    );
+    renderDetail();
+
+    expect(await screen.findByText('Agent: AGENT-A')).toBeInTheDocument();
+    expect(await screen.findByText('AGENT-A I - Person A')).toBeInTheDocument();
+    expect(screen.getByText('AGENT-A III')).toBeInTheDocument();
+  });
+
+  it('header shows "Agent: Mixed" when the ledgers disagree and nothing when none is set', async () => {
+    services.getCustomerGroup.mockResolvedValue({ ...GROUP, name: 'GRP-1 TRADING', sales_agent_mixed: true });
+    const mixed = renderDetail();
+    expect(await screen.findByText('Agent: Mixed')).toBeInTheDocument();
+    mixed.unmount();
+
+    services.getCustomerGroup.mockResolvedValue({ ...GROUP, name: 'GRP-1 TRADING', sales_agent_label: null });
+    renderDetail();
+    await screen.findByText('GRP-1 TRADING');
+    expect(screen.queryByText(/^Agent:/)).toBeNull();
+  });
+});
