@@ -1,6 +1,6 @@
 # PLAN: low stock asks fully semantic, hard-coded rules removed (LOWSTOCK-SEMANTIC)
 
-Status: in review, PR #1470 (4 Oct 2026); owner hand test PASS; crew design review P2 follow-up landed (no raw-text fallback); merged with main 74a168465 (CI red fixed by #1477, CHAT-LANGUAGE catalog entries added); tests/chatbot 6307 passed. Track: M (LEAD pattern). No schema migration; one
+Status: in review, PR #1470 (4 Oct 2026); owner hand test PASS; crew design review P2 follow-up landed (no raw-text fallback); merged with main 08403a29a (#1444 ideation keeps its shape capture via AskType.answered_by_parser); tests/chatbot 6340 passed. Track: M (LEAD pattern). No schema migration; one
 data migration (`lss_0001_parser_vocab`) publishes a new UNLABELLED parser prompt version.
 Card: `lowstock-semantic-behaviour-card.md` (Step 1 trace with file:line, rulings Q1-Q4).
 Hand test: `laneboard/scripts/1470.md`.
