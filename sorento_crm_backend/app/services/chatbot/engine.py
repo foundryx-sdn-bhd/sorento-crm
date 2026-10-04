@@ -5771,8 +5771,9 @@ def _run_stages_body(  # noqa: PLR0915
                     verdict,
                     turn_no=turn_no,
                 )
-                # #1262 fix lane round 7, R6: inside an order list no escalate offer and
-                # no routing picker; an empty list says so in one line.
+                # #1262 fix lane round 7, R6: inside an order list that answered, no
+                # escalate offer and no routing picker; a miss keeps its offer (owner
+                # ruling 4 Oct 2026, PICKER-ESCALATION).
                 answer = order_list_mod.list_reply(
                     answer,
                     was_open=order_list_was_open,
