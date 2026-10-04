@@ -262,32 +262,27 @@ def _has(prompt: str, word: str) -> bool:
     return re.search(r"(?<![A-Za-z_])" + re.escape(word) + r"(?![A-Za-z_])", prompt) is not None
 
 
-def test_no_grants_drops_every_gated_registry_row(session_factory, monkeypatch):
+def test_no_grants_keeps_every_gated_registry_row(session_factory, monkeypatch):
+    # Owner ruling 5 Oct 2026 (was test_no_grants_drops_every_gated_registry_row, which
+    # asserted every gated row ABSENT): the list variables keep the classification
+    # vocabulary for a contact with no grant.
     out = _config_prompt(session_factory, monkeypatch, [])
     for gated in ("purchase_cost", "purchase_order", "spo_allocation", "sales", "sales_report",
-                  "sales_analysis", "top_selling", "low_stock_report", "PO", "purchase cost"):
-        assert not _has(out, gated), (gated, out)
+                  "sales_analysis", "top_selling", "PO", "purchase cost"):
+        assert _has(out, gated), (gated, out)
     for kept in ("inventory", "order", "stock", "delivery", "outstanding", "check_stock"):
         assert _has(out, kept), (kept, out)
     assert "{{" not in out
 
 
-@pytest.mark.parametrize(
-    "grant,present,absent",
-    [
-        (C, ["purchase_cost", "purchase cost"], ["purchase_order", "PO", "sales_report", "low_stock_report"]),
-        (P, ["purchase_order", "spo_allocation", "PO"], ["purchase_cost", "purchase cost", "sales_analysis"]),
-        (S, ["sales", "sales_report", "sales_analysis", "top_selling"], ["purchase_order", "low_stock_report"]),
-        (L, ["low_stock_report"], ["purchase_cost", "sales_report", "PO"]),
-    ],
-    ids=["cost", "placed", "sales_report", "low_stock"],
-)
-def test_one_grant_restores_only_its_rows(session_factory, monkeypatch, grant, present, absent):
+@pytest.mark.parametrize("grant", [C, P, S, L], ids=["cost", "placed", "sales_report", "low_stock"])
+def test_one_grant_renders_the_same_lists_as_no_grant(session_factory, monkeypatch, grant):
+    # Owner ruling 5 Oct 2026 (was test_one_grant_restores_only_its_rows, which asserted
+    # the OTHER grants' rows absent): no per-audience row filtering, so one grant renders
+    # the same list lines as none. `{{domains_detail}}` (after "DETAIL:") may differ.
+    bare = _config_prompt(session_factory, monkeypatch, [])
     out = _config_prompt(session_factory, monkeypatch, [grant])
-    for word in present:
-        assert _has(out, word), (word, out)
-    for word in absent:
-        assert not _has(out, word), (word, out)
+    assert out.split("DETAIL:")[0] == bare.split("DETAIL:")[0]
 
 
 def test_all_four_grants_is_exactly_todays_render(session_factory, monkeypatch):

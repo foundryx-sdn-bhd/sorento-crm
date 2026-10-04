@@ -44,23 +44,17 @@ TAGS = {
 }
 TAG = {tag: grant for grant, tags in TAGS.items() for tag in tags}
 
-#: AC-PA-6, verbatim from the UAC.
+#: AC-PA-6 as reversed by the owner ruling of 5 Oct 2026: the classification vocabulary
+#: (domain ids purchase_cost, purchase_order, spo_allocation, sales; the words "PO",
+#: "purchase cost", "SPO"; the statuses sales_report, sales_analysis, top_selling; the
+#: intent low_stock_report) stays for EVERY audience, so it is no longer forbidden. What
+#: stays forbidden is the heavy instruction detail only. The block headings are asserted
+#: absent by `^== TITLE` in the matrix below and in test_parser_audience_vocab_kept.py.
 FORBIDDEN = {
-    C: [
-        "purchase_cost", "check_po_cost", "purchase cost", "last purchase cost",
-        "LAST PURCHASE COST", "buying price", "cost price",
-    ],
-    P: [
-        "purchase_order", "check_po", "purchase order", "PO", "PURCHASE ORDERS",
-        "PO placed", "supplier order",
-        # the spo_allocation row (G2) rides the same grant
-        "spo_allocation", "check_spo", "SPO LAST RECEIPT", "last received",
-    ],
-    S: [
-        "sales_report", "sales_analysis", "top_selling", "SALES REPORT", "SALES ANALYSIS",
-        "TOP SELLING", "sales_channel", "rank_by", "sales_basis",
-    ],
-    L: ["low_stock_report", "LOW STOCK REPORT", "reorder report"],
+    C: ["check_po_cost", "buying price", "cost price"],
+    P: ["check_po", "PO placed", "supplier order", "check_spo", "last received"],
+    S: ["sales_channel", "rank_by", "sales_basis"],
+    L: ["reorder report"],
 }
 
 #: The block headings (`== TITLE`) a held grant must keep.
@@ -251,6 +245,8 @@ _AUDIENCES = [pytest.param(list(s), id=_subset_id(s)) for s in _subsets()] + [
 class TestLeakMatrixPromptHalf:
     @pytest.mark.parametrize("grants", _AUDIENCES)
     def test_no_forbidden_term_of_a_missing_grant(self, grants) -> None:
+        # Owner ruling 5 Oct 2026: only the heavy detail terms are forbidden now (see
+        # FORBIDDEN); the vocabulary is asserted KEPT in test_parser_audience_vocab_kept.py.
         held = set(grants or [])
         rendered = _render(_tagged(), grants)
         leaked = {
@@ -260,6 +256,11 @@ class TestLeakMatrixPromptHalf:
         }
         leaked = {k: v for k, v in leaked.items() if v}
         assert not leaked, leaked
+        for grant in ALL_GRANTS:
+            if grant in held:
+                continue
+            for title in BLOCKS[grant]:
+                assert not re.search(rf"^== {re.escape(title)}\b", rendered, flags=re.MULTILINE), title
 
     @pytest.mark.parametrize("grants", _AUDIENCES)
     def test_every_block_of_a_held_grant_is_kept(self, grants) -> None:
