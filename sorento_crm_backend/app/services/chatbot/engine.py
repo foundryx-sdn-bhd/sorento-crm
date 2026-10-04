@@ -1761,6 +1761,19 @@ def _customer_scope_gate(
                 narrowed_refusal = scope_mod.refusal_line_for(links, of_name)
     elif my_account is not None:
         ids = [c for c in ids if links.levels.get(c) == my_account] or None
+    elif in_order and not self_reference and not _names_an_order_number(entities):
+        # DO-ASK-SIMPLIFY tester pass 1: a message naming no customer ("this month",
+        # answering the period question) continues the customer the conversation already
+        # carries, kept inside the links; "my" means every link, and an order number is
+        # looked up across every own account whatever the carry.
+        link_ids = set(ids)
+        carried = [
+            str(row.get("uuid"))
+            for row in getattr(focus, "customers", None) or []
+            if isinstance(row, dict) and str(row.get("uuid")) in link_ids
+        ]
+        if carried:
+            ids = list(dict.fromkeys(carried))
     if ids is None:
         return without_customers, None, True, narrowed_refusal
     if not in_order:
@@ -1880,6 +1893,16 @@ def _screen_resolver_for_scope(
         for kind, rows in (candidates or {}).items()
     }
     return refused, compatible, candidates, dropped_ids
+
+
+def _names_an_order_number(entities: list[dict[str, Any]]) -> bool:
+    """Does this message name a DO/SO/order number (the parser's own order hints)?"""
+    return any(
+        jsc.js_string(e.get("hint") or e.get("entity_type") or "").strip().lower()
+        in ("order", "customer_order", "order_number")
+        and e.get("current_message") is not False
+        for e in entities
+    )
 
 
 def _drill_offer_subject(scope_ids: list[str] | None, focus: Any, trace: Any) -> list[str] | None:

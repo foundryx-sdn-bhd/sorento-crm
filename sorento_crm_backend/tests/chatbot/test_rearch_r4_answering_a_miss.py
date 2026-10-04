@@ -269,13 +269,14 @@ class TestAC1700AnsweringAMemberOfferMiss:
         stored = _session_of(session_factory)
         assert (stored.get("open_question") or {}).get("kind") != "member_offer"
 
-    def test_all_dates_reruns_the_order_fetch_for_the_carried_customer(
+    def test_all_dates_asks_which_period_and_a_dated_follow_up_reruns_for_the_carried_customer(
         self, session_factory, monkeypatch
     ) -> None:
-        """GREEN CONTROL, measured live (see module docstring point 3): a business_query
-        naming no new entities and no date filter, over an UNRELATED open member_offer,
-        with a customer already carried on focus, re-runs the order fetch scoped to that
-        SAME carried customer with no date args - the offer never swallows it."""
+        """DO range rules for every contact (owner 4 Oct 2026). A dated miss offers "another
+        month or dates", never "all dates"; typing "all dates" is a dateless DO list ask, so it
+        gets the period question and fetches nothing; a dated follow-up (an August window) then
+        re-runs the order fetch exactly once, scoped to the SAME carried customer, over an
+        UNRELATED open member_offer that must not swallow it."""
         from app.services.chatbot.turn.state import Focus, focus_to_wire
 
         _seed_bare_contact(session_factory)
@@ -303,35 +304,44 @@ class TestAC1700AnsweringAMemberOfferMiss:
         _enable_business_lane(session_factory)
         call, captured = _capturing_mcp({"has_result": False, "items": []})
         _wire_business_services(monkeypatch, resolve_services=_resolve_services({}), mcp_call=call)
+        routing = {
+            "suggested_team": "customer_service",
+            "suggested_agent": "order_enquiries",
+            "team_source": "parser",
+        }
 
-        qf = _parser_output(
-            message_type="business_query",
-            intent_hint="check_order",
-            domain_hint="order",
-            entities=[],
-            date_filter_start=None,
-            date_filter_end=None,
-            routing={
-                "suggested_team": "customer_service",
-                "suggested_agent": "order_enquiries",
-                "team_source": "parser",
-            },
-        )
-        result = self._run_qf(session_factory, monkeypatch, qf, "all dates", "zzt-r4-all-dates")
+        def ask(start, end, text_body, msg_id):
+            qf = _parser_output(
+                message_type="business_query",
+                intent_hint="check_order",
+                domain_hint="order",
+                entities=[],
+                date_filter_start=start,
+                date_filter_end=end,
+                routing=routing,
+            )
+            mark = len(captured)
+            result = self._run_qf(session_factory, monkeypatch, qf, text_body, msg_id)
+            assert result.error is None, result.error
+            return (result.reply or {}).get("text") or "", captured[mark:]
 
-        assert result.error is None, result.error
-        assert len(captured) == 1, (
-            f"'all dates' must re-run the order fetch exactly once: {captured}"
-        )
-        name, args = captured[0]
-        assert name == "crm_order_management_orders_list", (name, captured)
+        # 1. "all dates" (the dated miss hint no longer offers it; see `test_rearch_r4_miss_engine.py`)
+        # is a dateless DO list ask: the period question, no fetch.
+        said, fetched = ask(None, None, "all dates", "zzt-r4-all-dates")
+        assert fetched == [], f"'all dates' must not fetch: {fetched}"
+        assert "Which period" in said, said
+
+        # 2. A dated follow-up re-runs the fetch exactly once for the carried customer.
+        _said, fetched = ask("2026-08-01", "2026-08-31", "august", "zzt-r4-august")
+        assert len(fetched) == 1, f"the dated follow-up must re-run the order fetch exactly once: {fetched}"
+        name, args = fetched[0]
+        assert name == "crm_order_management_orders_list", (name, fetched)
         assert args.get("customer_ids") == [customer_uuid], (
             "the re-run must stay scoped to the SAME carried customer, not swallowed "
             f"by the unrelated open member_offer: {args!r}"
         )
-        assert not args.get("order_date_from") and not args.get("order_date_to"), (
-            "'all dates' must clear the date window entirely: {args!r}".format(args=args)
-        )
+        assert args.get("actual_delivery_date_from") == "2026-08-01", args
+        assert args.get("actual_delivery_date_to") == "2026-08-31", args
 
     def _run_position(self, session_factory, monkeypatch, position_text: str, msg_id: str):
         qf = _parser_output(
