@@ -34,6 +34,7 @@ from __future__ import annotations
 from typing import Any, List, Optional
 
 import sqlalchemy as sa
+from sqlalchemy.orm import aliased
 
 from app.models.inventory import Warehouse
 from app.models.order import Customer, Order, OrderLine, SalesOrder
@@ -42,7 +43,7 @@ from app.models.sales_agent import SalesAgent
 from app.services.reports import registry as reg
 from app.services.scm.demand_class import PROJECT_SEGMENTS
 
-#: A DO with no sales order, or a sales order with no agent, groups here.
+#: A DO with no agent of its own and no sales order agent groups here.
 NO_AGENT = "(no agent)"
 
 #: The two channel values the `channel` dimension and filter speak (`demand_class.class_of`).
@@ -57,6 +58,32 @@ CHANNEL_EXPR = sa.case(
     (sa.func.coalesce(_SEGMENT, "") != "", sa.literal("retail")),
     else_=sa.null(),
 )
+
+
+def _resolved_agent_id() -> Any:
+    """The sales agent id of a DO line, resolved per delivery order.
+
+    Only the AutoCount push links a DO to its sales order (through `ref_doc_no`, see
+    `autocount_doc_ingest_service`), while every DO carries its own `orders.agent` code, so
+    that code wins (same precedent as `price_tag_request_service`). It is matched to the
+    master by code, the company's own row first and the shared (NULL company) row after. A
+    DO whose own code matches no master row resolves to NULL; it does not fall back to the
+    sales order. A DO with no code of its own takes its sales order's agent.
+    """
+    code = sa.func.nullif(sa.func.trim(Order.agent), "")
+    master = aliased(SalesAgent)
+    by_code = (
+        sa.select(master.id)
+        .where(
+            master.sales_agent == sa.func.upper(sa.func.trim(Order.agent)),
+            sa.or_(master.company_id == Order.company_id, master.company_id.is_(None)),
+        )
+        .order_by(master.company_id.asc().nulls_last())
+        .limit(1)
+        .correlate(Order)
+        .scalar_subquery()
+    )
+    return sa.case((code.isnot(None), by_code), else_=SalesOrder.sales_agent_id)
 
 
 def _fixed_filters() -> List[Any]:
@@ -175,7 +202,7 @@ def _base(ctx: Any) -> sa.Select:
         .outerjoin(ProductCategory, ProductCategory.id == Product.category_id)
         .outerjoin(Warehouse, Warehouse.id == OrderLine.warehouse_id)
         .outerjoin(SalesOrder, SalesOrder.id == Order.sales_order_id)
-        .outerjoin(SalesAgent, SalesAgent.id == SalesOrder.sales_agent_id)
+        .outerjoin(SalesAgent, SalesAgent.id == _resolved_agent_id())
         .where(sa.and_(*_fixed_filters()))
     )
 
@@ -201,7 +228,7 @@ def category_condition(ctx: Any, values: List[str]) -> Optional[Any]:
 
 
 def sales_agent_condition(ctx: Any, values: List[str]) -> Optional[Any]:
-    return SalesOrder.sales_agent_id.in_(values)
+    return _resolved_agent_id().in_(values)
 
 
 def location_condition(ctx: Any, values: List[str]) -> Optional[Any]:
@@ -230,7 +257,9 @@ COLUMNS = (
         "Sales agent",
         "text",
         "dimension",
-        lambda c: sa.func.coalesce(SalesAgent.sales_agent, NO_AGENT),
+        lambda c: sa.func.coalesce(
+            SalesAgent.sales_agent, sa.func.nullif(sa.func.trim(Order.agent), ""), NO_AGENT
+        ),
         size=140,
     ),
     reg.Column("location", "Location", "text", "dimension", lambda c: Warehouse.warehouse_code, size=120),
