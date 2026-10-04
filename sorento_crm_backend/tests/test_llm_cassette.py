@@ -286,8 +286,10 @@ class TestStorage:
         default = llm_cassette.cassette_dir()
         assert repo_root not in default.resolve().parents
 
-    def test_a_dir_inside_the_repository_is_refused(self, monkeypatch):
-        inside = Path(__file__).resolve().parent / "llm_cassettes_should_not_exist"
+    def test_a_dir_inside_the_repository_is_refused(self, monkeypatch, tmp_path):
+        # A fake checkout, so a regressed guard writes into tmp_path, never into this repo.
+        (tmp_path / "checkout" / ".git").mkdir(parents=True)
+        inside = tmp_path / "checkout" / "tests" / "llm_cassettes"
         monkeypatch.setenv("LLM_CASSETTE_DIR", str(inside))
         monkeypatch.setenv("LLM_CASSETTE_MODE", "record")
         with pytest.raises(llm_cassette.CassetteError, match="inside the repository"):
@@ -595,9 +597,38 @@ class TestHardening:
             embedding_worker._embed_text_chunks(["never recorded"])
         assert posted == [["abc"]]
 
+    def test_replay_refuses_a_cassette_dir_open_to_others(self, monkeypatch, cassette_dir):
+        monkeypatch.setenv("LLM_CASSETTE_MODE", "record")
+        _chat(_provider(monkeypatch, _Client()))
+        cassette_dir.chmod(0o777)
+        monkeypatch.setenv("LLM_CASSETTE_MODE", "replay")
+        with pytest.raises(llm_cassette.CassetteError, match="0700"):
+            _chat(_provider(monkeypatch, _Client(explode=True)))
+
+    def test_market_research_refuses_in_replay(self, monkeypatch):
+        import sys
+
+        from app.services.scm import market_research_service
+
+        built: list[str] = []
+        fake = types.SimpleNamespace(Anthropic=lambda **kw: built.append("client") or (_ for _ in ()).throw(AssertionError("network")))
+        monkeypatch.setitem(sys.modules, "anthropic", fake)
+        monkeypatch.setenv("LLM_CASSETTE_MODE", "replay")
+        with pytest.raises(llm_cassette.CassetteError):
+            market_research_service._anthropic_web_search("prompt", "k")
+        assert built == []
+
     def test_direct_http_calls_refuse_in_replay(self, monkeypatch):
+        import httpx
+
         from app.services.media_extract import transcribe
 
+        # A regressed guard must fail here, never reach the network.
+        def no_network(*args, **kwargs):
+            raise AssertionError("network")
+
+        monkeypatch.setattr(httpx, "post", no_network)
+        monkeypatch.setattr(httpx, "Client", no_network)
         monkeypatch.setenv("LLM_CASSETTE_MODE", "replay")
         with pytest.raises(llm_cassette.CassetteError):
             transcribe._post_transcription(
