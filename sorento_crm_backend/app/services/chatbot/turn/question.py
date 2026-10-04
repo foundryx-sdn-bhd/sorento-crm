@@ -93,9 +93,44 @@ def of_pending(pending: Pending | None) -> dict[str, Any] | None:
     return obj
 
 
-def open_question(pending: Pending | None, tasks: Any) -> dict[str, Any] | None:
-    """The ONE question on the table: the open pick or offer, which is what the next
-    message answers, else the stock question (`task.open_question`), else None."""
+def of_required_ask(slot: Any) -> dict[str, Any] | None:
+    """A `required_fields` question left open (the low stock report's category, supplier
+    or grouping) as the object, so the PARSER reads whether the next message answers it
+    (LOWSTOCK-SEMANTIC, crew ruling Q4): `about` names the ask, `owed` the field, and the
+    numbered options ride as a `pick_one`. The question's own words come from the ask's
+    registered field. None when nothing is open."""
+    from app.services.chatbot import required_fields as rf
+
+    if not isinstance(slot, dict) or not slot.get("asking"):
+        return None
+    ask = rf.ASKS.get(str(slot.get("ask") or ""))
+    field = next((f for f in (ask.fields if ask else ()) if f.name == slot.get("asking")), None)
+    if field is None:
+        return None
+    options = [
+        {"position": i, "code": str(o[1])}
+        for i, o in enumerate(slot.get("options") or [], start=1)
+        if isinstance(o, (list, tuple)) and len(o) == 2
+    ]
+    obj: dict[str, Any] = {
+        "kind": PICK_ONE if options else FREE,
+        "about": ask.name,
+        "question": field.question,
+        "owed": [field.name],
+    }
+    if options:
+        obj["options"] = options
+    return obj
+
+
+def open_question(pending: Pending | None, tasks: Any, required_ask: Any = None) -> dict[str, Any] | None:
+    """The ONE question on the table: a required field the LAST reply asked for (the slot
+    lives one turn, so it is always the newest question, newer than a carried roster pick
+    or a stock task still in the focus), else the open pick or offer, else the stock
+    question (`task.open_question`), else None."""
+    obj = of_required_ask(required_ask)
+    if obj is not None:
+        return obj
     obj = of_pending(pending)
     if obj is not None:
         return obj

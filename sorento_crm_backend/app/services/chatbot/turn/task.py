@@ -678,7 +678,7 @@ def _asks_to_resume(verdict: dict[str, Any], named: tuple[Slot, ...]) -> bool:
     """Is this message an explicit ask to resume the stock check (STUCK-QTY-LOOP)?
 
     The resume used to fire on ANY inventory message that named nothing new, and an
-    entity-less inventory message is also a low stock report (`low_stock_ask.take_words`
+    entity-less inventory message is also a low stock report (`low_stock_ask.take_entities`
     moves its brand and category words off the entities) and a bare "clear" the parser
     did not flag: the stored question was replayed on every one of them (owner, 4 Oct
     2026, prompt v42). A resume now needs the parser's own signal: a stock intent, or

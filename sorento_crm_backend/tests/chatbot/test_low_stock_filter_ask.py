@@ -1,13 +1,19 @@
-"""LOWSTOCK-FILTER-ASK: a chat low stock ask settles its product category before any run.
+"""LOWSTOCK-SEMANTIC (and LOWSTOCK-FILTER-ASK before it): a chat low stock ask settles its
+product category before any run, from the PARSER's reading alone.
 
-`documentation/plans/chatbot/lowstock-filter-ask-behaviour-card.md`, "Ruled behaviour":
+`documentation/plans/chatbot/lowstock-semantic-behaviour-card.md`. Owner, 4 Oct 2026:
+"remove the rules entirely, this is hard coded". The parser's `low_stock` key says which
+words are categories, brands and suppliers and how the report is grouped; the lane only
+resolves them against the master data:
 
-* the product category is the ONE required field: taken from the message (a category word,
-  narrowed by a brand word, or a brand alone), else asked, and nothing runs until it is
-  settled ("all" settles it as the whole book);
-* supplier and group-by are never asked: taken in when the message names them, otherwise
-  no supplier filter and no grouping;
-* every failure ends in a clear line (unknown twice ends the ask; "cancel" cancels).
+* the product category is the ONE required field: the parser's category words, narrowed by
+  its brands, or a brand alone, or `all_categories`; else asked, and nothing runs until it
+  is settled;
+* a supplier name that resolves to no supplier is said and asked once; a second miss runs
+  with no supplier filter and says so (crew ruling Q3);
+* a grouping the workbook cannot split by (brand, warehouse) is asked (crew ruling Q2);
+* the open question captures only a reply the parser reads as answering it (crew ruling Q4);
+* the settled filters persist, so a refinement narrows the report just shown.
 
 Full console turns: the REAL engine, lane and MCP presenter; only the parser and the MCP
 transport are doubles. Each `say` returns the reply text and every tool call it made, so
@@ -59,19 +65,32 @@ def _e(raw: str, hint: str) -> dict[str, Any]:
     return {"raw": raw, "hint": hint, "canonical_code": None, "current_message": True, "confident": True}
 
 
-def _ask(*entities: dict[str, Any], **overrides: Any) -> dict[str, Any]:
-    """The parser's reading of a low stock ask (LOW_STOCK_ADDENDUM)."""
-    return _parser_output(
-        domain_hint="inventory", intent_hint="low_stock_report", entities=list(entities), **overrides
-    )
+def _ls(categories=(), brands=(), suppliers=(), group_by=None, all_categories=None) -> dict[str, Any]:
+    """The parser's `low_stock` key (LOW_STOCK_FILTERS_ADDENDUM)."""
+    return {"group_by": group_by, "categories": list(categories), "all_categories": all_categories,
+            "brands": list(brands), "suppliers": list(suppliers)}
 
 
-def _reply(*entities: dict[str, Any], **overrides: Any) -> dict[str, Any]:
-    """The parser's reading of a short reply: whatever it makes of the bare words."""
-    base = dict(message_type="business_query", domain_hint="master_products", intent_hint="check_product",
-                entities=list(entities))
+def _ask(*entities: dict[str, Any], low_stock: dict[str, Any] | None = None, **overrides: Any) -> dict[str, Any]:
+    """The parser's reading of a fresh low stock ask: the ask names itself."""
+    base = dict(domain_hint="inventory", intent_hint="low_stock_report", entities=list(entities),
+                low_stock=low_stock or _ls(), domain_in_message=True)
     base.update(overrides)
     return _parser_output(**base)
+
+
+def _refine(**ls: Any) -> dict[str, Any]:
+    """A refinement of the report just shown ("taiyang only"): the same ask, no ask word."""
+    return _ask(low_stock=_ls(**ls), domain_in_message=False)
+
+
+def _answer(mode: str | None, *picked: int, intent: str | None = None, **ls: Any) -> dict[str, Any]:
+    """The parser's reading of a reply to the open low stock question."""
+    return _parser_output(
+        message_type="business_query", domain_hint="inventory" if intent else None, intent_hint=intent,
+        entities=[], low_stock=_ls(**ls),
+        open_question_answer={"mode": mode, "picked": list(picked), "items": [], "qty_for_all": None},
+    )
 
 
 def _stock_ask() -> dict[str, Any]:
@@ -201,70 +220,144 @@ def _filter_line(text: str) -> str:
 
 
 # --------------------------------------------------------------------------- #
-# Taken from the message: no question
+# Taken from the parser's reading: no question
 # --------------------------------------------------------------------------- #
 
 
-class TestNamedInTheMessage:
-    def test_the_owner_example_runs_at_once_scoped_to_the_brand_and_category(self, console) -> None:
+class TestReadByTheParser:
+    def test_the_owner_case_runs_at_once_scoped_to_the_brand_and_category(self, console) -> None:
+        """Owner, 4 Oct 2026: "low stock report for sorento water tap"."""
         text, calls = console.say(
-            _ask(_e("Sorento", "brand"), _e("water tap", "category")), "Sorento water tap low stock list"
+            _ask(low_stock=_ls(categories=["water tap"], brands=["sorento"])), "low stock report for sorento water tap"
         )
         (args,) = calls
         assert args.get("categories") == ["SRT-FT"], args
         assert not args.get("suppliers"), args
         assert args.get("split", "none") == "none", args
         assert QUESTION not in text
-        assert _filter_line(text) == "Sorento water tap, all suppliers, no grouping"
+        assert _filter_line(text) == "sorento water tap, all suppliers, no grouping"
         assert "Low: 3 of 10 planned products" in text
 
-    def test_a_category_word_alone_takes_every_brand(self, console) -> None:
-        _text, calls = console.say(_ask(_e("water tap", "category")), "water tap low stock")
+    def test_a_category_alone_takes_every_brand(self, console) -> None:
+        _text, calls = console.say(_ask(low_stock=_ls(categories=["water tap"])), "water tap low stock")
         (args,) = calls
         assert sorted(args["categories"]) == ["CB-FT", "SRT-FT"], args
 
     def test_a_brand_alone_settles_the_category_as_that_brand(self, console) -> None:
-        _text, calls = console.say(_ask(_e("Sorento", "brand")), "Sorento low stock")
+        _text, calls = console.say(_ask(low_stock=_ls(brands=["Sorento"])), "Sorento low stock")
         (args,) = calls
         assert sorted(args["categories"]) == ["SRT-FT", "SRT-WC"], args
 
-    def test_all_categories_in_the_message_runs_the_whole_book(self, console) -> None:
-        text, calls = console.say(_ask(), "low stock report all categories")
+    def test_all_categories_runs_the_whole_book(self, console) -> None:
+        text, calls = console.say(_ask(low_stock=_ls(all_categories=True)), "low stock report semua kategori")
         (args,) = calls
         assert not args.get("categories"), args
         assert _filter_line(text) == "all categories, all suppliers, no grouping"
 
-    def test_a_supplier_and_a_grouping_in_the_message_are_taken(self, console) -> None:
+    def test_a_supplier_and_a_grouping_are_taken(self, console) -> None:
         text, calls = console.say(
-            _ask(_e("water tap", "category")), "low stock water tap jinbaichuan hardware by supplier"
+            _ask(low_stock=_ls(categories=["water tap"], suppliers=["jinbaichuan hardware"], group_by="supplier")),
+            "low stock water tap from jinbaichuan hardware, per vendor",
         )
         (args,) = calls
         assert args.get("suppliers") == ["JINBAICHUAN HARDWARE"], args
         assert args.get("split") == "supplier", args
         assert _filter_line(text) == "water tap, supplier JINBAICHUAN HARDWARE, by supplier"
 
-    @pytest.mark.parametrize("words,split", [
-        ("by category", "category"),
-        ("group by category", "category"),
-        ("by supplier and category", "supplier_category"),
-        ("by supplier x category", "supplier_category"),
+    @pytest.mark.parametrize("group_by,split", [
+        ("supplier", "supplier"), ("category", "category"), ("supplier_category", "supplier_category"),
+        ("none", "none"),
     ])
-    def test_grouping_words(self, console, words, split) -> None:
-        _text, calls = console.say(_ask(_e("water closet", "category")), f"low stock water closet {words}")
+    def test_every_grouping_the_workbook_has(self, console, group_by, split) -> None:
+        _text, calls = console.say(_ask(low_stock=_ls(categories=["water closet"], group_by=group_by)), "x")
         (args,) = calls
-        assert args.get("split") == split, args
+        assert args.get("split", "none") == split, args
 
-    def test_a_product_type_the_parser_hinted_as_a_product_is_the_category(self, console) -> None:
-        _text, calls = console.say(_ask(_e("water tap", "product")), "water tap low stock")
+    def test_two_categories_take_both(self, console) -> None:
+        _text, calls = console.say(_ask(low_stock=_ls(categories=["water tap", "water closet"], brands=["sorento"])),
+                                   "low stock sorento tap and toilet")
         (args,) = calls
-        assert sorted(args["categories"]) == ["CB-FT", "SRT-FT"], args
-        assert not args.get("product_codes"), args
+        assert sorted(args["categories"]) == ["SRT-FT", "SRT-WC"], args
 
     def test_a_product_code_ask_names_its_own_scope(self, console) -> None:
         _text, calls = console.say(_ask(_e("SRTWT7408", "product")), "low stock for SRTWT7408")
         (args,) = calls
         assert args.get("product_codes") == ["SRTWT7408"], args
         assert not args.get("categories"), "a product-code ask is scoped by its code; no category"
+
+    def test_a_word_placed_in_low_stock_and_as_a_product_is_the_category(self, console) -> None:
+        """Two readings of one word: the structured field wins, the entity goes."""
+        _text, calls = console.say(
+            _ask(_e("water tap", "product"), low_stock=_ls(categories=["water tap"])), "water tap low stock"
+        )
+        (args,) = calls
+        assert sorted(args["categories"]) == ["CB-FT", "SRT-FT"], args
+        assert not args.get("product_codes"), args
+
+    def test_a_translated_category_is_taken_though_the_text_never_says_it(self, console) -> None:
+        """Kill test for the old `_in_text` rule: "水龙头" is read as "water tap" by the
+        parser; the message text never contains "water tap", and that is fine."""
+        _text, calls = console.say(_ask(low_stock=_ls(categories=["water tap"], brands=["sorento"])),
+                                   "sorento 水龙头 低库存")
+        (args,) = calls
+        assert args.get("categories") == ["SRT-FT"], args
+
+
+# --------------------------------------------------------------------------- #
+# Kill tests: the hard-coded rules are gone
+# --------------------------------------------------------------------------- #
+
+
+class TestTheRulesAreGone:
+    def test_grouping_and_supplier_words_beside_a_parsed_category_are_never_read(self, console) -> None:
+        """Reviewer kill test: the category IS settled (parser), so a re-added grouping
+        regex or leftover-word supplier search would change this run."""
+        _text, calls = console.say(_ask(low_stock=_ls(categories=["water closet"])),
+                                   "low stock water closet jinbaichuan trading by supplier per category")
+        (args,) = calls
+        assert not args.get("suppliers"), args
+        assert args.get("split", "none") == "none", args
+
+    def test_a_product_type_the_parser_left_a_product_is_never_relabelled(self, console) -> None:
+        """Reviewer kill test for the digit-shape rule: "water tap" resolves to seeded
+        categories, so a relabel would run a category-scoped report."""
+        _text, calls = console.say(_ask(_e("water tap", "product")), "low stock water tap")
+        assert not any(c.get("categories") for c in calls), calls
+
+    def test_grouping_and_supplier_words_in_the_text_alone_are_never_read(self, console) -> None:
+        """The message names a category, a supplier and a grouping, but the parser placed
+        nothing: no regex and no leftover-word search reads them, the category is asked."""
+        text, calls = console.say(_ask(), "low stock water closet jinbaichuan trading by supplier all categories")
+        assert calls == [] and text == QUESTION
+
+    def test_a_product_without_digits_is_never_turned_into_a_category(self, console) -> None:
+        """The old digit-shape rule re-labelled {raw: "water tap", hint: "product"} as a
+        category. Now nothing reads its shape: it is a product, as the parser said."""
+        _text, calls = console.say(_ask(_e("Lucia basin mixer", "product")), "low stock Lucia basin mixer")
+        assert not any(c.get("categories") for c in calls), calls
+
+    def test_a_category_with_digits_is_still_a_category(self, console) -> None:
+        _text, calls = console.say(_ask(low_stock=_ls(categories=["SRT-FT"])), "low stock SRT-FT")
+        (args,) = calls
+        assert args.get("categories") == ["SRT-FT"], args
+
+    @pytest.mark.parametrize("name", [
+        "split_from", "says_all_categories", "leftover_words", "supplier_word", "take_words", "_in_text",
+        "_SPLIT_PATTERNS", "_ALL_CATEGORIES", "_ASK_WORDS", "MAX_LEFTOVER_WORDS",
+    ])
+    def test_the_rule_is_not_in_the_module(self, name) -> None:
+        from app.services.chatbot.lanes.business import low_stock_ask
+
+        assert not hasattr(low_stock_ask, name), name
+
+    def test_the_module_reads_no_text(self) -> None:
+        import inspect
+
+        from app.services.chatbot.lanes.business import low_stock_ask
+
+        source = inspect.getsource(low_stock_ask)
+        assert not re.search(r"^import re$", source, re.M) and "re.compile" not in source and "isdigit" not in source
+        assert "low_stock_text" not in source
 
 
 # --------------------------------------------------------------------------- #
@@ -278,164 +371,315 @@ class TestAsked:
         assert text == QUESTION
         assert calls == [], "no reorder run before the category is settled"
 
-    def test_the_reply_settles_it_and_runs(self, console) -> None:
+    def test_the_parsers_answer_settles_it_and_runs(self, console) -> None:
         console.say(_ask(), "low stock report")
-        text, calls = console.say(_reply(_e("water closet", "product")), "water closet")
+        text, calls = console.say(_answer("fill", categories=["water closet"]), "tandas")
         (args,) = calls
         assert args.get("categories") == ["SRT-WC"], args
         assert _filter_line(text) == "water closet, all suppliers, no grouping"
 
+    def test_a_bare_answer_the_parser_placed_nothing_in_is_resolved_as_the_answer(self, console) -> None:
+        console.say(_ask(), "low stock report")
+        _text, calls = console.say(_answer("fill"), "water closet")
+        (args,) = calls
+        assert args.get("categories") == ["SRT-WC"], args
+
+    def test_an_answer_naming_more_settles_every_field(self, console) -> None:
+        console.say(_ask(), "low stock report")
+        _text, calls = console.say(
+            _answer("fill", intent="low_stock_report", categories=["water tap"], group_by="supplier"),
+            "water tap by supplier",
+        )
+        (args,) = calls
+        assert sorted(args["categories"]) == ["CB-FT", "SRT-FT"] and args.get("split") == "supplier", args
+
     def test_all_runs_the_whole_book(self, console) -> None:
         console.say(_ask(), "low stock report")
-        _text, calls = console.say(_reply(intent_hint=None, message_type="casual"), "all")
+        _text, calls = console.say(_answer("all"), "semua")
         (args,) = calls
         assert not args.get("categories"), args
 
     def test_a_grouping_from_the_first_message_survives_the_question(self, console) -> None:
-        console.say(_ask(), "low stock report by supplier")
-        _text, calls = console.say(_reply(_e("water closet", "product")), "water closet")
+        console.say(_ask(low_stock=_ls(group_by="supplier")), "low stock report by supplier")
+        _text, calls = console.say(_answer("fill", categories=["water closet"]), "water closet")
         (args,) = calls
         assert args.get("split") == "supplier", args
 
-    def test_an_unknown_reply_is_said_and_asked_again(self, console) -> None:
+    def test_an_unknown_answer_is_said_and_asked_again(self, console) -> None:
         console.say(_ask(), "low stock report")
-        text, calls = console.say(_reply(_e("spaceship", "product")), "spaceship")
+        text, calls = console.say(_answer("fill", categories=["spaceship"]), "spaceship")
         assert calls == []
         assert text == f"I don't know 'spaceship' as a category.\n\n{QUESTION}"
 
     def test_two_misses_end_the_ask_and_free_the_next_message(self, console) -> None:
         console.say(_ask(), "low stock report")
-        console.say(_reply(_e("spaceship", "product")), "spaceship")
-        text, calls = console.say(_reply(_e("rocket", "product")), "rocket")
+        console.say(_answer("fill", categories=["spaceship"]), "spaceship")
+        text, calls = console.say(_answer("fill", categories=["rocket"]), "rocket")
         assert calls == []
         assert text == (
             "I still can't place 'rocket'. Ask for the low stock report again with a category or \"all\"."
         )
-        _text, calls = console.say(_reply(intent_hint=None, message_type="casual"), "all")
+        _text, calls = console.say(_answer("all"), "all")
         assert calls == [], "the ask ended; a later 'all' must not start a run"
 
-    def test_cancel(self, console) -> None:
+    def test_cancel_declared_by_the_parser(self, console) -> None:
         console.say(_ask(), "low stock report")
-        text, calls = console.say(_reply(intent_hint=None, message_type="casual"), "cancel")
+        text, calls = console.say(_answer("cancel"), "tak payah lah")
         assert calls == [] and text == "Low stock report cancelled."
 
-    def test_a_different_ask_drops_the_question(self, console) -> None:
+    def test_a_new_question_wins(self, console) -> None:
+        """Crew ruling Q4 / STUCK-QTY-LOOP: the open question captures only an answer."""
         console.say(_ask(), "low stock report")
-        text, calls = console.say(_stock_ask(), "how many CB100 in BRW")
+        text, calls = console.say(_stock_ask(), "CB100 BRW")
         assert calls == []
-        assert QUESTION not in text
-        _text, calls = console.say(_reply(intent_hint=None, message_type="casual"), "all")
+        assert QUESTION not in text and "as a category" not in text
+        _text, calls = console.say(_answer("all"), "all")
         assert calls == [], "the question was dropped; 'all' must not start a run"
 
-    def test_a_category_word_unknown_in_the_message_is_said_and_asked(self, console) -> None:
-        text, calls = console.say(_ask(_e("spaceship", "category")), "spaceship low stock")
+    def test_a_new_low_stock_ask_over_the_supplier_question_runs_its_own_words(self, console) -> None:
+        """Reviewer must-fix 2 (reproduced): it ran the OLD category and quoted the whole
+        message as a supplier."""
+        console.say(_ask(low_stock=_ls(categories=["water tap"], suppliers=["acme"])), "low stock water tap from acme")
+        text, calls = console.say(
+            _ask(low_stock=_ls(categories=["water closet"], group_by="category"),
+                 open_question_answer={"mode": None, "picked": [], "items": [], "qty_for_all": None}),
+            "low stock report water closet by category",
+        )
+        (args,) = calls
+        assert args.get("categories") == ["SRT-WC"] and args.get("split") == "category", args
+        assert _filter_line(text) == "water closet, all suppliers, by category"
+
+    def test_clear_resets(self, console) -> None:
+        console.say(_ask(), "low stock report")
+        reset = _parser_output(message_type="casual", intent_hint=None, domain_hint=None, entities=[],
+                               topic_reset=True)
+        text, calls = console.say(reset, "clear")
+        assert calls == [] and "as a category" not in text
+        _text, calls = console.say(_answer("all"), "all")
+        assert calls == []
+
+    def test_a_category_unknown_in_the_first_message_is_said_and_asked(self, console) -> None:
+        text, calls = console.say(_ask(low_stock=_ls(categories=["spaceship"])), "spaceship low stock")
         assert calls == []
         assert text == f"I don't know 'spaceship' as a category.\n\n{QUESTION}"
 
 
 # --------------------------------------------------------------------------- #
-# Numbered pick on a supplier word naming several suppliers (crew Q5 (a))
+# Supplier: numbered pick, and an unknown name said and asked once (crew Q3)
 # --------------------------------------------------------------------------- #
 
+TAIYANG = "XIAMEN TAIYANG TECHNOLOGY CO.,LTD"
+SUPPLIER_QUESTION = 'Which supplier? Reply with a supplier name or "all".'
 
-class TestSupplierPick:
-    def test_several_suppliers_are_listed_and_a_number_picks(self, console) -> None:
-        text, calls = console.say(_ask(_e("water tap", "category")), "low stock water tap jinbaichuan")
+
+class TestSupplier:
+    def test_several_suppliers_are_listed_and_a_pick_takes_one(self, console) -> None:
+        text, calls = console.say(_ask(low_stock=_ls(categories=["water tap"], suppliers=["jinbaichuan"])),
+                                  "low stock water tap jinbaichuan")
         assert calls == []
         assert text == (
             'Which supplier do you mean? Reply with a number or "all":\n1. JINBAICHUAN HARDWARE\n2. JINBAICHUAN TRADING'
         )
-        _text, calls = console.say(_reply(intent_hint=None, message_type="casual"), "2")
+        _text, calls = console.say(_answer("pick", 2), "the second one")
         (args,) = calls
         assert args.get("suppliers") == ["JINBAICHUAN TRADING"], args
         assert sorted(args.get("categories")) == ["CB-FT", "SRT-FT"], args
 
+    def test_a_typed_number_still_picks(self, console) -> None:
+        console.say(_ask(low_stock=_ls(categories=["water tap"], suppliers=["jinbaichuan"])), "x")
+        _text, calls = console.say(_answer("fill"), "1")
+        (args,) = calls
+        assert args.get("suppliers") == ["JINBAICHUAN HARDWARE"], args
 
     def test_all_on_the_supplier_pick_runs_without_a_supplier(self, console) -> None:
-        console.say(_ask(_e("water tap", "category")), "low stock water tap jinbaichuan")
-        _text, calls = console.say(_reply(intent_hint=None, message_type="casual"), "all")
+        console.say(_ask(low_stock=_ls(categories=["water tap"], suppliers=["jinbaichuan"])), "x")
+        _text, calls = console.say(_answer("all"), "all")
         (args,) = calls
         assert not args.get("suppliers"), args
 
-    def test_a_supplier_among_other_words_is_still_found(self, console) -> None:
-        _text, calls = console.say(
-            _ask(_e("water tap", "category")), "hi can you send low stock water tap jinbaichuan trading this month"
+    def test_the_owner_taiyang_case(self, console) -> None:
+        """Turn 3dec9b68: "low stock report water closet taiyang"; the new prompt places
+        "taiyang" as a supplier. Two TAIYANG codes carry one name: one supplier."""
+        text, calls = console.say(
+            _ask(low_stock=_ls(categories=["water closet"], suppliers=["taiyang"])),
+            "low stock report water closet taiyang",
         )
         (args,) = calls
-        assert args.get("suppliers") == ["JINBAICHUAN TRADING"], args
-
-
-# --------------------------------------------------------------------------- #
-# Review round 1
-# --------------------------------------------------------------------------- #
-
-
-class TestReviewRound1:
-    def test_a_brand_no_category_carries_never_blocks_the_answer(self, console) -> None:
-        text, calls = console.say(_ask(_e("Moen", "brand")), "Moen low stock")
-        assert calls == [] and text == QUESTION
-        _text, calls = console.say(_reply(_e("water closet", "product")), "water closet")
-        (args,) = calls
+        assert args.get("suppliers") == [TAIYANG], args
         assert args.get("categories") == ["SRT-WC"], args
+        assert _filter_line(text) == f"water closet, supplier {TAIYANG}, no grouping"
 
-    def test_two_brands_take_both(self, console) -> None:
-        _text, calls = console.say(_ask(_e("Sorento", "brand"), _e("Cabana", "brand"),
-                                        _e("water tap", "category")), "Sorento Cabana water tap low stock")
+    def test_an_unknown_supplier_is_said_and_asked(self, console) -> None:
+        text, calls = console.say(_ask(low_stock=_ls(categories=["water tap"], suppliers=["acme"])),
+                                  "low stock water tap from acme")
+        assert calls == []
+        assert text == f"I don't know 'acme' as a supplier.\n\n{SUPPLIER_QUESTION}"
+        _text, calls = console.say(_answer("fill", suppliers=["taiyang"]), "taiyang")
         (args,) = calls
-        assert sorted(args["categories"]) == ["CB-FT", "SRT-FT"], args
+        assert args.get("suppliers") == [TAIYANG], args
 
-    def test_the_location_from_the_first_message_survives_the_question(self, console) -> None:
-        console.say(_ask(_e("BRW", "warehouse")), "low stock report BRW")
-        _text, calls = console.say(_reply(_e("water closet", "product")), "water closet")
+    def test_a_second_miss_runs_without_a_supplier_and_says_so(self, console) -> None:
+        console.say(_ask(low_stock=_ls(categories=["water tap"], suppliers=["acme"])), "x")
+        text, calls = console.say(_answer("fill", suppliers=["bolt"]), "bolt")
         (args,) = calls
-        assert args.get("warehouse_codes") == ["BRW"], args
+        assert not args.get("suppliers"), args
+        assert _filter_line(text) == "water tap, all suppliers, no supplier 'bolt' found, no grouping"
 
-    def test_a_long_casual_message_drops_the_question(self, console) -> None:
-        console.say(_ask(), "low stock report")
-        text, calls = console.say(_reply(intent_hint=None, message_type="casual", entities=[]),
-                                  "ok thanks I will check later")
-        assert calls == [] and "as a category" not in text
 
-    @pytest.mark.parametrize("words", ["per supplier", "supplier wise"])
-    def test_more_grouping_words(self, console, words) -> None:
-        _text, calls = console.say(_ask(_e("water closet", "category")), f"low stock water closet {words}")
+# --------------------------------------------------------------------------- #
+# Grouping the workbook cannot split by (crew Q2)
+# --------------------------------------------------------------------------- #
+
+GROUPING_PICK = (
+    "I can group the low stock report by supplier, by category, or both. Which one? Reply with a number:\n"
+    "1. Supplier\n2. Category\n3. Supplier x category\n4. No grouping"
+)
+
+
+class TestUnsupportedGrouping:
+    @pytest.mark.parametrize("group_by", ["brand", "warehouse"])
+    def test_is_asked_and_runs_nothing(self, console, group_by) -> None:
+        text, calls = console.say(_ask(low_stock=_ls(categories=["water tap"], group_by=group_by)), "split by brand")
+        assert calls == [] and text == GROUPING_PICK
+
+    def test_the_pick_runs_it(self, console) -> None:
+        console.say(_ask(low_stock=_ls(categories=["water tap"], group_by="brand")), "split by brand")
+        _text, calls = console.say(_answer("pick", 2), "category")
+        (args,) = calls
+        assert args.get("split") == "category", args
+
+    def test_the_parsers_grouping_answers_it(self, console) -> None:
+        console.say(_ask(low_stock=_ls(categories=["water tap"], group_by="brand")), "split by brand")
+        _text, calls = console.say(_answer("fill", group_by="supplier"), "ikut pembekal")
         (args,) = calls
         assert args.get("split") == "supplier", args
 
-    def test_the_session_schema_declares_the_slot(self) -> None:
-        """`SessionVars.focus` is `extra="forbid"` and `focus_to_wire` writes the key on
-        every turn: without it every `run_tail` turn (the n8n `/complete` path) raises."""
+    def test_a_supplier_pick_after_the_key_was_revoked_runs_downgraded(self, session_factory, monkeypatch) -> None:
+        """Reviewer should-fix 3: the pick was offered with the key held."""
+        grants = [GRANT, SUPPLIER_KEY]
+        console = _console(session_factory, monkeypatch, grants=grants)
+        console.say(_ask(low_stock=_ls(categories=["water tap"], group_by="brand")), "split by brand")
+        grants.remove(SUPPLIER_KEY)
+        _text, calls = console.say(_answer("pick", 1), "1")
+        (args,) = calls
+        assert args.get("split", "none") == "none", args
+
+    def test_without_the_supplier_key_only_category_and_none_are_offered(self, console_no_supplier_key) -> None:
+        text, _calls = console_no_supplier_key.say(
+            _ask(low_stock=_ls(categories=["water tap"], group_by="brand")), "split by brand"
+        )
+        assert text.endswith("1. Category\n2. No grouping"), text
+
+
+# --------------------------------------------------------------------------- #
+# The settled filters persist: a refinement narrows the report (crew root cause, 4 Oct)
+# --------------------------------------------------------------------------- #
+
+
+class TestRefinement:
+    def _report(self, console) -> None:
+        console.say(_ask(low_stock=_ls(categories=["water closet"], brands=["sorento"])),
+                    "low stock sorento water closet")
+
+    def test_a_supplier_only_narrows_the_report_just_shown(self, console) -> None:
+        """Crew root cause (4 Oct 2026): "taiyang only" lost the category and re-asked."""
+        self._report(console)
+        text, calls = console.say(_refine(suppliers=["taiyang"]), "taiyang only")
+        (args,) = calls
+        assert args.get("categories") == ["SRT-WC"], args
+        assert args.get("suppliers") == [TAIYANG], args
+        assert _filter_line(text) == f"sorento water closet, supplier {TAIYANG}, no grouping"
+
+    def test_a_grouping_only_keeps_the_category(self, console) -> None:
+        self._report(console)
+        _text, calls = console.say(_refine(group_by="supplier"), "by supplier")
+        (args,) = calls
+        assert args.get("categories") == ["SRT-WC"] and args.get("split") == "supplier", args
+
+    def test_a_brand_only_narrows_the_categories(self, console) -> None:
+        console.say(_ask(low_stock=_ls(categories=["water tap"])), "low stock water tap")
+        text, calls = console.say(_refine(brands=["cabana"]), "cabana only")
+        (args,) = calls
+        assert args.get("categories") == ["CB-FT"], args
+        assert _filter_line(text).startswith("cabana water tap"), text
+
+    def test_a_refinement_keeps_the_supplier_and_takes_a_new_grouping(self, console) -> None:
+        self._report(console)
+        console.say(_refine(suppliers=["taiyang"]), "taiyang only")
+        _text, calls = console.say(_refine(group_by="category"), "per category")
+        (args,) = calls
+        assert args.get("suppliers") == [TAIYANG] and args.get("split") == "category", args
+
+    def test_the_frame_dies_with_a_turn_that_ran_no_report(self, console) -> None:
+        """Reviewer should-fix 2: a turn that is not the filtered report clears it."""
+        self._report(console)
+        console.say(_stock_ask(), "CB100 BRW")
+        text, calls = console.say(_refine(suppliers=["taiyang"]), "taiyang only")
+        # (A carried "Couldn't find CB100." may trail the question: STUCK-QTY-LOOP's
+        # stale-entity fix, not this lane's.)
+        assert calls == [] and text.startswith(QUESTION)
+
+    def test_a_new_ask_never_inherits(self, console) -> None:
+        self._report(console)
+        text, calls = console.say(_ask(), "low stock report")
+        assert calls == [] and text == QUESTION
+
+    def test_a_category_answered_through_the_question_persists_too(self, console) -> None:
+        console.say(_ask(), "low stock report")
+        console.say(_answer("fill", categories=["water closet"]), "water closet")
+        _text, calls = console.say(_refine(group_by="supplier"), "by supplier")
+        (args,) = calls
+        assert args.get("categories") == ["SRT-WC"] and args.get("split") == "supplier", args
+
+
+# --------------------------------------------------------------------------- #
+# Kept from #1445: brands, location, schema, dry run, security, owner hand test
+# --------------------------------------------------------------------------- #
+
+
+class TestKept:
+    def test_a_brand_no_category_carries_never_blocks_the_answer(self, console) -> None:
+        text, calls = console.say(_ask(low_stock=_ls(brands=["Moen"])), "Moen low stock")
+        assert calls == [] and text == QUESTION
+        _text, calls = console.say(_answer("fill", categories=["water closet"]), "water closet")
+        (args,) = calls
+        assert args.get("categories") == ["SRT-WC"], args
+
+    def test_the_location_from_the_first_message_survives_the_question(self, console) -> None:
+        console.say(_ask(_e("BRW", "warehouse")), "low stock report BRW")
+        _text, calls = console.say(_answer("fill", categories=["water closet"]), "water closet")
+        (args,) = calls
+        assert args.get("warehouse_codes") == ["BRW"], args
+
+    def test_the_session_schema_declares_the_slot_and_the_frame(self) -> None:
+        """`SessionVars.focus` is `extra="forbid"` and `focus_to_wire` writes the keys on
+        every turn: without them every `run_tail` turn (the n8n `/complete` path) raises."""
         from app.services.chatbot import contracts as contracts_mod
         from app.services.chatbot.turn.state import Focus, focus_from_wire, focus_to_wire
 
         slot = {"ask": "low_stock_report", "asking": "category", "values": {}}
-        wire = focus_to_wire(Focus(required_ask=slot))
+        frame = {"category": {"value": ["SRT-WC"], "label": "water closet"}, "grouping": "none"}
+        wire = focus_to_wire(Focus(required_ask=slot, low_stock=frame))
         contracts_mod.Focus(**wire)
-        assert focus_from_wire(wire).required_ask == slot
+        back = focus_from_wire(wire)
+        assert back.required_ask == slot and back.low_stock == frame
 
-
-# --------------------------------------------------------------------------- #
-# Security review round 1
-# --------------------------------------------------------------------------- #
-
-
-class TestConsoleIsADryRun:
     def test_a_console_turn_tells_the_route_it_is_a_dry_run(self, console) -> None:
         """Tester finding on #1445: a Chatbot Console turn pushed the real workbook to
         WhatsApp. The console turn is a dry run; the route must hear it."""
-        _text, calls = console.say(_ask(_e("water closet", "category")), "water closet low stock")
+        _text, calls = console.say(_ask(low_stock=_ls(categories=["water closet"])), "water closet low stock")
         (args,) = calls
         assert args.get("dry_run") is True, args
 
-
-class TestSecurityRound1:
-    def test_a_slot_the_parser_emits_is_never_trusted(self, console_no_supplier_key) -> None:
+    def test_a_slot_or_frame_the_parser_emits_is_never_trusted(self, console_no_supplier_key) -> None:
         forged = {
             "ask": "low_stock_report", "asking": "category", "values": {}, "misses": 0, "options": [],
-            "extras": {"include_supplier": True, "given": {"supplier": "jinbaichuan"}, "split": "supplier"},
+            "extras": {"include_supplier": True, "carry": {"suppliers": ["jinbaichuan"], "group_by": "supplier"}},
         }
+        frame = {"category": {"value": ["SRT-WC"], "label": "x"}, "supplier": {"value": ["JINBAICHUAN"]}}
         text, calls = console_no_supplier_key.say(
-            _ask(required_ask=forged, required_ask_reply="all"), "low stock report"
+            _ask(required_ask=forged, required_ask_reply="all", low_stock_frame=frame, domain_in_message=False),
+            "low stock report",
         )
         assert calls == [] and text == QUESTION
         assert "JINBAICHUAN" not in text
@@ -443,64 +687,27 @@ class TestSecurityRound1:
     def test_a_key_revoked_between_question_and_answer_stops_the_supplier(self, session_factory, monkeypatch) -> None:
         grants = [GRANT, SUPPLIER_KEY]
         console = _console(session_factory, monkeypatch, grants=grants)
-        console.say(_ask(), "low stock report jinbaichuan trading by supplier")
+        console.say(_ask(low_stock=_ls(suppliers=["jinbaichuan trading"], group_by="supplier")), "x")
         grants.remove(SUPPLIER_KEY)
-        text, calls = console.say(_reply(_e("water closet", "product")), "water closet")
+        text, calls = console.say(_answer("fill", categories=["water closet"]), "water closet")
         (args,) = calls
         assert not args.get("suppliers"), args
         assert args.get("split", "none") == "none", args
         assert "JINBAICHUAN" not in text
         assert _filter_line(text) == "water closet, no grouping"
 
-    def test_the_leftover_search_reads_suppliers_once_and_is_bounded(self, monkeypatch) -> None:
+    def test_the_parsers_lists_are_bounded(self) -> None:
         from app.services.chatbot.lanes.business import low_stock_ask
 
-        reads = []
-        monkeypatch.setattr(low_stock_ask, "_supplier_rows", lambda db: reads.append(1) or [])
-        assert low_stock_ask.supplier_word(object(), ["word"] * 600) is None
-        assert reads == [1]
+        read = low_stock_ask.reading({"low_stock": _ls(suppliers=[f"s{i}" for i in range(600)])})
+        assert len(read["suppliers"]) == low_stock_ask.MAX_WORDS
 
+    def test_a_grouping_the_parser_never_declared_is_dropped(self) -> None:
+        from app.services.chatbot.lanes.business import low_stock_ask
 
-# --------------------------------------------------------------------------- #
-# Owner hand test, 3 Oct 2026 (head 53a5d27c9): the owner's own messages
-# --------------------------------------------------------------------------- #
-
-TAIYANG = "XIAMEN TAIYANG TECHNOLOGY CO.,LTD"
-
-
-class TestOwnerHandTest3Oct:
-    def test_a_supplier_word_the_parser_tagged_as_a_brand_is_still_the_supplier(self, console) -> None:
-        """Turn 3dec9b68: 'taiyang' came hinted brand; no category carries that brand, so
-        it was dropped as a brand AND hidden from the supplier search."""
-        text, calls = console.say(
-            _ask(_e("water closet", "category"), _e("taiyang", "brand")), "low stock report water closet taiyang"
-        )
-        (args,) = calls
-        assert args.get("suppliers") == [TAIYANG], args
-        assert args.get("categories") == ["SRT-WC"], args
-        assert _filter_line(text) == f"water closet, supplier {TAIYANG}, no grouping"
-
-    def test_a_grouping_word_the_parser_tagged_as_an_entity_never_turns_the_reply_into_a_miss(
-        self, console
-    ) -> None:
-        """Turn 4a90dd1d: the run was right, but the parser's {raw: 'supplier', hint:
-        'supplier'} reached the resolver, missed, and the miss handler replaced the
-        report's reply with 'Could not find inventory for supplier'."""
-        text, calls = console.say(
-            _ask(_e("water closet", "category"), _e("supplier", "supplier")),
-            "low stock report by supplier, water closet only",
-        )
-        (args,) = calls
-        assert args.get("split") == "supplier", args
-        assert args.get("categories") == ["SRT-WC"], args
-        assert not args.get("suppliers"), args
-        assert "Could not find" not in text and "salesman" not in text, text
-        assert _filter_line(text) == "water closet, all suppliers, by supplier"
-        assert "Low: 3 of 10 planned products" in text
+        assert low_stock_ask.reading({"low_stock": {"group_by": "colour"}})["group_by"] is None
 
     def test_the_miss_handler_never_answers_over_a_low_stock_report(self) -> None:
-        """The owner's turn reached the report and the miss handler still replaced its
-        reply (`via_resolver_exit`): a low stock reply is the report's own answer."""
         from app.services.chatbot import answer_bridge
 
         envelope = {"raw_fragment": {"kind": "result", "fetch": {
@@ -512,7 +719,7 @@ class TestOwnerHandTest3Oct:
     def test_the_pending_reply_states_the_filters_too(self, console) -> None:
         console.route_body = {"status": "pending", "run_id": "r", "download_id": "d", "dry_run": True}
         text, calls = console.say(
-            _ask(_e("water closet", "category"), _e("taiyang", "brand")), "low stock report water closet taiyang"
+            _ask(low_stock=_ls(categories=["water closet"], suppliers=["taiyang"])), "low stock water closet taiyang"
         )
         assert len(calls) == 1
         assert _filter_line(text) == f"water closet, supplier {TAIYANG}, no grouping"
@@ -520,19 +727,16 @@ class TestOwnerHandTest3Oct:
 
     def test_the_busy_reply_states_the_filters_too(self, console) -> None:
         console.route_body = {"status": "busy", "reason": "in_flight"}
-        text, _calls = console.say(_ask(_e("water closet", "category")), "low stock report water closet")
+        text, _calls = console.say(_ask(low_stock=_ls(categories=["water closet"])), "low stock water closet")
         assert _filter_line(text) == "water closet, all suppliers, no grouping"
-
-
-# --------------------------------------------------------------------------- #
-# A contact that may not see suppliers
-# --------------------------------------------------------------------------- #
 
 
 class TestWithoutTheSupplierKey:
     def test_supplier_words_are_not_taken(self, console_no_supplier_key) -> None:
         text, calls = console_no_supplier_key.say(
-            _ask(_e("water tap", "category")), "low stock water tap jinbaichuan hardware by supplier and category"
+            _ask(low_stock=_ls(categories=["water tap"], suppliers=["jinbaichuan hardware"],
+                               group_by="supplier_category")),
+            "x",
         )
         (args,) = calls
         assert not args.get("suppliers"), args
@@ -541,95 +745,31 @@ class TestWithoutTheSupplierKey:
         assert _filter_line(text) == "water tap, by category"
 
 
-# --------------------------------------------------------------------------- #
-# Live parser, 3 Oct 2026: a word carried from recent exchanges
-# --------------------------------------------------------------------------- #
+class TestTheOpenQuestion:
+    def test_the_pending_low_stock_question_outranks_a_stale_stock_task(self) -> None:
+        """STUCK-QTY-LOOP (4 Oct 2026): the low stock question is the newer one."""
+        from app.services.chatbot.turn import question
 
+        slot = {"ask": "low_stock_report", "asking": "category", "values": {}, "options": []}
+        stale = [{"kind": "stock", "status": "asking", "slots": [{"code": "X", "qty": None}]}]
+        obj = question.open_question(None, stale, slot)
+        assert obj == {"kind": "free", "about": "low_stock_report", "question": QUESTION, "owed": ["category"]}
 
-class TestLiveParserCarriedWord:
-    """Behaviour card "Ruled behaviour": a category or brand word counts only when the
-    CURRENT MESSAGE TEXT contains it (case-insensitive, whole words). The live parser, on a
-    bare "low stock report" after a "water closet" turn, emitted the carried word with
-    current_message: true even though the text does not contain it."""
+    def test_it_outranks_a_carried_roster_pick(self) -> None:
+        """Reviewer should-fix 1: the slot lives one turn, so it is the newest question."""
+        from app.services.chatbot.turn import question
+        from app.services.chatbot.turn.pending import Pending
 
-    def test_a_carried_category_word_not_in_the_text_is_asked_not_run(self, console) -> None:
-        text, calls = console.say(_ask(_e("water closet", "category")), "low stock report")
-        assert text == QUESTION
-        assert calls == [], "the word is not in the message; no run before the category is settled"
+        slot = {"ask": "low_stock_report", "asking": "category", "values": {}, "options": []}
+        roster = Pending(kind="customer_pick", expects="position", options=[{"position": 1, "code": "A", "label": "A"}],
+                         team=None, payload={}, asked_at_turn=None)
+        assert question.open_question(roster, [], slot)["about"] == "low_stock_report"
 
-    def test_a_carried_brand_word_not_in_the_text_is_asked_not_run(self, console) -> None:
-        text, calls = console.say(_ask(_e("Sorento", "brand")), "low stock report")
-        assert text == QUESTION
-        assert calls == [], "the brand is not in the message; no run before the category is settled"
+    def test_a_pick_is_stated_with_its_options(self) -> None:
+        from app.services.chatbot.turn import question
 
-    def test_a_word_in_the_text_with_other_case_and_spacing_still_counts(self, console) -> None:
-        _text, calls = console.say(_ask(_e("Water Closet", "category")), "low stock report water  closet")
-        (args,) = calls
-        assert args.get("categories") == ["SRT-WC"], args
-
-
-# --------------------------------------------------------------------------- #
-# Live parser, 3 Oct 2026 (gpt-5.4-mini): the answer shape with is_affirmative false
-# --------------------------------------------------------------------------- #
-
-
-def _live_reply(*entities: dict[str, Any]) -> dict[str, Any]:
-    """The live parser's reading of a bare answer to the category question: a business_query
-    with no hints, is_affirmative FALSE (not null), no continuation, no document."""
-    return _reply(*entities, intent_hint=None, domain_hint=None, message_type="business_query",
-                  is_affirmative=False, continuation=False, document=[])
-
-
-class TestLiveParserAnswerShape:
-    def test_cancel_with_is_affirmative_false_still_cancels(self, console) -> None:
-        console.say(_ask(), "low stock report")
-        text, calls = console.say(_live_reply(), "cancel")
-        assert text == "Low stock report cancelled."
-        assert calls == []
-
-    def test_cancel_with_topic_reset_still_cancels(self, console) -> None:
-        console.say(_ask(), "low stock report")
-        reply = {**_live_reply(), "topic_reset": True}
-        text, calls = console.say(reply, "cancel")
-        assert text == "Low stock report cancelled."
-        assert calls == []
-
-    def test_all_with_is_affirmative_false_still_runs_the_whole_book(self, console) -> None:
-        console.say(_ask(), "low stock report")
-        _text, calls = console.say(_live_reply(), "all")
-        (args,) = calls
-        assert not args.get("categories"), args
-
-    def test_a_category_with_is_affirmative_false_still_runs_it(self, console) -> None:
-        console.say(_ask(), "low stock report")
-        _text, calls = console.say(_live_reply(_e("water closet", "product")), "water closet")
-        (args,) = calls
-        assert args.get("categories") == ["SRT-WC"], args
-
-
-class TestStuckQtyLoopCategoryAnswer:
-    """STUCK-QTY-LOOP, crew pass on d456e887 (4 Oct): "taiyang only" under the open category
-    question, which the live parser read as a CUSTOMER, was taken as the category answer
-    ("I don't know 'taiyang only' as a category."). A reply the parser read as something
-    else is not this question's answer: the question is dropped and the message runs as
-    itself."""
-
-    @pytest.mark.parametrize(
-        "entity, text",
-        [
-            (_e("taiyang", "customer"), "taiyang only"),
-            (_e("BRW", "warehouse"), "BRW only"),
-            (_e("SRTWT7408", "product"), "SRTWT7408"),
-        ],
-    )
-    def test_a_reply_the_parser_read_as_another_kind_is_not_the_category(self, console, entity, text) -> None:
-        console.say(_ask(), "low stock report")
-        reply, calls = console.say(_reply(entity, intent_hint="low_stock_report", domain_hint="inventory"), text)
-        assert f"I don't know '{text}' as a category" not in reply, reply
-        assert "I still can't place" not in reply, reply
-
-    def test_a_category_word_the_parser_hinted_as_a_product_is_still_the_answer(self, console) -> None:
-        console.say(_ask(), "low stock report")
-        _text, calls = console.say(_reply(_e("water closet", "product")), "water closet")
-        (args,) = calls
-        assert args.get("categories") == ["SRT-WC"], args
+        slot = {"ask": "low_stock_report", "asking": "supplier", "values": {},
+                "options": [[["A"], "A CO"], [["B"], "B CO"]]}
+        obj = question.open_question(None, [], slot)
+        assert obj["kind"] == "pick_one" and obj["owed"] == ["supplier"]
+        assert obj["options"] == [{"position": 1, "code": "A CO"}, {"position": 2, "code": "B CO"}]

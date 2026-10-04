@@ -244,88 +244,144 @@ class TestConfigIsTheRequiredSet:
         assert not _start(TWO, category="water tap").done
 
 
+def _answer(mode, **extra):
+    return {"mode": mode, "picked": [], "items": [], "qty_for_all": None, **extra}
+
+
+ASK_OPTIONAL = rf.FieldSpec(
+    name="colour", noun="colour", question="Which colour?", resolve=_colour, required=False, ask_unknown=True,
+)
+WITH_ASKED_OPTIONAL = rf.AskType(
+    name="test_ask_opt", fields=(CATEGORY, ASK_OPTIONAL), reroute={}, cancelled="c", give_up="g {word}",
+)
+
+
+class TestOptionalFieldAskedWhenUnknown:
+    """LOWSTOCK-SEMANTIC crew ruling Q3: an optional word the message named but nothing
+    matched is said and asked once; the second miss goes on without it and keeps the word."""
+
+    def test_the_unknown_word_is_said_and_asked(self):
+        out = _start(WITH_ASKED_OPTIONAL, category="water tap", colour="spaceship")
+        assert out.reply == "I don't know 'spaceship' as a colour.\n\nWhich colour?"
+        assert out.slot["asking"] == "colour"
+
+    def test_a_pick_answered_with_another_ambiguous_word_gives_up(self):
+        """Never-stuck: an ambiguous answer to a pick is counted like a miss."""
+        first = _start(WITH_ASKED_OPTIONAL, category="water tap", colour="bl")
+        again = _reply(WITH_ASKED_OPTIONAL, first, "bl")
+        assert again.slot["misses"] == 1
+        last = _reply(WITH_ASKED_OPTIONAL, again, "bl")
+        assert last.done and last.values["colour"]["value"] == rf.ALL
+
+    def test_a_good_reply_takes_it(self):
+        out = _reply(WITH_ASKED_OPTIONAL, _start(WITH_ASKED_OPTIONAL, category="water tap", colour="x"), "blue")
+        assert out.done and out.values["colour"]["value"] == "BL"
+
+    def test_the_second_miss_runs_without_it_and_keeps_the_word(self):
+        out = _reply(WITH_ASKED_OPTIONAL, _start(WITH_ASKED_OPTIONAL, category="water tap", colour="x"), "purple")
+        assert out.done
+        assert out.values["colour"] == {"value": rf.ALL, "label": rf.ALL, "missed": "purple"}
+
+    def test_a_caller_resolved_unknown_says_its_own_word(self):
+        out = _start(WITH_ASKED_OPTIONAL, category="water tap", colour=rf.Resolved("unknown", label="taiyang"))
+        assert out.reply.startswith("I don't know 'taiyang' as a colour.")
+
+
+class TestParserAnswers:
+    def test_a_caller_resolved_reply_is_taken_as_is(self):
+        out = rf.collect(None, ONE, slot=_start(ONE).slot, reply=rf.Resolved("ok", value=["X"], label="x"))
+        assert out.done and out.values["category"]["value"] == ["X"]
+
+    def test_cancel_declared_by_the_parser_cancels_whatever_the_words(self):
+        out = rf.collect(None, ONE, slot=_start(ONE).slot, reply="lupakan je", cancel=True)
+        assert out.cancelled and out.reply == "Test cancelled."
+
+
 class TestReplyVerdict:
-    """The engine seam: while a question is open, the next message is read as its answer
-    unless it is plainly a different ask."""
+    """The engine seam (LOWSTOCK-SEMANTIC, crew ruling Q4 + the STUCK-QTY-LOOP pending
+    question rule): the open question captures ONLY a message the parser reads as answering
+    it; a new question always wins; "clear" (topic_reset, no answer) resets. Never the
+    message's length or punctuation."""
 
     def test_no_open_question_leaves_the_verdict_alone(self):
         verdict = {"intent_hint": "check_stock"}
         assert rf.reply_verdict(verdict, None, "hello", asks={"test_one": ONE}) == (verdict, None)
 
-    def test_the_rerouted_verdict_never_resets_the_topic(self):
+    def test_a_declared_answer_is_rerouted_to_the_ask_with_the_slot(self):
         slot = _start(ONE).slot
-        verdict = {"intent_hint": None, "message_type": "business_query", "topic_reset": True,
-                   "is_affirmative": False}
-        out, rule = rf.reply_verdict(verdict, slot, "cancel", asks={"test_one": ONE})
-        assert rule == "required_ask_answer"
-        assert out["topic_reset"] is False
-
-    def test_a_short_reply_is_rerouted_to_the_ask_with_the_slot(self):
-        slot = _start(ONE).slot
+        answer = _answer("fill")
         verdict, rule = rf.reply_verdict(
-            {"intent_hint": "check_product", "entities": [{"raw": "water tap"}]}, slot, "water tap",
-            asks={"test_one": ONE},
+            {"intent_hint": "check_product", "entities": [{"raw": "water tap"}], "open_question_answer": answer},
+            slot, "water tap", asks={"test_one": ONE},
         )
         assert rule == "required_ask_answer"
         assert verdict["intent_hint"] == "test_one"
         assert verdict["entities"] == []
         assert verdict["required_ask"] == slot
         assert verdict["required_ask_reply"] == "water tap"
+        assert verdict["required_ask_answer"] == answer
+        assert verdict["open_question_answer"] is None
 
-    def test_a_longer_message_the_parser_reads_as_another_ask_drops_the_question(self):
+    def test_the_same_ask_with_no_declared_answer_is_a_new_ask(self):
+        """Reviewer must-fix 2: a whole new low stock ask while the supplier question is
+        open was read as the supplier answer. A new question always wins."""
         slot = _start(ONE).slot
-        verdict = {"intent_hint": "check_stock", "entities": [{"raw": "CB100"}]}
-        out, rule = rf.reply_verdict(verdict, slot, "how many CB100 in BRW", asks={"test_one": ONE})
+        verdict = {"intent_hint": "test_one", "open_question_answer": _answer(None)}
+        out, rule = rf.reply_verdict(verdict, slot, "low stock report water closet by category",
+                                     asks={"test_one": ONE})
         assert out == verdict and rule == "required_ask_dropped"
 
-    def test_a_question_mark_is_another_ask_too(self):
+    def test_a_short_reply_the_parser_does_not_read_as_an_answer_drops_the_question(self):
+        """Kill test: the old three-word rule captured ANY short reply as the answer."""
         slot = _start(ONE).slot
-        verdict = {"intent_hint": "check_stock"}
-        out, rule = rf.reply_verdict(verdict, slot, "CB100?", asks={"test_one": ONE})
+        verdict = {"intent_hint": "check_stock", "open_question_answer": _answer(None)}
+        out, rule = rf.reply_verdict(verdict, slot, "CB100 stock", asks={"test_one": ONE})
         assert out == verdict and rule == "required_ask_dropped"
 
-    def test_a_longer_message_the_parser_reads_as_the_same_ask_is_still_the_answer(self):
+    def test_a_long_reply_the_parser_reads_as_an_answer_is_captured(self):
+        """Kill test: the old rule dropped any message over three words read as another ask."""
         slot = _start(ONE).slot
-        out, rule = rf.reply_verdict(
-            {"intent_hint": "test_one"}, slot, "the water tap one please", asks={"test_one": ONE}
+        _out, rule = rf.reply_verdict(
+            {"intent_hint": "check_product", "open_question_answer": _answer("fill")},
+            slot, "hmm let me think, water tap I guess", asks={"test_one": ONE},
         )
         assert rule == "required_ask_answer"
 
-    def test_a_longer_message_that_is_not_a_business_message_drops_the_question(self):
+    def test_a_question_mark_does_not_decide_it(self):
         slot = _start(ONE).slot
-        verdict = {"intent_hint": None, "message_type": "casual"}
-        out, rule = rf.reply_verdict(verdict, slot, "ok thanks I will check later", asks={"test_one": ONE})
+        _out, rule = rf.reply_verdict(
+            {"intent_hint": None, "open_question_answer": _answer("fill")}, slot, "water tap?", asks={"test_one": ONE}
+        )
+        assert rule == "required_ask_answer"
+
+    def test_clear_resets(self):
+        slot = _start(ONE).slot
+        verdict = {"intent_hint": None, "topic_reset": True, "open_question_answer": _answer(None)}
+        out, rule = rf.reply_verdict(verdict, slot, "clear", asks={"test_one": ONE})
         assert out == verdict and rule == "required_ask_dropped"
 
-    def test_a_short_casual_reply_is_still_the_answer(self):
+    def test_a_casual_message_with_no_answer_drops_the_question(self):
         slot = _start(ONE).slot
-        _out, rule = rf.reply_verdict({"intent_hint": None, "message_type": "casual"}, slot, "all",
-                                      asks={"test_one": ONE})
-        assert rule == "required_ask_answer"
+        verdict = {"intent_hint": None, "message_type": "casual"}
+        out, rule = rf.reply_verdict(verdict, slot, "ok", asks={"test_one": ONE})
+        assert out == verdict and rule == "required_ask_dropped"
 
     def test_an_empty_message_drops_the_question(self):
         slot = _start(ONE).slot
-        _out, rule = rf.reply_verdict({"intent_hint": None}, slot, "", asks={"test_one": ONE})
+        _out, rule = rf.reply_verdict({"intent_hint": None, "open_question_answer": _answer("fill")}, slot, "",
+                                      asks={"test_one": ONE})
         assert rule == "required_ask_dropped"
 
-    def test_the_rerouted_verdict_drops_the_parsers_open_question_answer(self):
+    def test_the_rerouted_answer_never_resets_the_topic_or_affirms(self):
+        """Live parser shape for "cancel": is_affirmative false and topic_reset true beside
+        the declared cancel. The reroute makes the turn an answer."""
         slot = _start(ONE).slot
-        out, _rule = rf.reply_verdict(
-            {"intent_hint": None, "open_question_answer": {"mode": "cancel"}}, slot, "cancel",
-            asks={"test_one": ONE},
-        )
-        assert out["open_question_answer"] is None
-
-    def test_the_rerouted_verdict_carries_no_affirmation_even_when_the_parser_said_false(self):
-        """Live parser shape for "cancel": is_affirmative false. The reroute makes the turn
-        an answer, not a decline, so the parser's is_affirmative must not survive it."""
-        slot = _start(ONE).slot
-        out, rule = rf.reply_verdict(
-            {"intent_hint": None, "message_type": "business_query", "is_affirmative": False}, slot, "cancel",
-            asks={"test_one": ONE},
-        )
+        verdict = {"intent_hint": None, "message_type": "business_query", "topic_reset": True,
+                   "is_affirmative": False, "open_question_answer": _answer("cancel")}
+        out, rule = rf.reply_verdict(verdict, slot, "cancel", asks={"test_one": ONE})
         assert rule == "required_ask_answer"
-        assert out["is_affirmative"] is None
+        assert out["topic_reset"] is False and out["is_affirmative"] is None
+        assert out["required_ask_answer"]["mode"] == "cancel"
 
     def test_an_unknown_ask_type_in_the_slot_is_dropped(self):
         out, rule = rf.reply_verdict({"intent_hint": None}, {"ask": "gone", "asking": "x"}, "1", asks={})

@@ -91,7 +91,12 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # owner-approved verbatim text) sits between PO_SPO_WAREHOUSE and MEMORY and takes the prompt
 # without MEMORY_ADDENDUM to 43,425 est. tokens and the whole prompt to 44,016; CEILING is
 # 44,016 - 512 = 43,504 so both assertions hold.
-CEILING = 43_504
+# Sixth re-pin, 4 Oct 2026 (LOWSTOCK-SEMANTIC, owner: "remove the rules entirely"):
+# LOW_STOCK_FILTERS_ADDENDUM (the `low_stock` key that replaces the lane's hard-coded
+# reading rules, 1,380 est. tokens) sits between ACCOUNT_LEDGER and MEMORY and takes the
+# prompt without MEMORY_ADDENDUM to 44,880 est. tokens and the whole prompt to 45,396;
+# CEILING is 45,396 - 512 = 44,884 so both assertions hold.
+CEILING = 44_884
 # The memory addendum on its own, bounded separately so this PR's growth stays bounded.
 # 26 Sep baseline (lane d89110c0): 339 est. tokens. Round 4 (baf4c813, 28 Sep: the history
 # question in any wording, the number re-run, commercial_request) took it to 512, which is

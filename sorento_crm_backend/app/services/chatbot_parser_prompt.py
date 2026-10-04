@@ -160,6 +160,73 @@ Every non-customer entity, and every customer entity without an account number, 
 "account": null. Never guess a number.
 """
 
+# LOWSTOCK-SEMANTIC (owner, 4 Oct 2026: "remove the rules entirely, this is hard coded"):
+# the low stock report's filters, read HERE and nowhere else. The lane used to read the
+# grouping out of the message with regexes, re-label a product word without digits as a
+# category and offer the leftover words to the supplier list
+# (`documentation/plans/chatbot/lowstock-semantic-behaviour-card.md`); all of that is gone,
+# and `lanes/business/low_stock_ask.py` only resolves what this key carries against the
+# master data. ADDITIVE ONLY, beneath ACCOUNT_LEDGER_ADDENDUM (MEMORY_ADDENDUM stays the
+# tail), published as a new UNLABELLED version by migration `lss_0001_parser_vocab`.
+LOW_STOCK_FILTERS_ADDENDUM = """
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+LOW STOCK REPORT FILTERS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+One more OUTPUT key, on every object:
+  "low_stock": {"group_by": "supplier|category|supplier_category|brand|warehouse|none"|null,
+    "categories": [], "all_categories": true|null, "brands": [], "suppliers": []}
+Fill it ONLY when intent_hint is "low_stock_report"; on every other message group_by null,
+all_categories null and the three lists []. Read the CURRENT message only, in any language
+or mix (English, Malay, Chinese, Manglish), never a word from an earlier turn. The top-level
+"group_by" stays null on a low stock ask.
+  - categories: each KIND of product named ("water tap", "tap", "water closet", "basin
+    mixer", "kitchen sink", "shower", or a category code like "SRT-FT"), in English, without
+    the brand and without "only", "for", "category". Translate: "paip air", "kepala paip",
+    "水龙头" -> "water tap"; "tandas", "mangkuk tandas", "马桶" -> "water closet"; "sinki dapur",
+    "厨房水槽" -> "kitchen sink". A number inside a category name keeps it a category. A
+    product TYPE is never a product entity.
+  - all_categories: true for every category ("all", "all categories", "everything",
+    "semua", "全部"); else null.
+  - brands: brand words ("sorento", "mocha", "cabana", or one from Known brands), as written.
+  - suppliers: a supplier, vendor or factory NAME to filter by ("from jinbaichuan",
+    "taiyang only", "pembekal X", "供应商 X"), as written. The word "supplier" or "vendor"
+    alone is never a name.
+  - group_by: how the report is split into sections. "by supplier", "per vendor", "group
+    them by supplier", "split by supplier", "supplier-wise", "ikut pembekal", "按供应商" ->
+    "supplier"; "by category", "per type", "ikut kategori", "按类别" -> "category"; supplier
+    and category together -> "supplier_category"; "by brand", "split by brand", "ikut
+    jenama", "按品牌" -> "brand"; "by warehouse", "per location", "ikut gudang" ->
+    "warehouse"; "no grouping", "one list" -> "none"; nothing said -> null. A supplier NAME
+    is a filter, never a grouping.
+A word placed in low_stock is NEVER also an entity. Entities on a low stock ask are only a
+SPECIFIC product (a code like "SRTWT7408") {hint: "product"} and a location {hint:
+"warehouse"}.
+  - "low stock report for sorento water tap" -> categories ["water tap"], brands ["sorento"],
+    entities []
+  - "low stock water closet, group them by supplier" -> categories ["water closet"],
+    group_by "supplier"
+  - "stok rendah paip air ikut pembekal" -> categories ["water tap"], group_by "supplier"
+  - "低库存 马桶 per vendor" -> categories ["water closet"], group_by "supplier"
+  - "low stock report water closet taiyang" -> categories ["water closet"], suppliers
+    ["taiyang"]
+REFINING THE REPORT JUST SHOWN: when "Previous response" starts "Low stock report (", a
+message that only names a filter or a grouping ("taiyang only", "by supplier", "sorento
+only", "just water closet", "ikut kategori") is the same ask: intent_hint
+"low_stock_report", domain_hint "inventory", domain_in_message false, and only the
+low_stock fields it names. A message naming the report itself ("low stock report",
+"low stock for basin") is a new ask: domain_in_message true.
+ANSWERING THE BOT'S LOW STOCK QUESTION: an Open question with "about": "low_stock_report"
+asks for the filter named in "owed". A message that answers it: intent_hint
+"low_stock_report", domain_hint "inventory", message_type "business_query", the low_stock
+fields it names, and open_question_answer mode "fill" (a category, supplier or grouping
+named), "pick" with picked (a number or an option named), "all" ("all", "any", "semua",
+"全部") or "cancel" ("cancel", "never mind", "batal"). "water tap by supplier" fills both
+fields. A message that asks something else ("stock for CB100", "my outstanding") is mode
+null, read as usual; "clear", "start over", "reset" -> mode null, topic_reset true.
+"""
+
 MEMORY_ADDENDUM = '\n\n== MEMORY ==\nTwo more OUTPUT keys: "message_type" gains "history_question"; "profile_statements": up to 3 {"key","value"} items, or null.\nThe user block may carry "About this contact", "Recent conversations" and "Earlier in this conversation" (oldest first). Use ONLY to resolve a reference ("that one", "the usual", "same as last time"); never override a code, customer or domain the CURRENT message names.\n"history_question": the dealer\'s OWN PAST with the bot, in any wording: "what did I ask", "what do I normally ask about", "what products do I usually ask about", "what did I check last week", "apa saya tanya tadi", "我之前问过什么"; never "clarification"; domain_hint, intent_hint null and entities [] (the past ask is not a live one). A bare number answering a numbered list in the Previous response re-runs that line: its domain and codes (current_message false). A discount, credit or price-exception request: "request_for_help", intent_hint "commercial_request". "profile_statements": up to 3 things the dealer states about THEMSELVES - key language|role|usual_brands|usual_sites|project|about, their own words.\n\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nCURRENT DATE\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nCURRENT DATE: {{current_date}}\n\nIf relative dates such as "today" or "yesterday" appear in the current turn input, convert them to absolute dates before calling the MCP tool.'
 
 # #1262 slice 5 (F4), owner ruling 1: "i don't want hard code, the parser supposed
@@ -651,6 +718,7 @@ SEMANTIC_PARSER_PROMPT += SELF_REFERENCE_ADDENDUM
 SEMANTIC_PARSER_PROMPT += ESCALATION_CONFIRMATION_ADDENDUM
 SEMANTIC_PARSER_PROMPT += PO_SPO_WAREHOUSE_ADDENDUM
 SEMANTIC_PARSER_PROMPT += ACCOUNT_LEDGER_ADDENDUM
+SEMANTIC_PARSER_PROMPT += LOW_STOCK_FILTERS_ADDENDUM
 SEMANTIC_PARSER_PROMPT += MEMORY_ADDENDUM
 
 # S1b (D16, AC-151 to AC-155): the same parser, 40.0% fewer characters (28,124 against the

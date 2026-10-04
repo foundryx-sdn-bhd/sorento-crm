@@ -385,7 +385,8 @@ class TestT3LowStockReportStillRunsWithNoEntities:
     ask still reaches its tool with no entities at all.
 
     LOWSTOCK-FILTER-ASK (owner ruling, 2 Oct 2026): a low stock ask now settles its
-    product category before it runs, so the whole-book ask is "... all categories"; a
+    product category before it runs, so the whole-book ask is "... all categories" (the
+    parser's `low_stock.all_categories`, LOWSTOCK-SEMANTIC); a
     bare "low stock report" asks the category (`test_low_stock_filter_ask.py`)."""
 
     def test_a_scopeless_low_stock_report_still_calls_its_tool(
@@ -409,7 +410,12 @@ class TestT3LowStockReportStillRunsWithNoEntities:
         result = _run_turn_engine(
             session_factory,
             monkeypatch,
-            qf=_stock_ask_verdict(intent_hint="low_stock_report"),
+            qf={
+                **_stock_ask_verdict(intent_hint="low_stock_report"),
+                # LOWSTOCK-SEMANTIC: "all categories" is the parser's reading, not the text's.
+                "low_stock": {"group_by": None, "categories": [], "all_categories": True, "brands": [],
+                              "suppliers": []},
+            },
             text_body="low stock report all categories",
             msg_id="zzt-r13-t3-lowstock",
             mcp_call=mcp_call,

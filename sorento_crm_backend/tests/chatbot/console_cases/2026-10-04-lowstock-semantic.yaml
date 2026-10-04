@@ -1,0 +1,89 @@
+# Console case for LOWSTOCK-SEMANTIC: the low stock filters read by the parser alone.
+#
+# `documentation/plans/chatbot/lowstock-semantic-behaviour-card.md`. NOT collected by pytest.
+# Run with `scripts/chatbot_console_check.py` (`documentation/agents/chatbot-verification.md`)
+# AFTER the new `chatbot_semantic_parser` version (migration `lss_0001_parser_vocab`) is
+# promoted, or pass it unpromoted with `--prompt-version <ai_prompt_versions.id>`:
+#
+#   venv/bin/python scripts/chatbot_console_check.py \
+#       tests/chatbot/console_cases/2026-10-04-lowstock-semantic.yaml \
+#       --base-url http://127.0.0.1:8000 --sleep-seconds 15
+#
+# Contact 437264483 must hold `scm.low_stock_report` and `purchase_orders.supplier`. Every
+# settled turn RUNS A REORDER PLAN; the per-contact limit is 5 asks per 10 minutes, so clear
+# the bucket between cases (`redis-cli -n <db> del rate_limit:v1:low_stock_report:<id>`).
+# A "Preparing the low stock report" or busy reply also passes a "Low stock report (" line:
+# every low stock reply opens with its filters.
+
+contact: "437264483"
+
+cases:
+  - name: the owner's case runs at once, scoped to Sorento taps
+    cold: true
+    turns:
+      - text: "low stock report for sorento water tap"
+        expect:
+          reply_contains:
+            - "Low stock report (sorento water tap"
+          reply_not_contains:
+            - "Which product category"
+            - "How many units"
+          no_uuid: true
+
+  - name: per vendor is a supplier grouping
+    cold: true
+    turns:
+      - text: "low stock water closet per vendor"
+        expect:
+          reply_contains:
+            - "by supplier"
+          no_uuid: true
+
+  - name: split by brand is asked, the pick runs it
+    cold: true
+    turns:
+      - text: "low stock water tap, split by brand"
+        expect:
+          reply_contains:
+            - "I can group the low stock report by supplier, by category, or both."
+      - text: "2"
+        expect:
+          reply_contains:
+            - "by category"
+
+  - name: Malay category and grouping
+    cold: true
+    turns:
+      - text: "stok rendah paip air ikut pembekal"
+        expect:
+          reply_contains:
+            - "by supplier"
+          reply_not_contains:
+            - "Which product category"
+
+  - name: a refinement narrows the report just shown
+    cold: true
+    turns:
+      - text: "low stock report sorento water closet"
+        expect:
+          reply_contains:
+            - "Low stock report (sorento water closet"
+      - text: "taiyang only"
+        expect:
+          reply_contains:
+            - "sorento water closet, supplier"
+          reply_not_contains:
+            - "Which product category"
+
+  - name: a new question wins over the open category question
+    cold: true
+    turns:
+      - text: "low stock report"
+        expect:
+          reply_contains:
+            - "Which product category"
+      - text: "how many CB100 in BRW"
+        expect:
+          reply_not_contains:
+            - "as a category"
+            - "Low stock report ("

@@ -38,14 +38,16 @@ API
   `Outcome.values` (`{name: {"value", "label"}}`). Otherwise send `Outcome.reply` and keep
   `Outcome.slot` (None when nothing stays open: cancelled or given up).
 * `reply_verdict(verdict, slot, text, *, asks=ASKS) -> (verdict, rule)` - the engine seam, read
-  before anything routes the message. With a question open, a short reply (or one the
-  parser reads as the same ask) is the answer: the verdict is rerouted to the ask, its
-  entities cleared, `is_affirmative` cleared and `topic_reset` cleared (a reply to the bot's own question is its
-  answer, never a yes/no, never a new topic), and `required_ask` / `required_ask_reply` carry the slot and the text to
-  the lane. A message of more than three words that the parser reads as a different ask
-  (another intent, or not a business message at all), an empty message, or any message
-  with a "?" drops the question (`required_ask_dropped`). An optional field's pick also
-  takes "all" / "none", and two misses on it settle it as "no filter" and go on.
+  before anything routes the message. The open question is stated to the parser as the turn's
+  `Open question:` object (`turn/question.of_required_ask`), so the PARSER says whether the
+  message answers it (LOWSTOCK-SEMANTIC, crew ruling Q4, 4 Oct 2026): a declared
+  `open_question_answer` (fill / pick / all / done / cancel) is the answer, and the verdict is rerouted to the ask, its entities cleared, `is_affirmative` and
+  `topic_reset` cleared, and `required_ask` / `required_ask_reply` / `required_ask_answer`
+  carry the slot, the text and the parser's answer to the lane. Anything else (a new question,
+  "clear", an empty message) drops the question (`required_ask_dropped`): a new question
+  always wins. Never the message's length or punctuation. `collect(..., cancel=True)` is the
+  parser's declared cancel. An optional field's pick also takes "all" / "none", and two misses
+  on it settle it as "no filter" and go on.
 
 The slot is one turn long: the engine consumes it on the next message, and the lane that
 asks again hands a fresh one back (`required_ask` on its envelope).
@@ -64,15 +66,16 @@ ALL = "all"
 #: "all <noun>s" are accepted too (`_is_all`).
 ALL_WORDS = frozenset({"all", "any", "everything", "every", "semua", "全部", "all of them"})
 #: Verdict keys only the engine sets (`reply_verdict`, and an ask's own pre-lane reading
-#: such as `low_stock_ask.take_words`). The engine strips them off the parser's output
+#: such as `low_stock_ask.take_entities`). The engine strips them off the parser's output
 #: before it reads anything, so a slot can never be forged through the parser.
-ENGINE_KEYS = frozenset({"required_ask", "required_ask_reply", "low_stock_words", "low_stock_text"})
+ENGINE_KEYS = frozenset({"required_ask", "required_ask_reply", "required_ask_answer", "low_stock_frame"})
 #: An OPTIONAL field also takes these as "no filter" (it was never required).
 NONE_WORDS = frozenset({"none", "no", "no filter", "skip"})
 CANCEL_WORDS = frozenset({"cancel", "stop", "never mind", "nevermind", "forget it", "batal"})
-#: A reply longer than this, read by the parser as another ask, leaves the question.
-SHORT_REPLY_WORDS = 3
 MAX_MISSES = 2
+#: `open_question_answer.mode` values that ANSWER the open question (the parser's own
+#: reading; LOWSTOCK-SEMANTIC, crew ruling Q4 4 Oct 2026). `None` answers nothing.
+ANSWER_MODES = frozenset({"fill", "pick", "all", "done", "cancel"})
 
 
 @dataclass(frozen=True)
@@ -91,6 +94,12 @@ class FieldSpec:
     resolve: Callable[[Any, str, dict[str, Any]], Resolved]
     allow_all: bool = True
     required: bool = True
+    #: An OPTIONAL field whose word the message named but nothing matched is said and
+    #: asked once (LOWSTOCK-SEMANTIC Q3); a second miss settles it as "no filter" and the
+    #: miss is kept on the value (`missed`) so the reply can say so. False: dropped quietly.
+    ask_unknown: bool = False
+    #: The first line of a numbered pick, when "Which <noun> do you mean?" does not fit.
+    pick_head: str | None = None
 
 
 @dataclass(frozen=True)
@@ -144,7 +153,9 @@ def _miss_line(word: str, spec: FieldSpec) -> str:
 
 def _pick_line(spec: FieldSpec, options: list[list[Any]]) -> str:
     takes_all = spec.allow_all or not spec.required
-    head = f"Which {spec.noun} do you mean? Reply with a number" + (' or "all":' if takes_all else ":")
+    head = spec.pick_head or (
+        f"Which {spec.noun} do you mean? Reply with a number" + (' or "all":' if takes_all else ":")
+    )
     return "\n".join([head, *[f"{i}. {label}" for i, (_value, label) in enumerate(options, start=1)]])
 
 
@@ -186,8 +197,9 @@ def collect(
     *,
     given: dict[str, Any] | None = None,
     slot: dict[str, Any] | None = None,
-    reply: str | None = None,
+    reply: str | Resolved | None = None,
     extras: dict[str, Any] | None = None,
+    cancel: bool = False,
 ) -> Outcome:
     values: dict[str, dict[str, Any]] = dict((slot or {}).get("values") or {})
     carried = dict((slot or {}).get("extras") or {})
@@ -195,27 +207,37 @@ def collect(
     specs = {s.name: s for s in ask.fields}
 
     if slot is not None and reply is not None:
-        if _norm(reply) in CANCEL_WORDS:
+        said_reply = reply.label if isinstance(reply, Resolved) else reply
+        if cancel or (isinstance(reply, str) and _norm(reply) in CANCEL_WORDS):
             return Outcome(values=values, reply=ask.cancelled, slot=None, extras=carried, cancelled=True)
         spec = specs.get(jsc.js_string(slot.get("asking")))
         if spec is not None:
             options = list(slot.get("options") or [])
-            got = _from_pick(spec, options, reply) if options else None
-            if got is None:
-                got = _settle(db, spec, reply, carried)
+            if isinstance(reply, Resolved):
+                # The caller already read the answer (the parser's own words, resolved).
+                got = reply
+            else:
+                got = _from_pick(spec, options, reply) if options else None
+                if got is None:
+                    got = _settle(db, spec, reply, carried)
             if got.status == "ok":
                 values[spec.name] = {"value": got.value, "label": got.label}
-            elif got.status == "ambiguous":
+            elif got.status == "ambiguous" and not (options and int(slot.get("misses") or 0) + 1 >= MAX_MISSES):
+                # A pick answered with a word that needs another pick is counted as a miss,
+                # so it never loops (never-stuck rule); a free question's first pick is not.
                 opts = [list(o) for o in got.options]
+                misses = int(slot.get("misses") or 0) + (1 if options else 0)
                 return Outcome(values=values, reply=_pick_line(spec, opts),
-                               slot=_slot(ask, values, carried, asking=spec.name, options=opts), extras=carried)
+                               slot=_slot(ask, values, carried, asking=spec.name, options=opts,
+                                          misses=misses), extras=carried)
             else:
-                word = " ".join(reply.split())
+                word = " ".join(str(said_reply or "").split())
                 misses = int(slot.get("misses") or 0) + 1
                 if misses >= MAX_MISSES and not spec.required:
                     # An optional field was only ever a pick over a word the message
-                    # gave: two misses settle it as "no filter" and the ask goes on.
-                    values[spec.name] = {"value": ALL, "label": ALL}
+                    # gave: two misses settle it as "no filter" and the ask goes on,
+                    # keeping the word so the reply can say it was not found.
+                    values[spec.name] = {"value": ALL, "label": ALL, "missed": word}
                     return collect(db, ask, given=given, slot={**slot, "values": values, "asking": None},
                                    extras=carried)
                 if misses >= MAX_MISSES:
@@ -242,9 +264,12 @@ def collect(
                 opts = [list(o) for o in got.options]
                 return Outcome(values=values, reply=_pick_line(spec, opts),
                                slot=_slot(ask, values, carried, asking=spec.name, options=opts), extras=carried)
-            if not spec.required:
+            said = " ".join(word.split()) if isinstance(word, str) else " ".join(got.label.split())
+            if not spec.required and not spec.ask_unknown:
                 continue
-            said = " ".join(word.split()) if isinstance(word, str) else ""
+            if not spec.required:
+                return Outcome(values=values, reply=_miss_line(said, spec),
+                               slot=_slot(ask, values, carried, asking=spec.name, misses=1), extras=carried)
             return Outcome(values=values, reply=_miss_line(said, spec),
                            slot=_slot(ask, values, carried, asking=spec.name), extras=carried)
         if not spec.required:
@@ -252,31 +277,6 @@ def collect(
         return Outcome(values=values, reply=spec.question,
                        slot=_slot(ask, values, carried, asking=spec.name), extras=carried)
     return Outcome(values=values, extras=carried)
-
-
-#: Entity hints that are never a product category (STUCK-QTY-LOOP).
-NOT_A_CATEGORY_HINTS = frozenset({"customer", "warehouse", "sales_agent", "transporter", "order", "customer_order"})
-
-
-def _read_as_another_kind(verdict: dict[str, Any]) -> bool:
-    """Did the parser read every word this message named as something other than a category:
-    a customer, a location, an order, or a product CODE (a product word with no digit is a
-    product type, `low_stock_ask.take_words`'s own rule)?"""
-    named = [
-        e for e in jsc.array(verdict.get("entities"))
-        if isinstance(e, dict) and e.get("current_message") is not False
-    ]
-    if not named:
-        return False
-    for entity in named:
-        hint = jsc.js_string(entity.get("hint") or "").strip().lower()
-        raw = jsc.js_string(entity.get("raw") or "")
-        if hint in NOT_A_CATEGORY_HINTS:
-            continue
-        if hint == "product" and any(ch.isdigit() for ch in raw):
-            continue
-        return False
-    return True
 
 
 def reply_verdict(
@@ -291,27 +291,21 @@ def reply_verdict(
     ask = (ASKS if asks is None else asks).get(jsc.js_string(slot.get("ask")))
     if ask is None:
         return verdict, "required_ask_dropped"
-    words = (text or "").split()
-    if not words or "?" in text:
-        # Nothing typed (an image, a sticker) or a question: not an answer.
+    # The parser was shown this question as the turn's `Open question:` object
+    # (`turn/question.of_required_ask`), so whether the message answers it is ITS reading,
+    # never the message's length or punctuation (LOWSTOCK-SEMANTIC, crew ruling Q4 and the
+    # STUCK-QTY-LOOP pending-question rule): only a declared answer is the answer. Anything
+    # else is a new question, which always wins (a whole new low stock ask included: it
+    # settles from its own words), and "clear" is the parser's `topic_reset` with no answer.
+    answer = verdict.get("open_question_answer")
+    mode = answer.get("mode") if isinstance(answer, dict) else None
+    answers = mode in ANSWER_MODES
+    if not (text or "").strip() or not answers:
         return verdict, "required_ask_dropped"
-    if jsc.js_string(slot.get("asking")) == "category" and _read_as_another_kind(verdict):
-        # STUCK-QTY-LOOP (crew pass on d456e887, 4 Oct 2026): "taiyang only", which the
-        # parser read as a CUSTOMER, was taken as the category ("I don't know 'taiyang only'
-        # as a category."). The parser's own entity hints say it is not a category, so it
-        # is not this question's answer. Superseded by LOWSTOCK-SEMANTIC (#1470), where only
-        # the parser's declared answer counts.
-        return verdict, "required_ask_dropped"
-    same_ask = verdict.get("intent_hint") == ask.reroute.get("intent_hint")
-    other_ask = (bool(verdict.get("intent_hint")) and not same_ask) or verdict.get("message_type") not in (
-        "business_query", "clarification", None,
-    )
-    if other_ask and len(words) > SHORT_REPLY_WORDS:
-        return verdict, "required_ask_dropped"
-    # A reply to the bot's own question is its answer, never a yes/no and never a new topic (live parser, 3 Oct 2026).
     rerouted = {
         **verdict, **ask.reroute, "entities": [], "open_question_answer": None,
         "is_affirmative": None, "topic_reset": False,
         "required_ask": slot, "required_ask_reply": text,
+        "required_ask_answer": dict(answer) if answers else None,
     }
     return rerouted, "required_ask_answer"

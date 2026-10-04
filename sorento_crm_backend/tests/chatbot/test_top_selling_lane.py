@@ -1069,6 +1069,8 @@ class TestParser:
         assert prompt_mod.SEMANTIC_PARSER_PROMPT.removesuffix(
             prompt_mod.MEMORY_ADDENDUM
         ).removesuffix(
+            prompt_mod.LOW_STOCK_FILTERS_ADDENDUM
+        ).removesuffix(
             prompt_mod.ACCOUNT_LEDGER_ADDENDUM
         ).removesuffix(
             prompt_mod.PO_SPO_WAREHOUSE_ADDENDUM
