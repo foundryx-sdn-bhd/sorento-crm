@@ -64,7 +64,7 @@ def _flat(seen: list[list[str]]) -> str:
 
 @pytest.fixture
 def dealer(session_factory, monkeypatch, stub_access):
-    return EngineConsole(session_factory, monkeypatch, stub_access, phone="+60000014731")
+    return EngineConsole(session_factory, monkeypatch, stub_access, phone="+601000001473")
 
 
 def _low_stock_verdict():

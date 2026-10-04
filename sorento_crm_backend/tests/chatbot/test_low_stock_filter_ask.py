@@ -424,7 +424,8 @@ class TestAsked:
 
     def test_cancel_declared_by_the_parser(self, console) -> None:
         console.say(_ask(), "low stock report")
-        text, calls = console.say(_answer("cancel"), "tak payah lah")
+        # An English message: CHAT-LANGUAGE (#1448) answers a Malay one in Malay.
+        text, calls = console.say(_answer("cancel"), "never mind")
         assert calls == [] and text == "Low stock report cancelled."
 
     def test_a_new_question_wins(self, console) -> None:
