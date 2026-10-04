@@ -152,6 +152,11 @@ class MasterRefResolver:
     ) -> Optional[str]:
         """Ref, then code, then (supplier only) name, then back-create (D1/D2/D10).
 
+        Product is the exception (PRODUCT-REF-COLLISION, owner ruling 3 Oct):
+        its identity is the code alone, the ref is never read or written, and
+        a missing or unknown code is `MissingReference` - handled first below.
+        Everything that follows applies to the other models.
+
         A SENT ref that does not resolve is `MissingReference` on its own -
         unchanged from v1 - but ONLY when there is nothing else to try: the
         moment `code` or `name` is also present, an unresolved ref falls
@@ -164,6 +169,16 @@ class MasterRefResolver:
         ref = (ref or "").strip() or None
         code = (code or "").strip() or None
         name = (name or "").strip() or None
+
+        if model is Product:
+            # PRODUCT-REF-COLLISION (owner ruling 3 Oct): product identity is
+            # the code only. The ref is never read or written for products
+            # (ItemAutoKey vs ItemCode refs collide); no code, or an unknown
+            # one, is a missing product.
+            by_code = self._resolve_by_code(model, code) if code else None
+            if by_code is None:
+                raise MissingReference(code_field if code else ref_field, code or ref)
+            return by_code
 
         if ref:
             try:
@@ -225,8 +240,6 @@ class MasterRefResolver:
             if ref or code:
                 warnings.append(WARN_WAREHOUSE_UNRESOLVED)
             return None
-        if model is Product:
-            raise MissingReference(code_field if code else ref_field, code or ref)
         if model is Customer:
             if code:
                 warnings.append(WARN_CUSTOMER_UNRESOLVED)
@@ -244,7 +257,7 @@ class MasterRefResolver:
         self, model: type, code: Optional[str], name: Optional[str], warnings: list[str]
     ) -> Optional[str]:
         """Code, then (supplier only) name, then back-create. Never touches ref."""
-        if model in (Product, Warehouse):
+        if model is Warehouse:
             return self._resolve_by_code(model, code) if code else None
 
         if model is SalesAgent:
