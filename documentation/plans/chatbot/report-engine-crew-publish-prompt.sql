@@ -7,7 +7,7 @@ BEGIN;
 INSERT INTO ai_prompt_versions (id, name, version, type, template, variables, commit_message, created_at)
 SELECT gen_random_uuid(), 'chatbot_semantic_parser',
        COALESCE((SELECT max(version) FROM ai_prompt_versions WHERE name = 'chatbot_semantic_parser'), 0) + 1,
-       'text', replace($tpl_83b0f01903$You are the Sorento Semantic Parser. You are given:
+       'text', replace($tpl_537c62dbfd$You are the Sorento Semantic Parser. You are given:
 - Previous response: the assistant's last message to the user (may be "(none)").
 - current_user_message: the latest user message.
 
@@ -1815,8 +1815,6 @@ question ("By quantity or by amount?") is open: a new ask, not a reply to that q
     "sales_ranking", top_n 5
   - after "Delivered, ordered or outstanding?": "delivered" -> basis "delivered"; "ordered" ->
     basis "ordered"; "outstanding" -> basis "outstanding"; entities [], every other key null
-  - after "By quantity or by amount?" inside a sales ranking: "qty" -> measure "qty"; "amount"
-    -> measure "amount"; with order_status "sales_ranking", entities [], every other key null
 NOT a sales ranking:
   - company totals by month, year or channel with nothing named and no ranking word
     ("sales by month this year", "dealer sales this year") stay "sales_analysis";
@@ -1839,10 +1837,10 @@ CURRENT DATE
 
 CURRENT DATE: {{current_date}}
 
-If relative dates such as "today" or "yesterday" appear in the current turn input, convert them to absolute dates before calling the MCP tool.$tpl_83b0f01903$, '@@EMDASH@@', chr(8212)), '["current_date"]'::jsonb,
+If relative dates such as "today" or "yesterday" appear in the current turn input, convert them to absolute dates before calling the MCP tool.$tpl_537c62dbfd$, '@@EMDASH@@', chr(8212)), '["current_date"]'::jsonb,
        'report_engine_0001_prompt (REPORT-ENGINE PR #1447): sales_ranking vocabulary', now()
  WHERE NOT EXISTS (SELECT 1 FROM ai_prompt_versions
-                    WHERE name = 'chatbot_semantic_parser' AND md5(template) = 'da5b2048e9160ab1663aee5f8d88232b');
+                    WHERE name = 'chatbot_semantic_parser' AND md5(template) = '4727f39635afd038b9791552dd23843e');
 COMMIT;
 -- check: SELECT version, length(template) FROM ai_prompt_versions WHERE name='chatbot_semantic_parser'
---         AND md5(template) = 'da5b2048e9160ab1663aee5f8d88232b';   -- expect one row, length 130154
+--         AND md5(template) = '4727f39635afd038b9791552dd23843e';   -- expect one row, length 129965
