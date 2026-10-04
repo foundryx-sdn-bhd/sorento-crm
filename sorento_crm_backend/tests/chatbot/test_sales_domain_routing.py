@@ -37,6 +37,8 @@ GRANT = "sales_orders.sales_report"
 DENIAL = "Sales report is not enabled for your account."
 CUSTOMER = {"uuid": CUSTOMER_UUID, "entity_type": "customer", "canonical_code": CUSTOMER_NAME}
 PRODUCT = {"uuid": PRODUCT_UUID, "entity_type": "product", "canonical_code": PRODUCT_CODE}
+# A 31-day range, the most #1433 (DO-ASK-SIMPLIFY) lets an order list ask carry.
+_A_MONTH = {"date_filter_start": "2026-09-01", "date_filter_end": "2026-09-30"}
 
 
 def _normalised(**verdict: Any) -> dict[str, Any]:
@@ -112,12 +114,14 @@ class TestTheLanePicksTheSalesTools:
 
     @pytest.mark.parametrize("status", ["outstanding", "so_outstanding", "delivered"])
     def test_an_order_report_still_picks_the_outstanding_report(self, session_factory, status) -> None:
-        captured = _picked("order", status, [PRODUCT], response=REPORT_HIT)
+        # #1433 answers a dateless order list ask with "Which period?", so give it a range.
+        captured = _picked("order", status, [PRODUCT], response=REPORT_HIT, **_A_MONTH)
         expected = "crm_outstanding_report" if status != "delivered" else "crm_order_management_orders_list"
         assert captured and captured[0][0] == expected, captured
 
     def test_a_plain_do_list_still_picks_the_orders_list(self, session_factory) -> None:
-        captured = _picked("order", None, [CUSTOMER])
+        # #1433 answers a dateless order list ask with "Which period?", so give it a range.
+        captured = _picked("order", None, [CUSTOMER], **_A_MONTH)
         assert captured and captured[0][0] == "crm_order_management_orders_list", captured
 
 
