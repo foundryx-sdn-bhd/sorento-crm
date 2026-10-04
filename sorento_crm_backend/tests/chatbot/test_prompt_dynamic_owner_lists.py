@@ -194,7 +194,7 @@ def test_the_access_level_order_step_fills_only_the_null_sort_orders():
                 assert after[name] == before, name
             else:
                 assert after[name] is not None, name
-                assert after[name] == OWNER_ACCESS_LEVELS.index(name), name
+                assert after[name] == OWNER_ACCESS_LEVELS.index(name) + 1, name
 
 
 def test_the_access_level_order_step_leaves_inactive_rows_alone():
