@@ -1,26 +1,17 @@
-"""Brain-path service for `ideate` WhatsApp turns (ideation pipeline, D7/D8, §5.1/§5.2).
+"""Shared-service plumbing the ideate flow keeps from the old multi-turn draft path.
 
-Flow per turn (see ``documentation/plans/ideation/PLAN-ideation-ideate-intent.md`` §2c):
+The turn itself is `ideation_capture_service.handle_capture_turn` (IDEATION-CAPTURE). What
+stays here is what live code still imports:
 
-  1. resolve the default workspace's ``ideation_product_id`` - fail-closed (no
-     ``create_idea`` call) if it or the shared-service config is unset (AC-31);
-  2. read the contact's ``session_vars.ideation`` pointer (``draft_id``/``status``);
-  3. run the sorento brain extractor → ``{ fields, remove, confirm }`` (D-CONFIRM);
-  4. build the §5.1 input deterministically (``product_id`` from the binding,
-     ``submitter`` = contact phone E.164, ``draft_id`` omitted on turn 1) and call
-     shared-service ``create_idea`` over HTTP (server-to-server httpx - NOT MCP);
-  5. read-modify-write ``session_vars``: KEEP ``ideation`` on ``collecting``/``review``,
-     DELETE it on ``complete``/``duplicate``, preserving every other CRM key (AC-16);
-  6. return ``{ status, reply_text, link?, session_vars }`` (the full updated blob).
-
-Resilience: a shared-service outage returns a graceful ``reply_text`` and NEVER
-mutates ``session_vars`` (AC-19) - mirrors the "always fail soft on the send path"
-posture. Args are built deterministically, so the LLM UUID-arg coercion used on the
-agent path is irrelevant here (AC-18).
+* the shared-service connection: `_resolve_ideation_config`, `_IdeationConfig`,
+  `call_create_idea`, `IdeationServiceError`, and the contact read `_get_contact_row`;
+* the access-denied reply composer `compose_ideate_denial_reply` (called from
+  `app.services.chatbot.lanes.canned`);
+* the S4 idle sweep (`sweep_idle_ideation_drafts`), which still drains `ideation` pointers
+  written by the old draft flow: a reminder at 24h idle, then a `cancel` close.
 """
 from __future__ import annotations
 
-import json
 import logging
 import re
 import uuid
@@ -28,6 +19,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import httpx
+import json
 from fastapi import HTTPException, status as http_status
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -41,23 +33,6 @@ from app.services.conversation_variables_service import (
     get_for_contact,
     overwrite_for_contact,
 )
-from app.services.ideation_extractor import (
-    IdeateExtraction,
-    derive_confirm,
-    extract_ideate_turn,
-    normalise_field_value,
-    normalise_title,
-)
-from app.services.ideation_media_service import (
-    MediaCandidate,
-    MediaClients,
-    build_menu_text,
-    default_clients,
-    extract_media_candidates,
-    fold_captions_into_text,
-    parse_selection,
-    snapshot_and_caption,
-)
 from app.services.llm_provider import get_provider
 from app.services.respond_workspace_service import RespondWorkspaceService
 
@@ -66,13 +41,8 @@ logger = logging.getLogger(__name__)
 _CREATE_IDEA_PATH = "/ideation/intake/create-idea"
 _TIMEOUT_SECONDS = 15
 
-# create_idea statuses that CLOSE the draft → clear the pointer (§5.2). `duplicate`
-# is retired (S1); `voted` and `cancelled` are its replacements (AC-1215).
+# create_idea statuses that CLOSE a draft (the idle sweep's close reads them).
 _TERMINAL_STATUSES = {"complete", "voted", "cancelled"}
-
-# Cap the accumulated transcript (WS-B) so a very long conversation can't bloat
-# session_vars / the create_idea payload. Keeps the most recent turns.
-_TRANSCRIPT_MAX_TURNS = 50
 
 # Should fix 2 (reviewer, round 2), narrowed by Fix round 3 (shared-service
 # contract facts, PR #87): the S4 close's ONLY signal that a draft is already
@@ -90,331 +60,24 @@ _DRAFT_GONE_STATUS_CODES = {404, 410}
 # a 422, so a human has to look at the payload bug either way.
 _MAX_CLOSE_PAYLOAD_ERROR_ATTEMPTS = 2
 
-# Intake answer keys the brain extracts into (mirrors the shared-service intake
-# target_schema - problem / proposed_solution / impact / department; no module or
-# who - business submitters don't know the module, and the submitter identifies who).
-_IDEATION_FIELD_LABELS: dict[str, str] = {
-    "problem": "Problem statement",
-    "proposed_solution": "Proposed solution",
-    "impact": "Impact",
-    "department": "Department",
-}
-
-# S3 - point-form field order for a recap reply (R10, amended by R16 to put
-# Problem first): only present fields ever show; a skipped or not-yet-answered
-# field is left out, never shown as blank.
-_RECAP_FIELD_ORDER: tuple[tuple[str, str], ...] = (
-    ("problem", "Problem"),
-    ("proposed_solution", "Solution"),
-    ("impact", "Impact"),
-    ("department", "Department"),
-)
-
-_QUESTION_MARKS = "?？"  # ASCII ? and full-width ？ (AC-1302)
-
-# #1279 round 2 (owner rulings, 26 Sep 2026):
-# - a captured value the extractor never produced (the intake seeds its required
-#   `problem` from the raw message when the extractor sent none) is never echoed;
-#   the recap says the field is still being worked out instead;
-# - the review turn always ends with this confirm question, and only a yes submits.
-_STILL_WORKING = "still being worked out"
-_CONFIRM_LINE = "Submit this idea? Reply yes to submit, or tell me what to change."
-
-# #1277: a field line, read regardless of the marker wrapped around its LABEL
-# ("Problem: x", "*Problem:* x", "*Problem*: x", Markdown "**Problem:** x",
-# italic "_Problem:_ x") - group 2 the label, group 3 the value. The closing
-# marker must repeat the opening one, so a value's own leading "*" is kept.
-_RECAP_LABELS = tuple(label for _key, label in _RECAP_FIELD_ORDER)
-_LABEL_TO_KEY = {label: key for key, label in _RECAP_FIELD_ORDER}
-_FIELD_LINE_RE = re.compile(
-    r"^\s*(\*\*|\*|_)?\s*(" + "|".join(_RECAP_LABELS) + r")\s*(?:\1)?\s*:\s*(?:\1)?\s*(.*?)\s*$"
-)
-# #1277: a bare title line may carry quotes, WhatsApp markers and an optional
-# "Title:" label around the title itself.
-_TITLE_LABEL_RE = re.compile(r"^title\s*:", re.I)
-_TITLE_STRIP_CHARS = "\"'“”‘’「」『』*_ \t"
-
-# Blocking 1 (reviewer, round 1, PR #1222 at 720bb8f5): any IDEA-<digits> token
-# in a composed reply must be EXACTLY a fact's idea number - word-boundary
-# matched, never a substring (IDEA-0042 is not IDEA-00421).
-#
-# Should fix 1 (reviewer, round 2): an LLM can plausibly write the token as
-# "idea-0777" (lowercase), "IDEA 0777" (a space instead of a hyphen), or
-# "IDEA-0777a" (a trailing word char, which used to defeat the trailing `\b`
-# entirely and let the token slip past unmatched). Case-insensitive, the
-# separator optional, and no trailing boundary - the digits captured are
-# compared to the allowed set, so format never matters, only the number.
-_IDEA_TOKEN_RE = re.compile(r"\bIDEA[-\s]?(\d+)", re.I)
-# The duplicate-candidate template's own opening phrase - a reply carrying it
-# while the status ISN'T duplicate_candidate is always an invention (there is
-# no candidate fact to name).
-_DUPLICATE_MENTION = "Similar idea exists:"
+_QUESTION_MARKS = "?？"  # ASCII ? and full-width ？
 
 
-def _same_value(a: Any, b: Any) -> bool:
-    return " ".join(str(a or "").casefold().split()) == " ".join(str(b or "").casefold().split())
-
-
-def _display_captured(
-    captured: dict[str, Any], clean_fields: dict[str, str] | None
-) -> dict[str, Any]:
-    """W1 (#1279 round 2): the captured values a recap may show. A value is shown
-    only when it is one the extractor produced (``clean_fields``, carried on the
-    pointer); anything else - the intake's own seed of ``problem`` from the raw
-    message on the first turn - shows as still being worked out. ``None`` (a
-    caller with no record) trusts ``captured`` as it is."""
-    if clean_fields is None:
-        return dict(captured)
-    return {
-        key: (value if not value or _same_value(value, clean_fields.get(key)) else _STILL_WORKING)
-        for key, value in captured.items()
-    }
-
-
-def _ideate_reply_facts(
-    result: dict[str, Any], clean_fields: dict[str, str] | None = None
-) -> dict[str, Any]:
-    """The FACTS block for the S3 composer (R5) - status, title, captured
-    answers, the next field to ask, any duplicate candidate, the idea number and
-    the link. Never the model's own words: these are read straight off the
-    shared-service response, with a value the extractor never produced replaced
-    by the still-being-worked-out wording (W1)."""
-    return {
-        "status": str(result.get("status") or ""),
-        "title": result.get("title") or "",
-        "captured": _display_captured(result.get("captured") or {}, clean_fields),
-        "next_field": result.get("next_field"),
-        "duplicate_candidate": result.get("duplicate_candidate") or None,
-        "idea_number": result.get("idea_number"),
-        "link": result.get("link"),
-    }
-
-
-def _field_line(line: str) -> tuple[str, str] | None:
-    """``(label, value)`` when ``line`` is a recap field line, bold or not."""
-    match = _FIELD_LINE_RE.match(line)
-    return (match.group(2), match.group(3)) if match else None
-
-
-def _is_title_line(line: str, title: str) -> bool:
-    """#1277: a line that says nothing but the draft title (quoted, bold, or
-    labelled "Title:"), compared case- and spacing-insensitively."""
-    bare = line.strip(_TITLE_STRIP_CHARS)
-    bare = _TITLE_LABEL_RE.sub("", bare, count=1).strip(_TITLE_STRIP_CHARS)
-    return " ".join(bare.lower().split()) == " ".join(title.lower().split())
-
-
-def _format_ideate_reply(text_out: str, facts: dict[str, Any]) -> str:
-    """#1277, applied to every reply (the LLM's or the shared-service template):
-
-    - W1: each field line reads ``*Label:* value`` (WhatsApp bold), idempotent;
-    - W3: the draft title is shown only in the final ``complete`` message - any
-      other status drops a line that is only the title. The duplicate
-      candidate's "Similar idea exists: <title>" line is not the draft title and
-      stays.
-
-    #1279 round 2: a field line always carries the FACT's value (the template
-    fallback echoes the intake's stored value, which may be a raw seed - W1), and
-    a ``review`` reply is the recap followed by the confirm question (W3).
-    """
-    title = str(facts.get("title") or "").strip()
-    captured = facts.get("captured") or {}
-    drop_title = bool(title) and facts.get("status") != "complete"
-    lines_out: list[str] = []
-    for line in (text_out or "").splitlines():
-        if drop_title and line.strip() and _is_title_line(line, title):
-            continue
-        field = _field_line(line)
-        if field:
-            label, value = field
-            fact_value = captured.get(_LABEL_TO_KEY[label])
-            if fact_value:
-                value = str(fact_value)
-            line = f"*{label}:* {value}".rstrip()
-        # A dropped title line can leave two blank lines meeting; keep one.
-        if not line.strip() and lines_out and not lines_out[-1].strip():
-            continue
-        lines_out.append(line)
-    if facts.get("status") == "review":
-        return _review_reply(lines_out, captured)
-    return "\n".join(lines_out).strip()
-
-
-def _review_reply(lines: list[str], captured: dict[str, Any]) -> str:
-    """W3 (#1279 round 2, owner ruling 26 Sep 2026): every field is filled, so the
-    review reply asks for nothing but the confirmation. Any short prose line the
-    composer wrote (an answer to the user's question) stays on top; every
-    question it wrote goes (reply 3 of the owner's session asked for the
-    department here, and reply 4's only '?' was a typed one inside the
-    department value); then the recap in the fixed order; then the confirm
-    question, always last."""
-    prose = [
-        line
-        for line in lines
-        if line.strip()
-        and not _field_line(line)
-        and line.strip() != _CONFIRM_LINE
-        and not any(ch in line for ch in _QUESTION_MARKS)
-    ]
-    recap = [
-        f"*{label}:* {captured[key]}" for key, label in _RECAP_FIELD_ORDER if captured.get(key)
-    ]
-    if not recap:
-        recap = [line for line in lines if _field_line(line)]
-    return "\n".join(prose + recap + [_CONFIRM_LINE])
-
-
-def _ends_in_one_question(text_out: str) -> bool:
-    """AC-1302: exactly one ``?``/``？`` as the last non-space character, no other."""
-    stripped = (text_out or "").rstrip()
-    if not stripped or stripped[-1] not in _QUESTION_MARKS:
-        return False
-    return sum(stripped.count(ch) for ch in _QUESTION_MARKS) == 1
-
-
-def _idea_digits(raw: Any) -> str:
-    """Should fix 1 (reviewer, round 2): the bare digits out of an idea number
-    in any of the formats ``_IDEA_TOKEN_RE`` recognises, so a fact's own
-    number (always the canonical ``IDEA-<digits>`` shape) compares equal to a
-    differently-cased or -spaced mention of the same number in LLM text."""
-    match = _IDEA_TOKEN_RE.search(str(raw))
-    return match.group(1) if match else str(raw)
-
-
-def _allowed_idea_numbers(facts: dict[str, Any]) -> set[str]:
-    """Every idea number (as bare digits) a composed reply is allowed to name:
-    the response's own ``idea_number`` (the idea's on complete, the
-    candidate's on voted) and the duplicate candidate's, when one is offered."""
-    allowed: set[str] = set()
-    if facts.get("idea_number"):
-        allowed.add(_idea_digits(facts["idea_number"]))
-    candidate = facts.get("duplicate_candidate") or {}
-    if candidate.get("idea_number"):
-        allowed.add(_idea_digits(candidate["idea_number"]))
-    return allowed
-
-
-def _facts_not_fabricated(text_out: str, facts: dict[str, Any], status: str | None) -> bool:
-    """Blocking 1 (reviewer, round 1): applied to EVERY status, not only
-    ``complete`` - reject any ``IDEA-<digits>``-shaped token (in any case,
-    with a hyphen, a space, or nothing between the letters and the digits -
-    Should fix 1, round 2) whose digits are not EXACTLY a fact's idea number,
-    any URL that is not exactly ``facts.link``, and a duplicate-candidate
-    mention when the status carries no such candidate."""
-    allowed_numbers = _allowed_idea_numbers(facts)
-    for match in _IDEA_TOKEN_RE.finditer(text_out):
-        if match.group(1) not in allowed_numbers:
-            return False
-
-    link = facts.get("link")
-    urls = [u.rstrip(".,;:!！)。") for u in re.findall(r"https?://\S+", text_out)]
-    for url in urls:
-        if url != link:
-            return False
-
-    if status != "duplicate_candidate" and _DUPLICATE_MENTION in text_out:
-        return False
-
-    return True
-
-
-def _passes_reply_checks(text_out: str, facts: dict[str, Any]) -> bool:
-    """Deterministic acceptance gate for a composed reply (AC-1302 to AC-1304,
-    AC-1310, AC-1311). Facts never come from the model - if the number, title,
-    or link is missing or altered, this rejects the reply and the caller falls
-    back to the shared-service template (R5)."""
+def _passes_denial_checks(text_out: str) -> bool:
+    """AC-1307: the access-denied composition has no positive facts to verify - only that
+    the LLM did not invent a URL or tack on a question."""
     text_out = (text_out or "").strip()
     if not text_out:
         return False
-
-    status = facts.get("status")
-
-    # AC-1307: the access-denied composition has no positive facts to verify -
-    # only that the LLM didn't invent a URL or tack on a question (Should fix 3).
-    if facts.get("denied"):
-        if re.search(r"https?://", text_out):
-            return False
-        if any(ch in text_out for ch in _QUESTION_MARKS):
-            return False
-        return True
-
-    if not _facts_not_fabricated(text_out, facts, status):
+    if re.search(r"https?://", text_out):
         return False
-
-    # W3 (#1279 round 2): the review reply's recap and its confirm question are
-    # rebuilt from the facts by `_format_ideate_reply`, so its shape is not the
-    # model's to get right - only that it invented nothing.
-    if status == "review":
-        return True
-
-    lines = [line.strip() for line in text_out.splitlines() if line.strip()]
-
-    if status == "complete":
-        # AC-1311: line 1 the title, line 2 the idea number verbatim, line 3
-        # (any line) 'Track it here: <link>' (R6 as amended by R13).
-        title = facts.get("title")
-        if title and lines and title not in lines[0]:
-            return False
-        idea_number = facts.get("idea_number")
-        if idea_number:
-            if len(lines) < 2 or idea_number not in lines[1]:
-                return False
-        link = facts.get("link")
-        if link and not any(
-            line.startswith("Track it here:") and link in line for line in lines
-        ):
-            return False
-        return True
-
-    # voted / cancelled (Should fix 1): terminal, same as complete - no trailing
-    # question required. `_facts_not_fabricated` already rejected an invented
-    # idea number; voted additionally requires the real one to be named.
-    if status in ("voted", "cancelled"):
-        idea_number = facts.get("idea_number")
-        if status == "voted" and idea_number and idea_number not in text_out:
-            return False
-        return True
-
-    if status == "duplicate_candidate":
-        # AC-1304: contains the candidate title verbatim; still non-terminal ->
-        # ends in the one question (AC-1302).
-        candidate = facts.get("duplicate_candidate") or {}
-        candidate_title = candidate.get("title")
-        if candidate_title and candidate_title not in text_out:
-            return False
-        return _ends_in_one_question(text_out)
-
-    # collecting / review / anything else non-terminal: AC-1310's point-form
-    # shape applies to a RECAP reply. Should fix 2: detect a recap by the title
-    # opening line 1 OR by a captured field's value already appearing anywhere
-    # in the text (an LLM that dropped the title line but still echoed the
-    # facts) - either way, every present captured field must show as its own
-    # 'Label: value' line, never packed into prose (AC-1310, "regardless"). A
-    # plain clarifying answer that echoes none of the captured values is exempt.
-    title = facts.get("title")
-    captured = facts.get("captured") or {}
-    is_recap = bool(title and lines and title in lines[0])
-    if not is_recap:
-        is_recap = any(value and value in text_out for value in captured.values())
-    if is_recap:
-        for key, label in _RECAP_FIELD_ORDER:
-            value = captured.get(key)
-            if not value:
-                continue
-            # #1277: read through the label parser so a bold "*Problem:*" line
-            # counts the same as a plain one.
-            if not any(
-                (field := _field_line(line)) and field[0] == label and value in field[1]
-                for line in lines
-            ):
-                return False
-    return _ends_in_one_question(text_out)
+    return not any(ch in text_out for ch in _QUESTION_MARKS)
 
 
-def _call_ideate_reply_llm(db: Session, *, facts: dict[str, Any], user_message: str) -> str | None:
-    """The S3 LLM call: same provider plumbing as the extractor, prompt key
-    ``ideate_reply``. Returns ``None`` on any failure so the caller falls back to
-    the shared-service template (R5) - never raises."""
+def _call_ideate_reply_llm(db: Session, *, user_message: str) -> str | None:
+    """The S3 LLM call for the denial reply: same provider plumbing as the extractor, prompt
+    key ``ideate_reply``. Returns ``None`` on any failure so the caller falls back to the
+    canned text - never raises."""
     try:
         config = AIAssistantConfigService(db).get()
     except Exception:  # noqa: BLE001
@@ -431,30 +94,11 @@ def _call_ideate_reply_llm(db: Session, *, facts: dict[str, Any], user_message: 
         logger.warning("ideate_reply: prompt render failed; falling back", exc_info=True)
         return None
 
-    fact_lines = [f"status: {facts.get('status') or ''}"]
-    if facts.get("denied"):
-        fact_lines.append(f"denied_agent: {facts['denied']}")
-    if facts.get("title"):
-        fact_lines.append(f"title: {facts['title']}")
-    captured = facts.get("captured") or {}
-    for key, label in _RECAP_FIELD_ORDER:
-        value = captured.get(key)
-        if value:
-            fact_lines.append(f"{label}: {value}")
-    if facts.get("next_field"):
-        fact_lines.append(f"next_field (the ONE thing to ask next): {facts['next_field']}")
-    candidate = facts.get("duplicate_candidate") or None
-    if candidate:
-        fact_lines.append(f"duplicate_candidate_title: {candidate.get('title')}")
-    if facts.get("idea_number"):
-        fact_lines.append(f"idea_number: {facts['idea_number']}")
-    if facts.get("link"):
-        fact_lines.append(f"link: {facts['link']}")
-
     user_block = (
         "FACTS (never invent, never alter these):\n"
-        + "\n".join(fact_lines)
-        + f"\n\nUser's latest message (read for LANGUAGE only):\n{user_message or ''}"
+        "status: access_denied\n"
+        "denied_agent: ideation"
+        f"\n\nUser's latest message (read for LANGUAGE only):\n{user_message or ''}"
     )
     messages_in = [
         {"role": "system", "content": system},
@@ -471,52 +115,15 @@ def _call_ideate_reply_llm(db: Session, *, facts: dict[str, Any], user_message: 
     return content or None
 
 
-def _compose_ideate_reply_from_facts(
-    db: Session, *, facts: dict[str, Any], user_message: str, fallback_text: str
-) -> str:
-    """The composer core (S3, R5): LLM first, deterministic checks, fallback to
-    ``fallback_text`` (the shared-service template) on any failure or rejected
-    shape (AC-1305)."""
-    composed = _call_ideate_reply_llm(db, facts=facts, user_message=user_message)
-    if composed is None or not _passes_reply_checks(composed, facts):
+def compose_ideate_denial_reply(db: Session, *, user_message: str, fallback_text: str) -> str:
+    """S3/AC-1307: the ``ideation`` agent's access-denied reply, in the user's language,
+    falling back to the existing ``access_denied`` canned text on any failure or a reply that
+    fails the deterministic checks. Called from
+    ``app.services.chatbot.lanes.canned.access_denied_text``."""
+    composed = _call_ideate_reply_llm(db, user_message=user_message)
+    if composed is None or not _passes_denial_checks(composed):
         return fallback_text
     return composed
-
-
-def compose_ideate_reply(
-    db: Session,
-    *,
-    result: dict[str, Any],
-    user_message: str,
-    clean_fields: dict[str, str] | None = None,
-) -> str:
-    """S3: compose the WhatsApp reply for a ``create_idea`` response from its
-    FACTS (R5), falling back to the shared-service ``reply_text`` template on any
-    LLM failure or a reply that fails the deterministic checks (AC-1301 to
-    AC-1305, AC-1310, AC-1311). Either way the text goes through
-    ``_format_ideate_reply`` (#1277: bold labels, title only on ``complete``;
-    #1279 round 2: fact values only, the confirm question on ``review``).
-    ``clean_fields`` is the values the extractor produced for this draft (W1)."""
-    fallback_text = str(result.get("reply_text") or "")
-    facts = _ideate_reply_facts(result, clean_fields)
-    composed = _compose_ideate_reply_from_facts(
-        db, facts=facts, user_message=user_message, fallback_text=fallback_text
-    )
-    return _format_ideate_reply(composed, facts)
-
-
-def compose_ideate_denial_reply(db: Session, *, user_message: str, fallback_text: str) -> str:
-    """S3/AC-1307: the ``ideation`` agent's access-denied reply goes through the
-    SAME composer, facts ``{denied: "ideation"}``, falling back to the existing
-    ``access_denied`` canned text on any failure. Called from
-    ``app.services.chatbot.lanes.canned.access_denied_text`` - the one named R18
-    seam outside the ideate lane itself."""
-    return _compose_ideate_reply_from_facts(
-        db,
-        facts={"status": "access_denied", "denied": "ideation"},
-        user_message=user_message,
-        fallback_text=fallback_text,
-    )
 
 
 class IdeationServiceError(Exception):
@@ -558,7 +165,7 @@ class _ContactState:
         self.phone_number = phone_number
         self.session_vars = session_vars
         # Human name from respond_contacts (WS-A). None when the CRM has no name
-        # for this contact → handle_turn falls back to the n8n-supplied name.
+        # for this contact → the capture turn falls back to the n8n-supplied name.
         self.display_name = display_name
         # R7/AC-1207: the code of the FIRST ContactAccessType in the contact's
         # access_types relationship order (sort_order, then code). None when the
@@ -688,419 +295,6 @@ def call_create_idea(base_url: str, api_key: str, payload: dict[str, Any]) -> di
         raise IdeationServiceError("create_idea returned a non-object body")
     return data
 
-
-def _graceful(
-    reply_text: str, session_vars: dict[str, Any], *, status: str, ideation: dict[str, Any] | None
-) -> dict[str, Any]:
-    """A fail-soft reply carrying the POINTER THIS TURN READ, not the contact's raw DB
-    row (reviewer round 1, PR #1230). `session_vars` here is `contact.session_vars` -
-    the row as it stood BEFORE this turn - and on a dry run with a carried test pointer
-    that row is the customer's own LIVE draft, not the test one the caller supplied.
-    Echoing it back as `session_vars.ideation` on an outage handed the caller someone
-    else's real pointer instead of the one it asked to continue. `ideation` is the
-    already is_test-guarded `ideation_state` the caller read (see `handle_turn`), so
-    the shape matches what every other return path uses. Absent, not `None`, when
-    there is no pointer to carry - the same "key present only when a draft is open"
-    shape the success path's read-modify-write already keeps (AC-13c/14/15's `pop`).
-    """
-    new_session_vars = dict(session_vars)
-    if ideation:
-        new_session_vars["ideation"] = ideation
-    else:
-        new_session_vars.pop("ideation", None)
-    return {"status": status, "reply_text": reply_text, "session_vars": new_session_vars}
-
-
-def _default_fetch_recent_messages(db: Session, respond_io_id: str) -> dict[str, Any]:
-    """Pull the contact's recent messages from the Respond List Messages API (DC-3).
-    Best-effort: any transport/auth failure yields an empty payload → no menu, the
-    turn proceeds without lookback (never a 500 on the send sub-flow)."""
-    try:
-        from app.services.integration_service import RespondClient
-
-        client = RespondClient.for_identifier(db, respond_io_id)
-        return client.list_messages(respond_io_id, limit=50)
-    except Exception:  # noqa: BLE001 - lookback is a nicety, never fatal
-        logger.warning("ideation media lookback failed for respond_io_id=%s", respond_io_id, exc_info=True)
-        return {"items": []}
-
-
-def _candidates_to_state(candidates: list[MediaCandidate]) -> list[dict[str, Any]]:
-    return [
-        {
-            "source_msg_id": c.source_msg_id,
-            "kind": c.kind,
-            "url": c.url,
-            "filename": c.filename,
-            "received_at": c.received_at.isoformat() if c.received_at else None,
-        }
-        for c in candidates
-    ]
-
-
-def _state_to_candidates(rows: list[dict[str, Any]]) -> list[MediaCandidate]:
-    out: list[MediaCandidate] = []
-    for r in rows or []:
-        received = r.get("received_at")
-        try:
-            received_dt = datetime.fromisoformat(received) if received else None
-        except (TypeError, ValueError):
-            received_dt = None
-        out.append(
-            MediaCandidate(
-                source_msg_id=str(r.get("source_msg_id") or ""),
-                kind=str(r.get("kind") or "file"),
-                url=str(r.get("url") or ""),
-                filename=r.get("filename"),
-                received_at=received_dt,
-            )
-        )
-    return out
-
-
-def handle_turn(
-    db: Session,
-    *,
-    respond_io_id: str,
-    message_text: str,
-    submitter_name: str | None = None,
-    media_selection: str | None = None,
-    is_new_idea: bool | None = None,
-    session_vars_in: dict[str, Any] | None = None,
-    media_clients: MediaClients | None = None,
-    fetch_recent_messages: Any = None,
-    is_test: bool = False,
-) -> dict[str, Any]:
-    """Handle one `ideate` turn. Returns ``{ status, reply_text, link?, session_vars }``.
-
-    ``session_vars`` in the return is always the FULL, updated blob (AC-10).
-    ``is_test`` (#1179) marks a chatbot dry-run turn: ``create_idea`` is still called,
-    with ``is_test: true`` so the shared service hides the idea from the board, and the
-    contact's ``session_vars`` is NOT persisted - the returned blob is the caller's to
-    carry. A test pointer written to the real contact row would otherwise be read back
-    by the contact's next live turn through the DB fallback below. Symmetrically
-    (reviewer Blocking 2, round 1), an incoming pointer - from either
-    ``session_vars_in`` or the DB fallback - is only continued when its own stamped
-    ``is_test`` matches THIS turn's; a mismatch starts fresh rather than letting a
-    test turn read/confirm a live draft or vice versa.
-    ``submitter_name`` is the n8n Respond.io-profile fallback used only when the
-    CRM's respond_contacts row has no name (WS-A). ``media_selection`` /
-    ``is_new_idea`` drive multi-modal capture (Group F); ``media_clients`` and
-    ``fetch_recent_messages`` are injectable seams (Respond/storage/vision) that
-    default to the real integrations - tests stub them.
-
-    The prior ideation pointer is read from the CALLER-supplied ``session_vars_in``
-    first (n8n owns/writes the column and is the last writer each turn), then falls
-    back to the contact's DB copy for legacy callers. This is what makes the draft
-    accumulate: without it, n8n's nested ``variables.ideation`` shape never matches
-    the endpoint's top-level DB read, so every turn minted a fresh ``draft_id``."""
-    contact = _get_contact_row(db, respond_io_id)
-    session_vars = contact.session_vars
-    caller_sv = session_vars_in or {}
-    ideation_state = (
-        caller_sv.get("ideation")
-        or (caller_sv.get("variables") or {}).get("ideation")  # n8n nested shape
-        or session_vars.get("ideation")                        # legacy DB fallback
-        or {}
-    )
-    # #1179 blocking 2 (reviewer, round 1): a pointer is continued only when its
-    # `is_test` flag matches THIS turn's - a live pointer read by a test turn (or a
-    # test pointer read by a live turn, e.g. across a console Reset) is exactly the
-    # cross-contamination D14 exists to prevent, so it starts fresh instead. A
-    # pointer with no `is_test` key (written before this fix, always by a live turn
-    # back then) reads as live.
-    if bool(ideation_state.get("is_test")) != bool(is_test):
-        ideation_state = {}
-    draft_id = ideation_state.get("draft_id")
-    prior_status = ideation_state.get("status")
-    prior_missing = ideation_state.get("missing") or []
-    prior_next_field = ideation_state.get("next_field")
-    prior_duplicate_candidate = ideation_state.get("duplicate_candidate") or None
-    prior_title = ideation_state.get("title")
-    # Blocking 2 (reviewer, round 1, PR #1222 at 720bb8f5): the draft's captured
-    # answers, carried on the pointer since the create_idea response that
-    # produced them. Threaded to the extractor as context so it can EXTEND a
-    # field instead of losing what was captured earlier (AC-1219).
-    prior_captured = ideation_state.get("captured") or {}
-    # W1 (#1279 round 2): the values the extractor produced for this draft, so a
-    # captured value it never produced (the intake's raw seed) is never echoed.
-    # `None` for a draft opened before this field existed: its captured values are
-    # trusted as they are rather than all hidden.
-    prior_clean_fields: dict[str, str] | None
-    if "clean_fields" in ideation_state:
-        prior_clean_fields = dict(ideation_state.get("clean_fields") or {})
-    elif ideation_state.get("draft_id"):
-        prior_clean_fields = None
-    else:
-        prior_clean_fields = {}
-    prior_transcript = ideation_state.get("transcript") or []
-    pending_media = ideation_state.get("pending_media") or None
-    seen_media_ids: set[str] = set(ideation_state.get("seen_media_ids") or [])
-
-    turn_text = (message_text or "").strip()
-
-    # (0) is_new_idea restart (DC-10): the user started a genuinely different idea
-    # while an old draft was open. Discard the old draft, start fresh - reset the
-    # pointer, transcript, and any media state so nothing leaks across ideas.
-    discard_draft_id: str | None = None
-    if is_new_idea and draft_id:
-        discard_draft_id = draft_id
-        draft_id = None
-        prior_status = None
-        prior_missing = []
-        prior_next_field = None
-        prior_duplicate_candidate = None
-        prior_title = None
-        prior_captured = {}
-        prior_clean_fields = {}
-        prior_transcript = []
-        pending_media = None
-        seen_media_ids = set()
-
-    # Submitter name: the CRM respond_contacts name wins; the n8n-supplied Respond.io
-    # profile name is the fallback (WS-A / AC-CAP-1..3). Never "".
-    effective_submitter_name = (
-        contact.display_name or (submitter_name or "").strip() or None
-    )
-
-    # Cumulative transcript (WS-B / AC-CAP-5..7): append this turn to the running
-    # log so the created idea's raw_text is the WHOLE conversation, not just the
-    # finalizing "okay i confirm". Bounded to the last _TRANSCRIPT_MAX_TURNS.
-    transcript_list = list(prior_transcript)
-    if turn_text:
-        transcript_list.append(turn_text)
-    transcript_list = transcript_list[-_TRANSCRIPT_MAX_TURNS:]
-    raw_transcript = "\n".join(transcript_list)
-
-    # (1) fail-closed: no product binding or dormant config → no create_idea call.
-    #     Config is DB-driven (default workspace row); .env is only a fallback.
-    config = _resolve_ideation_config(db)
-    product_id = config.product_id
-    base_url = config.base_url
-    api_key = config.api_key
-    if not config.is_ready:
-        return _graceful(
-            "Idea capture isn't set up here yet, so I couldn't log that - please try "
-            "again later or reach out to the team.",
-            session_vars,
-            status="unconfigured",
-            ideation=ideation_state,
-        )
-
-    # (2) multi-modal capture (Group F). Resolve this turn's media into three things:
-    #   attachments   → durably-captured picked media to send to create_idea
-    #   menu_text      → a media menu to append to this reply (a new lookback)
-    #   pending_media/seen_media_ids → the carried state written back below.
-    clients = media_clients or default_clients()
-    attachments: list[dict[str, Any]] = []
-    menu_text: str | None = None
-    # #1277 W4: the menu's own entries, numbered as the menu numbers them, so the
-    # caller (the chatbot's ideate lane) can send the images alongside the text.
-    offered_media: list[dict[str, Any]] = []
-
-    if media_selection is not None and pending_media:
-        # (2a) Selection answer (DC-7): resolve positions → snapshot picked media.
-        candidates = _state_to_candidates(pending_media)
-        picked = parse_selection(media_selection, candidates)
-        if picked:
-            attachments = snapshot_and_caption(picked, clients)
-        seen_media_ids |= {c.source_msg_id for c in candidates}
-        pending_media = None
-    elif pending_media:
-        # (2b) A menu was outstanding but this turn is not a selection (no position
-        # reference) → dismiss it (backward-only, low friction) and proceed normally.
-        seen_media_ids |= {str(r.get("source_msg_id") or "") for r in pending_media}
-        pending_media = None
-    else:
-        # (2c) New lookback (DC-1/2/3): pull recent inbound media not already offered.
-        fetcher = fetch_recent_messages or (lambda: _default_fetch_recent_messages(db, respond_io_id))
-        try:
-            payload_msgs = fetcher()
-        except Exception:  # noqa: BLE001 - lookback nicety, never fatal
-            payload_msgs = {"items": []}
-        candidates = [
-            c for c in extract_media_candidates(payload_msgs or {})
-            if c.source_msg_id not in seen_media_ids
-        ]
-        if candidates:
-            pending_media = _candidates_to_state(candidates)
-            menu_text = build_menu_text(candidates)
-            offered_media = [
-                {"position": i, "kind": c.kind, "url": c.url, "filename": c.filename}
-                for i, c in enumerate(candidates, start=1)
-            ]
-
-    # (3) brain extraction (D-CONFIRM): structured update, never free text.
-    #     next_field / the duplicate candidate's title ride along as CONTEXT ONLY
-    #     (a hint, per R17) - the extractor decides which field a message updates
-    #     by its meaning, never by which field was just asked (AC-1219).
-    extraction: IdeateExtraction = extract_ideate_turn(
-        db,
-        message_text=message_text,
-        status=prior_status,
-        missing=prior_missing,
-        next_field=prior_next_field,
-        duplicate_candidate_title=(prior_duplicate_candidate or {}).get("title"),
-        field_labels=_IDEATION_FIELD_LABELS,
-        captured=prior_captured,
-        prior_title=prior_title,
-    )
-
-    # W2 (#1279 round 2): every value goes through the deterministic normaliser (no
-    # typed '?', no quotes, a Title Case department) whatever the model emitted,
-    # and `confirm` is derived here again from the normalised result so a plain yes
-    # submits even when the extraction came back empty (owner ruling 26 Sep 2026).
-    fields = {
-        key: cleaned
-        for key, value in extraction.fields.items()
-        if (cleaned := normalise_field_value(key, value))
-    }
-    title = normalise_title(extraction.title)
-    confirm = derive_confirm(
-        prior_status,
-        message_text,
-        fields=fields,
-        remove=extraction.remove,
-        review_action=extraction.review_action,
-    )
-    clean_fields: dict[str, str] | None = (
-        None if prior_clean_fields is None else {**prior_clean_fields, **fields}
-    )
-    for key in extraction.remove:
-        (clean_fields or {}).pop(key, None)
-
-    # (4) build the §5.1 input deterministically. Captions fold into message_text so
-    # create_idea's semantic collection/dedup sees the visual content (DC-6/9).
-    message_for_intake = fold_captions_into_text(message_text, attachments)
-    payload: dict[str, Any] = {
-        "product_id": product_id,
-        # Shared-service CreateIdeaIn field is ``submitter_contact_id`` (accepts a
-        # phone E.164 and find-or-creates the contact copy). Sending the legacy key
-        # ``submitter`` silently dropped it → every idea's submitter was "Unknown".
-        "submitter_contact_id": contact.phone_number,
-        "message_text": message_for_intake,
-        "raw_transcript": raw_transcript,
-        "fields": fields,
-        "remove": extraction.remove,
-        "skip": extraction.skip,
-        "confirm": confirm,
-        # Always present, true or false: the shared service keys its board filter on it.
-        "is_test": bool(is_test),
-    }
-    if effective_submitter_name:
-        payload["submitter_name"] = effective_submitter_name
-    if title:
-        payload["title"] = title
-    if attachments:
-        payload["attachments"] = attachments
-    if draft_id:  # omitted on turn 1 (AC-12); passed through on continuation (AC-13/17)
-        payload["draft_id"] = draft_id
-    if discard_draft_id:  # is_new_idea restart (DC-10)
-        payload["discard_draft_id"] = discard_draft_id
-    # AC-1211: cancel is honoured at ANY draft status, not only review - a user may
-    # drop a draft at any step.
-    if extraction.review_action == "cancel":
-        payload["cancel"] = True
-    # AC-1214: only meaningful while the pointer is a duplicate candidate; default
-    # to "separate" unless the extractor read an explicit vote (R4 default).
-    # Nit 3 (reviewer round 1): omit it entirely when the user is cancelling -
-    # precedence between cancel and duplicate_choice is shared-service's call,
-    # not sorento's to pre-empt with a stale "separate" alongside cancel: true.
-    if prior_status == "duplicate_candidate" and extraction.review_action != "cancel":
-        payload["duplicate_choice"] = (
-            "vote" if extraction.duplicate_choice == "vote" else "separate"
-        )
-    if contact.submitter_tier:
-        payload["submitter_tier"] = contact.submitter_tier
-
-    try:
-        result = call_create_idea(base_url, api_key, payload)
-    except IdeationServiceError:
-        logger.warning("ideation create_idea outage for respond_io_id=%s", respond_io_id, exc_info=True)
-        return _graceful(
-            "Sorry, I couldn't save that idea just now - please try again in a moment.",
-            session_vars,
-            status="error",
-            ideation=ideation_state,
-        )
-
-    status_val = str(result.get("status") or "")
-    result_draft_id = result.get("draft_id") or draft_id
-    # S3: the LLM composes the reply from the response's FACTS, in the user's
-    # language, falling back to the shared-service template on any failure (R5).
-    reply_text = compose_ideate_reply(
-        db, result=result, user_message=message_text, clean_fields=clean_fields
-    )
-    link = result.get("link")
-
-    # The media menu is appended to THIS reply (DC-8) - the create_idea echo first,
-    # then "which of these files relate?".
-    if menu_text:
-        reply_text = f"{reply_text}\n\n{menu_text}" if reply_text else menu_text
-
-    # (5) read-modify-write: only touch the `ideation` key, preserve all others.
-    new_session_vars = dict(session_vars)
-    if status_val in _TERMINAL_STATUSES:
-        new_session_vars.pop("ideation", None)  # AC-13c/14/15
-    else:  # collecting or review → keep the pointer (AC-12/12b/13b)
-        ideation_blob: dict[str, Any] = {
-            "draft_id": result_draft_id,
-            "status": status_val,
-            "missing": list(result.get("missing") or []),
-            # The one optional field to ask next (S1), carried so the NEXT turn's
-            # extractor gets it as a hint (R17) and the reply composer (S3) can
-            # read it from the pointer too.
-            "next_field": result.get("next_field"),
-            # The stored title (S1) - latest value wins, kept from a prior turn
-            # when this one's response didn't carry one. Needed off the pointer
-            # itself (not only the response) so a later turn - and S4's idle
-            # sweep, which has no create_idea response to read - can name the
-            # idea in a reminder.
-            "title": result.get("title") or prior_title,
-            # Blocking 2: the draft's current captured answers, carried forward
-            # so the NEXT turn's extractor has them as context (AC-1219 extend).
-            # Nit 2 (reviewer round 2): `or` would replace a LEGITIMATE empty
-            # `captured: {}` (a `remove` emptying the draft) with the stale
-            # prior turn's answers - key presence decides, not truthiness.
-            "captured": result["captured"] if "captured" in result else prior_captured,
-            # W1 (#1279 round 2): what the extractor produced for this draft (a
-            # legacy draft's trusted captured values seed it on its first turn here).
-            "clean_fields": (
-                clean_fields
-                if clean_fields is not None
-                else {**(result.get("captured") or prior_captured), **fields}
-            ),
-            # Persist the running transcript so the NEXT turn appends to it (WS-B).
-            "transcript": transcript_list,
-            "updated_at": _now_iso(),
-            # #1179 blocking 2: stamped so a LATER turn can refuse to continue this
-            # pointer if its own `is_test` does not match (see the read-side guard
-            # above).
-            "is_test": bool(is_test),
-        }
-        # AC-1212: while a similar idea is offered, keep the candidate on the
-        # pointer so the next turn's extractor/reply have its title to hand.
-        if status_val == "duplicate_candidate" and result.get("duplicate_candidate"):
-            ideation_blob["duplicate_candidate"] = result.get("duplicate_candidate")
-        # Carry the media state (Group F): the outstanding menu + everything already
-        # offered, so a later turn resolves the selection and we never re-nag.
-        if pending_media:
-            ideation_blob["pending_media"] = pending_media
-        if seen_media_ids:
-            ideation_blob["seen_media_ids"] = sorted(seen_media_ids)
-        new_session_vars["ideation"] = ideation_blob
-    if not is_test:
-        overwrite_for_contact(db, respond_io_id=respond_io_id, state=new_session_vars)
-
-    response: dict[str, Any] = {
-        "status": status_val,
-        "reply_text": reply_text,
-        "session_vars": new_session_vars,
-        "offered_media": offered_media,
-    }
-    if link:
-        response["link"] = link
-    return response
 
 
 # =============================================================================
@@ -1283,7 +477,9 @@ def sweep_idle_ideation_drafts(db: Session, *, now: datetime | None = None) -> d
         try:
             session_vars = _coerce_to_dict(contact.session_vars)
             ideation = session_vars.get("ideation") or {}
-            if not ideation:
+            # Only the old draft flow's pointers (they carry a draft_id) drain here; a
+            # capture-flow held list has no draft in ss, so there is nothing to remind or close.
+            if not ideation or not ideation.get("draft_id"):
                 continue
             updated_at = _parse_iso(ideation.get("updated_at"))
             reminded_at = _parse_iso(ideation.get("reminded_at"))
@@ -1319,7 +515,7 @@ def sweep_idle_ideation_drafts(db: Session, *, now: datetime | None = None) -> d
             # Fix round 3: a draft already recorded as blocked (409) or that
             # spent its payload-error retry budget (422) is skipped without
             # calling shared-service again - "not re-sent every tick" - until
-            # a live turn rebuilds the pointer from scratch (handle_turn never
+            # a live turn rebuilds the pointer from scratch (the capture turn never
             # carries these fields forward).
             if ideation.get("close_blocked_at") or (
                 int(ideation.get("close_retry_count") or 0) >= _MAX_CLOSE_PAYLOAD_ERROR_ATTEMPTS

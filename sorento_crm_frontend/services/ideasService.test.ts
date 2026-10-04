@@ -74,6 +74,20 @@ describe('reads', () => {
     expect(c.params.get('search') || '').toBe('');
   });
 
+  it('listIdeas: mine true adds mine=true to the query', async () => {
+    apiFetch.mockResolvedValue(ok([]));
+    await service.listIdeas({ mine: true });
+    expect(call().params.get('mine')).toBe('true');
+  });
+
+  it('listIdeas: no mine param when mine is unset or false', async () => {
+    apiFetch.mockResolvedValue(ok([]));
+    await service.listIdeas({});
+    await service.listIdeas({ mine: false });
+    expect(call(0).params.has('mine')).toBe(false);
+    expect(call(1).params.has('mine')).toBe(false);
+  });
+
   it('getBoard: GET /ideas/board', async () => {
     apiFetch.mockResolvedValue(ok({ columns: [] }));
     await service.getBoard();

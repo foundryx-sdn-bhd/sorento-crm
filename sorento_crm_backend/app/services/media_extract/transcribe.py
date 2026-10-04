@@ -200,6 +200,10 @@ def _post_transcription(
     """The single HTTP seam, so tests can record a response without a network."""
     import httpx
 
+    from app.services import llm_cassette
+
+    llm_cassette.refuse_uncovered("transcription")
+
     try:
         response = httpx.post(
             TRANSCRIPTION_URL,

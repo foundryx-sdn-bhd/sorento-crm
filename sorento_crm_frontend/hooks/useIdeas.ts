@@ -27,7 +27,7 @@ export const IDEAS_KEY = ['ideas'] as const;
 export function useIdeasQuery(params: IdeaListParams) {
   return useQuery({
     ...LIST_QUERY_OPTIONS,
-    queryKey: [...IDEAS_KEY, 'list', params.query ?? '', params.status ?? ''],
+    queryKey: [...IDEAS_KEY, 'list', params.query ?? '', params.status ?? '', params.mine ?? false],
     queryFn: () => listIdeas(params),
   });
 }
