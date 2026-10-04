@@ -40,7 +40,9 @@ function renderSection() {
   );
 }
 
-beforeEach(() => apiFetch.mockReset());
+beforeEach(() => {
+  apiFetch.mockReset();
+});
 afterEach(() => cleanup());
 
 describe('ContactFieldRevealsSection prompt blocks (AC-PA-3)', () => {
