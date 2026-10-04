@@ -49,6 +49,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import openpyxl  # noqa: E402
 from sqlalchemy import func  # noqa: E402
+from sqlalchemy.orm import load_only  # noqa: E402
 
 from app import audit_context  # noqa: E402
 from app.models.access import (  # noqa: E402
@@ -96,6 +97,13 @@ MISSING_COLUMNS = ["phone", "name", "excel_row", "reason"]
 TICKS = {"Y", "YES", "X", "TRUE", "1"}
 MAX_CANDIDATES = 5
 TRIPLES = 11
+# Only the contact columns this script reads: prod can lag main, and a column the script never
+# uses must not make it fail.
+CONTACT_COLUMNS = (
+    RespondContact.id, RespondContact.name, RespondContact.phone_number, RespondContact.chatbot_profile,
+    RespondContact.chatbot_stock_allowed, RespondContact.notify_salesman, RespondContact.packing_list_allowed,
+    RespondContact.chatbot_eta_offset_applied, RespondContact.escalation_allowed,
+)
 
 
 @dataclass
@@ -221,25 +229,27 @@ def _find_contacts(db, phones) -> dict[str, RespondContact]:
         return {}
     digits = func.regexp_replace(RespondContact.phone_number, r"\D", "", "g")
     by_digits: dict[str, RespondContact] = {}
-    for contact, d in db.query(RespondContact, digits).filter(digits.in_(set(wanted.values()))).order_by(RespondContact.id):
+    for contact, d in db.query(RespondContact, digits).options(load_only(*CONTACT_COLUMNS)).filter(digits.in_(set(wanted.values()))).order_by(RespondContact.id):
         by_digits.setdefault(d, contact)
     return {p: by_digits[d] for p, d in wanted.items() if d in by_digits}
 
 
 def _resolve_world(db, rules: dict) -> dict:
     codes = set(rules["companies"].values())
-    companies = {c.code: c for c in db.query(Company).filter(Company.code.in_(codes))}
+    companies = {
+        c.code: c for c in db.query(Company.id, Company.code).filter(Company.code.in_(codes))
+    }
     if set(companies) != codes:
         raise SystemExit("A company in the rules is missing from the database.")
     warehouses: dict[str, dict[str, Warehouse]] = {}
     for code, wanted in rules["locations"].items():
-        rows = db.query(Warehouse).filter(
+        rows = db.query(Warehouse.id, Warehouse.warehouse_code).filter(
             Warehouse.company_id == companies[code].id, Warehouse.warehouse_code.in_(wanted)
         ).all()
         if {w.warehouse_code for w in rows} != set(wanted):
             raise SystemExit(f"A stock location of company {code} in the rules is missing from the database.")
         warehouses[code] = {w.warehouse_code: w for w in rows}
-    agents = {a.code: a for a in db.query(AccessAgent).filter(AccessAgent.code.in_(rules["agents"]))}
+    agents = {a.code: a for a in db.query(AccessAgent.id, AccessAgent.code).filter(AccessAgent.code.in_(rules["agents"]))}
     if set(agents) != set(rules["agents"]):
         raise SystemExit("An agent in the rules is missing from the database.")
     return {"companies": companies, "warehouses": warehouses, "agents": agents}
@@ -363,11 +373,9 @@ def _apply_contact(db, contact, d: Desired, todo: dict, rules: dict, actor_id: O
     if todo["media"] == "create":
         db.add(ContactMediaLimit(contact_id=cid, modality=rules["media_modality"], is_allowed=True, updated_by=actor_id))
     elif todo["media"] == "allow":
-        row = db.query(ContactMediaLimit).filter(
+        db.query(ContactMediaLimit).filter(
             ContactMediaLimit.contact_id == cid, ContactMediaLimit.modality == rules["media_modality"]
-        ).one()
-        row.is_allowed = True
-        row.updated_by = actor_id
+        ).update({"is_allowed": True, "updated_by": actor_id}, synchronize_session=False)
     for agent in todo["agents"]:
         db.add(ContactAgentAccess(
             respond_contact_id=cid, respond_contact_phone=contact.phone_number, respond_contact_name=contact.name,
@@ -377,7 +385,6 @@ def _apply_contact(db, contact, d: Desired, todo: dict, rules: dict, actor_id: O
     for col_name, value in todo["switches"].items():
         setattr(contact, col_name, value)
     db.flush()
-    db.expire(contact)
 
 
 def run(db, path, *, rules: dict = RULES, apply: bool = False, actor_id: Optional[str] = None) -> dict:
@@ -401,7 +408,7 @@ def run(db, path, *, rules: dict = RULES, apply: bool = False, actor_id: Optiona
         names = names_for(db, snaps.values())
         ids = [str(c.id) for c in contacts]
         media = {
-            str(m.contact_id): m for m in db.query(ContactMediaLimit).filter(
+            str(m.contact_id): m for m in db.query(ContactMediaLimit.contact_id, ContactMediaLimit.is_allowed).filter(
                 ContactMediaLimit.contact_id.in_(ids), ContactMediaLimit.modality == rules["media_modality"])
         }
         actor = audit_context.AuditActor(actor_type="user", user_id=actor_id) if actor_id else None
@@ -509,10 +516,12 @@ def links_review(db, path, out_path, *, rules: dict = RULES) -> int:
     for row, g in sorted(groups.items()):
         contact_ids = [str(found[p].id) for p in g["phones"] if p in found]
         for code in sorted(g["companies"]):
-            company = db.query(Company).filter(Company.code == code).first()
+            company = db.query(Company.id).filter(Company.code == code).first()
             if company is None:
                 continue
-            customers = db.query(Customer).filter(Customer.company_id == company.id).all()
+            customers = db.query(
+                Customer.id, Customer.customer_code, Customer.customer_name
+            ).filter(Customer.company_id == company.id).all()
             ranked = sorted(customers, key=lambda c: (-_score(g["company_name"], c.customer_name or ""), c.customer_code or ""))
             for cust in ranked[:MAX_CANDIDATES]:
                 linked = 0
@@ -544,7 +553,10 @@ def apply_links(db, path, reviewed_path, *, actor_id: Optional[str], rules: dict
             continue
         row = int(cells[idx["excel_row"]])
         debtor = _text(cells[idx["debtor_code"]])
-        customer = db.get(Customer, _text(cells[idx["customer_id"]])) if cells[idx["customer_id"]] else None
+        customer = (
+            db.query(Customer.id, Customer.company_id).filter(Customer.id == _text(cells[idx["customer_id"]])).first()
+            if cells[idx["customer_id"]] else None
+        )
         if customer is None or row not in groups:
             result["failed"].append({"excel_row": row, "debtor_code": debtor, "error": "customer or row no longer exists"})
             continue
@@ -592,17 +604,18 @@ def _session(db_url: str):
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
-    db = sessionmaker(bind=create_engine(db_url))()
+    # hide_parameters: an error must never echo bound phone numbers or names.
+    db = sessionmaker(bind=create_engine(db_url, hide_parameters=True))()
     set_company_scope(db, None)  # an admin tool: reads every company
     return db
 
 
 def _actor_id(db, email: Optional[str]) -> str:
-    from app.models.user import User
+    from app.models.user import User  # noqa: F401
 
     if not email:
         raise SystemExit("--actor-email is required with --apply and --apply-links.")
-    user = db.query(User).filter(func.lower(User.email) == email.strip().lower()).first()
+    user = db.query(User.id).filter(func.lower(User.email) == email.strip().lower()).first()
     if user is None:
         raise SystemExit("No user has that --actor-email.")
     return str(user.id)
@@ -617,6 +630,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap.add_argument("--links-review", metavar="OUT.xlsx")
     ap.add_argument("--apply-links", metavar="REVIEWED.xlsx")
     ap.add_argument("--actor-email")
+    ap.add_argument("--debug", action="store_true", help="re-raise errors with the full traceback")
     args = ap.parse_args(argv)
 
     db = _session(args.db_url)
@@ -639,6 +653,15 @@ def main(argv: Optional[list[str]] = None) -> int:
             print(f"{key:14}: {value}")
         print("APPLIED" if args.apply else "DRY RUN - nothing written. Re-run with --apply.")
         return 1 if res["failed"] else 0
+    except SystemExit:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        if args.debug:
+            raise
+        # Class and a short message only: SQL text and bound values can carry names and phones.
+        msg = str(getattr(exc, "orig", None) or exc).splitlines()[0][:160] if str(exc) else ""
+        print(f"error: {type(exc).__name__}: {msg}", file=sys.stderr)
+        return 1
     finally:
         db.close()
 
