@@ -73,4 +73,5 @@ Round 5 (security re-review, 3 Oct):
   output and in the committed fixtures.
 - **AC-24** Every value in a driver field of a tracked file (`*Driver:* <value>` in reply text,
   a `"Driver"` label/value pair, a `driver_name` key) is a `DRIVER X` placeholder or one of the
-  non-person labels `FROM AUTOCOUNT`, `Documentation`, `-`, `null`/empty.
+  non-person labels `FROM AUTOCOUNT`, `Documentation`, `Total` (a catalog word), a single capital
+  letter (fixture placeholder), `-`, `null`/empty.
