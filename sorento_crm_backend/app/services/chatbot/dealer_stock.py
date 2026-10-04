@@ -40,8 +40,19 @@ def without_escalation(text: str, question: Pending | None) -> tuple[str, Pendin
     """The dealer's version of a stock reply: no escalation sentence, no escalation
     pending, and "Please refer to your salesman." wherever one was offered. A roster the
     reply also carried (a pick of products) stays, without its attached offer."""
+    from app.services.chatbot.order_list import _picker_frame_lines, _without_picker
+    from app.services.chatbot.turn.pending import without_escalation as strip_pending
+
     stripped, had_sentence = refers_to_salesman(text)
     offered = had_sentence
+    # REFER-ONLY-FIXES (owner console, 3 Oct 2026): the routing picker the offer hung off
+    # goes with it, its numbered staff rows included, never left under the refer line,
+    # and the question loses the member options it no longer shows.
+    whole, prefixes = _picker_frame_lines()
+    if any(line.strip() in whole or line.strip().startswith(prefixes) for line in stripped.splitlines()):
+        question, dropped = strip_pending(question)
+        stripped = _without_picker(stripped, dropped or [])
+        offered = True
     if question is not None:
         if question.kind in ESCALATION_OFFER_KINDS:
             question = None

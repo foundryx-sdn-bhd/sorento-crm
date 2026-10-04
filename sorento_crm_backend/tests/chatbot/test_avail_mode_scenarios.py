@@ -73,7 +73,7 @@ def test_S03_no_stock_shipment_due(console):
 
 def test_S04_no_stock_nothing_incoming(console):
     c = console(SRT5674=Stock(on_hand=0))
-    assert c.say("SRT5674 x 5", stock(product("SRT5674", 5))) == f"SRT5674 x 5: {CROSS} No incoming. {R}"
+    assert c.say("SRT5674 x 5", stock(product("SRT5674", 5))) == f"SRT5674 x 5: {CROSS} No stock and no incoming. {R}"
 
 
 def test_S05_above_the_category_max_says_nothing_of_our_stock(console):
@@ -192,7 +192,7 @@ def test_S21_two_vague_codes_both_pickers_in_one_message(console):
         "SRTWC6022-SH-UF-NEW",
     ]
     assert c.say("2 and 11", _pick(2, 11)) == (
-        f"SRTWC286-SH-150 x 10: {TICK} {R}\n\nSRTWC6022-SH-UF x 4: {CROSS} No incoming. {R}"
+        f"SRTWC286-SH-150 x 10: {TICK} {R}\n\nSRTWC6022-SH-UF x 4: {CROSS} No stock and no incoming. {R}"
     )
 
 
@@ -200,7 +200,7 @@ def test_S21b_one_list_answered_the_other_asked_again_with_its_numbers(console):
     c = console(SRTWC286_SH_150=Stock(on_hand=50))
     c.say("srtwc286 x 10, srtwc6022 x 4", stock(product("srtwc286", 10), product("srtwc6022", 4)))
     assert c.say("2", _pick(2)) == f"SRTWC286-SH-150 x 10: {TICK} {R}\n\n{PICK6022}"
-    assert c.say("12", _pick(12)) == f"SRTWC6022-SH-UF-NEW x 4: {CROSS} No incoming. {R}"
+    assert c.say("12", _pick(12)) == f"SRTWC6022-SH-UF-NEW x 4: {CROSS} No stock and no incoming. {R}"
 
 
 def test_S22_vague_and_not_found(console):
@@ -296,7 +296,7 @@ def test_S32_picking_every_number_is_allowed_and_answered(console):
     every = list(range(1, len(OWNER_FAMILY) + 1))
     out = c.say(",".join(map(str, every)), _pick(*every))
     assert out.split("\n\n") == [
-        f"{code} x 10: {TICK if code == 'SRTWC286-SH-150' else CROSS + ' No incoming.'} {R}"
+        f"{code} x 10: {TICK if code == 'SRTWC286-SH-150' else CROSS + ' No stock and no incoming.'} {R}"
         for code in OWNER_FAMILY
     ]
 
@@ -322,7 +322,7 @@ def test_S35_several_numbers_each_answered(console):
     c = console(SRTWC286_SH_150=Stock(on_hand=50))
     c.say("srtwc286 x 10", stock(product("srtwc286", 10)))
     assert c.say("1 and 2", _pick(1, 2)) == (
-        f"SRTWC286-SH x 10: {CROSS} No incoming. {R}\n\nSRTWC286-SH-150 x 10: {TICK} {R}"
+        f"SRTWC286-SH x 10: {CROSS} No stock and no incoming. {R}\n\nSRTWC286-SH-150 x 10: {TICK} {R}"
     )
 
 
@@ -346,14 +346,14 @@ FAMILY_ASK = numbered("SRTWC286 matches 10 products. Which one?", OWNER_FAMILY)
 def test_S36_S37_quantity_of_a_position(console, typed):
     c = console()
     assert c.say("check stock srtwc286", stock(product("srtwc286"))) == FAMILY_ASK
-    assert c.say(typed, _qty_of((3, 2))) == f"SRTWC286-SH-200 x 2: {CROSS} No incoming. {R}"
+    assert c.say(typed, _qty_of((3, 2))) == f"SRTWC286-SH-200 x 2: {CROSS} No stock and no incoming. {R}"
 
 
 def test_S38_several_quantity_position_pairs(console):
     c = console()
     c.say("check stock srtwc286", stock(product("srtwc286")))
     assert c.say("2 of 1 and 5 of 3", _qty_of((1, 2), (3, 5))) == (
-        f"SRTWC286-SH x 2: {CROSS} No incoming. {R}\n\nSRTWC286-SH-200 x 5: {CROSS} No incoming. {R}"
+        f"SRTWC286-SH x 2: {CROSS} No stock and no incoming. {R}\n\nSRTWC286-SH-200 x 5: {CROSS} No stock and no incoming. {R}"
     )
 
 
@@ -372,7 +372,7 @@ def test_S21c_a_quantity_typed_over_a_handed_on_list_keeps_its_numbers(console):
     c.say("srtwc286 x 10, srtwc6022", stock(product("srtwc286", 10), product("srtwc6022")))
     c.say("2", _pick(2))
     assert c.say("4", reply(demand_qty=4)) == PICK6022
-    assert c.say("12", _pick(12)) == f"SRTWC6022-SH-UF-NEW x 4: {CROSS} No incoming. {R}"
+    assert c.say("12", _pick(12)) == f"SRTWC6022-SH-UF-NEW x 4: {CROSS} No stock and no incoming. {R}"
 
 
 def test_S40_exact_code_without_a_quantity_beside_a_vague_one_asks_the_pick_first(console):
@@ -391,7 +391,7 @@ def test_S41_a_picked_code_owing_a_quantity_does_not_drop_the_other_list(console
     assert first == numbered("SRTWC286 matches 10 products. Which one?", OWNER_FAMILY) + f"\n\n{PICK6022}"
     assert c.say("2", _pick(2)) == PICK6022
     assert c.say("11", _pick(11)) == (
-        f"SRTWC6022-SH-UF x 4: {CROSS} No incoming. {R}\n\nHow many units of SRTWC286-SH-150?"
+        f"SRTWC6022-SH-UF x 4: {CROSS} No stock and no incoming. {R}\n\nHow many units of SRTWC286-SH-150?"
     )
     assert c.say("3", reply(demand_qty=3)) == f"SRTWC286-SH-150 x 3: {TICK} {R}"
 
@@ -415,7 +415,7 @@ def test_S43_two_of_three_read_by_the_live_parser_as_option_two_is_option_three_
     misread = reply(
         reference_positions=[2], demand_qty=3, open_question_answer=answer("pick", items=[(2, None, 3)])
     )
-    assert c.say("2 of 3", misread) == f"SRTWC286-SH-200 x 2: {CROSS} No incoming. {R}"
+    assert c.say("2 of 3", misread) == f"SRTWC286-SH-200 x 2: {CROSS} No stock and no incoming. {R}"
 
 
 @pytest.mark.parametrize("typed", ["2 of the third one", "i want 2 of 3rd product", "2 of no 3", "2 pcs of 3"])
@@ -425,7 +425,7 @@ def test_S43b_quantity_of_a_position_worded_any_way(console, typed):
     misread = reply(
         reference_positions=[2], demand_qty=3, open_question_answer=answer("pick", items=[(2, None, 3)])
     )
-    assert c.say(typed, misread) == f"SRTWC286-SH-200 x 2: {CROSS} No incoming. {R}"
+    assert c.say(typed, misread) == f"SRTWC286-SH-200 x 2: {CROSS} No stock and no incoming. {R}"
 
 
 def test_S43c_several_pairs_read_off_the_message(console):
@@ -436,7 +436,7 @@ def test_S43c_several_pairs_read_off_the_message(console):
         open_question_answer=answer("pick", items=[(2, None, 1), (5, None, 3)]),
     )
     assert c.say("2 of 1 and 5 of 3", misread) == (
-        f"SRTWC286-SH x 2: {CROSS} No incoming. {R}\n\nSRTWC286-SH-200 x 5: {CROSS} No incoming. {R}"
+        f"SRTWC286-SH x 2: {CROSS} No stock and no incoming. {R}\n\nSRTWC286-SH-200 x 5: {CROSS} No stock and no incoming. {R}"
     )
 
 

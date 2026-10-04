@@ -73,6 +73,7 @@ from app.models.order import Customer
 from app.services.chatbot import engine as engine_mod
 from app.services.chatbot.lanes.business.services import FetchServices
 from app.services.chatbot.lanes.escalation import escalation_context
+from tests.chatbot._turn_helpers import do_window
 from tests.chatbot.conftest import set_chatbot_switches
 from tests.chatbot.test_engine import (  # noqa: F401 - fixtures re-exported by name
     _envelope,
@@ -224,6 +225,8 @@ class TestSF2StructuredCompanyNamesNotBotProse:
         stub_parser(
             _parser_output(
                 intent_hint="check_order", domain_hint="order",
+                # Dated: a dateless DO list ask asks which period first (DO-ASK-SIMPLIFY, owner 4 Oct 2026).
+                **do_window(),
                 entities=[
                     {"raw": self.PRODUCT_CODE, "hint": "product", "canonical_code": None,
                      "current_message": True, "confident": True},
@@ -264,6 +267,8 @@ class TestSF2StructuredCompanyNamesNotBotProse:
         stub_parser(
             _parser_output(
                 intent_hint="check_order", domain_hint="order",
+                # Dated: a dateless DO list ask asks which period first (DO-ASK-SIMPLIFY, owner 4 Oct 2026).
+                **do_window(),
                 entities=[
                     {"raw": PRODUCT_CODE, "hint": "product", "canonical_code": None,
                      "current_message": True, "confident": True},

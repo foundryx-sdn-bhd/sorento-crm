@@ -59,7 +59,7 @@ def test_incoming_sentence_names_the_eta():
 def test_no_incoming_sentence():
     line = _availability_line(_entry(product_code="SRT5674", requested_qty=150, branch="no_incoming"))
     assert line == (
-        "SRT5674 x 150: ❌ No incoming. Please refer to your salesman."
+        "SRT5674 x 150: ❌ No stock and no incoming. Please refer to your salesman."
     )
 
 

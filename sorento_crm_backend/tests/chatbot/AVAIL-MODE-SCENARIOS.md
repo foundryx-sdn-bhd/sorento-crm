@@ -27,7 +27,7 @@ category's, else 0. Available = on hand in the contact's allowed locations minus
 | S01 | SRT5674 x 50 (100 on hand) | `SRT5674 x 50: ✅ R` | Total on hand per product |
 | S02 | SRT5674 x 50 (30 on hand, X 100) | `SRT5674 x 50: ✅ 30 available. R` | same |
 | S03 | SRTW2000 x 150 (0, shipment 19/10) | `SRTW2000 x 150: ❌ ETA 19/10/2026.` | same |
-| S04 | SRT5674 x 5 (0, nothing incoming) | `SRT5674 x 5: ❌ No incoming. R` | same |
+| S04 | SRT5674 x 5 (0, nothing incoming) | `SRT5674 x 5: ❌ No stock and no incoming. R` | same |
 | S05 | CWCX604 x 300 (X 200) | `CWCX604 x 300: 🚫 the quantity is more than what I can confirm here. R` | no cap in full mode |
 | S06 | CWCX604 x 5 (X not set) | same 🚫 line | no cap |
 | S07 | SRT5674 got stock? / 50 | `How many units of SRT5674?` / the S01 line | no quantity asked |

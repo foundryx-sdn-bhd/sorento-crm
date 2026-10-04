@@ -49,7 +49,7 @@ from tests.chatbot.test_rearch_s3_roster_from_resolver import _seed_contact
 
 TOO_BIG = "🚫 the quantity is more than what I can confirm here. Please refer to your salesman."
 IN_STOCK = "✅ Please refer to your salesman."
-NO_INCOMING = "❌ No incoming. Please refer to your salesman."
+NO_INCOMING = "❌ No stock and no incoming. Please refer to your salesman."
 
 # One product per branch, so a single four-product ask exercises all four.
 #

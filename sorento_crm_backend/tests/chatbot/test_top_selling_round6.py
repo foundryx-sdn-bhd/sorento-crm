@@ -33,6 +33,7 @@ from typing import Any
 import pytest
 
 from app.services.chatbot import engine as engine_mod
+from tests.chatbot._turn_helpers import do_window
 from tests.chatbot import test_outstanding_lane as outstanding_lane
 from tests.chatbot.test_engine import CONTACT_ID, _envelope
 from tests.chatbot.test_outstanding_lane import _resolve_services, _wire_business_services
@@ -308,7 +309,8 @@ class TestR2TheMetricAnswer:
 
     def test_a_new_ask_naming_no_option_still_leaves(self, console) -> None:
         turn1, _ = console(_ask(top_n=100), "top 100 sold item", {})
-        turn2, captured = console(_fresh_order("all"), "show me the orders of last week please", turn1.session_vars)
+        # Dated: a dateless DO list ask asks which period first (DO-ASK-SIMPLIFY, owner 4 Oct 2026).
+        turn2, captured = console({**_fresh_order("all"), **do_window()}, "show me the orders of last week please", turn1.session_vars)
         assert _calls(captured) == []
         assert _calls(captured, ORDERS), captured
 

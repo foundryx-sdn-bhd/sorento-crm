@@ -84,7 +84,7 @@ def _ask(db, customer: Customer | None, contact_id: str, code: str, minutes_ago:
         product_code=code,
         quantity=10,
         branch="no_incoming",
-        answer_summary=f"{code} x 10: ❌ No incoming. Please refer to your salesman.",
+        answer_summary=f"{code} x 10: ❌ No stock and no incoming. Please refer to your salesman.",
         notified_agent=True,
         created_at=datetime.utcnow() - timedelta(minutes=minutes_ago),
     )

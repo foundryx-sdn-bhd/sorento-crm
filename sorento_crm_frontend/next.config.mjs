@@ -24,8 +24,12 @@ const nextConfig = {
   },
   // lucide-react is on Next's built-in optimizePackageImports list; @remixicon/react is not,
   // so its barrel imports would otherwise pull the whole icon set into every dev compile.
+  // proxyTimeout: the rewrite proxy below (dev, or a NEVER_STUCK_API_PROXY build) cuts a
+  // request at 30s by default and the browser gets a bare 500, while a slow chatbot turn
+  // can legitimately take longer than that.
   experimental: {
     optimizePackageImports: ['@remixicon/react'],
+    proxyTimeout: 120000,
   },
   compiler: {
     removeConsole: process.env.NODE_ENV === 'production' ? {

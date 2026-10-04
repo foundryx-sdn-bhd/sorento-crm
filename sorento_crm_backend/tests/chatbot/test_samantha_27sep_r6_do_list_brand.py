@@ -41,6 +41,7 @@ from app.services.chatbot_parser_prompt import KNOWN_BRANDS_ADDENDUM
 from tests._mc_lookup_seed import customer, product, warehouse
 from tests.chatbot.conftest import validating_resolve_entity
 from tests.test_orders_brand_filter import _seed_superadmin
+from tests.chatbot._turn_helpers import DO_WINDOW_DATE, do_window
 from tests.chatbot.test_samantha_27sep_r5_do_list_carry import ORDERS_LIST, REPORT, _Replay, _order_ask
 
 OWNER_MESSAGE = "DO brand sorneto for cheng huat sentul"
@@ -62,6 +63,8 @@ def _v40_do_list(brand_raw: str, brand_canonical: str | None) -> dict[str, Any]:
         ],
         document=["DO"],
         status=None,
+        # Dated: a dateless DO list ask asks which period first (DO-ASK-SIMPLIFY, owner 4 Oct 2026).
+        **do_window(),
     )
 
 
@@ -100,6 +103,7 @@ def _seed_documents(session_factory, sorento_brand_id: str) -> tuple[str, dict[s
         order = Order(
             id=str(uuid.uuid4()), order_number=number, customer_id=cust.id, debtor_name=cust.customer_name,
             is_cancelled=False, company_id=DEFAULT_COMPANY_ID,
+            actual_delivery_date=DO_WINDOW_DATE,
         )
         db.add(order)
         db.flush()

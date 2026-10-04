@@ -32,6 +32,7 @@ from app.services.chatbot.turn.policy import default_policy
 from app.services.chatbot.turn.state import Focus, focus_to_wire
 from app.services.company_scope import DEFAULT_COMPANY_ID
 from tests._pg_fixture import unique_code
+from tests.chatbot._turn_helpers import do_window
 from tests.chatbot.test_engine import _parser_output
 from tests.chatbot.test_engine_company_scope import _seed_product
 from tests.chatbot.test_outstanding_lane import (
@@ -651,6 +652,8 @@ class TestMultiDomainPickFetchesEveryNamedDomain:
                     {"raw": "hanlim", "hint": "customer", "canonical_code": None,
                      "current_message": True, "confident": True},
                 ],
+                # Dated: a dateless DO list ask asks which period first (DO-ASK-SIMPLIFY, owner 4 Oct 2026).
+                **do_window(),
                 asks=[{"domain": "order"}, {"domain": "incoming"}],
             ),
             text_body="orders and incoming for hanlim",
