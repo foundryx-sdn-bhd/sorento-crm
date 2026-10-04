@@ -1,6 +1,6 @@
 # PLAN: Stock Debt auxiliary columns + toggle + Excel (STOCKDEBT-AUX-COLS)
 
-Status: planned; size M, crew lane (LEAD pattern), awaiting owner answers to the behaviour card.
+Status: building; size M, crew lane (LEAD pattern); owner answered the card 4 Oct 2026 (see UAC header).
 UAC: `stockdebt-aux-cols-acceptance-criteria.md`.
 
 ## Ask (owner, 4 Oct 2026)
@@ -20,7 +20,7 @@ each over that id list:
 | `pool_on_hand` | `summary_order_service._pool_on_hand_map` (`summary_order_service.py:885`) |
 | `pool_po_qty` | `site_pool_supply.open_po_by_product` (`site_pool_supply.py:69`) |
 | `pool_incoming_qty` | `site_pool_supply.open_spo_by_product` (`site_pool_supply.py:104`) |
-| `dealer_outstanding` | `summary_order_service._demand_aggregates(horizon=date_to)["dealer_qty"]` (`summary_order_service.py:1075`) |
+| `dealer_outstanding` | MINUS `summary_order_service._demand_aggregates(horizon_start=date_from, horizon=date_to)["dealer_qty"]` (`summary_order_service.py:1075`); negated once in `list()` so screen, totals and Excel share the sign (Q6) |
 
 Called over the FILTERED rows only (after `only_debt` + supplier filtering), so the cost is
 four batch queries per request. `_totals` (`stock_debt_service.py:1994`) sums the four.

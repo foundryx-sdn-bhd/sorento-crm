@@ -1,7 +1,8 @@
 # UAC: Stock Debt auxiliary columns (STOCKDEBT-AUX-COLS)
 
-Plan: `PLAN-stockdebt-aux-cols.md`. Answers to the behaviour card questions are marked
-PROVISIONAL until crew relays the owner's answers; a changed answer edits the AC it names.
+Plan: `PLAN-stockdebt-aux-cols.md`. Owner answers relayed by crew 4 Oct 2026: Q1 (a) export
+follows the toggle, Q2 (a) default ON, Q3 (a) per browser, Q4 (b) start AND end date, Q5 (a)
+totals sum the four, Q6 Dealer O/standing printed NEGATIVE.
 
 ## Columns
 
@@ -18,12 +19,15 @@ PROVISIONAL until crew relays the owner's answers; a changed answer edits the AC
   counted; an over-received line counts 0.
 - **AC-4** `pool_incoming_qty` equals `site_pool_supply.open_spo_by_product(...)["qty"]`:
   open, not-received SPO allocations at pool warehouses only.
-- **AC-5** `dealer_outstanding` equals `summary_order_service._demand_aggregates(...,
-  horizon=<page end date>, horizon_start=None)["dealer_qty"]`: open retail-class SO lines,
-  `purchasing_status != 'covered'`, outstanding = COALESCE(qty_required, qty_ordered) -
-  delivered. A line due AFTER the end date is excluded; a line due before the START date is
-  still counted (Q4, PROVISIONAL); a line with no required date is always counted; with no
-  end date every open retail line counts. Project-class and unclassified lines never count.
+- **AC-5** `dealer_outstanding` equals MINUS `summary_order_service._demand_aggregates(...,
+  horizon_start=<page start date>, horizon=<page end date>)["dealer_qty"]`: open
+  retail-class SO lines, `purchasing_status != 'covered'`, outstanding =
+  COALESCE(qty_required, qty_ordered) - delivered. A line due before the start date or after
+  the end date is excluded (Q4); a line with no required date is always counted (existing
+  rule, `summary_order_service.py:1145-1157`); an unset bound does not narrow. Project-class
+  and unclassified lines never count.
+- **AC-5b** Dealer O/standing is a NEGATIVE number (47 outstanding reads -47) on the row, on
+  the screen, in the totals and in Excel (Q6). No outstanding reads 0, never -0.
 - **AC-6** The four values do not change with the Book (all/project/retail) or Supplier
   filter; those filters only decide which rows show.
 - **AC-7** No new per-product query: each of the four reads runs once per request over the
@@ -32,22 +36,21 @@ PROVISIONAL until crew relays the owner's answers; a changed answer edits the AC
 ## Toggle
 
 - **AC-8** A Switch "Show stock and PO columns" (existing `components/ui/switch.tsx`) in the
-  Stock Debt filter popover shows/hides the four columns. Default ON (Q2, PROVISIONAL).
+  Stock Debt filter popover shows/hides the four columns. Default ON (Q2).
 - **AC-9** The choice is remembered per browser (localStorage, wrapped in try/catch) and
-  restored on reload (Q3, PROVISIONAL). Hiding the columns does not count as an active
+  restored on reload (Q3). Hiding the columns does not count as an active
   filter chip.
 
 ## Totals
 
 - **AC-10** The screen's totals footer sums each of the four columns over the WHOLE filtered
-  set (not the page), like the month totals (Q5, PROVISIONAL).
+  set (not the page), like the month totals (Q5); Dealer O/standing total is negative.
 
 ## Excel export
 
 - **AC-11** With the toggle ON, the workbook carries the four columns after Supplier and
   before the first month, same labels, numeric cells; each sheet's Total row sums them.
-  With the toggle OFF the workbook is exactly today's (Q1, PROVISIONAL: export follows the
-  toggle). Existing columns are not reordered. Split-by-supplier/category sheets carry them
+  With the toggle OFF the workbook is exactly today's (Q1: export follows the toggle). Existing columns are not reordered. Split-by-supplier/category sheets carry them
   too.
 - **AC-12** The export request body gains `show_aux: bool` (default false so an old client
   gets today's workbook).
