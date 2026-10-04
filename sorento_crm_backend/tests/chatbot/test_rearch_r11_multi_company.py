@@ -28,6 +28,7 @@ from typing import Any
 from app.models.order import Customer
 from app.services.chatbot import engine as engine_mod
 from app.services.chatbot.lanes.business.services import FetchServices
+from tests.chatbot._turn_helpers import do_window
 from tests.chatbot.conftest import set_chatbot_switches
 from tests.chatbot.test_engine import _parser_output, stub_access, stub_parser  # noqa: F401
 from tests.chatbot.test_engine_company_scope import (
@@ -138,6 +139,8 @@ def _two_company_chain(session_factory) -> dict[str, str]:
 def _order_verdict() -> dict[str, Any]:
     return _parser_output(
         intent_hint="check_order", domain_hint="order",
+        # Dated: a dateless DO list ask asks which period first (DO-ASK-SIMPLIFY, owner 4 Oct 2026).
+        **do_window(),
         entities=[
             {"raw": PRODUCT_CODE, "hint": "product", "canonical_code": None, "current_message": True, "confident": True},
             {"raw": CUSTOMER_NAME, "hint": "customer", "canonical_code": None, "current_message": True, "confident": True},

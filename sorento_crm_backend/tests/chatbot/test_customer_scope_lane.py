@@ -480,8 +480,12 @@ class TestForcedToTheLinks:
         (own_id,) = _link_customers(session_factory, OWN_A)
         reply, captured = _turn(
             session_factory, monkeypatch,
-            _parser_output(domain_hint="order", intent_hint="check_order", order_status=None, entities=[]),
-            "list outstanding DO", attributes=(),
+            # DO-ASK-SIMPLIFY rules 3-4: a linked (dealer) contact's DO list needs a range.
+            _parser_output(
+                domain_hint="order", intent_hint="check_order", order_status=None, entities=[],
+                date_filter_start="2026-09-01", date_filter_end="2026-09-30",
+            ),
+            "list outstanding DO in september", attributes=(),
         )
         (args,) = _calls(captured, ORDERS)
         assert args["customer_ids"] == [own_id], args

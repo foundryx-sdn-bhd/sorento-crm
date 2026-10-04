@@ -25,6 +25,7 @@ clears on its own pick was the gap (live turn 25dcef1d-decc-407b-a6eb-08d8112ee8
 """
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
 PENDING_KINDS: tuple[str, ...] = (
@@ -207,3 +208,16 @@ def build_policy():
     return Policy.from_rows(
         domains=POLICY_DOMAIN_ROWS, kinds=POLICY_KIND_ROWS, tier_order=TIER_ORDER_FIXTURE
     )
+
+
+#: A delivery date inside `do_window()`, for a seed whose orders must match a dated DO ask.
+DO_WINDOW_DATE = date(2026, 9, 15)
+
+
+def do_window() -> dict[str, str]:
+    """A 30-day window (Sep 2026) for a DO list ask the test is not about.
+
+    Dated: a dateless DO list ask asks which period first (DO-ASK-SIMPLIFY, owner 4 Oct 2026).
+    A seed that needs its orders listed stamps `actual_delivery_date=DO_WINDOW_DATE`.
+    """
+    return {"date_filter_start": "2026-09-01", "date_filter_end": "2026-09-30"}
