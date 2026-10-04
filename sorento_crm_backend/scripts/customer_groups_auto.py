@@ -147,7 +147,8 @@ def shared_bracket_label(names: Sequence[str]) -> str:
 
 
 def code_key(code: str | None) -> str:
-    return (code or "").strip().lower()
+    """`lower(btrim(code))`, as #1475 keys a debtor (btrim strips spaces only)."""
+    return (code or "").strip(" ").lower()
 
 
 def _lead_order(row: Row):
@@ -204,7 +205,8 @@ def plan(rows: Iterable[Row], existing_groups: dict[tuple[str, str], str]) -> Pl
         owner: dict[str, PlannedGroup] = {}
         for g in candidates:
             for mid in g.member_ids:
-                target[mid] = "planned:" + g.name.lower()
+                # A family reusing a group lands in that group, same as its ledgers already in it.
+                target[mid] = ("group:" + g.existing_group_id) if g.existing_group_id else "planned:" + g.name.lower()
                 owner[mid] = g
         dropped: list[PlannedGroup] = []
         for (company_id, key), members in by_code.items():
@@ -245,14 +247,14 @@ def load_plan(conn) -> Plan:
     return plan(rows, existing)
 
 
-def _audit(conn, *, entity_type, entity_id, action, actor, company_id, new, description, event, run_id):
+def _audit(conn, *, entity_type, entity_id, action, actor, company_id, new, description, event, run_id, old=None):
     conn.execute(
         sa.text(
             """
             INSERT INTO audit_logs
-                (id, entity_type, entity_id, action, user_id, company_id, new_values, description,
+                (id, entity_type, entity_id, action, user_id, company_id, old_values, new_values, description,
                  actor_type, source, root_entity_type, root_entity_id, event, correlation_id)
-            VALUES (gen_random_uuid(), :t, :i, :a, :u, :c, CAST(:new AS jsonb), :d,
+            VALUES (gen_random_uuid(), :t, :i, :a, :u, :c, CAST(:old AS jsonb), CAST(:new AS jsonb), :d,
                     'user', 'script', :t, :i, :e, :run)
             """
         ),
@@ -262,6 +264,7 @@ def _audit(conn, *, entity_type, entity_id, action, actor, company_id, new, desc
             "a": action,
             "u": actor,
             "c": company_id,
+            "old": json.dumps(old) if old is not None else None,
             "new": json.dumps(new),
             "d": description,
             "e": event,
@@ -316,6 +319,7 @@ def apply(conn, the_plan: Plan, *, actor_user_id: str, run_id: str) -> tuple[int
                 action="UPDATE",
                 actor=actor_user_id,
                 company_id=g.company_id,
+                old={"customer_group_id": None},
                 new={"customer_group_id": group_id, "customer_group_name": g.name, "run_id": run_id},
                 description=f"Customer group set to {g.name} by the name rule",
                 event="customer.group_auto_assign",
@@ -370,6 +374,9 @@ def main(argv: list[str] | None = None) -> int:
 
     engine = sa.create_engine(args.db_url)
     with engine.begin() as conn:
+        if args.apply:
+            # Nobody groups a ledger between the plan read and the write (blocks writes, not reads).
+            conn.execute(sa.text("LOCK TABLE customers, customer_groups IN SHARE ROW EXCLUSIVE MODE"))
         the_plan = load_plan(conn)
         path = write_plan_csv(the_plan, args.out)
         print(_summary(the_plan))
