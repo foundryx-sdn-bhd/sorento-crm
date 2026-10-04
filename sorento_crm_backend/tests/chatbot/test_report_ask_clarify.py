@@ -648,24 +648,22 @@ def test_p_the_report_ask_addendum_teaches_the_basis_and_metric_answers() -> Non
     near = flat.split(basis_anchor, 1)[1][:260]
     for needle in ('basis "delivered"', 'basis "ordered"', 'basis "outstanding"'):
         assert needle in near, (needle, near)
-    metric_anchor = 'after "By quantity or by amount?" inside a sales ranking'
-    assert metric_anchor in flat
-    near = flat.split(metric_anchor, 1)[1][:260]
-    for needle in ('measure "qty"', 'measure "amount"', 'order_status "sales_ranking"'):
-        assert needle in near, (needle, near)
-
+    # Review B1: top selling asks the same metric question, so the sales ranking prompt must NOT
+    # teach a sales_ranking / measure reading of that answer (it would steal the top selling ask).
+    assert 'after "By quantity or by amount?" inside a sales ranking' not in flat
+    if "inside a sales ranking" in flat:
+        assert 'measure "qty"' not in flat.split("inside a sales ranking", 1)[1][:260], flat
 
 # --------------------------------------------------------------------------- #
 # Review S2: a top selling slot carrying basis "outstanding" never runs delivered silently
 # --------------------------------------------------------------------------- #
 
 
-def test_s2_outstanding_is_not_an_answer_to_the_top_selling_basis_question() -> None:
+def test_s2_waiting_still_accepts_outstanding_the_re_ask_comes_from_the_question_helper() -> None:
     from app.services.chatbot.turn.apply import _top_selling_waiting
 
     assert _top_selling_waiting("basis", {"basis": "delivered"}) is True
-    assert _top_selling_waiting("basis", {"basis": "ordered"}) is True
-    assert _top_selling_waiting("basis", {"basis": "outstanding"}) is False
+    assert _top_selling_waiting("basis", {"basis": "outstanding"}) is True
     assert _top_selling_waiting("basis", {"basis": None}) is False
 
 
@@ -684,17 +682,20 @@ def test_s2_a_top_selling_verdict_with_basis_outstanding_asks_the_basis_and_fetc
     assert ts_calls(captured) == [], captured
 
 
-def test_s2_an_outstanding_answer_to_the_top_selling_basis_question_asks_again(
+def test_s2_an_outstanding_answer_to_the_top_selling_basis_question_asks_again_and_keeps_the_held_ask(
     session_factory, monkeypatch, route
 ) -> None:
     _seed_contact(session_factory, variables={})
     reply, _captured = _top_selling(session_factory, monkeypatch, _ts(rank_by="amount", basis=None, top_n=10), "top 10 selling sorento")
     assert reply.strip() == TS_BASIS_Q
-    reply, captured = _top_selling(session_factory, monkeypatch, _answer_keys(basis="outstanding"), "outstanding")
+    reply, captured = _top_selling(
+        session_factory, monkeypatch, _answer_keys(basis="outstanding", domain_in_message=True), "outstanding"
+    )
     assert reply.strip() == TS_BASIS_Q, reply
     assert ts_calls(captured) == [], captured
     _reply, captured = _top_selling(session_factory, monkeypatch, _answer_keys(basis="delivered"), "delivered")
-    assert ts_calls(captured)[0]["basis"] == "delivered", captured
+    (args,) = ts_calls(captured)
+    assert args["basis"] == "delivered" and args["n"] == 10 and args["rank_by"] == "amount", args
 
 
 # --------------------------------------------------------------------------- #
@@ -722,3 +723,101 @@ def test_s6_the_lane_says_so_and_runs_nothing_when_the_resolver_finds_no_ids(con
     )
     assert text.strip() == "I don't know 'water closet' as a category.", text
     assert calls == [], calls
+
+
+# --------------------------------------------------------------------------- #
+# Review round 2
+# --------------------------------------------------------------------------- #
+
+CATALOGUE = "I can rank sales by customer, product, brand, category, sales agent, location, channel or month."
+
+
+def test_b1_a_sales_ranking_reading_of_the_top_selling_metric_answer_binds_the_open_question(
+    session_factory, monkeypatch, route
+) -> None:
+    """Top selling asked "By quantity or by amount?"; the parser reads "qty" as order_status
+    sales_ranking, measure qty, everything else null. The user's top selling ask is not lost and the
+    ranking lane's catalogue line is not said: the metric binds and the basis is asked next."""
+    _seed_contact(session_factory, variables={})
+    reply, _c = _top_selling(session_factory, monkeypatch, _ts(rank_by=None, basis=None, top_n=10), "top 10 selling sorento")
+    assert reply.strip() == TS_METRIC_Q
+    reply, captured = _top_selling(session_factory, monkeypatch, _answer_keys(measure="qty"), "qty")
+    assert reply.strip() != CATALOGUE, reply
+    assert reply.strip() == TS_BASIS_Q and ts_calls(captured) == [], (reply, captured)
+    _reply, captured = _top_selling(session_factory, monkeypatch, _answer_keys(basis="ordered"), "ordered")
+    (args,) = ts_calls(captured)
+    assert args["rank_by"] == "quantity" and args["basis"] == "ordered" and args["n"] == 10, args
+
+
+def _fetch_payload(slot: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "gate": {"compatible_entities": []},
+        "tier_gate": None,
+        "ctx": {
+            "parse": {"output": _parser_output(
+                domain_hint="order", intent_hint="check_order", order_status="top_selling",
+                entities=[], top_selling=slot)},
+            "contact": {"id": 437264483},
+            "access": {"attributes": ["sales_orders.sales_report"]},
+        },
+    }
+
+
+def test_n1_a_picked_row_with_no_basis_may_fall_back_to_delivered_nothing_else_may(session_factory) -> None:
+    import json
+
+    from app.services.chatbot.lanes.business import run_fetch
+    from app.services.chatbot.lanes.business.services import FetchServices
+
+    calls: list[tuple[str, dict[str, Any]]] = []
+
+    def _call(name, args):
+        calls.append((name, dict(args)))
+        return json.dumps({"has_result": False, "response": "x", "result_set": []})
+
+    run_fetch(_fetch_payload({"rank_by": "quantity", "top_n": 5}), services=FetchServices(mcp_call=_call))
+    assert calls == [], calls
+    run_fetch(
+        _fetch_payload({"rank_by": "quantity", "top_n": 5, "detail_code": "SRTWT7445"}),
+        services=FetchServices(mcp_call=_call),
+    )
+    (name, args), = calls
+    assert name == TOP_SELLING and args["basis"] == "delivered" and args["detail_code"] == "SRTWT7445", calls
+
+
+def test_n1_fetch_py_falls_back_to_delivered_only_for_a_picked_row() -> None:
+    from app.services.chatbot.lanes.business import fetch as fetch_mod
+
+    source = inspect.getsource(fetch_mod)
+    for m in re.finditer(r'else\s+"delivered"', source):
+        near = source[max(0, m.start() - 250):m.end()]
+        assert "detail_code" in near, near
+
+
+def test_n5_the_customer_picker_answer_asks_the_basis_before_any_fetch(session_factory, monkeypatch, route) -> None:
+    from tests.chatbot.test_outstanding_lane import HANLIM_UUID_1, _ambiguous_hanlim_resolve_services
+
+    _seed_contact(session_factory, variables={})
+    reply, captured = ts_turn(
+        session_factory, monkeypatch,
+        _ts(
+            rank_by="amount", basis=None, top_n=4,
+            entities=[{"raw": "hanlim", "hint": "customer", "canonical_code": None, "current_message": True, "confident": True}],
+        ),
+        "top 4 for hanlim by amount",
+        resolve_services=_ambiguous_hanlim_resolve_services(lambda **_: {"items": [], "has_result": False}),
+    )
+    assert ts_calls(captured) == [] and "Which customer do you mean?" in reply, reply
+    reply, captured = ts_turn(
+        session_factory, monkeypatch,
+        _parser_output(
+            message_type="casual", intent_hint=None, domain_hint=None, entities=[],
+            reference_positions=[1], reference_target="dym", entity_op="reuse", order_status=None,
+        ),
+        "1",
+    )
+    assert ts_calls(captured) == [], captured
+    assert reply.strip() == TS_BASIS_Q, reply
+    _reply, captured = _top_selling(session_factory, monkeypatch, _answer_keys(basis="delivered"), "delivered")
+    (args,) = ts_calls(captured)
+    assert args["customer_ids"] == [HANLIM_UUID_1] and args["basis"] == "delivered" and args["n"] == 4, args

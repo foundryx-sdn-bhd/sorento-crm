@@ -46,8 +46,8 @@ CATALOGUE_LINE = (
     "I can rank sales by customer, product, brand, category, sales agent, location, channel or month."
 )
 GIVE_UP = (
-    "I still can't read '{word}'. Ask again with the period and how many, "
-    "e.g. top 5 sales agents for Sorento this month."
+    "I still can't read '{word}'. Ask again in one message, "
+    "e.g. top 5 sales agents for Sorento this month by amount, delivered."
 )
 DIMENSION_REFUSAL = "That breakdown is not available for your account."
 _SNAKE = re.compile(r"\b[a-z]+_[a-z0-9_]+\b")
