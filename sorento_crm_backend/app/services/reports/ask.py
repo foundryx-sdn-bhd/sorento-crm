@@ -21,9 +21,9 @@ from app.services.reports.datasets import sales_order_lines_ask
 from app.services.sales_report_delivered import _CHANNEL_CLASS, resolve_locations
 from app.services.sales_report_service import _money_edge, _qty
 
-#: The words a caller may group by and filter by. Both bases name every word the same as the
-#: column or param key behind it, so one list each serves both (a word that differs from its
-#: key earns a mapping then).
+#: The words a caller may group by and filter by. Every word is named the same as the column or
+#: param key behind it, so one list each serves every basis (a word that differs from its key
+#: earns a mapping then).
 DIMENSIONS = ("customer", "product", "brand", "category", "sales_agent", "location", "channel", "month")
 FILTERS = ("customer", "product", "brand", "category", "sales_agent", "location", "channel")
 

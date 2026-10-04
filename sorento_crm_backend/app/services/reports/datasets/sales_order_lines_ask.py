@@ -1,9 +1,11 @@
 """Every basis of the chatbot's report ask (lane REPORT-ENGINE; owner direction 4 Oct 2026).
 
-Sales order lines over `sales_order_lines._base` (so a cancelled order or line is out, exactly
-as top selling has it) with the product's brand and category and the line's warehouse joined
-on, each line dated by top selling's own `sales_report_service._bucket_expr` (the line's
-required date, else its SO's order date). One definition per basis (`delivered`, `ordered`,
+Sales order lines joined to their SO, customer, sales agent and product, filtered by top
+selling's own `sales_report_service._common_filters` (a cancelled order or line is out, and a
+line with neither a required date nor an SO order date is out, exactly as top selling has it),
+with the product's brand and category and the line's warehouse joined on, each line dated by
+top selling's own `sales_report_service._bucket_expr` (the line's required date, else its SO's
+order date). One definition per basis (`delivered`, `ordered`,
 `outstanding`); the qty and amount are imported from `sales_report_service`, never rewritten.
 
 Registered NOWHERE (no `reg.register`): the Reports screen's Yearly comparison catalogue does
@@ -20,15 +22,33 @@ from app.models.order import Customer, SalesOrder, SalesOrderLine
 from app.models.product import Brand, Product, ProductCategory
 from app.models.sales_agent import SalesAgent
 from app.services.reports import registry as reg
-from app.services.reports.datasets import sales_order_lines
 from app.services.reports.datasets.delivery_order_lines import NO_AGENT
 from app.services.reports.datasets.sales_order_lines import channel_label
-from app.services.sales_report_service import _basis_figures, _bucket_expr, _per_line_exprs
+from app.services.sales_report_service import _basis_figures, _bucket_expr, _common_filters, _per_line_exprs
 
 
 def _base(ctx: Any) -> sa.Select:
     return (
-        sales_order_lines._base(ctx)
+        sa.select()
+        .select_from(SalesOrderLine)
+        .join(SalesOrder, SalesOrder.id == SalesOrderLine.sales_order_id)
+        .outerjoin(Customer, Customer.id == SalesOrder.customer_id)
+        .outerjoin(SalesAgent, SalesAgent.id == SalesOrder.sales_agent_id)
+        .outerjoin(Product, Product.id == SalesOrderLine.product_id)
+        .where(
+            sa.and_(
+                *_common_filters(
+                    product_ids=None,
+                    customer_query=None,
+                    customer_ids=None,
+                    channel=None,
+                    warehouse_ids=None,
+                    date_from=None,
+                    date_to=None,
+                    bucket_expr=_bucket_expr(),
+                )
+            )
+        )
         .outerjoin(Brand, Brand.id == Product.brand_id)
         .outerjoin(ProductCategory, ProductCategory.id == Product.category_id)
         .outerjoin(Warehouse, Warehouse.id == SalesOrderLine.warehouse_id)
@@ -67,13 +87,13 @@ def location_condition(ctx: Any, values: List[str]) -> Optional[Any]:
 
 
 def channel_condition(ctx: Any, values: List[str]) -> Optional[Any]:
-    """Values are demand classes (`retail` / `project`), the words the delivered basis speaks."""
+    """Values are demand classes (`retail` / `project`), as `SalesOrder.demand_class` holds them."""
     return SalesOrder.demand_class.in_(values)
 
 
 # ------------------------------------------------------------------------ catalog
 
-#: Basis -> (definition title, qty expression, amount expression), all top selling's own.
+#: Basis -> definition title. The qty and amount expressions come from `_figures`, top selling's own.
 _TITLES = {"delivered": "Delivered sales", "ordered": "Ordered sales", "outstanding": "Outstanding orders"}
 
 

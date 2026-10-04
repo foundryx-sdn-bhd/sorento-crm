@@ -1291,6 +1291,9 @@ def _top_selling_waiting(asked: Any, own: dict[str, Any]) -> bool:
     that restates the ranking while answering the clarify ("top 5 by amount" under "By
     quantity or by amount?") completes the asked ask."""
     axis = TOP_SELLING_CLARIFY_AXES.get(asked) if isinstance(asked, str) else None
+    if axis == "basis":
+        # Top selling has two bases: "outstanding" is no answer to its question (reviewer S2).
+        return own.get(axis) in ("delivered", "ordered")
     return axis is not None and own.get(axis) not in (None, "unclear")
 
 

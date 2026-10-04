@@ -4,7 +4,9 @@
 `crm_report_ask` (`GET /api/v1/order-management/report-ask`): every gate (grant, audience,
 company, location policy) is the ROUTE's, from `contact_id`; this module only turns the
 parser's reading into the route's params, and asks for the two fields the route requires
-(the period, and how many for a ranking) through the shared `required_fields` helper.
+(the period and how many, then, for a ranking, the metric, and always the basis) through the
+shared `required_fields` helper. A ranking never defaults the metric or the basis: it asks
+(owner ruling, 4 Oct 2026), through `ranking_ask.next_question`, as top selling does.
 
 * `take_words` (engine seam): a FRESH ask's brand, sales agent and category words come off
   the entity list onto `report_ask_words`, so the generic resolver never reads them as
@@ -22,6 +24,7 @@ from typing import Any
 from app.services.chatbot import jsc
 from app.services.chatbot import required_fields as rf
 from app.services.sales_report_service import TOP_SELLING_N_CEILING
+from app.services.chatbot.lanes.business import ranking_ask
 from app.services.chatbot.lanes.business import services as business_services
 
 ASK_NAME = "sales_ranking"
@@ -133,12 +136,55 @@ def _resolve_top_n(_db: Any, _word: str, extras: dict[str, Any]) -> rf.Resolved:
     return top_n_from(extras.get("reply_top_n"))
 
 
+#: The parser's keys for an answer to the metric question: `measure` (qty | amount) or the top
+#: selling key `rank_by` (a bare reply under the question parses as a top selling reading).
+METRIC_FROM_RANK_BY = {"quantity": "qty", "amount": "amount"}
+BASES = ("delivered", "ordered", "outstanding")
+
+
+def metric_from(parse_output: dict[str, Any]) -> str | None:
+    """The metric the parser read: `measure`, else `rank_by` (quantity is qty); None if neither."""
+    if parse_output.get("measure") in ("qty", "amount"):
+        return parse_output["measure"]
+    return METRIC_FROM_RANK_BY.get(parse_output.get("rank_by"))
+
+
+def basis_from(parse_output: dict[str, Any]) -> str | None:
+    basis = parse_output.get("basis")
+    return basis if basis in BASES else None
+
+
+def _resolve_metric(_db: Any, _word: str, extras: dict[str, Any]) -> rf.Resolved:
+    """An answering turn's metric: the PARSER's own reading of the reply (`reply_metric`)."""
+    metric = extras.get("reply_metric")
+    return rf.Resolved("ok", value=metric, label=metric) if metric in ("qty", "amount") else rf.Resolved("unknown")
+
+
+def _resolve_basis(_db: Any, _word: str, extras: dict[str, Any]) -> rf.Resolved:
+    """An answering turn's basis: the PARSER's own reading of the reply (`reply_basis`)."""
+    basis = extras.get("reply_basis")
+    return rf.Resolved("ok", value=basis, label=basis) if basis in BASES else rf.Resolved("unknown")
+
+
+def _metric_question() -> str:
+    asked = ranking_ask.next_question(metric_settled=False, basis_settled=False, basis_line=ranking_ask.RANKING_BASIS_LINE)
+    return asked[1] if asked else ranking_ask.METRIC_LINE
+
+
+def _basis_question() -> str:
+    asked = ranking_ask.next_question(metric_settled=True, basis_settled=False, basis_line=ranking_ask.RANKING_BASIS_LINE)
+    return asked[1] if asked else ranking_ask.RANKING_BASIS_LINE
+
+
 PERIOD = rf.FieldSpec(name="period", noun="period", question=PERIOD_QUESTION, resolve=_resolve_period, allow_all=False)
 TOP_N = rf.FieldSpec(name="top_n", noun="number", question=TOP_N_QUESTION, resolve=_resolve_top_n, allow_all=False)
 
+METRIC = rf.FieldSpec(name="metric", noun="measure", question=_metric_question, resolve=_resolve_metric, allow_all=False)
+BASIS = rf.FieldSpec(name="basis", noun="basis", question=_basis_question, resolve=_resolve_basis, allow_all=False)
+
 SALES_RANKING_ASK = rf.register(rf.AskType(
     name=ASK_NAME,
-    fields=(PERIOD, TOP_N),
+    fields=(PERIOD, TOP_N, METRIC, BASIS),
     reroute={
         "message_type": "business_query",
         "domain_hint": "order",
@@ -321,11 +367,12 @@ def _fresh_args(
     if dealer and _dealer_outside(parse_output, group_by):
         return None, DEALER_REFUSAL
 
-    args: dict[str, Any] = {
-        "basis": parse_output.get("basis") if parse_output.get("basis") in ("ordered", "outstanding") else "delivered",
-        "measure": "qty" if parse_output.get("measure") == "qty" else "amount",
-        "sort": "asc" if parse_output.get("rank_direction") == "bottom" else "desc",
-    }
+    # Neither the basis nor the metric is defaulted: one the message did not name is asked.
+    args: dict[str, Any] = {"sort": "asc" if parse_output.get("rank_direction") == "bottom" else "desc"}
+    if basis_from(parse_output):
+        args["basis"] = basis_from(parse_output)
+    if metric_from(parse_output):
+        args["measure"] = metric_from(parse_output)
     if group_by:
         args["group_by"] = group_by
     channel = parse_output.get("sales_channel")
@@ -347,7 +394,8 @@ def _fresh_args(
                 found, _named, ambiguous, unknown = business_pkg._top_selling_category_ids(
                     {"category_words": [word]}, db=db
                 )
-                if unknown:
+                if unknown or (not found and not ambiguous):
+                    # A word that matched nothing is said, never dropped from the filter.
                     return None, f"I don't know '{word}' as a {WORD_HINTS[hint]}."
                 if ambiguous:
                     listed = ", ".join(sorted(set(ambiguous)))
@@ -413,6 +461,32 @@ def _given_top_n(args: dict[str, Any], top_n: Any) -> dict[str, Any]:
     return {"top_n": got if got.status == "ok" else jsc.js_string(top_n)}
 
 
+def _given_choices(args: dict[str, Any]) -> dict[str, Any]:
+    """The metric and the basis as the helper's `given`, off the args a message named. A total
+    and a month trend show both measures, so they are never asked the metric (settled as None);
+    the basis is always asked unless named. Anything not named is left out, so it is asked."""
+    given: dict[str, Any] = {}
+    if not args.get("group_by") or args.get("group_by") == "month":
+        given["metric"] = rf.Resolved("ok", value=args.get("measure"), label=args.get("measure") or "")
+    elif args.get("measure"):
+        given["metric"] = rf.Resolved("ok", value=args["measure"], label=args["measure"])
+    if args.get("basis"):
+        given["basis"] = rf.Resolved("ok", value=args["basis"], label=args["basis"])
+    return given
+
+
+def _reply_choices(args: dict[str, Any], parse_output: dict[str, Any]) -> dict[str, Any]:
+    """An answering turn that carries the OTHER choice too ("qty delivered"): taken from the
+    parser's keys when the first message left it open. The asked field is read by the helper."""
+    given: dict[str, Any] = {}
+    metric, basis = metric_from(parse_output), basis_from(parse_output)
+    if metric and args.get("group_by") not in (None, "month") and not args.get("measure"):
+        given["metric"] = rf.Resolved("ok", value=metric, label=metric)
+    if basis and not args.get("basis"):
+        given["basis"] = rf.Resolved("ok", value=basis, label=basis)
+    return given
+
+
 def settle(
     db: Any, parse_output: dict[str, Any], entities: Any, *, dealer: bool = False
 ) -> tuple[rf.Outcome | None, str | None]:
@@ -432,8 +506,13 @@ def settle(
             SALES_RANKING_ASK,
             slot=slot,
             reply=jsc.js_string(parse_output.get("required_ask_reply") or ""),
-            given=_given_top_n(args, extras.get("top_n")),
-            extras={"reply_dates": reply_dates, "reply_top_n": parse_output.get("top_n")},
+            given={**_given_choices(args), **_given_top_n(args, extras.get("top_n")), **_reply_choices(args, parse_output)},
+            extras={
+                "reply_dates": reply_dates,
+                "reply_top_n": parse_output.get("top_n"),
+                "reply_metric": metric_from(parse_output),
+                "reply_basis": basis_from(parse_output),
+            },
         )
         if slot.get("asking") == "top_n" and outcome.slot is None and not outcome.done and not outcome.cancelled:
             # The helper gave up on the count (a second miss): run the default top 10 and say
@@ -458,7 +537,7 @@ def settle(
         # Not a valid ask: no axis and nothing to total. Say what can be ranked and open nothing.
         return None, CATALOGUE_LINE
     top_n = parse_output.get("top_n")
-    given = _given_top_n(args, top_n)
+    given = {**_given_choices(args), **_given_top_n(args, top_n)}
     period = period_from(parse_output.get("date_filter_start"), parse_output.get("date_filter_end"))
     if period is not None and parse_output.get("ranking_refine") is not True:
         # A refine with no ranking held has nothing to refine: it is a fresh ask, and a
@@ -494,7 +573,11 @@ def _refine(
     period = period_from(parse_output.get("date_filter_start"), parse_output.get("date_filter_end")) or period_from(
         frame.get("date_from"), frame.get("date_to")
     )
-    given = _given_top_n(args, top_n)
+    # A held ranking has both choices (its args ran): a refine never asks.
+    given = {**_given_choices(args), **_given_top_n(args, top_n)}
+    for name, key in (("metric", "measure"), ("basis", "basis")):
+        if name not in given:
+            given[name] = rf.Resolved("ok", value=args.get(key), label=args.get(key) or "")
     if period is not None:
         given["period"] = period
     return rf.collect(db, SALES_RANKING_ASK, given=given, extras={"args": args, "top_n": top_n}), None
@@ -503,6 +586,10 @@ def _refine(
 def route_args(outcome: rf.Outcome) -> dict[str, Any]:
     """The settled ask as `crm_report_ask`'s params (the route's names)."""
     args = dict(_dict(outcome.extras.get("args")))
+    for name, key in (("metric", "measure"), ("basis", "basis")):
+        settled = _dict(outcome.values.get(name)).get("value")
+        if settled:
+            args[key] = settled
     period = _dict(_dict(outcome.values.get("period")).get("value"))
     args["date_from"] = period.get("from")
     args["date_to"] = period.get("to")

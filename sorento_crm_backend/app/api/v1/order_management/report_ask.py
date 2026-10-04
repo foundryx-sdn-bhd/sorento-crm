@@ -1,11 +1,12 @@
 """`GET /api/v1/order-management/report-ask`: the chatbot's one flexible sales report (lane
 REPORT-ENGINE, slice 1a; `documentation/plans/chatbot/PLAN-report-engine.md` section 0 and 10).
 
-A ranking (one `group_by`) or a number over delivered, ordered or outstanding sales (all from sales order lines), for a required period,
-with the common filters. Every gate runs here, from `contact_id`, never in the lane or the
-prompt: the API key, the `sales_orders.sales_report` reveal grant, the audience (a
-customer-scoped contact is a DEALER and may only slice by product, brand, category, month),
-the contact's stock visibility policy over locations, and the engine's own company arm.
+A ranking (one `group_by`) or a number over delivered, ordered or outstanding sales (all from
+sales order lines), for a required period, with the common filters. Every gate runs here, from
+`contact_id`, never in the lane or the prompt: the API key, the `sales_orders.sales_report`
+reveal grant, the audience (a customer-scoped contact is a DEALER and may only slice by product,
+brand, category, month), the contact's stock visibility policy over locations, and the engine's
+own company arm.
 """
 from __future__ import annotations
 
@@ -42,7 +43,8 @@ _RATE_LIMIT = 10
 _RATE_WINDOW_SECONDS = 600
 _DEALER_MESSAGE = "That breakdown is not available for your account."
 _CHANNELS = {"dealer": "Dealer", "project": "Project team"}
-#: The basis a request without one gets. The owner decides the default; this is the one place.
+#: The route's default basis for a direct API caller that names none. The chatbot lane never
+#: relies on it: it asks the basis and always sends one.
 DEFAULT_BASIS = "delivered"
 _MAX_VALUES = 50
 _MIN_YEAR, _MAX_YEAR = 1900, 2200

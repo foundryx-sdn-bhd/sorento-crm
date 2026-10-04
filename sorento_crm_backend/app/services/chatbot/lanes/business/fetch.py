@@ -870,8 +870,10 @@ def entity_ids_transformer(
         slot = jsc.get(semantic_input, "top_selling")
         slot = slot if isinstance(slot, dict) else {}
         out["rank_by"] = jsc.js_string(slot.get("rank_by"))
-        if slot.get("basis") in ("delivered", "ordered"):
-            out["basis"] = slot["basis"]
+        # Always explicit: the lane asks the basis (`_top_selling_question`) and never fetches
+        # without one. Only a picked row's older slot can reach here with none, and the
+        # ranking it came from ran delivered.
+        out["basis"] = slot["basis"] if slot.get("basis") in ("delivered", "ordered") else "delivered"
         category_grain = slot.get("rank_group") == "category"
         if category_grain:
             out["group"] = "category"

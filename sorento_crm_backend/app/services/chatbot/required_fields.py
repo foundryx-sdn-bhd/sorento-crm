@@ -94,7 +94,9 @@ class Resolved:
 class FieldSpec:
     name: str
     noun: str
-    question: str
+    #: The line asked. A callable is read when it is asked, for a question another module owns
+    #: (the rankings' metric and basis lines, `lanes/business/ranking_ask`).
+    question: str | Callable[[], str]
     resolve: Callable[[Any, str, dict[str, Any]], Resolved]
     allow_all: bool = True
     required: bool = True
@@ -145,10 +147,14 @@ def _is_all(text: str, spec: FieldSpec) -> bool:
     return word in ALL_WORDS or word in {f"all {spec.noun}", f"all {_plural(spec.noun)}"}
 
 
+def _question(spec: FieldSpec) -> str:
+    return spec.question() if callable(spec.question) else spec.question
+
+
 def _miss_line(word: str, spec: FieldSpec, note: str = "") -> str:
     if note:
-        return f"{note}\n\n{spec.question}"
-    return f"I don't know '{word}' as a {spec.noun}.\n\n{spec.question}"
+        return f"{note}\n\n{_question(spec)}"
+    return f"I don't know '{word}' as a {spec.noun}.\n\n{_question(spec)}"
 
 
 def _pick_line(spec: FieldSpec, options: list[list[Any]]) -> str:
@@ -258,7 +264,7 @@ def collect(
                            slot=_slot(ask, values, carried, asking=spec.name), extras=carried)
         if not spec.required:
             continue
-        return Outcome(values=values, reply=spec.question,
+        return Outcome(values=values, reply=_question(spec),
                        slot=_slot(ask, values, carried, asking=spec.name), extras=carried)
     return Outcome(values=values, extras=carried)
 
