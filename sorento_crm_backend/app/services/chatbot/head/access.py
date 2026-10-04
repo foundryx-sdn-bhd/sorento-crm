@@ -106,9 +106,7 @@ def _skip_period_questions(db: Session, contact_id: str, space_id: str | None) -
     from sqlalchemy import text
 
     try:
-        from app.services.field_access import resolve_contact_id
-
-        internal_id = resolve_contact_id(db, contact_id, space_id)
+        internal_id = _resolve_contact_with_null_workspace_fallback(db, contact_id=contact_id, space_id=space_id)
         if internal_id is None:
             return False
         with db.begin_nested():

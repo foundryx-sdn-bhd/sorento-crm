@@ -293,6 +293,10 @@ def list_text(db: Session, names_by_id: dict[str, str], start: Any, end: Any, li
     if not rows:
         if start is None and end is None:
             return f"No sales orders for {header_names}."
+        if start is None:
+            return f"No sales orders for {header_names} up to {_day(end)}."
+        if end is None:
+            return f"No sales orders for {header_names} from {_day(start)}."
         return f"No sales orders for {header_names} from {_day(start)} to {_day(end)}."
     lines_by_so: dict[str, list[tuple[Any, Any]]] = {}
     for so_id, ordered, delivered in (
