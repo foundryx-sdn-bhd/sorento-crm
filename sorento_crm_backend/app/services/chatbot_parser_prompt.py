@@ -212,8 +212,6 @@ question ("By quantity or by amount?") is open: a new ask, not a reply to that q
     "sales_ranking", top_n 5
   - after "Delivered, ordered or outstanding?": "delivered" -> basis "delivered"; "ordered" ->
     basis "ordered"; "outstanding" -> basis "outstanding"; entities [], every other key null
-  - after "By quantity or by amount?" inside a sales ranking: "qty" -> measure "qty"; "amount"
-    -> measure "amount"; with order_status "sales_ranking", entities [], every other key null
 NOT a sales ranking:
   - company totals by month, year or channel with nothing named and no ranking word
     ("sales by month this year", "dealer sales this year") stay "sales_analysis";

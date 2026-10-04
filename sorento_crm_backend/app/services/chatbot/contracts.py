@@ -95,6 +95,7 @@ BrandScopeTreatment = Literal["filtered", "no_products"]
 # A key not named here is not looked up as a product.
 BRAND_SCOPE_PRODUCT_KEYS: dict[str, tuple[str, ...]] = {
     "crm_top_selling_report": ("code",),
+    "crm_report_ask": ("name",),
     "crm_order_analytics": ("group_key",),
     "crm_complaint_analytics": ("group_key",),
 }
@@ -140,6 +141,7 @@ BRAND_SCOPE_TREATMENT: dict[str, BrandScopeTreatment] = {
     "crm_purchase_request_reject": "no_products",
     "crm_resource_attachments_catalogue": "filtered",
     "crm_resource_attachments_current_stock_list": "filtered",
+    "crm_report_ask": "filtered",
     "crm_resource_attachments_list": "filtered",
     "crm_sales_analysis": "filtered",
     "crm_sales_report": "filtered",

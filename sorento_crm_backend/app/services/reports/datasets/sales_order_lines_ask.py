@@ -136,6 +136,7 @@ def _definition(basis: str) -> reg.ReportDefinition:
         date_bases=(reg.DateBasis("order_date", "Line date", _bucket_expr()),),
         base=_base,
         company_column=SalesOrder.company_id,
+        product_id_column=SalesOrderLine.product_id,
     )
     definition = reg.ReportDefinition(
         key=key,

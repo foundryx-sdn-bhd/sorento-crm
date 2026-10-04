@@ -874,7 +874,10 @@ def entity_ids_transformer(
         # Always explicit: the lane asks the basis (`_top_selling_question`) and never fetches
         # without one. Only a picked row's older slot can reach here with none, and the
         # ranking it came from ran delivered.
-        out["basis"] = slot["basis"] if slot.get("basis") in ("delivered", "ordered") else "delivered"
+        if slot.get("basis") in ("delivered", "ordered"):
+            out["basis"] = slot["basis"]
+        elif slot.get("detail_code"):
+            out["basis"] = "delivered"
         category_grain = slot.get("rank_group") == "category"
         if category_grain:
             out["group"] = "category"
@@ -995,7 +998,9 @@ def entity_ids_transformer(
         if channel in ("dealer", "project"):
             out["channel"] = channel
         basis = jsc.get(semantic_input, "sales_basis")
-        out["basis"] = basis if basis in SALES_ANALYSIS_BASES else "delivered"
+        out["basis"] = "delivered"  # the sales analysis route's own default basis
+        if basis in SALES_ANALYSIS_BASES:
+            out["basis"] = basis
         company = jsc.get(semantic_input, "sales_company")
         if jsc.truthy(company):
             out["company"] = jsc.js_string(company).strip()

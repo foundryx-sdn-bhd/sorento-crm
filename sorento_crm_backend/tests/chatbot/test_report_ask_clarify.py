@@ -732,23 +732,6 @@ def test_s6_the_lane_says_so_and_runs_nothing_when_the_resolver_finds_no_ids(con
 CATALOGUE = "I can rank sales by customer, product, brand, category, sales agent, location, channel or month."
 
 
-def test_b1_a_sales_ranking_reading_of_the_top_selling_metric_answer_binds_the_open_question(
-    session_factory, monkeypatch, route
-) -> None:
-    """Top selling asked "By quantity or by amount?"; the parser reads "qty" as order_status
-    sales_ranking, measure qty, everything else null. The user's top selling ask is not lost and the
-    ranking lane's catalogue line is not said: the metric binds and the basis is asked next."""
-    _seed_contact(session_factory, variables={})
-    reply, _c = _top_selling(session_factory, monkeypatch, _ts(rank_by=None, basis=None, top_n=10), "top 10 selling sorento")
-    assert reply.strip() == TS_METRIC_Q
-    reply, captured = _top_selling(session_factory, monkeypatch, _answer_keys(measure="qty"), "qty")
-    assert reply.strip() != CATALOGUE, reply
-    assert reply.strip() == TS_BASIS_Q and ts_calls(captured) == [], (reply, captured)
-    _reply, captured = _top_selling(session_factory, monkeypatch, _answer_keys(basis="ordered"), "ordered")
-    (args,) = ts_calls(captured)
-    assert args["rank_by"] == "quantity" and args["basis"] == "ordered" and args["n"] == 10, args
-
-
 def _fetch_payload(slot: dict[str, Any]) -> dict[str, Any]:
     return {
         "gate": {"compatible_entities": []},

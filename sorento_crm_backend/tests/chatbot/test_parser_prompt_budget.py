@@ -108,8 +108,8 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # how-many answer bullet, the people-ranking-is-a-new-ask rule and the singular no-count rule);
 # CEILING is 45,364 - 512 = 44,852.
 # PR #1447 (report engine): REPORT_ASK_ADDENDUM teaches the outstanding basis, +27 est. tokens.
-# PR #1447 (rankings clarify): the basis and metric answer lines, the delivered answer and the outstanding refine, +177 est. tokens.
-CEILING = 45_056
+# PR #1447 (rankings clarify): the basis answer line, the delivered answer and the outstanding refine, +114 est. tokens (review B1 removed the sales ranking metric bullet, -63).
+CEILING = 44_993
 # The memory addendum on its own, bounded separately so this PR's growth stays bounded.
 # 26 Sep baseline (lane d89110c0): 339 est. tokens. Round 4 (baf4c813, 28 Sep: the history
 # question in any wording, the number re-run, commercial_request) took it to 512, which is

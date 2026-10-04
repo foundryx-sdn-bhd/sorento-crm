@@ -37,8 +37,8 @@ DEFAULT_TOP_N = 10
 DEFAULT_TOP_N_NOTE = "I couldn't read how many, so here is the top 10."
 CANCELLED = "Sales ranking cancelled."
 GIVE_UP = (
-    "I still can't read '{word}'. Ask again with the period and how many, "
-    "e.g. top 5 sales agents for Sorento this month."
+    "I still can't read '{word}'. Ask again in one message, "
+    "e.g. top 5 sales agents for Sorento this month by amount, delivered."
 )
 #: The route's own refusal for a dealer's staff breakdown (`report_ask._DEALER_MESSAGE`).
 DEALER_REFUSAL = "That breakdown is not available for your account."
@@ -179,8 +179,8 @@ def _basis_question() -> str:
 PERIOD = rf.FieldSpec(name="period", noun="period", question=PERIOD_QUESTION, resolve=_resolve_period, allow_all=False)
 TOP_N = rf.FieldSpec(name="top_n", noun="number", question=TOP_N_QUESTION, resolve=_resolve_top_n, allow_all=False)
 
-METRIC = rf.FieldSpec(name="metric", noun="measure", question=_metric_question, resolve=_resolve_metric, allow_all=False)
-BASIS = rf.FieldSpec(name="basis", noun="basis", question=_basis_question, resolve=_resolve_basis, allow_all=False)
+METRIC = rf.FieldSpec(name="metric", noun="measure", question=ranking_ask.METRIC_LINE, question_fn=_metric_question, resolve=_resolve_metric, allow_all=False)
+BASIS = rf.FieldSpec(name="basis", noun="basis", question=ranking_ask.RANKING_BASIS_LINE, question_fn=_basis_question, resolve=_resolve_basis, allow_all=False)
 
 SALES_RANKING_ASK = rf.register(rf.AskType(
     name=ASK_NAME,

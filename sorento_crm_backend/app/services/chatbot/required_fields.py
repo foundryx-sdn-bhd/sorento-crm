@@ -53,7 +53,7 @@ asks again hands a fresh one back (`required_ask` on its envelope).
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Callable
 
 from app.services.chatbot import jsc
@@ -94,12 +94,13 @@ class Resolved:
 class FieldSpec:
     name: str
     noun: str
-    #: The line asked. A callable is read when it is asked, for a question another module owns
-    #: (the rankings' metric and basis lines, `lanes/business/ranking_ask`).
-    question: str | Callable[[], str]
+    question: str
     resolve: Callable[[Any, str, dict[str, Any]], Resolved]
     allow_all: bool = True
     required: bool = True
+    #: A question another module owns (the rankings' metric and basis lines,
+    #: `lanes/business/ranking_ask`), read when it is asked and laid over `question`.
+    question_fn: Callable[[], str] | None = None
 
 
 @dataclass(frozen=True)
@@ -147,14 +148,14 @@ def _is_all(text: str, spec: FieldSpec) -> bool:
     return word in ALL_WORDS or word in {f"all {spec.noun}", f"all {_plural(spec.noun)}"}
 
 
-def _question(spec: FieldSpec) -> str:
-    return spec.question() if callable(spec.question) else spec.question
+def _live(spec: FieldSpec) -> FieldSpec:
+    return replace(spec, question=spec.question_fn()) if spec.question_fn else spec
 
 
 def _miss_line(word: str, spec: FieldSpec, note: str = "") -> str:
     if note:
-        return f"{note}\n\n{_question(spec)}"
-    return f"I don't know '{word}' as a {spec.noun}.\n\n{_question(spec)}"
+        return f"{note}\n\n{spec.question}"
+    return f"I don't know '{word}' as a {spec.noun}.\n\n{spec.question}"
 
 
 def _pick_line(spec: FieldSpec, options: list[list[Any]]) -> str:
@@ -214,6 +215,7 @@ def collect(
             return Outcome(values=values, reply=ask.cancelled, slot=None, extras=carried, cancelled=True)
         spec = specs.get(jsc.js_string(slot.get("asking")))
         if spec is not None:
+            spec = _live(spec)
             options = list(slot.get("options") or [])
             got = _from_pick(spec, options, reply) if options else None
             if got is None:
@@ -242,6 +244,7 @@ def collect(
     for spec in ask.fields:
         if spec.name in values:
             continue
+        spec = _live(spec)
         word = (given or {}).get(spec.name)
         if word == ALL and spec.allow_all:
             values[spec.name] = {"value": ALL, "label": ALL}
@@ -264,7 +267,7 @@ def collect(
                            slot=_slot(ask, values, carried, asking=spec.name), extras=carried)
         if not spec.required:
             continue
-        return Outcome(values=values, reply=_question(spec),
+        return Outcome(values=values, reply=spec.question,
                        slot=_slot(ask, values, carried, asking=spec.name), extras=carried)
     return Outcome(values=values, extras=carried)
 
