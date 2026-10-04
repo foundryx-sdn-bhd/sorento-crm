@@ -201,4 +201,50 @@ describe('BulkCopyAccessDialog selection (review S1)', () => {
     await screen.findByText('Copy finished');
     expect(onApplied).toHaveBeenCalledTimes(1);
   });
+
+  // Lane CONTACT-COPY-FIELDS (UAC C4-C6).
+  it('C5/C6: "Not copied" is the server list, so companies show there only when this user cannot copy them', async () => {
+    const withCompanies = response(true);
+    withCompanies.source = {
+      ...withCompanies.source,
+      summary: [...summary, { label: 'Companies', value: 'Sorento' }, { label: 'Market segments', value: 'Retail' }],
+      not_copied: ['Linked customers', 'CS routing', 'Media limits', 'Memory'],
+    } as typeof withCompanies.source;
+    copySvc.bulkCopyContactAccess.mockResolvedValueOnce(withCompanies);
+    renderDialog();
+    await pickSource();
+    const summaryEl = await screen.findByTestId('copy-access-source-summary');
+    expect(summaryEl).toHaveTextContent('Market segments');
+    expect(summaryEl).toHaveTextContent('Retail');
+    expect(screen.getByTestId('copy-access-not-copied')).toHaveTextContent('Linked customers, CS routing, Media limits, Memory');
+    expect(screen.getByTestId('copy-access-not-copied')).not.toHaveTextContent('Companies');
+    cleanup();
+
+    const withoutCompanies = response(true);
+    withoutCompanies.source = {
+      ...withoutCompanies.source,
+      not_copied: ['Linked customers', 'CS routing', 'Media limits', 'Memory', 'Companies'],
+    } as typeof withoutCompanies.source;
+    copySvc.bulkCopyContactAccess.mockResolvedValueOnce(withoutCompanies);
+    renderDialog();
+    await pickSource();
+    expect(await screen.findByTestId('copy-access-not-copied')).toHaveTextContent('Companies');
+  });
+
+  it('C4: stock check mode shows its names, and a contact with no override reads Inherited', async () => {
+    const body = response(true);
+    body.results[0].changes = [
+      { facet: 'stock_check_mode', label: 'Stock check mode', before: 'detailed', after: 'availability', added: [], removed: [] },
+      { facet: 'stock_locations', label: 'Locations', before: null, after: 'Only KL1; hide zero-quantity', added: [], removed: [] },
+    ] as unknown as typeof body.results[0]['changes'];
+    copySvc.bulkCopyContactAccess.mockResolvedValueOnce(body);
+    renderDialog();
+    await pickSource();
+    fireEvent.click(await screen.findByRole('button', { name: 'Preview changes' }));
+    const row = screen.getByTestId('copy-access-row-t1');
+    expect(row).toHaveTextContent('Detailed');
+    expect(row).toHaveTextContent('Availability only');
+    expect(row).toHaveTextContent('Inherited');
+    expect(row).toHaveTextContent('Only KL1; hide zero-quantity');
+  });
 });
