@@ -31,7 +31,7 @@ from typing import Any, Callable, Mapping
 from app.services.chatbot.turn import task as task_mod
 from app.services.chatbot.turn.decide import NEW_INTENT, decide
 from app.services.chatbot.turn.policy_rows import DEFAULT_DOMAIN_ROWS
-from app.services.chatbot.turn.pending import ESCALATION_OFFER_KINDS, from_wire, is_roster, to_wire
+from app.services.chatbot.turn.pending import ESCALATION_OFFER_KINDS, OFFER_KINDS, from_wire, is_roster, to_wire
 from app.services.chatbot.turn.state import Focus, State, focus_from_wire
 
 __all__ = [
@@ -75,6 +75,23 @@ def _focus_slot(name: str, empty: Any) -> tuple[Callable[[State], bool], Callabl
     return is_held, clear
 
 
+#: The keys of `focus.top_selling` that are a QUESTION the ranking asked ("which metric?",
+#: "customer or sales agent?", one short unclear question). The rest of the slot is the
+#: ranking's own axes and its hand-over to the next report (`hop`, the ranked codes), which
+#: a later "outstanding" reads on purpose (top selling rounds 5, 7, 8): not held.
+TOP_SELLING_QUESTION_KEYS = ("asked", "who", "unclear")
+
+
+def _top_selling_question(state: State) -> bool:
+    slot = state.focus.top_selling or {}
+    return any(slot.get(key) for key in TOP_SELLING_QUESTION_KEYS)
+
+
+def _clear_top_selling_question(focus: Focus) -> None:
+    if focus.top_selling:
+        focus.top_selling = {k: v for k, v in focus.top_selling.items() if k not in TOP_SELLING_QUESTION_KEYS} or None
+
+
 #: slot -> (is it held?, clear it on a focus copy). `state.pending` is every kind of open
 #: question at once (`pending.PENDING_KINDS` and every narrower-minted roster): the rule
 #: never reads the kind, so a new kind needs no arm here.
@@ -84,7 +101,7 @@ SLOTS: dict[str, tuple[Callable[[State], bool], Callable[[Focus], None] | None]]
     "focus.required_ask": _focus_slot("required_ask", None),
     "focus.set_page": _focus_slot("set_page", None),
     "focus.set_clarify": _focus_slot("set_clarify", None),
-    "focus.top_selling": _focus_slot("top_selling", None),
+    "focus.top_selling": (_top_selling_question, _clear_top_selling_question),
 }
 
 
@@ -99,6 +116,14 @@ def _cleared(state: State, *, keep_pending: bool = False) -> State:
         if clear is not None:
             clear(focus)
     pending = state.pending if keep_pending else None
+    if state.pending is not None and pending is None:
+        # R17 (`apply._drop_question_subject`): a question that dies takes the subject it
+        # was asked about with it, or the next ask inherits the old customer, location and
+        # product ("sales order outstanding for SRTWC8517" under a question about another
+        # product, reviewer N2).
+        from app.services.chatbot.turn.apply import _drop_question_subject
+
+        _drop_question_subject(focus, state.pending)
     if pending is None:
         focus.held_turn = None
         focus.held_access = None
@@ -139,6 +164,12 @@ def _answers(state: State, verdict: dict[str, Any]) -> bool:
         or escalation.get("escalation_declined") is True
         or escalation.get("company_pick")
     ):
+        return True
+    if state.pending is not None and state.pending.kind in OFFER_KINDS and (
+        verdict.get("is_affirmative") is not None or verdict.get("outstanding_offer_declined") is True
+    ):
+        # A yes or a no to an offer (the parser's `is_affirmative`, or its declared decline
+        # of a detail offer) answers that offer, whatever intent rides along with it.
         return True
     if state.pending is not None and decide(verdict, state.focus, state.pending).answers:
         return True
@@ -225,19 +256,57 @@ def consume(
 LOOP_REPLY = "Let's leave that question. What would you like me to check?"
 
 
-def is_a_loop(state: State, stored: Mapping[str, Any] | None, *, question: Any, reply_text: Any, previous_reply: Any) -> bool:
+def is_a_loop(
+    state: State,
+    stored: Mapping[str, Any] | None,
+    *,
+    question: Any,
+    reply_text: Any,
+    previous_reply: Any,
+    verdict: Mapping[str, Any] | None = None,
+    fetched: bool = False,
+) -> bool:
     """Would this reply say exactly what the last one said, while every held question is
-    exactly as it was? Then the held question is talking to itself (STUCK-QTY-LOOP)."""
-    if not isinstance(reply_text, str) or not isinstance(previous_reply, str):
+    exactly as it was, nothing was read and the message named nothing of its own? Then the
+    held question is talking to itself (STUCK-QTY-LOOP). A message that names something (the parser's
+    current-message entities) changed the turn: asking the open question again over a
+    restated ask is the owner's own reading (top selling round 9, "top 10 hot sale item
+    by william" re-asks who William is)."""
+    if fetched or not isinstance(reply_text, str) or not isinstance(previous_reply, str):
+        # A reply a tool read this turn is an answer, even one that reads the same as the
+        # last ("50" then "10" over a three-product set, attribute asks round 7): only a
+        # question said again with nothing read is the held question talking to itself.
+        return False
+    if any(
+        isinstance(e, dict) and e.get("current_message") is not False
+        for e in (verdict or {}).get("entities") or []
+    ):
         return False
     if not reply_text.strip() or reply_text.strip() != previous_reply.strip():
         return False
     written = question if question is not None else state.pending
-    if not held_slots(replace(state, pending=written)):
+    if not _asks_a_held_question(state, question):
+        # The same ANSWER twice ("SRTWC286-SH x 2" asked again) is not a loop: only a reply
+        # that is itself a held question can talk to itself.
         return False
     stored = stored or {}
     was = _view(focus_from_wire(stored.get("focus")), from_wire(stored.get("open_question")))
     return was == _view(state.focus, written)
+
+
+def _asks_a_held_question(state: State, question: Any) -> bool:
+    """Is this reply a question the bot is holding: one the composer asked this turn, or an
+    open stock task, the required ask, a set count / clarify question or a ranking question
+    still waiting? An answered check (kept for a revision) is not one."""
+    focus = state.focus
+    return bool(
+        question is not None
+        or any(task.status == task_mod.OPEN for task in focus.tasks or ())
+        or focus.required_ask
+        or focus.set_page
+        or focus.set_clarify
+        or _top_selling_question(state)
+    )
 
 
 def let_go(state: State) -> State:
@@ -261,6 +330,8 @@ def _view(focus: Focus, pending: Any) -> tuple[Any, ...]:
         focus.required_ask,
         focus.set_page,
         focus.set_clarify,
+        # The whole ranking slot: a basis or period change re-asks the same question over a
+        # changed ask (top selling round 7), which is a change, not a loop.
         focus.top_selling,
     )
 

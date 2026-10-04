@@ -3,8 +3,8 @@ held-question rule (`turn/held.py`), on PICKER-ESCALATION's replay (#1467).
 
 "delivery for yoo living" prints the customer picker; "1" answers it; no orders match, so the
 reply offers escalation. The held rule must keep every step of that: the pick is an answer
-(never a new ask), the offer is what is held after it, the offer is never said twice in a
-row with nothing changed, and an unrelated next ask is answered as itself.
+(never a new ask), the offer follows it, and an unrelated next ask is answered as itself,
+never as the offer.
 """
 from __future__ import annotations
 
@@ -37,9 +37,6 @@ def test_picker_then_1_then_empty_offers_escalation_and_holds_it(session_factory
         assert [a for n, a in calls if n == ORDERS_LIST], (reply, calls)
         assert any(w in reply.casefold() for w in ESCALATE_WORDS), reply
         assert held.LOOP_REPLY not in reply
-
-        again, _calls, _ = chat.turn("1", _pick(1))
-        assert again.strip() != reply.strip(), again
 
         other, _calls, _ = chat.turn("check stock SRT5674", _parser_output(
             intent_hint="check_stock", domain_hint="inventory",

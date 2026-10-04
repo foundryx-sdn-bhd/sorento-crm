@@ -6527,6 +6527,8 @@ def _run_answer(
         question=getattr(answer, "question", None),
         reply_text=getattr(answer, "text", None),
         previous_reply=previous_reply,
+        verdict=verdict,
+        fetched=bool((refer_context or {}).get("envelopes")),
     ):
         # STUCK-QTY-LOOP loop guard (crew design review, 4 Oct 2026): the same held
         # question is never the whole reply twice in a row when nothing changed. It is let

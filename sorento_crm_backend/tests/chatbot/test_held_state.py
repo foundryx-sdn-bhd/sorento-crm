@@ -571,3 +571,27 @@ def test_a_repeated_open_question_of_any_kind_is_a_loop(kind):
     state = _state(Focus(), pending=_pending(kind))
     assert held.is_a_loop(state, _stored(state), question=state.pending, reply_text="Which one?", previous_reply="Which one?")
     assert held.held_slots(held.let_go(state)) == []
+
+
+def test_the_same_answer_twice_is_not_a_loop():
+    """"SRTWC286-SH x 2" asked again gets the same answer: the answered check it keeps for a
+    revision is not a question talking to itself."""
+    answered = ht.stock_task([("SRTWC286-SH", 2)], status="answered")
+    state = _state(Focus(tasks=(answered,)))
+    a = "SRTWC286-SH x 2: refer to your salesman."
+    assert not held.is_a_loop(state, _stored(state), question=None, reply_text=a, previous_reply=a)
+
+
+def test_a_message_that_names_something_is_not_a_loop():
+    """A restated ask ("top 10 hot sale item by william") may be met by the same open
+    question again: the message changed the turn (top selling round 9)."""
+    state = _state(_stuck_focus())
+    v = verdict(entities=[entity("william", hint="customer")])
+    assert not held.is_a_loop(state, _stored(state), question=None, reply_text="Q", previous_reply="Q", verdict=v)
+    assert held.is_a_loop(state, _stored(state), question=None, reply_text="Q", previous_reply="Q", verdict=verdict())
+
+
+def test_a_reply_a_tool_read_is_not_a_loop():
+    """"50" then "10" over a three-product set read the same set twice: answers, not a loop."""
+    state = _state(_stuck_focus())
+    assert not held.is_a_loop(state, _stored(state), question=None, reply_text="Q", previous_reply="Q", fetched=True)
