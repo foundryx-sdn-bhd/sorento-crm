@@ -132,6 +132,9 @@ def _order_ask(agent: str = "order_enquiries") -> dict[str, Any]:
         intent_hint="check_order",
         domain_hint="order",
         user_goal="checking the orders of a customer for a product",
+        # Dated: a dateless DO list ask asks which period first (DO-ASK-SIMPLIFY, owner 4 Oct 2026).
+        date_filter_start="2026-10-01",
+        date_filter_end="2026-10-31",
         entities=[
             {"raw": PRODUCT_CODE, "hint": "product", "canonical_code": None, "current_message": True, "confident": True},
             {"raw": CUSTOMER_NAME, "hint": "customer", "canonical_code": None, "current_message": True, "confident": True},
@@ -420,7 +423,9 @@ class TestR3BothMissClarifiesTheCompany:
     def test_the_multi_company_picker_copy(self, conversation):
         conv = conversation(_both_miss)
         said = _said(conv.say(f"{PRODUCT_CODE} kim seng jaya send yet", _order_ask()))
-        assert "Would you like me to escalate to customer service team?" in said, said
+        # A dated miss words the offer "..., or would you like me to escalate to customer service
+        # team?" after the 'another month or dates' hint (a dateless DO ask can no longer miss: it asks which period).
+        assert "or would you like me to escalate to customer service team?" in said, said
         assert (
             f"{PICKER_HEAD}\n*Mocha:*\n1. Kia Yee\n*Sorento:*\n2. Jereen Tee\n3. Tay Zhi Yang\n\n{COMPANY_SENTENCE}"
         ) in said, said
@@ -726,6 +731,9 @@ class TestR7OwnersRound4Transcript:
                 domain_hint="order",
                 entities=[],
                 entity_op="reuse",
+                # Dated: a dateless DO list ask asks which period first (DO-ASK-SIMPLIFY, owner 4 Oct 2026).
+                date_filter_start="2026-10-01",
+                date_filter_end="2026-10-31",
                 query_brands=["mocha"],
                 user_goal="asking about the mocha orders instead",
             ),

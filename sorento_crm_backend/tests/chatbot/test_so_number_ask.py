@@ -98,10 +98,12 @@ class TestUnresolvedSoNumberIsOneMissLine:
         _seed_contact(session_factory, variables={})
         own = _link_customers(session_factory, "ZZT OWN A", "ZZT OWN B")
 
+        # Dated: a DO list ask with no range asks which period first (DO-ASK-SIMPLIFY, owner
+        # 4 Oct 2026); this guard is about the links, not the range.
         _reply, captured = _turn(
             session_factory,
             monkeypatch,
-            _parser_output(domain_hint="order", intent_hint="check_order", order_status=None, entities=[]),
+            _parser_output(domain_hint="order", intent_hint="check_order", order_status=None, entities=[], date_filter_start="2026-10-01", date_filter_end="2026-10-31"),
             "my orders",
         )
 

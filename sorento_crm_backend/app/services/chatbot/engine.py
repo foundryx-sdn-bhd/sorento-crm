@@ -698,7 +698,7 @@ def _option_words(option: dict[str, Any]) -> set[str]:
 
 
 def _with_the_picked_axis(
-    verdict: dict[str, Any], pending: Any, positions: list[int]
+    verdict: dict[str, Any], pending: Any, positions: list[int], message: str = ""
 ) -> dict[str, Any]:
     """The roster's own axis, off the option(s) the customer picked.
 
@@ -718,6 +718,9 @@ def _with_the_picked_axis(
     * any other roster (product, customer): an entity of the roster's kind naming no
       picked option is dropped - the parser's echo of the previous pick is not a second
       subject. The picked option itself reaches the focus through `_answer_pending`.
+      MULTI-CODE-DYM Q3 (owner, 4 Oct 2026): a PRODUCT entity whose own word is in THIS
+      message ("2 and SRTWC286-SH-150?") is the customer's second subject, not an echo,
+      and stays.
     """
     matched = [o for o in pending.options if o.get("position") in positions]
     if not matched:
@@ -760,9 +763,40 @@ def _with_the_picked_axis(
             for v in (e.get("uuid"), e.get("canonical_code"), e.get("raw"), e.get("name"))
         )
 
+    from app.services.chatbot.turn.state import token_key
+
+    picked_keys = {
+        token_key(o.get(field))
+        for o in matched
+        for field in ("code", "label")
+        if o.get(field)
+    }
+    said = [w.strip(".?!:()\"'") for w in re.split(r"[\s,;/&+]+", message or "")]
+    said = [w for w in said if w]
+
+    def typed_here(e: dict[str, Any]) -> bool:
+        """The entity's word, whole, among this message's own words (a span of as many
+        words as it has): an echo of an earlier pick is not, even when a typed code
+        starts with it."""
+        raw = str(e.get("raw") or "").strip()
+        want, size = token_key(raw), len(raw.split()) or 1
+        if any(want in key for key in picked_keys):
+            # A piece of the picked code ("the srtwc286 one") names the pick itself.
+            return False
+        return bool(want) and any(
+            token_key(" ".join(said[i : i + size])) == want for i in range(len(said) - size + 1)
+        )
+
     entities = verdict.get("entities") or []
     kept_entities = [
-        e for e in entities if not (isinstance(e, dict) and e.get("hint") == kind and not names_a_pick(e))
+        e
+        for e in entities
+        if not (
+            isinstance(e, dict)
+            and e.get("hint") == kind
+            and not names_a_pick(e)
+            and not (kind == "product" and typed_here(e))
+        )
     ]
     if len(kept_entities) == len(entities):
         return verdict
@@ -1762,6 +1796,19 @@ def _customer_scope_gate(
                 narrowed_refusal = scope_mod.refusal_line_for(links, of_name)
     elif my_account is not None:
         ids = [c for c in ids if links.levels.get(c) == my_account] or None
+    elif in_order and not self_reference and not _names_an_order_number(entities):
+        # DO-ASK-SIMPLIFY tester pass 1: a message naming no customer ("this month",
+        # answering the period question) continues the customer the conversation already
+        # carries, kept inside the links; "my" means every link, and an order number is
+        # looked up across every own account whatever the carry.
+        link_ids = set(ids)
+        carried = [
+            str(row.get("uuid"))
+            for row in getattr(focus, "customers", None) or []
+            if isinstance(row, dict) and str(row.get("uuid")) in link_ids
+        ]
+        if carried:
+            ids = list(dict.fromkeys(carried))
     if ids is None:
         return without_customers, None, True, narrowed_refusal
     if not in_order:
@@ -1881,6 +1928,16 @@ def _screen_resolver_for_scope(
         for kind, rows in (candidates or {}).items()
     }
     return refused, compatible, candidates, dropped_ids
+
+
+def _names_an_order_number(entities: list[dict[str, Any]]) -> bool:
+    """Does this message name a DO/SO/order number (the parser's own order hints)?"""
+    return any(
+        jsc.js_string(e.get("hint") or e.get("entity_type") or "").strip().lower()
+        in ("order", "customer_order", "order_number")
+        and e.get("current_message") is not False
+        for e in entities
+    )
 
 
 def _drill_offer_subject(scope_ids: list[str] | None, focus: Any, trace: Any) -> list[str] | None:
@@ -4323,7 +4380,12 @@ def _run_stages_body(  # noqa: PLR0915
         # roster's axis from the option picked, never from a value the parser carried.
         roster_picks = _picks_in_the_roster_domain(state_in.pending, verdict)
         if roster_picks:
-            picked_verdict = _with_the_picked_axis(verdict, state_in.pending, roster_picks)
+            picked_verdict = _with_the_picked_axis(
+                verdict,
+                state_in.pending,
+                roster_picks,
+                jsc.js_string(jsc.get(_inner_message(envelope), "text") or ""),
+            )
             if picked_verdict is not verdict:
                 turn_trace.add(
                     "picked_axis",
@@ -5232,6 +5294,13 @@ def _run_stages_body(  # noqa: PLR0915
                 fetch=[_FetchSpec(domain=plan.domains[0], entities=[], filters={}, date_window=None)],
             )
 
+        # MULTI-CODE-DYM Q3 (owner, 4 Oct 2026): "2 and SRTWC286-SH-150" settled option 2
+        # from the roster and typed a code the resolver answered. The fetch keeps the
+        # resolver's rows for every kind it answered (`turn_runtime._entities_for`), so
+        # the settled pick rides beside them as a row of its own, or it is never fetched.
+        if "pick_plus_typed_subject" in plan.trace.rules_fired:
+            compatible_entities = _with_settled_picks(compatible_entities, state_out.focus.products)
+
         # -- E FETCH + F COMPOSE, for the turn that has something to look up --- #
         if (
             answer is None
@@ -5273,6 +5342,9 @@ def _run_stages_body(  # noqa: PLR0915
                     # what this message's token is, not the parser's hint.
                     resolved_kinds=resolved_kinds,
                     customer_scope=customer_scope,
+                    # MULTI-CODE-DYM: each unplaced token's did-you-mean, the same
+                    # candidates a lone miss of that token offers.
+                    unplaced_suggestions=_unplaced_suggestions(resolver_payload, unplaced_tokens),
                     # R6 (fix round 2): so a null `routing.suggested_team` inside the
                     # per-domain fetch context gets the same domain-aware fill this
                     # turn's own `ctx.parse.output` already got above.
@@ -5727,8 +5799,9 @@ def _run_stages_body(  # noqa: PLR0915
                     verdict,
                     turn_no=turn_no,
                 )
-                # #1262 fix lane round 7, R6: inside an order list no escalate offer and
-                # no routing picker; an empty list says so in one line.
+                # #1262 fix lane round 7, R6: inside an order list that answered, no
+                # escalate offer and no routing picker; a miss keeps its offer (owner
+                # ruling 4 Oct 2026, PICKER-ESCALATION).
                 answer = order_list_mod.list_reply(
                     answer,
                     was_open=order_list_was_open,
@@ -6367,6 +6440,39 @@ def _stock_answer_lines(envelopes: list[dict[str, Any]]) -> list[str]:
             if isinstance(flags, dict) and flags.get("branch") and not flags.get("needs_quantity") and title:
                 lines.append(str(title))
     return lines
+
+
+def _with_settled_picks(
+    compatible: list[dict[str, Any]], products: list[dict[str, Any]] | None
+) -> list[dict[str, Any]]:
+    """`compatible` plus each focus product a roster pick settled (it carries its uuid)
+    that the resolver's rows do not already hold."""
+    held = {str(e.get("uuid")) for e in compatible if isinstance(e, dict) and e.get("uuid")}
+    extra = [
+        turn_runtime._spec_row(p)
+        for p in products or []
+        if isinstance(p, dict) and p.get("uuid") and str(p.get("uuid")) not in held
+    ]
+    return [*compatible, *extra] if extra else compatible
+
+
+def _unplaced_suggestions(
+    resolver_payload: Any, unplaced: dict[str, str] | None
+) -> dict[str, list[dict[str, Any]]]:
+    """MULTI-CODE-DYM (owner, 4 Oct 2026, "treat each product code individually"): the
+    did-you-mean of every token this turn could not place, off the resolver's own answer
+    (`answer.did_you_mean_by_token`, the candidates `build_suggest_offer` shows for that
+    token asked alone). Empty when nothing is unplaced or no resolver ran; best effort, a
+    suggestion nobody could read leaves the plain "I could not find" line."""
+    if not unplaced or not isinstance(resolver_payload, dict):
+        return {}
+    from app.services.chatbot.lanes.business.answer import did_you_mean_by_token
+
+    try:
+        return did_you_mean_by_token(resolver_payload.get("resolved"), resolver_payload.get("gate"))
+    except Exception:  # noqa: BLE001 - a did-you-mean is never worth a failed turn
+        logger.warning("chatbot: the per-code did-you-mean did not read", exc_info=True)
+        return {}
 
 
 def _unplaced_tokens(envelopes: list[dict[str, Any]]) -> list[str]:

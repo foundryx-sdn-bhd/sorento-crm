@@ -1561,7 +1561,10 @@ def _fmt_value(v: Any) -> str:
     if isinstance(v, bool):
         return "Yes" if v else "No"
     if isinstance(v, str):
-        return (_fmt_ts(v) or v) if _ISO_RE.match(v) else v
+        # DO-ASK-SIMPLIFY tester pass 2: a value's own '*' (a product code "*REPLACE")
+        # would pair with the next label's bold marker and leave a stray '*' in WhatsApp.
+        # It prints as the look-alike U+2217, which WhatsApp does not read as formatting.
+        return ((_fmt_ts(v) or v) if _ISO_RE.match(v) else v).replace("*", "\u2217")
     if isinstance(v, (int, float)):
         return jsc.js_string(v)
     if isinstance(v, list):

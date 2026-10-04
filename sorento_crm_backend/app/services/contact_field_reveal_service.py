@@ -7,7 +7,9 @@ dealer by default (D4). A presenter marks a field `restricted=<key>` in
 contact - unlike `agent_field_access`, there is no owning agent to route a PO
 supplier's reveal through.
 
-Default is HIDDEN: a contact with no row for a key never sees that field. A full
+Default is HIDDEN, except the DO keys (`DEFAULT_ON_KEYS`), which default ON for every
+contact (owner, 4 Oct 2026): a contact with no row for any other key never sees that field,
+and a `granted=False` row hides a DO key. A full
 list PUT does not delete non-listed rows - it flips them to `granted=False` - so
 the table keeps who granted or revoked a key and when, rather than losing that
 history on the next save.
@@ -39,6 +41,22 @@ from app.models.access import ContactFieldReveal
 #: (see the module docstring above), so a new `restricted=` field on a presenter fails
 #: here until this tuple is updated to match, rather than silently missing the checklist.
 FIELD_REVEAL_KEYS: tuple[tuple[str, str], ...] = (
+    # DO-ASK-SIMPLIFY rule 2 (owner, 2 Oct 2026; every printed DO field since the 3 Oct hand
+    # test): one switch per DO field, ON by default for every contact, new ones
+    # included (owner, 4 Oct 2026); the owner turns one off per contact. Default ON
+    # comes from `DEFAULT_ON_KEYS`, with no seeding migration (crew review, 4 Oct 2026: a seed
+    # would reset owner-OFF switches).
+    ("delivery_orders.driver", "DO driver"),
+    ("delivery_orders.lorry_plate", "DO lorry plate"),
+    ("delivery_orders.pickup_time", "DO pickup time"),
+    ("delivery_orders.status", "DO status"),
+    ("delivery_orders.transporter", "DO transporter"),
+    ("delivery_orders.order_number", "DO order number"),
+    ("delivery_orders.customer", "DO customer"),
+    ("delivery_orders.order_date", "DO order date"),
+    ("delivery_orders.delivery_date", "DO delivery date"),
+    ("delivery_orders.warehouse", "DO warehouse"),
+    ("delivery_orders.products", "DO products"),
     ("inventory.sellable", "Outstanding SO on stock answers"),
     ("purchase_orders.placed", "PO placed (on order) on stock answers"),
     ("purchase_orders.supplier", "PO supplier"),
@@ -60,6 +78,14 @@ FIELD_REVEAL_KEYS: tuple[tuple[str, str], ...] = (
     ("scm.low_stock_report", "Low stock report over chat (staff: full workbook incl. Dealer o/s, PO and SPO numbers)"),
 )
 
+#: The DO reveal keys, on for every contact until a `granted=False` row says otherwise
+#: (owner, 4 Oct 2026). Every other key stays hidden by default. Any future
+#: `delivery_orders.*` reveal key is ON by default through this prefix rule, so adding one
+#: is an owner decision.
+DEFAULT_ON_KEYS: frozenset[str] = frozenset(
+    key for key, _label in FIELD_REVEAL_KEYS if key.startswith("delivery_orders.")
+)
+
 
 def field_reveal_keys() -> list[dict[str, str]]:
     """Every restricted key that exists, with its label, sorted by key.
@@ -70,17 +96,34 @@ def field_reveal_keys() -> list[dict[str, str]]:
     return [{"key": key, "label": label} for key, label in sorted(FIELD_REVEAL_KEYS)]
 
 
+def granted_keys_for(db: Session, respond_contact_ids: list[str]) -> dict[str, list[str]]:
+    """`granted_keys` for many contacts in one query: the ONE definition of the effective set.
+
+    Keyed by the ids as given (every id present, `[]` when nothing is held).
+    """
+    ids = [str(i) for i in respond_contact_ids]
+    held: dict[str, set[str]] = {i: set() for i in ids}
+    have_row: dict[str, set[str]] = {i: set() for i in ids}
+    if ids:
+        for contact_id, key, granted in (
+            db.query(
+                ContactFieldReveal.respond_contact_id,
+                ContactFieldReveal.field_key,
+                ContactFieldReveal.granted,
+            )
+            .filter(ContactFieldReveal.respond_contact_id.in_(ids))
+            .all()
+        ):
+            have_row[str(contact_id)].add(key)
+            if granted:
+                held[str(contact_id)].add(key)
+    return {i: sorted(held[i] | (DEFAULT_ON_KEYS - have_row[i])) for i in ids}
+
+
 def granted_keys(db: Session, respond_contact_id: str) -> list[str]:
-    """The keys this contact currently holds. `[]` when no row has ever been granted."""
-    rows = (
-        db.query(ContactFieldReveal.field_key)
-        .filter(
-            ContactFieldReveal.respond_contact_id == respond_contact_id,
-            ContactFieldReveal.granted.is_(True),
-        )
-        .all()
-    )
-    return sorted(key for (key,) in rows)
+    """The keys this contact currently holds: every granted row, plus each default-on key
+    with no row at all (a `granted=False` row hides it)."""
+    return granted_keys_for(db, [respond_contact_id])[str(respond_contact_id)]
 
 
 def set_granted_keys(
@@ -126,6 +169,16 @@ def set_granted_keys(
             row.granted = True
 
     known = {key for key, _label in FIELD_REVEAL_KEYS}
+    for key in DEFAULT_ON_KEYS - wanted - existing.keys():
+        # No row means ON for these, so turning one off needs an explicit row to stick.
+        db.add(
+            ContactFieldReveal(
+                respond_contact_id=respond_contact_id,
+                field_key=key,
+                granted=False,
+                created_by=actor_id,
+            )
+        )
     for key, row in existing.items():
         if key in known and key not in wanted and row.granted:
             row.granted = False

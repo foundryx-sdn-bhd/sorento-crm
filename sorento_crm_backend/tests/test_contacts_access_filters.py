@@ -315,6 +315,22 @@ def test_a2_5_access_differs_from_combines_with_other_filters(client, db, seeded
     assert _ids(_list(client, query=tag, access_differs_from=x.id, tier="office")) == {a.id}
 
 
+def test_do_default_on_access_differs_from_compares_the_effective_do_reveals(client, db, seeded):
+    """DO field reveals default ON (owner, 4 Oct 2026): a contact with no DO rows reads the same
+    as one with every DO key explicitly granted, and differs from one with a DO key turned off."""
+    from app.services.contact_field_reveal_service import FIELD_REVEAL_KEYS
+
+    do_keys = [k for k, _label in FIELD_REVEAL_KEYS if k.startswith("delivery_orders.")]
+    tag = unique_code("G", alpha=True)
+    x = _contact(db, tag, "X")
+    fresh = _contact(db, tag, "fresh")
+    explicit = _contact(db, tag, "explicit", reveals=do_keys)
+    hidden = _contact(db, tag, "hidden", revoked=["delivery_orders.warehouse"])
+    assert _ids(_list(client, query=tag, access_differs_from=x.id)) == {hidden.id}
+    assert fresh.id not in _ids(_list(client, query=tag, access_differs_from=x.id))
+    assert explicit.id not in _ids(_list(client, query=tag, access_differs_from=x.id))
+
+
 # ---------------------------------------------------------------- A2.6
 
 

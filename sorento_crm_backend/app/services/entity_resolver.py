@@ -19,10 +19,14 @@ Design notes
 """
 from __future__ import annotations
 
+import collections
+import copy
+import functools
 import logging
 import re
 import time
 import uuid
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any, Callable, Iterable, Optional
@@ -2703,10 +2707,7 @@ def _tier2_fuzzy_lookup(
         if allowed_entity_types is not None and produces.isdisjoint(allowed_entity_types):
             continue
         try:
-            if probe is _prefix_probe_inbound_shipment:
-                combined.extend(probe(db, token, regions=regions))
-            else:
-                combined.extend(probe(db, token))
+            combined.extend(_memo_tier2(probe, db, token, regions))
         except Exception:
             logger.exception("Tier-2 probe %s failed for token=%s", probe.__name__, token)
     return combined
@@ -2780,7 +2781,7 @@ def _tier3_embedding_lookup(
         return []
 
     try:
-        query_vec = _embed_text_chunks([token])[0]
+        query_vec = _memo_embedding(token, _embed_text_chunks)
     except Exception:
         logger.exception("Tier-3 query embedding failed for token=%s", token)
         return []
@@ -4744,6 +4745,106 @@ def _apply_entity_pins(
             raise EntityPinMismatch(orig_key, raw_pin)
 
 
+# --------------------------------------------------------------------------- #
+# Per-request memo
+# --------------------------------------------------------------------------- #
+# One resolve request can ask the same question of the database several times: the
+# cross-type expansion re-runs the Tier-1 / Tier-2 probes the tiers above it just ran,
+# and `references._resolve_input`'s all-types fallback runs a token the primary pass
+# could not resolve through the whole pipeline again - embedding it a second time, an
+# OpenAI round trip. Measured (CHAT-SLOW-MISS, 4 Oct 2026): one missing code in a
+# three-code stock ask was probed three times and embedded twice in one request.
+#
+# The memo holds each (probe, token) answer and each query vector for the life of ONE
+# request (`resolve_memo()`), and hands back copies: callers mutate what they get
+# (`match_tier`, company attribution). It never outlives the request, so it cannot
+# serve a stale row.
+_RESOLVE_MEMO: ContextVar[Optional[dict]] = ContextVar("entity_resolver_memo", default=None)
+
+
+class resolve_memo:
+    """Share probe answers across every resolve pass inside this block. Nests."""
+
+    def __enter__(self):
+        self._token = _RESOLVE_MEMO.set({}) if _RESOLVE_MEMO.get() is None else None
+        return self
+
+    def __exit__(self, *exc):
+        if self._token is not None:
+            _RESOLVE_MEMO.reset(self._token)
+        return False
+
+
+def _with_resolve_memo(fn):
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        with resolve_memo():
+            return fn(*args, **kwargs)
+
+    return wrapper
+
+
+def _memo_key(probe, token: str, regions) -> tuple:
+    return (probe, token, None if regions is None else frozenset(regions))
+
+
+def _memo_tier1(probe, db: Session, tokens: list[str], regions) -> dict[str, list[ResolvedEntity]]:
+    """`probe(db, tokens)` (Tier-1, batched), asking the database only for tokens it
+    has not already answered for in this request."""
+    memo = _RESOLVE_MEMO.get()
+    if memo is None:
+        return _call_tier1(probe, db, tokens, regions)
+    todo = [t for t in tokens if _memo_key(probe, t, regions) not in memo]
+    if todo:
+        fresh = _call_tier1(probe, db, todo, regions)
+        # A batch maps its rows back by NORMALISED code, so of two spellings of one code
+        # ("SRT-5764", "srt5764") only one gets the row. Asked alone, each would find it:
+        # such a token's batched answer is not its answer, so it is not remembered.
+        folded = collections.Counter(_alnum_casefold(t) for t in todo)
+        for t in todo:
+            if folded[_alnum_casefold(t)] == 1:
+                memo[_memo_key(probe, t, regions)] = copy.deepcopy(fresh.get(t, []))
+    out: dict[str, list[ResolvedEntity]] = {}
+    for t in tokens:
+        key = _memo_key(probe, t, regions)
+        out[t] = copy.deepcopy(memo[key]) if key in memo else fresh.get(t, [])
+    return out
+
+
+def _call_tier1(probe, db: Session, tokens: list[str], regions) -> dict[str, list[ResolvedEntity]]:
+    if probe is _probe_inbound_shipment:
+        return probe(db, tokens, regions=regions)
+    return probe(db, tokens)
+
+
+def _memo_tier2(probe, db: Session, token: str, regions) -> list[ResolvedEntity]:
+    """`probe(db, token)` (Tier-2, one token), once per request."""
+    memo = _RESOLVE_MEMO.get()
+    key = _memo_key(probe, token, regions)
+    if memo is None or key not in memo:
+        hits = (
+            probe(db, token, regions=regions)
+            if probe is _prefix_probe_inbound_shipment
+            else probe(db, token)
+        )
+        if memo is None:
+            return hits
+        memo[key] = copy.deepcopy(hits)
+    return copy.deepcopy(memo[key])
+
+
+def _memo_embedding(token: str, embed) -> list[float]:
+    """The query vector for `token`, embedded once per request."""
+    memo = _RESOLVE_MEMO.get()
+    key = ("embedding", token)
+    if memo is None:
+        return embed([token])[0]
+    if key not in memo:
+        memo[key] = list(embed([token])[0])
+    return memo[key]
+
+
+@_with_resolve_memo
 def resolve_references(
     db: Session,
     query_or_tokens: str | list[str],
@@ -4877,11 +4978,7 @@ def resolve_references(
             else:
                 probe_tokens = tokens
             try:
-                hits = (
-                    probe(db, probe_tokens, regions=regions)
-                    if probe is _probe_inbound_shipment
-                    else probe(db, probe_tokens)
-                )
+                hits = _memo_tier1(probe, db, probe_tokens, regions)
             except Exception:
                 logger.exception("Tier-1 probe %s failed", probe.__name__)
                 continue
@@ -5035,11 +5132,7 @@ def resolve_references(
                     # fallback path clears `allowed` so this is a no-op there.
                     continue
                 try:
-                    hits = (
-                        probe(db, [tok], regions=regions)
-                        if probe is _probe_inbound_shipment
-                        else probe(db, [tok])
-                    ).get(tok, [])
+                    hits = _memo_tier1(probe, db, [tok], regions).get(tok, [])
                 except Exception:
                     logger.exception("Cross-type tier-1 probe %s failed", probe.__name__)
                     continue
@@ -5058,11 +5151,7 @@ def resolve_references(
                     if allowed is not None and produces.isdisjoint(allowed):
                         continue
                     try:
-                        hits = (
-                            probe(db, tok, regions=regions)
-                            if probe is _prefix_probe_inbound_shipment
-                            else probe(db, tok)
-                        )
+                        hits = _memo_tier2(probe, db, tok, regions)
                     except Exception:
                         logger.exception("Cross-type tier-2 probe %s failed", probe.__name__)
                         continue
