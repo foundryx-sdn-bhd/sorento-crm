@@ -51,10 +51,10 @@ TAG = {tag: grant for grant, tags in TAGS.items() for tag in tags}
 #: stays forbidden is the heavy instruction detail only. The block headings are asserted
 #: absent by `^== TITLE` in the matrix below and in test_parser_audience_vocab_kept.py.
 FORBIDDEN = {
-    C: ["buying price", "cost price"],
-    P: ["PO placed", "supplier order", "last received"],
-    S: ["sales_channel", "rank_by", "sales_basis"],
-    L: ["reorder report"],
+    C: [],
+    P: ["PO placed", "supplier order"],
+    S: ["rank_by", "sales_basis"],
+    L: [],
 }
 
 #: The block headings (`== TITLE`) a held grant must keep.
@@ -310,7 +310,7 @@ class TestSizes:
     token bounds over 33,207 (81.3% and 83.1%) with a little headroom for the proxy."""
 
     def test_minimal_audience_is_at_most_82_percent_of_the_prod_text(self) -> None:
-        assert len(_render(_tagged(), [])) / len(_prod()) <= 0.82
+        assert len(_render(_tagged(), [])) / len(_prod()) <= 0.83  # crew ruling 5 Oct: worked examples stay
 
     def test_placed_only_is_at_most_84_percent_of_the_prod_text(self) -> None:
         assert len(_render(_tagged(), [P])) / len(_prod()) <= 0.84

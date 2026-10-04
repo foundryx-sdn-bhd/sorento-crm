@@ -98,6 +98,25 @@ class TestVocabularyKeptTaggedText:
             assert _has(out, word), word
 
 
+EXAMPLES = {
+    "purchase_cost": '"harga belian terakhir"',
+    "purchase_order": '"stock, incoming and PO" -> asks',
+    "spo_allocation": '"terakhir masuk"',
+    "sales": '"dealer sales report for hanlim" -> sales_channel',
+    "low_stock_report": '"laporan stok rendah"',
+}
+
+
+class TestWorkedExamplesStay:
+    """Crew ruling 5 Oct 2026: the gated WORKED EXAMPLES are classification aid."""
+
+    @pytest.mark.parametrize("grants", AUDIENCES)
+    @pytest.mark.parametrize("domain", list(EXAMPLES))
+    def test_each_gated_domains_example_line_is_in_every_audience(self, grants, domain) -> None:
+        assert EXAMPLES[domain] in _prod(), "fixture line must exist in the prod text"
+        assert EXAMPLES[domain] in render_for_audience(_tagged(), grants), domain
+
+
 # --------------------------------------------------------------------------- #
 # V2 / V3 on the real tagged prod text
 # --------------------------------------------------------------------------- #
@@ -208,7 +227,12 @@ def _registry_template(session_factory) -> None:
 
 
 def _var_lines(prompt: str) -> dict[str, str]:
-    return {m.group(1): m.group(2) for m in re.finditer(r"^@@(\w+): (.*)$", prompt, flags=re.MULTILINE)}
+    """Each `@@name:` variable's WHOLE block: up to the next `@@` marker or the TAIL line
+    (`{{statuses}}` renders one status per line)."""
+    return {
+        m.group(1): m.group(2).strip()
+        for m in re.finditer(r"^@@(\w+): (.*?)(?=^@@|^TAIL$)", prompt, flags=re.MULTILINE | re.DOTALL)
+    }
 
 
 class TestRegistryListsAreTheSameForEveryAudience:
