@@ -53,7 +53,7 @@ FOCUS_HELD: tuple[str, ...] = ("tasks", "required_ask", "set_page", "set_clarify
 FOCUS_NOT_HELD: tuple[str, ...] = (
     "products", "customers", "warehouse", "brands", "outstanding_brand_ids", "tier",
     "domains", "document", "status", "sales_channel", "date_window", "sort", "extra",
-    "intent", "held_turn", "held_access",
+    "intent", "held_turn", "held_access", "low_stock",
 )
 #: The `State` fields. `ideation` is the ideate lane's draft pointer: the MCP intake tool
 #: owns it and closes it on the draft's own terminal status (`lanes/ideate.py`), and the

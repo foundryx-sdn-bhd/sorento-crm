@@ -114,7 +114,12 @@ def test_the_engine_tells_the_held_rule_which_reader_answered(console, monkeypat
         return real(state, verdict_in, **kw)
 
     monkeypatch.setattr(engine_mod.turn_held, "consume", spy)
-    console.say("water tap", verdict(intent_hint="check_stock", domain_hint="inventory", entities=[entity("water tap", hint="category")]))
+    # LOWSTOCK-SEMANTIC (#1470): only the parser's declared answer answers the question.
+    console.say("water tap", verdict(
+        intent_hint="check_stock", domain_hint="inventory", entities=[entity("water tap", hint="category")],
+        low_stock={"group_by": None, "categories": ["water tap"], "all_categories": False, "brands": [], "suppliers": []},
+        open_question_answer={"mode": "fill", "picked": [], "items": [], "qty_for_all": None},
+    ))
     assert seen and "required_ask" in seen[-1], seen
 
 
