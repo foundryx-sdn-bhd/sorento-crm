@@ -1437,6 +1437,9 @@ class SalesOrderService:
         so = SalesOrder(
             so_number=so_number,
             customer_id=customer.id,
+            # The name the order is issued under (sdn_0001, DEBTOR-CODE-LINK), so a later
+            # rename of the customer never rewrites it.
+            debtor_name=(customer.customer_name or "").strip() or None,
             sales_agent_id=agent_id,
             order_date=date.today(),
             requested_delivery_date=(
