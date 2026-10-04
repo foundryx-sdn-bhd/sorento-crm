@@ -197,3 +197,35 @@ webhook up; document the setup steps in the PR."
 - Process note: the migration, service and tests were written in one session (cloud sandbox,
   crew lane) rather than by separate tester / coder agents; the reviewer and security-reviewer
   passes ran as Opus agents (Phase 3) before the PR left draft.
+
+## 7. Cloud browser pass (agent-browser, sandbox stack, 4 Oct 2026)
+
+Stack: this lane's Claude Code cloud sandbox, Postgres 16 + pgvector + Redis, database bootstrapped
+with `scripts.bootstrap_env` at the branch head (main merged, migration `clf_0001` re-parented onto
+`ideation_capture_0001`), every catalog module installed for the default tenant, fake seed only
+(contacts `+6010000000x`, names "Ahmad Zzt" / "Mei Zzt", customers ZZT-C1 / ZZT-C2, a sales agent
+with a verified portal token and the `conversation` override, an open intervention ticket
+assigned to the admin login, 60 messages on contact ZZT100001 including one image row and one
+staff-sent row, 3 on ZZT100002). No Respond.io key in the sandbox, so the delta read is never
+attempted here: the counter and the API log prove the request path makes no call; the one-call
+open and the backoff are covered by `tests/test_chat_local_first.py` and `tests/test_chat_reconcile.py`.
+Backend `uvicorn --reload` on :8000, `npm run dev` on :3000, `agent-browser 0.27.0` with the
+sandbox Chromium, session `clf`, viewports 1280x800 and 375x812.
+
+| Step | Walk | Result |
+| --- | --- | --- |
+| CRM sign-in | `/` -> email + password form -> Continue | PASS, lands on Dashboards |
+| Sidebar nav | SLA group (scrollintoview, click) -> Conversations | PASS, `/sla-management/conversations`, tabs Mine / Mentioned / Unassigned / All |
+| Inbox list | tab All | PASS, both seeded contacts with their last message |
+| Inbox thread (1280) | click contact row | PASS, 50 newest messages render; `GET .../conversations/ZZT100001/page?limit=50` once; `events/stream?contacts=ZZT100001` opened; image row renders as "Photo · site-photo.jpg" preview bubble; staff row renders; no console errors. Screenshot `evidence/chat-local-first/inbox-thread-1280.png` |
+| Inbox thread (375) | `set viewport 375 812` | PASS, thread readable, no horizontal clipping observed in the accessibility tree; screenshot kept out of git (two-screenshot cap) |
+| Call counter | `GET /api/v1/system/chat-history/respond-io-calls?minutes=5` with the admin token, after the above | PASS, `total: 0`; `grep -c "respond.io call" backend.log` = 0 |
+| Portal token link (375) | `/portal?token=<seeded>` | PASS, resolves to `/portal/c/zzt-agent`, "Welcome, Zzt Salesperson" |
+| Portal kind | landing combobox | PASS after seeding the per-contact `conversation` override: option "Conversation 2" (first run FAILED on the missing override: a seed gap, not a code gap; `resolve_visible_form_types` at `portal_form_visibility_service.py:100-111` needs the switch AND a linked agent) |
+| Portal list | option Conversation | PASS, both contacts, latest message first |
+| Portal thread (375) | click row | PASS, `GET /api/v1/public/portal/conversations/<id>/page?limit=50` once; image and staff bubbles render; no console errors. Screenshot `evidence/chat-local-first/portal-thread-375.png` |
+| Portal thread (1280) | `set viewport 1280 800` | PASS, screenshot kept out of git |
+| Ticket panel (1280) | Dashboards > My pending tasks > "Enquiry · Ahmad Zzt" | PASS (after R9): panel renders the same thread; `GET .../conversation-sla-tracking/<id>/conversation?limit=50` (plus `/ticket`, `/comments`); counter still 0 |
+| Ticket panel (375) | `set viewport 375 812` | PASS, thread readable |
+| Ticket panel send | type a reply and send | NOT RUN here: a send needs a Respond.io key and a real contact; covered by `tests/test_ticket_panel_local_first.py::test_...tp3` (send mirror row appears in the panel read) and the owner's hand test step 7 |
+| Phone inbound | WhatsApp from the phone | NOT RUN here (needs the owner's phone); webhook path covered by `tests/test_respond_webhook_ingest.py` and `test_ticket_panel_local_first.py` AC-TP2 |
