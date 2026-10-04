@@ -210,6 +210,8 @@ export interface StockDebtExportParams {
   supplierIds: string[];
   dateFrom: string;
   dateTo: string;
+  /** Whether the workbook carries the four stock and PO columns (default off on the wire). */
+  showAux: boolean;
   split: StockDebtExportSplit;
 }
 
@@ -282,6 +284,7 @@ export async function exportStockDebt(params: StockDebtExportParams): Promise<My
       date_from: params.dateFrom || undefined,
       date_to: params.dateTo || undefined,
       split: params.split,
+      show_aux: params.showAux,
     }),
   });
   if (!res.ok) throw new Error(await extractApiError(res, 'Failed to start the stock debt export'));
