@@ -117,7 +117,7 @@ Tester first (red), then the fix (green), each kill-tested:
   only then did the Problem line change. The same shape is in the #1277 transcript
   ("Problem: i ahve an idea, i want sale sorder report to track KKPI" next to a cleaned
   Solution). Trace check for the owner's DB: `select created_at, trace from chatbot_turns
-  where contact_respond_id = '437264483' and created_at between '2026-09-26 14:09Z' and
+  where contact_respond_id = '900000008' and created_at between '2026-09-26 14:09Z' and
   '2026-09-26 14:11Z' order by created_at` - the ideate lane's pointer (`ideation.captured`)
   shows `problem` equal to the raw message while `proposed_solution` is already clean.
 - **W2.** The extractor copied the department answer verbatim; nothing normalised it.

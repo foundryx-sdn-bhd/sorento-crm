@@ -179,7 +179,7 @@ const CONTACT_LOCKED = {
 const CONTACT_PICKED = {
   id: 'b2222222-2222-4222-8222-222222222222',
   name: 'Zaid Hassan',
-  phone_number: '+60129990000',
+  phone_number: '+60120000000',
   suggested_role_slug: 'portal_user',
 };
 const CONTACTS_BY_ID: Record<string, typeof CONTACT_LOCKED> = {
@@ -289,7 +289,7 @@ describe('UserAddDialog - S3 2.1: email optional with a phone, required without 
     renderDialog();
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Phone Only' } });
     fireEvent.change(screen.getByLabelText('Contact Number'), {
-      target: { value: '+60111234567' },
+      target: { value: '+60110000567' },
     });
     await tickRole('Portal user');
 

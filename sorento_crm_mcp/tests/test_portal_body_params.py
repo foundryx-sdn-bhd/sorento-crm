@@ -55,8 +55,8 @@ def test_numeric_string_id_not_coerced_to_int():
         def __init__(self):
             self.request_context = type("RC", (), {"lifespan_context": {"client": _Client(), "settings": type("S", (), {"crm_base_url": "http://x", "external_api_key": "k"})()}})()
 
-    asyncio.run(impl(_Ctx(), contact_id="437264483", space_id="364817"))
+    asyncio.run(impl(_Ctx(), contact_id="900000008", space_id="364817"))
     assert captured["method"] == "POST"
-    assert captured["body"]["contact_id"] == "437264483"  # still a string
+    assert captured["body"]["contact_id"] == "900000008"  # still a string
     assert captured["body"]["space_id"] == "364817"
     assert "submission_type" not in captured["body"]  # omitted optional dropped

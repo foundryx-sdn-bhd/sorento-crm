@@ -78,7 +78,7 @@ class TestAbsentAnswerCarriesThePendingWithoutReprinting:
 
     def test_a_casual_message_with_a_pending_open_fetches_nothing(self):
         """AC-1593 finding, 16 Sep 2026 console browser pass 2 (handpass2, contact
-        Justin, turn f8fe14a4 "hello" with a `team_pick` offer open): the recorded turn
+        CONTACT N, turn f8fe14a4 "hello" with a `team_pick` offer open): the recorded turn
         re-ran the PRIOR order fetch verbatim instead of answering as the casual
         exchange it plainly is - "hello" carries no business of its own.
 

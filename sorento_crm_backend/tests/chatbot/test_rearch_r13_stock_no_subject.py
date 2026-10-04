@@ -4,7 +4,7 @@
 Plan: `documentation/plans/chatbot/PLAN-chatbot-stock-no-subject-hotfix-22sep.md`.
 UAC: `chatbot-stock-no-subject-hotfix-22sep-acceptance-criteria.md` (AC-1790..AC-1796).
 
-The live chain (prod, 22 Sep 2026 12:52, contact 423729104, turns 59-60):
+The live chain (prod, 22 Sep 2026 12:52, contact 900000081, turns 59-60):
 
 * turn 59 "Srtwc8608-p-rl" missed and raised a did-you-mean roster. The token
   resolved ONLY as a `product_set` - a kind `gate.ALLOWED["inventory"]` does not

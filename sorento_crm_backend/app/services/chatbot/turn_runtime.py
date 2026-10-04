@@ -96,6 +96,11 @@ class TurnContext:
     access_levels: list[str] = field(default_factory=list)
     contains_flyer: bool = False
     ideation: Any = None
+    # CHAT-LANGUAGE: the `label_catalog.Localizer` for this turn's reply language, read by
+    # `turn/compose.py::compose`, and the language itself, which `tail.session_payload`
+    # carries to the next turn as `reply_language`.
+    localizer: Any = None
+    reply_language: str | None = None
     # SRTSC07 (prod transcript, 22 Sep 2026): this turn's own `routing.suggested_agent`,
     # read by `turn/compose.py::compose` so a freshly minted `team_pick` offer can carry
     # the agent half beside the team it already carries - `answer_bridge`'s own mint
@@ -2704,6 +2709,7 @@ def make_tool_runner(
     resolved_kinds: dict[str, dict[str, int]] | None = None,
     policy: Any = None,
     customer_scope: dict[str, Any] | None = None,
+    localizer: Any = None,
     unplaced_suggestions: dict[str, list[dict[str, Any]]] | None = None,
 ) -> Callable[[str, FetchSpec], dict[str, Any]]:
     """The ONE seam that reaches a tool: `run_fetch` calls it once per `FetchSpec`.
@@ -2812,6 +2818,8 @@ def make_tool_runner(
             # The contact's customer scope (`engine._customer_scope_gate`), read by
             # `lanes.business.run_fetch`; a lane-only key, never on the engine's own ctx.
             "customer_scope": customer_scope,
+            # CHAT-LANGUAGE: read by `output_structurer` (render-only).
+            "localizer": localizer,
         }
         if page_predicate is not None:
             entities = [
@@ -2924,7 +2932,7 @@ def make_tool_runner(
             and all(_entity_is_unplaced(e, unplaced) for e in entities)
         )
         # Hotfix 22 Sep 2026 (PLAN-chatbot-stock-no-subject-hotfix-22sep.md, live
-        # contact 423729104 turns 59-60): the guard above needs `bool(unplaced)`, and
+        # contact 900000081 turns 59-60): the guard above needs `bool(unplaced)`, and
         # the whole-book read that got through carried NOTHING unplaced. Turn 59's
         # "Srtwc8608-p-rl" resolved only as a `product_set` - a kind
         # `ALLOWED["inventory"]` does not take - so the carry was parked on

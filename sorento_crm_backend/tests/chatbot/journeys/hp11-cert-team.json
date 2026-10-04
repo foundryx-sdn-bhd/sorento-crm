@@ -1,11 +1,11 @@
 {
   "name": "hp11-cert-team",
-  "source": "Hand pass 11 owner console, 21 Sep 2026 (real production, contact_respond_id 437264483). Owner's local turn: '7408 CERTIFICATE' -> did-you-mean -> '1' (SRTWT7408-HANDLE) -> lane today answers 'But no attachment matched these. Would you like me to escalate to marketing product team?' - wrong team. Owner ruling: 'for cert is to direct to purchasing certification team'. See test_rearch_r11_cert_team.py for the measured cause (the resolved attachment_types row's own `is_certificate` must win over the parser's `routing.suggested_team`, which the v39 prompt sends as marketing_product for a certificate ask because the rendered domain block contradicts its own certificate rule).",
+  "source": "Hand pass 11 owner console, 21 Sep 2026 (real production, contact_respond_id 900000008). Owner's local turn: '7408 CERTIFICATE' -> did-you-mean -> '1' (SRTWT7408-HANDLE) -> lane today answers 'But no attachment matched these. Would you like me to escalate to marketing product team?' - wrong team. Owner ruling: 'for cert is to direct to purchasing certification team'. See test_rearch_r11_cert_team.py for the measured cause (the resolved attachment_types row's own `is_certificate` must win over the parser's `routing.suggested_team`, which the v39 prompt sends as marketing_product for a certificate ask because the rendered domain block contradicts its own certificate rule).",
   "cases": [
     {
       "name": "certificate-miss-offers-purchasing-certification-and-survives-the-dym-pick",
       "cold": true,
-      "contact": "437264483",
+      "contact": "900000008",
       "turns": [
         {
           "text": "7408 CERTIFICATE",

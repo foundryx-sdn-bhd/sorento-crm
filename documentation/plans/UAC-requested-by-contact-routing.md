@@ -10,15 +10,15 @@ Legend: ☐ pending · ☑ passed (fill in as verified).
 **Actor:** a contact (salesman / agent) opening the submission portal from a WhatsApp link.
 
 Today the portal asks "Requested by" (PR / SF) and "Salesperson" (stock inquiry) as **free text**,
-pre-filled with the submitting contact's own name. Darren submits on behalf of other salesmen and
-never for himself. CS routing reads the **submitter**, so Darren's forms miss Eric Ng's pinned CS and
-land on round robin - every time, and there will never be a pin for Darren.
+pre-filled with the submitting contact's own name. CONTACT X submits on behalf of other salesmen and
+never for himself. CS routing reads the **submitter**, so CONTACT X's forms miss CONTACT Y's pinned CS and
+land on round robin - every time, and there will never be a pin for CONTACT X.
 
 New journey:
 
 1. Contact opens the portal link. System already knows who they are (portal token → respond contact).
 2. Form shows **Requested by** as a picker, pre-filled with themselves - one tap for the common case,
-   one selection for Darren's case. Nothing else in the journey changes.
+   one selection for CONTACT X's case. Nothing else in the journey changes.
 3. The list they choose from is not "every contact in the CRM": it is the contacts belonging to
    market segments an admin has marked as selectable (e.g. Project). Names only - no phone, no
    company, nothing else leaked into a portal that any token-holder can open.
@@ -83,7 +83,7 @@ derived from the chosen contact, so PDFs / list search / portal search need no n
 
 ## E. Routing (the actual bug)
 
-- E1 ☐ Darren submits a PR with requested_by = Eric Ng, Eric has a CS pin matching the form →
+- E1 ☐ CONTACT X submits a PR with requested_by = CONTACT Y, Eric has a CS pin matching the form →
   the tracker assigns to Eric's pinned CS.
 - E2 ☐ Same, but Eric has NO pin → **round robin** (never falls back to the submitter's pin).
 - E3 ☐ `requested_by_contact_id` NULL (legacy / internal-created row) → behaviour byte-identical to
@@ -103,8 +103,8 @@ derived from the chosen contact, so PDFs / list search / portal search need no n
 - F1 ☐ `scripts/backfill_requested_by_contact.py --dry-run` reports matched / ambiguous / unmatched
   counts and writes NOTHING (no autoflush side effects).
 - F2 ☐ Matching is case-insensitive exact on the contact's name and on `first_name + ' ' + last_name`;
-  "Eric Ng" → Eric Ng, "ERIC" → Eric Ng only when exactly one contact matches.
-- F3 ☐ Ambiguous ("Cindy" with both *Cindy* and *Cindy Lee* present) → left NULL and listed in the
+  "CONTACT Y" → CONTACT Y, "ERIC" → CONTACT Y only when exactly one contact matches.
+- F3 ☐ Ambiguous ("Cindy" with both *Cindy* and *CONTACT W* present) → left NULL and listed in the
   report. Never guessed.
 - F4 ☐ Idempotent JOIN-based "set where mismatch": re-running corrects prior wrong values, not just
   NULLs (per the backfill lesson).

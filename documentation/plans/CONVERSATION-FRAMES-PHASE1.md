@@ -75,7 +75,7 @@ unchanged until user imports the new n8n flow nodes from
 
 ## 3. CRUD smoke results (localhost:8000, EXTERNAL_API_KEY=test)
 
-Test contact: `437264483`, space `364817`, channel `whatsapp`.
+Test contact: `900000008`, space `364817`, channel `whatsapp`.
 
 | # | Endpoint | Status |
 |---|---|---|
@@ -135,8 +135,8 @@ Required env (set in your shell or `.env.test`):
 
 ```
 PORTAL_E2E_BASE_URL=http://localhost:3000
-MCP_ROUTING_E2E_EMAIL=tehjayson@gmail.com
-MCP_ROUTING_E2E_PASSWORD=TestAdmin#2026
+MCP_ROUTING_E2E_EMAIL=person38@example.com
+MCP_ROUTING_E2E_PASSWORD=<set in .env.local>
 # Optional - pin to a known-good tool name; default falls back to first row.
 MCP_ROUTING_E2E_TOOL_NAME=crm_marketing_promotions_list
 ```
@@ -211,7 +211,7 @@ Architecture diagram lives in the user's chat transcript and at
 ```bash
 API=http://localhost:8000
 KEY=test
-CONTACT=437264483
+CONTACT=900000008
 SPACE=364817
 
 # Open

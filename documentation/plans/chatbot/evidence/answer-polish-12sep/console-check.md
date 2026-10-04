@@ -2,12 +2,12 @@
 
 Backend :8080 (worktree `chatbot-answer-polish`, coder commit on top of origin/main #834),
 MCP :8765 with `CRM_BASE_URL=http://localhost:8080`, DB `sorento_ai_automation_0907` (prod copy
-of 7 Sep, upgraded to alembic 512). Contact 437264483, stock policy as prod's copy has it:
+of 7 Sep, upgraded to alembic 512). Contact 900000008, stock policy as prod's copy has it:
 `detailed`, `hide_zero_locations = true`. Runner:
 
     venv/bin/python scripts/chatbot_console_check.py --say "ETA SRTWT6236" \
         --say "SRT6550-DIY ETA" --say "SRTKT71SS" --say "stock CWCX7605-S-ECO" \
-        --base-url http://127.0.0.1:8080 --contact 437264483
+        --base-url http://127.0.0.1:8080 --contact 900000008
 
 ## Before (same stack, origin/main #834, same contact)
 
@@ -82,7 +82,7 @@ spec cap.
 ## Graded case file
 
 Review fix round (commit `f07f93df8`), backend :8080 restarted on that commit, MCP :8765 up,
-contact 437264483 (default in the yaml), the four cases in
+contact 900000008 (default in the yaml), the four cases in
 `tests/chatbot/console_cases/2026-09-12-answer-polish.yaml`:
 
     set -a; source <(grep -E "^EXTERNAL_API_KEY=" .env); set +a

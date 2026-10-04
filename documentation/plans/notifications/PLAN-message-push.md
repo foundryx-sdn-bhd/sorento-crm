@@ -308,7 +308,7 @@ never by opening a deep URL.
    POST /api/v1/external/chat-history/messages  ->  {"id":36710,"status":"duplicate"}
    ```
 
-   Contact `437264483` holds TWO open conversation tickets with DIFFERENT assignees, so
+   Contact `900000008` holds TWO open conversation tickets with DIFFERENT assignees, so
    this is the multi-open case on live data. Result: **two** notifications, one per
    assignee, each linked to their OWN ticket, and **not** four:
 
@@ -317,7 +317,7 @@ never by opening a deep URL.
                    | link=/sla-management/conversation-sla-tracking/8c88750b-...
    Jayson Personal | Jayson | Can I get the price for the 900mm hood?
                    | link=/sla-management/conversation-sla-tracking/0f444728-...
-   tag=contact-437264483 on both
+   tag=contact-900000008 on both
    ```
 
    Deliveries per notification: `in_app` sent, `web_push` sent, **no email row**. Neither

@@ -478,7 +478,7 @@ def test_s6_3_deferred_delete_is_registered_behind_the_delete_slug(world):
 
 def test_agent_options_label_each_active_agent_with_their_team_now(api):
     client, db, _ = api
-    sean = _agent(db, "SEAN", "Sean Lee")
+    sean = _agent(db, "SEAN", "CONTACT AE")
     raj = _agent(db, "RAJ", "Raj Kumar")
     gone = _agent(db, "OLD", "Retired", active=False)
     central = client.post(BASE, json={"name": "Central", "sales_agent_ids": [sean.id]}).json()
@@ -487,7 +487,7 @@ def test_agent_options_label_each_active_agent_with_their_team_now(api):
     by_id = {o["id"]: o for o in data}
     assert by_id[sean.id]["team_id"] == central["id"]
     assert by_id[sean.id]["team_name"] == "Central"
-    assert by_id[sean.id]["label"] == f"{sean.sales_agent} - Sean Lee"
+    assert by_id[sean.id]["label"] == f"{sean.sales_agent} - CONTACT AE"
     assert by_id[raj.id]["team_id"] is None
     assert gone.id not in by_id
 

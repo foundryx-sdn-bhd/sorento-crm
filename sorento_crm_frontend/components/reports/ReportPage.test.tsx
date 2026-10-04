@@ -173,9 +173,9 @@ const RESULT: ReportResult = {
       ],
       column_groups: [],
       rows: [
-        { request_number: 'PSSF26-0310', sales_agent: 'Eric Ng', project_value: '1166830.70' },
+        { request_number: 'PSSF26-0310', sales_agent: 'CONTACT Y', project_value: '1166830.70' },
         // No value at all: the cell must show "-", never 0.00.
-        { request_number: 'PSSF26-0313', sales_agent: 'Amirul', project_value: null },
+        { request_number: 'PSSF26-0313', sales_agent: 'CONTACT U', project_value: null },
       ],
       totals: { project_value: '1166830.70' },
     },
@@ -185,9 +185,9 @@ const RESULT: ReportResult = {
       row_dim: { key: 'sales_agent', label: 'Sales agent' },
       col_dim: { key: 'month', label: 'Month', values: ['2026-01'], value_labels: { '2026-01': "Jan'26" } },
       measures: [{ key: 'project_value', label: 'Project value', type: 'money' }],
-      row_values: ['Eric Ng'],
-      cells: { 'Eric Ng': { '2026-01': { project_value: '1166830.70' } } },
-      row_totals: { 'Eric Ng': { project_value: '1166830.70' } },
+      row_values: ['CONTACT Y'],
+      cells: { 'CONTACT Y': { '2026-01': { project_value: '1166830.70' } } },
+      row_totals: { 'CONTACT Y': { project_value: '1166830.70' } },
       col_totals: { '2026-01': { project_value: '1166830.70' } },
       grand_total: { project_value: '1166830.70' },
     },
@@ -264,7 +264,7 @@ describe('ReportPage', () => {
     render();
 
     expect(await screen.findByText('PSSF26-0310')).toBeInTheDocument();
-    expect(screen.getByText('Eric Ng')).toBeInTheDocument();
+    expect(screen.getByText('CONTACT Y')).toBeInTheDocument();
     // Once in the row, once in the totals footer.
     expect(screen.getAllByText('1,166,830.70').length).toBe(2);
     // The second row has no project value: a dash, never a zero.
@@ -279,8 +279,8 @@ describe('ReportPage', () => {
         detail: {
           ...RESULT.layouts.detail,
           rows: [
-            { request_number: 'PSSF26-0310', sales_agent: 'Eric Ng', project_value: '0.00' },
-            { request_number: 'PSSF26-0313', sales_agent: 'Amirul', project_value: null },
+            { request_number: 'PSSF26-0310', sales_agent: 'CONTACT Y', project_value: '0.00' },
+            { request_number: 'PSSF26-0313', sales_agent: 'CONTACT U', project_value: null },
           ],
           totals: {},
         },
@@ -313,7 +313,7 @@ describe('ReportPage', () => {
     // that reaches the skeleton with rows in hand - see the case below.
     const rows = Array.from({ length: 60 }, (_, index) => ({
       request_number: `PSSF26-${String(index).padStart(4, '0')}`,
-      sales_agent: 'Eric Ng',
+      sales_agent: 'CONTACT Y',
       project_value: '1.00',
     }));
     runReport.mockResolvedValueOnce({
@@ -346,7 +346,7 @@ describe('ReportPage', () => {
     prefsGate.isLoading = true;
     const rows = Array.from({ length: 60 }, (_, index) => ({
       request_number: `PSSF26-${String(index).padStart(4, '0')}`,
-      sales_agent: 'Eric Ng',
+      sales_agent: 'CONTACT Y',
       project_value: '1.00',
     }));
     runReport.mockResolvedValue({

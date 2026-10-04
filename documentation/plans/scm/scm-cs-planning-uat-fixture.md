@@ -8,7 +8,7 @@ Plan: `PLAN-scm-cs-planning-uat.md` section 3.J (deliverable), 3.I (Link PO / Li
 | --- | --- |
 | Sales order | SO381895, dated 10 Dec 2025, class project, source `scm_upload`, 76 open lines, 0 delivered, every line at **BRW-IB** (the 19 Aug location amendment is already in the book), no line numbers in the book (one import timestamp 14 Aug 2026), no project mirror row, no order inquiry raised yet |
 | Customer | 300-Y071 YOTU BUILDER SDN BHD (PROJECT), site LOT 2752, TMN SEMARANG INTAN / DENGKIL |
-| Sales agent | JUSTIN (`sales_agents.sales_agent`), location group IB. Cyndi is the CS who raised the forms, not the agent on the order |
+| Sales agent | CONTACT N (`sales_agents.sales_agent`), location group IB. Cyndi is the CS who raised the forms, not the agent on the order |
 | Sibling orders in the book | SO414033 (112 lines) and SO414050 (63 lines), same agent, class project |
 | Reserve window | as_of + lead time (90 default) + 14 = 8 Dec 2026; every form date is inside it, so ladder v3 walks the stock rungs before Buy |
 | SPO storage | `spo_allocations` holds 1 row (a test row); every SPO document is still in `purchase_orders`. After migration 420 (section K) the SPO lines named below become `spo_allocations` rows; the expected link target is written as document + location so it reads the same on either side |

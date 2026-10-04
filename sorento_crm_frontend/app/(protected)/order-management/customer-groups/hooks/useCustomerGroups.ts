@@ -10,19 +10,28 @@ import {
   getCustomerGroupCustomers,
   getCustomerGroups,
   updateCustomerGroup,
+  type CustomerGroupsListParams,
 } from '../services/customerGroupService';
 
 /** The list's React Query key; the detail pager rebuilds the SAME key from the URL. */
-export function customerGroupsListQueryKey(params: DataGridApiFetchParams): QueryKey {
-  return ['customer-groups', params.pageIndex, params.pageSize, params.sorting, params.searchQuery];
+export function customerGroupsListQueryKey(params: CustomerGroupsListParams): QueryKey {
+  return [
+    'customer-groups',
+    params.pageIndex,
+    params.pageSize,
+    params.sorting,
+    params.searchQuery,
+    !!params.agent_mixed,
+  ];
 }
 
-function paramsFromUrl(params: ListPagerParams): DataGridApiFetchParams {
+function paramsFromUrl(params: ListPagerParams): CustomerGroupsListParams {
   return {
     pageIndex: params.pageIndex,
     pageSize: params.pageSize,
     sorting: params.sorting,
     searchQuery: params.searchQuery,
+    agent_mixed: params.filters.agent_mixed === 'true',
   };
 }
 
@@ -34,7 +43,7 @@ export const customerGroupsPagerQuery = {
     getCustomerGroups(paramsFromUrl(params)),
 };
 
-export function useCustomerGroups(params: DataGridApiFetchParams) {
+export function useCustomerGroups(params: CustomerGroupsListParams) {
   return useQuery({
     ...LIST_QUERY_OPTIONS,
     queryKey: customerGroupsListQueryKey(params),

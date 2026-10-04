@@ -27,7 +27,7 @@
 # `top_selling`. Export EXTERNAL_API_KEY from the backend .env first.
 #
 # PREREQUISITES:
-# - Contact 437264483 holds the `sales_orders.sales_report` reveal key and is office
+# - Contact 900000008 holds the `sales_orders.sales_report` reveal key and is office
 #   staff (every access type it holds is an office type, e.g. "Sorento Office"): the
 #   route refuses a contact that is neither staff nor linked to a customer.
 # - Migrations `chatbot_top_selling_tool` and `chatbot_top_selling_vocab` have run and the
@@ -35,7 +35,7 @@
 # - "Delivery date: 01/01/2026 to 31/12/2026" is the current-year default. BUMP EVERY
 #   JANUARY.
 
-contact: "437264483"
+contact: "900000008"
 
 cases:
   - name: Journey 1 - top 5 by quantity, whole book, current year, sticky pick list

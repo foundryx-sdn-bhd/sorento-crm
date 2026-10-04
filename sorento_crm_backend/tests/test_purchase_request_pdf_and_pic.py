@@ -11,8 +11,8 @@ Two problems this covers, both reported from production.
 
 2. **PIC.** There was nowhere to record the person receiving the delivery, so
    staff typed them into the address:
-   ``2, Lebuh Cecil, Ghaut, 10300 George Town, Pulau Pinang Contact: Hanson
-   (012-403 9611)``. The address became two facts in one column. PIC is a
+   ``2, Lebuh Cecil, Ghaut, 10300 George Town, Pulau Pinang Contact: CONTACT Q
+   (012-000 0502)``. The address became two facts in one column. PIC is a
    separate, optional, free-text field, printed on the PDF.
 
 PR and SF share one table and one detail component, so every assertion here runs
@@ -36,7 +36,7 @@ PATHOLOGICAL_ADDRESS = (
     "Level 14 Menara Northam Jalan Sultan Ahmad Shah, Georgetown 10050 "
     "REFERENCE-NO-WITH-NO-SPACES-ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 )
-PIC_VALUE = "Hanson (012-403 9611)"
+PIC_VALUE = "CONTACT Q (012-000 0502)"
 
 BOTH_TYPES = ["purchase_request", "sponsorship_form"]
 
@@ -125,7 +125,7 @@ def test_pic_is_printed(db, request_type):
 
     html = PurchaseRequestPDFService(db)._html(row)
     assert "PIC" in html.upper()
-    assert "Hanson" in html
+    assert "CONTACT Q" in html
 
 
 @pytest.mark.parametrize("request_type", BOTH_TYPES)

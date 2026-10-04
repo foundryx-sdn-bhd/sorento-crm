@@ -109,12 +109,33 @@ function renderList() {
 }
 
 describe('TranslationsList', () => {
-  it('renders the source, the English and the source kind badge', async () => {
+  it('renders the source, the translation and the source kind badge', async () => {
     renderList();
 
     expect(await screen.findByText('座厕 S-250出水 对冲')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Toilet bowl S-250')).toBeInTheDocument();
     expect(screen.getByText('ai')).toBeInTheDocument();
+  });
+
+  it('names each row\'s language pair, so a Malay and a Chinese row for one source differ', async () => {
+    mockList([
+      translation({ id: 't1' }),
+      translation({ id: 't2', source_text: 'Product Code', source_lang: 'en', target_lang: 'ms', target_text: 'Kod Produk' }),
+      translation({ id: 't3', source_text: 'Product Code', source_lang: 'en', target_lang: 'zh', target_text: '产品代码' }),
+    ]);
+    renderList();
+
+    expect(await screen.findByText('Chinese to English')).toBeInTheDocument();
+    expect(screen.getByText('English to Malay')).toBeInTheDocument();
+    expect(screen.getByText('English to Chinese')).toBeInTheDocument();
+    expect(screen.getByLabelText('Translation for 座厕 S-250出水 对冲')).toBeInTheDocument();
+  });
+
+  it('starts unfiltered and passes no language to the list query', async () => {
+    renderList();
+    await screen.findByText('座厕 S-250出水 对冲');
+    expect(screen.getByTestId('translations-language-filter')).toBeInTheDocument();
+    expect(hooks.useTranslations).toHaveBeenLastCalledWith(expect.objectContaining({ targetLang: '' }));
   });
 
   it('renders who wrote a manual correction, and a dash for an AI-only row', async () => {
@@ -154,10 +175,10 @@ describe('TranslationsList', () => {
     );
   });
 
-  it('saves an edited English cell on blur', async () => {
+  it('saves an edited translation cell on blur', async () => {
     renderList();
 
-    const input = await screen.findByLabelText('English for 座厕 S-250出水 对冲');
+    const input = await screen.findByLabelText('Translation for 座厕 S-250出水 对冲');
     fireEvent.change(input, { target: { value: 'Toilet bowl S-250, back outlet' } });
     fireEvent.blur(input);
 
@@ -172,7 +193,7 @@ describe('TranslationsList', () => {
   it('does not save when the cell is blurred unchanged', async () => {
     renderList();
 
-    const input = await screen.findByLabelText('English for 座厕 S-250出水 对冲');
+    const input = await screen.findByLabelText('Translation for 座厕 S-250出水 对冲');
     fireEvent.blur(input);
 
     expect(updateMutate).not.toHaveBeenCalled();

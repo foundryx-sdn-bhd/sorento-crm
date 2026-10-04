@@ -969,7 +969,7 @@ async def escalate_sla_tracking_integration(
     Respond user ID for n8n to update Respond.io, plus tracking message_id when set.
 
     respond_contact_id may be respond_contacts.id, RespondContact.respond_io_id, or contact
-    phone (E.164 such as +60166753328, optional spacing; MY local 0-prefix also resolved).
+    phone (E.164 such as +60160000509, optional spacing; MY local 0-prefix also resolved).
     """
     log_service = IntegrationLogService(db)
     try:

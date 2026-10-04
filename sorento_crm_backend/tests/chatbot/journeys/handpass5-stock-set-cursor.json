@@ -1,6 +1,6 @@
 {
   "name": "handpass5-stock-set-cursor",
-  "source": "hand pass 5 owner console turns 1-4 (contact_respond_id 437264483, 2026-09-17 05:16 +09) / ruling R1: a bare code token after any stock answer is a LIST answer, never a set-style 'N taps have stock.' summary and never a broadened 'Showing X to Y' across unrelated products.",
+  "source": "hand pass 5 owner console turns 1-4 (contact_respond_id 900000008, 2026-09-17 05:16 +09) / ruling R1: a bare code token after any stock answer is a LIST answer, never a set-style 'N taps have stock.' summary and never a broadened 'Showing X to Y' across unrelated products.",
   "cases": [
     {
       "name": "srtwc286-then-bare-7445-is-a-list-not-a-set",

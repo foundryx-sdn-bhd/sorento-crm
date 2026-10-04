@@ -1,0 +1,765 @@
+{
+  "turns": [
+    {
+      "access": {
+        "agent_name": "Order Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": null,
+          "countryCode": "MY",
+          "created_at": 1778415976,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": null
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000079"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": "zzt-900000079@example.invalid",
+          "firstName": "ZZT-900000079",
+          "id": 900000079,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000079",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000020\", \"firstName\": \"ZZT\", \"lastName\": \"Sorento\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": null,
+              "firstName": "ZZT-agent",
+              "id": null,
+              "lastName": ""
+            },
+            "countryCode": "MY",
+            "created_at": 1778415976,
+            "email": "zzt-900000079@example.invalid",
+            "firstName": "ZZT-900000079",
+            "id": 900000079,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000079",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "295535ad-9b9e-4c3a-a24f-62c41a25e63f",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxNDkzNjExNzgVAgASGBYzRUIwREI0RUVBOTEyMTA4OEI0MjFBAA==",
+            "contactId": 900000079,
+            "message": {
+              "text": "hi may i know deliery for 202609-1292",
+              "type": "text"
+            },
+            "messageId": 1788925365000000,
+            "timestamp": 1788925365000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message",
+          "send_attachments"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "c44a368f-5a7b-4348-9c22-946af8095e99"
+        ],
+        "focus_after": null,
+        "pending": null,
+        "text": "Customer: all customers\nProduct: all products\nOrder: 202609-1292\nDates: all dates\n\nHere are the orders I found.\n\n1. *Order Number:* 202609-1292\n*Customer:* PERNIAGAAN W JAYA (SEMENYIH) SDN BHD - HQ [A/C III]\n*Order Date:* 07/09/2026\n*Actual Delivery Date:* 09/09/2026\n*Status:* Picked Up / In Transit\n*Pickup Time:* 09:23:00\n*Transporter:* SORENTO\n*Driver:* DRIVER Y\n*Lorry Plate:* PLATE-3\n*Warehouse:* BRW\n*Products:* SRTWB7066 (1), SRTWB7055 (1), SRTWB1096 (1), SRTBF11413-MBL-NEW (2)\n\n_Data last updated: 09/09/2026 10:50:49_",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "contact_id",
+              "date_mode",
+              "is_active",
+              "order_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_order_management_orders_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "202609-1292",
+                "entity_type": "order",
+                "uuid": "c44a368f-5a7b-4348-9c22-946af8095e99"
+              }
+            ],
+            "resolved": true,
+            "token": "202609-1292"
+          }
+        ],
+        "tokens": [
+          "202609-1292"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 9,
+        "recorded_at": "2026-09-09T12:42:51.169381+09:00",
+        "turn_id": "1153dd1d-925b-4d7a-a8c0-98df1a03b1f3"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 1,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 1,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "contact_id": "900000079",
+            "date_mode": null,
+            "is_active": null,
+            "order_ids": [
+              "c44a368f-5a7b-4348-9c22-946af8095e99"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "attachments": [],
+            "fallback_used": false,
+            "has_result": true,
+            "intro": "Here are the orders I found.",
+            "items": [
+              {
+                "fields": [
+                  {
+                    "label": "Order Number",
+                    "value": "202609-1292"
+                  },
+                  {
+                    "label": "Customer",
+                    "value": "PERNIAGAAN W JAYA (SEMENYIH) SDN BHD - HQ [A/C III]"
+                  },
+                  {
+                    "label": "Order Date",
+                    "value": "2026-09-07T00:00:00"
+                  },
+                  {
+                    "label": "Actual Delivery Date",
+                    "value": "2026-09-09T00:00:00"
+                  },
+                  {
+                    "label": "Status",
+                    "value": "Picked Up / In Transit"
+                  },
+                  {
+                    "label": "Pickup Time",
+                    "value": "09:23:00"
+                  },
+                  {
+                    "label": "Transporter",
+                    "value": "SORENTO"
+                  },
+                  {
+                    "label": "Driver",
+                    "value": "DRIVER Y"
+                  },
+                  {
+                    "label": "Lorry Plate",
+                    "value": "PLATE-3"
+                  },
+                  {
+                    "label": "Warehouse",
+                    "value": "BRW"
+                  },
+                  {
+                    "label": "Products",
+                    "value": "SRTWB7066 (1), SRTWB7055 (1), SRTWB1096 (1), SRTBF11413-MBL-NEW (2)"
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "202609-1292"
+              }
+            ],
+            "last_updated_at": "2026-09-09T10:50:49.739418",
+            "result_type": "orders"
+          },
+          "tool": "crm_order_management_orders_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "order",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "order",
+            "raw": "202609-1292"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_order",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": "result",
+        "requested_attributes": [
+          "delivery"
+        ],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to check the delivery for 202609-1292"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "Order Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": null,
+          "countryCode": "MY",
+          "created_at": 1778415976,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": null
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000079"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": "zzt-900000079@example.invalid",
+          "firstName": "ZZT-900000079",
+          "id": 900000079,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000079",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000020\", \"firstName\": \"ZZT\", \"lastName\": \"Sorento\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": null,
+              "firstName": "ZZT-agent",
+              "id": null,
+              "lastName": ""
+            },
+            "countryCode": "MY",
+            "created_at": 1778415976,
+            "email": "zzt-900000079@example.invalid",
+            "firstName": "ZZT-900000079",
+            "id": 900000079,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000079",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "4834494e-d4a6-4600-be58-09551dbac60f",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxNDkzNjExNzgVAgASGBYzRUIwMDdBNzMyRThCQ0VEQzgwOUI5AA==",
+            "contactId": 900000079,
+            "message": {
+              "text": "202609-1292 this do also got delivery yesterday ?",
+              "type": "text"
+            },
+            "messageId": 1788925419000000,
+            "timestamp": 1788925419000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "c44a368f-5a7b-4348-9c22-946af8095e99"
+        ],
+        "focus_after": null,
+        "pending": {
+          "kind": "member_offer",
+          "option_labels": []
+        },
+        "text": "Customer: all customers\nProduct: all products\nOrder: 202609-1292\nDates: 08/09/2026\n\nHere's what you want:\n\u2022 customer_order: 202609-1292 (PERNIAGAAN W JAYA (SEMENYIH) SDN BHD - HQ [A/C III])\n\nBut no order from 08/09/2026 to 08/09/2026 matched these. Reply 'all dates' to search without the date filter, or would you like me to escalate to *Sorento* customer service team?\n\nPlease choose who to route to (reply with the number):\n1. Maryam Ariffin\n2. Cyndi\n3. Sandy Lim\n4. Lin\n5. Nur\n6. Aisyah\n7. Emily\n8. Balqis\n9. Niki\n10. Nurain\n\nIf you have no preference, just reply 'yes' and we'll assign automatically.",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "actual_delivery_date_from",
+              "actual_delivery_date_to",
+              "contact_id",
+              "date_mode",
+              "is_active",
+              "order_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_order_management_orders_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "202609-1292",
+                "entity_type": "order",
+                "uuid": "c44a368f-5a7b-4348-9c22-946af8095e99"
+              }
+            ],
+            "resolved": true,
+            "token": "202609-1292"
+          }
+        ],
+        "tokens": [
+          "202609-1292"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 9,
+        "recorded_at": "2026-09-09T12:43:44.193493+09:00",
+        "turn_id": "7f33afdf-6df0-4c6c-b687-8b3271b1fb7f"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 1,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 1,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "actual_delivery_date_from": "2026-09-08",
+            "actual_delivery_date_to": "2026-09-08",
+            "contact_id": "900000079",
+            "date_mode": null,
+            "is_active": null,
+            "order_ids": [
+              "c44a368f-5a7b-4348-9c22-946af8095e99"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "attachments": [],
+            "fallback_used": false,
+            "has_result": false,
+            "intro": "No matching results found.",
+            "items": [],
+            "last_updated_at": null,
+            "result_type": "orders"
+          },
+          "tool": "crm_order_management_orders_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": "2026-09-08",
+        "date_filter_start": "2026-09-08",
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "order",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "order",
+            "raw": "202609-1292"
+          }
+        ],
+        "entity_op": "reuse",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_order",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": "result",
+        "requested_attributes": [
+          "delivery"
+        ],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to check whether DO 202609-1292 was delivered yesterday"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "Order Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": null,
+          "countryCode": "MY",
+          "created_at": 1778415976,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": null
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000079"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": "zzt-900000079@example.invalid",
+          "firstName": "ZZT-900000079",
+          "id": 900000079,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000079",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000020\", \"firstName\": \"ZZT\", \"lastName\": \"Sorento\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": null,
+              "firstName": "ZZT-agent",
+              "id": null,
+              "lastName": ""
+            },
+            "countryCode": "MY",
+            "created_at": 1778415976,
+            "email": "zzt-900000079@example.invalid",
+            "firstName": "ZZT-900000079",
+            "id": 900000079,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000079",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "3acf4df9-5d73-4a71-8b2c-bbe7abb4bee9",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxNDkzNjExNzgVAgASGBYzRUIwODE2NTdENzkzRTlFNDQyNjlGAA==",
+            "contactId": 900000079,
+            "message": {
+              "text": "no need tq",
+              "type": "text"
+            },
+            "messageId": 1788925449000000,
+            "timestamp": 1788925449000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message"
+        ],
+        "branch_kind": "escalation_declined",
+        "canned": [],
+        "entity_ids": [],
+        "focus_after": null,
+        "pending": null,
+        "text": "Escalation declined.",
+        "tools": []
+      },
+      "resolutions": {
+        "resolutions": [],
+        "tokens": [],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 9,
+        "recorded_at": "2026-09-09T12:44:14.222520+09:00",
+        "turn_id": "da2fb55c-9d90-4aad-8a94-f7c2c3389e4a"
+      },
+      "tool_results": [],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": null,
+        "entities": [],
+        "entity_op": "reuse",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": null,
+        "is_active": null,
+        "is_affirmative": false,
+        "match_mode": "and",
+        "message_type": "casual",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to decline the offer"
+      }
+    }
+  ]
+}

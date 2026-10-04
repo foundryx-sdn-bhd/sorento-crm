@@ -33,7 +33,7 @@ from app.schemas.sla import ConversationSLATrackingCreate
 from app.services.sla_service import ConversationSLATrackingService
 from tests._pg_fixture import blank_session
 
-PHONE = "+60123456706"
+PHONE = "+60100000069"
 URL = "/api/v1/sla-management/conversation-sla-tracking/integration/escalate"
 
 
@@ -261,7 +261,7 @@ def test_tracking_id_for_another_contact_is_rejected(client, db):
     db.add(
         RespondContact(
             id=other_contact,
-            phone_number="+60123456707",
+            phone_number="+60100000070",
             name="Other",
             respond_io_id="10025907",
             session_vars={},

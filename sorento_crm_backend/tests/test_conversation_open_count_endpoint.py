@@ -31,7 +31,7 @@ from app.schemas.sla import ConversationSLATrackingCreate, ConversationSLATracki
 from app.services.sla_service import ConversationSLATrackingService
 from tests._pg_fixture import blank_session
 
-PHONE = "+60123456702"
+PHONE = "+60100000003"
 URL = "/api/v1/external/conversation-sla-tracking/open-count"
 
 
@@ -255,7 +255,7 @@ def test_conflicting_identifiers_are_a_400(client, db):
     db.add(
         RespondContact(
             id=str(uuid.uuid4()),
-            phone_number="+60123456703",
+            phone_number="+60100000073",
             name="Other Contact",
             respond_io_id="10025903",
             session_vars={},

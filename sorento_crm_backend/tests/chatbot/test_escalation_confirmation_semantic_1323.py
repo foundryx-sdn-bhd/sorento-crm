@@ -228,7 +228,7 @@ class TestApply:
 
 class TestRunTurn:
     def _plant(self, session_factory, monkeypatch) -> list[dict[str, Any]]:
-        _seed_contact(session_factory, phone="+60000001323")
+        _seed_contact(session_factory, phone="+60900000041")
         bodies = _capture_next_assignee(monkeypatch)
         _capture_sla(monkeypatch)
         _write_open_question(session_factory, open_question=dict(OFFER_WIRE))

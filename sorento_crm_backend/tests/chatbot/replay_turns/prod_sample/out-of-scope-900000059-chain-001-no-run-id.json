@@ -1,0 +1,1182 @@
+{
+  "turns": [
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1177555@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1177555,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1782546255,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000059"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000059",
+          "id": 900000059,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000059",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.900000000000030\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": "zzt-agent-1177555@example.invalid",
+              "firstName": "ZZT-agent",
+              "id": 1177555,
+              "lastName": "",
+              "role": "user"
+            },
+            "countryCode": "MY",
+            "created_at": 1782546255,
+            "email": null,
+            "firstName": "ZZT-900000059",
+            "id": 900000059,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000059",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "7f1c67f0-e854-4faf-8c8b-1a725d3ae282",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxNjIyOTExNzgVAgASGCBBQzIzNDExNDJENUVEQUUzNkQ0MjUwRTE4QTE4NjM2QwA=",
+            "contactId": 900000059,
+            "message": {
+              "text": "11833 Photo",
+              "type": "text"
+            },
+            "messageId": 1789104349000000,
+            "timestamp": 1789104349000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "90e76894-8384-4186-a3f7-ef73667726ff",
+          "ee40bb34-845d-4ab9-82f1-ca1ada06b27a"
+        ],
+        "focus_after": null,
+        "pending": {
+          "kind": "escalation_offer",
+          "option_labels": []
+        },
+        "text": "Here's what you want:\n\u2022 product: SRTBF11833\n\u2022 attachment_type: Product Photos\n\nBut no photo matched these. Would you like me to escalate to marketing product team?",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "attachment_type_ids",
+              "contact_id",
+              "date_mode",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_master_product_attachments_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "11833",
+                "entity_type": "product",
+                "uuid": "90e76894-8384-4186-a3f7-ef73667726ff"
+              }
+            ],
+            "resolved": true,
+            "token": "11833"
+          },
+          {
+            "matches": [
+              {
+                "canonical_code": "photo",
+                "entity_type": "attachment_type",
+                "uuid": "ee40bb34-845d-4ab9-82f1-ca1ada06b27a"
+              }
+            ],
+            "resolved": true,
+            "token": "photo"
+          }
+        ],
+        "tokens": [
+          "11833",
+          "Photo"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 11,
+        "recorded_at": "2026-09-11T14:25:55.246374+09:00",
+        "turn_id": "2a86015c-2c3a-4257-8caf-c62c5c17a7c5"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 2,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 2,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "attachment_type_ids": [
+              "90e76894-8384-4186-a3f7-ef73667726ff"
+            ],
+            "contact_id": "900000059",
+            "date_mode": null,
+            "is_active": null,
+            "product_ids": [
+              "ee40bb34-845d-4ab9-82f1-ca1ada06b27a"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "alternatives": [
+              {
+                "display": "SRTBF11831",
+                "id": "c87bb69f-bda9-415d-81d6-c63af166acca",
+                "is_variant": false,
+                "sim": 0.692,
+                "value": "SRTBF11831"
+              },
+              {
+                "display": "SRTBF11832",
+                "id": "7278e1f0-ba8d-4161-988e-d96c00d63db3",
+                "is_variant": false,
+                "sim": 0.692,
+                "value": "SRTBF11832"
+              },
+              {
+                "display": "SRTBF11821",
+                "id": "a6e750f6-a3c3-43bb-9697-606ae47742cb",
+                "is_variant": false,
+                "sim": 0.571,
+                "value": "SRTBF11821"
+              }
+            ],
+            "attachments": [],
+            "has_result": false,
+            "intro": "No matching results found.",
+            "items": [],
+            "last_updated_at": null,
+            "relaxed_axis": "entity",
+            "result_type": "product_attachments"
+          },
+          "tool": "crm_master_product_attachments_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "product_attachment",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "11833"
+          },
+          {
+            "canonical_code": "photo",
+            "confident": true,
+            "current_message": true,
+            "hint": "attachment_type",
+            "raw": "Photo"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_product_attachment",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to check a product attachment photo for 11833"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1177555@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1177555,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1782546255,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000059"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000059",
+          "id": 900000059,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000059",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.900000000000030\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": "zzt-agent-1177555@example.invalid",
+              "firstName": "ZZT-agent",
+              "id": 1177555,
+              "lastName": "",
+              "role": "user"
+            },
+            "countryCode": "MY",
+            "created_at": 1782546255,
+            "email": null,
+            "firstName": "ZZT-900000059",
+            "id": 900000059,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000059",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "da09ac90-7cc1-497c-8919-ce5477edcae8",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxNjIyOTExNzgVAgASGCBBQzMxOTREOEYxRTk4RTI4RDBCOENFRkEwOTA3RUQyOQA=",
+            "contactId": 900000059,
+            "message": {
+              "text": "yes",
+              "type": "text"
+            },
+            "messageId": 1789104371000000,
+            "timestamp": 1789104371000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message",
+          "add_comment",
+          "send_message"
+        ],
+        "branch_kind": "out_of_scope",
+        "canned": [],
+        "entity_ids": [],
+        "focus_after": null,
+        "pending": null,
+        "text": null,
+        "tools": []
+      },
+      "resolutions": {
+        "resolutions": [],
+        "tokens": [],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 11,
+        "recorded_at": "2026-09-11T14:26:17.187355+09:00",
+        "turn_id": "a3a2f9ea-bafe-4411-aa02-5b886963866e"
+      },
+      "tool_results": [],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": null,
+        "entities": [],
+        "entity_op": "reuse",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": true
+        },
+        "group_by": null,
+        "intent_hint": null,
+        "is_active": null,
+        "is_affirmative": true,
+        "match_mode": "and",
+        "message_type": "casual",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to confirm escalation"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1177555@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1177555,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1782546255,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000059"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000059",
+          "id": 900000059,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000059",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.900000000000030\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": "zzt-agent-1177555@example.invalid",
+              "firstName": "ZZT-agent",
+              "id": 1177555,
+              "lastName": "",
+              "role": "user"
+            },
+            "countryCode": "MY",
+            "created_at": 1782546255,
+            "email": null,
+            "firstName": "ZZT-900000059",
+            "id": 900000059,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000059",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "59933b10-e229-4f23-b9fe-429674b2009e",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxNjIyOTExNzgVAgASGCBBQzgyOERCNjE5QjYwOUM2MzIxN0NEMDVEQjlBRDM5OAA=",
+            "contactId": 900000059,
+            "message": {
+              "text": "65501 stock",
+              "type": "text"
+            },
+            "messageId": 1789106145000000,
+            "timestamp": 1789106145000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message",
+          "send_attachments"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "651f51bd-19f5-4763-ba81-f2929c2094cc",
+          "c9405e01-4747-4aa8-b6f8-b1ddd528bb37"
+        ],
+        "focus_after": null,
+        "pending": null,
+        "text": "Stock details found for the requested products.\n\n1. *Product Code:* IBBF65501\n*Warehouse:* MERU\n*System Location:* MOCHA-WH\n*Quantity On Hand:* 0\n\n2. *Product Code:* IBMC65501\n*Warehouse:* MERU\n*System Location:* MOCHA-WH\n*Quantity On Hand:* 4\n\n_Data last updated: 11/09/2026 11:50:22_",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "contact_id",
+              "date_mode",
+              "include_sellable",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_inventory_stock_balance_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "65501",
+                "entity_type": "product",
+                "uuid": "651f51bd-19f5-4763-ba81-f2929c2094cc"
+              }
+            ],
+            "resolved": true,
+            "token": "65501"
+          }
+        ],
+        "tokens": [
+          "65501"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 11,
+        "recorded_at": "2026-09-11T14:55:49.184323+09:00",
+        "turn_id": "1a9f076f-d00a-4d32-a53a-3f8d0bc5826c"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 2,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 2,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "contact_id": "900000059",
+            "date_mode": null,
+            "include_sellable": true,
+            "is_active": null,
+            "product_ids": [
+              "651f51bd-19f5-4763-ba81-f2929c2094cc",
+              "c9405e01-4747-4aa8-b6f8-b1ddd528bb37"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "attachments": [],
+            "fallback_used": false,
+            "has_result": true,
+            "intro": "Stock details found for the requested products.",
+            "items": [
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "IBBF65501"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "MERU"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "MOCHA-WH"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 0
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "IBBF65501"
+              },
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "IBMC65501"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "MERU"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "MOCHA-WH"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 4
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "IBMC65501"
+              }
+            ],
+            "last_updated_at": "2026-09-11T11:50:22.764969",
+            "result_type": "stock",
+            "stock_visibility": {
+              "hide_zero_locations": false,
+              "mode": "detailed",
+              "source": "contact",
+              "warehouse_codes": [
+                "BRW",
+                "MOCHA-WH",
+                "MWH"
+              ]
+            }
+          },
+          "tool": "crm_inventory_stock_balance_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "inventory",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "65501"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_stock",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to check stock for 65501"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1177555@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1177555,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1782546255,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000059"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000059",
+          "id": 900000059,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000059",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.900000000000030\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": "zzt-agent-1177555@example.invalid",
+              "firstName": "ZZT-agent",
+              "id": 1177555,
+              "lastName": "",
+              "role": "user"
+            },
+            "countryCode": "MY",
+            "created_at": 1782546255,
+            "email": null,
+            "firstName": "ZZT-900000059",
+            "id": 900000059,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000059",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "59801b22-33fc-4552-8801-480e4881c4fe",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxNjIyOTExNzgVAgASGCBBQzdEQTRCNjBBNzhCQkY5RjNDM0M0NzA4NjM3MzcyNAA=",
+            "contactId": 900000059,
+            "message": {
+              "text": "65502 stock",
+              "type": "text"
+            },
+            "messageId": 1789106182000000,
+            "timestamp": 1789106182000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message",
+          "send_attachments"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "733ef1a3-2cd7-4663-ba81-a6ced67ab2b7",
+          "f59e7755-624f-4011-81ea-e6d00476bbc8"
+        ],
+        "focus_after": null,
+        "pending": null,
+        "text": "Stock details found for the requested products.\n\n1. *Product Code:* IBBF65502\n*Warehouse:* MERU\n*System Location:* MOCHA-WH\n*Quantity On Hand:* 0\n\n2. *Product Code:* IBMC65502\n*Warehouse:* MERU\n*System Location:* MOCHA-WH\n*Quantity On Hand:* 6\n\n_Data last updated: 11/09/2026 11:50:22_",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "contact_id",
+              "date_mode",
+              "include_sellable",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_inventory_stock_balance_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "65502",
+                "entity_type": "product",
+                "uuid": "733ef1a3-2cd7-4663-ba81-a6ced67ab2b7"
+              }
+            ],
+            "resolved": true,
+            "token": "65502"
+          }
+        ],
+        "tokens": [
+          "65502"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 11,
+        "recorded_at": "2026-09-11T14:56:28.263737+09:00",
+        "turn_id": "d912b193-89b8-466b-8af3-398a6f726be7"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 2,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 2,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "contact_id": "900000059",
+            "date_mode": null,
+            "include_sellable": true,
+            "is_active": null,
+            "product_ids": [
+              "733ef1a3-2cd7-4663-ba81-a6ced67ab2b7",
+              "f59e7755-624f-4011-81ea-e6d00476bbc8"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "attachments": [],
+            "fallback_used": false,
+            "has_result": true,
+            "intro": "Stock details found for the requested products.",
+            "items": [
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "IBBF65502"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "MERU"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "MOCHA-WH"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 0
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "IBBF65502"
+              },
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "IBMC65502"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "MERU"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "MOCHA-WH"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 6
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "IBMC65502"
+              }
+            ],
+            "last_updated_at": "2026-09-11T11:50:22.764969",
+            "result_type": "stock",
+            "stock_visibility": {
+              "hide_zero_locations": false,
+              "mode": "detailed",
+              "source": "contact",
+              "warehouse_codes": [
+                "BRW",
+                "MOCHA-WH",
+                "MWH"
+              ]
+            }
+          },
+          "tool": "crm_inventory_stock_balance_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "inventory",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "65502"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_stock",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to check stock for 65502"
+      }
+    }
+  ]
+}

@@ -27,6 +27,7 @@ from app.services.chatbot.turn.task import REFER_TO_SALESMAN
 from app.services.company_scope import DEFAULT_COMPANY_ID
 from app.models.base import set_company_scope
 from tests._mc_lookup_seed import customer
+from tests.chatbot._turn_helpers import do_window
 from tests.chatbot.conftest import validating_resolve_entity
 from tests.chatbot.test_engine import CONTACT_ID, _parser_output
 from tests.chatbot.test_samantha_27sep_r5_do_list_carry import ORDERS_LIST, _order_ask, _pick
@@ -43,10 +44,12 @@ YOO_NAMES = ("YOO LIVING HOUSE SDN BHD", "YOO LIVING HOUSE TRADING SDN BHD")
 
 
 def _yoo_ask() -> dict[str, Any]:
+    # Dated: a dateless DO list ask asks which period first (DO-ASK-SIMPLIFY, owner 4 Oct 2026).
     return _order_ask(
         entities=[{"raw": YOO, "hint": "customer", "canonical_code": None, "current_message": True, "confident": True}],
         document=["DO"],
         status="delivered",
+        **do_window(),
     )
 
 

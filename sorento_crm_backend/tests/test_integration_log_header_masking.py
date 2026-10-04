@@ -237,7 +237,7 @@ def test_archived_fulfilment_feedback_plan_no_longer_carries_a_real_phone_number
     )
     assert plan_path.is_file(), f"expected the archived plan at {plan_path}"
     collapsed = re.sub(r"[\s-]+", "", plan_path.read_text(encoding="utf-8"))
-    assert "601116731179" not in collapsed, (
-        "the archived plan still carries the real phone number (+60 11-1673 1179, any "
+    assert "601100000524" not in collapsed, (
+        "the archived plan still carries the real phone number (+60 11-0000 0524, any "
         "spacing) - it must be redacted or replaced with a placeholder"
     )
