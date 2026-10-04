@@ -114,3 +114,24 @@ def test_d1_the_same_respond_io_id_in_another_workspace_does_not_leak_true(sessi
     assert out["skip_period_questions"] is False, out
     on_out = check_access(session_factory(), agent_code="general_enquiries", contact_id=rid, space_id=_on_space)
     assert on_out["skip_period_questions"] is True, on_out
+
+
+# --- round 3 (R2): a contact whose workspace_id is NULL ------------------------------------ #
+
+
+def test_r2_a_null_workspace_contact_with_the_switch_on_reads_true(session_factory):
+    from app.services.chatbot.head.access import check_access
+
+    _ws_id, space_id = _workspace(session_factory)
+    rid = f"ZZT-rid-{uuid.uuid4().hex[:8]}"
+    db = session_factory()
+    db.execute(
+        text(
+            "INSERT INTO respond_contacts (id, respond_io_id, workspace_id, phone_number, session_vars, "
+            "chatbot_skip_period_questions) VALUES (:id, :rid, NULL, :ph, CAST('{}' AS jsonb), true)"
+        ),
+        {"id": str(uuid.uuid4()), "rid": rid, "ph": f"+6011{uuid.uuid4().hex[:8]}"},
+    )
+    db.commit()
+    out = check_access(session_factory(), agent_code="general_enquiries", contact_id=rid, space_id=space_id)
+    assert out["skip_period_questions"] is True, out

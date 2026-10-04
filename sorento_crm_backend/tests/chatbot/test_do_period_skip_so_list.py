@@ -112,3 +112,15 @@ def test_d2_on_and_a_start_only_lists_rows_from_that_start_to_today(session_fact
     reply, _ = _turn(session_factory, SkipSwitchMonkeypatch(monkeypatch, True), _list_ask("2026-09-10", None))
     assert "None" not in reply, reply
     assert _numbers(reply) == [f"SO{600000 + d}" for d in range(25, 9, -1)], reply
+
+
+# --- round 3 (R1): an end with no start ---------------------------------------------------- #
+
+
+def test_r1_on_and_an_end_only_with_no_rows_never_says_none_or_errors(session_factory, monkeypatch):
+    _seed_contact(session_factory, variables={})
+    _link_customers(session_factory, H1)
+    reply, _ = _turn(session_factory, SkipSwitchMonkeypatch(monkeypatch, True), _list_ask(None, "2026-08-31"))
+    assert "None" not in reply, reply
+    assert "ran into a problem" not in reply, reply
+    assert reply.startswith(f"No sales orders for {GROUP}"), reply
