@@ -33,12 +33,15 @@ Omit --from-version to start from the `production` version.
 Every rebuilt version also carries ACCOUNT_LEDGER_ADDENDUM (#1432, the `account` entity
 key) just before the policy blocks, unless the source already has it; "identical" and
 `--verify` compare against the source plus that block.
+
+`--verify` also fails when any `{{...}}` survives the render, because no placeholder may reach the parser.
 """
 from __future__ import annotations
 
 import argparse
 import difflib
 import json
+import re
 import sys
 
 PROMPT_NAME = "chatbot_semantic_parser"
@@ -230,20 +233,22 @@ def verify(db, version: int, snapshot=None, *, against_version: int | None = Non
     else:
         source = snapshot.read_text(encoding="utf-8").replace("{{current_date}}", "D")
         want, against = with_account_block(source), snapshot.name
-    if out == want:
+    leftover_tokens = sorted({"{{" + m.group(1) + "}}" for m in re.finditer(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}", out)})
+    if out == want and not leftover_tokens:
         return {"version": version, "against": against, "equal": True, "first_difference": None,
-                "chars": (len(out), len(want))}
+                "leftover_tokens": leftover_tokens, "chars": (len(out), len(want))}
     a, b = out.splitlines(), want.splitlines()
     i = next((k for k, (x, y) in enumerate(zip(a, b)) if x != y), min(len(a), len(b)))
     return {
         "version": version,
         "against": against,
         "equal": False,
-        "first_difference": {
+        "first_difference": None if out == want else {
             "line": i + 1,
             "rendered": a[i] if i < len(a) else "<end>",
             "file": b[i] if i < len(b) else "<end>",
         },
+        "leftover_tokens": leftover_tokens,
         "chars": (len(out), len(want)),
     }
 
@@ -290,6 +295,9 @@ def main() -> int:
             if v["first_difference"]:
                 d = v["first_difference"]
                 print(f"    first difference at line {d['line']}:\n    rendered:  {d['rendered']!r}\n    reference: {d['file']!r}")
+            if v["leftover_tokens"]:
+                print(f"# leftover placeholders in v{v['version']}: {v['leftover_tokens']}")
+                return 1
             return 0 if v["equal"] else 1
         result = build(db, from_version=args.from_version, save=args.save)
         if args.save:
