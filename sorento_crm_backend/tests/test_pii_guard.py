@@ -263,7 +263,9 @@ _DRIVER_PROSE_FILES = {
     "documentation/plans/security/pii-scrub-acceptance-criteria.md",
     "sorento_crm_backend/tests/test_pii_guard.py",
 }
-_DRIVER_OK = re.compile(r"DRIVER [A-Z]{1,2}|FROM AUTOCOUNT|Documentation|-|")
+# a single capital letter is a fixture placeholder (X, T, D...); "Total" is a catalog
+# word a test uses on purpose (a value equal to a catalog key is never translated).
+_DRIVER_OK = re.compile(r"DRIVER [A-Z]{1,2}|[A-Z]|Total|FROM AUTOCOUNT|Documentation|-|")
 _Q = r'\\*"'  # a quote, possibly backslash-escaped one or more levels
 _VAL = r'(null|' + _Q + r'([^"\\]*)\\*")'
 _DRIVER_FIELDS = (
