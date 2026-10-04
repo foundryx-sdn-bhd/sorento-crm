@@ -124,15 +124,37 @@ describe('StockDebtClient auxiliary columns', () => {
     expect(headers()).toEqual(['Product', ...AUX_HEADERS, 'Aug 26', 'TBA', 'Total']);
   });
 
-  it('prints the row values, the dealer figure negative (AC-1, AC-5b)', async () => {
+  /** The text of the cells under the four aux headers, found by header column index. */
+  function auxCells(row: Element | null | undefined): string[] {
+    const idx = AUX_HEADERS.map((h) =>
+      screen.getAllByRole('columnheader').findIndex((c) => c.textContent?.trim() === h),
+    );
+    const cells = Array.from(row?.querySelectorAll('td, th') ?? []);
+    return idx.map((i) => (i < 0 ? '<no column>' : (cells[i]?.textContent ?? '').trim()));
+  }
+
+  it('prints the row values per aux cell, the dealer figure negative (AC-1, AC-5b)', async () => {
     renderBoard();
     const product = await screen.findByText('SRTWB242');
-    const rowText = product.closest('tr')?.textContent ?? '';
 
-    expect(rowText).toContain('40');
-    expect(rowText).toContain('30');
-    expect(rowText).toContain('60');
-    expect(rowText).toMatch(/-47/);
+    expect(auxCells(product.closest('tr'))).toEqual(['40', '30', '60', '-47']);
+  });
+
+  it('prints aux cells and footers as plain quantities: separators, no leading plus (AC-13)', async () => {
+    const env = envelope();
+    (env.data[0] as unknown as Record<string, number>).pool_on_hand = 1425;
+    (env.totals as unknown as Record<string, number>).pool_po_qty = 1234;
+    getStockDebtList.mockResolvedValue(env);
+    const { container } = renderBoard();
+    const product = await screen.findByText('SRTWB242');
+
+    expect(auxCells(product.closest('tr'))).toEqual(['1,425', '30', '60', '-47']);
+    expect(auxCells(container.querySelector('tfoot tr'))).toEqual([
+      '142',
+      '1,234',
+      '168',
+      '-147',
+    ]);
   });
 
   it('puts the totals of all four in the footer (AC-10)', async () => {
