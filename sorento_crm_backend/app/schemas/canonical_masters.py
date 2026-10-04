@@ -153,6 +153,10 @@ class CanonicalCustomer(_Canonical):
     # sent (no reference table - AutoCount states none for it).
     market_segment_code: Optional[str] = Field(None, max_length=50)
     region: Optional[str] = Field(None, max_length=80)
+    # AutoCount `Debtor.SalesAgent`. Absent or blank = untouched; an unknown code leaves the
+    # agent as it was with warning `agent_unresolved`. A known one is set on the linked ledger
+    # and every same-code ledger of the company.
+    sales_agent_code: Optional[str] = Field(None, max_length=100)
 
 
 class CanonicalSalesAgent(_Canonical):

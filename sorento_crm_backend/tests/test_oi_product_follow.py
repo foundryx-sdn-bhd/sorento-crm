@@ -15,7 +15,13 @@ from app.models.project_so import (
     ProjectSalesOrder,
     ProjectSalesOrderLine,
 )
-from tests.test_ingest_documents import INGEST_SO, _so_line, _so_record, env  # noqa: F401
+from tests.test_ingest_documents import (  # noqa: F401
+    INGEST_SO,
+    _code_of_ref,
+    _so_line,
+    _so_record,
+    env,
+)
 
 MARKER = "ZZT-OIPF"
 D1 = date(2026, 11, 2)
@@ -55,7 +61,7 @@ def test_mirror_line_follows_an_esb_product_swap(env):
     assert res.json()["records"][0]["outcome"] == "created", res.text
     _header, mirror = _adopt_with_mirror(env, record)
 
-    swapped = dict(record, lines=[dict(line, product_ref=env.product2_ref)])
+    swapped = dict(record, lines=[dict(line, product_ref=env.product2_ref, product_code=_code_of_ref(env, env.product2_ref))])
     res2 = env.post(INGEST_SO, [swapped])
     assert res2.json()["records"][0]["outcome"] == "updated", res2.text
 
