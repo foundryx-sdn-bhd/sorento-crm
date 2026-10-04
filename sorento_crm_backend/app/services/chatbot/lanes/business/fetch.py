@@ -3236,7 +3236,7 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
             flat_items = merge_stock_rows(flat_items)
         elif rtype == "stock_compact":
             flat_items = [compact_stock_block(it) for it in flat_items]
-        if opener.strip() in _DROPPED_OPENERS and msg.startswith(opener):
+        if opener.strip() in (*_DROPPED_OPENERS, *(loc.text(o) for o in _DROPPED_OPENERS)) and msg.startswith(opener):
             msg = msg[len(opener):]
     # One block is unnumbered, but only on the first page of a counted set.
     single_block = len(flat_items) == 1 and not set_row_offset
