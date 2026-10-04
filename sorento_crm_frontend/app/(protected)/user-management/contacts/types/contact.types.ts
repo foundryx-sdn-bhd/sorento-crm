@@ -51,6 +51,7 @@ export interface RespondContact {
   packing_list_allowed?: boolean;
   chatbot_eta_offset_applied?: boolean;
   escalation_allowed?: boolean;
+  chatbot_skip_period_questions?: boolean;
   /** Identity S3: the user this contact is linked to, if any (list rows). Null
    *  without `user_management.users.view`. */
   linked_user_id?: string | null;

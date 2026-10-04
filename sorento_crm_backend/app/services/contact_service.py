@@ -820,6 +820,7 @@ class ContactService:
             # ESCALATION-CONTROL: the one per-contact switch, default ON - a row without
             # the attribute is allowed. Listed by hand, like every field above.
             "escalation_allowed": getattr(contact, "escalation_allowed", True) is not False,
+            "chatbot_skip_period_questions": bool(getattr(contact, "chatbot_skip_period_questions", False)),
             # CONTACT-BRAND-SCOPE: listed by hand like every field above. The list endpoint
             # fills it for a whole page in one query; here, one contact when a session is given.
             "brands": brands,
