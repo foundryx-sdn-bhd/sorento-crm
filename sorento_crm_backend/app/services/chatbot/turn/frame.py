@@ -111,11 +111,13 @@ def expire(state: State) -> tuple[State, str | None]:
     return replace(state, focus=fresh, pending=None), "access_changed"
 
 
-def stamp(state: State) -> State:
-    """Where the focus is written: the access the frame was written under. An empty frame
-    carries no stamp; a failed access read keeps the old one."""
+def stamp(state: State, *, question: Any = None) -> State:
+    """Where the focus is written: the access the frame was written under. `question` is
+    the open question being written when it is not `state.pending` (the composer's own).
+    An empty frame carries no stamp; a failed access read keeps the old one."""
     focus = replace(state.focus)
-    if not _has_frame(focus) and state.pending is None:
+    written = question if question is not None else state.pending
+    if not _has_frame(focus) and written is None:
         focus.frame_access = None
     else:
         focus.frame_access = getattr(state.profile, "access_fp", None) or focus.frame_access

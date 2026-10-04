@@ -115,20 +115,33 @@ def test_every_minted_pending_kind_is_registered():
 KINDS = [*pending_mod.PENDING_KINDS, "brand_pick", "attachment_type_ask", "form_pick"]
 
 
-#: Questions that accept only a pick off their own options (escalation offers, rosters).
-PICK_ONLY = [k for k in KINDS if k in pending_mod.ESCALATION_OFFER_KINDS or pending_mod.is_roster(k)]
-QUESTION_KINDS = [k for k in KINDS if k not in PICK_ONLY]
+#: Questions that accept only a pick off their own options (rosters). INTENT-FRAMES
+#: (security review B1): an escalation offer is closed by the first message that does not
+#: answer it, a new intent included, so it is not on this side any more.
+PICK_ONLY = [k for k in KINDS if pending_mod.is_roster(k) and k not in pending_mod.ESCALATION_OFFER_KINDS]
+OFFERS = [k for k in KINDS if k in pending_mod.ESCALATION_OFFER_KINDS]
+QUESTION_KINDS = [k for k in KINDS if k not in PICK_ONLY and k not in OFFERS]
+#: Every kind but the offers: the next message that does not answer an offer closes it
+#: (`test_intent_frames.py::test_an_escalation_offer_the_next_message_ignores_is_closed`).
+NOT_OFFERS = [k for k in KINDS if k not in OFFERS]
 
 
 def test_both_sides_of_the_matrix_are_populated():
-    assert QUESTION_KINDS and PICK_ONLY
+    assert QUESTION_KINDS and PICK_ONLY and OFFERS
+
+
+@pytest.mark.parametrize("kind", OFFERS)
+def test_a_new_intent_closes_an_escalation_offer(kind):
+    state = _state(_all_held_focus(intent="check_order"), pending=_pending(kind))
+    out, why = held.consume(state, verdict(intent_hint="check_promotion", entities=[entity("X1")]))
+    assert why == "new_intent" and out.pending is None
 
 
 @pytest.mark.parametrize("kind", PICK_ONLY)
 def test_a_new_intent_keeps_a_pick_only_question_but_drops_the_rest(kind):
-    """An escalation offer or a roster accepts only a position or an offered label, so a
-    reply of another intent cannot be captured by it (#1323, #1352); the new question is
-    answered as itself, and reset / TTL / access still drop it."""
+    """A roster accepts only a position or an offered label, so a reply of another intent
+    cannot be captured by it (#1352); the new question is answered as itself, and reset /
+    access still drop it."""
     state = _state(_all_held_focus(intent="check_order"), pending=_pending(kind))
     out, why = held.consume(state, verdict(intent_hint="check_promotion", entities=[entity("X1")]))
     assert why == "new_intent"
@@ -157,7 +170,7 @@ def test_a_reset_drops_the_open_question(kind):
     assert why == "topic_reset"
 
 
-@pytest.mark.parametrize("kind", KINDS)
+@pytest.mark.parametrize("kind", NOT_OFFERS)
 def test_the_open_question_never_expires_by_turn_count(kind):
     """INTENT-FRAMES, owner ruling Q1: no TTL. Only context ends a held question."""
     state = _state(Focus(intent="check_order", frame_access="fp-a"), pending=_pending(kind), turn_no=10_000)
@@ -186,7 +199,7 @@ def test_a_genuine_answer_keeps_the_open_question(kind):
     assert why is None
 
 
-@pytest.mark.parametrize("kind", KINDS)
+@pytest.mark.parametrize("kind", NOT_OFFERS)
 def test_the_same_intent_keeps_the_open_question(kind):
     state = _state(Focus(intent="check_order"), pending=_pending(kind))
     out, why = held.consume(state, verdict(intent_hint="check_order", entities=[entity("7445")]))
@@ -194,7 +207,7 @@ def test_the_same_intent_keeps_the_open_question(kind):
     assert why is None
 
 
-@pytest.mark.parametrize("kind", KINDS)
+@pytest.mark.parametrize("kind", NOT_OFFERS)
 def test_no_intent_keeps_the_open_question(kind):
     """A message the parser gave no intent says nothing about a new question."""
     state = _state(Focus(intent="check_order"), pending=_pending(kind))

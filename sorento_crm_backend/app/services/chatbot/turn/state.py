@@ -360,7 +360,9 @@ def focus_from_wire(raw: Any) -> Focus:
         }
     intent = raw.get("intent")
     focus.intent = intent if isinstance(intent, str) and intent else None
-    frame_access = raw.get("frame_access")
+    # A row the STUCK-QTY-LOOP release wrote carries its access stamp as `held_access`
+    # (security review S2): read it as the frame's, so an access change still drops it.
+    frame_access = raw.get("frame_access") or raw.get("held_access")
     focus.frame_access = frame_access if isinstance(frame_access, str) and frame_access else None
     return focus
 

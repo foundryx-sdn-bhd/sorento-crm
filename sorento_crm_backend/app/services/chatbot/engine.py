@@ -6574,7 +6574,7 @@ def _run_answer(
         # console or replay turn the same way (finding 2a).
         # INTENT-FRAMES: the frame carries the access it was written under, read back by
         # `turn/frame.py::expire` on the next turn.
-        state = turn_frame.stamp(state)
+        state = turn_frame.stamp(state, question=getattr(answer, "question", None))
         session_payload = turn_tail.session_payload(state, answer, tail_ctx)
         if not dry_run:
             turn_tail.persist(
@@ -8651,7 +8651,7 @@ def run_tail(
         )
     before = dict(remembered_before or session_state.five_keys(jsc.get(ctx, "session")))
     # INTENT-FRAMES: the same stamp the composed arms write (`turn/frame.py`).
-    state = turn_frame.stamp(state)
+    state = turn_frame.stamp(state, question=question)
     payload = {
         "focus": turn_state.focus_to_wire(state.focus),
         # The lane's OWN question, else the one APPLY carried - the same rule the

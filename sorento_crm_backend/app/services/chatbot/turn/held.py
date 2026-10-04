@@ -130,9 +130,21 @@ def _answers(state: State, verdict: dict[str, Any]) -> bool:
     return False
 
 
-def _answers_only_by_pick(pending: Any) -> bool:
-    """Does this open question accept nothing but a pick off its own options?"""
-    return pending is not None and (pending.kind in ESCALATION_OFFER_KINDS or is_roster(pending.kind))
+def _without_offer(state: State) -> tuple[State, bool]:
+    """INTENT-FRAMES security review B1: an escalation offer lives exactly as long as the
+    contact's next message. One that message did not answer is closed (nothing counts
+    turns: the next message IS the context), and a roster keeps its pick but loses the
+    escalate sentence printed under it, so a later "ok" never hands the conversation to a
+    person nobody asked for (the AC-816 defect the 3-turn clock used to bound)."""
+    pending = state.pending
+    if pending is None:
+        return state, False
+    if pending.kind in ESCALATION_OFFER_KINDS:
+        return replace(state, pending=None), True
+    if pending.payload.get("escalate_offered") is True:
+        payload = {k: v for k, v in pending.payload.items() if k != "escalate_offered"}
+        return replace(state, pending=replace(pending, payload=payload)), True
+    return state, False
 
 
 def consume(
@@ -172,11 +184,15 @@ def consume(
     if verdict.get("topic_reset") is True:
         return _cleared(state), "topic_reset"
     if changed and not answers:
-        # A question that accepts ONLY a position or one of its own offered labels is kept
-        # (the new question is still answered as itself; it cannot be captured): an
-        # escalation offer (`decide`, #1323; the subject a miss offered it over is what
-        # "cert?" next is about, #833) and a roster (`pending.is_roster`; "incoming
-        # srtwc286" -> "4" -> "check stock" -> "7" still picks, #1352). Reset and access
-        # change still drop both.
-        return _cleared(state, keep_pending=_answers_only_by_pick(state.pending)), "new_intent"
+        # A roster accepts ONLY a position or one of its own offered labels, so it is kept
+        # (the new question is still answered as itself; it cannot be captured): "incoming
+        # srtwc286" -> "4" -> "check stock" -> "7" still picks (#1352). Reset and access
+        # change still drop it.
+        state = _cleared(state, keep_pending=state.pending is not None and is_roster(state.pending.kind))
+        state, _closed = _without_offer(state)
+        return state, "new_intent"
+    if not answers:
+        state, closed = _without_offer(state)
+        if closed:
+            return state, "offer_unanswered"
     return state, None

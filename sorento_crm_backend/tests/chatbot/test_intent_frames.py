@@ -358,3 +358,68 @@ def test_there_is_one_lane_reply_rule():
 
     assert not hasattr(answer_bridge, "_lane_asked")
     assert answer_bridge.LANE_OWN_REPLY_KEYS == ("so_status", "low_stock_report")
+
+
+# --------------------------------------------------------------------------- #
+# Security review B1: an escalation offer lives as long as the next message    #
+# --------------------------------------------------------------------------- #
+
+
+def _offer(kind: str = "team_pick", **payload):
+    from app.services.chatbot.turn import pending as pending_mod
+
+    return pending_mod.ask(
+        kind, [{"position": 1, "label": "Warehouse", "code": "warehouse"}], asked_at_turn=3,
+        payload={"domain": "inventory", **payload},
+    )
+
+
+@pytest.mark.parametrize("kind", ["team_pick", "member_offer", "company_pick"])
+def test_an_escalation_offer_the_next_message_ignores_is_closed(kind):
+    """Offer, then an unrelated turn: the offer is gone, so no later "ok thanks" can
+    accept it (the AC-816 defect without its 3-turn clock)."""
+    state = dataclasses.replace(_state(_ranking_frame(intent="check_stock")), pending=_offer(kind))
+    out, why = held.consume(state, verdict(intent_hint="check_stock", entities=[entity("SRTWC286-SH-150")]))
+    assert out.pending is None and why == "offer_unanswered"
+
+
+def test_an_escalation_offer_is_closed_on_a_new_intent_too():
+    state = dataclasses.replace(_state(_ranking_frame(intent="check_stock")), pending=_offer())
+    out, why = held.consume(state, verdict(intent_hint="check_promotion", entities=[entity("X1")]))
+    assert out.pending is None and why == "new_intent"
+
+
+def test_an_accepted_escalation_offer_is_kept_for_its_arm():
+    state = dataclasses.replace(_state(_ranking_frame(intent="check_stock")), pending=_offer())
+    v = verdict(escalation={"is_escalation_confirmation": True, "company_pick": None})
+    out, why = held.consume(state, v)
+    assert out.pending is not None and why is None
+
+
+def test_a_roster_keeps_its_pick_but_loses_the_escalate_sentence_when_ignored():
+    from app.services.chatbot.turn import pending as pending_mod
+
+    roster = pending_mod.ask(
+        "product_pick", [{"position": 1, "label": "A", "code": "A"}], asked_at_turn=3,
+        payload={"domain": "incoming", "escalate_offered": True},
+    )
+    state = dataclasses.replace(_state(_ranking_frame(intent="check_incoming")), pending=roster)
+    out, why = held.consume(state, verdict(message_type="casual", intent_hint=None))
+    assert out.pending is not None and out.pending.kind == "product_pick"
+    assert "escalate_offered" not in out.pending.payload and why == "offer_unanswered"
+
+
+def test_the_stamp_covers_the_question_the_composer_writes():
+    """Security review S2/S1: a turn whose only held thing is the question it asks now
+    is stamped, so an access change drops that question next turn."""
+    stamped = frame.stamp(_state(Focus()), question=_offer())
+    assert stamped.focus.frame_access == "fp-a"
+    state, why = frame.expire(dataclasses.replace(_state(stamped.focus, access_fp="fp-b"), pending=_offer()))
+    assert why == "access_changed" and state.pending is None
+
+
+def test_a_held_access_stamp_from_the_stuck_qty_loop_release_is_read_as_the_frames():
+    focus = focus_from_wire({"intent": "check_stock", "products": [{"raw": "A"}], "held_access": "fp-old"})
+    assert focus.frame_access == "fp-old"
+    _state_out, why = frame.expire(_state(focus, access_fp="fp-new"))
+    assert why == "access_changed"
