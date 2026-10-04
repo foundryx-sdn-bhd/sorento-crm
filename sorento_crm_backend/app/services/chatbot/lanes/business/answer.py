@@ -2358,6 +2358,9 @@ _DISPLAY_NAME_KEYS: tuple[str, ...] = (
 
 # Which axes are active comes from the GATE (`compatible_entities`), never from the parser's
 # hints: a bare code is often hinted `order` and matched by the resolver as a product.
+#: `axis_words`' answer for an axis that prints no header line this turn.
+_NO_LINE = object()
+
 _AXES: tuple[dict[str, Any], ...] = (
     {"label": "Customer", "types": ["customer"], "hints": ["customer"], "always": True, "allText": "all customers"},
     {"label": "Product", "types": ["product"], "hints": ["product"], "always": True, "allText": "all products"},
@@ -3005,8 +3008,14 @@ def not_found_error_message(
     gate: dict[str, Any] | None,
     entitlement_levels: Any = None,
     profile: Any = None,
+    granted_keys: Any = None,
 ) -> dict[str, Any]:
     """`not-found-error-message`: the miss reply, its search-scope header and its bullets.
+
+    `granted_keys` (DO-ASK-SIMPLIFY security B1): the contact's `contact_field_reveals`
+    grants (`ctx["access"]["attributes"]`). The "hasn't been delivered yet" line names the
+    order's current status only with `delivery_orders.status`; None is the empty set, so a
+    caller that passes nothing never leaks it.
 
     `profile` (#1262 slice 11, F8 follow-up): the SAME staff-audience gate `turn/
     compose.py` and `answer_bridge.py`'s cross-domain ladder already apply -
@@ -3621,6 +3630,17 @@ def not_found_error_message(
             ]
             if not rows:
                 return None  # axis never put in scope
+            if axis["label"] == "Customer":
+                # DO-ASK-SIMPLIFY tester pass 1 (`tail/scope_block._axis_words`): the
+                # forced links of an order NUMBER ask print no Customer line, and the
+                # grouped name wins over the typed word when the DB has named every row.
+                if all(jsc.truthy(jsc.get(row, "scope")) for row in rows) and any(
+                    jsc.truthy(e) and _nf_norm_raw(jsc.get(e, "entity_type")) in _ORDER_TYPES for e in compat
+                ):
+                    return _NO_LINE
+                named = [jsc.nullish_str(jsc.get(row, "display_name")).strip() for row in rows]
+                if all(named):
+                    return customer_header_words([(n, customer_group_of(n)) for n in named])
             words: list[str] = []
             for res in jsc.array(jsc.get(r, "resolutions")):  # 1. the customer's own token
                 matches = jsc.get(res, "matches")
@@ -3689,6 +3709,8 @@ def not_found_error_message(
                 head: list[str] = []
                 for axis in _AXES:
                     words = axis_words(axis)
+                    if words is _NO_LINE:
+                        continue
                     if axis.get("always"):
                         head.append(f"{axis['label']}: {words or axis['allText']}")
                     elif words:
@@ -3715,9 +3737,10 @@ def not_found_error_message(
             if nf:
                 parts.append(f"Couldn't find: {', '.join(nf)}.")
             # A WINDOWED MISS NAMES ITS DATES THE WAY THE HEADER DOES, AND OFFERS THE WIDEN.
-            # The invite names 'all dates' because that exact phrase is what the parser's
-            # deterministic widen arm detects; the frozen escalate contract is preserved by
-            # landing the invite BEFORE the would-clause.
+            # A DO list needs a range of at most 31 days for every contact (owner, 4 Oct 2026,
+            # `do_ask.range_reply`), so the invite asks for another month or dates rather
+            # than 'all dates'; the frozen escalate contract is preserved by landing the
+            # invite BEFORE the would-clause.
             miss_window = (
                 f" from {_fmt_date(date_start)} to {_fmt_date(date_end)}"
                 if (is_order_scope and jsc.truthy(date_start) and jsc.truthy(date_end))
@@ -3732,15 +3755,13 @@ def not_found_error_message(
             # trailing sentence - `_esc_offer`'s own phrasing covers every OTHER site.
             windowed = is_order_scope and (jsc.truthy(date_start) or jsc.truthy(date_end))
             if windowed:
+                widen = "Reply with another month or dates (e.g. August, or 15 Sep to 10 Oct)."
                 esc_ask = (
-                    refer.after("Reply 'all dates' to search without the date filter.", sep=" ")
+                    refer.after(widen, sep=" ")
                     if barred
-                    else "Reply 'all dates' to search without the date filter."
+                    else widen
                     if is_staff
-                    else (
-                        f"Reply 'all dates' to search without the date filter, or would you like me "
-                        f"to escalate to {team} team?"
-                    )
+                    else f"{widen[:-1]}, or would you like me to escalate to {team} team?"
                 )
             else:
                 esc_ask = _esc_offer()
@@ -4119,8 +4140,11 @@ def not_found_error_message(
                         )
                         if order_status == "delivered":
                             status = jsc.get(display, "status")
+                            status_shown = jsc.truthy(status) and "delivery_orders.status" in (
+                                granted_keys if isinstance(granted_keys, (list, tuple, set, frozenset)) else ()
+                            )
                             status_text = (
-                                f" - current status: {jsc.js_string(status)}" if jsc.truthy(status) else ""
+                                f" - current status: {jsc.js_string(status)}" if status_shown else ""
                             )
                             # Owner ruling (10 Sep 2026, reverses the 6 Sep 2026 ruling):
                             # `orders.estimated_delivery_date` is not a real promise - the

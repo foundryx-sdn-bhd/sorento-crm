@@ -474,7 +474,9 @@ def test_an_empty_list_inside_the_open_list_has_no_picker_frame(owner_chat, one_
         "what about 2019",
         _parser_output(
             domain_hint="order", intent_hint="check_order", entities=[], domain_in_message=False,
-            date_mode="range", date_filter_start="2019-01-01", date_filter_end="2019-12-31",
+            # January only: a whole year is over the 31-day cap and would be refused, not listed
+            # (DO-ASK-SIMPLIFY, owner 4 Oct 2026); this test needs an empty list.
+            date_mode="range", date_filter_start="2019-01-01", date_filter_end="2019-01-31",
             routing={"suggested_team": "customer_service", "suggested_agent": "order_enquiries", "team_source": None},
         ),
     )

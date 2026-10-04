@@ -43,6 +43,10 @@ LABELS = dict(FIELD_REVEAL_KEYS)
 COST = "purchase_orders.cost"
 SELLABLE = "inventory.sellable"
 PLACED = "purchase_orders.placed"
+#: DO-ASK-SIMPLIFY (owner, 4 Oct 2026): every DO field reveal defaults ON for every contact, so a
+#: contact's EFFECTIVE reveals (`granted_keys`) include these unless a granted=False row hides one.
+DO_KEYS = sorted(k for k, _label in FIELD_REVEAL_KEYS if k.startswith("delivery_orders."))
+WAREHOUSE = "delivery_orders.warehouse"
 
 FACET_ORDER = [
     "access_types",
@@ -184,12 +188,8 @@ def _snap(db, contact_id: str) -> dict:
     """The whole access set plus the untouched-by-copy fields, read fresh from the DB."""
     db.expire_all()
     c = db.get(RespondContact, contact_id)
-    revealed = sorted(
-        k
-        for (k,) in db.query(ContactFieldReveal.field_key).filter(
-            ContactFieldReveal.respond_contact_id == contact_id, ContactFieldReveal.granted.is_(True)
-        )
-    )
+    # The effective set (DO keys default ON), the same read the chatbot and the Field reveals card use.
+    revealed = contact_field_reveal_service.granted_keys(db, contact_id)
     agent_rows = (
         db.query(ContactAgentAccess, AccessAgent)
         .join(AccessAgent, AccessAgent.id == ContactAgentAccess.agent_id)
@@ -363,8 +363,8 @@ def test_a1_10_change_rows_carry_facet_label_before_after_and_human_added_remove
 
     fr = by_facet["field_reveals"]
     assert fr["label"] == "Field reveals"
-    assert fr["before"] == sorted([SELLABLE, PLACED])
-    assert fr["after"] == sorted([COST, SELLABLE])
+    assert fr["before"] == sorted([SELLABLE, PLACED, *DO_KEYS])
+    assert fr["after"] == sorted([COST, SELLABLE, *DO_KEYS])
     assert fr["added"] == ["Last purchase cost"]
     assert fr["removed"] == [LABELS[PLACED]]
 
@@ -622,3 +622,66 @@ def test_n1_failed_target_reason_carries_no_internal_error_text(client, db, worl
     assert row["status"] == "failed"
     assert "SECRET-SQL-TEXT" not in row["error"]
     assert _copy_audit_rows(db, target.id) == []
+
+
+# ---------------------------------------------------------------- DO reveals default ON (owner, 4 Oct 2026)
+
+
+def _hide(db, contact, key):
+    db.add(ContactFieldReveal(respond_contact_id=contact.id, field_key=key, granted=False))
+    db.flush()
+
+
+def _false_do_rows(db, contact_id):
+    db.expire_all()
+    return sorted(
+        k
+        for (k,) in db.query(ContactFieldReveal.field_key).filter(
+            ContactFieldReveal.respond_contact_id == contact_id,
+            ContactFieldReveal.granted.is_(False),
+            ContactFieldReveal.field_key.like("delivery_orders.%"),
+        )
+    )
+
+
+def _facets(row):
+    return {c["facet"]: c for c in row["changes"]}
+
+
+def test_do_default_on_copy_from_a_fresh_source_leaves_every_do_key_on_for_the_target(client, db):
+    # The target differs on reveals (it holds one extra key), so the copy really writes them.
+    source, target = _contact(db, "freshsrc"), _contact(db, "freshtgt", reveals=[COST])
+    assert _post(client, source, [target], dry_run=False).status_code == 200
+    assert contact_field_reveal_service.granted_keys(db, target.id) == DO_KEYS
+    assert COST not in contact_field_reveal_service.granted_keys(db, target.id)
+    assert _false_do_rows(db, target.id) == [], "a fresh source must not hide any DO field on the target"
+
+
+def test_do_default_on_copy_carries_a_turned_off_do_key_and_keeps_the_rest_on(client, db):
+    source, target = _contact(db, "offsrc"), _contact(db, "offtgt")
+    _hide(db, source, WAREHOUSE)
+    assert _post(client, source, [target], dry_run=False).status_code == 200
+    assert contact_field_reveal_service.granted_keys(db, target.id) == [k for k in DO_KEYS if k != WAREHOUSE]
+    assert _false_do_rows(db, target.id) == [WAREHOUSE]
+
+
+def test_do_default_on_dry_run_between_two_fresh_contacts_shows_no_reveal_difference(client, db):
+    source, target = _contact(db, "dryfsrc"), _contact(db, "dryftgt")
+    (row,) = _post(client, source, [target], dry_run=True).json()["results"]
+    assert row["status"] == "unchanged", row
+    assert "field_reveals" not in _facets(row), row["changes"]
+
+
+def test_do_default_on_dry_run_shows_exactly_the_warehouse_difference(client, db):
+    fresh, hidden = _contact(db, "dryfresh"), _contact(db, "dryhidden")
+    _hide(db, hidden, WAREHOUSE)
+
+    (row,) = _post(client, fresh, [hidden], dry_run=True).json()["results"]
+    assert [c["facet"] for c in row["changes"]] == ["field_reveals"], row["changes"]
+    change = row["changes"][0]
+    assert change["added"] == [LABELS[WAREHOUSE]] and change["removed"] == [], change
+
+    (row,) = _post(client, hidden, [fresh], dry_run=True).json()["results"]
+    assert [c["facet"] for c in row["changes"]] == ["field_reveals"], row["changes"]
+    change = row["changes"][0]
+    assert change["removed"] == [LABELS[WAREHOUSE]] and change["added"] == [], change
