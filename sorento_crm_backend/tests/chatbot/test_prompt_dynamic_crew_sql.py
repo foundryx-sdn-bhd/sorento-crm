@@ -246,6 +246,15 @@ def test_the_dev_seed_puts_the_owner_text_verbatim_then_the_variable_version_ren
         assert db.query(AIPromptVersion).filter(AIPromptVersion.name == KEY).count() == count
 
 
+def test_the_generated_access_level_updates_only_fill_a_null_sort_order():
+    gen = _gen()
+    for sql in (gen._pdyn_0004_sql(), gen.build_sql()):
+        updates = [ln for ln in sql.splitlines() if "UPDATE contact_access_types" in ln]
+        assert updates
+        for ln in updates:
+            assert "sort_order IS NULL" in ln, ln
+
+
 def test_the_crew_sql_also_swaps_the_order_domain_status_values():
     with pg_session() as db:
         _run_sql(db)

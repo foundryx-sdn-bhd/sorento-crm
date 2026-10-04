@@ -145,7 +145,7 @@ def test_the_access_level_order_step_renders_the_owner_list_and_inserts_nothing(
                     "INSERT INTO contact_access_types (code, name, is_active, sort_order, keywords, created_at, updated_at) "
                     "VALUES (:c, :n, true, :s, '[]', now(), now())"
                 ),
-                {"c": f"zzt{i}", "n": name, "s": i},
+                {"c": f"zzt{i}", "n": name, "s": None},
             )
         db.flush()
         count = db.execute(text("SELECT count(*) FROM contact_access_types")).scalar()
@@ -153,6 +153,48 @@ def test_the_access_level_order_step_renders_the_owner_list_and_inserts_nothing(
         pv.clear_cache()
         assert pv.render_value(db, "access_levels") == _owner('["Sorento Dealer"', "\n")
         assert db.execute(text("SELECT count(*) FROM contact_access_types")).scalar() == count
+
+
+def _put_levels(db, orders: dict[str, int | None]) -> None:
+    db.execute(text("UPDATE contact_access_types SET is_active = false"))
+    for i, name in enumerate(OWNER_ACCESS_LEVELS):
+        db.execute(
+            text(
+                "INSERT INTO contact_access_types (code, name, is_active, sort_order, keywords, created_at, updated_at) "
+                "VALUES (:c, :n, true, :s, '[]', now(), now())"
+            ),
+            {"c": f"zzt{i}", "n": name, "s": orders[name]},
+        )
+    db.flush()
+
+
+def _orders(db) -> dict[str, int | None]:
+    rows = db.execute(text("SELECT name, sort_order FROM contact_access_types WHERE code LIKE 'zzt%'")).all()
+    return {n: s for n, s in rows}
+
+
+def test_the_access_level_order_step_never_overwrites_a_set_sort_order():
+    with pg_session() as db:
+        original = {name: 100 + i for i, name in enumerate(reversed(OWNER_ACCESS_LEVELS))}
+        _put_levels(db, original)
+        _order_migration().apply(db.connection())
+        assert _orders(db) == original
+
+
+def test_the_access_level_order_step_fills_only_the_null_sort_orders():
+    with pg_session() as db:
+        original: dict[str, int | None] = {
+            name: (None if i % 2 == 0 else 100 + i) for i, name in enumerate(reversed(OWNER_ACCESS_LEVELS))
+        }
+        _put_levels(db, original)
+        _order_migration().apply(db.connection())
+        after = _orders(db)
+        for name, before in original.items():
+            if before is not None:
+                assert after[name] == before, name
+            else:
+                assert after[name] is not None, name
+                assert after[name] == OWNER_ACCESS_LEVELS.index(name), name
 
 
 def test_the_access_level_order_step_leaves_inactive_rows_alone():
