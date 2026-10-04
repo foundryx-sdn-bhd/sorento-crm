@@ -11,8 +11,9 @@
 #   brand starts with all brands (R4). The parser's own reading of these messages is
 #   not stable (v40 read "how aobut mocha" as a request for help), so the words decide.
 # * `list_reply` takes the escalate offer and the routing picker out of a reply inside
-#   the list, and says an empty result in one line (R6). The escalation lane stays one
-#   message away: a request for a person never reaches a business reply at all.
+#   the list that answered (R6). An empty result is a no-answer and keeps its offer
+#   (owner ruling 4 Oct 2026, PICKER-ESCALATION). The escalation lane stays one message
+#   away: a request for a person never reaches a business reply at all.
 from __future__ import annotations
 
 import re
@@ -44,10 +45,6 @@ _SWITCH_FILLER = frozenset(
 _CLEAR_VERBS = frozenset({"all", "any", "every", "both", "clear", "remove", "no", "drop", "reset", "without"})
 _BRAND_NOUNS = frozenset({"brand", "brands"})
 _CLEAR_FILLER = frozenset({"the", "filter", "pls", "please", "ok", "okay", "show", "just", "a", "any"})
-
-#: The one line an empty list reads. The header above it says what was searched.
-EMPTY_LIST_LINE = "No orders matched these."
-
 
 def _words(text: str) -> list[str]:
     return _WORD_RE.findall((text or "").casefold())
@@ -186,9 +183,14 @@ def order_list_verdict(db: Session, verdict: dict[str, Any], state: Any, text: s
 
 def list_reply(answer: Any, *, was_open: bool, fetch_plan: Any, envelopes: list[dict[str, Any]], order_status: Any) -> Any:
     """R6: a reply inside an order list that was already open (`was_open`, read before
-    this turn applied) carries no escalate offer and no routing picker, and an empty
-    list says so in one line under the header (`EMPTY_LIST_LINE`), keeping every other
-    line (a "could not find" note, a refusal). A first ask is answered as before."""
+    this turn applied) carries no escalate offer and no routing picker. A first ask is
+    answered as before.
+
+    An empty list is left as composed (owner ruling 4 Oct 2026, PICKER-ESCALATION: "any
+    no answer should get the escalation question, that's the gist"): a contact who may
+    escalate is offered a person, a barred one keeps "Please refer to your salesman."
+    R6's 27 Sep one-line empty list dropped both, after a customer picker too, since the
+    picker turn had already put the order domain in focus."""
     fetch = list(getattr(fetch_plan, "fetch", None) or [])
     if not was_open or len(fetch) != 1 or fetch[0].domain != "order" or not envelopes:
         return answer
@@ -196,6 +198,9 @@ def list_reply(answer: Any, *, was_open: bool, fetch_plan: Any, envelopes: list[
         return answer
     from app.services.chatbot.turn.fetch import envelope_missed
 
+    envelope = envelopes[0]
+    if envelope_missed(envelope) and not envelope.get("denied"):
+        return answer
     text, _had = refers_to_salesman(getattr(answer, "text", "") or "")
     question = answer.question
     dropped_options: list[dict[str, Any]] | None = None
@@ -212,9 +217,6 @@ def list_reply(answer: Any, *, was_open: bool, fetch_plan: Any, envelopes: list[
             if isinstance(row, dict) and row.get("company_name")
         ]
         text = _without_picker(text, dropped_options, companies=companies)
-    envelope = envelopes[0]
-    if envelope_missed(envelope) and not envelope.get("denied"):
-        text = _one_line_miss(text)
     if text == answer.text and question is answer.question and answer.offer is None:
         return answer
     return replace(answer, text=text, question=question, offer=None)
@@ -318,21 +320,3 @@ def _without_picker(text: str, options: list[dict[str, Any]], *, companies: list
     while kept and not kept[-1].strip():
         kept.pop()
     return "\n".join(kept)
-
-
-def _one_line_miss(text: str) -> str:
-    """The rich miss ("Here's what you want:", its bullets and "But no order matched
-    these ...") as one line; the header and any other line are kept."""
-    kept: list[str] = []
-    dropped = False
-    for line in (text or "").splitlines():
-        bare = line.strip()
-        if bare.startswith(("Here's what you want", "\u2022", "But no ")):
-            dropped = True
-            continue
-        kept.append(line)
-    if not dropped:
-        return text
-    while kept and not kept[-1].strip():
-        kept.pop()
-    return "\n".join([*kept, EMPTY_LIST_LINE])

@@ -62,6 +62,7 @@ from app.services.chatbot.turn.state import (
     Focus,
     State,
     escalation_barred,
+    token_key,
 )
 
 RESET_KEEPS = {"tier", "brands"}
@@ -1061,6 +1062,32 @@ def _focus_rules(
     replaced_kinds = {kind for kind in by_kind if kind not in picked_kinds}
     for kind in replaced_kinds:
         _set_kind_field(focus, kind, by_kind[kind])
+    # MULTI-CODE-DYM Q3 (owner, 4 Oct 2026): "2 and SRTWC286-SH-150" picks one option AND
+    # names a code of its own. The typed code that is not the picked row's own word is a
+    # second subject, answered beside the pick, never dropped.
+    for kind in picked_kinds & set(by_kind) & {"product"}:
+        attr = KIND_FIELD_MAP.get(kind)
+        if not attr:
+            continue
+        picked_rows = list(getattr(focus, attr, None) or [])
+        picked_keys = {
+            token_key(value)
+            for row in picked_rows
+            if isinstance(row, dict)
+            for value in (row.get("raw"), row.get("canonical_code"))
+            if value
+        }
+        # A word inside the picked code ("the srtwc286 one" over SRTWC286-SH) is how the
+        # customer named the pick, not a second subject.
+        extras = [
+            e
+            for e in by_kind[kind]
+            if token_key(_code_of_entity(e))
+            and not any(token_key(_code_of_entity(e)) in key for key in picked_keys)
+        ]
+        if extras:
+            setattr(focus, attr, picked_rows + extras)
+            trace.rules_fired.append("pick_plus_typed_subject")
     if replaced_kinds:
         trace.rules_fired.append("replace_same_axis")
     else:
