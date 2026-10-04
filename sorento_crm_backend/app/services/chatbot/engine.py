@@ -54,7 +54,11 @@ from app.services.customer_group_service import family_overrides
 from app.services.error_handler import AppException
 from app.services.ledger_family import customer_groups
 from app.services.chatbot.head import grounding, parser
-from app.services.chatbot.head.access import check_access, default_space_id
+from app.services.chatbot.head.access import (
+    check_access,
+    contact_reveal_grants,
+    default_space_id,
+)
 from app.services.chatbot.prompt_gates import grant_for_order_status
 from app.services.chatbot.head.build_ctx import build_ctx
 from app.services.chatbot.lanes import business, canned as canned_lanes, casual
@@ -4016,17 +4020,14 @@ def _run_stages_body(  # noqa: PLR0915
     # parser it will not call (AC-1810's "no parser call" reading extended to setup).
     with _session(session_factory) as db:
         # PARSER-PER-AUDIENCE: the prompt is rendered for what this contact may be
-        # answered on. The grants are the same `ctx.access.attributes` every refusal
-        # reads; an unreadable lookup is the minimal audience, never the full one.
+        # answered on. The grants are read the way `check_access` reads the
+        # `attributes` every refusal uses, with no access decision of their own; an
+        # unreadable lookup is the minimal audience, never the full one.
         try:
             prompt_grants = list(
-                check_access(
-                    db,
-                    agent_code=None,
-                    contact_id=contact_respond_id,
-                    space_id=default_space_id(db),
-                ).get("attributes")
-                or []
+                contact_reveal_grants(
+                    db, contact_id=contact_respond_id, space_id=default_space_id(db)
+                )
             )
         except Exception:  # noqa: BLE001 - fail closed to the minimal audience
             logger.warning("chatbot: audience grants lookup failed", exc_info=True)

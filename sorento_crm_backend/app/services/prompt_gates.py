@@ -33,6 +33,9 @@ class PromptGate:
     refused_domains: tuple[str, ...] = ()
     refused_intents: tuple[str, ...] = ()
     refused_order_statuses: tuple[str, ...] = ()
+    # The domain words (and switch words) that name this gate's domain or intent: the
+    # registry lists (`chatbot_prompt_vars`) leave them out for a contact without the grant.
+    words: tuple[str, ...] = ()
 
 
 PROMPT_GATES: tuple[PromptGate, ...] = (
@@ -47,6 +50,7 @@ PROMPT_GATES: tuple[PromptGate, ...] = (
             "LAST PURCHASE COST", "buying price", "cost price",
         ),
         refused_domains=("purchase_cost",),
+        words=("purchase cost", "last purchase cost", "buying price", "cost price"),
     ),
     PromptGate(
         domain="purchase_order",
@@ -59,6 +63,7 @@ PROMPT_GATES: tuple[PromptGate, ...] = (
             "PO placed", "supplier order",
         ),
         refused_domains=("purchase_order",),
+        words=("PO", "purchase order", "purchase orders", "supplier order"),
     ),
     PromptGate(
         domain="spo_allocation",
@@ -68,6 +73,7 @@ PROMPT_GATES: tuple[PromptGate, ...] = (
         blocks=("SPO LAST RECEIPT",),
         forbidden_terms=("spo_allocation", "check_spo", "SPO LAST RECEIPT", "last received"),
         refused_domains=("spo_allocation",),
+        words=("SPO", "last in", "last received"),
     ),
     PromptGate(
         domain="sales",
@@ -81,6 +87,7 @@ PROMPT_GATES: tuple[PromptGate, ...] = (
         ),
         refused_domains=("sales",),
         refused_order_statuses=("sales_report", "sales_analysis", "top_selling"),
+        words=("sales report", "sales analysis", "top selling"),
     ),
     PromptGate(
         domain="inventory",
@@ -90,6 +97,7 @@ PROMPT_GATES: tuple[PromptGate, ...] = (
         blocks=("LOW STOCK REPORT",),
         forbidden_terms=("low_stock_report", "LOW STOCK REPORT", "reorder report"),
         refused_intents=("low_stock_report",),
+        words=("low stock", "reorder report", "below level"),
     ),
 )
 

@@ -29,6 +29,7 @@ from app.services.chatbot.prompt_gates import render_for_audience
 from app.services.chatbot.turn import context as context_mod
 from app.services.chatbot.turn import question as question_mod
 from app.services.chatbot.turn import task as task_mod
+from app.services.chatbot_prompt_vars import hidden_tags
 
 logger = logging.getLogger(__name__)
 
@@ -623,13 +624,19 @@ def resolve_config(
 
     `grants` is the contact's reveal keys (`ctx.access.attributes`): the prompt is
     rendered for that audience, same version and label for everyone
-    (`prompt_gates.render_for_audience`). None means no grants, the minimal prompt.
+    (`prompt_gates.render_for_audience`), and so are the registry lists in it: a domain,
+    intent, status or word a missing grant gates is not listed. None means no grants, the
+    minimal prompt.
     """
     from app.services.ai_assistant_service import AIAssistantConfigService
     from app.services.llm_provider import resolve_api_key
 
     system_prompt, prompt_version = render(
-        db, PROMPT_KEY, current_date=current_date, override_version_id=override_version_id
+        db,
+        PROMPT_KEY,
+        current_date=current_date,
+        override_version_id=override_version_id,
+        hidden_tags=hidden_tags(grants),
     )
     system_prompt = render_for_audience(system_prompt, grants)
     provider_override, model_override = agent_model(db, PROMPT_KEY)

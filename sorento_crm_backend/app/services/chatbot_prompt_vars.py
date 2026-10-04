@@ -23,6 +23,8 @@ import logging
 import re as _re_mod
 import threading
 import time
+from collections.abc import Iterable
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Callable
@@ -52,8 +54,58 @@ class RegistryVariable:
 # --------------------------------------------------------------------------- #
 
 
+# --------------------------------------------------------------------------- #
+# Audience (PARSER-PER-AUDIENCE, owner ruling (a)). The lists render for the contact's
+# grants: a row whose domain, intent, status or word a `PROMPT_GATES` row gates is left
+# out for a contact without that row's grant. Set only while one variable renders; empty
+# (the default) is the full list, today's render.
+# --------------------------------------------------------------------------- #
+
+_HIDDEN: ContextVar[frozenset[str]] = ContextVar("chatbot_prompt_vars_hidden", default=frozenset())
+
+
+def hidden_tags(grants: Iterable[str] | None) -> frozenset[str]:
+    """The `PROMPT_GATES` tags a contact holding `grants` does not see. None is no grants."""
+    from app.services.prompt_gates import PROMPT_GATES
+
+    held = set(grants or ())
+    return frozenset(g.tag for g in PROMPT_GATES if g.grant not in held)
+
+
+def _hidden_gates() -> list:
+    hidden = _HIDDEN.get()
+    if not hidden:
+        return []
+    from app.services.prompt_gates import PROMPT_GATES
+
+    return [g for g in PROMPT_GATES if g.tag in hidden]
+
+
+def _hidden_domains() -> set[str]:
+    return {d for g in _hidden_gates() if g.part is None for d in (g.domain, *g.refused_domains)}
+
+
+def _hidden_intents() -> set[str]:
+    return {i for g in _hidden_gates() for i in ((g.part,) if g.part else ()) + g.refused_intents}
+
+
+def _hidden_statuses() -> set[str]:
+    return {s for g in _hidden_gates() for s in g.refused_order_statuses}
+
+
+def _hidden_words() -> set[str]:
+    return {w.lower() for g in _hidden_gates() for w in g.words}
+
+
+def _shown_words(words: list[str] | None) -> list[str]:
+    hidden = _hidden_words()
+    return [w for w in words or [] if (w or "").strip().lower() not in hidden]
+
+
 def _domain_names(db: Session) -> list[str]:
-    return list(db.execute(sql("SELECT name FROM chatbot_domains ORDER BY sort_order, name")).scalars())
+    hidden = _hidden_domains()
+    names = db.execute(sql("SELECT name FROM chatbot_domains ORDER BY sort_order, name")).scalars()
+    return [n for n in names if n not in hidden]
 
 
 def _domain_words(db: Session) -> list[str]:
@@ -61,16 +113,19 @@ def _domain_words(db: Session) -> list[str]:
     install without that list falls back to every switch word and status word."""
     curated = list(db.execute(sql("SELECT word FROM chatbot_domain_words ORDER BY sort_order, word")).scalars())
     if curated:
-        return _dedupe(curated)
+        return _dedupe(_shown_words(curated))
+    hidden = _hidden_domains()
     words: list[str] = []
-    for row in db.execute(sql("SELECT switch_words FROM chatbot_domains ORDER BY sort_order, name")):
-        words.extend(row[0] or [])
+    for row in db.execute(sql("SELECT name, switch_words FROM chatbot_domains ORDER BY sort_order, name")):
+        if row[0] not in hidden:
+            words.extend(row[1] or [])
     for row in _status_rows(db):
         words.extend(row["trigger_words"] or [])
-    return _dedupe(words)
+    return _dedupe(_shown_words(words))
 
 
 def _status_rows(db: Session) -> list[dict]:
+    domains, statuses = _hidden_domains(), _hidden_statuses()
     return [
         dict(r)
         for r in db.execute(
@@ -79,6 +134,7 @@ def _status_rows(db: Session) -> list[dict]:
                 "ORDER BY sort_order, value"
             )
         ).mappings()
+        if r["domain"] not in domains and r["value"] not in statuses
     ]
 
 
@@ -249,7 +305,14 @@ def _render_domains_detail(db: Session) -> str:
             "escalation_team_code FROM chatbot_domains ORDER BY sort_order, name"
         )
     ).mappings()
-    return "\n".join(_one_line(domain_line(r)) for r in rows)
+    domains, intents = _hidden_domains(), _hidden_intents()
+    shown = [
+        {**r, "intents": [i for i in r["intents"] or [] if i not in intents],
+         "switch_words": _shown_words(r["switch_words"])}
+        for r in rows
+        if r["name"] not in domains
+    ]
+    return "\n".join(_one_line(domain_line(r)) for r in shown)
 
 
 def _render_entity_kinds_detail(db: Session) -> str:
@@ -388,19 +451,30 @@ def clear_cache() -> None:
         _GENERATION += 1
 
 
-def render_value(db: Session, name: str) -> str:
-    """One variable's current text. Cached; a registry commit clears the cache."""
+def _cache_key(name: str, hidden: frozenset[str]) -> str:
+    """The full list keeps the plain name; an audience's list is cached apart from it."""
+    return name if not hidden else f"{name}#{'+'.join(sorted(hidden))}"
+
+
+def render_value(db: Session, name: str, hidden: frozenset[str] = frozenset()) -> str:
+    """One variable's current text for the audience missing `hidden` (empty: everyone).
+    Cached; a registry commit clears the cache."""
+    key = _cache_key(name, hidden)
     now = time.monotonic()
     with _LOCK:
-        hit = _CACHE.get(name)
+        hit = _CACHE.get(key)
         generation = _GENERATION
     if hit is not None and hit[0] > now:
         return hit[1]
-    value = VARIABLES[name].render(db)
+    token = _HIDDEN.set(frozenset(hidden))
+    try:
+        value = VARIABLES[name].render(db)
+    finally:
+        _HIDDEN.reset(token)
     with _LOCK:
-        _LAST_GOOD[name] = value
+        _LAST_GOOD[key] = value
         if generation == _GENERATION:
-            _CACHE[name] = (now + CACHE_TTL_SECONDS, value)
+            _CACHE[key] = (now + CACHE_TTL_SECONDS, value)
     return value
 
 
@@ -409,25 +483,28 @@ def render_values(db: Session, names: set[str] | list[str] | None = None) -> dic
     return {name: render_value(db, name) for name in wanted}
 
 
-def render_values_safe(db: Session, names: set[str] | list[str]) -> dict[str, str]:
+def render_values_safe(
+    db: Session, names: set[str] | list[str], hidden: frozenset[str] = frozenset()
+) -> dict[str, str]:
     """`render_values` for a live turn: never raises, never leaves a token unfilled. Each
     variable renders in its own savepoint, so one failing reader neither blanks the others
-    nor aborts the turn's transaction; a failed one falls back to its last good value,
-    and to "" only when it never rendered in this process."""
+    nor aborts the turn's transaction; a failed one falls back to its last good value
+    for the same audience, and to "" only when it never rendered in this process."""
     out: dict[str, str] = {}
     for name in [n for n in VARIABLE_NAMES if n in set(names)]:
+        key = _cache_key(name, hidden)
         with _LOCK:
-            hit = _CACHE.get(name)
+            hit = _CACHE.get(key)
         if hit is not None and hit[0] > time.monotonic():
             out[name] = hit[1]  # a cache hit needs no savepoint (no SQL runs)
             continue
         try:
             with db.begin_nested():
-                out[name] = render_value(db, name)
+                out[name] = render_value(db, name, hidden)
         except Exception:
             logger.warning("registry variable %s failed; using its last good value", name, exc_info=True)
             with _LOCK:
-                out[name] = _LAST_GOOD.get(name, "")
+                out[name] = _LAST_GOOD.get(key, "")
     return out
 
 
