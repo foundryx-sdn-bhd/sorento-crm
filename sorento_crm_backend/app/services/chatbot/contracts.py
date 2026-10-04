@@ -78,6 +78,80 @@ UNDOMAINED_CHATBOT_TOOLS: tuple[str, ...] = (
 )
 
 # --------------------------------------------------------------------------- #
+# Brand scope (CONTACT-BRAND-SCOPE, AC-16/AC-17). Every tool the chatbot can call and every
+# MCP catalogue tool names how a brand-scoped contact's result is treated:
+#   "filtered"    - the tool can return product rows; the fetch output guard drops every
+#                   list item naming a product outside the contact's brands.
+#   "no_products" - the tool never returns a product (nothing to drop).
+# `tests/chatbot/test_brand_scope_contract.py` fails when a tool is missing from this map,
+# so a new tool cannot ship without a decision.
+# --------------------------------------------------------------------------- #
+
+BrandScopeTreatment = Literal["filtered", "no_products"]
+
+# Keys, beyond `product_code` / `item_code` / `product_id`, that NAME a product in a `filtered`
+# tool's rows. Per tool, never global: `code` is a customer code on the customer tools, and
+# the analytics tools put the product in `group_key` (complaint analytics lower-cases it).
+# A key not named here is not looked up as a product.
+BRAND_SCOPE_PRODUCT_KEYS: dict[str, tuple[str, ...]] = {
+    "crm_top_selling_report": ("code",),
+    "crm_order_analytics": ("group_key",),
+    "crm_complaint_analytics": ("group_key",),
+}
+
+BRAND_SCOPE_TREATMENT: dict[str, BrandScopeTreatment] = {
+    "crm_certificates_list": "filtered",
+    "crm_complaint_analytics": "filtered",
+    "crm_complaint_close": "no_products",
+    "crm_complaints_list": "filtered",
+    "crm_forms_management_forms_list": "filtered",
+    "crm_ideation_turn": "no_products",
+    "crm_incoming_stock_by_product": "filtered",
+    "crm_incoming_stock_list": "filtered",
+    "crm_incoming_stock_shipments": "filtered",
+    "crm_inventory_stock_balance_list": "filtered",
+    "crm_inventory_warehouses_list": "no_products",
+    "crm_it_support_ticket_create": "no_products",
+    "crm_lookup_resolve": "filtered",
+    "crm_low_stock_report": "filtered",
+    "crm_marketing_promotion_attachments_list": "filtered",
+    "crm_marketing_promotion_products_list": "filtered",
+    "crm_marketing_promotions_list": "filtered",
+    "crm_master_brands_list": "no_products",
+    "crm_master_customers_list": "no_products",
+    "crm_master_product_attachments_list": "filtered",
+    "crm_master_product_categories_list": "no_products",
+    "crm_master_products_list": "filtered",
+    "crm_master_units_of_measure_list": "no_products",
+    "crm_order_analytics": "filtered",
+    "crm_order_cancel": "no_products",
+    "crm_order_management_orders_by_product_list": "filtered",
+    "crm_order_management_orders_list": "filtered",
+    "crm_outstanding_report": "filtered",
+    "crm_portal_link_get": "no_products",
+    "crm_procurement_po_last_cost_list": "filtered",
+    "crm_procurement_po_placed_list": "filtered",
+    "crm_procurement_spo_allocations_last_receipt_list": "filtered",
+    "crm_project_detail": "filtered",
+    "crm_project_forecast": "filtered",
+    "crm_project_quotations_list": "filtered",
+    "crm_projects_list": "filtered",
+    "crm_purchase_request_approve": "no_products",
+    "crm_purchase_request_reject": "no_products",
+    "crm_resource_attachments_catalogue": "filtered",
+    "crm_resource_attachments_current_stock_list": "filtered",
+    "crm_resource_attachments_list": "filtered",
+    "crm_sales_analysis": "filtered",
+    "crm_sales_report": "filtered",
+    "crm_sla_conversation_event_logs_list": "no_products",
+    "crm_sla_conversation_tracking_dashboard": "no_products",
+    "crm_sla_conversation_tracking_list": "no_products",
+    "crm_system_tool_capabilities_summary": "no_products",
+    "crm_top_selling_report": "filtered",
+    "user_guides_read": "no_products",
+}
+
+# --------------------------------------------------------------------------- #
 # Parser vocabularies (AC-109). Values are the parser prompt's own OUTPUT block.
 # --------------------------------------------------------------------------- #
 

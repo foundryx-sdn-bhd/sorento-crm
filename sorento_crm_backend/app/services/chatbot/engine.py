@@ -35,7 +35,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.models.base import set_company_scope
+from app.models.base import set_brand_scope, set_company_scope
 from app.models.chatbot_turn import ChatbotTurn
 from app.services.chatbot import dispatch, jsc, llm_call, media_intake, send_order, trace as trace_mod
 from app.services.chatbot.contracts import (
@@ -855,8 +855,33 @@ def _contact_company_scope(factory: SessionFactory, contact_respond_id: str) -> 
         db.close()
 
 
-def _scoped_factory(factory: SessionFactory, scope: frozenset) -> SessionFactory:
-    """`factory`, wrapped so every session it opens is stamped with `scope`.
+def _contact_brand_scope(factory: SessionFactory, contact_respond_id: str) -> frozenset | None:
+    """The contact's accessible brands (CONTACT-BRAND-SCOPE), resolved once per turn on a
+    session of its own, the way `_contact_company_scope` resolves its companies.
+
+    None = unscoped (every brand). Fail-closed: a lookup that raised returns a scope no
+    brand matches, so the turn sees no product rather than every product."""
+    from app.services.contact_brand_scope import NO_BRAND_ID, contact_brand_scope
+
+    db = factory()
+    try:
+        return contact_brand_scope(db, contact_respond_id, default_space_id(db))
+    except Exception:  # noqa: BLE001 - a scope lookup must never fail the turn
+        logger.warning(
+            "chatbot: brand scope lookup failed for contact %s, failing closed",
+            contact_respond_id,
+            exc_info=True,
+        )
+        return frozenset({NO_BRAND_ID})
+    finally:
+        db.close()
+
+
+def _scoped_factory(
+    factory: SessionFactory, scope: frozenset, brand_scope: frozenset | None = None
+) -> SessionFactory:
+    """`factory`, wrapped so every session it opens is stamped with `scope` (and, for a
+    brand-scoped contact, `brand_scope`: the session criterion that hides other brands).
 
     The FACTORY is wrapped rather than each of the engine's ~15 `_session` call sites
     changed, because the factory is also what the lanes get (`answer_services_for`
@@ -867,6 +892,7 @@ def _scoped_factory(factory: SessionFactory, scope: frozenset) -> SessionFactory
     def open_scoped_session() -> Session:
         db = factory()
         set_company_scope(db, scope)
+        set_brand_scope(db, brand_scope)
         return db
 
     return open_scoped_session
@@ -1050,7 +1076,7 @@ def _inject_harness_session(
     trace showed the contact's real memory while the lane ran on injected memory would be
     the worst kind of unreadable.
 
-    Fix 3 (console defect, contact 437264483, 23 Sep 2026): `session_state.five_keys`
+    Fix 3 (console defect, contact 900000008, 23 Sep 2026): `session_state.five_keys`
     returns the STORED top-level five keys whenever ANY of them is present on
     `session_vars`, and only falls through to the `variables` nest when none is - so
     writing the harness value into `variables` alone, leaving the stored row's own
@@ -2686,7 +2712,9 @@ def run_turn(
     # Resolved once, on a session of its own, from the same rule the X-API-Key
     # dependency uses. An unknown contact fails closed to zero rows.
     contact_scope = _contact_company_scope(session_factory, contact_respond_id)
-    session_factory = _scoped_factory(session_factory, contact_scope)
+    session_factory = _scoped_factory(
+        session_factory, contact_scope, _contact_brand_scope(session_factory, contact_respond_id)
+    )
 
     if offload is None:
         offload = bool(getattr(settings, "chatbot_turn_on_worker", False))
@@ -9130,6 +9158,7 @@ def complete_turn(  # noqa: PLR0915 - one linear pipeline, and the order IS the 
         set_company_scope(
             db, _contact_company_scope(session_factory, str(contact_respond_id or ""))
         )
+        set_brand_scope(db, _contact_brand_scope(session_factory, str(contact_respond_id or "")))
         dry_run = bool(row.is_test)
         stored_response = row.response if isinstance(row.response, dict) else {}
         ctx = fragments.get("ctx") or stored_response.get("ctx") or {}

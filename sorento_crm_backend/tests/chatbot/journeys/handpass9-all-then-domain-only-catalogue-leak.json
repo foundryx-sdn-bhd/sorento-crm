@@ -1,11 +1,11 @@
 {
   "name": "handpass9-all-then-domain-only-catalogue-leak",
-  "source": "hand pass 9 owner console, 20 Sep 2026 21:55-22:42 MYT (contact_respond_id 437264483). Turn e2e920b6-585f-47c7-b037-bedcbd70d8dc 'incoming and PO for srtwc286' -> 10-option roster. Turn 05bd3233-acec-4012-a797-0606a898ea98 'all' -> incoming + PO rows for the 10-member family, correct (control). Turn 554cf9c4-9249-4e45-ab2a-7a154b813009 'stock and incoming and PO' (no product word at all) -> DEFECT D5 (security-relevant, same family as the closed N-1 leak): all three tools ran with entities_in=0, total_uuids_passed=0 and the reply printed 50 unrelated stock rows + 50 unrelated PO rows - the WHOLE CATALOGUE, not the 10 rostered products. Recorded verdict: entity_op='clear', domain_hint='inventory', asks=[stock,incoming,purchase_order], entities=[], domain_in_message=true - decide.py's own four-row table calls this a DOMAIN SWITCH REUSING THE STANDING SUBJECT ('true'/'no entities' row), not a fresh unscoped catalogue query. D5(a): after 'all', the subject for a later domain-only message must stay the roster's own 10 products. D5(b), measured against origin/main (lanes/business/gate.py:86-95 ALLOWS_EMPTY={'inventory': False, 'incoming': True, ...}, enforced at gate.py:350-363 'no entities and 'inventory' requires a scoping entity'): a product-scoped fetch with an EMPTY product scope and NO scope term at all (no prior roster either) must never render a catalogue list for the inventory/stock leg - main's own gate refuses it outright. Turn faf3432f-b400-46f8-8568-cda3a2c5da10 'stock and incoming and PO for srtwc286' -> correct (control, product named in the same message).",
+  "source": "hand pass 9 owner console, 20 Sep 2026 21:55-22:42 MYT (contact_respond_id 900000008). Turn e2e920b6-585f-47c7-b037-bedcbd70d8dc 'incoming and PO for srtwc286' -> 10-option roster. Turn 05bd3233-acec-4012-a797-0606a898ea98 'all' -> incoming + PO rows for the 10-member family, correct (control). Turn 554cf9c4-9249-4e45-ab2a-7a154b813009 'stock and incoming and PO' (no product word at all) -> DEFECT D5 (security-relevant, same family as the closed N-1 leak): all three tools ran with entities_in=0, total_uuids_passed=0 and the reply printed 50 unrelated stock rows + 50 unrelated PO rows - the WHOLE CATALOGUE, not the 10 rostered products. Recorded verdict: entity_op='clear', domain_hint='inventory', asks=[stock,incoming,purchase_order], entities=[], domain_in_message=true - decide.py's own four-row table calls this a DOMAIN SWITCH REUSING THE STANDING SUBJECT ('true'/'no entities' row), not a fresh unscoped catalogue query. D5(a): after 'all', the subject for a later domain-only message must stay the roster's own 10 products. D5(b), measured against origin/main (lanes/business/gate.py:86-95 ALLOWS_EMPTY={'inventory': False, 'incoming': True, ...}, enforced at gate.py:350-363 'no entities and 'inventory' requires a scoping entity'): a product-scoped fetch with an EMPTY product scope and NO scope term at all (no prior roster either) must never render a catalogue list for the inventory/stock leg - main's own gate refuses it outright. Turn faf3432f-b400-46f8-8568-cda3a2c5da10 'stock and incoming and PO for srtwc286' -> correct (control, product named in the same message).",
   "cases": [
     {
       "name": "domain-only-ask-after-all-reuses-the-rosters-own-products",
       "cold": true,
-      "contact": "437264483",
+      "contact": "900000008",
       "turns": [
         {
           "text": "incoming and PO for srtwc286",
@@ -30,7 +30,7 @@
     {
       "name": "bare-multi-domain-ask-with-no-subject-at-all-never-dumps-stock",
       "cold": true,
-      "contact": "437264483",
+      "contact": "900000008",
       "turns": [
         {
           "text": "stock and incoming and PO",

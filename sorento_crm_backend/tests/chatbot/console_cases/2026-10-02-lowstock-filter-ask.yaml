@@ -8,7 +8,7 @@
 #       tests/chatbot/console_cases/2026-10-02-lowstock-filter-ask.yaml \
 #       --base-url http://127.0.0.1:8000 --sleep-seconds 15
 #
-# Contact 437264483 must hold `scm.low_stock_report` and `purchase_orders.supplier`.
+# Contact 900000008 must hold `scm.low_stock_report` and `purchase_orders.supplier`.
 # Rate limit: 5 runs per contact per 10 minutes. This file starts 4 runs (the asking turns
 # start none); clear the bucket before a re-run inside the window:
 #   redis-cli -n <db> del rate_limit:v1:low_stock_report:<respond_contacts.id>
@@ -16,7 +16,7 @@
 # A run turn passes on any of: ready (with the "Category: ..." filter line), pending, busy.
 # All three carry "low stock report". The filter line is asserted only where the reply is
 # ready, so it is graded by eye on a pending/busy answer (the pushed file carries it).
-contact: "437264483"
+contact: "900000008"
 
 cases:
   - name: the owner's example runs at once, scoped to Sorento taps

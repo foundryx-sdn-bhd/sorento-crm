@@ -335,7 +335,7 @@ def test_the_agents_class_beats_the_customers_market_segment(db, seeded):
     """Captain, 28 Aug 2026: the seller decides before the buyer. The sales force is split
     by channel, so a project agent's order IS project work - while one debtor buys through
     both channels, so its segment is only a default about the account. This is SO381895:
-    customer master said retail, agent JUSTIN sells project, and the fulfilment board could
+    customer master said retail, agent CONTACT N sells project, and the fulfilment board could
     not see the order."""
     seg = f"{MARKER}-RETAIL-{uuid.uuid4().hex[:6]}".lower()
     db.add(MarketSegment(id=_u(), code=seg, name=seg, is_active=True))

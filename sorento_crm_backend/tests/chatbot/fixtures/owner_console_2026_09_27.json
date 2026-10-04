@@ -1,5 +1,5 @@
 {
-  "source": "PR #833 comment 'Owner console test of round 3 (27 Sep 00:03 to 00:07 MYT, :3084, head 1683cb2f1, contact 487555417)'",
+  "source": "PR #833 comment 'Owner console test of round 3 (27 Sep 00:03 to 00:07 MYT, :3084, head 1683cb2f1, contact 900000039)'",
   "note": "The parser is stubbed as each turn's reply shows it answered: a counted-set reply means the stock / incoming intent with the class word as its entity; a product-search reply means check_product with the message's words as one product entity. No stored trace was attached to the comment, so these readings are inferred from the replies.",
   "exchanges": [
     {

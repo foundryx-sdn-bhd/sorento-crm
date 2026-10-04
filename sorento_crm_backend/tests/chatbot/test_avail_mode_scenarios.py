@@ -36,7 +36,7 @@ PICK2 = f"{PICK10}\n\n{PICK6022}"
 def console(session_factory, monkeypatch, stub_access):
     def make(**stock_facts: Stock) -> AvailConsole:
         return AvailConsole(
-            session_factory, monkeypatch, stub_access, phone="+60000009301", **stock_facts
+            session_factory, monkeypatch, stub_access, phone="+60100000901", **stock_facts
         )
 
     return make

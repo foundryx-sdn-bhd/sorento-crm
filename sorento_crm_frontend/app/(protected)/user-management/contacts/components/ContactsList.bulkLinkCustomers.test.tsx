@@ -115,7 +115,7 @@ const CONTACTS = [
   {
     ...base,
     id: 'contact-aisyah',
-    phone_number: '+60123456701',
+    phone_number: '+60100000004',
     name: 'Aisyah Rahman',
     first_name: 'Aisyah',
     last_name: 'Rahman',
@@ -125,7 +125,7 @@ const CONTACTS = [
   {
     ...base,
     id: 'contact-farah',
-    phone_number: '+60123456702',
+    phone_number: '+60100000003',
     name: 'Farah Idris',
     first_name: 'Farah',
     last_name: 'Idris',
@@ -159,7 +159,7 @@ function renderList() {
 }
 
 async function selectBothRows() {
-  await screen.findByText('+60123456701');
+  await screen.findByText('+60100000004');
   const boxes = screen.getAllByRole('checkbox', { name: 'Select row' });
   boxes.forEach((b) => fireEvent.click(b));
 }
@@ -268,8 +268,8 @@ describe('ContactsList - bulk Link customers (U4)', () => {
 
     await waitFor(() => expect(toastMock.error).toHaveBeenCalled());
     const msg = String(toastMock.error.mock.calls[0][0]);
-    expect(/Farah Idris|\+60123456702/.test(msg)).toBe(true);
-    expect(/Aisyah Rahman|\+60123456701/.test(msg)).toBe(false);
+    expect(/Farah Idris|\+60100000003/.test(msg)).toBe(true);
+    expect(/Aisyah Rahman|\+60100000004/.test(msg)).toBe(false);
     expect(msg).toContain('Customer is inactive');
     expect(await screen.findByRole('button', { name: 'Link customers (1)' })).toBeInTheDocument();
     const boxes = screen.getAllByRole('checkbox', { name: 'Select row' }) as HTMLInputElement[];
@@ -290,7 +290,7 @@ describe('ContactsList - "No customers linked" filter (U5.2/U5.3)', () => {
   it('the toolbar control sends customers=none (request or URL write)', async () => {
     mockContacts();
     renderList();
-    await screen.findByText('+60123456701');
+    await screen.findByText('+60100000004');
     fireEvent.click(await screen.findByLabelText('No customers linked'));
     await waitFor(() => {
       const fetched = apiFetch.mock.calls.some((c) => String(c[0]).includes('customers=none'));
@@ -327,7 +327,7 @@ describe('ContactsList - selection resets on page change (review R2)', () => {
     {
       ...base,
       id: 'contact-gita',
-      phone_number: '+60123456703',
+      phone_number: '+60100000073',
       name: 'Gita Lim',
       first_name: 'Gita',
       last_name: 'Lim',
@@ -354,12 +354,12 @@ describe('ContactsList - selection resets on page change (review R2)', () => {
     mockTwoPages();
     services.linkContactCustomers.mockResolvedValue([]);
     renderList();
-    await screen.findByText('+60123456701');
+    await screen.findByText('+60100000004');
     fireEvent.click(screen.getAllByRole('checkbox', { name: 'Select row' })[0]);
     expect(await screen.findByRole('button', { name: 'Link customers (1)' })).toBeInTheDocument();
 
     fireEvent.click(await screen.findByRole('button', { name: /Go to next page/ }));
-    await screen.findByText('+60123456703');
+    await screen.findByText('+60100000073');
     expect(screen.queryByRole('button', { name: /Link customers/ })).not.toBeInTheDocument();
     const boxes = screen.getAllByRole('checkbox', { name: 'Select row' }) as HTMLInputElement[];
     expect(boxes.some((b) => b.checked || b.getAttribute('aria-checked') === 'true')).toBe(false);

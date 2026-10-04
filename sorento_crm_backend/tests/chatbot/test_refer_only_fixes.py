@@ -64,7 +64,7 @@ def _assert_no_staff_list(text: str) -> None:
 
 
 def _order_miss(session_factory, monkeypatch, stub_parser, stub_access, *, barred: bool):
-    _seed_contact(session_factory, phone="+60000009401" if barred else "+60000009402")
+    _seed_contact(session_factory, phone="+60100000710" if barred else "+60100000711")
     if barred:
         _make_dealer(session_factory)
     _seed_product(session_factory, code="SRTWC8605-FT")
@@ -236,7 +236,7 @@ TICK, CROSS = "✅", "❌"
 @pytest.fixture
 def console(session_factory, monkeypatch, stub_access):
     def make(**stock_facts: Stock) -> AvailConsole:
-        return AvailConsole(session_factory, monkeypatch, stub_access, phone="+60000009403", **stock_facts)
+        return AvailConsole(session_factory, monkeypatch, stub_access, phone="+60100000712", **stock_facts)
 
     return make
 

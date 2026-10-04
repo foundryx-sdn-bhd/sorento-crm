@@ -76,7 +76,7 @@ function renderDialog(overrides: Partial<React.ComponentProps<typeof SendRequest
       onOpenChange={vi.fn()}
       supplierId="sup-1"
       supplierName="Foshan Ceramics"
-      supplierEmail="sales@jinbaichuan.cn"
+      supplierEmail="person36@example.com"
       lineCount={3}
       totalQty={4242}
       unsavedCount={0}
@@ -106,14 +106,14 @@ describe('SendRequestDialog', () => {
 
     expect(screen.getByText('Send this request')).toBeTruthy();
     expect(screen.getByTestId('send-email-panel')).toBeTruthy();
-    expect(screen.getByText('sales@jinbaichuan.cn')).toBeTruthy();
+    expect(screen.getByText('person36@example.com')).toBeTruthy();
     expect(sendButton().disabled).toBe(false);
   });
 
   it('adds an address, and sends to every chip (AC-C2)', async () => {
     renderDialog();
 
-    fireEvent.change(screen.getByLabelText('To'), { target: { value: 'ms.tee@sorento.com.my' } });
+    fireEvent.change(screen.getByLabelText('To'), { target: { value: 'person27@example.com' } });
     fireEvent.click(screen.getByRole('button', { name: 'Add' }));
     fireEvent.click(sendButton());
 
@@ -121,7 +121,7 @@ describe('SendRequestDialog', () => {
       expect(onSend).toHaveBeenCalledWith(
         expect.objectContaining({
           channel: 'email',
-          recipients: ['sales@jinbaichuan.cn', 'ms.tee@sorento.com.my'],
+          recipients: ['person36@example.com', 'person27@example.com'],
         }),
       ),
     );
@@ -133,13 +133,13 @@ describe('SendRequestDialog', () => {
     // what they mean.
     renderDialog();
 
-    fireEvent.change(screen.getByLabelText('To'), { target: { value: 'ms.tee@sorento.com.my' } });
+    fireEvent.change(screen.getByLabelText('To'), { target: { value: 'person27@example.com' } });
     fireEvent.click(sendButton());
 
     await waitFor(() =>
       expect(onSend).toHaveBeenCalledWith(
         expect.objectContaining({
-          recipients: ['sales@jinbaichuan.cn', 'ms.tee@sorento.com.my'],
+          recipients: ['person36@example.com', 'person27@example.com'],
         }),
       ),
     );
@@ -168,9 +168,9 @@ describe('SendRequestDialog', () => {
   it('removes a chip, and Send is disabled once nobody would receive it (AC-C2)', () => {
     renderDialog();
 
-    fireEvent.click(screen.getByLabelText('Remove sales@jinbaichuan.cn'));
+    fireEvent.click(screen.getByLabelText('Remove person36@example.com'));
 
-    expect(screen.queryByText('sales@jinbaichuan.cn')).toBeNull();
+    expect(screen.queryByText('person36@example.com')).toBeNull();
     expect(sendButton().disabled).toBe(true);
     expect(screen.getByText(/No address on file for Foshan Ceramics/)).toBeTruthy();
   });

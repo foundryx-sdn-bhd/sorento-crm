@@ -106,7 +106,7 @@ def api():
     with blank_session() as db:
         company_id = _sorento(db)
         project_seed_service.run(db, company_id=company_id)
-        owner = _user(db, f"{MARKER} Yana")
+        owner = _user(db, f"{MARKER} CONTACT AH")
         project = register_project(
             db,
             company_id=company_id,

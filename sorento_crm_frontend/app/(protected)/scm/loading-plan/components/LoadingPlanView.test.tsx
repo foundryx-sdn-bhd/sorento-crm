@@ -134,7 +134,7 @@ const PLAN: LoadingPlanRecord = {
   id: 'plan-1',
   supplier_id: 'sup-1',
   supplier_name: 'CHAOZHOU JINBAICHUAN SANITARY WARE CO., LTD',
-  supplier_email: 'sales@jinbaichuan.cn',
+  supplier_email: 'person36@example.com',
   started_at: '2026-08-27T14:02:00',
   plan_horizon_start: null,
   plan_horizon_date: '2026-09-30',

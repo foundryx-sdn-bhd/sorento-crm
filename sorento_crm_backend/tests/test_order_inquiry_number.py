@@ -166,7 +166,7 @@ def test_a_confirmation_stamps_the_number_on_the_inquiry_it_raises(db):
         delivery_date=date(2026, 9, 1))
     db.add(line)
     db.flush()
-    actor = User(id=_uid(), email=f"{_uid()}@zzt.test", name=f"{MARKER} Yana")
+    actor = User(id=_uid(), email=f"{_uid()}@zzt.test", name=f"{MARKER} CONTACT AH")
     db.add(actor)
     db.flush()
     decision = SOSupplyDecision(

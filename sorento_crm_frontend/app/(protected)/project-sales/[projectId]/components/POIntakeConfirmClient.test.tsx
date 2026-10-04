@@ -552,7 +552,7 @@ describe('POIntakeConfirmClient', () => {
     getPOVersion.mockResolvedValue(
       version({
         annotations: [
-          annotation({ state: 'accepted', actioned_by_name: 'Yana Abdullah' }),
+          annotation({ state: 'accepted', actioned_by_name: 'CONTACT AH Abdullah' }),
         ],
       }),
     );
@@ -569,7 +569,7 @@ describe('POIntakeConfirmClient', () => {
     originParam = '/project-sales/pipeline?from=p1';
     getPOVersion.mockResolvedValue(
       version({
-        annotations: [annotation({ state: 'accepted', actioned_by_name: 'Yana Abdullah' })],
+        annotations: [annotation({ state: 'accepted', actioned_by_name: 'CONTACT AH Abdullah' })],
       }),
     );
     confirmPOVersion.mockResolvedValue(version());
@@ -585,7 +585,7 @@ describe('POIntakeConfirmClient', () => {
     originParam = null;
     getPOVersion.mockResolvedValue(
       version({
-        annotations: [annotation({ state: 'accepted', actioned_by_name: 'Yana Abdullah' })],
+        annotations: [annotation({ state: 'accepted', actioned_by_name: 'CONTACT AH Abdullah' })],
       }),
     );
     confirmPOVersion.mockResolvedValue(version());
@@ -602,13 +602,13 @@ describe('POIntakeConfirmClient', () => {
     getPOVersion.mockResolvedValue(
       version({
         confirmed_at: '2026-05-15T03:02:00',
-        confirmed_by_name: 'Yana Abdullah',
+        confirmed_by_name: 'CONTACT AH Abdullah',
       }),
     );
 
     renderConfirm();
 
-    expect(await screen.findByText(/Yana Abdullah/)).toBeInTheDocument();
+    expect(await screen.findByText(/CONTACT AH Abdullah/)).toBeInTheDocument();
     // Approved and Countersigned are still rendered, as "Not yet" rather than hidden.
     expect(screen.getByText('Approved')).toBeInTheDocument();
     expect(screen.getByText('Countersigned')).toBeInTheDocument();
@@ -623,11 +623,11 @@ describe('POIntakeConfirmClient', () => {
     getPOVersion.mockResolvedValue(
       version({
         confirmed_at: '2026-05-15T03:02:00',
-        confirmed_by_name: 'Yana Abdullah',
+        confirmed_by_name: 'CONTACT AH Abdullah',
         purchase_order: {
           po_number: 'HQ/26/01/041',
           status: 'approved',
-          approved_by_name: 'Yana Abdullah',
+          approved_by_name: 'CONTACT AH Abdullah',
           approved_at: '2026-05-15T03:05:00',
           countersigned_by_name: null,
           countersigned_at: null,
@@ -653,11 +653,11 @@ describe('POIntakeConfirmClient', () => {
     getPOVersion.mockResolvedValue(
       version({
         confirmed_at: '2026-05-15T03:02:00',
-        confirmed_by_name: 'Yana Abdullah',
+        confirmed_by_name: 'CONTACT AH Abdullah',
         purchase_order: {
           po_number: 'HQ/26/01/041',
           status: 'approved',
-          approved_by_name: 'Yana Abdullah',
+          approved_by_name: 'CONTACT AH Abdullah',
           approved_at: '2026-05-15T03:05:00',
           countersigned_by_name: null,
           countersigned_at: null,

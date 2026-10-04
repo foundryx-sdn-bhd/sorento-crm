@@ -30,7 +30,7 @@ from app.services import chat_history_query as svc
 from tests._external_auth import external_permissions_granted
 from tests._pg_fixture import blank_session
 
-RESPOND_IO_ID = "437264483"
+RESPOND_IO_ID = "900000008"
 
 TRACE = {
     "v": 1,
@@ -75,7 +75,7 @@ def _payload(**overrides) -> dict:
     payload = {
         "channel": "whatsapp",
         "contact_id": RESPOND_IO_ID,
-        "phone_number": "+60166753328",
+        "phone_number": "+60160000509",
         "message": "how about SRTWC287",
         "sent_at": 1780751906900,
         "type": "incoming",
@@ -145,7 +145,7 @@ def _seed(db, **kw) -> ChatHistory:
     row = ChatHistory(
         channel="whatsapp",
         contact_id=RESPOND_IO_ID,
-        phone_number="+60166753328",
+        phone_number="+60160000509",
         message="m",
         sent_at=datetime(2026, 7, 20, 12, 0, 0),
         type="incoming",

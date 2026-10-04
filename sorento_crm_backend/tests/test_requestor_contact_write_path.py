@@ -54,14 +54,14 @@ def _inquiry(db, *, contact_id=None, salesperson_contact_id=None) -> StockInquir
 
 def test_eligible_id_accepted_and_label_stamped_from_live_name(db):
     _segment(db)
-    eric = _contact(db, name="Eric Ng", segments=["PROJECT"])
+    eric = _contact(db, name="CONTACT Y", segments=["PROJECT"])
     row = _inquiry(db)
 
     svc = PortalService(db)
     svc._apply_requestor_contact("stock_inquiry", row, eric)
 
     assert row.salesperson_contact_id == eric
-    assert row.salesperson == "Eric Ng"
+    assert row.salesperson == "CONTACT Y"
 
 
 def test_ineligible_id_rejected_422(db):
@@ -81,14 +81,14 @@ def test_ineligible_id_rejected_422(db):
 
 def test_submitting_contact_always_eligible_even_without_segment(db):
     """D3: the row's own submitter is always accepted, even unsegmented."""
-    darren = _contact(db, name="Darren Submitter")  # no segments
-    row = _inquiry(db, contact_id=darren)
+    contact_x = _contact(db, name="CONTACT X Submitter")  # no segments
+    row = _inquiry(db, contact_id=contact_x)
 
     svc = PortalService(db)
-    svc._apply_requestor_contact("stock_inquiry", row, darren)
+    svc._apply_requestor_contact("stock_inquiry", row, contact_x)
 
-    assert row.salesperson_contact_id == darren
-    assert row.salesperson == "Darren Submitter"
+    assert row.salesperson_contact_id == contact_x
+    assert row.salesperson == "CONTACT X Submitter"
 
 
 def test_currently_saved_but_now_ineligible_contact_can_be_kept(db):
@@ -106,21 +106,21 @@ def test_currently_saved_but_now_ineligible_contact_can_be_kept(db):
 
 def test_clearing_leaves_fk_null(db):
     _segment(db)
-    eric = _contact(db, name="Eric Ng", segments=["PROJECT"])
+    eric = _contact(db, name="CONTACT Y", segments=["PROJECT"])
     row = _inquiry(db, salesperson_contact_id=eric)
-    row.salesperson = "Eric Ng"
+    row.salesperson = "CONTACT Y"
 
     svc = PortalService(db)
     svc._apply_requestor_contact("stock_inquiry", row, None)
 
     assert row.salesperson_contact_id is None
     # Clearing the FK does not touch the free-text label (display fallback).
-    assert row.salesperson == "Eric Ng"
+    assert row.salesperson == "CONTACT Y"
 
 
 def test_clearing_with_empty_string_also_nulls(db):
     _segment(db)
-    eric = _contact(db, name="Eric Ng", segments=["PROJECT"])
+    eric = _contact(db, name="CONTACT Y", segments=["PROJECT"])
     row = _inquiry(db, salesperson_contact_id=eric)
 
     svc = PortalService(db)
@@ -150,7 +150,7 @@ def test_internal_stock_inquiry_create_stamps_fk_and_label(db):
     from app.services.procurement_service import StockInquiryService
 
     _segment(db)
-    eric = _contact(db, name="Eric Ng", segments=["PROJECT"])
+    eric = _contact(db, name="CONTACT Y", segments=["PROJECT"])
 
     payload = StockInquiryCreate(
         product_code="SRT-1",
@@ -166,9 +166,9 @@ def test_internal_stock_inquiry_create_stamps_fk_and_label(db):
 
     assert inquiry.salesperson_contact_id == eric
     # The label is what every printed surface reads.
-    assert inquiry.salesperson == "Eric Ng"
+    assert inquiry.salesperson == "CONTACT Y"
     # And the derived read-only display name resolves live off the FK.
-    assert inquiry.salesperson_contact_name == "Eric Ng"
+    assert inquiry.salesperson_contact_name == "CONTACT Y"
 
 
 def test_internal_stock_inquiry_create_never_500s_on_derived_field(db):
@@ -228,7 +228,7 @@ def test_internal_requestor_can_be_cleared(db):
     from app.services.procurement_service import StockInquiryService
 
     _segment(db)
-    eric = _contact(db, name="Eric Ng", segments=["PROJECT"])
+    eric = _contact(db, name="CONTACT Y", segments=["PROJECT"])
     row = _inquiry(db, salesperson_contact_id=eric)
 
     updated = StockInquiryService(db).update_inquiry(

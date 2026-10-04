@@ -118,7 +118,7 @@ def _master_workbook(header: list, rows: list[list]) -> bytes:
                      "Lorry Plate", "Customer", "Remarks CS", "Remarks", "Salesman", "Trips",
                      "W/H"])
     for r in rows:
-        tracking.append([r[0], date(2026, 9, 29), "2:30 PM", "Chong", "ZZ TRANS", "Ali", "WXX 1",
+        tracking.append([r[0], date(2026, 9, 29), "2:30 PM", "Chong", "ZZ TRANS", "Ali", "PLATE-40",
                          "cust ref", "dcs", "dr", "SEAN", 2, "BRW"])
     buf = BytesIO()
     wb.save(buf)
@@ -162,7 +162,7 @@ def test_unowned_row_gets_every_master_and_tracking_column(db):
     assert (order.remarks_cs, order.order_type) == ("cs rma", "RMA")
     assert order.actual_delivery_date == date(2026, 9, 29)
     assert (order.checker, order.transporter, order.driver_name, order.lorry_plate) == (
-        "Chong", "ZZ TRANS", "Ali", "WXX 1")
+        "Chong", "ZZ TRANS", "Ali", "PLATE-40")
     assert order.transporter_id is not None
     assert (order.customer_ref, order.delivery_remarks_cs, order.delivery_remarks) == (
         "cust ref", "dcs", "dr")

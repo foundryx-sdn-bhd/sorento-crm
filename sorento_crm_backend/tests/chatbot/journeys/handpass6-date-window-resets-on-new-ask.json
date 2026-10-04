@@ -1,6 +1,6 @@
 {
   "name": "handpass6-date-window-resets-on-new-ask",
-  "source": "hand pass 6 owner console turns 13:57:04-13:59:05 (contact_respond_id 437264483, 17 Sep 2026). A date filter set on one outstanding ask ('aug 2026' -> Order date: 01/08/2026 to 31/08/2026) must NOT survive into a NEW, unrelated ask that re-names the customer from scratch. Measured pre-fix (real reply text, 13:58:35 'all'): Order date stayed 01/08/2026 to 31/08/2026 after 'outstanign SO for chin chun' re-rostered the customer - the date window from the earlier probe leaked into a fresh query. Final step: switching domain away from outstanding entirely (a stock check) must carry NO Order date line at all.",
+  "source": "hand pass 6 owner console turns 13:57:04-13:59:05 (contact_respond_id 900000008, 17 Sep 2026). A date filter set on one outstanding ask ('aug 2026' -> Order date: 01/08/2026 to 31/08/2026) must NOT survive into a NEW, unrelated ask that re-names the customer from scratch. Measured pre-fix (real reply text, 13:58:35 'all'): Order date stayed 01/08/2026 to 31/08/2026 after 'outstanign SO for chin chun' re-rostered the customer - the date window from the earlier probe leaked into a fresh query. Final step: switching domain away from outstanding entirely (a stock check) must carry NO Order date line at all.",
   "cases": [
     {
       "name": "a-new-ask-resets-the-date-window-and-a-domain-switch-drops-it-entirely",

@@ -25,7 +25,7 @@ from app.services.user_service import UserPermissionService
 from tests._pg_fixture import blank_session
 
 BASE = "/api/v1/sla-management/message-snippets"
-PHONE = "+60123456701"
+PHONE = "+60100000004"
 
 
 @pytest.fixture

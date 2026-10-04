@@ -308,7 +308,7 @@ def test_c_the_stock_quantity_asked_after_a_roster_takes_the_bare_number(
     """AC-PK014: the dealer's flow. "check stock" asks "How many units of SRTWC286-SH-NEW?"
     AFTER the roster was asked, so that is the current question: "5" is the quantity, never
     variant 5 off the roster underneath (the scout's T4). The roster stays stored."""
-    c = EngineConsole(session_factory, monkeypatch, stub_access, phone="+60000013527")
+    c = EngineConsole(session_factory, monkeypatch, stub_access, phone="+60900000058")
     monkeypatch.setattr(turn_runtime, "_stock_availability_only", lambda *a, **k: True)
     _say(c, "incoming srtwc286", _incoming_ask())
     _say(c, "4", _bare_pick(4))
@@ -520,7 +520,7 @@ _SECOND_PICK_READINGS = {
         "domain_hint": "promotion", "intent_hint": "check_promotion", "domain_in_message": True,
     },
     # PR #1353 fix round 2, the LIVE v48 reading (chatbot.turns, 29 Sep 2026 10:22 MYT,
-    # contact 487555417): with `previous_conversation_state` carrying access_levels
+    # contact 900000039): with `previous_conversation_state` carrying access_levels
     # ["Sorento Office"] after "1", the parser echoed that level on the bare "2"
     # (parser_raw: domain_hint promotion, domain_in_message false, access_levels
     # ["Sorento Office"]), and the fetch answered Office again. The carried level names
@@ -707,7 +707,7 @@ def test_f_a_tier_roster_records_the_promotion_domain():
 # G. The picked option decides the roster's own axis (PR #1353 fix round 2)
 #
 # Owner retest of round 1 on the :3105 copy, parser v48 (chatbot.turns, 29 Sep 2026 10:22
-# MYT, contact 487555417): "promo srtwc286" -> roster (1 Office, 2 Dealer, 3 End user) ->
+# MYT, contact 900000039): "promo srtwc286" -> roster (1 Office, 2 Dealer, 3 End user) ->
 # "1" Office files (correct) -> "2" the SAME Office files. Turn "2"'s parser_raw:
 # domain_hint promotion, domain_in_message false, access_levels ["Sorento Office"] - the
 # level `previous_conversation_state` carried after "1", echoed on a bare position. The
@@ -852,7 +852,7 @@ def test_g_the_picked_axis_replaces_a_carried_value_that_names_no_picked_option(
 # H. The engine reads a bare position itself (PR #1353 fix round 3)
 #
 # Owner retest of round 2 on the :3105 copy, parser v48 (chatbot.turns, 29 Sep 2026 11:44
-# MYT, contact 487555417): "promo srtwc286" -> roster (1 Office, 2 Dealer, 3 End user) ->
+# MYT, contact 900000039): "promo srtwc286" -> roster (1 Office, 2 Dealer, 3 End user) ->
 # "1" Office files (correct) -> "2" the SAME Office files. Turn "2" (id 3f56a40d): the
 # parser read the bare "2" as reference_positions [1], open_question_answer {pick, [1]},
 # access_levels ["Sorento Office"]. Round 2's picked-axis rule had nothing to correct: the

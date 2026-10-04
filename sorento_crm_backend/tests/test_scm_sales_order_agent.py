@@ -57,7 +57,7 @@ def world(db):
                       is_active=True, is_discontinued=False)
     customer = Customer(id=_u(), customer_code=unique_code("C"), customer_name=f"{MARKER} Acme")
     jeremy = SalesAgent(id=_u(), sales_agent=unique_code("AGT"), person_label="JEREMY")
-    cindy = SalesAgent(id=_u(), sales_agent=unique_code("AGT"), person_label="CINDY LEE")
+    cindy = SalesAgent(id=_u(), sales_agent=unique_code("AGT"), person_label="CONTACT W")
     db.add_all([product, customer, jeremy, cindy])
     db.flush()
     return {"product": product, "customer": customer, "jeremy": jeremy, "cindy": cindy}
@@ -116,7 +116,7 @@ def test_list_batches_agents_into_one_query_per_distinct_agent(db, world):
 
     assert by_number[a.so_number]["sales_agent_label"] == "JEREMY"
     assert by_number[b.so_number]["sales_agent_label"] == "JEREMY"
-    assert by_number[c.so_number]["sales_agent_label"] == "CINDY LEE"
+    assert by_number[c.so_number]["sales_agent_label"] == "CONTACT W"
 
 
 # --------------------------------------------------------------------------- #
@@ -166,7 +166,7 @@ def test_update_reassigns_from_one_agent_to_another(db, world):
     )
 
     assert out["sales_agent_id"] == world["cindy"].id
-    assert out["sales_agent_label"] == "CINDY LEE"
+    assert out["sales_agent_label"] == "CONTACT W"
 
 
 def test_update_with_an_unknown_agent_id_404s(db, world):
@@ -247,7 +247,7 @@ def test_list_agents_filters_by_person_label_substring(db, world):
     # `query` runs unscoped over the whole shared master (real production agents included on
     # the local prod-copy DB), so this asserts membership rather than set equality - a full
     # equality check would be a flaky assertion about data this file does not own.
-    out = SalesOrderService(db).list_agents(query="cindy lee")
+    out = SalesOrderService(db).list_agents(query="CONTACT W")
     ids = {a["id"] for a in out}
 
     assert world["cindy"].id in ids

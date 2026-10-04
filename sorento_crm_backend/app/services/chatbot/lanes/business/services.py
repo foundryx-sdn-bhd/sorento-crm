@@ -248,6 +248,14 @@ def _mcp_call(db: Session | None = None) -> McpCallFn:
         from app.services.chatbot.lanes.business.fetch import ensure_read_only, parse_mcp_content
 
         ensure_read_only(name)
+        if db is not None:
+            from app.models.base import get_brand_scope
+            from app.services.chatbot.lanes.business.fetch import ToolNotAllowed
+            from app.services.contact_brand_scope import brand_scope_allows_tool
+
+            if not brand_scope_allows_tool(name, get_brand_scope(db)):
+                # Same arm as any tool the chatbot may not call; no new customer-facing text.
+                raise ToolNotAllowed(f"MCP tool {name} is not allowed for a brand-scoped contact")
 
         # The plan's capacity section bounds each MCP call at 10 s, and the AI assistant's
         # own 20 is a different budget for a different surface (a user watching a screen,
@@ -255,7 +263,15 @@ def _mcp_call(db: Session | None = None) -> McpCallFn:
         # `CHATBOT_MCP_TIMEOUT_SECONDS` overrides it per environment.
         timeout = int(getattr(settings, "chatbot_mcp_timeout_seconds", 0) or 10)
         client = MCPRuntimeClient(settings.ai_assistant_mcp_url, timeout_seconds=timeout)
-        return parse_mcp_content(client.call_tool(name, args))
+        result = parse_mcp_content(client.call_tool(name, args))
+        # CONTACT-BRAND-SCOPE: the probes (cross-domain, did-you-mean, siblings) read through
+        # this seam too, so a brand-scoped session's result is guarded here as well.
+        if db is not None:
+            from app.models.base import get_brand_scope
+            from app.services.chatbot.lanes.business.brand_guard import guard_result
+
+            result = guard_result(name, result, get_brand_scope(db), db)
+        return result
 
     return call
 

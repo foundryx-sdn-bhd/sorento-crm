@@ -1826,7 +1826,7 @@ def test_template_renders_strike_and_text_was():
                 "line_count": 1,
                 "link": "https://crm.test/project-sales/order-inquiries?query=SO397450",
             },
-            "actor": {"name": "Maryam Ariffin", "email": "project.sadmin03@sorento.com.my"},
+            "actor": {"name": "Maryam Ariffin", "email": "person32@example.com"},
             "today": "2026-09-16",
         }
 
@@ -1891,7 +1891,7 @@ def test_template_prints_blank_not_none_and_inline_borders():
                 "line_count": 1,
                 "link": "https://crm.test/project-sales/order-inquiries?query=SO397450",
             },
-            "actor": {"name": "Maryam Ariffin", "email": "project.sadmin03@sorento.com.my"},
+            "actor": {"name": "Maryam Ariffin", "email": "person32@example.com"},
             "today": "2026-09-16",
         }
 
@@ -2565,7 +2565,7 @@ def test_handover_r2_template_cells(kind_label, line_ctx, expected_cells):
                 "line_count": 1,
                 "link": "https://crm.test/project-sales/order-inquiries?query=SO314594",
             },
-            "actor": {"name": "Eling", "email": "eling@sorento.com.my"},
+            "actor": {"name": "Eling", "email": "person12@example.com"},
             "today": "18/09/2026",
         }
         rendered = EmailTemplateService(db).render(template, context)
@@ -2621,7 +2621,7 @@ def test_handover_r2_template_text_body_shows_location():
                 "line_count": 1,
                 "link": "https://crm.test/project-sales/order-inquiries?query=SO314594",
             },
-            "actor": {"name": "Eling", "email": "eling@sorento.com.my"},
+            "actor": {"name": "Eling", "email": "person12@example.com"},
             "today": "18/09/2026",
         }
         rendered = EmailTemplateService(db).render(template, context)
@@ -2683,7 +2683,7 @@ def _handover_context(lines: list[dict]) -> dict:
             "line_count": len(lines),
             "link": "https://crm.test/project-sales/order-inquiries?query=SO314594",
         },
-        "actor": {"name": "Eling", "email": "eling@sorento.com.my"},
+        "actor": {"name": "Eling", "email": "person12@example.com"},
         "today": "18/09/2026",
     }
 
@@ -2896,7 +2896,7 @@ def test_subject_ignores_blank_locations(locations, expected_subject):
             "pso_id": "pso-1", "so_number": "SO314594", "customer": "BUIMACO",
             "project": "TUJU", "stock_location": location, "verb_keys": (),
             "line": {"item_code": "X"}, "order_inquiry_id": "oi-1",
-            "actor": {"name": "Eling", "email": "eling@sorento.com.my"},
+            "actor": {"name": "Eling", "email": "person12@example.com"},
         }
 
     context, _ = _build_handover_context([_pending(loc) for loc in locations])
@@ -3256,7 +3256,7 @@ def test_handover_r2_template_cell_was_qty_zero_prints_0_and_change_to():
                 "lines": [line_ctx], "line_count": 1,
                 "link": "https://crm.test/project-sales/order-inquiries?query=SO314594",
             },
-            "actor": {"name": "Eling", "email": "eling@sorento.com.my"},
+            "actor": {"name": "Eling", "email": "person12@example.com"},
             "today": "18/09/2026",
         }
         rendered = EmailTemplateService(db).render(template, context)

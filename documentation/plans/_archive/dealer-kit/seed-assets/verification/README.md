@@ -242,7 +242,7 @@ Y 5.05), and every other edit was discarded by reloading without saving.
 
 ## The portal run, 30 Aug (D45-D47)
 
-Driven with agent-browser on the `:3030` lane, as the portal contact `Ziv Beh`
+Driven with agent-browser on the `:3030` lane, as the portal contact `CONTACT AI`
 (token link) and, for the admin half, as a staff user reaching Sales Agents
 through the sidebar. **Nothing was written to the database**: the dev database is
 a copy of production, and the run ends with `price_tag_requests` still at 0 rows
@@ -259,7 +259,7 @@ that framed the whole of D46.
 | `portal-6-lines-table-product-then-set.png` | The lines table at 1280 with two rows added by the one `Add line` button. Row 1 is the product `CBF31046`, row 2 a SET picked from the SAME dropdown (`CABANA CLOSE COUPLED WC ... Set - CWC611`); the picker labels every option `Product - CODE` or `Set - CODE`. Row 2's Alternatives cell is `disabled` and its cell title reads `A set is printed as one thing, so it carries no OR choices.`, while row 1's stays enabled. Nothing was saved: there is no portal route that deletes a price tag request, so the run stops at form state (D47, AC-M.16). |
 | `portal-7-lines-table-at-375px.png` | The same table at 375 x 812. The PAGE does not overflow (`document.scrollWidth` 375 = `clientWidth` 375); the table scrolls inside its own `overflow-x: auto` wrapper (560 in 317), which is the Purchase Request pattern (AC-M.16). |
 | `portal-8-sales-agent-linked-portal-contact-field.png` | The Sales Agents edit modal for `ACT`, reached from the sidebar (Users & Access > People > Sales Agents), now carrying `Linked portal contact` beneath Location group, reading `Not linked` (D46b, AC-M.15). |
-| `portal-9-contact-picker-name-and-masked-phone.png` | That picker searched for `Ziv`, answering `Ziv Beh ***1678`. The list is server-searched (the unfiltered open returned `Agnes ***1178`, `Ahmad Shakir Irfan ***3797`, ...), every row is a name plus the last four digits of the phone, and no id appears anywhere. Escaped without saving (D46b, AC-M.15). |
+| `portal-9-contact-picker-name-and-masked-phone.png` | That picker searched for `Ziv`, answering `CONTACT AI ***1678`. The list is server-searched (the unfiltered open returned `Agnes ***1178`, `Ahmad Shakir Irfan ***3797`, ...), every row is a name plus the last four digits of the phone, and no id appears anywhere. Escaped without saving (D46b, AC-M.15). |
 
 ### Measured, not pictured
 
@@ -294,7 +294,7 @@ that framed the whole of D46.
 
 ## Round 4, 30 Aug: the draft and the Submit that says what is missing (D48 / D49)
 
-Portal, impersonation token for Ziv Beh, FE `:3030` + BE `:8030`.
+Portal, impersonation token for CONTACT AI, FE `:3030` + BE `:8030`.
 
 - `portal-10-step0-repro-before-submit.png` - the captain's exact form state rebuilt
   before pressing Submit: debtor ARDENCY CONSTRUCTION, needed by 31/08/2026, notes,
@@ -512,12 +512,12 @@ enters a group. The DOM half of the page still needs the `MouseEvent('click')` d
 ## Round 9, 30 Aug: the form deploys granted to nobody, admins switch it on (D61, AC-M.26 / AC-M.27)
 
 Recorded on the :3030 lane after `alembic upgrade head` took the dev database to
-`ptag_0003`. Ziv Beh's portal token is the captain's test setup; the run ends with the
+`ptag_0003`. CONTACT AI's portal token is the captain's test setup; the run ends with the
 `dealer` access type granted again, so that setup still works.
 
 | File | What it proves |
 | --- | --- |
-| `portal-2x-1-dropdown-without-price-tag.png` | After the migration, Ziv Beh's landing dropdown offers Stock Inquiry, Complaint, Purchase Request and Sponsorship Form. Price Tag Request is absent, with no gating code added: `resolve_visible_form_types` unions an array that no longer holds the kind. |
+| `portal-2x-1-dropdown-without-price-tag.png` | After the migration, CONTACT AI's landing dropdown offers Stock Inquiry, Complaint, Purchase Request and Sponsorship Form. Price Tag Request is absent, with no gating code added: `resolve_visible_form_types` unions an array that no longer holds the kind. |
 | `portal-2x-3-portal-forms-picker-five-kinds.png` | User Management -> Contact Access Types -> Dealer -> Edit. The Portal forms field offers all five kinds with the portal's own labels, Stock Inquiry already ticked as the row carries it. |
 | `portal-2x-4-chips-show-price-tag-request.png` | After Save, the `dealer` row's Portal forms cell reads `Stock Inquiry` + `Price Tag Request`. The same shot is the post-migration state of every other row: the three other dealer types carry `Stock Inquiry` alone and the four office / end-user types carry the legacy four, exactly as `ptag_0001` seeds them. |
 | `portal-2x-5-dropdown-with-price-tag-after-grant.png` | Portal reloaded: Price Tag Request is in the dropdown with its count of 4. |
@@ -528,7 +528,7 @@ Read off the page rather than the screenshots, because the grid's Portal forms c
 past the right edge at 1280px (an existing DataGrid trait, not something this round changed;
 the shot above was taken at 1900px):
 
-| Step | `dealer` row, Portal forms cell | Ziv Beh's dropdown |
+| Step | `dealer` row, Portal forms cell | CONTACT AI's dropdown |
 | --- | --- | --- |
 | After `ptag_0003` | `Stock Inquiry` | 4 kinds, no Price Tag Request |
 | Grant saved | `Stock Inquiry`, `Price Tag Request` | 5 kinds |
@@ -563,7 +563,7 @@ the seeded template and all four requests are exactly as the merge found them.
 | `merge-3-price-tag-requests-list.png` | The CRM list, four requests. Every row is now `role="link"`: the list opens records through main's `rowHref` rather than `onRowClick`, and the record URL it writes carries `?page=1&limit=50&sort=created_at&dir=desc` plus the status filter when one is set. |
 | `merge-4-price-tag-request-record-header.png` | `PT-202608-0001` on main's S3 record chrome. Breadcrumb whose leaf is the DOC NUMBER, one `Back to price tag requests` beside it, then a record card carrying the number, its `Proof Ready` pill, the read-only metadata line, and `DetailActions`: the page-scoped pager reading `4 / 4`, the gear, and one primary CTA `View design`. |
 | `merge-5-designer-on-pt-0001.png` | The designer for the same request, opened by that CTA. Both lines are there (`CWC1009-RL` as a Set, `SRTWC286-SH-150` as a product), the Layers panel reads `Set (5)`, and the Konva stage draws 17 nodes. |
-| `merge-6-portal-five-kinds.png` | The portal as `Ziv Beh`, type dropdown open: Stock Inquiry, Complaint, Purchase Request, Sponsorship Form and **Price Tag Request 4**. The grant added in round 9 survived the merge. |
+| `merge-6-portal-five-kinds.png` | The portal as `CONTACT AI`, type dropdown open: Stock Inquiry, Complaint, Purchase Request, Sponsorship Form and **Price Tag Request 4**. The grant added in round 9 survived the merge. |
 
 The pager was walked, not only rendered: Previous on `PT-202608-0001` (4 / 4) pushed
 `/dealer-kit/price-tag-requests/f0206b81-...?page=1&limit=50&sort=created_at&dir=desc`
@@ -581,13 +581,13 @@ declared`: wrap each snippet in an IIFE.
 **One thing the shot shows that the run did not cause.** The portal page carries the
 `Admin Jayson Personal is viewing this portal as you` banner, because the same browser
 holds the staff login from the CRM half of the run. The contact resolved is still
-`Ziv Beh` (the heading, and the counts, are hers), which is what the dropdown proves.
+`CONTACT AI` (the heading, and the counts, are hers), which is what the dropdown proves.
 
 
 ## Round 11, 30 Aug: the review fixes on the lane (section 15)
 
 agent-browser sessions `ptag-review` (staff, `Jayson Personal`) and `ptag-portal`
-(the impersonation token for `Ziv Beh`), FE `:3030` + BE `:8030`, navigated from
+(the impersonation token for `CONTACT AI`), FE `:3030` + BE `:8030`, navigated from
 `/` through the sidebar. The database is a production copy, so the two drafts
 this run created were deleted through the portal's own Delete Draft at the end:
 `price_tag_requests` is back to the four rows it held, `PT-202608-0002` left
@@ -596,7 +596,7 @@ number does.
 
 | File | What it shows |
 | --- | --- |
-| `review-1-crm-list-salesperson-and-lines.png` | The CRM queue with the Salesperson column reading `Ziv Beh` and the Lines column reading 2, 1, 2, 2. Both drew blank before: `PriceTagRequestListItem` never declared `contact_name` or `line_count`, so `response_model` dropped them (finding 5). The footer reads `1 - 4 of 4` from the server's own count, not the length of an array (finding 13). |
+| `review-1-crm-list-salesperson-and-lines.png` | The CRM queue with the Salesperson column reading `CONTACT AI` and the Lines column reading 2, 1, 2, 2. Both drew blank before: `PriceTagRequestListItem` never declared `contact_name` or `line_count`, so `response_model` dropped them (finding 5). The footer reads `1 - 4 of 4` from the server's own count, not the length of an array (finding 13). |
 | `review-2-claim-before-unclaimed.png` | `PT-202608-0002` before the claim: status `New`, header subline `Assigned to: Unclaimed`, one primary CTA reading `Claim`. |
 | `review-3-claim-names-the-claimer.png` | The same page straight after Claim: status `Designing`, `Assigned to: Jayson Personal`, and the CTA has become `Design tags`. The claim writes `assigned_to_id` and the response carries the resolved name; before this it wrote `created_by`, which nothing read back, so the subline said `Unclaimed` for the rest of the request's life (finding 5, AC-M.30). |
 | `review-4-draft-after-delete-gets-a-free-number.png` | The portal list after the exact failure sequence: save `PT-202608-0005`, save `PT-202608-0006`, delete `0005`, save again. The fourth save answered `PT-202608-0007` and the page carries both drafts. On the old COUNT-of-surviving-rows sequence that last save asked for `0006`, which the live row already held, and Save Draft answered 500 on `price_tag_requests_doc_number_key` (finding 1, AC-M.28). |

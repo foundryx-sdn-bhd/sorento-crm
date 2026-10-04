@@ -315,7 +315,7 @@ def test_a_barred_contacts_incoming_miss_is_one_referred_row(
 ):
     """#1406: "... No incoming and no stock for ZZTSC07.\\n\\nPlease refer to your salesman."
     to a contact whose escalation switch is off, not a dealer."""
-    _seed_contact(session_factory, phone="+60000009301")
+    _seed_contact(session_factory, phone="+60900000005")
     _make_dealer(session_factory)
     result = _incoming_miss(session_factory, monkeypatch, stub_parser, stub_access)
     reply = (result.reply or {}).get("text") or ""
@@ -331,7 +331,7 @@ def test_a_barred_contacts_incoming_miss_is_one_referred_row(
 def test_the_same_miss_for_an_allowed_contact_offers_the_team_and_logs_nothing(
     session_factory, stub_parser, stub_access, monkeypatch
 ):
-    _seed_contact(session_factory, phone="+60000009302")
+    _seed_contact(session_factory, phone="+60900000007")
     result = _incoming_miss(session_factory, monkeypatch, stub_parser, stub_access)
     assert "escalate" in ((result.reply or {}).get("text") or "").lower()
     assert _rows(session_factory) == []
@@ -340,7 +340,7 @@ def test_the_same_miss_for_an_allowed_contact_offers_the_team_and_logs_nothing(
 def test_a_barred_contact_asking_for_a_person_is_one_row_of_what_they_typed(
     session_factory, stub_parser, stub_access, monkeypatch
 ):
-    _seed_contact(session_factory, phone="+60000009303")
+    _seed_contact(session_factory, phone="+60900000008")
     _make_dealer(session_factory)
     _capture_next_assignee(monkeypatch)
     _capture_sla(monkeypatch)
@@ -355,7 +355,7 @@ def test_a_barred_contact_asking_for_a_person_is_one_row_of_what_they_typed(
 
 
 def test_a_barred_contacts_stale_yes_is_one_row(session_factory, stub_parser, stub_access, monkeypatch):
-    _seed_contact(session_factory, phone="+60000009304")
+    _seed_contact(session_factory, phone="+60900000006")
     _make_dealer(session_factory)
     _write_open_question(
         session_factory,
@@ -397,7 +397,7 @@ def test_an_unbarred_contacts_small_talk_logs_nothing(session_factory, stub_acce
 
 
 def test_a_dry_run_still_writes_nothing(session_factory, stub_parser, stub_access, monkeypatch):
-    _seed_contact(session_factory, phone="+60000009305")
+    _seed_contact(session_factory, phone="+60900000009")
     _make_dealer(session_factory)
     _capture_next_assignee(monkeypatch)
     _capture_sla(monkeypatch)

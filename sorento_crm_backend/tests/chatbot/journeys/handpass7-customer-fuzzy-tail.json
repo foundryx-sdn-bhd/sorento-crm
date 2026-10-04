@@ -1,11 +1,11 @@
 {
   "name": "handpass7-customer-fuzzy-tail",
-  "source": "hand pass 7 owner console turn 19 Sep 2026 21:54:13 MYT (contact_respond_id 437264483): 'chun chun delivery'. Bug B3: measured live against :8081 today the customer roster is 'Which customer do you mean? 1. CHIN CHUN HARDWARE SDN BHD - has DO 2. CHIN CHUN HOMEMART SDN BHD - has DO 3. CHUN FATT HARDWARE TRADING - no DO 4. CHEW CHUN KEAT - no DO 5. CHIA LEE CHUN - no DO 6. CHIN CHUN HARDWARE AND TIMBER TRADING - no DO 7. CHUN YE TRADING - no DO' - CHEW CHUN KEAT and CHIA LEE CHUN are fuzzy-tail matches on 'chun' alone, not on the customer's actual phrase 'chun chun'.",
+  "source": "hand pass 7 owner console turn 19 Sep 2026 21:54:13 MYT (contact_respond_id 900000008): 'chun chun delivery'. Bug B3: measured live against :8081 today the customer roster is 'Which customer do you mean? 1. CHIN CHUN HARDWARE SDN BHD - has DO 2. CHIN CHUN HOMEMART SDN BHD - has DO 3. CHUN FATT HARDWARE TRADING - no DO 4. CHEW CHUN KEAT - no DO 5. CHIA LEE CHUN - no DO 6. CHIN CHUN HARDWARE AND TIMBER TRADING - no DO 7. CHUN YE TRADING - no DO' - CHEW CHUN KEAT and CHIA LEE CHUN are fuzzy-tail matches on 'chun' alone, not on the customer's actual phrase 'chun chun'.",
   "cases": [
     {
       "name": "chun-chun-delivery-excludes-single-word-fuzzy-tail",
       "cold": true,
-      "contact": "440987225",
+      "contact": "900000010",
       "turns": [
         {
           "text": "chun chun delivery",

@@ -346,7 +346,7 @@ tool. No new reply format.
   leg), "any shower set on promo" (product_type binding), "more" after the tap answer (6 to
   10). Evidence: `documentation/agents/chatbot-verification.md` procedure.
 
-## I. Owner hand test round 2 (26 Sep 2026, contact 487555417) [BE + FE]
+## I. Owner hand test round 2 (26 Sep 2026, contact 900000039) [BE + FE]
 
 Evidence for each: `tests/chatbot/test_attribute_asks_round2.py` (whole turns, real resolver,
 MCP stubbed), plus the console cases in `console_cases/2026-09-11-attribute-first-asks.yaml`.
@@ -378,7 +378,7 @@ MCP stubbed), plus the console cases in `console_cases/2026-09-11-attribute-firs
 - AC-1365 (W6) "water basin" is Wash Basin even where the category lacks the synonym; a
   section header never lists more than five codes in one line.
 
-## J. Owner hand test of round 2 (26 Sep 2026 13:07Z to 13:11Z, contact 487555417) [BE]
+## J. Owner hand test of round 2 (26 Sep 2026 13:07Z to 13:11Z, contact 900000039) [BE]
 
 Evidence for each: `tests/chatbot/test_attribute_asks_round3.py` (whole turns through
 `engine.run_turn`, real resolver, class vocabulary and brands table, MCP stubbed), plus the
@@ -408,7 +408,7 @@ round 3 console cases in `console_cases/2026-09-11-attribute-first-asks.yaml`.
   glass basin line is Sorento's in the catalogue (`brand_name` SORENTO, category `SRT-WB`,
   e.g. GB3011B "SORENTO GLASS BASIN ONLY GB3011B").
 
-## K. Owner console test of round 3 (27 Sep 2026 00:03 to 00:07 MYT, contact 487555417) [BE + FE]
+## K. Owner console test of round 3 (27 Sep 2026 00:03 to 00:07 MYT, contact 900000039) [BE + FE]
 
 Owner rulings R1 to R7, 27 Sep 2026 (PR #833 comment "Owner console test of round 3").
 Evidence for each: `tests/chatbot/test_attribute_asks_round4.py` (whole turns through
@@ -542,7 +542,7 @@ the same rule per domain. AC-1381's header lines and AC-1373's two-line rows are
 - AC-1388 (F1, zero set) A described set that qualifies nothing says what it looked for and what the
   set holds in the key's other values (AC-1374), never "Could not find incoming for category ...".
 
-## N. Owner hand test of 28 Sep 2026 (11:27 to 11:32 MYT, console :3083, contact 487555417) [BE]
+## N. Owner hand test of 28 Sep 2026 (11:27 to 11:32 MYT, console :3083, contact 900000039) [BE]
 
 Every attribute ask answers through the ONE reply the product-code ask already has. AC-1374,
 AC-1388 and the "I don't know ... I know ..." sentence of AC-1385 are superseded.

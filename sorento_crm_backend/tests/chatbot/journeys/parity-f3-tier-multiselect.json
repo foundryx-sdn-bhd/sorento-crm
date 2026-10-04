@@ -1,6 +1,6 @@
 {
   "name": "parity-f3-tier-multiselect",
-  "source": "chatbot-answer-half-reattach-acceptance-criteria.md AC-1697, AC-1698 (F3, hand pass 8). promo-tier.json already pins the single-pick case ('1') per AC-1697's picker copy; this chain extends it with the multi-select answers AC-1698 names ('1 and 2' and 'all' each return every chosen tier's promotions, never a miss). Contact 437264483, product srtwc286 (same as promo-tier.json).",
+  "source": "chatbot-answer-half-reattach-acceptance-criteria.md AC-1697, AC-1698 (F3, hand pass 8). promo-tier.json already pins the single-pick case ('1') per AC-1697's picker copy; this chain extends it with the multi-select answers AC-1698 names ('1 and 2' and 'all' each return every chosen tier's promotions, never a miss). Contact 900000008, product srtwc286 (same as promo-tier.json).",
   "cases": [
     {
       "name": "promo-tier-one-and-two",

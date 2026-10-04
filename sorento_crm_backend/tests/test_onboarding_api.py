@@ -175,7 +175,7 @@ def sent_request(db):
         company_id=SORENTO,
         title=unique_code("MOCHA staff"),
         requester_name="Esther Lim",
-        requester_email=f"{unique_code('esther')}@mocha.com.my".lower(),
+        requester_email=f"{unique_code('requester')}@example.com".lower(),
     )
     onboarding_service.send_request(db, str(request.id))
     return request
@@ -242,7 +242,7 @@ def _rows(count: int = 2) -> list[dict]:
             "row_number": i,
             "full_name": f"Person {i}",
             "role_label": "Sales admin",
-            "email_raw": f"person{i}@mocha.com.my",
+            "email_raw": f"person{i}@example.com",
             "phone_raw": f"012-345678{i}",
             "needs_system_account": True,
             "needs_respond_contact": False,
@@ -419,7 +419,7 @@ def _make_requests(db, titles: list[str]) -> list:
                 company_id=SORENTO,
                 title=title,
                 requester_name="Esther Lim",
-                requester_email=f"{unique_code('esther')}@mocha.com.my".lower(),
+                requester_email=f"{unique_code('requester')}@example.com".lower(),
             )
         )
     return made
@@ -571,7 +571,7 @@ def test_sorting_by_company_name_orders_by_the_company_name(client, db):
             company_id=company.id,
             title=f"{marker} batch",
             requester_name="Esther Lim",
-            requester_email=f"{unique_code('esther')}@mocha.com.my".lower(),
+            requester_email=f"{unique_code('requester')}@example.com".lower(),
         )
     _as(_make_user(db, slugs=ALL_SLUGS), db)
 
@@ -608,7 +608,7 @@ def test_creating_a_request_needs_the_add_permission(client, db):
         "company_id": SORENTO,
         "title": "New batch",
         "requester_name": "Esther",
-        "requester_email": "esther@mocha.com.my",
+        "requester_email": "person13@example.com",
     }
     _as(_make_user(db, slugs=("user_management.onboarding.view",)), db)
     assert client.post(f"{ADMIN}/requests", json=payload).status_code == 403
@@ -635,7 +635,7 @@ def test_creating_a_request_for_a_company_that_does_not_exist_is_refused(client,
             "company_id": bad,
             "title": unique_code("New batch"),
             "requester_name": "Esther",
-            "requester_email": f"{unique_code('esther')}@mocha.com.my".lower(),
+            "requester_email": f"{unique_code('requester')}@example.com".lower(),
         },
     )
     assert response.status_code == 422
@@ -662,7 +662,7 @@ def test_creating_a_request_for_someone_elses_company_is_refused(client, db):
             "company_id": outsider.id,
             "title": unique_code("New batch"),
             "requester_name": "Esther",
-            "requester_email": f"{unique_code('esther')}@mocha.com.my".lower(),
+            "requester_email": f"{unique_code('requester')}@example.com".lower(),
         },
     )
     assert response.status_code == 422
@@ -723,7 +723,7 @@ def test_a_person_cannot_be_written_through_another_request(client, db, sent_req
         company_id=SORENTO,
         title=unique_code("Other batch"),
         requester_name="Someone Else",
-        requester_email=f"{unique_code('other')}@mocha.com.my".lower(),
+        requester_email=f"{unique_code('other')}@example.com".lower(),
     )
     onboarding_service.send_request(db, str(other.id))
 
@@ -796,7 +796,7 @@ def test_rejecting_a_person_over_http_requires_a_reason(client, db, sent_request
 
 
 def test_the_reviewer_sees_collisions_the_requester_did_not(client, db, sent_request):
-    taken = "person1@mocha.com.my"
+    taken = "person1@example.com"
     db.add(
         User(id=unique_code("user"), email=taken, name="Already Here", status="ACTIVE")
     )

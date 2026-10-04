@@ -2924,7 +2924,7 @@ def make_tool_runner(
             and all(_entity_is_unplaced(e, unplaced) for e in entities)
         )
         # Hotfix 22 Sep 2026 (PLAN-chatbot-stock-no-subject-hotfix-22sep.md, live
-        # contact 423729104 turns 59-60): the guard above needs `bool(unplaced)`, and
+        # contact 900000081 turns 59-60): the guard above needs `bool(unplaced)`, and
         # the whole-book read that got through carried NOTHING unplaced. Turn 59's
         # "Srtwc8608-p-rl" resolved only as a `product_set` - a kind
         # `ALLOWED["inventory"]` does not take - so the carry was parked on

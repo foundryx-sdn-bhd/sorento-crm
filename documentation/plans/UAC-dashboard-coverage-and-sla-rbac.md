@@ -119,7 +119,7 @@ V.*
 ## Verification log (self-verify complete)
 
 Method: pytest (BE) + vitest (FE) + live browser (Playwright MCP) against :3000/:8000.
-Note on admin: `tehjayson@gmail.com` is role `admin` → `get_user_permission_slugs`
+Note on admin: `person38@example.com` is role `admin` → `get_user_permission_slugs`
 returns ALL slugs (user_service.py:1003). Admin bypass means hide/show can only be
 demonstrated on a NON-admin account; the FE gating logic itself is proven by vitest
 (buttons hidden when the slug is denied).

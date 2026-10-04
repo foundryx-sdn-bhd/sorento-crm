@@ -140,7 +140,7 @@ const convoItem: MyPendingSLAItem = {
   source_entity_type: null,
   source_entity_id: null,
   is_form_sla: false,
-  reference: '+60166753328',
+  reference: '+60160000509',
   respond_io_id: '999',
   next_action: null,
   due_at: new Date(Date.now() - 3600_000).toISOString(),
@@ -157,7 +157,7 @@ const ticketItem: MyPendingSLAItem = {
   source_entity_id: 'ticket-uuid',
   is_form_sla: true,
   reference: null,
-  respond_io_id: '440987225',
+  respond_io_id: '900000010',
   next_action: 'Mark CS resolved',
   due_at: new Date(Date.now() - 3600_000).toISOString(),
   is_responded: false,
@@ -183,7 +183,7 @@ const ticketOne: MyPendingSLAItem & Record<string, unknown> = {
   policy_name: 'Conversation SLA - Standard',
   is_intervention_ticket: true,
   contact_name: 'Aisyah Rahman',
-  contact_phone: '+60 12-334 5566',
+  contact_phone: '+60 12-000 0553',
   enquiry_snippet: 'Yes, please connect me to a person.',
   source_message_id: '1001',
   team_label: 'Customer Service - Tier 1',
@@ -322,7 +322,7 @@ describe('MyPendingSLAWidget clickable rows', () => {
     // It has a Respond contact but no FE record route → clicking opens Respond.
     fireEvent.click(screen.getByText('Ticket'));
     expect(openSpy).toHaveBeenCalledWith(
-      'https://app.respond.io/space/364817/inbox/440987225',
+      'https://app.respond.io/space/364817/inbox/900000010',
       '_blank',
       'noopener,noreferrer',
     );

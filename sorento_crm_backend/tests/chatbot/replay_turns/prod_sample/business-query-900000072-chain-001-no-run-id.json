@@ -1,0 +1,747 @@
+{
+  "turns": [
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow",
+        "hidden_spec_keys": [
+          "board_thickness",
+          "thickness"
+        ]
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1177555@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1177555,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1782546255,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000072"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000072",
+          "id": 900000072,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": null,
+          "locale": null,
+          "phone": "+60900000072",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.900000000000032\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": "zzt-agent-1177555@example.invalid",
+              "firstName": "ZZT-agent",
+              "id": 1177555,
+              "lastName": "",
+              "role": "user"
+            },
+            "countryCode": "MY",
+            "created_at": 1782546255,
+            "email": null,
+            "firstName": "ZZT-900000072",
+            "id": 900000072,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000072",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "51fc3448-d321-4fc4-b50e-5e9efbb99d3d",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxNjMzNjE2NzkVAgASGBQzQUMyQzUzREY5NEU2NjBEMzg3RgA=",
+            "contactId": 900000072,
+            "message": {
+              "text": "srtks8050",
+              "type": "text"
+            },
+            "messageId": 1789392249000000,
+            "timestamp": 1789392249000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message",
+          "send_attachments"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "6ad8ef48-f702-4803-8071-901f382a6d64",
+          "e2eea7e6-b744-488d-beb5-a715faadefe6"
+        ],
+        "focus_after": null,
+        "pending": null,
+        "text": "Here are the matching products.\n\n1. *Product Code:* SRTKS8050-BL\n*Description:* ****SORENTO HONEY COMB  KITCHEN SINK (800x500x230MM ) ( BLACK) SRTKS8050-BL\n*List Price:* MYR 1650.00\n*Dimensions:* 800.00 x 500.00 x 230.00 mm\n*Specs:* Product class: Kitchen Sink, Length: 800 mm, Width: 500 mm, Brand: SORENTO, Finish or colour: black, Height: 230 mm\n\u26a0\ufe0f  *(PRODUCT DISCONTINUED)*\n\n2. *Product Code:* SRTKS8050\n*Description:* SORENTO HONEY COMB  KITCHEN SINK (800x500x230MM )  SRTKS8050\n*List Price:* MYR 1550.00\n*Dimensions:* 800.00 x 500.00 x 230.00 mm\n*Specs:* Product class: Kitchen Sink, Length: 800 mm, Width: 500 mm, Brand: SORENTO, Height: 230 mm\n\n_Data last updated: 10/09/2026 18:58:18_\n\nP/S: if the spec you're after isn't shown above, just ask me for the *product catalogue* and I'll pull it up for you \ud83d\ude0a",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "contact_id",
+              "date_mode",
+              "include_specs",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_master_products_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "srtks8050",
+                "entity_type": "product",
+                "uuid": "6ad8ef48-f702-4803-8071-901f382a6d64"
+              }
+            ],
+            "resolved": true,
+            "token": "srtks8050"
+          }
+        ],
+        "tokens": [
+          "srtks8050"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 17,
+        "recorded_at": "2026-09-14T22:24:14.199111+09:00",
+        "turn_id": "807b8d1b-a636-4f44-8065-183830fc7f15"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 2,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 2,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "contact_id": "900000072",
+            "date_mode": null,
+            "include_specs": true,
+            "is_active": null,
+            "product_ids": [
+              "6ad8ef48-f702-4803-8071-901f382a6d64",
+              "e2eea7e6-b744-488d-beb5-a715faadefe6"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "attachments": [],
+            "fallback_used": false,
+            "has_result": true,
+            "intro": "Here are the matching products.",
+            "items": [
+              {
+                "fields": [
+                  {
+                    "label": "Product Code",
+                    "value": "SRTKS8050-BL"
+                  },
+                  {
+                    "label": "Description",
+                    "value": "****SORENTO HONEY COMB  KITCHEN SINK (800x500x230MM ) ( BLACK) SRTKS8050-BL"
+                  },
+                  {
+                    "label": "List Price",
+                    "value": "MYR 1650.00"
+                  },
+                  {
+                    "label": "Dimensions",
+                    "value": "800.00 x 500.00 x 230.00 mm"
+                  },
+                  {
+                    "key": "spec:class",
+                    "label": "Product class",
+                    "value": "Kitchen Sink"
+                  },
+                  {
+                    "key": "spec:dim_length",
+                    "label": "Length",
+                    "value": "800 mm"
+                  },
+                  {
+                    "key": "spec:dim_width",
+                    "label": "Width",
+                    "value": "500 mm"
+                  },
+                  {
+                    "key": "spec:brand",
+                    "label": "Brand",
+                    "value": "SORENTO"
+                  },
+                  {
+                    "key": "spec:finish",
+                    "label": "Finish or colour",
+                    "value": "black"
+                  },
+                  {
+                    "key": "spec:dim_height",
+                    "label": "Height",
+                    "value": "230 mm"
+                  },
+                  {
+                    "key": "spec:board_thickness",
+                    "label": "Drainer board / countertop thickness",
+                    "value": "3 mm"
+                  },
+                  {
+                    "key": "spec:thickness",
+                    "label": "Thickness",
+                    "value": "0.7 mm"
+                  }
+                ],
+                "flags": {
+                  "discontinued": true,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTKS8050-BL"
+              },
+              {
+                "fields": [
+                  {
+                    "label": "Product Code",
+                    "value": "SRTKS8050"
+                  },
+                  {
+                    "label": "Description",
+                    "value": "SORENTO HONEY COMB  KITCHEN SINK (800x500x230MM )  SRTKS8050"
+                  },
+                  {
+                    "label": "List Price",
+                    "value": "MYR 1550.00"
+                  },
+                  {
+                    "label": "Dimensions",
+                    "value": "800.00 x 500.00 x 230.00 mm"
+                  },
+                  {
+                    "key": "spec:class",
+                    "label": "Product class",
+                    "value": "Kitchen Sink"
+                  },
+                  {
+                    "key": "spec:dim_length",
+                    "label": "Length",
+                    "value": "800 mm"
+                  },
+                  {
+                    "key": "spec:dim_width",
+                    "label": "Width",
+                    "value": "500 mm"
+                  },
+                  {
+                    "key": "spec:brand",
+                    "label": "Brand",
+                    "value": "SORENTO"
+                  },
+                  {
+                    "key": "spec:dim_height",
+                    "label": "Height",
+                    "value": "230 mm"
+                  },
+                  {
+                    "key": "spec:board_thickness",
+                    "label": "Drainer board / countertop thickness",
+                    "value": "3 mm"
+                  },
+                  {
+                    "key": "spec:thickness",
+                    "label": "Thickness",
+                    "value": "0.7 mm"
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTKS8050"
+              }
+            ],
+            "last_updated_at": "2026-09-10T18:58:18.492260",
+            "result_type": "products",
+            "spec_vocabulary": {
+              "board_thickness": "Drainer board / countertop thickness",
+              "brand": "Brand",
+              "class": "Product class",
+              "dim_height": "Height",
+              "dim_length": "Length",
+              "dim_width": "Width",
+              "finish": "Finish or colour",
+              "thickness": "Thickness"
+            }
+          },
+          "tool": "crm_master_products_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "master_products",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "srtks8050"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_product",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to check the product for srtks8050"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow",
+        "hidden_spec_keys": [
+          "board_thickness",
+          "thickness"
+        ]
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1177555@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1177555,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1782546255,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000072"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000072",
+          "id": 900000072,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": null,
+          "locale": null,
+          "phone": "+60900000072",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.900000000000032\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": "zzt-agent-1177555@example.invalid",
+              "firstName": "ZZT-agent",
+              "id": 1177555,
+              "lastName": "",
+              "role": "user"
+            },
+            "countryCode": "MY",
+            "created_at": 1782546255,
+            "email": null,
+            "firstName": "ZZT-900000072",
+            "id": 900000072,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000072",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "99efc2c8-bce8-408e-9d7f-748445f07ddf",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxNjMzNjE2NzkVAgASGBQzQThDNkFFNzVDQkRGQTlEMzEyRQA=",
+            "contactId": 900000072,
+            "message": {
+              "text": "stock",
+              "type": "text"
+            },
+            "messageId": 1789392257000000,
+            "timestamp": 1789392257000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message",
+          "send_attachments"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "6ad8ef48-f702-4803-8071-901f382a6d64",
+          "e2eea7e6-b744-488d-beb5-a715faadefe6"
+        ],
+        "focus_after": null,
+        "pending": null,
+        "text": "Stock details found for the requested products.\n\n1. *Product Code:* SRTKS8050\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 0\n*Outstanding:* 4\n\n2. *Product Code:* SRTKS8050-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\u26a0\ufe0f  *(PRODUCT DISCONTINUED)*\n\n_Data last updated: 14/09/2026 17:25:40_\nStock is 0 at every location and no incoming for SRTKS8050, but PO is placed:\n*Product Code:* SRTKS8050\n*Ordered:* 4\n*Outstanding:* 4\n*PO date:* 2025-06-16\n*Location:* BRW\n\nStock is 0 at every location, no incoming and nothing on order for SRTKS8050-BL.\n\nWould you like me to escalate to purchasing team?",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "contact_id",
+              "date_mode",
+              "include_sellable",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_inventory_stock_balance_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [],
+        "tokens": [],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 17,
+        "recorded_at": "2026-09-14T22:24:22.211941+09:00",
+        "turn_id": "cc2d1c4b-1d40-45f6-8b4b-b2f7ec94d908"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 2,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 2,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "contact_id": "900000072",
+            "date_mode": null,
+            "include_sellable": true,
+            "is_active": null,
+            "product_ids": [
+              "6ad8ef48-f702-4803-8071-901f382a6d64",
+              "e2eea7e6-b744-488d-beb5-a715faadefe6"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "attachments": [],
+            "fallback_used": false,
+            "has_result": true,
+            "intro": "Stock details found for the requested products.",
+            "items": [
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "SRTKS8050"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "BUKIT RAJA"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "BRW"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 0
+                  },
+                  {
+                    "key": "open_so_qty",
+                    "label": "Outstanding",
+                    "value": 4
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTKS8050"
+              },
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "SRTKS8050-BL"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "BUKIT RAJA"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "BRW"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 0
+                  },
+                  {
+                    "key": "open_so_qty",
+                    "label": "Outstanding",
+                    "value": 0
+                  }
+                ],
+                "flags": {
+                  "discontinued": true,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTKS8050-BL"
+              }
+            ],
+            "last_updated_at": "2026-09-14T17:25:40.036011",
+            "restricted_fields": {
+              "open_so_qty": "inventory.sellable"
+            },
+            "result_type": "stock",
+            "stock_visibility": {
+              "hide_zero_locations": false,
+              "mode": "detailed",
+              "source": "contact",
+              "warehouse_codes": [
+                "BRW",
+                "MWH"
+              ]
+            }
+          },
+          "tool": "crm_inventory_stock_balance_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "inventory",
+        "entities": [],
+        "entity_op": "reuse",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_stock",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "clarification",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to check stock"
+      }
+    }
+  ]
+}

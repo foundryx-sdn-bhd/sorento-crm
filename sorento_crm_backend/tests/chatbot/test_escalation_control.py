@@ -150,7 +150,7 @@ class TestTheContactFlagDecides:
     def test_a_new_contact_is_allowed(self, session_factory) -> None:
         from app.services.chatbot.turn_runtime import load_profile
 
-        _seed_contact(session_factory, phone="+60000009001")
+        _seed_contact(session_factory, phone="+60900000046")
         stored = session_factory().execute(
             text("SELECT escalation_allowed FROM respond_contacts WHERE respond_io_id = :c"),
             {"c": str(CONTACT_ID)},
@@ -162,7 +162,7 @@ class TestTheContactFlagDecides:
     def test_the_flag_unticked_blocks(self, session_factory) -> None:
         from app.services.chatbot.turn_runtime import load_profile
 
-        _seed_contact(session_factory, phone="+60000009002")
+        _seed_contact(session_factory, phone="+60900000052")
         _set_flag(session_factory, False)
         profile, _ = load_profile(session_factory(), str(CONTACT_ID))
         assert profile.escalation_allowed is False
@@ -170,7 +170,7 @@ class TestTheContactFlagDecides:
     def test_dealer_access_types_do_not_block_when_the_flag_allows(self, session_factory) -> None:
         from app.services.chatbot.turn_runtime import load_profile
 
-        _seed_contact(session_factory, phone="+60000009003")
+        _seed_contact(session_factory, phone="+60900000051")
         _give_types(session_factory, _contact_pk(session_factory), ["Sorento Dealer", "Mocha Dealer"])
         profile, _ = load_profile(session_factory(), str(CONTACT_ID))
         assert profile.escalation_allowed is True
@@ -179,7 +179,7 @@ class TestTheContactFlagDecides:
         self, session_factory, stub_parser, stub_access, monkeypatch
     ) -> None:
         """The owner's hand test: Mr Loo (office, dealer and end-user types) is allowed."""
-        _seed_contact(session_factory, phone="+60000009014")
+        _seed_contact(session_factory, phone="+60900000045")
         _give_types(session_factory, _contact_pk(session_factory), MR_LOO_TYPES)
         bodies = _capture_next_assignee(monkeypatch)
         _capture_sla(monkeypatch)
@@ -316,7 +316,7 @@ class TestDealerIsNeverOfferedAndCannotForce:
     def test_a_miss_offers_no_escalation_and_arms_nothing(
         self, session_factory, stub_parser, stub_access, monkeypatch
     ) -> None:
-        _seed_contact(session_factory, phone="+60000009101")
+        _seed_contact(session_factory, phone="+60900000047")
         _make_dealer(session_factory)
         result = _incoming_miss(session_factory, monkeypatch, stub_parser, stub_access)
         reply = _reply(result)
@@ -335,7 +335,7 @@ class TestDealerIsNeverOfferedAndCannotForce:
     def test_asking_for_a_person_gets_the_salesman_line_and_no_hand_off(
         self, session_factory, stub_parser, stub_access, monkeypatch
     ) -> None:
-        _seed_contact(session_factory, phone="+60000009102")
+        _seed_contact(session_factory, phone="+60900000044")
         _make_dealer(session_factory)
         bodies = _capture_next_assignee(monkeypatch)
         sla = _capture_sla(monkeypatch)
@@ -349,7 +349,7 @@ class TestDealerIsNeverOfferedAndCannotForce:
     def test_a_stale_yes_to_an_old_offer_hands_nothing_over(
         self, session_factory, stub_parser, stub_access, monkeypatch
     ) -> None:
-        _seed_contact(session_factory, phone="+60000009103")
+        _seed_contact(session_factory, phone="+60900000054")
         _make_dealer(session_factory)
         _write_open_question(
             session_factory,
@@ -375,7 +375,7 @@ class TestUnbarredContactsAreUnchanged:
     def test_a_plain_contact_is_still_offered_and_handed_over(
         self, session_factory, stub_parser, stub_access, monkeypatch
     ) -> None:
-        _seed_contact(session_factory, phone="+60000009201")
+        _seed_contact(session_factory, phone="+60900000042")
         bodies = _capture_next_assignee(monkeypatch)
         _capture_sla(monkeypatch)
         _incoming_miss(session_factory, monkeypatch, stub_parser, stub_access)
@@ -387,7 +387,7 @@ class TestUnbarredContactsAreUnchanged:
     def test_a_staff_profile_still_asks_for_a_person_and_is_handed_over(
         self, session_factory, stub_parser, stub_access, monkeypatch
     ) -> None:
-        _seed_contact(session_factory, phone="+60000009202")
+        _seed_contact(session_factory, phone="+60900000043")
         db = session_factory()
         db.execute(
             text("UPDATE respond_contacts SET chatbot_profile = CAST(:p AS jsonb) WHERE respond_io_id = :c"),
@@ -404,7 +404,7 @@ class TestUnbarredContactsAreUnchanged:
     def test_ticking_the_flag_again_restores_the_offer(
         self, session_factory, stub_parser, stub_access, monkeypatch
     ) -> None:
-        _seed_contact(session_factory, phone="+60000009203")
+        _seed_contact(session_factory, phone="+60900000049")
         _set_flag(session_factory, False)
         _set_flag(session_factory, True)
         result = _incoming_miss(session_factory, monkeypatch, stub_parser, stub_access)
@@ -481,7 +481,7 @@ class TestNamedTeamAndTrace:
     ) -> None:
         """Review S3: `apply`'s named-team rule (no fetch, no roster) holds for the barred
         lane too, so "escalate ZZT... to purchasing team" is answered with the referral."""
-        _seed_contact(session_factory, phone="+60000009301")
+        _seed_contact(session_factory, phone="+60900000005")
         _make_dealer(session_factory)
         # Near neighbours, so the business lane has a did-you-mean roster to ask.
         _seed_product(session_factory, code="ZZTNOPE10")
@@ -561,17 +561,17 @@ class TestAmbiguousContact:
     unticked; only when every row is ticked is the contact allowed."""
 
     def _two_rows(self, session_factory, *, second_barred: bool) -> None:
-        _seed_contact(session_factory, phone="+60000009401")
+        _seed_contact(session_factory, phone="+60900000053")
         db = session_factory()
         db.execute(
             text(
                 "INSERT INTO respond_contacts (id, respond_io_id, phone_number, session_vars, workspace_id, "
                 "escalation_allowed) SELECT gen_random_uuid()::text, respond_io_id, '+60000009402', "
-                "'{}'::jsonb, workspace_id, :second FROM respond_contacts WHERE phone_number = '+60000009401'"
+                "'{}'::jsonb, workspace_id, :second FROM respond_contacts WHERE phone_number = '+60900000053'"
             ),
             {"second": not second_barred},
         )
-        db.execute(text("UPDATE respond_contacts SET escalation_allowed = false WHERE phone_number = '+60000009401'"))
+        db.execute(text("UPDATE respond_contacts SET escalation_allowed = false WHERE phone_number = '+60900000053'"))
         db.commit()
 
     def test_every_row_barred_is_barred(self, session_factory) -> None:
@@ -599,7 +599,7 @@ class TestAmbiguousContact:
             text(
                 "INSERT INTO respond_contacts (id, respond_io_id, phone_number, session_vars, workspace_id, "
                 "escalation_allowed) SELECT gen_random_uuid()::text, respond_io_id, '+60000009403', "
-                "'{}'::jsonb, workspace_id, false FROM respond_contacts WHERE phone_number = '+60000009401'"
+                "'{}'::jsonb, workspace_id, false FROM respond_contacts WHERE phone_number = '+60900000053'"
             )
         )
         db.commit()
@@ -679,7 +679,7 @@ _MISS_SHAPES = {
 def test_a_blocked_miss_names_what_was_asked_then_refers_to_the_salesman(
     shape, session_factory, stub_parser, stub_access, monkeypatch
 ) -> None:
-    _seed_contact(session_factory, phone="+60000009501")
+    _seed_contact(session_factory, phone="+60900000048")
     _seed_product(session_factory, code="ZZTSC07")
     _set_flag(session_factory, False)
     _stub_incoming_probe_empty(monkeypatch)
@@ -696,7 +696,7 @@ def test_a_blocked_miss_names_what_was_asked_then_refers_to_the_salesman(
 def test_an_allowed_miss_still_offers_the_team(
     shape, session_factory, stub_parser, stub_access, monkeypatch
 ) -> None:
-    _seed_contact(session_factory, phone="+60000009502")
+    _seed_contact(session_factory, phone="+60900000050")
     _seed_product(session_factory, code="ZZTSC07")
     _stub_incoming_probe_empty(monkeypatch)
     v, expected = _MISS_SHAPES[shape]
