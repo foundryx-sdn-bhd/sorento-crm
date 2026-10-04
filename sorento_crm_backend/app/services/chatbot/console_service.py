@@ -525,7 +525,7 @@ def run_console_turn(
 # answer (`snapshot_and_caption`, the same real upload a WhatsApp photo pick makes), and
 # spends one real LLM extraction (`extract_ideate_turn`, never stubbed here). Unlike
 # media, the CONTACT's own `respond_contacts.session_vars` stays untouched on a test turn
-# (`ideation_turn_service.handle_turn`'s `is_test` guard) - only the shared-service side
+# (`ideation_capture_service.handle_capture_turn`'s `is_test` guard) - only the shared-service side
 # writes. Acceptable for the same reason media's exception is: a manual testing tool used
 # sparingly, stated here so it is a known trade-off, not a surprise.
 # --------------------------------------------------------------------------- #

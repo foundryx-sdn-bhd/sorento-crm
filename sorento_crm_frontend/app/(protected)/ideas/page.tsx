@@ -1,5 +1,6 @@
 import { Metadata } from 'next';
 import { IdeasListView } from '@/components/ideas/IdeasListView';
+import { IdeasScopeToggle } from '@/components/ideas/IdeasScopeToggle';
 
 export const metadata: Metadata = {
   title: 'Ideas',
@@ -7,5 +8,5 @@ export const metadata: Metadata = {
 };
 
 export default function IdeasPage() {
-  return <IdeasListView />;
+  return <IdeasListView toolbarScopeSlot={<IdeasScopeToggle />} />;
 }

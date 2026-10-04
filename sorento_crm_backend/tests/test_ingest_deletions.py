@@ -519,7 +519,10 @@ class TestDeactivate:
         ref, product_id = env.product()
         env.sales_order(product_id=product_id)
 
-        res = env.delete("products", [ref])
+        # Products delete by code only (owner rulings, 3 Oct): the shared
+        # service sends the `codes` map.
+        code = env.row("products", product_id)["product_code"]
+        res = env.delete("products", [ref], body={"source_refs": [ref], "codes": {ref: code}})
 
         assert res.json()["records"][0]["outcome"] == "deactivated", res.text
         row = env.row("products", product_id)

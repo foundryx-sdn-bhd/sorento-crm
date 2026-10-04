@@ -19,7 +19,7 @@ from app.database import get_db
 from app.dependencies import get_external_api_user
 from app.schemas.external.ideation import IdeationTurnRequest, IdeationTurnResponse
 from app.schemas.integration import IntegrationLogCreate
-from app.services.ideation_turn_service import handle_turn
+from app.services.ideation_capture_service import handle_capture_turn
 from app.services.integration_service import (
     IntegrationLogService,
     sanitize_request_headers,
@@ -36,7 +36,7 @@ def ideation_turn(
     current_user: dict = Depends(get_external_api_user),
     db: Session = Depends(get_db),
 ):
-    """Handle one `ideate` turn: call `create_idea`, update session_vars, relay."""
+    """Handle one `ideate` turn: capture the idea from the one message, update session_vars, relay."""
     _ = current_user
 
     response_status = status.HTTP_200_OK
@@ -45,14 +45,14 @@ def ideation_turn(
     _http_exc_to_reraise: HTTPException | None = None
 
     try:
-        result = handle_turn(
+        # media_selection / is_new_idea are accepted for old n8n callers and ignored.
+        result = handle_capture_turn(
             db,
             respond_io_id=payload.respond_io_id,
             message_text=payload.message_text,
             submitter_name=payload.submitter_name,
-            media_selection=payload.media_selection,
-            is_new_idea=payload.is_new_idea,
             session_vars_in=payload.session_vars,
+            ask_reply=payload.ask_reply,
             is_test=payload.is_test,
         )
         response_payload = IdeationTurnResponse(**result)

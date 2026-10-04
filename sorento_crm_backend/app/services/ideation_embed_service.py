@@ -34,6 +34,10 @@ from jose import jwt
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.models.access import RespondContact
+from app.models.user import User
+from app.services.phone_utils import normalize_msisdn
+from app.services.user_service import UserPermissionService
 from app.services.respond_workspace_service import RespondWorkspaceService
 
 logger = logging.getLogger(__name__)
@@ -127,7 +131,41 @@ def _resolve_embed_config(db: Session | None) -> _EmbedConfig:
     )
 
 
-def mint_embed_assertion(user: dict[str, Any], *, secret: str, connection_id: str) -> str:
+def user_phone(db: Session, user: dict[str, Any]) -> str | None:
+    """The linked contact's phone, only when it is a VERIFIED number: `users.phone_verified_at`
+    is set and the user's own number equals the contact's. Otherwise None (no claim)."""
+    user_id = user.get("id")
+    if not user_id:
+        return None
+    row = (
+        db.query(RespondContact.phone_number, User.contact_number, User.phone_verified_at)
+        .join(User, User.respond_contact_id == RespondContact.id)
+        .filter(User.id == str(user_id))
+        .first()
+    )
+    if row is None or row.phone_verified_at is None:
+        return None
+    contact_phone = (row.phone_number or "").strip()
+    own = normalize_msisdn(row.contact_number)
+    if not contact_phone or own is None or own != normalize_msisdn(contact_phone):
+        return None
+    return contact_phone
+
+
+def user_ideas_manage(db: Session, user: dict[str, Any]) -> bool:
+    return bool(
+        UserPermissionService(db).check_user_has_permission(user.get("id"), "ideation.ideas.manage")
+    )
+
+
+def mint_embed_assertion(
+    user: dict[str, Any],
+    *,
+    secret: str,
+    connection_id: str,
+    phone: str | None = None,
+    ideas_manage: bool | None = None,
+) -> str:
     """Sign a short-lived assertion identifying the logged-in user for the embed
     connection. Signed with the resolved embed signing secret (never the app JWT
     secret) so the shared-service verifies it against the embed connection only."""
@@ -147,6 +185,11 @@ def mint_embed_assertion(user: dict[str, Any], *, secret: str, connection_id: st
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(seconds=_ASSERTION_TTL_SECONDS)).timestamp()),
     }
+    if phone:
+        payload["phone"] = phone
+    if ideas_manage is not None:
+        # ss refuses a non-manager's write on someone else's idea (403 not_owner).
+        payload["ideas_manage"] = bool(ideas_manage)
     return jwt.encode(payload, secret, algorithm=settings.jwt_algorithm)
 
 
@@ -189,8 +232,14 @@ def create_embed_session(
 
     assert config.base_url and config.fe_base_url and config.connection_id and config.secret
 
+    # The same claims the gateway sends: ss refuses a non-manager's write on someone else's
+    # idea from `ideas_manage`, and matches the user's WhatsApp ideas from a verified `phone`.
     assertion = mint_embed_assertion(
-        user, secret=config.secret, connection_id=config.connection_id
+        user,
+        secret=config.secret,
+        connection_id=config.connection_id,
+        phone=user_phone(db, user) if db is not None else None,
+        ideas_manage=user_ideas_manage(db, user) if db is not None else None,
     )
     request_payload: dict[str, Any] = {
         "connection_id": config.connection_id,
