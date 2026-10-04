@@ -440,7 +440,10 @@ def test_a_bare_continuation_keeps_the_brand(owner_chat) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# R6: no escalation inside a list; an empty result is one line.
+# R6: no escalation inside a list that answered. An empty result is a no-answer, and
+# a no-answer keeps the escalation offer (owner ruling 4 Oct 2026, PICKER-ESCALATION:
+# "any no answer should get the escalation question, that's the gist"), which overrides
+# R6's 27 Sep one-line, no-offer empty list.
 # --------------------------------------------------------------------------- #
 
 
@@ -453,9 +456,9 @@ def _year(year: int) -> dict[str, Any]:
     )
 
 
-def test_an_empty_list_is_one_line_and_keeps_the_conversation(owner_chat) -> None:
-    from app.services.chatbot.order_list import EMPTY_LIST_LINE
-
+def test_an_empty_list_offers_escalation_and_keeps_the_conversation(owner_chat) -> None:
+    """Owner ruling 4 Oct 2026 (PICKER-ESCALATION): an empty list inside an open list is
+    a no-answer, so a contact who may escalate is offered a person, as on a first ask."""
     chat = owner_chat
     chat.turn(OWNER_TURNS[4][0], OWNER_TURNS[4][1])
     reply, calls, _ = chat.turn("what about 2019", _year(2019))
@@ -463,21 +466,12 @@ def test_an_empty_list_is_one_line_and_keeps_the_conversation(owner_chat) -> Non
     assert chat.kind() == "business_query", reply
     assert _numbers(reply) == set(), reply
     low = reply.casefold()
-    assert not any(w in low for w in ESCALATE_WORDS), reply
-    assert reply.strip().splitlines()[-1] == EMPTY_LIST_LINE, reply
+    assert any(w in low for w in ESCALATE_WORDS), reply
     assert _header(reply, "Brand") == "Brand: Mocha", reply
-    assert _open_question(chat) in (None, {}), "no escalate offer or routing picker is left open"
     # The conversation stays: the next brand word re-runs the list.
     reply, calls, _ = chat.turn("sorento", _help_request([]))
     assert chat.kind() == "business_query", reply
     assert [a for n, a in calls if n == ORDERS_LIST][-1].get("brand_ids") == [chat.brand_id], calls
-
-
-def _open_question(chat) -> dict[str, Any] | None:
-    from tests.chatbot.test_samantha_26sep_s9_brand_resolve import _open_question_of
-
-    q = _open_question_of(chat.session_factory)
-    return q if q.get("kind") in ("team_pick", "member_offer", "company_pick") else None
 
 
 def test_a_request_for_a_person_still_escalates(owner_chat) -> None:

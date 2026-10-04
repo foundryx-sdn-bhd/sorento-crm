@@ -31,6 +31,7 @@ from app.services.entity_resolver import (
     _CODE_RE,
     EntityPinMismatch,
     _canonical_entity_type,
+    _with_resolve_memo,
     fetch_product_brands,
     resolve_references,
     resolve_references_intersection,
@@ -2060,6 +2061,9 @@ def _collect_match_types(result: dict[str, Any]) -> list[str]:
     return sorted(types)
 
 
+# One memo across the primary pass and the all-types fallback below: a token the primary
+# pass could not resolve is otherwise probed and embedded all over again (CHAT-SLOW-MISS).
+@_with_resolve_memo
 def _resolve_input(
     db: Session,
     query: str,
