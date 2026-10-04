@@ -254,6 +254,31 @@ def collect(
     return Outcome(values=values, extras=carried)
 
 
+#: Entity hints that are never a product category (STUCK-QTY-LOOP).
+NOT_A_CATEGORY_HINTS = frozenset({"customer", "warehouse", "sales_agent", "transporter", "order", "customer_order"})
+
+
+def _read_as_another_kind(verdict: dict[str, Any]) -> bool:
+    """Did the parser read every word this message named as something other than a category:
+    a customer, a location, an order, or a product CODE (a product word with no digit is a
+    product type, `low_stock_ask.take_words`'s own rule)?"""
+    named = [
+        e for e in jsc.array(verdict.get("entities"))
+        if isinstance(e, dict) and e.get("current_message") is not False
+    ]
+    if not named:
+        return False
+    for entity in named:
+        hint = jsc.js_string(entity.get("hint") or "").strip().lower()
+        raw = jsc.js_string(entity.get("raw") or "")
+        if hint in NOT_A_CATEGORY_HINTS:
+            continue
+        if hint == "product" and any(ch.isdigit() for ch in raw):
+            continue
+        return False
+    return True
+
+
 def reply_verdict(
     verdict: dict[str, Any],
     slot: dict[str, Any] | None,
@@ -269,6 +294,13 @@ def reply_verdict(
     words = (text or "").split()
     if not words or "?" in text:
         # Nothing typed (an image, a sticker) or a question: not an answer.
+        return verdict, "required_ask_dropped"
+    if jsc.js_string(slot.get("asking")) == "category" and _read_as_another_kind(verdict):
+        # STUCK-QTY-LOOP (crew pass on d456e887, 4 Oct 2026): "taiyang only", which the
+        # parser read as a CUSTOMER, was taken as the category ("I don't know 'taiyang only'
+        # as a category."). The parser's own entity hints say it is not a category, so it
+        # is not this question's answer. Superseded by LOWSTOCK-SEMANTIC (#1470), where only
+        # the parser's declared answer counts.
         return verdict, "required_ask_dropped"
     same_ask = verdict.get("intent_hint") == ask.reroute.get("intent_hint")
     other_ask = (bool(verdict.get("intent_hint")) and not same_ask) or verdict.get("message_type") not in (

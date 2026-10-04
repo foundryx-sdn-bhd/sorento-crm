@@ -596,6 +596,11 @@ class Focus(BaseModel):
     # every turn - a shape the session validator did not know would fail the write
     # itself.
     tasks: list[dict[str, Any]] = Field(default_factory=list)
+    # STUCK-QTY-LOOP (`turn/state.py::Focus.intent` / `held_turn` / `held_access`): the
+    # central held-question rule's facts, written by `focus_to_wire` only when set.
+    intent: str | None = None
+    held_turn: int | None = None
+    held_access: str | None = None
     # Any entity kind without a named axis above, keyed by kind. A kind this turn's
     # policy narrows on but the Focus never declared still has somewhere safe to sit
     # rather than being dropped on the way to the session.

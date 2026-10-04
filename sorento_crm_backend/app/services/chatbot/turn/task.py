@@ -626,11 +626,16 @@ def run(
                 question = impl.question(filled)
                 question_domain = filled.domain
             continue
-        if task.domain and task.domain == named_domain and _only_task_slots(task, verdict):
+        named = _named_slots(task, verdict)
+        if (
+            task.domain
+            and task.domain == named_domain
+            and _only_task_slots(task, verdict)
+            and _asks_to_resume(verdict, named)
+        ):
             # (3) resume: the task's own topic, named again with nothing new. Only
             # what is still missing is asked; nothing is asked twice.
             resumed = replace(task, status=OPEN, touched_at_turn=turn_no)
-            named = _named_slots(task, verdict)
             if named and len(named) < len(task.slots):
                 # Owner hand test 26 Sep, slice 3 (T5): "check stock SRTWC286-SH-UF"
                 # over a ten-product question names ONE of them - the dealer has
@@ -662,6 +667,26 @@ def run(
         parked_kinds=tuple(parked_kinds),
         rules=tuple(rules),
     )
+
+
+#: The intent a stock check is asked and resumed under ("back to the stock check":
+#: `chatbot_parser_prompt.py`, the parser's own resume example).
+STOCK_INTENT = "check_stock"
+
+
+def _asks_to_resume(verdict: dict[str, Any], named: tuple[Slot, ...]) -> bool:
+    """Is this message an explicit ask to resume the stock check (STUCK-QTY-LOOP)?
+
+    The resume used to fire on ANY inventory message that named nothing new, and an
+    entity-less inventory message is also a low stock report (`low_stock_ask.take_words`
+    moves its brand and category words off the entities) and a bare "clear" the parser
+    did not flag: the stored question was replayed on every one of them (owner, 4 Oct
+    2026, prompt v42). A resume now needs the parser's own signal: a stock intent, or
+    one of the task's own products named under no other intent."""
+    intent = verdict.get("intent_hint")
+    if intent == STOCK_INTENT:
+        return True
+    return not intent and bool(named)
 
 
 def _revised(task: Task, verdict: dict[str, Any], turn_no: int) -> Task | None:

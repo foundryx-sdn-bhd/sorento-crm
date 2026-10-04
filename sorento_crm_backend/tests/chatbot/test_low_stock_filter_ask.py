@@ -605,3 +605,31 @@ class TestLiveParserAnswerShape:
         _text, calls = console.say(_live_reply(_e("water closet", "product")), "water closet")
         (args,) = calls
         assert args.get("categories") == ["SRT-WC"], args
+
+
+class TestStuckQtyLoopCategoryAnswer:
+    """STUCK-QTY-LOOP, crew pass on d456e887 (4 Oct): "taiyang only" under the open category
+    question, which the live parser read as a CUSTOMER, was taken as the category answer
+    ("I don't know 'taiyang only' as a category."). A reply the parser read as something
+    else is not this question's answer: the question is dropped and the message runs as
+    itself."""
+
+    @pytest.mark.parametrize(
+        "entity, text",
+        [
+            (_e("taiyang", "customer"), "taiyang only"),
+            (_e("BRW", "warehouse"), "BRW only"),
+            (_e("SRTWT7408", "product"), "SRTWT7408"),
+        ],
+    )
+    def test_a_reply_the_parser_read_as_another_kind_is_not_the_category(self, console, entity, text) -> None:
+        console.say(_ask(), "low stock report")
+        reply, calls = console.say(_reply(entity, intent_hint="low_stock_report", domain_hint="inventory"), text)
+        assert f"I don't know '{text}' as a category" not in reply, reply
+        assert "I still can't place" not in reply, reply
+
+    def test_a_category_word_the_parser_hinted_as_a_product_is_still_the_answer(self, console) -> None:
+        console.say(_ask(), "low stock report")
+        _text, calls = console.say(_reply(_e("water closet", "product")), "water closet")
+        (args,) = calls
+        assert args.get("categories") == ["SRT-WC"], args

@@ -32,6 +32,7 @@ from app.services.chatbot.turn.decide import (
     CARRY,
     DOCUMENT_BY_SCOPE,
     NEW_ASK,
+    NEW_INTENT,
     OUTSTANDING_KINDS,
     EVERYTHING,
     FAMILY,
@@ -65,7 +66,13 @@ from app.services.chatbot.turn.state import (
     token_key,
 )
 
-RESET_KEEPS = {"tier", "brands"}
+# STUCK-QTY-LOOP: `intent` too - the reset turn's own intent is what the next message is
+# compared against (`turn/held.py::consume`).
+RESET_KEEPS = {"tier", "brands", "intent"}
+
+#: STUCK-QTY-LOOP: the `focus.extra` kinds that belong to the ask they were named in, not
+#: to the subject, so a message of another intent drops them (`_focus_rules`).
+INTENT_OWNED_EXTRA = frozenset({"sales_agent"})
 
 # D6, "domain follows the document": a turn that names a document kind and no domain is
 # about the domain that OWNS that document (SPO belongs to spo_allocation, not incoming,
@@ -1092,6 +1099,17 @@ def _focus_rules(
         trace.rules_fired.append("replace_same_axis")
     else:
         trace.rules_fired.append("reuse_alive")
+
+    if verdict.get(NEW_INTENT) is True:
+        # STUCK-QTY-LOOP (crew report 2, "taiyang only" -> "Could not find inventory for
+        # William"): a message of another intent does not carry the old ask's own person
+        # axis. Only the kinds in `INTENT_OWNED_EXTRA`: a grounded specification ("cert?"
+        # after "any gunmetal basin has incoming?", #833) is the subject and still carries.
+        # Which other axes an intent owns is the owner's "intent-owned frames" decision.
+        for extra_kind in sorted(INTENT_OWNED_EXTRA & set(focus.extra)):
+            if extra_kind not in by_kind and focus.extra.get(extra_kind):
+                focus.extra[extra_kind] = []
+                trace.rules_fired.append(f"new_intent_drops_{extra_kind}")
 
     asks = verdict.get("asks") or []
     if by_kind:

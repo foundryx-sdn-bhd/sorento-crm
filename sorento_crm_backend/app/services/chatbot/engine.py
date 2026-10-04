@@ -68,6 +68,7 @@ from app.services.chatbot.turn import state as turn_state
 from app.services.chatbot.turn import compose as turn_compose
 from app.services.chatbot.turn import context as context_mod
 from app.services.chatbot.turn import episode_digest as episode_digest_mod
+from app.services.chatbot.turn import held as turn_held
 from app.services.chatbot.turn import fetch as run_fetch_mod
 from app.services.chatbot.turn import memory as memory_mod
 from app.services.chatbot.turn import profile_facts as profile_facts_mod
@@ -3710,9 +3711,13 @@ def _run_stages_body(  # noqa: PLR0915
         # `chatbot_recall_enabled` is no longer read (contract section 2: the recall
         # re-parse is deleted; the column stays, untouched, per Q1 - no data change).
         profile, _recall_enabled = turn_runtime.load_profile(db, contact_respond_id)
+        profile.access_fp = _access_fingerprint(session_factory, contact_respond_id, profile)
         known_phone = turn_runtime.contact_phone(db, contact_respond_id)
         turn_no = turn_runtime.turn_number(db, contact_respond_id)
         state_in = turn_runtime.load_state(session_block, profile=profile, turn_no=turn_no)
+        # STUCK-QTY-LOOP: a held question built under other access, or past its TTL, is
+        # gone before the parser is shown it (`turn/held.py`).
+        state_in, held_expired = turn_held.expire(state_in)
         remembered_before = session_state.five_keys(session_block)
         # The parser's `Previous response:` line. Read here, at `received`, with the
         # other contact facts and off the SAME session: it is what the bot last said to
@@ -4103,6 +4108,8 @@ def _run_stages_body(  # noqa: PLR0915
     # itself become the trace's last entry instead of the failed `understood`
     # stage (AC-105/R5/H44's own "no routing" shape).
     turn_trace.add("context", context_report)
+    if held_expired:
+        turn_trace.add("held_dropped", {"why": held_expired})
 
     # The routing default lands ONCE, here, after the last parse and before the access
     # read (finding 2b): every reader downstream - access, the lanes, the trace - sees
@@ -4125,10 +4132,18 @@ def _run_stages_body(  # noqa: PLR0915
     # the parser filling `top_n` for a bare "10" - its prompt has no example of one, and
     # its positional rule pulls a bare number toward `reference_positions`.
     # Round 4 R5 on PR #833: the answer to an open clarify re-runs the ask it was about.
+    # STUCK-QTY-LOOP: the readers below that answer a held question from its own offered
+    # options each return a new verdict when they do; `turn_held.consume` is told which
+    # did, so an answer is never dropped as a "new question".
+    held_answered: list[str] = []
+    read = verdict
     verdict = turn_runtime.with_clarify_answer(
         verdict, latest_user_message, carried=state_in.focus.set_clarify
     )
     verdict = _with_account_answer(verdict, state_in.focus.set_clarify)
+    if verdict is not read:
+        held_answered.append("set_clarify")
+    read = verdict
     verdict = turn_runtime.with_set_count_from_text(
         verdict, latest_user_message, carried=state_in.focus.set_page
     )
@@ -4137,6 +4152,8 @@ def _run_stages_body(  # noqa: PLR0915
     verdict = turn_runtime.with_brand_from_offer(
         verdict, latest_user_message, carried=state_in.focus.set_page
     )
+    if verdict is not read:
+        held_answered.append("set_page")
     # Round 3 W3 on PR #833: a class word of this message's own starts a new set.
     verdict = turn_runtime.with_new_set_words(verdict)
     # Fix round 8 on PR #833 (owner retest of round 7): every descriptor the parser
@@ -4225,6 +4242,7 @@ def _run_stages_body(  # noqa: PLR0915
             turn_trace.add("required_ask", {"verdict_rule": required_rule, "ask": (open_ask or {}).get("ask")})
         if required_rule == "required_ask_answer":
             state_in = dataclasses_replace(state_in, pending=None)
+            held_answered.append("required_ask")
         verdict = low_stock_ask.take_words(verdict, _message_text)
 
         # Owner retest of top selling round 4 (27 Sep 2026): inside a ranking, the message
@@ -4238,6 +4256,7 @@ def _run_stages_body(  # noqa: PLR0915
             in_ranking_conversation = False
         if top_selling_rule:
             turn_trace.add("top_selling", {"verdict_rule": top_selling_rule})
+            held_answered.append("top_selling")
         if state_in.focus.status == "top_selling" or state_in.focus.top_selling or (
             jsc.js_string(verdict.get("order_status") or "").strip() == "top_selling"
         ):
@@ -4378,6 +4397,15 @@ def _run_stages_body(  # noqa: PLR0915
                     },
                 )
                 verdict = picked_verdict
+
+        # STUCK-QTY-LOOP (owner, 4 Oct 2026): the ONE rule for every held question, on
+        # the verdict as every reader above left it. A reset clears them all; a message of
+        # a different intent that answers none of them is a new question, and they all go
+        # (`turn/held.py`). Before APPLY, so no arm of it can replay a dropped question.
+        held_before = turn_held.held_slots(state_in)
+        state_in, held_why = turn_held.consume(state_in, verdict, answered=held_answered)
+        if held_why:
+            turn_trace.add("held_dropped", {"why": held_why, "slots": held_before})
 
         # C APPLY, first pass: state and plan from the verdict alone.
         state_out, plan = turn_apply(state_in, verdict, policy)
@@ -6253,6 +6281,46 @@ def _dealer_refers_to_salesman(answer: Any) -> Any:
     return dataclasses_replace(answer, text=text, question=question)
 
 
+def _access_fingerprint(session_factory: SessionFactory, contact_respond_id: str, profile: Any) -> str | None:
+    """STUCK-QTY-LOOP: everything that decides what this contact is told, as one string
+    (`Profile.access_fp`). A held question stamped under another one was built for access
+    the contact no longer has (owner, 4 Oct 2026: availability switched to compact), so
+    `turn/held.py::expire` drops it. The stock mode and the field-reveal grants are read
+    the way the stock tool and `head/access.check_access` read them, on a session of their
+    own so a failed read can never abort the turn's. A read that fails gives None: the
+    access is unknown, and `expire` neither drops nor restamps on an unknown access."""
+    import hashlib
+
+    from app.services.chatbot.head.access import _resolve_contact_with_null_workspace_fallback
+    from app.services.contact_field_reveal_service import granted_keys
+    from app.services.stock_visibility import resolve_policy
+
+    try:
+        with _session(session_factory) as db:
+            space_id = default_space_id(db)
+            mode = getattr(resolve_policy(db, contact_respond_id, space_id), "mode", None)
+            resolved = _resolve_contact_with_null_workspace_fallback(
+                db, contact_id=contact_respond_id, space_id=space_id
+            )
+            reveals = sorted(str(key) for key in (granted_keys(db, resolved) if resolved else []) or [])
+    except Exception:  # noqa: BLE001 - a fingerprint is a profile fact, never the turn
+        logger.warning("chatbot: access fingerprint unreadable for %s", contact_respond_id)
+        return None
+    grants = getattr(profile, "grants", None)
+    facts = [
+        getattr(profile, "tier", None),
+        sorted(grants) if grants is not None else None,
+        getattr(profile, "stock_allowed", None),
+        getattr(profile, "stock_availability_only", None),
+        mode,
+        getattr(profile, "escalation_allowed", None),
+        getattr(profile, "notify_salesman", None),
+        getattr(profile, "packing_list_allowed", None),
+        reveals,
+    ]
+    return hashlib.sha256(json.dumps(facts, default=str).encode()).hexdigest()[:16]
+
+
 def _stock_ask_reply(
     answer: Any,
     state_out: Any,
@@ -6487,6 +6555,9 @@ def _run_answer(
         # back as `session_patch` and writes nothing (D14). Same rule `run_tail` applies
         # for the older lanes, so every asking lane carries its question to the next
         # console or replay turn the same way (finding 2a).
+        # STUCK-QTY-LOOP: the held questions carry the turn and the access they were
+        # (re)asked under, read back by `turn/held.py::expire` on the next turn.
+        state = turn_held.stamp(state, remembered_before, question=getattr(answer, "question", None))
         session_payload = turn_tail.session_payload(state, answer, tail_ctx)
         if not dry_run:
             turn_tail.persist(
@@ -8562,6 +8633,9 @@ def run_tail(
             turn_no=0,
         )
     before = dict(remembered_before or session_state.five_keys(jsc.get(ctx, "session")))
+    if applied is not None:
+        # STUCK-QTY-LOOP: the same stamp the composed arms write (`turn/held.py`).
+        state = turn_held.stamp(state, before, question=question)
     payload = {
         "focus": turn_state.focus_to_wire(state.focus),
         # The lane's OWN question, else the one APPLY carried - the same rule the
