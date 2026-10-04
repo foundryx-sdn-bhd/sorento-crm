@@ -30,6 +30,14 @@ Run from sorento_crm_backend/. Stdout carries counts only; names and phones go t
     python scripts/contact_bulk_setup.py --excel /path/to/dealers.xlsx \\
         --db-url postgresql://user@localhost:5432/dbname \\
         --apply-links /path/to/reviewed.xlsx --actor-email someone@example.com
+
+    # 4. auto links: the clear cases (one surviving, not held, same-named customer per Excel row and
+    #    company) link themselves; the rest go to out/links-review-leftover.xlsx for the review above.
+    #    Dry run first (writes out/auto-links-plan.csv), then add --apply --actor-email.
+    python scripts/contact_bulk_setup.py --excel /path/to/dealers.xlsx \\
+        --db-url postgresql://user@localhost:5432/dbname --out /path/to/out --auto-links
+    docker exec <container> python scripts/contact_bulk_setup.py --excel /tmp/<file>.xlsx \\
+        --db-url "$DATABASE_URL" --out /tmp/contact-bulk --auto-links
 """
 from __future__ import annotations
 
@@ -620,17 +628,13 @@ def _score(a: str, b: str) -> float:
     return SequenceMatcher(None, a.casefold().strip(), b.casefold().strip()).ratio()
 
 
-def links_review(db, path, out_path, *, rules: dict = RULES) -> int:
-    """Write the review sheet: per Excel row and company, the top candidate customers. Links nothing."""
-    entries, _ = parse_workbook(path, rules=rules)
-    groups = _row_groups(entries)
-    found, _ambiguous = _find_contacts(db, {p for g in groups.values() for p in g["phones"]})
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "links review"
-    ws.append(["excel_row", "excel_company", "company_code", "debtor_code", "customer_name", "customer_id", "reason", "link", "survives_merge", "held"])
-    written = 0
-    # Pick every row's candidates first, then read the merge groups of ALL of them in one query.
+REVIEW_HEADER = ["excel_row", "excel_company", "company_code", "debtor_code", "customer_name", "customer_id",
+                 "reason", "link", "survives_merge", "held"]
+
+
+def _candidates(db, groups: dict, found: dict) -> list[dict]:
+    """Per Excel row and company, the top candidate customers with their merge flags: one dict each
+    (`line` is the review-sheet row), survivors first inside each Excel row block."""
     picked: list[tuple] = []
     for row, g in sorted(groups.items()):
         contact_ids = [str(found[p].id) for p in g["phones"] if p in found]
@@ -643,6 +647,7 @@ def links_review(db, path, out_path, *, rules: dict = RULES) -> int:
             ).filter(Customer.company_id == company.id).all()
             ranked = sorted(customers, key=lambda c: (-_score(g["company_name"], c.customer_name or ""), c.customer_code or ""))
             picked.extend((row, g, code, contact_ids, cust) for cust in ranked[:MAX_CANDIDATES])
+    # The merge groups of ALL candidates in one query.
     flags = _merge_flags(db, {(str(c[4].company_id), (c[4].customer_code or "").strip().lower()) for c in picked})
     blocks: dict[int, list] = {}
     for row, g, code, contact_ids, cust in picked:
@@ -655,16 +660,165 @@ def links_review(db, path, out_path, *, rules: dict = RULES) -> int:
         if linked:
             reason = f"already linked ({linked} of {len(contact_ids)} contacts)"
         survives, held = flags.get(str(cust.id), ("Y", "N"))
-        blocks.setdefault(row, []).append(
-            [row, _safe(g["company_name"]), code, _safe(cust.customer_code), _safe(cust.customer_name), str(cust.id), reason, None, survives, held]
-        )
+        blocks.setdefault(row, []).append({
+            "row": row, "code": code, "company_name": g["company_name"], "customer_id": str(cust.id),
+            "customer_code": cust.customer_code, "customer_name": cust.customer_name, "company_id": cust.company_id,
+            "survives": survives, "held": held, "linked": linked, "contact_ids": contact_ids,
+            "line": [row, _safe(g["company_name"]), code, _safe(cust.customer_code), _safe(cust.customer_name),
+                     str(cust.id), reason, None, survives, held],
+        })
+    out: list[dict] = []
     for row in sorted(blocks):
-        for line in sorted(blocks[row], key=lambda l: l[8] != "Y"):  # survivors first, order kept otherwise
-            ws.append(line)
-            written += 1
-    wb.save(out_path)
-    _private(out_path)
-    return written
+        out.extend(sorted(blocks[row], key=lambda c: c["survives"] != "Y"))  # survivors first, order kept otherwise
+    return out
+
+
+def _write_review(path, lines: list) -> None:
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "links review"
+    ws.append(REVIEW_HEADER)
+    for line in lines:
+        ws.append(line)
+    wb.save(path)
+    _private(path)
+
+
+def links_review(db, path, out_path, *, rules: dict = RULES) -> int:
+    """Write the review sheet: per Excel row and company, the top candidate customers. Links nothing."""
+    entries, _ = parse_workbook(path, rules=rules)
+    groups = _row_groups(entries)
+    found, _ambiguous = _find_contacts(db, {p for g in groups.values() for p in g["phones"]})
+    lines = [c["line"] for c in _candidates(db, groups, found)]
+    _write_review(out_path, lines)
+    return len(lines)
+
+
+def _link_contact(db, actor, actor_id, cid: str, customer, result: dict, failure: dict) -> None:
+    """Link one contact to one customer: existing pair skipped, own savepoint, one audit row."""
+    if db.query(RespondContactCustomer).filter(
+        RespondContactCustomer.contact_id == cid, RespondContactCustomer.customer_id == customer.id
+    ).first():
+        result["skipped_existing"] += 1
+        return
+    savepoint = db.begin_nested()
+    try:
+        if actor:
+            audit_context.stamp_actor(actor, db=db)
+        db.add(RespondContactCustomer(
+            contact_id=cid, customer_id=customer.id, company_id=customer.company_id,
+            is_primary=False, source="bulk_setup", linked_by=actor_id,
+        ))
+        db.flush()
+        audit_service.record(
+            db,
+            event="contact.customer_linked_bulk",
+            entity_type="respond_contacts",
+            entity_id=cid,
+            old_values={"customer": None},
+            new_values={"customer": customer.customer_code},
+            description="Customer linked from the contact bulk setup review sheet",
+        )
+        savepoint.commit()
+        db.commit()
+        result["linked"] += 1
+    except Exception as exc:  # noqa: BLE001
+        savepoint.rollback()
+        result["failed"].append({**failure, "error": f"{type(exc).__name__}: {str(exc)[:200]}"})
+
+
+def auto_links(db, path, out_dir, *, apply: bool = False, actor_id: Optional[str] = None, rules: dict = RULES) -> dict:
+    """Link the clear cases. In a block (Excel row, company) EVERY customer of that company whose
+    normalised name equals the Excel company's, that survives the debtor-code merge and is not held,
+    is linked to every found contact of the row (all customers searched, no candidate cap). A block
+    whose contacts are all linked already is left alone; a block with no such customer is
+    needs_human and its candidate rows (held exact matches marked 'held') land in
+    links-review-leftover.xlsx. Dry run by default."""
+    entries, _ = parse_workbook(path, rules=rules)
+    groups = _row_groups(entries)
+    found, _ambiguous = _find_contacts(db, {p for g in groups.values() for p in g["phones"]})
+    names = {p: c.name or "" for p, c in found.items()}  # plain values: commits expire the entities
+    ids = {p: str(c.id) for p, c in found.items()}
+    blocks: dict[tuple, list] = {}
+    for cand in _candidates(db, groups, found):
+        blocks.setdefault((cand["row"], cand["code"]), []).append(cand)
+
+    result: dict = {"auto": [], "already_linked": 0, "needs_human": 0, "linked": 0, "skipped_existing": 0, "failed": []}
+    leftover: list = []
+    company_by_code = {str(c.code): c.id for c in db.query(Company.id, Company.code)}
+    customers_of: dict[str, list] = {}  # no candidate cap here: every customer of the company is searched
+    exact_of: dict[tuple, list] = {}
+    for row, g in sorted(groups.items()):
+        wanted = normalise_name(g["company_name"])
+        for code in sorted(g["companies"]):
+            if code not in company_by_code:
+                continue
+            if code not in customers_of:
+                customers_of[code] = db.query(
+                    Customer.id, Customer.customer_code, Customer.customer_name, Customer.company_id
+                ).filter(Customer.company_id == company_by_code[code]).all()
+            exact_of[(row, code)] = [c for c in customers_of[code] if normalise_name(c.customer_name) == wanted]
+    flags = _merge_flags(db, {(str(c.company_id), (c.customer_code or "").strip().lower()) for v in exact_of.values() for c in v})
+
+    for (row, code), exact in exact_of.items():
+        g = groups[row]
+        contact_ids = [ids[p] for p in g["phones"] if p in found]
+        if not contact_ids:
+            continue
+        cands = blocks.get((row, code), [])
+        linked_ids = {
+            str(c) for (c,) in db.query(RespondContactCustomer.contact_id).filter(
+                RespondContactCustomer.contact_id.in_(contact_ids),
+                RespondContactCustomer.customer_id.in_([c["customer_id"] for c in cands] + [str(c.id) for c in exact]),
+            )
+        }
+        if linked_ids >= set(contact_ids):
+            result["already_linked"] += 1
+            continue
+        clear = [c for c in exact if flags.get(str(c.id), ("Y", "N")) == ("Y", "N")]
+        held = {str(c.id): c for c in exact if flags.get(str(c.id), ("Y", "N"))[1] == "Y"}
+        if not clear:
+            result["needs_human"] += 1
+            shown = set()
+            for c in cands:
+                if c["customer_id"] in held:
+                    c["line"][6] = "held"
+                shown.add(c["customer_id"])
+                leftover.append(c["line"])
+            for cid_, c in held.items():
+                if cid_ not in shown:
+                    leftover.append([row, _safe(g["company_name"]), code, _safe(c.customer_code), _safe(c.customer_name),
+                                     cid_, "held", None, flags[cid_][0], "Y"])
+            continue
+        for hit in clear:
+            result["auto"].append({
+                "excel_row": row, "company_code": code, "customer_id": str(hit.id), "company_id": hit.company_id,
+                "debtor_code": hit.customer_code, "customer_name": hit.customer_name,
+                "contacts": [p for p in g["phones"] if p in found],
+            })
+
+    actor = audit_context.AuditActor(actor_type="user", user_id=actor_id) if actor_id else None
+    plan_rows = []
+    for a in result["auto"]:
+        customer = SimpleNamespace(id=a["customer_id"], company_id=a["company_id"], customer_code=a["debtor_code"])
+        for phone in a["contacts"]:
+            status = "would link"
+            if apply:
+                before = (result["linked"], result["skipped_existing"])
+                _link_contact(db, actor, actor_id, ids[phone], customer, result,
+                              {"excel_row": a["excel_row"], "debtor_code": a["debtor_code"]})
+                status = "linked" if result["linked"] > before[0] else "existing" if result["skipped_existing"] > before[1] else "failed"
+            plan_rows.append([a["excel_row"], a["company_code"], _safe(a["debtor_code"]), _safe(a["customer_name"]),
+                              _safe(names[phone]), status])
+    out_dir = Path(out_dir)
+    plan_path = out_dir / "auto-links-plan.csv"
+    with open(plan_path, "w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["excel_row", "company_code", "debtor_code", "customer_name", "contact", "status"])
+        w.writerows(plan_rows)
+    _private(plan_path)
+    _write_review(out_dir / "links-review-leftover.xlsx", leftover)
+    return result
 
 
 def apply_links(db, path, reviewed_path, *, actor_id: Optional[str], rules: dict = RULES) -> dict:
@@ -711,36 +865,8 @@ def apply_links(db, path, reviewed_path, *, actor_id: Optional[str], rules: dict
             contact = found.get(phone)
             if contact is None:
                 continue
-            cid = contact_ids[phone]
-            if db.query(RespondContactCustomer).filter(
-                RespondContactCustomer.contact_id == cid, RespondContactCustomer.customer_id == customer.id
-            ).first():
-                result["skipped_existing"] += 1
-                continue
-            savepoint = db.begin_nested()
-            try:
-                if actor:
-                    audit_context.stamp_actor(actor, db=db)
-                db.add(RespondContactCustomer(
-                    contact_id=cid, customer_id=customer.id, company_id=customer.company_id,
-                    is_primary=False, source="bulk_setup", linked_by=actor_id,
-                ))
-                db.flush()
-                audit_service.record(
-                    db,
-                    event="contact.customer_linked_bulk",
-                    entity_type="respond_contacts",
-                    entity_id=cid,
-                    old_values={"customer": None},
-                    new_values={"customer": customer.customer_code},
-                    description="Customer linked from the contact bulk setup review sheet",
-                )
-                savepoint.commit()
-                db.commit()
-                result["linked"] += 1
-            except Exception as exc:  # noqa: BLE001
-                savepoint.rollback()
-                result["failed"].append({"excel_row": row, "debtor_code": debtor, "error": f"{type(exc).__name__}: {str(exc)[:200]}"})
+            _link_contact(db, actor, actor_id, contact_ids[phone], customer, result,
+                          {"excel_row": row, "debtor_code": debtor})
     return result
 
 
@@ -776,14 +902,33 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap.add_argument("--out", help="directory for the CSV files (required for a dry run or --apply)")
     ap.add_argument("--links-review", metavar="OUT.xlsx")
     ap.add_argument("--apply-links", metavar="REVIEWED.xlsx")
+    ap.add_argument("--auto-links", action="store_true", help="link the clear contact to customer cases (dry run unless --apply)")
     ap.add_argument("--actor-email")
     ap.add_argument("--debug", action="store_true", help="re-raise errors with the full traceback")
     args = ap.parse_args(argv)
     if not (args.links_review or args.apply_links) and not args.out:
         ap.error("--out is required for a dry run or --apply")
+    if args.auto_links and not args.out:
+        ap.error("--out is required with --auto-links")
+    if (args.apply or args.apply_links) and not args.actor_email:
+        ap.error("--actor-email is required with --apply and --apply-links")
 
     db = _session(args.db_url)
     try:
+        if args.auto_links:
+            out = Path(args.out)
+            out.mkdir(parents=True, exist_ok=True)
+            res = auto_links(db, args.excel, out, apply=args.apply,
+                             actor_id=_actor_id(db, args.actor_email) if args.apply else None)
+            print(f"auto blocks   : {len(res['auto'])}")
+            print(f"auto pairs    : {sum(len(a['contacts']) for a in res['auto'])}")
+            print(f"already linked: {res['already_linked']}")
+            print(f"needs human   : {res['needs_human']}")
+            if args.apply:
+                print(f"linked        : {res['linked']}  skipped_existing: {res['skipped_existing']}  failed: {len(res['failed'])}")
+            else:
+                print("DRY RUN - nothing written. Re-run with --apply.")
+            return 1 if res["failed"] else 0
         if args.links_review:
             n = links_review(db, args.excel, args.links_review)
             print(f"candidate rows written: {n}")
