@@ -161,7 +161,7 @@ class TestToolPickSalesVsOutstanding:
             "tier_gate": None,
             "ctx": {
                 "parse": {"output": _qf(order_status=order_status, entities=[])},
-                "contact": {"id": 437264483},
+                "contact": {"id": 900000008},
                 "access": {"attributes": attributes},
             },
         }
@@ -294,7 +294,7 @@ class TestChannelFromParserOnly:
                 "parse": {
                     "output": _qf(order_status="sales_report", entities=[], sales_channel=sales_channel)
                 },
-                "contact": {"id": 437264483},
+                "contact": {"id": 900000008},
                 "access": {"attributes": list(attributes)},
             },
         }

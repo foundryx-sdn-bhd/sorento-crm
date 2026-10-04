@@ -1,6 +1,6 @@
 {
   "name": "parity-f7-photo-miss",
-  "source": "chatbot-answer-half-reattach-acceptance-criteria.md AC-1702 (F7, hand pass 8): a Product Photos miss must read 'Here's what you want:' with product + attachment_type bullets, 'But no Product Photos matched these. Would you like me to escalate to marketing product team?'. Measured read-only (sorento_ai_automation_rearch): SRTW4002 is a real, active, unique product code (no sibling shares its prefix) with zero product_attachments rows of attachment_type Product Photos, so 'photo for SRTW4002' is a genuine miss on real data. Contact 437264483.",
+  "source": "chatbot-answer-half-reattach-acceptance-criteria.md AC-1702 (F7, hand pass 8): a Product Photos miss must read 'Here's what you want:' with product + attachment_type bullets, 'But no Product Photos matched these. Would you like me to escalate to marketing product team?'. Measured read-only (sorento_ai_automation_rearch): SRTW4002 is a real, active, unique product code (no sibling shares its prefix) with zero product_attachments rows of attachment_type Product Photos, so 'photo for SRTW4002' is a genuine miss on real data. Contact 900000008.",
   "cases": [
     {
       "name": "photo-for-srtw4002-is-a-genuine-miss",

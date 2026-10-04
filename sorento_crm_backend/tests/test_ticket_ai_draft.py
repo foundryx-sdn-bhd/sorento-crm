@@ -30,7 +30,7 @@ from app.services.user_service import UserPermissionService
 from tests._pg_fixture import blank_session
 
 BASE = "/api/v1/sla-management/conversation-sla-tracking"
-PHONE = "+60123456702"
+PHONE = "+60100000003"
 RESPOND_IO_ID = "10025777"
 
 

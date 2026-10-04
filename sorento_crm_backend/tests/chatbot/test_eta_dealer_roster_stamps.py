@@ -1,5 +1,5 @@
 """PR #1329 fix round 2 (owner hand test on :3101 at e5ee59dc, 29 Sep 2026 11:53 MYT,
-contact 437264483, a dealer, prompt v50).
+contact 900000008, a dealer, prompt v50).
 
 Turn 562961e4 "eta srtwc286": the ten-row roster stamped EVERY row "no incoming", while
 turn ca1eb616 "all" fetched ETAs for SRTWC286-SH-NEW, -NEW-200 and -NEW-P. The dealer view

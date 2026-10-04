@@ -1,0 +1,1423 @@
+{
+  "turns": [
+    {
+      "access": {
+        "agent_name": "Order Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": null,
+          "countryCode": "MY",
+          "created_at": 1778415976,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000069"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000069",
+          "id": 900000069,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": null,
+          "locale": null,
+          "phone": "+60900000069",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000026\", \"firstName\": \"ZZT\", \"lastName\": \"Koh\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": null,
+              "firstName": "ZZT-agent",
+              "id": null,
+              "lastName": ""
+            },
+            "countryCode": "MY",
+            "created_at": 1778415976,
+            "email": null,
+            "firstName": "ZZT-900000069",
+            "id": 900000069,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000069",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "7c7dbdfe-c77c-40eb-908e-914e123585a4",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxMjY3ODExNzgVAgASGCBBQzBFQjFGMUQ1Qzk4MkNBNjc5MTI5RkY5RUEzNEVBQQA=",
+            "contactId": 900000069,
+            "message": {
+              "text": "Srt3603-cr sales order    outstanding",
+              "type": "text"
+            },
+            "messageId": 1789211252000000,
+            "timestamp": 1789211252000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "b9bc8bbf-572a-4bf6-acfd-3a2a8710041f",
+          "c37d972a-7a66-4465-9f83-e399e2943c37"
+        ],
+        "focus_after": null,
+        "pending": {
+          "kind": "member_offer",
+          "option_labels": []
+        },
+        "text": "Customer: all customers\nProduct: Srt3603-cr\nDates: all dates\n\nHere's what you want:\n\u2022 product: SRT3603-CR-L (+1 more)\n\nBut no outstanding order matched these. Would you like me to escalate to *Sorento* customer service team?\n\nPlease choose who to route to (reply with the number):\n1. Maryam Ariffin\n2. Cyndi\n3. Sandy Lim\n4. Lin\n5. Nur\n6. Aisyah\n7. Emily\n8. Balqis\n9. Niki\n10. Nurain\n\nIf you have no preference, just reply 'yes' and we'll assign automatically.",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "contact_id",
+              "date_mode",
+              "is_active",
+              "order_status",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_order_management_orders_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "Srt3603-cr",
+                "entity_type": "product",
+                "uuid": "b9bc8bbf-572a-4bf6-acfd-3a2a8710041f"
+              }
+            ],
+            "resolved": true,
+            "token": "Srt3603-cr"
+          }
+        ],
+        "tokens": [
+          "Srt3603-cr"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 11,
+        "recorded_at": "2026-09-12T20:07:38.212400+09:00",
+        "turn_id": "aac65111-b3de-4dfb-b3bb-1191c1fd4933"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 2,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 2,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "contact_id": "900000069",
+            "date_mode": null,
+            "is_active": null,
+            "order_status": "outstanding",
+            "product_ids": [
+              "b9bc8bbf-572a-4bf6-acfd-3a2a8710041f",
+              "c37d972a-7a66-4465-9f83-e399e2943c37"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "attachments": [],
+            "fallback_used": false,
+            "has_result": false,
+            "intro": "No matching results found.",
+            "items": [],
+            "last_updated_at": null,
+            "result_type": "orders"
+          },
+          "tool": "crm_order_management_orders_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "order",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "Srt3603-cr"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_order",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": "outstanding",
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": "specific",
+        "top_n": null,
+        "user_goal": "trying to check the outstanding sales order for Srt3603-cr"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "Order Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": null,
+          "countryCode": "MY",
+          "created_at": 1778415976,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000069"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000069",
+          "id": 900000069,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": null,
+          "locale": null,
+          "phone": "+60900000069",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000026\", \"firstName\": \"ZZT\", \"lastName\": \"Koh\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": null,
+              "firstName": "ZZT-agent",
+              "id": null,
+              "lastName": ""
+            },
+            "countryCode": "MY",
+            "created_at": 1778415976,
+            "email": null,
+            "firstName": "ZZT-900000069",
+            "id": 900000069,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000069",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "54e34085-384d-42e8-be27-f981a0f14e4a",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxMjY3ODExNzgVAgASGCBBQ0IwRTFDMTc5RkMzM0I1QTlFN0VGOTdDQzNERTc0QwA=",
+            "contactId": 900000069,
+            "message": {
+              "text": "No, tq",
+              "type": "text"
+            },
+            "messageId": 1789211285000000,
+            "timestamp": 1789211285000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message"
+        ],
+        "branch_kind": "escalation_declined",
+        "canned": [],
+        "entity_ids": [],
+        "focus_after": null,
+        "pending": null,
+        "text": "Escalation declined.",
+        "tools": []
+      },
+      "resolutions": {
+        "resolutions": [],
+        "tokens": [],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 11,
+        "recorded_at": "2026-09-12T20:08:10.243563+09:00",
+        "turn_id": "391adb0b-9869-47a6-b649-a38a901bf7bf"
+      },
+      "tool_results": [],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": null,
+        "entities": [],
+        "entity_op": "reuse",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": null,
+        "is_active": null,
+        "is_affirmative": false,
+        "match_mode": "and",
+        "message_type": "casual",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to decline the escalation offer"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "Order Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": null,
+          "countryCode": "MY",
+          "created_at": 1778415976,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000069"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000069",
+          "id": 900000069,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": null,
+          "locale": null,
+          "phone": "+60900000069",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000026\", \"firstName\": \"ZZT\", \"lastName\": \"Koh\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": null,
+              "firstName": "ZZT-agent",
+              "id": null,
+              "lastName": ""
+            },
+            "countryCode": "MY",
+            "created_at": 1778415976,
+            "email": null,
+            "firstName": "ZZT-900000069",
+            "id": 900000069,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000069",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "79d50168-2bd5-4793-99bb-396fc1e530c7",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxMjY3ODExNzgVAgASGCBBQzJCOTEyMTk2OTkyN0E0QzJCMjhDOUY4OTQyNUMwMgA=",
+            "contactId": 900000069,
+            "message": {
+              "text": "Srtwt7443 sales order outstanding for IB",
+              "type": "text"
+            },
+            "messageId": 1789211341000000,
+            "timestamp": 1789211341000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [],
+        "focus_after": null,
+        "pending": {
+          "kind": "escalation_offer",
+          "option_labels": []
+        },
+        "text": "Which customer do you mean? Please choose:\n1. BM SALES & SERVICES SDN BHD - [IBORN] (MCH) - no DO\n2. JOO SENG HARDWARE SDN BHD - [IBORN] (MCH) - no DO\n3. WISER MARKETING - [IBORN] (MCH) - no DO\n4. BP EXCEL HARDWARE TRADING SDN BHD - [IBORN] (MCH) - no DO\n5. DILOOMA SDN BHD - [IBORN] (MCH) - no DO\n6. CHIN CHUN HARDWARE SDN BHD - [IBORN] (MCH) - no DO\n7. TOONG STAR SDN BHD - [IBORN] (MCH) - no DO\n8. LTL GLOBAL SDN BHD - [IBORN] (MCH) - no DO\n\nNone of these have a recent DO.",
+        "tools": []
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [],
+            "resolved": false,
+            "token": "Srtwt7443"
+          },
+          {
+            "matches": [],
+            "resolved": false,
+            "token": "IB"
+          }
+        ],
+        "tokens": [
+          "Srtwt7443",
+          "IB"
+        ],
+        "unresolved_tokens": [
+          "Srtwt7443",
+          "IB"
+        ]
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 11,
+        "recorded_at": "2026-09-12T20:09:06.188729+09:00",
+        "turn_id": "2835e6b4-57a2-49eb-8ca5-b2d82578897a"
+      },
+      "tool_results": [],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "order",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "Srtwt7443"
+          },
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "customer",
+            "raw": "IB"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_order",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": "so_outstanding",
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": "specific",
+        "top_n": null,
+        "user_goal": "trying to check the outstanding sales order for IB for Srtwt7443"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "Order Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": null,
+          "countryCode": "MY",
+          "created_at": 1778415976,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000069"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000069",
+          "id": 900000069,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": null,
+          "locale": null,
+          "phone": "+60900000069",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000026\", \"firstName\": \"ZZT\", \"lastName\": \"Koh\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": null,
+              "firstName": "ZZT-agent",
+              "id": null,
+              "lastName": ""
+            },
+            "countryCode": "MY",
+            "created_at": 1778415976,
+            "email": null,
+            "firstName": "ZZT-900000069",
+            "id": 900000069,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000069",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "20be9ea1-4f32-4fa0-85f4-f0fe6fe7547f",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxMjY3ODExNzgVAgASGCBBQzk4ODI3MjdBM0Q0QzUxNkQ2RjRFMUJENUMyNDVBRQA=",
+            "contactId": 900000069,
+            "message": {
+              "text": "Srtwt7443 sales order outstanding for project",
+              "type": "text"
+            },
+            "messageId": 1789211395000000,
+            "timestamp": 1789211395000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message",
+          "send_attachments"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "2cda24b3-979e-4ca3-9ec9-c7430e5cfbbe",
+          "76633903-32a2-4937-9daf-c1fe6cdc2137"
+        ],
+        "focus_after": null,
+        "pending": {
+          "kind": "team_pick",
+          "option_labels": [
+            "orders"
+          ]
+        },
+        "text": "Customer: all customers\nProduct: Srtwt7443\nDates: all dates\n\nHere is the outstanding SO I found.\n\n1. *SO Number:* SO245246\n*Product Code:* SRTWT7443\n*Outstanding Qty:* 156\n*Order Date:* 2022-12-14\n\n2. *SO Number:* SO313699\n*Product Code:* SRTWT7443\n*Outstanding Qty:* 420\n*Order Date:* 2024-08-01\n\n3. *SO Number:* SO314876\n*Product Code:* SRTWT7443\n*Outstanding Qty:* 56\n*Order Date:* 2024-08-09\n\n4. *SO Number:* SO325707\n*Product Code:* SRTWT7443\n*Outstanding Qty:* 2\n*Order Date:* 2024-11-04\n\n5. *SO Number:* SO325711\n*Product Code:* SRTWT7443\n*Outstanding Qty:* 102\n*Order Date:* 2024-11-04\n\n6. *SO Number:* SO331506\n*Product Code:* SRTWT7443\n*Outstanding Qty:* 34\n*Order Date:* 2024-12-18\n\n7. *SO Number:* SO331785\n*Product Code:* SRTWT7443\n*Outstanding Qty:* 205\n*Order Date:* 2024-12-20\n\n8. *SO Number:* SO331785\n*Product Code:* SRTWT7443\n*Outstanding Qty:* 205\n*Order Date:* 2024-12-20\n\n9. *SO Number:* SO335289\n*Product Code:* SRTWT7443\n*Outstanding Qty:* 210\n*Order Date:* 2025-01-17\n\n10. *SO Number:* SO335289\n*Product Code:* SRTWT7443\n*Outstanding Qty:* 315\n*Order Date:* 2025-01-17\n\n11. *SO Number:* SO335294\n*Product Code:* SRTWT7443\n*Outstanding Qty:* 315\n*Order Date:* 2025-01-17\n\n12. *SO Number:* SO335294\n*Product Code:* SRTWT7443\n*Outstanding Qty:* 210\n*Order Date:* 2025-01-17\n\n13. *SO Number:* SO341788\n*Product Code:* SRTWT7443\n*Outstanding Qty:* 788\n*Order Date:* 2025-03-17\n\n14. *SO Number:* SO358261\n*Product Code:* SRTWT7443\n*Outstanding Qty:* 28\n*Order Date:* 2025-07-15\n\n15. *SO Number:* SO358264\n*Product Code:* SRTWT7443\n*Outstanding Qty:* 220\n*Order Date:* 2025-07-15\n\n16. *SO Number:* SO362120\n*Product Code:* SRTWT7443\n*Outstanding Qty:* 5\n*Order Date:* 2025-08-08\n\n17. *SO Number:* SO364172\n*Product Code:* SRTWT7443\n*Outstanding Qty:* 18\n*Order Date:* 2025-08-21\n\n18. *SO Number:* SO368870\n*Product Code:* SRTWT7443\n*Outstanding Qty:* 364\n*Order Date:* 2025-09-24\n\n19. *SO Number:* SO368871\n*Product Code:* SRTWT7443\n*Outstanding Qty:* 364\n*Order Date:* 2025-09-24\n\n20. *SO Number:* SO368872\n*Product Code:* SRTWT7443\n*Outstanding Qty:* 364\n*Order Date:* 2025-09-24",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "contact_id",
+              "date_mode",
+              "is_active",
+              "order_status",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_order_management_orders_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "Srtwt7443",
+                "entity_type": "product",
+                "uuid": "2cda24b3-979e-4ca3-9ec9-c7430e5cfbbe"
+              }
+            ],
+            "resolved": true,
+            "token": "Srtwt7443"
+          }
+        ],
+        "tokens": [
+          "Srtwt7443"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 11,
+        "recorded_at": "2026-09-12T20:10:00.268260+09:00",
+        "turn_id": "36ade1bd-2a9d-438a-b838-1e6ab38d2414"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 2,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 2,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "contact_id": "900000069",
+            "date_mode": null,
+            "is_active": null,
+            "order_status": "so_outstanding",
+            "product_ids": [
+              "76633903-32a2-4937-9daf-c1fe6cdc2137",
+              "2cda24b3-979e-4ca3-9ec9-c7430e5cfbbe"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "bytes": 8988,
+            "head": "{\"result_type\": \"so_outstanding\", \"intro\": \"Here is the outstanding SO I found.\", \"items\": [{\"title\": \"SO245246\", \"fields\": [{\"key\": \"so_number\", \"label\": \"SO Number\", \"value\": \"SO245246\"}, {\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWT7443\"}, {\"key\": \"outstanding_qty\", \"label\": \"Outstanding Qty\", \"value\": \"156\"}, {\"key\": \"order_date\", \"label\": \"Order Date\", \"value\": \"2022-12-14\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SO313699\", \"fields\": [{\"key\": \"so_number\", \"label\": \"SO Number\", \"value\": \"SO313699\"}, {\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWT7443\"}, {\"key\": \"outstanding_qty\", \"label\": \"Outstanding Qty\", \"value\": \"420\"}, {\"key\": \"order_date\", \"label\": \"Order Date\", \"value\": \"2024-08-01\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SO314876\", \"fields\": [{\"key\": \"so_number\", \"label\": \"SO Number\", \"value\": \"SO314876\"}, {\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWT7443\"}, {\"key\": \"outstanding_qty\", \"label\": \"Outstanding Qty\", \"value\": \"56\"}, {\"key\": \"order_date\", \"label\": \"Order Date\", \"value\": \"2024-08-09\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SO325707\", \"fields\": [{\"key\": \"so_number\", \"label\": \"SO Number\", \"value\": \"SO325707\"}, {\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWT7443\"}, {\"key\": \"outstanding_qty\", \"label\": \"Outstanding Qty\", \"value\": \"2\"}, {\"key\": \"order_date\", \"label\": \"Order Date\", \"value\": \"2024-11-04\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SO325711\", \"fields\": [{\"key\": \"so_number\", \"label\": \"SO Number\", \"value\": \"SO325711\"}, {\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWT7443\"}, {\"key\": \"outstanding_qty\", \"label\": \"Outstanding Qty\", \"value\": \"102\"}, {\"key\": \"order_date\", \"label\": \"Order Date\", \"value\": \"2024-11-04\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SO331506\", \"fields\": [{\"key\": \"so_number\", \"label\": \"SO Number\", \"value\": \"SO331506\"}, {\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWT7443\"}, {\"key\": \"outstanding_qty\", \"label\": \"Outstanding Qty\", \"value\": \"34\"}, {\"key\": \"order_date\", \"label\": \"Order Date\", \"value\": \"2024-12-18\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SO331785\", \"fields\": [{\"key\": \"so_number\", \"label\": \"SO Number\", \"value\": \"SO331785\"}, {\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWT7443\"}, {\"key\": \"outstanding_qty\", \"label\": \"Outstanding Qty\", \"value\": \"205\"}, {\"key\": \"order_date\", \"label\": \"Order Date\", \"value\": \"2024-12-20\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SO331785\", \"fields\": [{\"key\": \"so_number\", \"label\": \"SO Number\", \"value\": \"SO331785\"}, {\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWT7443\"}, {\"key\": \"outstanding_qty\", \"label\": \"Outstanding Qty\", \"value\": \"205\"}, {\"key\": \"order_date\", \"label\": \"Order Date\", \"value\": \"2024-12-20\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SO335289\", \"fields\": [{\"key\": \"so_number\", \"label\": \"SO Number\", \"value\": \"SO335289\"}, {\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWT7443\"}, {\"key\": \"outstanding_qty\", \"label\": \"Outstanding Qty\", \"value\": \"210\"}, {\"key\": \"order_date\", \"label\": \"Order Date\", \"value\": \"2025-01-17\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SO335289\", \"fields\": [{\"key\": \"so_number\", \"label\": \"SO Number\", \"value\": \"SO335289\"}, {\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWT7443\"}, {\"key\": \"outstanding_qty\", \"label\": \"Outstanding Qty\", \"value\": \"315\"}, {\"key\": \"order_date\", \"label\": \"Order Date\", \"value\": \"2025-01-17\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SO335294\", \"fields\": [{\"key\": \"so_number\", \"label\": \"SO Number\", \"value\": \"SO335294\"}, {\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWT7443\"}, {\"key\": \"outstanding_qty\", \"label\": \"Outstanding Qty\", \"value\": \"315\"}, {\"key\": \"order_date\", \"label\": \"Order Date\", \"value\": \"2025-01-17\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SO335294\", \"fields\": [{\"key\": \"so_number\", \"label\": \"SO Number\", \"value\": \"SO335294\"}, {\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWT7443\"}, {\"key\": \"outstanding_qty\", \"label\": \"Outstanding Qty\", \"value\": \"210\"}, {\"key\": \"order_date\", \"label\": \"Order Date\", \"value\": \"2025-01-17\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SO341788\", \"fields\": [{\"key\": \"so_number\", \"label\": \"SO Number\", \"value\": \"SO341788\"}, {\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWT7443\"}, {\"key\": \"outstanding_qty\", \"label\": \"Outstanding Qty\", \"value\": \"788\"}, {\"key\": \"order_date\", \"label\": \"Order Date\", \"value\": \"2025-03-17\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SO358261\", \"fields\": [{\"key\": \"so_number\", \"label\": \"SO Number\", \"value\": \"SO358261\"}, {\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWT7443\"}, {\"key\": \"outstanding_qty\", \"label\": \"Outstanding Qty\", \"value\": \"28\"}, {\"key\": \"order_date\", \"label\": \"Order Date\", \"value\": \"2025-07-15\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SO358264\", \"fields\": [{\"key\": \"so_number\", \"label\": \"SO Number\", \"value\": \"SO358264\"}, {\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWT7443\"}, {\"key\": \"outstanding_qty\", \"label\": \"Outstanding Qty\", \"value\": \"220\"}, {\"key\": \"order_date\", \"label\": \"Order Date\", \"value\": \"2025-07-15\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SO362120\", \"fields\": [{\"key\": \"so_number\", \"label\": \"SO Number\", \"value\": \"SO362120\"}, {\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWT7443\"}, {\"key\": \"outstanding_qty\", \"label\": \"Outstanding Qty\", \"value\": \"5\"}, {\"key\": \"order_date\", \"label\": \"Order Date\", \"value\": \"2025-08-08\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SO364172\", \"fields\": [{\"key\": \"so_number\", \"label\": \"SO Number\", \"value\": \"SO364172\"}, {\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWT7443\"}, {\"key\": \"outstanding_qty\", \"label\": \"Outstanding Qty\", \"value\": \"18\"}, {\"key\": \"order_date\", \"label\": \"Order Date\", \"value\": \"2025-08-21\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SO368870\", \"fields\": [{\"key\": \"so_number\", \"label\": \"SO Number\", \"value\": \"SO368870\"}, {\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWT7443\"}, {\"key\": \"outstanding_qty\", \"label\": \"Outstanding Qty\", \"value\": \"364\"}, {\"key\": \"order_date\", \"label\": \"Order Date\", \"value\": \"2025-09-24\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SO368871\", \"fields\": [{\"key\": \"so_number\", \"label\": \"SO Number\", \"value\": \"SO368871\"}, {\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWT7443\"}, ",
+            "truncated": true
+          },
+          "tool": "crm_order_management_orders_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "order",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "Srtwt7443"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_order",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": "so_outstanding",
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to check the outstanding sales order for Srtwt7443 for project"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "Order Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": null,
+          "countryCode": "MY",
+          "created_at": 1778415976,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000069"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000069",
+          "id": 900000069,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": null,
+          "locale": null,
+          "phone": "+60900000069",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000026\", \"firstName\": \"ZZT\", \"lastName\": \"Koh\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": null,
+              "firstName": "ZZT-agent",
+              "id": null,
+              "lastName": ""
+            },
+            "countryCode": "MY",
+            "created_at": 1778415976,
+            "email": null,
+            "firstName": "ZZT-900000069",
+            "id": 900000069,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000069",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "26a532b1-dcaa-4371-9752-f550be17c10c",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxMjY3ODExNzgVAgASGCBBQ0QzMEYxRUEyQkNBN0M1MjgwRjBGNTQyNEFCRTRCMAA=",
+            "contactId": 900000069,
+            "message": {
+              "text": "Can show customer name?",
+              "type": "text"
+            },
+            "messageId": 1789211473000000,
+            "timestamp": 1789211473000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message",
+          "send_attachments"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "2cda24b3-979e-4ca3-9ec9-c7430e5cfbbe",
+          "76633903-32a2-4937-9daf-c1fe6cdc2137"
+        ],
+        "focus_after": null,
+        "pending": {
+          "kind": "team_pick",
+          "option_labels": [
+            "orders"
+          ]
+        },
+        "text": "Customer: all customers\nProduct: Srtwt7443\nDates: all dates\n\nHere are the orders I found.\n\n1. *Order Number:* SMC202609-0073\n*Customer:* REURBAN DESIGN & BUILD SDN BHD (PROJECT - CASH)\n*Order Date:* 10/09/2026\n*Actual Delivery Date:* 11/09/2026\n*Status:* Picked Up / In Transit\n*Pickup Time:* 08:51:00\n*Transporter:* SORENTO\n*Driver:* DRIVER M\n*Lorry Plate:* PLATE-38\n*Warehouse:* BRW\n*Products:* SRTWCX8608-RL (6), SRTWCY8608 (6), SRTWC8608-SC (6), WESERP10B (6), C-FH14 (6), CB2154-DIY (6), SRT59-CR (6), SRT393-18 (2), SRTWT7203 (4), SRTWT7443 (6), C-FH14 (4), B2155-NL-BLUE (4), SRTWB1543 (4), SRTWB245 (4), SRTPW0035-CR (8), CBT001-NL (4), TPE-9203 (6), SRT2403-CR (6)\n\n2. *Order Number:* SMC202609-0067\n*Customer:* MURO WALL SDN BHD (PROJECT)\n*Order Date:* 09/09/2026\n*Actual Delivery Date:* 10/09/2026\n*Status:* Picked Up / In Transit\n*Pickup Time:* 09:10:00\n*Transporter:* SORENTO\n*Driver:* DRIVER AD\n*Lorry Plate:* PLATE-26\n*Warehouse:* BRW\n*Products:* SRT202-GM (3), SRTWT810-GM (3), SRT320-GM (3), SRT2413-GM (2), SRT371-1-GM (3), SRTWT7443-GM (3), SRT2408-GM (1), SRTW1000-NEW (3)\n\n3. *Order Number:* 202609-1351\n*Customer:* FULLSHUN SANITARYWARE SDN BHD [A/C I]\n*Order Date:* 07/09/2026\n*Actual Delivery Date:* 09/09/2026\n*Status:* Picked Up / In Transit\n*Pickup Time:* 20:45:00\n*Transporter:* SORENTO\n*Driver:* DRIVER X\n*Lorry Plate:* PLATE-34\n*Warehouse:* BRW\n*Products:* SRTSH2626-GM (3), SRTKT74SS-GM (1), SRTWT7443-GM (5), SRTWT7443-GM (1), SRT206-GM (20), SRT206-GM (3), SRTWT902 (10), SRTWT902 (1)\n\n4. *Order Number:* 202609-1282\n*Customer:* S TWO SANITARY WARE SDN BHD [A/C I]\n*Order Date:* 07/09/2026\n*Actual Delivery Date:* 08/09/2026\n*Status:* Picked Up / In Transit\n*Pickup Time:* 09:13:00\n*Transporter:* SORENTO\n*Driver:* DRIVER M\n*Lorry Plate:* PLATE-3\n*Warehouse:* BRW\n*Products:* SRTWT8249 (4), SRTWT7443-GM (2)\n\n5. *Order Number:* 202609-1387\n*Customer:* KBO LOGISTICS & SUPPLY SDN BHD [A/C I]\n*Order Date:* 07/09/2026\n*Actual Delivery Date:* 08/09/2026\n*Status:* Picked Up / In Transit\n*Pickup Time:* 09:29:00\n*Transporter:* SORENTO\n*Driver:* DRIVER N\n*Lorry Plate:* PLATE-21\n*Warehouse:* BRW\n*Products:* SRT369-5-GM (10), SRTWT5830-BL (5), SRTKT1862SS (4), SRTKT1862SS (1), SRTSS3220 (6), SRTWT7443 (7), SRTWT7443 (2), SRT1369-3-FRG (3), SRT2402-FRG (1), SRT70-CR (20), SRT70-CR (4)\n\n6. *Order Number:* PS202609-0144\n*Customer:* PEMBINAAN INFRA E&J SDN BHD (PROJECT)\n*Order Date:* 08/09/2026\n*Actual Delivery Date:* 08/09/2026\n*Status:* Picked Up / In Transit\n*Pickup Time:* 09:29:00\n*Transporter:* SORENTO\n*Driver:* DRIVER N\n*Lorry Plate:* PLATE-21\n*Warehouse:* BRW\n*Products:* SRTWT7413 (24), C-FHSS12 (68), B2155-NL-BLUE (68), SRTWT7443 (68), C-FHSS12 (68), B2155-NL-BLUE (68), TPE-9203 (68), SRTSA830-PJ (68), SRTSH22712 (68), SRTWT2215 (40), PT-PCT (224), SRT73-CR (68), SRTWT907SS (68), SRT1000-CR (68), C-FHSS12 (68), B2155-NL-BLUE (68), SRTWT7443 (68), C-FHSS12 (68), B2155-NL-BLUE (68), TPE-9203 (68), SRTSA830-PJ (68), SRTSH22712 (68), SRTWT2215 (40), PT-PCT (224), SRT73-CR (68), SRTWT907SS (68), SRT1000-CR (68)\n\n7. *Order Number:* PS202609-0116\n*Customer:* ECO WORLD TRADING SDN BHD (PROJECT)\n*Order Date:* 07/09/2026\n*Actual Delivery Date:* 08/09/2026\n*Status:* Picked Up / In Transit\n*Pickup Time:* 10:08:00\n*Transporter:* SORENTO\n*Driver:* DRIVER AD\n*Lorry Plate:* PLATE-26\n*Warehouse:* BRW\n*Products:* SRTPCAT123 (8), B2155-NL-BLUE (64), C-FH14 (64), SRTUFV101 (40), TPE-9203-300 (48), TPE-9203 (8), SRTPW0035 (56), SRTWT7443 (48), C-FH16 (48), SRTSC07 (8), C-FH14 (8), CB81CR-PJ (64), CB1178A-SS-NEW (64), DURO9548-WHITE (32), SRT392-24 (8), SRT5732 (8), TPE-9201-300 (81), CB2829-DIY (81), C-FH14 (81), CB2805A-DIY (8), TPE-9201-300 (77)\n\n8. *Order Number:* 202609-1542\n*Customer:* PSM HOME CENTRE SDN BHD [A/C I]\n*Order Date:* 08/09/2026\n*Actual Delivery Date:* 08/09/2026\n*Status:* Picked Up / In Transit\n*Pickup Time:* 17:08:00\n*Transporter:* SORENTO\n*Driver:* DRIVER AE\n*Lorry Plate:* PLATE-36\n*Warehouse:* BRW\n*Products:* SRT764-24-GM (4), SRT394-18-GM (4), SRTW5000 (10), SRTW2600 (10), SRTW1100-BL (4), SRTSS8720 (2), SRTWT2219 (3), SRTWT7443 (2), SRTWT7202-BL (2)\n\n9. *Order Number:* REP202609-0149\n*Customer:* EUROTAN ENTERPRISE SDN BHD [A/C I]\n*Order Date:* 07/09/2026\n*Actual Delivery Date:* 08/09/2026\n*Status:* Picked Up / In Transit\n*Pickup Time:* 09:51:00\n*Transporter:* SORENTO\n*Driver:* DRIVER B\n*Lorry Plate:* PLATE-34\n*Warehouse:* BRW\n*Products:* SRTKS2405 (1), SRTKS8845 (1), SRTKS1045 (1), SRTKS6647 (1), SRTKS7846 (1), SRTKS6547-BL (1), SRTKS6647-BL (1), SRTKS7846-BL (1), SRTKS6042-BL (1), SRTKS8835-BL (1), SRTKS915 (1), SRTKS8845-BL (1), SRTKS1045-BL (1), SRTKS2433 (1), SRTKS2435 (1), SRTKS7081 (1), SRTKS2433-BL (1), SRTKS2435-BL (1), SRTKS7082-BL (1), SRTKS8835 (1), SRTKS1035 (1), SRTKS8151 (1), SRTKT1633SS-BL (1), SRTKT1635SS-GM (1), SRTKT73SS (1), SRTKT73SS-BL (1), SRTKT71SS-FRG (1), SRTKT71SS-GM (1), SRTKT72SS-BL (1), SRTWT5830-BL (1), SRTWT5825 (1), SRTWT7443-GM (1), SRTWT6804-RG (1), SRTWT6824-GM (1), SRTWF12C-GY (1)\n\n10. *Order Number:* 202609-0802\n*Customer:* LSTC HARDWARE SDN BHD [A/C I]\n*Order Date:* 03/09/2026\n*Actual Delivery Date:* 07/09/2026\n*Status:* Picked Up / In Transit\n*Pickup Time:* 10:29:00\n*Transporter:* SORENTO - ASAC\n*Driver:* DRIVER P\n*Lorry Plate:* PLATE-24\n*Warehouse:* BRW\n*Products:* SRT364-HP (10), SRT364-HP (3), SRTWT7443 (3), SRTWT7443 (1)\n\n11. *Order Number:* PS202609-0019\n*Customer:* SETIA-WOOD INDUSTRIES SDN BHD (PROJECT)\n*Order Date:* 01/09/2026\n*Actual Delivery Date:* 07/09/2026\n*Status:* Picked Up / In Transit\n*Pickup Time:* 10:13:00\n*Transporter:* SUNCREST\n*Driver:* DRIVER AF\n*Lorry Plate:* PLATE-6\n*Warehouse:* BRW\n*Products:* SRTWT5908 (220), C-FH14 (25), CB313 (100), SRT73-CR (100), CB2805A-DIY (50), SRTWB7014 (25), SRTPW0035 (25), TPE-9203 (25), SRTWT7443 (25), C-FH14 (125), SRTSH22611 (25), C-FH14 (75), SRTWB243 (75), SRTPW0035 (75), TPE-9203 (75), SRTWT7445-NEW (75), SRTSA831-PJ (45), SRTSH22512-N (75), CKS1050 (25), CKSW015 (25), TPE-9201-300 (25), CB2829-DIY (25), C-FH14 (25)\n\n12. *Order Number:* 202609-0914\n*Customer:* AT & E BUILDING MATERIALS [A/C I]\n*Order Date:* 07/09/2026\n*Actual Delivery Date:* 07/09/2026\n*Status:* Picked Up / In Transit\n*Pickup Time:* 16:40:00\n*Transporter:* LAW TRANSPORT\n*Driver:* DRIVER AG\n*Lorry Plate:* PLATE-39\n*Warehouse:* BRW\n*Products:* SRTPW0035-CR (2), SRTWT7443 (8), SRTWT2215 (6), SRT6630 (22), SRTWT7408 (8), SRTSH1040 (8), SRT59-CR (15)\n\n13. *Order Number:* REP202609-0125\n*Customer:* GRAND WATERHOUSE SDN BHD [A/C I]\n*Order Date:* 07/09/2026\n*Actual Delivery Date:* 07/09/2026\n*Status:* Picked Up / In Transit\n*Pickup Time:* 18:59:00\n*Transporter:* SORENTO\n*Driver:* DRIVER Z\n*Lorry Plate:* PLATE-7\n*Warehouse:* BRW\n*Products:* SRTWT7445 (1), SRTWT7447-RG (1), SRTWT7445-LV-GM (1), SRTWT2207 (1), SRTWT7447-BL (1), SRTWT6803-RG (1), SRTWT6801 (1), SRTWT7443-GM (1), SRTWT7443 (1), SRTWT5857-FRG (1), SRTWT5877-GY (1), SRTWT6821-GM (1), SRTWT5841-RG (1), SRTWT7203 (1), SRTWT8203 (1), SRTWT6855-GY (1), SRTWT7449-RG (1), SRTWT7203-GM (1), SRTWT7203-BL (1), SRTWT7448 (1), SRTWT6805 (1), SRTWT7449-BL (1), SRTWT6825-GM (1), SRTWT6804-RG (1), SRTWT8246-RG (1)\n\n14. *Order Number:* PS202609-0097\n*Customer:* SETIA-WOOD INDUSTRIES SDN BHD (PROJECT)\n*Order Date:* 04/09/2026\n*Actual Delivery Date:* 04/09/2026\n*Status:* Picked Up / In Transit\n*Pickup Time:* 09:46:00\n*Transporter:* SORENTO\n*Driver:* DRIVER AD\n*Lorry Plate:* PLATE-26\n*Warehouse:* BRW\n*Products:* SRTWT162-BLUE (9), SRTWT8213 (20), SRTWT907SS (32), C-FH14 (28), SRTWT6806 (2), SRTWT7443 (10), CB2807-DIY (2), CBT001-B (12), 32MM TAIL PIECE COUPLING (12), SRTW5000 (2), CB600 (10), TPE-9204 (2), SRTSA831-PJ (8), SRTSH22512-N (8), SRTWT8213 (23), SRTSA-SS (2), SRTWT7408 (6), SRTSS3240 (2), SRTWT8224 (6), SRTWT807 (4), CB55CR-PJ (8), SRT320-CR (4), SRT2403-CR (10), SRT2302-HP (2), TPE-9201-300 (2), CB2829-SS-CR-DIY (2), SRTWT2215 (14), CB6638 (6), CB6633-PP (88), SRTA8046 (24), TPE-9101 (24), SRT382-6-DIY (6), SRTWT162-RED (30), SRTWT167-BLUE (48)\n\n15. *Order Number:* SMC202609-0026\n*Customer:* MURO WALL SDN BHD (PROJECT)\n*Order Date:* 02/09/2026\n*Actual Delivery Date:* 04/09/2026\n*Status:* Picked Up / In Transit\n*Pickup Time:* 09:46:00\n*Transporter:* SORENTO\n*Driver:* DRIVER AD\n*Lorry Plate:* PLATE-26\n*Warehouse:* BRW\n*Products:* SRTBF31514-NEW (1), SRTWT902-GM (1), SRT107-GM (1), SRT332-GM (1), SRT371-1-GM (1), SRTWT7443-GM (1), C-FH14 (1), SRTWT907SS (1)\n\n16. *Order Number:* PS202609-0011\n*Customer:* BUIMACO SDN BHD (PROJECT)\n*Order Date:* 01/09/2026\n*Actual Delivery Date:* 03/09/2026\n*Status:* Picked Up / In Transit\n*Pickup Time:* 13:03:00\n*Transporter:* TRANSMARK\n*Driver:* DRIVER AH\n*Lorry Plate:* PLATE-1\n*Warehouse:* BRW\n*Products:* SRT78-CR (88), CSH2062 (29), B2155-NL-BLUE (62), C-FH14 (62), SRT78-CR (62), CB1178A-SS-NEW (62), SRT1000-CR (62), CB230SS (20), TPE-9203 (20), SRTWB1514-FULL GLAZE (42), SRTWHBWP (42), CB230SS (42), TPE-9203 (42), SRTWT7443 (62), B2155-NL-BLUE (62), C-FH14 (62), CSA400AA (20), CSH2062 (20), CB2519SS-DIY (20), CB2805A-DIY (60), PALLET (2), PALLET (3)\n\n17. *Order Number:* SMC202609-0022\n*Customer:* BUILD ART MARKETING SDN BHD (PROJECT)\n*Order Date:* 02/09/2026\n*Actual Delivery Date:* 03/09/2026\n*Status:* Picked Up / In Transit\n*Pickup Time:* 09:02:00\n*Transporter:* SORENTO\n*Driver:* DRIVER X\n*Lorry Plate:* PLATE-38\n*Warehouse:* BRW\n*Products:* SRTWB1610 (2), SRTWT7443 (2), SRTPW0035-CR (2), CBT001-NL (2)\n\n18. *Order Number:* PS202609-0078\n*Customer:* BUILTOP GROUP SDN BHD (PROJECT)\n*Order Date:* 03/09/2026\n*Actual Delivery Date:* 03/09/2026\n*Status:* Picked Up / In Transit\n*Pickup Time:* 10:51:00\n*Transporter:* SUNCREST\n*Driver:* DRIVER J\n*Lorry Plate:* PLATE-9\n*Warehouse:* BRW\n*Products:* SRTWB1515 (30), TPE-9203 (136), SRTWT7443 (136), SRTWT6230 (16)\n\n19. *Order Number:* PS202609-0085\n*Customer:* ECO WORLD TRADING SDN BHD (PROJECT)\n*Order Date:* 03/09/2026\n*Actual Delivery Date:* 03/09/2026\n*Status:* Picked Up / In Transit\n*Pickup Time:* 09:53:00\n*Transporter:* SORENTO\n*Driver:* DRIVER S\n*Lorry Plate:* PLATE-27\n*Warehouse:* BRW\n*Products:* SRTPCAT123 (8), B2155-NL-BLUE (64), C-FH14 (64), SRTUB206 (40), SRTUFV101 (40), SRTWB7055 (48), SRTWB246 (8), TPE-9203-300 (48), TPE-9203 (8), SRTPW0035 (56), SRTWT7443 (48), C-FH16 (48), SRTSC07 (8), C-FH14 (8), CB81CR-PJ (64), CB1178A-SS-NEW (64), DURO9548-WHITE (32), SRT392-24 (8), SRT5732 (8), CKS1050 (81), CKSW015 (81), TPE-9201-300 (81), CB2829-DIY (81), C-FH14 (81), CB2805A-DIY (8)\n\n20. *Order Number:* 202609-0701\n*Customer:* ZHIN HENG HOMEMART SDN BHD [A/C I]\n*Order Date:* 02/09/2026\n*Actual Delivery Date:* 02/09/2026\n*Status:* Picked Up / In Transit\n*Pickup Time:* 20:26:00\n*Transporter:* SORENTO\n*Driver:* DRIVER AI\n*Lorry Plate:* PLATE-7\n*Warehouse:* BRW\n*Products:* SRTWT6204-MBL (5), SRTWT6204-MBL (1), SRTWT6827-GM (5), SRTWT6827-GM (1), SRTWT8239-GM (5), SRTWT8239-GM (1), SRTWT8203 (5), SRTWT8203 (1), SRTWT7443-GM (5), SRTWT7443-GM (1), SRTWT6806 (5), SRTWT6806 (1), SRTWT7449-RG (5), SRTWT7449-RG (1), SRTWT6204-MBL (6)\n\n_Data last updated: 11/09/2026 17:41:11_",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "contact_id",
+              "date_mode",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_order_management_orders_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [],
+        "tokens": [],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 11,
+        "recorded_at": "2026-09-12T20:11:18.201844+09:00",
+        "turn_id": "545c9785-80e9-4424-8c7e-06a4348729fe"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 2,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 2,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "contact_id": "900000069",
+            "date_mode": null,
+            "is_active": null,
+            "product_ids": [
+              "76633903-32a2-4937-9daf-c1fe6cdc2137",
+              "2cda24b3-979e-4ca3-9ec9-c7430e5cfbbe"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "bytes": 19747,
+            "head": "{\"result_type\": \"orders\", \"intro\": \"Here are the orders I found.\", \"items\": [{\"title\": \"SMC202609-0073\", \"fields\": [{\"label\": \"Order Number\", \"value\": \"SMC202609-0073\"}, {\"label\": \"Customer\", \"value\": \"REURBAN DESIGN & BUILD SDN BHD (PROJECT - CASH)\"}, {\"label\": \"Order Date\", \"value\": \"2026-09-10T00:00:00\"}, {\"label\": \"Actual Delivery Date\", \"value\": \"2026-09-11T00:00:00\"}, {\"label\": \"Status\", \"value\": \"Picked Up / In Transit\"}, {\"label\": \"Pickup Time\", \"value\": \"08:51:00\"}, {\"label\": \"Transporter\", \"value\": \"SORENTO\"}, {\"label\": \"Driver\", \"value\": \"DRIVER M\"}, {\"label\": \"Lorry Plate\", \"value\": \"PLATE-38\"}, {\"label\": \"Warehouse\", \"value\": \"BRW\"}, {\"label\": \"Products\", \"value\": \"SRTWCX8608-RL (6), SRTWCY8608 (6), SRTWC8608-SC (6), WESERP10B (6), C-FH14 (6), CB2154-DIY (6), SRT59-CR (6), SRT393-18 (2), SRTWT7203 (4), SRTWT7443 (6), C-FH14 (4), B2155-NL-BLUE (4), SRTWB1543 (4), SRTWB245 (4), SRTPW0035-CR (8), CBT001-NL (4), TPE-9203 (6), SRT2403-CR (6)\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SMC202609-0067\", \"fields\": [{\"label\": \"Order Number\", \"value\": \"SMC202609-0067\"}, {\"label\": \"Customer\", \"value\": \"MURO WALL SDN BHD (PROJECT)\"}, {\"label\": \"Order Date\", \"value\": \"2026-09-09T00:00:00\"}, {\"label\": \"Actual Delivery Date\", \"value\": \"2026-09-10T00:00:00\"}, {\"label\": \"Status\", \"value\": \"Picked Up / In Transit\"}, {\"label\": \"Pickup Time\", \"value\": \"09:10:00\"}, {\"label\": \"Transporter\", \"value\": \"SORENTO\"}, {\"label\": \"Driver\", \"value\": \"DRIVER AD\"}, {\"label\": \"Lorry Plate\", \"value\": \"PLATE-26\"}, {\"label\": \"Warehouse\", \"value\": \"BRW\"}, {\"label\": \"Products\", \"value\": \"SRT202-GM (3), SRTWT810-GM (3), SRT320-GM (3), SRT2413-GM (2), SRT371-1-GM (3), SRTWT7443-GM (3), SRT2408-GM (1), SRTW1000-NEW (3)\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"202609-1351\", \"fields\": [{\"label\": \"Order Number\", \"value\": \"202609-1351\"}, {\"label\": \"Customer\", \"value\": \"FULLSHUN SANITARYWARE SDN BHD [A/C I]\"}, {\"label\": \"Order Date\", \"value\": \"2026-09-07T00:00:00\"}, {\"label\": \"Actual Delivery Date\", \"value\": \"2026-09-09T00:00:00\"}, {\"label\": \"Status\", \"value\": \"Picked Up / In Transit\"}, {\"label\": \"Pickup Time\", \"value\": \"20:45:00\"}, {\"label\": \"Transporter\", \"value\": \"SORENTO\"}, {\"label\": \"Driver\", \"value\": \"DRIVER X\"}, {\"label\": \"Lorry Plate\", \"value\": \"PLATE-34\"}, {\"label\": \"Warehouse\", \"value\": \"BRW\"}, {\"label\": \"Products\", \"value\": \"SRTSH2626-GM (3), SRTKT74SS-GM (1), SRTWT7443-GM (5), SRTWT7443-GM (1), SRT206-GM (20), SRT206-GM (3), SRTWT902 (10), SRTWT902 (1)\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"202609-1282\", \"fields\": [{\"label\": \"Order Number\", \"value\": \"202609-1282\"}, {\"label\": \"Customer\", \"value\": \"S TWO SANITARY WARE SDN BHD [A/C I]\"}, {\"label\": \"Order Date\", \"value\": \"2026-09-07T00:00:00\"}, {\"label\": \"Actual Delivery Date\", \"value\": \"2026-09-08T00:00:00\"}, {\"label\": \"Status\", \"value\": \"Picked Up / In Transit\"}, {\"label\": \"Pickup Time\", \"value\": \"09:13:00\"}, {\"label\": \"Transporter\", \"value\": \"SORENTO\"}, {\"label\": \"Driver\", \"value\": \"DRIVER M\"}, {\"label\": \"Lorry Plate\", \"value\": \"PLATE-3\"}, {\"label\": \"Warehouse\", \"value\": \"BRW\"}, {\"label\": \"Products\", \"value\": \"SRTWT8249 (4), SRTWT7443-GM (2)\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"202609-1387\", \"fields\": [{\"label\": \"Order Number\", \"value\": \"202609-1387\"}, {\"label\": \"Customer\", \"value\": \"KBO LOGISTICS & SUPPLY SDN BHD [A/C I]\"}, {\"label\": \"Order Date\", \"value\": \"2026-09-07T00:00:00\"}, {\"label\": \"Actual Delivery Date\", \"value\": \"2026-09-08T00:00:00\"}, {\"label\": \"Status\", \"value\": \"Picked Up / In Transit\"}, {\"label\": \"Pickup Time\", \"value\": \"09:29:00\"}, {\"label\": \"Transporter\", \"value\": \"SORENTO\"}, {\"label\": \"Driver\", \"value\": \"DRIVER N\"}, {\"label\": \"Lorry Plate\", \"value\": \"PLATE-21\"}, {\"label\": \"Warehouse\", \"value\": \"BRW\"}, {\"label\": \"Products\", \"value\": \"SRT369-5-GM (10), SRTWT5830-BL (5), SRTKT1862SS (4), SRTKT1862SS (1), SRTSS3220 (6), SRTWT7443 (7), SRTWT7443 (2), SRT1369-3-FRG (3), SRT2402-FRG (1), SRT70-CR (20), SRT70-CR (4)\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"PS202609-0144\", \"fields\": [{\"label\": \"Order Number\", \"value\": \"PS202609-0144\"}, {\"label\": \"Customer\", \"value\": \"PEMBINAAN INFRA E&J SDN BHD (PROJECT)\"}, {\"label\": \"Order Date\", \"value\": \"2026-09-08T00:00:00\"}, {\"label\": \"Actual Delivery Date\", \"value\": \"2026-09-08T00:00:00\"}, {\"label\": \"Status\", \"value\": \"Picked Up / In Transit\"}, {\"label\": \"Pickup Time\", \"value\": \"09:29:00\"}, {\"label\": \"Transporter\", \"value\": \"SORENTO\"}, {\"label\": \"Driver\", \"value\": \"DRIVER N\"}, {\"label\": \"Lorry Plate\", \"value\": \"PLATE-21\"}, {\"label\": \"Warehouse\", \"value\": \"BRW\"}, {\"label\": \"Products\", \"value\": \"SRTWT7413 (24), C-FHSS12 (68), B2155-NL-BLUE (68), SRTWT7443 (68), C-FHSS12 (68), B2155-NL-BLUE (68), TPE-9203 (68), SRTSA830-PJ (68), SRTSH22712 (68), SRTWT2215 (40), PT-PCT (224), SRT73-CR (68), SRTWT907SS (68), SRT1000-CR (68), C-FHSS12 (68), B2155-NL-BLUE (68), SRTWT7443 (68), C-FHSS12 (68), B2155-NL-BLUE (68), TPE-9203 (68), SRTSA830-PJ (68), SRTSH22712 (68), SRTWT2215 (40), PT-PCT (224), SRT73-CR (68), SRTWT907SS (68), SRT1000-CR (68)\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"PS202609-0116\", \"fields\": [{\"label\": \"Order Number\", \"value\": \"PS202609-0116\"}, {\"label\": \"Customer\", \"value\": \"ECO WORLD TRADING SDN BHD (PROJECT)\"}, {\"label\": \"Order Date\", \"value\": \"2026-09-07T00:00:00\"}, {\"label\": \"Actual Delivery Date\", \"value\": \"2026-09-08T00:00:00\"}, {\"label\": \"Status\", \"value\": \"Picked Up / In Transit\"}, {\"label\": \"Pickup Time\", \"value\": \"10:08:00\"}, {\"label\": \"Transporter\", \"value\": \"SORENTO\"}, {\"label\": \"Driver\", \"value\": \"DRIVER AD\"}, {\"label\": \"Lorry Plate\", \"value\": \"PLATE-26\"}, {\"label\": \"Warehouse\", \"value\": \"BRW\"}, {\"label\": \"Products\", \"value\": \"SRTPCAT123 (8), B2155-NL-BLUE (64), C-FH14 (64), SRTUFV101 (40), TPE-9203-300 (48), TPE-9203 (8), SRTPW0035 (56), SRTWT7443 (48), C-FH16 (48), SRTSC07 (8), C-FH14 (8), CB81CR-PJ (64), CB1178A-SS-NEW (64), DURO9548-WHITE (32), SRT392-24 (8), SRT5732 (8), TPE-9201-300 (81), CB2829-DIY (81), C-FH14 (81), CB2805A-DIY (8), TPE-9201-300 (77)\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"202609-1542\", \"fields\": [{\"label\": \"Order Number\", \"value\": \"202609-1542\"}, {\"label\": \"Customer\", \"value\": \"PSM HOME CENTRE SDN BHD [A/C I]\"}, {\"label\": \"Order Date\", \"value\": \"2026-09-08T00:00:00\"}, {\"label\": \"Actual Delivery Date\", \"value\": \"2026-09-08T00:00:00\"}, {\"label\": \"Status\", \"value\": \"Picked Up / In Transit\"}, {\"label\": \"Pickup Time\", \"value\": \"17:08:00\"}, {\"label\": \"Transporter\", \"value\": \"SORENTO\"}, {\"label\": \"Driver\", \"value\": \"DRIVER AE\"}, {\"label\": \"Lorry Plate\", \"value\": \"PLATE-36\"}, {\"label\": \"Warehouse\", \"value\": \"BRW\"}, {\"label\": \"Products\", \"value\": \"SRT764-24-GM (4), SRT394-18-GM (4), SRTW5000 (10), SRTW2600 (10), SRTW1100-BL (4), SRTSS8720 (2), SRTWT2219 (3), SRTWT7443 (2), SRTWT7202-BL (2)\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"REP202609-0149\", \"fields\": [{\"label\": \"Order Number\", \"value\": \"REP202609-0149\"}, {\"label\": \"Customer\", \"value\": \"EUROTAN ENTERPRISE SDN BHD [A/C I]\"}, {\"label\": \"Order Date\", \"value\": \"2026-09-07T00:00:00\"}, {\"label\": \"Actual Delivery Date\", \"value\": \"2026-09-08T00:00:00\"}, {\"label\": \"Status\", \"value\": \"Picked Up / In Transit\"}, {\"label\": \"Pickup Time\", \"value\": \"09:51:00\"}, {\"label\": \"Transporter\", \"value\": \"SORENTO\"}, {\"label\": \"Driver\", \"value\": \"DRIVER B\"}, {\"label\": \"Lorry Plate\", \"value\": \"PLATE-34\"}, {\"label\": \"Warehouse\", \"value\": \"BRW\"}, {\"label\": \"Products\", \"value\": \"SRTKS2405 (1), SRTKS8845 (1), SRTKS1045 (1), SR",
+            "truncated": true
+          },
+          "tool": "crm_order_management_orders_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": null,
+        "entities": [],
+        "entity_op": "reuse",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": null,
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to show customer name"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "Order Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": null,
+          "countryCode": "MY",
+          "created_at": 1778415976,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000069"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000069",
+          "id": 900000069,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": null,
+          "locale": null,
+          "phone": "+60900000069",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000026\", \"firstName\": \"ZZT\", \"lastName\": \"Koh\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": null,
+              "firstName": "ZZT-agent",
+              "id": null,
+              "lastName": ""
+            },
+            "countryCode": "MY",
+            "created_at": 1778415976,
+            "email": null,
+            "firstName": "ZZT-900000069",
+            "id": 900000069,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000069",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "09a17bfc-cb7b-4752-bf8b-a39e06c7e8e1",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxMjY3ODExNzgVAgASGCBBQzA1RkYxQzBCM0MwMDRCQTAxRDA0MEFENEYwNkY2RQA=",
+            "contactId": 900000069,
+            "message": {
+              "text": "Show Srtwt7443 sales order outstanding with customer name",
+              "type": "text"
+            },
+            "messageId": 1789211530000000,
+            "timestamp": 1789211530000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message",
+          "send_attachments"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "2cda24b3-979e-4ca3-9ec9-c7430e5cfbbe",
+          "76633903-32a2-4937-9daf-c1fe6cdc2137"
+        ],
+        "focus_after": null,
+        "pending": {
+          "kind": "team_pick",
+          "option_labels": [
+            "orders"
+          ]
+        },
+        "text": "Customer: all customers\nProduct: Srtwt7443\nDates: all dates\n\nHere is the outstanding SO I found.\n\n1. *SO Number:* SO245246\n*Product Code:* SRTWT7443\n*Outstanding Qty:* 156\n*Order Date:* 2022-12-14\n\n2. *SO Number:* SO313699\n*Product Code:* SRTWT7443\n*Outstanding Qty:* 420\n*Order Date:* 2024-08-01\n\n3. *SO Number:* SO314876\n*Product Code:* SRTWT7443\n*Outstanding Qty:* 56\n*Order Date:* 2024-08-09\n\n4. *SO Number:* SO325707\n*Product Code:* SRTWT7443\n*Outstanding Qty:* 2\n*Order Date:* 2024-11-04\n\n5. *SO Number:* SO325711\n*Product Code:* SRTWT7443\n*Outstanding Qty:* 102\n*Order Date:* 2024-11-04\n\n6. *SO Number:* SO331506\n*Product Code:* SRTWT7443\n*Outstanding Qty:* 34\n*Order Date:* 2024-12-18\n\n7. *SO Number:* SO331785\n*Product Code:* SRTWT7443\n*Outstanding Qty:* 205\n*Order Date:* 2024-12-20\n\n8. *SO Number:* SO331785\n*Product Code:* SRTWT7443\n*Outstanding Qty:* 205\n*Order Date:* 2024-12-20\n\n9. *SO Number:* SO335289\n*Product Code:* SRTWT7443\n*Outstanding Qty:* 210\n*Order Date:* 2025-01-17\n\n10. *SO Number:* SO335289\n*Product Code:* SRTWT7443\n*Outstanding Qty:* 315\n*Order Date:* 2025-01-17\n\n11. *SO Number:* SO335294\n*Product Code:* SRTWT7443\n*Outstanding Qty:* 315\n*Order Date:* 2025-01-17\n\n12. *SO Number:* SO335294\n*Product Code:* SRTWT7443\n*Outstanding Qty:* 210\n*Order Date:* 2025-01-17\n\n13. *SO Number:* SO341788\n*Product Code:* SRTWT7443\n*Outstanding Qty:* 788\n*Order Date:* 2025-03-17\n\n14. *SO Number:* SO358261\n*Product Code:* SRTWT7443\n*Outstanding Qty:* 28\n*Order Date:* 2025-07-15\n\n15. *SO Number:* SO358264\n*Product Code:* SRTWT7443\n*Outstanding Qty:* 220\n*Order Date:* 2025-07-15\n\n16. *SO Number:* SO362120\n*Product Code:* SRTWT7443\n*Outstanding Qty:* 5\n*Order Date:* 2025-08-08\n\n17. *SO Number:* SO364172\n*Product Code:* SRTWT7443\n*Outstanding Qty:* 18\n*Order Date:* 2025-08-21\n\n18. *SO Number:* SO368870\n*Product Code:* SRTWT7443\n*Outstanding Qty:* 364\n*Order Date:* 2025-09-24\n\n19. *SO Number:* SO368871\n*Product Code:* SRTWT7443\n*Outstanding Qty:* 364\n*Order Date:* 2025-09-24\n\n20. *SO Number:* SO368872\n*Product Code:* SRTWT7443\n*Outstanding Qty:* 364\n*Order Date:* 2025-09-24",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "contact_id",
+              "date_mode",
+              "is_active",
+              "order_status",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_order_management_orders_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "Srtwt7443",
+                "entity_type": "product",
+                "uuid": "2cda24b3-979e-4ca3-9ec9-c7430e5cfbbe"
+              }
+            ],
+            "resolved": true,
+            "token": "Srtwt7443"
+          }
+        ],
+        "tokens": [
+          "Srtwt7443"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 11,
+        "recorded_at": "2026-09-12T20:12:15.259194+09:00",
+        "turn_id": "72c7b92f-88df-41b0-9458-c63f87e1b988"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 2,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 2,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "contact_id": "900000069",
+            "date_mode": null,
+            "is_active": null,
+            "order_status": "so_outstanding",
+            "product_ids": [
+              "76633903-32a2-4937-9daf-c1fe6cdc2137",
+              "2cda24b3-979e-4ca3-9ec9-c7430e5cfbbe"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "bytes": 8988,
+            "head": "{\"result_type\": \"so_outstanding\", \"intro\": \"Here is the outstanding SO I found.\", \"items\": [{\"title\": \"SO245246\", \"fields\": [{\"key\": \"so_number\", \"label\": \"SO Number\", \"value\": \"SO245246\"}, {\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWT7443\"}, {\"key\": \"outstanding_qty\", \"label\": \"Outstanding Qty\", \"value\": \"156\"}, {\"key\": \"order_date\", \"label\": \"Order Date\", \"value\": \"2022-12-14\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SO313699\", \"fields\": [{\"key\": \"so_number\", \"label\": \"SO Number\", \"value\": \"SO313699\"}, {\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWT7443\"}, {\"key\": \"outstanding_qty\", \"label\": \"Outstanding Qty\", \"value\": \"420\"}, {\"key\": \"order_date\", \"label\": \"Order Date\", \"value\": \"2024-08-01\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SO314876\", \"fields\": [{\"key\": \"so_number\", \"label\": \"SO Number\", \"value\": \"SO314876\"}, {\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWT7443\"}, {\"key\": \"outstanding_qty\", \"label\": \"Outstanding Qty\", \"value\": \"56\"}, {\"key\": \"order_date\", \"label\": \"Order Date\", \"value\": \"2024-08-09\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SO325707\", \"fields\": [{\"key\": \"so_number\", \"label\": \"SO Number\", \"value\": \"SO325707\"}, {\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWT7443\"}, {\"key\": \"outstanding_qty\", \"label\": \"Outstanding Qty\", \"value\": \"2\"}, {\"key\": \"order_date\", \"label\": \"Order Date\", \"value\": \"2024-11-04\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SO325711\", \"fields\": [{\"key\": \"so_number\", \"label\": \"SO Number\", \"value\": \"SO325711\"}, {\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWT7443\"}, {\"key\": \"outstanding_qty\", \"label\": \"Outstanding Qty\", \"value\": \"102\"}, {\"key\": \"order_date\", \"label\": \"Order Date\", \"value\": \"2024-11-04\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SO331506\", \"fields\": [{\"key\": \"so_number\", \"label\": \"SO Number\", \"value\": \"SO331506\"}, {\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWT7443\"}, {\"key\": \"outstanding_qty\", \"label\": \"Outstanding Qty\", \"value\": \"34\"}, {\"key\": \"order_date\", \"label\": \"Order Date\", \"value\": \"2024-12-18\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SO331785\", \"fields\": [{\"key\": \"so_number\", \"label\": \"SO Number\", \"value\": \"SO331785\"}, {\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWT7443\"}, {\"key\": \"outstanding_qty\", \"label\": \"Outstanding Qty\", \"value\": \"205\"}, {\"key\": \"order_date\", \"label\": \"Order Date\", \"value\": \"2024-12-20\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SO331785\", \"fields\": [{\"key\": \"so_number\", \"label\": \"SO Number\", \"value\": \"SO331785\"}, {\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWT7443\"}, {\"key\": \"outstanding_qty\", \"label\": \"Outstanding Qty\", \"value\": \"205\"}, {\"key\": \"order_date\", \"label\": \"Order Date\", \"value\": \"2024-12-20\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SO335289\", \"fields\": [{\"key\": \"so_number\", \"label\": \"SO Number\", \"value\": \"SO335289\"}, {\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWT7443\"}, {\"key\": \"outstanding_qty\", \"label\": \"Outstanding Qty\", \"value\": \"210\"}, {\"key\": \"order_date\", \"label\": \"Order Date\", \"value\": \"2025-01-17\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SO335289\", \"fields\": [{\"key\": \"so_number\", \"label\": \"SO Number\", \"value\": \"SO335289\"}, {\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWT7443\"}, {\"key\": \"outstanding_qty\", \"label\": \"Outstanding Qty\", \"value\": \"315\"}, {\"key\": \"order_date\", \"label\": \"Order Date\", \"value\": \"2025-01-17\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SO335294\", \"fields\": [{\"key\": \"so_number\", \"label\": \"SO Number\", \"value\": \"SO335294\"}, {\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWT7443\"}, {\"key\": \"outstanding_qty\", \"label\": \"Outstanding Qty\", \"value\": \"315\"}, {\"key\": \"order_date\", \"label\": \"Order Date\", \"value\": \"2025-01-17\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SO335294\", \"fields\": [{\"key\": \"so_number\", \"label\": \"SO Number\", \"value\": \"SO335294\"}, {\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWT7443\"}, {\"key\": \"outstanding_qty\", \"label\": \"Outstanding Qty\", \"value\": \"210\"}, {\"key\": \"order_date\", \"label\": \"Order Date\", \"value\": \"2025-01-17\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SO341788\", \"fields\": [{\"key\": \"so_number\", \"label\": \"SO Number\", \"value\": \"SO341788\"}, {\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWT7443\"}, {\"key\": \"outstanding_qty\", \"label\": \"Outstanding Qty\", \"value\": \"788\"}, {\"key\": \"order_date\", \"label\": \"Order Date\", \"value\": \"2025-03-17\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SO358261\", \"fields\": [{\"key\": \"so_number\", \"label\": \"SO Number\", \"value\": \"SO358261\"}, {\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWT7443\"}, {\"key\": \"outstanding_qty\", \"label\": \"Outstanding Qty\", \"value\": \"28\"}, {\"key\": \"order_date\", \"label\": \"Order Date\", \"value\": \"2025-07-15\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SO358264\", \"fields\": [{\"key\": \"so_number\", \"label\": \"SO Number\", \"value\": \"SO358264\"}, {\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWT7443\"}, {\"key\": \"outstanding_qty\", \"label\": \"Outstanding Qty\", \"value\": \"220\"}, {\"key\": \"order_date\", \"label\": \"Order Date\", \"value\": \"2025-07-15\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SO362120\", \"fields\": [{\"key\": \"so_number\", \"label\": \"SO Number\", \"value\": \"SO362120\"}, {\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWT7443\"}, {\"key\": \"outstanding_qty\", \"label\": \"Outstanding Qty\", \"value\": \"5\"}, {\"key\": \"order_date\", \"label\": \"Order Date\", \"value\": \"2025-08-08\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SO364172\", \"fields\": [{\"key\": \"so_number\", \"label\": \"SO Number\", \"value\": \"SO364172\"}, {\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWT7443\"}, {\"key\": \"outstanding_qty\", \"label\": \"Outstanding Qty\", \"value\": \"18\"}, {\"key\": \"order_date\", \"label\": \"Order Date\", \"value\": \"2025-08-21\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SO368870\", \"fields\": [{\"key\": \"so_number\", \"label\": \"SO Number\", \"value\": \"SO368870\"}, {\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWT7443\"}, {\"key\": \"outstanding_qty\", \"label\": \"Outstanding Qty\", \"value\": \"364\"}, {\"key\": \"order_date\", \"label\": \"Order Date\", \"value\": \"2025-09-24\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SO368871\", \"fields\": [{\"key\": \"so_number\", \"label\": \"SO Number\", \"value\": \"SO368871\"}, {\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWT7443\"}, ",
+            "truncated": true
+          },
+          "tool": "crm_order_management_orders_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "order",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "Srtwt7443"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_order",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": "so_outstanding",
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [
+          "customer name"
+        ],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": "specific",
+        "top_n": null,
+        "user_goal": "trying to show the outstanding sales order for Srtwt7443 with customer name"
+      }
+    }
+  ]
+}

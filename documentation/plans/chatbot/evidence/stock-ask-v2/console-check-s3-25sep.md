@@ -70,7 +70,7 @@ reused. All scenario data (contact, categories, products, stock, the incoming sh
 packing list, the access grant, the integration principal and the seed `chatbot.turns`
 row) was seeded directly via SQLAlchemy against `sorento_ci`, matching the shape
 `tests/chatbot/test_console_turn_endpoint.py`'s own fixtures (`seeded_contact_with_a_prior_turn`,
-`tests/chatbot/test_engine.py::_envelope`/`CONTACT_ID = 437264483`) already establish for this
+`tests/chatbot/test_engine.py::_envelope`/`CONTACT_ID = 900000008`) already establish for this
 exact purpose - the SAME `CONTACT_ID` every other console-case file in this repo uses.
 
 Two additional environment gaps were found and worked around (neither is an S3 code
@@ -121,7 +121,7 @@ since the legacy env-var comparison round 1 relied on has since been removed).
 
 ## Scenario data
 
-Contact: `respond_io_id = "437264483"` (the console-case convention contact; matches every
+Contact: `respond_io_id = "900000008"` (the console-case convention contact; matches every
 other file under `tests/chatbot/console_cases/`), stock visibility policy `mode=availability`
 (a `stock_visibility_policies` row with `contact_id` = the internal id, R1's "Availability
 only" scope), `packing_list_allowed` flipped between the two B3 runs (see below), warehouse
@@ -176,7 +176,7 @@ lane switches restored: enabled=False lanes=[]
 ```
 
 Then, for B3, run twice with the toggle flipped between runs (`UPDATE respond_contacts SET
-packing_list_allowed = <true|false> WHERE respond_io_id = '437264483'`):
+packing_list_allowed = <true|false> WHERE respond_io_id = '900000008'`):
 
 ```
 SORENTO_ENV_FILE=.env.ci-tests venv/bin/python scripts/chatbot_console_check.py \
@@ -217,7 +217,7 @@ says to.
 ## The six branches, replies verbatim (round 2, footer fix + BULK_IMPORT row both in effect)
 
 Read via `SELECT response->'reply'->>'text' FROM chatbot.turns WHERE contact_respond_id =
-'437264483' AND is_test = true ORDER BY created_at DESC` immediately after each run (dry
+'900000008' AND is_test = true ORDER BY created_at DESC` immediately after each run (dry
 runs still write `chatbot.turns`, per `documentation/agents/chatbot-verification.md`).
 
 **B1 via Q > X** (`SA318A`, asked 250, X=200) and **B1 via unset X** (`SA318B`, asked 20, X

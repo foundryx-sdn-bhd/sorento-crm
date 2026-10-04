@@ -1,5 +1,0 @@
-[    4115ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ webpack-internal:///(app-pages-browser)/./node_modules/next/dist/compiled/react-dom/cjs/react-dom-client.development.js:25630
-[    4600ms] [LOG] i18next: languageChanged en-GB @ webpack-internal:///(app-pages-browser)/./node_modules/i18next/dist/esm/i18next.js:223
-[    4600ms] [LOG] i18next: initialized {debug: true, initAsync: true, ns: Array(1), defaultNS: Array(1), fallbackLng: Array(1)} @ webpack-internal:///(app-pages-browser)/./node_modules/i18next/dist/esm/i18next.js:223
-[    4807ms] [LOG] [Fast Refresh] rebuilding @ webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/hot-reloader/app/hot-reloader-app.js:196
-[    6330ms] [LOG] [Fast Refresh] done in 1524ms @ webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/dev/report-hmr-latency.js:13

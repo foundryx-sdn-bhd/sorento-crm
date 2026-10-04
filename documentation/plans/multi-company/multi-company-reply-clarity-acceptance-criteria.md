@@ -9,7 +9,7 @@ span more than one company; never key on the caller's access list.
 
 ## Journey
 
-**Actor.** A WhatsApp contact who buys from both Mocha and Sorento (contact 437264483 in
+**Actor.** A WhatsApp contact who buys from both Mocha and Sorento (contact 900000008 in
 the reproduced case), asking the assistant "MWC-SC08B check stock". Behind them: n8n
 (`sub-get-results` -> `crm_inventory_stock_balance_list` with `view=render`) and the
 FastMCP process that presents the backend list into `items[]`.

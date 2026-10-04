@@ -43,10 +43,10 @@ import { PortalLanding } from './PortalLanding';
 const ME = {
   contact_id: 'contact-1',
   space_id: 'space-1',
-  name: 'Darren Lee',
+  name: 'CONTACT X Lee',
   phone_number: '60123456789',
   expires_at: '2026-09-01T00:00:00Z',
-  portal_slug: 'darren',
+  portal_slug: 'contact-x',
   whatsapp_number: '60177777777',
 };
 
@@ -77,7 +77,7 @@ function calledWithKind(kind: string): boolean {
 describe('PortalLanding - every kind derives from visible_form_types (AC-L1)', () => {
   it('offers, and fetches, only the granted kind - nothing unconditional', async () => {
     mockContact(['complaint']);
-    render(<PortalLanding slug="darren" />);
+    render(<PortalLanding slug="contact-x" />);
 
     const trigger = await screen.findByRole('combobox');
     await waitFor(() => expect(fetchSubmissions).toHaveBeenCalled());
@@ -98,7 +98,7 @@ describe('PortalLanding - every kind derives from visible_form_types (AC-L1)', (
 
   it('fetches every granted kind, legacy and price tag alike, and no others', async () => {
     mockContact(['purchase_request', 'price_tag_request']);
-    render(<PortalLanding slug="darren" />);
+    render(<PortalLanding slug="contact-x" />);
 
     await waitFor(() => expect(listRequestsAsSummaries).toHaveBeenCalled());
     expect(calledWithKind('purchase_request')).toBe(true);
@@ -111,7 +111,7 @@ describe('PortalLanding - every kind derives from visible_form_types (AC-L1)', (
 describe('PortalLanding - the active tab falls back to the first visible kind (AC-L2)', () => {
   it('defaults to Stock Inquiry when visible - the dealers main form stays first', async () => {
     mockContact(['complaint', 'stock_inquiry', 'purchase_request']);
-    render(<PortalLanding slug="darren" />);
+    render(<PortalLanding slug="contact-x" />);
 
     expect(
       await screen.findByRole('link', { name: /New Stock Inquiry/ }),
@@ -120,7 +120,7 @@ describe('PortalLanding - the active tab falls back to the first visible kind (A
 
   it('with no ?type= in the URL', async () => {
     mockContact(['purchase_request', 'sponsorship_form']);
-    render(<PortalLanding slug="darren" />);
+    render(<PortalLanding slug="contact-x" />);
 
     expect(
       await screen.findByRole('link', { name: /New Purchase Request/ }),
@@ -130,7 +130,7 @@ describe('PortalLanding - the active tab falls back to the first visible kind (A
   it('with a ?type= naming a kind outside the visible set', async () => {
     searchParams = new URLSearchParams('type=stock_inquiry');
     mockContact(['purchase_request', 'sponsorship_form']);
-    render(<PortalLanding slug="darren" />);
+    render(<PortalLanding slug="contact-x" />);
 
     expect(
       await screen.findByRole('link', { name: /New Purchase Request/ }),
@@ -141,7 +141,7 @@ describe('PortalLanding - the active tab falls back to the first visible kind (A
 describe('PortalLanding - empty visible set (AC-L3)', () => {
   it('shows the WhatsApp empty state instead of the picker, toolbar or list', async () => {
     mockContact([]);
-    render(<PortalLanding slug="darren" />);
+    render(<PortalLanding slug="contact-x" />);
 
     expect(
       await screen.findByText('No forms are available for your account.'),
@@ -162,7 +162,7 @@ describe('PortalLanding - empty visible set (AC-L3)', () => {
       whatsapp_number: null,
       visible_form_types: [],
     });
-    render(<PortalLanding slug="darren" />);
+    render(<PortalLanding slug="contact-x" />);
 
     await screen.findByText('No forms are available for your account.');
     expect(screen.queryByRole('link', { name: /Chat with us on WhatsApp/ })).toBeNull();

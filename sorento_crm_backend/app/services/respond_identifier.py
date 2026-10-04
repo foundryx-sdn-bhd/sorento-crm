@@ -46,7 +46,7 @@ def contact_for_identifier(db: Session, identifier: Optional[str]) -> Optional[R
     """The RespondContact an OUTBOUND identifier addresses, or None.
 
     An outbound identifier is whatever `RespondClient` was handed for the API
-    path: a bare `respond_io_id`, a prefixed `id:437264483` / `phone:+6012...`,
+    path: a bare `respond_io_id`, a prefixed `id:900000008` / `phone:+6012...`,
     or a raw phone number. The prefix is stripped and the remainder is matched
     against `respond_io_id` first, then `phone_number` - the same order the
     workspace-credential resolver uses, because both answer the same question
@@ -76,7 +76,7 @@ def contact_for_identifier(db: Session, identifier: Optional[str]) -> Optional[R
 def resolve_send_identifier(db: Session, value: Optional[str]) -> Optional[str]:
     """Return an identifier safe to pass to RespondClient.send_message / list_messages.
 
-    Already-prefixed values like ``phone:+60123...`` or ``id:437264483`` pass through
+    Already-prefixed values like ``phone:+60123...`` or ``id:900000008`` pass through
     unchanged; otherwise the value is resolved via RespondContact to a numeric
     `respond_io_id`. Returns None when no contact can be located.
     """

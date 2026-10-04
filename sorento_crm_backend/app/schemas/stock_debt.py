@@ -73,6 +73,11 @@ class StockDebtRow(BaseModel):
     #: the screen and the workbook both, so `undated`/`unlocated` are no longer folded in
     #: here - they still ride on the row, unchanged, just not in this figure).
     total: float = 0.0
+    #: Auxiliary columns: BRW pool on hand, open PO, open SPO, and dealer outstanding.
+    pool_on_hand: float = 0.0
+    pool_po_qty: float = 0.0
+    pool_incoming_qty: float = 0.0
+    dealer_outstanding: float = 0.0
 
 
 class StockDebtPagination(BaseModel):
@@ -95,6 +100,10 @@ class StockDebtTotals(BaseModel):
     undated: float
     unlocated: float
     total: float
+    pool_on_hand: float = 0.0
+    pool_po_qty: float = 0.0
+    pool_incoming_qty: float = 0.0
+    dealer_outstanding: float = 0.0
 
 
 class StockDebtSupplier(BaseModel):
@@ -312,3 +321,4 @@ class StockDebtExportIn(BaseModel):
     supplier_ids: List[str] = []
     book: Book = "all"
     split: ExportSplit = "none"
+    show_aux: bool = False

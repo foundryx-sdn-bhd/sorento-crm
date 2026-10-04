@@ -33,7 +33,7 @@ function entry(overrides: Partial<FormRevisionEntry> = {}): FormRevisionEntry {
     label: 'Revision 1',
     reason: 'Wrong quantity',
     submitted_at: '2026-08-01T02:00:00',
-    submitted_by: 'Darren Lee',
+    submitted_by: 'CONTACT X Lee',
     snapshot_fields: [
       { field: 'inquiry_number', label: 'Inquiry number', value: 'SI-26-0184', display: null },
       { field: 'product_code', label: 'Product code', value: 'SRTWT51030', display: null },
@@ -77,7 +77,7 @@ describe('RevisionSnapshotDialog', () => {
 
   it('names who sent the version and when', () => {
     render(<RevisionSnapshotDialog entry={entry()} onOpenChange={() => {}} />);
-    expect(screen.getByText(/by Darren Lee/)).toBeInTheDocument();
+    expect(screen.getByText(/by CONTACT X Lee/)).toBeInTheDocument();
   });
 
   it('renders line items as a table, one row per product', () => {

@@ -20,8 +20,8 @@ once and lands on both.
 
 - The person on site is a real human with a phone number, but the form has
   nowhere to put them. So they get typed into **Delivery Address**:
-  `2, Lebuh Cecil, Ghaut, 10300 George Town, Pulau Pinang Contact: Hanson
-  (012-403 9611)`. The address field is now two facts wearing one coat: nobody
+  `2, Lebuh Cecil, Ghaut, 10300 George Town, Pulau Pinang Contact: CONTACT Q
+  (012-000 0502)`. The address field is now two facts wearing one coat: nobody
   can read the address programmatically, and the contact is invisible to anyone
   scanning the form.
 - To print, staff hit **Export to Excel**. A long address blows one cell out to
@@ -49,7 +49,7 @@ The obvious modelling instinct is `pic_name` + `pic_phone`. Rejected:
 
 - The user asked for "free text field for user to key in name and contact
   number" - one box.
-- Real data is messy (`Hanson (012-403 9611)`, `Hanson / Ali 012-4039611`, a
+- Real data is messy (`CONTACT Q (012-000 0502)`, `CONTACT Q / CONTACT R 012-0000502`, a
   name with no number). Two required-shaped columns invite empty halves and
   validation fights over a field that is explicitly **not mandatory**.
 - Nothing downstream parses it. It is printed and read by humans.
@@ -67,7 +67,7 @@ as the FK-shaped path - PIC is deliberately the informal one.
   `request_type` values; no backfill (historical rows keep PIC empty, their
   contact stays embedded in the address - we do not attempt to parse it out).
 - **AC-2** CRM form: PIC renders **immediately below Customer Name**, optional,
-  free text, placeholder naming both parts (e.g. `Hanson (012-403 9611)`).
+  free text, placeholder naming both parts (e.g. `CONTACT Q (012-000 0502)`).
 - **AC-3** Portal submission form: same field, same position, same optionality.
 - **AC-4** Portal `/view` (read-only contact view) and the `(auth)/approval`
   page display PIC when set. Per the CRUD standard the section still renders

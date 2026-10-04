@@ -70,10 +70,10 @@ import { PortalLanding } from './PortalLanding';
 const ME = {
   contact_id: 'contact-1',
   space_id: 'space-1',
-  name: 'Darren Lee',
+  name: 'CONTACT X Lee',
   phone_number: '60123456789',
   expires_at: '2026-09-01T00:00:00Z',
-  portal_slug: 'darren',
+  portal_slug: 'contact-x',
   visible_form_types: ['complaint', 'stock_inquiry', 'purchase_request', 'sponsorship_form'],
 };
 
@@ -125,7 +125,7 @@ describe('PortalLanding - Cards is the default at every width (R3-2, AC-R9)', ()
   it('defaults to Cards at 375px-equivalent (no match) when nothing is stored', async () => {
     const restore = mockViewportAtLeast768(false);
     try {
-      render(<PortalLanding slug="darren" />);
+      render(<PortalLanding slug="contact-x" />);
       await screen.findByText('SI-26-0184');
 
       expect(
@@ -139,7 +139,7 @@ describe('PortalLanding - Cards is the default at every width (R3-2, AC-R9)', ()
   it('defaults to Cards at 1280px-equivalent (matches) too - the viewport default is gone', async () => {
     const restore = mockViewportAtLeast768(true);
     try {
-      render(<PortalLanding slug="darren" />);
+      render(<PortalLanding slug="contact-x" />);
       await screen.findByText('SI-26-0184');
 
       expect(
@@ -152,7 +152,7 @@ describe('PortalLanding - Cards is the default at every width (R3-2, AC-R9)', ()
 
   it('a stored choice still wins over the default', async () => {
     window.localStorage.setItem('sorento.portalView', 'list');
-    render(<PortalLanding slug="darren" />);
+    render(<PortalLanding slug="contact-x" />);
     await screen.findByText('SI-26-0184');
 
     expect(
@@ -163,7 +163,7 @@ describe('PortalLanding - Cards is the default at every width (R3-2, AC-R9)', ()
 
 describe('PortalLanding - view persists (AC-L7, unaffected by R3-2)', () => {
   it('persists the pick to localStorage and keeps it across a type switch', async () => {
-    render(<PortalLanding slug="darren" />);
+    render(<PortalLanding slug="contact-x" />);
     await screen.findByText('SI-26-0184');
 
     fireEvent.click(screen.getByRole('radio', { name: 'List view' }));
@@ -194,7 +194,7 @@ describe('PortalLanding - view persists (AC-L7, unaffected by R3-2)', () => {
 describe('PortalLanding - List view is a DataGrid table (R3-2, AC-R9)', () => {
   it('renders a table with one column per field of the kind, and the row', async () => {
     window.localStorage.setItem('sorento.portalView', 'list');
-    render(<PortalLanding slug="darren" />);
+    render(<PortalLanding slug="contact-x" />);
 
     const table = await screen.findByRole('table', {}, { timeout: 2000 });
     expect(table).toBeInTheDocument();
@@ -210,7 +210,7 @@ describe('PortalLanding - List view is a DataGrid table (R3-2, AC-R9)', () => {
 
   it('clicking a row navigates to the submission detail (rowHref)', async () => {
     window.localStorage.setItem('sorento.portalView', 'list');
-    render(<PortalLanding slug="darren" />);
+    render(<PortalLanding slug="contact-x" />);
     await screen.findByRole('table', {}, { timeout: 2000 });
 
     fireEvent.click(screen.getByText('SI-26-0184'));
@@ -226,7 +226,7 @@ describe('PortalLanding - List view is a DataGrid table (R3-2, AC-R9)', () => {
 describe('PortalLanding - list columns are per-kind (review round 3)', () => {
   it('stock_inquiry has no Need by column, and Form Number is at least 170 wide', async () => {
     window.localStorage.setItem('sorento.portalView', 'list');
-    render(<PortalLanding slug="darren" />);
+    render(<PortalLanding slug="contact-x" />);
     await screen.findByRole('table', {}, { timeout: 2000 });
 
     expect(screen.queryByRole('columnheader', { name: /Need by/ })).toBeNull();
@@ -261,7 +261,7 @@ describe('PortalLanding - list columns are per-kind (review round 3)', () => {
     });
     window.localStorage.setItem('sorento.portalView', 'list');
 
-    render(<PortalLanding slug="darren" />);
+    render(<PortalLanding slug="contact-x" />);
 
     await screen.findByRole('table', {}, { timeout: 2000 });
     expect(screen.getByRole('columnheader', { name: /Need by/ })).toBeInTheDocument();
@@ -278,7 +278,7 @@ describe('PortalLanding - New button label (review round 3, item 9)', () => {
   // (what a narrow-viewport reader gets in place of the truncated text),
   // and the visible label's OWN outer text node is bare "New".
   it('the button always carries the full label as its title, and reads bare "New" as its own text', async () => {
-    render(<PortalLanding slug="darren" />);
+    render(<PortalLanding slug="contact-x" />);
     await screen.findByText('SI-26-0184');
 
     const button = screen.getByRole('link', { name: /New Stock Inquiry/ });

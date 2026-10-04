@@ -123,7 +123,7 @@ export const MOCK_PROVENANCE: Record<string, StoredSpecProvenance> = {
   finish: {
     source: 'human',
     confidence: 1,
-    evidence: 'set by merchandiser@sorento.com.my',
+    evidence: 'set by person26@example.com',
   },
   dim_length: {
     source: 'flyer',
@@ -145,15 +145,15 @@ export const MOCK_PROVENANCE: Record<string, StoredSpecProvenance> = {
     migrated_from: 'flyer',
   },
   // Authored, and derivation now reads something else: the conflict below.
-  shape: { source: 'human', confidence: 1, evidence: 'set by merchandiser@sorento.com.my' },
+  shape: { source: 'human', confidence: 1, evidence: 'set by person26@example.com' },
   class: { source: 'category', confidence: 0.5, evidence: 'SRT-WC' },
-  model_note: { source: 'human', confidence: 1, evidence: 'set by merchandiser@sorento.com.my' },
+  model_note: { source: 'human', confidence: 1, evidence: 'set by person26@example.com' },
   gloss_level: { source: 'derived', confidence: 0.6, evidence: 'SEMI GLOSS FINISH' },
   // The tombstone. No entry in MOCK_VALUES at all - this row exists only here.
   has_overflow: {
     source: 'human',
     confidence: 1,
-    evidence: 'set by merchandiser@sorento.com.my',
+    evidence: 'set by person26@example.com',
     absent: true,
   },
 };

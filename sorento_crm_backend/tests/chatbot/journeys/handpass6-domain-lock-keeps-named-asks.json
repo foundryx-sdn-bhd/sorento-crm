@@ -1,6 +1,6 @@
 {
   "name": "handpass6-domain-lock-keeps-named-asks",
-  "source": "hand pass 6 owner console turns 08:51:24-08:52:23 and 13:53:47 (contact_respond_id 437264483, 17 Sep 2026). Ruling R-a: a settled multi-code product carry (the ten SRTWC286 variants a stock answer listed) switching to incoming/PO runs for ALL of them, no 'Which product do you mean?' roster. Measured pre-fix (psql chatbot.turns): 08:51:37 'incoming and PO' DID re-roster (has_incoming=f, has_po=f); 08:52:01 'stock, incoming and PO for all of them' dropped stock (has_stock=f); 08:52:23 'i want stock also' dropped incoming+PO (has_incoming=f, has_po=f) - an answered domain-add wording replaces rather than accumulates.",
+  "source": "hand pass 6 owner console turns 08:51:24-08:52:23 and 13:53:47 (contact_respond_id 900000008, 17 Sep 2026). Ruling R-a: a settled multi-code product carry (the ten SRTWC286 variants a stock answer listed) switching to incoming/PO runs for ALL of them, no 'Which product do you mean?' roster. Measured pre-fix (psql chatbot.turns): 08:51:37 'incoming and PO' DID re-roster (has_incoming=f, has_po=f); 08:52:01 'stock, incoming and PO for all of them' dropped stock (has_stock=f); 08:52:23 'i want stock also' dropped incoming+PO (has_incoming=f, has_po=f) - an answered domain-add wording replaces rather than accumulates.",
   "cases": [
     {
       "name": "domain-add-wording-keeps-every-named-domain",

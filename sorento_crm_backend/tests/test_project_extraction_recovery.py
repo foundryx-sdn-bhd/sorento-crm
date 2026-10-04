@@ -200,7 +200,7 @@ def seeded():
     with blank_session() as db:
         company_id = _sorento(db)
         project_seed_service.run(db, company_id=company_id)
-        owner = _user(db, f"{MARKER} Yana")
+        owner = _user(db, f"{MARKER} CONTACT AH")
         project = _project(db, company_id, owner)
         yield db, project, _po(db, project, owner), owner
 

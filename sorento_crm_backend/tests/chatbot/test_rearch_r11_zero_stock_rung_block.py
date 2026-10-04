@@ -1,7 +1,7 @@
 """Hand pass 11 finding 1, rung-block round - the owner retested the zero-stock ladder
 LIVE on :8081 @ `d91e53fc1` (the commit that made the ladder actually climb) and it now
 climbs, but the RUNG BLOCK itself carries two defects. Ladder turn
-`27f60a71-a8c9-4d17-bd99-33f008d4207f` (contact `437264483`, clone DB
+`27f60a71-a8c9-4d17-bd99-33f008d4207f` (contact `900000008`, clone DB
 `sorento_ai_automation_rearch`, read-only SELECT against `chatbot.turns.trace`, 21 Sep
 2026) is functionally the SAME scenario `test_rearch_r11_zero_stock_live_replay.py`
 already replays as turn `8781cd47...` (same contact, same typed text "check stock

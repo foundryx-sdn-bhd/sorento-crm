@@ -49,7 +49,7 @@ purchasing that is corrected by a second email 42 minutes later.
 Three costs, all visible in the client's own files:
 
 1. **Retyping.** `SO397450` is 99 lines across 21 pages, read by hand off a scanned PO and a
-   matrix schedule, twice (Yana, then CS).
+   matrix schedule, twice (CONTACT AH, then CS).
 2. **No structured commitment.** The quotation exists only as a PDF, so "does this PO agree
    with what we quoted" is a human reading two documents side by side. `QT-004188` item 7 was
    cancelled by hand months later because the price had changed. Nothing caught it.
@@ -301,7 +301,7 @@ Three conclusions, and they change the build:
 - **Natural-key match-back can collide [G4].** Two SOs on one PO within one area group would
   key identically but for the line fingerprint. The fingerprint is therefore part of the key,
   and an ambiguous match must be raised to CS rather than resolved by guessing.
-- **The Yana step stays (D21), and CS reviews rather than retypes** (client confirmed at plan
+- **The CONTACT AH step stays (D21), and CS reviews rather than retypes** (client confirmed at plan
   review). The day in the process remains; the keying does not. If they later want the day
   back, it is a workflow change, not a rebuild.
 

@@ -212,7 +212,7 @@ def _ctx(text: str, entities: list[dict[str, Any]], domain: str) -> dict[str, An
     """`build-ctx`'s inner ctx for one AND-mode business turn."""
     return {
         "text": {"message": {"message": {"text": text}}},
-        "contact": {"id": "437264483"},
+        "contact": {"id": "900000008"},
         "parse": {
             "output": {
                 "message_type": "business_query",
@@ -273,7 +273,7 @@ def _args_for(entities: list[dict[str, Any]], tool: str) -> dict[str, Any]:
         {
             "entities": entities,
             "tool": tool,
-            "semantic_input": {"contact_id": "437264483", "space_id": "364817"},
+            "semantic_input": {"contact_id": "900000008", "space_id": "364817"},
         }
     )
 

@@ -60,7 +60,7 @@ def test_window_open_when_recent_inbound_only_has_message_id(monkeypatch):
         {"traffic": "incoming", "messageId": recent_id, "status": []},
     ]
     _patch_messages(monkeypatch, items)
-    ws = get_window_state(None, "437264483")
+    ws = get_window_state(None, "900000008")
     assert ws["open"] is True
     assert ws["last_incoming_at"] is not None
 
@@ -69,5 +69,5 @@ def test_window_closed_when_inbound_is_old(monkeypatch):
     old_id = int((datetime.utcnow() - timedelta(hours=30)).timestamp()) * 1_000_000
     items = [{"traffic": "incoming", "messageId": old_id, "status": []}]
     _patch_messages(monkeypatch, items)
-    ws = get_window_state(None, "437264483")
+    ws = get_window_state(None, "900000008")
     assert ws["open"] is False

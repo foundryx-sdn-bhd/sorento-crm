@@ -28,6 +28,14 @@ sorento_crm_backend/.next/*
 # Playwright MCP scratch (console logs, page snapshots)
 .playwright-mcp/
 
+# Raw captures carry auth headers, prod-copy pages or queue payloads; the repo
+# is public (scripts/pii_guard.py fails CI on them too).
+*.har
+*.rdb
+.cursor/debug.log
+# Root-level page snapshots from browser tools (none is a real config file).
+/*.yml
+
 # Claude-managed dev server logs
 .devlogs/
 
@@ -97,3 +105,13 @@ sorento_crm_mcp/*.egg-info/
 
 # per-lane private test DB env, never committed
 .env.ci-tests
+
+# Local compose overrides, key files and env variants may carry secrets; only the
+# .env.example templates are tracked.
+docker-compose.override*
+compose.override*
+*.key
+.env.*
+!.env.example
+!**/.env.example
+!sorento_crm_backend/.env.browse

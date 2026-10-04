@@ -158,7 +158,7 @@ describe('PartiesClient', () => {
           name: 'Veritas Architects',
           registration_no: '199801012345',
           project_count: 4,
-          phone: '03-1234 5678',
+          phone: '09-0000 0080',
           customer_name: null,
         }),
         party({
@@ -178,7 +178,7 @@ describe('PartiesClient', () => {
     expect(screen.getByText('199801012345')).toBeInTheDocument();
     expect(screen.getByText('Architect')).toBeInTheDocument();
     expect(screen.getByText('4 projects')).toBeInTheDocument();
-    expect(screen.getByText('03-1234 5678')).toBeInTheDocument();
+    expect(screen.getByText('09-0000 0080')).toBeInTheDocument();
 
     expect(screen.getByText('Bina Trading')).toBeInTheDocument();
     expect(screen.getByText('Trading house')).toBeInTheDocument();
