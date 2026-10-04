@@ -130,15 +130,16 @@ def test_a_new_intent_with_no_carry_signal_and_no_entity_starts_empty():
 @pytest.mark.parametrize(
     "signal",
     [
-        {"entity_op": "reuse"},
+        {"continuation": True, "entity_op": "reuse"},
         {"anaphora": {"backward_reference": True}},
         {"continuation": True},
     ],
-    ids=["entity_op_reuse", "backward_reference", "continuation"],
+    ids=["live_cert_reading", "backward_reference", "continuation"],
 )
 def test_a_carry_signal_carries_the_subject_but_never_the_old_filters(signal):
-    """"cert?" after "any gunmetal basin has incoming?" (#833, parser `entity_op:
-    reuse`): the basins and their finish carry; the old ask's own filters do not."""
+    """"cert?" after "any gunmetal basin has incoming?" (#833; the live parser reads it
+    `continuation: true`, `entity_op: reuse`): the basins and their finish carry; the old
+    ask's own filters do not."""
     v = verdict(intent_hint="check_product_attachment", domain_hint="product_attachment", **signal)
     focus = _turn(_ranking_frame(), v)
     assert _codes(focus.products) == ["SRTWB9GM0"]
@@ -151,11 +152,20 @@ def test_a_carry_signal_carries_the_subject_but_never_the_old_filters(signal):
     assert focus.sales_channel is None
 
 
+def test_entity_op_reuse_alone_is_not_a_carry_signal():
+    """Measured live (gpt-5.4-mini, 4 Oct 2026): "low stock report for sorento water tap"
+    right after a stock check comes back `entity_op: reuse`, `continuation: false`. The
+    stock check's products must not ride into the report."""
+    v = verdict(intent_hint="low_stock_report", domain_hint="inventory", entity_op="reuse", continuation=False)
+    focus = _turn(_ranking_frame(intent="check_stock", domains=["inventory"]), v)
+    assert _codes(focus.products) == [] and _codes(focus.customers) == []
+
+
 def test_a_carry_signal_never_carries_an_axis_the_message_named_itself():
     v = verdict(
         intent_hint="check_stock",
         domain_hint="inventory",
-        entity_op="reuse",
+        continuation=True,
         entities=[entity("SRTWC286-SH-150")],
     )
     focus = _turn(_ranking_frame(), v)
@@ -188,6 +198,16 @@ def test_a_refinement_of_the_same_intent_narrows_the_frame():
     out = _turn(focus, v)
     assert _codes(out.customers) == ["HANLIM"]
     assert _codes(out.products) == ["SRTWB9GM0"]
+
+
+@pytest.mark.parametrize("message_type", ["request_for_help", "clarification", "casual"])
+def test_only_a_business_question_starts_a_new_frame(message_type):
+    """"please escalate to marketing team" after a stock answer carries the escalation's
+    subject; the parser may carry another intent onto it, but it asks nothing new."""
+    v = verdict(message_type=message_type, intent_hint="check_product", domain_hint="master_products")
+    out = _turn(_ranking_frame(), v)
+    assert _codes(out.products) == ["SRTWB9GM0"]
+    assert out.extra.get("sales_agent") == [AGENT]
 
 
 def test_a_message_with_no_intent_keeps_the_frame():
@@ -306,18 +326,13 @@ def _envelope(**fetch) -> dict:
 
 @pytest.mark.parametrize(
     "fetch",
-    [
-        {"has_result": True},
-        {"has_result": False, "so_status": True},
-        {"has_result": False, "low_stock_report": True},
-    ],
-    ids=["rows_found", "so_status_reply", "low_stock_reply"],
+    [{"has_result": False, "so_status": True}, {"has_result": False, "low_stock_report": True}],
+    ids=["so_status_reply", "low_stock_reply"],
 )
-def test_a_resolver_not_found_never_replaces_the_lanes_own_reply(fetch):
+def test_no_miss_trigger_replaces_a_lanes_declared_reply(fetch):
     from app.services.chatbot import answer_bridge
 
-    _raw, _item, (via_exit, _err, _empty) = answer_bridge._miss_triggers({"_exit_kind": "not_found"}, _envelope(**fetch))
-    assert via_exit is False
+    assert answer_bridge._miss_triggers({"_exit_kind": "not_found"}, _envelope(**fetch))[2] == (False, False, False)
 
 
 def test_a_lanes_own_question_outranks_every_miss_trigger():
@@ -327,10 +342,19 @@ def test_a_lanes_own_question_outranks_every_miss_trigger():
     assert answer_bridge._miss_triggers({"_exit_kind": "not_found"}, envelope)[2] == (False, False, False)
 
 
-def test_a_resolver_not_found_still_speaks_when_the_lane_has_nothing():
+@pytest.mark.parametrize("fetch", [{"has_result": False}, {"has_result": True}], ids=["nothing", "a_denial_line"])
+def test_a_resolver_not_found_still_speaks_when_the_lane_declared_nothing(fetch):
+    """A lane line that only says what the contact may not see ("Sales order figures are
+    not enabled", `has_result` true) is not an answer to the word: the miss speaks
+    (ESCALATION-CONTROL's "Couldn't find SO999001")."""
     from app.services.chatbot import answer_bridge
 
-    _raw, _item, (via_exit, _err, _empty) = answer_bridge._miss_triggers(
-        {"_exit_kind": "not_found"}, _envelope(has_result=False)
-    )
+    _raw, _item, (via_exit, _err, _empty) = answer_bridge._miss_triggers({"_exit_kind": "not_found"}, _envelope(**fetch))
     assert via_exit is True
+
+
+def test_there_is_one_lane_reply_rule():
+    from app.services.chatbot import answer_bridge
+
+    assert not hasattr(answer_bridge, "_lane_asked")
+    assert answer_bridge.LANE_OWN_REPLY_KEYS == ("so_status", "low_stock_report")

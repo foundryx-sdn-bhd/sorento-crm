@@ -67,12 +67,12 @@ def _as_written_unchanged(base: Mapping[str, Any]) -> dict[str, Any]:
     """`base` as THIS turn would write it had it changed nothing.
 
     Loading is not lossless: `focus_from_wire` marks every carried entity as not named by
-    this message, and `turn_runtime.load_state` ticks the open question's clock. A turn
+    this message, and `pending.from_wire` normalises the open question. A turn
     that never touched focus therefore still writes a focus that differs from the raw
     stored one, and comparing against the raw `base` would read that as "this turn
     changed it" and clobber the other turn's write (review round 2, M1).
     """
-    from app.services.chatbot.turn.pending import from_wire, tick, to_wire as pending_wire
+    from app.services.chatbot.turn.pending import from_wire, to_wire as pending_wire
     from app.services.chatbot.turn.state import focus_from_wire
 
     out = dict(base)
@@ -81,7 +81,7 @@ def _as_written_unchanged(base: Mapping[str, Any]) -> dict[str, Any]:
     except Exception:  # noqa: BLE001 - an unreadable focus just compares raw
         pass
     try:
-        out["open_question"] = pending_wire(tick(from_wire(base.get("open_question"))))
+        out["open_question"] = pending_wire(from_wire(base.get("open_question")))
     except Exception:  # noqa: BLE001
         pass
     return out

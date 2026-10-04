@@ -153,6 +153,10 @@ def consume(
     # Only a change between two KNOWN intents counts: `intent_hint` is the parser's own
     # snake_case phrase, and a synonym it drifts to between turns is not a new question.
     changed = bool(intent and prior and intent != prior and {intent, prior} <= KNOWN_INTENTS)
+    # INTENT-FRAMES: only a business question asks something new. An escalation request,
+    # a clarification or a casual turn is about the frame it is in, whatever intent the
+    # parser carried onto it ("please escalate to marketing team" after a stock answer).
+    changed = changed and verdict.get("message_type") in ("business_query", None)
     holding = bool(held_slots(state))
     answers = holding and (bool(answered) or _answers(state, verdict))
     if changed and not answers:

@@ -337,10 +337,10 @@ def test_consume_marks_a_new_intent_on_the_verdict():
 
 def test_a_refine_under_a_new_intent_still_carries_the_subject():
     """"cert?" after "any gunmetal basin has incoming?" is about those basins (#833): the
-    parser reads it `entity_op: reuse` (`test_attribute_asks_round9._v2`), so the subject
-    carries into the new intent's frame (INTENT-FRAMES)."""
+    live parser reads it `continuation: true` (INTENT-FRAMES, measured 4 Oct 2026), so the
+    subject carries into the new intent's frame."""
     focus = Focus(intent="check_incoming", products=[entity("CBWB9GM0")], domains=["incoming"])
-    v = verdict(intent_hint="check_product_attachment", domain_hint="product_attachment", entity_op="reuse", entities=[entity("cert", hint="attachment_type")])
+    v = verdict(intent_hint="check_product_attachment", domain_hint="product_attachment", entity_op="reuse", continuation=True, entities=[entity("cert", hint="attachment_type")])
     held.consume(_state(focus), v)
     out, _plan = apply(_state(focus), v, build_policy())
     assert [p["raw"] for p in out.focus.products] == ["CBWB9GM0"]

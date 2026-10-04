@@ -592,7 +592,7 @@ def test_S50_a_bare_eta_after_an_exact_code_asks_only_that_code(console):
     """Fine-tune 4: 'srtw2000 20' then 'eta' listed SRTW2000-SS-CR, -A, -NL as well."""
     c = console(SRTW2000=Stock(x=200, eta=ETA))
     c.say("srtw2000 20", stock(product("srtw2000", 20)))
-    out = c.say("eta", reply(entities=[], domain_hint="incoming", intent_hint="check_incoming"))
+    out = c.say("eta", reply(entities=[], domain_hint="incoming", intent_hint="check_incoming", continuation=True, entity_op="reuse"))
     assert out == f"SRTW2000: {TICK} ETA 19/10/2026\n\n{R}"
     (last,) = [a for name, a in c.tool_calls if name == "crm_incoming_stock_list"][-1:]
     assert [c.codes[p] for p in last["product_ids"]] == ["SRTW2000"]
@@ -602,7 +602,7 @@ def test_S50b_an_exact_code_eta_ask_and_its_bare_follow_up_stay_exact(console):
     c = console()
     first = c.say("eta SRTWC286-SH", _eta_ask("SRTWC286-SH"))
     assert first == f"SRTWC286-SH: No ETA\n\n{R}"
-    assert c.say("eta", reply(entities=[], domain_hint="incoming", intent_hint="check_incoming")) == first
+    assert c.say("eta", reply(entities=[], domain_hint="incoming", intent_hint="check_incoming", continuation=True, entity_op="reuse")) == first
 
 
 def test_S50c_an_exact_code_stock_ask_carries_only_that_code(console):
@@ -615,7 +615,9 @@ def test_S50c_an_exact_code_stock_ask_carries_only_that_code(console):
 # ================================================================== tester re-run on a5ba9dc9f (3 Oct)
 # The live parser's other readings of the owner's messages (crew-tester, 3 runs each).
 
-BARE_ETA = reply(entities=[], domain_hint="incoming", intent_hint="check_incoming")
+# INTENT-FRAMES: the live parser reads a bare "eta" after a product answer as the same
+# subject (`continuation: true`, `entity_op: reuse`; gpt-5.4-mini, 4 Oct 2026).
+BARE_ETA = reply(entities=[], domain_hint="incoming", intent_hint="check_incoming", continuation=True, entity_op="reuse")
 
 
 @pytest.mark.parametrize(

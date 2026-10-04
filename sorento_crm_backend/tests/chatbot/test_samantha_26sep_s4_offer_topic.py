@@ -441,8 +441,11 @@ class TestB2EngineT6SendsTheCarriedProductsToIncoming:
         assert captured1 == [], f"the bare outstanding ask arms the scope question first: {captured1}"
         assert (_session_of(session_factory).get("open_question") or {}).get("kind") == "outstanding_scope"
 
+        # INTENT-FRAMES: the live parser reads "got eta" after an answer as the same subject
+        # (`continuation: true`, `entity_op: reuse`; gpt-5.4-mini, 4 Oct 2026).
         qf2 = _qf(
             domain_hint="incoming", intent_hint="check_incoming", entities=[], domain_in_message=True,
+            continuation=True, entity_op="reuse",
         )
         result, captured2 = _run_turn(
             session_factory, monkeypatch,

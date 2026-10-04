@@ -1597,10 +1597,7 @@ def _miss_triggers(
         maybe_fetch = raw_fragment.get("fetch")
         fetch_item = maybe_fetch if isinstance(maybe_fetch, dict) else None
 
-    # INTENT-FRAMES (owner, 4 Oct 2026): the lane's own reply always outranks the generic
-    # miss text. The resolver's own `not_found` exit speaks only when the lane has nothing
-    # of its own (`_lane_owns_reply`).
-    via_resolver_exit = payload.get("_exit_kind") == "not_found" and not _lane_owns_reply(fetch_item)
+    via_resolver_exit = payload.get("_exit_kind") == "not_found"
     via_error_fragment = fragment_outcome == "not_found"
     # R5 (AC-1699, AC-1702): a THIRD trigger - the resolver settled a real subject,
     # the fetch genuinely ran for it, and the tool came back with zero rows. This
@@ -1625,10 +1622,9 @@ def _miss_triggers(
         and isinstance(fetch_item, Mapping)
         and not fetch_item.get("has_result")
     )
-    if _lane_asked(envelope):
-        # STUCK-QTY-LOOP (crew report 2, 4 Oct 2026): a lane that asked its OWN required
-        # question (the low stock category ask, `required_fields`) answered the turn with
-        # that question; no miss of any kind replaces it.
+    if _lane_owns_reply(envelope, fetch_item):
+        # INTENT-FRAMES (owner, 4 Oct 2026, ruling Q5): ONE rule - the lane's own question
+        # or reply always outranks the generic miss text, so no trigger fires.
         return raw_fragment, fetch_item, (False, False, False)
     return raw_fragment, fetch_item, (via_resolver_exit, via_error_fragment, via_fetched_empty)
 
@@ -1636,23 +1632,20 @@ def _miss_triggers(
 #: The lanes' own declaration, on their fetch fragment, that their reply already says
 #: what happened to every word they were handed: SO-NUMBER-ASK (`so_numbers`, the reply
 #: names the SO words no SO answered) and the low stock report (LOWSTOCK-FILTER-ASK, owner
-#: hand test 3 Oct 2026, turn 4a90dd1d: the report said its own line).
+#: hand test 3 Oct 2026, turn 4a90dd1d: the report said its own line). `has_result` is
+#: not one: a lane that only says what the contact may not see sets it too, and a word
+#: that matched nothing is the better answer there (ESCALATION-CONTROL's "Couldn't find").
 LANE_OWN_REPLY_KEYS: tuple[str, ...] = ("so_status", "low_stock_report")
 
 
-def _lane_owns_reply(fetch_item: Any) -> bool:
-    """INTENT-FRAMES: does the lane have a reply of its own that the resolver's `not_found`
-    exit must not replace - rows its fetch found, or its own declared reply?"""
-    if not isinstance(fetch_item, Mapping):
-        return False
-    return bool(fetch_item.get("has_result")) or any(fetch_item.get(key) is True for key in LANE_OWN_REPLY_KEYS)
-
-
-def _lane_asked(envelope: dict[str, Any] | None) -> bool:
-    """Did the lane end this turn with a required question of its own
-    (`turn_runtime.envelope_of`'s `required_ask`)? `lane_ask` is not read: its
-    `alternatives_ask` is the miss's own did-you-mean roster."""
-    return isinstance(envelope, dict) and isinstance(envelope.get("required_ask"), dict)
+def _lane_owns_reply(envelope: dict[str, Any] | None, fetch_item: Any) -> bool:
+    """INTENT-FRAMES: did the lane end this turn with an answer of its own that no miss
+    may replace - its own required question (`turn_runtime.envelope_of`'s `required_ask`;
+    `lane_ask` is not read, its `alternatives_ask` is the miss's own did-you-mean roster)
+    or a reply it declared (`LANE_OWN_REPLY_KEYS`)?"""
+    if isinstance(envelope, dict) and isinstance(envelope.get("required_ask"), dict):
+        return True
+    return isinstance(fetch_item, Mapping) and any(fetch_item.get(key) is True for key in LANE_OWN_REPLY_KEYS)
 
 
 def answers_a_miss(payload: dict[str, Any], envelope: dict[str, Any] | None) -> bool:

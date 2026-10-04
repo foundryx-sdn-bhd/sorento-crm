@@ -9,8 +9,8 @@
 #   * a refinement of the same intent narrows the frame (today's reading, unchanged);
 #   * a NEW intent starts a clean frame. The old ask's own filters never move over; its
 #     subject moves over only when the parser says this message is about the same subject
-#     (`entity_op: "reuse"`, `anaphora.backward_reference`, `continuation`), and only on an
-#     axis the message did not name itself. No word rules: those parser fields alone;
+#     (`continuation`, `anaphora.backward_reference`), and only on an axis the message did
+#     not name itself. No word rules: those parser fields alone;
 #   * nothing expires by time or by turn count (owner ruling Q1): a frame ends by context
 #     only - the parser's reading of the next message (above), a reset, or an access
 #     change, which drops the whole frame, held questions included.
@@ -50,12 +50,15 @@ STAMPS: tuple[str, ...] = ("intent", "frame_access")
 
 
 def carries_subject(verdict: dict[str, Any]) -> bool:
-    """Does the parser say this message is about the subject already in the frame?"""
+    """Does the parser say this message is about the subject already in the frame?
+
+    `continuation` (INTENT_FRAMES_ADDENDUM) or a backward reference. Never `entity_op:
+    "reuse"` on its own: the live parser also emits it for a fresh report that names no
+    entity ("low stock report for sorento water tap" right after a stock check: reuse,
+    continuation false; measured 4 Oct 2026 on gpt-5.4-mini)."""
     anaphora = verdict.get("anaphora")
-    return (
-        verdict.get("entity_op") == "reuse"
-        or (isinstance(anaphora, dict) and anaphora.get("backward_reference") is True)
-        or verdict.get("continuation") is True
+    return verdict.get("continuation") is True or (
+        isinstance(anaphora, dict) and anaphora.get("backward_reference") is True
     )
 
 
