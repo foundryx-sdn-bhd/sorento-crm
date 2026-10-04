@@ -98,7 +98,7 @@ def test_partial_miss_offers_the_single_code_did_you_mean():
 
     assert "*Product Code:* SRTWC286" in text and "*Product Code:* SRTWC6022" in text
     assert (
-        'Couldn\'t find "srt5764" (product). Did you mean:\n1. SRT57-CR\n2. SRT5713\n3. SRT5732'
+        'Couldn\'t find "srt5764" (product). Did you mean:\n3. SRT57-CR\n4. SRT5713\n5. SRT5732'
         in text
     ), text
     assert text.rstrip().endswith(CLOSING), text

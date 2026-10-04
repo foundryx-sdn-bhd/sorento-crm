@@ -1094,7 +1094,7 @@ class TestScopeBlockAskScopedAxesAndBestEffortWrapper:
             f"the answer') - the found rows must still reach the customer, without "
             f"the header, never as a failed lane: {reply!r}"
         )
-        assert "*Order Number:* ZZT-ORD-SCOPE-1" in reply, (
+        assert "ZZT-ORD-SCOPE-1" in reply, (
             f"the genuinely-found order rows must still answer even though the "
             f"scope block itself raised: {reply!r}"
         )

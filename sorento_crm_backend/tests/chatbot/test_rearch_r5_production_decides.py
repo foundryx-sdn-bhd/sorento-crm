@@ -467,8 +467,8 @@ class TestHitScopeBlock:
         payload = payload_calls[-1]
         expected_scope = _expected_scope_block(qf, payload["gate"], payload["resolved"])
         expected_fragment = structurer_calls[-1].get("response") or ""
-        assert expected_fragment.startswith("*Order Number:* ZZT-ORD-1"), (
-            "test setup sanity: the production hit fragment is the order block (card v4: no opener)"
+        assert expected_fragment.startswith("ZZT-ORD-1"), (
+            "test setup sanity: the production hit fragment is the order block (card v4: no opener; an ungranted contact sees the order number alone)"
         )
         expected_text = f"{expected_scope}\n\n{expected_fragment}"
 
@@ -558,7 +558,7 @@ class TestScopeBlockAfterPick:
         assert "No matching results found" not in reply2, (
             f"AC-1695: the family's own order genuinely exists - never a bare miss: {reply2!r}"
         )
-        assert "*Order Number:* ZZT-ORD-PICK-1" in reply2, reply2
+        assert "ZZT-ORD-PICK-1" in reply2, reply2
         assert code in reply2, (
             f"AC-1695: the ORIGINAL product token must still scope the post-pick reply: {reply2!r}"
         )
