@@ -185,15 +185,26 @@ def test_ac5_stock_compact_opener_removed():
     assert text.startswith("*Product Code:* P-ONE"), text
 
 
+_DO_KEYS = [
+    f"delivery_orders.{k}"
+    for k in (
+        "order_number", "customer", "order_date", "delivery_date", "status", "pickup_time",
+        "transporter", "driver", "lorry_plate", "warehouse", "products",
+    )
+]
+
+
 def test_ac5_orders_opener_removed():
-    text = render(ORDERS_TOOL, {"data": [_order_row()], "pagination": {"total": 1}}, UNGRANTED)
+    text = render(ORDERS_TOOL, {"data": [_order_row()], "pagination": {"total": 1}},
+        {"semantic_input": {}, "access": {"attributes": _DO_KEYS}},
+    )
 
     assert "Here are the orders I found." not in text, text
     assert text.startswith("*Order Number:* SMC202609-0055"), text
 
 
 def test_ac5_delivered_orders_opener_removed():
-    ctx = {"semantic_input": {"order_status": "delivered"}, "tool": ORDERS_TOOL}
+    ctx = {"semantic_input": {"order_status": "delivered"}, "tool": ORDERS_TOOL, "access": {"attributes": _DO_KEYS}}
     text = render(ORDERS_TOOL, {"data": [_order_row()], "pagination": {"total": 1}}, ctx)
 
     assert "Here are the delivered orders I found." not in text, text

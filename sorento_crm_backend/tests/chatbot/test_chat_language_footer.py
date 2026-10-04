@@ -44,17 +44,17 @@ def test_item4_a_counted_set_with_other_brands_keeps_the_ms_footer_last():
         },
     }
     text = fetch.output_structurer(envelope, ctx)["response"]
-    footer = "_Data dikemas kini: 02/10/2026 09:15:30_"
+    footer = "_Dikemas kini 02/10/2026 09:15_"
     assert text.endswith(footer), text
     assert text.index("Other brands") < text.index(footer), text
 
 
 def test_item4_the_promo_footer_regex_matches_every_language():
     for lang in ("ms", "zh"):
-        footer = _loc(lang).text("Data last updated: 02/10/2026 09:15:30")
+        footer = _loc(lang).text("Updated 02/10/2026 09:15")
         match = answer_mod._DATA_LAST_UPDATED_RE.search(f"intro\n\n_{footer}_")
         assert match and match.group(0) == f"_{footer}_", lang
-    english = answer_mod._DATA_LAST_UPDATED_RE.search("x\n_Data last updated: 02/10/2026 09:15:30_")
+    english = answer_mod._DATA_LAST_UPDATED_RE.search("x\n_Updated 02/10/2026 09:15_")
     assert english is not None
 
 
@@ -114,7 +114,7 @@ def test_item6_a_tool_outside_the_localized_set_with_an_ms_localizer_stays_engli
     assert "*Product Code:* SRTSWT3001" in text
     assert "*Total:* 51" in text
     assert "PRODUCT DISCONTINUED" in text
-    assert "_Data last updated: 02/10/2026 09:15:30_" in text
+    assert "_Updated 02/10/2026 09:15_" in text
     assert "Jumlah" not in text and "Ringkasan" not in text and "dikemas" not in text
 
 
@@ -126,7 +126,7 @@ def test_item6_a_tool_outside_the_localized_set_with_an_ms_localizer_stays_engli
 def _edited_ms() -> Localizer:
     table = {
         **label_catalog.defaults("ms"),
-        "Data last updated: {ts}": "Dikemas kini: {ts}",
+        "Updated {ts}": "Kemas kini {ts}",
         f"yes, we have stock. {label_catalog.REFER_TO_SALESMAN}": "ya, ada. Sila hubungi jurujual anda.",
     }
     return Localizer("ms", table)
@@ -134,10 +134,10 @@ def _edited_ms() -> Localizer:
 
 def test_item4_an_edited_footer_is_still_recognised():
     loc = _edited_ms()
-    assert "Dikemas kini:" in label_catalog.footer_leads(loc)
-    assert "Dikemas kini:" not in label_catalog.footer_leads()
-    match = answer_mod._data_last_updated_re(loc).search("x\n\n_Dikemas kini: 02/10/2026 09:15_")
-    assert match and match.group(0) == "_Dikemas kini: 02/10/2026 09:15_"
+    assert "Kemas kini" in label_catalog.footer_leads(loc)
+    assert "Kemas kini" not in label_catalog.footer_leads()
+    match = answer_mod._data_last_updated_re(loc).search("x\n\n_Kemas kini 02/10/2026 09:15_")
+    assert match and match.group(0) == "_Kemas kini 02/10/2026 09:15_"
 
 
 def test_item4_an_edited_refer_sentence_is_still_recognised():
@@ -159,6 +159,6 @@ def test_item3_compose_splits_on_any_languages_footer():
     from tests.chatbot.test_chat_language_render import _env, _policy, _state
 
     # An English footer under an ms turn (a reply the lane did not localize).
-    lane = "*Product Code:* SRTSWT3001-GM\n\n_Data last updated: 02/10/2026 09:15:30_"
+    lane = "*Product Code:* SRTSWT3001-GM\n\n_Updated 02/10/2026 09:15_"
     text = compose([_env(lane)], _state(), _policy(), ctx=SimpleNamespace(localizer=_loc("ms"))).text
-    assert text.index("Tiada stok ditemui") < text.index("_Data last updated")
+    assert text.index("Tiada stok ditemui") < text.index("_Updated")

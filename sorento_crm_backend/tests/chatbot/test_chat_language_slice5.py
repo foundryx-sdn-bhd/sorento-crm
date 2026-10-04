@@ -288,7 +288,7 @@ def test_cl54_compose_two_products_each_get_their_own_localized_gap_line(lang):
 @pytest.mark.parametrize("lang", ["ms", "zh"])
 def test_cl54_compose_the_gap_line_below_the_footer_paragraph_keeps_its_place(lang):
     text = _compose_gap_text(lang, [("SRT1", "photo")], ["SRT1"], ["photo", "datasheet"],
-                             lane_text="I have attached the file(s) below.\n\n_Data last updated: 03/10/2026 16:24:40_")
+                             lane_text="I have attached the file(s) below.\n\n_Updated 03/10/2026 16:24_")
     gap = WORDING[lang]["has_no"].format(code="SRT1", types="datasheet")
     assert f"\n\n{gap}\n\n" in text, repr(text)
 

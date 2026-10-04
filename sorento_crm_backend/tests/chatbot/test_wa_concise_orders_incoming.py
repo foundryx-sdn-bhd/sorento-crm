@@ -19,6 +19,14 @@ from tests.chatbot._wa_concise_helpers import (
 )
 
 ORDER_NO = "SMC202609-0055"
+_DO_KEYS = [
+    f"delivery_orders.{k}"
+    for k in (
+        "order_number", "customer", "order_date", "delivery_date", "status", "pickup_time",
+        "transporter", "driver", "lorry_plate", "warehouse", "products",
+    )
+]
+_DO_GRANTED = {"semantic_input": {}, "access": {"attributes": _DO_KEYS}}
 
 
 def _order(number: str = ORDER_NO) -> dict:
@@ -45,7 +53,7 @@ def _order(number: str = ORDER_NO) -> dict:
 
 def _orders_text(*numbers: str) -> str:
     rows = [_order(n) for n in (numbers or (ORDER_NO,))]
-    return render(ORDERS_TOOL, {"data": rows, "pagination": {"total": len(rows)}}, UNGRANTED)
+    return render(ORDERS_TOOL, {"data": rows, "pagination": {"total": len(rows)}}, _DO_GRANTED)
 
 
 _ORDER_BLOCK = (

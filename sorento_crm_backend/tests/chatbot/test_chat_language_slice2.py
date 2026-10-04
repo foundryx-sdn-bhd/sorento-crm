@@ -524,7 +524,7 @@ def test_ac_cl21_po_placed_ms_labels_and_intro_with_the_grant():
     env = _po_placed_envelope()
     ctx_access = _grant("purchase_orders.supplier")
     text = _assert_values_identical(env, TOOL_PO_PLACED, "ms", access=ctx_access)
-    assert "Berikut ialah PO yang telah dibuat." in text
+    assert "Berikut ialah PO yang telah dibuat." not in text  # no row opener
     assert "*No. PO:* PO-2026-0412" in text
     assert "*Kuantiti Dipesan:* 120" in text
     assert "*Kuantiti Tertunggak:* 45" in text
@@ -554,7 +554,7 @@ def test_ac_cl21_po_placed_ms_supplier_dropped_without_the_grant():
 def test_ac_cl21_po_placed_zh_labels():
     env = _po_placed_envelope()
     text = _assert_values_identical(env, TOOL_PO_PLACED, "zh", access=_grant("purchase_orders.supplier"))
-    assert "以下是已下的 PO。" in text
+    assert "以下是已下的 PO。" not in text  # no row opener
     assert "*PO 编号:* PO-2026-0412" in text
     assert "*订购数量:* 120" in text
     assert "*供应商:* ACME CERAMICS SDN BHD" in text
@@ -566,13 +566,13 @@ def test_ac_cl21_po_placed_en_localizer_and_absent_localizer_are_byte_identical(
     ident = fetch.output_structurer(copy.deepcopy(env), _ctx(TOOL_PO_PLACED, localizer=IDENTITY))["response"]
     assert bare == ident
     assert "*PO Number:* PO-2026-0412" in bare
-    assert "Here is the PO placed I found." in bare
+    assert "Here is the PO placed I found." not in bare  # no row opener
 
 
 def test_ac_cl21_po_placed_footer_is_translated_and_state_stays_english():
     env = _po_placed_envelope()
     out = fetch.output_structurer(copy.deepcopy(env), _ctx(TOOL_PO_PLACED, "ms"))
-    assert "_Data dikemas kini: 02/10/2026 09:15:30_" in out["response"]
+    assert "_Dikemas kini 02/10/2026 09:15_" in out["response"]
     labels = [f["label"] for f in out["answers"][0]["fields"]]
     assert "PO Number" in labels and "Ordered Qty" in labels
     assert "No. PO" not in labels
@@ -586,7 +586,7 @@ def test_ac_cl21_po_placed_footer_is_translated_and_state_stays_english():
 def test_ac_cl22_spo_recorded_date_zh():
     env = _spo_envelope(recorded=True)
     text = _assert_values_identical(env, TOOL_SPO, "zh")
-    assert "以下是每个产品最近的 SPO 记录。" in text
+    assert "以下是每个产品最近的 SPO 记录。" not in text  # no row opener
     assert "*SPO 编号:* SPO-77001" in text
     assert "*货柜号:* MSKU1234567" in text
     assert "*SPO 日期（已记录）:*" in text
@@ -608,7 +608,7 @@ def test_ac_cl22_spo_plain_date_zh_uses_the_plain_label():
 def test_ac_cl22_spo_recorded_date_ms():
     env = _spo_envelope(recorded=True)
     text = _assert_values_identical(env, TOOL_SPO, "ms")
-    assert "Berikut ialah baris SPO terakhir bagi setiap produk." in text
+    assert "Berikut ialah baris SPO terakhir bagi setiap produk." not in text  # no row opener
     assert "*Tarikh SPO (direkodkan):*" in text
     assert "*No. Kontena:* MSKU1234567" in text
     assert "*Kuantiti GR:* 300" in text
@@ -631,7 +631,7 @@ def test_ac_cl22_a_label_that_differs_from_the_key_english_falls_back_to_label_t
 def test_ac_cl23_orders_list_ms_labels_and_value_untouched_status():
     env = _orders_envelope()
     text = _assert_values_identical(env, TOOL_ORDERS, "ms")
-    assert "Berikut ialah pesanan yang saya temui." in text
+    assert "Berikut ialah pesanan yang saya temui." not in text  # no row opener
     assert "*No. Pesanan:* SO-26-00981" in text
     assert "*Pelanggan:* TAN BROTHERS HARDWARE" in text
     assert "*Status:* Partially Delivered" in text
@@ -661,9 +661,9 @@ def test_ac_cl23_outstanding_intro_when_order_status_is_outstanding():
 def test_ac_cl23_delivered_intro_when_order_status_is_delivered():
     env = _orders_envelope()
     text = _render(env, TOOL_ORDERS, "ms", semantic_input={"order_status": "delivered"})
-    assert "Berikut ialah pesanan yang telah dihantar." in text
+    assert "Berikut ialah pesanan yang telah dihantar." not in text  # no row opener
     zh = _render(env, TOOL_ORDERS, "zh", semantic_input={"order_status": "delivered"})
-    assert "以下是我找到的已送货订单。" in zh
+    assert "以下是我找到的已送货订单。" not in zh  # no row opener
 
 
 def test_ac_cl23_outstanding_intro_english_without_a_localizer_is_unchanged():
@@ -730,7 +730,7 @@ def test_ac_cl23_so_outstanding_qty_dropped_without_the_grant_ms():
 def test_ac_cl23_orders_by_product_zh():
     env = _orders_by_product_envelope()
     text = _assert_values_identical(env, TOOL_ORDERS_BY_PRODUCT, "zh")
-    assert "以下是我找到的订单。" in text
+    assert "以下是我找到的订单。" not in text  # no row opener
     assert "*订单号:* SO-26-00981" in text
     assert "*客户:* TAN BROTHERS HARDWARE" in text
     assert "*订单日期:*" in text
@@ -761,7 +761,7 @@ def test_ac_cl24_po_cost_zh_with_cost_and_supplier_grants():
         "zh",
         access=_grant("purchase_orders.cost", "purchase_orders.supplier"),
     )
-    assert "以下是每个产品和位置最近一次的采购成本。" in text
+    assert "以下是每个产品和位置最近一次的采购成本。" not in text  # no row opener
     assert "*单位成本:* MYR 12.50" in text
     assert "*单位折扣:* MYR 0.00" in text
     assert "*折后单位成本:* MYR 12.50" in text
@@ -806,7 +806,7 @@ def test_ac_cl24_po_cost_ms_labels():
     assert "*Diskaun / unit:* MYR 0.00" in text
     assert "*Kos selepas diskaun / unit:* MYR 12.50" in text
     assert "*Kuantiti PO:* 120" in text
-    assert "Berikut ialah kos belian terakhir bagi setiap produk dan lokasi." in text
+    assert "Berikut ialah kos belian terakhir bagi setiap produk dan lokasi." not in text  # no row opener
 
 
 # --------------------------------------------------------------------------- #
@@ -888,7 +888,7 @@ def test_ac_cl26_promotions_with_an_ms_localizer_renders_as_with_none():
     assert ms["response"] == bare["response"]
     assert "*Company:* SORENTO" in ms["response"]
     assert "EXPIRED" in ms["response"]
-    assert "Data last updated" in ms["response"]
+    assert "Updated 02/10/2026 09:15" in ms["response"]
     assert "Syarikat" not in ms["response"] and "TAMAT" not in ms["response"]
 
 
@@ -910,7 +910,7 @@ def test_ac_cl26_attachments_with_an_ms_localizer_renders_as_with_none():
     bare = fetch.output_structurer(copy.deepcopy(env), _ctx(tool))["response"]
     ms = fetch.output_structurer(copy.deepcopy(env), _ctx(tool, "ms"))["response"]
     assert ms == bare
-    assert "Here are the documents I found." in ms
+    assert "Here are the documents I found." not in ms  # no row opener
     assert "Gudang" not in ms
 
 

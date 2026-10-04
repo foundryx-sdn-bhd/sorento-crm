@@ -50,7 +50,7 @@ SLICE1: dict[str, tuple[str, str]] = {
         "tiada stok buat masa ini, ETA {eta}.",
         "目前没有库存，ETA {eta}。",
     ),
-    "Data last updated: {ts}": ("Data dikemas kini: {ts}", "数据更新时间: {ts}"),
+    "Updated {ts}": ("Dikemas kini {ts}", "更新时间 {ts}"),
     "No stock found for {codes}.": (
         "Tiada stok ditemui untuk {codes}.",
         "未找到 {codes} 的库存。",
@@ -279,20 +279,20 @@ def test_text_template_reinserts_the_value_verbatim(lang):
 def test_text_template_for_codes_and_footer(lang):
     loc = Localizer(lang, label_catalog.defaults(lang))
     codes = loc.text("No stock found for SRTSWT3001-GM.")
-    ts = loc.text("Data last updated: 02/10/2026 09:15")
+    ts = loc.text("Updated 02/10/2026 09:15")
     if lang == "ms":
         assert codes == "Tiada stok ditemui untuk SRTSWT3001-GM."
-        assert ts == "Data dikemas kini: 02/10/2026 09:15"
+        assert ts == "Dikemas kini 02/10/2026 09:15"
     else:
         assert codes == "未找到 SRTSWT3001-GM 的库存。"
-        assert ts == "数据更新时间: 02/10/2026 09:15"
+        assert ts == "更新时间 02/10/2026 09:15"
 
 
 def test_template_must_match_the_whole_string(loc):
     # A longer string that merely contains the English shape is not a match.
     s = "note: no stock at the moment, ETA 15/10/2026. extra"
     assert loc.text(s) == s
-    s2 = "Please say: Data last updated: x"
+    s2 = "Please say: Updated x"
     assert loc.text(s2) == s2
 
 
