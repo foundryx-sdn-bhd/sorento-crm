@@ -112,6 +112,24 @@ test.describe('Conversation intervention ticket round-trip', () => {
       await fileInput.first().setInputFiles(ATTACHMENT_FIXTURE);
     }
 
+    // R9: the panel's post-send re-read hits the thread endpoint (not /page) and
+    // that response already carries the sent row, from the local-first read.
+    const SENT_TEXT = 'Checking on this now - thank you for your patience.';
+    const threadResponse = page.waitForResponse(
+      async (res) => {
+        if (
+          res.request().method() !== 'GET' ||
+          !/\/conversation-sla-tracking\/[^/]+\/conversation(\?|$)/.test(res.url())
+        ) {
+          return false;
+        }
+        const body = await res.json().catch(() => null);
+        const items: Array<{ message?: { text?: string } }> = body?.items ?? [];
+        return items.some((item) => item.message?.text?.includes(SENT_TEXT));
+      },
+      { timeout: 30_000 },
+    );
+
     const sendResponse = page.waitForResponse(
       (res) => res.url().includes('/ticket/send') && res.request().method() === 'POST',
       { timeout: 30_000 },
@@ -119,6 +137,13 @@ test.describe('Conversation intervention ticket round-trip', () => {
     await drawer.getByRole('button', { name: /^send$/i }).click();
     const sendResult = await sendResponse;
     expect(sendResult.ok()).toBeTruthy();
+
+    const threadResult = await threadResponse;
+    expect(threadResult.ok()).toBeTruthy();
+    const threadBody = await threadResult.json();
+    expect(
+      threadBody.items.map((item: { message?: { text?: string } }) => item.message?.text),
+    ).toEqual(expect.arrayContaining([expect.stringContaining(SENT_TEXT)]));
 
     // The response clock stops on THIS ticket only (AC-E1) - the drawer refetches
     // and shows the message in the thread.
