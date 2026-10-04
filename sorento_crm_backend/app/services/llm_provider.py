@@ -193,6 +193,7 @@ class LLMProvider(Protocol):
         json_schema: Optional[dict] = None,
         json_schema_name: Optional[str] = None,
         timeout: Optional[float] = None,
+        prompt_cache_key: Optional[str] = None,
     ) -> ChatResult: ...
 
     def embed(self, text: str) -> list[float]: ...
@@ -401,6 +402,7 @@ class OpenAIProvider:
         json_schema: Optional[dict] = None,
         json_schema_name: Optional[str] = None,
         timeout: Optional[float] = None,
+        prompt_cache_key: Optional[str] = None,
     ) -> ChatResult:
         from app.services import llm_cassette
 
@@ -431,6 +433,10 @@ class OpenAIProvider:
             }
         elif response_format is not None:
             kwargs["response_format"] = response_format
+        # Routing hint for OpenAI's prompt cache; not part of the cassette key, which
+        # covers only what decides the answer.
+        if prompt_cache_key:
+            kwargs["prompt_cache_key"] = prompt_cache_key
 
         def live() -> Any:
             # A caller-set timeout turns the SDK's own retries off: the caller owns the retry
@@ -742,6 +748,7 @@ class AnthropicProvider:
         json_schema: Optional[dict] = None,
         json_schema_name: Optional[str] = None,
         timeout: Optional[float] = None,
+        prompt_cache_key: Optional[str] = None,
     ) -> ChatResult:
         from app.services import llm_cassette
 
@@ -1304,6 +1311,7 @@ class GeminiProvider:
         json_schema: Optional[dict] = None,
         json_schema_name: Optional[str] = None,
         timeout: Optional[float] = None,
+        prompt_cache_key: Optional[str] = None,
     ) -> ChatResult:
         from app.services import llm_cassette
 

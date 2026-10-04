@@ -83,6 +83,16 @@ def mode() -> str:
     return value
 
 
+def pinned_date() -> str | None:
+    """`LLM_CASSETTE_DATE`, honoured only while recording or replaying (so never in
+    production, which refuses those modes). Pins the parser's "today" so a cassette keyed
+    on a dated request stays valid past midnight, and a replayed answer's relative dates
+    stay the ones it was recorded with."""
+    if mode() == "off":
+        return None
+    return (os.environ.get("LLM_CASSETTE_DATE") or "").strip() or None
+
+
 def mode_label() -> str:
     """`mode()` for a trace record: never raises, so a bad value names itself there
     instead of failing a turn that made no model call (a harness-bypassed parse)."""

@@ -530,6 +530,129 @@ def run_memory_cases(args) -> int:
     return 0 if passed else 1
 
 
+REPLAY_TURNS_DIR = BACKEND_ROOT / "tests" / "chatbot" / "replay_turns"
+
+
+def load_replay_messages() -> list[dict]:
+    """Every distinct customer message in the committed turn-replay corpus, in file order."""
+    seen: set[str] = set()
+    out: list[dict] = []
+    for path in sorted(REPLAY_TURNS_DIR.rglob("*.json")):
+        with path.open(encoding="utf-8") as fh:
+            turns = json.load(fh).get("turns") or []
+        for index, turn in enumerate(turns):
+            envelope = turn.get("envelope") or {}
+            # envelope.message is the respond.io event; its `message` is the message
+            # record, whose own `message` carries the text.
+            record = ((envelope.get("message") or {}).get("message")) or {}
+            text = (record.get("message") or {}).get("text")
+            if not text or not str(text).strip() or text in seen:
+                continue
+            seen.add(text)
+            state = envelope.get("previous_conversation_state") or {}
+            out.append({"id": f"{path.stem}#{index}", "message": str(text), "state": state})
+    return out
+
+
+def run_date_layout(args) -> int:
+    """LLM-TEST-COST (crew ruling (b), 4 Oct 2026): the date line moved from the end of
+    the system prompt to the head of the user message. Same prompt, same model, same
+    messages; each input parsed THREE times: old layout, new layout, old layout again. The
+    last pair is the noise floor - a disagreement the model has with itself is not the
+    layout's - so the claim is "new vs old agrees as often as old vs old"."""
+    from dataclasses import replace
+
+    from app.database import SessionLocal
+    from app.services.ai_assistant_service import AIAssistantConfigService
+    from app.services.chatbot.head.parser import (
+        DECLARED_KEYS,
+        ParserConfig,
+        ParserError,
+        build_user_block,
+        parse,
+        render_static,
+    )
+    from app.services.llm_provider import resolve_api_key
+
+    current_date = args.current_date or "Saturday, 04 October 2026"
+    db = SessionLocal()
+    try:
+        config = AIAssistantConfigService(db).get()
+        provider = (config.provider if config is not None else None) or "openai"
+        model = args.model or (config.model if config is not None else None) or "gpt-5.4-mini"
+        api_key = (resolve_api_key(config, provider) if config is not None else "") or os.environ.get(
+            "OPENAI_API_KEY", ""
+        )
+        if not api_key:
+            print("STOP: no API key (AI assistant config row or OPENAI_API_KEY). Nothing was called.")
+            return 2
+        static, version, date_line = render_static(db, current_date=current_date, override_version_id=None)
+    finally:
+        db.close()
+    if date_line is None:
+        print("STOP: this prompt version has no single date line to move; nothing to compare.")
+        return 2
+    # Rebuild the OLD rendering exactly: the date line back where the template had it.
+    from app.services.ai_prompt_registry import render
+    from app.services.chatbot.head.parser import PROMPT_KEY
+
+    db = SessionLocal()
+    try:
+        old_system, _ = render(db, PROMPT_KEY, current_date=current_date)
+    finally:
+        db.close()
+
+    old = ParserConfig(system_prompt=old_system, prompt_version=version, provider=provider, model=model, api_key=api_key)
+    new = replace(old, system_prompt=static, date_line=date_line)
+    inputs = load_replay_messages()
+    rng = random.Random(args.seed)
+    if args.n and args.n < len(inputs):
+        inputs = rng.sample(inputs, args.n)
+    keys = sorted(DECLARED_KEYS)
+    print(
+        f"prompt v{version}  provider={provider} model={model}  inputs={len(inputs)} "
+        f"(of {len(load_replay_messages())} distinct replay-corpus messages)"
+    )
+    print(f"  old system prompt {len(old_system)} chars, new {len(static)} chars; moved: {date_line!r}")
+
+    same_new = same_ctl = 0
+    key_new, key_ctl = Counter(), Counter()
+    failures = 0
+    rows = []
+    for index, item in enumerate(inputs, 1):
+        block = build_user_block(
+            previous_response=(item["state"] or {}).get("response"),
+            latest_user_message=item["message"],
+            pending_kind=None,
+        )
+        try:
+            a = parse(old, block)
+            b = parse(new, block)
+            c = parse(old, block)
+        except ParserError as exc:
+            failures += 1
+            print(f"[{index}/{len(inputs)}] {item['id']}: FAILED ({exc})")
+            continue
+        d_new, d_ctl = diff_keys(a, b, keys), diff_keys(a, c, keys)
+        same_new += not d_new
+        same_ctl += not d_ctl
+        key_new.update(d_new)
+        key_ctl.update(d_ctl)
+        rows.append({"id": item["id"], "new_vs_old": d_new, "old_vs_old": d_ctl})
+        print(f"[{index}/{len(inputs)}] {item['id']:<60} new:{','.join(d_new) or 'SAME'}  control:{','.join(d_ctl) or 'SAME'}")
+
+    ran = len(rows)
+    print(f"\nidentical emissions (all {len(keys)} declared keys):")
+    print(f"  new layout vs old : {same_new}/{ran}")
+    print(f"  old vs old (noise): {same_ctl}/{ran}")
+    print(f"  failures: {failures}")
+    print("keys that differed, new vs old:", dict(key_new) or "none")
+    print("keys that differed, old vs old:", dict(key_ctl) or "none")
+    if args.json_out:
+        Path(args.json_out).write_text(json.dumps({"rows": rows, "same_new": same_new, "same_ctl": same_ctl, "ran": ran}, indent=2), encoding="utf-8")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--live-llm", action="store_true", help="actually call the provider")
@@ -575,12 +698,27 @@ def main() -> int:
     ap.add_argument(
         "--current-date",
         default=None,
-        help="--memory-cases only: override the prompt's {{current_date}} (default a fixed date)",
+        help="--memory-cases / --date-layout: override the prompt's {{current_date}} (default a fixed date)",
+    )
+    ap.add_argument(
+        "--date-layout",
+        action="store_true",
+        help=(
+            "LLM-TEST-COST: parse replay-corpus messages with the date line in the system "
+            "prompt (old) and at the head of the user message (new), plus an old-vs-old "
+            "control; --n samples, --seed, --model and --current-date apply. Costs 3 calls "
+            "per input"
+        ),
     )
     args = ap.parse_args()
 
     if args.memory_cases:
         return run_memory_cases(args)
+    if args.date_layout:
+        if not args.live_llm:
+            print(f"DRY RUN: {len(load_replay_messages())} distinct replay-corpus messages; add --live-llm")
+            return 0
+        return run_date_layout(args)
 
     os.environ.setdefault("no_proxy", "*")
     groups = {g.strip() for g in args.groups.split(",") if g.strip()}

@@ -102,8 +102,11 @@ message. Never commit one.
   spend without recording. Copy that pattern into a new lane's harness.
 - `scripts/chatbot_console_check.py` stops after the first turn the backend answered live, unless
   `--live` is passed (a `--record` backend needs `--live` too).
-- A recording is keyed on the exact request, and the system prompt carries the date, so a
-  cassette is good for the day and prompt version it was recorded on.
+- A recording is keyed on the exact request, and the parser's request carries today's date
+  (as the first line of the user message), so by default a cassette is good for the day and
+  prompt version it was recorded on. Set `LLM_CASSETTE_DATE` (e.g. `Saturday, 04 October 2026`)
+  on the backend to pin the parser's "today" while recording AND replaying: the same cassettes
+  then stay valid on later days. It is ignored when the mode is `off`.
 - The OpenAI provider and the direct-HTTP embedding calls are recorded. In replay an Anthropic or
   Gemini call, Whisper transcription and the market-research call are refused: use `--live`
   when a pass needs them.

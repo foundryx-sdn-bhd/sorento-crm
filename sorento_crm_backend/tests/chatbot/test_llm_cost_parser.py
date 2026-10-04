@@ -197,19 +197,19 @@ class TestPromptCacheKey:
 
     def test_openai_sends_it_and_the_cassette_key_ignores_it(self, monkeypatch, cassette_dir):
         client, calls = self._client()
-        provider = llm_provider.OpenAIProvider("k", default_model="m")
+        provider = llm_provider.OpenAIProvider("sk-test-cachekey", default_model="m")
         monkeypatch.setattr(provider, "_client", lambda **_kw: client)
         monkeypatch.setenv("LLM_CASSETTE_MODE", "record")
         provider.chat(MESSAGES, prompt_cache_key="chatbot_semantic_parser:v56")
         assert calls[0]["prompt_cache_key"] == "chatbot_semantic_parser:v56"
         monkeypatch.setenv("LLM_CASSETTE_MODE", "replay")
-        replayed = llm_provider.OpenAIProvider("k", default_model="m")
+        replayed = llm_provider.OpenAIProvider("sk-test-cachekey", default_model="m")
         monkeypatch.setattr(replayed, "_client", lambda **_kw: (_ for _ in ()).throw(AssertionError("live")))
         replayed.chat(MESSAGES, prompt_cache_key="chatbot_semantic_parser:v57")
 
     def test_unset_sends_nothing(self, monkeypatch):
         client, calls = self._client()
-        provider = llm_provider.OpenAIProvider("k", default_model="m")
+        provider = llm_provider.OpenAIProvider("sk-test-cachekey", default_model="m")
         monkeypatch.setattr(provider, "_client", lambda **_kw: client)
         provider.chat(MESSAGES)
         assert "prompt_cache_key" not in calls[0]

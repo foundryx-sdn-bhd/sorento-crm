@@ -8003,8 +8003,14 @@ _MONTHS = (
 
 
 def _current_date_directive() -> str:
-    """`{{ $now.toUTC(8*60).format('cccc, dd MMMM yyyy') }}` - Malaysia time, same format."""
+    """`{{ $now.toUTC(8*60).format('cccc, dd MMMM yyyy') }}` - Malaysia time, same format.
+
+    A test run recording or replaying cassettes may pin it (`LLM_CASSETTE_DATE`)."""
     from datetime import timedelta
+
+    pinned = llm_cassette.pinned_date()
+    if pinned:
+        return pinned
 
     now_myt = datetime.now(timezone.utc) + timedelta(hours=8)
     return (
