@@ -58,8 +58,8 @@ def test_family_without_a_numbered_account_or_alone_is_not_grouped():
 
 def test_cash_shopee_lazada_families_are_never_grouped():
     rows = [
-        _row("CASH (PARAGON PREMIUM)", 1),
-        _row("CASH (PERMAS JAYA)", 2),
+        _row("CASH (ZZT NORTH)", 1),
+        _row("CASH (ZZT SOUTH)", 2),
         _row("SHOPEE [A/C I]", 1),
         _row("SHOPEE [A/C II]", 2),
         _row("LAZADA (A/C I)", 1),
@@ -82,6 +82,22 @@ def test_name_is_taken_from_lowest_numbered_member():
         _row("SCR MARKETING (M) SDN BHD [A/C I]", 1),
     ]
     assert _names(auto.plan(rows, {})) == [(CO, "SCR MARKETING (M) SDN BHD")]
+
+
+def test_lead_is_the_lowest_numbered_member_and_its_spelling_names_the_group():
+    rows = [
+        _row("Hanlim Trading Sdn Bhd [A/C II]", 2),
+        _row("HANLIM TRADING SDN BHD [A/C I]", 1),
+    ]
+    assert _names(auto.plan(rows, {})) == [(CO, "HANLIM TRADING SDN BHD")]
+
+
+def test_account_marker_shared_by_every_member_is_not_part_of_the_name():
+    rows = [
+        _row("ALPHA TILES SDN BHD (KL) [A/C I]", 1),
+        _row("ALPHA TILES SDN BHD (JB) [A/C I]", 1),
+    ]
+    assert _names(auto.plan(rows, {})) == [(CO, "ALPHA TILES SDN BHD")]
 
 
 def test_families_are_per_company():
@@ -138,6 +154,18 @@ def test_debtor_code_shared_with_a_ledger_in_another_existing_group_is_a_conflic
     plan = auto.plan(rows, {})
     assert plan.groups == []
     assert [s.reason for s in plan.skipped] == ["debtor_code_conflict"]
+
+
+def test_code_shared_with_a_ledger_already_in_the_reused_group_is_not_a_conflict():
+    gid = str(uuid.uuid4())
+    rows = [
+        _row("ALPHA TILES SDN BHD [A/C I]", 1, code="300-A001"),
+        _row("ALPHA TILES SDN BHD [A/C II]", 2),
+        _row("SOMETHING ELSE", None, code="300-A001", group=gid),
+    ]
+    plan = auto.plan(rows, {(CO, "alpha tiles sdn bhd"): gid})
+    assert _names(plan) == [(CO, "ALPHA TILES SDN BHD")]
+    assert plan.conflicts == []
 
 
 def test_cash_debtor_code_never_conflicts():
@@ -235,6 +263,20 @@ def test_apply_creates_assigns_audits_and_rerun_changes_nothing(tmp_path):
         again = auto.load_plan(conn)
         assert again.groups == []
         assert auto.apply(conn, again, actor_user_id=actor, run_id="cga-test-2") == (0, 0)
+
+        # A ledger the office grouped after the plan was read is never moved by apply.
+        late_group = CustomerGroup(id=str(uuid.uuid4()), company_id=DEFAULT_COMPANY_ID, name="LATE PICK")
+        db.add(late_group)
+        db.flush()
+        late = [_cust(db, "EPSILON GLASS SDN BHD [A/C I]", 1), _cust(db, "EPSILON GLASS SDN BHD [A/C II]", 2)]
+        stale = auto.load_plan(conn)
+        conn.execute(text("UPDATE customers SET customer_group_id = :g WHERE id = :i"), {"g": late_group.id, "i": late[0]})
+        assert auto.apply(conn, stale, actor_user_id=actor, run_id="cga-test-3") == (1, 1)
+        assert _group_of(db, late[0]) == late_group.id
+        old = conn.execute(
+            text("SELECT old_values FROM audit_logs WHERE correlation_id = 'cga-test-3' AND entity_type = 'customer'")
+        ).scalar()
+        assert old == {"customer_group_id": None}
 
         out = auto.write_plan_csv(plan, tmp_path)
         with open(out, newline="", encoding="utf-8") as fh:
