@@ -85,11 +85,21 @@ dev; the dry run (R11) re-measures them before anything is applied.
   conflict: a retired row's phone that differs (on digits) from the kept row's own phone is
   listed and blocks the group until `keep` is named (crew 4 Oct); two buyers' phones with no
   kept phone are not a conflict, since neither is carried.
-- **R7a Listed, never acted on** (crew 4 Oct): `name_mismatch` (retired names that differ from
+- **R7b Held groups** (owner 4 Oct, decision (b)): a group with a `name_mismatch` is HELD:
+  `--apply` skips it (CSV column `held=name_mismatch`) until the owner writes `release=yes` on
+  its row. Every other group merges. `301-*` cash / Shopee / walk-in codes are never held: their
+  retired rows are buyers' names by design (`CASH_CODE_PREFIXES`). The normalisation rule is
+  `normalise_name` in `app/services/customer_merge.py` (case; `(...)` dropped; everything from the
+  first `&` dropped, so an `& DESIGN` variant is the same company only when the core before it
+  matches; punctuation to spaces; SDN / BHD / BERHAD / ENTERPRISE / ENT / TRADING / CO / COMPANY /
+  PLT / M / THE dropped), tested in `tests/test_customer_merge.py::TestNameMismatchHold`.
+  Runbook: the unique index waits until every held and conflict group is resolved;
+  `--create-index` only succeeds when no code holds two rows.
+- **R7a Listed** (crew 4 Oct): `name_mismatch` (retired names that differ from
   the kept name once case, punctuation and `SDN BHD` / `BERHAD` / `ENTERPRISE` / `TRADING` /
   `(M)` noise are removed, i.e. likely another business under the same code) and
   `ref_conflicts` (every row's AutoCount ref when more than one row holds one; Q1 (a) already
-  keeps the code-form one).
+  keeps the code-form one). `name_mismatch` drives the hold in R7b.
 - **R8 Repoint:** every FK (discovered from `pg_constraint` at run time, as
   `scripts/dedupe_spo_number_format.py` does) moves from retired ids to the survivor. Before the
   repoint, a document with no `debtor_name` gets the retired row's name, so no order loses the

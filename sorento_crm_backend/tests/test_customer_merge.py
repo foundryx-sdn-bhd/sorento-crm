@@ -65,7 +65,13 @@ def _uid() -> str:
 
 
 def _code(stem: str) -> str:
-    return unique_code(f"{MARKER}{stem}")[:30]
+    """A cash-style `301-*` code: most tests merge differently named rows, which a non-cash
+    code would hold (owner decision (b)); the hold has its own tests below."""
+    return "301-" + unique_code(f"{MARKER}{stem}")[:26]
+
+
+def _dealer_code(stem: str) -> str:
+    return "300-" + unique_code(f"{MARKER}{stem}")[:26]
 
 
 def _seed(db, code, name, created_at, *, id=None, company_id=DEFAULT_COMPANY_ID, **extra) -> str:
@@ -336,6 +342,79 @@ class TestPlan:
         header = lines[0].split(",")
         for column in ("survivor_id", "kept_reason", "survivor_ref", "ref_conflicts", "name_mismatch", "keep"):
             assert column in header
+
+
+# ======================================================== name mismatch hold (owner decision (b))
+class TestNameMismatchHold:
+    @pytest.mark.parametrize(
+        "a, b",
+        [
+            ("Chin Chun Hardware Sdn. Bhd.", "CHIN CHUN HARDWARE SDN BHD"),
+            ("CHIN-CHUN HARDWARE (M) SDN BHD", "chin chun hardware"),
+            ("W-PLY & DESIGN SDN BHD", "W-PLY ENTERPRISE"),
+            ("UNIMAX SANITARIO BERHAD", "Unimax Sanitario Trading"),
+        ],
+    )
+    def test_same_core_name(self, a, b):
+        assert customer_merge.normalise_name(a) == customer_merge.normalise_name(b)
+
+    @pytest.mark.parametrize(
+        "a, b",
+        [
+            ("CHIN CHUN HARDWARE", "HOMEMART SDN BHD"),
+            ("UNIMAX SANITARIO", "LIVINGMART"),
+            ("W-PLY", "ASIANEKA & DILOOMA"),
+            ("INSAMADU", "IOI BUSINESS HOTEL"),
+        ],
+    )
+    def test_different_core_name(self, a, b):
+        assert customer_merge.normalise_name(a) != customer_merge.normalise_name(b)
+
+    def test_another_business_under_a_dealer_code_is_held(self, db):
+        code = _dealer_code("HD")
+        survivor = _seed(db, code, "CHIN CHUN HARDWARE SDN BHD", OLD)
+        other = _seed(db, code, "HOMEMART SDN BHD", NEW)
+        g = _group(customer_merge.plan(db, codes=[code]), code)
+        assert g.held == "name_mismatch"
+        result = customer_merge.apply(db, run_id="run-hd", codes=[code])
+        assert result.merged == [] and [x.survivor_id for x in result.held] == [survivor]
+        assert _exists(db, other)
+
+    def test_a_held_group_merges_when_released(self, db):
+        code = _dealer_code("HR")
+        _seed(db, code, "CHIN CHUN HARDWARE SDN BHD", OLD)
+        other = _seed(db, code, "HOMEMART SDN BHD", NEW)
+        result = customer_merge.apply(
+            db, run_id="run-hr", codes=[code], releases=[(DEFAULT_COMPANY_ID, code)]
+        )
+        assert len(result.merged) == 1 and not _exists(db, other)
+
+    def test_same_core_name_under_a_dealer_code_merges(self, db):
+        code = _dealer_code("HS")
+        _seed(db, code, "Chin Chun Hardware Sdn. Bhd.", OLD)
+        other = _seed(db, code, "CHIN CHUN HARDWARE (M) SDN BHD", NEW)
+        g = _group(customer_merge.plan(db, codes=[code]), code)
+        assert g.held == "" and g.name_mismatch == []
+        customer_merge.apply(db, run_id="run-hs", codes=[code])
+        assert not _exists(db, other)
+
+    def test_cash_codes_are_never_held(self, db):
+        code = _code("HC")
+        _seed(db, code, "CASH SALES", OLD)
+        _seed(db, code, "AISAH", NEW)
+        g = _group(customer_merge.plan(db, codes=[code]), code)
+        assert g.name_mismatch == ["AISAH"] and g.held == ""
+
+    def test_release_column_is_read_from_the_csv(self, db, tmp_path):
+        code = _dealer_code("RL")
+        _seed(db, code, "CHIN CHUN HARDWARE", OLD)
+        _seed(db, code, "HOMEMART", NEW)
+        path = tmp_path / "plan.csv"
+        customer_merge.write_plan_csv(customer_merge.plan(db, codes=[code]), path)
+        lines = path.read_text().strip().splitlines()
+        lines[1] = lines[1] + "yes"  # `release` is the last column
+        path.write_text("\n".join(lines) + "\n")
+        assert customer_merge.read_releases(path) == {(DEFAULT_COMPANY_ID, code.lower())}
 
 
 # ============================================================================== R7-R10 apply

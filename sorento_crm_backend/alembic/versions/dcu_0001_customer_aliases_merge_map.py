@@ -7,14 +7,14 @@ after a clean apply, and a follow-up migration adds the index for parity once pr
 (card Q4 (a)), so a deploy never depends on a destructive run.
 
 Revision ID: dcu_0001
-Revises: dev_login_0001
+Revises: cbs_0001_contact_brand_ids
 """
 from __future__ import annotations
 
 from alembic import op
 
 revision = "dcu_0001"
-down_revision = "dev_login_0001"
+down_revision = "cbs_0001_contact_brand_ids"
 branch_labels = None
 depends_on = None
 

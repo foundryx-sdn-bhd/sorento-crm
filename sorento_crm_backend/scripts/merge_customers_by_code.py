@@ -16,8 +16,11 @@ Run from sorento_crm_backend/:
 - The dry run changes nothing. Its CSV (one row per group: survivor, retired rows, rows that
   would move per table, conflicts) holds real customer data: it lands in `scripts/out/`
   (gitignored) and is never committed.
-- A group with a conflict (customer group, phone, email, active, agent, segment, owner differ)
-  is skipped by `--apply` until its `keep` column names the row whose values win.
+- A group with a conflict (customer group, phone, active, agent, segment, owner differ) is
+  skipped by `--apply` until its `keep` column names the row whose values win.
+- A group whose retired names are another business (`held=name_mismatch`, never a `301-*` cash
+  code) is held by `--apply` until its `release` column says `yes`. The unique index waits for
+  every held and conflict group: it is created only when no code holds two rows.
 - `--apply` commits once per company and prints the run id; `--revert <run id>` undoes it.
 - `--create-index` adds the code-unique index after a clean apply, and refuses while any code
   still holds two rows.
@@ -81,6 +84,7 @@ def _summary(groups: list[customer_merge.Group]) -> str:
         f"groups: {len(groups)}  rows: {rows}  retired: {rows - len(groups)}",
         f"conflict groups: {len(conflicts)}  by field: {dict(fields)}",
         f"kept because: {dict(Counter(g.kept_reason for g in groups))}",
+        f"held (name mismatch, not merged without release=yes): {sum(1 for g in groups if g.held)}  "
         f"groups with a name mismatch: {sum(1 for g in groups if g.name_mismatch)}  "
         f"with several AutoCount refs: {sum(1 for g in groups if g.ref_conflicts)}",
         f"rows that move: {dict(moved)}",
@@ -130,9 +134,10 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         resolutions = customer_merge.read_resolutions(args.resolutions) if args.resolutions else {}
+        releases = customer_merge.read_releases(args.resolutions) if args.resolutions else set()
         run_id = f"dcu-{stamp}"
         companies = sorted({g.company_id for g in groups})
-        merged = skipped = 0
+        merged = skipped = held = 0
         for cid in companies:
             try:
                 result = customer_merge.apply(
@@ -141,6 +146,7 @@ def main(argv: list[str] | None = None) -> int:
                     company_id=cid,
                     codes=args.code,
                     resolutions=resolutions,
+                    releases=releases,
                     actor_user_id=actor,
                 )
                 db.commit()
@@ -150,8 +156,12 @@ def main(argv: list[str] | None = None) -> int:
                 raise
             merged += len(result.merged)
             skipped += len(result.skipped)
-            print(f"company {cid}: merged {len(result.merged)} groups, skipped {len(result.skipped)} (conflicts)")
-        print(f"run id: {run_id}  merged: {merged}  skipped: {skipped}")
+            held += len(result.held)
+            print(
+                f"company {cid}: merged {len(result.merged)} groups, skipped {len(result.skipped)} "
+                f"(conflicts), held {len(result.held)} (name mismatch)"
+            )
+        print(f"run id: {run_id}  merged: {merged}  skipped: {skipped}  held: {held}")
 
         if args.create_index:
             try:

@@ -7,6 +7,9 @@ Per group (company + `lower(btrim(customer_code))` holding more than one row):
 
 - Survivor: `customer_identity.SURVIVOR_ORDER_SQL` (code-form AutoCount ref, any ref, oldest,
   lowest id). It keeps its own name, code and ref.
+- Held (owner 4 Oct, decision (b)): a group whose retired names are another business once
+  normalised (`normalise_name`, `held_reason`) is not merged unless its CSV row says
+  `release=yes`; `301-*` cash codes are never held. The code-unique index waits for them.
 - Fields: a blank on the survivor is filled from the retired rows, oldest first. Where both hold
   a value and differ on a `CONFLICT_FIELDS` column the group is a CONFLICT: `apply` skips it
   unless the owner named a `keep` row for it, whose values then win on those columns.
@@ -131,12 +134,17 @@ class Group:
     #: `row id=ref` for every row of the group holding an AutoCount ref, when more than one does.
     #: Informational: Q1 (a) already decides (the kept row's ref stays, the others are dropped).
     ref_conflicts: list[str] = field(default_factory=list)
+    #: why `--apply` holds the group (`name_mismatch`), empty when it merges
+    held: str = ""
 
 
 @dataclass
 class ApplyResult:
     merged: list[Group] = field(default_factory=list)
+    #: conflict groups with no `keep` row named
     skipped: list[Group] = field(default_factory=list)
+    #: name-mismatch groups not released (owner decision (b))
+    held: list[Group] = field(default_factory=list)
 
 
 # ------------------------------------------------------------------------------ schema reads
@@ -321,6 +329,7 @@ def plan(
             group.ref_conflicts = [f"{rid}={ref}" for rid, ref in refs.items()]
         kept = normalise_name(group.survivor_name)
         group.name_mismatch = [n for n in group.retired_names if normalise_name(n) != kept]
+        group.held = held_reason(group) or ""
         group.not_carried = _not_carried(db, group)
         links = next((t for t, c, _p, _t in fks if _short(t) == "respond_contact_customers"), None)
         if links:
@@ -342,13 +351,40 @@ _NAME_NOISE = frozenset(
     {"sdn", "bhd", "berhad", "enterprise", "ent", "trading", "co", "company", "plt", "m", "the"}
 )
 
+#: Codes AutoCount keeps as ONE debtor for many buyers (cash sales, Shopee, walk-in): their
+#: retired rows are buyers' names, never the debtor's, so a name mismatch there is the normal
+#: case and never holds the group (owner brief 4 Oct: `301-*` codes merge, each document keeps
+#: its buyer in `debtor_name`).
+CASH_CODE_PREFIXES = ("301-",)
+
 
 def normalise_name(name: Optional[str]) -> str:
-    """`Chin Chun Hardware Sdn. Bhd.` -> `chin chun hardware`, for `name_mismatch` only."""
+    """The core of a business name, for `name_mismatch` only (owner 4 Oct, decision (b)).
+
+    1. case-insensitive;
+    2. parenthesised parts dropped: `(M)`, `(KTN)`;
+    3. everything from the first `&` dropped: `W-PLY & DESIGN` -> `W-PLY`, so an `& ...`
+       variant counts as the same company only when the core before it matches;
+    4. punctuation becomes a space: `CHIN-CHUN` = `CHIN CHUN`, `SDN. BHD.` = `SDN BHD`;
+    5. noise words dropped: SDN, BHD, BERHAD, ENTERPRISE, ENT, TRADING, CO, COMPANY, PLT, M, THE.
+
+    `Chin Chun Hardware Sdn. Bhd.` -> `chin chun hardware`; `HOMEMART SDN BHD` -> `homemart`.
+    """
     import re
 
-    words = re.sub(r"[^a-z0-9]+", " ", (name or "").lower()).split()
+    text_ = (name or "").lower()
+    text_ = re.sub(r"\([^)]*\)", " ", text_)
+    text_ = text_.split("&", 1)[0]
+    words = re.sub(r"[^a-z0-9]+", " ", text_).split()
     return " ".join(w for w in words if w not in _NAME_NOISE)
+
+
+def held_reason(group: "Group") -> Optional[str]:
+    """Why `--apply` holds this group back, or None (owner 4 Oct, decision (b)): a retired name
+    that is another business under the same code. Released only by `release=yes` in the CSV."""
+    if group.name_mismatch and not group.code_key.startswith(CASH_CODE_PREFIXES):
+        return "name_mismatch"
+    return None
 
 
 def _blank(expr: str) -> str:
@@ -440,11 +476,14 @@ def apply(
     company_id: Optional[str] = None,
     codes: Optional[Iterable[str]] = None,
     resolutions: Optional[dict[tuple[str, str], str]] = None,
+    releases: Optional[Iterable[tuple[str, str]]] = None,
     actor_user_id: Optional[str] = None,
 ) -> ApplyResult:
     """Merge every group in scope. Does not commit. `resolutions` maps
-    `(company_id, code_key)` to the row id whose values win on a conflict."""
+    `(company_id, code_key)` to the row id whose values win on a conflict; `releases` names
+    the held groups the owner cleared to merge anyway."""
     resolutions = {(str(k[0]), k[1].strip().lower()): v for k, v in (resolutions or {}).items()}
+    released = {(str(c), k.strip().lower()) for c, k in (releases or ())}
     result = ApplyResult()
     groups = plan(db, company_id=company_id, codes=codes, lock=True)
     if not groups:
@@ -452,6 +491,9 @@ def apply(
     fks = _referencing_fks(db)
     columns = _customer_columns(db)
     for group in groups:
+        if group.held and (group.company_id, group.code_key) not in released:
+            result.held.append(group)
+            continue
         keep = resolutions.get((group.company_id, group.code_key))
         if group.conflicts and keep is None:
             result.skipped.append(group)
@@ -852,6 +894,7 @@ CSV_FIELDS = (
     "code_key",
     "survivor_id",
     "survivor_name",
+    "held",
     "kept_reason",
     "survivor_ref",
     "retired_count",
@@ -864,6 +907,7 @@ CSV_FIELDS = (
     "not_carried",
     "contact_links_dropped",
     "keep",
+    "release",
 )
 
 
@@ -888,6 +932,7 @@ def write_plan_csv(groups: list[Group], path: Path | str) -> None:
                         f"{c['field']}: {c['survivor_value']} | {c['retired_id']}={c['retired_value']}"
                         for c in g.conflicts
                     ),
+                    "held": g.held,
                     "kept_reason": g.kept_reason,
                     "survivor_ref": g.survivor_ref or "",
                     "ref_conflicts": ";".join(g.ref_conflicts),
@@ -895,8 +940,19 @@ def write_plan_csv(groups: list[Group], path: Path | str) -> None:
                     "not_carried": ";".join(f"{k}={v}" for k, v in sorted(g.not_carried.items())),
                     "contact_links_dropped": ";".join(g.contact_links_dropped),
                     "keep": "",
+                    "release": "",
                 }
             )
+
+
+def read_releases(path: Path | str) -> set[tuple[str, str]]:
+    """`(company_id, code_key)` of every held group the owner marked `release=yes`."""
+    with open(path, newline="", encoding="utf-8") as fh:
+        return {
+            (row["company_id"], row["code_key"])
+            for row in csv.DictReader(fh)
+            if (row.get("release") or "").strip().lower() in ("yes", "y", "true", "1")
+        }
 
 
 def read_resolutions(path: Path | str) -> dict[tuple[str, str], str]:
