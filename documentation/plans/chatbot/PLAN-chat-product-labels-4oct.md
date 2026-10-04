@@ -1,6 +1,6 @@
 # PLAN: product info labels follow the user's language (CHAT-PRODUCT-LABELS)
 
-Status: Build complete (red tests f7aace61, catalog a3c3b8b3), in review. Track: small fix (size S,
+Status: Build complete (red tests f7aace61, catalog a3c3b8b3, review fix 62962e47), reviewer ready; browser pass in progress. Track: small fix (size S,
 no migration, no auth/RBAC change, no new ingest surface). Follow-up A of #1448.
 
 ## Owner ask (4 Oct 2026)
@@ -38,6 +38,8 @@ chatbot label catalog so they translate like the rest.
    `_VALIDITY_LABELS` words and `FILE_LINK_UNAVAILABLE`. The validity words and the link text
    translate only as the value of their own label, through a per-label `LABEL_VALUES` map read
    by `Localizer._value`, so an order `*Status:* Expired` stays as printed (#1448 owner Q3).
+   Those words are value-only (`_VALUE_ONLY`): never a whole line, a flag or a label of their
+   own, so the SO status card's bare "Unknown" line stays as printed (review B1).
 5. No change to `_LOCALIZED_TOOLS`, the presenters, or the spec registry labels.
 
 Out of scope (follow-ups B/C or not asked): spec registry labels inside "Specs", product data
