@@ -108,3 +108,11 @@ Q5. Contacts list + copy access: (a) add the hideable Brands column now and ask 
 - Q4 (a): out-of-scope code gets the identical unknown-code reply.
 - Q5 (a): hideable Brands column on the contacts list now; crew asks #1463 to add brands to its copy set.
 - No mock: pure reuse of the locations pattern.
+
+## Owner ruling, project forecast (4 Oct 2026)
+
+- Forecast rule (b) stands: a brand-scoped contact gets NO project forecast (all-brand totals
+  would leak other brands' money). The chatbot answers with the existing not-allowed path
+  (`ToolNotAllowed`); the REST route returns 403. One seam:
+  `contact_brand_scope.brand_scope_allows_tool`. Option (c), per-brand project scoping, is the
+  named follow-up if project brands are ever recorded per project.

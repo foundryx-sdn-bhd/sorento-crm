@@ -1,6 +1,6 @@
 # PLAN - Per-contact accessible brands (CONTACT-BRAND-SCOPE)
 
-Status: building (4 Oct 2026). Track: standard, size L (migration + scoping boundary;
+Status: in review, owner hand test PASS 4 Oct 2026 (PR #1469); forecast rule (b) confirmed by owner 4 Oct. Track: standard, size L (migration + scoping boundary;
 security-reviewer runs). Card: `CARD-contact-brand-scope-4oct.md` (owner answers Q1-Q5 = a).
 UAC: `contact-brand-scope-4oct-acceptance-criteria.md`. Branch `crew/contact-brand-scope`.
 
