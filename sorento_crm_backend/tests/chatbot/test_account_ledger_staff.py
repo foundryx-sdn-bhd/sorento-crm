@@ -31,6 +31,7 @@ from tests._mc_lookup_seed import customer as seed_customer
 from app.services.company_scope import DEFAULT_COMPANY_ID
 from tests.chatbot.conftest import validating_resolve_entity
 from tests.chatbot.test_customer_scope_lane import REPORT, _ask, _calls, _ent, _session_of, _turn
+from tests.chatbot.test_customer_scope_lane import _give_access_type
 from tests.chatbot.test_outstanding_lane import REPORT_HIT, _seed_contact
 
 H_2 = "SOON HENG HARDWARE [A/C II]"
@@ -115,6 +116,7 @@ def _turn_with(session_factory, monkeypatch, rows, by_token, entity, body):
 def test_account_1_lists_only_the_level_one_ledgers(session_factory, monkeypatch) -> None:
     """AC-8: two families, one line each, each the level one ledger by its exact name."""
     _seed_contact(session_factory, variables={})
+    _give_access_type(session_factory, "Sorento Office")
     rows = _seed_book(session_factory)
     reply, captured = _turn_with(
         session_factory, monkeypatch, rows, {"soon heng": ALL_NAMES}, _acct("Soon Heng", 1),
@@ -137,6 +139,7 @@ def test_account_1_lists_only_the_level_one_ledgers(session_factory, monkeypatch
 def test_a_single_survivor_is_answered_without_a_picker(session_factory, monkeypatch) -> None:
     """"Soon Heng Trading account 1" leaves one ledger: the report runs on it."""
     _seed_contact(session_factory, variables={})
+    _give_access_type(session_factory, "Sorento Office")
     rows = _seed_book(session_factory)
     reply, captured = _turn_with(
         session_factory, monkeypatch, rows, {"soon heng trading": TRADING}, _acct("Soon Heng Trading", 1),
@@ -150,6 +153,7 @@ def test_a_single_survivor_is_answered_without_a_picker(session_factory, monkeyp
 def test_a_level_the_name_lacks_is_refused_naming_the_levels_it_has(session_factory, monkeypatch) -> None:
     """AC-9 / Q4."""
     _seed_contact(session_factory, variables={})
+    _give_access_type(session_factory, "Sorento Office")
     rows = _seed_book(session_factory)
     reply, captured = _turn_with(
         session_factory, monkeypatch, rows, {"soon heng trading": TRADING}, _acct("Soon Heng Trading", 2),
@@ -161,6 +165,7 @@ def test_a_level_the_name_lacks_is_refused_naming_the_levels_it_has(session_fact
 
 def test_a_level_no_family_of_the_word_has_is_refused_with_the_word_quoted(session_factory, monkeypatch) -> None:
     _seed_contact(session_factory, variables={})
+    _give_access_type(session_factory, "Sorento Office")
     rows = _seed_book(session_factory)
     reply, captured = _turn_with(
         session_factory, monkeypatch, rows, {"soon heng": ALL_NAMES}, _acct("Soon Heng", 7),
@@ -173,6 +178,7 @@ def test_a_level_no_family_of_the_word_has_is_refused_with_the_word_quoted(sessi
 def test_no_account_leaves_the_picker_unchanged(session_factory, monkeypatch) -> None:
     """AC-5 regression: the family picker lists the two families, not narrowed to a level."""
     _seed_contact(session_factory, variables={})
+    _give_access_type(session_factory, "Sorento Office")
     rows = _seed_book(session_factory, levels=False)  # no account asked: levels are irrelevant
     reply, captured = _turn_with(
         session_factory, monkeypatch, rows, {"soon heng": ALL_NAMES}, _acct("Soon Heng", None),
