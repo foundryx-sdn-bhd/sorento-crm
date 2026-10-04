@@ -651,7 +651,7 @@ def test_s3_several_categories_matching_a_word_run_nothing_and_name_them(console
     _seed_more(console)
     text, calls = console.say(_rank(_e("faucet", "category"), group_by="product"), "top products for faucet")
     assert calls == []
-    assert text.strip() == "'faucet' matches several categories: ZZT FAUCET BLACK, ZZT FAUCET CHROME. Ask again naming one.", text
+    assert text.strip() == "'faucet' matches several categories: ZZTFC1, ZZTFC2. Ask again naming one.", text
 
 
 def test_s3_several_brands_matching_a_word_run_nothing_and_name_them(console) -> None:
