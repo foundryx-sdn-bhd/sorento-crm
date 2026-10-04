@@ -384,3 +384,113 @@ class TestOtherCustomersAreRefused:
         )
         assert reply.strip() == refusal(OWN_A), reply
         assert _calls(captured, SALES) == [] and captured == [], captured
+
+
+# --------------------------------------------------------------------------- #
+# Review nits S1 and S2: early refusal for every gated domain, fan-out and carry
+# --------------------------------------------------------------------------- #
+
+from app.services.chatbot.lanes.business import ResolveGateServices  # noqa: E402
+from tests.chatbot.conftest import validating_resolve_entity  # noqa: E402
+from tests.chatbot.test_engine import _parser_output  # noqa: E402
+
+_OTHER_UUID = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+_GATED = [
+    pytest.param("purchase_cost", "check_po_cost", COST_REFUSAL, id="purchase_cost"),
+    pytest.param("purchase_order", "check_po", PO_REFUSAL_FRAGMENT, id="purchase_order"),
+    pytest.param("spo_allocation", "check_spo", "not allowed to access", id="spo_allocation"),
+]
+
+
+def _counting_services(matches_per_token: list[dict[str, Any]]):
+    """A resolver that answers `matches_per_token` for any asked token and counts calls."""
+    calls: list[dict[str, Any]] = []
+
+    def _resolve(body: dict[str, Any]) -> dict[str, Any]:
+        calls.append(body)
+        asked = list(body.get("tokens") or [])
+        return {
+            "tokens": asked,
+            "resolutions": [{"raw": t, "token": t, "matches": matches_per_token} for t in asked if matches_per_token],
+            "unresolved_tokens": [] if matches_per_token else asked,
+        }
+
+    return ResolveGateServices(
+        access_types=lambda **_: [{"name": "Sorento Dealer"}],
+        resolve_entity=validating_resolve_entity(_resolve),
+        probe=lambda **_: None,
+    ), calls
+
+
+class TestGatedDomainRefusesBeforePickerOrMiss:
+    @pytest.mark.parametrize("domain,intent,fragment", _GATED)
+    @pytest.mark.parametrize("shape", ["ambiguous", "not_found"])
+    def test_no_picker_no_miss_no_resolver_without_the_grant(
+        self, session_factory, monkeypatch, domain, intent, fragment, shape
+    ) -> None:
+        matches = (
+            [
+                {"uuid": PRODUCT_UUID, "entity_type": "product", "canonical_code": PRODUCT_CODE + "A"},
+                {"uuid": _OTHER_UUID, "entity_type": "product", "canonical_code": PRODUCT_CODE + "B"},
+            ]
+            if shape == "ambiguous"
+            else []
+        )
+        services, resolver_calls = _counting_services(matches)
+        _seed_contact(session_factory, variables={})
+        result, captured = _run_turn(
+            session_factory, monkeypatch, qf=_qf(domain_hint=domain, intent_hint=intent),
+            text_body=f"{domain} for {PRODUCT_CODE}", msg_id=f"ZZT-pa-{uuid.uuid4().hex[:12]}",
+            attributes=[], resolve_services=services, mcp_response=PO_ROW,
+        )
+        reply = (result.reply or {}).get("text") or ""
+        assert fragment in reply, reply
+        assert PRODUCT_CODE + "A" not in reply and PRODUCT_CODE + "B" not in reply, reply
+        assert "Couldn't find" not in reply and "Which" not in reply, reply
+        assert captured == [], captured
+        assert resolver_calls == [], resolver_calls
+
+
+class TestFanOutAndCarry:
+    def test_fan_out_inventory_plus_purchase_order(self, session_factory, monkeypatch) -> None:
+        qf = _parser_output(
+            domain_hint=None, intent_hint=None, order_status=None,
+            entities=[{"raw": PRODUCT_CODE, "hint": "product", "canonical_code": None,
+                       "current_message": True, "confident": True}],
+            asks=[
+                {"domain": "inventory", "intent": "check_stock"},
+                {"domain": "purchase_order", "intent": "check_po"},
+            ],
+        )
+        _seed_contact(session_factory, variables={})
+        result, captured = _run_turn(
+            session_factory, monkeypatch, qf=qf, text_body=f"stock and PO for {PRODUCT_CODE}",
+            msg_id=f"ZZT-pa-{uuid.uuid4().hex[:12]}", attributes=[], matches=PRODUCT_MATCH,
+        )
+        reply = (result.reply or {}).get("text") or ""
+        names = _names(captured)
+        assert "crm_inventory_stock_balance_list" in names, (names, reply)
+        assert PO_TOOL not in names, names
+        assert PO_REFUSAL_FRAGMENT in reply, reply
+        assert PO_NUMBER not in reply and "PO Quantity" not in reply, reply
+
+    def test_carried_followup_after_a_granted_po_turn_is_refused(self, session_factory, monkeypatch) -> None:
+        _seed_contact(session_factory, variables={})
+        _run_turn(
+            session_factory, monkeypatch, qf=_qf(domain_hint="purchase_order", intent_hint="check_po"),
+            text_body=f"PO for {PRODUCT_CODE}", msg_id=f"ZZT-pa-{uuid.uuid4().hex[:12]}",
+            attributes=[P], matches=PRODUCT_MATCH, mcp_response=PO_ROW,
+        )
+        follow = _qf(
+            domain_hint=None, intent_hint=None, entities=[], entity_op="reuse",
+            continuation=True, user_goal="follow up on the same purchase order",
+        )
+        result, captured = _run_turn(
+            session_factory, monkeypatch, qf=follow, text_body="and the quantity?",
+            msg_id=f"ZZT-pa-{uuid.uuid4().hex[:12]}", attributes=[], matches=PRODUCT_MATCH,
+            mcp_response=PO_ROW,
+        )
+        reply = (result.reply or {}).get("text") or ""
+        assert PO_TOOL not in _names(captured), captured
+        assert PO_NUMBER not in reply and "PO Quantity" not in reply, reply
+        assert PO_REFUSAL_FRAGMENT in reply, reply

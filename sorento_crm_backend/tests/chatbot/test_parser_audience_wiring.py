@@ -104,7 +104,7 @@ def _version_count(session_factory) -> int:
     ).scalar()
 
 
-def _real_turn(session_factory, monkeypatch, *, attributes: list[str]) -> str:
+def _real_turn(session_factory, monkeypatch, *, attributes: list[str], grants_reader=None) -> str:
     """One real `engine.run_turn` with `resolve_config` UNSTUBBED. Returns the system
     prompt `parser.parse` was handed."""
     if not session_factory().execute(
@@ -121,7 +121,8 @@ def _real_turn(session_factory, monkeypatch, *, attributes: list[str]) -> str:
         },
     )
     monkeypatch.setattr(
-        engine_mod, "contact_reveal_grants", lambda db, *, contact_id, space_id: list(attributes)
+        engine_mod, "contact_reveal_grants",
+        grants_reader or (lambda db, *, contact_id, space_id: list(attributes)),
     )
     monkeypatch.setattr(engine_mod, "default_space_id", lambda db: "364817")
     monkeypatch.setattr("app.services.llm_provider.resolve_api_key", lambda cfg, provider: "sk-test")
@@ -251,3 +252,58 @@ class TestMovingTheLabelMovesEveryAudience:
             for mark in marks:
                 assert (mark in second) == (grant in grants), (grant, second)
         assert _version_count(session_factory) == 2
+
+
+# --------------------------------------------------------------------------- #
+# Review nits R1 and R2
+# --------------------------------------------------------------------------- #
+
+
+class TestPromptCacheKeyPerAudience:
+    def _key(self, session_factory, monkeypatch, grants) -> str:
+        from app.services.chatbot import llm_call
+
+        monkeypatch.setattr("app.services.llm_provider.resolve_api_key", lambda cfg, provider: "sk-test")
+        _publish(session_factory, SYNTHETIC)
+        config = parser_mod.resolve_config(
+            session_factory(), current_date="Friday, 02 October 2026", grants=grants
+        )
+        seen: dict[str, Any] = {}
+
+        def _chat(*args, **kwargs):
+            seen.update(kwargs)
+            raise RuntimeError("stop after capture")
+
+        monkeypatch.setattr(llm_call, "chat", _chat)
+        try:
+            parser_mod.parse(config, "user block")
+        except Exception:  # noqa: BLE001 - the capture is the point
+            pass
+        assert "prompt_cache_key" in seen, seen
+        return seen["prompt_cache_key"]
+
+    def test_differs_between_audiences_equal_within_one(self, session_factory, monkeypatch) -> None:
+        none_a = self._key(session_factory, monkeypatch, [])
+        none_b = self._key(session_factory, monkeypatch, [])
+        sales = self._key(session_factory, monkeypatch, [S])
+        full = self._key(session_factory, monkeypatch, [C, P, S, L])
+        assert none_a == none_b
+        assert len({none_a, sales, full}) == 3, (none_a, sales, full)
+
+
+class TestGrantsReadFailureDegradesToMinimalPrompt:
+    def test_aborted_transaction_in_grants_read_still_completes(self, session_factory, monkeypatch) -> None:
+        from sqlalchemy.exc import DBAPIError
+
+        _publish(session_factory, SYNTHETIC)
+        # a grants read that aborts the surrounding transaction the way a real SQL error does
+        def _broken(db, *, contact_id, space_id):
+            try:
+                db.execute(text("SELECT * FROM zzt_table_that_does_not_exist"))
+            except DBAPIError:
+                raise
+            return []
+
+        prompt = _real_turn(session_factory, monkeypatch, attributes=[], grants_reader=_broken)
+        assert not any(mark in prompt for mark in ALL_MARKS)
+        assert "TAIL_ZZT" in prompt
