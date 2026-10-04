@@ -37,6 +37,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models.base import set_brand_scope, set_company_scope
 from app.models.chatbot_turn import ChatbotTurn
+from app.services import llm_cassette
 from app.services.chatbot import dispatch, jsc, llm_call, media_intake, send_order, trace as trace_mod
 from app.services.chatbot.contracts import (
     BUSINESS_BRANCH_KINDS,
@@ -4099,7 +4100,13 @@ def _run_stages_body(  # noqa: PLR0915
             status="failed",
             summary="Could not understand the message.",
             why="The parser did not return a usable answer, so the turn was not routed.",
-            facts={"prompt_version": parser_config.prompt_version, "model": parser_config.model},
+            facts={
+                "prompt_version": parser_config.prompt_version,
+                "model": parser_config.model,
+                # A replay miss fails here: the console check must not read it as a live
+                # spend (LLM-TEST-COST).
+                "llm_cassette": llm_cassette.mode_label(),
+            },
             error=message,
             raw={"user_block": user_block},
         )
@@ -4167,6 +4174,10 @@ def _run_stages_body(  # noqa: PLR0915
             # alongside the total the trace already carried.
             "prompt_tokens": int(parser_usage.get("prompt_tokens") or 0),
             "completion_tokens": int(parser_usage.get("completion_tokens") or 0),
+            # LLM-TEST-COST: the prompt-cache hit, and whether this parse was live,
+            # recorded or replayed (`off` everywhere but a test run).
+            "cached_tokens": int(parser_usage.get("cached_tokens") or 0),
+            "llm_cassette": llm_cassette.mode_label(),
             "parser_bypassed": parser_bypassed,
             "recalled_frames": len(recalled),
             # D17: WHICH options the parser was shown, on the record.
@@ -8117,8 +8128,14 @@ _MONTHS = (
 
 
 def _current_date_directive() -> str:
-    """`{{ $now.toUTC(8*60).format('cccc, dd MMMM yyyy') }}` - Malaysia time, same format."""
+    """`{{ $now.toUTC(8*60).format('cccc, dd MMMM yyyy') }}` - Malaysia time, same format.
+
+    A test run recording or replaying cassettes may pin it (`LLM_CASSETTE_DATE`)."""
     from datetime import timedelta
+
+    pinned = llm_cassette.pinned_date()
+    if pinned:
+        return pinned
 
     now_myt = datetime.now(timezone.utc) + timedelta(hours=8)
     return (

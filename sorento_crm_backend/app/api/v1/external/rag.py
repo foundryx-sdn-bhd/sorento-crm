@@ -22,6 +22,13 @@ router = APIRouter()
 
 
 def _embed_query(query: str) -> list[float]:
+    from app.services import llm_cassette
+
+    if llm_cassette.mode() == "replay":
+        # Test runs only (LLM-TEST-COST): the same recording the embedding worker keeps.
+        from app.services.embedding_worker import _embed_text_chunks
+
+        return _embed_text_chunks([query])[0]
     if not settings.openai_api_key:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Embedding provider not configured")
     headers = {"Authorization": f"Bearer {settings.openai_api_key}", "Content-Type": "application/json"}
