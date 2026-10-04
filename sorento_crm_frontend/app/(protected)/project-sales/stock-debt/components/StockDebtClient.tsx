@@ -129,6 +129,11 @@ function signed(value: number): string {
   return value > 0 ? `+${value.toLocaleString()}` : value.toLocaleString();
 }
 
+/** Aux quantities print plain: no leading `+`, and never `-0`. */
+function plainQty(value: number): string {
+  return (value || 0).toLocaleString();
+}
+
 /** Which cell is open. `month` is a `YYYY-MM` key, or `tba` / `undated`. */
 interface OpenCell {
   productId: string;
@@ -475,10 +480,10 @@ export function StockDebtClient() {
               skeleton: <Skeleton className="h-4 w-full" />,
             },
             size: 112,
-            footer: () => (totals ? signed(totals[key] ?? 0) : '-'),
+            footer: () => (totals ? plainQty(totals[key] ?? 0) : '-'),
             cell: ({ row }) => (
               <span className="block px-2 py-1 text-end text-sm tabular-nums">
-                {signed(row.original[key] ?? 0)}
+                {plainQty(row.original[key] ?? 0)}
               </span>
             ),
           }))

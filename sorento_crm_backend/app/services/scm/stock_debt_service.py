@@ -475,7 +475,8 @@ class StockDebtService:
                 k: float(v["qty"])
                 for k, v in site_pool_supply.open_spo_by_product(db, product_ids).items()
             },
-            # Outstanding is shown positive; `dealer_qty` is signed demand-side.
+            # `dealer_qty` is the positive outstanding; shown NEGATIVE here, and 0 stays a
+            # plain 0 (never -0).
             "dealer": {
                 k: (-float(v["dealer_qty"]) if v["dealer_qty"] else 0.0)
                 for k, v in demand.items()
