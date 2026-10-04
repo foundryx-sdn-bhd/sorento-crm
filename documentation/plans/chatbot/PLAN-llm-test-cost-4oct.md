@@ -1,6 +1,6 @@
 # PLAN: LLM-TEST-COST (cut test LLM spend: prompt size, cache, record/replay)
 
-Status: implemented on branch `claude/llm-test-cost-kbwfi3` (PR #1476), awaiting review. Track:
+Status: implemented on branch `claude/llm-test-cost-kbwfi3` (PR #1476); reviewer + security review passed, awaiting CI and merge. Track:
 small fix track (backend/test infra only, no migration, no auth/RBAC change, no owner-visible
 behaviour). UAC: `llm-test-cost-4oct-acceptance-criteria.md`.
 
