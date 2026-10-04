@@ -110,20 +110,19 @@ def held_slots(state: State) -> list[str]:
     return [name for name, (is_held, _clear) in SLOTS.items() if is_held(state)]
 
 
-def _cleared(state: State, *, keep_pending: bool = False) -> State:
+def _cleared(state: State, *, keep_pending: bool = False, verdict: dict[str, Any] | None = None) -> State:
     focus = replace(state.focus)
     for _name, (_is_held, clear) in SLOTS.items():
         if clear is not None:
             clear(focus)
     pending = state.pending if keep_pending else None
-    if state.pending is not None and pending is None:
-        # R17 (`apply._drop_question_subject`): a question that dies takes the subject it
-        # was asked about with it, or the next ask inherits the old customer, location and
-        # product ("sales order outstanding for SRTWC8517" under a question about another
-        # product, reviewer N2).
-        from app.services.chatbot.turn.apply import _drop_question_subject
+    if state.pending is not None and pending is None and verdict is not None:
+        # A question that dies on a new ask leaves its subject as APPLY's own arm would:
+        # dropped when the new ask names its own entity (R17), carried when it names none
+        # ("got eta" over the outstanding scope question, #1262 slice 4 B2).
+        from app.services.chatbot.turn.apply import let_question_go
 
-        _drop_question_subject(focus, state.pending)
+        let_question_go(focus, state.pending, verdict)
     if pending is None:
         focus.held_turn = None
         focus.held_access = None
@@ -245,7 +244,7 @@ def consume(
         # "cert?" next is about, #833) and a roster (`pending.is_roster`; "incoming
         # srtwc286" -> "4" -> "check stock" -> "7" still picks, #1352). Reset, TTL and
         # access change still drop both.
-        return _cleared(state, keep_pending=_answers_only_by_pick(state.pending)), "new_ask"
+        return _cleared(state, keep_pending=_answers_only_by_pick(state.pending), verdict=verdict), "new_ask"
     return state, None
 
 

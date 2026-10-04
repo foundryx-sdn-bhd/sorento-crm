@@ -418,6 +418,30 @@ def _holds_the_offer(pending: Pending, decision: Decision, verdict: dict[str, An
     )
 
 
+def let_question_go(focus: Focus, pending: Pending, verdict: dict[str, Any]) -> None:
+    """What happens to the subject of a question that dies on a new ask (STUCK-QTY-LOOP, the
+    central held rule, `turn/held.py`), the same two readings this module's own outstanding
+    arm makes: a new ask that names its own entity drops the subject the question was asked
+    about (R17, `_drop_question_subject`); one that names none ("got eta", #1262 slice 4 B2)
+    is answered over it, so the question's subject is settled onto the focus and only its own
+    document, status, window and channel go."""
+    if not isinstance((pending.payload or {}).get("filters"), dict):
+        return
+    if any(isinstance(e, dict) and e.get("current_message") is not False for e in verdict.get("entities") or []):
+        _drop_question_subject(focus, pending)
+        return
+    from_offer = replace(focus, products=[], customers=[], warehouse=[], outstanding_brand_ids=[])
+    _settle_question_subject(from_offer, pending, None)
+    focus.products = focus.products or from_offer.products
+    focus.customers = focus.customers or from_offer.customers
+    focus.warehouse = focus.warehouse or from_offer.warehouse
+    focus.outstanding_brand_ids = focus.outstanding_brand_ids or from_offer.outstanding_brand_ids
+    focus.document = []
+    focus.status = None
+    focus.date_window = None
+    focus.sales_channel = None
+
+
 def _drop_question_subject(focus: Focus, pending: Pending) -> None:
     """R17: the offer dies, and its filters die with it.
 
