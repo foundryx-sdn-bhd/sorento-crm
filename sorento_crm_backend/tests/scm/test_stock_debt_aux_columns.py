@@ -282,7 +282,7 @@ def test_values_do_not_change_with_book_or_supplier_filter(scm_app):
         _present(db, p, pool, marker, p.product_code[-1])
     db.flush()
     _stock(db, prod, pool, 40)
-    _po(db, prod, pool, qty=30, received=10)
+    _po(db, prod, pool, qty=30, received=10, supplier=sup_a)
     _spo(db, prod, pool, qty=60, arrives=date(2027, 3, 20))
     _retail(db, prod, pool, qty=7, required_date=date(2027, 3, 10), so=f"{marker}-R1")
 
@@ -414,7 +414,7 @@ def _export_world(db, marker):
         ))
         _present(db, prod, pool, marker, tag)
         _stock(db, prod, pool, stock)
-        _po(db, prod, pool, qty=po)
+        _po(db, prod, pool, qty=po, supplier=sup)
         _spo(db, prod, pool, qty=spo, arrives=date(2027, 3, 20))
         _retail(db, prod, pool, qty=dealer, required_date=date(2027, 3, 10),
                 so=f"{marker}-R{tag}")
@@ -501,8 +501,9 @@ def test_export_route_threads_show_aux_into_the_job_filters(scm_app, monkeypatch
     assert resp.status_code == 201, resp.text
     assert calls[0]["args"][2].get("show_aux") is True, calls[0]["args"][2]
 
-    app2, db2 = _client(scm_app)
-    with TestClient(app2) as c:
+    # one client: clear the first row's in-flight state so the 409 guard lets the second in
+    db.execute(text("UPDATE user_downloads SET status = 'ready'"))
+    with TestClient(app) as c:
         resp = c.post(f"{BASE}/export", json={"split": "none"})
     assert resp.status_code == 201, resp.text
     assert calls[1]["args"][2].get("show_aux") is False, calls[1]["args"][2]

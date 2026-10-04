@@ -100,7 +100,7 @@ describe('getStockDebtCell', () => {
 describe('exportStockDebt show_aux (STOCKDEBT-AUX-COLS AC-12)', () => {
   const base = {
     query: '', onlyDebt: true, book: 'all' as const, supplierIds: [], dateFrom: '',
-    dateTo: '', split: 'none' as const,
+    dateTo: '', split: 'none' as const, showAux: true,
   };
 
   async function sentBody(extra: Record<string, unknown>) {
