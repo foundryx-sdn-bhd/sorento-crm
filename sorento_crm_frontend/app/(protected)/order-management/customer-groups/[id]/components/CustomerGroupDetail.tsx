@@ -131,6 +131,13 @@ export default function CustomerGroupDetail({ groupId }: { groupId: string }) {
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
                 <span>{ledgerCountLabel(group.ledger_count)}</span>
                 {accounts ? <span>{accounts}</span> : null}
+                {group.sales_agent_mixed ? (
+                  <Badge variant="warning" appearance="light" size="sm">
+                    Agent: Mixed
+                  </Badge>
+                ) : group.sales_agent_label ? (
+                  <span>Agent: {group.sales_agent_label}</span>
+                ) : null}
               </div>
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                 {group.created_at ? (
@@ -281,6 +288,28 @@ function LedgersTab({ groupId, canEdit }: { groupId: string; canEdit: boolean })
         ),
         size: 320,
         meta: { headerTitle: 'Name', skeleton: <Skeleton className="h-4 w-40" /> },
+      },
+      {
+        accessorKey: 'sales_agent_code',
+        header: ({ column }) => <DataGridColumnHeader title="Agent" column={column} />,
+        enableSorting: false,
+        cell: ({ row }) => {
+          const { sales_agent_code, sales_agent_name } = row.original;
+          const label = sales_agent_code
+            ? sales_agent_name
+              ? `${sales_agent_code} - ${sales_agent_name}`
+              : sales_agent_code
+            : null;
+          return label ? (
+            <span className="block truncate" title={label}>
+              {label}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">-</span>
+          );
+        },
+        size: 180,
+        meta: { headerTitle: 'Agent', skeleton: <Skeleton className="h-4 w-24" /> },
       },
       {
         accessorKey: 'account_level',

@@ -17,6 +17,9 @@ class CustomerGroupResponse(BaseModel):
     ledger_count: int = 0
     # Sorted distinct `customers.account_level` of the members; none when no member is numbered.
     account_levels: List[int] = []
+    # The one person behind the group's ledger agents; None when none is assigned or they differ.
+    sales_agent_label: Optional[str] = None
+    sales_agent_mixed: bool = False
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

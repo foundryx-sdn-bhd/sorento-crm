@@ -114,9 +114,24 @@ function monthLabel(key: string): string {
   return `${names[index] ?? month} ${year?.slice(2) ?? ''}`;
 }
 
+const SHOW_AUX_KEY = 'stock-debt.show-aux';
+
+/** The four read-only columns between Product and the months. */
+const AUX_COLUMNS = [
+  { key: 'pool_on_hand', header: 'BRW On Hand Qty' },
+  { key: 'pool_po_qty', header: 'BRW PO Qty' },
+  { key: 'pool_incoming_qty', header: 'BRW Incoming Qty' },
+  { key: 'dealer_outstanding', header: 'Dealer O/standing Qty' },
+] as const;
+
 /** `-16` reads as debt, `+84` as surplus; a bare `84` reads as neither. */
 function signed(value: number): string {
   return value > 0 ? `+${value.toLocaleString()}` : value.toLocaleString();
+}
+
+/** Aux quantities print plain: no leading `+`, and never `-0`. */
+function plainQty(value: number): string {
+  return (value || 0).toLocaleString();
 }
 
 /** Which cell is open. `month` is a `YYYY-MM` key, or `tba` / `undated`. */
@@ -186,6 +201,24 @@ export function StockDebtClient() {
   // Default ON (AC-S2-10): the whole catalogue is ~4,000 products and the answer the
   // planner came for is the short list that owes something.
   const [onlyDebt, setOnlyDebt] = React.useState(true);
+  // Display preference, not a filter: remembered per browser, default ON. Read after mount
+  // so the server render and first client render agree.
+  const [showAux, setShowAux] = React.useState(true);
+  React.useEffect(() => {
+    try {
+      if (window.localStorage.getItem(SHOW_AUX_KEY) === 'false') setShowAux(false);
+    } catch {
+      // Storage denied: keep the default.
+    }
+  }, []);
+  const changeShowAux = (next: boolean) => {
+    setShowAux(next);
+    try {
+      window.localStorage.setItem(SHOW_AUX_KEY, String(next));
+    } catch {
+      // Storage denied: the choice lasts for this visit only.
+    }
+  };
   const [openCell, setOpenCell] = React.useState<OpenCell | null>(null);
   const [pagination, setPagination] = React.useState<PaginationState>({
     pageIndex: 0,
@@ -437,6 +470,24 @@ export function StockDebtClient() {
           );
         },
       },
+      ...(showAux
+        ? AUX_COLUMNS.map<ColumnDef<StockDebtRow>>(({ key, header }) => ({
+            id: `aux:${key}`,
+            header: () => <span className="block truncate text-end" title={header}>{header}</span>,
+            meta: {
+              headerTitle: header,
+              headerClassName: 'text-end',
+              skeleton: <Skeleton className="h-4 w-full" />,
+            },
+            size: 112,
+            footer: () => (totals ? plainQty(totals[key] ?? 0) : '-'),
+            cell: ({ row }) => (
+              <span className="block px-2 py-1 text-end text-sm tabular-nums">
+                {plainQty(row.original[key] ?? 0)}
+              </span>
+            ),
+          }))
+        : []),
       ...months.map<ColumnDef<StockDebtRow>>((key) => ({
         id: `m:${key}`,
         header: () => columnHeader(`m:${key}`, monthLabel(key), monthLabel(key)),
@@ -498,7 +549,7 @@ export function StockDebtClient() {
     // `selectionRef` note above): the renderers close over `selectionRef.current`
     // instead, so `columns` - and the per-cell component identity TanStack's
     // `flexRender` sees - stays stable across every drag step and click.
-  }, [months, tbaMonth, totals]);
+  }, [months, tbaMonth, totals, showAux]);
 
   const table = useReactTable({
     data: rows,
@@ -631,6 +682,7 @@ export function StockDebtClient() {
                 kind: 'custom',
                 active: activeFilterCount > 0,
                 activeCount: activeFilterCount,
+                modal: false,
                 activeSummary: activeChips,
                 content: (
                   <div className="space-y-4">
@@ -692,13 +744,24 @@ export function StockDebtClient() {
                         Only products in debt
                       </Label>
                     </div>
+
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        id="show-aux"
+                        checked={showAux}
+                        onCheckedChange={changeShowAux}
+                      />
+                      <Label htmlFor="show-aux" className="text-sm whitespace-nowrap">
+                        Show stock and PO columns
+                      </Label>
+                    </div>
                   </div>
                 ),
               }}
               primaryAction={
                 <StockDebtExportPopover
                   envelope={list.data}
-                  filters={{ query: debounced, onlyDebt, book, supplierIds, dateFrom, dateTo }}
+                  filters={{ query: debounced, onlyDebt, book, supplierIds, dateFrom, dateTo, showAux }}
                 />
               }
             />
