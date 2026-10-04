@@ -22,7 +22,7 @@ from app.services.chatbot.lanes.business.fetch import output_structurer
 from app.services.text_tokens import tokens
 from tests._pg_fixture import blank_session
 
-_DASH = "—"
+_DASH = "\u2014"
 _ACCESS_NOTE = f"I can't share the {{label}} {_DASH} please check with the office."
 
 #: Every entry this lane adds: English -> (ms, zh).
@@ -146,10 +146,10 @@ def test_every_new_entry_keeps_its_placeholders(english):
 
 def test_the_catalog_source_stays_dash_free_and_the_ms_zh_text_carries_no_dash():
     source = Path(label_catalog.__file__).read_text(encoding="utf-8")
-    assert _DASH not in source and "–" not in source
+    assert _DASH not in source and "\u2013" not in source
     for english in NEW:
         for lang in ("ms", "zh"):
-            assert _DASH not in LABELS[english][lang] and "–" not in LABELS[english][lang]
+            assert _DASH not in LABELS[english][lang] and "\u2013" not in LABELS[english][lang]
 
 
 def test_the_two_value_phrases_are_value_words_and_no_new_sentence_is_inline():
@@ -239,6 +239,20 @@ def test_validity_words_and_the_link_text_stay_as_printed_after_any_other_label(
     assert loc.reply(f"*Validity:* {_NO_LINK}") == f"*{_t('Validity', lang)}:* {_NO_LINK}"
     # Inside a longer value it is data.
     assert loc.reply("*Validity:* Valid until 2027") == f"*{_t('Validity', lang)}:* Valid until 2027"
+
+
+@pytest.mark.parametrize("lang", ["ms", "zh"])
+@pytest.mark.parametrize("word", (*_VALIDITY, _NO_LINK))
+def test_a_value_only_word_is_never_a_line_a_flag_or_a_label_of_its_own(lang, word):
+    loc = _loc(lang)
+    # The SO status card (`so_status.py`) prints the status alone on a line under the header.
+    card = f"*SO123* - Acme\n{word}"
+    assert loc.reply(card) == card
+    for line in (word, f"*{word}*", f"_{word}_", f"*_{word}_*", f"- {word}", f"1. {word}", f"⚠️  *({word})*"):
+        assert loc.reply(line) == line, line
+    for line in (f"{word}: 10 pcs", f"1. {word}: 10 pcs, MYR 5.00", f"*{word}:* 3", f"- *{word}:* 3"):
+        assert loc.reply(line) == line, line
+    assert loc.text(word) == word and loc.sentence(word) == word
 
 
 @pytest.mark.parametrize("lang", ["ms", "zh"])

@@ -621,6 +621,9 @@ LABEL_VALUES: dict[str, frozenset[str]] = {
     "Validity": frozenset({"Valid", "Expiring soon", "Expired", "Not yet valid", "Unknown"}),
     "File Link": frozenset({"(file link unavailable right now)"}),
 }
+#: Those words are never a sentence, a flag or a label of their own: a status card that prints
+#: "Unknown" or "Expired" alone on a line keeps it as printed (#1448 owner Q3).
+_VALUE_ONLY = frozenset().union(*LABEL_VALUES.values())
 RANGE = "{from} to {to}"
 #: A `{token}` matches at most this many characters of one line, and a line longer than
 #: `_INLINE_LINE_MAX` gets `lines()` only (the inline pass is skipped for it).
@@ -709,6 +712,8 @@ class Localizer:
         return _TOKEN.sub(lambda t: values.get(t.group(1), t.group(0)), self.table.get(key, key))
 
     def _text(self, s: str, *, inline: bool) -> str:
+        if s in _VALUE_ONLY:
+            return s
         if s in self.table:
             return self.table[s]
         best = None
@@ -782,7 +787,7 @@ class Localizer:
         if done != line:
             return done
         flag = _FLAG.fullmatch(line)
-        if flag and flag.group(2) in self.table and not tokens(flag.group(2)):
+        if flag and flag.group(2) in self.table and flag.group(2) not in _VALUE_ONLY and not tokens(flag.group(2)):
             return flag.group(1) + self.table[flag.group(2)] + flag.group(3)
         number = _NUMBERED.match(line)
         prefix, rest = (number.group(0), line[number.end() :]) if number else ("", line)
@@ -794,7 +799,7 @@ class Localizer:
             if not rest.startswith(left):
                 continue
             head, found, value = rest[len(left) :].partition(sep)
-            if not found or head not in self.table or _BREAKDOWN_VALUE.match(value):
+            if not found or head not in self.table or head in _VALUE_ONLY or _BREAKDOWN_VALUE.match(value):
                 continue  # a breakdown row (`5 (O/S: 2)`) whose name collides with a label is data
             return prefix + left + self.table[head] + sep + self._value(value, head)
         return line
