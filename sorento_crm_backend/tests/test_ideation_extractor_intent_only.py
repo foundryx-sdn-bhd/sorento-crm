@@ -101,16 +101,20 @@ def test_migration_is_single_head_and_upgrade_wires_seed_and_publish():
     revision = _assign(src, "revision")
     assert isinstance(revision, str) and 0 < len(revision) <= 32
 
-    # Not pinned as the head: later migrations legitimately chain on this one; the
-    # single-head property is enforced by check_alembic_heads.py and CI.
-    from alembic.config import Config
-    from alembic.script import ScriptDirectory
-
-    cfg = Config()
-    cfg.set_main_option("script_location", str(VERSIONS_DIR.parent))
-    script = ScriptDirectory.from_config(cfg)
-    assert len(script.get_heads()) == 1
-    assert script.get_revision(REVISION) is not None
+    # Single head across the whole versions dir, not "this revision is the head": a later
+    # lane's migration legitimately chains on top of it (DEBTOR-CODE-LINK's sdn_0002 did).
+    revisions, parents = set(), set()
+    for p in VERSIONS_DIR.glob("*.py"):
+        p_src = p.read_text(encoding="utf-8")
+        rev = _assign(p_src, "revision")
+        if not isinstance(rev, str):
+            continue
+        revisions.add(rev)
+        down = _assign(p_src, "down_revision")
+        parents.update(down if isinstance(down, (tuple, list)) else [down])
+    assert REVISION in revisions
+    heads = revisions - parents
+    assert len(heads) == 1, f"alembic heads: {sorted(heads)}"
 
     upgrade = next(
         n for n in ast.parse(src).body if isinstance(n, ast.FunctionDef) and n.name == "upgrade"
