@@ -12,8 +12,9 @@ run answer from a recording instead:
 The seam is `llm_provider.OpenAIProvider` (`chat` and `embed`), so every caller of
 `get_provider` is covered without knowing this module exists. Anthropic and Gemini are not
 recorded: in replay mode they refuse (`CassetteError`) rather than spend, and so do the
-direct-HTTP calls that bypass the provider (embeddings, transcription, market research),
-each through `refuse_uncovered`.
+direct-HTTP transcription and market-research calls (`refuse_uncovered`). The direct-HTTP
+embedding calls (`embedding_worker._embed_text_chunks`, `external/rag`) record and replay
+like `OpenAIProvider.embed`, so a replayed turn's semantic matching behaves as it did live.
 
 **Key.** sha256 over the request's model, messages, response format (the strict schema)
 and tools - what decides the answer. Temperature and the token ceiling do not change the
@@ -42,6 +43,7 @@ logger = logging.getLogger(__name__)
 MODE_ENV = "LLM_CASSETTE_MODE"
 DIR_ENV = "LLM_CASSETTE_DIR"
 MODES = ("off", "record", "replay")
+DEV_ENVIRONMENTS = frozenset({"development", "dev", "local", "test", "ci"})
 
 # The request fields that decide the answer. Everything else (temperature, the ceiling,
 # `tool_choice`, timeouts) is left out so a harmless tweak keeps the recordings.
@@ -62,8 +64,9 @@ class CassetteMiss(CassetteError):
 def mode() -> str:
     """The current mode, read per call so a test or a runner can switch it.
 
-    Production refuses anything but `off`: `record` there would write the model's answers
-    to real customers into an unmanaged file, and `replay` would fail every turn.
+    Anything but `off` runs only in a dev/test `ENVIRONMENT` (an allowlist, so a staging or
+    prod copy under another name is refused too): `record` there would write the model's
+    answers to real customers into an unmanaged file, and `replay` would fail every turn.
     """
     value = (os.environ.get(MODE_ENV) or "off").strip().lower()
     if value not in MODES:
@@ -71,8 +74,12 @@ def mode() -> str:
     if value != "off":
         from app.config import settings
 
-        if (settings.environment or "").strip().lower() == "production":
-            raise CassetteError(f"{MODE_ENV}={value} is refused in production")
+        environment = (settings.environment or "").strip().lower()
+        if environment not in DEV_ENVIRONMENTS:
+            raise CassetteError(
+                f"{MODE_ENV}={value} is refused in ENVIRONMENT={environment!r} "
+                f"(allowed only in {', '.join(sorted(DEV_ENVIRONMENTS))}; never production)"
+            )
     return value
 
 
@@ -186,8 +193,9 @@ def _write(key: str, kind: str, model: str, response: Any, secret: str) -> None:
 
 def _read(key: str, kind: str, model: str) -> Any:
     path = _path(key)
-    if path.parent.is_dir():
-        _require_private(path.parent)
+    for directory in (cassette_dir(), path.parent):
+        if directory.is_dir():
+            _require_private(directory)
     if not path.is_file():
         raise CassetteMiss(
             f"LLM cassette miss: no {kind} recording for key {key} (model {model}) in "

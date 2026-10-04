@@ -104,10 +104,10 @@ message. Never commit one.
   `--live` is passed (a `--record` backend needs `--live` too).
 - A recording is keyed on the exact request, and the system prompt carries the date, so a
   cassette is good for the day and prompt version it was recorded on.
-- Only the OpenAI provider is recorded. In replay an Anthropic or Gemini call is refused, and so
-  are the direct-HTTP embeddings, transcription and market-research calls (so Tier-3 entity
-  matching and background indexing do not run): use `--live` when a pass needs them.
-- Production refuses any mode but `off`. A cassette dir inside any git checkout, or one not
+- The OpenAI provider and the direct-HTTP embedding calls are recorded. In replay an Anthropic or
+  Gemini call, Whisper transcription and the market-research call are refused: use `--live`
+  when a pass needs them.
+- Any mode but `off` runs only when `ENVIRONMENT` is development, dev, local, test or ci. A cassette dir inside any git checkout, or one not
   owned by you with mode 0700, is refused. Clear old cassettes with
   `find ~/.cache/sorento-llm-cassettes -name '*.json' -mtime +7 -delete`.
 

@@ -144,21 +144,22 @@ the wire. Each applies only when set.
 
 ## Direct-HTTP calls outside the provider seam
 
-Raw-httpx embeddings (`embedding_worker._embed_text_chunks`, `api/v1/external/rag.py`), Whisper
-(`media_extract/transcribe.py`) and the SCM market-research Anthropic call do not go through
-`OpenAIProvider`, so nothing records them. In replay each one refuses (`refuse_uncovered`)
-instead of spending (security review round 1, S3). The cost of that: in a replay run the
-entity resolver's Tier-3 fallback (`entity_resolver.py`, `_memo_embedding`) skips (it already
-catches and returns no match), and background indexing of new rows fails. Run `--live` when a
-pass depends on either.
+Raw-httpx embeddings (`embedding_worker._embed_text_chunks`, `api/v1/external/rag.py`) do not go
+through `OpenAIProvider`, so they get their own cassette call: recorded and replayed under the same
+key scheme (security review round 2), so the entity resolver's Tier-3 fallback and frame recall
+behave in replay as they did when recorded. A background-indexing embedding of a row that was
+never recorded misses in replay (it raises; the indexer logs it). Whisper
+(`media_extract/transcribe.py`) and the SCM market-research Anthropic call refuse in replay
+(`refuse_uncovered`) instead of spending.
 
 ## Security review round 1 (applied)
 
 - B1: the console check read an inline trace the `/turn` body never carries; it now reads the
   stored row (`_row_trace`).
 - S1: a cassette dir inside ANY git checkout (another clone, a worktree's primary) is refused.
-- S2: `LLM_CASSETTE_MODE` other than `off` raises when `ENVIRONMENT=production`.
-- S3: the direct-HTTP calls above refuse in replay.
+- S2: `LLM_CASSETTE_MODE` other than `off` raises unless `ENVIRONMENT` is development, dev,
+  local, test or ci (an allowlist, round 2).
+- S3: the direct-HTTP calls above never spend in replay (embeddings replay, the rest refuse).
 - S4: `LLM_BASE_URL` must be https (http only on localhost), since the key travels there.
 - N1: an existing cassette dir must be owned by this user with mode 0700.
 - N2 (retention): a cassette is good for one day, so clear old ones with
@@ -173,3 +174,11 @@ pass depends on either.
 - Known, left as is: a replayed turn still writes its RECORDED token counts to
   `ai_assistant_usage_logs` (test databases only, since replay never runs in production).
   Read test-DB usage with that in mind; `understood.facts.llm_cassette` tells the two apart.
+
+## Security review round 2 (applied)
+
+- The console check stops when the turn row is not in its own database (backend on another
+  `DATABASE_URL`) instead of running unchecked.
+- Direct-HTTP embeddings record/replay rather than refuse, so replay matches live.
+- The environment guard is an allowlist.
+- `_read` checks the cassette root's ownership too.

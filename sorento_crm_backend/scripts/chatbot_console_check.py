@@ -247,7 +247,16 @@ def _cassette_refusal(body: dict[str, Any], live: bool) -> str | None:
     before the run stops."""
     if live or "_http_error" in body:
         return None
-    for record in _row_trace(body.get("turn_id")):
+    turn_id = body.get("turn_id")
+    trace = _row_trace(turn_id)
+    if turn_id and not trace:
+        # The backend wrote this turn somewhere this script cannot see (another
+        # DATABASE_URL), so whether it was replayed cannot be checked: stop, never assume.
+        return (
+            f"stopped: cannot confirm replay, turn {turn_id} is not in this script's "
+            "database (is the backend on another DATABASE_URL?). Pass --live to run unchecked."
+        )
+    for record in trace:
         if not (isinstance(record, dict) and record.get("stage") == "understood"):
             continue
         facts = record.get("facts") or {}

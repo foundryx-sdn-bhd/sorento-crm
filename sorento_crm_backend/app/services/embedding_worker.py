@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 import hashlib
+import json
 import logging
 from typing import Any
 
@@ -606,11 +607,23 @@ def _canonical_for_source(db: Session, source_type: str, source_id: str, payload
 def _embed_text_chunks(chunks: list[str]) -> list[list[float]]:
     from app.services import llm_cassette
 
-    llm_cassette.refuse_uncovered("embeddings")
-    if not settings.openai_api_key:
+    if llm_cassette.mode() != "replay" and not settings.openai_api_key:
         raise ValueError("OPENAI_API_KEY is required for embedding worker")
     if not chunks:
         return []
+    # Test runs only (LLM-TEST-COST): recorded and replayed; a plain call when unset.
+    return llm_cassette.through(
+        kind="embed",
+        key=llm_cassette.embed_key(settings.embedding_model_name, json.dumps(chunks, ensure_ascii=False)),
+        model=settings.embedding_model_name,
+        secret=settings.openai_api_key or "",
+        live=lambda: _post_embeddings(chunks),
+        dump=lambda vectors: vectors,
+        load=lambda vectors: [list(v) for v in vectors],
+    )
+
+
+def _post_embeddings(chunks: list[str]) -> list[list[float]]:
     headers = {"Authorization": f"Bearer {settings.openai_api_key}", "Content-Type": "application/json"}
     payload = {"model": settings.embedding_model_name, "input": chunks}
     with httpx.Client(timeout=30) as client:

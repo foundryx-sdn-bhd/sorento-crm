@@ -508,6 +508,12 @@ class TestConsoleCheckRefusal:
         # A turn that failed before the parse has no `understood` stage: nothing was spent.
         assert _check_with_row(None)._cassette_refusal(_body(), live=False) is None
 
+    def test_a_turn_row_this_script_cannot_see_stops_the_run(self):
+        check = _console_check()
+        check._row_trace = lambda turn_id: []
+        refusal = check._cassette_refusal(_body(), live=False)
+        assert refusal and "cannot confirm replay" in refusal
+
     def test_a_replay_miss_stops_with_the_miss_not_a_spend_claim(self):
         check = _check_with_row({"llm_cassette": "replay"}, status="failed", error="LLM cassette miss: key abc")
         refusal = check._cassette_refusal(_body(), live=False)
@@ -542,13 +548,14 @@ class TestHardening:
     def test_production_refuses_any_mode_but_off(self, monkeypatch):
         from app.config import settings
 
-        monkeypatch.setattr(settings, "environment", "production")
-        monkeypatch.setenv("LLM_CASSETTE_MODE", "off")
-        assert llm_cassette.mode() == "off"
-        for value in ("record", "replay"):
-            monkeypatch.setenv("LLM_CASSETTE_MODE", value)
-            with pytest.raises(llm_cassette.CassetteError, match="production"):
-                llm_cassette.mode()
+        for environment in ("production", "staging", "prod"):
+            monkeypatch.setattr(settings, "environment", environment)
+            monkeypatch.setenv("LLM_CASSETTE_MODE", "off")
+            assert llm_cassette.mode() == "off"
+            for value in ("record", "replay"):
+                monkeypatch.setenv("LLM_CASSETTE_MODE", value)
+                with pytest.raises(llm_cassette.CassetteError, match="refused"):
+                    llm_cassette.mode()
 
     def test_an_existing_dir_open_to_others_is_refused(self, monkeypatch, cassette_dir):
         cassette_dir.mkdir(mode=0o777)
@@ -565,16 +572,33 @@ class TestHardening:
         TestOverrides()._capture_ctor(monkeypatch)
         OpenAIProvider(SECRET)._client()
 
-    def test_direct_http_calls_refuse_in_replay(self, monkeypatch):
+    def test_direct_http_embeddings_record_and_replay(self, monkeypatch, cassette_dir):
         from app.api.v1.external import rag
+        from app.config import settings
         from app.services import embedding_worker
+
+        monkeypatch.setattr(settings, "openai_api_key", SECRET)
+        posted: list[list[str]] = []
+
+        def fake_post(chunks):
+            posted.append(chunks)
+            return [[0.5, float(len(c))] for c in chunks]
+
+        monkeypatch.setattr(embedding_worker, "_post_embeddings", fake_post)
+        monkeypatch.setenv("LLM_CASSETTE_MODE", "record")
+        assert embedding_worker._embed_text_chunks(["abc"]) == [[0.5, 3.0]]
+        monkeypatch.setenv("LLM_CASSETTE_MODE", "replay")
+        assert embedding_worker._embed_text_chunks(["abc"]) == [[0.5, 3.0]]
+        assert rag._embed_query("abc") == [0.5, 3.0]
+        assert posted == [["abc"]]
+        with pytest.raises(llm_cassette.CassetteMiss):
+            embedding_worker._embed_text_chunks(["never recorded"])
+        assert posted == [["abc"]]
+
+    def test_direct_http_calls_refuse_in_replay(self, monkeypatch):
         from app.services.media_extract import transcribe
 
         monkeypatch.setenv("LLM_CASSETTE_MODE", "replay")
-        with pytest.raises(llm_cassette.CassetteError):
-            rag._embed_query("x")
-        with pytest.raises(llm_cassette.CassetteError):
-            embedding_worker._embed_text_chunks(["x"])
         with pytest.raises(llm_cassette.CassetteError):
             transcribe._post_transcription(
                 b"", filename="f.ogg", mime_type="audio/ogg", fields={}, api_key="k", timeout=1.0
