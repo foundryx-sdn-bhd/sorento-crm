@@ -26,8 +26,7 @@ from tests.chatbot.test_low_stock_filter_ask import (
     SUPPLIER_KEY,
     _ask,
     _console,
-    _e,
-    _reply,
+    _answer,
 )
 
 APP = Path(rf.__file__).resolve().parents[2]  # .../app
@@ -42,7 +41,7 @@ PICK_TAIL = "\n1. ZZT-A1\n2. ZZT-A2"
 # --------------------------------------------------------------------------- #
 MS = {
     "category_question": 'Kategori produk yang mana? Balas dengan kategori (cth. water tap) atau "all".',
-    "supplier_question": "Pembekal yang mana?",
+    "supplier_question": 'Pembekal yang mana? Balas dengan nama pembekal atau "all".',
     "miss_category": "Saya tidak mengenali '{word}' sebagai kategori.",
     "miss_supplier": "Saya tidak mengenali '{word}' sebagai pembekal.",
     "pick_category_all": 'Kategori mana yang anda maksudkan? Balas dengan nombor atau "all":',
@@ -55,7 +54,7 @@ MS = {
 }
 ZH = {
     "category_question": '请问是哪个产品类别？请回复类别（例如 water tap）或 "all"。',
-    "supplier_question": "请问是哪个供应商？",
+    "supplier_question": '请问是哪个供应商？请回复供应商名称或 "all"。',
     "miss_category": "我不认识 '{word}' 这个类别。",
     "miss_supplier": "我不认识 '{word}' 这个供应商。",
     "pick_category_all": '您指的是哪个类别？请回复编号或 "all"：',
@@ -154,8 +153,9 @@ def test_cl52_an_english_turn_is_byte_identical(cid, english):
 
 def test_cl52_the_english_helpers_still_print_main_wording():
     assert CATEGORY.question == 'Which product category? Reply with a category (e.g. water tap) or "all".'
-    assert SUPPLIER.question == "Which supplier?"
-    assert rf._miss_line("x", SUPPLIER) == "I don't know 'x' as a supplier.\n\nWhich supplier?"
+    # LOWSTOCK-SEMANTIC (#1470) worded the supplier question like the category one.
+    assert SUPPLIER.question == 'Which supplier? Reply with a supplier name or "all".'
+    assert rf._miss_line("x", SUPPLIER) == "I don't know 'x' as a supplier.\n\n" + SUPPLIER.question
     assert rf._pick_line(CATEGORY, OPTIONS).startswith('Which category do you mean? Reply with a number or "all":\n1. ZZT-A1')
     assert rf._pick_line(CATEGORY_NO_ALL, OPTIONS).startswith("Which category do you mean? Reply with a number:\n")
     assert lsa.CANCELLED == "Low stock report cancelled."
@@ -216,7 +216,7 @@ def test_cl55_the_source_literals_are_pinned():
     assert 'f"Which {spec.noun} do you mean? Reply with a number"' in src
     assert """(' or "all":' if takes_all else ":")""" in src
     low = (APP / "services/chatbot/lanes/business/low_stock_ask.py").read_text(encoding="utf-8")
-    assert 'question="Which supplier?"' in low
+    assert "SUPPLIER_QUESTION = 'Which supplier? Reply with a supplier name or \"all\".'" in low
     assert "Low stock report cancelled." in low and "I still can't place '{word}'." in low
 
 
@@ -352,25 +352,26 @@ def test_cl53_an_ms_turn_asks_in_malay_then_the_ms_reply_settles_the_field(ms_co
     assert text == MS["category_question"]
     assert calls == [], "no run before the category is settled"
     # The answer is read from the slot, not from the Malay question: 'semua' settles it as all.
-    _text, calls = ms_console.say(_reply(intent_hint=None, message_type="casual"), "semua")
+    # LOWSTOCK-SEMANTIC (#1470): only the parser's declared answer answers the question.
+    _text, calls = ms_console.say(_answer("all"), "semua")
     assert len(calls) == 1, "the field settled, the report ran"
     assert not calls[0].get("categories"), calls[0]
 
 
 def test_cl53_an_ms_miss_is_said_in_malay_and_the_slot_survives(ms_console):
     ms_console.say(_ask(), "tunjuk laporan stok rendah")
-    text, calls = ms_console.say(_reply(_e("kapal angkasa", "product")), "kapal angkasa")
+    text, calls = ms_console.say(_answer("fill", categories=["kapal angkasa"]), "kapal angkasa")
     assert calls == []
     assert text == MS["miss_category"].format(word="kapal angkasa") + "\n\n" + MS["category_question"]
     # Still open: a real category word answers it.
-    _text, calls = ms_console.say(_reply(_e("water closet", "product")), "water closet")
+    _text, calls = ms_console.say(_answer("fill", categories=["water closet"]), "water closet")
     (args,) = calls
     assert args.get("categories") == ["SRT-WC"], args
 
 
 def test_cl53_an_ms_cancel_is_said_in_malay(ms_console):
     ms_console.say(_ask(), "tunjuk laporan stok rendah")
-    text, calls = ms_console.say(_reply(intent_hint=None, message_type="casual"), "batal")
+    text, calls = ms_console.say(_answer("cancel"), "batal")
     assert calls == [] and text == MS["cancelled"]
 
 

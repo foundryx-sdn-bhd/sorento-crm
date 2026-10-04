@@ -374,7 +374,7 @@ LABELS: dict[str, dict[str, str]] = {
     "Couldn't find some items:": {"ms": "Tidak dapat menemui beberapa item:", "zh": "找不到部分项目："},
     # Slice 5 (3 Oct): required fields (#1445) and the attachment gap line (#1437).
     'Which product category? Reply with a category (e.g. water tap) or "all".': {"ms": 'Kategori produk yang mana? Balas dengan kategori (cth. water tap) atau "all".', "zh": '请问是哪个产品类别？请回复类别（例如 water tap）或 "all"。'},
-    "Which supplier?": {"ms": "Pembekal yang mana?", "zh": "请问是哪个供应商？"},
+    'Which supplier? Reply with a supplier name or "all".': {"ms": 'Pembekal yang mana? Balas dengan nama pembekal atau "all".', "zh": '请问是哪个供应商？请回复供应商名称或 "all"。'},
     "I don't know '{word}' as a category.": {"ms": "Saya tidak mengenali '{word}' sebagai kategori.", "zh": "我不认识 '{word}' 这个类别。"},
     "I don't know '{word}' as a supplier.": {"ms": "Saya tidak mengenali '{word}' sebagai pembekal.", "zh": "我不认识 '{word}' 这个供应商。"},
     'Which category do you mean? Reply with a number or "all":': {"ms": 'Kategori mana yang anda maksudkan? Balas dengan nombor atau "all":', "zh": '您指的是哪个类别？请回复编号或 "all"：'},
@@ -558,7 +558,7 @@ INLINE = frozenset(
         "Couldn't find: {names}.",
         # Slice 5 (3 Oct): required fields (#1445) and the attachment gap line (#1437).
         'Which product category? Reply with a category (e.g. water tap) or "all".',
-        "Which supplier?",
+        'Which supplier? Reply with a supplier name or "all".',
         "I don't know '{word}' as a category.",
         "I don't know '{word}' as a supplier.",
         'Which category do you mean? Reply with a number or "all":',
