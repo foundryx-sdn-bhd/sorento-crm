@@ -1631,7 +1631,8 @@ CATALOG: tuple[ToolSpec, ...] = (
             "respond.io contact id) and `message_text` (what they just said), plus `session_vars` "
             "carrying the `ideation` pointer from the previous turn (null on the first). Optionally "
             "`submitter_name`, `media_selection` when a photo menu is open (comma-joined positions, "
-            "or 'all'), `is_new_idea` to start a fresh draft over an open one, and `is_test` "
+            "or 'all'), `is_new_idea` to start a fresh draft over an open one, `ask_reply` (true when "
+            "the message answers the bot's ask-back for an idea), and `is_test` "
             "for a test turn (the idea is stored hidden from the board, no session state is "
             "persisted). RETURNS "
             "`{status, reply_text, link?, session_vars}` - `reply_text` is what to "
@@ -1654,6 +1655,7 @@ CATALOG: tuple[ToolSpec, ...] = (
             "media_selection",
             "is_new_idea",
             "is_test",
+            "ask_reply",
         ),
         module="chatbot",
         external=True,

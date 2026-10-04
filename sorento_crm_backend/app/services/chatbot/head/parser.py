@@ -878,6 +878,9 @@ def parse(config: ParserConfig, user_block: str) -> ParsedOutput:
             max_tokens=PARSER_MAX_TOKENS,
             json_schema=PARSE_OUTPUT_JSON_SCHEMA,
             json_schema_name=PARSE_OUTPUT_SCHEMA_NAME,
+            # One cache bucket per published prompt version: every parse on it shares
+            # the same static prefix (OpenAI only; the others ignore it).
+            prompt_cache_key=f"{PROMPT_KEY}:v{config.prompt_version or 'fallback'}",
         )
     except llm_call.RateLimited as exc:
         raise ParserError(f"parser provider call failed: {exc}", rate_limited=True) from exc
@@ -890,6 +893,9 @@ def parse(config: ParserConfig, user_block: str) -> ParsedOutput:
         "prompt_tokens": int(getattr(result, "prompt_tokens", 0) or 0),
         "completion_tokens": int(getattr(result, "completion_tokens", 0) or 0),
         "total_tokens": int(getattr(result, "total_tokens", 0) or 0),
+        # The prompt-cache hit (LLM-TEST-COST): how much of `prompt_tokens` was billed
+        # at the cached rate.
+        "cached_tokens": int(getattr(result, "cached_tokens", 0) or 0),
     }
     try:
         content = (result.content or "").strip()

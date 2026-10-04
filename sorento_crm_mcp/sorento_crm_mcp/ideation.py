@@ -66,6 +66,7 @@ def register_ideation_tools(mcp: Any, settings: Settings) -> None:
         media_selection: str | None = None,
         is_new_idea: bool | None = None,
         is_test: bool | None = None,
+        ask_reply: bool | None = None,
     ) -> str:
         """Record or continue one turn of an idea a customer is submitting.
 
@@ -75,11 +76,13 @@ def register_ideation_tools(mcp: Any, settings: Settings) -> None:
         first). ``submitter_name`` is a display-name fallback used only when the
         contact row has no name. ``media_selection`` answers an OPEN photo menu
         ("1,3" or "all") and must be omitted when no menu is open.
-        ``is_new_idea`` starts a fresh draft over an open one. ``is_test`` marks
+        ``is_new_idea`` starts a fresh draft over an open one. ``ask_reply`` is
+        true when this message answers the bot's ask-back for an idea: a second
+        reply with still no idea ends the ask with a clear message. ``is_test`` marks
         a test turn: the idea is stored but hidden from the board, and no
         session state is persisted for the contact.
 
-        Returns ``{status, reply_text, link?, session_vars, offered_media}`` as
+        Returns ``{status, reply_text, link?, language?, session_vars, offered_media}`` as
         JSON text (``offered_media``: the media menu this reply offered, #1277).
         """
         client = ctx.request_context.lifespan_context["client"]
@@ -101,6 +104,8 @@ def register_ideation_tools(mcp: Any, settings: Settings) -> None:
             body["is_new_idea"] = is_new_idea
         if is_test is not None:
             body["is_test"] = is_test
+        if ask_reply is not None:
+            body["ask_reply"] = ask_reply
         return await client.request(
             spec.method,
             spec.path,
