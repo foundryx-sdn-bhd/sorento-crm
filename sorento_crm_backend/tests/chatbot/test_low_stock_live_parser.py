@@ -128,7 +128,7 @@ def test_another_ask_leaves_it_empty() -> None:
 
 OPEN_CATEGORY = {"kind": "free", "about": "low_stock_report", "question": QUESTION, "owed": ["category"]}
 OPEN_SUPPLIER = {
-    "kind": "pick_one", "about": "low_stock_report", "question": 'Which supplier? Reply with a supplier name or "all".',
+    "kind": "pick_one", "about": "low_stock_report", "question": "Which supplier?",
     "owed": ["supplier"],
     "options": [{"position": 1, "code": "JINBAICHUAN HARDWARE"}, {"position": 2, "code": "JINBAICHUAN TRADING"}],
 }

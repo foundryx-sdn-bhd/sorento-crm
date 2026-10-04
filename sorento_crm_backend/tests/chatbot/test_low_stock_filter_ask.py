@@ -472,7 +472,7 @@ class TestAsked:
 
     def test_cancel_declared_by_the_parser(self, console) -> None:
         console.say(_ask(), "low stock report")
-        text, calls = console.say(_answer("cancel"), "tak payah lah")
+        text, calls = console.say(_answer("cancel"), "never mind that one")
         assert calls == [] and text == "Low stock report cancelled."
 
     def test_a_new_question_wins(self, console) -> None:
@@ -517,7 +517,7 @@ class TestAsked:
 # --------------------------------------------------------------------------- #
 
 TAIYANG = "XIAMEN TAIYANG TECHNOLOGY CO.,LTD"
-SUPPLIER_QUESTION = 'Which supplier? Reply with a supplier name or "all".'
+SUPPLIER_QUESTION = "Which supplier?"
 
 
 class TestSupplier:
@@ -825,3 +825,23 @@ class TestTheOpenQuestion:
         obj = question.open_question(None, [], slot)
         assert obj["kind"] == "pick_one" and obj["owed"] == ["supplier"]
         assert obj["options"] == [{"position": 1, "code": "A CO"}, {"position": 2, "code": "B CO"}]
+
+
+class TestTheNewLinesTranslate:
+    """CHAT-LANGUAGE (#1448): a Malay or Chinese turn reads every low stock line in its
+    language, the lines this lane adds included (the grouping pick, the blank give-up)."""
+
+    @pytest.mark.parametrize("lang", ["ms", "zh"])
+    def test_grouping_pick_question_and_blank_give_up(self, lang) -> None:
+        from app.services.chatbot import label_catalog
+        from app.services.chatbot import required_fields as rf
+        from app.services.chatbot.lanes.business import low_stock_ask as lsa
+
+        loc = label_catalog.Localizer(lang, label_catalog.defaults(lang))
+        options = [[v, label] for v, label in lsa._GROUPING_OPTIONS]
+        pick = rf._pick_line(lsa.GROUPING, options)
+        for english in (pick, lsa.GROUPING_QUESTION, lsa.GIVE_UP_BLANK):
+            out = loc.reply(english)
+            # Every line, the four options included, reads in the turn language.
+            for line in english.split("\n"):
+                assert line not in out.split("\n"), (lang, line)

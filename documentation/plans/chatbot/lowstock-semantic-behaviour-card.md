@@ -72,7 +72,7 @@ Wording (exact, unchanged from #1445 except the two new lines marked NEW):
 
 - Category missing: `Which product category? Reply with a category (e.g. water tap) or "all".`
 - NEW, unsupported grouping: `I can group the low stock report by supplier, by category, or both. Which one? Reply 1, 2, 3, or "none":` then `1. Supplier` / `2. Category` / `3. Supplier x category`.
-- NEW, unknown supplier: `I don't know 'xyz' as a supplier.` + `Which supplier? Reply with a supplier name or "all".`
+- NEW, unknown supplier: `I don't know 'xyz' as a supplier.` + `Which supplier?`
 - Settled: the existing first line `Low stock report (<category as said>, supplier <name> | all suppliers, by <grouping> | no grouping)`.
 
 ## Examples (expected parse -> reply)

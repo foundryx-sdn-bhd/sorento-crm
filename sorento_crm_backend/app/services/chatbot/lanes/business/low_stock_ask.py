@@ -33,7 +33,6 @@ ASK_NAME = "low_stock_report"
 SUPPLIER_GRANT = "purchase_orders.supplier"
 
 QUESTION = 'Which product category? Reply with a category (e.g. water tap) or "all".'
-SUPPLIER_QUESTION = 'Which supplier? Reply with a supplier name or "all".'
 GROUPING_QUESTION = "How should the low stock report be grouped?"
 GROUPING_PICK = "I can group the low stock report by supplier, by category, or both. Which one? Reply with a number:"
 CANCELLED = "Low stock report cancelled."
@@ -215,7 +214,7 @@ def resolve_grouping(_db: Any, word: str, extras: dict[str, Any]) -> rf.Resolved
 
 CATEGORY = rf.FieldSpec(name="category", noun="category", question=QUESTION, resolve=resolve_category)
 SUPPLIER = rf.FieldSpec(
-    name="supplier", noun="supplier", question=SUPPLIER_QUESTION, resolve=resolve_supplier,
+    name="supplier", noun="supplier", question="Which supplier?", resolve=resolve_supplier,
     required=False, ask_unknown=True,
 )
 GROUPING = rf.FieldSpec(
