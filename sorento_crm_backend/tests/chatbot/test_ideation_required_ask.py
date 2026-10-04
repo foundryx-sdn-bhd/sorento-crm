@@ -103,8 +103,10 @@ class TestRegistered:
         from app.services.chatbot import required_fields
         from app.services.chatbot.lanes import ideate  # noqa: F401
 
+        # LOWSTOCK-SEMANTIC (#1470): only the parser's declared answer answers the slot.
         parsed = {"message_type": "business_query", "domain_hint": "master_products",
-                  "intent_hint": "check_product", "entities": [{"raw": "basin"}]}
+                  "intent_hint": "check_product", "entities": [{"raw": "basin"}],
+                  "open_question_answer": {"mode": "fill", "picked": [], "items": [], "qty_for_all": None}}
         verdict, rule = required_fields.reply_verdict(parsed, _slot(), "leaky basin")
         assert rule == "required_ask_answer"
         assert verdict["intent_hint"] == "submit_idea" and verdict["domain_hint"] == "ideate"
@@ -172,6 +174,8 @@ class TestBuildArguments:
 # --------------------------------------------------------------------------- #
 
 IDEATE_PARSE = dict(message_type="business_query", intent_hint="submit_idea", domain_hint="ideate")
+#: The answering turn as the parser reads it under the open slot: a declared answer (#1470).
+ANSWER_PARSE = dict(IDEATE_PARSE, open_question_answer={"mode": "fill", "picked": [], "items": [], "qty_for_all": None})
 
 
 def _say(session_factory, stub_parser, parse: dict[str, Any], body: str, message_id: str):
@@ -218,7 +222,8 @@ class TestThroughTheEngine:
         )
 
         _say(session_factory, stub_parser, IDEATE_PARSE, "want to submit idea", "ZZT-ri-2a")
-        result = _say(session_factory, stub_parser, IDEATE_PARSE, "ok i want to submit one", "ZZT-ri-2b")
+        # LOWSTOCK-SEMANTIC (#1470): the parser declares the reply as the slot's answer.
+        result = _say(session_factory, stub_parser, ANSWER_PARSE, "ok i want to submit one", "ZZT-ri-2b")
 
         assert len(calls) == 2
         assert calls[0].get("ask_reply") is None
@@ -242,7 +247,8 @@ class TestThroughTheEngine:
         result = _say(
             session_factory,
             stub_parser,
-            dict(message_type="business_query", intent_hint="check_product", domain_hint="master_products"),
+            dict(message_type="business_query", intent_hint="check_product", domain_hint="master_products",
+                 open_question_answer={"mode": "fill", "picked": [], "items": [], "qty_for_all": None}),
             "leaky basin",
             "ZZT-ri-3b",
         )
@@ -310,7 +316,7 @@ class TestSlotNeverGoesStale:
 
         _say(session_factory, stub_parser, IDEATE_PARSE, "want to submit idea", "ZZT-stale-3a")
         assert _focus_slot(session_factory) is not None
-        _say(session_factory, stub_parser, IDEATE_PARSE, "the tap handle is too stiff", "ZZT-stale-3b")
+        _say(session_factory, stub_parser, ANSWER_PARSE, "the tap handle is too stiff", "ZZT-stale-3b")
         assert calls[1]["ask_reply"] is True
         assert _focus_slot(session_factory) is None
 
