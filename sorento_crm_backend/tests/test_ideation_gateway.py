@@ -198,7 +198,10 @@ _ROUTES = [
     ),
 ]
 _ALL = [pytest.param(*r, id=r[0]) for r in _ROUTES]
-_MANAGE_ONLY = [pytest.param(*r, id=r[0]) for r in _ROUTES if r[4]]
+# `patch` stays a manage route for EVERY idea but the caller's own: a view-only user is now
+# checked against ss `isMine` first (owner Q3, IDEATION-CAPTURE), covered in
+# tests/test_ideation_own_edit.py, so it is no longer "403 with ss never called".
+_MANAGE_ONLY = [pytest.param(*r, id=r[0]) for r in _ROUTES if r[4] and r[0] != "patch"]
 _VIEW_ONLY = [pytest.param(*r, id=r[0]) for r in _ROUTES if not r[4]]
 
 _FIELDS = "name, method, path, kw, manage, ss_method, ss_path, ss_query, ss_json, ss_status"

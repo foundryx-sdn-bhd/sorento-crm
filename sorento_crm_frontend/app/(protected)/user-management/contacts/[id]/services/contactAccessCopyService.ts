@@ -34,7 +34,14 @@ export interface AccessCopyResult {
 export interface AccessCopyResponse {
   dry_run: boolean;
   /** `summary`: the source's access set as display lines (label, value), for step 1. */
-  source: { id: string; label: string; summary: { label: string; value: string }[] };
+  source: {
+    id: string;
+    label: string;
+    summary: { label: string; value: string }[];
+    /** What this copy leaves alone for the signed-in user (companies / stock fields need the
+     *  same rights as their own editors). Optional so an older backend still renders. */
+    not_copied?: string[];
+  };
   results: AccessCopyResult[];
   counts: Record<AccessCopyStatus, number>;
 }
