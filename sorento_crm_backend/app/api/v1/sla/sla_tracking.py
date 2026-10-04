@@ -2160,13 +2160,14 @@ async def get_sla_tracking_conversation(
     current_user: dict = Depends(get_current_user_or_api_key),
     db: Session = Depends(get_db),
 ):
-    """List Respond.io messages for the contact linked to this SLA tracking (respond_io_id on respond_contacts).
+    """The ticket panel's message page for the contact linked to this SLA tracking.
 
-    The listing is a real Respond.io HTTP call (``RespondClient.list_messages``,
-    15s timeout) behind a synchronous service method, so this ``async def``
-    route hands it to ``run_in_threadpool`` rather than blocking the event loop
-    for its duration - same treatment as its siblings ``GET .../ticket`` and
-    ``POST .../ticket/send``. The drawer opens both, milliseconds apart.
+    Local-first: the page comes from ``chat_histories`` (``cursor`` is a message
+    id and pages OLDER rows, same as ``before`` on ``.../conversation/page``).
+    No Respond.io call is made on the request path when stored rows exist; the
+    one delta read is queued after the response by ``chat_thread_sync_service``.
+    The service method is synchronous, so this ``async def`` route hands it to
+    ``run_in_threadpool`` rather than blocking the event loop.
     """
     from starlette.concurrency import run_in_threadpool
 
