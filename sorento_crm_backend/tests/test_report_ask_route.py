@@ -1289,7 +1289,29 @@ def _bulk_world(db):
     return top
 
 
-def test_a_ranking_over_more_than_5000_groups_is_not_truncated(client, db):
+@pytest.fixture
+def refresh_planner_stats():
+    """Leave the shared scratch schema's planner statistics fresh after the bulk test.
+
+    `_bulk_world` inserts ~5,000 products and SO lines that `blank_session` rolls back. The rollback
+    leaves dead tuples and stale statistics on those tables in the worker's schema, so the NEXT test
+    on that worker (a timing test in another file) plans its query badly. VACUUM cannot run inside a
+    transaction, so it runs on its own AUTOCOMMIT connection. Request this fixture BEFORE `db`: it is
+    then torn down AFTER `db`'s rollback, and it runs even when the test fails."""
+    yield
+    from app.database import engine
+    from tests._pg_fixture import blank_schema_engine
+
+    blank_schema_engine()  # builds the scratch schema if it is somehow absent
+    from tests._pg_fixture import _BLANK
+
+    schema = _BLANK["name"]
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+        for table in ("products", "sales_order_lines", "sales_orders", "customers", "warehouses"):
+            conn.exec_driver_sql(f'VACUUM ANALYZE "{schema}"."{table}"')
+
+
+def test_a_ranking_over_more_than_5000_groups_is_not_truncated(refresh_planner_stats, client, db):
     top = _bulk_world(db)
     body = _ok(client, _full(db), group_by="product", top_n=3)
     assert body["status"] == "ok", body
