@@ -86,8 +86,12 @@ dev; the dry run (R11) re-measures them before anything is applied.
     (logged, restored by revert). A linked row always wins survivorship (R6), so the survivor
     never lacks a ref while a retired row holds one. Owner rule: linkage by code, so a
     code-form ref wins over an AutoKey-form one.
-  - `scm.market_segment_backfill_425`: retired id replaced by the survivor's, duplicates dropped.
-  - Embeddings: retired documents deleted, survivor re-queued.
+  - `scm.market_segment_backfill_425` (the downgrade ledger of migration 425, no FK): the
+    retired id's row is dropped (logged, restored by revert).
+  - Embeddings: the retired row's documents are deleted (derived data, not restored by
+    revert); the survivor's stay.
+  - `customer_aliases` already on a retired row move with it; one equal to a survivor alias
+    is dropped (logged).
 - **R10 Retired rows** are deleted after the repoint. Each one's full row, every repointed FK row
   id and every dropped collision row is written to `customer_merge_map` first, plus one
   `audit_logs` row `CUSTOMER_MERGE` per retired id (entity = survivor, old_values = the retired
@@ -101,8 +105,14 @@ dev; the dry run (R11) re-measures them before anything is applied.
   `customer_aliases (company_id, customer_id, alias_name)`, unique per customer on
   `lower(btrim(alias_name))`. The chatbot name join and trigram search match
   `customer_name OR alias`, so "find NAME-B2" still lands on the merged customer.
-- **R13 Unique index** `(company_id, lower(btrim(customer_code)))` comes LAST (Q4). The old
-  (code, name) index then becomes redundant and is dropped in the same step.
+- **R13 Unique index** `uq_customers_company_code_lower` on `(company_id,
+  lower(btrim(customer_code))) WHERE btrim(customer_code) <> ''` comes LAST (Q4 (a)):
+  `--create-index` adds it after a clean apply and refuses while any code holds two rows; a
+  revert drops it first. The model declaration, and dropping the now-redundant (code, name)
+  index, ride the follow-up migration that lands after prod is merged.
+- **R15 Ordering with #1474.** Once the index exists, a masters push whose name differs from the
+  customer's must UPDATE the code's row, never insert: that is #1474's code-first ingest. So
+  `--create-index` waits until #1474 is merged and deployed.
 - **R14 Order:** sandbox copy -> crew applies on shared dev -> prod only with owner approval.
 
 ## Examples (masked)
