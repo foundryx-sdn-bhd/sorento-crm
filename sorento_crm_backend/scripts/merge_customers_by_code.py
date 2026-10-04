@@ -29,7 +29,7 @@ import argparse
 import os
 import sys
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -85,7 +85,7 @@ def main(argv: list[str] | None = None) -> int:
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.utcnow().strftime("%Y%m%dT%H%M%S")
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
 
     db = SessionLocal()
     set_company_scope(db, None)  # a maintenance run sees every company; filters are explicit
@@ -126,7 +126,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"run id: {run_id}  merged: {merged}  skipped: {skipped}")
 
         if args.create_index:
-            customer_merge.create_unique_index(db)
+            try:
+                customer_merge.create_unique_index(db)
+            except customer_merge.DuplicatesRemain as exc:
+                db.rollback()
+                print(f"index not created: {exc} (fill their `keep` column and re-run)")
+                return 2
             db.commit()
             print(f"created {customer_merge.UNIQUE_INDEX}")
         return 0

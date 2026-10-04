@@ -563,6 +563,11 @@ def revert(db: Session, run_id: str, *, actor_user_id: Optional[str] = None) -> 
         {"run": run_id},
     ).all()
     customers_table = _table_of(db, "customers")
+    if maps:
+        # The retired rows share their survivor's code, so the code-unique index (if a
+        # clean apply created it) has to go first. `create_unique_index` puts it back once
+        # the codes are unique again.
+        db.execute(text(f"DROP INDEX IF EXISTS {_index_qualified(db)}"))
     for map_id, cid, survivor, retired, row, repointed, dropped, updated in maps:
         db.execute(
             text(
@@ -619,6 +624,17 @@ def revert(db: Session, run_id: str, *, actor_user_id: Optional[str] = None) -> 
 
 
 # ------------------------------------------------------------------------------ unique index
+def _index_qualified(db: Session) -> str:
+    """The index's name in the schema that holds `customers`."""
+    schema = db.execute(
+        text(
+            "SELECT quote_ident(n.nspname) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+            "WHERE c.oid = to_regclass('customers')"
+        )
+    ).scalar()
+    return f"{schema}.{UNIQUE_INDEX}"
+
+
 def duplicate_groups(db: Session) -> int:
     return int(
         db.execute(

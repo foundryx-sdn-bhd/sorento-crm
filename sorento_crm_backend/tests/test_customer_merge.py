@@ -487,6 +487,18 @@ class TestRevert:
             for m in db.query(CustomerMergeMap).filter(CustomerMergeMap.run_id == "run-rv")
         )
 
+    def test_revert_after_the_index_was_created_drops_it_first(self, db):
+        db.execute(text("DELETE FROM customers WHERE id IN (SELECT id FROM customers c WHERE EXISTS ("
+                        "SELECT 1 FROM customers d WHERE d.company_id = c.company_id AND d.id <> c.id "
+                        "AND lower(btrim(d.customer_code)) = lower(btrim(c.customer_code))))"))
+        code = _code("RI")
+        _seed(db, code, "NAME-A", OLD)
+        retired = _seed(db, code, "NAME-B", NEW)
+        customer_merge.apply(db, run_id="run-ri", codes=[code])
+        customer_merge.create_unique_index(db)
+        customer_merge.revert(db, "run-ri")
+        assert _exists(db, retired)
+
     def test_revert_twice_is_a_no_op(self, db):
         code = _code("R2")
         _seed(db, code, "NAME-A", OLD)
