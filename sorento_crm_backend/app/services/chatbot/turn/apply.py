@@ -66,9 +66,9 @@ from app.services.chatbot.turn.state import (
     token_key,
 )
 
-# STUCK-QTY-LOOP: `intent` too - the reset turn's own intent is what the next message is
+# STUCK-QTY-LOOP: `frame` too - what the reset turn asks is what the next message is
 # compared against (`turn/held.py::consume`).
-RESET_KEEPS = {"tier", "brands", "intent"}
+RESET_KEEPS = {"tier", "brands", "frame"}
 
 #: STUCK-QTY-LOOP: the `focus.extra` kinds that belong to the ask they were named in, not
 #: to the subject, so a message of another intent drops them (`_focus_rules`).

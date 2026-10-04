@@ -94,7 +94,7 @@ def test_a_canned_turn_after_a_business_turn_writes_its_session(console):
     check, or every casual / escalation / clarify turn after a business turn fails."""
     _open_the_question(console)
     console.say("thanks", verdict(message_type="casual", intent_hint=None))
-    assert (console.state or {}).get("focus", {}).get("intent") == "check_stock"
+    assert (console.state or {}).get("focus", {}).get("frame", {}).get("intent") == "check_stock"
 
 
 def test_the_engine_tells_the_held_rule_which_reader_answered(console, monkeypatch, stub_access):
@@ -146,3 +146,16 @@ def test_a_failed_access_read_neither_drops_nor_restamps(console, monkeypatch):
     monkeypatch.setattr(stock_visibility, "resolve_policy", broken)
     console.say("10", reply(demand_qty=10))
     assert console.state["focus"].get("held_access") in (None, stamp)
+
+
+def test_the_same_held_question_is_never_the_whole_reply_twice_in_a_row(console):
+    """Crew design review P1 (1): "stock?" straight after the question re-asks it word for
+    word with nothing changed. The loop guard lets the question go and asks what is wanted."""
+    from app.services.chatbot.turn import held
+
+    _open_the_question(console)
+    text = console.say("stock?", reply())
+    assert text == held.LOOP_REPLY, text
+    assert not (console.state or {}).get("focus", {}).get("tasks")
+    again = console.say("check stock", reply())
+    assert again != held.LOOP_REPLY or ASK not in again, again

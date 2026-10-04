@@ -4132,18 +4132,15 @@ def _run_stages_body(  # noqa: PLR0915
     # the parser filling `top_n` for a bare "10" - its prompt has no example of one, and
     # its positional rule pulls a bare number toward `reference_positions`.
     # Round 4 R5 on PR #833: the answer to an open clarify re-runs the ask it was about.
-    # STUCK-QTY-LOOP: the readers below that answer a held question from its own offered
-    # options each return a new verdict when they do; `turn_held.consume` is told which
-    # did, so an answer is never dropped as a "new question".
+    # STUCK-QTY-LOOP: the held questions the parser's own declared answer settled before
+    # APPLY, handed to `turn_held.consume` (crew design review: parser answers only, never
+    # these text readers - a clarify answer re-states its own ask's frame, so it is never
+    # read as a new ask anyway).
     held_answered: list[str] = []
-    read = verdict
     verdict = turn_runtime.with_clarify_answer(
         verdict, latest_user_message, carried=state_in.focus.set_clarify
     )
     verdict = _with_account_answer(verdict, state_in.focus.set_clarify)
-    if verdict is not read:
-        held_answered.append("set_clarify")
-    read = verdict
     verdict = turn_runtime.with_set_count_from_text(
         verdict, latest_user_message, carried=state_in.focus.set_page
     )
@@ -4152,8 +4149,6 @@ def _run_stages_body(  # noqa: PLR0915
     verdict = turn_runtime.with_brand_from_offer(
         verdict, latest_user_message, carried=state_in.focus.set_page
     )
-    if verdict is not read:
-        held_answered.append("set_page")
     # Round 3 W3 on PR #833: a class word of this message's own starts a new set.
     verdict = turn_runtime.with_new_set_words(verdict)
     # Fix round 8 on PR #833 (owner retest of round 7): every descriptor the parser
@@ -5952,6 +5947,7 @@ def _run_stages_body(  # noqa: PLR0915
             answer = _without_escalation_offer(answer)
         return _run_answer(
             turn_id=turn_id,
+            previous_reply=previous_reply,
             ctx=ctx,
             item=item,
             branch_kind=branch_kind,
@@ -6125,6 +6121,7 @@ def _run_stages_body(  # noqa: PLR0915
         turn_trace.add("escalation_barred", {"branch_kind": branch_kind})
         return _run_answer(
             turn_id=turn_id,
+            previous_reply=previous_reply,
             ctx=ctx,
             item=item,
             branch_kind=branch_kind,
@@ -6505,6 +6502,7 @@ def _run_answer(
     stock_ask_entries: list[dict[str, Any]] | None = None,
     chat_console: bool = False,
     refer_context: dict[str, Any] | None = None,
+    previous_reply: str | None = None,
 ) -> TurnResult:
     """G TAIL for a turn the composer answered: persist, record, hand the actions back.
 
@@ -6523,6 +6521,19 @@ def _run_answer(
     carried = remembered_before.get("_carried_line")
     if carried and (getattr(answer, "text", "") or "").strip():
         answer = dataclasses_replace(answer, text=f"{carried}\n\n{answer.text}")
+    if turn_held.is_a_loop(
+        state,
+        remembered_before,
+        question=getattr(answer, "question", None),
+        reply_text=getattr(answer, "text", None),
+        previous_reply=previous_reply,
+    ):
+        # STUCK-QTY-LOOP loop guard (crew design review, 4 Oct 2026): the same held
+        # question is never the whole reply twice in a row when nothing changed. It is let
+        # go, and the contact is asked what they want instead.
+        turn_trace.add("held_dropped", {"why": "loop", "slots": turn_held.held_slots(state)})
+        state = turn_held.let_go(state)
+        answer = turn_compose.Answer(text=turn_held.LOOP_REPLY)
     stage[0] = "replied"
     reply = {
         **_reply_of(answer),

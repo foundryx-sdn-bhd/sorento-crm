@@ -619,7 +619,6 @@ class TestStuckQtyLoopCategoryAnswer:
         [
             (_e("taiyang", "customer"), "taiyang only"),
             (_e("BRW", "warehouse"), "BRW only"),
-            (_e("SRTWT7408", "product"), "SRTWT7408"),
         ],
     )
     def test_a_reply_the_parser_read_as_another_kind_is_not_the_category(self, console, entity, text) -> None:

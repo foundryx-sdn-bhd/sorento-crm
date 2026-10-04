@@ -259,9 +259,8 @@ NOT_A_CATEGORY_HINTS = frozenset({"customer", "warehouse", "sales_agent", "trans
 
 
 def _read_as_another_kind(verdict: dict[str, Any]) -> bool:
-    """Did the parser read every word this message named as something other than a category:
-    a customer, a location, an order, or a product CODE (a product word with no digit is a
-    product type, `low_stock_ask.take_words`'s own rule)?"""
+    """Did the parser read every word this message named as something other than a category
+    (a customer, a location, an order)? The parser's hints only, never the word's shape."""
     named = [
         e for e in jsc.array(verdict.get("entities"))
         if isinstance(e, dict) and e.get("current_message") is not False
@@ -270,12 +269,8 @@ def _read_as_another_kind(verdict: dict[str, Any]) -> bool:
         return False
     for entity in named:
         hint = jsc.js_string(entity.get("hint") or "").strip().lower()
-        raw = jsc.js_string(entity.get("raw") or "")
-        if hint in NOT_A_CATEGORY_HINTS:
-            continue
-        if hint == "product" and any(ch.isdigit() for ch in raw):
-            continue
-        return False
+        if hint not in NOT_A_CATEGORY_HINTS:
+            return False
     return True
 
 

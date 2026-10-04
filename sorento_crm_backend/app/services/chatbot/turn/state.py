@@ -165,12 +165,13 @@ class Focus:
     tasks: tuple[Task, ...] = ()
     extra: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     # STUCK-QTY-LOOP (owner, 4 Oct 2026): the central held-question rule's three facts
-    # (`turn/held.py`). `intent` is the last intent the parser named, so a message of
-    # another intent is a new question and the held ones go. `held_turn` / `held_access`
+    # (`turn/held.py`). `frame` is what the conversation is asking, by the parser's own
+    # fields (`held.frame_of`: intent, domain, order status), so a message that asks
+    # something else is a new question and the held ones go. `held_turn` / `held_access`
     # stamp when the held questions last changed and under which access, for the TTL and
     # the access-change drop. All three are optional on the wire: an older row reads as
     # unstamped.
-    intent: str | None = None
+    frame: dict[str, str] | None = None
     held_turn: int | None = None
     held_access: str | None = None
 
@@ -280,7 +281,7 @@ def focus_to_wire(focus: Focus) -> dict[str, Any]:
     wire["tasks"] = [task_to_wire(task) for task in (focus.tasks or ())]
     wire["extra"] = {k: list(v) for k, v in (focus.extra or {}).items()}
     # STUCK-QTY-LOOP: written only when set, so a focus with nothing held reads as before.
-    for name in ("intent", "held_turn", "held_access"):
+    for name in ("frame", "held_turn", "held_access"):
         if getattr(focus, name) is not None:
             wire[name] = getattr(focus, name)
     return wire
@@ -354,8 +355,12 @@ def focus_from_wire(raw: Any) -> Focus:
             for k, value in extra.items()
             if isinstance(value, list)
         }
-    intent = raw.get("intent")
-    focus.intent = intent if isinstance(intent, str) and intent else None
+    frame = raw.get("frame")
+    focus.frame = (
+        {k: v for k, v in frame.items() if isinstance(k, str) and isinstance(v, str)} or None
+        if isinstance(frame, dict)
+        else None
+    )
     held_turn = raw.get("held_turn")
     focus.held_turn = held_turn if isinstance(held_turn, int) and not isinstance(held_turn, bool) else None
     held_access = raw.get("held_access")

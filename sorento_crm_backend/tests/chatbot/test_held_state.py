@@ -55,7 +55,7 @@ def _state(focus: Focus | None = None, *, pending=None, turn_no: int = 5, access
 def _all_held_focus(**over) -> Focus:
     """A focus holding one of every focus-held question at once."""
     base = dict(
-        intent="check_stock",
+        frame={"intent": "check_stock"},
         tasks=(ht.stock_task([(code, None) for code in SRTWB[:3]]),),
         required_ask={"ask": "low_stock_report", "values": {}, "asking": "category"},
         set_page={"set_key": "k"},
@@ -130,16 +130,16 @@ def test_a_new_intent_keeps_a_pick_only_question_but_drops_the_rest(kind):
     """An escalation offer or a roster accepts only a position or an offered label, so a
     reply of another intent cannot be captured by it (#1323, #1352); the new question is
     answered as itself, and reset / TTL / access still drop it."""
-    state = _state(_all_held_focus(intent="check_order"), pending=_pending(kind))
+    state = _state(_all_held_focus(frame={"intent": "check_order"}), pending=_pending(kind))
     out, why = held.consume(state, verdict(intent_hint="check_promotion", entities=[entity("X1")]))
-    assert why == "new_intent"
+    assert why == "new_ask"
     assert out.pending is not None
     assert held.held_slots(out) == ["state.pending"]
 
 
 @pytest.mark.parametrize("kind", QUESTION_KINDS)
 def test_a_new_intent_drops_the_open_question(kind):
-    state = _state(Focus(intent="check_order", domains=["order"]), pending=_pending(kind))
+    state = _state(Focus(frame={"intent": "check_order"}, domains=["order"]), pending=_pending(kind))
     v = verdict(
         intent_hint="check_promotion",
         domain_hint="promotion",
@@ -147,12 +147,12 @@ def test_a_new_intent_drops_the_open_question(kind):
     )
     out, why = held.consume(state, v)
     assert out.pending is None
-    assert why == "new_intent"
+    assert why == "new_ask"
 
 
 @pytest.mark.parametrize("kind", KINDS)
 def test_a_reset_drops_the_open_question(kind):
-    state = _state(Focus(intent="check_order"), pending=_pending(kind))
+    state = _state(Focus(frame={"intent": "check_order"}), pending=_pending(kind))
     out, why = held.consume(state, verdict(topic_reset=True))
     assert out.pending is None
     assert why == "topic_reset"
@@ -160,7 +160,7 @@ def test_a_reset_drops_the_open_question(kind):
 
 @pytest.mark.parametrize("kind", KINDS)
 def test_the_open_question_expires(kind):
-    state = _state(Focus(intent="check_order", held_turn=4, held_access="fp-a"), pending=_pending(kind), turn_no=4 + held.HELD_TTL_TURNS + 1)
+    state = _state(Focus(frame={"intent": "check_order"}, held_turn=4, held_access="fp-a"), pending=_pending(kind), turn_no=4 + held.HELD_TTL_TURNS + 1)
     out, why = held.expire(state)
     assert out.pending is None
     assert why == "ttl"
@@ -168,7 +168,7 @@ def test_the_open_question_expires(kind):
 
 @pytest.mark.parametrize("kind", KINDS)
 def test_the_open_question_survives_inside_its_ttl(kind):
-    state = _state(Focus(intent="check_order", held_turn=4, held_access="fp-a"), pending=_pending(kind), turn_no=4 + held.HELD_TTL_TURNS)
+    state = _state(Focus(frame={"intent": "check_order"}, held_turn=4, held_access="fp-a"), pending=_pending(kind), turn_no=4 + held.HELD_TTL_TURNS)
     out, why = held.expire(state)
     assert out.pending is not None
     assert why is None
@@ -176,7 +176,7 @@ def test_the_open_question_survives_inside_its_ttl(kind):
 
 @pytest.mark.parametrize("kind", KINDS)
 def test_an_access_change_drops_the_open_question(kind):
-    state = _state(Focus(intent="check_order", held_turn=4, held_access="fp-old"), pending=_pending(kind), access_fp="fp-new")
+    state = _state(Focus(frame={"intent": "check_order"}, held_turn=4, held_access="fp-old"), pending=_pending(kind), access_fp="fp-new")
     out, why = held.expire(state)
     assert out.pending is None
     assert why == "access_changed"
@@ -186,7 +186,7 @@ def test_an_access_change_drops_the_open_question(kind):
 def test_a_genuine_answer_keeps_the_open_question(kind):
     """A position picked off the question is an answer whatever intent the parser put on
     it ("2 stock" picks row 2), so the question is the arm's to settle, not dropped."""
-    state = _state(Focus(intent="check_order"), pending=_pending(kind))
+    state = _state(Focus(frame={"intent": "check_order"}), pending=_pending(kind))
     v = verdict(intent_hint="check_stock", domain_hint="inventory", reference_positions=[2])
     out, why = held.consume(state, v)
     assert out.pending is not None
@@ -195,7 +195,7 @@ def test_a_genuine_answer_keeps_the_open_question(kind):
 
 @pytest.mark.parametrize("kind", KINDS)
 def test_the_same_intent_keeps_the_open_question(kind):
-    state = _state(Focus(intent="check_order"), pending=_pending(kind))
+    state = _state(Focus(frame={"intent": "check_order"}), pending=_pending(kind))
     out, why = held.consume(state, verdict(intent_hint="check_order", entities=[entity("7445")]))
     assert out.pending is not None
     assert why is None
@@ -204,7 +204,7 @@ def test_the_same_intent_keeps_the_open_question(kind):
 @pytest.mark.parametrize("kind", KINDS)
 def test_no_intent_keeps_the_open_question(kind):
     """A message the parser gave no intent says nothing about a new question."""
-    state = _state(Focus(intent="check_order"), pending=_pending(kind))
+    state = _state(Focus(frame={"intent": "check_order"}), pending=_pending(kind))
     out, why = held.consume(state, verdict(intent_hint=None))
     assert out.pending is not None
 
@@ -215,7 +215,7 @@ def test_no_intent_keeps_the_open_question(kind):
 @pytest.mark.parametrize("slot", sorted(held.FOCUS_HELD))
 def test_a_new_intent_drops_every_focus_held_question(slot):
     out, why = held.consume(_state(_all_held_focus()), verdict(intent_hint="check_promotion", entities=[entity("X1")]))
-    assert why == "new_intent"
+    assert why == "new_ask"
     assert f"focus.{slot}" not in held.held_slots(out)
 
 
@@ -274,15 +274,15 @@ def test_stamp_clears_when_nothing_is_held():
 
 
 def test_the_stamp_and_intent_survive_the_wire():
-    focus = focus_from_wire(focus_to_wire(Focus(intent="check_stock", held_turn=3, held_access="fp-a")))
-    assert (focus.intent, focus.held_turn, focus.held_access) == ("check_stock", 3, "fp-a")
+    focus = focus_from_wire(focus_to_wire(Focus(frame={"intent": "check_stock"}, held_turn=3, held_access="fp-a")))
+    assert (focus.frame, focus.held_turn, focus.held_access) == ({"intent": "check_stock"}, 3, "fp-a")
 
 
 def test_consume_records_the_message_intent_on_the_focus():
-    out, _ = held.consume(_state(Focus(intent="check_order")), verdict(intent_hint="check_stock"))
-    assert out.focus.intent == "check_stock"
-    out, _ = held.consume(_state(Focus(intent="check_order")), verdict(intent_hint=None))
-    assert out.focus.intent == "check_order"
+    out, _ = held.consume(_state(Focus(frame={"intent": "check_order"})), verdict(intent_hint="check_stock"))
+    assert (out.focus.frame or {}).get("intent") == "check_stock"
+    out, _ = held.consume(_state(Focus(frame={"intent": "check_order"})), verdict(intent_hint=None))
+    assert (out.focus.frame or {}).get("intent") == "check_order"
 
 
 # --------------------------------------------------------------------------- #
@@ -344,9 +344,9 @@ def test_back_to_the_stock_check_still_resumes():
 def test_the_owner_sequence_through_the_central_rule():
     """Availability task open, then the low stock ask: the central rule drops the task
     (a new intent that answers nothing) before the task step ever runs."""
-    state = _state(dataclasses.replace(_stuck_focus(), intent="check_stock"))
+    state = _state(dataclasses.replace(_stuck_focus(), frame={"intent": "check_stock"}))
     state, why = held.consume(state, _low_stock_verdict())
-    assert why == "new_intent"
+    assert why == "new_ask"
     assert state.focus.tasks == ()
 
 
@@ -357,14 +357,14 @@ def test_the_owner_sequence_through_the_central_rule():
 
 def test_consume_marks_a_new_intent_on_the_verdict():
     v = verdict(intent_hint="check_stock", domain_in_message=False, entities=[entity("taiyang", hint="brand")])
-    held.consume(_state(Focus(intent="check_order")), v)
+    held.consume(_state(Focus(frame={"intent": "check_order"})), v)
     assert v.get(held.NEW_INTENT) is True
 
 
 def test_a_refine_under_a_new_intent_still_carries_the_subject():
     """"cert?" after "any gunmetal basin has incoming?" is about those basins (#833): a new
     intent drops only the old ask's own extra words, never the products."""
-    focus = Focus(intent="check_incoming", products=[entity("CBWB9GM0")], domains=["incoming"])
+    focus = Focus(frame={"intent": "check_incoming"}, products=[entity("CBWB9GM0")], domains=["incoming"])
     v = verdict(intent_hint="check_product_attachment", domain_hint="product_attachment", entities=[entity("cert", hint="attachment_type")])
     held.consume(_state(focus), v)
     out, _plan = apply(_state(focus), v, build_policy())
@@ -375,13 +375,13 @@ def test_carried_entities_of_the_old_intent_do_not_reach_a_new_intent():
     """'taiyang only' after a ranking by sales agent William: William is the old ask's
     and must not be resolved (and missed) as part of the stock ask."""
     focus = Focus(
-        intent="check_order",
+        frame={"intent": "check_order"},
         domains=["order"],
         extra={"sales_agent": [entity("William", hint="sales_agent")]},
     )
     v = verdict(intent_hint="check_stock", domain_hint="inventory", domain_in_message=False, entities=[entity("taiyang", hint="brand")])
     state, why = held.consume(_state(focus), v)
-    assert why is None or why == "new_intent"
+    assert why is None or why == "new_ask"
     out, _plan = apply(state, v, build_policy())
     assert not out.focus.extra.get("sales_agent")
 
@@ -424,14 +424,14 @@ def test_an_answer_an_engine_reader_took_is_kept_under_another_intent(reader):
     ],
 )
 def test_an_escalation_offer_answered_by_the_parser_is_kept(kind, escalation):
-    state = _state(Focus(intent="check_stock"), pending=_pending(kind))
+    state = _state(Focus(frame={"intent": "check_stock"}), pending=_pending(kind))
     out, why = held.consume(state, verdict(intent_hint="check_order", escalation=escalation))
     assert why is None
     assert out.pending is not None
 
 
 def test_the_parsers_declared_answer_is_kept():
-    state = _state(Focus(intent="check_order"), pending=_pending("customer_pick"))
+    state = _state(Focus(frame={"intent": "check_order"}), pending=_pending("customer_pick"))
     v = verdict(intent_hint="check_stock", answers_open_question={"resolved": True, "picks": [1], "answer": None})
     out, why = held.consume(state, v)
     assert why is None and out.pending is not None
@@ -440,14 +440,14 @@ def test_the_parsers_declared_answer_is_kept():
 def test_an_intent_outside_the_routing_table_is_not_a_new_question():
     """`intent_hint` is a free phrase; a synonym the parser drifts to is not a change."""
     v = verdict(intent_hint="stock_check_please", entities=[entity("X1")])
-    out, why = held.consume(_state(Focus(intent="check_stock"), pending=_pending("product_pick")), v)
+    out, why = held.consume(_state(Focus(frame={"intent": "check_stock"}), pending=_pending("product_pick")), v)
     assert why is None and out.pending is not None
     assert held.NEW_INTENT not in v
 
 
 def test_a_reset_keeps_the_conversations_intent():
-    state, _plan = apply(_state(Focus(intent="check_stock")), verdict(topic_reset=True), build_policy())
-    assert state.focus.intent == "check_stock"
+    state, _plan = apply(_state(Focus(frame={"intent": "check_stock"})), verdict(topic_reset=True), build_policy())
+    assert (state.focus.frame or {}).get("intent") == "check_stock"
 
 
 @pytest.mark.parametrize("kind", PICK_ONLY)
@@ -456,7 +456,7 @@ def test_a_surviving_pick_only_question_never_becomes_the_reply_to_a_new_intent(
     pickable, but it never speaks unless the reply IS a pick. The new question is what the
     turn plans: its own domain is fetched, and the kept question is not the turn's ask."""
     kept = pending_mod.ask(kind, _options(), asked_at_turn=4, payload={"domain": "order", "domains": ["order"]})
-    state = _state(Focus(intent="check_order", domains=["order"]), pending=kept)
+    state = _state(Focus(frame={"intent": "check_order"}, domains=["order"]), pending=kept)
     v = verdict(
         intent_hint="check_stock",
         domain_hint="inventory",
@@ -464,8 +464,110 @@ def test_a_surviving_pick_only_question_never_becomes_the_reply_to_a_new_intent(
         entities=[entity("SRT5674")],
     )
     state, why = held.consume(state, v)
-    assert why == "new_intent" and state.pending is kept
+    assert why == "new_ask" and state.pending is kept
     _out, plan = apply(state, v, build_policy())
     assert plan.ask is not kept and getattr(plan.ask, "asked_at_turn", None) != 4
     assert [spec.domain for spec in plan.fetch] == ["inventory"]
     assert plan.trace.task_question is None
+
+
+# --------------------------------------------------------------------------- #
+# Crew design review (4 Oct): a new ask is read off the parser's frame, not the intent alone
+# --------------------------------------------------------------------------- #
+
+
+def test_the_frame_is_the_parsers_intent_domain_and_status():
+    v = verdict(intent_hint="check_order", domain_hint="order", status="top_selling")
+    assert held.frame_of(v) == {"intent": "check_order", "domain": "order", "status": "top_selling"}
+    assert held.frame_of(verdict(intent_hint="some_free_phrase")) == {}
+
+
+@pytest.mark.parametrize(
+    "before, after",
+    [
+        ({"intent": "check_order", "status": "top_selling"}, dict(intent_hint="check_order", status="outstanding")),
+        ({"intent": "check_order", "status": "outstanding"}, dict(intent_hint="check_order", order_status="sales_report")),
+        ({"intent": "check_stock", "domain": "inventory"}, dict(intent_hint="check_stock", domain_hint="incoming")),
+    ],
+)
+def test_moving_between_asks_that_share_an_intent_is_a_new_ask(before, after):
+    """Top selling, outstanding and the sales report all ride `check_order`: the status (or
+    the domain) is what says the contact moved on."""
+    out, why = held.consume(_state(_all_held_focus(frame=before)), verdict(**after))
+    assert why == "new_ask"
+    assert held.held_slots(out) == []
+
+
+def test_a_contacts_first_framed_message_over_unframed_held_state_is_a_new_ask():
+    """A question held from before this rule (no frame yet) does not swallow the first
+    message that asks something of its own and answers nothing."""
+    out, why = held.consume(_state(_all_held_focus(frame=None)), verdict(intent_hint="check_promotion", entities=[entity("X1")]))
+    assert why == "new_ask"
+    assert out.focus.frame == {"intent": "check_promotion"}
+
+
+def test_a_refinement_that_restates_nothing_new_is_not_a_new_ask():
+    out, why = held.consume(
+        _state(_all_held_focus(frame={"intent": "check_order", "domain": "order", "status": "outstanding"})),
+        verdict(intent_hint="check_order", domain_hint="order", entities=[entity("hanlim", hint="customer")]),
+    )
+    assert why is None
+    assert held.held_slots(out)
+
+
+# --------------------------------------------------------------------------- #
+# Crew design review: the loop guard
+# --------------------------------------------------------------------------- #
+
+
+def _stored(state: State) -> dict:
+    return {"focus": focus_to_wire(state.focus), "open_question": pending_mod.to_wire(state.pending)}
+
+
+def test_the_same_held_question_said_twice_with_nothing_changed_is_a_loop():
+    state = _state(_stuck_focus())
+    q = "How many units for each?\n1. SRTWB1086 - "
+    assert held.is_a_loop(state, _stored(state), question=None, reply_text=q, previous_reply=q)
+
+
+def test_a_re_ask_that_only_touched_the_task_is_still_a_loop():
+    state = _state(_stuck_focus())
+    stored = _stored(state)
+    touched = dataclasses.replace(
+        state, focus=dataclasses.replace(state.focus, tasks=tuple(dataclasses.replace(t, touched_at_turn=9) for t in state.focus.tasks))
+    )
+    assert held.is_a_loop(touched, stored, question=None, reply_text="Q", previous_reply="Q")
+
+
+@pytest.mark.parametrize(
+    "reply, previous",
+    [("How many units for each?", "Something else"), ("", ""), ("Q", None)],
+)
+def test_a_different_reply_is_not_a_loop(reply, previous):
+    state = _state(_stuck_focus())
+    assert not held.is_a_loop(state, _stored(state), question=None, reply_text=reply, previous_reply=previous)
+
+
+def test_a_changed_held_question_is_not_a_loop():
+    state = _state(_stuck_focus())
+    stored = _stored(state)
+    filled = dataclasses.replace(
+        state,
+        focus=dataclasses.replace(
+            state.focus,
+            tasks=(ht.stock_task([(code, 10 if i == 0 else None) for i, code in enumerate(SRTWB)]),),
+        ),
+    )
+    assert not held.is_a_loop(filled, stored, question=None, reply_text="Q", previous_reply="Q")
+
+
+def test_nothing_held_is_not_a_loop():
+    state = _state(Focus())
+    assert not held.is_a_loop(state, _stored(state), question=None, reply_text="Hi", previous_reply="Hi")
+
+
+@pytest.mark.parametrize("kind", KINDS)
+def test_a_repeated_open_question_of_any_kind_is_a_loop(kind):
+    state = _state(Focus(), pending=_pending(kind))
+    assert held.is_a_loop(state, _stored(state), question=state.pending, reply_text="Which one?", previous_reply="Which one?")
+    assert held.held_slots(held.let_go(state)) == []

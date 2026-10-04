@@ -34,7 +34,10 @@ from app.services.chatbot.turn.policy_rows import DEFAULT_DOMAIN_ROWS
 from app.services.chatbot.turn.pending import ESCALATION_OFFER_KINDS, from_wire, is_roster, to_wire
 from app.services.chatbot.turn.state import Focus, State, focus_from_wire
 
-__all__ = ["NEW_INTENT", "HELD_TTL_TURNS", "SLOTS", "consume", "expire", "held_slots", "stamp"]
+__all__ = [
+    "NEW_INTENT", "HELD_TTL_TURNS", "LOOP_REPLY", "SLOTS", "consume", "expire", "frame_of",
+    "held_slots", "is_a_loop", "let_go", "stamp",
+]
 
 #: Turns a held question survives after it last changed. Escalation offers keep their
 #: own shorter clock (`pending.OFFER_TTL`, 3). Six: a roster picked row by row changes on
@@ -53,7 +56,7 @@ FOCUS_HELD: tuple[str, ...] = ("tasks", "required_ask", "set_page", "set_clarify
 FOCUS_NOT_HELD: tuple[str, ...] = (
     "products", "customers", "warehouse", "brands", "outstanding_brand_ids", "tier",
     "domains", "document", "status", "sales_channel", "date_window", "sort", "extra",
-    "intent", "held_turn", "held_access",
+    "frame", "held_turn", "held_access",
 )
 #: The `State` fields. `ideation` is the ideate lane's draft pointer: the MCP intake tool
 #: owns it and closes it on the draft's own terminal status (`lanes/ideate.py`), and the
@@ -156,41 +159,90 @@ def _answers_only_by_pick(pending: Any) -> bool:
     return pending is not None and (pending.kind in ESCALATION_OFFER_KINDS or is_roster(pending.kind))
 
 
+def frame_of(verdict: dict[str, Any]) -> dict[str, str]:
+    """What this message ASKS, by the parser's own fields: its intent (one the routing table
+    knows; `intent_hint` is a free phrase and a synonym is not a new ask), its domain and its
+    order status ("outstanding", "top_selling", "sales_report" all share `check_order`, so
+    the status is what tells them apart). Only what the parser stated."""
+    frame: dict[str, str] = {}
+    intent = verdict.get("intent_hint")
+    if isinstance(intent, str) and intent in KNOWN_INTENTS:
+        frame["intent"] = intent
+    domain = verdict.get("domain_hint")
+    if isinstance(domain, str) and domain:
+        frame["domain"] = domain
+    status = verdict.get("status") or verdict.get("order_status")
+    if isinstance(status, str) and status:
+        frame["status"] = status
+    return frame
+
+
 def consume(
     state: State, verdict: dict[str, Any], *, answered: list[str] | tuple[str, ...] = ()
 ) -> tuple[State, str | None]:
-    """Once the verdict is read: a reset clears every held question, and so does a message
-    of a different intent that answers none of them. `answered` names the held slots an
-    engine reader answered from their own offered options this turn (the clarify pick, the
-    set count, the required ask's reply, a top selling answer): an answer, never dropped.
+    """Once the verdict is read: a reset clears every held question, and so does a NEW ASK
+    that answers none of them.
 
-    Records this message's intent on the focus (the last one named is kept through a
-    message that names none), and marks the verdict `NEW_INTENT` when the intent changed,
-    so `decide()` reads a would-be refinement as a fresh ask: the old ask's carried
-    entities never ride into the new one (crew report 2, "taiyang only")."""
-    intent = verdict.get("intent_hint")
-    intent = intent if isinstance(intent, str) and intent else None
-    prior = state.focus.intent
-    # Only a change between two KNOWN intents counts: `intent_hint` is the parser's own
-    # snake_case phrase, and a synonym it drifts to between turns is not a new question.
-    changed = bool(intent and prior and intent != prior and {intent, prior} <= KNOWN_INTENTS)
+    A new ask is read off the parser's fields alone (`frame_of`): the message states an
+    intent, domain or order status that differs from the frame the conversation is in, or
+    it states one at all while held questions carry no frame yet (a contact's first turn
+    under this rule). `answered` names the held slots the parser's own declared answer
+    settled before APPLY (the required ask's `reply_verdict`, a top selling answer); the
+    parser's other answer fields are read here (`_answers`). Never the message's words.
+
+    Records the frame on the focus (a field the message does not state is kept), and marks
+    the verdict `NEW_INTENT` when it changed, so `apply._focus_rules` drops the old ask's own
+    extra kinds (crew report 2, "taiyang only")."""
+    frame = frame_of(verdict)
+    prior = dict(state.focus.frame or {})
+    changed = any(key in prior and prior[key] != value for key, value in frame.items())
+    first = bool(frame) and not prior
     if changed:
         verdict[NEW_INTENT] = True
-    if intent and intent != prior:
-        state = replace(state, focus=replace(state.focus, intent=intent))
+    merged = frame if changed else {**prior, **frame}
+    if merged != prior:
+        state = replace(state, focus=replace(state.focus, frame=merged or None))
     if not held_slots(state):
         return state, None
     if verdict.get("topic_reset") is True:
         return _cleared(state), "topic_reset"
-    if changed and not answered and not _answers(state, verdict):
+    if (changed or first) and not answered and not _answers(state, verdict):
         # A question that accepts ONLY a position or one of its own offered labels is kept
-        # (the new question is still answered as itself; it cannot be captured): an
-        # escalation offer (`decide`, #1323, with its own `pending.OFFER_TTL` clock; the
-        # subject a miss offered it over is what "cert?" next is about, #833) and a roster
-        # (`pending.is_roster`; "incoming srtwc286" -> "4" -> "check stock" -> "7" still
-        # picks, #1352). Reset, TTL and access change still drop both.
-        return _cleared(state, keep_pending=_answers_only_by_pick(state.pending)), "new_intent"
+        # (the new question is still answered as itself; it cannot be captured, and it
+        # never speaks unless the reply IS a pick): an escalation offer (`decide`, #1323,
+        # with its own `pending.OFFER_TTL` clock; the subject a miss offered it over is what
+        # "cert?" next is about, #833) and a roster (`pending.is_roster`; "incoming
+        # srtwc286" -> "4" -> "check stock" -> "7" still picks, #1352). Reset, TTL and
+        # access change still drop both.
+        return _cleared(state, keep_pending=_answers_only_by_pick(state.pending)), "new_ask"
     return state, None
+
+
+#: STUCK-QTY-LOOP loop guard (crew design review, 4 Oct 2026): what the bot says instead
+#: of saying the same held question a second time in a row when nothing changed. A person
+#: does not repeat themselves word for word; they let the question go and ask what is
+#: wanted. Wording for the owner to tune.
+LOOP_REPLY = "Let's leave that question. What would you like me to check?"
+
+
+def is_a_loop(state: State, stored: Mapping[str, Any] | None, *, question: Any, reply_text: Any, previous_reply: Any) -> bool:
+    """Would this reply say exactly what the last one said, while every held question is
+    exactly as it was? Then the held question is talking to itself (STUCK-QTY-LOOP)."""
+    if not isinstance(reply_text, str) or not isinstance(previous_reply, str):
+        return False
+    if not reply_text.strip() or reply_text.strip() != previous_reply.strip():
+        return False
+    written = question if question is not None else state.pending
+    if not held_slots(replace(state, pending=written)):
+        return False
+    stored = stored or {}
+    was = _view(focus_from_wire(stored.get("focus")), from_wire(stored.get("open_question")))
+    return was == _view(state.focus, written)
+
+
+def let_go(state: State) -> State:
+    """The loop guard's state: every held question dropped, the frame kept."""
+    return _cleared(state)
 
 
 def _view(focus: Focus, pending: Any) -> tuple[Any, ...]:
@@ -201,7 +253,11 @@ def _view(focus: Focus, pending: Any) -> tuple[Any, ...]:
         question["payload"] = {k: v for k, v in (question.get("payload") or {}).items() if k != "ttl"}
     return (
         question,
-        [task_mod.task_to_wire(task) for task in focus.tasks or ()],
+        # A re-ask stamps `touched_at_turn`; that is not a change to the question.
+        [
+            {k: v for k, v in task_mod.task_to_wire(task).items() if k not in ("touched_at_turn", "opened_at_turn")}
+            for task in focus.tasks or ()
+        ],
         focus.required_ask,
         focus.set_page,
         focus.set_clarify,
