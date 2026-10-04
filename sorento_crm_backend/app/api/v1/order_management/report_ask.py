@@ -25,12 +25,13 @@ from app.api.v1.order_management._contact_scope import (
 from app.api.v1.order_management.orders import _normalize_entities
 from app.database import get_db
 from app.dependencies import require_permission_with_api_key
-from app.models.base import company_scope
+from app.models.base import company_scope, set_brand_scope
 from app.models.company import RespondContactCompany
 from app.models.order import Customer
 from app.models.product import Brand, Product, ProductCategory
 from app.models.sales_agent import SalesAgent
 from app.schemas.report_ask import ReportAskResponse
+from app.services.contact_brand_scope import contact_brand_scope
 from app.services.error_handler import AppException, handle_not_found
 from app.services.reports import ask
 from app.services.sales_report_service import TOP_SELLING_N_CEILING, _resolve_products
@@ -254,6 +255,13 @@ def report_ask(
     keys = granted_keys(db, resolved) if resolved else []
     if GRANT not in keys:
         raise AppException(403, "Sales report is not enabled for your account.", code="sales_report_not_enabled")
+
+    # Brand scope off the contact this route already resolved, whatever the key: the router
+    # dependency stamps it only for the legacy shared key (security H1). Stamped before any
+    # query below, the echo lookups included. Unscoped: nothing set.
+    brand_scope = contact_brand_scope(db, contact_id, space_id)
+    if brand_scope:
+        set_brand_scope(db, brand_scope)
 
     common = {
         "basis": basis_norm,
