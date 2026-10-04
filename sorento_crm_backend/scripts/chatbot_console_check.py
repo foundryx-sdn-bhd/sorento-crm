@@ -255,6 +255,9 @@ def _cassette_refusal(body: dict[str, Any], live: bool) -> str | None:
             return None
         mode = facts.get("llm_cassette")
         if mode == "replay":
+            if record.get("status") == "failed":
+                # A cassette miss: nothing spent, but the run cannot grade anything.
+                return f"stopped: replay could not answer this turn: {record.get('error')}"
             return None
         return (
             f"stopped: the backend parsed this turn live (LLM_CASSETTE_MODE="
@@ -286,23 +289,6 @@ def _row_trace(turn_id: str | None) -> list[Any]:
         except ValueError:
             return []
     return trace if isinstance(trace, list) else []
-    for record in body.get("trace") or []:
-        if not (isinstance(record, dict) and record.get("stage") == "understood"):
-            continue
-        facts = record.get("facts") or {}
-        if facts.get("parser_bypassed"):
-            return None
-        mode = facts.get("llm_cassette")
-        if mode == "replay":
-            return None
-        return (
-            f"stopped: the backend parsed this turn live (LLM_CASSETTE_MODE="
-            f"{mode or 'unset, backend predates LLM-TEST-COST'}), which spends real "
-            "OpenAI tokens. Start the backend in replay (LLM_CASSETTE_MODE=replay, or a "
-            "harness launcher with no flag), or pass --live to spend on purpose (a "
-            "--record backend needs --live too)."
-        )
-    return None
 
 
 def _pending_kind(body: dict[str, Any], turn_id: str | None) -> str | None:

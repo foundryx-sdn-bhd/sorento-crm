@@ -4005,7 +4005,13 @@ def _run_stages_body(  # noqa: PLR0915
             status="failed",
             summary="Could not understand the message.",
             why="The parser did not return a usable answer, so the turn was not routed.",
-            facts={"prompt_version": parser_config.prompt_version, "model": parser_config.model},
+            facts={
+                "prompt_version": parser_config.prompt_version,
+                "model": parser_config.model,
+                # A replay miss fails here: the console check must not read it as a live
+                # spend (LLM-TEST-COST).
+                "llm_cassette": llm_cassette.mode_label(),
+            },
             error=message,
             raw={"user_block": user_block},
         )
@@ -4076,7 +4082,7 @@ def _run_stages_body(  # noqa: PLR0915
             # LLM-TEST-COST: the prompt-cache hit, and whether this parse was live,
             # recorded or replayed (`off` everywhere but a test run).
             "cached_tokens": int(parser_usage.get("cached_tokens") or 0),
-            "llm_cassette": llm_cassette.mode(),
+            "llm_cassette": llm_cassette.mode_label(),
             "parser_bypassed": parser_bypassed,
             "recalled_frames": len(recalled),
             # D17: WHICH options the parser was shown, on the record.

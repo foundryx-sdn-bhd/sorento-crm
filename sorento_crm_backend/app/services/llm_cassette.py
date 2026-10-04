@@ -42,7 +42,6 @@ logger = logging.getLogger(__name__)
 MODE_ENV = "LLM_CASSETTE_MODE"
 DIR_ENV = "LLM_CASSETTE_DIR"
 MODES = ("off", "record", "replay")
-DEFAULT_DIR = Path.home() / ".cache" / "sorento-llm-cassettes"
 
 # The request fields that decide the answer. Everything else (temperature, the ceiling,
 # `tool_choice`, timeouts) is left out so a harmless tweak keeps the recordings.
@@ -77,6 +76,15 @@ def mode() -> str:
     return value
 
 
+def mode_label() -> str:
+    """`mode()` for a trace record: never raises, so a bad value names itself there
+    instead of failing a turn that made no model call (a harness-bypassed parse)."""
+    try:
+        return mode()
+    except (ValueError, CassetteError) as exc:
+        return f"invalid: {exc}"
+
+
 def runner_mode(*, live: bool, record: bool) -> str:
     """The mode a scripted runner starts its backend in: replay unless told otherwise."""
     if live and record:
@@ -102,7 +110,9 @@ def configure_runner(argv: list[str]) -> str:
 
 def cassette_dir() -> Path:
     raw = os.environ.get(DIR_ENV)
-    path = Path(raw).expanduser() if raw else DEFAULT_DIR
+    # Default computed here, not at import: the engine imports this module, and a
+    # container without a home directory must still import the engine.
+    path = Path(raw).expanduser() if raw else Path.home() / ".cache" / "sorento-llm-cassettes"
     resolved = path.resolve()
     # ANY git checkout, not just this one: a worktree's primary checkout or a second clone
     # of the same public repository is one `git add -A` away from publishing a recording.

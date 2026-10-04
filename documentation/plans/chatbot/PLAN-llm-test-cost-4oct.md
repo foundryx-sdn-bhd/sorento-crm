@@ -163,3 +163,13 @@ pass depends on either.
 - N1: an existing cassette dir must be owned by this user with mode 0700.
 - N2 (retention): a cassette is good for one day, so clear old ones with
   `find "${LLM_CASSETTE_DIR:-$HOME/.cache/sorento-llm-cassettes}" -name '*.json' -mtime +7 -delete`.
+
+## Review round 1 (reviewer, applied)
+
+- A replay miss fails `understood` with `llm_cassette: replay` on the failed record, and the
+  console check stops with the miss itself, not a false "spent real tokens" claim.
+- `llm_cassette.mode_label()` in the trace never raises; the default cassette dir is computed
+  lazily (the engine imports the module).
+- Known, left as is: a replayed turn still writes its RECORDED token counts to
+  `ai_assistant_usage_logs` (test databases only, since replay never runs in production).
+  Read test-DB usage with that in mind; `understood.facts.llm_cassette` tells the two apart.

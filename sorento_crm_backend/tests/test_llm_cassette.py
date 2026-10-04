@@ -277,6 +277,10 @@ class TestKey:
 
 
 class TestStorage:
+    def test_mode_label_never_raises(self, monkeypatch):
+        monkeypatch.setenv("LLM_CASSETTE_MODE", "replya")
+        assert llm_cassette.mode_label().startswith("invalid")
+
     def test_default_dir_is_outside_the_repository(self, monkeypatch):
         repo_root = Path(__file__).resolve().parents[2]
         default = llm_cassette.cassette_dir()
@@ -412,11 +416,12 @@ class TestOverrides:
 
     def test_unset_leaves_the_client_and_model_alone(self, monkeypatch):
         built = self._capture_ctor(monkeypatch)
-        provider = OpenAIProvider(SECRET, default_model="gpt-fake")
-        client_calls: list[dict] = []
-        provider.chat(MESSAGES, model="gpt-fake")
+        OpenAIProvider(SECRET, default_model="gpt-fake").chat(MESSAGES, model="gpt-fake")
         assert "base_url" not in built[0]
         assert built[0]["api_key"] == SECRET
+        client = _Client()
+        _chat(_provider(monkeypatch, client), model="gpt-asked")
+        assert client.calls[0]["model"] == "gpt-asked"
 
     def test_base_url_reaches_the_client_when_set(self, monkeypatch):
         monkeypatch.setenv("LLM_BASE_URL", "https://cheap-model.invalid/v1")
@@ -477,10 +482,11 @@ def _body() -> dict:
     return {"turn_id": "t-1", "branch_kind": "business", "reply": {"text": "x"}}
 
 
-def _check_with_row(facts: dict | None):
+def _check_with_row(facts: dict | None, **record: Any):
     """The console check with its row read stubbed: the turn's stored trace."""
     check = _console_check()
-    trace = [{"stage": "received"}] + ([{"stage": "understood", "facts": facts}] if facts is not None else [])
+    understood = [{"stage": "understood", "facts": facts, **record}] if facts is not None else []
+    trace = [{"stage": "received"}] + understood
     check._row_trace = lambda turn_id: trace if turn_id == "t-1" else []
     return check
 
@@ -501,6 +507,11 @@ class TestConsoleCheckRefusal:
         assert _check_with_row({"llm_cassette": "off"})._cassette_refusal({"_http_error": "HTTP 500"}, live=False) is None
         # A turn that failed before the parse has no `understood` stage: nothing was spent.
         assert _check_with_row(None)._cassette_refusal(_body(), live=False) is None
+
+    def test_a_replay_miss_stops_with_the_miss_not_a_spend_claim(self):
+        check = _check_with_row({"llm_cassette": "replay"}, status="failed", error="LLM cassette miss: key abc")
+        refusal = check._cassette_refusal(_body(), live=False)
+        assert refusal and "cassette miss" in refusal and "spends" not in refusal
 
     def test_post_with_pacing_raises_system_exit(self, monkeypatch):
         check = _check_with_row({"llm_cassette": "off"})

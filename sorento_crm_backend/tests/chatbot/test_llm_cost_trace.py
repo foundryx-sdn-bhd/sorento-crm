@@ -48,3 +48,25 @@ def test_understood_facts_name_the_cassette_mode(session_factory, stub_parser, s
     monkeypatch.setenv("LLM_CASSETTE_MODE", "replay")
     facts = _understood_facts(session_factory, stub_parser, stub_access, "ZZT-llmcost-2")
     assert facts.get("llm_cassette") == "replay", facts
+
+
+def test_a_failed_parse_still_names_the_cassette_mode(
+    session_factory, stub_parser, stub_access, monkeypatch
+):
+    """A replay miss fails `understood`; the failed record must say it was replay."""
+    _seed_contact(session_factory, str(CONTACT_ID))
+    stub_access()
+    stub_parser(_parser_output())  # stubs `resolve_config`; `parse` is replaced below
+    monkeypatch.setenv("LLM_CASSETTE_MODE", "replay")
+
+    def miss(config, user_block):
+        raise parser_mod.ParserError("parser provider call failed: LLM cassette miss: key abc")
+
+    monkeypatch.setattr(parser_mod, "parse", miss)
+    envelope = _envelope()
+    envelope.message["message"]["messageId"] = "ZZT-llmcost-3"
+    result = engine_mod.run_turn(envelope, session_factory=session_factory)
+    row = session_factory().query(ChatbotTurn).filter(ChatbotTurn.id == result.turn_id).first()
+    understood = next(r for r in row.trace if r.get("stage") == "understood")
+    assert understood.get("status") == "failed"
+    assert (understood.get("facts") or {}).get("llm_cassette") == "replay"
