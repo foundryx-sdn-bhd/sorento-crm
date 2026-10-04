@@ -527,7 +527,7 @@ def test_u17_second_apply_is_idempotent(db, tmp_path, w):
 
 
 def test_u18_match_is_formatting_insensitive_and_never_creates(db, tmp_path, w):
-    spaced = _contact(db, 1, phone="+60 17-000 0001")
+    spaced = _contact(db, 1, phone="+60 17-0000 0001")
     before = db.query(RespondContact).count()
     path = _book(tmp_path, [_row([("ZZT P1", raw(1), BO), ("ZZT Nobody", raw(9), BO)])])
     res = _run(db, w, path, apply=True, actor_id=w.actor)
