@@ -15,7 +15,7 @@
 # Finding 5's case assumes the console contact's stock visibility policy is DETAILED with
 # `hide_zero_locations = true`, which is how it stood on the prod copy the finding was
 # reproduced against - do not flip it for this run.
-contact: "437264483"
+contact: "900000008"
 
 cases:
   # ======================================================================================

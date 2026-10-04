@@ -22,7 +22,7 @@
 # text. `scripts/chatbot_console_check.py::_grade` has no branch for `expect.parser`
 # today (AC-1551's own pytest asserts this) - the coder adds it alongside the new key.
 
-contact: "438930735"
+contact: "900000052"
 
 cases:
   - name: DO outstanding names the document (D6, contract 38)

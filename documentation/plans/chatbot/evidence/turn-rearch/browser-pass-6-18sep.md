@@ -4,7 +4,7 @@ Stack: frontend http://localhost:3081 (dev/HMR), backend :8081, clone DB
 `sorento_ai_automation_rearch`, lane head 4427bb6bb. Parser version confirmed in the console UI:
 `v27 · full · production`. Session: agent-browser `--session rearch-browser-6` (via
 `AGENT_BROWSER_SESSION=rearch-browser-6`), headless, logged in via `E2E_EMAIL`/`E2E_PASSWORD`
-from `sorento_crm_frontend/.env.local`. Contact used throughout: Justin (`+60122465213`).
+from `sorento_crm_frontend/.env.local`. Contact used throughout: CONTACT N (`+60120000510`).
 
 Navigation: sidebar clicks from `/` on first entry (System > Messaging > Chatbot Console), no
 deep URL for the first navigation. `get url` checked repeatedly through the run; every read
@@ -132,7 +132,7 @@ offer, and the apply layer follows the position-answer path instead of the docum
 path - it answers "1" again rather than honoring `document: ["SO"]`. Confirmed this is a
 precondition-sensitive bug, not a wholesale SO-support gap: the more explicit
 `Outstanding for hanlim sales order` (turn 4) WAS recognized as SO scope (denied via
-`Sales order figures are not enabled for your account`, correctly, since Justin lacks that
+`Sales order figures are not enabled for your account`, correctly, since CONTACT N lacks that
 grant). Same defect class as hand-pass-3 row 5, **unfixed** for the bare two-word phrasing.
 Screenshot: `pass6-item5-sales-order-switch-fail.png`.
 
@@ -140,7 +140,7 @@ Screenshot: `pass6-item5-sales-order-switch-fail.png`.
 
 | # | Sent | Result | Turn id |
 |---|------|--------|---------|
-| 1 | `Purchase cost for wc286` | `Sorry, you are not allowed to access purchase cost` (Justin lacks this grant, unlike the owner who recorded this chain) | `bb4ee0f6-3b2c-45a9-ac93-7f680fd63057` |
+| 1 | `Purchase cost for wc286` | `Sorry, you are not allowed to access purchase cost` (CONTACT N lacks this grant, unlike the owner who recorded this chain) | `bb4ee0f6-3b2c-45a9-ac93-7f680fd63057` |
 | 2 | `PO for this` | `Which one do you mean? 1. this (customer) 2. this (form)` branch `clarify_menu` | `b3e600c6-53cf-47cd-8845-9a492ab05677` |
 | 3 | `All` | `Sorry, you are not allowed to access purchase cost` again | `b4a1bf04-81f7-4e4b-9be6-5295c99471f0` |
 
@@ -192,7 +192,7 @@ silently dropped). This directly reverses pass 5's turn 15 FAIL (RULING 11 fan-o
 ## Summary
 
 - **PASS:** item 2 (ledger family header), item 6 (PO roster stamps, via the supplementary
-  product-first check - the recorded chain's precondition doesn't apply to Justin), item 7 (word
+  product-first check - the recorded chain's precondition doesn't apply to CONTACT N), item 7 (word
   numbers), item 8 (two-domain fan-out with one ungranted domain, all 3 sub-checks), and the
   first half of item 5 (DO detail list carries the full filter header).
 - **FAIL:** item 1 (promo tier pick still returns "No matching results" with no stamped roster),

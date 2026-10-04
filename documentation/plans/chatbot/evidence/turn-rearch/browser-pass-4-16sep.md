@@ -18,9 +18,9 @@ transition. No cross-session hijack observed - `get url` always matched the page
 off-screen no-op hit. Radix Select traps not encountered (contact picker is a plain searchable
 combobox, no Radix dropdown involved).
 
-## Step 1 - Console, contact Justin, escalation chain + customer roster (10 turns)
+## Step 1 - Console, contact CONTACT N, escalation chain + customer roster (10 turns)
 
-Reset clicked first; contact combobox set to "Justin" via the searchable combobox (types +
+Reset clicked first; contact combobox set to "CONTACT N" via the searchable combobox (types +
 click), persisted across the whole chain.
 
 | Turn | Sent | Branch chip | Result | Turn id |

@@ -37,7 +37,7 @@ from app.schemas.sla import ConversationSLATrackingCreate, ConversationSLATracki
 from app.services.sla_service import ConversationSLATrackingService
 from tests._pg_fixture import blank_session
 
-PHONE = "+60123456708"
+PHONE = "+60100000072"
 CREATE_URL = "/api/v1/sla-management/conversation-sla-tracking/integration"
 OPEN_COUNT_URL = "/api/v1/external/conversation-sla-tracking/open-count"
 

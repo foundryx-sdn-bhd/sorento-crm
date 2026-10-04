@@ -181,7 +181,7 @@ def seeded():
     with blank_session() as db:
         company_id = _sorento(db)
         project_seed_service.run(db, company_id=company_id)
-        owner = _user(db, f"{MARKER} Yana")
+        owner = _user(db, f"{MARKER} CONTACT AH")
         project = _project(db, company_id, owner)
         yield db, project, owner
 
@@ -1545,7 +1545,7 @@ def test_the_version_carries_the_approval_stamps(seeded):
 
     after = service.serialize_version(version)["purchase_order"]
     assert after["status"] == "approved"
-    assert after["approved_by_name"] == f"{MARKER} Yana"
+    assert after["approved_by_name"] == f"{MARKER} CONTACT AH"
     assert after["countersigned_by_name"] == f"{MARKER} Manager"
 
 

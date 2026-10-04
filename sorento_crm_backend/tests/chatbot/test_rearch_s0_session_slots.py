@@ -57,6 +57,7 @@ def test_session_vars_forbids_extra_keys_and_declares_exactly_the_five():
         "ideation",
         "access_levels",
         "contains_flyer",
+        "reply_language",
     }
 
 

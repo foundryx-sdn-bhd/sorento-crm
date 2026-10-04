@@ -30,7 +30,7 @@ const UNNAMED = {
   id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
   contact_id: 'contact-unnamed',
   name: null,
-  phone_number: '60198765432',
+  phone_number: '60190000432',
   is_primary: false,
   created_at: '2026-01-02T08:00:00',
 };
@@ -63,7 +63,7 @@ describe('CustomerLinkedContactsSection', () => {
     services.getCustomerLinkedContacts.mockResolvedValue([UNNAMED]);
     renderSection();
 
-    const link = await screen.findByRole('link', { name: '60198765432' });
+    const link = await screen.findByRole('link', { name: '60190000432' });
     expect(link).toHaveAttribute('href', '/user-management/contacts/contact-unnamed');
   });
 

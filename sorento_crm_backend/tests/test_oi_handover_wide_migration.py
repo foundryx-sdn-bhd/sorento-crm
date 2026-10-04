@@ -195,7 +195,7 @@ def test_migrated_template_renders_wide_with_the_line_total_cells():
             "line_count": 1,
             "link": "https://crm.test/project-sales/order-inquiries?query=SO402757",
         },
-        "actor": {"name": "Eling", "email": "eling@sorento.com.my"},
+        "actor": {"name": "Eling", "email": "person12@example.com"},
         "today": "30/09/2026",
     }
     with blank_session() as db:

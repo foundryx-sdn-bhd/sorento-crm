@@ -24,7 +24,7 @@
 # the console runner posts text; T10's code (M210-GM) and T9's (M488-75-PVD-GM) are real.
 #
 # DATA FACTS (prod copy): brand Sorento is an active brand; Cheng Huat Sentul is one
-# customer; M210-GM and M488-75-PVD-GM are Mocha products. Contact 477071892 is Samantha
+# customer; M210-GM and M488-75-PVD-GM are Mocha products. Contact 900000106 is Samantha
 # (profile tier office, per the F8 ruling assumed in the PR).
 #
 
@@ -77,7 +77,7 @@ x-outstanding-sorento-cheng-huat: &outstanding_sorento_cheng_huat
     - {raw: "Sorento", hint: "brand", canonical_code: null, current_message: true, confident: true}
     - {raw: "Cheng Huat Sentul", hint: "customer", canonical_code: null, current_message: true, confident: true}
 
-contact: "477071892"
+contact: "900000106"
 
 cases:
   - name: T2 to T4 - brand Sorento and a dealer, no customer pick, no kind pick (S7, S8, S9)

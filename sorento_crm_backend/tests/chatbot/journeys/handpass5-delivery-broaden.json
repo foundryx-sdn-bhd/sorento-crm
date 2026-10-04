@@ -1,6 +1,6 @@
 {
   "name": "handpass5-delivery-broaden",
-  "source": "hand pass 5 owner console turns 13-16 (contact_respond_id 437264483, 2026-09-17 05:18-05:19 +09) / ruling R2: under orders for SRTWC286-SH + hanlim, 'okay nvm for all products' / 'for any products' drops the product filter (header names HANLIM and no product code); the parser gains broaden_to (family | all) - 'all variants of 286' under a picked variant names every variant of the family in the header. Turn 17 ('for rpacc') is an open owner ruling and is NOT encoded here.",
+  "source": "hand pass 5 owner console turns 13-16 (contact_respond_id 900000008, 2026-09-17 05:18-05:19 +09) / ruling R2: under orders for SRTWC286-SH + hanlim, 'okay nvm for all products' / 'for any products' drops the product filter (header names HANLIM and no product code); the parser gains broaden_to (family | all) - 'all variants of 286' under a picked variant names every variant of the family in the header. Turn 17 ('for rpacc') is an open owner ruling and is NOT encoded here.",
   "cases": [
     {
       "name": "okay-nvm-for-all-products-drops-the-product-filter",

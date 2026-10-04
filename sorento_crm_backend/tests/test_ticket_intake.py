@@ -35,9 +35,9 @@ def db() -> Session:
 @pytest.fixture
 def seed_user(db: Session) -> User:
     user = (
-        db.query(User).filter(User.email == "tehjayson@gmail.com").first()
+        db.query(User).filter(User.email == "person38@example.com").first()
     )
-    assert user is not None, "expected seed user tehjayson@gmail.com to exist"
+    assert user is not None, "expected seed user person38@example.com to exist"
     return user
 
 

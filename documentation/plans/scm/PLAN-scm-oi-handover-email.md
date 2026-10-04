@@ -119,7 +119,7 @@ Any exception is logged, never raised (post-commit work never raises).
     "line_count": 10,
     "link": "https://.../project-sales/order-inquiries?query=SO397450"
   },
-  "actor": {"name": "Maryam Ariffin", "email": "project.sadmin03@sorento.com.my"},
+  "actor": {"name": "Maryam Ariffin", "email": "person32@example.com"},
   "today": "2026-09-16"
 }
 ```

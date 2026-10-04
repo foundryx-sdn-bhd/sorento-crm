@@ -25,7 +25,7 @@ One dataset, one story, walked in order by the people who will use the system. E
 
 | Data | Source | Used at |
 | --- | --- | --- |
-| SO book with SO381895 (YOTU BUILDER / LOT 2752, agent JUSTIN, 76 lines) and the 148 open retail orders that had no class (all 15 customers ruled retail on 26 Aug) | AutoCount SO export | 1, 11 |
+| SO book with SO381895 (YOTU BUILDER / LOT 2752, agent CONTACT N, 76 lines) and the 148 open retail orders that had no class (all 15 customers ruled retail on 26 Aug) | AutoCount SO export | 1, 11 |
 | CS Order Inquiry Forms (1) 12 Aug 16:10, (2) 19 Aug 10:25, (3) 19 Aug 17:23 | `documentation/plans/scm/fixtures/SO381895-form-{1,2,3}-*.xlsx` | 2, 11 |
 | 2026 PO and SPO book | AutoCount PO export | 6, 10 |
 | Proforma invoice KAILU `KL20260717` (17 Jul; SRTWT7443, SRTWT8203, SRTWT8258-GM; unit price in RMB; cites 202605-S0060 and 202605-S0084) | `Sorento/phase-2/User Requirements/purchasing/fulfilment_example_files/KAILU形式发票(Sorento)260717.xlsx` | 9, 12 |
@@ -35,7 +35,7 @@ One dataset, one story, walked in order by the people who will use the system. E
 
 Known facts about the data, so nobody logs them as failures:
 
-- SO381895's sales agent in the CRM is JUSTIN (IB group). Cyndi is the CS who raised the forms.
+- SO381895's sales agent in the CRM is CONTACT N (IB group). Cyndi is the CS who raised the forms.
 - 14 ORDER BACK rows on forms (1) and (2) have no SO line in the book (closed in AutoCount). They only enter through the order inquiry sheet upload, with no SO line. We walk them.
 - `SPO-2026/08-0046` is not in the system. `202606-S0019` is (45 lines, open SRTWC7405-SC at BRW-IB).
 - Every SPO in the book carries a promised date in the past. By the 26 Aug ruling ("trust the book") they still count as incoming and read "overdue N days".

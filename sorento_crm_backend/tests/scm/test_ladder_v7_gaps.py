@@ -90,7 +90,7 @@ def test_free_piles_at_nets_out_a_pinned_hold_at_another_groups_bin():
             ),
             DemandLine(
                 key="ib_holder", so_number="SOib_holder", line_no=1, warehouse="BRW-IB",
-                agent_code="JENNIFER", required_date=date(2026, 9, 25), open_qty=40,
+                agent_code="CONTACT O", required_date=date(2026, 9, 25), open_qty=40,
             ),
         ],
         pinned=[Hold(line_key="ib_holder", supply_key="on_hand:BRW-IB", qty=40, warehouse="BRW-IB")],

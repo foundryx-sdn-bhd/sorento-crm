@@ -27,7 +27,7 @@ from app.services import form_sla_service as svc_mod
 from app.services.form_sla_service import FormSLAOrchestrator
 from app.services.user_service import AccessAgentService
 
-SUBMITTER_ID = "submitter-darren"
+SUBMITTER_ID = "submitter-contact-x"
 REQUESTOR_ID = "requestor-eric"
 RR_ASSIGNEE = {"id": "rr-user", "email": "rr@x.com", "name": "RR User", "respond_user_id": "ru-rr"}
 PIN_ASSIGNEE = {"id": "pinned-user", "email": "pin@x.com", "name": "Pinned User", "respond_user_id": "ru-pin"}
@@ -108,7 +108,7 @@ def test_e1_requestor_with_pin_is_assigned_to_that_pin(orch):
 # ---------------------------------------------------------------------------
 # E2 (the actual bug): requestor has NO pin -> round robin, and the resolver
 # is called with the REQUESTOR's id, never retried with the submitter's id --
-# even though the submitter (Darren) DOES have a pin that must be ignored.
+# even though the submitter (CONTACT X) DOES have a pin that must be ignored.
 # ---------------------------------------------------------------------------
 
 

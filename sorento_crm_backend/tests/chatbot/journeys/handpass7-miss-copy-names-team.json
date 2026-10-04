@@ -1,11 +1,11 @@
 {
   "name": "handpass7-miss-copy-names-team",
-  "source": "hand pass 7 owner console turn 19 Sep 2026 21:56:45 MYT (contact_respond_id 437264483): 'CB2805A-SS-CR-DIY  PHOTO' -> 'No matching results found.' + bare 'Would you like me to escalate?' (measured live against :8081 today, unchanged). Ruling R-f: the miss reply names its team - 'Here's what you want:' / 'But no photo matched these.' / 'escalate to marketing product team' (app/services/chatbot/turn/policy_rows.py: product_attachment's escalation_team_code is 'marketing_product', pretty-printed 'marketing product' by answer.py's _pretty_team). Every escalate offer must name its team - a bare 'Would you like me to escalate?' with no team is itself the defect this file locks down for the incoming and order domains too (incoming -> 'purchasing' per policy_rows.py; order -> the customer_service member-offer picker, 'Please choose who to route to' / \"just reply 'yes'\" from app/services/chatbot/tail/member_offer.py, not a bare escalate line). Order-miss case replays the owner's own 21:54:13-21:55:07 sequence ('chun chun delivery' -> 'one and two' -> 'just for srtwc286' -> 'all'), which measured live today as a genuine order-domain miss ('*orders* for ... No matching results found. Would you like me to escalate?').",
+  "source": "hand pass 7 owner console turn 19 Sep 2026 21:56:45 MYT (contact_respond_id 900000008): 'CB2805A-SS-CR-DIY  PHOTO' -> 'No matching results found.' + bare 'Would you like me to escalate?' (measured live against :8081 today, unchanged). Ruling R-f: the miss reply names its team - 'Here's what you want:' / 'But no photo matched these.' / 'escalate to marketing product team' (app/services/chatbot/turn/policy_rows.py: product_attachment's escalation_team_code is 'marketing_product', pretty-printed 'marketing product' by answer.py's _pretty_team). Every escalate offer must name its team - a bare 'Would you like me to escalate?' with no team is itself the defect this file locks down for the incoming and order domains too (incoming -> 'purchasing' per policy_rows.py; order -> the customer_service member-offer picker, 'Please choose who to route to' / \"just reply 'yes'\" from app/services/chatbot/tail/member_offer.py, not a bare escalate line). Order-miss case replays the owner's own 21:54:13-21:55:07 sequence ('chun chun delivery' -> 'one and two' -> 'just for srtwc286' -> 'all'), which measured live today as a genuine order-domain miss ('*orders* for ... No matching results found. Would you like me to escalate?').",
   "cases": [
     {
       "name": "photo-miss-names-marketing-product-team",
       "cold": true,
-      "contact": "440987225",
+      "contact": "900000010",
       "turns": [
         {
           "text": "CB2805A-SS-CR-DIY  PHOTO",
@@ -20,7 +20,7 @@
     {
       "name": "incoming-miss-names-purchasing-team",
       "cold": true,
-      "contact": "440987225",
+      "contact": "900000010",
       "_note": "CB2805A-PJ measured via psql (19 Sep 2026): zero pending inbound_shipment_lines AND zero stock anywhere (CB2805A-DIY was tried first and rejected - it has real stock, so the engine cross-references into a stock section instead of a plain miss, a different, correct code path). Measured live against :8081 today: 'incoming for CB2805A-PJ' -> '*incoming stock* for CB2805A-PJ: No matching results found. Nothing on stock or outstanding purchase orders either. Would you like me to escalate?' - a genuine bare, unnamed escalate offer.",
       "turns": [
         {
@@ -35,7 +35,7 @@
     {
       "name": "order-miss-offers-customer-service-route-picker",
       "cold": true,
-      "contact": "440987225",
+      "contact": "900000010",
       "turns": [
         {
           "text": "chun chun delivery",

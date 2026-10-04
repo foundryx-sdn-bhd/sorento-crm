@@ -67,7 +67,7 @@ vi.mock('../hooks/useSalesTeams', () => ({
   useSalesTeamAgentOptions: () => ({
     data: [
       { id: 'ali', code: 'ALI', label: 'ALI - Ali Hassan', team_id: 'north', team_name: 'North' },
-      { id: 'sean', code: 'SEAN I', label: 'SEAN I - Sean Lee', team_id: 'central', team_name: 'Central' },
+      { id: 'sean', code: 'SEAN I', label: 'SEAN I - CONTACT AE', team_id: 'central', team_name: 'Central' },
       { id: 'raj', code: 'RAJ', label: 'RAJ - Raj Kumar', team_id: null, team_name: null },
     ],
     isLoading: false,
@@ -85,7 +85,7 @@ beforeEach(() => {
 describe('SalesTeamModal', () => {
   it('labels each agent option with the team they are in now', () => {
     render(<SalesTeamModal open onOpenChange={() => {}} />);
-    expect(screen.getByText('SEAN I - Sean Lee (now in Central)')).toBeTruthy();
+    expect(screen.getByText('SEAN I - CONTACT AE (now in Central)')).toBeTruthy();
     expect(screen.getByText('RAJ - Raj Kumar (no team)')).toBeTruthy();
   });
 
@@ -94,7 +94,7 @@ describe('SalesTeamModal', () => {
     fireEvent.click(screen.getByLabelText('RAJ - Raj Kumar (no team)'));
     expect(screen.queryByLabelText('Moves on')).toBeNull();
 
-    fireEvent.click(screen.getByLabelText('SEAN I - Sean Lee (now in Central)'));
+    fireEvent.click(screen.getByLabelText('SEAN I - CONTACT AE (now in Central)'));
     const movesOn = screen.getByLabelText('Moves on') as HTMLInputElement;
     expect(movesOn.value).toBe(todayMalaysiaYyyyMmDd());
     expect(movesOn.max).toBe(todayMalaysiaYyyyMmDd());
@@ -105,7 +105,7 @@ describe('SalesTeamModal', () => {
     const onOpenChange = vi.fn();
     render(<SalesTeamModal open onOpenChange={onOpenChange} />);
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: '  North  ' } });
-    fireEvent.click(screen.getByLabelText('SEAN I - Sean Lee (now in Central)'));
+    fireEvent.click(screen.getByLabelText('SEAN I - CONTACT AE (now in Central)'));
     fireEvent.change(screen.getByLabelText('Moves on'), { target: { value: '2026-09-20' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
@@ -138,11 +138,11 @@ describe('SalesTeamModal', () => {
     expect(Array.from(leader.options).map((o) => o.value)).toEqual(['']);
 
     fireEvent.click(screen.getByLabelText('RAJ - Raj Kumar (no team)'));
-    fireEvent.click(screen.getByLabelText('SEAN I - Sean Lee (now in Central)'));
+    fireEvent.click(screen.getByLabelText('SEAN I - CONTACT AE (now in Central)'));
     expect(Array.from(leader.options).map((o) => o.textContent)).toEqual([
       'No leader',
       'RAJ - Raj Kumar',
-      'SEAN I - Sean Lee',
+      'SEAN I - CONTACT AE',
     ]);
     fireEvent.change(leader, { target: { value: 'raj' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));

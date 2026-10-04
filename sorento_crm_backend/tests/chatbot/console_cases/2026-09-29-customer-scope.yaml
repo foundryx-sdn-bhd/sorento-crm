@@ -28,7 +28,7 @@
 #
 # PREREQUISITES (the owner seeds these on the stack; each contact needs one prior turn so a
 # `chatbot.turns` envelope exists to borrow, see the script's own docstring):
-# - 437264483: the default office staff contact (an active "Sorento Office" type), holding the
+# - 900000008: the default office staff contact (an active "Sorento Office" type), holding the
 #   `sales_orders.outstanding` reveal key.
 # - 990000001: a dealer contact with NO link and no office type, same reveal key.
 # - 990000002: a dealer contact linked to exactly ONE customer (call it OWN). The other-customer
@@ -38,7 +38,7 @@
 # - REPLACE-WITH-A-FOREIGN-DO: a real delivery order number of a customer that 990000002 is
 #   NOT linked to.
 
-contact: "437264483"
+contact: "900000008"
 
 cases:
   # ---- a scoped contact naming someone else is refused, before any lookup ----
