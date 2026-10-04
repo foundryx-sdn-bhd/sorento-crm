@@ -530,6 +530,71 @@ class TestCashCodeCustomerGroup:
         assert ("customer_group_id", retired) in {(c["field"], c["retired_id"]) for c in g.conflicts}
 
 
+# ============================================ one-command prod run (owner 5 Oct 00:20, no sheets)
+class TestOneCommandRun:
+    """Owner: the 17 conflict groups take the script's default (the kept row's own values), and
+    every held group merges too. `--default-resolutions` / `--release-all-held`, no CSV input."""
+
+    def _conflict_group(self, db):
+        code = _dealer_code("OC")
+        _segment(db, "ZZSEG-OA"), _segment(db, "ZZSEG-OB")
+        survivor = _seed(db, code, "NAME-A", OLD, market_segment_code="ZZSEG-OA")
+        retired = _seed(db, code, "NAME-A SDN BHD", NEW, market_segment_code="ZZSEG-OB")
+        return code, survivor, retired
+
+    def _held_group(self, db):
+        code = _dealer_code("OH")
+        survivor = _seed(db, code, "ROMEO TILES SDN BHD", OLD)
+        retired = _seed(db, code, "SIERRA STONE", NEW)
+        return code, survivor, retired
+
+    def test_default_resolutions_merge_conflict_groups_keeping_the_kept_rows_values(self, db):
+        code, survivor, retired = self._conflict_group(db)
+        result = customer_merge.apply(db, run_id="run-oc", codes=[code], default_resolutions=True)
+        assert [g.survivor_id for g in result.merged] == [survivor] and result.skipped == []
+        assert not _exists(db, retired)
+        assert _scalar(db, "SELECT market_segment_code FROM customers WHERE id = :i", i=survivor) == "ZZSEG-OA"
+
+    def test_release_all_held_merges_every_held_group(self, db):
+        code, survivor, retired = self._held_group(db)
+        result = customer_merge.apply(db, run_id="run-oh", codes=[code], release_all_held=True)
+        assert [g.survivor_id for g in result.merged] == [survivor] and result.held == []
+        assert not _exists(db, retired)
+
+    def test_without_the_flags_both_still_wait(self, db):
+        c1, _s1, r1 = self._conflict_group(db)
+        c2, _s2, r2 = self._held_group(db)
+        result = customer_merge.apply(db, run_id="run-on", codes=[c1, c2])
+        assert result.merged == [] and len(result.skipped) == 1 and len(result.held) == 1
+        assert _exists(db, r1) and _exists(db, r2)
+
+    def test_one_command_run_merges_all_and_reverts_all(self, db):
+        c1, s1, r1 = self._conflict_group(db)
+        c2, s2, r2 = self._held_group(db)
+        c3 = _code("OK")
+        s3 = _seed(db, c3, "CASH SALES", OLD)
+        r3 = _seed(db, c3, "BUYER-1", NEW)
+        result = customer_merge.apply(
+            db, run_id="run-all", codes=[c1, c2, c3], default_resolutions=True, release_all_held=True
+        )
+        assert len(result.merged) == 3 and result.skipped == [] and result.held == []
+        assert not any(_exists(db, r) for r in (r1, r2, r3))
+        assert customer_merge.revert(db, "run-all") == 3
+        assert all(_exists(db, r) for r in (r1, r2, r3))
+        assert _scalar(db, "SELECT market_segment_code FROM customers WHERE id = :i", i=r1) == "ZZSEG-OB"
+
+    def test_cli_exposes_both_flags(self):
+        import importlib
+
+        cli = importlib.import_module("scripts.merge_customers_by_code")
+        args = cli.build_parser().parse_args(
+            ["--apply", "--actor", "ops@example.invalid", "--release-all-held", "--default-resolutions"]
+        )
+        assert args.release_all_held and args.default_resolutions
+        plain = cli.build_parser().parse_args([])
+        assert not plain.release_all_held and not plain.default_resolutions
+
+
 # ============================================================================== R7-R10 apply
 class TestApply:
     def test_repoints_documents_fills_names_and_deletes_retired_rows(self, db):
