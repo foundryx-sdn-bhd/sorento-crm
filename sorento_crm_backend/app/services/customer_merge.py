@@ -136,6 +136,8 @@ class Group:
     ref_conflicts: list[str] = field(default_factory=list)
     #: why `--apply` holds the group (`name_mismatch`), empty when it merges
     held: str = ""
+    #: customer group name -> how many retired rows hold it
+    retired_groups: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -330,6 +332,18 @@ def plan(
         kept = normalise_name(group.survivor_name)
         group.name_mismatch = [n for n in group.retired_names if normalise_name(n) != kept]
         group.held = held_reason(group) or ""
+        group.retired_groups = {
+            name: int(n)
+            for name, n in db.execute(
+                text(
+                    "SELECT coalesce(g.name, r.customer_group_id::text), count(*) FROM customers r "
+                    "LEFT JOIN customer_groups g ON g.id = r.customer_group_id "
+                    "WHERE r.id = ANY(CAST(:ids AS uuid[])) AND r.customer_group_id IS NOT NULL "
+                    "GROUP BY 1 ORDER BY 1"
+                ),
+                {"ids": group.retired_ids},
+            ).all()
+        }
         group.not_carried = _not_carried(db, group)
         links = next((t for t, c, _p, _t in fks if _short(t) == "respond_contact_customers"), None)
         if links:
@@ -379,10 +393,21 @@ def normalise_name(name: Optional[str]) -> str:
     return " ".join(w for w in words if w not in _NAME_NOISE)
 
 
+def is_cash_code(code_key: str) -> bool:
+    return code_key.startswith(CASH_CODE_PREFIXES)
+
+
+#: On a cash code the customer group is the AutoCount debtor's, not a buyer's (crew 4 Oct): the
+#: survivor keeps a group only when it is the AutoCount-linked row and already holds one. It is
+#: never filled from a retired row and never a conflict; the retired rows' groups are listed in
+#: the plan CSV (`retired_groups`) so they stay visible.
+CASH_GROUP_FIELD = "customer_group_id"
+
+
 def held_reason(group: "Group") -> Optional[str]:
     """Why `--apply` holds this group back, or None (owner 4 Oct, decision (b)): a retired name
     that is another business under the same code. Released only by `release=yes` in the CSV."""
-    if group.name_mismatch and not group.code_key.startswith(CASH_CODE_PREFIXES):
+    if group.name_mismatch and not is_cash_code(group.code_key):
         return "name_mismatch"
     return None
 
@@ -412,6 +437,8 @@ def _conflicts(db: Session, group: Group) -> list[dict]:
             for rid, sv, rv in rows
         )
     for column in CONFLICT_FIELDS:
+        if column == CASH_GROUP_FIELD and is_cash_code(group.code_key):
+            continue
         rows = db.execute(
             text(
                 f"""
@@ -534,6 +561,22 @@ def _merge_group(
         for column in sorted(conflict_fields):
             updated[keep].append(_set_from(db, customers_table, survivor, keep, column))
     fillable = [c for c in columns if c not in _NOT_FILLED and c not in conflict_fields]
+    if is_cash_code(group.code_key):
+        fillable = [c for c in fillable if c != CASH_GROUP_FIELD]
+        if group.kept_reason == "oldest" and group.retired_ids:
+            old = db.execute(
+                text(f"SELECT to_jsonb({CASH_GROUP_FIELD}) FROM customers WHERE id = :s"),
+                {"s": survivor},
+            ).scalar()
+            if old is not None:
+                db.execute(
+                    text(f"UPDATE customers SET {CASH_GROUP_FIELD} = NULL WHERE id = :s"),
+                    {"s": survivor},
+                )
+                updated[group.retired_ids[0]].append(
+                    {"table": customers_table, "pk": "id", "ids": [survivor],
+                     "column": CASH_GROUP_FIELD, "old": old}
+                )
     for rid in sorted(group.retired_ids, key=lambda r: (retired_rows[r].get("created_at") or "", r)):
         for column in fillable:
             hit = db.execute(
@@ -904,6 +947,7 @@ CSV_FIELDS = (
     "conflicts",
     "ref_conflicts",
     "name_mismatch",
+    "retired_groups",
     "not_carried",
     "contact_links_dropped",
     "keep",
@@ -937,6 +981,7 @@ def write_plan_csv(groups: list[Group], path: Path | str) -> None:
                     "survivor_ref": g.survivor_ref or "",
                     "ref_conflicts": ";".join(g.ref_conflicts),
                     "name_mismatch": ";".join(g.name_mismatch),
+                    "retired_groups": ";".join(f"{k}={v}" for k, v in g.retired_groups.items()),
                     "not_carried": ";".join(f"{k}={v}" for k, v in sorted(g.not_carried.items())),
                     "contact_links_dropped": ";".join(g.contact_links_dropped),
                     "keep": "",

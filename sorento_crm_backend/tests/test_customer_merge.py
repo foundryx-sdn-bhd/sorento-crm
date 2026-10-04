@@ -18,7 +18,7 @@ from sqlalchemy import text
 
 from app.models.company import Company
 from app.models.integration_reference import IntegrationReference
-from app.models.order import Customer, CustomerAlias, CustomerContact, CustomerMergeMap, Order, SalesOrder
+from app.models.order import Customer, CustomerGroup, CustomerAlias, CustomerContact, CustomerMergeMap, Order, SalesOrder
 from app.models.project_so import CustomerItemCodeMap
 from app.models.product import Product, ProductCategory, UnitOfMeasure
 from app.services import customer_identity, customer_merge
@@ -58,6 +58,17 @@ def _segment(db, code: str) -> str:
         {"c": code},
     )
     return code
+
+
+def _cgroup(db, name: str) -> str:
+    row = CustomerGroup(company_id=DEFAULT_COMPANY_ID, name=f"{name} {uuid.uuid4().hex[:6]}")
+    db.add(row)
+    db.flush()
+    return str(row.id)
+
+
+def _group_of(db, customer_id):
+    return _scalar(db, "SELECT customer_group_id::text FROM customers WHERE id = :i", i=customer_id)
 
 
 def _uid() -> str:
@@ -340,7 +351,8 @@ class TestPlan:
         lines = path.read_text().strip().splitlines()
         assert len(lines) == 2  # header + one group
         header = lines[0].split(",")
-        for column in ("survivor_id", "kept_reason", "survivor_ref", "ref_conflicts", "name_mismatch", "keep"):
+        for column in ("survivor_id", "held", "kept_reason", "survivor_ref", "ref_conflicts",
+                       "name_mismatch", "retired_groups", "keep", "release"):
             assert column in header
 
 
@@ -415,6 +427,48 @@ class TestNameMismatchHold:
         lines[1] = lines[1] + "yes"  # `release` is the last column
         path.write_text("\n".join(lines) + "\n")
         assert customer_merge.read_releases(path) == {(DEFAULT_COMPANY_ID, code.lower())}
+
+
+# ======================================================= cash-code customer group (crew 4 Oct)
+class TestCashCodeCustomerGroup:
+    def test_unlinked_survivor_drops_its_group_and_retired_groups_are_listed(self, db):
+        code = _code("CG")
+        a, b = _cgroup(db, "DEALER"), _cgroup(db, "RETAIL")
+        survivor = _seed(db, code, "CASH SALES", OLD, customer_group_id=a)
+        _seed(db, code, "BUYER-1", NEW, customer_group_id=b)
+        g = _group(customer_merge.plan(db, codes=[code]), code)
+        assert g.conflicts == []
+        assert list(g.retired_groups.values()) == [1]
+        customer_merge.apply(db, run_id="run-cg", codes=[code])
+        assert _group_of(db, survivor) is None
+        customer_merge.revert(db, "run-cg")
+        assert _group_of(db, survivor) == a
+
+    def test_linked_survivor_keeps_its_group(self, db):
+        code = _code("CL")
+        a, b = _cgroup(db, "DEALER"), _cgroup(db, "RETAIL")
+        _seed(db, code, "BUYER-1", OLD, customer_group_id=b)
+        survivor = _seed(db, code, "CASH SALES", NEW, customer_group_id=a)
+        _ref(db, survivor, f"AED_SORENTO:{code}")
+        customer_merge.apply(db, run_id="run-cl", codes=[code])
+        assert _group_of(db, survivor) == a
+
+    def test_group_is_never_filled_from_a_buyer(self, db):
+        code = _code("CF2")
+        b = _cgroup(db, "RETAIL")
+        survivor = _seed(db, code, "CASH SALES", NEW)
+        _ref(db, survivor, f"AED_SORENTO:{code}")
+        _seed(db, code, "BUYER-1", OLD, customer_group_id=b)
+        customer_merge.apply(db, run_id="run-cf2", codes=[code])
+        assert _group_of(db, survivor) is None
+
+    def test_dealer_code_group_clash_is_still_a_conflict(self, db):
+        code = _dealer_code("DG")
+        a, b = _cgroup(db, "DEALER"), _cgroup(db, "RETAIL")
+        _seed(db, code, "NAME-A", OLD, customer_group_id=a)
+        retired = _seed(db, code, "NAME-A SDN BHD", NEW, customer_group_id=b)
+        g = _group(customer_merge.plan(db, codes=[code]), code)
+        assert ("customer_group_id", retired) in {(c["field"], c["retired_id"]) for c in g.conflicts}
 
 
 # ============================================================================== R7-R10 apply

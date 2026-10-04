@@ -95,6 +95,12 @@ dev; the dry run (R11) re-measures them before anything is applied.
   PLT / M / THE dropped), tested in `tests/test_customer_merge.py::TestNameMismatchHold`.
   Runbook: the unique index waits until every held and conflict group is resolved;
   `--create-index` only succeeds when no code holds two rows.
+- **R7c Cash-code customer group** (crew 4 Oct): on a `301-*` group the survivor keeps a customer
+  group only when it is the AutoCount-linked row and already holds one; an unlinked survivor's
+  group is cleared (logged, restored by revert). A retired buyer's group is never filled onto the
+  survivor and never a conflict; the CSV's `retired_groups` lists them (group name = rows).
+  Dealer codes keep the R7 conflict rule. `CASH_GROUP_FIELD` in `app/services/customer_merge.py`,
+  tested in `tests/test_customer_merge.py::TestCashCodeCustomerGroup`.
 - **R7a Listed** (crew 4 Oct): `name_mismatch` (retired names that differ from
   the kept name once case, punctuation and `SDN BHD` / `BERHAD` / `ENTERPRISE` / `TRADING` /
   `(M)` noise are removed, i.e. likely another business under the same code) and
@@ -172,7 +178,7 @@ dev; the dry run (R11) re-measures them before anything is applied.
 
 ## Questions (with recommendations)
 
-**Answered 4 Oct (crew): Q1-Q5 all (a).** Conflict CSV from the dev-copy dry run goes back to
+**Answered 4 Oct (crew): Q1-Q5 all (a); B1 (a); name-mismatch hold (b) with `301-*` exempt (a).** Conflict CSV from the dev-copy dry run goes back to
 the owner as a `crew-ask` so the `keep` column can be filled.
 
 - **Q1 Survivor when several rows are AutoCount-linked:** (a) the code-form ref row, else the
