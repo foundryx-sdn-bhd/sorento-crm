@@ -1182,3 +1182,21 @@ def test_auto_fills_the_missing_exact_ledgers_of_a_partly_linked_block(db, tmp_p
     assert len(_audits(db, event="contact.customer_linked_bulk")) == 2
     again, _ = _auto(db, w, path, tmp_path, apply=True, actor_id=w.actor)
     assert (again["counts"]["auto_pairs"], again["counts"]["already_linked"], again["linked"]) == (0, 1, 0)
+
+
+def test_auto_counts_and_plans_each_contact_and_ledger_pair_once(db, tmp_path, w):
+    c1 = _contact(db, 1)
+    ledger = _customer(db, w.a, "ZZT ALPHA [A/C I]", "ZZT-D1")
+    path = _book(tmp_path, [
+        _row([("ZZT P1", raw(1), BO)], company="ZZT ALPHA Sdn Bhd"),
+        _row([("ZZT P1", raw(1), EMP)], company="ZZT ALPHA Sdn Bhd"),
+    ])
+    plan, out = _auto(db, w, path, tmp_path)
+    assert plan["counts"]["auto_pairs"] == 1, plan["counts"]
+    _, rows = _read_plan(out)
+    assert len(rows) == 1, rows
+    assert rows[0]["contact"] == c1.name and rows[0]["debtor_code"] == "ZZT-D1"
+    assert sorted(rows[0]["excel_row"].split(";")) == ["2", "3"]
+    res, _ = _auto(db, w, path, tmp_path, apply=True, actor_id=w.actor)
+    assert (res["linked"], res["skipped_existing"]) == (plan["counts"]["auto_pairs"], 0)
+    assert [(l.contact_id, l.customer_id) for l in _links(db)] == [(c1.id, ledger.id)]
