@@ -54,6 +54,6 @@ asks its category once and the reply runs it. No rule fills that gap.
   product without digits is never a category, the rule names and `import re` are gone).
 - `tests/chatbot/test_required_fields.py`: helper changes, reply capture by the parser.
 - `tests/chatbot/test_parser_low_stock_filters_publish.py`: the publish.
-- `tests/chatbot/test_low_stock_live_parser.py` (opt-in `LOW_STOCK_LIVE_PARSER=1`): 27 live
+- `tests/chatbot/test_low_stock_live_parser.py` (opt-in `CHATBOT_LIVE_LLM=1`, `live_external` marker): 27 live
   parser paraphrase cases and 6 end-to-end console flows on `gpt-5.4-mini`.
 - `tests/chatbot/console_cases/2026-10-04-lowstock-semantic.yaml`: the post-deploy console check.
