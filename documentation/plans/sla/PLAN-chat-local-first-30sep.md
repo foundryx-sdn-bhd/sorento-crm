@@ -110,6 +110,21 @@ will fail"), so local must be a cache that self-heals, never one that is blindly
   attachment block and `sender.source` from the columns. Old rows fill in as the reconcile
   re-reads them (fill-if-null upsert), no one-shot script.
 
+### R9 Ticket panel reads local first (crew gap, 1 Oct 2026)
+- `GET /api/v1/sla-management/conversation-sla-tracking/{id}/conversation`
+  (`app/api/v1/sla/sla_tracking.py:2155`) still read Respond.io on every poll through
+  `sla_service.fetch_respond_conversation_for_tracking` (`:5888-5898`); the drawer
+  (`TicketConversationPanel.tsx:153`) polls it and refetches it after a send (`:198-204`), so the
+  row the CRM mirrors at send time (`mirror_outgoing_send`, `sla_service.py:6834`) was not what the
+  panel showed. Only `/conversation/page` and `/search` used the thread service.
+- Fix: the route answers `_thread_page_for_contact(contact, before=cursor, limit=limit)`, the same
+  local-first page the inbox and portal read; `cursor` maps to `before`. The panel reads only
+  `data.items` and sorts by time (`useConversationThread.ts:184`), so the shape change is safe.
+- Red tests first (tester subagent): backend `tests/test_ticket_panel_local_first.py` (AC-TP1 to
+  AC-TP4), FE `TicketConversationPanel.localfirst.test.tsx`, and the existing e2e
+  `intervention-ticket-round-trip.spec.ts` extended (crew ask; the standing "no new spec" order is
+  respected, no new file).
+
 ### R6 Observability
 - `respond_call_counter`: every `RespondClient` HTTP call (one `_http()` builder with an httpx
   request hook) increments a per-minute counter (Redis `INCR`, 15 min TTL, in-process fallback)

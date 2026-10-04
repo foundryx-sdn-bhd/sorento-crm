@@ -72,3 +72,14 @@ Plan: `PLAN-chat-local-first-30sep.md`.
   `chat_thread_sync_state` (seeded from the last 7 days), one `scheduled_tasks` row. No
   `system_settings` change: the knobs are the task row's interval and metadata. Single alembic
   head.
+
+## H. Ticket panel (crew gap, 1 Oct 2026)
+- AC-TP1 `GET /conversation-sla-tracking/{id}/conversation` returns the ticket contact's thread from
+  `chat_histories` (`source: local`) and makes zero Respond.io calls when rows exist.
+- AC-TP2 A message delivered by the Respond.io webhook for that contact appears in that response
+  without a Respond.io read.
+- AC-TP3 A message sent from the ticket panel (`POST .../ticket/send`) is in `chat_histories` through
+  the send mirror and appears in that response without a Respond.io read.
+- AC-TP4 `cursor=<oldest message id>` pages older rows (maps to `before`).
+- AC-TP5 The panel's refetch after a send renders the sent row (vitest); the e2e round-trip asserts
+  the `/conversation` request carries the sent text.
