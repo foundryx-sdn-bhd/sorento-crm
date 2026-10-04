@@ -26,6 +26,7 @@ from tests._pg_fixture import unique_code
 from tests.test_ingest_documents import (
     INGEST_SO,
     MARKER,
+    _code_of_ref,
     _so_line,
     _so_record,
     env,  # noqa: F401 - pytest fixture, imported for reuse
@@ -34,10 +35,14 @@ from tests.test_ingest_documents import (
 __all__ = ["env"]
 
 
-class TestProductRefResolvedOncePerBatch:
-    def test_the_same_product_ref_across_two_lines_resolves_once(self, env, monkeypatch):
+class TestProductRefNeverResolvedByIngest:
+    def test_a_batch_never_reads_a_product_reference(self, env, monkeypatch):
+        """Owner rulings (3 Oct): products match by company + code only, so a
+        batch makes no `integration_references` lookup for `products` at all
+        (this was "resolves once per batch" before the ref lookup went away)."""
         import app.services.integration_reference_service as irs
 
+        code = _code_of_ref(env, env.product_ref)
         calls: list[tuple[str, str]] = []
         real_resolve = irs.IntegrationReferenceService.resolve
 
@@ -49,17 +54,14 @@ class TestProductRefResolvedOncePerBatch:
 
         monkeypatch.setattr(irs.IntegrationReferenceService, "resolve", _counting)
 
-        line_a = _so_line(env, qty_ordered=5)
-        line_b = _so_line(env, product_ref=line_a["product_ref"], qty_ordered=3)
+        line_a = _so_line(env, product_code=code, qty_ordered=5)
+        line_b = _so_line(env, product_ref=line_a["product_ref"], product_code=code, qty_ordered=3)
         record = _so_record(env, lines=[line_a, line_b])
 
         res = env.post(INGEST_SO, [record])
 
         assert res.json()["records"][0]["outcome"] == "created", res.text
-        product_calls = [c for c in calls if c == ("products", line_a["product_ref"])]
-        # ONE lookup for a ref two lines share - not two, and not three (the
-        # batch-level plan-exception snapshot resolving it a second time).
-        assert len(product_calls) == 1, calls
+        assert [c for c in calls if c[0] == "products"] == [], calls
 
 
 class TestBackCreatedCustomerReuse:
@@ -115,8 +117,22 @@ class TestMemoDoesNotLeakAcrossResolverInstances:
         res_a = env.post(INGEST_SO, [record_a])
 
         product_b_ref = env.link_product(env.company_b)
+        product_b_id = env.refs_for(env.company_b).resolve(
+            entity_type="products", source_ref=product_b_ref
+        )
+        product_b_code = env.db.execute(
+            text("SELECT product_code FROM products WHERE id = :i"), {"i": str(product_b_id)}
+        ).scalar()
         record_b = _so_record(
-            env, lines=[_so_line(env, product_ref=product_b_ref, warehouse_code=code)]
+            env,
+            lines=[
+                _so_line(
+                    env,
+                    product_ref=product_b_ref,
+                    product_code=product_b_code,
+                    warehouse_code=code,
+                )
+            ],
         )
         res_b = env.post(INGEST_SO, [record_b], company_code=env.company_b_code)
 
