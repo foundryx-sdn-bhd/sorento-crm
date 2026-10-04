@@ -1085,13 +1085,14 @@ def test_auto_block_already_linked_is_skipped_and_untouched(db, tmp_path, w):
     other = _customer(db, w.a, "ZZT Dealer A Hardware Supplies", "ZZT-L2")
     db.add_all([
         RespondContactCustomer(contact_id=c1.id, customer_id=hit.id, company_id=w.a.id, source="manual"),
+        RespondContactCustomer(contact_id=c2.id, customer_id=hit.id, company_id=w.a.id, source="manual"),
         RespondContactCustomer(contact_id=c2.id, customer_id=other.id, company_id=w.a.id, source="manual"),
     ])
     db.flush()
     res, _ = _auto(db, w, _auto_book(tmp_path), tmp_path, apply=True, actor_id=w.actor)
     assert (res["auto"], res["already_linked"], res["needs_human"], res["linked"]) == ([], 1, 0, 0)
     assert sorted((l.contact_id, l.customer_id, l.source) for l in _links(db)) == sorted(
-        [(c1.id, hit.id, "manual"), (c2.id, other.id, "manual")])
+        [(c1.id, hit.id, "manual"), (c2.id, hit.id, "manual"), (c2.id, other.id, "manual")])
 
 
 def test_auto_leftover_holds_only_needs_human_blocks_and_works_with_apply_links(db, tmp_path, w):
@@ -1162,3 +1163,22 @@ def test_auto_counts_rows_blocks_ledgers_and_pairs_in_result_and_stdout(db, tmp_
     for label, n in (("auto rows", 1), ("auto blocks", 1), ("auto ledgers", 2), ("auto pairs", 4),
                      ("already linked", 0), ("needs human", 0)):
         assert re.search(rf"^{label}\s*: {n}$", stdout, re.M), (label, stdout)
+
+
+def test_auto_fills_the_missing_exact_ledgers_of_a_partly_linked_block(db, tmp_path, w):
+    c1, c2 = _contact(db, 1), _contact(db, 2)
+    l1 = _customer(db, w.a, "ZZT ALPHA [A/C I]", "ZZT-P1")
+    l2 = _customer(db, w.a, "ZZT ALPHA [A/C II]", "ZZT-P2")
+    db.add_all([RespondContactCustomer(contact_id=c.id, customer_id=l1.id, company_id=w.a.id, source="manual") for c in (c1, c2)])
+    db.flush()
+    path = _auto_book(tmp_path, company="ZZT ALPHA Sdn Bhd")
+    plan, _ = _auto(db, w, path, tmp_path)
+    assert plan["counts"]["auto_pairs"] == 2 and plan["counts"]["already_linked"] == 0, plan["counts"]
+    assert {x["customer_id"] for x in plan["auto"]} == {l2.id}
+    res, _ = _auto(db, w, path, tmp_path, apply=True, actor_id=w.actor)
+    assert res["linked"] == 2
+    assert sorted((l.contact_id, l.customer_id) for l in _links(db)) == sorted(
+        [(c.id, x.id) for c in (c1, c2) for x in (l1, l2)])
+    assert len(_audits(db, event="contact.customer_linked_bulk")) == 2
+    again, _ = _auto(db, w, path, tmp_path, apply=True, actor_id=w.actor)
+    assert (again["counts"]["auto_pairs"], again["counts"]["already_linked"], again["linked"]) == (0, 1, 0)
