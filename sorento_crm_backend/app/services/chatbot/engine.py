@@ -68,6 +68,7 @@ from app.services.chatbot.turn import state as turn_state
 from app.services.chatbot.turn import compose as turn_compose
 from app.services.chatbot.turn import context as context_mod
 from app.services.chatbot.turn import episode_digest as episode_digest_mod
+from app.services.chatbot.turn import frame as turn_frame
 from app.services.chatbot.turn import held as turn_held
 from app.services.chatbot.turn import fetch as run_fetch_mod
 from app.services.chatbot.turn import memory as memory_mod
@@ -3715,9 +3716,10 @@ def _run_stages_body(  # noqa: PLR0915
         known_phone = turn_runtime.contact_phone(db, contact_respond_id)
         turn_no = turn_runtime.turn_number(db, contact_respond_id)
         state_in = turn_runtime.load_state(session_block, profile=profile, turn_no=turn_no)
-        # STUCK-QTY-LOOP: a held question built under other access, or past its TTL, is
-        # gone before the parser is shown it (`turn/held.py`).
-        state_in, held_expired = turn_held.expire(state_in)
+        # INTENT-FRAMES: a frame written under other access is gone, held questions
+        # included, before the parser is shown it (`turn/frame.py`). Nothing expires by
+        # time or turn count (owner ruling Q1).
+        state_in, frame_expired = turn_frame.expire(state_in)
         remembered_before = session_state.five_keys(session_block)
         # The parser's `Previous response:` line. Read here, at `received`, with the
         # other contact facts and off the SAME session: it is what the bot last said to
@@ -4110,8 +4112,8 @@ def _run_stages_body(  # noqa: PLR0915
     # itself become the trace's last entry instead of the failed `understood`
     # stage (AC-105/R5/H44's own "no routing" shape).
     turn_trace.add("context", context_report)
-    if held_expired:
-        turn_trace.add("held_dropped", {"why": held_expired})
+    if frame_expired:
+        turn_trace.add("frame_dropped", {"why": frame_expired})
 
     # The routing default lands ONCE, here, after the last parse and before the access
     # read (finding 2b): every reader downstream - access, the lanes, the trace - sees
@@ -6570,9 +6572,9 @@ def _run_answer(
         # back as `session_patch` and writes nothing (D14). Same rule `run_tail` applies
         # for the older lanes, so every asking lane carries its question to the next
         # console or replay turn the same way (finding 2a).
-        # STUCK-QTY-LOOP: the held questions carry the turn and the access they were
-        # (re)asked under, read back by `turn/held.py::expire` on the next turn.
-        state = turn_held.stamp(state, remembered_before, question=getattr(answer, "question", None))
+        # INTENT-FRAMES: the frame carries the access it was written under, read back by
+        # `turn/frame.py::expire` on the next turn.
+        state = turn_frame.stamp(state)
         session_payload = turn_tail.session_payload(state, answer, tail_ctx)
         if not dry_run:
             turn_tail.persist(
@@ -8648,9 +8650,8 @@ def run_tail(
             turn_no=0,
         )
     before = dict(remembered_before or session_state.five_keys(jsc.get(ctx, "session")))
-    if applied is not None:
-        # STUCK-QTY-LOOP: the same stamp the composed arms write (`turn/held.py`).
-        state = turn_held.stamp(state, before, question=question)
+    # INTENT-FRAMES: the same stamp the composed arms write (`turn/frame.py`).
+    state = turn_frame.stamp(state)
     payload = {
         "focus": turn_state.focus_to_wire(state.focus),
         # The lane's OWN question, else the one APPLY carried - the same rule the

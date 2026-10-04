@@ -143,11 +143,11 @@ def test_a_failed_access_read_neither_drops_nor_restamps(console, monkeypatch):
     from app.services import stock_visibility
 
     _open_the_question(console)
-    stamp = console.state["focus"]["held_access"]
+    stamp = console.state["focus"]["frame_access"]
 
     def broken(*a, **k):
         raise RuntimeError("boom")
 
     monkeypatch.setattr(stock_visibility, "resolve_policy", broken)
     console.say("10", reply(demand_qty=10))
-    assert console.state["focus"].get("held_access") in (None, stamp)
+    assert console.state["focus"].get("frame_access") in (None, stamp)

@@ -4554,13 +4554,12 @@ def build_suggest_offer(
     def mk_offer(cands: Any) -> Any:
         """id = this turn's identity (stamped onto the picked entity as its dym slot, giving
         the parser a STABLE handle across repeated picks); domain drives the domain-switch
-        supersede rule; ttl / picked seed the lifecycle the tail advances each turn."""
+        supersede rule; picked seeds the lifecycle the tail advances each turn."""
         if not (isinstance(cands, list) and cands):
             return None
         return {
             "id": jsc.js_string(execution_id),
             "domain": jsc.get(q, "domain_hint") if jsc.truthy(jsc.get(q, "domain_hint")) else None,
-            "ttl": 3,
             "candidates": cands,
             "picked": [],
         }

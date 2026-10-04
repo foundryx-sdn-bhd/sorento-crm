@@ -18,7 +18,7 @@ import re
 import pytest
 
 from app.services.chatbot.lanes.business import low_stock_ask
-from app.services.chatbot.turn import held
+from app.services.chatbot.turn import frame, held
 from app.services.chatbot.turn import pending as pending_mod
 from app.services.chatbot.turn.apply import apply
 from app.services.chatbot.turn.state import Focus, Profile, State, focus_from_wire, focus_to_wire
@@ -61,8 +61,7 @@ def _all_held_focus(**over) -> Focus:
         set_page={"set_key": "k"},
         set_clarify={"term": "tap", "options": ["tap", "wash basin"], "ask": "x"},
         top_selling={"rank_by": "qty", "asked": "metric", "who": {"x": 1}, "unclear": "y"},
-        held_turn=4,
-        held_access="fp-a",
+        frame_access="fp-a",
     )
     base.update(over)
     return Focus(**base)
@@ -159,25 +158,19 @@ def test_a_reset_drops_the_open_question(kind):
 
 
 @pytest.mark.parametrize("kind", KINDS)
-def test_the_open_question_expires(kind):
-    state = _state(Focus(intent="check_order", held_turn=4, held_access="fp-a"), pending=_pending(kind), turn_no=4 + held.HELD_TTL_TURNS + 1)
-    out, why = held.expire(state)
-    assert out.pending is None
-    assert why == "ttl"
-
-
-@pytest.mark.parametrize("kind", KINDS)
-def test_the_open_question_survives_inside_its_ttl(kind):
-    state = _state(Focus(intent="check_order", held_turn=4, held_access="fp-a"), pending=_pending(kind), turn_no=4 + held.HELD_TTL_TURNS)
-    out, why = held.expire(state)
-    assert out.pending is not None
-    assert why is None
+def test_the_open_question_never_expires_by_turn_count(kind):
+    """INTENT-FRAMES, owner ruling Q1: no TTL. Only context ends a held question."""
+    state = _state(Focus(intent="check_order", frame_access="fp-a"), pending=_pending(kind), turn_no=10_000)
+    out, why = frame.expire(state)
+    assert out.pending is not None and why is None
+    out, why = held.consume(out, verdict(intent_hint="check_order", entities=[entity("7445")]))
+    assert out.pending is not None and why is None
 
 
 @pytest.mark.parametrize("kind", KINDS)
 def test_an_access_change_drops_the_open_question(kind):
-    state = _state(Focus(intent="check_order", held_turn=4, held_access="fp-old"), pending=_pending(kind), access_fp="fp-new")
-    out, why = held.expire(state)
+    state = _state(Focus(intent="check_order", frame_access="fp-old"), pending=_pending(kind), access_fp="fp-new")
+    out, why = frame.expire(state)
     assert out.pending is None
     assert why == "access_changed"
 
@@ -225,18 +218,16 @@ def test_a_reset_drops_everything_held():
     assert _nothing_held(out)
 
 
-def test_ttl_and_access_drop_everything_held():
-    ttl, why = held.expire(_state(_all_held_focus(held_turn=1), pending=_pending("team_pick"), turn_no=1 + held.HELD_TTL_TURNS + 1))
-    assert why == "ttl" and _nothing_held(ttl)
-    acc, why = held.expire(_state(_all_held_focus(held_access="fp-old"), pending=_pending("team_pick"), access_fp="fp-new"))
+def test_an_access_change_drops_everything_held():
+    acc, why = frame.expire(_state(_all_held_focus(frame_access="fp-old"), pending=_pending("team_pick"), access_fp="fp-new"))
     assert why == "access_changed" and _nothing_held(acc)
 
 
 def test_an_unstamped_held_state_is_kept_not_dropped():
-    """Rows written before this lane carry no stamp: they are judged on their next turn
-    (and stamped then), never dropped wholesale on deploy."""
-    state = _state(_all_held_focus(held_turn=None, held_access=None), pending=_pending("customer_pick"))
-    out, why = held.expire(state)
+    """Rows written before this lane carry no stamp: they are stamped on their next write,
+    never dropped wholesale on deploy."""
+    state = _state(_all_held_focus(frame_access=None), pending=_pending("customer_pick"))
+    out, why = frame.expire(state)
     assert why is None
     assert out.pending is not None
 
@@ -254,28 +245,9 @@ def test_a_held_stock_quantity_keeps_the_task_under_another_intent():
 # --------------------------------------------------------------------------- #
 
 
-def test_stamp_records_turn_and_access_when_held_state_changed():
-    before = focus_to_wire(Focus())
-    after = _state(_all_held_focus(held_turn=None, held_access=None), turn_no=9, access_fp="fp-z")
-    stamped = held.stamp(after, {"focus": before, "open_question": None})
-    assert (stamped.focus.held_turn, stamped.focus.held_access) == (9, "fp-z")
-
-
-def test_stamp_carries_an_unchanged_held_state():
-    focus = _all_held_focus(held_turn=3, held_access="fp-a")
-    before = {"focus": focus_to_wire(focus), "open_question": None}
-    stamped = held.stamp(_state(focus, turn_no=7, access_fp="fp-a"), before)
-    assert stamped.focus.held_turn == 3
-
-
-def test_stamp_clears_when_nothing_is_held():
-    stamped = held.stamp(_state(Focus(held_turn=3, held_access="fp-a"), turn_no=7), {"focus": None, "open_question": None})
-    assert (stamped.focus.held_turn, stamped.focus.held_access) == (None, None)
-
-
-def test_the_stamp_and_intent_survive_the_wire():
-    focus = focus_from_wire(focus_to_wire(Focus(intent="check_stock", held_turn=3, held_access="fp-a")))
-    assert (focus.intent, focus.held_turn, focus.held_access) == ("check_stock", 3, "fp-a")
+def test_the_intent_survives_the_wire():
+    focus = focus_from_wire(focus_to_wire(Focus(intent="check_stock", frame_access="fp-a")))
+    assert (focus.intent, focus.frame_access) == ("check_stock", "fp-a")
 
 
 def test_consume_records_the_message_intent_on_the_focus():
@@ -364,10 +336,11 @@ def test_consume_marks_a_new_intent_on_the_verdict():
 
 
 def test_a_refine_under_a_new_intent_still_carries_the_subject():
-    """"cert?" after "any gunmetal basin has incoming?" is about those basins (#833): a new
-    intent drops only the old ask's own extra words, never the products."""
+    """"cert?" after "any gunmetal basin has incoming?" is about those basins (#833): the
+    parser reads it `entity_op: reuse` (`test_attribute_asks_round9._v2`), so the subject
+    carries into the new intent's frame (INTENT-FRAMES)."""
     focus = Focus(intent="check_incoming", products=[entity("CBWB9GM0")], domains=["incoming"])
-    v = verdict(intent_hint="check_product_attachment", domain_hint="product_attachment", entities=[entity("cert", hint="attachment_type")])
+    v = verdict(intent_hint="check_product_attachment", domain_hint="product_attachment", entity_op="reuse", entities=[entity("cert", hint="attachment_type")])
     held.consume(_state(focus), v)
     out, _plan = apply(_state(focus), v, build_policy())
     assert [p["raw"] for p in out.focus.products] == ["CBWB9GM0"]

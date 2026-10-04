@@ -249,50 +249,6 @@ def quick_replies(kind: str | None, labels: list[str]) -> str | None:
     return ", ".join(kept)
 
 
-#: AC-816 rule 1: how many turns an unanswered escalation offer stays on the customer's
-#: screen. Three, the did-you-mean offer's own lifetime, because "unanswered" is not a
-#: licence to live forever - an offer the customer simply ignored used to be re-armed on
-#: every later turn, so a bare "yes" about something else three or twenty turns on still
-#: read as an escalation confirmation and assigned a human to a conversation nobody had
-#: asked to escalate. A constant, not a setting: `system_settings` carries no chatbot TTL
-#: column today (checked), and one preference does not need a table.
-OFFER_TTL = 3
-
-
-def tick(pending: Pending | None) -> Pending | None:
-    """One more turn has begun: the open offer's clock ticks, and at zero it is gone.
-
-    Read at the LOAD seam (`turn_runtime.load_state`), so an expired offer is simply not
-    there - APPLY, the router, the parser's option list and the tail all agree about it
-    without any of them having to know the rule. The remaining count rides on the marker
-    itself (AC-816: "rather than a session key of its own, because the marker is already
-    what says the offer is open and a second key could disagree with it"), and the write
-    is automatic: the tail stores the pending the turn CARRIED, which is this ticked one.
-    A marker with no count - written by n8n, or before this rule shipped - reads as open
-    and starts its clock on this turn.
-
-    Only the three ESCALATION offers have a clock. The business questions do not: R22
-    ruled `outstanding_scope` / `outstanding_detail` sticky on purpose ("a TTL would
-    close it behind a customer who is still reading it"), and the roster kinds are
-    contract 36's sticky roster by definition. What expires is the offer whose stale
-    acceptance hands a human a conversation nobody asked to escalate, and that is
-    `_answer_offer`'s own set.
-
-    A turn that re-prints the question or narrows it still SPENDS one turn against the
-    clock - or the narrow arm becomes the unbounded carry again (AC-816 rule 1's own
-    words).
-    """
-    if pending is None or pending.kind not in ESCALATION_OFFER_KINDS:
-        return pending
-    carried = pending.payload.get("ttl")
-    remaining = (carried if isinstance(carried, int) else OFFER_TTL) - 1
-    if remaining <= 0:
-        return None
-    payload = dict(pending.payload)
-    payload["ttl"] = remaining
-    return replace(pending, payload=payload)
-
-
 def to_wire(pending: Pending | None) -> dict[str, Any] | None:
     """`session_vars.open_question` - the ONE open question, as stored (AC-1504)."""
     if pending is None:

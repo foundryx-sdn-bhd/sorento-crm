@@ -63,10 +63,10 @@ SCOPE_BY_DOCUMENT: dict[tuple[str, ...], str] = {
 
 #: STUCK-QTY-LOOP (crew report 2, 4 Oct 2026): the verdict marker `turn/held.py::consume`
 #: sets when this message names an intent other than the one the conversation was in.
-#: `apply._focus_rules` then drops the carried ask-owned `focus.extra` kinds the message
-#: did not name (`apply.INTENT_OWNED_EXTRA`): "taiyang only" asked for stock after a ranking by sales agent William must not
-#: carry William into the stock lookup as a miss. The SUBJECT (products, customers) still
-#: carries: "cert?" after "any gunmetal basin has incoming?" is about those basins (#833).
+#: INTENT-FRAMES: `turn/frame.py::on_new_intent` then starts a clean frame, carrying the
+#: subject only on the parser's own signal ("cert?" after "any gunmetal basin has
+#: incoming?" is `entity_op: reuse`, #833), never the old ask's filters ("taiyang only"
+#: after a ranking by a sales agent never looks the agent up).
 NEW_INTENT = "_new_intent"
 
 #: A position no roster ever prints (they count from 1): a pick of nothing on offer, which

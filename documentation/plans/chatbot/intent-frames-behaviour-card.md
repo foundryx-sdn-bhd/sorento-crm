@@ -48,12 +48,16 @@ SUBJECT (what the question is about) or OWNED by the intent (how that one ask is
 4. **The lane's own reply outranks generic miss text**: the resolver's `not_found` exit
    speaks only when the lane has nothing of its own (no rows, no question of its own). One
    rule replaces the three exemptions.
-5. **Expiry**: the frame (subject, owned axes, intent, held questions) is dropped at load
-   when (a) the contact's access fingerprint changed since it was written (stock mode,
-   escalation, reveals: `Profile.access_fp`, #1471), or (b) the contact was silent longer
-   than the frame TTL (Q1). A reset (`topic_reset`) drops it as today (tier and brand stay).
-6. **Held questions** keep #1471's rule unchanged: a pick-only roster survives a new intent
-   but speaks only when the reply is a pick (ruling (a)).
+5. **Expiry is by context only, never by time or turn count** (owner ruling Q1). A frame
+   ends when the parser reads the next message as leaving it (rule 2), on a reset
+   (`topic_reset`, tier and brand stay), or at load when the contact's access fingerprint
+   changed since it was written (stock mode, escalation, reveals: `Profile.access_fp`,
+   #1471), which drops the whole frame, held questions and the open question included.
+   This lane removes every TTL: #1471's 6-turn held-question TTL and its turn/access
+   stamps, and `pending.tick`'s 3-turn escalation-offer clock (AC-816).
+6. **Held questions** keep #1471's consume rule: a pick-only roster or escalation offer
+   survives a new intent but speaks only when the reply is a pick or the parser's own
+   escalation confirmation (ruling (a)).
 7. **Reply format and escalation are untouched**: one fact per line `*Label:* value`; a
    no-answer for an escalation-allowed contact still ends with the escalation offer.
 
@@ -96,7 +100,19 @@ reuse`), so the gunmetal basins carry into the certificate ask.
 - n8n / console dry runs read and write the same keys; no new session key beyond two
   optional focus stamps (no migration).
 
-## Questions (recommendations first)
+## Owner rulings (4 Oct 2026)
+
+- **Q1:** frames must NOT expire by time or by turn count. Expiry is decided from context:
+  the parser's reading of whether the new turn continues, refines or leaves the frame; an
+  access or profile change; an explicit clear/reset. Remove every TTL in this lane,
+  including #1471's 6-turn held-state TTL and `pending.tick`-style limits (#1471 merges
+  first as is).
+- **Q2 (a):** a carry signal carries only the subject, never the old ask's filters.
+- **Q3 (a):** one live frame, no stack.
+- **Q4 (a):** "clear", "reset", "start over" examples in a new unlabelled prompt version.
+- **Q5 (a):** one not-found rule.
+
+## Questions as asked (recommendations first)
 
 - **Q1 Frame TTL.** (a) the frame expires after 60 minutes of contact silence; (b) 24 h;
   (c) a turn count like held questions (6 turns). Recommendation (a): a turn count never

@@ -1597,15 +1597,10 @@ def _miss_triggers(
         maybe_fetch = raw_fragment.get("fetch")
         fetch_item = maybe_fetch if isinstance(maybe_fetch, dict) else None
 
-    # SO-NUMBER-ASK: the lane answered the SO words the resolver could not place, and its
-    # reply already names the ones no SO answered (`lanes/business/run_fetch`'s
-    # `so_numbers` arm), so the resolver's own exit is no miss of its own.
-    so_status_answered = isinstance(fetch_item, Mapping) and fetch_item.get("so_status") is True
-    # LOWSTOCK-FILTER-ASK (owner hand test, 3 Oct 2026, turn 4a90dd1d): a low stock
-    # report ran and said its own line; a word the resolver missed on the same turn
-    # never turns that reply into "Could not find inventory".
-    low_stock_answered = isinstance(fetch_item, Mapping) and fetch_item.get("low_stock_report") is True
-    via_resolver_exit = payload.get("_exit_kind") == "not_found" and not (so_status_answered or low_stock_answered)
+    # INTENT-FRAMES (owner, 4 Oct 2026): the lane's own reply always outranks the generic
+    # miss text. The resolver's own `not_found` exit speaks only when the lane has nothing
+    # of its own (`_lane_owns_reply`).
+    via_resolver_exit = payload.get("_exit_kind") == "not_found" and not _lane_owns_reply(fetch_item)
     via_error_fragment = fragment_outcome == "not_found"
     # R5 (AC-1699, AC-1702): a THIRD trigger - the resolver settled a real subject,
     # the fetch genuinely ran for it, and the tool came back with zero rows. This
@@ -1631,12 +1626,26 @@ def _miss_triggers(
         and not fetch_item.get("has_result")
     )
     if _lane_asked(envelope):
-        # STUCK-QTY-LOOP (crew report 2, 4 Oct 2026, "taiyang only" -> "Could not find
-        # inventory for William"): a lane that asked its OWN required question (the low
-        # stock category ask, `required_fields`) answered the turn with that question. A word the resolver missed on the same turn never
-        # turns it into a miss: the lane's question always outranks the not_found exit.
+        # STUCK-QTY-LOOP (crew report 2, 4 Oct 2026): a lane that asked its OWN required
+        # question (the low stock category ask, `required_fields`) answered the turn with
+        # that question; no miss of any kind replaces it.
         return raw_fragment, fetch_item, (False, False, False)
     return raw_fragment, fetch_item, (via_resolver_exit, via_error_fragment, via_fetched_empty)
+
+
+#: The lanes' own declaration, on their fetch fragment, that their reply already says
+#: what happened to every word they were handed: SO-NUMBER-ASK (`so_numbers`, the reply
+#: names the SO words no SO answered) and the low stock report (LOWSTOCK-FILTER-ASK, owner
+#: hand test 3 Oct 2026, turn 4a90dd1d: the report said its own line).
+LANE_OWN_REPLY_KEYS: tuple[str, ...] = ("so_status", "low_stock_report")
+
+
+def _lane_owns_reply(fetch_item: Any) -> bool:
+    """INTENT-FRAMES: does the lane have a reply of its own that the resolver's `not_found`
+    exit must not replace - rows its fetch found, or its own declared reply?"""
+    if not isinstance(fetch_item, Mapping):
+        return False
+    return bool(fetch_item.get("has_result")) or any(fetch_item.get(key) is True for key in LANE_OWN_REPLY_KEYS)
 
 
 def _lane_asked(envelope: dict[str, Any] | None) -> bool:
