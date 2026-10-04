@@ -72,6 +72,9 @@ ENGINE_KEYS = frozenset({"required_ask", "required_ask_reply", "required_ask_ans
 #: An OPTIONAL field also takes these as "no filter" (it was never required).
 NONE_WORDS = frozenset({"none", "no", "no filter", "skip"})
 CANCEL_WORDS = frozenset({"cancel", "stop", "never mind", "nevermind", "forget it", "batal"})
+#: A reply longer than this, read by the parser as another ask, leaves the question
+#: (asks that are not `answered_by_parser` only).
+SHORT_REPLY_WORDS = 3
 MAX_MISSES = 2
 #: `open_question_answer.mode` values that ANSWER the open question (the parser's own
 #: reading; LOWSTOCK-SEMANTIC, crew ruling Q4 4 Oct 2026). `None` answers nothing.
@@ -112,6 +115,11 @@ class AskType:
     #: The give-up line when the last miss carried no word of its own (the parser read an
     #: answer but placed nothing in it); `give_up` with "that" when unset.
     give_up_blank: str | None = None
+    #: The ask is stated to the parser as the turn's `Open question:` and a reply counts only
+    #: through the parser's declared answer (LOWSTOCK-SEMANTIC, crew ruling Q4). False keeps
+    #: the original capture (a short reply is the answer, a longer other ask or a "?" drops
+    #: it), which IDEATION-CAPTURE (#1444) is written and tested against.
+    answered_by_parser: bool = False
 
 
 #: Every registered ask type, by name (`register`). The engine seam reads the open slot's
@@ -304,6 +312,8 @@ def reply_verdict(
     # STUCK-QTY-LOOP pending-question rule): only a declared answer is the answer. Anything
     # else is a new question, which always wins (a whole new low stock ask included: it
     # settles from its own words), and "clear" is the parser's `topic_reset` with no answer.
+    if not ask.answered_by_parser:
+        return _reply_verdict_by_shape(verdict, slot, text, ask)
     answer = verdict.get("open_question_answer")
     mode = answer.get("mode") if isinstance(answer, dict) else None
     answers = mode in ANSWER_MODES
@@ -314,5 +324,28 @@ def reply_verdict(
         "is_affirmative": None, "topic_reset": False,
         "required_ask": slot, "required_ask_reply": text,
         "required_ask_answer": dict(answer) if answers else None,
+    }
+    return rerouted, "required_ask_answer"
+
+
+def _reply_verdict_by_shape(
+    verdict: dict[str, Any], slot: dict[str, Any], text: str, ask: AskType
+) -> tuple[dict[str, Any], str | None]:
+    """The original capture, for an ask not `answered_by_parser` (IDEATION-CAPTURE #1444):
+    a short reply (or one the parser reads as the same ask) is the answer; a longer message
+    the parser reads as another ask, an empty one, or one with a "?" drops the question."""
+    words = (text or "").split()
+    if not words or "?" in text:
+        return verdict, "required_ask_dropped"
+    same_ask = verdict.get("intent_hint") == ask.reroute.get("intent_hint")
+    other_ask = (bool(verdict.get("intent_hint")) and not same_ask) or verdict.get("message_type") not in (
+        "business_query", "clarification", None,
+    )
+    if other_ask and len(words) > SHORT_REPLY_WORDS:
+        return verdict, "required_ask_dropped"
+    rerouted = {
+        **verdict, **ask.reroute, "entities": [], "open_question_answer": None,
+        "is_affirmative": None, "topic_reset": False,
+        "required_ask": slot, "required_ask_reply": text,
     }
     return rerouted, "required_ask_answer"

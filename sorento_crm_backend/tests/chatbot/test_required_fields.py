@@ -45,6 +45,15 @@ ONE = rf.AskType(
     reroute={"intent_hint": "test_one"},
     cancelled="Test cancelled.",
     give_up="I still can't place '{word}'. Ask again.",
+    answered_by_parser=True,
+)
+#: The same ask on the original capture (IDEATION-CAPTURE #1444 is written against it).
+BY_SHAPE = rf.AskType(
+    name="test_shape",
+    fields=(CATEGORY,),
+    reroute={"intent_hint": "test_shape"},
+    cancelled="Test cancelled.",
+    give_up="I still can't place '{word}'. Ask again.",
 )
 TWO = rf.AskType(
     name="test_two",
@@ -394,3 +403,29 @@ class TestReplyVerdict:
     def test_an_unknown_ask_type_in_the_slot_is_dropped(self):
         out, rule = rf.reply_verdict({"intent_hint": None}, {"ask": "gone", "asking": "x"}, "1", asks={})
         assert rule == "required_ask_dropped"
+
+
+class TestReplyVerdictByShape:
+    """An ask not `answered_by_parser` keeps the original capture (ideation, #1444)."""
+
+    def test_a_short_reply_is_the_answer_whatever_the_parser_read(self):
+        slot = _start(BY_SHAPE).slot
+        out, rule = rf.reply_verdict({"intent_hint": "check_product"}, slot, "leaky basin",
+                                     asks={"test_shape": BY_SHAPE})
+        assert rule == "required_ask_answer" and out["intent_hint"] == "test_shape"
+
+    def test_a_longer_other_ask_or_a_question_drops_it(self):
+        slot = _start(BY_SHAPE).slot
+        asks = {"test_shape": BY_SHAPE}
+        assert rf.reply_verdict({"intent_hint": "check_stock"}, slot, "how many CB100 in BRW", asks=asks)[1] \
+            == "required_ask_dropped"
+        assert rf.reply_verdict({"intent_hint": None}, slot, "CB100?", asks=asks)[1] == "required_ask_dropped"
+
+    def test_it_is_never_stated_to_the_parser(self):
+        from app.services.chatbot.turn import question
+
+        rf.register(BY_SHAPE)
+        try:
+            assert question.of_required_ask(_start(BY_SHAPE).slot) is None
+        finally:
+            rf.ASKS.pop("test_shape", None)

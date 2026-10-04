@@ -238,6 +238,7 @@ LOW_STOCK_ASK = rf.register(rf.AskType(
     cancelled=CANCELLED,
     give_up=GIVE_UP,
     give_up_blank=GIVE_UP_BLANK,
+    answered_by_parser=True,
 ))
 
 
