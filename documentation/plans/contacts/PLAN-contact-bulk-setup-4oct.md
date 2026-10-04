@@ -1,6 +1,6 @@
 # PLAN: contact bulk setup from the owner's dealer Excel (CONTACT-BULK-SETUP)
 
-Status: building, M track (script only, no migration, no UI, no auth change). Behaviour card:
+Status: built, review clean, PR #1483 awaiting owner merge; M track (script only, no migration, no UI, no auth change). Behaviour card:
 crew/state/files/contact-bulk/CARD.md (outside git, holds real names). UAC alongside:
 `contact-bulk-setup-4oct-acceptance-criteria.md`.
 
