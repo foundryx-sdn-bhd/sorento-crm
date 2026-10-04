@@ -36,18 +36,25 @@ SUBJECT (what the question is about) or OWNED by the intent (how that one ask is
 1. **Same intent, or no intent named** (a pick, "yes", a bare value): today's reading,
    unchanged. A refinement narrows the frame ("taiyang only" on a low stock report narrows
    that report's supplier, #1470).
-2. **A new intent** (the parser's `intent_hint` is a known intent other than the frame's):
-   a clean frame. Every intent-owned axis goes. A subject axis carries ONLY when the parser
-   says the message is about the same subject: `entity_op: "reuse"`, or
-   `anaphora.backward_reference: true`, or `continuation: true`, and only on an axis this
-   message did not name itself. Nothing else moves over. No word rules: the engine reads
-   only those parser fields.
+2. **A new intent** (a `business_query` whose `intent_hint` is a known intent other than
+   the frame's, and that answers no held question): a clean frame. Every intent-owned axis
+   goes. A subject axis carries ONLY when the parser says the message is about the same
+   subject: `continuation: true` (defined by this lane's prompt addendum) or
+   `anaphora.backward_reference: true`, and only on an axis this message did not name
+   itself. `entity_op: "reuse"` alone is NOT a carry signal: measured live (gpt-5.4-mini,
+   4 Oct 2026), the parser also emits it for a fresh "low stock report for sorento water
+   tap" right after a stock check. An entity the parser copied from the conversation
+   (`current_message: false`) never lands on a new frame. An escalation request, a
+   clarification or a casual turn never starts a frame, and never relabels the frame's
+   intent. No word rules: the engine reads only those parser fields.
 3. **Stale entities never reach the resolver or the miss list**: the resolver and the miss
    composer read the frame after rule 2 ran, so an axis the new frame dropped is not there
    to miss.
-4. **The lane's own reply outranks generic miss text**: the resolver's `not_found` exit
-   speaks only when the lane has nothing of its own (no rows, no question of its own). One
-   rule replaces the three exemptions.
+4. **The lane's own reply outranks generic miss text**: one rule
+   (`answer_bridge._lane_owns_reply`): no miss trigger fires over the lane's own required
+   question or a reply the lane declared (`LANE_OWN_REPLY_KEYS`: SO status, low stock
+   report). `has_result` alone is not one: "Sales order figures are not enabled" sets it,
+   and "Couldn't find SO999001" is the better answer there.
 5. **Expiry is by context only, never by time or turn count** (owner ruling Q1). A frame
    ends when the parser reads the next message as leaving it (rule 2), on a reset
    (`topic_reset`, tier and brand stay), or at load when the contact's access fingerprint
@@ -55,9 +62,11 @@ SUBJECT (what the question is about) or OWNED by the intent (how that one ask is
    #1471), which drops the whole frame, held questions and the open question included.
    This lane removes every TTL: #1471's 6-turn held-question TTL and its turn/access
    stamps, and `pending.tick`'s 3-turn escalation-offer clock (AC-816).
-6. **Held questions** keep #1471's consume rule: a pick-only roster or escalation offer
-   survives a new intent but speaks only when the reply is a pick or the parser's own
-   escalation confirmation (ruling (a)).
+6. **Held questions** keep #1471's consume rule: a roster survives a new intent but speaks
+   only when the reply is a pick (ruling (a)). An escalation offer lives as long as the
+   contact's next message (security review B1, crew-ask pending): a message that does not
+   answer it closes it after APPLY has read the turn, and a roster loses the escalate
+   sentence printed under it, so a later "ok thanks" never hands the chat to a person.
 7. **Reply format and escalation are untouched**: one fact per line `*Label:* value`; a
    no-answer for an escalation-allowed contact still ends with the escalation offer.
 
@@ -65,7 +74,7 @@ SUBJECT (what the question is about) or OWNED by the intent (how that one ask is
 
 1. **Stale product into a low stock report.** Availability contact: "check stock
    SRTWC286-SH-150 and SRTWC286-SH-200" (frame: check_stock, 2 products) then "low stock
-   report for sorento water tap" (new intent, `entity_op` not reuse). Today the 2 products
+   report for sorento water tap" (new intent, `continuation: false`). Today the 2 products
    stay on the focus beside the low stock ask. After: the low stock frame starts clean; the
    report is filtered only by what the parser placed in `low_stock`.
 2. **"taiyang only" -> "Could not find inventory for W\*\*\*\*\*\*".** A ranking by sales
@@ -77,14 +86,14 @@ SUBJECT (what the question is about) or OWNED by the intent (how that one ask is
    then "taiyang only" (parser: low_stock_report, supplier taiyang). Same intent: the
    report narrows to supplier taiyang (#1470), nothing is dropped.
 4. **Domain switch about the same subject.** "incoming SRTWC286" -> roster -> "4" ->
-   "check stock" (parser: check_stock, no entities, `entity_op: reuse`) -> "7". "check
-   stock" carries the picked product (explicit reuse); "7" picks off the surviving incoming
-   roster (#1352, #1471 ruling (a)).
+   "check stock" (parser: check_stock, no entities, `continuation: true`) -> "7". "check
+   stock" carries the picked product; "7" picks off the surviving incoming roster (#1352,
+   #1471 ruling (a)).
 5. **Picker -> "1" -> empty -> escalation.** A product pick answered with "1" whose fetch
    comes back empty ends with the escalation offer (PICKER-ESCALATION, #1467), unchanged.
 
-Also kept: "any gunmetal basin has incoming?" -> "cert?" (#833: parser `entity_op:
-reuse`), so the gunmetal basins carry into the certificate ask.
+Also kept: "any gunmetal basin has incoming?" -> "cert?" (#833: parser `continuation:
+true`, measured live), so the gunmetal basins carry into the certificate ask.
 
 ## Edge cases
 

@@ -211,7 +211,7 @@ class Profile:
     # STUCK-QTY-LOOP: one string naming everything above that decides what this contact
     # is told, plus their stock mode and field-reveal grants (`engine._access_fingerprint`). A held
     # question stamped under another fingerprint was built for access the contact no
-    # longer has, so `turn/held.py::expire` drops it. None = not computed (tests, n8n).
+    # longer has, so `turn/frame.py::expire` drops it. None = not computed (tests, n8n).
     access_fp: str | None = None
 
 

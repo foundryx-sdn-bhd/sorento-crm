@@ -294,7 +294,9 @@ def test_a_picker_answer_that_finds_nothing_ends_with_the_escalation_offer(sessi
         assert "YOO LIVING HOUSE" in picker, picker
         one = _pick(1)
         if stale_intent:
-            one.update(intent_hint=stale_intent, domain_hint="inventory")
+            # The live reading of a bare "1" is business_query (4 Oct 2026), so only the
+            # "an answer starts no frame" rule keeps the picker's frame here.
+            one.update(intent_hint=stale_intent, domain_hint="inventory", message_type="business_query")
         monkeypatch.setattr(engine_mod, "turn_apply", traced)
         reply_text, calls, _ = chat.turn("1", one)
     finally:

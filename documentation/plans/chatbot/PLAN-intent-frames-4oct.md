@@ -11,8 +11,13 @@ first; merge those two before this one.
 
 1. `turn/frame.py` (new, pure): the axis classes (subject / intent-owned / contact /
    stamps; held questions stay in `turn/held.py`), `on_new_intent` (a clean frame, the
-   subject carried only on `entity_op: reuse`, `anaphora.backward_reference` or
-   `continuation`), `expire` (access change only) and `stamp` (`focus.frame_access`).
+   subject carried only on `continuation` or `anaphora.backward_reference`), `expire`
+   (access change only) and `stamp` (`focus.frame_access`, the composer's question
+   included).
+1b. `turn/held.py::consume`: only a `business_query` that answers no held question starts
+   a frame; on that turn the parser's echoed entities (`current_message: false`) are
+   dropped; the frame's intent changes only when a frame starts. An escalation offer the
+   message does not answer is closed after APPLY (`without_unanswered_offer`).
 2. `turn/apply.py::_apply`: `frame.on_new_intent` runs first, before any reader sees the
    old frame. #1471's single-kind `INTENT_OWNED_EXTRA` block in `_focus_rules` is retired
    (generalised by the frame rule).
@@ -22,13 +27,15 @@ first; merge those two before this one.
    `Focus.held_turn` / `held_access` (still accepted by `contracts.Focus` for rows the
    #1471 release wrote), `pending.OFFER_TTL` / `pending.tick` and its load call, the
    dead `"ttl": 3` on the did-you-mean dym marker.
-5. `answer_bridge._miss_triggers`: one rule, `_lane_owns_reply` (rows found, or the lane's
-   own declared reply in `LANE_OWN_REPLY_KEYS`), replacing the per-lane exemptions; the
-   lane's own required question still outranks every miss trigger.
+5. `answer_bridge._miss_triggers`: one rule, `_lane_owns_reply` (the lane's own required
+   question, or its declared reply in `LANE_OWN_REPLY_KEYS`), replacing the per-lane
+   exemptions. `has_result` is deliberately not one.
 6. Parser prompt: `INTENT_FRAMES_ADDENDUM` (defines `continuation`, adds clear / reset /
    start over to TOPIC RESET), published unlabelled by migration `if_0001_parser_frames`
    (additive data). Release step: promote the new `chatbot_semantic_parser` version in the
-   same release (after #1470's `lss_0001` version).
+   same release. When #1470's `lss_0001` and this `if_0001` run in one release, `lss_0001`
+   already publishes a body that carries this addendum (both build from the live module)
+   and `if_0001` finds it and does nothing: one new version, not two.
 
 No schema migration: the focus is JSON; one new optional key (`frame_access`).
 
@@ -43,7 +50,8 @@ No schema migration: the focus is JSON; one new optional key (`frame_access`).
   picker -> "1" -> empty -> escalation; incoming -> "4" -> "check stock" -> "7"), plus
   the lane-reads-only-its-own-frame contract at the resolver and tool seams.
 - Updated: #1471's held tests (TTL and stamp tests become access/no-TTL tests), the
-  #833 carry test (the real verdict's `entity_op: reuse`), the top selling sticky pick
+  #833 carry test and other follow-up fixtures (the live parser's `continuation: true`),
+  the prompt-stacking tests and the prompt budget, the top selling sticky pick
   clock test.
 
 ## Process

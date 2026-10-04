@@ -6302,7 +6302,7 @@ def _access_fingerprint(session_factory: SessionFactory, contact_respond_id: str
     """STUCK-QTY-LOOP: everything that decides what this contact is told, as one string
     (`Profile.access_fp`). A held question stamped under another one was built for access
     the contact no longer has (owner, 4 Oct 2026: availability switched to compact), so
-    `turn/held.py::expire` drops it. The stock mode and the field-reveal grants are read
+    `turn/frame.py::expire` drops it. The stock mode and the field-reveal grants are read
     the way the stock tool and `head/access.check_access` read them, on a session of their
     own so a failed read can never abort the turn's. A read that fails gives None: the
     access is unknown, and `expire` neither drops nor restamps on an unknown access."""

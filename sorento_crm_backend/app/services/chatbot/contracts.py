@@ -444,9 +444,8 @@ class Pending(BaseModel):
     kind: PendingKind
     team: str | None = None
     domain: str | None = None
-    # `member_offer` only: how many more turns the roster stays on the customer's screen
-    # (AC-816 rule 1, `tail/pending.MEMBER_OFFER_TTL`). Absent on every other kind, and on
-    # a marker written by n8n, which has no clock - the reader treats absence as "open".
+    # Legacy: the retired AC-816 turn clock's count. Still accepted on a stored marker;
+    # nothing reads it (INTENT-FRAMES, owner ruling Q1: no turn clock).
     ttl: int | None = None
     # `team_clarify` only (AC-821 / AC-822): the teams the ask actually OFFERED, as
     # `{team, label}` - the slug the router acts on beside the exact string the customer
