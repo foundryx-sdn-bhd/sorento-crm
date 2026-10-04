@@ -715,3 +715,151 @@ def test_u22_vanished_customer_is_reported_others_still_link(db, tmp_path, w):
     assert res["linked"] == 2 and len(res["failed"]) == 1
     assert "ZZT-D-NEAR" in str(res["failed"][0])
     assert {l.customer_id for l in _links(db)} == {lw.exact.id}
+
+
+# ---------------------------------------------------------------- review round
+
+
+def test_rules_are_the_owner_values():
+    assert cbs.RULES == {
+        "companies": {"Sorento Sdn Bhd": "SRT", "Mocha Sdn Bhd": "MCH"},
+        "owner_types": {"SRT": "dealer", "MCH": "mocha_dealer"},
+        "base_type": "end_user",
+        "locations": {"SRT": ["BRW", "MWH"], "MCH": ["HQ", "MOCHA-WH"]},
+        "stock_mode": "availability",
+        "segment": "retail",
+        "media_modality": "image",
+        "agents": ["general_enquiries", "order_enquiries", "incoming_stock_enquiries"],
+        "agent_valid_from": datetime(2026, 1, 1),
+        "agent_valid_to": datetime(2026, 12, 31),
+        "switches_on": ["chatbot_stock_allowed", "chatbot_eta_offset_applied"],
+        "switches_off": ["escalation_allowed"],
+    }
+
+
+def test_u7_warehouse_code_shared_by_both_companies_resolves_per_company(db, tmp_path, w):
+    own = warehouse(db, company_id=w.a.id, code="ZSHARED")
+    warehouse(db, company_id=w.b.id, code="ZSHARED")
+    w.rules["locations"] = {"ZSRT": ["ZBRW", "ZMWH", "ZSHARED"], "ZMCH": ["ZHQ", "ZMOCHAWH", "ZSHARED"]}
+    c = _contact(db, 1)
+    _run(db, w, _book(tmp_path, [_row([("ZZT P1", raw(1), BO)])]), apply=True, actor_id=w.actor)
+    assert _state(db, c.id)["stock"][1] == sorted([w.wh["ZBRW"].id, w.wh["ZMWH"].id, own.id])
+
+
+def test_u18_two_contacts_with_same_digits_are_ambiguous_and_untouched(db, tmp_path, w):
+    c1 = _contact(db, 1, phone="+" + dbphone(1))
+    c2 = _contact(db, 1, phone=dbphone(1))
+    before = (_state(db, c1.id), _state(db, c2.id))
+    res = _run(db, w, _book(tmp_path, [_row([("ZZT P1", raw(1), BO)])]), apply=True, actor_id=w.actor)
+    assert (_state(db, c1.id), _state(db, c2.id)) == before
+    assert _audits(db) == []
+    assert [m["reason"] for m in res["missing"] if m["phone"] == norm(1)] == ["ambiguous"]
+
+
+def _tampered(db, tmp_path, w, edit):
+    """Review sheet with the Excel-row ZZT-D-EXACT (good) and ZZT-D-NEAR (tampered by edit(cells, lw))."""
+    lw = _link_world(db, tmp_path, w)
+    review, reviewed = tmp_path / "review.xlsx", tmp_path / "reviewed.xlsx"
+    cbs.links_review(db, lw.path, review, rules=w.rules)
+    wb = openpyxl.load_workbook(review)
+    ws = wb.active
+    header = [c.value for c in ws[1]]
+    col = {h: header.index(h) for h in header}
+    for r in ws.iter_rows(min_row=2):
+        if r[col["debtor_code"]].value == "ZZT-D-EXACT":
+            r[col["link"]].value = "Y"
+        elif r[col["debtor_code"]].value == "ZZT-D-NEAR":
+            r[col["link"]].value = "Y"
+            edit({h: r[i] for h, i in col.items()}, lw)
+    wb.save(reviewed)
+    res = cbs.apply_links(db, lw.path, reviewed, actor_id=w.actor, rules=w.rules)
+    return lw, res
+
+
+def _assert_only_good_linked(db, lw, res):
+    assert len(res["failed"]) == 1, res
+    assert {l.customer_id for l in _links(db)} == {lw.exact.id}
+    assert res["linked"] == 2
+
+
+def test_tampered_customer_id_from_a_company_outside_the_row(db, tmp_path, w):
+    def edit(cells, lw):
+        cells["customer_id"].value = lw.m_only.id
+        cells["debtor_code"].value = lw.m_only.customer_code
+        cells["customer_name"].value = lw.m_only.customer_name
+    lw, res = _tampered(db, tmp_path, w, edit)
+    _assert_only_good_linked(db, lw, res)
+
+
+def test_tampered_debtor_code_not_equal_to_the_customers_code(db, tmp_path, w):
+    lw, res = _tampered(db, tmp_path, w, lambda cells, lw: setattr(cells["debtor_code"], "value", "ZZT-D-EXACT"))
+    _assert_only_good_linked(db, lw, res)
+
+
+def test_tampered_excel_company_not_equal_to_the_rows_company_name(db, tmp_path, w):
+    lw, res = _tampered(db, tmp_path, w, lambda cells, lw: setattr(cells["excel_company"], "value", "ZZT Some Other Company"))
+    _assert_only_good_linked(db, lw, res)
+
+
+def test_tampered_customer_id_that_is_not_a_uuid(db, tmp_path, w):
+    lw, res = _tampered(db, tmp_path, w, lambda cells, lw: setattr(cells["customer_id"], "value", "abc"))
+    _assert_only_good_linked(db, lw, res)
+
+
+# formula-injection guard: spreadsheet apps run a cell that starts with = + - @
+
+
+@pytest.mark.parametrize("prefix", ["=", "+", "-", "@"])
+def test_formula_cells_are_neutralised_in_csv_and_xlsx(db, tmp_path, w, prefix):
+    evil = f"{prefix}ZZT Evil"
+    c = _contact(db, 1)
+    c.name = evil
+    _customer(db, w.a, f"{prefix}ZZT Dealer A Sdn Bhd", "ZZT-D-EVIL")
+    path = _book(tmp_path, [_row([("ZZT P1", raw(1), BO), (evil, raw(9), EMP)], company=f"{prefix}ZZT Dealer A Sdn Bhd")])
+    res = _run(db, w, path)
+    out = tmp_path / "out"
+    out.mkdir()
+    changes_csv = out / "changes.csv"
+    cbs.write_csv(res, changes_csv)
+    with open(changes_csv, newline="") as fh:
+        contacts = {r["contact"] for r in csv.DictReader(fh)}
+    assert contacts == {"'" + evil}
+    (missing_csv,) = [p for p in out.glob("*.csv") if p != changes_csv]
+    with open(missing_csv, newline="") as fh:
+        names = {r["name"] for r in csv.DictReader(fh)}
+    assert names == {"'" + evil}
+    review = tmp_path / "review.xlsx"
+    cbs.links_review(db, path, review, rules=w.rules)
+    ws = openpyxl.load_workbook(review).active
+    header = [x.value for x in ws[1]]
+    seen = 0
+    for r in ws.iter_rows(min_row=2):
+        for h in ("excel_company", "customer_name"):
+            cell = r[header.index(h)]
+            if cell.value:
+                assert cell.value.startswith("'") and cell.data_type == "s", (h, cell.value, cell.data_type)
+                seen += 1
+    assert seen
+
+
+def test_main_dry_run_without_out_exits_with_usage_error():
+    with pytest.raises(SystemExit) as exc:
+        cbs.main(["--excel", "x.xlsx", "--db-url", "postgresql://example.invalid/none"])
+    assert exc.value.code == 2
+
+
+def test_output_files_are_owner_only(db, tmp_path, w):
+    import os
+
+    _contact(db, 1)
+    path = _book(tmp_path, [_row([("ZZT P1", raw(1), BO), ("ZZT Ghost", raw(9), EMP)])])
+    res = _run(db, w, path)
+    out = tmp_path / "out"
+    out.mkdir()
+    cbs.write_csv(res, out / "changes.csv")
+    review = tmp_path / "review.xlsx"
+    cbs.links_review(db, path, review, rules=w.rules)
+    files = [*out.glob("*.csv"), review]
+    assert len(files) == 3
+    for f in files:
+        assert os.stat(f).st_mode & 0o777 == 0o600, f
