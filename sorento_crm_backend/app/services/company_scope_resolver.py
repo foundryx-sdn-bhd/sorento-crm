@@ -46,7 +46,14 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.models.base import UNSET, CompanyScope, company_scope, get_company_scope, set_company_scope
+from app.models.base import (
+    UNSET,
+    CompanyScope,
+    company_scope,
+    get_company_scope,
+    set_brand_scope,
+    set_company_scope,
+)
 from app.models.company import Company, UserCompany
 from app.models.user import User
 from app.models.user_session import UserSession
@@ -242,6 +249,23 @@ def _resolve_api_key_scope(db: Session, request: Request) -> CompanyScope:
     return resolve_contact_company_scope(db, contact_id, space_id)
 
 
+def _resolve_api_key_brand_scope(db: Session, request: Request):
+    """CONTACT-BRAND-SCOPE: the calling contact's accessible brands, or None (unscoped).
+
+    Only the X-API-Key + contact_id + space_id shape carries a contact; a staff session, a
+    portal token or a key with no contact identity is untouched."""
+    api_key = request.headers.get("X-API-Key")
+    if not api_key or not _api_key_valid(api_key):
+        return None
+    contact_id = (request.query_params.get("contact_id") or "").strip()
+    space_id = (request.query_params.get("space_id") or "").strip()
+    if not contact_id or not space_id:
+        return None
+    from app.services.contact_brand_scope import contact_brand_scope
+
+    return contact_brand_scope(db, contact_id, space_id)
+
+
 def _portal_token_value(request: Request) -> Optional[str]:
     """The portal/public-view token, wherever that surface puts it.
 
@@ -338,8 +362,10 @@ async def apply_company_scope(
 ) -> CompanyScope:
     """Router-level dependency: resolve + stamp the company scope onto the request
     session so the ``do_orm_execute`` filter enforces isolation for every route."""
+    brand_scope = None
     try:
         scope = resolve_company_scope(request, db)
+        brand_scope = _resolve_api_key_brand_scope(db, request)
     except Exception as exc:  # noqa: BLE001 - resolver must never 500 the request
         logger.warning("company scope resolver failed; falling back to UNSET (fail-closed): %s", exc)
         scope = UNSET
@@ -350,6 +376,7 @@ async def apply_company_scope(
     if not hasattr(db, "info"):
         return scope
     set_company_scope(db, scope)
+    set_brand_scope(db, brand_scope)
     return scope
 
 

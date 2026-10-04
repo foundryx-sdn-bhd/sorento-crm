@@ -27,6 +27,7 @@ import time
 from app.services.chatbot import contracts
 from app.services.chatbot import copy as reply_copy
 from app.services.chatbot import jsc
+from app.services.chatbot.lanes.business import brand_guard
 from app.services.chatbot import do_ask
 from app.services.chatbot.lanes.business import fetch as fetch_mod
 from app.services.chatbot.lanes.business import low_stock_ask
@@ -1360,6 +1361,12 @@ def run_fetch(
     # sales figures for your own account" to the very person whose own accounts exist.
     # Links win: the customer sales report over them. Staff without links keep the analysis.
     has_own_accounts = bool(customer_scope.get("ids"))
+    # CONTACT-BRAND-SCOPE: a brand-scoped contact's accessible brands ride beside the
+    # customer scope (`scope_brand_ids`) so the output guard below drops what the contact
+    # may not see. The turn ctx wins, then the session the engine stamped, then the contact.
+    brand_scope_ids = _brand_scope_ids(ctx, db, contact_id, space_id)
+    if brand_scope_ids:
+        semantic_input["scope_brand_ids"] = brand_scope_ids
     # SO-NUMBER-ASK (PLAN-so-number-ask.md): SO numbers the resolver could not place
     # (`turn_runtime` hands them over as `so_numbers`) are answered from `sales_orders`
     # here, before any tool pick: the orders list reads the DO book and answered an SO ask
@@ -1458,8 +1465,13 @@ def run_fetch(
             "contact_id": contact_id,
         }
         args = fetch_mod.entity_ids_transformer(trigger, space_id=space_id)
-        return fetch_mod.parse_mcp_content(
-            fetch_mod.call_tool(tool, args, mcp=_McpSeam(services.mcp_call))
+        return brand_guard.guard_result(
+            tool,
+            fetch_mod.parse_mcp_content(
+                fetch_mod.call_tool(tool, args, mcp=_McpSeam(services.mcp_call))
+            ),
+            semantic_input.get("scope_brand_ids"),
+            db,
         )
 
     # ── AC-1132 out-of-range: re-ask the SAME outstanding_scope question ──────
@@ -2102,7 +2114,9 @@ def run_fetch(
             f"MCP tool {tool_name} failed: {exc}", outcome=_fetch_failure_outcome(tool_name, exc)
         )
 
-    envelope = fetch_mod.parse_mcp_content(raw)
+    envelope = brand_guard.guard_result(
+        tool_name, fetch_mod.parse_mcp_content(raw), semantic_input.get("scope_brand_ids"), db
+    )
     if trace is not None:
         # A9: ONE call, ONE tool, ONE envelope this turn - the same "the read" this
         # whole function is named for. `envelope` rides through `trace.add`'s own
@@ -2199,6 +2213,38 @@ def run_fetch(
         "delegate_payload": {**payload, "fetch": item},
         "fetch": item,
     }
+
+
+def _brand_scope_ids(ctx: dict[str, Any], db: Any, contact_id: Any, space_id: Any) -> list[str]:
+    """The contact's accessible brand ids for the output guard; [] = unscoped.
+
+    The brand scope the engine stamped on the session, then the contact's own row. The turn ctx
+    is read only when there is no session at all, so it can never widen what the session and
+    the contact carry. A contact whose scope cannot be read fails
+    closed to a brand nothing carries, so every product row is dropped rather than shown."""
+    if db is None:
+        # No session to read a scope from, so a ctx claim can only NARROW (the guard then fails
+        # closed for lack of a session to look products up with); it never replaces a real scope.
+        carried = ctx.get("brand_scope") if isinstance(ctx.get("brand_scope"), dict) else {}
+        ids = carried.get("ids")
+        return sorted(str(i) for i in ids) if isinstance(ids, (list, tuple, set, frozenset)) and ids else []
+    from app.models.base import get_brand_scope
+
+    stamped = get_brand_scope(db)
+    if stamped:
+        return sorted(stamped)
+    if not contact_id:
+        return []
+    try:
+        from app.services.contact_brand_scope import contact_brand_scope
+
+        derived = contact_brand_scope(db, str(contact_id), fetch_mod.space_id_or_default(space_id))
+    except Exception:  # noqa: BLE001 - fail closed
+        logger.warning("chatbot: brand scope lookup failed, failing closed", exc_info=True)
+        from app.services.contact_brand_scope import NO_BRAND_ID
+
+        return [NO_BRAND_ID]
+    return sorted(derived) if derived else []
 
 
 class _McpSeam:
