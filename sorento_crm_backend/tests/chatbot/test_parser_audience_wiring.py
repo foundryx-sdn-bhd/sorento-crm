@@ -264,7 +264,6 @@ class TestPromptCacheKeyPerAudience:
         from app.services.chatbot import llm_call
 
         monkeypatch.setattr("app.services.llm_provider.resolve_api_key", lambda cfg, provider: "sk-test")
-        _publish(session_factory, SYNTHETIC)
         config = parser_mod.resolve_config(
             session_factory(), current_date="Friday, 02 October 2026", grants=grants
         )
@@ -283,6 +282,7 @@ class TestPromptCacheKeyPerAudience:
         return seen["prompt_cache_key"]
 
     def test_differs_between_audiences_equal_within_one(self, session_factory, monkeypatch) -> None:
+        _publish(session_factory, SYNTHETIC)  # one version for every key below
         none_a = self._key(session_factory, monkeypatch, [])
         none_b = self._key(session_factory, monkeypatch, [])
         sales = self._key(session_factory, monkeypatch, [S])
