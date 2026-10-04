@@ -969,3 +969,156 @@ def test_apply_links_works_on_a_sheet_with_the_new_columns(db, tmp_path, w):
     _tick(review, reviewed, {"ZZT-D-EXACT"})
     res = cbs.apply_links(db, lw.path, reviewed, actor_id=w.actor, rules=w.rules)
     assert (res["linked"], res["failed"]) == (2, [])
+
+
+# ---------------------------------------------------------------- --auto-links
+
+
+def _auto_book(tmp_path, company="ZZT Dealer A Sdn Bhd", extra_rows=()):
+    people = [("ZZT P1", raw(1), BO), ("ZZT P2", raw(2), EMP), ("ZZT Nobody", raw(9), EMP)]
+    return _book(tmp_path, [_row(people, company=company), *extra_rows])
+
+
+def _auto(db, w, path, tmp_path, **kw):
+    out = tmp_path / "auto"
+    out.mkdir(exist_ok=True)
+    return cbs.auto_links(db, path, out, rules=w.rules, **kw), out
+
+
+def _read_plan(out):
+    with open(out / "auto-links-plan.csv", newline="") as fh:
+        reader = csv.DictReader(fh)
+        return reader.fieldnames, list(reader)
+
+
+def test_auto_exact_name_single_survivor_is_auto_and_dry_run_writes_nothing(db, tmp_path, w):
+    import os
+
+    c1, c2 = _contact(db, 1), _contact(db, 2)
+    hit = _customer(db, w.a, "ZZT DEALER A SDN. BHD.", "ZZT-A1")
+    _customer(db, w.a, "ZZT Dealer A Hardware Supplies", "ZZT-A2")  # fuzzy neighbour, not exact
+    res, out = _auto(db, w, _auto_book(tmp_path), tmp_path)
+    assert [(a["excel_row"], a["company_code"], a["customer_id"], a["debtor_code"]) for a in res["auto"]] == [(2, "ZSRT", hit.id, "ZZT-A1")]
+    assert len(res["auto"][0]["contacts"]) == 2
+    assert (res["already_linked"], res["needs_human"], res["linked"]) == (0, 0, 0)
+    assert _links(db) == [] and _audits(db, event="contact.customer_linked_bulk") == []
+    fields, rows = _read_plan(out)
+    assert fields == ["excel_row", "company_code", "debtor_code", "customer_name", "contact", "status"]
+    assert sorted(r["contact"] for r in rows) == sorted([c1.name, c2.name])
+    assert {r["debtor_code"] for r in rows} == {"ZZT-A1"}
+    for f in (out / "auto-links-plan.csv", out / "links-review-leftover.xlsx"):
+        assert os.stat(f).st_mode & 0o777 == 0o600, f
+
+
+def test_auto_apply_links_every_row_contact_audits_and_is_idempotent(db, tmp_path, w):
+    c1, c2 = _contact(db, 1), _contact(db, 2)
+    hit = _customer(db, w.a, "ZZT Dealer A Sdn Bhd", "ZZT-A1")
+    path = _auto_book(tmp_path)
+    res, _ = _auto(db, w, path, tmp_path, apply=True, actor_id=w.actor)
+    assert (res["linked"], res["skipped_existing"]) == (2, 0)
+    links = _links(db)
+    assert sorted(l.contact_id for l in links) == sorted([c1.id, c2.id])
+    assert all(l.customer_id == hit.id and l.source == "bulk_setup" and l.company_id == w.a.id and l.is_primary is False for l in links)
+    assert len(_audits(db, event="contact.customer_linked_bulk")) == 2
+    again, _ = _auto(db, w, path, tmp_path, apply=True, actor_id=w.actor)
+    assert (again["linked"], again["skipped_existing"]) == (0, 2) or again["already_linked"] == 1
+    assert len(_links(db)) == 2 and len(_audits(db, event="contact.customer_linked_bulk")) == 2
+
+
+def test_auto_fuzzy_only_is_needs_human_and_in_the_leftover(db, tmp_path, w):
+    _contact(db, 1)
+    _customer(db, w.a, "ZZT Dealer A Hardware Supplies", "ZZT-A9")
+    res, out = _auto(db, w, _auto_book(tmp_path), tmp_path, apply=True, actor_id=w.actor)
+    assert (res["auto"], res["needs_human"], res["linked"]) == ([], 1, 0)
+    assert _links(db) == []
+    _, rows = _read_review(out / "links-review-leftover.xlsx")
+    assert {r["debtor_code"] for r in rows} == {"ZZT-A9"}
+
+
+def test_auto_two_surviving_exact_matches_is_needs_human(db, tmp_path, w):
+    _contact(db, 1)
+    _customer(db, w.a, "ZZT Dealer A Sdn Bhd", "ZZT-B1")
+    _customer(db, w.a, "ZZT Dealer A Trading", "ZZT-B2")  # same name once the suffix is dropped
+    res, _ = _auto(db, w, _auto_book(tmp_path), tmp_path, apply=True, actor_id=w.actor)
+    assert (res["auto"], res["needs_human"]) == ([], 1)
+    assert _links(db) == []
+
+
+def test_auto_exact_match_only_on_a_retired_row_is_needs_human(db, tmp_path, w):
+    _contact(db, 1)
+    # 301- groups are never held, so only survives_merge=N keeps the exact-named row out
+    _dup(db, w, "ZZT Zebra Works", "301-ZZT5", created=datetime(2020, 1, 1))
+    _dup(db, w, "ZZT Dealer A Sdn Bhd", "301-ZZT5", created=datetime(2021, 1, 1))
+    res, _ = _auto(db, w, _auto_book(tmp_path), tmp_path, apply=True, actor_id=w.actor)
+    assert (res["auto"], res["needs_human"]) == ([], 1)
+    assert _links(db) == []
+
+
+def test_auto_exact_match_in_a_held_group_is_needs_human(db, tmp_path, w):
+    _contact(db, 1)
+    _dup(db, w, "ZZT Dealer A Sdn Bhd", "ZZT-H5", created=datetime(2020, 1, 1))
+    _dup(db, w, "ZZT Unrelated Hardware", "ZZT-H5", created=datetime(2021, 1, 1))
+    res, _ = _auto(db, w, _auto_book(tmp_path), tmp_path, apply=True, actor_id=w.actor)
+    assert (res["auto"], res["needs_human"]) == ([], 1)
+    assert _links(db) == []
+
+
+def test_auto_block_already_linked_is_skipped_and_untouched(db, tmp_path, w):
+    c1, c2 = _contact(db, 1), _contact(db, 2)
+    hit = _customer(db, w.a, "ZZT Dealer A Sdn Bhd", "ZZT-L1")
+    other = _customer(db, w.a, "ZZT Dealer A Hardware Supplies", "ZZT-L2")
+    db.add_all([
+        RespondContactCustomer(contact_id=c1.id, customer_id=hit.id, company_id=w.a.id, source="manual"),
+        RespondContactCustomer(contact_id=c2.id, customer_id=other.id, company_id=w.a.id, source="manual"),
+    ])
+    db.flush()
+    res, _ = _auto(db, w, _auto_book(tmp_path), tmp_path, apply=True, actor_id=w.actor)
+    assert (res["auto"], res["already_linked"], res["needs_human"], res["linked"]) == ([], 1, 0, 0)
+    assert sorted((l.contact_id, l.customer_id, l.source) for l in _links(db)) == sorted(
+        [(c1.id, hit.id, "manual"), (c2.id, other.id, "manual")])
+
+
+def test_auto_leftover_holds_only_needs_human_blocks_and_works_with_apply_links(db, tmp_path, w):
+    _contact(db, 1), _contact(db, 2), _contact(db, 3)
+    _customer(db, w.a, "ZZT Dealer A Sdn Bhd", "ZZT-A1")
+    beta = _customer(db, w.a, "ZZT Beta Hardware", "ZZT-BETA")
+    beta_row = _row([("ZZT P3", raw(3), BO)], company="ZZT Beta Co Sdn Bhd")
+    path = _auto_book(tmp_path, extra_rows=[beta_row])
+    res, out = _auto(db, w, path, tmp_path)
+    assert (len(res["auto"]), res["needs_human"]) == (1, 1)
+    review = tmp_path / "full-review.xlsx"
+    cbs.links_review(db, path, review, rules=w.rules)
+    full_header, _ = _read_review(review)
+    header, rows = _read_review(out / "links-review-leftover.xlsx")
+    assert header == full_header and len(header) == 10
+    assert {r["excel_row"] for r in rows} == {3}
+    reviewed = tmp_path / "reviewed.xlsx"
+    _tick(out / "links-review-leftover.xlsx", reviewed, {"ZZT-BETA"})
+    done = cbs.apply_links(db, path, reviewed, actor_id=w.actor, rules=w.rules)
+    assert (done["linked"], done["failed"]) == (1, [])
+    assert {l.customer_id for l in _links(db)} == {beta.id}
+
+
+def test_auto_plan_csv_is_formula_safe(db, tmp_path, w):
+    c1 = _contact(db, 1)
+    c1.name = "=ZZT Evil"
+    _customer(db, w.a, "ZZT Dealer A Sdn Bhd", "ZZT-A1")
+    _, out = _auto(db, w, _auto_book(tmp_path), tmp_path)
+    _, rows = _read_plan(out)
+    assert {r["contact"] for r in rows} == {"'=ZZT Evil"}
+
+
+def test_auto_cli_mode_exists_and_requires_out_and_actor(tmp_path, capsys):
+    base = ["--auto-links", "--excel", "x.xlsx", "--db-url", "postgresql://example.invalid/none"]
+    with pytest.raises(SystemExit) as exc:
+        cbs.main(["--help"])
+    assert exc.value.code == 0
+    assert "--auto-links" in capsys.readouterr().out
+    with pytest.raises(SystemExit) as exc:
+        cbs.main(base)  # no --out
+    assert exc.value.code == 2
+    assert "--out" in capsys.readouterr().err
+    with pytest.raises(SystemExit) as exc:
+        cbs.main([*base, "--out", str(tmp_path), "--apply"])  # no --actor-email
+    assert exc.value.code == 2
+    assert "--actor-email" in capsys.readouterr().err
