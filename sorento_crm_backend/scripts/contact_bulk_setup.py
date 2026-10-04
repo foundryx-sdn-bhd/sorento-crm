@@ -766,15 +766,6 @@ def auto_links(db, path, out_dir, *, apply: bool = False, actor_id: Optional[str
         if not contact_ids:
             continue
         cands = blocks.get((row, code), [])
-        linked_ids = {
-            str(c) for (c,) in db.query(RespondContactCustomer.contact_id).filter(
-                RespondContactCustomer.contact_id.in_(contact_ids),
-                RespondContactCustomer.customer_id.in_([c["customer_id"] for c in cands] + [str(c.id) for c in exact]),
-            )
-        }
-        if linked_ids >= set(contact_ids):
-            result["already_linked"] += 1
-            continue
         clear = [c for c in exact if flags.get(str(c.id), ("Y", "N")) == ("Y", "N")]
         held = {str(c.id): c for c in exact if flags.get(str(c.id), ("Y", "N"))[1] == "Y"}
         if not clear:
@@ -790,12 +781,25 @@ def auto_links(db, path, out_dir, *, apply: bool = False, actor_id: Optional[str
                     leftover.append([row, _safe(g["company_name"]), code, _safe(c.customer_code), _safe(c.customer_name),
                                      cid_, "held", None, flags[cid_][0], "Y"])
             continue
+        have = {
+            (str(c), str(cu)) for c, cu in db.query(RespondContactCustomer.contact_id, RespondContactCustomer.customer_id).filter(
+                RespondContactCustomer.contact_id.in_(contact_ids),
+                RespondContactCustomer.customer_id.in_([str(c.id) for c in clear]),
+            )
+        }
+        planned = 0
         for hit in clear:
+            missing = [p for p in g["phones"] if p in found and (ids[p], str(hit.id)) not in have]
+            if not missing:
+                continue
+            planned += 1
             result["auto"].append({
                 "excel_row": row, "company_code": code, "customer_id": str(hit.id), "company_id": hit.company_id,
                 "debtor_code": hit.customer_code, "customer_name": hit.customer_name,
-                "contacts": [p for p in g["phones"] if p in found],
+                "contacts": missing,
             })
+        if not planned:
+            result["already_linked"] += 1
 
     actor = audit_context.AuditActor(actor_type="user", user_id=actor_id) if actor_id else None
     plan_rows = []
