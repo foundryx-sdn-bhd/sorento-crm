@@ -130,10 +130,13 @@ MEASURED_VERDICT_READS: dict[str, str] = {
     # `turn/apply.py::_focus_rules` onto `Focus.sort`. 45 declared keys -> 47.
     "sort_by": "app/services/chatbot/turn/apply.py",
     "sort_dir": "app/services/chatbot/turn/apply.py",
+    # 4 Oct 2026 (LOWSTOCK-SEMANTIC): the low stock filters, read by
+    # `lanes/business/low_stock_ask.reading`. 48 declared keys -> 49.
+    "low_stock": "app/services/chatbot/lanes/business/low_stock_ask.py",
 }
 
 
-def test_measured_read_set_matches_the_48_declared_keys():
+def test_measured_read_set_matches_the_49_declared_keys():
     """The table above is complete and has no typo - every declared key is measured read
     exactly once, and the table names nothing DECLARED_KEYS does not also carry. Catches a
     stale table before it can hide a real drift in the two tests below."""

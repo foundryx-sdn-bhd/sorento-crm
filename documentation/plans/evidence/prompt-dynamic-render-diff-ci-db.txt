@@ -1,0 +1,78 @@
+# em/en dashes in the prompt text shown as "-" (repo dash guard)
+# production v3, 127534 chars rendered before, 130246 after
+# current_date left as {{current_date}} on both sides
+# domain_hint list: -> {{domains}}
+# OUTPUT order_status: -> {{status_values}}
+# OUTPUT status: -> {{status_values}}
+# order_status full set: -> {{status_values}}
+# OUTPUT suggested_team: -> {{teams}}
+# OUTPUT suggested_agent: -> {{agents}}
+# entity hint list: -> {{entity_kinds}}
+# access levels: registry lacks ['Sorento Dealer', 'Mocha Dealer', 'Mocha Office', 'Cabana Dealer', 'Cabana Office', 'End User', 'Sorento Office'], kept literal
+# status bullets: -> {{statuses}}
+# domain words: -> {{domain_words}} (kept the words no registry holds: DO, SO, purchase cost, price, photo, certificate, forms, GRN)
+# policy blocks: -> {{domains_detail}}, {{entity_kinds_detail}}, {{specs}}
+
+--- v3 rendered (before)
++++ wording layer rendered (after)
+@@ -72,3 +72,3 @@
+   - check_po_cost - what we paid a supplier for something (see LAST PURCHASE COST)
+-domain_hint = ONE of: master_products | product_attachment | promotion | forms | inventory | order | incoming | portal_link | resource_attachment | goods_receive | spo_allocation | ideate | purchase_cost | null
++domain_hint = ONE of: master_products | product_attachment | promotion | forms | inventory | order | incoming | portal_link | resource_attachment | goods_receive | spo_allocation | ideate | purchase_order | purchase_cost | sales | null
+ 
+@@ -77,4 +77,3 @@
+ domain_in_message is true when THIS message itself carries a DOMAIN or STATUS word -
+-stock, incoming, ETA, delivery, order, outstanding, DO, SO, PO, purchase cost, promo,
+-price, spec, photo, catalogue, certificate, forms, shipment, GRN - in any language.
++catalogue, catalog, spec, specs, specification, specifications, dimension, dimensions, promo, promos, promotion, promotions, promosi, stock, stocks, inventory, stok, qty, quantity, low stock, reorder report, below level, order, orders, outstanding, tempahan, delivery, deliveries, deliver, delivered, penghantaran, hantar, dihantar, incoming, eta, shipment, shipments, arriving, container, containers, spo, po, sales, sales report, top selling, sales analysis, best selling, pending, not delivered, undelivered, not yet delivered, still pending, open orders, belum hantar, belum sampai, tak hantar lagi, completed, done, sudah hantar, sudah sampai, SO outstanding, outstanding SO, outstanding sales order, ordered but no DO, no DO yet, belum DO, belum keluar DO, 还没出DO, 未出DO, delivery order outstanding, DO outstanding, pending delivery order, pending DO, DO pending, both SO and DO, sales order and delivery order outstanding, sales performance, sales figures, jualan report, laporan jualan, 销售报告, total sales, dealer sales, project sales, sales by month, monthly sales, jualan tahun ini, 销售总额, hot selling, most sold, top sellers, best seller, barang paling laku, paling laris, 畅销, DO, SO, purchase cost, price, photo, certificate, forms, GRN - in any language.
+ It is false when the message only names entities, a date window or a place, and leans
+@@ -397,3 +396,3 @@
+ 
+-Each entity: { "raw": "<exact phrase>", "hint": "product|promotion|customer|transporter|inbound_shipment|warehouse|attachment|form|order|category|brand|attachment_type", "canonical_code": "usually null; REQUIRED when hint is attachment_type = the normalized English kind, exactly one of: photo|technical drawing|3D model|certificate; OPTIONAL when hint is attachment = the normalized English document class when one clearly applies, one of: catalogue|warranty|price tag template|brand guarantee|container status, else null", "current_message": true if the entity is extracted from current message, false if it is from previous context, "confident": true|false }
++Each entity: { "raw": "<exact phrase>", "hint": "product|promotion|customer|transporter|inbound_shipment|warehouse|attachment|form|order|category|brand|attachment_type|specification", "canonical_code": "usually null; REQUIRED when hint is attachment_type = the normalized English kind, exactly one of: photo|technical drawing|3D model|certificate; OPTIONAL when hint is attachment = the normalized English document class when one clearly applies, one of: catalogue|warranty|price tag template|brand guarantee|container status, else null", "current_message": true if the entity is extracted from current message, false if it is from previous context, "confident": true|false }
+ 
+@@ -639,7 +638,10 @@
+ carry it over from prior state.
+-  - "outstanding" -> orders NOT yet delivered: "outstanding", "pending", "not delivered",
+-    "undelivered", "not yet delivered", "still pending", "open orders", "belum hantar",
+-    "belum sampai", "tak hantar lagi".
+-  - "delivered"   -> orders ALREADY delivered: "delivered", "completed", "done",
+-    "sudah hantar", "sudah sampai".
++  - "outstanding" -> orders NOT yet delivered: "outstanding", "pending", "not delivered", "undelivered", "not yet delivered", "still pending", "open orders", "belum hantar", "belum sampai", "tak hantar lagi".
++  - "delivered" -> orders ALREADY delivered: "delivered", "completed", "done", "sudah hantar", "sudah sampai".
++  - "so_outstanding" -> a sales order with NO delivery order yet: "SO outstanding", "outstanding SO", "outstanding sales order", "ordered but no DO", "no DO yet", "belum DO", "belum keluar DO", "还没出DO", "未出DO".
++  - "do_outstanding" -> a delivery order raised and not yet delivered: "delivery order outstanding", "DO outstanding", "pending delivery order", "pending DO", "DO pending".
++  - "outstanding_both" -> both the SO backlog and the DO pending: "both SO and DO", "sales order and delivery order outstanding".
++  - "sales_report" -> a customer's or product's sales figures by month: "sales", "sales report", "sales performance", "sales figures", "jualan report", "laporan jualan", "销售报告". Domain "sales".
++  - "sales_analysis" -> the company's own sales totals: "sales analysis", "total sales", "dealer sales", "project sales", "sales by month", "monthly sales", "jualan tahun ini", "销售总额". Domain "sales".
++  - "top_selling" -> a ranking of items by what was sold: "top selling", "best selling", "hot selling", "most sold", "top sellers", "best seller", "barang paling laku", "paling laris", "畅销". Domain "sales".
+   - null -> DEFAULT. No delivery-status qualifier in the current message -> return all.
+@@ -767,3 +769,3 @@
+   "is_active": "true|false|null - lifecycle status filter from current message only, else null",
+-  "order_status": "outstanding|delivered|null - ORDER delivery-status filter from current message only (order domain), else null",
++  "order_status": "outstanding|delivered|so_outstanding|do_outstanding|outstanding_both|sales_report|sales_analysis|top_selling|null - ORDER delivery-status filter from current message only (order domain), else null",
+   "correction": false,
+@@ -771,3 +773,3 @@
+     "suggested_team": "purchasing|purchasing_certification|customer_service|marketing_product|marketing_form|warehouse|marketing_promotion|it_admin",
+-    "suggested_agent": "general_enquiries|order_enquiries|incoming_stock_enquiries|marketing_form|it_support"
++    "suggested_agent": "general_enquiries|order_enquiries|incoming_stock_enquiries|marketing_form|it_support|ideation"
+   },
+@@ -775,3 +777,3 @@
+   "document": [], the papers the message named: SO|DO|PO|SPO|GRN codes, else []
+-  "status": "outstanding|delivered|sales_report|null - the delivery/order status axis from the current message only, else null; it is sales_report on exactly the turns order_status is sales_report (see SALES REPORT below)",
++  "status": "outstanding|delivered|so_outstanding|do_outstanding|outstanding_both|sales_report|sales_analysis|top_selling|null - the delivery/order status axis from the current message only, else null; it is sales_report on exactly the turns order_status is sales_report (see SALES REPORT below)",
+   "asks": [] one {"domain","intent"} per domain the message names, ONLY when it names more than one; see ASKS
+@@ -818,3 +820,3 @@
+   - "outstanding SO", "SO outstanding", "outstanding sales order" is order_status "so_outstanding" under domain_hint "order" / intent_hint "check_order", NEVER purchase_order / check_po; check_po needs a PO or supplier word.
+-The full set is now: outstanding|delivered|so_outstanding|do_outstanding|outstanding_both|null. Order domain only, and
++The full set is now: outstanding|delivered|so_outstanding|do_outstanding|outstanding_both|sales_report|sales_analysis|top_selling|null. Order domain only, and
+ still only from the current message's explicit words.
+@@ -1759,2 +1761,3 @@
+ Domain purchase_cost ("last purchase cost"): intents check_po_cost. Switch words: (none). product narrows narrow_by_type. Escalates to purchasing.
++Domain sales ("sales"): intents check_sales. Switch words: sales, sales report, top selling, sales analysis, best selling. customer narrows must_narrow_one; order narrows narrow_to_code; product narrows list_all. Takes a date window. Escalates to customer_service.
+ 
+@@ -1773,2 +1776,4 @@
+ Entity kind warehouse: resolver warehouses. Did-you-mean on. Default narrowing optional_filter.
++
++
+ <<<END CHATBOT POLICY BLOCKS>>>

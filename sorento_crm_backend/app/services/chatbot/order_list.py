@@ -23,6 +23,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.services.chatbot import jsc
+from app.services.chatbot.contracts import ORDER_OR_SALES_DOMAINS
 from app.services.chatbot.dealer_stock import refers_to_salesman
 from app.services.chatbot.turn.pending import ESCALATION_OFFER_KINDS
 
@@ -172,7 +173,9 @@ def order_list_verdict(db: Session, verdict: dict[str, Any], state: Any, text: s
             return _continuation(verdict, entities=[entity]), replace(state, pending=open_pending), "order_list_brand_switched"
     if (
         focus.outstanding_brand_ids
-        and jsc.js_string(verdict.get("domain_hint") or "").strip() == "order"
+        # R7 (PLAN-prompt-dynamic-30sep D9): a sales ask was an order ask here until it
+        # had its own domain, and it still leaves the list's brand behind.
+        and jsc.js_string(verdict.get("domain_hint") or "").strip() in ORDER_OR_SALES_DOMAINS
         and verdict.get("domain_in_message") is True
         and _names_own_subject(verdict)
         and not _names_a_brand(verdict)
