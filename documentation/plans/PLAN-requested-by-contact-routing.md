@@ -16,10 +16,10 @@ if not assignee:
 ```
 
 `contact_id` is the **submitting** respond contact. `_resolve_pinned_assignee` filters
-`RespondContactCsRouting.respond_contact_id == contact_id`. Darren (contact
+`RespondContactCsRouting.respond_contact_id == contact_id`. CONTACT X (contact
 `9ce8ca9e-d0b4-4cf2-8061-82debf2c02b2`) submits PR26-0338 / PR26-0339 / PR26-0340 on behalf of others;
 he has no pin and never will, so every one of those forms round-robins instead of reaching the CS
-pinned for Eric Ng.
+pinned for CONTACT Y.
 
 The requestor is currently **free text**: `purchase_requests.requested_by TEXT` (PR + SF share the
 table), `stock_inquiries.salesperson TEXT`, pre-filled in the portal from the submitter
@@ -42,7 +42,7 @@ semantics or predicates.
 | D1 | Submitter keeps receiving all updates. Tracker `respond_contact_id` stays the submitter. |
 | D2 | Requestor has no pin → round robin. Never fall back to the submitter's pin (that is the bug). |
 | D3 | Requestor dropdown exposes **names only**. |
-| D4 | Backfill existing rows by name; "Eric Ng"/"ERIC" → Eric Ng; ambiguous left NULL and reported. |
+| D4 | Backfill existing rows by name; "CONTACT Y"/"ERIC" → CONTACT Y; ambiguous left NULL and reported. |
 | D5 | Gate the dropdown on market segments, admin-controlled per segment. |
 | D6 | Eligible set = flagged-segment contacts **∪ the row's submitting contact ∪ the currently-saved requestor**. Nobody can ever be blocked from submitting, and editing a row whose requestor lost eligibility can't silently blank the field. Applies to the portal AND the CRM staff picker. |
 | D7 | The staff picker uses the **same gated list** as the portal - one definition of "who can be a requestor". Missing person → tag their contact once, both surfaces pick it up. |

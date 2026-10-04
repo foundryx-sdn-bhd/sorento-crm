@@ -55,10 +55,10 @@ beforeEach(() => {
   (fetchMeWithGrace as ReturnType<typeof vi.fn>).mockResolvedValue({
     contact_id: 'contact-1',
     space_id: 'space-1',
-    name: 'Darren Lee',
+    name: 'CONTACT X Lee',
     phone_number: '60123456789',
     expires_at: '2026-09-01T00:00:00Z',
-    portal_slug: 'darren',
+    portal_slug: 'contact-x',
     // Every kind is gated now (PLAN-portal-forms-market-segment D2) - this
     // suite is about the revise composer, not visibility.
     visible_form_types: ['complaint', 'stock_inquiry', 'purchase_request', 'sponsorship_form'],
@@ -69,7 +69,7 @@ beforeEach(() => {
 });
 
 async function openPreview() {
-  render(<PortalLanding slug="darren" />);
+  render(<PortalLanding slug="contact-x" />);
   const card = await screen.findByText('SI-26-0184');
   fireEvent.contextMenu(card);
   return card;
@@ -108,7 +108,7 @@ describe('PortalLanding - revise from the long-press preview card', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Revise' }));
 
     await waitFor(() =>
-      expect(push).toHaveBeenCalledWith('/portal/c/darren/stock_inquiry/si-1?revise=1'),
+      expect(push).toHaveBeenCalledWith('/portal/c/contact-x/stock_inquiry/si-1?revise=1'),
     );
   });
 

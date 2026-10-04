@@ -11,7 +11,7 @@ daemon). Login via sidebar from `/`, never a deep URL.
 
 ## Data prep on the copy (`sorento_oioh_stack`)
 
-1. Deleted the saved column preference for `tehjayson@gmail.com` on listing key
+1. Deleted the saved column preference for `person38@example.com` on listing key
    `projects.projects.view::order-inquiry-worklist` (table `user_list_column_configs`), so
    AC-OH-01/62 show the true default.
 2. SO314593 / B2154-NL (`so_line_id 0ecc19dc-f2fc-45e5-ba0d-4ae4de4f2488`) sat post-confirm

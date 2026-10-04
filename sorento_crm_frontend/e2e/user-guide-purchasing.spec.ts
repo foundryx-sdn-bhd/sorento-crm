@@ -4,7 +4,7 @@
  *
  * Run against a deployed instance:
  *   PORTAL_E2E_BASE_URL=https://fe-sorento.foundryx.my \
- *   USER_GUIDE_E2E_EMAIL=tehjayson@gmail.com \
+ *   USER_GUIDE_E2E_EMAIL=person38@example.com \
  *   USER_GUIDE_E2E_PASSWORD='...' \
  *   npx playwright test e2e/user-guide-purchasing.spec.ts
  *

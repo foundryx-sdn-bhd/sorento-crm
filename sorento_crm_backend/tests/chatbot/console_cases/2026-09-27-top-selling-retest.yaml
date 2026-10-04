@@ -14,13 +14,13 @@
 #       --prompt-version <id of the chatbot_semantic_parser version migration
 #                         chatbot_top_selling_vocab_r4 published>
 #
-# PREREQUISITES: the same as `2026-09-26-top-selling.yaml` (contact 437264483 holds the
+# PREREQUISITES: the same as `2026-09-26-top-selling.yaml` (contact 900000008 holds the
 # Sales report key and an active office access type), plus a sales agent FANNY, the
 # brand Sorento, and product categories whose class label is Water Closet and Tap on the
 # prod copy. Migrations up to `chatbot_top_selling_vocab_r4` have run and the MCP server
 # was restarted (the catalog gains `brand_ids` and `direction`).
 
-contact: "437264483"
+contact: "900000008"
 
 cases:
   - name: Retest items 1 to 3 - no chips, the agent, the correction

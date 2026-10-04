@@ -103,10 +103,10 @@ beforeEach(() => {
   (fetchMeWithGrace as ReturnType<typeof vi.fn>).mockResolvedValue({
     contact_id: 'contact-1',
     space_id: 'space-1',
-    name: 'Darren Lee',
+    name: 'CONTACT X Lee',
     phone_number: '60123456789',
     expires_at: '2026-09-01T00:00:00Z',
-    portal_slug: 'darren',
+    portal_slug: 'contact-x',
     // Every kind is gated now (PLAN-portal-forms-market-segment D2) - this
     // suite is about revision badges, not visibility.
     visible_form_types: ['complaint', 'stock_inquiry', 'purchase_request', 'sponsorship_form'],
@@ -119,7 +119,7 @@ beforeEach(() => {
 
 describe('PortalLanding - revision badge and date on the submission card', () => {
   it('shows "Rev 2" and a Revised date line for a revised row', async () => {
-    render(<PortalLanding slug="darren" />);
+    render(<PortalLanding slug="contact-x" />);
     await screen.findByText('SI-26-0184');
 
     expect(screen.getByText('Rev 2')).toBeInTheDocument();
@@ -127,7 +127,7 @@ describe('PortalLanding - revision badge and date on the submission card', () =>
   });
 
   it('shows neither the badge nor a Revised line for an unrevised row', async () => {
-    render(<PortalLanding slug="darren" />);
+    render(<PortalLanding slug="contact-x" />);
     const freshCard = await screen.findByText('SI-26-0200');
 
     expect(screen.queryByText('Rev 0')).toBeNull();
@@ -149,7 +149,7 @@ describe('PortalLanding - revising chip for a parked, unsent draft', () => {
   });
 
   it('shows the Revising chip for a row with a parked draft', async () => {
-    render(<PortalLanding slug="darren" />);
+    render(<PortalLanding slug="contact-x" />);
     await screen.findByText('SI-26-0777');
 
     const chips = screen.getAllByTestId('revising-chip');
@@ -158,7 +158,7 @@ describe('PortalLanding - revising chip for a parked, unsent draft', () => {
   });
 
   it('shows no Revising chip for a row without a parked draft', async () => {
-    render(<PortalLanding slug="darren" />);
+    render(<PortalLanding slug="contact-x" />);
     const notRevisingCard = await screen.findByText('SI-26-0888');
 
     expect(notRevisingCard).toBeInTheDocument();

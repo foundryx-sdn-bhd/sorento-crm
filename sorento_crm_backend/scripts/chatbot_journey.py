@@ -3,7 +3,7 @@
 reply against RULINGS, not a recording.
 
     venv/bin/python scripts/chatbot_journey.py \
-        --base http://localhost:8081 --contact 437264483 \
+        --base http://localhost:8081 --contact 900000008 \
         --chain tests/chatbot/journeys/promo-tier.json --sleep 8
 
 Unlike `chatbot_console_check.py` (which posts a borrowed WEBHOOK envelope at

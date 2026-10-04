@@ -23,8 +23,8 @@ from app.schemas.sla import ConversationSLATrackingCreate, ConversationSLATracki
 from app.services.sla_service import ConversationSLATrackingService
 from tests._pg_fixture import blank_session
 
-PHONE_A = "+60123456701"
-PHONE_B = "+60123456702"
+PHONE_A = "+60100000004"
+PHONE_B = "+60100000003"
 RESPOND_IO_A = "10025601"
 RESPOND_IO_B = "10025602"
 

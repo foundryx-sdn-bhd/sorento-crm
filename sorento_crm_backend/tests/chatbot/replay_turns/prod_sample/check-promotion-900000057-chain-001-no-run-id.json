@@ -1,0 +1,212 @@
+{
+  "turns": [
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": null,
+          "countryCode": "MY",
+          "created_at": 1782546255,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000057"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000057",
+          "id": 900000057,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": null,
+          "locale": null,
+          "phone": "+60900000057",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.900000000000031\", \"firstName\": \"ZZT\", \"lastName\": \"Teh\\ud83d\\udebd\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": null,
+              "firstName": "ZZT-agent",
+              "id": null,
+              "lastName": ""
+            },
+            "countryCode": "MY",
+            "created_at": 1782546255,
+            "email": null,
+            "firstName": "ZZT-900000057",
+            "id": 900000057,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000057",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "695d0868-0e2e-412e-ae9f-7abd0b616491",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxNDkyODk2ODcVAgASGBQzQUZFRTREQzE4NzQ5OUVCQ0EwQQA=",
+            "contactId": 900000057,
+            "message": {
+              "text": "Kt886 promotion",
+              "type": "text"
+            },
+            "messageId": 1789353411000000,
+            "timestamp": 1789353411000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message"
+        ],
+        "branch_kind": "check_promotion",
+        "canned": [],
+        "entity_ids": [],
+        "focus_after": null,
+        "pending": {
+          "kind": "tier_pick",
+          "option_labels": [
+            "dealer",
+            "office",
+            "end user"
+          ]
+        },
+        "text": "Which access level do you need for Kt886?\n1. Office - no promotion\n2. Dealer - no promotion\n3. End user - no promotion\nReply with the number(s), e.g. \"1\", \"1 and 2\", or \"all\".",
+        "tools": []
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [],
+            "resolved": false,
+            "token": "Kt886"
+          }
+        ],
+        "tokens": [
+          "Kt886"
+        ],
+        "unresolved_tokens": [
+          "Kt886"
+        ]
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 17,
+        "recorded_at": "2026-09-14T11:36:57.206185+09:00",
+        "turn_id": "ca795054-b8b8-4408-b1e8-912d080f9a3e"
+      },
+      "tool_results": [],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "promotion",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "Kt886"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_promotion",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": "specific",
+        "top_n": null,
+        "user_goal": "trying to check promotion for Kt886"
+      }
+    }
+  ]
+}

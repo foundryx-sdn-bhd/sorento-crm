@@ -37,7 +37,7 @@ export const MOCK_WORKLIST_ROWS: OrderInquiryWorklistRow[] = [
     agent_label: 'Sean',
     state: 'actioned',
     raised_at: '2026-01-02T09:15:00',
-    raised_by_name: 'Cindy Lee',
+    raised_by_name: 'CONTACT W',
     verb: 'ORDER',
     note: null,
     taken_from_po: '35',
@@ -83,7 +83,7 @@ export const MOCK_WORKLIST_ROWS: OrderInquiryWorklistRow[] = [
     agent_label: null,
     state: 'raised',
     raised_at: '2026-01-08T11:02:00',
-    raised_by_name: 'Johnson Tan',
+    raised_by_name: 'CONTACT AA Tan',
     verb: 'ORDER',
     note: null,
     taken_from_po: '0',
@@ -116,7 +116,7 @@ export const MOCK_WORKLIST_ROWS: OrderInquiryWorklistRow[] = [
     // its full 91 and 60 of it sits on 202601-S0044, so 31 is still demand.
     state: 'partly_linked',
     raised_at: '2026-01-02T09:15:00',
-    raised_by_name: 'Cindy Lee',
+    raised_by_name: 'CONTACT W',
     verb: 'ORDER',
     note: null,
     taken_from_po: '60',
@@ -198,8 +198,8 @@ export const MOCK_WORKLIST_ROWS: OrderInquiryWorklistRow[] = [
     supplier_id: null,
     po_number: 'SPO-2026/08-0061',
     location: 'BRW-IB',
-    agent_code: 'JUSTIN',
-    agent_label: 'Justin',
+    agent_code: 'CONTACT N',
+    agent_label: 'CONTACT N',
     state: 'placed',
     raised_at: '2026-08-12T16:10:00',
     raised_by_name: 'Cyndi Ong',
@@ -255,7 +255,7 @@ export const MOCK_WORKLIST_ROWS: OrderInquiryWorklistRow[] = [
     agent_label: null,
     state: 'partly_linked',
     raised_at: '2025-11-20T09:00:00',
-    raised_by_name: 'Cindy Lee',
+    raised_by_name: 'CONTACT W',
     verb: 'ORDER',
     // AC-RL-10's own note shape.
     note: 'SPO-2026/01-0143 received 19 Jan 2026 in full, goods are BRW-IR stock, released at revision 4',
@@ -310,7 +310,7 @@ export const MOCK_WORKLIST_ROWS: OrderInquiryWorklistRow[] = [
     agent_label: null,
     state: 'raised',
     raised_at: '2026-09-16T10:00:00',
-    raised_by_name: 'Cindy Lee',
+    raised_by_name: 'CONTACT W',
     verb: 'ORDER',
     note: null,
     taken_from_po: '220',
@@ -348,8 +348,8 @@ export const MOCK_WORKLIST_SUMMARY: OrderInquiryWorklistSummary = {
   // Only the people who actually raised one of these rows - the "Raised by" filter's
   // whole list, and the reason it is not a picker over every user in the company.
   raised_by: [
-    { id: 'user-cindy', label: 'Cindy Lee', rows: 2 },
-    { id: 'user-johnson', label: 'Johnson Tan', rows: 1 },
+    { id: 'user-cindy', label: 'CONTACT W', rows: 2 },
+    { id: 'user-contact-aa', label: 'CONTACT AA Tan', rows: 1 },
   ],
   // The three cards (AC-I11), over these same rows: row 5's SPO link 10; row 1's
   // 35 and row 3's 40 + 20 on purchase orders; row 2's whole 85 and row 3's remaining

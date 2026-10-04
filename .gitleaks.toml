@@ -1,0 +1,16 @@
+title = "sorento_crm gitleaks config"
+
+[extend]
+useDefault = true
+
+# Fake values that fixtures, CI and docs use on purpose.
+[allowlist]
+description = "agreed placeholders"
+regexes = [
+  '''^ci-dummy-secret$''',
+  '''^cloud-lane-test-key$''',
+  '''^<set me>$''',
+  '''^REDACTED$''',
+  '''^example\.com$''',
+  '''^example\.invalid$''',
+]

@@ -511,13 +511,13 @@ describe('AC-DT-6: the Raised via column (PLAN-oi-decision-trail-ui.md)', () => 
         {raisedCell(
           linesRow({
             raise_event_kind: 'raised',
-            raise_event_by_name: 'Johnson',
+            raise_event_by_name: 'CONTACT AA',
             raise_event_at: '2026-09-20T03:22:00',
           }),
         )}
       </>,
     );
-    expect(screen.getByText(/Raised by Johnson/)).toBeInTheDocument();
+    expect(screen.getByText(/Raised by CONTACT AA/)).toBeInTheDocument();
   });
 
   it('reads "Sheet" for a row whose note starts with the sheet migration stamp, no event matched', () => {

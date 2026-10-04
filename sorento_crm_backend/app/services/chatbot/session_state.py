@@ -14,11 +14,13 @@ from __future__ import annotations
 from typing import Any
 
 from app.services.chatbot import jsc
+from app.services.chatbot.label_catalog import LANGUAGES
 from app.services.chatbot.turn.narrow import ledger_family_key
 from app.services.chatbot.turn.pending import OFFER_KINDS, Pending, from_wire
 from app.services.chatbot.turn.state import KIND_FIELD_MAP
 
-FIVE_KEYS = ("focus", "open_question", "ideation", "access_levels", "contains_flyer")
+# `reply_language` is the sixth (CHAT-LANGUAGE); the name stays for the callers.
+FIVE_KEYS = ("focus", "open_question", "ideation", "access_levels", "contains_flyer", "reply_language")
 
 #: The pre-rearch marker kinds (`contracts.PENDING_KINDS`), by the name the turn package
 #: gives the SAME question (`turn/pending.PENDING_KINDS`). n8n's outer loop still writes
@@ -45,7 +47,15 @@ _LEGACY_ORDER_STATUS: dict[str, tuple[list[str], str]] = {
 
 
 def five_keys(session_block: Any) -> dict[str, Any]:
-    """The five keys off `get-session-vars`' own body (`{"session_vars": {...}}`)."""
+    """The five keys off `get-session-vars`' own body (`{"session_vars": {...}}`), and the
+    reply language when it is one the bot speaks (anything else reads as none)."""
+    read = _five_keys(session_block)
+    if read.get("reply_language") not in LANGUAGES:
+        read["reply_language"] = None
+    return read
+
+
+def _five_keys(session_block: Any) -> dict[str, Any]:
     state = jsc.get(session_block, "session_vars")
     state = state if isinstance(state, dict) else {}
     if any(key in state for key in FIVE_KEYS):

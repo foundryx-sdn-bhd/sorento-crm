@@ -1,7 +1,7 @@
 # Round 3 browser evidence (AC-RS-65..72)
 
 `PLAN-oi-request-cs-reserve.md` section 6d, `oi-request-cs-reserve-acceptance-criteria.md`.
-agent-browser on :3080, session `oireserve-r3-coder`, logged in as `tehjayson@gmail.com`
+agent-browser on :3080, session `oireserve-r3-coder`, logged in as `person38@example.com`
 (holds `projects.order_inquiry.action`, `projects.order_inquiries.acknowledge` and
 `projects.order_inquiries.reserve` - both request and confirm flows reachable). Navigated
 from `/` via the sidebar: Procurement -> Supply Chain -> Order Inquiries. OI used throughout:

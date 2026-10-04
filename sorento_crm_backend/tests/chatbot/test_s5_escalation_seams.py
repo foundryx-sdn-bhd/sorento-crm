@@ -62,7 +62,7 @@ def _ctx(*, message_body: dict[str, Any], reply_to: Any = None) -> dict[str, Any
     if reply_to is not None:
         message["replyTo"] = reply_to
     return {
-        "contact": {"id": "ZZT-esc-seam-1", "phone": "+60123450099"},
+        "contact": {"id": "ZZT-esc-seam-1", "phone": "+60120000527"},
         "text": {"message": message},
         "session": {"session_vars": {"variables": {}}},
         "parse": {
@@ -262,7 +262,7 @@ class TestACEQ4SlaCommentDatetimeFields:
             {
                 "agent_code": "general_enquiries",
                 "team_set_code": "CS",
-                "contact_phone_number": "+60123450099",
+                "contact_phone_number": "+60120000527",
             }
         )
 
@@ -307,7 +307,7 @@ class TestACEQ4SlaCommentDatetimeFields:
             {
                 "agent_code": "general_enquiries",
                 "team_set_code": "CS",
-                "contact_phone_number": "+60123450099",
+                "contact_phone_number": "+60120000527",
             }
         )
 
@@ -586,7 +586,7 @@ class TestProductionSeams:
         assert seen["next_assignee_body"]["policy_code"] == "NORMAL"
         assert seen["next_assignee_body"]["team_code"] == "customer_service"
         assert seen["next_assignee_user"] == {"id": None, "email": "chatbot"}
-        assert seen["sla_payload"].contact_phone_number == "+60123450099"
+        assert seen["sla_payload"].contact_phone_number == "+60120000527"
         assert seen["sla_payload"].source_message_text == "I need a human"
 
     def test_the_production_session_is_closed_and_rolled_back_on_a_raise(

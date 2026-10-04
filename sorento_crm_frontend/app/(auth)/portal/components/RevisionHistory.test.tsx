@@ -52,7 +52,7 @@ function entry(over: Partial<PortalRevisionEntry> = {}): PortalRevisionEntry {
     label: 'Original',
     reason: null,
     submitted_at: '2026-07-20T02:00:00',
-    submitted_by: 'Darren Lee',
+    submitted_by: 'CONTACT X Lee',
     is_reconstructed: false,
     snapshot: {},
     attachments: [],
@@ -81,7 +81,7 @@ describe('RevisionHistory', () => {
 
     expect(screen.getAllByTestId('revision-entry')).toHaveLength(1);
     expect(screen.getByText('Original')).toBeInTheDocument();
-    expect(screen.getByText('Darren Lee')).toBeInTheDocument();
+    expect(screen.getByText('CONTACT X Lee')).toBeInTheDocument();
     expect(screen.queryByText('Original submission only.')).toBeNull();
   });
 
@@ -448,9 +448,9 @@ describe('RevisionHistory', () => {
               label: 'Revision 1',
               // The scalar pair still holds the newest stage; the list drives it.
               voided_stage_code: 'approval',
-              voided_assignee_name: 'Li Juan',
+              voided_assignee_name: 'CONTACT AC',
               voided_stages: [
-                { stage_code: 'approval', assignee_name: 'Li Juan' },
+                { stage_code: 'approval', assignee_name: 'CONTACT AC' },
                 { stage_code: 'project_sales', assignee_name: 'Mei Ling' },
               ],
             }),
@@ -461,7 +461,7 @@ describe('RevisionHistory', () => {
       const lines = screen
         .getAllByTestId('revision-voided-stage')
         .map((el) => el.textContent ?? '');
-      expect(lines).toEqual(['Stopped: approval (Li Juan)', 'project sales (Mei Ling)']);
+      expect(lines).toEqual(['Stopped: approval (CONTACT AC)', 'project sales (Mei Ling)']);
     });
 
     it('falls back to the scalar stage for a row written before the list existed', () => {

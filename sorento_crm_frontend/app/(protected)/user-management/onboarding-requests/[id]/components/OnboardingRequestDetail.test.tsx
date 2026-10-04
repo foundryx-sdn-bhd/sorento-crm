@@ -105,7 +105,7 @@ function detail(overrides: Partial<Detail> = {}): Detail {
     title: 'MOCHA staff onboarding',
     company_name: 'MOCHA Sdn Bhd',
     requester_name: 'Esther Lim',
-    requester_email: 'esther@mocha.com.my',
+    requester_email: 'person13@example.com',
     status: 'in_review',
     people_count: 1,
     approved_count: 0,
@@ -136,8 +136,8 @@ function detail(overrides: Partial<Detail> = {}): Detail {
         full_name: 'Nurul Aisyah',
         nick_name: 'Aisyah',
         role_label: 'Sales admin',
-        phone_raw: '012-3456781',
-        email_raw: 'aisyah@mocha.com.my',
+        phone_raw: '010-0000002',
+        email_raw: 'person4@example.com',
         template_id: 'tpl-sales',
         requester_note: null,
         reviewer_note: null,
@@ -289,7 +289,7 @@ describe('OnboardingRequestDetail', () => {
     const email = within(await screen.findByTestId('people-grid')).getByLabelText(
       'Email, row 1',
     );
-    fireEvent.change(email, { target: { value: 'typed@mocha.com.my' } });
+    fireEvent.change(email, { target: { value: 'person39@example.com' } });
     fireEvent.blur(email);
 
     await waitFor(() => expect(updateOnboardingPerson).toHaveBeenCalled());

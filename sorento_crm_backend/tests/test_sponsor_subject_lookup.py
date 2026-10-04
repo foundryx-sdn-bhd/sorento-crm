@@ -252,7 +252,7 @@ def test_approver_name_outranks_email(db_session):
     # the message must read the NAME so it matches the detail page's "Approved by".
     svc = _service(db_session)
     header = SimpleNamespace(
-        approved_by="ABDUL BASER BIN RAMLI", approver_email="baser@sorento.com.my"
+        approved_by="ABDUL BASER BIN RAMLI", approver_email="person6@example.com"
     )
     assert svc._resolve_approver_display_name(header) == "ABDUL BASER BIN RAMLI"
 

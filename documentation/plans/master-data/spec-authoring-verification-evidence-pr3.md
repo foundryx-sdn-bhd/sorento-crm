@@ -191,7 +191,7 @@ Checked directly against the local Postgres copy of prod used for the run
   (backend.log:2082).
 - `product_specifications` for `MGB5026B` (`product_id = 23e36570-f9ee-467b-b53e-4574f810e889`):
   the `material` value is back to its original content (`{"value": "glass"}`), **but its
-  provenance now reads `source: human, evidence: "set by tehjayson@gmail.com"` and `status:
+  provenance now reads `source: human, evidence: "set by person38@example.com"` and `status:
   authored`**, not the presumed original `derived` status. The transcript records the agent
   looking for a "Revert to derived" action in the row's "More actions" menu
   (`e2e-20` through `e2e-23`) and not managing to trigger it before the session ended. This is a

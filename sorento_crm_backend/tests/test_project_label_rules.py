@@ -45,7 +45,7 @@ class TestLabelFromInquiryCell:
         )
 
     def test_r4_no_slash_or_an_empty_remainder_is_no_label(self):
-        assert label_from_inquiry_cell("OTM GROUP SDN BHD (SMC-JENNIFER)") is None
+        assert label_from_inquiry_cell("OTM GROUP SDN BHD (SMC-contact-o)") is None
         assert label_from_inquiry_cell("") is None
         assert label_from_inquiry_cell("A / ") is None
 
@@ -124,7 +124,7 @@ class TestLabelFromNoteNoMatch:
             None,
         )
         assert label_from_note("***DELIVERY 27/08/2026") == (None, None)
-        assert label_from_note("CONTACT : 016-771 1912") == (None, None)
+        assert label_from_note("CONTACT : 016-000 0522") == (None, None)
         assert label_from_note("") == (None, None)
         assert label_from_note(None) == (None, None)
 

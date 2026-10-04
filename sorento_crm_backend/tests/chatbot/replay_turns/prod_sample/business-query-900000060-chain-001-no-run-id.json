@@ -1,0 +1,730 @@
+{
+  "turns": [
+    {
+      "access": {
+        "agent_name": "Incoming Stock Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow",
+        "hidden_spec_keys": [
+          "board_thickness",
+          "thickness"
+        ]
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1132641@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1132641,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1782546255,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000060"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000060",
+          "id": 900000060,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": null,
+          "locale": null,
+          "phone": "+60900000060",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.9000000000000002\", \"firstName\": \"ZZT\", \"lastName\": \"Sorento\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": "zzt-agent-1132641@example.invalid",
+              "firstName": "ZZT-agent",
+              "id": 1132641,
+              "lastName": "",
+              "role": "user"
+            },
+            "countryCode": "MY",
+            "created_at": 1782546255,
+            "email": null,
+            "firstName": "ZZT-900000060",
+            "id": 900000060,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000060",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "b1bcad8d-21e2-46a6-a7e1-5cfbe1f97bce",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxNjIyOTE2NzkVAgASGBQzQTY5QUJENzI0NTk0NjVFMjlCMgA=",
+            "contactId": 900000060,
+            "message": {
+              "text": "Srtmcb6088 BL ETA",
+              "type": "text"
+            },
+            "messageId": 1789382955000000,
+            "timestamp": 1789382955000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "018db078-6778-4d3c-9901-ee47f463cfa6"
+        ],
+        "focus_after": null,
+        "pending": {
+          "kind": "escalation_offer",
+          "option_labels": []
+        },
+        "text": "Here's what you want:\n\u2022 product: SRTMCB6088-BL\n\nBut no incoming matched these.\nBut here are the stock details for the requested products:\n\n- *Product Code:* SRTMCB6088-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 0\n*Outstanding:* 17\n\nNo incoming and stock is 0 at every location for SRTMCB6088-BL, but PO is placed:\n*Product Code:* SRTMCB6088-BL\n*Ordered:* 100\n*Outstanding:* 100\n*PO date:* 2026-08-21\n*Location:* BRW\n\nWould you like me to escalate to purchasing team?",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "contact_id",
+              "date_mode",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_incoming_stock_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "Srtmcb6088",
+                "entity_type": "product",
+                "uuid": "018db078-6778-4d3c-9901-ee47f463cfa6"
+              }
+            ],
+            "resolved": true,
+            "token": "Srtmcb6088"
+          },
+          {
+            "matches": [],
+            "resolved": false,
+            "token": "BL"
+          }
+        ],
+        "tokens": [
+          "Srtmcb6088",
+          "BL"
+        ],
+        "unresolved_tokens": [
+          "BL"
+        ]
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 17,
+        "recorded_at": "2026-09-14T19:49:21.212686+09:00",
+        "turn_id": "c0f646d7-12a0-42dc-8eb3-3747df8e1ec1"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 1,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 1,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "contact_id": "900000060",
+            "date_mode": null,
+            "is_active": null,
+            "product_ids": [
+              "018db078-6778-4d3c-9901-ee47f463cfa6"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "alternatives": [
+              {
+                "display": "SRTMCB6083-BL",
+                "id": "22f4e21c-069c-4700-89f4-d93eb96afa13",
+                "is_variant": false,
+                "sim": 0.625,
+                "value": "SRTMCB6083-BL"
+              }
+            ],
+            "attachments": [],
+            "field_access": {
+              "denied": [
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "eta_delay_date",
+                  "label": "ETA Delay",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "inspection_date",
+                  "label": "CIDB Inspection",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "approval_date",
+                  "label": "CIDB Approval",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "gatepass_date",
+                  "label": "Gatepass",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "warehouse_arrival_date",
+                  "label": "Warehouse Arrival",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "informed_collection_date",
+                  "label": "Collection Informed",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "collection_date",
+                  "label": "Collection",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "loading_date",
+                  "label": "Loading",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "etc_date",
+                  "label": "ETC",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "etd_date",
+                  "label": "ETD",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "liner_code",
+                  "label": "Liner",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "china_forwarder",
+                  "label": "China Forwarder",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "malaysia_forwarder",
+                  "label": "Malaysia Forwarder",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "consignee",
+                  "label": "Consignee",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "delivery_warehouse",
+                  "label": "Delivery Warehouse",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "free_days_available",
+                  "label": "Free Days Available",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "loc",
+                  "label": "Location",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "stacked",
+                  "label": "Stacked",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "coa_permit_no",
+                  "label": "COA Permit No.",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "source_sheet",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                }
+              ],
+              "note": "These fields are omitted because this caller may not see them. Absent does NOT mean the value is unknown or not yet reached."
+            },
+            "field_vocabulary": {
+              "approval_date": "CIDB Approval",
+              "china_forwarder": "China Forwarder",
+              "coa_permit_no": "COA Permit No.",
+              "collection_date": "Collection",
+              "consignee": "Consignee",
+              "delivery_warehouse": "Delivery Warehouse",
+              "estimated_arrival_date": "ETA",
+              "eta_delay_date": "ETA Delay",
+              "etc_date": "ETC",
+              "etd_date": "ETD",
+              "free_days_available": "Free Days Available",
+              "gatepass_date": "Gatepass",
+              "informed_collection_date": "Collection Informed",
+              "inspection_date": "CIDB Inspection",
+              "liner_code": "Liner",
+              "loading_date": "Loading",
+              "loc": "Location",
+              "malaysia_forwarder": "Malaysia Forwarder",
+              "stacked": "Stacked",
+              "warehouse_arrival_date": "Warehouse Arrival"
+            },
+            "has_result": false,
+            "intro": "No matching results found.",
+            "items": [],
+            "last_updated_at": null,
+            "relaxed_axis": "entity",
+            "result_type": "incoming_stock"
+          },
+          "tool": "crm_incoming_stock_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "incoming",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "Srtmcb6088"
+          },
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "warehouse",
+            "raw": "BL"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_incoming",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [
+          "estimated_arrival_date"
+        ],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to check the ETA for Srtmcb6088 BL"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "Incoming Stock Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow",
+        "hidden_spec_keys": [
+          "board_thickness",
+          "thickness"
+        ]
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1132641@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1132641,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1782546255,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000060"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000060",
+          "id": 900000060,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": null,
+          "locale": null,
+          "phone": "+60900000060",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.9000000000000002\", \"firstName\": \"ZZT\", \"lastName\": \"Sorento\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": "zzt-agent-1132641@example.invalid",
+              "firstName": "ZZT-agent",
+              "id": 1132641,
+              "lastName": "",
+              "role": "user"
+            },
+            "countryCode": "MY",
+            "created_at": 1782546255,
+            "email": null,
+            "firstName": "ZZT-900000060",
+            "id": 900000060,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000060",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "82bc37c6-2074-4e93-8e3f-2eedc6bfa9dc",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxNjIyOTE2NzkVAgASGBQzQUQxNTBDOTAxQzgzOTIyREQyRAA=",
+            "contactId": 900000060,
+            "message": {
+              "text": "Srtmcb6083 BL ETA",
+              "type": "text"
+            },
+            "messageId": 1789383016000000,
+            "timestamp": 1789383016000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message",
+          "send_attachments"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "22f4e21c-069c-4700-89f4-d93eb96afa13",
+          "4c3a15c6-4bf0-43fc-aff4-9cfda2539d59"
+        ],
+        "focus_after": null,
+        "pending": {
+          "kind": "team_pick",
+          "option_labels": [
+            "incoming stock"
+          ]
+        },
+        "text": "I have attached the file(s) below.\n\n1. *Product Code:* SRTMCB6083-BL\n*Container:* DFSU6642819\n*ETA:* 2026-08-20\n*Incoming Quantity:* 99\n*Warehouse Allocations:* BRW (83), BRW-HP (10), BRW-SMC (6)\n\n2. *Product Code:* SRTMCB6083-BL\n*Container:* FFAU6960188\n*ETA:* 2026-09-06\n*Incoming Quantity:* 1\n*Warehouse Allocations:* BRW (1)\n\n3. *Product Code:* SRTMCB6083-BL\n*Container:* TIIU6796688\n*ETA:* 2026-09-17\n*Incoming Quantity:* 200\n\ud83d\udea9  *(PENDING ALLOCATION)*\nNo incoming for SRTMCB6083-BL-DF.\n\nBut here are the stock details for the requested products:\n\n- *Product Code:* SRTMCB6083-BL-DF\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 19\n*Outstanding:* 0\n\nWould you like me to escalate to purchasing team?",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "contact_id",
+              "date_mode",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_incoming_stock_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "Srtmcb6083 BL",
+                "entity_type": "product",
+                "uuid": "22f4e21c-069c-4700-89f4-d93eb96afa13"
+              }
+            ],
+            "resolved": true,
+            "token": "Srtmcb6083 BL"
+          }
+        ],
+        "tokens": [
+          "Srtmcb6083 BL"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 17,
+        "recorded_at": "2026-09-14T19:50:21.223380+09:00",
+        "turn_id": "8e7fa050-ba0a-4f39-b337-bdab5d5e9fa8"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 2,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 2,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "contact_id": "900000060",
+            "date_mode": null,
+            "is_active": null,
+            "product_ids": [
+              "4c3a15c6-4bf0-43fc-aff4-9cfda2539d59",
+              "22f4e21c-069c-4700-89f4-d93eb96afa13"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "bytes": 8708,
+            "head": "{\"result_type\": \"incoming_stock\", \"intro\": \"I have attached the file(s) below.\", \"items\": [{\"title\": \"SRTMCB6083-BL\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTMCB6083-BL\"}, {\"key\": \"shipping_container_number\", \"label\": \"Container\", \"value\": \"DFSU6642819\"}, {\"key\": \"estimated_arrival_date\", \"label\": \"ETA\", \"value\": \"2026-08-20\"}, {\"key\": \"remaining_incoming_quantity\", \"label\": \"Incoming Quantity\", \"value\": 99}, {\"key\": \"warehouse_allocations\", \"label\": \"Warehouse Allocations\", \"value\": \"BRW (83), BRW-HP (10), BRW-SMC (6)\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTMCB6083-BL\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTMCB6083-BL\"}, {\"key\": \"shipping_container_number\", \"label\": \"Container\", \"value\": \"FFAU6960188\"}, {\"key\": \"estimated_arrival_date\", \"label\": \"ETA\", \"value\": \"2026-09-06\"}, {\"key\": \"remaining_incoming_quantity\", \"label\": \"Incoming Quantity\", \"value\": 1}, {\"key\": \"warehouse_allocations\", \"label\": \"Warehouse Allocations\", \"value\": \"BRW (1)\"}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTMCB6083-BL\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTMCB6083-BL\"}, {\"key\": \"shipping_container_number\", \"label\": \"Container\", \"value\": \"TIIU6796688\"}, {\"key\": \"estimated_arrival_date\", \"label\": \"ETA\", \"value\": \"2026-09-17\"}, {\"key\": \"remaining_incoming_quantity\", \"label\": \"Incoming Quantity\", \"value\": 200}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": true, \"partially_allocated\": false}}], \"attachments\": [{\"url\": \"https://cdn-sorento.com/packing_list/c0c7c165-97f5-49ce-acfe-ee7c29182dc5/DFSU6642819.xlsx\", \"filename\": \"DFSU6642819.xlsx\", \"mimeType\": \"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\", \"attachmentType\": null}, {\"url\": \"https://cdn-sorento.com/packing_list/ccd478bc-6791-497e-b40e-63d04405d459/FFAU6960188.xlsx\", \"filename\": \"FFAU6960188.xlsx\", \"mimeType\": \"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\", \"attachmentType\": null}, {\"url\": \"https://cdn-sorento.com/packing_list/b841752a-de77-494e-8f4a-521791e1cf2b/TIIU6796688.xlsx\", \"filename\": \"TIIU6796688.xlsx\", \"mimeType\": \"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\", \"attachmentType\": null}], \"action_links\": [], \"last_updated_at\": null, \"has_result\": true, \"field_access\": {\"denied\": [{\"field\": \"eta_delay_date\", \"agent_code\": \"incoming_stock_enquiries\", \"outcome\": \"field_not_allowed\", \"reason\": \"This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override.\", \"label\": \"ETA Delay\"}, {\"field\": \"inspection_date\", \"agent_code\": \"incoming_stock_enquiries\", \"outcome\": \"field_not_allowed\", \"reason\": \"This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override.\", \"label\": \"CIDB Inspection\"}, {\"field\": \"approval_date\", \"agent_code\": \"incoming_stock_enquiries\", \"outcome\": \"field_not_allowed\", \"reason\": \"This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override.\", \"label\": \"CIDB Approval\"}, {\"field\": \"gatepass_date\", \"agent_code\": \"incoming_stock_enquiries\", \"outcome\": \"field_not_allowed\", \"reason\": \"This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override.\", \"label\": \"Gatepass\"}, {\"field\": \"warehouse_arrival_date\", \"agent_code\": \"incoming_stock_enquiries\", \"outcome\": \"field_not_allowed\", \"reason\": \"This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override.\", \"label\": \"Warehouse Arrival\"}, {\"field\": \"informed_collection_date\", \"agent_code\": \"incoming_stock_enquiries\", \"outcome\": \"field_not_allowed\", \"reason\": \"This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override.\", \"label\": \"Collection Informed\"}, {\"field\": \"collection_date\", \"agent_code\": \"incoming_stock_enquiries\", \"outcome\": \"field_not_allowed\", \"reason\": \"This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override.\", \"label\": \"Collection\"}, {\"field\": \"loading_date\", \"agent_code\": \"incoming_stock_enquiries\", \"outcome\": \"field_not_allowed\", \"reason\": \"This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override.\", \"label\": \"Loading\"}, {\"field\": \"etc_date\", \"agent_code\": \"incoming_stock_enquiries\", \"outcome\": \"field_not_allowed\", \"reason\": \"This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override.\", \"label\": \"ETC\"}, {\"field\": \"etd_date\", \"agent_code\": \"incoming_stock_enquiries\", \"outcome\": \"field_not_allowed\", \"reason\": \"This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override.\", \"label\": \"ETD\"}, {\"field\": \"liner_code\", \"agent_code\": \"incoming_stock_enquiries\", \"outcome\": \"field_not_allowed\", \"reason\": \"This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override.\", \"label\": \"Liner\"}, {\"field\": \"china_forwarder\", \"agent_code\": \"incoming_stock_enquiries\", \"outcome\": \"field_not_allowed\", \"reason\": \"This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override.\", \"label\": \"China Forwarder\"}, {\"field\": \"malaysia_forwarder\", \"agent_code\": \"incoming_stock_enquiries\", \"outcome\": \"field_not_allowed\", \"reason\": \"This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override.\", \"label\": \"Malaysia Forwarder\"}, {\"field\": \"consignee\", \"agent_code\": \"incoming_stock_enquiries\", \"outcome\": \"field_not_allowed\", \"reason\": \"This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override.\", \"label\": \"Consignee\"}, {\"field\": \"delivery_warehouse\", \"agent_code\": \"incoming_stock_enquiries\", \"outcome\": \"field_not_allowed\", \"reason\": \"This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override.\", \"label\": \"Delivery Warehouse\"}, {\"field\": \"free_days_available\", \"agent_code\": \"incoming_stock_enquiries\", \"outcome\": \"field_not_allowed\", \"reason\": \"This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override.\", \"label\": \"Free Days Available\"}, {\"field\": \"loc\", \"agent_code\": \"incoming_stock_enquiries\", \"outcome\": \"field_not_allowed\", \"reason\": \"This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override.\", \"label\": \"Location\"}, {\"field\": \"stacked\", \"agent_code\": \"incoming_stock_enquiries\", \"outcome\": \"field_not_allowed\", \"reason\": \"This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override.\", \"label\": \"Stacked\"}, {\"field\": \"coa_permit_no\", \"agent_code\": \"incoming_stock_enquiries\", \"outcome\": \"field_not_allowed\", \"reason\": \"This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override.\", \"label\": \"COA Permit No.\"}, {\"field\": \"source_sheet\", \"agent_code\": \"incoming_stock_enquiries\", \"outcome\": \"field_not_allowed\", \"reason\": \"This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override.\"}], \"note\": \"These fields are omitted because this caller may not see them. Absent does NOT mean the value is unknown or not yet reached.\"}, \"field_vocabulary\": {\"estimated_arrival_date\": \"ETA\", \"eta_delay_date\": \"ETA Delay\", \"inspection_date\": \"CIDB Inspection\", \"approval_date\": \"CIDB Approval\", \"gatep",
+            "truncated": true
+          },
+          "tool": "crm_incoming_stock_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "incoming",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "Srtmcb6083 BL"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_incoming",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [
+          "estimated_arrival_date"
+        ],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to check the ETA for Srtmcb6083 BL"
+      }
+    }
+  ]
+}

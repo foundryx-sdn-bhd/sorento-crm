@@ -13,9 +13,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.order import Customer, CustomerGroup
+from app.models.sales_agent import SalesAgent
 from app.services.company_scope import pending_company_id
 from app.services.error_handler import handle_conflict, handle_not_found, handle_unprocessable
 from app.services.ledger_family import normalise_customer_name
+from app.services.scm.sales_agent_service import derive_person_label
 
 _DUPLICATE = "A group with this name already exists"
 
@@ -42,17 +44,63 @@ class CustomerGroupService:
             out[gid] = (count + n, levels + ([level] if level is not None else []))
         return {gid: (count, sorted(levels)) for gid, (count, levels) in out.items()}
 
+    @staticmethod
+    def _person_key_sql():
+        """SQL twin of `derive_person_label` + the label-first rule, one key per agent row."""
+        code = func.regexp_replace(
+            func.upper(SalesAgent.sales_agent), "^[[:space:]]+|[[:space:]]+$", "", "g"
+        )
+        derived = func.nullif(
+            func.rtrim(
+                func.regexp_replace(code, "[[:space:]-]+(I|II|III|IV|V|VI|VII|VIII|IX|X)$", ""),
+                " -",
+            ),
+            "",
+        )
+        typed = func.nullif(
+            func.regexp_replace(SalesAgent.person_label, "^[[:space:]]+|[[:space:]]+$", "", "g"), ""
+        )
+        return func.nullif(func.lower(func.coalesce(typed, derived)), "")
+
+    def _agents(self, group_ids: list[str]) -> dict[str, tuple[Optional[str], bool]]:
+        """`{group id: (agent label, mixed)}`: one person over the ledgers that carry an agent
+        shows that person; two or more are mixed with no label. Unassigned ledgers are ignored."""
+        if not group_ids:
+            return {}
+        rows = (
+            self.db.query(Customer.customer_group_id, SalesAgent.person_label, SalesAgent.sales_agent)
+            .join(SalesAgent, SalesAgent.id == Customer.sales_agent_id)
+            .filter(Customer.customer_group_id.in_(group_ids))
+            .order_by(SalesAgent.sales_agent, SalesAgent.id)
+            .all()
+        )
+        people: dict[str, dict[str, str]] = {}
+        for gid, person_label, code in rows:
+            typed = (person_label or "").strip()
+            label = typed or derive_person_label(code)
+            if not label:
+                continue
+            people.setdefault(gid, {}).setdefault(label.lower(), label)
+        return {
+            gid: ((next(iter(keys.values())), False) if len(keys) == 1 else (None, True))
+            for gid, keys in people.items()
+        }
+
     def _shape(self, groups: list[CustomerGroup]) -> list[dict]:
         stats = self._stats([g.id for g in groups])
+        agents = self._agents([g.id for g in groups])
         shaped = []
         for g in groups:
             count, levels = stats.get(g.id, (0, []))
+            agent_label, agent_mixed = agents.get(g.id, (None, False))
             shaped.append(
                 {
                     "id": g.id,
                     "name": g.name,
                     "ledger_count": count,
                     "account_levels": levels,
+                    "sales_agent_label": agent_label,
+                    "sales_agent_mixed": agent_mixed,
                     "created_at": g.created_at,
                     "updated_at": g.updated_at,
                 }
@@ -74,10 +122,21 @@ class CustomerGroupService:
         query: Optional[str] = None,
         sort: Optional[str] = None,
         dir: str = "asc",
+        agent_mixed: bool = False,
     ):
         q = self.db.query(CustomerGroup)
         if query and query.strip():
             q = q.filter(CustomerGroup.name.ilike(f"%{query.strip()}%"))
+        if agent_mixed:
+            mixed = (
+                self.db.query(Customer.customer_group_id)
+                .join(SalesAgent, SalesAgent.id == Customer.sales_agent_id)
+                .join(CustomerGroup, CustomerGroup.id == Customer.customer_group_id)
+                .filter(Customer.company_id == CustomerGroup.company_id)
+                .group_by(Customer.customer_group_id)
+                .having(func.count(func.distinct(self._person_key_sql())) > 1)
+            )
+            q = q.filter(CustomerGroup.id.in_(mixed))
         total = q.count()
         descending = dir == "desc"
         if sort == "ledger_count":

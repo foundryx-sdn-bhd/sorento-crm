@@ -29,11 +29,14 @@ def list_translations(
     query: Optional[str] = Query(None),
     sort: Optional[str] = Query(None),
     dir: Optional[str] = Query(None),
+    # The language a row translates INTO: `en` is the supplier-document memory, `ms` / `zh`
+    # the chatbot's reply wording (CHAT-LANGUAGE).
+    target_lang: Optional[str] = Query(None, pattern="^(en|ms|zh)$"),
     db: Session = Depends(get_db),
     _user: dict = Depends(_VIEW),
 ):
     rows, total = translation_service.list_memory(
-        db, page=page, limit=limit, query=query, sort=sort, dir=dir,
+        db, page=page, limit=limit, query=query, sort=sort, dir=dir, target_lang=target_lang,
     )
     return {
         "data": rows,

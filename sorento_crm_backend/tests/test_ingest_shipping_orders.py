@@ -61,6 +61,7 @@ from tests.test_ingest_documents import (
     MARKER,
     _po_record,
     _ref,
+    _with_product_code,
     env,  # noqa: F401 - pytest fixture, imported for reuse per the tester brief
 )
 
@@ -90,7 +91,7 @@ def _spo_line(env, *, ref=None, product_ref=None, **extra) -> dict:
         "qty_ordered": 10,
     }
     line.update(extra)
-    return line
+    return _with_product_code(env, line)
 
 
 def _spo_rows(env, spo_number: str):

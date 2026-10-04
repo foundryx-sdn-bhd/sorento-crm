@@ -281,7 +281,7 @@ def picked_positions(pending: Pending, verdict: dict[str, Any]) -> tuple[list[in
         return positions, "positions"
     if positions:
         return positions, "positions"
-    # Prod turns 339 and 342 (contact 487555417, 23 Sep 2026): "Photo srt446-RG" and
+    # Prod turns 339 and 342 (contact 900000039, 23 Sep 2026): "Photo srt446-RG" and
     # "Srt446-RG list price" both label-matched an offered option even though the
     # parser itself said `domain_in_message: true` - the message named its own
     # question. The parser decides ask vs pick; this engine only resolves WHICH
