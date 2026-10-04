@@ -1,6 +1,6 @@
 # PLAN: debtor code unique per company, merge duplicates (DEBTOR-CODE-UNIQUE)
 
-Status: Build (card answered Q1-Q5 (a), crew 4 Oct; red tests, then code). Track: L (data merge across every customer
+Status: Review done, awaiting CI + owner hand test (card answered Q1-Q5 (a) and B1 (a), 4 Oct). Merge run on shared dev / prod is crew-held. Track: L (data merge across every customer
 FK, a unique index, external ingest create paths).
 Base: on/after #1474 (DEBTOR-CODE-LINK), which adds the `sales_orders.debtor_name` backfill and
 the code-first master ingest lookup.
@@ -22,4 +22,5 @@ them; each document keeps the buyer name in its own `debtor_name`).
 4. `merge_map` + `audit_logs` per merge so it can be undone.
 5. Unique index `(company_id, lower(btrim(customer_code)))` LAST, after the merge.
 
-Card: `documentation/plans/autocount/CARD-debtor-code-unique-04oct.md` (to come).
+Card: `documentation/plans/autocount/CARD-debtor-code-unique-04oct.md` (the contract).
+PR: #1475 (`crew-lane: DEBTOR-CODE-UNIQUE`).
