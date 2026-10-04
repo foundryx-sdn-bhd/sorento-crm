@@ -134,31 +134,38 @@ def record_alias(
     return True
 
 
-#: SQL predicate: customer alias `c` is named `{n}` by its own name or an alias, in the company
-#: `{co}`. Format with the SQL expressions, e.g.
-#: `NAME_OR_ALIAS_SQL.format(n="o.debtor_name", co="o.company_id")`.
-NAME_OR_ALIAS_SQL = (
-    "(c.company_id = {co} AND (lower(btrim(c.customer_name)) = lower(btrim({n})) OR EXISTS ("
-    "SELECT 1 FROM customer_aliases ca WHERE ca.customer_id = c.id "
-    "AND lower(btrim(ca.alias_name)) = lower(btrim({n})))))"
+#: Every name a customer answers to, as `(customer_id, company_id, name_key)`: its own name
+#: and each alias. Joined by equality on `(company_id, name_key)`, which Postgres can hash;
+#: an `OR EXISTS(alias)` join predicate cannot be, and measured 3.5 s against 8 ms on a
+#: dev-sized copy (review S3).
+CUSTOMER_NAMES_SQL = (
+    "(SELECT id AS customer_id, company_id, lower(btrim(customer_name)) AS name_key FROM customers "
+    "UNION ALL SELECT customer_id, company_id, lower(btrim(alias_name)) FROM customer_aliases)"
 )
 
 
-def name_or_alias_clause(customer_cls, name_column, company_column):
-    """ORM join predicate: `customer_cls` is named `name_column` by its name or an alias, in
-    the company `company_column` (an order names a customer of its own company only)."""
-    from sqlalchemy import and_, exists, func, or_, select
+def outerjoin_customer_by_order_name(query, order_cls):
+    """`query.outerjoin(Customer)` on the order's debtor name, matched against the customer's
+    name or an alias, within the order's own company (an order names a customer of its own
+    company only)."""
+    from sqlalchemy import and_, func, select, union_all
 
-    return and_(
-        customer_cls.company_id == company_column,
-        or_(
-            func.lower(func.btrim(customer_cls.customer_name)) == func.lower(func.btrim(name_column)),
-            exists(
-                select(CustomerAlias.id).where(
-                    CustomerAlias.customer_id == customer_cls.id,
-                    func.lower(func.btrim(CustomerAlias.alias_name))
-                    == func.lower(func.btrim(name_column)),
-                )
-            ),
+    names = union_all(
+        select(
+            Customer.id.label("customer_id"),
+            Customer.company_id.label("company_id"),
+            func.lower(func.btrim(Customer.customer_name)).label("name_key"),
         ),
-    )
+        select(
+            CustomerAlias.customer_id.label("customer_id"),
+            CustomerAlias.company_id.label("company_id"),
+            func.lower(func.btrim(CustomerAlias.alias_name)).label("name_key"),
+        ),
+    ).subquery("customer_names")
+    return query.outerjoin(
+        names,
+        and_(
+            names.c.company_id == order_cls.company_id,
+            names.c.name_key == func.lower(func.btrim(order_cls.debtor_name)),
+        ),
+    ).outerjoin(Customer, Customer.id == names.c.customer_id)

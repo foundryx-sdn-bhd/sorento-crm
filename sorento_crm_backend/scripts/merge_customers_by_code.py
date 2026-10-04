@@ -21,7 +21,9 @@ Run from sorento_crm_backend/:
 - `--apply` commits once per company and prints the run id; `--revert <run id>` undoes it.
 - `--create-index` adds the code-unique index after a clean apply, and refuses while any code
   still holds two rows.
-Take a `pg_dump` of the database first.
+Take a `pg_dump` of the database first, and run `--apply` in a quiet window: it holds row locks
+on every customer it merges for the whole of a company's transaction, so a live write that
+references one of them waits for the run.
 """
 from __future__ import annotations
 

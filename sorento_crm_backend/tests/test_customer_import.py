@@ -560,6 +560,25 @@ def test_a_new_name_on_a_held_code_updates_that_customer_and_keeps_the_name_as_a
         assert [a.alias_name for a in aliases] == ["CASH (SRT) - AIMAN"]
 
 
+def test_a_row_under_another_name_only_fills_blanks():
+    """Review S2: a buyer's details never replace the customer's own."""
+    with blank_session() as session:
+        _aliases(session)
+        set_company_scope(session, frozenset({DEFAULT_COMPANY_ID}))
+        code = unique_code("C")[:50]
+        _apply(session, _workbook([[code, "CASH SALES", None, None, None, None, None]]))
+        held = _held(session, code)[0]
+        held.email = "cash@example.invalid"
+        session.flush()
+
+        _apply(
+            session,
+            _workbook([[code, "BUYER 5", "buyer5@example.invalid", None, None, None, None]]),
+        )
+        session.expire_all()
+        assert _held(session, code)[0].email == "cash@example.invalid"
+
+
 def test_a_code_twice_in_one_file_is_one_customer():
     with blank_session() as session:
         _aliases(session)

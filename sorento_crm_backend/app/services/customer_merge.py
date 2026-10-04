@@ -13,8 +13,9 @@ Per group (company + `lower(btrim(customer_code))` holding more than one row):
 - Documents: an order / sales order with no `debtor_name` gets the retired row's name first, so
   no document loses the buyer name it showed.
 - Every FK onto `customers.id` (read from `pg_constraint` at run time, never a list) moves to the
-  survivor. Unique collisions are resolved first and every dropped row is kept in full:
-  a contact linked to both keeps one link (primary if either was), a second main contact becomes
+  survivor, except WhatsApp contact links (`respond_contact_customers`, an external contact's
+  access): those are dropped and listed for CS to re-link (owner, 4 Oct). Unique collisions are
+  resolved first and every dropped row is kept in full: a second main contact becomes
   stakeholder, a duplicate item-code mapping keeps the survivor's, retired AutoCount refs are
   dropped (`uq_integration_ref_entity`: one per row; the survivor's wins).
 - The retired names become `customer_aliases`; the retired row is deleted.
@@ -40,15 +41,37 @@ from app.services import customer_identity
 
 logger = logging.getLogger(__name__)
 
-#: Columns where two non-blank, different values are a conflict for the owner (card R7, Q2).
+#: Columns where two non-blank, different values are a conflict for the owner (card R7, Q2):
+#: survivor against a retired row, or two retired rows against each other when the survivor
+#: holds none. A conflict group is skipped until its `keep` row is named.
 CONFLICT_FIELDS = (
     "customer_group_id",
-    "phone_number",
-    "email",
     "is_active",
     "sales_agent_id",
     "market_segment_code",
     "account_owner_user_id",
+)
+
+#: Never carried from a retired row onto the survivor (review S1): under a cash code the
+#: retired rows are walk-in buyers, and one buyer's phone, email or address must not become
+#: the shared account's (the chatbot also matches customers by phone). Listed in the plan CSV
+#: (`not_carried`) and kept in full in the merge map instead.
+PERSONAL_FIELDS = frozenset(
+    {
+        "phone_number",
+        "mobile_number",
+        "email",
+        "billing_address",
+        "tax_id",
+        "registered_name",
+        "trading_name",
+        "registration_number",
+        "salutation",
+        "first_name",
+        "last_name",
+        "notes",
+        "website",
+    }
 )
 
 #: Never filled from a retired row: identity, bookkeeping, and the AR snapshot (a retired row's
@@ -63,11 +86,12 @@ _NOT_FILLED = frozenset(
         "created_by",
         "updated_at",
         "customer_type",
+        "is_active",
         "ar_outstanding",
         "ar_ageing_json",
         "ar_as_of",
     }
-)
+) | PERSONAL_FIELDS
 
 #: The code-unique index this lane ends on (card R13).
 UNIQUE_INDEX = "uq_customers_company_code_lower"
@@ -87,6 +111,10 @@ class Group:
     retired_names: list[str]
     fk_counts: dict[str, int] = field(default_factory=dict)
     conflicts: list[dict] = field(default_factory=list)
+    #: personal field -> how many retired rows hold a value the survivor will not take
+    not_carried: dict[str, int] = field(default_factory=dict)
+    #: WhatsApp contacts linked to a retired row: the link is dropped, CS re-links
+    contact_links_dropped: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -127,12 +155,28 @@ def _referencing_fks(db: Session) -> list[tuple[str, str, str, str]]:
             JOIN pg_class rc ON rc.oid = c.conrelid
             JOIN pg_namespace rn ON rn.oid = rc.relnamespace
             JOIN pg_attribute ra ON ra.attrelid = c.conrelid AND ra.attnum = c.conkey[1]
-            WHERE c.contype = 'f' AND c.confrelid = :oid AND array_length(c.conkey, 1) = 1
+            WHERE c.contype = 'f' AND c.confrelid = :oid
             ORDER BY 1, 2
             """
         ),
         {"oid": _customers_oid(db)},
     ).all()
+    # A multi-column FK, or one onto a column other than `id`, is a shape this merge cannot
+    # repoint; with CASCADE its rows would vanish with the retired customer unnoticed.
+    odd = db.execute(
+        text(
+            """
+            SELECT c.conname FROM pg_constraint c
+            WHERE c.contype = 'f' AND c.confrelid = :oid
+              AND (array_length(c.conkey, 1) <> 1 OR (
+                   SELECT attname FROM pg_attribute
+                   WHERE attrelid = c.confrelid AND attnum = c.confkey[1]) <> 'id')
+            """
+        ),
+        {"oid": _customers_oid(db)},
+    ).scalars().all()
+    if odd:
+        raise RuntimeError(f"foreign keys onto customers this merge cannot repoint: {odd}")
     out = []
     for table, column, pk, pk_type in rows:
         if not pk or "," in pk:
@@ -241,6 +285,18 @@ def plan(
         if n:
             group.fk_counts["integration_references.entity_id"] = int(n)
         group.conflicts = _conflicts(db, group)
+        group.not_carried = _not_carried(db, group)
+        links = next((t for t, c, _p, _t in fks if _short(t) == "respond_contact_customers"), None)
+        if links:
+            group.contact_links_dropped = list(
+                db.execute(
+                    text(
+                        f"SELECT contact_id FROM {links} "
+                        "WHERE customer_id = ANY(CAST(:ids AS uuid[])) ORDER BY contact_id"
+                    ),
+                    {"ids": group.retired_ids},
+                ).scalars()
+            )
         groups.append(group)
     return groups
 
@@ -273,6 +329,38 @@ def _conflicts(db: Session, group: Group) -> list[dict]:
                     "retired_value": retired_value,
                 }
             )
+        # The survivor holds nothing, but the retired rows disagree among themselves: filling
+        # from the oldest would be a silent pick.
+        rows = db.execute(
+            text(
+                f"""
+                SELECT r.id::text, r.{column}::text FROM customers s, customers r
+                WHERE s.id = :s AND r.id = ANY(CAST(:ids AS uuid[]))
+                  AND {_blank('s.' + column)} AND NOT {_blank('r.' + column)}
+                """
+            ),
+            {"s": group.survivor_id, "ids": group.retired_ids},
+        ).all()
+        if len({(v or "").strip().lower() for _r, v in rows}) > 1:
+            out.extend(
+                {"field": column, "survivor_value": None, "retired_id": rid, "retired_value": value}
+                for rid, value in rows
+            )
+    return out
+
+
+def _not_carried(db: Session, group: Group) -> dict[str, int]:
+    out = {}
+    for column in sorted(PERSONAL_FIELDS):
+        n = db.execute(
+            text(
+                f"SELECT count(*) FROM customers r WHERE r.id = ANY(CAST(:ids AS uuid[])) "
+                f"AND NOT {_blank('r.' + column)}"
+            ),
+            {"ids": group.retired_ids},
+        ).scalar()
+        if n:
+            out[column] = int(n)
     return out
 
 
@@ -330,12 +418,12 @@ def _merge_group(
     tables = {_short(table): table for table, _c, _p, _t in fks}
 
     # Fields (R7): the owner's keep row first, then blanks filled oldest retired first.
+    # A conflict field is decided by the owner's keep row alone, never by the fill below.
+    conflict_fields = {c["field"] for c in group.conflicts}
     if keep is not None and keep != survivor:
-        for conflict in group.conflicts:
-            if conflict["retired_id"] != keep:
-                continue
-            updated[keep].append(_set_from(db, customers_table, survivor, keep, conflict["field"]))
-    fillable = [c for c in columns if c not in _NOT_FILLED and c not in ("is_active",)]
+        for column in sorted(conflict_fields):
+            updated[keep].append(_set_from(db, customers_table, survivor, keep, column))
+    fillable = [c for c in columns if c not in _NOT_FILLED and c not in conflict_fields]
     for rid in sorted(group.retired_ids, key=lambda r: (retired_rows[r].get("created_at") or "", r)):
         for column in fillable:
             hit = db.execute(
@@ -355,29 +443,34 @@ def _merge_group(
         # Documents keep the buyer name they showed (R8).
         for table in ("orders", "sales_orders"):
             qualified = _table_of(db, table)
-            ids = db.execute(
+            olds = db.execute(
                 text(
-                    f"UPDATE {qualified} SET debtor_name = :n WHERE customer_id = :r "
-                    "AND NULLIF(btrim(debtor_name), '') IS NULL RETURNING id::text"
+                    f"SELECT id::text, debtor_name FROM {qualified} WHERE customer_id = :r "
+                    "AND NULLIF(btrim(debtor_name), '') IS NULL"
                 ),
-                {"n": name, "r": rid},
-            ).scalars().all()
-            if ids:
+                {"r": rid},
+            ).all()
+            if not olds:
+                continue
+            db.execute(
+                text(f"UPDATE {qualified} SET debtor_name = :n WHERE id = ANY(CAST(:ids AS uuid[]))"),
+                {"n": name, "ids": [i for i, _old in olds]},
+            )
+            by_old: dict[Optional[str], list[str]] = {}
+            for doc_id, old in olds:
+                by_old.setdefault(old, []).append(doc_id)
+            for old, ids in by_old.items():
                 updated[rid].append(
-                    {"table": qualified, "pk": "id", "ids": ids, "column": "debtor_name", "old": None}
+                    {"table": qualified, "pk": "id", "ids": ids, "column": "debtor_name", "old": old}
                 )
 
         # Unique collisions (R9), before the repoint.
+        # A contact link is an external contact's access, so it never moves to the survivor
+        # (owner, 4 Oct, security review B1 (a)): every retired row's link is dropped, kept
+        # in the map, and listed for CS to re-link deliberately (`contact_links_dropped`).
         links = tables.get("respond_contact_customers")
         if links:
-            dropped += _drop_where(
-                db,
-                links,
-                f"t.customer_id = :r AND t.contact_id IN "
-                f"(SELECT contact_id FROM {links} WHERE customer_id = :s)",
-                {"r": rid, "s": survivor},
-                before_delete=lambda rows: _promote_primary(db, links, rows, survivor, updated[rid]),
-            )
+            dropped += _drop_where(db, links, "t.customer_id = :r", {"r": rid})
         contacts = tables.get("customer_contacts")
         if contacts and db.execute(
             text(f"SELECT 1 FROM {contacts} WHERE customer_id = :s AND contact_role = 'main'"),
@@ -486,38 +579,13 @@ def _set_from(db: Session, table: str, survivor: str, source: str, column: str) 
     return {"table": table, "pk": "id", "ids": [survivor], "column": column, "old": old}
 
 
-def _drop_where(db: Session, qualified: str, where: str, params: dict, before_delete=None) -> list[dict]:
+def _drop_where(db: Session, qualified: str, where: str, params: dict) -> list[dict]:
     """Delete the rows of `qualified` (aliased `t` in `where`) and return them in full."""
     rows = db.execute(text(f"SELECT to_jsonb(t) FROM {qualified} t WHERE {where}"), params).scalars().all()
     if not rows:
         return []
-    if before_delete is not None:
-        before_delete(rows)
     db.execute(text(f"DELETE FROM {qualified} t WHERE {where}"), params)
     return [{"table": qualified, "row": row} for row in rows]
-
-
-def _promote_primary(
-    db: Session, links: str, rows: list[dict], survivor: str, updated: list[dict]
-) -> None:
-    """A contact linked to both keeps the survivor's link, primary if either was. The retired
-    primary goes first: `uq_respond_contact_customers_one_primary` allows one per contact."""
-    primaries = [r for r in rows if r.get("is_primary")]
-    if not primaries:
-        return
-    db.execute(
-        text(f"DELETE FROM {links} WHERE id = ANY(CAST(:ids AS uuid[]))"),
-        {"ids": [r["id"] for r in primaries]},
-    )
-    ids = db.execute(
-        text(
-            f"UPDATE {links} SET is_primary = true WHERE customer_id = :s "
-            "AND contact_id = ANY(:c) AND NOT is_primary RETURNING id::text"
-        ),
-        {"s": survivor, "c": [r["contact_id"] for r in primaries]},
-    ).scalars().all()
-    if ids:
-        updated.append({"table": links, "pk": "id", "ids": ids, "column": "is_primary", "old": False})
 
 
 def _audit(db, group, survivor, retired_id, retired_row, run_id, action, actor_user_id) -> None:
@@ -721,6 +789,8 @@ CSV_FIELDS = (
     "retired_names",
     "fk_counts",
     "conflicts",
+    "not_carried",
+    "contact_links_dropped",
     "keep",
 )
 
@@ -746,6 +816,8 @@ def write_plan_csv(groups: list[Group], path: Path | str) -> None:
                         f"{c['field']}: {c['survivor_value']} | {c['retired_id']}={c['retired_value']}"
                         for c in g.conflicts
                     ),
+                    "not_carried": ";".join(f"{k}={v}" for k, v in sorted(g.not_carried.items())),
+                    "contact_links_dropped": ";".join(g.contact_links_dropped),
                     "keep": "",
                 }
             )

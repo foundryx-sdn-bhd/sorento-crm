@@ -21,7 +21,7 @@ from app.models.integration_reference import IntegrationReference
 from app.models.order import Customer, CustomerAlias, CustomerContact, CustomerMergeMap, Order, SalesOrder
 from app.models.project_so import CustomerItemCodeMap
 from app.models.product import Product, ProductCategory, UnitOfMeasure
-from app.services import customer_merge
+from app.services import customer_identity, customer_merge
 from app.services.company_scope import DEFAULT_COMPANY_ID, register_company_scope_listeners
 
 from tests._pg_fixture import blank_session, unique_code
@@ -50,6 +50,14 @@ def company_b(db) -> str:
     db.add(company)
     db.flush()
     return str(company.id)
+
+
+def _segment(db, code: str) -> str:
+    db.execute(
+        text("INSERT INTO market_segments (code, name, is_active) VALUES (:c, :c, true) ON CONFLICT (code) DO NOTHING"),
+        {"c": code},
+    )
+    return code
 
 
 def _uid() -> str:
@@ -229,20 +237,43 @@ class TestPlan:
 
     def test_conflicting_values_are_listed(self, db):
         code = _code("CF")
-        survivor = _seed(db, code, "NAME-A", OLD, phone_number="+60-1", is_active=True)
-        retired = _seed(db, code, "NAME-B", NEW, phone_number="+60-2", is_active=False)
+        _segment(db, "ZZSEG-A"), _segment(db, "ZZSEG-B")
+        survivor = _seed(db, code, "NAME-A", OLD, market_segment_code="ZZSEG-A", is_active=True)
+        retired = _seed(db, code, "NAME-B", NEW, market_segment_code="ZZSEG-B", is_active=False)
         g = _group(customer_merge.plan(db, codes=[code]), code)
         fields = {(c["field"], c["retired_id"]) for c in g.conflicts}
-        assert ("phone_number", retired) in fields
+        assert ("market_segment_code", retired) in fields
         assert ("is_active", retired) in fields
         assert g.survivor_id == survivor
 
+    def test_retired_rows_disagreeing_with_each_other_is_a_conflict(self, db):
+        """Review S1: the survivor holds none, two retired rows differ - no silent pick."""
+        code = _code("RR")
+        _segment(db, "ZZSEG-C"), _segment(db, "ZZSEG-D")
+        _seed(db, code, "CASH SALES", OLD)
+        a = _seed(db, code, "BUYER-1", MID, market_segment_code="ZZSEG-C")
+        b = _seed(db, code, "BUYER-2", NEW, market_segment_code="ZZSEG-D")
+        g = _group(customer_merge.plan(db, codes=[code]), code)
+        assert {(c["field"], c["retired_id"]) for c in g.conflicts} == {
+            ("market_segment_code", a),
+            ("market_segment_code", b),
+        }
+
     def test_null_versus_value_is_not_a_conflict(self, db):
         code = _code("NC")
+        _segment(db, "ZZSEG-E")
         _seed(db, code, "NAME-A", OLD)
-        _seed(db, code, "NAME-B", NEW, phone_number="+60-2")
+        _seed(db, code, "NAME-B", NEW, market_segment_code="ZZSEG-E")
         g = _group(customer_merge.plan(db, codes=[code]), code)
         assert g.conflicts == []
+
+    def test_personal_fields_are_listed_not_carried(self, db):
+        code = _code("PF")
+        _seed(db, code, "CASH SALES", OLD)
+        _seed(db, code, "BUYER-1", NEW, phone_number="+60-2", email="b@example.invalid")
+        g = _group(customer_merge.plan(db, codes=[code]), code)
+        assert g.conflicts == []
+        assert g.not_carried == {"email": 1, "phone_number": 1}
 
     def test_plan_csv_has_one_row_per_group(self, db, tmp_path):
         code = _code("CSV")
@@ -260,7 +291,7 @@ class TestApply:
     def test_repoints_documents_fills_names_and_deletes_retired_rows(self, db):
         code = _code("AP")
         survivor = _seed(db, code, "CASH SALES", OLD)
-        retired = _seed(db, code, "BUYER-1", NEW, email="buyer@example.invalid")
+        retired = _seed(db, code, "BUYER-1", NEW, email="buyer@example.invalid", region="NORTH")
         so_blank = _so(db, retired)
         so_named = _so(db, retired, debtor_name="BUYER-1 (DO NAME)")
         order = _order(db, retired)
@@ -287,7 +318,8 @@ class TestApply:
         row = db.get(Customer, survivor)
         db.refresh(row)
         assert row.customer_name == "CASH SALES"
-        assert row.email == "buyer@example.invalid"
+        assert row.region == "NORTH"  # a blank filled from the retired row
+        assert row.email is None  # a buyer's personal detail never moves (review S1)
 
     def test_retired_names_become_aliases(self, db):
         code = _code("AL")
@@ -320,19 +352,28 @@ class TestApply:
         )
         assert audit == 1
 
-    def test_respond_contact_linked_to_both_keeps_one_primary_link(self, db):
+    def test_retired_rows_contact_links_are_dropped_never_repointed(self, db):
+        """Owner 4 Oct (security review B1 (a)): a contact linked to a retired buyer must not
+        gain the survivor's ledgers; CS re-links from the plan's list."""
         code = _code("RC")
         survivor = _seed(db, code, "CASH SALES", OLD)
         retired = _seed(db, code, "BUYER-1", NEW)
-        contact = _respond_contact(db)
-        _link(db, contact, survivor, primary=False)
-        _link(db, contact, retired, primary=True)
+        both = _respond_contact(db)
+        only_retired = _respond_contact(db)
+        survivor_link = _link(db, both, survivor, primary=False)
+        _link(db, both, retired, primary=True)
+        _link(db, only_retired, retired, primary=True)
+        g = _group(customer_merge.plan(db, codes=[code]), code)
+        assert g.contact_links_dropped == sorted([both, only_retired])
         customer_merge.apply(db, run_id="run-rc", codes=[code])
         rows = db.execute(
-            text("SELECT customer_id::text, is_primary FROM respond_contact_customers WHERE contact_id = :c"),
-            {"c": contact},
+            text(
+                "SELECT id::text, customer_id::text, is_primary FROM respond_contact_customers "
+                "WHERE contact_id IN (:a, :b)"
+            ),
+            {"a": both, "b": only_retired},
         ).all()
-        assert [(r[0], r[1]) for r in rows] == [(survivor, True)]
+        assert [(r[0], r[1], r[2]) for r in rows] == [(survivor_link, survivor, False)]
 
     def test_second_main_contact_becomes_stakeholder(self, db):
         code = _code("MC")
@@ -403,8 +444,9 @@ class TestApply:
 
     def test_conflict_group_is_skipped_without_a_resolution(self, db):
         code = _code("SK")
-        survivor = _seed(db, code, "NAME-A", OLD, phone_number="+60-1")
-        retired = _seed(db, code, "NAME-B", NEW, phone_number="+60-2")
+        _segment(db, "ZZSEG-F"), _segment(db, "ZZSEG-G")
+        survivor = _seed(db, code, "NAME-A", OLD, market_segment_code="ZZSEG-F")
+        retired = _seed(db, code, "NAME-B", NEW, market_segment_code="ZZSEG-G")
         result = customer_merge.apply(db, run_id="run-sk", codes=[code])
         assert result.merged == []
         assert [g.survivor_id for g in result.skipped] == [survivor]
@@ -412,14 +454,15 @@ class TestApply:
 
     def test_conflict_group_merges_with_the_owners_keep_row(self, db):
         code = _code("KP")
-        survivor = _seed(db, code, "NAME-A", OLD, phone_number="+60-1")
-        retired = _seed(db, code, "NAME-B", NEW, phone_number="+60-2")
+        _segment(db, "ZZSEG-H"), _segment(db, "ZZSEG-I")
+        survivor = _seed(db, code, "NAME-A", OLD, market_segment_code="ZZSEG-H")
+        retired = _seed(db, code, "NAME-B", NEW, market_segment_code="ZZSEG-I")
         resolutions = {(DEFAULT_COMPANY_ID, code.lower()): retired}
         result = customer_merge.apply(db, run_id="run-kp", codes=[code], resolutions=resolutions)
         assert [g.survivor_id for g in result.merged] == [survivor]
         row = db.get(Customer, survivor)
         db.refresh(row)
-        assert row.phone_number == "+60-2"  # the owner kept the retired row's value
+        assert row.market_segment_code == "ZZSEG-I"  # the owner kept the retired row's value
         assert row.customer_name == "NAME-A"  # identity fields never move
 
     def test_second_apply_is_a_no_op(self, db):
@@ -442,30 +485,55 @@ class TestApply:
 # ================================================================================= revert
 class TestRevert:
     def test_revert_restores_rows_links_and_values(self, db):
+        """Review B1: every merge effect is present after apply and gone after revert."""
         code = _code("RV")
-        survivor = _seed(db, code, "CASH SALES", OLD)
-        retired = _seed(db, code, "BUYER-1", NEW, email="b@example.invalid")
+        survivor = _seed(db, code, "CASH SALES", NEW)
+        _ref(db, survivor, f"AED_SORENTO:{code}")  # code-form: survives although newer
+        retired = _seed(db, code, "BUYER-1", OLD, region="NORTH")
         _ref(db, retired, "AED_SORENTO:2001")
-        so_blank = _so(db, retired)
+        so_null = _so(db, retired)
+        so_blank = _so(db, retired, debtor_name="  ")
         keep_main = _contact(db, survivor, role="main")
         demoted = _contact(db, retired, role="main")
         contact = _respond_contact(db)
-        _link(db, contact, survivor)
+        survivor_link = _link(db, contact, survivor)
         dup_link = _link(db, contact, retired, primary=True)
+        p1, p2 = _product(db), _product(db)
+        _code_map(db, survivor, "CUST-ITEM-1", p1)
+        dup_map = _code_map(db, retired, "CUST-ITEM-1", p2)
+        customer_identity.record_alias(db, survivor, "OLD NAME", source="test")
+        customer_identity.record_alias(db, retired, "old name", source="test")
 
-        before_aliases = db.query(CustomerAlias).count()
+        def ref_of(cid):
+            return _scalar(
+                db,
+                "SELECT source_ref FROM integration_references WHERE entity_type = 'customers' "
+                "AND entity_id = :e",
+                e=cid,
+            )
+
         customer_merge.apply(db, run_id="run-rv", codes=[code])
-        customer_merge.revert(db, "run-rv")
+        # applied
+        assert not _exists(db, retired)
+        assert ref_of(retired) is None
+        assert _scalar(db, "SELECT count(*) FROM respond_contact_customers WHERE id = :i", i=dup_link) == 0
+        assert not _scalar(db, "SELECT is_primary FROM respond_contact_customers WHERE id = :i", i=survivor_link)
+        assert _scalar(db, "SELECT contact_role FROM customer_contacts WHERE id = :i", i=demoted) == "stakeholder"
+        assert _scalar(db, "SELECT debtor_name FROM sales_orders WHERE id = :i", i=so_blank) == "BUYER-1"
+        assert db.query(CustomerItemCodeMap).filter(CustomerItemCodeMap.id == dup_map).count() == 0
+        assert db.get(Customer, survivor).region == "NORTH"
 
-        assert _exists(db, retired)
+        customer_merge.revert(db, "run-rv")
+        db.expire_all()
+        # reverted
         row = db.get(Customer, retired)
-        db.refresh(row)
-        assert row.customer_name == "BUYER-1" and row.email == "b@example.invalid"
-        surv = db.get(Customer, survivor)
-        db.refresh(surv)
-        assert surv.email is None
-        assert _scalar(db, "SELECT customer_id::text FROM sales_orders WHERE id = :i", i=so_blank) == retired
-        assert _scalar(db, "SELECT debtor_name FROM sales_orders WHERE id = :i", i=so_blank) is None
+        assert row is not None and row.customer_name == "BUYER-1" and row.region == "NORTH"
+        assert db.get(Customer, survivor).region is None
+        assert ref_of(retired) == "AED_SORENTO:2001"
+        assert ref_of(survivor) == f"AED_SORENTO:{code}"
+        assert _scalar(db, "SELECT customer_id::text FROM sales_orders WHERE id = :i", i=so_null) == retired
+        assert _scalar(db, "SELECT debtor_name FROM sales_orders WHERE id = :i", i=so_null) is None
+        assert _scalar(db, "SELECT debtor_name FROM sales_orders WHERE id = :i", i=so_blank) == "  "
         assert _scalar(db, "SELECT contact_role FROM customer_contacts WHERE id = :i", i=demoted) == "main"
         assert (
             _scalar(db, "SELECT customer_id::text FROM customer_contacts WHERE id = :i", i=demoted)
@@ -476,15 +544,12 @@ class TestRevert:
             _scalar(db, "SELECT customer_id::text || is_primary FROM respond_contact_customers WHERE id = :i", i=dup_link)
             == f"{retired}true"
         )
-        assert (
-            _scalar(
-                db,
-                "SELECT source_ref FROM integration_references WHERE entity_type = 'customers' AND entity_id = :e",
-                e=retired,
-            )
-            == "AED_SORENTO:2001"
-        )
-        assert db.query(CustomerAlias).count() == before_aliases
+        assert not _scalar(db, "SELECT is_primary FROM respond_contact_customers WHERE id = :i", i=survivor_link)
+        assert db.query(CustomerItemCodeMap).filter(CustomerItemCodeMap.id == dup_map).count() == 1
+        assert sorted(
+            (str(a.customer_id), a.alias_name) for a in db.query(CustomerAlias)
+            if str(a.customer_id) in (survivor, retired)
+        ) == sorted([(survivor, "OLD NAME"), (retired, "old name")])
         assert all(
             m.reverted_at is not None
             for m in db.query(CustomerMergeMap).filter(CustomerMergeMap.run_id == "run-rv")

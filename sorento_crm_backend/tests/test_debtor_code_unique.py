@@ -334,6 +334,19 @@ class TestAliases:
         hits = _probe_customer_debtor_name(db, [buyer])
         assert [h.uuid for h in hits[buyer]] == [cid]
 
+    def test_order_name_never_resolves_to_another_companys_alias(self, db, company_b):
+        """Security review N1: an SRT order's buyer name never lands on an MCH customer."""
+        from app.services.entity_resolver import _probe_customer_debtor_name
+
+        set_company_scope(db, None)
+        buyer = f"{MARKER} BUYER {uuid.uuid4().hex[:6]}"
+        mch = _seed(db, _code("MX"), "MCH CASH", OLD, company_id=company_b)
+        customer_identity.record_alias(db, mch, buyer, source="merge")
+        db.add(Order(order_number=_code("ORD"), debtor_name=buyer, company_id=DEFAULT_COMPANY_ID))
+        db.flush()
+        hits = _probe_customer_debtor_name(db, [buyer])
+        assert [h.uuid for h in hits[buyer]] == [None]
+
     def test_trigram_customer_search_reads_aliases(self, db):
         from app.services.entity_resolver import _trgm_lookup
 

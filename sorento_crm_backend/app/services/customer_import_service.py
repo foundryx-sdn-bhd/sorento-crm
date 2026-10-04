@@ -4,8 +4,8 @@ Three decisions carry this file, all from UAC-customer-importer.
 
 **The key is (company, debtor code).** DEBTOR-CODE-UNIQUE (owner, 4 Oct 2026): one customer per
 debtor code per company, like AutoCount (`customer_identity`). A row whose code is already held
-updates that customer, fill-only, and never renames it; a different name on the row is kept as
-an alias (`customer_aliases`) so search still finds it. Only a code nobody in the company holds
+updates that customer and never renames it; a row under another name only fills the customer's
+blanks, and its name is kept as an alias (`customer_aliases`) so search still finds it. Only a code nobody in the company holds
 is inserted. A code twice in one file is one customer: the later row is a duplicate.
 
 **What a person curates is never overwritten.** Account owners, notes and the active flag are
@@ -667,12 +667,18 @@ def _changes(held: Customer, row: CustomerRow) -> dict[str, str]:
 
     Empty means the row states nothing new, which is `unchanged` and no write at all - not
     an update with the same values (AC-3.3).
+
+    A row under the customer's code but another NAME (a buyer under a cash code, kept as an
+    alias) only fills blanks: one buyer's phone or email must not replace the customer's own.
     """
+    fill_only = _key(row.customer_name) != _key(str(held.customer_name or ""))
     changes: dict[str, str] = {}
     for field_name in UPDATABLE_FIELDS:
         value = row.values.get(field_name)
         if value is None:
             continue  # a blank cell is "not supplied", never "clear it"
+        if fill_only and (getattr(held, field_name) or None):
+            continue
         if (getattr(held, field_name) or None) != value:
             changes[field_name] = value
     for field_name in FILL_IF_EMPTY_FIELDS:

@@ -68,16 +68,23 @@ dev; the dry run (R11) re-measures them before anything is applied.
   `customers`); if several rows are linked, the one whose ref is code-form (`<db>:<code>`); else
   the oldest `created_at`, ties to the lowest id. The survivor keeps its name, code and ref.
 - **R7 Fields:** the survivor keeps every value it holds; a NULL/blank on the survivor is filled
-  from the retired rows (oldest first). Where the survivor and a retired row both hold a value
-  and differ on customer group, phone, email, active, sales agent or market segment, the group is
-  a **conflict**: listed in the dry-run CSV and NOT merged until the owner decides (Q2).
+  from the retired rows (oldest first). Where two rows both hold a value and differ on customer
+  group, active, sales agent, market segment or account owner (survivor against a retired row,
+  or two retired rows when the survivor holds none), the group is a **conflict**: listed in the
+  dry-run CSV and NOT merged until the owner names a `keep` row (Q2), whose values then win on
+  those fields. Personal and contact fields (phone, mobile, email, address, tax id, registered /
+  trading names, person names, notes, website) are NEVER carried from a retired row (review S1:
+  under a cash code those are one walk-in buyer's details); the CSV's `not_carried` column counts
+  them and the merge map keeps them in full.
 - **R8 Repoint:** every FK (discovered from `pg_constraint` at run time, as
   `scripts/dedupe_spo_number_format.py` does) moves from retired ids to the survivor. Before the
   repoint, a document with no `debtor_name` gets the retired row's name, so no order loses the
   buyer name it showed.
 - **R9 Collisions:**
-  - `respond_contact_customers`: a contact linked to both keeps one link (the survivor's, else
-    the oldest); `is_primary` is kept if either link was primary.
+  - `respond_contact_customers` (an external contact's access, owner 4 Oct, security review B1
+    (a)): a retired row's links are never repointed. They are dropped (kept in the map, restored
+    by revert) and listed in the CSV's `contact_links_dropped` column so CS re-links each contact
+    deliberately. A contact already linked to the survivor keeps that link unchanged.
   - `customer_contacts`: the survivor's main contact stays main; a retired row's main becomes
     `stakeholder`.
   - `projects.customer_item_code_map`: same (company, customer_code) on both: the survivor's
@@ -98,13 +105,13 @@ dev; the dry run (R11) re-measures them before anything is applied.
   row). Existing audit history is never rewritten (it is append-only by trigger).
 - **R11 Modes:** `--dry-run` (default) writes one CSV row per group (company, code, survivor,
   retired ids + names, FK counts per table, collisions, conflicts) and changes nothing.
-  `--apply` runs one transaction per company and verifies before commit (0 rows still point at a
-  retired id; per-table counts add up). `--revert <run id>` re-inserts the retired rows from
+  `--apply` runs one transaction per company, under `--actor <user>` (named on every audit row),
+  and refuses to delete a retired row while any FK still points at it. `--revert <run id>` re-inserts the retired rows from
   `customer_merge_map` and points every recorded row back.
-- **R12 Aliases:** every retired name (and the survivor's earlier names) goes to
+- **R12 Aliases:** every retired name goes to
   `customer_aliases (company_id, customer_id, alias_name)`, unique per customer on
   `lower(btrim(alias_name))`. The chatbot name join and trigram search match
-  `customer_name OR alias`, so "find NAME-B2" still lands on the merged customer.
+  `customer_name OR alias`, within the order's own company, so "find NAME-B2" still lands on the merged customer.
 - **R13 Unique index** `uq_customers_company_code_lower` on `(company_id,
   lower(btrim(customer_code))) WHERE btrim(customer_code) <> ''` comes LAST (Q4 (a)):
   `--create-index` adds it after a clean apply and refuses while any code holds two rows; a
