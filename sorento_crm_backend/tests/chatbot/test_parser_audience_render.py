@@ -51,8 +51,8 @@ TAG = {tag: grant for grant, tags in TAGS.items() for tag in tags}
 #: stays forbidden is the heavy instruction detail only. The block headings are asserted
 #: absent by `^== TITLE` in the matrix below and in test_parser_audience_vocab_kept.py.
 FORBIDDEN = {
-    C: ["check_po_cost", "buying price", "cost price"],
-    P: ["check_po", "PO placed", "supplier order", "check_spo", "last received"],
+    C: ["buying price", "cost price"],
+    P: ["PO placed", "supplier order", "last received"],
     S: ["sales_channel", "rank_by", "sales_basis"],
     L: ["reorder report"],
 }

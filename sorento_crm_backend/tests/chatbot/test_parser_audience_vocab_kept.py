@@ -90,7 +90,7 @@ class TestVocabularyKeptTaggedText:
     @pytest.mark.parametrize("grants", AUDIENCES)
     def test_domain_names_status_values_and_intent_survive(self, grants) -> None:
         out = render_for_audience(_tagged(), grants)
-        for word in ("purchase_order", "SPO", "sales_report", "low_stock_report"):
+        for word in ("purchase_order", "SPO", "sales_report", "low_stock_report", "check_po", "check_po_cost", "check_spo"):
             assert _has(out, word), word
         # the status value in the `status` OUTPUT line, not only in prose
         assert re.search(r'"status":[^\n]*sales_report', out), "status lost sales_report"
@@ -266,7 +266,7 @@ class TestVocabularyKeptVariablePath:
         words = _section(out, "== DOMAIN IN MESSAGE ==", 900)
         for word in ("PO", "purchase cost", "SPO"):
             assert _has(words, word), (word, words)
-        for word in ("sales_report", "sales_analysis", "top_selling", "low_stock_report"):
+        for word in ("sales_report", "sales_analysis", "top_selling", "low_stock_report", "check_po", "check_po_cost", "check_spo"):
             assert _has(out, word), word
         held = set(grants)
         gated_titles = {C: ["LAST PURCHASE COST"], P: ["PURCHASE ORDERS", "SPO LAST RECEIPT"],
