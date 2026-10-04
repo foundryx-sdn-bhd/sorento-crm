@@ -31,6 +31,7 @@ from dataclasses import dataclass, replace as dataclasses_replace
 from datetime import datetime, timezone
 from typing import Any, Callable, Iterator, Mapping
 
+from sqlalchemy import text as sql
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -1968,6 +1969,84 @@ def _screen_resolver_for_scope(
         for kind, rows in (candidates or {}).items()
     }
     return refused, compatible, candidates, dropped_ids
+
+
+_ORDER_TYPES = ("customer_order", "order")
+
+
+def _drop_foreign_order_suggestions(
+    db: Session,
+    scope: dict[str, Any],
+    payload: dict[str, Any] | None,
+    compatible: list[dict[str, Any]],
+    candidates: dict[str, list[dict[str, Any]]],
+) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, Any]]], list[str]]:
+    """PARSER-PER-AUDIENCE S1: a customer-scoped contact's "did you mean" never offers
+    another customer's order number. Every order row the resolver SUGGESTED (an
+    alternative, or a match of any tier but `exact`) whose order is not one of the
+    contact's linked customers' is dropped, from the payload the miss and the picker are
+    composed from and from the candidates the offer stores. An exact order number keeps
+    `_screen_resolver_for_scope`'s rule (it resolves, without the owner's name). Returns
+    `(compatible, candidates, dropped_order_ids)`."""
+    def _suggested(row: Any, *, alternative: bool) -> bool:
+        return (
+            isinstance(row, dict)
+            and str(row.get("entity_type") or "").lower() in _ORDER_TYPES
+            and bool(row.get("uuid"))
+            and (alternative or str(row.get("match_tier") or "exact") != "exact")
+        )
+
+    resolutions: list[dict[str, Any]] = []
+    resolved = (payload or {}).get("resolved") if isinstance(payload, dict) else None
+    if isinstance(resolved, dict):
+        resolutions = [r for r in resolved.get("resolutions") or [] if isinstance(r, dict)]
+    asked = {
+        str(row["uuid"])
+        for res in resolutions
+        for key in ("matches", "alternatives")
+        for row in res.get(key) or []
+        if _suggested(row, alternative=key == "alternatives")
+    } | {
+        str(row["uuid"])
+        for rows in [compatible, *(candidates or {}).values()]
+        if isinstance(rows, list)
+        for row in rows
+        if _suggested(row, alternative=False)
+    }
+    if not asked:
+        return compatible, candidates, []
+    own = [str(i) for i in scope.get("ids") or []]
+    allowed: set[str] = set()
+    if own:
+        allowed = {
+            str(r[0])
+            for r in db.execute(
+                sql("SELECT id FROM orders WHERE id::text = ANY(:ids) AND customer_id::text = ANY(:own)"),
+                {"ids": sorted(asked), "own": own},
+            )
+        }
+    foreign = asked - allowed
+    if not foreign:
+        return compatible, candidates, []
+
+    def _clean(rows: Any) -> Any:
+        if not isinstance(rows, list):
+            return rows
+        return [r for r in rows if not (isinstance(r, dict) and str(r.get("uuid")) in foreign
+                                        and str(r.get("entity_type") or "").lower() in _ORDER_TYPES)]
+
+    for res in resolutions:
+        for key in ("matches", "alternatives"):
+            if isinstance(res.get(key), list):
+                res[key] = _clean(res[key])
+    if isinstance(resolved, dict) and isinstance(resolved.get("alternatives"), list):
+        resolved["alternatives"] = _clean(resolved["alternatives"])
+    gate = (payload or {}).get("gate") if isinstance(payload, dict) else None
+    if isinstance(gate, dict):
+        for key in ("compatible_entities", "customer_probe_entities"):
+            if isinstance(gate.get(key), list):
+                gate[key] = _clean(gate[key])
+    return _clean(compatible), {k: _clean(v) for k, v in (candidates or {}).items()}, sorted(foreign)
 
 
 def _names_an_order_number(entities: list[dict[str, Any]]) -> bool:
@@ -4909,6 +4988,11 @@ def _run_stages_body(  # noqa: PLR0915
             screened_refused = False
             screened_dropped: list[str] = []
             if customer_scope and customer_scope.get("enforced"):
+                compatible_entities, resolved_candidates, foreign_orders = _drop_foreign_order_suggestions(
+                    db, customer_scope, resolver_payload, compatible_entities, resolved_candidates
+                )
+                if foreign_orders:
+                    turn_trace.add("customer_scope", {"dropped_order_suggestions": foreign_orders})
                 screened_refused, compatible_entities, resolved_candidates, screened_dropped = (
                     _screen_resolver_for_scope(
                         customer_scope, resolver_payload, compatible_entities, resolved_candidates
