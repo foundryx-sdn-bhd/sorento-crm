@@ -275,6 +275,56 @@ class TestPlan:
         assert g.conflicts == []
         assert g.not_carried == {"email": 1, "phone_number": 1}
 
+    def test_phone_clash_with_the_kept_row_is_a_conflict(self, db):
+        """Crew 4 Oct: phone conflicts are listed (survivor against a retired row only)."""
+        code = _code("PH")
+        _seed(db, code, "NAME-A", OLD, phone_number="+60-12 345")
+        same = _seed(db, code, "NAME-B", MID, phone_number="6012345")
+        other = _seed(db, code, "NAME-C", NEW, phone_number="+60-99 999")
+        g = _group(customer_merge.plan(db, codes=[code]), code)
+        assert [(c["field"], c["retired_id"]) for c in g.conflicts] == [("phone_number", other)]
+        assert same not in {c["retired_id"] for c in g.conflicts}
+
+    def test_two_buyers_phones_without_a_kept_phone_are_not_a_conflict(self, db):
+        code = _code("PB")
+        _seed(db, code, "CASH SALES", OLD)
+        _seed(db, code, "BUYER-1", MID, phone_number="+60-1")
+        _seed(db, code, "BUYER-2", NEW, phone_number="+60-2")
+        assert _group(customer_merge.plan(db, codes=[code]), code).conflicts == []
+
+    def test_kept_reason_survivor_ref_and_ref_conflicts(self, db):
+        code = _code("KR")
+        autokey = _seed(db, code, "NAME-A", OLD)
+        _ref(db, autokey, "AED_SORENTO:1003")
+        code_form = _seed(db, code, "NAME-B", NEW)
+        _ref(db, code_form, f"foundryx_service_s51:{code}")
+        g = _group(customer_merge.plan(db, codes=[code]), code)
+        assert g.kept_reason == "code_form_ref"
+        assert g.survivor_ref == f"foundryx_service_s51:{code}"
+        assert sorted(g.ref_conflicts) == sorted(
+            [f"{autokey}=AED_SORENTO:1003", f"{code_form}=foundryx_service_s51:{code}"]
+        )
+
+    def test_kept_reason_autocount_ref_and_oldest(self, db):
+        linked_code, plain_code = _code("KA"), _code("KO")
+        _seed(db, linked_code, "NAME-A", OLD)
+        linked = _seed(db, linked_code, "NAME-B", NEW)
+        _ref(db, linked, "AED_SORENTO:7001")
+        _seed(db, plain_code, "NAME-A", OLD)
+        _seed(db, plain_code, "NAME-B", NEW)
+        groups = customer_merge.plan(db, codes=[linked_code, plain_code])
+        assert _group(groups, linked_code).kept_reason == "autocount_ref"
+        assert _group(groups, plain_code).kept_reason == "oldest"
+        assert _group(groups, plain_code).ref_conflicts == []
+
+    def test_name_mismatch_lists_retired_names_of_another_business(self, db):
+        code = _code("NM")
+        _seed(db, code, "Chin Chun Hardware Sdn. Bhd.", OLD)
+        _seed(db, code, "CHIN CHUN HARDWARE SDN BHD (M)", MID)
+        _seed(db, code, "HOMEMART SDN BHD", NEW)
+        g = _group(customer_merge.plan(db, codes=[code]), code)
+        assert g.name_mismatch == ["HOMEMART SDN BHD"]
+
     def test_plan_csv_has_one_row_per_group(self, db, tmp_path):
         code = _code("CSV")
         _seed(db, code, "NAME-A", OLD)
@@ -283,7 +333,9 @@ class TestPlan:
         customer_merge.write_plan_csv(customer_merge.plan(db, codes=[code]), path)
         lines = path.read_text().strip().splitlines()
         assert len(lines) == 2  # header + one group
-        assert "survivor_id" in lines[0] and "keep" in lines[0]
+        header = lines[0].split(",")
+        for column in ("survivor_id", "kept_reason", "survivor_ref", "ref_conflicts", "name_mismatch", "keep"):
+            assert column in header
 
 
 # ============================================================================== R7-R10 apply

@@ -80,6 +80,9 @@ def _summary(groups: list[customer_merge.Group]) -> str:
     lines = [
         f"groups: {len(groups)}  rows: {rows}  retired: {rows - len(groups)}",
         f"conflict groups: {len(conflicts)}  by field: {dict(fields)}",
+        f"kept because: {dict(Counter(g.kept_reason for g in groups))}",
+        f"groups with a name mismatch: {sum(1 for g in groups if g.name_mismatch)}  "
+        f"with several AutoCount refs: {sum(1 for g in groups if g.ref_conflicts)}",
         f"rows that move: {dict(moved)}",
     ]
     return "\n".join(lines)

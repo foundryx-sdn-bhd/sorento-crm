@@ -67,6 +67,12 @@ dev; the dry run (R11) re-measures them before anything is applied.
 - **R6 Survivor:** the row linked to AutoCount (`integration_references`, entity_type
   `customers`); if several rows are linked, the one whose ref is code-form (`<db>:<code>`); else
   the oldest `created_at`, ties to the lowest id. The survivor keeps its name, code and ref.
+- **R6a Survivor name.** The merge never renames the survivor. Where a ref exists the survivor is
+  the AutoCount-linked row, whose `customer_name` the masters push writes from AutoCount's own
+  debtor name (`app/services/master_ingest_service.py:473` builds the columns from
+  `payload.name`; a ref match updates that row at `:1212-1228`). After #1474 the push finds that
+  same row by code, so the next push keeps it at AutoCount's current name. The plan CSV states
+  `kept_reason` (`code_form_ref` | `autocount_ref` | `oldest`) and `survivor_ref` per group.
 - **R7 Fields:** the survivor keeps every value it holds; a NULL/blank on the survivor is filled
   from the retired rows (oldest first). Where two rows both hold a value and differ on customer
   group, active, sales agent, market segment or account owner (survivor against a retired row,
@@ -75,7 +81,15 @@ dev; the dry run (R11) re-measures them before anything is applied.
   those fields. Personal and contact fields (phone, mobile, email, address, tax id, registered /
   trading names, person names, notes, website) are NEVER carried from a retired row (review S1:
   under a cash code those are one walk-in buyer's details); the CSV's `not_carried` column counts
-  them and the merge map keeps them in full.
+  them and the merge map keeps them in full. Phone is the one personal field that is also a
+  conflict: a retired row's phone that differs (on digits) from the kept row's own phone is
+  listed and blocks the group until `keep` is named (crew 4 Oct); two buyers' phones with no
+  kept phone are not a conflict, since neither is carried.
+- **R7a Listed, never acted on** (crew 4 Oct): `name_mismatch` (retired names that differ from
+  the kept name once case, punctuation and `SDN BHD` / `BERHAD` / `ENTERPRISE` / `TRADING` /
+  `(M)` noise are removed, i.e. likely another business under the same code) and
+  `ref_conflicts` (every row's AutoCount ref when more than one row holds one; Q1 (a) already
+  keeps the code-form one).
 - **R8 Repoint:** every FK (discovered from `pg_constraint` at run time, as
   `scripts/dedupe_spo_number_format.py` does) moves from retired ids to the survivor. Before the
   repoint, a document with no `debtor_name` gets the retired row's name, so no order loses the

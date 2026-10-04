@@ -52,6 +52,12 @@ CONFLICT_FIELDS = (
     "account_owner_user_id",
 )
 
+#: Conflicts only survivor against a retired row, compared on digits (`+60-12 345` = `6012345`).
+#: Not between retired rows: under a cash code every walk-in buyer has their own phone, and
+#: none of them is ever carried (`PERSONAL_FIELDS`), so only a clash with the kept row's own
+#: phone is a question for the owner (crew 4 Oct: phone conflicts listed).
+PHONE_FIELDS = ("phone_number",)
+
 #: Never carried from a retired row onto the survivor (review S1): under a cash code the
 #: retired rows are walk-in buyers, and one buyer's phone, email or address must not become
 #: the shared account's (the chatbot also matches customers by phone). Listed in the plan CSV
@@ -115,6 +121,16 @@ class Group:
     not_carried: dict[str, int] = field(default_factory=dict)
     #: WhatsApp contacts linked to a retired row: the link is dropped, CS re-links
     contact_links_dropped: list[str] = field(default_factory=list)
+    #: why this row is kept: `code_form_ref` | `autocount_ref` | `oldest` (card R6, Q1 (a))
+    kept_reason: str = ""
+    #: the kept row's AutoCount ref, if any; AutoCount's masters push keeps its name current
+    survivor_ref: Optional[str] = None
+    #: retired names that differ from the kept name once normalised (likely another business
+    #: under the same code: listed for the owner, never acted on)
+    name_mismatch: list[str] = field(default_factory=list)
+    #: `row id=ref` for every row of the group holding an AutoCount ref, when more than one does.
+    #: Informational: Q1 (a) already decides (the kept row's ref stays, the others are dropped).
+    ref_conflicts: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -285,6 +301,26 @@ def plan(
         if n:
             group.fk_counts["integration_references.entity_id"] = int(n)
         group.conflicts = _conflicts(db, group)
+        refs = dict(
+            db.execute(
+                text(
+                    "SELECT entity_id, source_ref FROM integration_references "
+                    "WHERE entity_type = 'customers' AND entity_id = ANY(:ids) ORDER BY entity_id"
+                ),
+                {"ids": [group.survivor_id] + group.retired_ids},
+            ).all()
+        )
+        group.survivor_ref = refs.get(group.survivor_id)
+        if group.survivor_ref is None:
+            group.kept_reason = "oldest"
+        elif customer_identity.code_key(group.survivor_ref.split(":", 1)[-1]) == key:
+            group.kept_reason = "code_form_ref"
+        else:
+            group.kept_reason = "autocount_ref"
+        if len(refs) > 1:
+            group.ref_conflicts = [f"{rid}={ref}" for rid, ref in refs.items()]
+        kept = normalise_name(group.survivor_name)
+        group.name_mismatch = [n for n in group.retired_names if normalise_name(n) != kept]
         group.not_carried = _not_carried(db, group)
         links = next((t for t, c, _p, _t in fks if _short(t) == "respond_contact_customers"), None)
         if links:
@@ -301,12 +337,44 @@ def plan(
     return groups
 
 
+#: Words that carry no identity in a Malaysian business name.
+_NAME_NOISE = frozenset(
+    {"sdn", "bhd", "berhad", "enterprise", "ent", "trading", "co", "company", "plt", "m", "the"}
+)
+
+
+def normalise_name(name: Optional[str]) -> str:
+    """`Chin Chun Hardware Sdn. Bhd.` -> `chin chun hardware`, for `name_mismatch` only."""
+    import re
+
+    words = re.sub(r"[^a-z0-9]+", " ", (name or "").lower()).split()
+    return " ".join(w for w in words if w not in _NAME_NOISE)
+
+
 def _blank(expr: str) -> str:
     return f"NULLIF(btrim({expr}::text), '') IS NULL"
 
 
 def _conflicts(db: Session, group: Group) -> list[dict]:
     out = []
+    for column in PHONE_FIELDS:
+        digits_s = f"regexp_replace(s.{column}::text, '[^0-9]', '', 'g')"
+        digits_r = f"regexp_replace(r.{column}::text, '[^0-9]', '', 'g')"
+        rows = db.execute(
+            text(
+                f"""
+                SELECT r.id::text, s.{column}::text, r.{column}::text
+                FROM customers s, customers r
+                WHERE s.id = :s AND r.id = ANY(CAST(:ids AS uuid[]))
+                  AND {digits_s} <> '' AND {digits_r} <> '' AND {digits_s} <> {digits_r}
+                """
+            ),
+            {"s": group.survivor_id, "ids": group.retired_ids},
+        ).all()
+        out.extend(
+            {"field": column, "survivor_value": sv, "retired_id": rid, "retired_value": rv}
+            for rid, sv, rv in rows
+        )
     for column in CONFLICT_FIELDS:
         rows = db.execute(
             text(
@@ -784,11 +852,15 @@ CSV_FIELDS = (
     "code_key",
     "survivor_id",
     "survivor_name",
+    "kept_reason",
+    "survivor_ref",
     "retired_count",
     "retired_ids",
     "retired_names",
     "fk_counts",
     "conflicts",
+    "ref_conflicts",
+    "name_mismatch",
     "not_carried",
     "contact_links_dropped",
     "keep",
@@ -816,6 +888,10 @@ def write_plan_csv(groups: list[Group], path: Path | str) -> None:
                         f"{c['field']}: {c['survivor_value']} | {c['retired_id']}={c['retired_value']}"
                         for c in g.conflicts
                     ),
+                    "kept_reason": g.kept_reason,
+                    "survivor_ref": g.survivor_ref or "",
+                    "ref_conflicts": ";".join(g.ref_conflicts),
+                    "name_mismatch": ";".join(g.name_mismatch),
                     "not_carried": ";".join(f"{k}={v}" for k, v in sorted(g.not_carried.items())),
                     "contact_links_dropped": ";".join(g.contact_links_dropped),
                     "keep": "",
