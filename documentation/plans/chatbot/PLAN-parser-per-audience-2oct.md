@@ -1,8 +1,6 @@
 # PLAN: parser prompt rendered per contact audience
 
-Status: Plan, owner answered Q1-Q5 (2 Oct). Red tests in preparation; build after #1405 merges. Behaviour card filed as one crew-ask on PR #1429; build blocked on the owner's
-answer AND on #1405 (PROMPT-DYNAMIC) merging. Track: full (it touches what a contact may see,
-so security review runs). UAC: `parser-per-audience-2oct-acceptance-criteria.md`.
+Status: Built, review READY (reviewer + security-reviewer, 5 Oct 2026), hand test owed. Track: full. G1 split to draft PR #1487 (crew ruling 5 Oct). Crew ruling (a) 5 Oct: ppa_0001 builds the tagged version from the production-labelled template at migration time (keeps every #1405 variable, adds the #1470 low-stock block once); registry list rows are filtered per audience. UAC: `parser-per-audience-2oct-acceptance-criteria.md`.
 
 crew-lane: PARSER-PER-AUDIENCE
 
