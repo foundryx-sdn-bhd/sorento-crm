@@ -1821,9 +1821,6 @@ def _customer_scope_gate(
             if not ids:
                 return without_customers, None, True, None
         return parse_output, ids, False, None
-    if not scope["ids"]:
-        # G1: an enforced scope with no links at all is "no account yet", never "no scope".
-        return without_customers, None, True, None
     narrowed_refusal: str | None = None
     ids: list[str] | None = list(scope["ids"])
     if words:

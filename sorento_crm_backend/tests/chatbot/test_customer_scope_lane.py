@@ -228,20 +228,10 @@ class TestWhoIsScoped:
         assert "under your account" not in reply
         assert captured == []
 
-    def test_unlinked_contact_fails_closed(self, session_factory, monkeypatch) -> None:
-        """G1 (owner ruling 2 Oct 2026): no link and no office type -> refused, no tool."""
+    def test_unlinked_contact_is_unchanged(self, session_factory, monkeypatch) -> None:
+        """AC-CS-03: no link, no office type -> today's behaviour: the picker, no refusal,
+        no forced customer ids."""
         _seed_contact(session_factory, variables={})
-        reply, captured = _turn(
-            session_factory, monkeypatch, _ask([_ent("hanlim")]), resolve_services=_hanlim_services(),
-        )
-        assert "can't find an account linked to you" in reply, reply
-        assert captured == []
-
-    def test_unlinked_office_contact_is_unchanged(self, session_factory, monkeypatch) -> None:
-        """AC-CS-03 for staff: no link, an office type -> today's behaviour: the picker,
-        no refusal, no forced customer ids."""
-        _seed_contact(session_factory, variables={})
-        _give_access_type(session_factory, "Sorento Office")
         reply, captured = _turn(
             session_factory, monkeypatch, _ask([_ent("hanlim")]), resolve_services=_hanlim_services(),
         )
@@ -724,17 +714,16 @@ class TestScopedSalesAnalysisRunsTheSalesReport:
         events = _scope_events(session_factory, result)
         assert any(e.get("decision") == "sales_analysis_answered_as_sales_report" and e.get("ids") == links for e in events), events
 
-    def test_an_unlinked_non_office_contact_is_refused_the_sales_analysis(self, session_factory, monkeypatch) -> None:
-        """G1: a contact nobody linked and with no office type gets no company totals."""
+    def test_an_unlinked_contact_keeps_the_sales_analysis(self, session_factory, monkeypatch) -> None:
+        """B2 changes nothing for a contact nobody linked: the company totals as today."""
         from tests.chatbot.test_sales_analysis_lane import ROUTE_HIT, _rendered
 
         _seed_contact(session_factory, variables={})
-        _result, reply, captured = _run(
+        _result, _reply, captured = _run(
             session_factory, monkeypatch, _owner_verdict(self_reference=False), "sales this month",
             mcp_response=_rendered(ROUTE_HIT),
         )
-        assert captured == [], captured
-        assert "can't find an account linked to you" in reply, reply
+        assert [name for name, _ in captured] == ["crm_sales_analysis"], captured
 
     def test_a_staff_contact_with_links_gets_the_sales_report_over_its_links(self, session_factory, monkeypatch) -> None:
         """Owner hand test ("Mr Loo", 30 Sep 2026): an office contact that is ALSO linked
