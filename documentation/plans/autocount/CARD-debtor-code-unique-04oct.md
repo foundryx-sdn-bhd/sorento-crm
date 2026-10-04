@@ -82,9 +82,10 @@ dev; the dry run (R11) re-measures them before anything is applied.
     `stakeholder`.
   - `projects.customer_item_code_map`: same (company, customer_code) on both: the survivor's
     mapping stays, the retired one is dropped (logged).
-  - `integration_references`: the survivor keeps its ref; a retired row's ref moves to the
-    survivor only when the survivor has none; otherwise it is deleted (logged). Owner rule:
-    linkage by code, so a code-form ref wins over an AutoKey-form one.
+  - `integration_references`: the survivor keeps its ref; every retired row's ref is deleted
+    (logged, restored by revert). A linked row always wins survivorship (R6), so the survivor
+    never lacks a ref while a retired row holds one. Owner rule: linkage by code, so a
+    code-form ref wins over an AutoKey-form one.
   - `scm.market_segment_backfill_425`: retired id replaced by the survivor's, duplicates dropped.
   - Embeddings: retired documents deleted, survivor re-queued.
 - **R10 Retired rows** are deleted after the repoint. Each one's full row, every repointed FK row
@@ -129,6 +130,9 @@ dev; the dry run (R11) re-measures them before anything is applied.
   (`project_lead_service.py:385-401`), unaffected.
 
 ## Questions (with recommendations)
+
+**Answered 4 Oct (crew): Q1-Q5 all (a).** Conflict CSV from the dev-copy dry run goes back to
+the owner as a `crew-ask` so the `keep` column can be filled.
 
 - **Q1 Survivor when several rows are AutoCount-linked:** (a) the code-form ref row, else the
   oldest linked row (R6) (b) always the oldest. Recommend (a): owner rule "linkage by code".

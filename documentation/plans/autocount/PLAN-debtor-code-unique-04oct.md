@@ -1,6 +1,6 @@
 # PLAN: debtor code unique per company, merge duplicates (DEBTOR-CODE-UNIQUE)
 
-Status: Plan (behaviour card first, then red tests). Track: L (data merge across every customer
+Status: Build (card answered Q1-Q5 (a), crew 4 Oct; red tests, then code). Track: L (data merge across every customer
 FK, a unique index, external ingest create paths).
 Base: on/after #1474 (DEBTOR-CODE-LINK), which adds the `sales_orders.debtor_name` backfill and
 the code-first master ingest lookup.
