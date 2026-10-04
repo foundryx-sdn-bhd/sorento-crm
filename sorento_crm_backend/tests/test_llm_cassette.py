@@ -180,6 +180,12 @@ class TestRecord:
         mode = stat.S_IMODE(files[0].stat().st_mode)
         assert mode == 0o600, oct(mode)
 
+    def test_directories_it_creates_are_private(self, monkeypatch, cassette_dir):
+        monkeypatch.setenv("LLM_CASSETTE_MODE", "record")
+        _chat(_provider(monkeypatch, _Client()))
+        for directory in (cassette_dir, _files(cassette_dir)[0].parent):
+            assert stat.S_IMODE(directory.stat().st_mode) == 0o700, directory
+
     def test_the_file_carries_no_secret_and_no_request_text(self, monkeypatch, cassette_dir):
         monkeypatch.setenv("LLM_CASSETTE_MODE", "record")
         _chat(_provider(monkeypatch, _Client()))

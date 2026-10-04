@@ -143,7 +143,9 @@ def _write(key: str, kind: str, model: str, response: Any, secret: str) -> None:
     if secret and secret in body:
         raise CassetteError(f"refusing to write cassette {key}: the response contains the API key")
     path = _path(key)
-    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    # Created 0700 at every level this code creates; an existing directory keeps its mode.
+    for directory in (cassette_dir(), path.parent):
+        directory.mkdir(mode=0o700, parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".tmp-", suffix=".json")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
