@@ -1,6 +1,6 @@
 # PLAN: per-contact "Skip date-range questions" (DO-PERIOD-SKIP)
 
-Status: planned (4 Oct 2026). Track: full (M), carries an additive migration. UAC:
+Status: built, review READY (4 Oct 2026); PR held by crew push freeze. Track: full (M), carries an additive migration. UAC:
 `do-period-skip-acceptance-criteria.md`.
 
 ## Why
@@ -12,7 +12,7 @@ The owner wants a few internal contacts never asked. He sets the switch himself;
 
 Q1 switch ON + no dates: no date filter, newest, 20-row cap (pre-#1433). Q2 skip the 31-day cap
 too. Q3 any contact. Q4 Chatbot tab under "Chatbot hands over to support teams", in copy SWITCHES.
-Q5 every period question, one switch, one helper.
+Q5 every period question, one switch, one helper. Derived: switch ON, SO list capped at newest 20 (mirrors the MCP DO cap); empty replies name the open window ("up to <day>"); contact resolved like the rest of the chatbot (resolve_contact_with_null_workspace_fallback).
 
 ## Period-asking call sites on main (all of them)
 
