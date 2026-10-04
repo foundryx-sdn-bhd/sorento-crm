@@ -101,12 +101,20 @@ def test_migration_is_single_head_and_upgrade_wires_seed_and_publish():
     revision = _assign(src, "revision")
     assert isinstance(revision, str) and 0 < len(revision) <= 32
 
-    for p in VERSIONS_DIR.glob("*.py"):
-        if p == path:
-            continue
-        down = _assign(p.read_text(encoding="utf-8"), "down_revision")
-        downs = list(down) if isinstance(down, (tuple, list)) else [down]
-        assert REVISION not in downs, f"{p.name} sits on top of {REVISION}: not the head"
+    # The graph has ONE head and this revision is on its line. A later lane's migration
+    # chained on top (`scripts/alembic-reparent.sh`) is the normal case, never a failure
+    # (LOWSTOCK-SEMANTIC #1470: "lss_0001_parser_vocab sits on top of ...: not the head").
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    backend_root = VERSIONS_DIR.parents[1]
+    cfg = Config(str(backend_root / "alembic.ini"))
+    cfg.set_main_option("script_location", str(backend_root / "alembic"))
+    script = ScriptDirectory.from_config(cfg)
+    heads = script.get_heads()
+    assert len(heads) == 1, f"multiple alembic heads: {heads}"
+    lineage = {rev.revision for rev in script.walk_revisions(base="base", head=heads[0])}
+    assert revision == REVISION and REVISION in lineage, f"{REVISION} is not on the head's line"
 
     upgrade = next(
         n for n in ast.parse(src).body if isinstance(n, ast.FunctionDef) and n.name == "upgrade"
