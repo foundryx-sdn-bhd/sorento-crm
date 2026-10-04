@@ -57,6 +57,9 @@ FOCUS_NOT_HELD: tuple[str, ...] = (
     "products", "customers", "warehouse", "brands", "outstanding_brand_ids", "tier",
     "domains", "document", "status", "sales_channel", "date_window", "sort", "extra",
     "frame", "held_turn", "held_access",
+    # LOWSTOCK-SEMANTIC (#1470): the last settled low stock report's frame, a refinement's
+    # carry for one report; it asks nothing (`engine` clears it each turn).
+    "low_stock",
 )
 #: The `State` fields. `ideation` is the ideate lane's draft pointer: the MCP intake tool
 #: owns it and closes it on the draft's own terminal status (`lanes/ideate.py`), and the

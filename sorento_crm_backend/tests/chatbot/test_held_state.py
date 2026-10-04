@@ -306,12 +306,12 @@ def _low_stock_verdict() -> dict:
             entity("water tap", hint="category"),
         ],
     )
-    return low_stock_ask.take_words(v, "low stock report for sorento water tap")
+    return low_stock_ask.take_entities(v)
 
 
 def test_a_low_stock_report_never_replays_the_quantity_question():
     """The owner's exact turn: the low stock verdict reaches the task step with no
-    entities (take_words moved them), and the stored question came back verbatim."""
+    entities (`take_entities` moved them), and the stored question came back verbatim."""
     _state2, plan = apply(ht.state(_stuck_focus()), _low_stock_verdict(), build_policy())
     assert plan.trace.task_question is None
     assert "task_resumed_stock_qty" not in plan.trace.rules_fired

@@ -4037,7 +4037,9 @@ def _run_stages_body(  # noqa: PLR0915
     # PR #1247 rounds 8 and 9: the ONE question on the table, as a structured object the
     # parser answers in `open_question_answer` - the open pick or offer when there is
     # one (it is what the message answers), else the stock question (issue #1293).
-    open_question = turn_question.open_question(state_in.pending, state_in.focus.tasks)
+    open_question = turn_question.open_question(
+        state_in.pending, state_in.focus.tasks, state_in.focus.required_ask
+    )
     effective_level = memory_intake["effective_level"]
     subject_full = parser.current_subject_line(state_in.focus)
     subject_prefix = "Current subject: "
@@ -4325,10 +4327,10 @@ def _run_stages_body(  # noqa: PLR0915
         s7_mode = _s7_mode(db, settings_row)
         space_id_for_turn = business_services.fetch_space_id(db)
 
-        # LOWSTOCK-FILTER-ASK: an ask that left a required field open (the slot is one
-        # turn long, consumed here) reads this message as the answer unless it is plainly
-        # another ask; a fresh low stock ask takes its category / brand words off the
-        # entity list for the lane. Read before every other seam below.
+        # LOWSTOCK-FILTER-ASK / LOWSTOCK-SEMANTIC: an ask that left a required field open
+        # (the slot is one turn long, consumed here) reads this message as its answer only
+        # when the parser declared one; a fresh low stock ask keeps only the entities that
+        # scope the run. Read before every other seam below.
         from app.services.chatbot import required_fields
         from app.services.chatbot.lanes.business import low_stock_ask
 
@@ -4344,7 +4346,13 @@ def _run_stages_body(  # noqa: PLR0915
         if required_rule == "required_ask_answer":
             state_in = dataclasses_replace(state_in, pending=None)
             held_answered.append("required_ask")
-        verdict = low_stock_ask.take_words(verdict, _message_text)
+        # LOWSTOCK-SEMANTIC: the low stock ask's own words ride the parser's `low_stock`
+        # key; only the entities that scope the RUN stay, and the last settled report's
+        # frame rides along for a refinement.
+        verdict = low_stock_ask.take_entities(verdict, state_in.focus.low_stock)
+        # The frame lives one report: only a turn that runs the low stock report writes it
+        # back (below), so it never outlives the reply it describes.
+        state_in.focus.low_stock = None
 
         # Owner retest of top selling round 4 (27 Sep 2026): inside a ranking, the message
         # is read against the question the bot asked before anything routes it.
@@ -5949,6 +5957,13 @@ def _run_stages_body(  # noqa: PLR0915
                     (e["required_ask"] for e in envelopes or [] if isinstance(e, dict) and isinstance(e.get("required_ask"), dict)),
                     None,
                 )
+                # LOWSTOCK-SEMANTIC (crew root cause, 4 Oct 2026): the filters a low stock
+                # report was built with outlive the turn, so "taiyang only" narrows it.
+                low_stock_frame = next(
+                    (e["low_stock_frame"] for e in envelopes or [] if isinstance(e, dict) and isinstance(e.get("low_stock_frame"), dict)),
+                    None,
+                )
+                state_out.focus.low_stock = low_stock_frame
                 if (
                     (state_out.focus.top_selling or {}).get("asked")
                     and state_out.pending is not None

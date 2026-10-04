@@ -432,6 +432,28 @@ def _build_json_schema() -> dict[str, Any]:
                 },
                 "required": ["mode", "picked", "items", "qty_for_all"],
             },
+            # LOWSTOCK-SEMANTIC (owner, 4 Oct 2026): everything the low stock report's
+            # filters need, read by the parser and nowhere else - the lane only resolves
+            # these words against the master data (`lanes/business/low_stock_ask.py`).
+            # Always an object (strict mode), empty unless intent_hint is
+            # `low_stock_report`. `group_by` is an ENUM: brand / warehouse are named so
+            # the lane can ASK (the workbook splits only by supplier and category),
+            # never so a value it cannot run is guessed into one it can.
+            "low_stock": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "group_by": {
+                        "type": ["string", "null"],
+                        "enum": ["supplier", "category", "supplier_category", "brand", "warehouse", "none", None],
+                    },
+                    "categories": {"type": "array", "items": {"type": "string"}},
+                    "all_categories": {"type": ["boolean", "null"]},
+                    "brands": {"type": "array", "items": {"type": "string"}},
+                    "suppliers": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["group_by", "categories", "all_categories", "brands", "suppliers"],
+            },
             "anaphora": {
                 "type": "object",
                 "additionalProperties": False,
@@ -520,6 +542,7 @@ def _build_json_schema() -> dict[str, Any]:
             "open_question_answer",
             "anaphora",
             "profile_statements",
+            "low_stock",
         ],
     }
 
@@ -571,6 +594,9 @@ TOLERATED_ABSENT: frozenset[str] = frozenset(
         "open_question_answer",
         "self_reference",
         "profile_statements",
+        # LOWSTOCK-SEMANTIC: no recorded emission and no prompt version before
+        # `lss_0001_parser_vocab` carries it; absent reads as "nothing placed".
+        "low_stock",
     }
 )
 
