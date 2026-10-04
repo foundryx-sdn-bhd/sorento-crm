@@ -26,7 +26,7 @@ from tests._pg_fixture import blank_session
 WEBHOOK_URL = "/api/v1/public/respond/webhook"
 INGEST_URL = "/api/v1/external/chat-history/messages"
 SECRET = "zzt-webhook-secret"
-CONTACT_ID = "ZZT437264483"
+CONTACT_ID = "ZZT100000001"
 MESSAGE_ID = 1786751891000000
 
 
@@ -83,7 +83,7 @@ def _event(**overrides) -> dict:
             "id": CONTACT_ID,
             "firstName": "Zzt",
             "lastName": "Hook",
-            "phone": "+60166753328",
+            "phone": "+60100000001",
         },
         "message": {
             "messageId": MESSAGE_ID,
@@ -201,7 +201,7 @@ def test_a_signed_message_event_writes_the_row(client, db, transport):
     (row,) = _rows(db)
     assert row.channel == "whatsapp", "whatsapp_cloud normalises to the n8n channel name"
     assert row.type == "incoming"
-    assert row.phone_number == "+60166753328"
+    assert row.phone_number == "+60100000001"
     assert row.message == "Sure, I will check that for you."
     assert row.first_name == "Zzt" and row.last_name == "Hook"
     assert row.sender_source == "contact"
@@ -215,7 +215,7 @@ def test_the_webhook_then_n8n_is_one_row(client, db, transport):
         json={
             "channel": "whatsapp",
             "contact_id": CONTACT_ID,
-            "phone_number": "+60166753328",
+            "phone_number": "+60100000001",
             "message": "Sure, I will check that for you.",
             "sent_at": 1786751891000,
             "type": "incoming",
@@ -236,7 +236,7 @@ def test_n8n_then_the_webhook_is_one_row(client, db, transport):
         json={
             "channel": "whatsapp",
             "contact_id": CONTACT_ID,
-            "phone_number": "+60166753328",
+            "phone_number": "+60100000001",
             "message": "Sure, I will check that for you.",
             "sent_at": 1786751891000,
             "type": "incoming",
@@ -362,7 +362,7 @@ def test_n8n_can_send_the_media_columns_too(client, db, transport):
         json={
             "channel": "whatsapp",
             "contact_id": CONTACT_ID,
-            "phone_number": "+60166753328",
+            "phone_number": "+60100000001",
             "message": "[image] photo.jpg",
             "sent_at": 1786751891000,
             "type": "incoming",
@@ -414,7 +414,7 @@ def test_a_stored_row_enters_the_reconcile_window(client, db, transport):
         json={
             "channel": "whatsapp",
             "contact_id": CONTACT_ID,
-            "phone_number": "+60166753328",
+            "phone_number": "+60100000001",
             "message": "later",
             "sent_at": 1786751991000,
             "type": "incoming",
