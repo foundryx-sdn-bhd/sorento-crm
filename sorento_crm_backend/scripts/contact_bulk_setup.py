@@ -50,7 +50,7 @@ from typing import Any, Optional
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import openpyxl  # noqa: E402
-from sqlalchemy import func  # noqa: E402
+from sqlalchemy import func, text  # noqa: E402
 from sqlalchemy.orm import load_only  # noqa: E402
 
 from app import audit_context  # noqa: E402
@@ -531,6 +531,81 @@ def write_csv(result: dict, changes_path) -> Path:
 
 # ---------------------------------------------------------------- links
 
+# Copied from PR #1475 (head dff1718a1), app/services/customer_merge.py `_NAME_SUFFIXES` and
+# `normalise_name`, and app/services/customer_identity.py `SURVIVOR_ORDER_SQL`: that PR is not
+# on main and this one file is what runs against prod, so it carries its own copy of the rules.
+_NAME_SUFFIXES = frozenset(
+    {
+        "sdn", "bhd", "berhad", "sendirian", "plt", "llp", "m",
+        "enterprise", "enterprises", "ent", "trading", "co", "company",
+    }
+)
+CASH_CODE_PREFIXES = ("301-",)
+
+
+def normalise_name(name: Optional[str]) -> str:
+    """The core of a business name (PR #1475 dff1718a1 customer_merge.normalise_name)."""
+
+    def _words(text_: str) -> list[str]:
+        return re.sub(r"[^a-z0-9]+", " ", text_).split()
+
+    raw = (name or "").lower()
+    text_ = re.sub(r"\[[^\]]*\]|\([^)]*\)", " ", raw)
+    text_ = re.sub(r"[\[(][^\])]*$", " ", text_)
+    text_ = re.split(r"\s+-\s+", text_, maxsplit=1)[0]
+    text_ = text_.split("&", 1)[0]
+    words = _words(text_)
+    if words and words[0] == "the":
+        words = words[1:]
+    while words and words[-1] in _NAME_SUFFIXES:
+        words.pop()
+    return " ".join(words) or " ".join(_words(raw))
+
+
+def _merge_flags(db, keys: set) -> dict[str, tuple[str, str]]:
+    """customer id -> (survives_merge, held), Y/N, for every member of the (company, code) groups
+    named in `keys`. One read-only query. Group = company + lower(btrim(code)); survivor order is
+    SURVIVOR_ORDER_SQL: code-form integration ref, then any ref, then oldest created_at, then id."""
+    keys = {k for k in keys if k[1]}
+    if not keys:
+        return {}
+    ordered = sorted(keys)
+    rows = db.execute(
+        text(
+            """
+            SELECT c.id::text, c.company_id::text, lower(btrim(c.customer_code)), c.customer_name, c.created_at,
+              EXISTS (
+                SELECT 1 FROM integration_references r
+                WHERE r.entity_type = 'customers' AND r.entity_id = c.id::text
+                  AND lower(btrim(regexp_replace(r.source_ref, '^[^:]*:', ''))) = lower(btrim(c.customer_code))
+              ),
+              EXISTS (
+                SELECT 1 FROM integration_references r
+                WHERE r.entity_type = 'customers' AND r.entity_id = c.id::text
+              )
+            FROM customers c
+            WHERE (c.company_id::text, lower(btrim(c.customer_code))) IN (
+              SELECT * FROM unnest(CAST(:cids AS text[]), CAST(:codes AS text[])))
+            """
+        ),
+        {"cids": [k[0] for k in ordered], "codes": [k[1] for k in ordered]},
+    ).all()
+    groups: dict[tuple, list] = {}
+    for row in rows:
+        groups.setdefault((row[1], row[2]), []).append(row)
+    out: dict[str, tuple[str, str]] = {}
+    for (_, code), members in groups.items():
+        members.sort(key=lambda m: (not m[5], not m[6], m[4] is None, m[4] or datetime.min, m[0]))
+        survivor = members[0]
+        held = (
+            len(members) > 1
+            and not code.startswith(CASH_CODE_PREFIXES)
+            and any(normalise_name(m[3]) != normalise_name(survivor[3]) for m in members[1:])
+        )
+        for m in members:
+            out[m[0]] = ("Y" if m is survivor else "N", "Y" if held else "N")
+    return out
+
 
 def _row_groups(entries: list[Entry]) -> dict[int, dict]:
     groups: dict[int, dict] = {}
@@ -553,8 +628,10 @@ def links_review(db, path, out_path, *, rules: dict = RULES) -> int:
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "links review"
-    ws.append(["excel_row", "excel_company", "company_code", "debtor_code", "customer_name", "customer_id", "reason", "link"])
+    ws.append(["excel_row", "excel_company", "company_code", "debtor_code", "customer_name", "customer_id", "reason", "link", "survives_merge", "held"])
     written = 0
+    # Pick every row's candidates first, then read the merge groups of ALL of them in one query.
+    picked: list[tuple] = []
     for row, g in sorted(groups.items()):
         contact_ids = [str(found[p].id) for p in g["phones"] if p in found]
         for code in sorted(g["companies"]):
@@ -562,20 +639,29 @@ def links_review(db, path, out_path, *, rules: dict = RULES) -> int:
             if company is None:
                 continue
             customers = db.query(
-                Customer.id, Customer.customer_code, Customer.customer_name
+                Customer.id, Customer.customer_code, Customer.customer_name, Customer.company_id
             ).filter(Customer.company_id == company.id).all()
             ranked = sorted(customers, key=lambda c: (-_score(g["company_name"], c.customer_name or ""), c.customer_code or ""))
-            for cust in ranked[:MAX_CANDIDATES]:
-                linked = 0
-                if contact_ids:
-                    linked = db.query(RespondContactCustomer).filter(
-                        RespondContactCustomer.customer_id == cust.id, RespondContactCustomer.contact_id.in_(contact_ids)
-                    ).count()
-                reason = f"similarity {_score(g['company_name'], cust.customer_name or ''):.2f}"
-                if linked:
-                    reason = f"already linked ({linked} of {len(contact_ids)} contacts)"
-                ws.append([row, _safe(g["company_name"]), code, _safe(cust.customer_code), _safe(cust.customer_name), str(cust.id), reason, None])
-                written += 1
+            picked.extend((row, g, code, contact_ids, cust) for cust in ranked[:MAX_CANDIDATES])
+    flags = _merge_flags(db, {(str(c[4].company_id), (c[4].customer_code or "").strip().lower()) for c in picked})
+    blocks: dict[int, list] = {}
+    for row, g, code, contact_ids, cust in picked:
+        linked = 0
+        if contact_ids:
+            linked = db.query(RespondContactCustomer).filter(
+                RespondContactCustomer.customer_id == cust.id, RespondContactCustomer.contact_id.in_(contact_ids)
+            ).count()
+        reason = f"similarity {_score(g['company_name'], cust.customer_name or ''):.2f}"
+        if linked:
+            reason = f"already linked ({linked} of {len(contact_ids)} contacts)"
+        survives, held = flags.get(str(cust.id), ("Y", "N"))
+        blocks.setdefault(row, []).append(
+            [row, _safe(g["company_name"]), code, _safe(cust.customer_code), _safe(cust.customer_name), str(cust.id), reason, None, survives, held]
+        )
+    for row in sorted(blocks):
+        for line in sorted(blocks[row], key=lambda l: l[8] != "Y"):  # survivors first, order kept otherwise
+            ws.append(line)
+            written += 1
     wb.save(out_path)
     _private(out_path)
     return written
