@@ -818,6 +818,14 @@ def auto_links(db, path, out_dir, *, apply: bool = False, actor_id: Optional[str
         w.writerows(plan_rows)
     _private(plan_path)
     _write_review(out_dir / "links-review-leftover.xlsx", leftover)
+    result["counts"] = {
+        "auto_rows": len({a["excel_row"] for a in result["auto"]}),
+        "auto_blocks": len({(a["excel_row"], a["company_code"]) for a in result["auto"]}),
+        "auto_ledgers": len({a["customer_id"] for a in result["auto"]}),
+        "auto_pairs": sum(len(a["contacts"]) for a in result["auto"]),
+        "already_linked": result["already_linked"],
+        "needs_human": result["needs_human"],
+    }
     return result
 
 
@@ -918,12 +926,11 @@ def main(argv: Optional[list[str]] = None) -> int:
         if args.auto_links:
             out = Path(args.out)
             out.mkdir(parents=True, exist_ok=True)
-            res = auto_links(db, args.excel, out, apply=args.apply,
+            res = auto_links(db, args.excel, out, apply=args.apply, rules=RULES,
                              actor_id=_actor_id(db, args.actor_email) if args.apply else None)
-            print(f"auto blocks   : {len(res['auto'])}")
-            print(f"auto pairs    : {sum(len(a['contacts']) for a in res['auto'])}")
-            print(f"already linked: {res['already_linked']}")
-            print(f"needs human   : {res['needs_human']}")
+            for key, label in (("auto_rows", "auto rows"), ("auto_blocks", "auto blocks"), ("auto_ledgers", "auto ledgers"),
+                               ("auto_pairs", "auto pairs"), ("already_linked", "already linked"), ("needs_human", "needs human")):
+                print(f"{label:14} : {res['counts'][key]}")
             if args.apply:
                 print(f"linked        : {res['linked']}  skipped_existing: {res['skipped_existing']}  failed: {len(res['failed'])}")
             else:
