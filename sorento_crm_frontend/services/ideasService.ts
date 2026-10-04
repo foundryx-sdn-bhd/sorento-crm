@@ -5,7 +5,7 @@
  * `/api/v1/ideation/*`, which calls the ss embed API as the signed-in user (PLAN-ideation-in-crm
  * section 10). ss's camelCase shapes pass through unchanged; the few mappings are noted below.
  *
- *   listIdeas         GET    /ideation/ideas?filter=<archived|all>&search=            view
+ *   listIdeas         GET    /ideation/ideas?filter=<archived|all>&search=&mine=true   view
  *   getBoard          GET    /ideation/ideas/board                                    view
  *   getIdea           GET    /ideation/ideas/{id}                                     view
  *   getMergedChildren GET    /ideation/ideas/{id}/merged                              view
@@ -113,6 +113,7 @@ function toComment(raw: Raw): IdeaComment {
 export async function listIdeas(params: IdeaListParams): Promise<Idea[]> {
   const search = new URLSearchParams();
   if (params.status) search.set('filter', params.status);
+  if (params.mine === true) search.set('mine', 'true');
   if (params.query?.trim()) search.set('search', params.query.trim());
   const qs = search.toString();
   const rows = await read<Raw[]>(await apiFetch(`${BASE}/ideas${qs ? `?${qs}` : ''}`), 'Failed to load ideas');

@@ -13,4 +13,6 @@ regexes = [
   '''^REDACTED$''',
   '''^example\.com$''',
   '''^example\.invalid$''',
+  # Hand-written 16-char portal track token used as a fixture by the ideas tests.
+  '''^Ab3dEf9hJk2LmN0p$''',
 ]

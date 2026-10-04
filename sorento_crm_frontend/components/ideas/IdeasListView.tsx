@@ -71,6 +71,7 @@ import { IdeaCaptureModal } from './IdeaCaptureModal';
 import { IdeasBulkMergeDialog } from './IdeasBulkMergeDialog';
 import { IdeaStatusBadge } from './IdeaStatusBadge';
 import { IdeasViewToggle } from './IdeasViewToggle';
+import { useIdeasMine } from './IdeasScopeToggle';
 import { VoteBox } from './VoteBox';
 import {
   buildIdeaActions,
@@ -115,6 +116,8 @@ export function IdeasListView({
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [mergeRows, setMergeRows] = useState<Idea[] | null>(null);
 
+  // My ideas | All ideas lives in the URL (`?view=mine`, AC-K-07 slot, IDEATION-CAPTURE).
+  const mine = useIdeasMine();
   const {
     value: searchQuery,
     setValue: setSearchQuery,
@@ -129,7 +132,7 @@ export function IdeasListView({
     isError,
     error,
     refetch,
-  } = useIdeasQuery({ status: 'all' });
+  } = useIdeasQuery({ status: 'all', mine });
   const { vote } = useIdeaMutations();
   // `mutate` is stable across renders; the mutation object is not, and columns that depend on it
   // are rebuilt (and every cell remounted) each time a request changes state.

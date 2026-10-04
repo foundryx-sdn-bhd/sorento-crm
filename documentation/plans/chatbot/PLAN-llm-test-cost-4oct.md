@@ -1,0 +1,224 @@
+# PLAN: LLM-TEST-COST (cut test LLM spend: prompt size, cache, record/replay)
+
+Status: implemented on branch `claude/llm-test-cost-kbwfi3` (PR #1476); reviewer + security review passed, awaiting CI and merge. Track:
+small fix track (backend/test infra only, no migration, no auth/RBAC change, no owner-visible
+behaviour). UAC: `llm-test-cost-4oct-acceptance-criteria.md`.
+
+Lane: crew-lane LLM-TEST-COST, 4 Oct 2026.
+
+## Goal
+
+Cut OpenAI spend from testing without changing prod accuracy. No local model. Owner hand tests
+stay on real gpt-5.4-mini. Prompt WORDING is not changed in this lane.
+
+## 1. Prompt size: why a parse is ~33k tokens
+
+Token counts below are OpenAI's own (`POST /v1/responses/input_tokens`, model `gpt-5.4-mini`,
+free endpoint), not an estimate.
+
+### Measured now
+
+| Part | Tokens | Source |
+| --- | --- | --- |
+| System prompt as published (fallback + rendered policy blocks) | 32,419 | `ai_prompt_registry.render("chatbot_semantic_parser")` on a bootstrapped DB |
+| of which the vendored fallback text | 31,644 | `app/services/chatbot_parser_prompt.py` `SEMANTIC_PARSER_PROMPT` |
+| Strict output schema (`PARSE_OUTPUT_JSON_SCHEMA`) | ~1,850 | `app/services/chatbot/head/parser.py` |
+| One real parse, end to end (short message) | **33,540 prompt tokens** | live call, see section 2 |
+
+A real dealer turn adds its user block (memory layers, recent exchanges) on top, so 33-35k matches
+the ~33k/parse seen on `chatbot.turns.trace` at prompt_version 56.
+
+### Why it grew from ~10k (8-18 Sep) to ~33k
+
+Two separate causes:
+
+1. **The slim body was retired (22 Sep, #952, turn engine re-architecture).** From 8 to 21 Sep
+   production ran the S1b *slim* body, 40% shorter than the live n8n body and proven against the
+   replay corpus. With its addenda it was **10,821 tokens** (`alembic/_legacy_prompt_bodies.py`
+   `SEMANTIC_PARSER_PROMPT_SLIM_V1`), which is the ~10k/parse in `ai_assistant_usage_logs`. The
+   re-architecture went back to the FULL live body as the base (`chatbot_parser_prompt.py:694`,
+   "RETIRED ... the slim body is no longer published from here"). That accounts for roughly
+   +10k at once.
+2. **Every feature since then added a vocabulary addendum** to the full body
+   (`chatbot_parser_prompt.py:98-654`, appended at `:648-654`). Nothing has been removed since.
+
+The vendored fallback's size at each commit that touched it:
+
+| Date | PR | Change | Tokens | Delta |
+| --- | --- | --- | ---: | ---: |
+| 5 Sep | #659 | S0+S1: live n8n body vendored | 11,106 | |
+| 7 Sep | #711 | warehouse-arrival cue | 11,357 | +251 |
+| 8 Sep | #735 | growth r1 (`GROWTH_R1_ADDENDUM`) | 13,266 | +1,909 |
+| 12 Sep | #844 | last purchase cost | 13,600 | +334 |
+| 14 Sep | #862 | outstanding report | 14,916 | +1,316 |
+| 14 Sep | #909 | low stock report | 15,194 | +278 |
+| 19 Sep | #1034 | sales report | 16,929 | +1,735 |
+| 22 Sep | #952 | re-architecture (stock task, specification, sales analysis blocks; slim body retired) | 20,802 | +3,873 |
+| 27 Sep | #1247 | stock ask v2 | 22,745 | +1,943 |
+| 27 Sep | #1269 | sales reports S1 | 23,350 | +605 |
+| 28 Sep | #1324 | escalation confirmation | 24,618 | +1,268 |
+| 28 Sep | #1321 | billing documents | 24,660 | +42 |
+| 28 Sep | #1301 | the Samantha case | 25,340 | +680 |
+| 28 Sep | #1273 | top X hot selling | 28,158 | +2,818 |
+| 29 Sep | #833 | attribute-first asks | 28,991 | +833 |
+| 29 Sep | #1353 | pick never overrides domain | 29,422 | +431 |
+| 29 Sep | #1304 | contact memory | 29,665 | +243 |
+| 29 Sep | #1373 | SPO / warehouse | 30,861 | +1,196 |
+| 30 Sep | #1365 | self reference | 31,187 | +326 |
+| 2 Oct | #1432 | account ledger | 31,644 | +457 |
+
+Largest sections of today's fallback (tokens): preamble, the live n8n body plus woven edits 15,108;
+SO / PO / SPO vocabulary (growth r1) 3,507; TOP SELLING 2,807; THE OPEN TASK (stock task)
+2,137; SALES REPORT 1,724; ESCALATION CONFIRMATION 1,247; PO, SPO AND THE WAREHOUSE 1,152;
+SPECIFICATIONS 813; CUSTOMER ACCOUNT NUMBER 714; SALES ANALYSIS 635; the rest under 400 each.
+
+### Cache friendliness
+
+- The parser call is `[system: prompt, user: user_block]` plus the strict schema
+  (`head/parser.py` `parse`). The system prompt and schema are byte-identical across calls; the
+  only variable inside the system prompt is `{{current_date}}`, which sits at character 125,341
+  of 129,174 (97%), near the tail. The variable data (contact, history, message) is all in the
+  last message. **Nothing needed reordering.**
+- `tests/test_llm_cassette.py::TestStablePrefix` now pins both facts: the variable block is
+  last and identical-prefix across calls, and two days' prompts share at least 95% as a common
+  prefix.
+- `cached_tokens` (`usage.prompt_tokens_details.cached_tokens`) now reaches the `understood`
+  trace facts (`engine.py`, `facts.cached_tokens`) via `ChatResult.cached_tokens`
+  (`llm_provider.py`) and the parser's usage dict (`head/parser.py`).
+
+### Proposed trims (a separate ask, NOT done here: wording is the owner's)
+
+1. Re-apply the S1b slimming method to the full body's 15k preamble (it took the live body down
+   40% with replay-corpus parity once already).
+2. Consolidate the worked examples in GROWTH_R1 (3.5k) and TOP SELLING (2.8k).
+3. Move `CURRENT DATE` into the user block so the system prompt is fully static (only ~1k
+   tokens after it today, so a small win; needs a parity run because position can change
+   output).
+4. Send `prompt_cache_key` (one per prompt version) so OpenAI routes parses to the same cache.
+
+## 2. Measured numbers
+
+Three live parses, real published prompt, gpt-5.4-mini, short fake messages (`record` mode, so
+the same three then replayed):
+
+| Run | prompt_tokens | cached_tokens | hit rate | latency |
+| --- | ---: | ---: | ---: | ---: |
+| live 1 | 33,540 | 30,976 | 92.4% | 2.8 s |
+| live 2 | 33,540 | 33,024 | 98.5% | 1.7 s |
+| live 3 | 33,539 | 33,024 | 98.5% | 1.9 s |
+| replay 1-3 | same values | same values | n/a | 0.0-0.4 s, no network call |
+
+- **Tokens per parse, before and after this lane: unchanged at ~33.5k** (no prompt edits, by
+  ruling). What changes is what a test run PAYS: a replayed parse is 0 tokens.
+- OpenAI's automatic prompt cache already serves 92-98% of every warm parse, so a live parse is
+  billed mostly at the cached-input rate. Prod's own hit rate is now visible per turn in
+  `understood.facts.cached_tokens`.
+
+## 3. Record/replay (built)
+
+`app/services/llm_cassette.py`, used by `OpenAIProvider.chat` / `.embed`
+(`app/services/llm_provider.py`). `LLM_CASSETTE_MODE=off|record|replay`, default off, read per
+call. Key = sha256 of (model, messages, response_format incl. schema, tools). A replay miss raises
+`CassetteMiss` naming the key; `chatbot/llm_call.chat` raises it at once (it is not a rate limit,
+timeout or transient). Anthropic and Gemini refuse in replay. Storage is `LLM_CASSETTE_DIR`, default
+`~/.cache/sorento-llm-cassettes`. A directory inside the git checkout is refused. Files are 0600 in
+0700 dirs, hold only the response, and a response containing the API key is not written. Nothing
+is committed.
+
+Known limit: the system prompt carries the date, so a cassette is valid for the day (and prompt
+version) it was recorded on.
+
+## 4. Runners (built)
+
+- Harness launchers `documentation/plans/chatbot/evidence/lowstock-filter-ask/harness/run_backend_live.py`
+  and `run_worker_local.py` start in replay; `--record` / `--live` to spend
+  (`llm_cassette.configure_runner`).
+- `scripts/chatbot_console_check.py` reads `understood.facts.llm_cassette` off each turn and stops
+  after the first live parse unless `--live`.
+- Documented in `documentation/agents/cloud-lanes.md`.
+
+## 5. Optional override (built, set nowhere)
+
+`LLM_BASE_URL` reaches the OpenAI client constructor, and `LLM_MODEL_OVERRIDE` replaces the model on
+the wire. Each applies only when set.
+
+## Direct-HTTP calls outside the provider seam
+
+Raw-httpx embeddings (`embedding_worker._embed_text_chunks`, `api/v1/external/rag.py`) do not go
+through `OpenAIProvider`, so they get their own cassette call: recorded and replayed under the same
+key scheme (security review round 2), so the entity resolver's Tier-3 fallback and frame recall
+behave in replay as they did when recorded. A background-indexing embedding of a row that was
+never recorded misses in replay (it raises; the indexer logs it). Whisper
+(`media_extract/transcribe.py`) and the SCM market-research Anthropic call refuse in replay
+(`refuse_uncovered`) instead of spending.
+
+## Security review round 1 (applied)
+
+- B1: the console check read an inline trace the `/turn` body never carries; it now reads the
+  stored row (`_row_trace`).
+- S1: a cassette dir inside ANY git checkout (another clone, a worktree's primary) is refused.
+- S2: `LLM_CASSETTE_MODE` other than `off` raises unless `ENVIRONMENT` is development, dev,
+  local, test or ci (an allowlist, round 2).
+- S3: the direct-HTTP calls above never spend in replay (embeddings replay, the rest refuse).
+- S4: `LLM_BASE_URL` must be https (http only on localhost), since the key travels there.
+- N1: an existing cassette dir must be owned by this user with mode 0700.
+- N2 (retention): a cassette is good for one day, so clear old ones with
+  `find "${LLM_CASSETTE_DIR:-$HOME/.cache/sorento-llm-cassettes}" -name '*.json' -mtime +7 -delete`.
+
+## Review round 1 (reviewer, applied)
+
+- A replay miss fails `understood` with `llm_cassette: replay` on the failed record, and the
+  console check stops with the miss itself, not a false "spent real tokens" claim.
+- `llm_cassette.mode_label()` in the trace never raises; the default cassette dir is computed
+  lazily (the engine imports the module).
+- Known, left as is: a replayed turn still writes its RECORDED token counts to
+  `ai_assistant_usage_logs` (test databases only, since replay never runs in production).
+  Read test-DB usage with that in mind; `understood.facts.llm_cassette` tells the two apart.
+
+## Security review round 2 (applied)
+
+- The console check stops when the turn row is not in its own database (backend on another
+  `DATABASE_URL`) instead of running unchecked.
+- Direct-HTTP embeddings record/replay rather than refuse, so replay matches live.
+- The environment guard is an allowlist.
+- `_read` checks the cassette root's ownership too.
+
+## Crew ruling (b), 4 Oct: static system prompt and `prompt_cache_key`
+
+Asked for: send `prompt_cache_key` per prompt version, and move the CURRENT DATE line out of the
+system prompt into the user block with no wording change, proven to give identical parses on the
+replay corpus.
+
+**Shipped:**
+- `prompt_cache_key = "chatbot_semantic_parser:v<prompt_version>"` on every parse
+  (`head/parser.py` `parse`). It goes through `OpenAIProvider.chat`; Anthropic and Gemini accept
+  and ignore it. It is not part of the cassette key.
+- `LLM_CASSETTE_DATE` pins the parser's "today" (`engine._current_date_directive` via
+  `llm_cassette.pinned_date`), honoured only in record/replay. This is what actually keeps
+  cassettes valid past midnight. Moving the date would not have done it alone: the date would
+  still be in the request, so still in the key.
+
+**Measured, NOT shipped: moving the date line.** It was implemented (commit `1ee5e1453`,
+`parser.render_static` plus `scripts/chatbot_parser_parity.py --date-layout`) and measured live on
+gpt-5.4-mini, prompt v3 as bootstrapped:
+- Sample: 60 of the 431 distinct messages in `tests/chatbot/replay_turns`, seed 1963. Each was
+  parsed with the old layout, the new layout, and the old layout again as the noise floor.
+- gpt-5.4-mini is not deterministic here: old vs old gave identical emissions (all 48 keys) on
+  only 30/60, and new vs old on 22/60.
+- On the routing-decisive keys (`message_type`, `domain_hint`, `intent_hint`, `routing`,
+  `escalation`, `document`), new vs old differed on 5/60 inputs and old vs old on 1/60.
+- Re-running those 5 inputs 4 times per layout showed 3 consistent layout effects, plus one
+  that leans differently:
+
+| replay input | old layout (4/4) | new layout |
+| --- | --- | --- |
+| `business-query-438930735-chain-001#5` | `master_products` / `check_product` | `domain_hint: null`, `intent_hint: null` (4/4) |
+| `check-promotion-404285551-chain-001#7` | `message_type: business_query` | `clarification` (4/4) |
+| `focus-006-g-incoming-wc286...#2` | `message_type: unknown` | `business_query` (4/4) |
+| `case-029-a3-belum-do...#0` | `document: ["SO"]` 3/4 | `["DO"]` 2/4 |
+
+So the move changes the parse on about 5% of messages, and not always for the better. That
+fails "output unchanged", so the move was reverted. The prefix cache does not need it: the date
+already sits at 97% of the system prompt, so roughly 31k of 33.5k tokens are a stable prefix
+(the 98.5% warm hit rate above). Trigger to revisit: an owner-approved prompt revision that is
+re-graded on the replay corpus anyway.

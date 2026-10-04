@@ -303,3 +303,93 @@ def test_endpoint_never_echoes_secrets(api_client, monkeypatch):
     text = resp.text
     assert _SIGNING_SECRET not in text
     assert _CONNECTION_ID not in text
+
+
+# --------------------------------------------------------------------------- #
+# The embed-session route's assertion carries ideas_manage and the verified phone #
+# --------------------------------------------------------------------------- #
+@pytest.fixture
+def embed_route(configured, monkeypatch):
+    import uuid
+    from datetime import datetime, timezone
+
+    from fastapi.testclient import TestClient
+
+    from app.dependencies import get_current_user, get_db
+    from app.main import app
+    from app.models.access import RespondContact
+    from app.models.user import User
+    from app.services.user_service import UserPermissionService
+    from tests._pg_fixture import blank_session
+
+    allow: set[str] = {"ideation.board.view"}
+    monkeypatch.setattr(
+        UserPermissionService, "check_user_has_permission", lambda self, uid, slug: slug in allow
+    )
+    posted: list[dict] = []
+    monkeypatch.setattr(
+        svc,
+        "post_embed_session",
+        lambda base_url, payload: posted.append(payload) or {"token": "t", "expires_at": "2099-01-01T00:00:00+00:00"},
+    )
+
+    def _decode(payload):
+        return jwt.decode(
+            payload["assertion"], _SIGNING_SECRET, algorithms=[settings.jwt_algorithm], audience="ideation-embed"
+        )
+
+    with blank_session() as db:
+
+        def seed_user(*, verified: bool, phone: str = "+60100000001") -> dict:
+            uid = str(uuid.uuid4())
+            contact_id = str(uuid.uuid4())
+            db.add(RespondContact(id=contact_id, phone_number=phone, name="ZZT Contact"))
+            db.flush()
+            db.add(
+                User(
+                    id=uid,
+                    email=f"zzt-{uid[:8]}@example.test",
+                    name="ZZT Embed",
+                    status="ACTIVE",
+                    respond_contact_id=contact_id,
+                    contact_number=phone,
+                    phone_verified_at=datetime.now(timezone.utc) if verified else None,
+                )
+            )
+            db.commit()
+            return {"id": uid, "email": f"zzt-{uid[:8]}@example.test", "name": "ZZT Embed"}
+
+        def call(user: dict) -> dict:
+            app.dependency_overrides[get_db] = lambda: db
+            app.dependency_overrides[get_current_user] = lambda: dict(user)
+            try:
+                resp = TestClient(app).post(_EMBED_URL, json={})
+            finally:
+                app.dependency_overrides.clear()
+            assert resp.status_code == 200, resp.text
+            return _decode(posted[-1])
+
+        yield seed_user, call, allow
+
+
+def test_embed_route_ideas_manage_false_for_a_view_only_user(embed_route):
+    seed_user, call, allow = embed_route
+    claims = call(seed_user(verified=False))
+    assert "ideas_manage" in claims
+    assert claims["ideas_manage"] is False
+
+
+def test_embed_route_ideas_manage_true_for_a_manage_holder(embed_route):
+    seed_user, call, allow = embed_route
+    allow.add("ideation.ideas.manage")
+    assert call(seed_user(verified=False))["ideas_manage"] is True
+
+
+def test_embed_route_carries_phone_for_a_verified_user(embed_route):
+    seed_user, call, _ = embed_route
+    assert call(seed_user(verified=True, phone="+60100000002"))["phone"] == "+60100000002"
+
+
+def test_embed_route_omits_phone_for_an_unverified_user(embed_route):
+    seed_user, call, _ = embed_route
+    assert "phone" not in call(seed_user(verified=False, phone="+60100000003"))
