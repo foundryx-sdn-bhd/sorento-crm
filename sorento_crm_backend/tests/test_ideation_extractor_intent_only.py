@@ -101,12 +101,16 @@ def test_migration_is_single_head_and_upgrade_wires_seed_and_publish():
     revision = _assign(src, "revision")
     assert isinstance(revision, str) and 0 < len(revision) <= 32
 
-    for p in VERSIONS_DIR.glob("*.py"):
-        if p == path:
-            continue
-        down = _assign(p.read_text(encoding="utf-8"), "down_revision")
-        downs = list(down) if isinstance(down, (tuple, list)) else [down]
-        assert REVISION not in downs, f"{p.name} sits on top of {REVISION}: not the head"
+    # Not pinned as the head: later migrations legitimately chain on this one; the
+    # single-head property is enforced by check_alembic_heads.py and CI.
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    cfg = Config()
+    cfg.set_main_option("script_location", str(VERSIONS_DIR.parent))
+    script = ScriptDirectory.from_config(cfg)
+    assert len(script.get_heads()) == 1
+    assert script.get_revision(REVISION) is not None
 
     upgrade = next(
         n for n in ast.parse(src).body if isinstance(n, ast.FunctionDef) and n.name == "upgrade"

@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision = "clf_0001_chat_local_first"
 down_revision = "ideation_capture_0001"
@@ -69,7 +70,12 @@ def upgrade() -> None:
     if not exists:
         op.create_table(
             "chat_thread_sync_state",
-            sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
+            sa.Column(
+                "id",
+                postgresql.UUID(as_uuid=False),
+                primary_key=True,
+                server_default=sa.text("gen_random_uuid()"),
+            ),
             sa.Column("channel", sa.String(32), nullable=False),
             sa.Column("contact_id", sa.String(128), nullable=False),
             sa.Column("newest_synced_message_id", sa.String(64), nullable=True),

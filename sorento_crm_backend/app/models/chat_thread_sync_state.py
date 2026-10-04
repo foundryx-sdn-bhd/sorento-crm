@@ -20,7 +20,10 @@ It holds only what the message rows cannot say for themselves:
 The oldest stored message id is deliberately NOT here: a scroll-back continues from
 whatever is oldest in ``chat_histories`` (``chat_thread_sync_service.oldest_stored``).
 """
-from sqlalchemy import BigInteger, Boolean, Column, DateTime, Index, String, Text, UniqueConstraint, text
+import uuid
+
+from sqlalchemy import Boolean, Column, DateTime, Index, String, Text, UniqueConstraint, text
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 
 from app.database import Base
@@ -30,7 +33,13 @@ class ChatThreadSyncState(Base):
     __tablename__ = "chat_thread_sync_state"
     __audit_skip__ = "sync bookkeeping, not a business record"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    # server_default: chat_thread_sync_service inserts with raw SQL and never passes an id.
+    id = Column(
+        UUID(as_uuid=False),
+        primary_key=True,
+        default=lambda: str(uuid.uuid4()),
+        server_default=text("gen_random_uuid()"),
+    )
     channel = Column(String(32), nullable=False)
     contact_id = Column(String(128), nullable=False)
     newest_synced_message_id = Column(String(64), nullable=True)
