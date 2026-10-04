@@ -411,14 +411,9 @@ any lead-in: a short alphanumeric run that looks like part of a product code ("w
 "7445", "kt1861", "srtwt") is entities [{"raw":"<the token>","hint":"product"}] with
 entity_op "replace_combine", never "reuse" and never left out.
   - "how about wc286" -> entities [{"raw":"wc286","hint":"product"}]
-{{#without purchase_order}}
-Purchase orders: "PO" or "purchase order" is domain_hint "purchase_order", intent_hint "check_po"; emit it, the system answers or declines.
-{{/without}}
-{{#only purchase_order}}
   - "all wc286 purchase order" -> entities [{"raw":"wc286","hint":"product"}],
     message_type "business_query", domain_hint "purchase_order", intent_hint "check_po".
     A product plus "purchase order" or "PO" is a business query, never casual.
-{{/only}}
 
 == PRONOUN REFERENCE, NEVER AN ENTITY ==
 A pronoun or demonstrative phrase that points at something OUTSIDE the current message ("this customer", "these", "them", "the previous product", "it") never becomes an entity, in any language, and never invents a value for the kind it stands in for - it is a REFERENCE, not a referent. Set "anaphora": {"backward_reference": true} whenever the message carries one, false otherwise. The kind it points at stays OUT of entities[] entirely - downstream already carries what it points at.
@@ -729,14 +724,9 @@ them, as {"domain": "<domain name>", "intent": "<intent_hint for that domain, or
 The domain names are the ones listed in the domain block at the end of this prompt.
   - "incoming and stock for 7445" -> asks [{"domain":"incoming","intent":"check_incoming"},
     {"domain":"inventory","intent":"check_stock"}], domain_hint "incoming"
-{{#without purchase_cost}}
-Last purchase cost: "purchase cost" is domain_hint "purchase_cost", intent_hint "check_po_cost"; emit it, the system answers or declines.
-{{/without}}
-{{#only purchase_cost}}
   - "purchase cost and stock for SRTWC286" -> asks
     [{"domain":"purchase_cost","intent":"check_po_cost"},
     {"domain":"inventory","intent":"check_stock"}], domain_hint "purchase_cost"
-{{/only}}
 domain_hint STAYS the FIRST of them, so nothing that reads one domain changes behaviour.
 A message that names ONE domain, or none, emits "asks": null - that is nearly every
 message. Never invent a second domain from the previous turn, from the current subject, or
@@ -925,6 +915,9 @@ Anything LONGER than that is a CUSTOMER name, however it is capitalised: "FULLSH
 "IBORNGROUP", "Hing Seng", "FULLSHUN SANITARYWARE" are customer entities, never
 warehouses. A product code carries digits ("SRTWC8517", "MSK11A-QT") and is neither.
 
+{{#without purchase_order}}
+A PO ask is domain_hint "purchase_order", intent_hint "check_po"; emit it, the system answers or declines.
+{{/without}}
 {{#only purchase_order}}
 == PURCHASE ORDERS: domain_hint "purchase_order", intent_hint "check_po" ==
 A question about what WE ordered from a SUPPLIER - never about what a customer ordered
@@ -939,22 +932,22 @@ purchase_order: those stay domain_hint "order", intent_hint "check_order".
 "PO" or "purchase order" ALONE, with or without a product, is purchase_order. It is NEVER
 purchase_cost: only the words of COST ("cost", "last purchase cost", "how much did we pay")
 make a message purchase_cost.
-{{#only purchase_order}}
   - "stock, incoming and PO" -> asks [{"domain":"inventory","intent":"check_stock"},
     {"domain":"incoming","intent":"check_incoming"},
     {"domain":"purchase_order","intent":"check_po"}], domain_hint "inventory" - the FIRST
-{{/only}}
     of the asks, never the last one and never purchase_cost.
 
 {{#without spo_allocation}}
-Last in: "last in" or "SPO" is domain_hint "spo_allocation", intent_hint "check_spo"; emit it, the system answers or declines.
+A last in ask is domain_hint "spo_allocation", intent_hint "check_spo"; emit it, the system answers or declines.
 {{/without}}
 {{#only spo_allocation}}
 == SPO LAST RECEIPT: intent_hint "check_spo", domain_hint "spo_allocation" ==
 "when did this last come in, and how much" is a receiving question, not a stock question.
+{{/only}}
   - "last in", "last incoming qty", "last received", "when did it last come in",
     "上次进货", "terakhir masuk" -> intent_hint "check_spo",
     domain_hint "spo_allocation"
+{{#only spo_allocation}}
   - "last 3 in" sets top_n = 3 as well.
 "how much stock do we have" is still check_stock / inventory; "when is it arriving" is
 still check_incoming / incoming.
@@ -991,11 +984,9 @@ When the previous reply offered to escalate ("Would you like me to escalate to .
 and the current message ASKS SOMETHING - a product, stock, a PO, an SO, a last-in, with or
 without a code - it is a business_query. Set escalation.is_escalation_confirmation = FALSE
 and emit the entity the customer named THIS turn.
-{{#only purchase_order}}
   - "PO for SRTWC8517" after an escalate offer -> business_query, check_po,
     purchase_order, entities [SRTWC8517 as product, current_message true],
     is_escalation_confirmation false
-{{/only}}
   - "yes", "yes escalate", "ok please escalate" -> THAT is the confirmation
 Only a message that answers the offer is a confirmation. A message that ignores it and
 asks something else leaves the offer alone.
@@ -1007,6 +998,9 @@ request_for_help is ONLY a request for a HUMAN. A message that names a customer 
 For requested_attributes ONLY: emit the customer's own attribute phrase, WHOLE ("seat cover material", "list price"), never a shortened token; a base property (price, dimensions, description, name) is a requested attribute too. This rule never reaches an entity's canonical_code.
 
 
+{{#without purchase_cost}}
+A purchase cost ask is domain_hint "purchase_cost", intent_hint "check_po_cost"; emit it, the system answers or declines.
+{{/without}}
 {{#only purchase_cost}}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 LAST PURCHASE COST
@@ -1015,10 +1009,12 @@ LAST PURCHASE COST
 == LAST PURCHASE COST: intent_hint "check_po_cost", domain_hint "purchase_cost" ==
 "what did we pay a supplier for this, last time" is a COST question, never a
 selling-price question - it is what WE PAID, not what WE CHARGE.
+{{/only}}
   - "last purchase cost", "last cost", "what did we pay", "what did we pay for",
     "buying price", "purchase price", "cost price", "上次采购价", "成本",
     "harga belian terakhir", "harga beli" -> intent_hint "check_po_cost",
     domain_hint "purchase_cost"
+{{#only purchase_cost}}
   - "last 3 purchase cost" sets top_n = 3 as well; "by warehouse" / "by location" sets
     group_by "warehouse".
 "how much do we sell it for", "selling price", "what do we charge", "how much does it cost", "berapa harga", "多少钱" are NEVER purchase_cost: those stay domain_hint
@@ -1026,12 +1022,14 @@ selling-price question - it is what WE PAID, not what WE CHARGE.
 exactly as PRICE TERMINOLOGY already states - "cost" alone is the everyday word for
 the SELLING price, not a signal for this domain.
 {{/only}}
+{{#only purchase_cost}}
 The same code-is-the-product rule as PO / SPO applies: "last purchase cost for
 SRTWC8517" names a PRODUCT, never an order.
+{{/only}}
 
 
 {{#without low_stock_report}}
-Low stock report: "low stock" is intent_hint "low_stock_report", domain_hint "inventory"; emit it, the system answers or declines.
+A low stock ask is intent_hint "low_stock_report", domain_hint "inventory"; emit it, the system answers or declines.
 {{/without}}
 {{#only low_stock_report}}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1041,9 +1039,11 @@ LOW STOCK REPORT
 == LOW STOCK REPORT: intent_hint "low_stock_report", domain_hint "inventory" ==
 "which items are below their reorder level" is a REPORT the buyer runs, not a stock
 balance question about one product.
+{{/only}}
   - "low stock report", "low stock", "reorder report", "stock below level",
     "what needs reordering", "laporan stok rendah", "低库存报表" ->
     intent_hint "low_stock_report", domain_hint "inventory"
+{{#only low_stock_report}}
   - A LOCATION word in the same message ("low stock report BRW", "low stock for IB")
     is a warehouse entity - hint "warehouse" - never a product, even though a bare
     token under this domain usually is one.
@@ -1057,7 +1057,7 @@ quantity.
 
 
 {{#without sales}}
-Asks about sales: sales report, sales analysis, top selling are order_status "sales_report", "sales_analysis", "top_selling", domain_hint "order"; emit them, the system answers or declines.
+Asks about sales are order_status "sales_report", "sales_analysis" or "top_selling", domain_hint "order"; emit them, the system answers or declines.
 {{/without}}
 {{#only sales}}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1117,9 +1117,11 @@ never "customer" merely because of where it sits.
     sits to "dealer"), date_filter_start/date_filter_end set to August this year (DATE
     FILTER above governs this exactly as anywhere else in the message - see the rule
     right below: the channel word and the product code beside "August" never absorb it)
+{{/only}}
   - "dealer sales report for hanlim" -> sales_channel "dealer", entity {raw: "hanlim", hint:
     "customer"} (a COMPANY NAME after "dealer" is still a customer - the product-code-shape
     rule above never applies to a name)
+{{#only sales}}
   - "project SRTWC286 sales this year" -> sales_channel "project", entity {raw: "SRTWC286",
     hint: "product"}
 
