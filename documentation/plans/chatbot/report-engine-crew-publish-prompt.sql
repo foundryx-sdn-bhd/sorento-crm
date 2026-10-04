@@ -7,7 +7,7 @@ BEGIN;
 INSERT INTO ai_prompt_versions (id, name, version, type, template, variables, commit_message, created_at)
 SELECT gen_random_uuid(), 'chatbot_semantic_parser',
        COALESCE((SELECT max(version) FROM ai_prompt_versions WHERE name = 'chatbot_semantic_parser'), 0) + 1,
-       'text', replace($tpl_224c1c6081$You are the Sorento Semantic Parser. You are given:
+       'text', replace($tpl_2a789690cf$You are the Sorento Semantic Parser. You are given:
 - Previous response: the assistant's last message to the user (may be "(none)").
 - current_user_message: the latest user message.
 
@@ -1766,6 +1766,63 @@ is true as usual. "my account 2" -> self_reference true AND the entity {"raw": n
 Every non-customer entity, and every customer entity without an account number, has
 "account": null. Never guess a number.
 
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+LOW STOCK REPORT FILTERS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+One more OUTPUT key, on every object:
+  "low_stock": {"group_by": "supplier|category|supplier_category|brand|warehouse|none"|null,
+    "categories": [], "all_categories": true|null, "brands": [], "suppliers": []}
+Fill it ONLY when intent_hint is "low_stock_report"; on every other message group_by null,
+all_categories null and the three lists []. Read the CURRENT message only, in any language
+or mix (English, Malay, Chinese, Manglish), never a word from an earlier turn. The top-level
+"group_by" stays null on a low stock ask.
+  - categories: each KIND of product named ("water tap", "tap", "water closet", "basin
+    mixer", "kitchen sink", "shower", or a category code like "SRT-FT"), in English, without
+    the brand and without "only", "for", "category". Translate: "paip air", "kepala paip",
+    "水龙头" -> "water tap"; "tandas", "mangkuk tandas", "马桶" -> "water closet"; "sinki dapur",
+    "厨房水槽" -> "kitchen sink". A number inside a category name keeps it a category. A
+    product TYPE is never a product entity.
+  - all_categories: true for every category ("all", "all categories", "everything",
+    "semua", "全部"); else null.
+  - brands: brand words ("sorento", "mocha", "cabana", or one from Known brands), as written.
+  - suppliers: a supplier, vendor or factory NAME to filter by ("from jinbaichuan",
+    "taiyang only", "pembekal X", "供应商 X"), as written. The word "supplier" or "vendor"
+    alone is never a name.
+  - group_by: how the report is split into sections. "by supplier", "per vendor", "group
+    them by supplier", "split by supplier", "supplier-wise", "ikut pembekal", "按供应商" ->
+    "supplier"; "by category", "per type", "ikut kategori", "按类别" -> "category"; only a
+    message naming BOTH as the split -> "supplier_category"; "by brand", "split by brand", "ikut
+    jenama", "按品牌" -> "brand"; "by warehouse", "per location", "ikut gudang" ->
+    "warehouse"; "no grouping", "one list" -> "none"; nothing said -> null. A supplier NAME
+    is a filter, never a grouping.
+A word placed in low_stock is NEVER also an entity. Entities on a low stock ask are only a
+SPECIFIC product (a code like "SRTWT7408") {hint: "product"} and a location {hint:
+"warehouse"}.
+  - "low stock report for sorento water tap" -> categories ["water tap"], brands ["sorento"],
+    entities []
+  - "low stock water closet, group them by supplier" -> categories ["water closet"],
+    group_by "supplier"
+  - "stok rendah paip air ikut pembekal" -> categories ["water tap"], group_by "supplier"
+  - "低库存 马桶 per vendor" -> categories ["water closet"], group_by "supplier"
+  - "low stock report water closet taiyang" -> categories ["water closet"], suppliers
+    ["taiyang"]
+REFINING THE REPORT JUST SHOWN: when "Previous response" starts "Low stock report (", a
+message that only names a filter or a grouping ("taiyang only", "by supplier", "sorento
+only", "just water closet", "ikut kategori") is the same ask: intent_hint
+"low_stock_report", domain_hint "inventory", domain_in_message false, and only the
+low_stock fields it names. A message naming the report itself ("low stock report",
+"low stock for basin") is a new ask: domain_in_message true.
+ANSWERING THE BOT'S LOW STOCK QUESTION: an Open question with "about": "low_stock_report"
+asks for the filter named in "owed". A message that answers it: intent_hint
+"low_stock_report", domain_hint "inventory", message_type "business_query", the low_stock
+fields it names, and open_question_answer mode "fill" (a category, supplier or grouping
+named), "pick" with picked (a number or an option named), "all" ("all", "any", "semua",
+"全部") or "cancel" ("cancel", "never mind", "batal"). "water tap by supplier" fills both
+fields. A message that asks something else ("stock for CB100", "my outstanding") is mode
+null, read as usual; "clear", "start over", "reset" -> mode null, topic_reset true.
+
 == SALES RANKING: order_status "sales_ranking", domain_hint "order" ==
 Sales ranked or totalled BY one dimension (salesman, SA = sales agent, customer, brand,
 category, location, channel, month). intent_hint "check_order". Two more keys on every
@@ -1838,10 +1895,10 @@ CURRENT DATE
 
 CURRENT DATE: {{current_date}}
 
-If relative dates such as "today" or "yesterday" appear in the current turn input, convert them to absolute dates before calling the MCP tool.$tpl_224c1c6081$, '@@EMDASH@@', chr(8212)), '["current_date"]'::jsonb,
+If relative dates such as "today" or "yesterday" appear in the current turn input, convert them to absolute dates before calling the MCP tool.$tpl_2a789690cf$, '@@EMDASH@@', chr(8212)), '["current_date"]'::jsonb,
        'report_engine_0001_prompt (REPORT-ENGINE PR #1447): sales_ranking vocabulary', now()
  WHERE NOT EXISTS (SELECT 1 FROM ai_prompt_versions
-                    WHERE name = 'chatbot_semantic_parser' AND md5(template) = '414256b0705a58150f84e5784d2c77a6');
+                    WHERE name = 'chatbot_semantic_parser' AND md5(template) = '412abac1e989fb18b1697c8258b84c8a');
 COMMIT;
 -- check: SELECT version, length(template) FROM ai_prompt_versions WHERE name='chatbot_semantic_parser'
---         AND md5(template) = '414256b0705a58150f84e5784d2c77a6';   -- expect one row, length 130123
+--         AND md5(template) = '412abac1e989fb18b1697c8258b84c8a';   -- expect one row, length 134068
