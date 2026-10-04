@@ -86,3 +86,25 @@ workflow's `NOT_DOCS_RE`). A test that reads a new documentation path must add i
 
 A PR with no `ci` label shows no checks and therefore cannot merge under branch protection - that
 is intended, not a bug: it is what keeps a not-yet-ready PR from being mergeable by accident.
+
+## LLM spend in test runs: replay by default (LLM-TEST-COST, 4 Oct 2026)
+
+A scripted or browser-pass run answers the parser from recorded cassettes, not OpenAI. The
+switch is `LLM_CASSETTE_MODE` on the BACKEND process (`off` is the default and the only value
+production ever has; `record` calls live and writes a cassette; `replay` answers from the
+cassette and fails a turn with "LLM cassette miss: ... key <sha256>" rather than calling live).
+Cassettes live in `LLM_CASSETTE_DIR` (default `~/.cache/sorento-llm-cassettes`); a directory
+inside the repository is refused, because a recording holds the model's answer to a real
+message. Never commit one.
+
+- Harness launchers (`documentation/plans/chatbot/evidence/*/harness/run_backend_live.py`,
+  `run_worker_local.py`) start in replay; pass `--record` once to fill the cassettes, `--live` to
+  spend without recording. Copy that pattern into a new lane's harness.
+- `scripts/chatbot_console_check.py` stops after the first turn the backend answered live, unless
+  `--live` is passed (a `--record` backend needs `--live` too).
+- A recording is keyed on the exact request, and the system prompt carries the date, so a
+  cassette is good for the day and prompt version it was recorded on.
+- Only the OpenAI provider is recorded; in replay an Anthropic or Gemini call is refused.
+
+`LLM_BASE_URL` / `LLM_MODEL_OVERRIDE` point the OpenAI client at another OpenAI-compatible
+endpoint or model when set. Nothing sets them today.

@@ -85,6 +85,20 @@ def runner_mode(*, live: bool, record: bool) -> str:
     return "off" if live else "replay"
 
 
+def configure_runner(argv: list[str]) -> str:
+    """Set the mode for a scripted runner's backend process from its own `argv`.
+
+    `--live` spends for real, `--record` spends and records; neither means replay, unless
+    `LLM_CASSETTE_MODE` was already exported, which is then respected.
+    """
+    live, record = "--live" in argv, "--record" in argv
+    if live or record:
+        os.environ[MODE_ENV] = runner_mode(live=live, record=record)
+    else:
+        os.environ.setdefault(MODE_ENV, "replay")
+    return mode()
+
+
 def cassette_dir() -> Path:
     raw = os.environ.get(DIR_ENV)
     path = Path(raw).expanduser() if raw else DEFAULT_DIR

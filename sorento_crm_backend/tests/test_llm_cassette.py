@@ -81,13 +81,25 @@ class _Client:
         self.embeddings = _Embeddings()
 
 
+_ENV = ("LLM_CASSETTE_MODE", "LLM_CASSETTE_DIR", "LLM_BASE_URL", "LLM_MODEL_OVERRIDE")
+
+
 @pytest.fixture(autouse=True)
 def _clean_env(monkeypatch, tmp_path):
-    for name in ("LLM_CASSETTE_MODE", "LLM_CASSETTE_DIR", "LLM_BASE_URL", "LLM_MODEL_OVERRIDE"):
+    # Restored by hand as well: `configure_runner` writes `os.environ` directly, which
+    # monkeypatch cannot undo for a variable that was unset when the test began, and a
+    # leaked `replay` would turn every later test in this worker into a cassette miss.
+    saved = {name: os.environ.get(name) for name in _ENV}
+    for name in _ENV:
         monkeypatch.delenv(name, raising=False)
     llm_provider._OPENAI_REJECTED_PARAMS.clear()
     yield
     llm_provider._OPENAI_REJECTED_PARAMS.clear()
+    for name, value in saved.items():
+        if value is None:
+            os.environ.pop(name, None)
+        else:
+            os.environ[name] = value
 
 
 @pytest.fixture
@@ -427,3 +439,57 @@ class TestRunnerMode:
     def test_live_and_record_together_are_refused(self):
         with pytest.raises(ValueError):
             llm_cassette.runner_mode(live=True, record=True)
+
+
+class TestConfigureRunner:
+    def test_no_flag_means_replay(self, monkeypatch):
+        assert llm_cassette.configure_runner([]) == "replay"
+        assert os.environ["LLM_CASSETTE_MODE"] == "replay"
+
+    def test_an_exported_mode_is_respected_without_a_flag(self, monkeypatch):
+        monkeypatch.setenv("LLM_CASSETTE_MODE", "record")
+        assert llm_cassette.configure_runner(["--port", "8001"]) == "record"
+
+    def test_flags_win(self, monkeypatch):
+        monkeypatch.setenv("LLM_CASSETTE_MODE", "replay")
+        assert llm_cassette.configure_runner(["--live"]) == "off"
+        assert llm_cassette.configure_runner(["--record"]) == "record"
+
+
+def _console_check():
+    import importlib.util
+
+    path = Path(__file__).resolve().parents[1] / "scripts" / "chatbot_console_check.py"
+    spec = importlib.util.spec_from_file_location("chatbot_console_check_llm_cost", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _body(**facts: Any) -> dict:
+    return {"trace": [{"stage": "received"}, {"stage": "understood", "facts": facts}]}
+
+
+class TestConsoleCheckRefusal:
+    def test_a_live_parse_stops_the_run_without_live(self):
+        check = _console_check()
+        refusal = check._cassette_refusal(_body(llm_cassette="off"), live=False)
+        assert refusal and "--live" in refusal
+
+    def test_a_backend_without_the_fact_counts_as_live(self):
+        check = _console_check()
+        assert check._cassette_refusal(_body(), live=False)
+
+    def test_replay_bypass_and_live_flag_pass(self):
+        check = _console_check()
+        assert check._cassette_refusal(_body(llm_cassette="replay"), live=False) is None
+        assert check._cassette_refusal(_body(parser_bypassed=True), live=False) is None
+        assert check._cassette_refusal(_body(llm_cassette="off"), live=True) is None
+        assert check._cassette_refusal({"_http_error": "HTTP 500"}, live=False) is None
+
+    def test_post_with_pacing_raises_system_exit(self, monkeypatch):
+        check = _console_check()
+        monkeypatch.setattr(check, "_post", lambda *a, **k: _body(llm_cassette="off"))
+        with pytest.raises(SystemExit):
+            check._post_with_pacing(None, "u", "k", {}, 1.0, live=False)
+        assert check._post_with_pacing(None, "u", "k", {}, 1.0, live=True)
