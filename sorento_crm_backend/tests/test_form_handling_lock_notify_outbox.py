@@ -232,7 +232,7 @@ def _wa_objs(use_case: str):
     )
     user = SimpleNamespace(id="u1")
     delivery = SimpleNamespace(status="pending", error_message=None, sent_at=None)
-    contact = SimpleNamespace(id="contact-uuid", respond_io_id="404284985")
+    contact = SimpleNamespace(id="contact-uuid", respond_io_id="900000104")
     return db, notification, user, delivery, contact
 
 
@@ -274,7 +274,7 @@ def test_handling_whatsapp_failure_writes_outbox_log():
     assert log_arg.direction == "outbound"
     assert log_arg.status == "failed"
     assert log_arg.status_code == 401
-    assert log_arg.external_reference == "404284985"
+    assert log_arg.external_reference == "900000104"
     # business_id is the notification UUID, never a composite source id.
     assert log_arg.business_id == notification.id
     assert delivery.status == "failed"
@@ -296,7 +296,7 @@ def test_handling_whatsapp_success_writes_outbox_log():
     assert log_service.create_integration_log.call_count == 1
     log_arg = log_service.create_integration_log.call_args.args[0]
     assert log_arg.status == "success"
-    assert log_arg.external_reference == "404284985"
+    assert log_arg.external_reference == "900000104"
     assert delivery.status == "sent"
 
 

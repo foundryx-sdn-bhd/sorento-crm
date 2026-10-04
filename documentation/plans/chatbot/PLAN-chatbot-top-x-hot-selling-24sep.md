@@ -661,7 +661,7 @@ transcripts in order and types the owner's own messages; live parser run:
   strictly against sales agents, categories (code, name or class vocabulary term), brands
   and customers (`engine._split_noisy_token`). A token naming an agent or a brand beside
   another kind always splits; any other splits only when it does not resolve whole ("water
-  tap" stays the Tap class, "SAMPLE - FANNY NG" one customer). Words under three letters
+  tap" stays the Tap class, "SAMPLE - CONTACT Z" one customer). Words under three letters
   ("by") are dropped; one unknown leftover is said once ("I don't know 'marble'.") and the
   ranking runs. A split word the parser sent to a promotion or document lookup is read
   back into the ranking.

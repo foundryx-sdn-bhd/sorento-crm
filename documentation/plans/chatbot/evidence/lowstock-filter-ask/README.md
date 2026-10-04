@@ -6,7 +6,7 @@ adds this folder is docs only.
 ## Stack (all inside the cloud sandbox)
 
 - Postgres 16 `sorento_browse`, built by `scripts.bootstrap_env`, then the synthetic seed in
-  `harness/` (no customer data): admin login, contact 437264483 with `scm.low_stock_report` +
+  `harness/` (no customer data): admin login, contact 900000008 with `scm.low_stock_report` +
   `purchase_orders.supplier`, categories SRT-WC / CB-WC / M-WC / BRT-WC / IDC-WC / SRT-FT /
   CB-FT, suppliers XIAMEN TAIYANG TECHNOLOGY CO.,LTD (400-X006, 400-X008), JINBAICHUAN
   TRADING, JINBAICHUAN HARDWARE, six products below their reorder level at a pooled BRW,

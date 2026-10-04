@@ -60,7 +60,7 @@ function summary(overrides: Partial<OnboardingRequestSummary> = {}): OnboardingR
     title: 'MOCHA staff onboarding',
     company_name: 'MOCHA Sdn Bhd',
     requester_name: 'Esther Lim',
-    requester_email: 'esther@mocha.com.my',
+    requester_email: 'person13@example.com',
     status: 'submitted',
     people_count: 3,
     approved_count: 0,
@@ -221,7 +221,7 @@ describe('NewOnboardingRequestDialog', () => {
       target: { value: 'Esther Lim' },
     });
     fireEvent.change(within(dialog).getByLabelText('Requester email'), {
-      target: { value: 'esther@mocha.com.my' },
+      target: { value: 'person13@example.com' },
     });
     expect(within(dialog).getByRole('button', { name: 'Create' })).toBeDisabled();
   });
@@ -239,7 +239,7 @@ describe('NewOnboardingRequestDialog', () => {
       target: { value: 'Esther Lim' },
     });
     fireEvent.change(within(dialog).getByLabelText('Requester email'), {
-      target: { value: 'esther@mocha.com.my' },
+      target: { value: 'person13@example.com' },
     });
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Create' }));
@@ -248,7 +248,7 @@ describe('NewOnboardingRequestDialog', () => {
         company_id: 'co-2',
         title: 'Staff onboarding',
         requester_name: 'Esther Lim',
-        requester_email: 'esther@mocha.com.my',
+        requester_email: 'person13@example.com',
         requester_phone: null,
       }),
     );

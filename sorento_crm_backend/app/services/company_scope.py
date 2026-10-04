@@ -163,6 +163,9 @@ def admin_listing_company_filter(db, column) -> Optional[ColumnElement]:
 # pre-multi-company test baseline. The DB schema (NOT NULL + DEFAULT Sorento from
 # migrations 305/306) is unaffected, so disabling this just reverts read/write
 # behaviour to "all companies / DB-default company". Never set in production.
+# NOTE (CONTACT-BRAND-SCOPE): the per-contact brand criterion lives in the same
+# `do_orm_execute` listener, so COMPANY_SCOPE_ENFORCE=0 switches it off too. That flag is a
+# measurement-only escape hatch and must never be set on a stack serving real contacts.
 _ENFORCE = os.getenv("COMPANY_SCOPE_ENFORCE", "1") != "0"
 
 
@@ -267,6 +270,17 @@ def register_company_scope_listeners() -> None:
         # company_id, so a direct query on them (the IDOR path) is still covered.
         if not state.is_select or state.is_column_load or state.is_relationship_load:
             return
+
+        # CONTACT-BRAND-SCOPE: a brand-scoped contact sees only products of its brands
+        # (a NULL brand fails the IN, Q1). Concrete clause for the same cache reason as
+        # the company predicate below; absent scope adds nothing (unscoped is unchanged).
+        brand_scope = state.session.info.get("brand_scope")
+        if brand_scope:
+            from app.models.product import Product
+
+            state.statement = state.statement.options(
+                with_loader_criteria(Product, Product.brand_id.in_(sorted(brand_scope)), include_aliases=True)
+            )
 
         scope = state.session.info.get("company_scope", UNSET)
         if scope is None:

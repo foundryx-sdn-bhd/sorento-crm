@@ -48,7 +48,7 @@ a red test. Needs either a permanent "accepted, uncoverable" ruling or a live re
   re-search for a problem that is already resolved.
 - **"4 decline cases, recorded=orders_list / actual=crm_outstanding_report" (sign,
   ruled)** - measured this session: only **1 file, 3 occurrences** match this exact
-  direction (`prod_sample/escalation-declined-445239408-chain-001-no-run-id.json`,
+  direction (`prod_sample/escalation-declined-900000069-chain-001-no-run-id.json`,
   steps 1/4/6), not 4 files - the other 3 the coordinator's message may have been
   counting were likely already fixed by coder 8's review-fix round merged in at the
   start of this session (`7d85b68e3`). **Not signed** - see its own row below, the file
@@ -75,20 +75,20 @@ remaining ones are worth individually diagnosing).
 `console/case-{008,010,012,015,026,030,033,047}`,
 `console/focus-{002,004,005,006,008,012,013}`,
 `console/handbuilt-rp-001`, `console/handpass1-{002,003,004}`,
-`prod_sample/business-query-{437264483,438930735,440987225,445239415,477071885,
-477071886,477071887,477071888,477071891,487555417,505043725}`,
-`prod_sample/check-promotion-{404285551,428126355,437264483,445239384,445659708,
-477071885,477071886,477071887,487555417}`,
-`prod_sample/clarify-menu-437264483`,
-`prod_sample/demand-qty-{423729473,430229069}`,
-`prod_sample/escalation-declined-{423729094,437253667,440987225,445239390,445239402,
-445239408,445239415,477071886,478227502,480184379,482766288,482786754}`,
-`prod_sample/low-signal-{404280950,423729094,423729473,445239386,477071887,477071889,
-477071893,482786754,487555417}`,
-`prod_sample/offer-hold-423729094`,
-`prod_sample/out-of-scope-{423729094,423729104,423882401,437264483,438930735,440987225,
-445239402,445239409,445239414,477071887,477071889,482766267,487555417}`,
-`prod_sample/stock-denied-{423729473,430229069}`.
+`prod_sample/business-query-{900000008,900000052,900000010,900000056,900000072,
+900000053,900000060,900000101,900000102,900000039,900000088}`,
+`prod_sample/check-promotion-{900000026,900000086,900000008,900000061,900000091,
+900000072,900000053,900000060,900000039}`,
+`prod_sample/clarify-menu-900000008`,
+`prod_sample/demand-qty-{900000017,900000040}`,
+`prod_sample/escalation-declined-{900000055,900000085,900000010,900000079,900000077,
+900000069,900000056,900000053,900000094,900000083,900000093,900000068}`,
+`prod_sample/low-signal-{900000070,900000055,900000017,900000080,900000060,900000059,
+900000057,900000068,900000039}`,
+`prod_sample/offer-hold-900000055`,
+`prod_sample/out-of-scope-{900000055,900000081,900000089,900000008,900000052,900000010,
+900000077,900000063,900000092,900000060,900000059,900000078,900000039}`,
+`prod_sample/stock-denied-{900000017,900000040}`.
 
 Not exhaustively broken down per file this session (117 remaining failing files total,
 time-boxed per the coordinator's priority order - T4/T3/contract-lines still ahead in
@@ -105,14 +105,14 @@ re-run the same way. Investigated, not done - two blockers, both measured, neith
 tester's to route around:
 
 1. **Browser pass 6 ran under a DIFFERENT contact than the original recordings.**
-   Pass 6's own header: "Contact used throughout: Justin (`+60122465213`)". The hand
-   pass 2/3 recordings (tester 14/15) were all captured against contact `437264483`
-   (tester 15's own handoff: "Source DB clone... contact 437264483"). Pass 6's own
+   Pass 6's own header: "Contact used throughout: CONTACT N (`+60120000510`)". The hand
+   pass 2/3 recordings (tester 14/15) were all captured against contact `900000008`
+   (tester 15's own handoff: "Source DB clone... contact 900000008"). Pass 6's own
    chain 4 (item 6, PO roster stamps) hit this directly: `Purchase cost for wc286` ->
-   `Sorry, you are not allowed to access purchase cost (Justin lacks this grant,
+   `Sorry, you are not allowed to access purchase cost (CONTACT N lacks this grant,
    unlike the owner who recorded this chain)` - forcing a "supplementary check"
    workaround with a DIFFERENT typed message for that one item. A splice that mixes
-   Justin's turns into a 437264483 chain crosses `respond_contacts` rows entirely -
+   CONTACT N's turns into a 900000008 chain crosses `respond_contacts` rows entirely -
    different session thread, different access grants, no shared `session_patch`
    history - not a like-for-like field swap.
 2. **The replay harness seeds each chain's SOURCE contact's REAL prior session
@@ -146,7 +146,7 @@ below, with its own more specific reason) are enumerated here so the R-A skip ru
 (tester 20, 17 Sep 2026 - generalized to read every heading, not one hardcoded
 section) can find them:
 
-`console/handpass2-justin-incoming-picker`,
+`console/handpass2-contact-n-incoming-picker`,
 `console/handpass2-owner-17sep-golden-win`,
 `console/handpass2-owner-17sep-hanlim-delivery-miss-picks`,
 `console/handpass2-owner-17sep-hanlim-rpacc-sticky-pick`,
@@ -156,7 +156,7 @@ section) can find them:
 `console/handpass2-owner-17sep-purchase-cost-all`,
 `console/handpass2-owner-17sep-stock-incoming`,
 `console/handpass2-owner-17sep-two-domain-asks`,
-`console/handpass3-justin-escalation-offer`,
+`console/handpass3-contact-n-escalation-offer`,
 `console/handpass3-owner-17sep-outstanding-hanlim-detail-sales-order-switch`,
 `console/handpass3-owner-17sep-promo-tier`,
 `console/handpass3-owner-17sep-purchase-cost-po`,
@@ -228,10 +228,10 @@ one paragraph, not two:
 `console/case-055-ac-32c-family-ask-returns-one-row-per-member-per-location`,
 `console/case-056-ac-30-last-in-for-a-family-names-every-member`,
 `contract/line-001-stock-by-location`,
-`prod_sample/business-query-445239384-chain-001-no-run-id`,
-`prod_sample/business-query-477071889-chain-001-no-run-id`,
-`prod_sample/out-of-scope-423755030-chain-001-no-run-id`,
-`prod_sample/out-of-scope-445239384-chain-001-no-run-id`.
+`prod_sample/business-query-900000061-chain-001-no-run-id`,
+`prod_sample/business-query-900000059-chain-001-no-run-id`,
+`prod_sample/out-of-scope-900000071-chain-001-no-run-id`,
+`prod_sample/out-of-scope-900000061-chain-001-no-run-id`.
 
 Re-measured this session (unchanged from tester 15's original clustering): 16 files
 still fail on entity_ids alone; case-045 additionally confirmed clean on

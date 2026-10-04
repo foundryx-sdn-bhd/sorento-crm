@@ -223,7 +223,7 @@ killed. Own tab via `tab new`; `get url` re-checked before every trusted read; s
    `GET /api/v1/master-data/brands/select?company_id=00000000-0000-0000-0000-000000000001`
    (Sorento company id, after switching) - both 200, confirming the brand list is fetched scoped
    to the selected company as documented in the S1 contract note. The multi-select then listed
-   13 Sorento brands (BRAVAT, CABANA, ELLECI, IBORN, INFINITY, JOHNSON SUISSE, MOCHA, NO LOGO,
+   13 Sorento brands (BRAVAT, CABANA, ELLECI, IBORN, INFINITY, CONTACT AA SUISSE, MOCHA, NO LOGO,
    OTHERS, SORENTO, TP ENTERPRISE, WDI, and the initial "All brands"). Selected `SORENTO` and
    `MOCHA`. Screenshot: `step2d-row-added.png`, `step2e-row-added-userB.png`.
 

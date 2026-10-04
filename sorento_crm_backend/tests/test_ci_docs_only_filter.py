@@ -742,7 +742,7 @@ def _ran(results: dict[str, str]) -> set[str]:
     return {job for job, r in results.items() if r != "skipped"}
 
 
-GATES_ON_PR = {"check-migration-heads", "changes", "release-ci-label"}
+GATES_ON_PR = {"check-migration-heads", "changes", "release-ci-label", "pii-guard", "gitleaks"}
 
 
 def test_pull_request_fast_gate_backend_with_scm_paths():
@@ -811,14 +811,14 @@ def test_pull_request_with_another_label_runs_nothing():
 def test_merge_group_runs_the_full_suite_and_never_deploys():
     ran = _ran(_simulate("merge_group", outputs=FULL_PIPELINE))
     assert ran == {
-        "check-migration-heads", "changes", "validate-backend", "validate-mcp",
+        "check-migration-heads", "pii-guard", "changes", "validate-backend", "validate-mcp",
         "test-backend-scm", "test-backend", "validate-frontend", "typecheck-frontend",
     }
 
 
-RELEASE_ONLY = {"check-migration-heads", "changes", "build-images", "build-and-deploy", "notify-owner"}
+RELEASE_ONLY = {"check-migration-heads", "pii-guard", "changes", "build-images", "build-and-deploy", "notify-owner"}
 FULL_SUITE = {
-    "check-migration-heads", "changes", "validate-backend", "validate-mcp",
+    "check-migration-heads", "pii-guard", "changes", "validate-backend", "validate-mcp",
     "test-backend-scm", "test-backend", "validate-frontend", "typecheck-frontend",
 }
 
@@ -827,7 +827,7 @@ def test_push_to_main_runs_the_alembic_gate_and_nothing_else():
     """Owner decision 29 Sep 2026: a merge does not test or deploy."""
     for outputs in (FULL_PIPELINE, {**NO_AREA, "docs_only": "true"}):
         results = _simulate("push", outputs=outputs)
-        assert _ran(results) == {"check-migration-heads"}, results
+        assert _ran(results) == {"check-migration-heads", "pii-guard", "gitleaks"}, results
         assert results["changes"] == "skipped"
         assert results["build-images"] == "skipped"
         assert results["build-and-deploy"] == "skipped"

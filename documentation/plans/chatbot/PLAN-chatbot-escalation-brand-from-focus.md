@@ -6,7 +6,7 @@ Source: the root-cause report on #865 ("Root cause: null brand on escalation aft
 
 ## Cause
 
-The escalation lane never looked up a brand (H26, `escalation_services._not_live("resolve_and_gate")`). The five-key session keeps the focus product and not its brand. The only thing that carried a brand into an escalation was a question some earlier turn happened to mint, with the brand stamped on its payload (#1108 `carried_brand`). So a product turn that FAILED carried the brand, and a product turn that succeeded dropped it. On 24 Sep (contact 503641482) a SORENTO spec answer followed by "Please esculate to Marketing" drew the mocha-only member.
+The escalation lane never looked up a brand (H26, `escalation_services._not_live("resolve_and_gate")`). The five-key session keeps the focus product and not its brand. The only thing that carried a brand into an escalation was a question some earlier turn happened to mint, with the brand stamped on its payload (#1108 `carried_brand`). So a product turn that FAILED carried the brand, and a product turn that succeeded dropped it. On 24 Sep (contact 900000107) a SORENTO spec answer followed by "Please esculate to Marketing" drew the mocha-only member.
 
 ## Fix (option 1)
 

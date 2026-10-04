@@ -78,6 +78,10 @@ function row(overrides: Partial<StockDebtRow> = {}): StockDebtRow {
     supplier_id: null,
     supplier_name: null,
     category_code: null,
+    pool_on_hand: 0,
+    pool_po_qty: 0,
+    pool_incoming_qty: 0,
+    dealer_outstanding: 0,
     ...overrides,
   };
   // AC-5: sums months + tba + undated + unlocated - kept derived here rather than
@@ -110,6 +114,10 @@ function envelope(rows: StockDebtRow[] = [row()]): StockDebtListResponse {
       undated: rows.reduce((sum, r) => sum + r.undated, 0),
       unlocated: rows.reduce((sum, r) => sum + r.unlocated, 0),
       total: rows.reduce((sum, r) => sum + r.total, 0),
+      pool_on_hand: 0,
+      pool_po_qty: 0,
+      pool_incoming_qty: 0,
+      dealer_outstanding: 0,
     },
     suppliers: [],
     sheet_counts: { supplier: 0, category: 0, supplier_category: 0 },
@@ -301,6 +309,10 @@ describe('StockDebtClient', () => {
       screen.getAllByRole('columnheader').map((cell) => cell.textContent?.trim()),
     ).toEqual([
       'Product',
+      'BRW On Hand Qty',
+      'BRW PO Qty',
+      'BRW Incoming Qty',
+      'Dealer O/standing Qty',
       'Aug 26',
       'Sep 26',
       'Oct 26',

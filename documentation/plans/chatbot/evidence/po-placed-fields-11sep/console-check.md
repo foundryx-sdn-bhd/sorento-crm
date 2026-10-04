@@ -225,14 +225,14 @@ session. No `system_settings` row was changed (the MCP endpoint is a pure env-va
 
 ### R1 - does the console script's contact hold `inventory.sellable` too?
 
-`chatbot.turns.contact_respond_id` stores the Respond.io phone-style id ("437264483" -
+`chatbot.turns.contact_respond_id` stores the Respond.io phone-style id ("900000008" -
 `respond_contacts.respond_io_id`); `contact_field_reveals.respond_contact_id` stores the
 **internal** `respond_contacts.id` UUID instead. They are the SAME contact, just two different
 keys on the one row:
 
 ```sql
-select id, respond_io_id, name from respond_contacts where respond_io_id='437264483';
--- 80560c8f-6358-4115-8b2c-e139ef31e48e | 437264483 | Jayson
+select id, respond_io_id, name from respond_contacts where respond_io_id='900000008';
+-- 80560c8f-6358-4115-8b2c-e139ef31e48e | 900000008 | Jayson
 
 select field_key, granted from contact_field_reveals
 where respond_contact_id='80560c8f-6358-4115-8b2c-e139ef31e48e';

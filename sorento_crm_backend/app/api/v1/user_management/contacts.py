@@ -21,6 +21,7 @@ from app.services.user_contact_link import (
 from app.schemas.user import RespondContactResponse, RespondContactCreate, RespondContactUpdate, ContactAgentAccessResponse
 from app.schemas.common import ListResponse
 from app.schemas.market_segment import MarketSegmentCodesUpdate
+from app.schemas.contact_brand import ContactBrandsResponse, ContactBrandsUpdate
 from app.schemas.contact_customer import (
     ContactCustomerLinkCreate,
     ContactCustomerLinksResponse,
@@ -798,6 +799,41 @@ async def set_contact_market_segments(
         return {
             "codes": MarketSegmentService(db).set_contact_segments(contact_id, payload.codes)
         }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise handle_internal_error(str(e))
+
+
+@router.get("/{contact_id}/brands", response_model=ContactBrandsResponse)
+async def get_contact_brands(
+    contact_id: str,
+    current_user: dict = Depends(require_permission("user_management.contacts.view")),
+    db: Session = Depends(get_db),
+):
+    """The brands this contact may see through the chatbot / MCP. Empty = every brand."""
+    try:
+        from app.services.contact_brand_scope import get_contact_brands as read
+
+        return read(db, contact_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise handle_internal_error(str(e))
+
+
+@router.put("/{contact_id}/brands", response_model=ContactBrandsResponse)
+async def set_contact_brands(
+    contact_id: str,
+    payload: ContactBrandsUpdate,
+    current_user: dict = Depends(require_permission("user_management.contacts.edit")),
+    db: Session = Depends(get_db),
+):
+    """Replace the contact's accessible brands (empty = clear, every brand)."""
+    try:
+        from app.services.contact_brand_scope import set_contact_brands as write
+
+        return write(db, contact_id, payload.brand_ids)
     except HTTPException:
         raise
     except Exception as e:

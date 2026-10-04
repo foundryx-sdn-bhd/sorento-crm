@@ -81,7 +81,7 @@ def _seed(engine, rows=ROWS, delivery_status=None):
     s = sessionmaker(bind=engine)()
     for mid, sent, typ in rows:
         s.add(ChatHistory(
-            channel="whatsapp", contact_id="437264483", phone_number="+60166753328",
+            channel="whatsapp", contact_id="900000008", phone_number="+60160000509",
             message="x", sent_at=sent, type=typ, message_id=mid,
             delivery_status=delivery_status, resolve_attempts=5,
         ))

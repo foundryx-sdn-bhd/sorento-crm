@@ -1190,7 +1190,7 @@ describe('barcode on the print page', () => {
   it('prints the override instead of the bound barcode (AC-S9-2)', () => {
     render(
       <TagSheetRenderer
-        doc={docWith([{ ...barcodeLayer(), text_override: '111222333' }])}
+        doc={docWith([{ ...barcodeLayer(), text_override: '110000526' }])}
         resolvedData={{ [TAG_ID]: resolved({ barcode: VALID_EAN13 }) }}
         assets={{}}
         images={{}}
@@ -1198,7 +1198,7 @@ describe('barcode on the print page', () => {
     );
 
     // Code128 (non-EAN), so no guard split - plain override text.
-    expect(screen.getByText('111222333')).toBeInTheDocument();
+    expect(screen.getByText('110000526')).toBeInTheDocument();
     expect(screen.queryByText('4 006381 333931')).not.toBeInTheDocument();
   });
 

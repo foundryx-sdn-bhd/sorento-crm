@@ -1,11 +1,11 @@
 {
   "name": "handpass7-outstanding-quantity-domain",
-  "source": "hand pass 7 owner console turns 19 Sep 2026 21:57:56-21:59:22 MYT (contact_respond_id 437264483): a multi-code 'CB88SS / SRT2313-HP / CB447-BL / CSS8803-BL / CB88SS-BL / CB447-GM / CB88SS-GM / CB6408-RG / stock' listing, THEN the owner's own three typo'd outstanding-quantity asks - 'oustaning quantity for CB88SS', 'oustangind dealer quantiyt for CB88SS', 'oustangind dealer quantiyt report for CB88SS' (owner's own spelling, kept verbatim). Bug B2: measured live 19 Sep 2026 the SAME multi-turn precondition reproduces the bug (a fresh cold single-turn ask does NOT - measured separately, confirming this is a domain-switch-under-a-settled-stock-carry defect, not a parser miss on the typo alone): each typo'd ask renders '*stock* for CB88SS, ...' with per-row '*Warehouse:*'/'*System Location:*'/'*Quantity On Hand:*'/'*Outstanding:*' fields (the DETAILED stock mode, confirmed live), never the outstanding-report shape ('Product: CB88SS / Customer: all / Location: all / Order date: all' scope block plus '*Sales order outstanding*' or '*Delivery order outstanding*') the correctly-working sibling turn at 21:59:50 ('outstanidng deliveyr quantity for CB88SS') already renders on a COLD ask. The stock reply's own '*Outstanding:* N' FIELD LABEL is a coincidental substring match on the bare word 'outstanding' - assertions below require the real scope-block phrase and section header, not the bare word, so a wrong-reason green from that field label cannot slip through (measured: without this the bare-word check false-passed).",
+  "source": "hand pass 7 owner console turns 19 Sep 2026 21:57:56-21:59:22 MYT (contact_respond_id 900000008): a multi-code 'CB88SS / SRT2313-HP / CB447-BL / CSS8803-BL / CB88SS-BL / CB447-GM / CB88SS-GM / CB6408-RG / stock' listing, THEN the owner's own three typo'd outstanding-quantity asks - 'oustaning quantity for CB88SS', 'oustangind dealer quantiyt for CB88SS', 'oustangind dealer quantiyt report for CB88SS' (owner's own spelling, kept verbatim). Bug B2: measured live 19 Sep 2026 the SAME multi-turn precondition reproduces the bug (a fresh cold single-turn ask does NOT - measured separately, confirming this is a domain-switch-under-a-settled-stock-carry defect, not a parser miss on the typo alone): each typo'd ask renders '*stock* for CB88SS, ...' with per-row '*Warehouse:*'/'*System Location:*'/'*Quantity On Hand:*'/'*Outstanding:*' fields (the DETAILED stock mode, confirmed live), never the outstanding-report shape ('Product: CB88SS / Customer: all / Location: all / Order date: all' scope block plus '*Sales order outstanding*' or '*Delivery order outstanding*') the correctly-working sibling turn at 21:59:50 ('outstanidng deliveyr quantity for CB88SS') already renders on a COLD ask. The stock reply's own '*Outstanding:* N' FIELD LABEL is a coincidental substring match on the bare word 'outstanding' - assertions below require the real scope-block phrase and section header, not the bare word, so a wrong-reason green from that field label cannot slip through (measured: without this the bare-word check false-passed).",
   "cases": [
     {
       "name": "oustaning-quantity-for-cb88ss",
       "cold": true,
-      "contact": "440987225",
+      "contact": "900000010",
       "turns": [
         {
           "text": "CB88SS\nSRT2313-HP\nCB447-BL\nCSS8803-BL\nCB88SS-BL\nCB447-GM\nCB88SS-GM\nCB6408-RG\nstock",
@@ -24,7 +24,7 @@
     {
       "name": "oustangind-dealer-quantiyt-for-cb88ss",
       "cold": true,
-      "contact": "440987225",
+      "contact": "900000010",
       "turns": [
         {
           "text": "CB88SS\nSRT2313-HP\nCB447-BL\nCSS8803-BL\nCB88SS-BL\nCB447-GM\nCB88SS-GM\nCB6408-RG\nstock",
@@ -43,7 +43,7 @@
     {
       "name": "oustangind-dealer-quantiyt-report-for-cb88ss",
       "cold": true,
-      "contact": "440987225",
+      "contact": "900000010",
       "turns": [
         {
           "text": "CB88SS\nSRT2313-HP\nCB447-BL\nCSS8803-BL\nCB88SS-BL\nCB447-GM\nCB88SS-GM\nCB6408-RG\nstock",

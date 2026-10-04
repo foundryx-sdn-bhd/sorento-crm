@@ -1,7 +1,7 @@
 """Hand pass 11, defect 4 - "cabana catalog" must answer with the Cabana catalogue file,
 never a kind_pick. RED, test-first.
 
-Owner's local chain (clone, v39, contact 437264483): "cabana catalog" -> "Which one do you
+Owner's local chain (clone, v39, contact 900000008): "cabana catalog" -> "Which one do you
 mean? 1. cabana (promotion) 2. cabana (attachment)" -> "2" -> "Here's what you want:
 attachment: CABANA WASH BASIN PROMO 09092026 END USER.pdf (+14 more). But no
 resource_attachment matched these. Would you like me to escalate to customer service team?"

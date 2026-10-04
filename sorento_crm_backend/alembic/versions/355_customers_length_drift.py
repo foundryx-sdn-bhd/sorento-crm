@@ -7,7 +7,7 @@ asked for the narrower widths - they are the residue of an earlier shape that a 
 edit never carried into a migration.
 
 Found by a real 4,196-row AutoCount debtor export: 58 rows carry a `Phone 1` longer than 20
-characters (`016-978 5508 (MR.CHAEH)`, `09-5668833/013-9800123`). The importer's over-length
+characters (`016-000 0503 (MR.CHAEH)`, `95-0000558/013-0000504`). The importer's over-length
 pre-check read the MODEL's lengths, so every one of those rows passed the preview and was then
 rejected by Postgres at apply time with `StringDataRightTruncation` - a preview promising 0
 failures followed by 58 `upsert_error` rows. The importer now reads its limits from the

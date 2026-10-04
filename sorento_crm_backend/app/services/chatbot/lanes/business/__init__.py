@@ -27,6 +27,7 @@ import time
 from app.services.chatbot import contracts
 from app.services.chatbot import copy as reply_copy
 from app.services.chatbot import jsc
+from app.services.chatbot.lanes.business import brand_guard
 from app.services.chatbot import do_ask
 from app.services.chatbot.lanes.business import fetch as fetch_mod
 from app.services.chatbot.lanes.business import low_stock_ask
@@ -718,7 +719,11 @@ def _sales_analysis_axis_unsupported(group_by: str) -> dict[str, Any]:
 
 
 def _outstanding_detail_reoffer(
-    filters: dict[str, Any], rows: list[dict[str, Any]], *, kind: str = "outstanding_detail"
+    filters: dict[str, Any],
+    rows: list[dict[str, Any]],
+    *,
+    kind: str = "outstanding_detail",
+    localizer: Any = None,
 ) -> dict[str, Any]:
     """AC-1143(c): an out-of-range number against an OPEN detail offer re-prints that
     offer, fetches nothing, and leaves it open - the same `structured` shape (and so the
@@ -738,6 +743,8 @@ def _outstanding_detail_reoffer(
         text = "Reply with a number for detail:\n" + "\n".join(
             f"{jsc.js_string(row.get('idx'))}. {jsc.js_string(row.get('label'))}" for row in rows
         )
+    if kind == "outstanding_detail" and localizer is not None:
+        text = localizer.lines(text)  # CHAT-LANGUAGE: the stored offer stays English
     structured: dict[str, Any] = {
         "response": text,
         "outstanding_ask": {
@@ -1360,6 +1367,12 @@ def run_fetch(
     # sales figures for your own account" to the very person whose own accounts exist.
     # Links win: the customer sales report over them. Staff without links keep the analysis.
     has_own_accounts = bool(customer_scope.get("ids"))
+    # CONTACT-BRAND-SCOPE: a brand-scoped contact's accessible brands ride beside the
+    # customer scope (`scope_brand_ids`) so the output guard below drops what the contact
+    # may not see. The turn ctx wins, then the session the engine stamped, then the contact.
+    brand_scope_ids = _brand_scope_ids(ctx, db, contact_id, space_id)
+    if brand_scope_ids:
+        semantic_input["scope_brand_ids"] = brand_scope_ids
     # SO-NUMBER-ASK (PLAN-so-number-ask.md): SO numbers the resolver could not place
     # (`turn_runtime` hands them over as `so_numbers`) are answered from `sales_orders`
     # here, before any tool pick: the orders list reads the DO book and answered an SO ask
@@ -1458,8 +1471,13 @@ def run_fetch(
             "contact_id": contact_id,
         }
         args = fetch_mod.entity_ids_transformer(trigger, space_id=space_id)
-        return fetch_mod.parse_mcp_content(
-            fetch_mod.call_tool(tool, args, mcp=_McpSeam(services.mcp_call))
+        return brand_guard.guard_result(
+            tool,
+            fetch_mod.parse_mcp_content(
+                fetch_mod.call_tool(tool, args, mcp=_McpSeam(services.mcp_call))
+            ),
+            semantic_input.get("scope_brand_ids"),
+            db,
         )
 
     # ── AC-1132 out-of-range: re-ask the SAME outstanding_scope question ──────
@@ -1483,7 +1501,10 @@ def run_fetch(
             # deploy keeps re-printing the kind it always did.
             reask_kind = detail_reask.get("kind") or "outstanding_detail"
             return _outstanding_detail_reoffer(
-                detail_reask.get("filters") or {}, reoffer_rows, kind=reask_kind
+                detail_reask.get("filters") or {},
+                reoffer_rows,
+                kind=reask_kind,
+                localizer=ctx.get("localizer"),
             )
 
     reask_filters = parse_output.get("outstanding_reask_filters")
@@ -1999,6 +2020,7 @@ def run_fetch(
         # `check_access` to fill it from `contact_field_reveals`; until then it is
         # always None, so every restricted field stays hidden by construction.
         "access": ctx.get("access"),
+        "localizer": ctx.get("localizer"),
         # E2 (attribute-first asks): the resolver's `predicate` block, carried
         # through the gate untouched (`resolved`/`gate` are the same mutated dict,
         # `gate.py`'s own C4 bypass reads it off `resolver.get("predicate")` the
@@ -2102,7 +2124,9 @@ def run_fetch(
             f"MCP tool {tool_name} failed: {exc}", outcome=_fetch_failure_outcome(tool_name, exc)
         )
 
-    envelope = fetch_mod.parse_mcp_content(raw)
+    envelope = brand_guard.guard_result(
+        tool_name, fetch_mod.parse_mcp_content(raw), semantic_input.get("scope_brand_ids"), db
+    )
     if trace is not None:
         # A9: ONE call, ONE tool, ONE envelope this turn - the same "the read" this
         # whole function is named for. `envelope` rides through `trace.add`'s own
@@ -2202,6 +2226,38 @@ def run_fetch(
         "delegate_payload": {**payload, "fetch": item},
         "fetch": item,
     }
+
+
+def _brand_scope_ids(ctx: dict[str, Any], db: Any, contact_id: Any, space_id: Any) -> list[str]:
+    """The contact's accessible brand ids for the output guard; [] = unscoped.
+
+    The brand scope the engine stamped on the session, then the contact's own row. The turn ctx
+    is read only when there is no session at all, so it can never widen what the session and
+    the contact carry. A contact whose scope cannot be read fails
+    closed to a brand nothing carries, so every product row is dropped rather than shown."""
+    if db is None:
+        # No session to read a scope from, so a ctx claim can only NARROW (the guard then fails
+        # closed for lack of a session to look products up with); it never replaces a real scope.
+        carried = ctx.get("brand_scope") if isinstance(ctx.get("brand_scope"), dict) else {}
+        ids = carried.get("ids")
+        return sorted(str(i) for i in ids) if isinstance(ids, (list, tuple, set, frozenset)) and ids else []
+    from app.models.base import get_brand_scope
+
+    stamped = get_brand_scope(db)
+    if stamped:
+        return sorted(stamped)
+    if not contact_id:
+        return []
+    try:
+        from app.services.contact_brand_scope import contact_brand_scope
+
+        derived = contact_brand_scope(db, str(contact_id), fetch_mod.space_id_or_default(space_id))
+    except Exception:  # noqa: BLE001 - fail closed
+        logger.warning("chatbot: brand scope lookup failed, failing closed", exc_info=True)
+        from app.services.contact_brand_scope import NO_BRAND_ID
+
+        return [NO_BRAND_ID]
+    return sorted(derived) if derived else []
 
 
 class _McpSeam:
@@ -2424,7 +2480,7 @@ def complete_answer(
             not_allowed_check_stock=bool(payload.get("not_allowed_check_stock")),
         )
         promo = answer_mod.promo_picker(
-            validated, parser=parser, resolved=resolved, gate=gate
+            validated, parser=parser, resolved=resolved, gate=gate, localizer=ctx.get("localizer")
         )
         # n8n feeds `crossdomain-zeroset` the PROMO-PICKER's output; this feeds it the
         # VALIDATOR item. Equivalent only because `promo_picker` returns its input

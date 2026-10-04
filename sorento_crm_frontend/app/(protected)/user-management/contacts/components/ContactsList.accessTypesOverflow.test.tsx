@@ -99,7 +99,7 @@ const ACCESS_TYPES = [
 
 const SEVEN_TYPES_ROW = {
   id: 'contact-seven',
-  phone_number: '+60123456701',
+  phone_number: '+60100000004',
   name: 'Seven Types',
   first_name: 'Seven',
   last_name: 'Types',
@@ -116,7 +116,7 @@ const SEVEN_TYPES_ROW = {
 const ONE_TYPE_ROW = {
   ...SEVEN_TYPES_ROW,
   id: 'contact-one',
-  phone_number: '+60123456702',
+  phone_number: '+60100000003',
   name: 'One Type',
   first_name: 'One',
   last_name: 'Type',

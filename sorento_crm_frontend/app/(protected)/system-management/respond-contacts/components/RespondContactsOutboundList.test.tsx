@@ -34,14 +34,14 @@ const ROWS: RespondContactOutboundRow[] = [
   {
     id: 'contact-enabled',
     name: 'Aisyah Rahman',
-    phone_number: '+60123456701',
+    phone_number: '+60100000004',
     respond_io_id: '10025901',
     outbound_enabled: true,
   },
   {
     id: 'contact-disabled',
     name: 'Farah Idris',
-    phone_number: '+60123456702',
+    phone_number: '+60100000003',
     respond_io_id: '10025902',
     outbound_enabled: false,
   },
@@ -109,7 +109,7 @@ describe('RespondContactsOutboundList - states', () => {
     renderWithClient(<RespondContactsOutboundList />);
 
     expect(screen.getByText('Aisyah Rahman')).toBeInTheDocument();
-    expect(screen.getByText('+60123456702')).toBeInTheDocument();
+    expect(screen.getByText('+60100000003')).toBeInTheDocument();
     expect(screen.getByText('10025901')).toBeInTheDocument();
     expect(screen.getByText('Enabled')).toBeInTheDocument();
     expect(screen.getByText('Disabled')).toBeInTheDocument();

@@ -127,7 +127,7 @@ def _seed_real_attachment_type(session_factory: Any, type_name: str) -> str:
 class TestMissNounIsTheResolvedAttachmentLabel:
     """Captain ruling, 20 Sep 2026: the miss noun is the RESOLVED attachment type label in
     both cases (AC-1702, matching the owner's hand pass 8 production reply), superseding the
-    older prompt v11 capture `prod_sample/out-of-scope-438930735...` that printed the
+    older prompt v11 capture `prod_sample/out-of-scope-900000052...` that printed the
     customer's own word."""
 
     def test_type_named_this_turn_uses_the_resolved_label_not_the_raw_word(

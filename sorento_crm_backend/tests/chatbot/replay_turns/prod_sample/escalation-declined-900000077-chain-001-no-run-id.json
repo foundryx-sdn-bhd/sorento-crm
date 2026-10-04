@@ -1,0 +1,612 @@
+{
+  "turns": [
+    {
+      "access": {
+        "agent_name": "Incoming Stock Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": null,
+          "countryCode": "MY",
+          "created_at": 1778415976,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000077"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": "zzt-900000077@example.invalid",
+          "firstName": "ZZT-900000077",
+          "id": 900000077,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": null,
+          "locale": null,
+          "phone": "+60900000077",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000024\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": null,
+              "firstName": "ZZT-agent",
+              "id": null,
+              "lastName": ""
+            },
+            "countryCode": "MY",
+            "created_at": 1778415976,
+            "email": "zzt-900000077@example.invalid",
+            "firstName": "ZZT-900000077",
+            "id": 900000077,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000077",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "f0f289e4-01bb-4a11-96d2-06fe0d7292b3",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxMjU4OTExNzkVAgASGBYzRUIwOTc5NzY1MTM5MTJFODMzQzczAA==",
+            "contactId": 900000077,
+            "message": {
+              "text": "incoming SRTWC193",
+              "type": "text"
+            },
+            "messageId": 1789020590000000,
+            "timestamp": 1789020590000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "2160cd12-dc1e-47ec-a73a-556cfc76bba4"
+        ],
+        "focus_after": null,
+        "pending": {
+          "kind": "escalation_offer",
+          "option_labels": []
+        },
+        "text": "Here's what you want:\n\u2022 product: SRTWC193\n\nBut no incoming matched these.\nNo incoming for SRTWC193.\n\nBut here are the stock details for the requested products:\n\n- *Product Code:* SRTWC193\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 1\n\n- *Product Code:* SRTWC193\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-BB\n*Quantity On Hand:* 1\n\n- *Product Code:* SRTWC193\n*Warehouse:* MERU\n*System Location:* MWH\n*Quantity On Hand:* 0\n\n- *Product Code:* SRTWC193\n*Warehouse:* MERU\n*System Location:* MWH-BB\n*Quantity On Hand:* 0\n\nWould you like me to escalate to purchasing team?",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "contact_id",
+              "date_mode",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_incoming_stock_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "SRTWC193",
+                "entity_type": "product",
+                "uuid": "2160cd12-dc1e-47ec-a73a-556cfc76bba4"
+              }
+            ],
+            "resolved": true,
+            "token": "SRTWC193"
+          }
+        ],
+        "tokens": [
+          "SRTWC193"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 9,
+        "recorded_at": "2026-09-10T15:09:56.210053+09:00",
+        "turn_id": "3c16c050-4c5f-4c50-9397-af345bcf6d17"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 1,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 1,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "contact_id": "900000077",
+            "date_mode": null,
+            "is_active": null,
+            "product_ids": [
+              "2160cd12-dc1e-47ec-a73a-556cfc76bba4"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "attachments": [],
+            "field_access": {
+              "denied": [
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "eta_delay_date",
+                  "label": "ETA Delay",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "inspection_date",
+                  "label": "CIDB Inspection",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "approval_date",
+                  "label": "CIDB Approval",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "gatepass_date",
+                  "label": "Gatepass",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "warehouse_arrival_date",
+                  "label": "Warehouse Arrival",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "informed_collection_date",
+                  "label": "Collection Informed",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "collection_date",
+                  "label": "Collection",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "loading_date",
+                  "label": "Loading",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "etc_date",
+                  "label": "ETC",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "etd_date",
+                  "label": "ETD",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "liner_code",
+                  "label": "Liner",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "china_forwarder",
+                  "label": "China Forwarder",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "malaysia_forwarder",
+                  "label": "Malaysia Forwarder",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "consignee",
+                  "label": "Consignee",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "delivery_warehouse",
+                  "label": "Delivery Warehouse",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "free_days_available",
+                  "label": "Free Days Available",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "loc",
+                  "label": "Location",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "stacked",
+                  "label": "Stacked",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "coa_permit_no",
+                  "label": "COA Permit No.",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "source_sheet",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                }
+              ],
+              "note": "These fields are omitted because this caller may not see them. Absent does NOT mean the value is unknown or not yet reached."
+            },
+            "field_vocabulary": {
+              "approval_date": "CIDB Approval",
+              "china_forwarder": "China Forwarder",
+              "coa_permit_no": "COA Permit No.",
+              "collection_date": "Collection",
+              "consignee": "Consignee",
+              "delivery_warehouse": "Delivery Warehouse",
+              "estimated_arrival_date": "ETA",
+              "eta_delay_date": "ETA Delay",
+              "etc_date": "ETC",
+              "etd_date": "ETD",
+              "free_days_available": "Free Days Available",
+              "gatepass_date": "Gatepass",
+              "informed_collection_date": "Collection Informed",
+              "inspection_date": "CIDB Inspection",
+              "liner_code": "Liner",
+              "loading_date": "Loading",
+              "loc": "Location",
+              "malaysia_forwarder": "Malaysia Forwarder",
+              "stacked": "Stacked",
+              "warehouse_arrival_date": "Warehouse Arrival"
+            },
+            "has_result": false,
+            "intro": "No matching results found.",
+            "items": [],
+            "last_updated_at": null,
+            "result_type": "incoming_stock"
+          },
+          "tool": "crm_incoming_stock_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "incoming",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "SRTWC193"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_incoming",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [
+          "__all__"
+        ],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to check incoming for SRTWC193"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "Incoming Stock Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": null,
+          "countryCode": "MY",
+          "created_at": 1778415976,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000077"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": "zzt-900000077@example.invalid",
+          "firstName": "ZZT-900000077",
+          "id": 900000077,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": null,
+          "locale": null,
+          "phone": "+60900000077",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000024\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": null,
+              "firstName": "ZZT-agent",
+              "id": null,
+              "lastName": ""
+            },
+            "countryCode": "MY",
+            "created_at": 1778415976,
+            "email": "zzt-900000077@example.invalid",
+            "firstName": "ZZT-900000077",
+            "id": 900000077,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000077",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "50a579bd-55bb-4cbe-9dbe-0e363dd08766",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxMjU4OTExNzkVAgASGBYzRUIwOERCMjcwODYwQjdCRjU0OTZFAA==",
+            "contactId": 900000077,
+            "message": {
+              "text": "NO",
+              "type": "text"
+            },
+            "messageId": 1789020623000000,
+            "timestamp": 1789020623000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message"
+        ],
+        "branch_kind": "escalation_declined",
+        "canned": [],
+        "entity_ids": [],
+        "focus_after": null,
+        "pending": null,
+        "text": "Escalation declined.",
+        "tools": []
+      },
+      "resolutions": {
+        "resolutions": [],
+        "tokens": [],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 9,
+        "recorded_at": "2026-09-10T15:10:30.303497+09:00",
+        "turn_id": "d81101ff-043b-4c45-9dbf-fd6803964c2e"
+      },
+      "tool_results": [],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": null,
+        "entities": [],
+        "entity_op": "reuse",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": null,
+        "is_active": null,
+        "is_affirmative": false,
+        "match_mode": "and",
+        "message_type": "casual",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to decline the escalation offer"
+      }
+    }
+  ]
+}

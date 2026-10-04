@@ -276,10 +276,10 @@ describe('InspectorPanel - barcode value override (D23, S9 review S7)', () => {
     );
 
     fireEvent.change(screen.getByPlaceholderText('4006381333931'), {
-      target: { value: '111222333' },
+      target: { value: '110000526' },
     });
 
-    expect(onUpdate).toHaveBeenCalledWith('bc1', { text_override: '111222333' });
+    expect(onUpdate).toHaveBeenCalledWith('bc1', { text_override: '110000526' });
   });
 
   it('offers Relink only while overridden, not on a plain bound layer', () => {
@@ -295,7 +295,7 @@ describe('InspectorPanel - barcode value override (D23, S9 review S7)', () => {
 
     rerender(
       <InspectorPanel
-        layer={barcodeLayer({ text_override: '111222333' })}
+        layer={barcodeLayer({ text_override: '110000526' })}
         onUpdate={vi.fn()}
         onUpdateProps={vi.fn()}
         resolvedText="4006381333931"
@@ -308,7 +308,7 @@ describe('InspectorPanel - barcode value override (D23, S9 review S7)', () => {
     const onUpdate = vi.fn();
     render(
       <InspectorPanel
-        layer={barcodeLayer({ text_override: '111222333' })}
+        layer={barcodeLayer({ text_override: '110000526' })}
         onUpdate={onUpdate}
         onUpdateProps={vi.fn()}
         resolvedText="4006381333931"
@@ -337,14 +337,14 @@ describe('InspectorPanel - barcode value override (D23, S9 review S7)', () => {
     const onUpdate = vi.fn();
     render(
       <InspectorPanel
-        layer={barcodeLayer({ text_override: '111222333' })}
+        layer={barcodeLayer({ text_override: '110000526' })}
         onUpdate={onUpdate}
         onUpdateProps={vi.fn()}
         resolvedText="4006381333931"
       />,
     );
 
-    fireEvent.change(screen.getByDisplayValue('111222333'), { target: { value: '' } });
+    fireEvent.change(screen.getByDisplayValue('110000526'), { target: { value: '' } });
 
     expect(onUpdate).toHaveBeenCalledWith('bc1', { text_override: '' });
   });

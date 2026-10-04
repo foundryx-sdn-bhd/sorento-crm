@@ -1,0 +1,476 @@
+{
+  "turns": [
+    {
+      "access": {
+        "agent_name": "Order Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": null,
+          "countryCode": "MY",
+          "created_at": 1778415977,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000092"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000092",
+          "id": 900000092,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": null,
+          "locale": null,
+          "phone": "+60900000092",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000025\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": null,
+              "firstName": "ZZT-agent",
+              "id": null,
+              "lastName": ""
+            },
+            "countryCode": "MY",
+            "created_at": 1778415977,
+            "email": null,
+            "firstName": "ZZT-900000092",
+            "id": 900000092,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000092",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "99c66e45-d8c1-4eb9-b09e-ac177d9cc5f5",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxOTcyOTM5NjMVAgASGBQyQURCODY5QUIxOEI3RDY0MjlDQwA=",
+            "contactId": 900000092,
+            "message": {
+              "text": "Miracle Nexus Supply\nSRTWT107 \nDelivery order number",
+              "type": "text"
+            },
+            "messageId": 1789352725000000,
+            "timestamp": 1789352725000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "58f912e0-0492-42fe-be98-b4e0e30a2cc5",
+          "97e60731-0784-410e-b23b-d92cbea445c0",
+          "9be9d4cc-c26a-4f5f-8a00-a930d8f200bb"
+        ],
+        "focus_after": null,
+        "pending": {
+          "kind": "member_offer",
+          "option_labels": []
+        },
+        "text": "Customer: Miracle Nexus Supply\nProduct: SRTWT107\nDates: all dates\n\nHere's what you want:\n\u2022 customer: MIRACLE NEXUS SUPPLY SDN BHD (PROJECT)\n\u2022 product: SRTWT107 (+1 more)\n\nBut no order matched these. Would you like me to escalate to *Sorento* customer service team?\n\nPlease choose who to route to (reply with the number):\n1. Maryam Ariffin\n2. Cyndi\n3. Aisyah\n4. Balqis\n5. Niki\n6. Nurain\n\nIf you have no preference, just reply 'yes' and we'll assign automatically.",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "contact_id",
+              "customer_ids",
+              "date_mode",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_order_management_orders_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "Miracle Nexus Supply",
+                "entity_type": "customer",
+                "uuid": "58f912e0-0492-42fe-be98-b4e0e30a2cc5"
+              }
+            ],
+            "resolved": true,
+            "token": "Miracle Nexus Supply"
+          },
+          {
+            "matches": [
+              {
+                "canonical_code": "SRTWT107",
+                "entity_type": "product",
+                "uuid": "97e60731-0784-410e-b23b-d92cbea445c0"
+              }
+            ],
+            "resolved": true,
+            "token": "SRTWT107"
+          }
+        ],
+        "tokens": [
+          "Miracle Nexus Supply",
+          "SRTWT107"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 17,
+        "recorded_at": "2026-09-14T11:25:31.176279+09:00",
+        "turn_id": "ec2c3f34-d2cb-42a9-9744-e6ddf3e43131"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 3,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 3,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "contact_id": "900000092",
+            "customer_ids": [
+              "97e60731-0784-410e-b23b-d92cbea445c0"
+            ],
+            "date_mode": null,
+            "is_active": null,
+            "product_ids": [
+              "9be9d4cc-c26a-4f5f-8a00-a930d8f200bb",
+              "58f912e0-0492-42fe-be98-b4e0e30a2cc5"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "attachments": [],
+            "fallback_used": false,
+            "has_result": false,
+            "intro": "No matching results found.",
+            "items": [],
+            "last_updated_at": null,
+            "result_type": "orders"
+          },
+          "tool": "crm_order_management_orders_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "order",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "customer",
+            "raw": "Miracle Nexus Supply"
+          },
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "SRTWT107"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_order",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": "specific",
+        "top_n": null,
+        "user_goal": "trying to check a delivery order for Miracle Nexus Supply and SRTWT107"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "Order Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": null,
+          "countryCode": "MY",
+          "created_at": 1778415977,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000092"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000092",
+          "id": 900000092,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": null,
+          "locale": null,
+          "phone": "+60900000092",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000025\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": null,
+              "firstName": "ZZT-agent",
+              "id": null,
+              "lastName": ""
+            },
+            "countryCode": "MY",
+            "created_at": 1778415977,
+            "email": null,
+            "firstName": "ZZT-900000092",
+            "id": 900000092,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000092",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "81ee63bc-f525-438e-94b4-27ec73b28fad",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxOTcyOTM5NjMVAgASGBQyQTgxNjhFMzAxOUVFQTE0NDZFRAA=",
+            "contactId": 900000092,
+            "message": {
+              "text": "5",
+              "type": "text"
+            },
+            "messageId": 1789352758000000,
+            "timestamp": 1789352758000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message",
+          "assign_conversation",
+          "add_comment",
+          "send_message"
+        ],
+        "branch_kind": "out_of_scope",
+        "canned": [],
+        "entity_ids": [],
+        "focus_after": null,
+        "pending": null,
+        "text": null,
+        "tools": []
+      },
+      "resolutions": {
+        "resolutions": [],
+        "tokens": [],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 17,
+        "recorded_at": "2026-09-14T11:26:05.219828+09:00",
+        "turn_id": "aeb6680f-c237-4cc4-b938-868dc5fdf610"
+      },
+      "tool_results": [],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": null,
+        "entities": [],
+        "entity_op": "reuse",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": null,
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "casual",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [
+          5
+        ],
+        "reference_target": "dym",
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to pick a routing option"
+      }
+    }
+  ]
+}

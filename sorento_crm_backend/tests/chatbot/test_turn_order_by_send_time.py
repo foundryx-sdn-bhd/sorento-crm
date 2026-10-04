@@ -83,7 +83,7 @@ def _now_ms() -> int:
 
 
 def _seed_contact(
-    session_factory, contact_id: int, *, focus_codes: list[str], phone: str = "+60163281179"
+    session_factory, contact_id: int, *, focus_codes: list[str], phone: str = "+60160000528"
 ) -> None:
     session_vars = {
         "focus": {"products": [_product(c) for c in focus_codes], "domains": ["inventory"]},

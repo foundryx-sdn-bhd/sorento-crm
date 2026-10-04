@@ -1,5 +1,5 @@
 """Owner hand test of round 2 on PR #833 (26 Sep 2026 ~13:07Z to 13:11Z, console :3084,
-contact 487555417). W1 to W5 of the round 3 fix brief, as whole turns.
+contact 900000039). W1 to W5 of the round 3 fix brief, as whole turns.
 
 Each case runs `engine.run_turn` with the v3 verdict shape, the real resolver, the real
 class vocabulary and the real brands table, with only the MCP tool call stubbed (same

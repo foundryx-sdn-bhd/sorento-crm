@@ -5,7 +5,7 @@ Plan: `documentation/plans/chatbot/PLAN-product-attachment-picker-stamp.md`.
 UAC: `documentation/plans/chatbot/product-attachment-picker-stamp-acceptance-criteria.md`.
 
 Owner console turn "photo for srtwc286" (local repro `chatbot.turns`
-`bfe8e386-db90-46df-ae6b-35c15d636362`, 8 Sep 2026, `is_test`, contact 437264483) replied
+`bfe8e386-db90-46df-ae6b-35c15d636362`, 8 Sep 2026, `is_test`, contact 900000008) replied
 
     product_attachment search needs to be more specific. Multiple matches found. Please choose:
     1. SRTWC286-SH-200

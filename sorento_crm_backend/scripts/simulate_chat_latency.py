@@ -16,7 +16,7 @@ from app.models.user import SystemSetting
 from app.services import chat_latency_service as latency
 from app.services.system_health_alert_service import _eval_chat_latency
 
-CONTACT = "sim-445239409"
+CONTACT = "sim-900000063"
 
 
 def _msg(db, *, type, turn_id, respond_ts, ingest_at=None, delivery_status=None):
