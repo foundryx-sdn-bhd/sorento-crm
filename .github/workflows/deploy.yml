@@ -414,8 +414,12 @@ jobs:
             echo "${why:-$EVENT is not a pull_request}: every area counts as changed"
             exit 0
           fi
+          # A here-string, not `printf | grep -q`: grep -q exits on its first
+          # match, and a printf still writing the rest of the list then dies
+          # of SIGPIPE, which pipefail turns into a false flag (scm=false on
+          # run 37140058013, CI-SCM-FILTER-RACE).
           flag() {
-            if printf '%s\n' "$files" | grep -Eq "$2"; then echo "$1=true"; else echo "$1=false"; fi
+            if grep -Eq "$2" <<< "$files"; then echo "$1=true"; else echo "$1=false"; fi
           }
           # SCM_RE: what makes the SCM shards run on a PR. The scm API,
           # service, module, model and schema files, the SCM tests, an scm
@@ -1181,7 +1185,8 @@ jobs:
             rel="${path#sorento_crm_backend/}"
             if [ ! -f "$path" ]; then
               dropped="$dropped  $rel (not in the checkout: deleted or renamed away)"$'\n'
-            elif printf '%s\n' "$excluded" | grep -qxF "$rel"; then
+            # Here-string, not a pipe: see flag() in job `changes`.
+            elif grep -qxF "$rel" <<< "$excluded"; then
               dropped="$dropped  $rel (listed in tests/ci_excluded.txt)"$'\n'
             else
               run="$run $rel"

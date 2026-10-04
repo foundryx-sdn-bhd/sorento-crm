@@ -25,6 +25,7 @@ from typing import Any
 
 from app.services.chatbot.lanes.business import fetch as fetch_mod
 from app.services.chatbot.lanes.business.services import FetchServices, ResolveGateServices
+from tests.chatbot._turn_helpers import do_window
 from tests.chatbot.conftest import set_chatbot_switches, validating_resolve_entity
 from tests.chatbot.test_engine import CONTACT_ID, _envelope, _parser_output, stub_access  # noqa: F401
 from tests.chatbot.test_samantha_26sep_s9_brand_resolve import (
@@ -175,8 +176,10 @@ _HIT = {"has_result": True, "items": [_HIT_ROW], "data": [_HIT_ROW]}
 
 
 def _delivered_orders_qf(entities: list[dict[str, Any]], **extra: Any) -> dict[str, Any]:
+    # Dated: a dateless DO list ask asks which period first (DO-ASK-SIMPLIFY, owner 4 Oct 2026).
     return _parser_output(
-        domain_hint="order", intent_hint="check_order", order_status="delivered", entities=entities, **extra
+        domain_hint="order", intent_hint="check_order", order_status="delivered", entities=entities,
+        **{**do_window(), **extra},
     )
 
 

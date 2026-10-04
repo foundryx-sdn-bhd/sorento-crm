@@ -26,17 +26,52 @@ export type ContactsListParams = ListPagerParams;
  * AC-MEM028) is the only value this lane sends - the backend filters to
  * `chatbot_memory_level IS NOT NULL`.
  */
+/**
+ * CONTACT-BULK-ACCESS (UAC A2.3): the access filters, each one query param, absent when
+ * unset. Field name -> param name; the values are the backend's own (`yes|no`, a tier
+ * code or `none`, a code, an id).
+ */
+export const CONTACT_ACCESS_FILTER_PARAMS = {
+  accessType: 'access_type',
+  tier: 'tier',
+  cost: 'cost',
+  escalation: 'escalation',
+  packingList: 'packing_list',
+  stock: 'stock',
+  customerId: 'customer_id',
+  accessDiffersFrom: 'access_differs_from',
+} as const;
+
+export type ContactAccessFilters = Partial<
+  Record<keyof typeof CONTACT_ACCESS_FILTER_PARAMS, string | null>
+>;
+
+/** The access filters as the URL carries them, read back (inverse of the writer below). */
+export function contactAccessFiltersFromUrl(filters: Record<string, string>): ContactAccessFilters {
+  const out: ContactAccessFilters = {};
+  for (const [field, param] of Object.entries(CONTACT_ACCESS_FILTER_PARAMS)) {
+    if (filters[param]) out[field as keyof ContactAccessFilters] = filters[param];
+  }
+  return out;
+}
+
 export function contactsListFilters({
   chatbotMemoryLevel,
   customersNone = false,
+  access = {},
 }: {
   chatbotMemoryLevel: string | null;
   customersNone?: boolean;
+  access?: ContactAccessFilters;
 }): Record<string, string> {
   const filters: Record<string, string> = {};
   if (chatbotMemoryLevel) filters.chatbot_memory_level = chatbotMemoryLevel;
   // `customers=none`: the contacts with no linked customer (bulk Link customers worklist).
   if (customersNone) filters.customers = 'none';
+  for (const [field, param] of Object.entries(CONTACT_ACCESS_FILTER_PARAMS)) {
+    const value = access[field as keyof ContactAccessFilters];
+    if (value) filters[param] = value;
+  }
   return filters;
 }
 
