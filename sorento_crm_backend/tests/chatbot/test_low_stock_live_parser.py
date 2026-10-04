@@ -7,7 +7,7 @@ by the model reading `LOW_STOCK_FILTERS_ADDENDUM`. These tests call the real pro
 the prompt this branch publishes (`SEMANTIC_PARSER_PROMPT` plus the committed policy-blocks
 seed, the shape `chatbot_rearch_s4._body` publishes) and grade the `low_stock` key it emits.
 
-Opt-in, never in CI: `LOW_STOCK_LIVE_PARSER=1` (model `LOW_STOCK_LIVE_MODEL`, default
+Opt-in, never in CI: `CHATBOT_LIVE_LLM=1` (the suite's `live_external` marker; model `LOW_STOCK_LIVE_MODEL`, default
 `gpt-5.4-mini`, the production parser model; key `OPENAI_API_KEY`, or a placeholder where an
 egress proxy injects it). Each case is one parse, so a paraphrase that fails is named alone.
 """
@@ -20,8 +20,9 @@ from typing import Any
 
 import pytest
 
-LIVE = os.environ.get("LOW_STOCK_LIVE_PARSER") == "1"
-pytestmark = pytest.mark.skipif(not LIVE, reason="live parser run: set LOW_STOCK_LIVE_PARSER=1")
+# The suite-wide live call guard (NO-LIVE-LLM-TESTS, tests/conftest.py) skips these unless
+# CHATBOT_LIVE_LLM=1, and lifts the guard for them only when it is set.
+pytestmark = pytest.mark.live_external
 
 QUESTION = 'Which product category? Reply with a category (e.g. water tap) or "all".'
 SEED = Path(__file__).parent / "fixtures" / "prompt_blocks_seed.txt"
@@ -127,7 +128,7 @@ def test_another_ask_leaves_it_empty() -> None:
 
 OPEN_CATEGORY = {"kind": "free", "about": "low_stock_report", "question": QUESTION, "owed": ["category"]}
 OPEN_SUPPLIER = {
-    "kind": "pick_one", "about": "low_stock_report", "question": 'Which supplier? Reply with a supplier name or "all".',
+    "kind": "pick_one", "about": "low_stock_report", "question": "Which supplier?",
     "owed": ["supplier"],
     "options": [{"position": 1, "code": "JINBAICHUAN HARDWARE"}, {"position": 2, "code": "JINBAICHUAN TRADING"}],
 }

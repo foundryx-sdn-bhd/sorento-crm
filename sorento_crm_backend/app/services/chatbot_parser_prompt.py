@@ -195,8 +195,8 @@ or mix (English, Malay, Chinese, Manglish), never a word from an earlier turn. T
     alone is never a name.
   - group_by: how the report is split into sections. "by supplier", "per vendor", "group
     them by supplier", "split by supplier", "supplier-wise", "ikut pembekal", "按供应商" ->
-    "supplier"; "by category", "per type", "ikut kategori", "按类别" -> "category"; supplier
-    and category together -> "supplier_category"; "by brand", "split by brand", "ikut
+    "supplier"; "by category", "per type", "ikut kategori", "按类别" -> "category"; only a
+    message naming BOTH as the split -> "supplier_category"; "by brand", "split by brand", "ikut
     jenama", "按品牌" -> "brand"; "by warehouse", "per location", "ikut gudang" ->
     "warehouse"; "no grouping", "one list" -> "none"; nothing said -> null. A supplier NAME
     is a filter, never a grouping.

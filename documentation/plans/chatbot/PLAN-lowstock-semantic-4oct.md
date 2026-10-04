@@ -1,6 +1,6 @@
 # PLAN: low stock asks fully semantic, hard-coded rules removed (LOWSTOCK-SEMANTIC)
 
-Status: in review, PR #1470 (4 Oct 2026); reviewer round 1 fixed, tests/chatbot 5538 passed, live parser 33/33. Track: M (LEAD pattern). No schema migration; one
+Status: in review, PR #1470 (4 Oct 2026); owner hand test PASS; crew design review P2 follow-up landed (no raw-text fallback); merged with main 08403a29a (#1444 ideation keeps its shape capture via AskType.answered_by_parser); tests/chatbot 6340 passed. Track: M (LEAD pattern). No schema migration; one
 data migration (`lss_0001_parser_vocab`) publishes a new UNLABELLED parser prompt version.
 Card: `lowstock-semantic-behaviour-card.md` (Step 1 trace with file:line, rulings Q1-Q4).
 Hand test: `laneboard/scripts/1470.md`.
@@ -54,6 +54,6 @@ asks its category once and the reply runs it. No rule fills that gap.
   product without digits is never a category, the rule names and `import re` are gone).
 - `tests/chatbot/test_required_fields.py`: helper changes, reply capture by the parser.
 - `tests/chatbot/test_parser_low_stock_filters_publish.py`: the publish.
-- `tests/chatbot/test_low_stock_live_parser.py` (opt-in `LOW_STOCK_LIVE_PARSER=1`): 27 live
+- `tests/chatbot/test_low_stock_live_parser.py` (opt-in `CHATBOT_LIVE_LLM=1`, `live_external` marker): 27 live
   parser paraphrase cases and 6 end-to-end console flows on `gpt-5.4-mini`.
 - `tests/chatbot/console_cases/2026-10-04-lowstock-semantic.yaml`: the post-deploy console check.

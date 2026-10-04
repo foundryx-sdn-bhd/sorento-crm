@@ -33,11 +33,11 @@ ASK_NAME = "low_stock_report"
 SUPPLIER_GRANT = "purchase_orders.supplier"
 
 QUESTION = 'Which product category? Reply with a category (e.g. water tap) or "all".'
-SUPPLIER_QUESTION = 'Which supplier? Reply with a supplier name or "all".'
 GROUPING_QUESTION = "How should the low stock report be grouped?"
 GROUPING_PICK = "I can group the low stock report by supplier, by category, or both. Which one? Reply with a number:"
 CANCELLED = "Low stock report cancelled."
 GIVE_UP = "I still can't place '{word}'. Ask for the low stock report again with a category or \"all\"."
+GIVE_UP_BLANK = "I still can't tell which one you mean. Ask for the low stock report again with a category or \"all\"."
 
 SPLIT_LABELS = {
     "none": "none",
@@ -55,6 +55,11 @@ _GROUPING_OPTIONS = (
 )
 #: Security S2 (kept from #1445): bound what one parse can make the lane resolve.
 MAX_WORDS = 6
+
+#: "All" as an already-settled value: the lane hands the shared helper only resolved
+#: values, so none of its reply-word lists is ever consulted for a low stock ask.
+_ALL = rf.Resolved("ok", value=rf.ALL, label=rf.ALL)
+_BLANK = rf.Resolved("unknown", label="")
 
 #: The engine's own key for the persisted frame (`required_fields.ENGINE_KEYS`).
 FRAME_KEY = "low_stock_frame"
@@ -194,13 +199,13 @@ def _grouping_options(include_supplier: bool) -> list[tuple[str, str]]:
 
 
 def resolve_grouping(_db: Any, word: str, extras: dict[str, Any]) -> rf.Resolved:
-    """The parser's `group_by` value (or, answering the grouping pick, an option's own
-    label). A split the workbook has is taken; one it has not (brand, warehouse) is the
-    supplier / category / both / none pick (crew ruling Q2)."""
+    """The parser's `group_by` enum value (never user text). A split the workbook has is
+    taken; one it has not (brand, warehouse) is the supplier / category / both / none pick
+    (crew ruling Q2)."""
     options = _grouping_options(extras.get("include_supplier") is not False)
-    want = " ".join((word or "").split()).casefold()
+    want = word or ""
     for value, label in options:
-        if want in (value, label.casefold()):
+        if want == value:
             return rf.Resolved("ok", value=value, label=label)
     if want in GROUP_BY:
         return rf.Resolved("ambiguous", options=tuple((v, label) for v, label in options))
@@ -209,7 +214,7 @@ def resolve_grouping(_db: Any, word: str, extras: dict[str, Any]) -> rf.Resolved
 
 CATEGORY = rf.FieldSpec(name="category", noun="category", question=QUESTION, resolve=resolve_category)
 SUPPLIER = rf.FieldSpec(
-    name="supplier", noun="supplier", question=SUPPLIER_QUESTION, resolve=resolve_supplier,
+    name="supplier", noun="supplier", question="Which supplier?", resolve=resolve_supplier,
     required=False, ask_unknown=True,
 )
 GROUPING = rf.FieldSpec(
@@ -232,6 +237,8 @@ LOW_STOCK_ASK = rf.register(rf.AskType(
     },
     cancelled=CANCELLED,
     give_up=GIVE_UP,
+    give_up_blank=GIVE_UP_BLANK,
+    answered_by_parser=True,
 ))
 
 
@@ -323,9 +330,9 @@ def _group_word(group: str | None, include_supplier: bool) -> str | None:
     return {"supplier": "none", "supplier_category": "category"}.get(group, group)
 
 
-def _category(db: Any, read: dict[str, Any], brands: list[str], extras: dict[str, Any]) -> Any:
+def _category(db: Any, read: dict[str, Any], brands: list[str], extras: dict[str, Any]) -> rf.Resolved | None:
     if read["all_categories"]:
-        return rf.ALL
+        return _ALL
     if read["categories"]:
         return _all_of(db, read["categories"], CATEGORY, extras)
     if brands:
@@ -348,12 +355,13 @@ def _from_frame(db: Any, frame: dict[str, Any], read: dict[str, Any], brands: li
         elif brands and value == rf.ALL:
             given["category"] = brand_categories(db, brands)
         elif not brands:
-            given["category"] = rf.ALL if value == rf.ALL else rf.Resolved("ok", value=value, label=label)
+            given["category"] = _ALL if value == rf.ALL else rf.Resolved("ok", value=value, label=label)
     supplier = frame.get("supplier") if isinstance(frame.get("supplier"), dict) else None
     if include_supplier and supplier and not read["suppliers"] and isinstance(supplier.get("value"), list):
         given["supplier"] = rf.Resolved("ok", value=supplier["value"], label=str(supplier.get("label") or ""))
     if not read["group_by"] and frame.get("grouping"):
-        given["grouping"] = _group_word(str(frame["grouping"]), include_supplier)
+        group = _group_word(str(frame["grouping"]), include_supplier) or "none"
+        given["grouping"] = resolve_grouping(db, group, {"include_supplier": include_supplier})
     return {k: v for k, v in given.items() if v is not None}
 
 
@@ -367,15 +375,17 @@ def _given(db: Any, read: dict[str, Any], brands: list[str], extras: dict[str, A
         given["supplier"] = _all_of(db, read["suppliers"], SUPPLIER, extras)
     group = _group_word(read["group_by"], include_supplier)
     if group:
-        given["grouping"] = group
+        given["grouping"] = resolve_grouping(db, group, extras)
     return given
 
 
 def _answer(db: Any, slot: dict[str, Any], parse_output: dict[str, Any], read: dict[str, Any],
-            extras: dict[str, Any]) -> tuple[Any, bool]:
-    """The reply to the open question: the parser's declared answer first (a pick, "all",
-    "cancel", the field's own words), else the bare reply resolved as the answer to the
-    question asked (crew ruling Q4: "1", "all", "water closet")."""
+            extras: dict[str, Any]) -> tuple[rf.Resolved | None, bool]:
+    """The reply to the open question, from the PARSER's declared answer only (crew design
+    review, 4 Oct 2026: "a reply counts only via the parser-declared answer"): a pick of
+    the listed options, "all", "cancel", or the field's own words in `low_stock`. The reply
+    text is never read; an answer that placed nothing is a blank miss, asked again.
+    Returns `(answer, cancel)`."""
     answer = parse_output.get("required_ask_answer")
     answer = answer if isinstance(answer, dict) else {}
     mode = answer.get("mode")
@@ -387,7 +397,7 @@ def _answer(db: Any, slot: dict[str, Any], parse_output: dict[str, Any], read: d
         value, label = options[picked[0] - 1]
         return rf.Resolved("ok", value=value, label=label), False
     if mode == "all":
-        return rf.ALL, False
+        return _ALL, False
     asking = slot.get("asking")
     include_supplier = extras.get("include_supplier") is True
     brands = list(extras.get("brands") or [])
@@ -399,8 +409,8 @@ def _answer(db: Any, slot: dict[str, Any], parse_output: dict[str, Any], read: d
     elif asking == "supplier" and read["suppliers"]:
         return _all_of(db, read["suppliers"], SUPPLIER, extras), False
     elif asking == "grouping" and read["group_by"]:
-        return _group_word(read["group_by"], include_supplier), False
-    return str(parse_output.get("required_ask_reply") or ""), False
+        return resolve_grouping(db, _group_word(read["group_by"], include_supplier) or "", extras), False
+    return rf.Resolved("unknown", label=""), False
 
 
 def settle(db: Any, parse_output: dict[str, Any], *, include_supplier: bool) -> rf.Outcome:
@@ -428,9 +438,8 @@ def settle(db: Any, parse_output: dict[str, Any], *, include_supplier: bool) -> 
         given = _given(db, {**merged, "categories": [], "all_categories": False}, [], extras, include_supplier)
         if slot.get("asking") == "category":
             # How a later refinement names the category back ("Cabana water tap").
-            words = read["categories"] or ([reply] if isinstance(reply, str) and reply != rf.ALL else [])
-            extras["category_words"] = " ".join(" ".join(words).split())
-        return rf.collect(db, LOW_STOCK_ASK, slot=slot, reply=reply if reply is not None else "",
+            extras["category_words"] = " ".join(" ".join(read["categories"]).split())
+        return rf.collect(db, LOW_STOCK_ASK, slot=slot, reply=reply if reply is not None else _BLANK,
                           given=given, cancel=cancel, extras=extras)
 
     frame = parse_output.get(FRAME_KEY) if isinstance(parse_output.get(FRAME_KEY), dict) else None

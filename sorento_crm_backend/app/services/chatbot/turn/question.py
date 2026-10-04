@@ -104,6 +104,9 @@ def of_required_ask(slot: Any) -> dict[str, Any] | None:
     if not isinstance(slot, dict) or not slot.get("asking"):
         return None
     ask = rf.ASKS.get(str(slot.get("ask") or ""))
+    if ask is None or not ask.answered_by_parser:
+        # Only an ask whose replies the parser reads (the low stock report) is stated.
+        return None
     field = next((f for f in (ask.fields if ask else ()) if f.name == slot.get("asking")), None)
     if field is None:
         return None
