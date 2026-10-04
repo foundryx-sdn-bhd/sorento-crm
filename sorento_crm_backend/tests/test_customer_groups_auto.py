@@ -186,7 +186,7 @@ def _actor(db) -> str:
 
 
 def _group_of(db, cid):
-    return db.execute(text("SELECT customer_group_id FROM customers WHERE id = :i"), {"i": cid}).scalar()
+    return db.execute(text("SELECT customer_group_id::text FROM customers WHERE id = :i"), {"i": cid}).scalar()
 
 
 def test_apply_creates_assigns_audits_and_rerun_changes_nothing(tmp_path):
