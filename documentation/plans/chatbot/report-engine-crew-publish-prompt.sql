@@ -1,11 +1,9 @@
 -- crew-migration: publish report_engine_0001_prompt's chatbot parser prompt (REPORT-ENGINE, PR #1447; body md5 in the check below).
--- Idempotent: inserts the next version only when no version carries this exact body; the
--- tool append is guarded the same way. The production label is NOT moved here: the owner moves it in the admin
--- Prompts screen (or crew runs the label step posted on PR #1447). Em-dashes in the body are
--- written as @@EMDASH@@ and restored by replace(), so the stored body matches the code byte for byte.
+-- Idempotent: inserts the next version only when no version carries this exact body.
+-- PURE INSERT: nothing else is touched (no label move, no domain row). The hand test picks the
+-- version in the Chatbot Console's prompt-version picker. Em-dashes in the body are written as
+-- @@EMDASH@@ and restored by replace(), so the stored body matches the code byte for byte.
 BEGIN;
-UPDATE chatbot_domains SET tools = array_append(tools, 'crm_report_ask')
- WHERE name = 'order' AND NOT ('crm_report_ask' = ANY(tools));
 INSERT INTO ai_prompt_versions (id, name, version, type, template, variables, commit_message, created_at)
 SELECT gen_random_uuid(), 'chatbot_semantic_parser',
        COALESCE((SELECT max(version) FROM ai_prompt_versions WHERE name = 'chatbot_semantic_parser'), 0) + 1,
