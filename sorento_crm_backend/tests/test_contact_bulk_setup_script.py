@@ -1035,13 +1035,27 @@ def test_auto_fuzzy_only_is_needs_human_and_in_the_leftover(db, tmp_path, w):
     assert {r["debtor_code"] for r in rows} == {"ZZT-A9"}
 
 
-def test_auto_two_surviving_exact_matches_is_needs_human(db, tmp_path, w):
-    _contact(db, 1)
-    _customer(db, w.a, "ZZT Dealer A Sdn Bhd", "ZZT-B1")
-    _customer(db, w.a, "ZZT Dealer A Trading", "ZZT-B2")  # same name once the suffix is dropped
+def test_auto_links_every_surviving_exact_ledger(db, tmp_path, w):
+    c1, c2 = _contact(db, 1), _contact(db, 2)
+    a = _customer(db, w.a, "ZZT ALPHA [A/C I]", "ZZT-B1")
+    b = _customer(db, w.a, "ZZT ALPHA [A/C II]", "ZZT-B2")
+    res, _ = _auto(db, w, _auto_book(tmp_path, company="ZZT ALPHA Sdn Bhd"), tmp_path, apply=True, actor_id=w.actor)
+    assert sorted(x["customer_id"] for x in res["auto"]) == sorted([a.id, b.id])
+    assert all(len(x["contacts"]) == 2 for x in res["auto"])
+    assert (res["needs_human"], res["linked"]) == (0, 4)
+    assert sorted((l.contact_id, l.customer_id) for l in _links(db)) == sorted(
+        [(c.id, x.id) for c in (c1, c2) for x in (a, b)])
+
+
+def test_auto_has_no_candidate_cap(db, tmp_path, w):
+    c1, c2 = _contact(db, 1), _contact(db, 2)
+    exact = [_customer(db, w.a, f"ZZT Dealer A [Ledger {i}]", f"ZZT-E{i}") for i in range(7)]
+    for i in range(3):
+        _customer(db, w.a, f"ZZT Dealer A Hardware Supplies {i}", f"ZZT-F{i}")
     res, _ = _auto(db, w, _auto_book(tmp_path), tmp_path, apply=True, actor_id=w.actor)
-    assert (res["auto"], res["needs_human"]) == ([], 1)
-    assert _links(db) == []
+    assert sorted(x["customer_id"] for x in res["auto"]) == sorted(x.id for x in exact)
+    assert (res["needs_human"], res["linked"]) == (0, 14)
+    assert {l.customer_id for l in _links(db)} == {x.id for x in exact}
 
 
 def test_auto_exact_match_only_on_a_retired_row_is_needs_human(db, tmp_path, w):
@@ -1054,13 +1068,15 @@ def test_auto_exact_match_only_on_a_retired_row_is_needs_human(db, tmp_path, w):
     assert _links(db) == []
 
 
-def test_auto_exact_match_in_a_held_group_is_needs_human(db, tmp_path, w):
+def test_auto_exact_match_in_a_held_group_is_needs_human_and_listed_as_held(db, tmp_path, w):
     _contact(db, 1)
-    _dup(db, w, "ZZT Dealer A Sdn Bhd", "ZZT-H5", created=datetime(2020, 1, 1))
+    held = _dup(db, w, "ZZT Dealer A Sdn Bhd", "ZZT-H5", created=datetime(2020, 1, 1))
     _dup(db, w, "ZZT Unrelated Hardware", "ZZT-H5", created=datetime(2021, 1, 1))
-    res, _ = _auto(db, w, _auto_book(tmp_path), tmp_path, apply=True, actor_id=w.actor)
+    res, out = _auto(db, w, _auto_book(tmp_path), tmp_path, apply=True, actor_id=w.actor)
     assert (res["auto"], res["needs_human"]) == ([], 1)
     assert _links(db) == []
+    _, rows = _read_review(out / "links-review-leftover.xlsx")
+    assert [r["reason"] for r in rows if r["customer_id"] == held.id] == ["held"]
 
 
 def test_auto_block_already_linked_is_skipped_and_untouched(db, tmp_path, w):
