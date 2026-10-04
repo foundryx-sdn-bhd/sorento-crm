@@ -1075,7 +1075,7 @@ def _inject_harness_session(
     trace showed the contact's real memory while the lane ran on injected memory would be
     the worst kind of unreadable.
 
-    Fix 3 (console defect, contact 437264483, 23 Sep 2026): `session_state.five_keys`
+    Fix 3 (console defect, contact 900000008, 23 Sep 2026): `session_state.five_keys`
     returns the STORED top-level five keys whenever ANY of them is present on
     `session_vars`, and only falls through to the `variables` nest when none is - so
     writing the harness value into `variables` alone, leaving the stored row's own

@@ -1,5 +1,5 @@
 """Owner hand pass 3 (AC-1593), 17 Sep 2026 17:31-17:38 MYT, 26-turn console chain,
-contact 437264483 (source clone `sorento_ai_automation_rearch`). One unit red per
+contact 900000008 (source clone `sorento_ai_automation_rearch`). One unit red per
 FINAL ruling row - owner go, coordinator relay, 17 Sep 2026 evening, the UAC's own
 "Hand pass 3 rulings" block (`documentation/plans/chatbot/chatbot-turn-rearch-
 acceptance-criteria.md`) - superseding the earlier proposed-ruling brief

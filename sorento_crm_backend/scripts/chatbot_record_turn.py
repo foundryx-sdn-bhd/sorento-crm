@@ -12,7 +12,7 @@ the source database, and it never writes anywhere except under
         line-001-stock-by-location
 
     venv/bin/python scripts/chatbot_record_turn.py --db-url "$SOURCE_URL" \\
-        --contact 437264483 --since 2026-09-15 --until 2026-09-16 --group console \\
+        --contact 900000008 --since 2026-09-15 --until 2026-09-16 --group console \\
         --slug-prefix owner-15sep
 
     venv/bin/python scripts/chatbot_record_turn.py --db-url "$SOURCE_URL" \\
@@ -61,6 +61,7 @@ and `resolutions`):
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -341,6 +342,76 @@ def _scrub_assignee(assignee: dict[str, Any] | None) -> None:
         assignee["email"] = f"zzt-agent-{assignee_id}@example.invalid" if assignee_id else "zzt-agent@example.invalid"
 
 
+_FAKE_ID_PREFIX = "900000"
+_CONTACT_ID_KEYS = ("contactId", "contact_id", "respond_io_id", "respond_id", "contact_respond_id")
+
+
+def _fake_contact_id(real_id: Any) -> str:
+    """The one stable fake id every contact-id position of a recording derives from:
+    twelve digits, `900000` then six digits taken from a hash of the real id. The same
+    real id always maps to the same fake one across runs, a fake id maps to itself
+    (so scrubbing twice changes nothing), and `+60` plus it is a fake phone the PII
+    guard accepts (a zero run straight after the prefix). No id keeps the `None` label."""
+    if real_id is None:
+        return "None"
+    text = str(real_id)
+    if len(text) == 12 and text.startswith(_FAKE_ID_PREFIX):
+        return text
+    digest = hashlib.sha256(text.encode()).hexdigest()
+    return _FAKE_ID_PREFIX + f"{int(digest, 16) % 1000000:06d}"
+
+
+_MEDIA_HOST = "https://cdn.example.invalid/"
+_MEDIA_PARENT_KEYS = ("attachment", "media")
+_MEDIA_URL_KEYS = ("url", "source_url")
+
+
+def _collect_real_ids(node: Any, found: set[str], *, key: str | None = None) -> None:
+    """Every real contact id text inside a raw row: id-named keys, plus `id` of a
+    contact-shaped dict. Digit strings of six or more only (so `id: 3` never counts)."""
+    if isinstance(node, dict):
+        for k, v in node.items():
+            if isinstance(v, (str, int)) and not isinstance(v, bool):
+                is_id = k in _CONTACT_ID_KEYS or (k == "id" and key in ("contact", None) and "firstName" in node)
+                if is_id and str(v).isdigit() and len(str(v)) >= 6:
+                    found.add(str(v))
+            _collect_real_ids(v, found, key=k)
+    elif isinstance(node, list):
+        for item in node:
+            _collect_real_ids(item, found, key=key)
+
+
+def _final_scrub(node: Any, real_ids: set[str], media_map: dict[str, str], *, under: bool = False) -> Any:
+    """Last pass over a whole recorded turn: inbound media links (`url` / `source_url`
+    under an `attachment` or `media` key) become a placeholder-host link, and every
+    remaining occurrence of a real id inside any string becomes its fake."""
+    if isinstance(node, dict):
+        for k, v in list(node.items()):
+            child_under = under or k in _MEDIA_PARENT_KEYS
+            node[k] = _final_scrub(v, real_ids, media_map, under=child_under)
+        return node
+    if isinstance(node, list):
+        return [_final_scrub(i, real_ids, media_map, under=under) for i in node]
+    if isinstance(node, str):
+        for url in sorted(media_map, key=len, reverse=True):
+            node = node.replace(url, media_map[url])
+        for real in real_ids:
+            node = re.sub(rf"(?<!\d){re.escape(real)}(?!\d)", _fake_contact_id(real), node)
+    return node
+
+
+def _collect_media_urls(node: Any, out: dict[str, str], under: bool = False) -> None:
+    if isinstance(node, dict):
+        for k, v in node.items():
+            child_under = under or k in _MEDIA_PARENT_KEYS
+            if child_under and k in _MEDIA_URL_KEYS and isinstance(v, str) and v:
+                out.setdefault(v, "")
+            _collect_media_urls(v, out, child_under)
+    elif isinstance(node, list):
+        for i in node:
+            _collect_media_urls(i, out, under)
+
+
 def _scrub_contact(contact: dict[str, Any] | None) -> None:
     """One contact-shaped dict, in place - the shared body `_scrub_pii` and
     `_scrub_nested_pii` both call, so a contact found nested three levels deep inside
@@ -354,13 +425,15 @@ def _scrub_contact(contact: dict[str, Any] | None) -> None:
     (measured); `_scrub_assignee` above is the assignee's own rule."""
     if not isinstance(contact, dict):
         return
-    contact_id = contact.get("id")
+    contact_id = _fake_contact_id(contact.get("id"))
+    if "id" in contact and contact["id"] is not None:
+        contact["id"] = int(contact_id)
     if "firstName" in contact:
         contact["firstName"] = f"ZZT-{contact_id}"
     if "lastName" in contact:
         contact["lastName"] = ""
     if "phone" in contact and contact["phone"]:
-        contact["phone"] = f"+60{str(contact_id)[-9:].rjust(9, '0')}"
+        contact["phone"] = f"+60{contact_id}"
     if "email" in contact and contact["email"]:
         contact["email"] = f"zzt-{contact_id}@example.invalid"
     custom_fields = contact.get("custom_fields")
@@ -413,6 +486,10 @@ def _scrub_nested_pii(node: Any, *, key: str | None = None) -> Any:
                 _scrub_contact(node)
         if node.get("source") == "whatsapp_business" and node.get("name"):
             node["name"] = "Internal (scrubbed)"
+        for id_key in _CONTACT_ID_KEYS:
+            if node.get(id_key) is not None and not isinstance(node[id_key], (dict, list)):
+                fake = _fake_contact_id(node[id_key])
+                node[id_key] = int(fake) if isinstance(node[id_key], int) else fake
         for child_key, value in node.items():
             _scrub_nested_pii(value, key=child_key)
     elif isinstance(node, list):
@@ -425,7 +502,7 @@ def _scrub_pii(envelope: dict[str, Any] | None) -> dict[str, Any] | None:
     """Real names, phone numbers and emails out of a recorded envelope before it is
     ever written to disk (this corpus is committed to git).
 
-    Contact 437264483 (`test_engine.py::CONTACT_ID`, "Jayson"/"ZZT") is the team's
+    Contact 900000008 (`test_engine.py::CONTACT_ID`, "Jayson"/"ZZT") is the team's
     OWN standing console-test contact, already hardcoded across dozens of committed
     test files - scrubbing it too keeps ONE rule ("every envelope is scrubbed") over
     a carve-out, and costs nothing since no test reads a name/phone value. Every
@@ -447,7 +524,7 @@ def _scrub_pii(envelope: dict[str, Any] | None) -> dict[str, Any] | None:
     channel = message.get("channel") or {}
     if channel.get("name"):
         # The COMPANY's own WhatsApp Business channel name/number (measured:
-        # "Internal (+60 11-1673 1179)") - not a customer's, but still the
+        # "Internal (+60 11-0000 0524)") - not a customer's, but still the
         # company's real number, publicly readable in a committed corpus.
         channel["name"] = "Internal (scrubbed)"
     if isinstance(channel.get("meta"), str):
@@ -477,6 +554,16 @@ def _scrub_pii(envelope: dict[str, Any] | None) -> dict[str, Any] | None:
 
 
 def _record_row(row: dict[str, Any], *, db_label: str, switches: dict[str, Any]) -> dict[str, Any]:
+    real_ids: set[str] = set()
+    _collect_real_ids(row, real_ids)
+    turn = _record_row_raw(row, db_label=db_label, switches=switches)
+    urls: dict[str, str] = {}
+    _collect_media_urls(turn, urls)
+    media_map = {u: _MEDIA_HOST + (u.split("?")[0].rstrip("/").rsplit("/", 1)[-1] or "media") for u in urls}
+    return _final_scrub(turn, real_ids, media_map)
+
+
+def _record_row_raw(row: dict[str, Any], *, db_label: str, switches: dict[str, Any]) -> dict[str, Any]:
     trace = row.get("trace") or []
     tool_events = _tool_events(trace)
     verdict = _verdict_of(trace)
@@ -650,7 +737,7 @@ def main(argv: list[str] | None = None) -> int:
                 ),
                 {**params, "limit": args.limit},
             ).fetchall()
-            prefix = args.slug_prefix or _slugify(f"contact-{args.contact}")
+            prefix = args.slug_prefix or _slugify(f"contact-{_fake_contact_id(args.contact)}")
             if args.chain_by == "none":
                 for i, row in enumerate(rows, start=1):
                     turn = _record_row(_row_to_dict(row), db_label=db_label, switches=switches)

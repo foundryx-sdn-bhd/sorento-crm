@@ -371,7 +371,7 @@ at revision 4 covering lines 1, 2, 8, 12.
 only), not `require_permission_with_api_key` - the `EXTERNAL_API_KEY` path 401'd outright
 (`{"detail":"Authentication required"}`). Rather than drive the whole 20k-row baseline/diff
 build through agent-browser (fragile for byte-exact xlsx construction and JSON diff assertions),
-a staff session row was minted directly for the FE's own `E2E_EMAIL` user (`tehjayson@gmail.com`,
+a staff session row was minted directly for the FE's own `E2E_EMAIL` user (`person38@example.com`,
 role `admin`) via `INSERT INTO public.user_sessions` (same shape `mint_session()` writes) and
 used as a Bearer token for the file-upload/preview/apply/API-assertion half of the run; the
 review/apply/board/OI half was driven live through agent-browser against the same login. This

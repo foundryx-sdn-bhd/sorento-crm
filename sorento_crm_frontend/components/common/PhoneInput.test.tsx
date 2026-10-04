@@ -6,18 +6,18 @@ import { PhoneInput, normalisePhone } from './PhoneInput';
 
 describe('normalisePhone (Malaysia default)', () => {
   it.each([
-    ['0166753328'],
-    ['60166753328'],
-    ['+60 16-675 3328'],
-    ['+60166753328'],
-    ['0060166753328'],
-    ['016-675 3328'],
-    ['166753328'],
-    ['16-675 3328'],
-  ])('%s normalises to +60166753328, shown as 16-675 3328 (no trunk 0)', (raw) => {
+    ['0160000509'],
+    ['60160000509'],
+    ['+60 16-000 0509'],
+    ['+60160000509'],
+    ['0060160000509'],
+    ['016-000 0509'],
+    ['160000509'],
+    ['16-000 0509'],
+  ])('%s normalises to +60160000509, shown as 16-000 0509 (no trunk 0)', (raw) => {
     expect(normalisePhone(raw, 'MY')).toEqual({
-      e164: '+60166753328',
-      display: '16-675 3328',
+      e164: '+60160000509',
+      display: '16-000 0509',
       country: 'MY',
       valid: true,
     });
@@ -80,20 +80,20 @@ describe('PhoneInput', () => {
     expect(field()).toHaveAttribute('type', 'tel');
   });
 
-  it.each([['0166753328'], ['016-675 3328'], ['60166753328'], ['+60 16-675 3328']])(
-    'pasting %s shows 16-675 3328 and emits +60166753328 as valid',
+  it.each([['0160000509'], ['016-000 0509'], ['60160000509'], ['+60 16-000 0509']])(
+    'pasting %s shows 16-000 0509 and emits +60160000509 as valid',
     (raw) => {
       const onChange = vi.fn();
       render(<Harness onChange={onChange} />);
       fireEvent.change(field(), { target: { value: raw } });
-      expect(field().value).toBe('16-675 3328');
-      expect(screen.getByTestId('value').textContent).toBe('+60166753328');
-      expect(onChange).toHaveBeenLastCalledWith('+60166753328', { valid: true, country: 'MY' });
+      expect(field().value).toBe('16-000 0509');
+      expect(screen.getByTestId('value').textContent).toBe('+60160000509');
+      expect(onChange).toHaveBeenLastCalledWith('+60160000509', { valid: true, country: 'MY' });
     },
   );
 
-  it.each([['0166753328'], ['166753328']])(
-    'typing %s digit by digit shows 16-675 3328, the trunk 0 dropped at once',
+  it.each([['0160000509'], ['160000509']])(
+    'typing %s digit by digit shows 16-000 0509, the trunk 0 dropped at once',
     (keys) => {
       render(<Harness />);
       for (const d of keys) {
@@ -101,8 +101,8 @@ describe('PhoneInput', () => {
         if (d === '0' && field().value === '') continue;
         expect(field().value.startsWith('0')).toBe(false);
       }
-      expect(field().value).toBe('16-675 3328');
-      expect(screen.getByTestId('value').textContent).toBe('+60166753328');
+      expect(field().value).toBe('16-000 0509');
+      expect(screen.getByTestId('value').textContent).toBe('+60160000509');
     },
   );
 
@@ -126,7 +126,7 @@ describe('PhoneInput', () => {
     fireEvent.change(field(), { target: { value: '016675' } });
     fireEvent.blur(field());
     expect(screen.getByRole('alert')).toBeInTheDocument();
-    fireEvent.change(field(), { target: { value: '0166753328' } });
+    fireEvent.change(field(), { target: { value: '0160000509' } });
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
@@ -143,8 +143,8 @@ describe('PhoneInput', () => {
   });
 
   it('seeds the national number without the trunk 0 from an E.164 value', () => {
-    render(<PhoneInput value="+60166753328" onChange={vi.fn()} aria-label="Phone" />);
-    expect((screen.getByLabelText('Phone') as HTMLInputElement).value).toBe('16-675 3328');
+    render(<PhoneInput value="+60160000509" onChange={vi.fn()} aria-label="Phone" />);
+    expect((screen.getByLabelText('Phone') as HTMLInputElement).value).toBe('16-000 0509');
   });
 
   it('picking another country re-reads the digits against it', async () => {
@@ -164,8 +164,8 @@ describe('PhoneInput', () => {
   it('switching country away and back keeps the number without a trunk 0', async () => {
     const onChange = vi.fn();
     render(<Harness onChange={onChange} />);
-    fireEvent.change(field(), { target: { value: '0166753328' } });
-    expect(field().value).toBe('16-675 3328');
+    fireEvent.change(field(), { target: { value: '0160000509' } });
+    expect(field().value).toBe('16-000 0509');
     fireEvent.click(screen.getByRole('button', { name: 'Country: Malaysia (+60)' }));
     fireEvent.change(await screen.findByPlaceholderText('Search...'), { target: { value: 'Singapore' } });
     fireEvent.click(await screen.findByRole('option', { name: /Singapore/ }));
@@ -174,8 +174,8 @@ describe('PhoneInput', () => {
     fireEvent.change(await screen.findByPlaceholderText('Search...'), { target: { value: 'Malaysia' } });
     fireEvent.click(await screen.findByRole('option', { name: /Malaysia/ }));
     await waitFor(() =>
-      expect(onChange).toHaveBeenLastCalledWith('+60166753328', { valid: true, country: 'MY' }),
+      expect(onChange).toHaveBeenLastCalledWith('+60160000509', { valid: true, country: 'MY' }),
     );
-    expect(field().value).toBe('16-675 3328');
+    expect(field().value).toBe('16-000 0509');
   });
 });

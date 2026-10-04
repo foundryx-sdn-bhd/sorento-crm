@@ -9,10 +9,10 @@
 #   venv/bin/python scripts/chatbot_console_check.py \
 #       tests/chatbot/console_cases/2026-09-memory.yaml --base-url http://127.0.0.1:8000
 #
-# Prerequisites: contact 437264483 has its own memory level Full memory (contact page >
+# Prerequisites: contact 900000008 has its own memory level Full memory (contact page >
 # Chatbot) and a Console-ingress turn on record (the check borrows its envelope, so its
 # turns are console turns and write console conversations, D14's console exception).
-contact: '437264483'
+contact: '900000008'
 cases:
 - name: 'S4 owner hand test round 3: after a stock and an incoming ask, ''what do i normally ask about'' lists both, numbered,
     never the clarify menu'

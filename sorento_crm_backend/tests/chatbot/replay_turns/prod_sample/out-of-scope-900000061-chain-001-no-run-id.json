@@ -1,0 +1,640 @@
+{
+  "turns": [
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow",
+        "hidden_spec_keys": [
+          "board_thickness",
+          "thickness"
+        ]
+      },
+      "envelope": {
+        "contact": {
+          "assignee": null,
+          "countryCode": "MY",
+          "created_at": 1778415976,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000061"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": "zzt-900000061@example.invalid",
+          "firstName": "ZZT-900000061",
+          "id": 900000061,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000061",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000016\", \"firstName\": \"ZZT\", \"lastName\": \"Loo\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": null,
+              "firstName": "ZZT-agent",
+              "id": null,
+              "lastName": ""
+            },
+            "countryCode": "MY",
+            "created_at": 1778415976,
+            "email": "zzt-900000061@example.invalid",
+            "firstName": "ZZT-900000061",
+            "id": 900000061,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000061",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "18456572-17f2-4bcb-a8c3-111ba2c63a73",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxNjc3MDExNzgVAgASGBQzQUY1NTAwNTg0QkMyRDkxNjcyRAA=",
+            "contactId": 900000061,
+            "message": {
+              "text": "Srtwc8066 stock",
+              "type": "text"
+            },
+            "messageId": 1789377318000000,
+            "timestamp": 1789377318000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message",
+          "send_attachments"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "1635a25c-2c72-43db-8882-82911c9a739f",
+          "23bc701c-f30c-47cc-8061-dc2bed23738f",
+          "2cabf54e-8420-4f9a-9de4-234a5d5d8f83",
+          "6307346b-0286-41ab-917a-addfa7bf4840",
+          "6c7876e7-5545-4c8d-ac77-3a7307858e80",
+          "6ca8ff37-39ef-4739-863f-99d46621e0ed",
+          "89d540da-8f48-40e0-877b-7324f16fca32",
+          "b79d5277-9c42-45fe-bd46-adf26a3c0d48",
+          "c904e931-835e-4d73-b6f2-c32725ae80a3",
+          "cbeb1477-0c02-4550-95bb-b458743fbc73",
+          "ce66dcdc-3c73-4774-a2b8-8ba717270ba7",
+          "d0d903f6-80ed-48b8-9a6d-db47ab23e711",
+          "e6447675-85ae-4ee7-88e4-e122b91c4061",
+          "efbe923b-3f39-4e07-94a0-cc3aa4817ec5",
+          "f6ee32b3-6963-4f91-9634-3ae9713572d5"
+        ],
+        "focus_after": null,
+        "pending": {
+          "kind": "team_pick",
+          "option_labels": [
+            "stock"
+          ]
+        },
+        "text": "Stock details found for the requested products.\n\n1. *Product Code:* SRTWC8066-P-NEW\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 40\n*Outstanding:* 3\n\n2. *Product Code:* SRTWC8066-P-NEW\n*Warehouse:* MERU\n*System Location:* MWH\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n3. *Product Code:* SRTWC8066-P-NEW\n*Warehouse:* WH3 (PSM)\n*System Location:* WH3\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n4. *Product Code:* SRTWC8066-P-NEW\n*Warehouse:* WH3 (PSM)\n*System Location:* WH3-PSM\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n5. *Product Code:* SRTWC8066-S-150-NEW\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 28\n*Outstanding:* 3\n\n6. *Product Code:* SRTWC8066-S-150-NEW\n*Warehouse:* BERSATU (PORT KLANG)\n*System Location:* DC1\n*Quantity On Hand:* 123\n*Outstanding:* 0\n\n7. *Product Code:* SRTWC8066-S-150-NEW\n*Warehouse:* MERU\n*System Location:* MWH\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n8. *Product Code:* SRTWC8066-S-150-NEW\n*Warehouse:* WH3 (PSM)\n*System Location:* WH3\n*Quantity On Hand:* 30\n*Outstanding:* 0\n\n9. *Product Code:* SRTWC8066-S-200-NEW\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 42\n*Outstanding:* 3\n\n10. *Product Code:* SRTWC8066-S-200-NEW\n*Warehouse:* BERSATU (PORT KLANG)\n*System Location:* DC1\n*Quantity On Hand:* 106\n*Outstanding:* 0\n\n11. *Product Code:* SRTWC8066-S-200-NEW\n*Warehouse:* MERU\n*System Location:* MWH\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n12. *Product Code:* SRTWC8066-S-200-NEW\n*Warehouse:* WH3 (PSM)\n*System Location:* WH3\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n13. *Product Code:* SRTWC8066-S-200-NEW\n*Warehouse:* WH3 (PSM)\n*System Location:* WH3-PSM\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n14. *Product Code:* SRTWC8066-S-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 18\n*Outstanding:* 0\n\n15. *Product Code:* SRTWC8066-SC\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 52\n*Outstanding:* 0\n\n16. *Product Code:* SRTWC8066-S-GY\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 10\n*Outstanding:* 0\n\u26a0\ufe0f  *(PRODUCT DISCONTINUED)*\n\n17. *Product Code:* SRTWC8066-S-GY\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SYNT\n*Quantity On Hand:* 1\n*Outstanding:* 1\n\u26a0\ufe0f  *(PRODUCT DISCONTINUED)*\n\n18. *Product Code:* SRTWC8066-SH-MG\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 3\n*Outstanding:* 0\n\n19. *Product Code:* SRTWC8066-SH-MG\n*Warehouse:* MERU\n*System Location:* MWH\n*Quantity On Hand:* 19\n*Outstanding:* 0\n\n20. *Product Code:* SRTWC8066-SH-MK\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 9\n*Outstanding:* 0\n\n21. *Product Code:* SRTWC8066-SH-MK\n*Warehouse:* MERU\n*System Location:* MWH\n*Quantity On Hand:* 2\n*Outstanding:* 0\n\n22. *Product Code:* SRTWC8066-SH-MW\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 9\n*Outstanding:* 0\n\n23. *Product Code:* SRTWC8066-SH-MW\n*Warehouse:* MERU\n*System Location:* MWH\n*Quantity On Hand:* 10\n*Outstanding:* 0\n\n24. *Product Code:* SRTWC8066-S-MBL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 41\n*Outstanding:* 0\n\n25. *Product Code:* SRTWC8066-S-MBL\n*Warehouse:* MERU\n*System Location:* MWH\n*Quantity On Hand:* 6\n*Outstanding:* 0\n\n26. *Product Code:* SRTWC8066-S-NEW\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 0\n*Outstanding:* 179\n\n27. *Product Code:* SRTWC8066-S-NEW\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-AM\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n28. *Product Code:* SRTWC8066-S-NEW\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-BB\n*Quantity On Hand:* 0\n*Outstanding:* 5\n\n29. *Product Code:* SRTWC8066-S-NEW\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-BILL\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n30. *Product Code:* SRTWC8066-S-NEW\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-HP\n*Quantity On Hand:* 2\n*Outstanding:* 0\n\n31. *Product Code:* SRTWC8066-S-NEW\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SMC\n*Quantity On Hand:* 1\n*Outstanding:* 1\n\n32. *Product Code:* SRTWC8066-S-NEW\n*Warehouse:* BERSATU (PORT KLANG)\n*System Location:* DC1\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n33. *Product Code:* SRTWC8066-S-NEW\n*Warehouse:* BERSATU (PORT KLANG)\n*System Location:* DC1-HP\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n34. *Product Code:* SRTWC8066-S-NEW\n*Warehouse:* MERU\n*System Location:* MWH\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n35. *Product Code:* SRTWC8066-S-NEW\n*Warehouse:* WH3 (PSM)\n*System Location:* WH3\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n36. *Product Code:* SRTWC8066-S-NEW\n*Warehouse:* WH3 (PSM)\n*System Location:* WH3-PSM\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n37. *Product Code:* SRTWC8066-S-RG\n*Warehouse:* WH3 (PSM)\n*System Location:* WH3-PSM\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\u26a0\ufe0f  *(PRODUCT DISCONTINUED)*\n\n38. *Product Code:* SRTWC8066-S-UF\n*Warehouse:* MERU\n*System Location:* MWH-IR\n*Quantity On Hand:* 5\n*Outstanding:* 0\n\n_Data last updated: 14/09/2026 11:27:04_\nNo stock for SRTWC8066-SH-UF.\n\nBut there is INCOMING stock (ETA) for the requested products:\n\n- *Product Code:* SRTWC8066-SH-UF\n*Container:* WHLU5774588\n*ETA:* 2026-09-04\n*Incoming Quantity:* 100\n\ud83d\udea9  *(PENDING ALLOCATION)*\n\nStock is 0 at every location, no incoming and nothing on order for SRTWC8066-S-RG.\n\nWould you like me to escalate to purchasing team?",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "contact_id",
+              "date_mode",
+              "include_sellable",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_inventory_stock_balance_list"
+          }
+        ]
+      },
+      "received_session_vars": {
+        "respond_io_id": "900000061",
+        "session_vars": {
+          "quick_reply": "Yes escalate,No it's okay",
+          "user_response": "No incoming stock (ETA) found for SRTWT7445.\nNo incoming for SRTWT7445-LV-GM, SRTWT7445, SRTWT7445-LV, SRTWT7445-NEW, SRTWT7445-LV-BL.\n\nBut here are the stock details for the requested products:\n\n- *Product Code:* SRTWT7445-LV-GM\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 102\n*Outstanding:* 0\n\n- *Product Code:* SRTWT7445\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-BB\n*Quantity On Hand:* 5\n*Outstanding:* 0\n\n- *Product Code:* SRTWT7445\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 0\n*Outstanding:* 3\n\n- *Product Code:* SRTWT7445\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-IR\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n- *Product Code:* SRTWT7445\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SMC\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n- *Product Code:* SRTWT7445-LV\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-IB\n*Quantity On Hand:* 34\n*Outstanding:* 90\n\n- *Product Code:* SRTWT7445-LV\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-BB\n*Quantity On Hand:* 22\n*Outstanding:* 0\n\n- *Product Code:* SRTWT7445-LV\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-AM\n*Quantity On Hand:* 2\n*Outstanding:* 2\n\n- *Product Code:* SRTWT7445-LV\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 0\n*Outstanding:* 2\n\n- *Product Code:* SRTWT7445-LV\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SMC\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n- *Product Code:* SRTWT7445-LV\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SYNT\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n- *Product Code:* SRTWT7445-LV\n*Warehouse:* BERSATU (PORT KLANG)\n*System Location:* DC1-IB\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n- *Product Code:* SRTWT7445-NEW\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-NTC\n*Quantity On Hand:* 146\n*Outstanding:* 699\n\n- *Product Code:* SRTWT7445-NEW\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-IR\n*Quantity On Hand:* 6\n*Outstanding:* 3205\n\n- *Product Code:* SRTWT7445-NEW\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-BB\n*Quantity On Hand:* 4\n*Outstanding:* 3549\n\n- *Product Code:* SRTWT7445-LV-WEPLS\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-BB\n*Quantity On Hand:* 0\n*Outstanding:* 352\n\n- *Product Code:* SRTWT7445-LV-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 311\n*Outstanding:* 0\n\n- *Product Code:* SRTWT7445-LV-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-BB\n*Quantity On Hand:* 1\n*Outstanding:* 3\n\n- *Product Code:* SRTWT7445-LV-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-NTC\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\nNo incoming and no stock for SRTWT7445-LV-BL-NEW, SRTWT7445-LV-NEW, but PO is placed:\n*Product Code:* SRTWT7445-LV-BL-NEW\n*Ordered:* 124\n*Outstanding:* 124\n*PO date:* 2026-05-04\n*Location:* BRW-NTC\n\n*Product Code:* SRTWT7445-LV-BL-NEW\n*Ordered:* 76\n*Outstanding:* 76\n*PO date:* 2026-05-04\n*Location:* BRW\n\n*Product Code:* SRTWT7445-LV-NEW\n*Ordered:* 191\n*Outstanding:* 191\n*PO date:* 2026-05-18\n*Location:* BRW-BB\n\n*Product Code:* SRTWT7445-LV-NEW\n*Ordered:* 153\n*Outstanding:* 153\n*PO date:* 2026-05-18\n*Location:* BRW-IB\n\n*Product Code:* SRTWT7445-LV-NEW\n*Ordered:* 2\n*Outstanding:* 2\n*PO date:* 2026-05-18\n*Location:* BRW-BB\n\n*Product Code:* SRTWT7445-LV-NEW\n*Ordered:* 1\n*Outstanding:* 1\n*PO date:* 2026-05-18\n*Location:* BRW-BB\n\n*Product Code:* SRTWT7445-LV-NEW\n*Ordered:* 12\n*Outstanding:* 12\n*PO date:* 2026-05-18\n*Location:* BRW-BB\n\n*Product Code:* SRTWT7445-LV-NEW\n*Ordered:* 1\n*Outstanding:* 1\n*PO date:* 2026-05-18\n*Location:* BRW-BB\n\n*Product Code:* SRTWT7445-LV-NEW\n*Ordered:* 6\n*Outstanding:* 6\n*PO date:* 2026-06-04\n*Location:* BRW-IB\n\n*Product Code:* SRTWT7445-LV-NEW\n*Ordered:* 4\n*Outstanding:* 4\n*PO date:* 2026-05-18\n*Location:* BRW-IB\n\n*Product Code:* SRTWT7445-LV-NEW\n*Ordered:* 35\n*Outstanding:* 35\n*PO date:* 2026-05-18\n*Location:* BRW-BB\n\n*Product Code:* SRTWT7445-LV-NEW\n*Ordered:* 167\n*Outstanding:* 167\n*PO date:* 2026-07-30\n*Location:* BRW\n\n*Product Code:* SRTWT7445-LV-NEW\n*Ordered:* 148\n*Outstanding:* 148\n*PO date:* 2026-07-30\n*Location:* BRW-BB\n\n*Product Code:* SRTWT7445-LV-NEW\n*Ordered:* 10\n*Outstanding:* 10\n*PO date:* 2026-06-04\n*Location:* BRW-IB\n\n*Product Code:* SRTWT7445-LV-NEW\n*Ordered:* 2\n*Outstanding:* 2\n*PO date:* 2026-06-04\n*Location:* BRW-IB\n\n*Product Code:* SRTWT7445-LV-NEW\n*Ordered:* 12\n*Outstanding:* 12\n*PO date:* 2026-07-30\n*Location:* BRW-IB\n\n*Product Code:* SRTWT7445-LV-NEW\n*Ordered:* 25\n*Outstanding:* 25\n*PO date:* 2026-06-04\n*Location:* BRW-IB\n\n*Product Code:* SRTWT7445-LV-NEW\n*Ordered:* 5\n*Outstanding:* 5\n*PO date:* 2026-06-04\n*Location:* BRW-BB\n\n*Product Code:* SRTWT7445-LV-NEW\n*Ordered:* 145\n*Outstanding:* 145\n*PO date:* 2026-06-04\n*Location:* BRW-BB\n\n*Product Code:* SRTWT7445-LV-NEW\n*Ordered:* 300\n*Outstanding:* 300\n*PO date:* 2026-09-03\n*Location:* BRW\n\n*Product Code:* SRTWT7445-LV-NEW\n*Ordered:* 6\n*Outstanding:* 6\n*PO date:* 2026-06-04\n*Location:* BRW-BB\n\n*Product Code:* SRTWT7445-LV-NEW\n*Ordered:* 2\n*Outstanding:* 2\n*PO date:* 2026-07-30\n*Location:* BRW-NTC\n\n*Product Code:* SRTWT7445-LV-NEW\n*Ordered:* 2\n*Outstanding:* 2\n*PO date:* 2026-07-30\n*Location:* BRW-IB\n\n*Product Code:* SRTWT7445-LV-NEW\n*Ordered:* 1\n*Outstanding:* 1\n*PO date:* 2026-05-18\n*Location:* BRW-BB\n\n*Product Code:* SRTWT7445-LV-NEW\n*Ordered:* 1\n*Outstanding:* 1\n*PO date:* 2026-06-04\n*Location:* BRW-IB\n\n*Product Code:* SRTWT7445-LV-NEW\n*Ordered:* 61\n*Outstanding:* 61\n*PO date:* 2026-07-30\n*Location:* BRW-IB\n\n*Product Code:* SRTWT7445-LV-NEW\n*Ordered:* 8\n*Outstanding:* 8\n*PO date:* 2026-07-30\n*Location:* BRW-BB\n\nNo incoming, no stock and nothing on order for SRTWT7445-NL.\n\nNo incoming and stock is 0 at every location for SRTWT7445-LV-WEPLS, but PO is placed:\n*Product Code:* SRTWT7445-LV-WEPLS\n*Ordered:* 8\n*Outstanding:* 8\n*PO date:* 2026-05-18\n*Location:* BRW-BB\n\n*Product Code:* SRTWT7445-LV-WEPLS\n*Ordered:* 230\n*Outstanding:* 230\n*PO date:* 2026-05-18\n*Location:* BRW-BB\n\n*Product Code:* SRTWT7445-LV-WEPLS\n*Ordered:* 122\n*Outstanding:* 122\n*PO date:* 2026-05-18\n*Location:* BRW-BB\n\nRelated products:\n1. SRTWT7445-LV-BL-NEW - has incoming\n2. SRTWT7445-LV-NEW - has incoming\n3. SRTWT7445-LV-WEPLS - has incoming\n4. SRTWT7445-NEW - has incoming\n5. SRTWT7445 - no incoming\n6. SRTWT7445-LV - no incoming\n7. SRTWT7445-LV-BL - no incoming\n8. SRTWT7445-LV-GM - no incoming\n9. SRTWT7445-NL - no incoming\nReply with a number to check its incoming, or reply 'yes' to escalate to purchasing team.",
+          "variables": {
+            "access_levels": [],
+            "contains_flyer": false,
+            "date_filter_end": null,
+            "date_filter_start": null,
+            "date_mode": null,
+            "domain_hint": "incoming",
+            "dym_candidates": [],
+            "dym_offer": null,
+            "entities": [
+              {
+                "canonical_code": "SRTWT7445",
+                "confident": true,
+                "current_message": true,
+                "hint": "product",
+                "raw": "Srtwt7445"
+              }
+            ],
+            "escalation": {
+              "is_escalation_confirmation": false
+            },
+            "ideation": null,
+            "intent_hint": "check_incoming",
+            "last_result_set": [
+              {
+                "entity_type": "product",
+                "idx": 1,
+                "label": "SRTWT7445-LV-BL-NEW",
+                "product": "SRTWT7445-LV-BL-NEW",
+                "uuid": "445b035d-5e17-4345-9a1a-d41a6bda4868",
+                "value": "SRTWT7445-LV-BL-NEW"
+              },
+              {
+                "entity_type": "product",
+                "idx": 2,
+                "label": "SRTWT7445-LV-NEW",
+                "product": "SRTWT7445-LV-NEW",
+                "uuid": "e6d87826-d2c4-4332-98ec-7381ea821a9f",
+                "value": "SRTWT7445-LV-NEW"
+              },
+              {
+                "entity_type": "product",
+                "idx": 3,
+                "label": "SRTWT7445-LV-WEPLS",
+                "product": "SRTWT7445-LV-WEPLS",
+                "uuid": "e44a6c78-93ee-4126-9ce8-8c3092dab9de",
+                "value": "SRTWT7445-LV-WEPLS"
+              },
+              {
+                "entity_type": "product",
+                "idx": 4,
+                "label": "SRTWT7445-NEW",
+                "product": "SRTWT7445-NEW",
+                "uuid": "7ccd90c1-e4d5-4a0c-b6bc-5783cad6c411",
+                "value": "SRTWT7445-NEW"
+              },
+              {
+                "entity_type": "product",
+                "idx": 5,
+                "label": "SRTWT7445",
+                "product": "SRTWT7445",
+                "uuid": "90afd8db-dbd8-40c2-a3b4-072feb01b08a",
+                "value": "SRTWT7445"
+              },
+              {
+                "entity_type": "product",
+                "idx": 6,
+                "label": "SRTWT7445-LV",
+                "product": "SRTWT7445-LV",
+                "uuid": "b3261772-aae1-4614-b7a8-b89b93734ff7",
+                "value": "SRTWT7445-LV"
+              },
+              {
+                "entity_type": "product",
+                "idx": 7,
+                "label": "SRTWT7445-LV-BL",
+                "product": "SRTWT7445-LV-BL",
+                "uuid": "ed13ab1e-2f13-4f57-800d-1928173ba201",
+                "value": "SRTWT7445-LV-BL"
+              },
+              {
+                "entity_type": "product",
+                "idx": 8,
+                "label": "SRTWT7445-LV-GM",
+                "product": "SRTWT7445-LV-GM",
+                "uuid": "2f949bd7-6426-4cad-8263-41f86f9368e4",
+                "value": "SRTWT7445-LV-GM"
+              },
+              {
+                "entity_type": "product",
+                "idx": 9,
+                "label": "SRTWT7445-NL",
+                "product": "SRTWT7445-NL",
+                "uuid": "bf98c511-4063-4d1b-8737-eeec2cc00d18",
+                "value": "SRTWT7445-NL"
+              }
+            ],
+            "match_mode": "and",
+            "message_type": "business_query",
+            "pending": {
+              "domain": "incoming",
+              "kind": "escalation_offer",
+              "team": "purchasing"
+            },
+            "query_brands": [],
+            "requested_attributes": [
+              "estimated_arrival_date"
+            ],
+            "response": "No incoming stock (ETA) found for SRTWT7445. Related products:\n1. SRTWT7445-LV-BL-NEW - has incoming\n2. SRTWT7445-LV-NEW - has incoming\n3. SRTWT7445-LV-WEPLS - has incoming\n4. SRTWT7445-NEW - has incoming\n5. SRTWT7445 - no incoming\n6. SRTWT7445-LV - no incoming\n7. SRTWT7445-LV-BL - no incoming\n8. SRTWT7445-LV-GM - no incoming\n9. SRTWT7445-NL - no incoming\nReply with a number to check its incoming, or reply 'yes' to escalate to purchasing team.",
+            "routing": {
+              "suggested_agent": "incoming_stock_enquiries",
+              "suggested_team": "purchasing"
+            },
+            "routing_brand": "sorento",
+            "routing_brand_source": "resolved",
+            "routing_companies": [
+              {
+                "brand_code": "sorento",
+                "codes": [
+                  "SRTWT7445"
+                ],
+                "company_id": "00000000-0000-0000-0000-000000000001",
+                "company_name": "Sorento",
+                "labels": [
+                  "SRTWT7445"
+                ]
+              }
+            ],
+            "routing_company": "00000000-0000-0000-0000-000000000001",
+            "routing_roster_plan": null,
+            "selection_context": "suggest_offer",
+            "user_goal": "trying to check the ETA for Srtwt7445"
+          }
+        }
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "Srtwc8066",
+                "entity_type": "product",
+                "uuid": "1635a25c-2c72-43db-8882-82911c9a739f"
+              }
+            ],
+            "resolved": true,
+            "token": "Srtwc8066"
+          }
+        ],
+        "tokens": [
+          "Srtwc8066"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 17,
+        "recorded_at": "2026-09-14T18:15:22.537481+09:00",
+        "turn_id": "4cbb6a49-f1cf-4010-89bc-397a780418f9"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 15,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 15,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "contact_id": "900000061",
+            "date_mode": null,
+            "include_sellable": true,
+            "is_active": null,
+            "product_ids": [
+              "b79d5277-9c42-45fe-bd46-adf26a3c0d48",
+              "c904e931-835e-4d73-b6f2-c32725ae80a3",
+              "ce66dcdc-3c73-4774-a2b8-8ba717270ba7",
+              "d0d903f6-80ed-48b8-9a6d-db47ab23e711",
+              "efbe923b-3f39-4e07-94a0-cc3aa4817ec5",
+              "23bc701c-f30c-47cc-8061-dc2bed23738f",
+              "2cabf54e-8420-4f9a-9de4-234a5d5d8f83",
+              "6c7876e7-5545-4c8d-ac77-3a7307858e80",
+              "89d540da-8f48-40e0-877b-7324f16fca32",
+              "6ca8ff37-39ef-4739-863f-99d46621e0ed",
+              "cbeb1477-0c02-4550-95bb-b458743fbc73",
+              "f6ee32b3-6963-4f91-9634-3ae9713572d5",
+              "e6447675-85ae-4ee7-88e4-e122b91c4061",
+              "1635a25c-2c72-43db-8882-82911c9a739f",
+              "6307346b-0286-41ab-917a-addfa7bf4840"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "bytes": 20143,
+            "head": "{\"result_type\": \"stock\", \"intro\": \"Stock details found for the requested products.\", \"items\": [{\"title\": \"SRTWC8066-P-NEW\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWC8066-P-NEW\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"BUKIT RAJA\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"BRW\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 40}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 3}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWC8066-P-NEW\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWC8066-P-NEW\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"MERU\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"MWH\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 0}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWC8066-P-NEW\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWC8066-P-NEW\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"WH3 (PSM)\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"WH3\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 0}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWC8066-P-NEW\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWC8066-P-NEW\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"WH3 (PSM)\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"WH3-PSM\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 0}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWC8066-S-150-NEW\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWC8066-S-150-NEW\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"BUKIT RAJA\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"BRW\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 28}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 3}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWC8066-S-150-NEW\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWC8066-S-150-NEW\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"BERSATU (PORT KLANG)\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"DC1\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 123}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWC8066-S-150-NEW\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWC8066-S-150-NEW\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"MERU\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"MWH\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 0}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWC8066-S-150-NEW\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWC8066-S-150-NEW\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"WH3 (PSM)\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"WH3\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 30}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWC8066-S-200-NEW\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWC8066-S-200-NEW\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"BUKIT RAJA\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"BRW\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 42}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 3}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWC8066-S-200-NEW\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWC8066-S-200-NEW\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"BERSATU (PORT KLANG)\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"DC1\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 106}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWC8066-S-200-NEW\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWC8066-S-200-NEW\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"MERU\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"MWH\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 0}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWC8066-S-200-NEW\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWC8066-S-200-NEW\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"WH3 (PSM)\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"WH3\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 0}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWC8066-S-200-NEW\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWC8066-S-200-NEW\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"WH3 (PSM)\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"WH3-PSM\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 0}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWC8066-S-BL\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWC8066-S-BL\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"BUKIT RAJA\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"BRW\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 18}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWC8066-SC\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWC8066-SC\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"BUKIT RAJA\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"BRW\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 52}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWC8066-S-GY\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWC8066-S-GY\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"BUKIT RAJA\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"BRW\"}, {\"key\": ",
+            "truncated": true
+          },
+          "tool": "crm_inventory_stock_balance_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "inventory",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "Srtwc8066"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_stock",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to check stock for Srtwc8066"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow",
+        "hidden_spec_keys": [
+          "board_thickness",
+          "thickness"
+        ]
+      },
+      "envelope": {
+        "contact": {
+          "assignee": null,
+          "countryCode": "MY",
+          "created_at": 1778415976,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000061"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": "zzt-900000061@example.invalid",
+          "firstName": "ZZT-900000061",
+          "id": 900000061,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000061",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000016\", \"firstName\": \"ZZT\", \"lastName\": \"Loo\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": null,
+              "firstName": "ZZT-agent",
+              "id": null,
+              "lastName": ""
+            },
+            "countryCode": "MY",
+            "created_at": 1778415976,
+            "email": "zzt-900000061@example.invalid",
+            "firstName": "ZZT-900000061",
+            "id": 900000061,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000061",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "49e53bad-7907-46a3-a07e-d5ef8d2e507f",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxNjc3MDExNzgVAgASGBQzQTAwOEQ4OTJDQjE0OTM4MEUxQwA=",
+            "contactId": 900000061,
+            "message": {
+              "text": "Yes escalate",
+              "type": "text"
+            },
+            "messageId": 1789377774000000,
+            "replyTo": {
+              "id": 1789377330662401,
+              "mId": "wamid.HBgLNjAxNjc3MDExNzgVAgARGBI0M0FGMzBFNDkwREQ5NzNBMEUA",
+              "message": {
+                "replies": [
+                  "Yes escalate",
+                  "No it's okay"
+                ],
+                "title": "\u26a0\ufe0f  *(PRODUCT DISCONTINUED)*\n\n38. *Product Code:* SRTWC8066-S-UF\n*Warehouse:* MERU\n*System Location:* MWH-IR\n*Quantity On Hand:* 5\n*Outstanding:* 0\n\n_Data last updated: 14/09/2026 11:27:04_\nNo stock for SRTWC8066-SH-UF.\n\nBut there is INCOMING stock (ETA) for the requested products:\n\n- *Product Code:* SRTWC8066-SH-UF\n*Container:* WHLU5774588\n*ETA:* 2026-09-04\n*Incoming Quantity:* 100\n\ud83d\udea9  *(PENDING ALLOCATION)*\n\nStock is 0 at every location, no incoming and nothing on order for SRTWC8066-S-RG.\n\nWould you like me to escalate to purchasing team?",
+                "type": "quick_reply"
+              },
+              "sender": {
+                "source": "n8n",
+                "type": "message"
+              }
+            },
+            "timestamp": 1789377774000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message",
+          "assign_conversation",
+          "add_comment",
+          "send_message"
+        ],
+        "branch_kind": "out_of_scope",
+        "canned": [],
+        "entity_ids": [],
+        "focus_after": null,
+        "pending": null,
+        "text": null,
+        "tools": []
+      },
+      "resolutions": {
+        "resolutions": [],
+        "tokens": [],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 17,
+        "recorded_at": "2026-09-14T18:22:59.220433+09:00",
+        "turn_id": "a76f1885-67d6-4214-84b1-33ad56ec5c9d"
+      },
+      "tool_results": [],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": null,
+        "entities": [],
+        "entity_op": "reuse",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": true
+        },
+        "group_by": null,
+        "intent_hint": null,
+        "is_active": null,
+        "is_affirmative": true,
+        "match_mode": "and",
+        "message_type": "request_for_help",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": "general_enquiries",
+          "suggested_team": "purchasing"
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to escalate to purchasing team"
+      }
+    }
+  ]
+}

@@ -18,7 +18,7 @@ from app.services.chatbot.lanes.business.resolve_gate import resolve_entity_body
 def _ctx(entities: list[dict[str, Any]], match_mode: str | None) -> dict[str, Any]:
     return {
         "text": {"message": {"message": {"text": "Srtswt3001 / Srtswt3001-gm stock"}}},
-        "contact": {"id": "423729104"},
+        "contact": {"id": "900000081"},
         "parse": {
             "output": {
                 "message_type": "business_query",

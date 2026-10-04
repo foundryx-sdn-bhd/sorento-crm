@@ -1,11 +1,11 @@
 {
   "name": "hp11-cabana-catalogue",
-  "source": "Hand pass 11 owner console, 21 Sep 2026 (real production, contact_respond_id 437264483, clone turn 7e84591c-2b6f-4aa0-a4cd-c8aa29fbdc05). Owner's local chain: 'cabana catalog' -> 'Which one do you mean? 1. cabana (promotion) 2. cabana (attachment)' -> '2' -> \"Here's what you want: attachment: CABANA WASH BASIN PROMO 09092026 END USER.pdf (+14 more). But no resource_attachment matched these. Would you like me to escalate to customer service team?\". The recorded verdict is CORRECT (entities [{raw cabana, hint brand}, {raw catalog, hint attachment, canonical_code catalogue}], domain_hint resource_attachment, intent get_resource_attachment) - `turn/reconcile.py`'s D2 wrongly re-kinds the brand-hinted word into a kind_pick when the plan's domain is resource_attachment (brand = scope, not a choice). See test_rearch_r11_catalogue.py for the measured cause and file citations.",
+  "source": "Hand pass 11 owner console, 21 Sep 2026 (real production, contact_respond_id 900000008, clone turn 7e84591c-2b6f-4aa0-a4cd-c8aa29fbdc05). Owner's local chain: 'cabana catalog' -> 'Which one do you mean? 1. cabana (promotion) 2. cabana (attachment)' -> '2' -> \"Here's what you want: attachment: CABANA WASH BASIN PROMO 09092026 END USER.pdf (+14 more). But no resource_attachment matched these. Would you like me to escalate to customer service team?\". The recorded verdict is CORRECT (entities [{raw cabana, hint brand}, {raw catalog, hint attachment, canonical_code catalogue}], domain_hint resource_attachment, intent get_resource_attachment) - `turn/reconcile.py`'s D2 wrongly re-kinds the brand-hinted word into a kind_pick when the plan's domain is resource_attachment (brand = scope, not a choice). See test_rearch_r11_catalogue.py for the measured cause and file citations.",
   "cases": [
     {
       "name": "cabana-catalog-answers-with-the-cabana-file-no-kind-pick",
       "cold": true,
-      "contact": "437264483",
+      "contact": "900000008",
       "turns": [
         {
           "text": "cabana catalog",
@@ -20,7 +20,7 @@
     {
       "name": "sorento-catalogue-returns-a-different-file-than-cabana",
       "cold": true,
-      "contact": "437264483",
+      "contact": "900000008",
       "turns": [
         {
           "text": "sorento catalogue",

@@ -1,5 +1,0 @@
-- generic [active] [ref=e1]:
-  - alert [ref=e2]
-  - generic [ref=e3]:
-    - img "Sorento" [ref=e4]
-    - paragraph [ref=e6]: Loading…

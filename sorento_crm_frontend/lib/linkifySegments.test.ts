@@ -22,7 +22,7 @@ describe('linkifySegments', () => {
   });
 
   it('keeps a hash fragment inside the link', () => {
-    const url = 'https://app.respond.io/space/364817/inbox/497368374#1787975493000000';
+    const url = 'https://app.respond.io/space/364817/inbox/900000108#1787975493000000';
     expect(linkifySegments(url)).toEqual([{ text: url, href: url }]);
   });
 

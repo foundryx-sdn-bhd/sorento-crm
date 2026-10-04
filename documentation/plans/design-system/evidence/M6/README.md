@@ -68,7 +68,7 @@ are in the scratchpad, not committed - the numbers and screenshots below are the
 | M6-04 | Success toast auto-dismisses at ~4000ms | PASS | Composer's `toast.success('Sent.')` on a real send: visible for `4201ms` from first-seen to first-gone sample (150ms poll granularity) |
 | M6-04 | **Query error: top-center, close button, persists** | **FAIL** | `Fetch.fulfillRequest` forced two consecutive 500s on `GET /api/v1/master-data/products` (react-query `retry:1` needs both failed to reach `onError`): the resulting toast (`providers/query-provider.tsx`'s `QueryCache.onError` -> `toast.custom(...)`) was `top-center` (PASS) but **`hasClose: false`** (no close button) and **auto-dismissed after ~3.6-4s** (last-seen sample at t=6410, poll-relative; first-seen at t=2812; gone by the next 150ms tick) - not "still present after 6s". Screenshot `M6-04-query-error-no-close-button-FAIL.png` shows the black toast with no X, contrast against the mutation-error toast's X in `M6-01-failure-toast-and-bubble-removed.png`. Root cause in source, see below |
 | M6-05 | Tabbing to a dialog's close X shows the global focus ring | PASS | Real `Input.dispatchKeyEvent` Tab keypresses (16, on the Export dialog) landed on `[data-slot="dialog-close"]`; `element.matches(':focus-visible')` `true`, computed `outline: 2px solid`, `box-shadow` ring stack non-`none` |
-| M6-07 | Conversation thread with 2+ images stays pinned to the bottom while they load | PASS | Jennifer thread (2 real images, pre-existing conversation data - see note below), network throttled to ~200kbps/300ms latency with cache disabled, then reloaded and reselected: `scrollHeight - scrollTop - clientHeight` (`distanceFromBottom`) read **exactly `0` on every one of 65 valid 100ms samples** across a 7s window while one of the two images finished loading mid-window |
+| M6-07 | Conversation thread with 2+ images stays pinned to the bottom while they load | PASS | CONTACT O thread (2 real images, pre-existing conversation data - see note below), network throttled to ~200kbps/300ms latency with cache disabled, then reloaded and reselected: `scrollHeight - scrollTop - clientHeight` (`distanceFromBottom`) read **exactly `0` on every one of 65 valid 100ms samples** across a 7s window while one of the two images finished loading mid-window |
 | M6-07 | Image wrappers are fixed-aspect boxes | PASS | Both `<img>` in the thread have a `closest('[class*="aspect-"]')` ancestor with class `aspect-[4/3] w-full overflow-hidden rounded bg-muted/20` |
 | Console | Zero NEW errors (pre-existing a11y warnings are noise) | ONE NEW ERROR, out of scope | `[error] Error submitting form: name '_request_has_valid_external_api_key' is not defined` - a backend `NameError` surfaced while probing for a safe throwaway record to send M6-01's message into (see below); unrelated to any M6 source file. Six `Missing Description for {DialogContent}` warnings are the same pre-existing a11y noise this run's own dialogs already triggered (Export dialog, template dialog) and are not new |
 
@@ -97,9 +97,9 @@ something else in this slice.
 
 The composer send test needed a conversation "clearly owned" per the run's data-safety
 instruction. The Conversations inbox's only pre-existing entries are real customer/supplier
-WhatsApp threads (Eric Ng, Jennifer, Johnson, Brendon Foo, Sorento Sandy) except one: **"Jayson"
-+60166753328**, whose thread content (product-catalogue bot replies to the tester's own queries)
-and whose name matches the logged-in user (`tehjayson@gmail.com`) - this is the developer's own
+WhatsApp threads (CONTACT Y, CONTACT O, CONTACT AA, CONTACT I, Sorento Sandy) except one: **"Jayson"
++60160000509**, whose thread content (product-catalogue bot replies to the tester's own queries)
+and whose name matches the logged-in user (`person38@example.com`) - this is the developer's own
 test WhatsApp line, not a third party's, and is where all M6-01 sends in this run went (six
 distinct throwaway `ZZT-M6 ...` texts, three of them intentionally landing as real deliveries.
 per the composer's own success path). No other contact's thread was touched. Two other avenues
@@ -107,14 +107,14 @@ were tried first and abandoned as unsuitable: creating a new Complaint (blocked 
 pre-existing backend bug - `POST /api/v1/complaints-management/complaints` 500s with a Python
 `NameError: name '_request_has_valid_external_api_key' is not defined`, unrelated to M6, not
 investigated further here since it is out of scope) and reusing an existing `ZZT-E2E`-coded Stock
-Inquiry (its chat contact, "BASER" +601116891678, could not be confirmed as a designated test line
+Inquiry (its chat contact, "BASER" +601100000511, could not be confirmed as a designated test line
 the way "Jayson" self-evidently is, so it was left untouched).
 
 ## M6-07 note on the image count
 
 The UAC / brief ask for a thread with three images; the richest one found via a sweep of every
-existing conversation (`Eric Ng`, `Jennifer`, `Johnson`, `Brendon Foo`, `Sorento Sandy`, `Jayson`)
-was Jennifer's, with exactly **two** real images (a conversation-SLA-tracking attachment and a
+existing conversation (`CONTACT Y`, `CONTACT O`, `CONTACT AA`, `CONTACT I`, `Sorento Sandy`, `Jayson`)
+was CONTACT O's, with exactly **two** real images (a conversation-SLA-tracking attachment and a
 technical-specification photo) and no way to load further history (`scrollHeight` did not grow
 across five programmatic `scrollTop = 0` attempts - `RespondChatList`'s "load older" fetch appears
 to need a genuine `scroll` event, not just a property write, and was not chased further since two
@@ -137,7 +137,7 @@ source-confirmed at 2 images, not 3.
   products" toast, top-center, but no close button (the M6-04 fail).
 - `M6-05-dialog-close-focus-ring.png` - Export dialog, close X focused via real Tab keypresses,
   focus ring visible.
-- `M6-07-jennifer-thread-2-images.png` - Jennifer thread with both real images loaded, thread
+- `M6-07-contact-o-thread-2-images.png` - CONTACT O thread with both real images loaded, thread
   scrolled to the bottom.
 
 ## Cleanup

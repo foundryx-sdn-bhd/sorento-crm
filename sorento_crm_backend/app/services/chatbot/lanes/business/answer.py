@@ -402,7 +402,7 @@ _ON_HAND_WITH_OUTSTANDING = re.compile(r"^\s*(-?\d+(?:\.\d+)?)\s*\(O/S:")
 def _on_hand_number(value: Any) -> Any:
     """The ON-HAND part of a compact Total that already carries its outstanding suffix.
 
-    MEASURED, hand pass 11 defect 1 (live turn cfee5933, contact 437264483 on the
+    MEASURED, hand pass 11 defect 1 (live turn cfee5933, contact 900000008 on the
     0921 clone): `_stock_compact` (sorento_crm_mcp/presenters.py) publishes the
     compact per-product total as `{"key": "total_on_hand", "value": 0,
     "granted_value": "0 (O/S: 0)"}` and restricts it behind `inventory.sellable`, and

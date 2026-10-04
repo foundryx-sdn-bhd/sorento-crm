@@ -129,7 +129,7 @@ def _ctx(
     query_brands: list | None = None,
     entities: list | None = None,
     prev_variables: dict | None = None,
-    contact_phone: str = "+60123450099",
+    contact_phone: str = "+60120000527",
     contact_id: str = "ZZT-esc-1",
     current_assignee: str | None = None,
     person_mention: str | None = None,
@@ -1516,10 +1516,10 @@ class TestPersonMentionEscalationRoutesByStaffLookup:
 
         ctx = _ctx(
             routing={"suggested_team": "purchasing", "suggested_agent": "general_enquiries"},
-            person_mention="Johnson",
+            person_mention="CONTACT AA",
             # The PARSER resolved the team from this message, so nothing was inherited.
             parser_raw={"routing": {"suggested_team": "purchasing", "suggested_agent": "general_enquiries"}},
-            text="hi Johnson, please escalate this",
+            text="hi CONTACT AA, please escalate this",
         )
         item = _item(
             brand_code=None, company_id=None, company_name=None, routing_source="none",

@@ -29,7 +29,7 @@ def db():
 
 
 def _contact(db) -> str:
-    c = RespondContact(id=str(uuid.uuid4()), phone_number=f"+6011{uuid.uuid4().hex[:8]}", name="Eric Ng")
+    c = RespondContact(id=str(uuid.uuid4()), phone_number=f"+6011{uuid.uuid4().hex[:8]}", name="CONTACT Y")
     db.add(c)
     db.commit()
     return c.id

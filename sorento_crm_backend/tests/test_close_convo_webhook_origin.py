@@ -40,7 +40,7 @@ from app.services.sla_service import ConversationSLATrackingService
 from app.services.user_service import UserPermissionService
 from tests._pg_fixture import blank_session
 
-PHONE = "+60123456781"
+PHONE = "+60100000002"
 RESPOND_IO_ID = "10025601"
 BASE = "/api/v1/sla-management/conversation-sla-tracking"
 CLOSE_WEBHOOK_URL = "https://n8n.test/webhook/respond-close-convo"

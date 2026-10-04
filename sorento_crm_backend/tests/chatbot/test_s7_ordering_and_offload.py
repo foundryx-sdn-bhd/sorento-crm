@@ -429,7 +429,7 @@ class TestStalledCounterRepair:
     def test_queue_wait_timeout_runs_the_turn(
         self, real_contacts, stub_engine_seams, stub_parser, monkeypatch, redis_client
     ) -> None:
-        """CHATBOT-QUEUE-FIX (prod 1 Oct, tickets 2 and 4 of contact 423729104): a
+        """CHATBOT-QUEUE-FIX (prod 1 Oct, tickets 2 and 4 of contact 900000081): a
         predecessor still alive past the cap no longer fails this turn with the generic
         error. The turn runs, and the trace says it waited out the budget."""
         _enable_ordering(monkeypatch, queue_wait_seconds=0.3)

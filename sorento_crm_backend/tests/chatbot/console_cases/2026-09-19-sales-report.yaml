@@ -21,7 +21,7 @@
 # sales-report/` (new directory, following the `evidence/outstanding-report/` precedent).
 #
 # PREREQUISITES before this file is run:
-# - The contact below (437264483, the same contact the outstanding-report console files use)
+# - The contact below (900000008, the same contact the outstanding-report console files use)
 #   holds the NEW per-contact field-reveal key `sales_orders.sales_report` (Contacts > Access >
 #   "Sales report" - S10). It is a fresh key; nothing grants it by default.
 # - Migration `519_chatbot_sales_report_vocab.py` has run (already present in this worktree at
@@ -80,7 +80,7 @@
 # envelope-borrowing needs one) and (b) does NOT hold `sales_orders.sales_report`, verified via
 # Contacts > Access or `contact_field_reveal_service.list_granted_keys` right before the run.
 
-contact: "437264483"
+contact: "900000008"
 
 # Sales report v4 (lane SALES-REPORT, PR #1401, mock documentation/mockups/sales-report/index.html):
 # the reply is the delivered basis by DO date - bold header lines, `*Total:*` plus one line per
@@ -256,7 +256,7 @@ cases:
   - name: "DENIAL - a contact without sales_orders.sales_report is refused before any fetch"
     # AC-1651/Journey step 7. Replace the contact id below (see the header PREREQUISITES note)
     # with a real, stored contact that has never been granted the key.
-    contact: "445239415"
+    contact: "900000056"
     cold: true
     turns:
       - text: "give me the dealer sales report for hanlim"

@@ -574,7 +574,7 @@ class RespondClient:
     def set_conversation_assignee(self, identifier: str, assignee_id: str) -> dict:
         """
         Set the conversation assignee for a contact. POST /v2/contact/{identifier}/conversation/assignee.
-        identifier: contact identifier (e.g. "phone:+60166753328" or "id:contact-uuid").
+        identifier: contact identifier (e.g. "phone:+60160000509" or "id:contact-uuid").
         assignee_id: Respond.io user id (space member). Use empty string to unassign.
         """
         if not self.api_key:

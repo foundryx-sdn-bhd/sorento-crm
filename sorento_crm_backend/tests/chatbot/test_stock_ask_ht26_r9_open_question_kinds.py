@@ -6,7 +6,7 @@ first one I need two'. It's quite weird that it replies in that way. So maybe ou
 can be better. And I'm also curious in your methodology ... not too much hard coding,
 hard routing."
 
-The exchange (14:07Z to 14:08Z, :3087, contact 437264483):
+The exchange (14:07Z to 14:08Z, :3087, contact 900000008):
   "check stock STWC2867"      -> "Couldn't find STWC2867. Did you mean: 1. SRTWC286-SH
                                   2. SRTWC286-SH-P"
   "the first one, I need 2"   -> "STWC2867 x 2: which one? 1. ... 2. ..."   (wrong)
@@ -271,7 +271,7 @@ def test_c_the_block_states_a_pick_object_and_keeps_the_open_task_lines():
 def test_c_the_engine_sends_the_did_you_mean_as_a_pick_object(
     session_factory, monkeypatch, stub_access
 ):
-    console = EngineConsole(session_factory, monkeypatch, stub_access, phone="+60000009101")
+    console = EngineConsole(session_factory, monkeypatch, stub_access, phone="+60900000047")
     console.say("check stock STWC2867", stock(product("STWC2867")))
     console.say("the first one, I need 2", _first_one_two())
     block = console.last_block
@@ -487,7 +487,7 @@ def _answered(*pairs: tuple[str, int]) -> str:
 
 def test_g_1406_the_first_one_i_need_2(session_factory, monkeypatch, stub_access):
     """Issue #1293: the owner's exchange, 14:07Z to 14:08Z, as it reads after the fix."""
-    c = EngineConsole(session_factory, monkeypatch, stub_access, phone="+60000009102")
+    c = EngineConsole(session_factory, monkeypatch, stub_access, phone="+60900000044")
     assert c.say("check stock STWC2867", stock(product("STWC2867"))) == DYM_TEXT
     assert c.say("the first one, I need 2", _first_one_two()) == _answered(("SRTWC286-SH", 2))
     # The pick is spent: the same did-you-mean, asked again, answers "1, I need 2" too.
@@ -506,7 +506,7 @@ def test_g_1406_replayed_with_a_recorded_emission_reads_the_same(
 ):
     """The fallback: the parser left the object out (mode null) and read the position
     and the quantity as it always has."""
-    c = EngineConsole(session_factory, monkeypatch, stub_access, phone="+60000009103")
+    c = EngineConsole(session_factory, monkeypatch, stub_access, phone="+60900000054")
     c.say("check stock STWC2867", stock(product("STWC2867")))
     assert c.say("the first one, I need 2", reply(demand_qty=2, reference_positions=[1])) == _answered(
         ("SRTWC286-SH", 2)
@@ -516,7 +516,7 @@ def test_g_1406_replayed_with_a_recorded_emission_reads_the_same(
 def test_g_1406_a_quantity_alone_asks_which_without_the_unknown_code(
     session_factory, monkeypatch, stub_access
 ):
-    c = EngineConsole(session_factory, monkeypatch, stub_access, phone="+60000009104")
+    c = EngineConsole(session_factory, monkeypatch, stub_access, phone="+60900000059")
     c.say("check stock STWC2867", stock(product("STWC2867")))
     assert c.say("I need 2", reply(demand_qty=2)) == numbered("Which one do you need 2 of?", DYM)
     assert c.say("the second", reply(reference_positions=[2], open_question_answer=answer("pick", picked=[2]))) == _answered(
@@ -527,7 +527,7 @@ def test_g_1406_a_quantity_alone_asks_which_without_the_unknown_code(
 def test_g_0718_round_3_hand_test(session_factory, monkeypatch, stub_access):
     """07:18Z (round 3 hand test, rulings 1 and 2): the list is numbered; a bare number
     after an answered quantity revises it, never a pick and never a re-ask."""
-    c = EngineConsole(session_factory, monkeypatch, stub_access, phone="+60000009105")
+    c = EngineConsole(session_factory, monkeypatch, stub_access, phone="+60900000061")
     assert c.say("check stock srtwc286", stock(product("srtwc286"))) == LIST
     assert c.say("1", reply(reference_positions=[1], open_question_answer=answer("pick", picked=[1]))) == (
         "How many units of SRTWC286-SH?"
@@ -550,7 +550,7 @@ def test_g_0818_round_4_all_is_point_form_and_one_number_is_every_line(
     "tia" is a typo of "tiga", a quantity the parser reads)."""
     from app.services.chatbot.turn.apply import STOCK_PICK_NOT_ALL
 
-    c = EngineConsole(session_factory, monkeypatch, stub_access, phone="+60000009106")
+    c = EngineConsole(session_factory, monkeypatch, stub_access, phone="+60900000063")
     assert c.say("check stock srtwc286", stock(product("srtwc286"))) == LIST
     every = reply(reference_positions=list(range(1, 11)), open_question_answer=answer("pick", picked=list(range(1, 11))))
     # AVAIL-MODE-REPLIES (owner, 2 Oct 2026, Q4 (b)) supersedes ruling 1 for the bare
@@ -565,7 +565,7 @@ def test_g_0818_round_4_all_is_point_form_and_one_number_is_every_line(
 def test_g_1011_round_7_session(session_factory, monkeypatch, stub_access):
     """10:11Z to 10:14Z, the round 7 console test (rows as numbered in its PR comment),
     every row as ruled in round 8, through the engine this time."""
-    c = EngineConsole(session_factory, monkeypatch, stub_access, phone="+60000009107")
+    c = EngineConsole(session_factory, monkeypatch, stub_access, phone="+60900000060")
     # Row 1 and 2.
     assert c.say("check stock srtwc286", stock(product("srtwc286"))) == LIST
     assert c.say(
@@ -649,7 +649,7 @@ PICK_WITH_QTY = [
 
 @pytest.mark.parametrize("message,obj", PICK_WITH_QTY, ids=[m for m, _o in PICK_WITH_QTY])
 def test_h_pick_one_with_a_quantity(session_factory, monkeypatch, stub_access, message, obj):
-    c = EngineConsole(session_factory, monkeypatch, stub_access, phone="+60000009201")
+    c = EngineConsole(session_factory, monkeypatch, stub_access, phone="+60900000042")
     c.say("check stock STWC2867", stock(product("STWC2867")))
     assert c.say(message, reply(open_question_answer=obj)) == _answered(("SRTWC286-SH", 2))
 
@@ -672,7 +672,7 @@ MULTI_PICK = [
 
 @pytest.mark.parametrize("message,picked", MULTI_PICK, ids=[m for m, _p in MULTI_PICK])
 def test_h_pick_one_several_opens_their_quantities(session_factory, monkeypatch, stub_access, message, picked):
-    c = EngineConsole(session_factory, monkeypatch, stub_access, phone="+60000009202")
+    c = EngineConsole(session_factory, monkeypatch, stub_access, phone="+60900000043")
     c.say("check stock srtwc286", stock(product("srtwc286")))
     out = c.say(message, reply(open_question_answer=answer("pick", picked=picked)))
     assert out == _point_form([OWNER_FAMILY[p - 1] for p in picked])
@@ -695,7 +695,7 @@ BOTH = [
 
 @pytest.mark.parametrize("message,obj,qty", BOTH, ids=[m for m, _o, _q in BOTH])
 def test_h_pick_one_both(session_factory, monkeypatch, stub_access, message, obj, qty):
-    c = EngineConsole(session_factory, monkeypatch, stub_access, phone="+60000009203")
+    c = EngineConsole(session_factory, monkeypatch, stub_access, phone="+60900000049")
     c.say("check stock STWC2867", stock(product("STWC2867")))
     out = c.say(message, reply(open_question_answer=obj))
     if qty is None:
@@ -721,7 +721,7 @@ CONFIRM = [
 
 @pytest.mark.parametrize("message,mode", CONFIRM, ids=[m for m, _x in CONFIRM])
 def test_h_confirm(session_factory, monkeypatch, stub_access, message, mode):
-    c = EngineConsole(session_factory, monkeypatch, stub_access, phone="+60000009204")
+    c = EngineConsole(session_factory, monkeypatch, stub_access, phone="+60900000066")
     assert c.say("check stock ELP3753 10", stock(product("ELP3753", 10))) == (
         "Couldn't find ELP3753. Did you mean ELP3754?"
     )
@@ -753,7 +753,7 @@ QUANTITIES = [
 @pytest.mark.parametrize("message,obj,qtys", QUANTITIES, ids=[m for m, _o, _q in QUANTITIES])
 def test_h_quantities(session_factory, monkeypatch, stub_access, message, obj, qtys):
     three = OWNER_FAMILY[:3]
-    c = EngineConsole(session_factory, monkeypatch, stub_access, phone="+60000009205")
+    c = EngineConsole(session_factory, monkeypatch, stub_access, phone="+60900000062")
     c.say("check stock srtwc286", stock(product("srtwc286")))
     assert c.say("1 2 3", reply(open_question_answer=answer("pick", picked=[1, 2, 3]))) == _point_form(three)
     assert c.say(message, reply(open_question_answer=obj)) == _answered(*zip(three, qtys))
@@ -777,7 +777,7 @@ LAST_ANSWER = [
 @pytest.mark.parametrize("message,obj,qtys", LAST_ANSWER, ids=[m for m, _o, _q in LAST_ANSWER])
 def test_h_last_answer(session_factory, monkeypatch, stub_access, message, obj, qtys):
     three = OWNER_FAMILY[:3]
-    c = EngineConsole(session_factory, monkeypatch, stub_access, phone="+60000009206")
+    c = EngineConsole(session_factory, monkeypatch, stub_access, phone="+60900000064")
     c.say("check stock srtwc286", stock(product("srtwc286")))
     c.say("1 2 3", reply(open_question_answer=answer("pick", picked=[1, 2, 3])))
     assert c.say("3 each", reply(open_question_answer=answer("all", qty_for_all=3))) == _answered(
@@ -794,7 +794,7 @@ def test_h_family_order_survives_a_reshuffled_heap(session_factory, monkeypatch,
     new row position and new index entries) and the list must not move."""
     from sqlalchemy import text
 
-    c = EngineConsole(session_factory, monkeypatch, stub_access, phone="+60000009207")
+    c = EngineConsole(session_factory, monkeypatch, stub_access, phone="+60900000065")
     db = session_factory()
     moved = OWNER_FAMILY[:6]
     db.execute(

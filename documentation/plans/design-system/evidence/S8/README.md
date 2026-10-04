@@ -22,7 +22,7 @@ line in `apple-alignment-acceptance-criteria.md` and
 
 Session `s8-evidence` against the S8 worktree lane (:3090/:8000). Verified by
 measurement (`getComputedStyle`/`getBoundingClientRect` sampled over rAF loops)
-per the brief, plus screenshots. Login: `tehjayson@gmail.com` (E2E_EMAIL).
+per the brief, plus screenshots. Login: `person38@example.com` (E2E_EMAIL).
 
 ## Findings summary
 
