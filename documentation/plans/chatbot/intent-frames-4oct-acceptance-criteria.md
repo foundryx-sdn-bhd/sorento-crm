@@ -6,9 +6,11 @@ Each criterion names the test that holds it.
   agent, status, document, channel, date window, sort). `test_a_new_intent_drops_the_old_asks_filters_and_subject`.
 - **AC-2** A new intent carries the old subject (products, customers, warehouse,
   product-describing extras) only when the parser says so: `continuation` or
-  `anaphora.backward_reference` (never `entity_op: reuse` alone), and an echoed old
-  entity never lands. `test_entity_op_reuse_alone_is_not_a_carry_signal`,
-  `test_an_echoed_old_entity_never_lands_on_a_new_intents_frame`. `test_a_carry_signal_carries_the_subject_but_never_the_old_filters`.
+  `anaphora.backward_reference` (never `entity_op: reuse` alone); an entity the parser
+  echoed from the conversation never lands as itself but carries its own axis's settled
+  rows. `test_entity_op_reuse_alone_is_not_a_carry_signal`,
+  `test_an_echoed_old_entity_carries_its_axis_as_the_settled_row`,
+  `test_a_carry_signal_carries_the_subject_but_never_the_old_filters`.
 - **AC-3** A new intent with no carry signal starts with no subject but its own.
   `test_a_new_intent_with_no_carry_signal_and_no_entity_starts_empty`.
 - **AC-4** A refinement of the same intent narrows the frame (combine across kinds).
