@@ -384,6 +384,12 @@ LABELS: dict[str, dict[str, str]] = {
     "Low stock report cancelled.": {"ms": "Laporan stok rendah dibatalkan.", "zh": "低库存报告已取消。"},
     "I still can't place '{word}'. Ask for the low stock report again with a category or \"all\".": {"ms": "Saya masih tidak dapat mengenali '{word}'. Minta laporan stok rendah sekali lagi dengan kategori atau \"all\".", "zh": "我仍然无法识别 '{word}'。请再次索取低库存报告，并提供类别或 \"all\"。"},
     "{code} has no {types}.": {"ms": "{code} tiada {types}.", "zh": "{code} 没有{types}。"},
+    # LOWSTOCK-SEMANTIC (4 Oct): the grouping pick (crew Q2) and the blank give-up.
+    "I can group the low stock report by supplier, by category, or both. Which one? Reply with a number:": {"ms": "Saya boleh mengasingkan laporan stok rendah mengikut pembekal, mengikut kategori, atau kedua-duanya. Yang mana satu? Balas dengan nombor:", "zh": "低库存报告可以按供应商、按类别或两者分组。请问要哪一种？请回复编号："},
+    "Supplier x category": {"ms": "Pembekal x kategori", "zh": "供应商 x 类别"},
+    "No grouping": {"ms": "Tanpa pengasingan", "zh": "不分组"},
+    "How should the low stock report be grouped?": {"ms": "Bagaimana laporan stok rendah patut diasingkan?", "zh": "低库存报告要如何分组？"},
+    "I still can't tell which one you mean. Ask for the low stock report again with a category or \"all\".": {"ms": "Saya masih tidak pasti yang mana satu anda maksudkan. Minta laporan stok rendah sekali lagi dengan kategori atau \"all\".", "zh": "我仍然无法确定您指的是哪一个。请再次索取低库存报告，并提供类别或 \"all\"。"},
 }
 
 #: Presenter field key -> English label (slices 1 and 2).

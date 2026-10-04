@@ -4281,6 +4281,9 @@ def envelope_of(
         # LOWSTOCK-FILTER-ASK: the `required_fields` slot a lane left open, recorded on
         # `focus.required_ask` by `engine.py` for the next message only.
         "required_ask": fetched.get("required_ask"),
+        # LOWSTOCK-SEMANTIC: the filters a low stock report ran with, recorded on
+        # `focus.low_stock` by `engine.py` so a refinement narrows that report.
+        "low_stock_frame": fetched.get("low_stock_frame"),
     }
     if raw_fragment is not None:
         # R4 (PLAN-chatbot-answer-half-reattach.md): the UNTOUCHED `business.run_fetch`
