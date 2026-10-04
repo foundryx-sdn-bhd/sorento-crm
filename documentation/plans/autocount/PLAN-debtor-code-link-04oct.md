@@ -19,7 +19,8 @@ fail "already linked to another source" (crew E2E, 4 Oct).
   the document, so documents are out of scope. Sales agent still goes to every same-code row (#1468).
 - Crew 4 Oct: Q2 (a) keep the stored ref and warn `ref_mismatch`; Q3 (a) keep each ref's prefix.
 - Owner 4 Oct: Q1 (a) first = oldest created_at, ties to the lowest id.
-- Owner pending: Q4 (name clash keeps the old name + warns). Built on (a).
+- Owner 4 Oct ~11:30: exact (code, name) row first, else the oldest row (renamed). Never name alone.
+  Q4 (name clash) is gone with it.
 
 ## Design (simplest thing that works)
 
@@ -28,16 +29,15 @@ fail "already linked to another source" (crew E2E, 4 Oct).
 `MasterIngestService._apply_scoped`: for `entity_type == "customers"` the ref-first lookup and the
 (code, name) adopt are replaced by one code lookup:
 
-1. `_first_customer_by_code(company, code)`: `SELECT id ... WHERE company_id = :cid AND
-   upper(btrim(customer_code)) = upper(btrim(:code)) ORDER BY created_at, id::text LIMIT 1`.
+1. `_customer_by_code(company, code, name)`: `SELECT id ... WHERE company_id = :cid AND
+   lower(btrim(customer_code)) = :code ORDER BY (lower(btrim(customer_name)) = :name) DESC,
+   created_at, id::text LIMIT 1` (exact-name row first, else the oldest).
 2. None -> the existing create path (`_insert` + `_link`).
 3. Found -> the existing update path (segment fill-only, `_diff`, `_update`), plus:
-   - name clash check against a same-company sibling's (code, name) -> drop `customer_name` from
-     the columns and warn `customer_name_taken`;
    - ref bookkeeping per R5 (link only when both the row and the ref are free; otherwise keep and
      warn `ref_mismatch` unless the row already holds the pushed ref).
 
-No new table, no new column, no registry, no setting. `_adopt_customer` (D13) is removed for the
+No new table, no new column, no registry, no setting. `_adopt_customer` (D13) becomes this lookup for the
 masters push; `customer_back_create` and the document ladders are untouched (R8).
 
 ### Slice 2: one-off link conversion (R9)

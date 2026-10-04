@@ -8,6 +8,10 @@ Owner rules this card is built on:
 - 4 Oct ~11:25: when several CRM customers share a debtor code, the master feed updates the FIRST
   one. Sales orders and DOs follow the debtor name on the document, so which row the master feed
   updates does not matter for documents. The sales agent still goes to every same-code row (#1468).
+- 4 Oct ~11:30 (Q2 of the owner round): within company + debtor code, a row whose name matches
+  AutoCount's name exactly (trim / case-insensitive, the unique index's own rule) is updated;
+  otherwise the oldest-created row is updated and renamed. Never match by name alone, no fuzzy
+  matching.
 
 All examples are masked (public repo). Codes like `300-X001` and names like `NAME-A` are fake.
 This sandbox cannot reach the dev DB, so the examples are built on the crew's dev counts
@@ -31,25 +35,28 @@ This sandbox cannot reach the dev DB, so the examples are built on the crew's de
 ## Rules (proposed)
 
 - **R1 Identity.** A pushed debtor is matched by company + debtor code: trimmed, case-insensitive
-  (`300-x001 ` = `300-X001`). The `source_ref` and the name are never used to pick the row.
+  (`300-x001 ` = `300-X001`). The `source_ref` never picks the row, and a name never picks a row
+  on its own: a same-name row under another code is never touched.
 - **R2 No row with the code.** Create one (code, name, the other fields), and link the pushed ref.
   Outcome `created`.
-- **R3 One or more rows with the code.** Update the FIRST one: oldest `created_at`, then lowest
-  `id` as a tie-break (rows from one import batch share a `created_at`). Name, phone, email,
-  registration no, tax id, country, region, active and segment (fill-only, unchanged) apply to
-  that row only. Outcome `updated`.
+- **R3 One or more rows with the code.** Pick the target among the same-code rows of the company:
+  1. the row whose name equals the pushed name exactly (`lower(btrim(...))`, the same comparison
+     as `uq_customers_company_code_name_lower`, so at most one row can match);
+  2. otherwise the oldest `created_at`, then lowest `id` (rows from one import batch share a
+     `created_at`), renamed to the pushed name. That rename cannot clash: step 1 found no row with
+     that name under this code.
+  Name, phone, email, registration no, tax id, country, region, active and segment (fill-only,
+  unchanged) apply to the target only. Outcome `updated`.
 - **R4 Other same-code rows.** Untouched, except the sales agent, which #1468 already writes to
   every same-code row of the company. (This lane keeps that; it does not add any other fan-out.)
 - **R5 The pushed ref.** Bookkeeping only, never a reason to fail:
-  - the first row has no ref and the pushed ref is free: link it;
-  - the first row already holds the pushed ref: keep it (re-link touches `last_synced_at`);
-  - the first row holds a different ref, or the pushed ref belongs to another row: keep what is
+  - the target has no ref and the pushed ref is free: link it;
+  - the target already holds the pushed ref: keep it (re-link touches `last_synced_at`);
+  - the target holds a different ref, or the pushed ref belongs to another row: keep what is
     stored, link nothing, warn `ref_mismatch` (the same code-wins rule products use since
     contract 2.4, `PLAN-ingest-products-code-wins.md`).
-- **R6 Name clash.** If renaming the first row to the AutoCount name would collide with a sibling
-  that already has that exact (code, name), the first row keeps its name, every other field
-  still applies, warning `customer_name_taken`. (Without this the unique index fails the whole
-  record.)
+- **R6 No name clash possible.** Removed by the owner's 11:30 rule: a rename only happens when no
+  same-code row has the pushed name (R3 step 2), so the unique index cannot fire.
 - **R7 Companies.** Matching never crosses companies: `300-X001` in SRT and `300-X001` in MCH are
   two customers, each found only by its own company's push.
 - **R8 Documents unchanged.** SO / DO / billing customer resolution is not touched (owner,
@@ -58,8 +65,8 @@ This sandbox cannot reach the dev DB, so the examples are built on the crew's de
   `<prefix>:<debtor code>` (the row's own trimmed `customer_code`, prefix kept), so no customer
   link carries an AutoKey any more and a deletion or document ref in code form finds the row.
   - Idempotent: a ref already equal to `<prefix>:<code>` is left alone; a second run changes 0.
-  - Collision (the target ref already names another row of that company): the FIRST row by R3
-    gets it, the other keeps its old ref and is listed in the report. Nothing is deleted.
+  - Collision (the target ref already names another row of that company): the oldest-created
+    row (ties to the lowest id) gets it, since a conversion has no pushed name to compare; the other keeps its old ref and is listed in the report. Nothing is deleted.
   - Additive and reversible: the script writes a CSV of (ref id, old, new) before it changes
     anything; `--revert <csv>` puts the old values back.
   - Delivered as a script with `--dry-run` (default) / `--apply`, not an alembic migration, so a
@@ -71,8 +78,9 @@ This sandbox cannot reach the dev DB, so the examples are built on the crew's de
 | # | Situation | Push | Today | Proposed |
 |---|---|---|---|---|
 | E1 | `300-X001` has one row `NAME-A`, linked `AED_SORENTO:1001` | `<db>:300-X001`, `NAME-A`, new phone | FAILED (already linked) | Row updated (phone). Ref kept, warn `ref_mismatch` until R9 runs; after R9 the stored ref is `AED_SORENTO:300-X001`, and if `<db>` is `AED_SORENTO` there is no warning at all. |
-| E2 | `300-X002` has a ledger `NAME-B` (created 2025-01) and a DO back-created row `NAME-B SDN BHD` (created 2026-09) | `NAME-B SDN BHD (NEW)`, agent `AGENT-A I` | FAILED or adopts by exact name only | The 2025 ledger is renamed `NAME-B SDN BHD (NEW)` and gets the phone etc.; the DO row keeps its name; both get `AGENT-A I` (#1468). |
-| E3 | `300-X003`: ledger `NAME-C` (2025-01) and DO row `NAME-C2` (2026-09); AutoCount now says `NAME-C2` | name `NAME-C2` | adopts the DO row by exact name, the ledger never updates | The ledger is first, but `NAME-C2` is taken by the sibling: ledger keeps `NAME-C`, other fields apply, warn `customer_name_taken`. |
+| E2 | `300-X002` has a ledger `NAME-B` (created 2025-01) and a DO back-created row `NAME-B SDN BHD` (created 2026-09) | `NAME-B SDN BHD (NEW)`, agent `AGENT-A I` | no ref match, no exact name: created a third row | No row has that exact name: the oldest (2025 ledger) is renamed `NAME-B SDN BHD (NEW)` and gets the phone etc.; the DO row keeps its name; both get `AGENT-A I` (#1468). |
+| E3 | `300-X003`: ledger `NAME-C` (2025-01, linked `AED_SORENTO:1003`) and DO row `NAME-C2` (2026-09, unlinked); AutoCount now says `NAME-C2` | `<db>:300-X003`, name ` name-c2 `, new phone | adopts the DO row by exact name | Exact-name match: the DO row `NAME-C2` gets the phone and the pushed ref (it had none); the ledger is untouched; both get the agent. |
+| E7 | `301-X007` is a cash-sale code with many DO back-created names, none equal to AutoCount's debtor name | `CASH SALES` | created another row | The oldest `301-X007` row is renamed `CASH SALES` and updated; every other row keeps its name; all get the agent (#1468). |
 | E4 | `300-X004` exists in SRT and in MCH | SRT push | SRT row only | SRT row only (R7). |
 | E5 | `300-X005` not in the CRM | push | created | created, ref linked (R2). |
 | E6 | AutoCount renumbers `300-X006` to `300-X060` (AutoKey unchanged) | `<db>:300-X060` | vendor API: ref match, the old row's code is changed to `300-X060` | No row has `300-X060`: a new ledger is created; the `300-X006` row and its history stay as they are. |
@@ -86,7 +94,7 @@ This sandbox cannot reach the dev DB, so the examples are built on the crew's de
 - A code later reused in AutoCount for a different debtor: it updates the same CRM ledger (that
   is what code identity means).
 - Dry run / pull preview: takes the same path and rolls back, so the preview shows the R3 target
-  and the R5/R6 warnings.
+  and the R5 warning.
 
 ## ss side
 
@@ -116,6 +124,5 @@ AutoKey, switching it to `AccNo` makes new links code-form from day one; optiona
     JOIN companies c ON c.id = r.company_id WHERE r.entity_type = 'customers' GROUP BY 1, 2;`
     If SRT prod's HTTP DB name is not `AED_SORENTO`, nothing fails: matching is by code (R1) and the
     push only warns `ref_mismatch` (R5).
-- Q4 Name clash (R6): (a) keep the old name + warn (b) fail the record as today.
-  Recommendation (a): one clash should not stop the phone and agent from updating. Owner to
-  answer; building on (a).
+- Q4 Name clash (R6): **superseded, owner 4 Oct ~11:30**: exact (code, name) match first, else
+  the oldest row, so a clash cannot happen.
