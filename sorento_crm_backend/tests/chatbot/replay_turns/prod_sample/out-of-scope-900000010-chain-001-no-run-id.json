@@ -1,0 +1,2648 @@
+{
+  "turns": [
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1061691@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1061691,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1777880659,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000010"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000010",
+          "id": 900000010,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000010",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000015\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": "zzt-agent-1061691@example.invalid",
+              "firstName": "ZZT-agent",
+              "id": 1061691,
+              "lastName": "",
+              "role": "user"
+            },
+            "countryCode": "MY",
+            "created_at": 1777880659,
+            "email": null,
+            "firstName": "ZZT-900000010",
+            "id": 900000010,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000010",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "7f085c33-3ad9-43de-933e-8e2f069834e5",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxMjI0NjUyMTMVAgASGBYzRUIwREJBNzdGMjY1RTAyMzIyQzUzAA==",
+            "contactId": 900000010,
+            "message": {
+              "text": "CHECK STOCK SRTSS5726-GM",
+              "type": "text"
+            },
+            "messageId": 1789063599000000,
+            "timestamp": 1789063599000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message",
+          "send_attachments"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "56d21c38-ca1f-4f21-8fd8-fb0a48582260",
+          "a786ae31-3e92-4e61-8f59-5de9aea4face"
+        ],
+        "focus_after": null,
+        "pending": null,
+        "text": "Stock details found for the requested products.\n\n1. *Product Code:* SRTSS5726-GM\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 282\n*Outstanding:* 0\n\n2. *Product Code:* SRTSS5726-GM\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-AM\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n3. *Product Code:* SRTSS5726-GM\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-BB\n*Quantity On Hand:* 19\n*Outstanding:* 25\n\n4. *Product Code:* SRTSS5726-GM\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-IB\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n5. *Product Code:* SRTSS5726-GM\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-IR\n*Quantity On Hand:* 294\n*Outstanding:* 294\n\n6. *Product Code:* SRTSS5726-GMB\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 328\n*Outstanding:* 0\n\n_Data last updated: 10/09/2026 17:36:41_",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "contact_id",
+              "date_mode",
+              "include_sellable",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_inventory_stock_balance_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "SRTSS5726-GM",
+                "entity_type": "product",
+                "uuid": "56d21c38-ca1f-4f21-8fd8-fb0a48582260"
+              }
+            ],
+            "resolved": true,
+            "token": "SRTSS5726-GM"
+          }
+        ],
+        "tokens": [
+          "SRTSS5726-GM"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 9,
+        "recorded_at": "2026-09-11T03:06:45.218444+09:00",
+        "turn_id": "376a3535-80f1-488f-a818-32ce1232a2b9"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 2,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 2,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "contact_id": "900000010",
+            "date_mode": null,
+            "include_sellable": true,
+            "is_active": null,
+            "product_ids": [
+              "56d21c38-ca1f-4f21-8fd8-fb0a48582260",
+              "a786ae31-3e92-4e61-8f59-5de9aea4face"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "attachments": [],
+            "fallback_used": false,
+            "has_result": true,
+            "intro": "Stock details found for the requested products.",
+            "items": [
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "SRTSS5726-GM"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "BUKIT RAJA"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "BRW"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 282
+                  },
+                  {
+                    "key": "open_so_qty",
+                    "label": "Outstanding",
+                    "value": 0
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTSS5726-GM"
+              },
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "SRTSS5726-GM"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "BUKIT RAJA"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "BRW-AM"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 0
+                  },
+                  {
+                    "key": "open_so_qty",
+                    "label": "Outstanding",
+                    "value": 0
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTSS5726-GM"
+              },
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "SRTSS5726-GM"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "BUKIT RAJA"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "BRW-BB"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 19
+                  },
+                  {
+                    "key": "open_so_qty",
+                    "label": "Outstanding",
+                    "value": 25
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTSS5726-GM"
+              },
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "SRTSS5726-GM"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "BUKIT RAJA"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "BRW-IB"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 0
+                  },
+                  {
+                    "key": "open_so_qty",
+                    "label": "Outstanding",
+                    "value": 0
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTSS5726-GM"
+              },
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "SRTSS5726-GM"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "BUKIT RAJA"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "BRW-IR"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 294
+                  },
+                  {
+                    "key": "open_so_qty",
+                    "label": "Outstanding",
+                    "value": 294
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTSS5726-GM"
+              },
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "SRTSS5726-GMB"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "BUKIT RAJA"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "BRW"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 328
+                  },
+                  {
+                    "key": "open_so_qty",
+                    "label": "Outstanding",
+                    "value": 0
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTSS5726-GMB"
+              }
+            ],
+            "last_updated_at": "2026-09-10T17:36:41.411894",
+            "restricted_fields": {
+              "open_so_qty": "inventory.sellable"
+            },
+            "result_type": "stock",
+            "stock_visibility": {
+              "hide_zero_locations": false,
+              "mode": "detailed",
+              "source": "contact",
+              "warehouse_codes": [
+                "BRW",
+                "BRW-ACTS",
+                "BRW-AM",
+                "BRW-BB",
+                "BRW-BILL",
+                "BRW-CLR",
+                "BRW-HP",
+                "BRW-IB",
+                "BRW-IR",
+                "BRW-NTC",
+                "BRW-PSM",
+                "BRW-S/L",
+                "BRW-SMC",
+                "BRW-SYNT",
+                "DC1-ACT",
+                "DC1-AM",
+                "DC1-BB",
+                "DC1-HP",
+                "DC1-IB",
+                "DC1-IR",
+                "DC1-NTC",
+                "DC1-S/L",
+                "DC1-SMC",
+                "DEFECT",
+                "DISPLAY",
+                "HOLD",
+                "HQ",
+                "MKTG",
+                "MKTG-HQ",
+                "MOCHA-KC",
+                "MOCHA-WH",
+                "MWH",
+                "MWH-ACT",
+                "MWH-AM",
+                "MWH-BB",
+                "MWH-DFT",
+                "MWH-HP",
+                "MWH-IB",
+                "MWH-IR",
+                "MWH-MOC",
+                "MWH-NTC",
+                "MWH-S/L",
+                "MWH-SMC",
+                "REJECT",
+                "REPAIR",
+                "REWORK",
+                "RSW",
+                "RSW-ACT",
+                "RSW-BB",
+                "RSW-HP",
+                "RSW-IB",
+                "RSW-IR",
+                "RSW-NTC",
+                "RSW-SMC",
+                "SHRT ACC",
+                "SPARPART",
+                "VAR",
+                "WH3",
+                "WH3-ACT",
+                "WH3-AM",
+                "WH3-BB",
+                "WH3-HP",
+                "WH3-IB",
+                "WH3-IR",
+                "WH3-NTC",
+                "WH3-PSM",
+                "WH3-R/S",
+                "WH3-S/L",
+                "WH3-SMC"
+              ]
+            }
+          },
+          "tool": "crm_inventory_stock_balance_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "inventory",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "SRTSS5726-GM"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_stock",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to check stock for SRTSS5726-GM"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1061691@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1061691,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1777880659,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000010"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000010",
+          "id": 900000010,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000010",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000015\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": "zzt-agent-1061691@example.invalid",
+              "firstName": "ZZT-agent",
+              "id": 1061691,
+              "lastName": "",
+              "role": "user"
+            },
+            "countryCode": "MY",
+            "created_at": 1777880659,
+            "email": null,
+            "firstName": "ZZT-900000010",
+            "id": 900000010,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000010",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "66bc08d5-8d7e-4841-9951-6eb8f0635771",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxMjI0NjUyMTMVAgASGBYzRUIwQzc5RTAzRjI4MzA4RUNDQUM2AA==",
+            "contactId": 900000010,
+            "message": {
+              "text": "DRAWING SRTSS5726-GM",
+              "type": "text"
+            },
+            "messageId": 1789063642000000,
+            "timestamp": 1789063642000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message",
+          "send_attachments"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "56d21c38-ca1f-4f21-8fd8-fb0a48582260",
+          "759e8bb0-0895-40ca-98eb-74870303cf3e"
+        ],
+        "focus_after": null,
+        "pending": null,
+        "text": "I have attached the file(s) below.\n\n1. *Product Code:* SRTSS5726-GM\n*Attachment Type:* Technical Specifications\n*File Name:* SRTSS5726-GM\u5c3a\u5bf8\u56fe.jpg\n\n_Data last updated: 03/08/2026 10:08:52_",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "attachment_type_ids",
+              "contact_id",
+              "date_mode",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_master_product_attachments_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "SRTSS5726-GM",
+                "entity_type": "product",
+                "uuid": "56d21c38-ca1f-4f21-8fd8-fb0a48582260"
+              }
+            ],
+            "resolved": true,
+            "token": "SRTSS5726-GM"
+          },
+          {
+            "matches": [
+              {
+                "canonical_code": "technical drawing",
+                "entity_type": "attachment_type",
+                "uuid": "759e8bb0-0895-40ca-98eb-74870303cf3e"
+              }
+            ],
+            "resolved": true,
+            "token": "technical drawing"
+          }
+        ],
+        "tokens": [
+          "SRTSS5726-GM",
+          "DRAWING"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 9,
+        "recorded_at": "2026-09-11T03:07:27.175794+09:00",
+        "turn_id": "73aeb00b-f9f7-45d3-b8b2-d3742ef57a4b"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 2,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 2,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "attachment_type_ids": [
+              "759e8bb0-0895-40ca-98eb-74870303cf3e"
+            ],
+            "contact_id": "900000010",
+            "date_mode": null,
+            "is_active": null,
+            "product_ids": [
+              "56d21c38-ca1f-4f21-8fd8-fb0a48582260"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "attachments": [
+              {
+                "attachmentType": "Technical Specifications",
+                "filename": "SRTSS5726-GM\u5c3a\u5bf8\u56fe.jpg",
+                "mimeType": "image/jpeg",
+                "uploadedAt": "2026-08-03T10:08:52.705306",
+                "url": "https://cdn-sorento.com/technical_specifications/55602f84-57f4-433a-a41d-2f5e35bf515e/SRTSS5726-GM\u5c3a\u5bf8\u56fe.jpg"
+              }
+            ],
+            "fallback_used": false,
+            "has_result": true,
+            "intro": "I have attached the file(s) below.",
+            "items": [
+              {
+                "fields": [
+                  {
+                    "label": "Product Code",
+                    "value": "SRTSS5726-GM"
+                  },
+                  {
+                    "label": "Attachment Type",
+                    "value": "Technical Specifications"
+                  },
+                  {
+                    "label": "File Name",
+                    "value": "SRTSS5726-GM\u5c3a\u5bf8\u56fe.jpg"
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTSS5726-GM"
+              }
+            ],
+            "last_updated_at": "2026-08-03T10:08:52.705306",
+            "result_type": "product_attachments"
+          },
+          "tool": "crm_master_product_attachments_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "product_attachment",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "SRTSS5726-GM"
+          },
+          {
+            "canonical_code": "technical drawing",
+            "confident": true,
+            "current_message": true,
+            "hint": "attachment_type",
+            "raw": "DRAWING"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_product_attachment",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": "result",
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to get a drawing for SRTSS5726-GM"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1061691@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1061691,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1777880659,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000010"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000010",
+          "id": 900000010,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000010",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000015\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": "zzt-agent-1061691@example.invalid",
+              "firstName": "ZZT-agent",
+              "id": 1061691,
+              "lastName": "",
+              "role": "user"
+            },
+            "countryCode": "MY",
+            "created_at": 1777880659,
+            "email": null,
+            "firstName": "ZZT-900000010",
+            "id": 900000010,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000010",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "d098525b-d7ed-4411-9da1-5c170dbdead7",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxMjI0NjUyMTMVAgASGBQzQUZCNERFNzVCRjkyNUFDNzc4OAA=",
+            "contactId": 900000010,
+            "message": {
+              "text": "Drawing for SRTBT012-BL",
+              "type": "text"
+            },
+            "messageId": 1789064887000000,
+            "timestamp": 1789064887000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "759e8bb0-0895-40ca-98eb-74870303cf3e"
+        ],
+        "focus_after": null,
+        "pending": {
+          "kind": "escalation_offer",
+          "option_labels": []
+        },
+        "text": "Couldn't find \"SRTBT012-BL\" (product). Did you mean:\n1. SRTBT012 - no Technical Specifications\n2. SRTBT013 - no Technical Specifications\n3. SRTBT014 - no Technical Specifications\nReply with a code to continue, or would you like me to escalate to marketing product team?",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "attachment_type_ids",
+              "contact_id",
+              "date_mode",
+              "is_active",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_master_product_attachments_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "SRTBT012-BL",
+                "entity_type": "product",
+                "uuid": "759e8bb0-0895-40ca-98eb-74870303cf3e"
+              }
+            ],
+            "resolved": true,
+            "token": "SRTBT012-BL"
+          },
+          {
+            "matches": [],
+            "resolved": false,
+            "token": "technical drawing"
+          }
+        ],
+        "tokens": [
+          "SRTBT012-BL",
+          "Drawing"
+        ],
+        "unresolved_tokens": [
+          "technical drawing"
+        ]
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 9,
+        "recorded_at": "2026-09-11T03:28:12.215194+09:00",
+        "turn_id": "3bb6a9ee-b140-4e0b-ac28-9ccd152ec455"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 1,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 1,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "attachment_type_ids": [
+              "759e8bb0-0895-40ca-98eb-74870303cf3e"
+            ],
+            "contact_id": "900000010",
+            "date_mode": null,
+            "is_active": null,
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "attachments": [],
+            "has_result": false,
+            "intro": "No matching results found.",
+            "items": [],
+            "last_updated_at": null,
+            "result_type": "product_attachments"
+          },
+          "tool": "crm_master_product_attachments_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "product_attachment",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "SRTBT012-BL"
+          },
+          {
+            "canonical_code": "technical drawing",
+            "confident": true,
+            "current_message": true,
+            "hint": "attachment_type",
+            "raw": "Drawing"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_product_attachment",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to get the drawing for SRTBT012-BL"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1061691@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1061691,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1777880659,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000010"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000010",
+          "id": 900000010,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000010",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000015\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": "zzt-agent-1061691@example.invalid",
+              "firstName": "ZZT-agent",
+              "id": 1061691,
+              "lastName": "",
+              "role": "user"
+            },
+            "countryCode": "MY",
+            "created_at": 1777880659,
+            "email": null,
+            "firstName": "ZZT-900000010",
+            "id": 900000010,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000010",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "8fb5c90f-8e4f-4693-8261-6828432c803f",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxMjI0NjUyMTMVAgASGBQzQUNFMUQ4MzVFQTlDNTQ0NUJGQwA=",
+            "contactId": 900000010,
+            "message": {
+              "text": "No it's okay",
+              "type": "text"
+            },
+            "messageId": 1789064930000000,
+            "replyTo": {
+              "id": 1789064904033682,
+              "mId": "wamid.HBgLNjAxMjI0NjUyMTMVAgARGBI2QzZBRTlDNjcxMTk0RTcwNjkA",
+              "message": {
+                "replies": [
+                  "SRTBT012",
+                  "SRTBT013",
+                  "SRTBT014",
+                  "Yes escalate",
+                  "No it's okay"
+                ],
+                "title": "Couldn't find \"SRTBT012-BL\" (product). Did you mean:\n1. SRTBT012 - no Technical Specifications\n2. SRTBT013 - no Technical Specifications\n3. SRTBT014 - no Technical Specifications\nReply with a code to continue, or would you like me to escalate to marketing product team?",
+                "type": "quick_reply"
+              },
+              "sender": {
+                "source": "n8n",
+                "type": "message"
+              }
+            },
+            "timestamp": 1789064930000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message"
+        ],
+        "branch_kind": "escalation_declined",
+        "canned": [],
+        "entity_ids": [],
+        "focus_after": null,
+        "pending": null,
+        "text": "Escalation declined.",
+        "tools": []
+      },
+      "resolutions": {
+        "resolutions": [],
+        "tokens": [],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 9,
+        "recorded_at": "2026-09-11T03:28:55.257720+09:00",
+        "turn_id": "df6fb6f0-55bd-4c83-a271-1d5e416060b9"
+      },
+      "tool_results": [],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": null,
+        "entities": [],
+        "entity_op": "reuse",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": null,
+        "is_active": null,
+        "is_affirmative": false,
+        "match_mode": "and",
+        "message_type": "casual",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to decline the escalation offer"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1061691@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1061691,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1777880659,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000010"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000010",
+          "id": 900000010,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000010",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000015\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": "zzt-agent-1061691@example.invalid",
+              "firstName": "ZZT-agent",
+              "id": 1061691,
+              "lastName": "",
+              "role": "user"
+            },
+            "countryCode": "MY",
+            "created_at": 1777880659,
+            "email": null,
+            "firstName": "ZZT-900000010",
+            "id": 900000010,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000010",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "7664e10c-5a86-4402-b464-13f11b49c141",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxMjI0NjUyMTMVAgASGBYzRUIwNzNGNjA2MTBFQjI5RTUwNzZEAA==",
+            "contactId": 900000010,
+            "message": {
+              "text": "DRAWING FOR SRTW1600",
+              "type": "text"
+            },
+            "messageId": 1789065025000000,
+            "timestamp": 1789065025000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "759e8bb0-0895-40ca-98eb-74870303cf3e",
+          "a57e9a4a-84cc-4d08-887d-4042f922e490"
+        ],
+        "focus_after": null,
+        "pending": {
+          "kind": "escalation_offer",
+          "option_labels": []
+        },
+        "text": "Here's what you want:\n\u2022 product: SRTW1600\n\u2022 attachment_type: Technical Specifications\n\nBut no technical drawing matched these. Would you like me to escalate to marketing product team?",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "attachment_type_ids",
+              "contact_id",
+              "date_mode",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_master_product_attachments_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "SRTW1600",
+                "entity_type": "product",
+                "uuid": "759e8bb0-0895-40ca-98eb-74870303cf3e"
+              }
+            ],
+            "resolved": true,
+            "token": "SRTW1600"
+          },
+          {
+            "matches": [
+              {
+                "canonical_code": "technical drawing",
+                "entity_type": "attachment_type",
+                "uuid": "a57e9a4a-84cc-4d08-887d-4042f922e490"
+              }
+            ],
+            "resolved": true,
+            "token": "technical drawing"
+          }
+        ],
+        "tokens": [
+          "SRTW1600",
+          "drawing"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 9,
+        "recorded_at": "2026-09-11T03:30:30.263515+09:00",
+        "turn_id": "25072d0f-bce7-4ff6-8136-4fbde7f972fc"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 2,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 2,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "attachment_type_ids": [
+              "759e8bb0-0895-40ca-98eb-74870303cf3e"
+            ],
+            "contact_id": "900000010",
+            "date_mode": null,
+            "is_active": null,
+            "product_ids": [
+              "a57e9a4a-84cc-4d08-887d-4042f922e490"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "attachments": [],
+            "fallback_used": false,
+            "has_result": false,
+            "intro": "No matching results found.",
+            "items": [],
+            "last_updated_at": null,
+            "result_type": "product_attachments"
+          },
+          "tool": "crm_master_product_attachments_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "product_attachment",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "SRTW1600"
+          },
+          {
+            "canonical_code": "technical drawing",
+            "confident": true,
+            "current_message": true,
+            "hint": "attachment_type",
+            "raw": "drawing"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_product_attachment",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to get a drawing for SRTW1600"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1061691@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1061691,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1777880659,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000010"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000010",
+          "id": 900000010,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000010",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000015\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": "zzt-agent-1061691@example.invalid",
+              "firstName": "ZZT-agent",
+              "id": 1061691,
+              "lastName": "",
+              "role": "user"
+            },
+            "countryCode": "MY",
+            "created_at": 1777880659,
+            "email": null,
+            "firstName": "ZZT-900000010",
+            "id": 900000010,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000010",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "2ae4f775-9334-4d87-b6e8-16ce16d6af64",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxMjI0NjUyMTMVAgASGBYzRUIwQjc5Q0U1RkU1OTAwOTdDRUMzAA==",
+            "contactId": 900000010,
+            "message": {
+              "text": "ESCALATE",
+              "type": "text"
+            },
+            "messageId": 1789065053000000,
+            "timestamp": 1789065053000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message",
+          "add_comment",
+          "send_message"
+        ],
+        "branch_kind": "out_of_scope",
+        "canned": [],
+        "entity_ids": [],
+        "focus_after": null,
+        "pending": null,
+        "text": null,
+        "tools": []
+      },
+      "resolutions": {
+        "resolutions": [],
+        "tokens": [],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 9,
+        "recorded_at": "2026-09-11T03:30:58.203622+09:00",
+        "turn_id": "32eb2ea5-0fd1-43ed-8194-13ea5d6edd17"
+      },
+      "tool_results": [],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": null,
+        "entities": [],
+        "entity_op": "reuse",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": true
+        },
+        "group_by": null,
+        "intent_hint": null,
+        "is_active": null,
+        "is_affirmative": true,
+        "match_mode": "and",
+        "message_type": "request_for_help",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to escalate"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1061691@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1061691,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1777880659,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000010"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000010",
+          "id": 900000010,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000010",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000015\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": "zzt-agent-1061691@example.invalid",
+              "firstName": "ZZT-agent",
+              "id": 1061691,
+              "lastName": "",
+              "role": "user"
+            },
+            "countryCode": "MY",
+            "created_at": 1777880659,
+            "email": null,
+            "firstName": "ZZT-900000010",
+            "id": 900000010,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000010",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "da858a8d-202f-4c05-bcd8-fbba6ab194e1",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxMjI0NjUyMTMVAgASGBYzRUIwQ0ZBNjhBNTQ1MzVCQzJERUYyAA==",
+            "contactId": 900000010,
+            "message": {
+              "text": "DRAWING FOR SRTWT5879-GM",
+              "type": "text"
+            },
+            "messageId": 1789065533000000,
+            "timestamp": 1789065533000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "759e8bb0-0895-40ca-98eb-74870303cf3e",
+          "ac503359-5284-4ab3-a706-fd0f46ca19ea"
+        ],
+        "focus_after": null,
+        "pending": {
+          "kind": "escalation_offer",
+          "option_labels": []
+        },
+        "text": "Here's what you want:\n\u2022 product: SRTWT5879-GM\n\u2022 attachment_type: Technical Specifications\n\nBut no technical drawing matched these. Would you like me to escalate to marketing product team?",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "attachment_type_ids",
+              "contact_id",
+              "date_mode",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_master_product_attachments_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "SRTWT5879-GM",
+                "entity_type": "product",
+                "uuid": "759e8bb0-0895-40ca-98eb-74870303cf3e"
+              }
+            ],
+            "resolved": true,
+            "token": "SRTWT5879-GM"
+          },
+          {
+            "matches": [
+              {
+                "canonical_code": "technical drawing",
+                "entity_type": "attachment_type",
+                "uuid": "ac503359-5284-4ab3-a706-fd0f46ca19ea"
+              }
+            ],
+            "resolved": true,
+            "token": "technical drawing"
+          }
+        ],
+        "tokens": [
+          "SRTWT5879-GM",
+          "drawing"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 9,
+        "recorded_at": "2026-09-11T03:38:58.208955+09:00",
+        "turn_id": "d04fbb2e-21f0-44ea-bcc5-952ab5d5eb04"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 2,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 2,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "attachment_type_ids": [
+              "759e8bb0-0895-40ca-98eb-74870303cf3e"
+            ],
+            "contact_id": "900000010",
+            "date_mode": null,
+            "is_active": null,
+            "product_ids": [
+              "ac503359-5284-4ab3-a706-fd0f46ca19ea"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "alternatives": [
+              {
+                "display": "SRTWT5800",
+                "id": "f3f2f74e-a1a2-4b5c-8706-3e304aa85431",
+                "is_variant": false,
+                "sim": 0.467,
+                "value": "SRTWT5800"
+              },
+              {
+                "display": "SRTWT5801",
+                "id": "74d1f39d-61d3-445b-b499-f20ef9cb03ec",
+                "is_variant": false,
+                "sim": 0.467,
+                "value": "SRTWT5801"
+              }
+            ],
+            "attachments": [],
+            "has_result": false,
+            "intro": "No matching results found.",
+            "items": [],
+            "last_updated_at": null,
+            "relaxed_axis": "entity",
+            "result_type": "product_attachments"
+          },
+          "tool": "crm_master_product_attachments_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "product_attachment",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "SRTWT5879-GM"
+          },
+          {
+            "canonical_code": "technical drawing",
+            "confident": true,
+            "current_message": true,
+            "hint": "attachment_type",
+            "raw": "drawing"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_product_attachment",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to get a drawing for SRTWT5879-GM"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1061691@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1061691,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1777880659,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000010"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000010",
+          "id": 900000010,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000010",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000015\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": "zzt-agent-1061691@example.invalid",
+              "firstName": "ZZT-agent",
+              "id": 1061691,
+              "lastName": "",
+              "role": "user"
+            },
+            "countryCode": "MY",
+            "created_at": 1777880659,
+            "email": null,
+            "firstName": "ZZT-900000010",
+            "id": 900000010,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000010",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "022ec2be-617d-4cce-871f-71db88b9fc16",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxMjI0NjUyMTMVAgASGBYzRUIwNEEyNDAwRkU1QTc3NkE3MTIzAA==",
+            "contactId": 900000010,
+            "message": {
+              "text": "DRAWING FOR SRT93-SS",
+              "type": "text"
+            },
+            "messageId": 1789065664000000,
+            "timestamp": 1789065664000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "4d028d12-e417-42d2-81b3-6844082b218c",
+          "759e8bb0-0895-40ca-98eb-74870303cf3e"
+        ],
+        "focus_after": null,
+        "pending": {
+          "kind": "escalation_offer",
+          "option_labels": []
+        },
+        "text": "Here's what you want:\n\u2022 product: SRT93-SS\n\u2022 attachment_type: Technical Specifications\n\nBut no technical drawing matched these. Would you like me to escalate to marketing product team?",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "attachment_type_ids",
+              "contact_id",
+              "date_mode",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_master_product_attachments_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "SRT93-SS",
+                "entity_type": "product",
+                "uuid": "4d028d12-e417-42d2-81b3-6844082b218c"
+              }
+            ],
+            "resolved": true,
+            "token": "SRT93-SS"
+          },
+          {
+            "matches": [
+              {
+                "canonical_code": "technical drawing",
+                "entity_type": "attachment_type",
+                "uuid": "759e8bb0-0895-40ca-98eb-74870303cf3e"
+              }
+            ],
+            "resolved": true,
+            "token": "technical drawing"
+          }
+        ],
+        "tokens": [
+          "SRT93-SS",
+          "drawing"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 9,
+        "recorded_at": "2026-09-11T03:41:10.212114+09:00",
+        "turn_id": "0ca2427d-af03-4668-8f53-792f405a8941"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 2,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 2,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "attachment_type_ids": [
+              "759e8bb0-0895-40ca-98eb-74870303cf3e"
+            ],
+            "contact_id": "900000010",
+            "date_mode": null,
+            "is_active": null,
+            "product_ids": [
+              "4d028d12-e417-42d2-81b3-6844082b218c"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "attachments": [],
+            "fallback_used": false,
+            "has_result": false,
+            "intro": "No matching results found.",
+            "items": [],
+            "last_updated_at": null,
+            "result_type": "product_attachments"
+          },
+          "tool": "crm_master_product_attachments_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "product_attachment",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "SRT93-SS"
+          },
+          {
+            "canonical_code": "technical drawing",
+            "confident": true,
+            "current_message": true,
+            "hint": "attachment_type",
+            "raw": "drawing"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_product_attachment",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": "marketing_product"
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to get a drawing for SRT93-SS"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1061691@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1061691,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1777880659,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000010"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000010",
+          "id": 900000010,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000010",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000015\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": "zzt-agent-1061691@example.invalid",
+              "firstName": "ZZT-agent",
+              "id": 1061691,
+              "lastName": "",
+              "role": "user"
+            },
+            "countryCode": "MY",
+            "created_at": 1777880659,
+            "email": null,
+            "firstName": "ZZT-900000010",
+            "id": 900000010,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000010",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "29835eac-3df9-4caa-821a-17e7352a435d",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxMjI0NjUyMTMVAgASGBYzRUIwREM2RDU3MTc1NTZDNDJCOEY5AA==",
+            "contactId": 900000010,
+            "message": {
+              "text": "ESCALATE",
+              "type": "text"
+            },
+            "messageId": 1789065690000000,
+            "replyTo": {
+              "id": 1789065544401365,
+              "mId": "wamid.HBgLNjAxMjI0NjUyMTMVAgARGBIwRUFEOTcwNjgxNDRBNzA1NzIA",
+              "message": {
+                "text": "Here's what you want:\n\u2022 product: SRTWT5879-GM\n\u2022 attachment_type: Technical Specifications\n\nBut no technical drawing matched these. Would you like me to escalate to marketing product team?",
+                "type": "text"
+              },
+              "sender": {
+                "source": "n8n",
+                "type": "message"
+              }
+            },
+            "timestamp": 1789065690000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message",
+          "add_comment",
+          "send_message"
+        ],
+        "branch_kind": "out_of_scope",
+        "canned": [],
+        "entity_ids": [],
+        "focus_after": null,
+        "pending": null,
+        "text": null,
+        "tools": []
+      },
+      "resolutions": {
+        "resolutions": [],
+        "tokens": [],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 9,
+        "recorded_at": "2026-09-11T03:41:36.163340+09:00",
+        "turn_id": "2498d6c8-704c-4fee-99b4-8d576f61eb66"
+      },
+      "tool_results": [],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": null,
+        "entities": [],
+        "entity_op": "reuse",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": true
+        },
+        "group_by": null,
+        "intent_hint": null,
+        "is_active": null,
+        "is_affirmative": true,
+        "match_mode": "and",
+        "message_type": "request_for_help",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to escalate"
+      }
+    }
+  ]
+}

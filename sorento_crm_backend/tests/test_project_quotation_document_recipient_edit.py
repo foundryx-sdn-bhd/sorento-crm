@@ -41,12 +41,12 @@ from ._pg_fixture import blank_session
 MARKER = "zzt-qheaderedit"
 
 PARTY_ADDRESS = "Level 12, Menara Nadi\nJalan Ampang\n50450 Kuala Lumpur"
-PARTY_PHONE = "03-2011 8888"
+PARTY_PHONE = "09-0000 0078"
 # What a correction looks like: the same customer, their finance department's own address. The
 # newlines matter - the column holds one string and the PDF prints a line per newline.
 CORRECTED_NAME = f"{MARKER} Nadi Cergas Sdn Bhd (Finance)"
 CORRECTED_ADDRESS = "Finance Department\nLot 8, Jalan Kia Peng\n50450 Kuala Lumpur"
-CORRECTED_PHONE = "03-2011 9999"
+CORRECTED_PHONE = "09-0000 0077"
 
 
 def _uid() -> str:

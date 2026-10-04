@@ -154,7 +154,7 @@ class _World:
                 "i": self.agent,
                 "c": self.company_id,
                 "code": f"{MARKER}-AG",
-                "label": "JUSTIN",
+                "label": "CONTACT N",
             },
         )
         db.flush()
@@ -357,7 +357,7 @@ def test_every_placement_names_the_inquiry_the_order_the_customer_and_the_agent(
         ("SO416191", 7, "BRW"),
     ]
     assert {p["customer"] for p in placements} == {"YOTU BUILDER SDN BHD"}
-    assert {p["agent"] for p in placements} == {"JUSTIN"}
+    assert {p["agent"] for p in placements} == {"CONTACT N"}
     assert all(p["inquiry_no"] for p in placements)
 
 

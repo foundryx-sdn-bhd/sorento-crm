@@ -1,0 +1,4201 @@
+{
+  "turns": [
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow",
+        "hidden_spec_keys": []
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1061691@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1061691,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1777550801,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000052"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000052",
+          "id": 900000052,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000052",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000014\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": "zzt-agent-1061691@example.invalid",
+              "firstName": "ZZT-agent",
+              "id": 1061691,
+              "lastName": "",
+              "role": "user"
+            },
+            "countryCode": "MY",
+            "created_at": 1777550801,
+            "email": null,
+            "firstName": "ZZT-900000052",
+            "id": 900000052,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000052",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "592c0946-aaff-4bc4-8386-f630f9b91708",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxNjkyMDEyODYVAgASGBQzQTI0RjFGMDU1ODcyQkUyRjMxQgA=",
+            "contactId": 900000052,
+            "message": {
+              "text": "Check stock CB476-GM",
+              "type": "text"
+            },
+            "messageId": 1789382045000000,
+            "timestamp": 1789382045000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message",
+          "send_attachments"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "02451cf4-8c1e-4643-af7f-03f49d7dde13"
+        ],
+        "focus_after": null,
+        "pending": null,
+        "text": "Stock details found for the requested products.\n\n1. *Product Code:* CB476-GM\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 292\n*Outstanding:* 0\n\n2. *Product Code:* CB476-GM\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-HP\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n_Data last updated: 14/09/2026 17:25:40_",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "contact_id",
+              "date_mode",
+              "include_sellable",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_inventory_stock_balance_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "CB476-GM",
+                "entity_type": "product",
+                "uuid": "02451cf4-8c1e-4643-af7f-03f49d7dde13"
+              }
+            ],
+            "resolved": true,
+            "token": "CB476-GM"
+          }
+        ],
+        "tokens": [
+          "CB476-GM"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 17,
+        "recorded_at": "2026-09-14T19:34:11.181883+09:00",
+        "turn_id": "ebe5f4a4-854e-4063-a7ec-76092ace0292"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 1,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 1,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "contact_id": "900000052",
+            "date_mode": null,
+            "include_sellable": true,
+            "is_active": null,
+            "product_ids": [
+              "02451cf4-8c1e-4643-af7f-03f49d7dde13"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "attachments": [],
+            "fallback_used": false,
+            "has_result": true,
+            "intro": "Stock details found for the requested products.",
+            "items": [
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "CB476-GM"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "BUKIT RAJA"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "BRW"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 292
+                  },
+                  {
+                    "key": "open_so_qty",
+                    "label": "Outstanding",
+                    "value": 0
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "CB476-GM"
+              },
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "CB476-GM"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "BUKIT RAJA"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "BRW-HP"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 0
+                  },
+                  {
+                    "key": "open_so_qty",
+                    "label": "Outstanding",
+                    "value": 0
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "CB476-GM"
+              }
+            ],
+            "last_updated_at": "2026-09-14T17:25:40.036011",
+            "restricted_fields": {
+              "open_so_qty": "inventory.sellable"
+            },
+            "result_type": "stock",
+            "stock_visibility": {
+              "hide_zero_locations": false,
+              "mode": "detailed",
+              "source": "contact",
+              "warehouse_codes": [
+                "BRW",
+                "BRW-ACTS",
+                "BRW-AM",
+                "BRW-BB",
+                "BRW-BILL",
+                "BRW-CLR",
+                "BRW-HP",
+                "BRW-IB",
+                "BRW-IR",
+                "BRW-NTC",
+                "BRW-PSM",
+                "BRW-S/L",
+                "BRW-SMC",
+                "BRW-SYNT",
+                "DC1-ACT",
+                "DC1-AM",
+                "DC1-BB",
+                "DC1-HP",
+                "DC1-IB",
+                "DC1-IR",
+                "DC1-NTC",
+                "DC1-S/L",
+                "DC1-SMC",
+                "DEFECT",
+                "DISPLAY",
+                "HOLD",
+                "HQ",
+                "MKTG",
+                "MKTG-HQ",
+                "MOCHA-KC",
+                "MOCHA-WH",
+                "MWH",
+                "MWH-ACT",
+                "MWH-AM",
+                "MWH-BB",
+                "MWH-DFT",
+                "MWH-HP",
+                "MWH-IB",
+                "MWH-IR",
+                "MWH-MOC",
+                "MWH-NTC",
+                "MWH-S/L",
+                "MWH-SMC",
+                "REJECT",
+                "REPAIR",
+                "REWORK",
+                "RSW",
+                "RSW-ACT",
+                "RSW-BB",
+                "RSW-HP",
+                "RSW-IB",
+                "RSW-IR",
+                "RSW-NTC",
+                "RSW-SMC",
+                "SHRT ACC",
+                "SPARPART",
+                "VAR",
+                "WH3",
+                "WH3-ACT",
+                "WH3-AM",
+                "WH3-BB",
+                "WH3-HP",
+                "WH3-IB",
+                "WH3-IR",
+                "WH3-NTC",
+                "WH3-PSM",
+                "WH3-R/S",
+                "WH3-S/L",
+                "WH3-SMC"
+              ]
+            }
+          },
+          "tool": "crm_inventory_stock_balance_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "inventory",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "CB476-GM"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_stock",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to check stock for CB476-GM"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow",
+        "hidden_spec_keys": []
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1061691@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1061691,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1777550801,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000052"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000052",
+          "id": 900000052,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000052",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000014\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": "zzt-agent-1061691@example.invalid",
+              "firstName": "ZZT-agent",
+              "id": 1061691,
+              "lastName": "",
+              "role": "user"
+            },
+            "countryCode": "MY",
+            "created_at": 1777550801,
+            "email": null,
+            "firstName": "ZZT-900000052",
+            "id": 900000052,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000052",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "7cf32431-397d-46c0-affc-8354b4e19e7b",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxNjkyMDEyODYVAgASGBQzQUY0QkZGQTgyOUQ5M0RGQTcxNgA=",
+            "contactId": 900000052,
+            "message": {
+              "text": "Check stock CB310",
+              "type": "text"
+            },
+            "messageId": 1789382110000000,
+            "timestamp": 1789382110000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message",
+          "send_attachments"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "0e7459bd-a08e-413f-ab66-f132cdaeab36",
+          "17c426ec-d16d-4551-82eb-bad9d6a26c1e",
+          "213f4b5e-bd17-4a6a-865b-c564b2ba4dff",
+          "22f84c74-79db-415b-bf2b-68115ba44132",
+          "299106ea-75eb-4225-af7a-14b181aed82a",
+          "3440a820-300f-43ef-a660-ec4aaa235e46",
+          "36b8b8a2-e1b8-4678-9120-b33680654661",
+          "7c8923c9-1e79-48de-993e-692788f7e9d5",
+          "8bc7093c-7402-49dc-9722-375f21726dd0",
+          "8d538b07-d1fa-4603-acac-b009dfdc5458",
+          "b3833515-9312-4a67-b0f2-d22dc7bb5945",
+          "b8301306-2b5a-4001-acd9-08a5c38c7956",
+          "bbc30965-ca21-4b2e-997e-8167c0d48479",
+          "bdc6a95c-0aa0-4ade-8ec6-dd6bcc4b3ca6"
+        ],
+        "focus_after": null,
+        "pending": null,
+        "text": "Stock details found for the requested products.\n\n1. *Product Code:* CB310\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n2. *Product Code:* CB3105\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\u26a0\ufe0f  *(PRODUCT DISCONTINUED)*\n\n3. *Product Code:* CB3105\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-CLR\n*Quantity On Hand:* 1\n*Outstanding:* 0\n\u26a0\ufe0f  *(PRODUCT DISCONTINUED)*\n\n4. *Product Code:* CB3107\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\u26a0\ufe0f  *(PRODUCT DISCONTINUED)*\n\n5. *Product Code:* CB3107\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-CLR\n*Quantity On Hand:* 2\n*Outstanding:* 0\n\u26a0\ufe0f  *(PRODUCT DISCONTINUED)*\n\n6. *Product Code:* CB310-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-HP\n*Quantity On Hand:* 5\n*Outstanding:* 0\n\n7. *Product Code:* CB310-CR-PJ\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 2\n*Outstanding:* 0\n\n8. *Product Code:* CB310-CR-PJ\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-BB\n*Quantity On Hand:* 372\n*Outstanding:* 3961\n\n9. *Product Code:* CB310-CR-PJ\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-IB\n*Quantity On Hand:* 117\n*Outstanding:* 797\n\n10. *Product Code:* CB310-CR-PJ\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-NTC\n*Quantity On Hand:* 0\n*Outstanding:* 24\n\n_Data last updated: 14/09/2026 17:25:40_\nNo stock for CB310-CR-L.\n\nBut there is INCOMING stock (ETA) for the requested products:\n\n- *Product Code:* CB310-CR-L\n*Container:* CMAU4318062\n*ETA:* 2026-08-20\n*Incoming Quantity:* 600\n*Warehouse Allocations:* BRW (75), BRW-BB (525)\n\nNo stock, no incoming and nothing on order for CB3108, CB3106, CB3100, CB310-GM, CB3106A, CB3105A, CB3109A, CB3109.\n\nWould you like me to escalate to purchasing team?",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "contact_id",
+              "date_mode",
+              "include_sellable",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_inventory_stock_balance_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "CB310",
+                "entity_type": "product",
+                "uuid": "0e7459bd-a08e-413f-ab66-f132cdaeab36"
+              }
+            ],
+            "resolved": true,
+            "token": "CB310"
+          }
+        ],
+        "tokens": [
+          "CB310"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 17,
+        "recorded_at": "2026-09-14T19:35:15.231473+09:00",
+        "turn_id": "df9113a5-7ea2-46d4-b7c8-cd53cb4ae7a8"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 14,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 14,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "contact_id": "900000052",
+            "date_mode": null,
+            "include_sellable": true,
+            "is_active": null,
+            "product_ids": [
+              "7c8923c9-1e79-48de-993e-692788f7e9d5",
+              "b8301306-2b5a-4001-acd9-08a5c38c7956",
+              "bdc6a95c-0aa0-4ade-8ec6-dd6bcc4b3ca6",
+              "8bc7093c-7402-49dc-9722-375f21726dd0",
+              "22f84c74-79db-415b-bf2b-68115ba44132",
+              "0e7459bd-a08e-413f-ab66-f132cdaeab36",
+              "3440a820-300f-43ef-a660-ec4aaa235e46",
+              "8d538b07-d1fa-4603-acac-b009dfdc5458",
+              "b3833515-9312-4a67-b0f2-d22dc7bb5945",
+              "213f4b5e-bd17-4a6a-865b-c564b2ba4dff",
+              "299106ea-75eb-4225-af7a-14b181aed82a",
+              "bbc30965-ca21-4b2e-997e-8167c0d48479",
+              "36b8b8a2-e1b8-4678-9120-b33680654661",
+              "17c426ec-d16d-4551-82eb-bad9d6a26c1e"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "attachments": [],
+            "fallback_used": false,
+            "has_result": true,
+            "intro": "Stock details found for the requested products.",
+            "items": [
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "CB310"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "BUKIT RAJA"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "BRW"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 0
+                  },
+                  {
+                    "key": "open_so_qty",
+                    "label": "Outstanding",
+                    "value": 0
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "CB310"
+              },
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "CB3105"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "BUKIT RAJA"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "BRW"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 0
+                  },
+                  {
+                    "key": "open_so_qty",
+                    "label": "Outstanding",
+                    "value": 0
+                  }
+                ],
+                "flags": {
+                  "discontinued": true,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "CB3105"
+              },
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "CB3105"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "BUKIT RAJA"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "BRW-CLR"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 1
+                  },
+                  {
+                    "key": "open_so_qty",
+                    "label": "Outstanding",
+                    "value": 0
+                  }
+                ],
+                "flags": {
+                  "discontinued": true,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "CB3105"
+              },
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "CB3107"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "BUKIT RAJA"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "BRW"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 0
+                  },
+                  {
+                    "key": "open_so_qty",
+                    "label": "Outstanding",
+                    "value": 0
+                  }
+                ],
+                "flags": {
+                  "discontinued": true,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "CB3107"
+              },
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "CB3107"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "BUKIT RAJA"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "BRW-CLR"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 2
+                  },
+                  {
+                    "key": "open_so_qty",
+                    "label": "Outstanding",
+                    "value": 0
+                  }
+                ],
+                "flags": {
+                  "discontinued": true,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "CB3107"
+              },
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "CB310-BL"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "BUKIT RAJA"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "BRW-HP"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 5
+                  },
+                  {
+                    "key": "open_so_qty",
+                    "label": "Outstanding",
+                    "value": 0
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "CB310-BL"
+              },
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "CB310-CR-PJ"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "BUKIT RAJA"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "BRW"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 2
+                  },
+                  {
+                    "key": "open_so_qty",
+                    "label": "Outstanding",
+                    "value": 0
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "CB310-CR-PJ"
+              },
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "CB310-CR-PJ"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "BUKIT RAJA"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "BRW-BB"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 372
+                  },
+                  {
+                    "key": "open_so_qty",
+                    "label": "Outstanding",
+                    "value": 3961
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "CB310-CR-PJ"
+              },
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "CB310-CR-PJ"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "BUKIT RAJA"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "BRW-IB"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 117
+                  },
+                  {
+                    "key": "open_so_qty",
+                    "label": "Outstanding",
+                    "value": 797
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "CB310-CR-PJ"
+              },
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "CB310-CR-PJ"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "BUKIT RAJA"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "BRW-NTC"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 0
+                  },
+                  {
+                    "key": "open_so_qty",
+                    "label": "Outstanding",
+                    "value": 24
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "CB310-CR-PJ"
+              }
+            ],
+            "last_updated_at": "2026-09-14T17:25:40.036011",
+            "restricted_fields": {
+              "open_so_qty": "inventory.sellable"
+            },
+            "result_type": "stock",
+            "stock_visibility": {
+              "hide_zero_locations": false,
+              "mode": "detailed",
+              "source": "contact",
+              "warehouse_codes": [
+                "BRW",
+                "BRW-ACTS",
+                "BRW-AM",
+                "BRW-BB",
+                "BRW-BILL",
+                "BRW-CLR",
+                "BRW-HP",
+                "BRW-IB",
+                "BRW-IR",
+                "BRW-NTC",
+                "BRW-PSM",
+                "BRW-S/L",
+                "BRW-SMC",
+                "BRW-SYNT",
+                "DC1-ACT",
+                "DC1-AM",
+                "DC1-BB",
+                "DC1-HP",
+                "DC1-IB",
+                "DC1-IR",
+                "DC1-NTC",
+                "DC1-S/L",
+                "DC1-SMC",
+                "DEFECT",
+                "DISPLAY",
+                "HOLD",
+                "HQ",
+                "MKTG",
+                "MKTG-HQ",
+                "MOCHA-KC",
+                "MOCHA-WH",
+                "MWH",
+                "MWH-ACT",
+                "MWH-AM",
+                "MWH-BB",
+                "MWH-DFT",
+                "MWH-HP",
+                "MWH-IB",
+                "MWH-IR",
+                "MWH-MOC",
+                "MWH-NTC",
+                "MWH-S/L",
+                "MWH-SMC",
+                "REJECT",
+                "REPAIR",
+                "REWORK",
+                "RSW",
+                "RSW-ACT",
+                "RSW-BB",
+                "RSW-HP",
+                "RSW-IB",
+                "RSW-IR",
+                "RSW-NTC",
+                "RSW-SMC",
+                "SHRT ACC",
+                "SPARPART",
+                "VAR",
+                "WH3",
+                "WH3-ACT",
+                "WH3-AM",
+                "WH3-BB",
+                "WH3-HP",
+                "WH3-IB",
+                "WH3-IR",
+                "WH3-NTC",
+                "WH3-PSM",
+                "WH3-R/S",
+                "WH3-S/L",
+                "WH3-SMC"
+              ]
+            }
+          },
+          "tool": "crm_inventory_stock_balance_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "inventory",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "CB310"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_stock",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to check stock for CB310"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow",
+        "hidden_spec_keys": []
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1061691@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1061691,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1777550801,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000052"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000052",
+          "id": 900000052,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000052",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000014\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": "zzt-agent-1061691@example.invalid",
+              "firstName": "ZZT-agent",
+              "id": 1061691,
+              "lastName": "",
+              "role": "user"
+            },
+            "countryCode": "MY",
+            "created_at": 1777550801,
+            "email": null,
+            "firstName": "ZZT-900000052",
+            "id": 900000052,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000052",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "33a46357-b5c3-421e-819e-9508c68cf1cd",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxNjkyMDEyODYVAgASGBQzQUNBNDBEQTZDRkJFNDA4MDg4QwA=",
+            "contactId": 900000052,
+            "message": {
+              "text": "Check stock CB310-GM",
+              "type": "text"
+            },
+            "messageId": 1789382185000000,
+            "timestamp": 1789382185000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "22f84c74-79db-415b-bf2b-68115ba44132"
+        ],
+        "focus_after": null,
+        "pending": {
+          "kind": "escalation_offer",
+          "option_labels": []
+        },
+        "text": "Here's what you want:\n\u2022 product: CB310-GM\n\nBut no inventory matched these.\nNo stock, no incoming and nothing on order for CB310-GM.\n\nWould you like me to escalate to purchasing team?",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "contact_id",
+              "date_mode",
+              "include_sellable",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_inventory_stock_balance_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "CB310-GM",
+                "entity_type": "product",
+                "uuid": "22f84c74-79db-415b-bf2b-68115ba44132"
+              }
+            ],
+            "resolved": true,
+            "token": "CB310-GM"
+          }
+        ],
+        "tokens": [
+          "CB310-GM"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 17,
+        "recorded_at": "2026-09-14T19:36:32.195754+09:00",
+        "turn_id": "8c030cb8-641c-4198-adab-b76fd67c309f"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 1,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 1,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "contact_id": "900000052",
+            "date_mode": null,
+            "include_sellable": true,
+            "is_active": null,
+            "product_ids": [
+              "22f84c74-79db-415b-bf2b-68115ba44132"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "alternatives": [
+              {
+                "display": "CB3105",
+                "id": "36b8b8a2-e1b8-4678-9120-b33680654661",
+                "is_variant": false,
+                "sim": 0.5,
+                "value": "CB3105"
+              },
+              {
+                "display": "CB3107",
+                "id": "b8301306-2b5a-4001-acd9-08a5c38c7956",
+                "is_variant": false,
+                "sim": 0.5,
+                "value": "CB3107"
+              },
+              {
+                "display": "CB310-BL",
+                "id": "213f4b5e-bd17-4a6a-865b-c564b2ba4dff",
+                "is_variant": false,
+                "sim": 0.455,
+                "value": "CB310-BL"
+              }
+            ],
+            "attachments": [],
+            "has_result": false,
+            "intro": "No matching results found.",
+            "items": [],
+            "last_updated_at": "2026-09-14T17:25:40.036011",
+            "relaxed_axis": "entity",
+            "result_type": "stock",
+            "stock_visibility": {
+              "hide_zero_locations": false,
+              "mode": "detailed",
+              "source": "contact",
+              "warehouse_codes": [
+                "BRW",
+                "BRW-ACTS",
+                "BRW-AM",
+                "BRW-BB",
+                "BRW-BILL",
+                "BRW-CLR",
+                "BRW-HP",
+                "BRW-IB",
+                "BRW-IR",
+                "BRW-NTC",
+                "BRW-PSM",
+                "BRW-S/L",
+                "BRW-SMC",
+                "BRW-SYNT",
+                "DC1-ACT",
+                "DC1-AM",
+                "DC1-BB",
+                "DC1-HP",
+                "DC1-IB",
+                "DC1-IR",
+                "DC1-NTC",
+                "DC1-S/L",
+                "DC1-SMC",
+                "DEFECT",
+                "DISPLAY",
+                "HOLD",
+                "HQ",
+                "MKTG",
+                "MKTG-HQ",
+                "MOCHA-KC",
+                "MOCHA-WH",
+                "MWH",
+                "MWH-ACT",
+                "MWH-AM",
+                "MWH-BB",
+                "MWH-DFT",
+                "MWH-HP",
+                "MWH-IB",
+                "MWH-IR",
+                "MWH-MOC",
+                "MWH-NTC",
+                "MWH-S/L",
+                "MWH-SMC",
+                "REJECT",
+                "REPAIR",
+                "REWORK",
+                "RSW",
+                "RSW-ACT",
+                "RSW-BB",
+                "RSW-HP",
+                "RSW-IB",
+                "RSW-IR",
+                "RSW-NTC",
+                "RSW-SMC",
+                "SHRT ACC",
+                "SPARPART",
+                "VAR",
+                "WH3",
+                "WH3-ACT",
+                "WH3-AM",
+                "WH3-BB",
+                "WH3-HP",
+                "WH3-IB",
+                "WH3-IR",
+                "WH3-NTC",
+                "WH3-PSM",
+                "WH3-R/S",
+                "WH3-S/L",
+                "WH3-SMC"
+              ]
+            }
+          },
+          "tool": "crm_inventory_stock_balance_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "inventory",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "CB310-GM"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_stock",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to check stock for CB310-GM"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow",
+        "hidden_spec_keys": []
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1061691@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1061691,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1777550801,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000052"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000052",
+          "id": 900000052,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000052",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000014\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": "zzt-agent-1061691@example.invalid",
+              "firstName": "ZZT-agent",
+              "id": 1061691,
+              "lastName": "",
+              "role": "user"
+            },
+            "countryCode": "MY",
+            "created_at": 1777550801,
+            "email": null,
+            "firstName": "ZZT-900000052",
+            "id": 900000052,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000052",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "dfea9a47-f189-4bd5-9a77-aff1d3c794af",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxNjkyMDEyODYVAgASGBQzQTEwNDM1RUEyMUQ4MkNDNkJGRQA=",
+            "contactId": 900000052,
+            "message": {
+              "text": "Technical Drawing CB476-GM",
+              "type": "text"
+            },
+            "messageId": 1789382262000000,
+            "timestamp": 1789382262000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "02451cf4-8c1e-4643-af7f-03f49d7dde13",
+          "759e8bb0-0895-40ca-98eb-74870303cf3e"
+        ],
+        "focus_after": null,
+        "pending": {
+          "kind": "escalation_offer",
+          "option_labels": []
+        },
+        "text": "Here's what you want:\n\u2022 product: CB476-GM\n\u2022 attachment_type: Technical Specifications\n\nBut no technical drawing matched these. Would you like me to escalate to marketing product team?",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "attachment_type_ids",
+              "contact_id",
+              "date_mode",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_master_product_attachments_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "CB476-GM",
+                "entity_type": "product",
+                "uuid": "02451cf4-8c1e-4643-af7f-03f49d7dde13"
+              }
+            ],
+            "resolved": true,
+            "token": "CB476-GM"
+          },
+          {
+            "matches": [
+              {
+                "canonical_code": "technical drawing",
+                "entity_type": "attachment_type",
+                "uuid": "759e8bb0-0895-40ca-98eb-74870303cf3e"
+              }
+            ],
+            "resolved": true,
+            "token": "technical drawing"
+          }
+        ],
+        "tokens": [
+          "CB476-GM",
+          "Technical Drawing"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 17,
+        "recorded_at": "2026-09-14T19:37:47.186111+09:00",
+        "turn_id": "9c5d761e-4b2a-41c3-ac14-025887d0ebf8"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 2,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 2,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "attachment_type_ids": [
+              "759e8bb0-0895-40ca-98eb-74870303cf3e"
+            ],
+            "contact_id": "900000052",
+            "date_mode": null,
+            "is_active": null,
+            "product_ids": [
+              "02451cf4-8c1e-4643-af7f-03f49d7dde13"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "attachments": [],
+            "fallback_used": false,
+            "has_result": false,
+            "intro": "No matching results found.",
+            "items": [],
+            "last_updated_at": null,
+            "result_type": "product_attachments"
+          },
+          "tool": "crm_master_product_attachments_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "product_attachment",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "CB476-GM"
+          },
+          {
+            "canonical_code": "technical drawing",
+            "confident": true,
+            "current_message": true,
+            "hint": "attachment_type",
+            "raw": "Technical Drawing"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_product_attachment",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to get the technical drawing for CB476-GM"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "Incoming Stock Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow",
+        "hidden_spec_keys": []
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1061691@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1061691,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1777550801,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000052"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000052",
+          "id": 900000052,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000052",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000014\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": "zzt-agent-1061691@example.invalid",
+              "firstName": "ZZT-agent",
+              "id": 1061691,
+              "lastName": "",
+              "role": "user"
+            },
+            "countryCode": "MY",
+            "created_at": 1777550801,
+            "email": null,
+            "firstName": "ZZT-900000052",
+            "id": 900000052,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000052",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "6ad5820d-1c87-415d-8d87-dbcedbac3f6d",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxNjkyMDEyODYVAgASGBQzQTVGRTc5NTk4OTU5RTBDOTREQQA=",
+            "contactId": 900000052,
+            "message": {
+              "text": "Check incoming stock SRT2367",
+              "type": "text"
+            },
+            "messageId": 1789382502000000,
+            "timestamp": 1789382502000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "6772d3bc-76f9-4470-a57c-87b7a162e1a6"
+        ],
+        "focus_after": null,
+        "pending": {
+          "kind": "escalation_offer",
+          "option_labels": []
+        },
+        "text": "Here's what you want:\n\u2022 product: SRT2367\n\nBut no incoming matched these.\nNo incoming for SRT2367.\n\nBut here are the stock details for the requested products:\n\n- *Product Code:* SRT2367\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SMC\n*Quantity On Hand:* 55\n*Outstanding:* 109\n\n- *Product Code:* SRT2367\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 0\n*Outstanding:* 16\n\nWould you like me to escalate to purchasing team?",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "contact_id",
+              "date_mode",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_incoming_stock_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "SRT2367",
+                "entity_type": "product",
+                "uuid": "6772d3bc-76f9-4470-a57c-87b7a162e1a6"
+              }
+            ],
+            "resolved": true,
+            "token": "SRT2367"
+          }
+        ],
+        "tokens": [
+          "SRT2367"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 17,
+        "recorded_at": "2026-09-14T19:41:47.212774+09:00",
+        "turn_id": "9e44daf3-5f62-4a76-aba0-f952cd237871"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 1,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 1,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "contact_id": "900000052",
+            "date_mode": null,
+            "is_active": null,
+            "product_ids": [
+              "6772d3bc-76f9-4470-a57c-87b7a162e1a6"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "attachments": [],
+            "field_access": {
+              "denied": [
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "eta_delay_date",
+                  "label": "ETA Delay",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "inspection_date",
+                  "label": "CIDB Inspection",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "approval_date",
+                  "label": "CIDB Approval",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "gatepass_date",
+                  "label": "Gatepass",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "warehouse_arrival_date",
+                  "label": "Warehouse Arrival",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "informed_collection_date",
+                  "label": "Collection Informed",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "collection_date",
+                  "label": "Collection",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "loading_date",
+                  "label": "Loading",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "etc_date",
+                  "label": "ETC",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "etd_date",
+                  "label": "ETD",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "liner_code",
+                  "label": "Liner",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "china_forwarder",
+                  "label": "China Forwarder",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "malaysia_forwarder",
+                  "label": "Malaysia Forwarder",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "consignee",
+                  "label": "Consignee",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "delivery_warehouse",
+                  "label": "Delivery Warehouse",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "free_days_available",
+                  "label": "Free Days Available",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "loc",
+                  "label": "Location",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "stacked",
+                  "label": "Stacked",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "coa_permit_no",
+                  "label": "COA Permit No.",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "source_sheet",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                }
+              ],
+              "note": "These fields are omitted because this caller may not see them. Absent does NOT mean the value is unknown or not yet reached."
+            },
+            "field_vocabulary": {
+              "approval_date": "CIDB Approval",
+              "china_forwarder": "China Forwarder",
+              "coa_permit_no": "COA Permit No.",
+              "collection_date": "Collection",
+              "consignee": "Consignee",
+              "delivery_warehouse": "Delivery Warehouse",
+              "estimated_arrival_date": "ETA",
+              "eta_delay_date": "ETA Delay",
+              "etc_date": "ETC",
+              "etd_date": "ETD",
+              "free_days_available": "Free Days Available",
+              "gatepass_date": "Gatepass",
+              "informed_collection_date": "Collection Informed",
+              "inspection_date": "CIDB Inspection",
+              "liner_code": "Liner",
+              "loading_date": "Loading",
+              "loc": "Location",
+              "malaysia_forwarder": "Malaysia Forwarder",
+              "stacked": "Stacked",
+              "warehouse_arrival_date": "Warehouse Arrival"
+            },
+            "has_result": false,
+            "intro": "No matching results found.",
+            "items": [],
+            "last_updated_at": null,
+            "result_type": "incoming_stock"
+          },
+          "tool": "crm_incoming_stock_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "incoming",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "SRT2367"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_incoming",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to check incoming stock for SRT2367"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "Incoming Stock Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow",
+        "hidden_spec_keys": []
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1061691@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1061691,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1777550801,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000052"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000052",
+          "id": 900000052,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000052",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000014\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": "zzt-agent-1061691@example.invalid",
+              "firstName": "ZZT-agent",
+              "id": 1061691,
+              "lastName": "",
+              "role": "user"
+            },
+            "countryCode": "MY",
+            "created_at": 1777550801,
+            "email": null,
+            "firstName": "ZZT-900000052",
+            "id": 900000052,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000052",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "7d97545e-46b7-4cab-b5b0-4bc0c7dd1fe1",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxNjkyMDEyODYVAgASGBQzQUUyQ0Y2Q0VBNjAwQTg1MjE5MgA=",
+            "contactId": 900000052,
+            "message": {
+              "text": "SRTMCB8071-BL",
+              "type": "text"
+            },
+            "messageId": 1789382967000000,
+            "timestamp": 1789382967000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "e82fd009-7b33-433e-bf0f-dd0e12b443a2"
+        ],
+        "focus_after": null,
+        "pending": {
+          "kind": "escalation_offer",
+          "option_labels": []
+        },
+        "text": "Here's what you want:\n\u2022 product: SRTMCB8071-BL\n\nBut no incoming matched these.\nBut here are the stock details for the requested products:\n\n- *Product Code:* SRTMCB8071-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 0\n*Outstanding:* 1\n\u26a0\ufe0f  *(PRODUCT DISCONTINUED)*\n\n- *Product Code:* SRTMCB8071-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SMC\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\u26a0\ufe0f  *(PRODUCT DISCONTINUED)*\n\n- *Product Code:* SRTMCB8071-BL\n*Warehouse:* WH3 (PSM)\n*System Location:* WH3-PSM\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\u26a0\ufe0f  *(PRODUCT DISCONTINUED)*\n\nNo incoming, stock is 0 at every location and nothing on order for SRTMCB8071-BL.\n\nWould you like me to escalate to purchasing team?",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "contact_id",
+              "date_mode",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_incoming_stock_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "SRTMCB8071-BL",
+                "entity_type": "product",
+                "uuid": "e82fd009-7b33-433e-bf0f-dd0e12b443a2"
+              }
+            ],
+            "resolved": true,
+            "token": "SRTMCB8071-BL"
+          }
+        ],
+        "tokens": [
+          "SRTMCB8071-BL"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 17,
+        "recorded_at": "2026-09-14T19:49:31.203388+09:00",
+        "turn_id": "5a8b7088-a309-40ac-a961-c107ae1b4b16"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 1,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 1,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "contact_id": "900000052",
+            "date_mode": null,
+            "is_active": null,
+            "product_ids": [
+              "e82fd009-7b33-433e-bf0f-dd0e12b443a2"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "alternatives": [
+              {
+                "display": "SRTMCB8083-BL",
+                "id": "ea48b01d-3dda-4efd-be42-b66033e43dd1",
+                "is_variant": false,
+                "sim": 0.529,
+                "value": "SRTMCB8083-BL"
+              }
+            ],
+            "attachments": [],
+            "field_access": {
+              "denied": [
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "eta_delay_date",
+                  "label": "ETA Delay",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "inspection_date",
+                  "label": "CIDB Inspection",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "approval_date",
+                  "label": "CIDB Approval",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "gatepass_date",
+                  "label": "Gatepass",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "warehouse_arrival_date",
+                  "label": "Warehouse Arrival",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "informed_collection_date",
+                  "label": "Collection Informed",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "collection_date",
+                  "label": "Collection",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "loading_date",
+                  "label": "Loading",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "etc_date",
+                  "label": "ETC",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "etd_date",
+                  "label": "ETD",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "liner_code",
+                  "label": "Liner",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "china_forwarder",
+                  "label": "China Forwarder",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "malaysia_forwarder",
+                  "label": "Malaysia Forwarder",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "consignee",
+                  "label": "Consignee",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "delivery_warehouse",
+                  "label": "Delivery Warehouse",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "free_days_available",
+                  "label": "Free Days Available",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "loc",
+                  "label": "Location",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "stacked",
+                  "label": "Stacked",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "coa_permit_no",
+                  "label": "COA Permit No.",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                },
+                {
+                  "agent_code": "incoming_stock_enquiries",
+                  "field": "source_sheet",
+                  "outcome": "field_not_allowed",
+                  "reason": "This contact holds the agent, but this field is not allowed on it. Tick the field on the agent, or add a per-contact override."
+                }
+              ],
+              "note": "These fields are omitted because this caller may not see them. Absent does NOT mean the value is unknown or not yet reached."
+            },
+            "field_vocabulary": {
+              "approval_date": "CIDB Approval",
+              "china_forwarder": "China Forwarder",
+              "coa_permit_no": "COA Permit No.",
+              "collection_date": "Collection",
+              "consignee": "Consignee",
+              "delivery_warehouse": "Delivery Warehouse",
+              "estimated_arrival_date": "ETA",
+              "eta_delay_date": "ETA Delay",
+              "etc_date": "ETC",
+              "etd_date": "ETD",
+              "free_days_available": "Free Days Available",
+              "gatepass_date": "Gatepass",
+              "informed_collection_date": "Collection Informed",
+              "inspection_date": "CIDB Inspection",
+              "liner_code": "Liner",
+              "loading_date": "Loading",
+              "loc": "Location",
+              "malaysia_forwarder": "Malaysia Forwarder",
+              "stacked": "Stacked",
+              "warehouse_arrival_date": "Warehouse Arrival"
+            },
+            "has_result": false,
+            "intro": "No matching results found.",
+            "items": [],
+            "last_updated_at": null,
+            "relaxed_axis": "entity",
+            "result_type": "incoming_stock"
+          },
+          "tool": "crm_incoming_stock_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "incoming",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "SRTMCB8071-BL"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_incoming",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to check incoming for SRTMCB8071-BL"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow",
+        "hidden_spec_keys": []
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1061691@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1061691,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1777550801,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000052"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000052",
+          "id": 900000052,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000052",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000014\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": "zzt-agent-1061691@example.invalid",
+              "firstName": "ZZT-agent",
+              "id": 1061691,
+              "lastName": "",
+              "role": "user"
+            },
+            "countryCode": "MY",
+            "created_at": 1777550801,
+            "email": null,
+            "firstName": "ZZT-900000052",
+            "id": 900000052,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000052",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "85bcb59d-4f94-4795-b68f-7a7c0ab38def",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxNjkyMDEyODYVAgASGBQzQTlBNjk4QTczNEQ4MUM4MjVFRAA=",
+            "contactId": 900000052,
+            "message": {
+              "text": "Check stock SRTMCB8071-BL",
+              "type": "text"
+            },
+            "messageId": 1789382976000000,
+            "timestamp": 1789382976000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message",
+          "send_attachments"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "e82fd009-7b33-433e-bf0f-dd0e12b443a2"
+        ],
+        "focus_after": null,
+        "pending": {
+          "kind": "team_pick",
+          "option_labels": [
+            "incoming stock"
+          ]
+        },
+        "text": "Stock details found for the requested products.\n\n1. *Product Code:* SRTMCB8071-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 0\n*Outstanding:* 1\n\u26a0\ufe0f  *(PRODUCT DISCONTINUED)*\n\n2. *Product Code:* SRTMCB8071-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SMC\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\u26a0\ufe0f  *(PRODUCT DISCONTINUED)*\n\n3. *Product Code:* SRTMCB8071-BL\n*Warehouse:* WH3 (PSM)\n*System Location:* WH3-PSM\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\u26a0\ufe0f  *(PRODUCT DISCONTINUED)*\n\n_Data last updated: 14/09/2026 17:25:40_\nStock is 0 at every location, no incoming and nothing on order for SRTMCB8071-BL.\n\nWould you like me to escalate to purchasing team?",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "contact_id",
+              "date_mode",
+              "include_sellable",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_inventory_stock_balance_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "SRTMCB8071-BL",
+                "entity_type": "product",
+                "uuid": "e82fd009-7b33-433e-bf0f-dd0e12b443a2"
+              }
+            ],
+            "resolved": true,
+            "token": "SRTMCB8071-BL"
+          }
+        ],
+        "tokens": [
+          "SRTMCB8071-BL"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 17,
+        "recorded_at": "2026-09-14T19:49:41.214655+09:00",
+        "turn_id": "c53ecf52-2b86-43e0-b724-a8da311158bc"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 1,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 1,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "contact_id": "900000052",
+            "date_mode": null,
+            "include_sellable": true,
+            "is_active": null,
+            "product_ids": [
+              "e82fd009-7b33-433e-bf0f-dd0e12b443a2"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "attachments": [],
+            "fallback_used": false,
+            "has_result": true,
+            "intro": "Stock details found for the requested products.",
+            "items": [
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "SRTMCB8071-BL"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "BUKIT RAJA"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "BRW"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 0
+                  },
+                  {
+                    "key": "open_so_qty",
+                    "label": "Outstanding",
+                    "value": 1
+                  }
+                ],
+                "flags": {
+                  "discontinued": true,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTMCB8071-BL"
+              },
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "SRTMCB8071-BL"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "BUKIT RAJA"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "BRW-SMC"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 0
+                  },
+                  {
+                    "key": "open_so_qty",
+                    "label": "Outstanding",
+                    "value": 0
+                  }
+                ],
+                "flags": {
+                  "discontinued": true,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTMCB8071-BL"
+              },
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "SRTMCB8071-BL"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "WH3 (PSM)"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "WH3-PSM"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 0
+                  },
+                  {
+                    "key": "open_so_qty",
+                    "label": "Outstanding",
+                    "value": 0
+                  }
+                ],
+                "flags": {
+                  "discontinued": true,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTMCB8071-BL"
+              }
+            ],
+            "last_updated_at": "2026-09-14T17:25:40.036011",
+            "restricted_fields": {
+              "open_so_qty": "inventory.sellable"
+            },
+            "result_type": "stock",
+            "stock_visibility": {
+              "hide_zero_locations": false,
+              "mode": "detailed",
+              "source": "contact",
+              "warehouse_codes": [
+                "BRW",
+                "BRW-ACTS",
+                "BRW-AM",
+                "BRW-BB",
+                "BRW-BILL",
+                "BRW-CLR",
+                "BRW-HP",
+                "BRW-IB",
+                "BRW-IR",
+                "BRW-NTC",
+                "BRW-PSM",
+                "BRW-S/L",
+                "BRW-SMC",
+                "BRW-SYNT",
+                "DC1-ACT",
+                "DC1-AM",
+                "DC1-BB",
+                "DC1-HP",
+                "DC1-IB",
+                "DC1-IR",
+                "DC1-NTC",
+                "DC1-S/L",
+                "DC1-SMC",
+                "DEFECT",
+                "DISPLAY",
+                "HOLD",
+                "HQ",
+                "MKTG",
+                "MKTG-HQ",
+                "MOCHA-KC",
+                "MOCHA-WH",
+                "MWH",
+                "MWH-ACT",
+                "MWH-AM",
+                "MWH-BB",
+                "MWH-DFT",
+                "MWH-HP",
+                "MWH-IB",
+                "MWH-IR",
+                "MWH-MOC",
+                "MWH-NTC",
+                "MWH-S/L",
+                "MWH-SMC",
+                "REJECT",
+                "REPAIR",
+                "REWORK",
+                "RSW",
+                "RSW-ACT",
+                "RSW-BB",
+                "RSW-HP",
+                "RSW-IB",
+                "RSW-IR",
+                "RSW-NTC",
+                "RSW-SMC",
+                "SHRT ACC",
+                "SPARPART",
+                "VAR",
+                "WH3",
+                "WH3-ACT",
+                "WH3-AM",
+                "WH3-BB",
+                "WH3-HP",
+                "WH3-IB",
+                "WH3-IR",
+                "WH3-NTC",
+                "WH3-PSM",
+                "WH3-R/S",
+                "WH3-S/L",
+                "WH3-SMC"
+              ]
+            }
+          },
+          "tool": "crm_inventory_stock_balance_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "inventory",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "SRTMCB8071-BL"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_stock",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to check stock for SRTMCB8071-BL"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow",
+        "hidden_spec_keys": []
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1061691@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1061691,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1777550801,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000052"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000052",
+          "id": 900000052,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000052",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000014\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": "zzt-agent-1061691@example.invalid",
+              "firstName": "ZZT-agent",
+              "id": 1061691,
+              "lastName": "",
+              "role": "user"
+            },
+            "countryCode": "MY",
+            "created_at": 1777550801,
+            "email": null,
+            "firstName": "ZZT-900000052",
+            "id": 900000052,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000052",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "abf38658-434f-4846-a07a-cadf8359921e",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxNjkyMDEyODYVAgASGBQzQTIzNkU1MDk1RjdENkQ2NDgzNgA=",
+            "contactId": 900000052,
+            "message": {
+              "text": "Check stock SRTMCB8081-WH",
+              "type": "text"
+            },
+            "messageId": 1789383038000000,
+            "timestamp": 1789383038000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message",
+          "send_attachments"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "9b94fd22-a374-4d60-933d-346041992948"
+        ],
+        "focus_after": null,
+        "pending": {
+          "kind": "team_pick",
+          "option_labels": [
+            "incoming stock"
+          ]
+        },
+        "text": "Stock details found for the requested products.\n\n1. *Product Code:* SRTMCB8081-WH\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 32\n*Outstanding:* 9\n\n2. *Product Code:* SRTMCB8081-WH\n*Warehouse:* WH3 (PSM)\n*System Location:* WH3-PSM\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n_Data last updated: 14/09/2026 17:25:40_",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "contact_id",
+              "date_mode",
+              "include_sellable",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_inventory_stock_balance_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "SRTMCB8081-WH",
+                "entity_type": "product",
+                "uuid": "9b94fd22-a374-4d60-933d-346041992948"
+              }
+            ],
+            "resolved": true,
+            "token": "SRTMCB8081-WH"
+          }
+        ],
+        "tokens": [
+          "SRTMCB8081-WH"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 17,
+        "recorded_at": "2026-09-14T19:50:44.199974+09:00",
+        "turn_id": "8209242b-1111-4381-9729-b177a3641d02"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 1,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 1,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "contact_id": "900000052",
+            "date_mode": null,
+            "include_sellable": true,
+            "is_active": null,
+            "product_ids": [
+              "9b94fd22-a374-4d60-933d-346041992948"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "attachments": [],
+            "fallback_used": false,
+            "has_result": true,
+            "intro": "Stock details found for the requested products.",
+            "items": [
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "SRTMCB8081-WH"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "BUKIT RAJA"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "BRW"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 32
+                  },
+                  {
+                    "key": "open_so_qty",
+                    "label": "Outstanding",
+                    "value": 9
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTMCB8081-WH"
+              },
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "SRTMCB8081-WH"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "WH3 (PSM)"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "WH3-PSM"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 0
+                  },
+                  {
+                    "key": "open_so_qty",
+                    "label": "Outstanding",
+                    "value": 0
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTMCB8081-WH"
+              }
+            ],
+            "last_updated_at": "2026-09-14T17:25:40.036011",
+            "restricted_fields": {
+              "open_so_qty": "inventory.sellable"
+            },
+            "result_type": "stock",
+            "stock_visibility": {
+              "hide_zero_locations": false,
+              "mode": "detailed",
+              "source": "contact",
+              "warehouse_codes": [
+                "BRW",
+                "BRW-ACTS",
+                "BRW-AM",
+                "BRW-BB",
+                "BRW-BILL",
+                "BRW-CLR",
+                "BRW-HP",
+                "BRW-IB",
+                "BRW-IR",
+                "BRW-NTC",
+                "BRW-PSM",
+                "BRW-S/L",
+                "BRW-SMC",
+                "BRW-SYNT",
+                "DC1-ACT",
+                "DC1-AM",
+                "DC1-BB",
+                "DC1-HP",
+                "DC1-IB",
+                "DC1-IR",
+                "DC1-NTC",
+                "DC1-S/L",
+                "DC1-SMC",
+                "DEFECT",
+                "DISPLAY",
+                "HOLD",
+                "HQ",
+                "MKTG",
+                "MKTG-HQ",
+                "MOCHA-KC",
+                "MOCHA-WH",
+                "MWH",
+                "MWH-ACT",
+                "MWH-AM",
+                "MWH-BB",
+                "MWH-DFT",
+                "MWH-HP",
+                "MWH-IB",
+                "MWH-IR",
+                "MWH-MOC",
+                "MWH-NTC",
+                "MWH-S/L",
+                "MWH-SMC",
+                "REJECT",
+                "REPAIR",
+                "REWORK",
+                "RSW",
+                "RSW-ACT",
+                "RSW-BB",
+                "RSW-HP",
+                "RSW-IB",
+                "RSW-IR",
+                "RSW-NTC",
+                "RSW-SMC",
+                "SHRT ACC",
+                "SPARPART",
+                "VAR",
+                "WH3",
+                "WH3-ACT",
+                "WH3-AM",
+                "WH3-BB",
+                "WH3-HP",
+                "WH3-IB",
+                "WH3-IR",
+                "WH3-NTC",
+                "WH3-PSM",
+                "WH3-R/S",
+                "WH3-S/L",
+                "WH3-SMC"
+              ]
+            }
+          },
+          "tool": "crm_inventory_stock_balance_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "inventory",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "SRTMCB8081-WH"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_stock",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to check stock for SRTMCB8081-WH"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow",
+        "hidden_spec_keys": []
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1061691@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1061691,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1777550801,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000052"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000052",
+          "id": 900000052,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000052",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000014\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": "zzt-agent-1061691@example.invalid",
+              "firstName": "ZZT-agent",
+              "id": 1061691,
+              "lastName": "",
+              "role": "user"
+            },
+            "countryCode": "MY",
+            "created_at": 1777550801,
+            "email": null,
+            "firstName": "ZZT-900000052",
+            "id": 900000052,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000052",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "ca4550ac-8ae6-49ce-85ba-f84ee22663c5",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxNjkyMDEyODYVAgASGBQzQUNGMEJEMkFDQkM0MzBEQTA2NAA=",
+            "contactId": 900000052,
+            "message": {
+              "text": "Check stock SRTMCB7071-BL",
+              "type": "text"
+            },
+            "messageId": 1789383066000000,
+            "timestamp": 1789383066000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [],
+        "focus_after": null,
+        "pending": {
+          "kind": "escalation_offer",
+          "option_labels": []
+        },
+        "text": "Couldn't find \"SRTMCB7071-BL\" (product). Did you mean:\n1. SRTMCB6071-BL - has stock details\n2. SRTMCB7070-BL - has stock details\n3. SRTMCB8071-BL - no stock details\nReply with a code to continue, or would you like me to escalate to warehouse team?",
+        "tools": []
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [],
+            "resolved": false,
+            "token": "SRTMCB7071-BL"
+          }
+        ],
+        "tokens": [
+          "SRTMCB7071-BL"
+        ],
+        "unresolved_tokens": [
+          "SRTMCB7071-BL"
+        ]
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 17,
+        "recorded_at": "2026-09-14T19:51:11.212556+09:00",
+        "turn_id": "aeeeacaa-55c7-4f5c-9fd4-074d09f438ed"
+      },
+      "tool_results": [],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "inventory",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "SRTMCB7071-BL"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_stock",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": "result",
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to check stock for SRTMCB7071-BL"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow",
+        "hidden_spec_keys": []
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1061691@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1061691,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1777550801,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000052"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000052",
+          "id": 900000052,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000052",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000014\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": "zzt-agent-1061691@example.invalid",
+              "firstName": "ZZT-agent",
+              "id": 1061691,
+              "lastName": "",
+              "role": "user"
+            },
+            "countryCode": "MY",
+            "created_at": 1777550801,
+            "email": null,
+            "firstName": "ZZT-900000052",
+            "id": 900000052,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000052",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "a7950af1-3285-45b7-9f22-a45939b1ecad",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxNjkyMDEyODYVAgASGBQzQUUzMjMwMzRFOTM3NTAyNUQ3QwA=",
+            "contactId": 900000052,
+            "message": {
+              "text": "Check stock SRTMCB7070-BL",
+              "type": "text"
+            },
+            "messageId": 1789383107000000,
+            "timestamp": 1789383107000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message",
+          "send_attachments"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "ee42afea-f032-46db-968d-b54dd966f0be"
+        ],
+        "focus_after": null,
+        "pending": {
+          "kind": "team_pick",
+          "option_labels": [
+            "stock"
+          ]
+        },
+        "text": "Stock details found for the requested products.\n\n1. *Product Code:* SRTMCB7070-BL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 18\n*Outstanding:* 0\n\n2. *Product Code:* SRTMCB7070-BL\n*Warehouse:* WH3 (PSM)\n*System Location:* WH3-PSM\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n_Data last updated: 14/09/2026 17:25:40_",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "contact_id",
+              "date_mode",
+              "include_sellable",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_inventory_stock_balance_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "SRTMCB7070-BL",
+                "entity_type": "product",
+                "uuid": "ee42afea-f032-46db-968d-b54dd966f0be"
+              }
+            ],
+            "resolved": true,
+            "token": "SRTMCB7070-BL"
+          }
+        ],
+        "tokens": [
+          "SRTMCB7070-BL"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 17,
+        "recorded_at": "2026-09-14T19:51:52.178517+09:00",
+        "turn_id": "014db408-7b78-4734-80e1-68622edaac2f"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 1,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 1,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "contact_id": "900000052",
+            "date_mode": null,
+            "include_sellable": true,
+            "is_active": null,
+            "product_ids": [
+              "ee42afea-f032-46db-968d-b54dd966f0be"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "attachments": [],
+            "fallback_used": false,
+            "has_result": true,
+            "intro": "Stock details found for the requested products.",
+            "items": [
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "SRTMCB7070-BL"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "BUKIT RAJA"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "BRW"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 18
+                  },
+                  {
+                    "key": "open_so_qty",
+                    "label": "Outstanding",
+                    "value": 0
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTMCB7070-BL"
+              },
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "SRTMCB7070-BL"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "WH3 (PSM)"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "WH3-PSM"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 0
+                  },
+                  {
+                    "key": "open_so_qty",
+                    "label": "Outstanding",
+                    "value": 0
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTMCB7070-BL"
+              }
+            ],
+            "last_updated_at": "2026-09-14T17:25:40.036011",
+            "restricted_fields": {
+              "open_so_qty": "inventory.sellable"
+            },
+            "result_type": "stock",
+            "stock_visibility": {
+              "hide_zero_locations": false,
+              "mode": "detailed",
+              "source": "contact",
+              "warehouse_codes": [
+                "BRW",
+                "BRW-ACTS",
+                "BRW-AM",
+                "BRW-BB",
+                "BRW-BILL",
+                "BRW-CLR",
+                "BRW-HP",
+                "BRW-IB",
+                "BRW-IR",
+                "BRW-NTC",
+                "BRW-PSM",
+                "BRW-S/L",
+                "BRW-SMC",
+                "BRW-SYNT",
+                "DC1-ACT",
+                "DC1-AM",
+                "DC1-BB",
+                "DC1-HP",
+                "DC1-IB",
+                "DC1-IR",
+                "DC1-NTC",
+                "DC1-S/L",
+                "DC1-SMC",
+                "DEFECT",
+                "DISPLAY",
+                "HOLD",
+                "HQ",
+                "MKTG",
+                "MKTG-HQ",
+                "MOCHA-KC",
+                "MOCHA-WH",
+                "MWH",
+                "MWH-ACT",
+                "MWH-AM",
+                "MWH-BB",
+                "MWH-DFT",
+                "MWH-HP",
+                "MWH-IB",
+                "MWH-IR",
+                "MWH-MOC",
+                "MWH-NTC",
+                "MWH-S/L",
+                "MWH-SMC",
+                "REJECT",
+                "REPAIR",
+                "REWORK",
+                "RSW",
+                "RSW-ACT",
+                "RSW-BB",
+                "RSW-HP",
+                "RSW-IB",
+                "RSW-IR",
+                "RSW-NTC",
+                "RSW-SMC",
+                "SHRT ACC",
+                "SPARPART",
+                "VAR",
+                "WH3",
+                "WH3-ACT",
+                "WH3-AM",
+                "WH3-BB",
+                "WH3-HP",
+                "WH3-IB",
+                "WH3-IR",
+                "WH3-NTC",
+                "WH3-PSM",
+                "WH3-R/S",
+                "WH3-S/L",
+                "WH3-SMC"
+              ]
+            }
+          },
+          "tool": "crm_inventory_stock_balance_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "inventory",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "SRTMCB7070-BL"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_stock",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to check stock for SRTMCB7070-BL"
+      }
+    }
+  ]
+}

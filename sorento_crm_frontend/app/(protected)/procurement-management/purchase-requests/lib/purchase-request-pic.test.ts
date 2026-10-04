@@ -3,7 +3,7 @@
  *
  * Background: there was nowhere to record the person receiving the delivery, so
  * staff typed them onto the end of the delivery address
- * ("... Pulau Pinang Contact: Hanson (012-403 9611)"). PIC is now its own field,
+ * ("... Pulau Pinang Contact: CONTACT Q (012-000 0502)"). PIC is now its own field,
  * and it has to survive into every export or people will go straight back to
  * putting it in the address.
  *
@@ -35,7 +35,7 @@ function request(over: Record<string, unknown> = {}) {
     request_type: 'purchase_request',
     request_number: 'PR26-0332',
     customer_name: 'KEE LIN TRADING SDN BHD',
-    pic: 'Hanson (012-403 9611)',
+    pic: 'CONTACT Q (012-000 0502)',
     delivery_address: '2, Lebuh Cecil, Ghaut, 10300 George Town',
     project_title: 'ECO SUMMIT',
     lines: [],
@@ -59,7 +59,7 @@ describe('PIC in the PR / SF Excel export', () => {
 
       const pic = flatRows().find((r) => String(r?.[0]).startsWith('PIC'));
       expect(pic, 'no PIC row in the exported sheet').toBeTruthy();
-      expect(String(pic?.[1])).toContain('Hanson');
+      expect(String(pic?.[1])).toContain('CONTACT Q');
     },
   );
 

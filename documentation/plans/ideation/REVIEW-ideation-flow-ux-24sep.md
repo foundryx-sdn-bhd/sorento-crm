@@ -9,10 +9,10 @@ comments (`gh issue view 1172 --comments`).
 ## Setup
 
 - Local `foundryx-shared-service` backend booted from `~/Documents/foundryx/foundryx-shared-service/service_backend`
-  on `:8001`: `DATABASE_URL=postgresql://foundryx:foundryx@localhost:5432/fx_shared_local
+  on `:8001`: `DATABASE_URL=postgresql://foundryx:<password>@localhost:5432/fx_shared_local
   .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8001`. DB `fx_shared_local` created fresh
   (`createdb -O foundryx fx_shared_local`) and migrated/seeded with the repo's own tooling:
-  `DATABASE_URL=postgresql://foundryx:foundryx@localhost:5432/fx_shared_local
+  `DATABASE_URL=postgresql://foundryx:<password>@localhost:5432/fx_shared_local
   POSTGRES_ADMIN_URL=postgresql://tehjayson@localhost:5432/postgres .venv/bin/python -m
   scripts.bootstrap_db`. This creates the default tenant, roles, demo admin, and installs the
   `omnichannel` module.

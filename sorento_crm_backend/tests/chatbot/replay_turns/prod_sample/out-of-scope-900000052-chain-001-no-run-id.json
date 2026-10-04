@@ -1,0 +1,4327 @@
+{
+  "turns": [
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1061691@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1061691,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1777550801,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000052"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000052",
+          "id": 900000052,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000052",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000014\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": "zzt-agent-1061691@example.invalid",
+              "firstName": "ZZT-agent",
+              "id": 1061691,
+              "lastName": "",
+              "role": "user"
+            },
+            "countryCode": "MY",
+            "created_at": 1777550801,
+            "email": null,
+            "firstName": "ZZT-900000052",
+            "id": 900000052,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000052",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "a6293884-bc94-4334-92ee-f0d9f520ae9f",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxNjkyMDEyODYVAgASGBQzQUU1MjZCODY5MjEyNDhEQjZFNwA=",
+            "contactId": 900000052,
+            "message": {
+              "text": "Check stock SRTWT9124-GM",
+              "type": "text"
+            },
+            "messageId": 1789110618000000,
+            "timestamp": 1789110618000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "76deb998-c70f-4dac-a87d-0d132011c6ec"
+        ],
+        "focus_after": null,
+        "pending": {
+          "kind": "escalation_offer",
+          "option_labels": []
+        },
+        "text": "Here's what you want:\n\u2022 product: SRTWT9124-GM\n\nBut no inventory matched these.\nNo stock and no incoming for SRTWT9124-GM, but PO is placed:\nQty 10 placed on 2026-07-08\n\nWould you like me to escalate to purchasing team?",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "contact_id",
+              "date_mode",
+              "include_sellable",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_inventory_stock_balance_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "SRTWT9124-GM",
+                "entity_type": "product",
+                "uuid": "76deb998-c70f-4dac-a87d-0d132011c6ec"
+              }
+            ],
+            "resolved": true,
+            "token": "SRTWT9124-GM"
+          }
+        ],
+        "tokens": [
+          "SRTWT9124-GM"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 11,
+        "recorded_at": "2026-09-11T16:10:22.217146+09:00",
+        "turn_id": "557aa2e6-1e2f-4f12-beb7-037d5889a69f"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 1,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 1,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "contact_id": "900000052",
+            "date_mode": null,
+            "include_sellable": true,
+            "is_active": null,
+            "product_ids": [
+              "76deb998-c70f-4dac-a87d-0d132011c6ec"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "alternatives": [
+              {
+                "display": "SRTWT912-GM",
+                "id": "99559dae-2ded-4449-b518-32bd631be225",
+                "is_variant": false,
+                "sim": 0.643,
+                "value": "SRTWT912-GM"
+              },
+              {
+                "display": "SRTWT9122",
+                "id": "d166e5d6-26e8-4c87-a352-5219d830e4ff",
+                "is_variant": false,
+                "sim": 0.571,
+                "value": "SRTWT9122"
+              },
+              {
+                "display": "SRTWT9123",
+                "id": "3735e53c-f7e4-4e13-9e16-e449f934477e",
+                "is_variant": false,
+                "sim": 0.571,
+                "value": "SRTWT9123"
+              }
+            ],
+            "attachments": [],
+            "has_result": false,
+            "intro": "No matching results found.",
+            "items": [],
+            "last_updated_at": "2026-09-11T11:50:22.764969",
+            "relaxed_axis": "entity",
+            "result_type": "stock",
+            "stock_visibility": {
+              "hide_zero_locations": false,
+              "mode": "detailed",
+              "source": "contact",
+              "warehouse_codes": [
+                "BRW",
+                "BRW-ACTS",
+                "BRW-AM",
+                "BRW-BB",
+                "BRW-BILL",
+                "BRW-CLR",
+                "BRW-HP",
+                "BRW-IB",
+                "BRW-IR",
+                "BRW-NTC",
+                "BRW-PSM",
+                "BRW-S/L",
+                "BRW-SMC",
+                "BRW-SYNT",
+                "DC1-ACT",
+                "DC1-AM",
+                "DC1-BB",
+                "DC1-HP",
+                "DC1-IB",
+                "DC1-IR",
+                "DC1-NTC",
+                "DC1-S/L",
+                "DC1-SMC",
+                "DEFECT",
+                "DISPLAY",
+                "HOLD",
+                "HQ",
+                "MKTG",
+                "MKTG-HQ",
+                "MOCHA-KC",
+                "MOCHA-WH",
+                "MWH",
+                "MWH-ACT",
+                "MWH-AM",
+                "MWH-BB",
+                "MWH-DFT",
+                "MWH-HP",
+                "MWH-IB",
+                "MWH-IR",
+                "MWH-MOC",
+                "MWH-NTC",
+                "MWH-S/L",
+                "MWH-SMC",
+                "REJECT",
+                "REPAIR",
+                "REWORK",
+                "RSW",
+                "RSW-ACT",
+                "RSW-BB",
+                "RSW-HP",
+                "RSW-IB",
+                "RSW-IR",
+                "RSW-NTC",
+                "RSW-SMC",
+                "SHRT ACC",
+                "SPARPART",
+                "VAR",
+                "WH3",
+                "WH3-ACT",
+                "WH3-AM",
+                "WH3-BB",
+                "WH3-HP",
+                "WH3-IB",
+                "WH3-IR",
+                "WH3-NTC",
+                "WH3-PSM",
+                "WH3-R/S",
+                "WH3-S/L",
+                "WH3-SMC"
+              ]
+            }
+          },
+          "tool": "crm_inventory_stock_balance_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "inventory",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "SRTWT9124-GM"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_stock",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to check stock for SRTWT9124-GM"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1061691@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1061691,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1777550801,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000052"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000052",
+          "id": 900000052,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000052",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000014\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": "zzt-agent-1061691@example.invalid",
+              "firstName": "ZZT-agent",
+              "id": 1061691,
+              "lastName": "",
+              "role": "user"
+            },
+            "countryCode": "MY",
+            "created_at": 1777550801,
+            "email": null,
+            "firstName": "ZZT-900000052",
+            "id": 900000052,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000052",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "1520c656-171b-41a5-bd8d-46dfd73413c0",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxNjkyMDEyODYVAgASGBQzQUE3MDY5QUU4MzJGQ0EyREEwNQA=",
+            "contactId": 900000052,
+            "message": {
+              "text": "Please provide product details for SRTWT9124-GM",
+              "type": "text"
+            },
+            "messageId": 1789110829000000,
+            "timestamp": 1789110829000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message",
+          "send_attachments"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "76deb998-c70f-4dac-a87d-0d132011c6ec"
+        ],
+        "focus_after": null,
+        "pending": null,
+        "text": "Here are the matching products.\n\n1. *Product Code:* SRTWT9124-GM\n*Description:* SORENTO SERENE  2 WAY EXPOSE SHOWER SET WITH THERMOSTATIC SRTWT9124-GM\n*List Price:* MYR 2000.00\n*Dimensions:* Not defined\n*Specs:* Product class: Shower, Type: shower_set, Thermostatic: True, Brand: SORENTO, Control type: two_way, Finish or colour: gunmetal\n\n_Data last updated: 10/09/2026 18:58:30_\n\nP/S: if the spec you're after isn't shown above, just ask me for the *product catalogue* and I'll pull it up for you \ud83d\ude0a",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "contact_id",
+              "date_mode",
+              "include_specs",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_master_products_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "SRTWT9124-GM",
+                "entity_type": "product",
+                "uuid": "76deb998-c70f-4dac-a87d-0d132011c6ec"
+              }
+            ],
+            "resolved": true,
+            "token": "SRTWT9124-GM"
+          }
+        ],
+        "tokens": [
+          "SRTWT9124-GM"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 11,
+        "recorded_at": "2026-09-11T16:13:55.274630+09:00",
+        "turn_id": "3d1153d1-fc1b-4911-9c93-70d3bdb0781a"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 1,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 1,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "contact_id": "900000052",
+            "date_mode": null,
+            "include_specs": true,
+            "is_active": null,
+            "product_ids": [
+              "76deb998-c70f-4dac-a87d-0d132011c6ec"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "attachments": [],
+            "fallback_used": false,
+            "has_result": true,
+            "intro": "Here are the matching products.",
+            "items": [
+              {
+                "fields": [
+                  {
+                    "label": "Product Code",
+                    "value": "SRTWT9124-GM"
+                  },
+                  {
+                    "label": "Description",
+                    "value": "SORENTO SERENE  2 WAY EXPOSE SHOWER SET WITH THERMOSTATIC SRTWT9124-GM"
+                  },
+                  {
+                    "label": "List Price",
+                    "value": "MYR 2000.00"
+                  },
+                  {
+                    "label": "Dimensions",
+                    "value": "Not defined"
+                  },
+                  {
+                    "key": "spec:class",
+                    "label": "Product class",
+                    "value": "Shower"
+                  },
+                  {
+                    "key": "spec:product_type",
+                    "label": "Type",
+                    "value": "shower_set"
+                  },
+                  {
+                    "key": "spec:is_thermostatic",
+                    "label": "Thermostatic",
+                    "value": true
+                  },
+                  {
+                    "key": "spec:brand",
+                    "label": "Brand",
+                    "value": "SORENTO"
+                  },
+                  {
+                    "key": "spec:control_type",
+                    "label": "Control type",
+                    "value": "two_way"
+                  },
+                  {
+                    "key": "spec:finish",
+                    "label": "Finish or colour",
+                    "value": "gunmetal"
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTWT9124-GM"
+              }
+            ],
+            "last_updated_at": "2026-09-10T18:58:30.348278",
+            "result_type": "products",
+            "spec_vocabulary": {
+              "brand": "Brand",
+              "class": "Product class",
+              "control_type": "Control type",
+              "finish": "Finish or colour",
+              "is_thermostatic": "Thermostatic",
+              "product_type": "Type"
+            }
+          },
+          "tool": "crm_master_products_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "master_products",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "SRTWT9124-GM"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_product",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to get product details for SRTWT9124-GM"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1061691@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1061691,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1777550801,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000052"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000052",
+          "id": 900000052,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000052",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000014\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": "zzt-agent-1061691@example.invalid",
+              "firstName": "ZZT-agent",
+              "id": 1061691,
+              "lastName": "",
+              "role": "user"
+            },
+            "countryCode": "MY",
+            "created_at": 1777550801,
+            "email": null,
+            "firstName": "ZZT-900000052",
+            "id": 900000052,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000052",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "47855ab6-a10e-4d6d-a0fa-7388dce58ddd",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxNjkyMDEyODYVAgASGBQzQTM5RDIzMDY0MUZFNTM2QTlGRQA=",
+            "contactId": 900000052,
+            "message": {
+              "text": "Product catalogue for model SRTWT9124-GM",
+              "type": "text"
+            },
+            "messageId": 1789110885000000,
+            "timestamp": 1789110885000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [],
+        "focus_after": null,
+        "pending": {
+          "kind": "team_pick",
+          "option_labels": [
+            "stock"
+          ]
+        },
+        "text": "Please provide the attachment type for product SRTWT9124-GM - e.g. product image, technical drawing, or certificate.",
+        "tools": []
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [],
+            "resolved": false,
+            "token": "catalogue"
+          },
+          {
+            "matches": [],
+            "resolved": false,
+            "token": "SRTWT9124-GM"
+          }
+        ],
+        "tokens": [
+          "Product catalogue",
+          "SRTWT9124-GM"
+        ],
+        "unresolved_tokens": [
+          "catalogue",
+          "SRTWT9124-GM"
+        ]
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 11,
+        "recorded_at": "2026-09-11T16:14:50.252139+09:00",
+        "turn_id": "acfebdeb-29e9-49ee-88be-51ae3ada8497"
+      },
+      "tool_results": [],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "resource_attachment",
+        "entities": [
+          {
+            "canonical_code": "catalogue",
+            "confident": true,
+            "current_message": true,
+            "hint": "attachment",
+            "raw": "Product catalogue"
+          },
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "SRTWT9124-GM"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "get_resource_attachment",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to get the product catalogue for model SRTWT9124-GM"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1061691@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1061691,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1777550801,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000052"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000052",
+          "id": 900000052,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000052",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000014\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": "zzt-agent-1061691@example.invalid",
+              "firstName": "ZZT-agent",
+              "id": 1061691,
+              "lastName": "",
+              "role": "user"
+            },
+            "countryCode": "MY",
+            "created_at": 1777550801,
+            "email": null,
+            "firstName": "ZZT-900000052",
+            "id": 900000052,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000052",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "155374a4-a9f5-41d1-a1db-96a97f7c3267",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxNjkyMDEyODYVAgASGBQzQTgyN0FGNDk0NkI4MEFGN0FFQgA=",
+            "contactId": 900000052,
+            "message": {
+              "text": "Technical Drawing",
+              "type": "text"
+            },
+            "messageId": 1789110917000000,
+            "timestamp": 1789110917000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "759e8bb0-0895-40ca-98eb-74870303cf3e",
+          "76deb998-c70f-4dac-a87d-0d132011c6ec"
+        ],
+        "focus_after": null,
+        "pending": {
+          "kind": "escalation_offer",
+          "option_labels": []
+        },
+        "text": "Here's what you want:\n\u2022 attachment_type: Technical Specifications\n\u2022 product: SRTWT9124-GM\n\nBut no technical drawing matched these. Would you like me to escalate to marketing product team?",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "attachment_type_ids",
+              "contact_id",
+              "date_mode",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_master_product_attachments_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "technical drawing",
+                "entity_type": "attachment_type",
+                "uuid": "759e8bb0-0895-40ca-98eb-74870303cf3e"
+              }
+            ],
+            "resolved": true,
+            "token": "technical drawing"
+          }
+        ],
+        "tokens": [
+          "Technical Drawing"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 11,
+        "recorded_at": "2026-09-11T16:15:21.417916+09:00",
+        "turn_id": "6ae45940-4a98-48b5-9940-587fab3bf699"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 2,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 2,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "attachment_type_ids": [
+              "759e8bb0-0895-40ca-98eb-74870303cf3e"
+            ],
+            "contact_id": "900000052",
+            "date_mode": null,
+            "is_active": null,
+            "product_ids": [
+              "76deb998-c70f-4dac-a87d-0d132011c6ec"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "alternatives": [
+              {
+                "display": "SRTWT6824-GM",
+                "id": "46a3b4fc-ae44-4023-8ac8-885509ba518e",
+                "is_variant": false,
+                "sim": 0.5,
+                "value": "SRTWT6824-GM"
+              }
+            ],
+            "attachments": [],
+            "has_result": false,
+            "intro": "No matching results found.",
+            "items": [],
+            "last_updated_at": null,
+            "relaxed_axis": "entity",
+            "result_type": "product_attachments"
+          },
+          "tool": "crm_master_product_attachments_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "product_attachment",
+        "entities": [
+          {
+            "canonical_code": "technical drawing",
+            "confident": true,
+            "current_message": true,
+            "hint": "attachment_type",
+            "raw": "Technical Drawing"
+          }
+        ],
+        "entity_op": "reuse",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_product_attachment",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to specify the attachment type as technical drawing for the previously mentioned product"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1061691@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1061691,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1777550801,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000052"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000052",
+          "id": 900000052,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000052",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000014\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": "zzt-agent-1061691@example.invalid",
+              "firstName": "ZZT-agent",
+              "id": 1061691,
+              "lastName": "",
+              "role": "user"
+            },
+            "countryCode": "MY",
+            "created_at": 1777550801,
+            "email": null,
+            "firstName": "ZZT-900000052",
+            "id": 900000052,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000052",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "48d61e59-54e1-47c8-b47e-973e4ffda694",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxNjkyMDEyODYVAgASGBQzQTM2OUQ4MUM0QkY2MzVFNzc3RAA=",
+            "contactId": 900000052,
+            "message": {
+              "text": "Product image",
+              "type": "text"
+            },
+            "messageId": 1789110920000000,
+            "timestamp": 1789110920000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "76deb998-c70f-4dac-a87d-0d132011c6ec",
+          "90e76894-8384-4186-a3f7-ef73667726ff"
+        ],
+        "focus_after": null,
+        "pending": {
+          "kind": "escalation_offer",
+          "option_labels": []
+        },
+        "text": "Here's what you want:\n\u2022 attachment_type: Product Photos\n\u2022 product: SRTWT9124-GM\n\nBut no photo matched these. Would you like me to escalate to marketing product team?",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "attachment_type_ids",
+              "contact_id",
+              "date_mode",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_master_product_attachments_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "photo",
+                "entity_type": "attachment_type",
+                "uuid": "76deb998-c70f-4dac-a87d-0d132011c6ec"
+              }
+            ],
+            "resolved": true,
+            "token": "photo"
+          }
+        ],
+        "tokens": [
+          "Product image"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 11,
+        "recorded_at": "2026-09-11T16:15:26.277563+09:00",
+        "turn_id": "da65f9d8-e13b-4581-ba01-1ab2bae83115"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 2,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 2,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "attachment_type_ids": [
+              "90e76894-8384-4186-a3f7-ef73667726ff"
+            ],
+            "contact_id": "900000052",
+            "date_mode": null,
+            "is_active": null,
+            "product_ids": [
+              "76deb998-c70f-4dac-a87d-0d132011c6ec"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "alternatives": [
+              {
+                "display": "SRTWT912-GM",
+                "id": "99559dae-2ded-4449-b518-32bd631be225",
+                "is_variant": false,
+                "sim": 0.643,
+                "value": "SRTWT912-GM"
+              },
+              {
+                "display": "SRTWT6824-GM",
+                "id": "46a3b4fc-ae44-4023-8ac8-885509ba518e",
+                "is_variant": false,
+                "sim": 0.5,
+                "value": "SRTWT6824-GM"
+              }
+            ],
+            "attachments": [],
+            "has_result": false,
+            "intro": "No matching results found.",
+            "items": [],
+            "last_updated_at": null,
+            "relaxed_axis": "entity",
+            "result_type": "product_attachments"
+          },
+          "tool": "crm_master_product_attachments_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "product_attachment",
+        "entities": [
+          {
+            "canonical_code": "photo",
+            "confident": true,
+            "current_message": true,
+            "hint": "attachment_type",
+            "raw": "Product image"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_product_attachment",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to check a product attachment for the product image"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1061691@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1061691,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1777550801,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000052"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000052",
+          "id": 900000052,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000052",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000014\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": "zzt-agent-1061691@example.invalid",
+              "firstName": "ZZT-agent",
+              "id": 1061691,
+              "lastName": "",
+              "role": "user"
+            },
+            "countryCode": "MY",
+            "created_at": 1777550801,
+            "email": null,
+            "firstName": "ZZT-900000052",
+            "id": 900000052,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000052",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "35d98696-29de-40bb-9b08-503217a6e3b0",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxNjkyMDEyODYVAgASGBQzQUU5NjUyOTY1RTAzQkUxM0E0NgA=",
+            "contactId": 900000052,
+            "message": {
+              "text": "Yes",
+              "type": "text"
+            },
+            "messageId": 1789110945000000,
+            "replyTo": {
+              "id": 1789110929448447,
+              "mId": "wamid.HBgLNjAxNjkyMDEyODYVAgARGBI1M0JGQTA1QzI1QjE5MDdDMEQA",
+              "message": {
+                "text": "Here's what you want:\n\u2022 attachment_type: Product Photos\n\u2022 product: SRTWT9124-GM\n\nBut no photo matched these. Would you like me to escalate to marketing product team?",
+                "type": "text"
+              },
+              "sender": {
+                "source": "n8n",
+                "type": "message"
+              }
+            },
+            "timestamp": 1789110945000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message",
+          "add_comment",
+          "send_message"
+        ],
+        "branch_kind": "out_of_scope",
+        "canned": [],
+        "entity_ids": [],
+        "focus_after": null,
+        "pending": null,
+        "text": null,
+        "tools": []
+      },
+      "resolutions": {
+        "resolutions": [],
+        "tokens": [],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 11,
+        "recorded_at": "2026-09-11T16:15:51.284637+09:00",
+        "turn_id": "64c5864e-cb9a-4421-abf8-186ec5619209"
+      },
+      "tool_results": [],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": null,
+        "entities": [],
+        "entity_op": "reuse",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": true
+        },
+        "group_by": null,
+        "intent_hint": null,
+        "is_active": null,
+        "is_affirmative": true,
+        "match_mode": "and",
+        "message_type": "casual",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to confirm escalation"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1061691@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1061691,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1777550801,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000052"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000052",
+          "id": 900000052,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000052",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000014\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": "zzt-agent-1061691@example.invalid",
+              "firstName": "ZZT-agent",
+              "id": 1061691,
+              "lastName": "",
+              "role": "user"
+            },
+            "countryCode": "MY",
+            "created_at": 1777550801,
+            "email": null,
+            "firstName": "ZZT-900000052",
+            "id": 900000052,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000052",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "500c4138-a8fd-4f81-8fa1-b1b56bd0b21b",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxNjkyMDEyODYVAgASGBQzQUIyMUMzM0UwMUY5OUZFNUQzMAA=",
+            "contactId": 900000052,
+            "message": {
+              "text": "Yes",
+              "type": "text"
+            },
+            "messageId": 1789110952000000,
+            "replyTo": {
+              "id": 1789110924777241,
+              "mId": "wamid.HBgLNjAxNjkyMDEyODYVAgARGBI1MzA0MTk4MzMyQzM5ODFBQzYA",
+              "message": {
+                "text": "Here's what you want:\n\u2022 attachment_type: Technical Specifications\n\u2022 product: SRTWT9124-GM\n\nBut no technical drawing matched these. Would you like me to escalate to marketing product team?",
+                "type": "text"
+              },
+              "sender": {
+                "source": "n8n",
+                "type": "message"
+              }
+            },
+            "timestamp": 1789110952000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message",
+          "add_comment",
+          "send_message"
+        ],
+        "branch_kind": "out_of_scope",
+        "canned": [],
+        "entity_ids": [],
+        "focus_after": null,
+        "pending": null,
+        "text": null,
+        "tools": []
+      },
+      "resolutions": {
+        "resolutions": [],
+        "tokens": [],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 11,
+        "recorded_at": "2026-09-11T16:15:57.229686+09:00",
+        "turn_id": "ed384587-9e75-4948-9b7a-d6b9ca6b406c"
+      },
+      "tool_results": [],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": null,
+        "entities": [],
+        "entity_op": "reuse",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": true
+        },
+        "group_by": null,
+        "intent_hint": null,
+        "is_active": null,
+        "is_affirmative": true,
+        "match_mode": "and",
+        "message_type": "casual",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to confirm escalation"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1061691@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1061691,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1777550801,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000052"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000052",
+          "id": 900000052,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000052",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000014\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": "zzt-agent-1061691@example.invalid",
+              "firstName": "ZZT-agent",
+              "id": 1061691,
+              "lastName": "",
+              "role": "user"
+            },
+            "countryCode": "MY",
+            "created_at": 1777550801,
+            "email": null,
+            "firstName": "ZZT-900000052",
+            "id": 900000052,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000052",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "e0b2fce5-d7d6-4594-a4a6-d7f35575670f",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxNjkyMDEyODYVAgASGBQzQUVERkQ5ODg1Q0EzMkU2OUVGQgA=",
+            "contactId": 900000052,
+            "message": {
+              "text": "Ikram certificate for SRTSP124",
+              "type": "text"
+            },
+            "messageId": 1789112486000000,
+            "timestamp": 1789112486000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message",
+          "send_attachments"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "1439736c-20ca-4bba-b387-b242ff4a4599",
+          "66aadcc3-c761-48ed-9a2a-add352126296"
+        ],
+        "focus_after": null,
+        "pending": null,
+        "text": "I have attached the file(s) below.\n\n1. *Product Code:* SRTSP124\n*Attachment Type:* Certification\n*File Name:* SPAN - WCM PC 000319 SRTSP124 - EXP 12 JULY 2029.pdf\n*Certificate Number:* BPAI/0728-2026\n*Valid Until:* 2029-07-12\n*Validity:* Valid\n\n2. *Product Code:* SRTSP124\n*Attachment Type:* Certification\n*File Name:* WCM - WCM PC 000319 - EXP 14 JUNE 2027.pdf\n*Certificate Number:* 000319\n*Valid Until:* 2027-06-14\n*Validity:* Valid\n\n3. *Product Code:* SRTSP124\n*Attachment Type:* Certification\n*File Name:* PPS - JBC WCM PC 000 319 - EXP 19 NOV 2026.pdf\n*Certificate Number:* 2-11250087\n*Valid Until:* 2026-11-19\n*Validity:* Valid\n\n_Data last updated: 11/08/2026 09:15:29_",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "attachment_type_ids",
+              "contact_id",
+              "date_mode",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_master_product_attachments_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "SRTSP124",
+                "entity_type": "product",
+                "uuid": "1439736c-20ca-4bba-b387-b242ff4a4599"
+              }
+            ],
+            "resolved": true,
+            "token": "SRTSP124"
+          },
+          {
+            "matches": [
+              {
+                "canonical_code": "certificate",
+                "entity_type": "attachment_type",
+                "uuid": "66aadcc3-c761-48ed-9a2a-add352126296"
+              }
+            ],
+            "resolved": true,
+            "token": "certificate"
+          }
+        ],
+        "tokens": [
+          "SRTSP124",
+          "Ikram certificate"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 11,
+        "recorded_at": "2026-09-11T16:41:32.251615+09:00",
+        "turn_id": "2897b6c8-d9b6-4b7e-9084-5ff71dea170d"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 2,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 2,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "attachment_type_ids": [
+              "1439736c-20ca-4bba-b387-b242ff4a4599"
+            ],
+            "contact_id": "900000052",
+            "date_mode": null,
+            "is_active": null,
+            "product_ids": [
+              "66aadcc3-c761-48ed-9a2a-add352126296"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "attachments": [
+              {
+                "attachmentType": "Certification",
+                "filename": "SPAN - WCM PC 000319 (SRTSP124) - EXP 12 JULY 2029.pdf",
+                "mimeType": "application/pdf",
+                "uploadedAt": "2026-08-11T09:15:29.505822",
+                "url": "https://cdn-sorento.com/certification/5d0c3924-fbc7-4e3f-a2ac-f8010c2d5c57/SPAN - WCM PC 000319 SRTSP124 - EXP 12 JULY 2029.pdf"
+              },
+              {
+                "attachmentType": "Certification",
+                "filename": "WCM - WCM PC 000319 - EXP 14 JUNE 2027.pdf",
+                "mimeType": "application/pdf",
+                "uploadedAt": "2026-08-06T10:48:24.675903",
+                "url": "https://cdn-sorento.com/certification/d64eb6cc-5f8e-41bb-826f-2d3966828478/WCM - WCM PC 000319 - EXP 14 JUNE 2027.pdf"
+              },
+              {
+                "attachmentType": "Certification",
+                "filename": "PPS - JBC WCM PC 000 319 - EXP 19 NOV 2026.pdf",
+                "mimeType": "application/pdf",
+                "uploadedAt": "2026-08-06T11:40:36.444322",
+                "url": "https://cdn-sorento.com/certification/310f7b28-a747-49bc-b80d-987b89bbb3c6/PPS - JBC WCM PC 000 319 - EXP 19 NOV 2026.pdf"
+              }
+            ],
+            "fallback_used": false,
+            "has_result": true,
+            "intro": "I have attached the file(s) below.",
+            "items": [
+              {
+                "fields": [
+                  {
+                    "label": "Product Code",
+                    "value": "SRTSP124"
+                  },
+                  {
+                    "label": "Attachment Type",
+                    "value": "Certification"
+                  },
+                  {
+                    "label": "File Name",
+                    "value": "SPAN - WCM PC 000319 SRTSP124 - EXP 12 JULY 2029.pdf"
+                  },
+                  {
+                    "label": "Certificate Number",
+                    "value": "BPAI/0728-2026"
+                  },
+                  {
+                    "label": "Valid Until",
+                    "value": "2029-07-12"
+                  },
+                  {
+                    "label": "Validity",
+                    "value": "Valid"
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTSP124"
+              },
+              {
+                "fields": [
+                  {
+                    "label": "Product Code",
+                    "value": "SRTSP124"
+                  },
+                  {
+                    "label": "Attachment Type",
+                    "value": "Certification"
+                  },
+                  {
+                    "label": "File Name",
+                    "value": "WCM - WCM PC 000319 - EXP 14 JUNE 2027.pdf"
+                  },
+                  {
+                    "label": "Certificate Number",
+                    "value": "000319"
+                  },
+                  {
+                    "label": "Valid Until",
+                    "value": "2027-06-14"
+                  },
+                  {
+                    "label": "Validity",
+                    "value": "Valid"
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTSP124"
+              },
+              {
+                "fields": [
+                  {
+                    "label": "Product Code",
+                    "value": "SRTSP124"
+                  },
+                  {
+                    "label": "Attachment Type",
+                    "value": "Certification"
+                  },
+                  {
+                    "label": "File Name",
+                    "value": "PPS - JBC WCM PC 000 319 - EXP 19 NOV 2026.pdf"
+                  },
+                  {
+                    "label": "Certificate Number",
+                    "value": "2-11250087"
+                  },
+                  {
+                    "label": "Valid Until",
+                    "value": "2026-11-19"
+                  },
+                  {
+                    "label": "Validity",
+                    "value": "Valid"
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTSP124"
+              }
+            ],
+            "last_updated_at": "2026-08-11T09:15:29.505822",
+            "result_type": "product_attachments"
+          },
+          "tool": "crm_master_product_attachments_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "product_attachment",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "SRTSP124"
+          },
+          {
+            "canonical_code": "certificate",
+            "confident": true,
+            "current_message": true,
+            "hint": "attachment_type",
+            "raw": "Ikram certificate"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_product_attachment",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to get the Ikram certificate for SRTSP124"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1061691@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1061691,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1777550801,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000052"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000052",
+          "id": 900000052,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000052",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000014\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": "zzt-agent-1061691@example.invalid",
+              "firstName": "ZZT-agent",
+              "id": 1061691,
+              "lastName": "",
+              "role": "user"
+            },
+            "countryCode": "MY",
+            "created_at": 1777550801,
+            "email": null,
+            "firstName": "ZZT-900000052",
+            "id": 900000052,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000052",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "264948e7-bae8-48fd-b0ef-b24d5480b6c0",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxNjkyMDEyODYVAgASGBQzQUI5MkU1NUMwRDk3QzAyNzNBOQA=",
+            "contactId": 900000052,
+            "message": {
+              "text": "Ikram certificate SRTSP231",
+              "type": "text"
+            },
+            "messageId": 1789112542000000,
+            "timestamp": 1789112542000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "1439736c-20ca-4bba-b387-b242ff4a4599",
+          "c598db72-65f1-4371-bbdc-906320b34082"
+        ],
+        "focus_after": null,
+        "pending": {
+          "kind": "escalation_offer",
+          "option_labels": []
+        },
+        "text": "Here's what you want:\n\u2022 attachment_type: Certification\n\u2022 product: SRTSP231\n\nBut no certificate matched these. Would you like me to escalate to purchasing certification team?",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "attachment_type_ids",
+              "contact_id",
+              "date_mode",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_master_product_attachments_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "certificate",
+                "entity_type": "attachment_type",
+                "uuid": "1439736c-20ca-4bba-b387-b242ff4a4599"
+              }
+            ],
+            "resolved": true,
+            "token": "certificate"
+          },
+          {
+            "matches": [
+              {
+                "canonical_code": "SRTSP231",
+                "entity_type": "product",
+                "uuid": "c598db72-65f1-4371-bbdc-906320b34082"
+              }
+            ],
+            "resolved": true,
+            "token": "SRTSP231"
+          }
+        ],
+        "tokens": [
+          "Ikram certificate",
+          "SRTSP231"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 11,
+        "recorded_at": "2026-09-11T16:42:27.244844+09:00",
+        "turn_id": "d3970ed1-4bb3-4032-a894-043d9c76335a"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 2,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 2,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "attachment_type_ids": [
+              "1439736c-20ca-4bba-b387-b242ff4a4599"
+            ],
+            "contact_id": "900000052",
+            "date_mode": null,
+            "is_active": null,
+            "product_ids": [
+              "c598db72-65f1-4371-bbdc-906320b34082"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "attachments": [],
+            "fallback_used": false,
+            "has_result": false,
+            "intro": "No matching results found.",
+            "items": [],
+            "last_updated_at": null,
+            "result_type": "product_attachments"
+          },
+          "tool": "crm_master_product_attachments_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "product_attachment",
+        "entities": [
+          {
+            "canonical_code": "certificate",
+            "confident": true,
+            "current_message": true,
+            "hint": "attachment_type",
+            "raw": "Ikram certificate"
+          },
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "SRTSP231"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_product_attachment",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to check the certificate attachment for SRTSP231"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1061691@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1061691,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1777550801,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000052"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000052",
+          "id": 900000052,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000052",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000014\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": "zzt-agent-1061691@example.invalid",
+              "firstName": "ZZT-agent",
+              "id": 1061691,
+              "lastName": "",
+              "role": "user"
+            },
+            "countryCode": "MY",
+            "created_at": 1777550801,
+            "email": null,
+            "firstName": "ZZT-900000052",
+            "id": 900000052,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000052",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "f541c892-ffe2-4a05-8d6e-ba34c7d78f0d",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxNjkyMDEyODYVAgASGBQzQTUyQjMyMjkwMUJBMDM1RkEyQQA=",
+            "contactId": 900000052,
+            "message": {
+              "text": "Check stock SRTWCX8608-RL",
+              "type": "text"
+            },
+            "messageId": 1789112644000000,
+            "timestamp": 1789112644000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message",
+          "send_attachments"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "07204298-cb2b-4996-8601-f748bd86e408",
+          "0fb2507c-c6f3-47a1-ad10-296a3604aaea",
+          "50153b51-e516-4229-b22e-4567ec62c45e"
+        ],
+        "focus_after": null,
+        "pending": null,
+        "text": "Stock details found for the requested products.\n\n1. *Product Code:* SRTWCX8608-RL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 87\n*Outstanding:* 24\n\n2. *Product Code:* SRTWCX8608-RL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-AM\n*Quantity On Hand:* 0\n*Outstanding:* 9\n\n3. *Product Code:* SRTWCX8608-RL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-BB\n*Quantity On Hand:* 0\n*Outstanding:* 3061\n\n4. *Product Code:* SRTWCX8608-RL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-IB\n*Quantity On Hand:* 0\n*Outstanding:* 1042\n\n5. *Product Code:* SRTWCX8608-RL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-IR\n*Quantity On Hand:* 0\n*Outstanding:* 1862\n\n6. *Product Code:* SRTWCX8608-RL\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SMC\n*Quantity On Hand:* 1\n*Outstanding:* 52\n\n7. *Product Code:* SRTWCX8608-RL\n*Warehouse:* BERSATU (PORT KLANG)\n*System Location:* DC1-AM\n*Quantity On Hand:* 9\n*Outstanding:* 0\n\n8. *Product Code:* SRTWCX8608-RL\n*Warehouse:* BERSATU (PORT KLANG)\n*System Location:* DC1-BB\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n9. *Product Code:* SRTWCX8608-RL\n*Warehouse:* BERSATU (PORT KLANG)\n*System Location:* DC1-IB\n*Quantity On Hand:* 382\n*Outstanding:* 0\n\n10. *Product Code:* SRTWCX8608-RL\n*Warehouse:* BERSATU (PORT KLANG)\n*System Location:* DC1-IR\n*Quantity On Hand:* 141\n*Outstanding:* 0\n\n11. *Product Code:* SRTWCX8608-RL\n*Warehouse:* BERSATU (PORT KLANG)\n*System Location:* DC1-NTC\n*Quantity On Hand:* 20\n*Outstanding:* 0\n\n12. *Product Code:* SRTWCX8608-RL\n*Warehouse:* BERSATU (PORT KLANG)\n*System Location:* DC1-SMC\n*Quantity On Hand:* 10\n*Outstanding:* 0\n\n13. *Product Code:* SRTWCX8608-RL\n*Warehouse:* MERU\n*System Location:* MWH\n*Quantity On Hand:* 32\n*Outstanding:* 0\n\n14. *Product Code:* SRTWCX8608-RL\n*Warehouse:* MERU\n*System Location:* MWH-AM\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n15. *Product Code:* SRTWCX8608-RL\n*Warehouse:* MERU\n*System Location:* MWH-BB\n*Quantity On Hand:* 34\n*Outstanding:* 0\n\n16. *Product Code:* SRTWCX8608-RL\n*Warehouse:* MERU\n*System Location:* MWH-IB\n*Quantity On Hand:* 41\n*Outstanding:* 0\n\n17. *Product Code:* SRTWCX8608-RL\n*Warehouse:* MERU\n*System Location:* MWH-IR\n*Quantity On Hand:* 3\n*Outstanding:* 0\n\n18. *Product Code:* SRTWCX8608-RL\n*Warehouse:* MERU\n*System Location:* MWH-SMC\n*Quantity On Hand:* 25\n*Outstanding:* 0\n\n19. *Product Code:* SRTWCX8608-RL-WEPLS\n*Warehouse:* MERU\n*System Location:* MWH-BB\n*Quantity On Hand:* 10\n*Outstanding:* 0\n\n_Data last updated: 11/09/2026 11:50:22_",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "contact_id",
+              "date_mode",
+              "include_sellable",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_inventory_stock_balance_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "SRTWCX8608-RL",
+                "entity_type": "product",
+                "uuid": "07204298-cb2b-4996-8601-f748bd86e408"
+              }
+            ],
+            "resolved": true,
+            "token": "SRTWCX8608-RL"
+          }
+        ],
+        "tokens": [
+          "SRTWCX8608-RL"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 11,
+        "recorded_at": "2026-09-11T16:44:08.286539+09:00",
+        "turn_id": "3b5d47ab-4ac8-4fca-98ac-b84ff5609aa2"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 3,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 3,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "contact_id": "900000052",
+            "date_mode": null,
+            "include_sellable": true,
+            "is_active": null,
+            "product_ids": [
+              "07204298-cb2b-4996-8601-f748bd86e408",
+              "0fb2507c-c6f3-47a1-ad10-296a3604aaea",
+              "50153b51-e516-4229-b22e-4567ec62c45e"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "bytes": 10963,
+            "head": "{\"result_type\": \"stock\", \"intro\": \"Stock details found for the requested products.\", \"items\": [{\"title\": \"SRTWCX8608-RL\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWCX8608-RL\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"BUKIT RAJA\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"BRW\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 87}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 24}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWCX8608-RL\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWCX8608-RL\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"BUKIT RAJA\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"BRW-AM\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 0}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 9}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWCX8608-RL\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWCX8608-RL\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"BUKIT RAJA\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"BRW-BB\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 0}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 3061}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWCX8608-RL\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWCX8608-RL\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"BUKIT RAJA\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"BRW-IB\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 0}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 1042}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWCX8608-RL\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWCX8608-RL\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"BUKIT RAJA\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"BRW-IR\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 0}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 1862}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWCX8608-RL\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWCX8608-RL\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"BUKIT RAJA\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"BRW-SMC\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 1}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 52}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWCX8608-RL\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWCX8608-RL\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"BERSATU (PORT KLANG)\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"DC1-AM\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 9}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWCX8608-RL\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWCX8608-RL\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"BERSATU (PORT KLANG)\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"DC1-BB\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 0}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWCX8608-RL\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWCX8608-RL\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"BERSATU (PORT KLANG)\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"DC1-IB\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 382}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWCX8608-RL\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWCX8608-RL\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"BERSATU (PORT KLANG)\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"DC1-IR\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 141}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWCX8608-RL\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWCX8608-RL\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"BERSATU (PORT KLANG)\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"DC1-NTC\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 20}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWCX8608-RL\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWCX8608-RL\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"BERSATU (PORT KLANG)\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"DC1-SMC\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 10}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWCX8608-RL\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWCX8608-RL\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"MERU\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"MWH\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 32}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWCX8608-RL\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWCX8608-RL\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"MERU\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"MWH-AM\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 0}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWCX8608-RL\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWCX8608-RL\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"MERU\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"MWH-BB\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity On Hand\", \"value\": 34}, {\"key\": \"open_so_qty\", \"label\": \"Outstanding\", \"value\": 0}], \"flags\": {\"discontinued\": false, \"expired\": false, \"expiring_soon\": false, \"unallocated\": false, \"partially_allocated\": false}}, {\"title\": \"SRTWCX8608-RL\", \"fields\": [{\"key\": \"product_code\", \"label\": \"Product Code\", \"value\": \"SRTWCX8608-RL\"}, {\"key\": \"warehouse\", \"label\": \"Warehouse\", \"value\": \"MERU\"}, {\"key\": \"system_location\", \"label\": \"System Location\", \"value\": \"MWH-IB\"}, {\"key\": \"quantity_on_hand\", \"label\": \"Quantity O",
+            "truncated": true
+          },
+          "tool": "crm_inventory_stock_balance_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "inventory",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "SRTWCX8608-RL"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_stock",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to check stock for SRTWCX8608-RL"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1061691@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1061691,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1777550801,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000052"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000052",
+          "id": 900000052,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000052",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000014\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": "zzt-agent-1061691@example.invalid",
+              "firstName": "ZZT-agent",
+              "id": 1061691,
+              "lastName": "",
+              "role": "user"
+            },
+            "countryCode": "MY",
+            "created_at": 1777550801,
+            "email": null,
+            "firstName": "ZZT-900000052",
+            "id": 900000052,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000052",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "76109285-24f9-494a-8b8c-79ef7d9042e7",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxNjkyMDEyODYVAgASGBQzQUI4MDNEMkQ1NkFEMjlFNkZFRAA=",
+            "contactId": 900000052,
+            "message": {
+              "text": "Check stock SRTWB7055",
+              "type": "text"
+            },
+            "messageId": 1789112659000000,
+            "timestamp": 1789112659000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message",
+          "send_attachments"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "151c1cfa-b52f-4a33-ba9b-bf99951fdae0",
+          "46479ee5-9032-4abd-bef8-29fc1617ab43",
+          "52794004-a0fe-4566-bd3f-e6c59630b7cf",
+          "db55f5f4-466f-4509-88a3-e0318b99b627"
+        ],
+        "focus_after": null,
+        "pending": null,
+        "text": "Stock details found for the requested products.\n\n1. *Product Code:* SRTWB7055\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 5\n*Outstanding:* 0\n\n2. *Product Code:* SRTWB7055\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-BB\n*Quantity On Hand:* 9\n*Outstanding:* 1396\n\n3. *Product Code:* SRTWB7055\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-IR\n*Quantity On Hand:* 1\n*Outstanding:* 64\n\n4. *Product Code:* SRTWB7055\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-NTC\n*Quantity On Hand:* 0\n*Outstanding:* 52\n\n5. *Product Code:* SRTWB7055\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SMC\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n6. *Product Code:* SRTWB7055\n*Warehouse:* BERSATU (PORT KLANG)\n*System Location:* DC1-BB\n*Quantity On Hand:* 296\n*Outstanding:* 0\n\n7. *Product Code:* SRTWB7055\n*Warehouse:* BERSATU (PORT KLANG)\n*System Location:* DC1-IR\n*Quantity On Hand:* 95\n*Outstanding:* 0\n\n8. *Product Code:* SRTWB7055\n*Warehouse:* BERSATU (PORT KLANG)\n*System Location:* DC1-NTC\n*Quantity On Hand:* 60\n*Outstanding:* 0\n\n9. *Product Code:* SRTWB7055\n*Warehouse:* MERU\n*System Location:* MWH\n*Quantity On Hand:* 17\n*Outstanding:* 0\n\n10. *Product Code:* SRTWB7055\n*Warehouse:* MERU\n*System Location:* MWH-BB\n*Quantity On Hand:* 91\n*Outstanding:* 0\n\n_Data last updated: 11/09/2026 11:50:22_",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "contact_id",
+              "date_mode",
+              "include_sellable",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_inventory_stock_balance_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "SRTWB7055",
+                "entity_type": "product",
+                "uuid": "151c1cfa-b52f-4a33-ba9b-bf99951fdae0"
+              }
+            ],
+            "resolved": true,
+            "token": "SRTWB7055"
+          }
+        ],
+        "tokens": [
+          "SRTWB7055"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 11,
+        "recorded_at": "2026-09-11T16:44:25.311125+09:00",
+        "turn_id": "88305d2e-c1cf-4019-bdce-a04ea4474969"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 4,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 4,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "contact_id": "900000052",
+            "date_mode": null,
+            "include_sellable": true,
+            "is_active": null,
+            "product_ids": [
+              "46479ee5-9032-4abd-bef8-29fc1617ab43",
+              "db55f5f4-466f-4509-88a3-e0318b99b627",
+              "52794004-a0fe-4566-bd3f-e6c59630b7cf",
+              "151c1cfa-b52f-4a33-ba9b-bf99951fdae0"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "attachments": [],
+            "fallback_used": false,
+            "has_result": true,
+            "intro": "Stock details found for the requested products.",
+            "items": [
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "SRTWB7055"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "BUKIT RAJA"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "BRW"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 5
+                  },
+                  {
+                    "key": "open_so_qty",
+                    "label": "Outstanding",
+                    "value": 0
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTWB7055"
+              },
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "SRTWB7055"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "BUKIT RAJA"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "BRW-BB"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 9
+                  },
+                  {
+                    "key": "open_so_qty",
+                    "label": "Outstanding",
+                    "value": 1396
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTWB7055"
+              },
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "SRTWB7055"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "BUKIT RAJA"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "BRW-IR"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 1
+                  },
+                  {
+                    "key": "open_so_qty",
+                    "label": "Outstanding",
+                    "value": 64
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTWB7055"
+              },
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "SRTWB7055"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "BUKIT RAJA"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "BRW-NTC"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 0
+                  },
+                  {
+                    "key": "open_so_qty",
+                    "label": "Outstanding",
+                    "value": 52
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTWB7055"
+              },
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "SRTWB7055"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "BUKIT RAJA"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "BRW-SMC"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 0
+                  },
+                  {
+                    "key": "open_so_qty",
+                    "label": "Outstanding",
+                    "value": 0
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTWB7055"
+              },
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "SRTWB7055"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "BERSATU (PORT KLANG)"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "DC1-BB"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 296
+                  },
+                  {
+                    "key": "open_so_qty",
+                    "label": "Outstanding",
+                    "value": 0
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTWB7055"
+              },
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "SRTWB7055"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "BERSATU (PORT KLANG)"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "DC1-IR"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 95
+                  },
+                  {
+                    "key": "open_so_qty",
+                    "label": "Outstanding",
+                    "value": 0
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTWB7055"
+              },
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "SRTWB7055"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "BERSATU (PORT KLANG)"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "DC1-NTC"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 60
+                  },
+                  {
+                    "key": "open_so_qty",
+                    "label": "Outstanding",
+                    "value": 0
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTWB7055"
+              },
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "SRTWB7055"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "MERU"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "MWH"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 17
+                  },
+                  {
+                    "key": "open_so_qty",
+                    "label": "Outstanding",
+                    "value": 0
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTWB7055"
+              },
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "SRTWB7055"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "MERU"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "MWH-BB"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 91
+                  },
+                  {
+                    "key": "open_so_qty",
+                    "label": "Outstanding",
+                    "value": 0
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRTWB7055"
+              }
+            ],
+            "last_updated_at": "2026-09-11T11:50:22.764969",
+            "restricted_fields": {
+              "open_so_qty": "inventory.sellable"
+            },
+            "result_type": "stock",
+            "stock_visibility": {
+              "hide_zero_locations": false,
+              "mode": "detailed",
+              "source": "contact",
+              "warehouse_codes": [
+                "BRW",
+                "BRW-ACTS",
+                "BRW-AM",
+                "BRW-BB",
+                "BRW-BILL",
+                "BRW-CLR",
+                "BRW-HP",
+                "BRW-IB",
+                "BRW-IR",
+                "BRW-NTC",
+                "BRW-PSM",
+                "BRW-S/L",
+                "BRW-SMC",
+                "BRW-SYNT",
+                "DC1-ACT",
+                "DC1-AM",
+                "DC1-BB",
+                "DC1-HP",
+                "DC1-IB",
+                "DC1-IR",
+                "DC1-NTC",
+                "DC1-S/L",
+                "DC1-SMC",
+                "DEFECT",
+                "DISPLAY",
+                "HOLD",
+                "HQ",
+                "MKTG",
+                "MKTG-HQ",
+                "MOCHA-KC",
+                "MOCHA-WH",
+                "MWH",
+                "MWH-ACT",
+                "MWH-AM",
+                "MWH-BB",
+                "MWH-DFT",
+                "MWH-HP",
+                "MWH-IB",
+                "MWH-IR",
+                "MWH-MOC",
+                "MWH-NTC",
+                "MWH-S/L",
+                "MWH-SMC",
+                "REJECT",
+                "REPAIR",
+                "REWORK",
+                "RSW",
+                "RSW-ACT",
+                "RSW-BB",
+                "RSW-HP",
+                "RSW-IB",
+                "RSW-IR",
+                "RSW-NTC",
+                "RSW-SMC",
+                "SHRT ACC",
+                "SPARPART",
+                "VAR",
+                "WH3",
+                "WH3-ACT",
+                "WH3-AM",
+                "WH3-BB",
+                "WH3-HP",
+                "WH3-IB",
+                "WH3-IR",
+                "WH3-NTC",
+                "WH3-PSM",
+                "WH3-R/S",
+                "WH3-S/L",
+                "WH3-SMC"
+              ]
+            }
+          },
+          "tool": "crm_inventory_stock_balance_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "inventory",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "SRTWB7055"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_stock",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to check stock for SRTWB7055"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1061691@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1061691,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1777550801,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000052"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000052",
+          "id": 900000052,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000052",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000014\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": "zzt-agent-1061691@example.invalid",
+              "firstName": "ZZT-agent",
+              "id": 1061691,
+              "lastName": "",
+              "role": "user"
+            },
+            "countryCode": "MY",
+            "created_at": 1777550801,
+            "email": null,
+            "firstName": "ZZT-900000052",
+            "id": 900000052,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000052",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "e631072f-ea93-44d4-8842-826e1bd1891e",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxNjkyMDEyODYVAgASGBQzQUQ0RDFDQUJDMTkzOEIyNEVDMAA=",
+            "contactId": 900000052,
+            "message": {
+              "text": "Check stock SRT764-24-GM",
+              "type": "text"
+            },
+            "messageId": 1789113981000000,
+            "timestamp": 1789113981000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message",
+          "send_attachments"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "e4640500-c9da-47a2-9119-46425fa22056"
+        ],
+        "focus_after": null,
+        "pending": null,
+        "text": "Stock details found for the requested products.\n\n1. *Product Code:* SRT764-24-GM\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW\n*Quantity On Hand:* 114\n*Outstanding:* 5\n\n2. *Product Code:* SRT764-24-GM\n*Warehouse:* BUKIT RAJA\n*System Location:* BRW-SMC\n*Quantity On Hand:* 0\n*Outstanding:* 0\n\n_Data last updated: 11/09/2026 11:50:22_",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "contact_id",
+              "date_mode",
+              "include_sellable",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_inventory_stock_balance_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "SRT764-24-GM",
+                "entity_type": "product",
+                "uuid": "e4640500-c9da-47a2-9119-46425fa22056"
+              }
+            ],
+            "resolved": true,
+            "token": "SRT764-24-GM"
+          }
+        ],
+        "tokens": [
+          "SRT764-24-GM"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 11,
+        "recorded_at": "2026-09-11T17:06:26.209525+09:00",
+        "turn_id": "5764c803-3179-4e73-ad2e-b1512ee7979e"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 1,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 1,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "contact_id": "900000052",
+            "date_mode": null,
+            "include_sellable": true,
+            "is_active": null,
+            "product_ids": [
+              "e4640500-c9da-47a2-9119-46425fa22056"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "attachments": [],
+            "fallback_used": false,
+            "has_result": true,
+            "intro": "Stock details found for the requested products.",
+            "items": [
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "SRT764-24-GM"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "BUKIT RAJA"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "BRW"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 114
+                  },
+                  {
+                    "key": "open_so_qty",
+                    "label": "Outstanding",
+                    "value": 5
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRT764-24-GM"
+              },
+              {
+                "fields": [
+                  {
+                    "key": "product_code",
+                    "label": "Product Code",
+                    "value": "SRT764-24-GM"
+                  },
+                  {
+                    "key": "warehouse",
+                    "label": "Warehouse",
+                    "value": "BUKIT RAJA"
+                  },
+                  {
+                    "key": "system_location",
+                    "label": "System Location",
+                    "value": "BRW-SMC"
+                  },
+                  {
+                    "key": "quantity_on_hand",
+                    "label": "Quantity On Hand",
+                    "value": 0
+                  },
+                  {
+                    "key": "open_so_qty",
+                    "label": "Outstanding",
+                    "value": 0
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRT764-24-GM"
+              }
+            ],
+            "last_updated_at": "2026-09-11T11:50:22.764969",
+            "restricted_fields": {
+              "open_so_qty": "inventory.sellable"
+            },
+            "result_type": "stock",
+            "stock_visibility": {
+              "hide_zero_locations": false,
+              "mode": "detailed",
+              "source": "contact",
+              "warehouse_codes": [
+                "BRW",
+                "BRW-ACTS",
+                "BRW-AM",
+                "BRW-BB",
+                "BRW-BILL",
+                "BRW-CLR",
+                "BRW-HP",
+                "BRW-IB",
+                "BRW-IR",
+                "BRW-NTC",
+                "BRW-PSM",
+                "BRW-S/L",
+                "BRW-SMC",
+                "BRW-SYNT",
+                "DC1-ACT",
+                "DC1-AM",
+                "DC1-BB",
+                "DC1-HP",
+                "DC1-IB",
+                "DC1-IR",
+                "DC1-NTC",
+                "DC1-S/L",
+                "DC1-SMC",
+                "DEFECT",
+                "DISPLAY",
+                "HOLD",
+                "HQ",
+                "MKTG",
+                "MKTG-HQ",
+                "MOCHA-KC",
+                "MOCHA-WH",
+                "MWH",
+                "MWH-ACT",
+                "MWH-AM",
+                "MWH-BB",
+                "MWH-DFT",
+                "MWH-HP",
+                "MWH-IB",
+                "MWH-IR",
+                "MWH-MOC",
+                "MWH-NTC",
+                "MWH-S/L",
+                "MWH-SMC",
+                "REJECT",
+                "REPAIR",
+                "REWORK",
+                "RSW",
+                "RSW-ACT",
+                "RSW-BB",
+                "RSW-HP",
+                "RSW-IB",
+                "RSW-IR",
+                "RSW-NTC",
+                "RSW-SMC",
+                "SHRT ACC",
+                "SPARPART",
+                "VAR",
+                "WH3",
+                "WH3-ACT",
+                "WH3-AM",
+                "WH3-BB",
+                "WH3-HP",
+                "WH3-IB",
+                "WH3-IR",
+                "WH3-NTC",
+                "WH3-PSM",
+                "WH3-R/S",
+                "WH3-S/L",
+                "WH3-SMC"
+              ]
+            }
+          },
+          "tool": "crm_inventory_stock_balance_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "inventory",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "SRT764-24-GM"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_stock",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to check stock for SRT764-24-GM"
+      }
+    },
+    {
+      "access": {
+        "agent_name": "General Enquiries",
+        "all_attributes_allowed": false,
+        "allowed": true,
+        "attributes": [
+          "inventory.sellable",
+          "purchase_orders.placed"
+        ],
+        "decision": "allow"
+      },
+      "envelope": {
+        "contact": {
+          "assignee": {
+            "email": "zzt-agent-1061691@example.invalid",
+            "firstName": "ZZT-agent",
+            "id": 1061691,
+            "lastName": ""
+          },
+          "countryCode": "MY",
+          "created_at": 1777550801,
+          "custom_fields": [
+            {
+              "name": "enquiry_type",
+              "value": null
+            },
+            {
+              "name": "user_type",
+              "value": null
+            },
+            {
+              "name": "complaint_id",
+              "value": null
+            },
+            {
+              "name": "is_allowed_stock",
+              "value": "true"
+            },
+            {
+              "name": "is_human_intervened",
+              "value": "false"
+            },
+            {
+              "name": "backend_id",
+              "value": "https://internal.example.invalid/contacts/900000052"
+            },
+            {
+              "name": "is_allowed_ai",
+              "value": "true"
+            },
+            {
+              "name": "is_allowed_voice",
+              "value": null
+            }
+          ],
+          "email": null,
+          "firstName": "ZZT-900000052",
+          "id": 900000052,
+          "isBlocked": false,
+          "language": null,
+          "lastName": "",
+          "lifecycle": "New Lead",
+          "locale": null,
+          "phone": "+60900000052",
+          "profilePic": null,
+          "status": "open",
+          "tags": [
+            "imported_20260510_200514",
+            "imported_20260627_150636"
+          ]
+        },
+        "ingress": "webhook",
+        "is_test": false,
+        "media": null,
+        "message": {
+          "channel": {
+            "created_at": 1767682908,
+            "id": 453209,
+            "meta": "{\"meta\": {\"profile\": {\"name\": \"ZZT\"}, \"wa_id\": \"60100000000\", \"user_id\": \"MY.90000000000000014\", \"firstName\": \"ZZT\", \"lastName\": \"\"}}",
+            "name": "Internal (scrubbed)",
+            "source": "whatsapp_business"
+          },
+          "contact": {
+            "assignee": {
+              "email": "zzt-agent-1061691@example.invalid",
+              "firstName": "ZZT-agent",
+              "id": 1061691,
+              "lastName": "",
+              "role": "user"
+            },
+            "countryCode": "MY",
+            "created_at": 1777550801,
+            "email": null,
+            "firstName": "ZZT-900000052",
+            "id": 900000052,
+            "language": null,
+            "lastName": "",
+            "phone": "+60900000052",
+            "profilePic": null,
+            "status": "open"
+          },
+          "event_id": "cdd4347b-9dcf-46b9-be47-5c8870cca1fa",
+          "event_type": "message.received",
+          "message": {
+            "channelId": 453209,
+            "channelMessageId": "wamid.HBgLNjAxNjkyMDEyODYVAgASGBQzQTY0QjkwNENCQThCMjFFMTBEMwA=",
+            "contactId": 900000052,
+            "message": {
+              "text": "List price SRT764-24-GM",
+              "type": "text"
+            },
+            "messageId": 1789114011000000,
+            "timestamp": 1789114011000,
+            "traffic": "incoming"
+          },
+          "sender": {
+            "broadcastHistoryId": null,
+            "source": "contact",
+            "teamId": null,
+            "userId": null,
+            "workflowId": null
+          }
+        },
+        "mode": null,
+        "scope": null,
+        "shadow_of": null,
+        "test_run_id": null
+      },
+      "expected": {
+        "action_kinds": [
+          "send_message",
+          "send_attachments"
+        ],
+        "branch_kind": "business_query",
+        "canned": [],
+        "entity_ids": [
+          "e4640500-c9da-47a2-9119-46425fa22056"
+        ],
+        "focus_after": null,
+        "pending": null,
+        "text": "Here are the matching products.\n\n1. *Product Code:* SRT764-24-GM\n*Description:* SORENTO 24''   MOVEABLE TOWEL SHELF   SRT764-24-GM\n*List Price:* MYR 400.00\n*Dimensions:* Not defined\n\n_Data last updated: 10/09/2026 18:58:14_\n\nP/S: if the spec you're after isn't shown above, just ask me for the *product catalogue* and I'll pull it up for you \ud83d\ude0a",
+        "tools": [
+          {
+            "args_keys": [
+              "_diagnostics",
+              "access_levels",
+              "contact_id",
+              "date_mode",
+              "include_specs",
+              "is_active",
+              "product_ids",
+              "space_id",
+              "view"
+            ],
+            "tool": "crm_master_products_list"
+          }
+        ]
+      },
+      "resolutions": {
+        "resolutions": [
+          {
+            "matches": [
+              {
+                "canonical_code": "SRT764-24-GM",
+                "entity_type": "product",
+                "uuid": "e4640500-c9da-47a2-9119-46425fa22056"
+              }
+            ],
+            "resolved": true,
+            "token": "SRT764-24-GM"
+          }
+        ],
+        "tokens": [
+          "SRT764-24-GM"
+        ],
+        "unresolved_tokens": []
+      },
+      "source": {
+        "db": "sorento_ai_automation_rearch",
+        "expected_from": "recorded",
+        "prompt_version": 11,
+        "recorded_at": "2026-09-11T17:06:56.189837+09:00",
+        "turn_id": "c2513d08-9e78-4fae-8086-d6e40689bb44"
+      },
+      "tool_results": [
+        {
+          "args": {
+            "_diagnostics": {
+              "entities_in": 1,
+              "scalar_truncated": [],
+              "skipped": [],
+              "total_uuids_passed": 1,
+              "unmapped_types": []
+            },
+            "access_levels": [],
+            "contact_id": "900000052",
+            "date_mode": null,
+            "include_specs": true,
+            "is_active": null,
+            "product_ids": [
+              "e4640500-c9da-47a2-9119-46425fa22056"
+            ],
+            "space_id": "364817",
+            "view": "render"
+          },
+          "envelope": {
+            "action_links": [],
+            "attachments": [],
+            "fallback_used": false,
+            "has_result": true,
+            "intro": "Here are the matching products.",
+            "items": [
+              {
+                "fields": [
+                  {
+                    "label": "Product Code",
+                    "value": "SRT764-24-GM"
+                  },
+                  {
+                    "label": "Description",
+                    "value": "SORENTO 24''   MOVEABLE TOWEL SHELF   SRT764-24-GM"
+                  },
+                  {
+                    "label": "List Price",
+                    "value": "MYR 400.00"
+                  },
+                  {
+                    "label": "Dimensions",
+                    "value": "Not defined"
+                  },
+                  {
+                    "key": "spec:class",
+                    "label": "Product class",
+                    "value": "Bathroom Accessory"
+                  },
+                  {
+                    "key": "spec:product_type",
+                    "label": "Type",
+                    "value": "towel_shelf"
+                  },
+                  {
+                    "key": "spec:steel_grade",
+                    "label": "Steel grade",
+                    "value": "304"
+                  },
+                  {
+                    "key": "spec:material",
+                    "label": "Material",
+                    "value": "stainless_steel"
+                  },
+                  {
+                    "key": "spec:brand",
+                    "label": "Brand",
+                    "value": "SORENTO"
+                  },
+                  {
+                    "key": "spec:finish",
+                    "label": "Finish or colour",
+                    "value": "gunmetal"
+                  }
+                ],
+                "flags": {
+                  "discontinued": false,
+                  "expired": false,
+                  "expiring_soon": false,
+                  "partially_allocated": false,
+                  "unallocated": false
+                },
+                "title": "SRT764-24-GM"
+              }
+            ],
+            "last_updated_at": "2026-09-10T18:58:14.180186",
+            "result_type": "products",
+            "spec_vocabulary": {
+              "brand": "Brand",
+              "class": "Product class",
+              "finish": "Finish or colour",
+              "material": "Material",
+              "product_type": "Type",
+              "steel_grade": "Steel grade"
+            }
+          },
+          "tool": "crm_master_products_list"
+        }
+      ],
+      "verdict": {
+        "access_levels": [],
+        "broaden_axis": null,
+        "contains_flyer": false,
+        "correction": false,
+        "date_filter_end": null,
+        "date_filter_start": null,
+        "date_mode": null,
+        "demand_qty": null,
+        "domain_hint": "master_products",
+        "entities": [
+          {
+            "canonical_code": null,
+            "confident": true,
+            "current_message": true,
+            "hint": "product",
+            "raw": "SRT764-24-GM"
+          }
+        ],
+        "entity_op": "replace_combine",
+        "escalation": {
+          "company_pick": null,
+          "is_escalation_confirmation": false
+        },
+        "group_by": null,
+        "intent_hint": "check_product",
+        "is_active": null,
+        "is_affirmative": null,
+        "match_mode": "and",
+        "message_type": "business_query",
+        "order_status": null,
+        "person_mention": null,
+        "reference_positions": [],
+        "reference_target": null,
+        "requested_attributes": [
+          "price"
+        ],
+        "routing": {
+          "suggested_agent": null,
+          "suggested_team": null
+        },
+        "scope_exclusive": false,
+        "scope_intent": null,
+        "top_n": null,
+        "user_goal": "trying to check the list price of SRT764-24-GM"
+      }
+    }
+  ]
+}

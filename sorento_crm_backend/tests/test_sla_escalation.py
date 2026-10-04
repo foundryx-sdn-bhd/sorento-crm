@@ -182,7 +182,7 @@ def test_create_tracking_agent_code_with_explicit_assignee_skips_round_robin():
         return_value="00000000-0000-0000-0000-000000000001",
     ):
         payload = ConversationSLATrackingCreate(
-            contact_phone_number="+60166753328",
+            contact_phone_number="+60160000509",
             policy_id="policy-1",
             current_tier=1,
             agent_code="general_enquiries",
@@ -198,13 +198,13 @@ def test_create_tracking_agent_code_with_explicit_assignee_skips_round_robin():
 
 
 def test_respond_contact_phone_lookup_candidates_e164_and_local():
-    c1 = _respond_contact_phone_lookup_candidates("+60166753328")
-    assert "+60166753328" in c1
-    assert "60166753328" in c1
-    c2 = _respond_contact_phone_lookup_candidates("0166753328")
-    assert "+60166753328" in c2
-    c3 = _respond_contact_phone_lookup_candidates("+60 16-6753328")
-    assert "+60166753328" in c3
+    c1 = _respond_contact_phone_lookup_candidates("+60160000509")
+    assert "+60160000509" in c1
+    assert "60160000509" in c1
+    c2 = _respond_contact_phone_lookup_candidates("0160000509")
+    assert "+60160000509" in c2
+    c3 = _respond_contact_phone_lookup_candidates("+60 16-0000509")
+    assert "+60160000509" in c3
 
 
 def test_resolve_internal_respond_contact_id_falls_back_to_phone():
@@ -223,7 +223,7 @@ def test_resolve_internal_respond_contact_id_falls_back_to_phone():
 
     mock_db.query.side_effect = [q_miss, q_miss, q_phone]
 
-    assert service.resolve_internal_respond_contact_id("+60166753328") == "crm-contact-1"
+    assert service.resolve_internal_respond_contact_id("+60160000509") == "crm-contact-1"
     assert mock_db.query.call_count == 3
 
 

@@ -22,7 +22,7 @@ from app.models.chat_history import ChatHistory
 from tests._external_auth import external_permissions_granted
 from tests._pg_fixture import blank_session
 
-RESPOND_IO_ID = "437264483"
+RESPOND_IO_ID = "900000008"
 # Respond message ids ARE epoch microseconds; both lanes carry the same one.
 MESSAGE_ID = "1780751891000000"
 INGEST_URL = "/api/v1/external/chat-history/messages"
@@ -54,7 +54,7 @@ def _payload(**overrides) -> dict:
     payload = {
         "channel": "whatsapp",
         "contact_id": RESPOND_IO_ID,
-        "phone_number": "+60166753328",
+        "phone_number": "+60160000509",
         "message": "Sure, I will check that for you.",
         "sent_at": 1780751906900,
         "type": "outgoing",

@@ -281,7 +281,7 @@ def test_the_pdf_renders_the_issue_snapshot_and_not_the_live_rows():
         document.your_ref = f"{MARKER}/NC/2026/007"
         document.attn_name = f"{MARKER} Kelly"
         document.signatory_name = f"{MARKER} Baser Ramli"
-        document.signatory_phone = "019-3508781"
+        document.signatory_phone = "019-0000506"
         document.cover_letter_html = f"<p>{MARKER} first letter</p>"
         document.terms_html = f"<ol><li>{MARKER} first clause</li></ol>"
         db.flush()
@@ -311,7 +311,7 @@ def test_the_pdf_renders_the_issue_snapshot_and_not_the_live_rows():
         assert f"{MARKER} first letter" in before
         assert f"{MARKER} first clause" in before
         assert PRICED_TOTAL in before
-        assert "019-3508781" in before
+        assert "019-0000506" in before
         # The signature the document was issued with, inline. It is COPIED onto the issue, so it is
         # part of the snapshot rather than a live read of whatever the draft now holds.
         assert SIGNATURE_DATA_URI in before

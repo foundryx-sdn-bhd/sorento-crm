@@ -166,14 +166,14 @@ All new fields optional:
 ```jsonc
 {
   "channel": "whatsapp",
-  "contact_id": "445239409",
-  "phone_number": "+60165622487",
+  "contact_id": "900000063",
+  "phone_number": "+60160000517",
   "message": "SRTKS2405 stock level",
   "sent_at": 1784519974000,          // CHANGED: raw respond message.timestamp
   "type": "incoming",
   "message_id": "1784519974000000",  // NEW - load-bearing, resolver keys on this
   "turn_id": "48213",                // NEW: {{ $execution.id }}
-  "first_name": "Johnson",
+  "first_name": "CONTACT A",
   "last_name": null,
   "reply_to_message_id": null,
   "reply_to_message": null

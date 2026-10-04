@@ -5,7 +5,7 @@ clone, no project sales orders). Part B stack (same FE/BE ports, DB switched by 
 DB `sorento_ai_automation_0915_1900` (production copy). No RQ worker on either stack -
 dispatch stops at the `email_outbox` row (Part B DB) / `Notification`+`NotificationDelivery`
 (Part A DB), expected in both cases. Browser: agent-browser headless, sessions `oi-handover`
-(Part A) and `oi-handover-b` (Part B), both logged in as `tehjayson@gmail.com`.
+(Part A) and `oi-handover-b` (Part B), both logged in as `person38@example.com`.
 
 **Part A** ran on the CI-clone DB and found the AC-H16 hydration defect (section 3 below).
 **Part B** ran later on the production copy, after a coder fix round landed
@@ -202,10 +202,10 @@ Saved `handover-email-real.html` / `.txt` (SO289628, before the one_email toggle
 | Qty without trailing decimals | PASS - DB holds `3210.0000`, email shows `3210` |
 | Dates dd/mm/yyyy | PASS - `16/09/2026`, `11/04/2023` |
 | Worklist link present | PASS - `http://localhost:3000/project-sales/order-inquiries?query=SO289628` |
-| `metadata_json`/`recipient_email` include purchasing + actor | PASS - 7 recipient rows: `purchase01@mocha.com.my, purchase02@mocha.com.my, joeyte@sorento.com.my, purchasing@sorento.com.my, jereentee@sorento.com.my, josephineng@sorento.com.my, tehjayson@gmail.com` (actor, the logged-in user, present) |
+| `metadata_json`/`recipient_email` include purchasing + actor | PASS - 7 recipient rows: `person33@example.com, person34@example.com, person20@example.com, person35@example.com, person19@example.com, person21@example.com, person38@example.com` (actor, the logged-in user, present) |
 
 One inconsistency caught between this email and the later SO259655 one (see AC-H26 section):
-this SO289628 email's footer read `Raised by Teh Jayson (tehjayson@gmail.com) on 2026-09-16.`
+this SO289628 email's footer read `Raised by Teh Jayson (person38@example.com) on 2026-09-16.`
 (ISO date) while the SO259655 one 24 minutes later read `...on 16/09/2026.` (dd/mm/yyyy). The
 worktree's backend runs `--reload` and a live coder was committing to this exact worktree
 during my session (`486c7dbfb`, `6a93384bd` landed while I was mid-run) - the date-format fix
@@ -272,18 +272,18 @@ rows handed over)". This time `email_outbox` gained exactly **one** row for the 
 not seven:
 
 ```
-id=624f3fec-..., subject='OI: BRW-IB @ SO259655', recipient_email='purchase02@mocha.com.my'
+id=624f3fec-..., subject='OI: BRW-IB @ SO259655', recipient_email='person34@example.com'
 recipients_json = {
-  "to": ["purchase02@mocha.com.my"],
-  "cc": ["joeyte@sorento.com.my", "purchase01@mocha.com.my", "purchasing@sorento.com.my",
-         "josephineng@sorento.com.my", "jereentee@sorento.com.my", "tehjayson@gmail.com"],
+  "to": ["person34@example.com"],
+  "cc": ["person20@example.com", "person33@example.com", "person35@example.com",
+         "person21@example.com", "person19@example.com", "person38@example.com"],
   "bcc": []
 }
-metadata_json.recipients = [same 7 addresses, tehjayson@gmail.com (the raiser) LAST]
+metadata_json.recipients = [same 7 addresses, person38@example.com (the raiser) LAST]
 ```
 
 Confirms exactly what was asked: all 6 purchasing addresses (`to` + `cc`) with the raiser
-(`tehjayson@gmail.com`, via `include_actor`) placed **last** in both `recipients_json.cc` and
+(`person38@example.com`, via `include_actor`) placed **last** in both `recipients_json.cc` and
 `metadata_json.recipients`. `automation_runs.recipients_attempted = 7` (counts resolved
 addresses, not outbox rows - correct, since `resolve_recipients` still returns 7 addresses,
 they're just folded into one row's To+Cc instead of one row per address). Body content (both

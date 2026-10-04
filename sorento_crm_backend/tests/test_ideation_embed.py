@@ -340,7 +340,7 @@ def embed_route(configured, monkeypatch):
 
     with blank_session() as db:
 
-        def seed_user(*, verified: bool, phone: str = "+60123450000") -> dict:
+        def seed_user(*, verified: bool, phone: str = "+60100000001") -> dict:
             uid = str(uuid.uuid4())
             contact_id = str(uuid.uuid4())
             db.add(RespondContact(id=contact_id, phone_number=phone, name="ZZT Contact"))
@@ -387,9 +387,9 @@ def test_embed_route_ideas_manage_true_for_a_manage_holder(embed_route):
 
 def test_embed_route_carries_phone_for_a_verified_user(embed_route):
     seed_user, call, _ = embed_route
-    assert call(seed_user(verified=True, phone="+60123451111"))["phone"] == "+60123451111"
+    assert call(seed_user(verified=True, phone="+60100000002"))["phone"] == "+60100000002"
 
 
 def test_embed_route_omits_phone_for_an_unverified_user(embed_route):
     seed_user, call, _ = embed_route
-    assert "phone" not in call(seed_user(verified=False, phone="+60123452222"))
+    assert "phone" not in call(seed_user(verified=False, phone="+60100000003"))

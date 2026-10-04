@@ -1,6 +1,6 @@
 {
   "name": "parity-f5-hanlim-hit-header",
-  "source": "chatbot-answer-half-reattach-acceptance-criteria.md AC-1696 (F5, hand pass 8): 'delivery for hanlim' is a hit (real orders 2026-04-21..2026-09-14 for HANLIM TRADING SDN BHD, measured read-only) and must open with the scope block header, same as F1/F6. Contact 437264483.",
+  "source": "chatbot-answer-half-reattach-acceptance-criteria.md AC-1696 (F5, hand pass 8): 'delivery for hanlim' is a hit (real orders 2026-04-21..2026-09-14 for HANLIM TRADING SDN BHD, measured read-only) and must open with the scope block header, same as F1/F6. Contact 900000008.",
   "cases": [
     {
       "name": "delivery-for-hanlim-hit-header",

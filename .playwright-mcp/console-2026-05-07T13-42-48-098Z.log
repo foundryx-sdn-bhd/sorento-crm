@@ -1,9 +1,0 @@
-[     326ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7242/ingest/82ff2983-30f8-41d1-a335-d37b94435673:0
-[     328ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7242/ingest/82ff2983-30f8-41d1-a335-d37b94435673:0
-[     330ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7242/ingest/82ff2983-30f8-41d1-a335-d37b94435673:0
-[     330ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7242/ingest/82ff2983-30f8-41d1-a335-d37b94435673:0
-[     338ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7242/ingest/82ff2983-30f8-41d1-a335-d37b94435673:0
-[     338ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7242/ingest/82ff2983-30f8-41d1-a335-d37b94435673:0
-[     339ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7242/ingest/82ff2983-30f8-41d1-a335-d37b94435673:0
-[     458ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "current-password"): (More info: https://goo.gl/9p2vKq) %o @ http://localhost:3000/signin?callbackUrl=%2F:0
-[   88709ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:3000/api/auth/callback/credentials:0

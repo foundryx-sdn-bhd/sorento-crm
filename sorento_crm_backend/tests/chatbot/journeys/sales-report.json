@@ -1,11 +1,11 @@
 {
   "name": "sales-report",
-  "source": "coder 25's own journey gate (PLAN-chatbot-sales-report.md port, 20 Sep 2026), driven live against :8081 (git_sha 484c79d92, prompt v39, contact 437264483): 5 asks, all 5/5 PASS at the time - 'give me the dealer sales report for hanlim' then '1' (By-product breakdown, then the SO detail list), 'sales report for SRTWC286' (product-only ask, S18 current-year default window, S19 several-code carry, S20 both breakdowns), 'project sales report for hanlim' (Channel: Project), 'how much did hanlim buy this year' (the fuzzy ask still reaches the sales report, year window), 'dealer outstanding quantity for hanlim' (the trap - still the OUTSTANDING report, not the sales report, despite the word 'dealer' beside 'outstanding'). Re-run here as a persisted regression chain, contact 440987225 (also holds sales_orders.sales_report on the clone). Expectations moved to the delivered-basis reply (sales report v4, lane SALES-REPORT, PR #1401): '*Total:*' and period lines, the '*Drill down:*' options, and a pick re-running with group_by; 'Reply 1 for the sales order list.' and the SO list are retired.",
+  "source": "coder 25's own journey gate (PLAN-chatbot-sales-report.md port, 20 Sep 2026), driven live against :8081 (git_sha 484c79d92, prompt v39, contact 900000008): 5 asks, all 5/5 PASS at the time - 'give me the dealer sales report for hanlim' then '1' (By-product breakdown, then the SO detail list), 'sales report for SRTWC286' (product-only ask, S18 current-year default window, S19 several-code carry, S20 both breakdowns), 'project sales report for hanlim' (Channel: Project), 'how much did hanlim buy this year' (the fuzzy ask still reaches the sales report, year window), 'dealer outstanding quantity for hanlim' (the trap - still the OUTSTANDING report, not the sales report, despite the word 'dealer' beside 'outstanding'). Re-run here as a persisted regression chain, contact 900000010 (also holds sales_orders.sales_report on the clone). Expectations moved to the delivered-basis reply (sales report v4, lane SALES-REPORT, PR #1401): '*Total:*' and period lines, the '*Drill down:*' options, and a pick re-running with group_by; 'Reply 1 for the sales order list.' and the SO list are retired.",
   "cases": [
     {
       "name": "dealer-sales-report-hanlim-then-first-drill-down",
       "cold": true,
-      "contact": "440987225",
+      "contact": "900000010",
       "turns": [
         {
           "text": "give me the dealer sales report for hanlim",
@@ -26,7 +26,7 @@
     {
       "name": "product-only-ask-defaults-to-current-year",
       "cold": true,
-      "contact": "440987225",
+      "contact": "900000010",
       "turns": [
         {
           "text": "sales report for SRTWC286",
@@ -39,7 +39,7 @@
     {
       "name": "project-channel-worded-ask",
       "cold": true,
-      "contact": "440987225",
+      "contact": "900000010",
       "turns": [
         {
           "text": "project sales report for hanlim",
@@ -53,7 +53,7 @@
     {
       "name": "fuzzy-how-much-did-hanlim-buy-this-year",
       "cold": true,
-      "contact": "440987225",
+      "contact": "900000010",
       "turns": [
         {
           "text": "how much did hanlim buy this year",
@@ -67,7 +67,7 @@
     {
       "name": "dealer-outstanding-trap-still-reaches-outstanding-report",
       "cold": true,
-      "contact": "440987225",
+      "contact": "900000010",
       "_note": "the word 'dealer' sits beside 'outstanding', not a sales-report status word - the trap this case guards is a channel word alone flipping the report kind.",
       "turns": [
         {

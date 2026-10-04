@@ -190,7 +190,7 @@ def test_two_lines_of_two_different_agents_each_keep_their_own_code():
         product = _product(db, f"ZZT-{_uid()[:6]}")
         warehouse = _warehouse(db, f"ZZT-{_uid()[:6]}"[:20])
         jeremy = _agent(db, f"ZZTJ{_uid()[:4]}", person_label=f"{MARKER} Jeremy")
-        cindy = _agent(db, f"ZZTC{_uid()[:4]}", person_label=f"{MARKER} Cindy Lee")
+        cindy = _agent(db, f"ZZTC{_uid()[:4]}", person_label=f"{MARKER} CONTACT W")
         first = _order(
             db, so_number="ZZT-SO-AGT1", agent=jeremy, order_date=date(2026, 1, 1)
         )

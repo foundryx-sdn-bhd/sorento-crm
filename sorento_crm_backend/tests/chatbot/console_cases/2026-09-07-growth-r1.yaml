@@ -51,7 +51,7 @@
 # reason that is not the lane's. The owner keeps a compact row on this contact for their own
 # grading; flip it to detailed for a graded run and restore it after. The PO rung also needs
 # the contact to hold `purchase_orders.placed` (Contacts > Access > Field reveals).
-contact: "437264483"
+contact: "900000008"
 
 cases:
   # ======================================================================================

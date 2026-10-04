@@ -72,7 +72,7 @@ def test_internal_requestor_select_happy_path(client):
 
     c, db = client
     _segment(db)
-    eric = _contact(db, name="Eric Ng", segments=["PROJECT"])
+    eric = _contact(db, name="CONTACT Y", segments=["PROJECT"])
 
     app.dependency_overrides[get_current_user_or_api_key] = lambda: {
         "id": str(uuid.uuid4()),
@@ -96,13 +96,13 @@ def test_internal_requestor_select_include_ids(client):
     from app.models.procurement import StockInquiry
 
     c, db = client
-    darren = _contact(db, name="Darren Submitter")  # no segments
+    contact_x = _contact(db, name="CONTACT X Submitter")  # no segments
     db.add(
         StockInquiry(
             id=str(uuid.uuid4()),
             inquiry_number="SEL-SI-1",
             status="new",
-            contact_id=darren,
+            contact_id=contact_x,
         )
     )
     db.commit()
@@ -114,10 +114,10 @@ def test_internal_requestor_select_include_ids(client):
     try:
         res = c.get(
             "/api/v1/master-data/respond-contacts/requestor-select",
-            params={"include_ids": darren},
+            params={"include_ids": contact_x},
         )
         assert res.status_code == 200, res.text
-        assert [i["id"] for i in res.json()["items"]] == [darren]
+        assert [i["id"] for i in res.json()["items"]] == [contact_x]
     finally:
         app.dependency_overrides.pop(get_current_user_or_api_key, None)
 
@@ -174,23 +174,23 @@ def test_portal_requestor_options_always_includes_the_submitter(client):
     """D3: the submitting contact is ALWAYS an option, even belonging to no
     flagged segment -- self-service can never be blocked."""
     c, db = client
-    darren = _contact(db, name="Darren Submitter")  # no segments
-    token = _token(db, darren)
+    contact_x = _contact(db, name="CONTACT X Submitter")  # no segments
+    token = _token(db, contact_x)
 
     res = c.get(
         "/api/v1/public/portal/requestor-options", headers={"X-Portal-Token": token}
     )
     assert res.status_code == 200, res.text
     items = res.json()["items"]
-    assert darren in [i["id"] for i in items]
+    assert contact_x in [i["id"] for i in items]
 
 
 def test_portal_requestor_options_names_only(client):
     c, db = client
     _segment(db)
-    eric = _contact(db, name="Eric Ng", segments=["PROJECT"])
-    darren = _contact(db, name="Darren Submitter")
-    token = _token(db, darren)
+    eric = _contact(db, name="CONTACT Y", segments=["PROJECT"])
+    contact_x = _contact(db, name="CONTACT X Submitter")
+    token = _token(db, contact_x)
 
     res = c.get(
         "/api/v1/public/portal/requestor-options", headers={"X-Portal-Token": token}
@@ -199,4 +199,4 @@ def test_portal_requestor_options_names_only(client):
     for item in res.json()["items"]:
         assert set(item.keys()) == {"id", "name"}
     ids = {i["id"] for i in res.json()["items"]}
-    assert {eric, darren} <= ids
+    assert {eric, contact_x} <= ids

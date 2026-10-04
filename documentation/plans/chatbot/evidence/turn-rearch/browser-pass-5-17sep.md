@@ -7,15 +7,15 @@ feat/chatbot-turn-rearch") - confirmed `99b97c8fb` is an ancestor of HEAD
 (`git merge-base --is-ancestor 99b97c8fb HEAD` = true). Parser version confirmed in the console
 UI: `v24 · full · production`. Session: agent-browser `--session rearch-browser-5`, headless,
 logged in via `E2E_EMAIL`/`E2E_PASSWORD` from `sorento_crm_frontend/.env.local`. Contact used:
-Justin (`+60122465213`), never the owner's own ZZT contact. 8 seconds between every turn; no 429
+CONTACT N (`+60120000510`), never the owner's own ZZT contact. 8 seconds between every turn; no 429
 encountered anywhere in the chain, so no run was cut short.
 
 Navigation: sidebar clicks from `/` throughout (System > Messaging > Chatbot Console; System group
 expanded via `@ref`, then Messaging subgroup, then the Chatbot Console link) - no deep URL used.
 `scrollintoview @ref` before every click. `get url` checked at the start and the end of the run:
 both reads matched `http://localhost:3081/system-management/chatbot-console` - no cross-session
-hijack. Reset clicked before the first turn; contact combobox set to Justin via the searchable
-combobox (type "Justin", click the single filtered option) - a plain listbox/combobox, not a Radix
+hijack. Reset clicked before the first turn; contact combobox set to CONTACT N via the searchable
+combobox (type "CONTACT N", click the single filtered option) - a plain listbox/combobox, not a Radix
 Select, so no batching trap. Reply text read via `document.querySelector('main').innerText`
 (the message bubbles are not exposed as distinct accessibility-tree nodes under `snapshot -i`, so
 this eval was the reliable read path all 15 turns); each turn's id was read from the `trace` link's

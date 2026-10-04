@@ -222,6 +222,6 @@ def test_a_short_number_never_matches_by_suffix():
     with pg_session() as db, company_scope(db, frozenset({SORENTO})):
         # Suffix matching on a handful of digits would pair unrelated people.
         contact = _contact(db, phone="1234")
-        _customer(db, phone_number="60123451234")
+        _customer(db, phone_number="60120000540")
 
         assert propose_customers(db, contact.id) == []

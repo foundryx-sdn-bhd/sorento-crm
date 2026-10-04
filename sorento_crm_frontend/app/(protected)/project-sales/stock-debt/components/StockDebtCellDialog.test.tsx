@@ -80,7 +80,7 @@ const CELL = {
   demand: [
     {
       so_number: 'SO390918',
-      agent_code: 'JENNIFER',
+      agent_code: 'CONTACT O',
       warehouse_code: 'BRW-BB',
       required_date: '2026-10-15',
       // Ordered/Delivered/Outstanding/Assigned/Short are FIVE distinct numbers on
@@ -191,7 +191,7 @@ describe('StockDebtCellDialog', () => {
     renderDialog();
 
     expect(await screen.findByText('SO390918')).toBeInTheDocument();
-    expect(screen.getByText('JENNIFER')).toBeInTheDocument();
+    expect(screen.getByText('CONTACT O')).toBeInTheDocument();
     // The Bin column (AC-S2-7): which pile the line sits in decides everything else. Both
     // codes also appear in the Supply table, so the assertion is scoped to Demand's row.
     const shortRow = screen.getByText('SO375875').closest('tr') as HTMLElement;
@@ -264,7 +264,7 @@ describe('StockDebtCellDialog', () => {
     renderDialog({
       demand: [
         {
-          so_number: 'SO-A', agent_code: 'JUSTIN', warehouse_code: 'W1',
+          so_number: 'SO-A', agent_code: 'CONTACT N', warehouse_code: 'W1',
           required_date: '2026-10-05', open_qty: 7, qty_ordered: 7, qty_delivered: 0,
           assigned_qty: 7, assigned_source: null, short_qty: 0, status: 'covered',
         } as StockDebtDemandLine,
@@ -283,7 +283,7 @@ describe('StockDebtCellDialog', () => {
       'Demand (10)', 'Supply (0)',
     ]);
 
-    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'JUSTIN' } });
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'CONTACT N' } });
 
     await waitFor(() => expect(screen.queryByText('SO-B')).not.toBeInTheDocument());
     expect(screen.getByText('SO-A')).toBeInTheDocument();
@@ -594,7 +594,7 @@ describe('StockDebtCellDialog', () => {
       demand: [
         {
           so_number: 'SO-ONHAND',
-          agent_code: 'JENNIFER',
+          agent_code: 'CONTACT O',
           warehouse_code: 'BRW-BB',
           required_date: '2026-10-15',
           open_qty: 14,
@@ -731,7 +731,7 @@ describe('StockDebtCellDialog', () => {
       demand: [
         {
           so_number: 'SO382618',
-          agent_code: 'JENNIFER',
+          agent_code: 'CONTACT O',
           warehouse_code: 'BRW-BB',
           required_date: '2026-10-15',
           open_qty: 100,
@@ -924,7 +924,7 @@ describe('StockDebtCellDialog', () => {
     const demandRow = (qty: number, ordered: number, delivered: number, entry: object) =>
       ({
         so_number: 'SO419208',
-        agent_code: 'ERIC NG',
+        agent_code: 'CONTACT Y',
         warehouse_code: 'BRW-BB',
         required_date: '2026-09-14',
         open_qty: qty,
