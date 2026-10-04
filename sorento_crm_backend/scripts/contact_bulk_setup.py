@@ -170,12 +170,12 @@ def parse_workbook(path, *, rules: dict = RULES) -> tuple[list[Entry], list[dict
     if approval is None or under is None:
         raise SystemExit("The sheet needs an APPROVAL column and a 'Dealer Registered Under' column.")
     triples = []
-    for i in range(1, TRIPLES + 1):
-        cols = (header.index(f"name {i}") if f"name {i}" in header else None,
-                header.index(f"contact number {i}") if f"contact number {i}" in header else None,
-                header.index(f"access level {i}") if f"access level {i}" in header else None)
-        if None not in cols:
-            triples.append(cols)
+    for i, h in enumerate(header):
+        if re.fullmatch(r"name( \d+)?", h):
+            ok = i + 2 < len(header) and header[i + 1].startswith("contact") and header[i + 2].startswith("access level")
+            if not ok:
+                raise SystemExit(f"Column {i + 1}: a Name column is not followed by Contact and Access Level columns.")
+            triples.append((i, i + 1, i + 2))
 
     by_name = {k.strip().lower(): v for k, v in rules["companies"].items()}
     entries: list[Entry] = []
