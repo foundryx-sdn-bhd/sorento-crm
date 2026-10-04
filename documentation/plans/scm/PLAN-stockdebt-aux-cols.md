@@ -1,6 +1,6 @@
 # PLAN: Stock Debt auxiliary columns + toggle + Excel (STOCKDEBT-AUX-COLS)
 
-Status: building; size M, crew lane (LEAD pattern); owner answered the card 4 Oct 2026 (see UAC header).
+Status: in review; PR #1478 (size M, crew lane, LEAD pattern), review READY, browser pass PASS on cf996dcf4, owner hand test owed. Owner answered the card 4 Oct 2026 (see UAC header).
 UAC: `stockdebt-aux-cols-acceptance-criteria.md`.
 
 ## Ask (owner, 4 Oct 2026)
