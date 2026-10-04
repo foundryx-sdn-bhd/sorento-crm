@@ -1174,7 +1174,7 @@ class MasterIngestService:
     ) -> tuple[IngestOutcome, str, Optional[dict[str, dict[str, Any]]], list[str]]:
         """Pins `company_scope` for the WHOLE record, not just `_insert`/`_update`'s
         own writes: `_product_columns` (`ensure_reference`/`resolve_master_by_code`)
-        and the generic adopt-fallback below both run ordinary ORM queries against
+        and the adopt-fallback below (and `_apply_customer`) run ordinary ORM queries against
         company-scoped tables, and without this those queries are filtered by
         whatever the ambient session scope happens to be - which a caller running
         two companies through one session (this module's own parity tests) never
@@ -1228,8 +1228,8 @@ class MasterIngestService:
             return IngestOutcome.UPDATED, existing_id, diff, warnings
 
         # First sync: adopt a local record with the same business identity
-        # rather than creating a duplicate under a new id. Customers override
-        # take their own path (`_apply_customer`); everything else matches on
+        # rather than creating a duplicate under a new id. Customers never get
+        # here (`_apply_customer`); everything else matches on
         # the bare business code. Sales agents keep their own normalised-code
         # match (`_lookup_id`) - shared table, not company-scoped the way
         # `resolve_master_by_code` assumes. Every other master matches
@@ -1327,17 +1327,20 @@ class MasterIngestService:
                 warnings.append(WARN_REF_MISMATCH)
             return IngestOutcome.CREATED, new_id, None, warnings
 
-        # Never rename (owner decision, 4 Oct 2026): the name only ever matches. Same-code
-        # rows converge when DEBTOR-CODE-UNIQUE merges them.
+        # Never rename (owner decision, 4 Oct 2026): the name only ever matches, and the code
+        # keeps the row's own spelling, as its same-code siblings do. Same-code rows converge
+        # when DEBTOR-CODE-UNIQUE merges them.
         columns.pop("customer_name", None)
+        columns.pop("customer_code", None)
         self._finalize_customer_segment_fill_only(columns, target)
         diff = self._diff(spec, target, columns)
         if diff != {}:
             self._update(spec, target, columns)
+        # `holder` is resolved under this company and source system, so `holder == target`
+        # is the one proof the row already holds this exact ref; a same-text ref under another
+        # source system or company is not, and must not reach `link()`.
         origin = self._origin_of("customers", target)
-        if (origin is None and holder is None) or (
-            origin is not None and origin.source_ref == payload.source_ref
-        ):
+        if holder == target or (origin is None and holder is None):
             self._link("customers", target, payload)
         else:
             warnings.append(WARN_REF_MISMATCH)

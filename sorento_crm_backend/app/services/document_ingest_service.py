@@ -1012,11 +1012,15 @@ class DocumentIngestService(MasterRefResolver):
         elif (
             hasattr(payload, "customer_name")
             and values.get("customer_id")
-            and not (getattr(header, "debtor_name", None) or "").strip()
+            and (
+                not (getattr(header, "debtor_name", None) or "").strip()
+                or str(values["customer_id"]) != str(getattr(header, "customer_id", None))
+            )
         ):
             # DEBTOR-CODE-LINK (crew, 4 Oct 2026): an SO pushed without a name still carries
-            # the one it was issued under - the resolved customer's name as of now, fill-only -
-            # so a later rename of the master never rewrites it on this order.
+            # the one it was issued under - the resolved customer's name as of now, written
+            # when the order has none or moves to another customer - so a later rename of the
+            # master never rewrites it on this order.
             master_name = (
                 self.db.query(Customer.customer_name)
                 .filter(Customer.id == values["customer_id"])

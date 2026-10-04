@@ -149,6 +149,8 @@ class TestFirstRowByDebtorCode:
         assert rec.outcome is IngestOutcome.UPDATED, rec.errors
         assert rec.entity_id == a
         assert _cols(db, a, "phone_number") == ("0111111111",)
+        # the row keeps its own code spelling, like its same-code siblings (review nit)
+        assert _cols(db, a, "customer_code") == (code,)
         assert _refs_of(db, a) == ["AED_SORENTO:1001"]
         assert rec.warnings == [WARN_REF_MISMATCH]
 
@@ -413,3 +415,29 @@ class TestDryRunAndUnchangedBehaviour:
             False,
             "0100000013",
         )
+
+
+class TestReviewRound1:
+    def test_t16_same_text_ref_under_another_source_system_warns_and_never_fails(self, db):
+        """Review M1: `origin_of` sees any source system, `link()` only autocount. A row whose
+        stored ref has the pushed text under another system must not reach `link()`."""
+        _scope(db)
+        code = _code("T16")
+        a = _seed(db, code, "NAME-A", OLD)
+        ref = f"SS:{code}"
+        db.add(
+            IntegrationReference(
+                entity_type="customers",
+                entity_id=a,
+                company_id=DEFAULT_COMPANY_ID,
+                source_system="import",
+                source_ref=ref,
+            )
+        )
+        db.flush()
+
+        _result, rec = _push(db, {"source_ref": ref, "code": code, "name": "NAME-A", "phone_number": "0100000016"})
+
+        assert rec.outcome is IngestOutcome.UPDATED, rec.errors
+        assert rec.warnings == [WARN_REF_MISMATCH]
+        assert _cols(db, a, "phone_number") == ("0100000016",)

@@ -48,13 +48,14 @@ This sandbox cannot reach the dev DB, so the examples are built on the crew's de
   2. otherwise the oldest `created_at`, then lowest `id` (rows from one import batch share a
      `created_at`). Its name is NEVER changed (owner decision, 4 Oct): every other field updates.
   Phone, email, registration no, tax id, country, region, active and segment (fill-only,
-  unchanged) apply to the target only; the name only ever matches, it is never written onto an
-  existing row. Outcome `updated`.
+  unchanged) apply to the target only; the name only ever matches and the code keeps the row's
+  own spelling: neither is written onto an existing row. Outcome `updated`.
 - **R4 Other same-code rows.** Untouched, except the sales agent, which #1468 already writes to
   every same-code row of the company. (This lane keeps that; it does not add any other fan-out.)
 - **R5 The pushed ref.** Bookkeeping only, never a reason to fail:
   - the target has no ref and the pushed ref is free: link it;
-  - the target already holds the pushed ref: keep it (re-link touches `last_synced_at`);
+  - the target already holds the pushed ref (same company and source system): keep it (re-link
+    touches `last_synced_at`);
   - the target holds a different ref, or the pushed ref belongs to another row: keep what is
     stored, link nothing, warn `ref_mismatch` (the same code-wins rule products use since
     contract 2.4, `PLAN-ingest-products-code-wins.md`).
@@ -62,8 +63,9 @@ This sandbox cannot reach the dev DB, so the examples are built on the crew's de
   so the (code, name) unique index cannot fire on an update. Names converge when DEBTOR-CODE-UNIQUE
   merges same-code rows.
 - **R10 SO keeps its issue name.** `sales_orders.debtor_name` is backfilled from today's customer
-  name where it is NULL (alembic `sdn_0002_so_debtor_backfill`, additive, idempotent), and every
-  SO write fills it (AutoCount ingest when no name is sent, fill-only; manual create), so a later
+  name where it is NULL, same company only (alembic `sdn_0002_so_debtor_backfill`, additive,
+  idempotent), and every SO write fills it: AutoCount ingest when no name is sent (when the order
+  has none, or moves to another customer); manual create; a manual customer change. A later
   rename or merge never rewrites the name on an existing order.
 - **R7 Companies.** Matching never crosses companies: `300-X001` in SRT and `300-X001` in MCH are
   two customers, each found only by its own company's push.
@@ -72,11 +74,15 @@ This sandbox cannot reach the dev DB, so the examples are built on the crew's de
 - **R9 One-off link conversion.** Every existing customer ref `<prefix>:<AutoKey>` becomes
   `<prefix>:<debtor code>` (the row's own trimmed `customer_code`, prefix kept), so no customer
   link carries an AutoKey any more and a deletion or document ref in code form finds the row.
-  - Idempotent: a ref already equal to `<prefix>:<code>` is left alone; a second run changes 0.
-  - Collision (the target ref already names another row of that company): the oldest-created
-    row (ties to the lowest id) gets it, since a conversion has no pushed name to compare; the other keeps its old ref and is listed in the report. Nothing is deleted.
+  - Idempotent: a ref already equal to `<prefix>:<code>` is left alone and is never touched again.
+  - Collision: a new ref already held in that company (by any row, even one this run is about to
+    change) is skipped and reported, so no UPDATE ever meets the unique index. Among candidates
+    for the same new ref the oldest-created row (ties to the lowest id) gets it, since a
+    conversion has no pushed name to compare. A ref that only frees up during a run converts on
+    the next run (rare: a stale code-form ref pointing at another code); the other keeps its old ref and is listed in the report. Nothing is deleted.
   - Additive and reversible: the script writes a CSV of (ref id, old, new) before it changes
-    anything; `--revert <csv>` puts the old values back.
+    anything, and refuses an existing path so an earlier run's list is never replaced;
+    `--revert <csv>` puts the old values back. A blank code is skipped (`blank_code`).
   - Delivered as a script with `--dry-run` (default) / `--apply`, not an alembic migration, so a
     merge or deploy never rewrites prod links. Dev first; prod is a crew-held run after owner
     approval.

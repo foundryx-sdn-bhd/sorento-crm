@@ -141,6 +141,13 @@ FIELD_NOTES: dict[str, str] = {
         "system - the record updates, the STORED reference is kept as-is, and the "
         "verdict carries the ref_mismatch warning."
     ),
+    "customers": (
+        "A customer push resolves by company + debtor code (case/whitespace-insensitive), "
+        "never by source_ref: among same-code rows the exact-name one wins, else the oldest. "
+        "An existing customer is never renamed. The pushed source_ref is linked only when the "
+        "row and the ref are both free; otherwise the stored reference is kept and the "
+        "verdict carries the ref_mismatch warning (never a failed record)."
+    ),
     # Both entities get the SAME sentence (D24's shape is one note per
     # entity, not per field) - from_so_external means the identical thing on
     # a purchase-order line and on a shipping-order line.

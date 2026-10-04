@@ -135,3 +135,20 @@ def test_upgrade_runs_the_backfill_and_downgrade_is_a_no_op(db):
         mod.downgrade()
     assert _name(db, so.id) == "NAME-UP"
     assert len(mod.revision) <= 32
+
+
+def test_an_order_pointing_at_another_companys_customer_stays_null(db):
+    """Security nit: the backfill never copies a name across companies."""
+    from app.models.company import Company
+
+    other = Company(id=str(uuid.uuid4()), name="ZZTSDN B", code=unique_code("ZZTSDN")[:10])
+    db.add(other)
+    db.flush()
+    foreign = Customer(customer_code=unique_code("ZZTSDN"), customer_name="NAME-FOREIGN", company_id=str(other.id))
+    db.add(foreign)
+    db.flush()
+    so = _so(db, customer_id=str(foreign.id))
+
+    _migration_module().backfill_so_debtor_name(db.connection())
+
+    assert _name(db, so.id) is None

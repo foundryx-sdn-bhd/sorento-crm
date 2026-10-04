@@ -1,8 +1,8 @@
 # PLAN: debtor identity = debtor code (DEBTOR-CODE-LINK)
 
-Status: Build (red tests, then coder). Track: L (rewrites customer links; external ingest surface).
+Status: Review round 1 fixed (reviewer M1/M2 + security should-fix); next crew-migration SQL, hand test, CI. Track: L (rewrites customer links; external ingest surface).
 Card (rules, examples, questions): `documentation/plans/autocount/CARD-debtor-code-link-04oct.md`.
-UAC: the card's rules R1-R9 and examples E1-E6 are the acceptance criteria for this lane.
+UAC: the card's rules R1-R10 and examples E1-E7 are the acceptance criteria for this lane.
 PR: #1474 (`crew-lane: DEBTOR-CODE-LINK`).
 
 ## Journey

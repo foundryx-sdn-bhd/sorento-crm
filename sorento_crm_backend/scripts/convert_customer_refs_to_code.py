@@ -68,7 +68,7 @@ class Change:
 class Skip:
     ref_id: str
     old_source_ref: str
-    reason: str  # "collision" | "unparseable"
+    reason: str  # "collision" | "unparseable" | "blank_code"
 
 
 @dataclass
@@ -93,6 +93,9 @@ def plan_conversion(db: Session) -> ConversionPlan:
         if ":" not in old:
             plan.skipped.append(Skip(row["ref_id"], old, "unparseable"))
             continue
+        if not row["code"]:
+            plan.skipped.append(Skip(row["ref_id"], old, "blank_code"))
+            continue
         new = f"{old.split(':', 1)[0]}:{row['code']}"
         if new == old:
             plan.already_code += 1
@@ -109,7 +112,8 @@ def plan_conversion(db: Session) -> ConversionPlan:
 
 def apply_conversion(db: Session, plan: ConversionPlan, csv_path: str) -> int:
     """Write the CSV first, then rewrite each ref. Returns the number of refs changed."""
-    with open(csv_path, "w", newline="") as fh:
+    # "x": never replace an earlier run's change list, which may be the only way back.
+    with open(csv_path, "x", newline="") as fh:
         writer = csv.writer(fh)
         writer.writerow(CSV_HEADER)
         for c in plan.changes:
@@ -119,7 +123,7 @@ def apply_conversion(db: Session, plan: ConversionPlan, csv_path: str) -> int:
         count += db.execute(
             text(
                 "UPDATE integration_references SET source_ref = :new, updated_at = now() "
-                "WHERE id::text = :id AND source_ref = :old"
+                "WHERE id = CAST(:id AS uuid) AND source_ref = :old"
             ),
             {"new": c.new_source_ref, "id": c.ref_id, "old": c.old_source_ref},
         ).rowcount
@@ -134,7 +138,7 @@ def revert(db: Session, csv_path: str) -> int:
             count += db.execute(
                 text(
                     "UPDATE integration_references SET source_ref = :old, updated_at = now() "
-                    "WHERE id::text = :id AND source_ref = :new"
+                    "WHERE id = CAST(:id AS uuid) AND source_ref = :new"
                 ),
                 {"old": row["old_source_ref"], "id": row["ref_id"], "new": row["new_source_ref"]},
             ).rowcount
@@ -144,9 +148,10 @@ def revert(db: Session, csv_path: str) -> int:
 def _print_plan(plan: ConversionPlan) -> None:
     collisions = sum(1 for s in plan.skipped if s.reason == "collision")
     unparseable = sum(1 for s in plan.skipped if s.reason == "unparseable")
+    blank = sum(1 for s in plan.skipped if s.reason == "blank_code")
     print(
         f"to convert: {len(plan.changes)}  already code form: {plan.already_code}  "
-        f"collisions: {collisions}  unparseable: {unparseable}"
+        f"collisions: {collisions}  unparseable: {unparseable}  blank code: {blank}"
     )
     for s in plan.skipped:
         print(f"  skipped {s.reason}: ref {s.ref_id} ({s.old_source_ref})")

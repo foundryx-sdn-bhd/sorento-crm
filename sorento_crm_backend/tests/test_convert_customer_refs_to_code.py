@@ -364,3 +364,30 @@ class TestChainedRefs:
         assert [c.ref_id for c in second.changes] == [r_b]
         mod.apply_conversion(db, second, str(tmp_path / "2.csv"))
         assert (_stored(db, r_a), _stored(db, r_b)) == (f"AED_SORENTO:{c1}", f"AED_SORENTO:{c2}")
+
+
+class TestReviewRound1Script:
+    def test_s16_apply_never_replaces_an_existing_change_list(self, db, tmp_path):
+        """Security should-fix: the CSV may be the only way back, so a second --apply to the
+        same path refuses before touching anything."""
+        mod = _script()
+        cid = _customer(db, _code("S16"))
+        rid = _ref(db, cid, "AED_SORENTO:160")
+        path = tmp_path / "out.csv"
+        path.write_text("earlier run\n")
+
+        with pytest.raises(FileExistsError):
+            mod.apply_conversion(db, mod.plan_conversion(db), str(path))
+
+        assert path.read_text() == "earlier run\n"
+        assert _stored(db, rid) == "AED_SORENTO:160"
+
+    def test_s17_blank_code_is_skipped_not_turned_into_a_bare_prefix(self, db):
+        mod = _script()
+        cid = _customer(db, "   ")
+        rid = _ref(db, cid, "AED_SORENTO:170")
+
+        plan = mod.plan_conversion(db)
+
+        assert _change_for(plan, rid) is None
+        assert _skip_for(plan, rid).reason == "blank_code"

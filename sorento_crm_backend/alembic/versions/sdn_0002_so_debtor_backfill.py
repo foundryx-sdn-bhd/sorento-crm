@@ -28,7 +28,8 @@ def backfill_so_debtor_name(bind) -> int:
         text(
             "UPDATE sales_orders so SET debtor_name = btrim(c.customer_name) "
             "FROM customers c "
-            "WHERE so.customer_id = c.id AND so.debtor_name IS NULL "
+            "WHERE so.customer_id = c.id AND so.company_id = c.company_id "
+            "AND so.debtor_name IS NULL "
             "AND btrim(c.customer_name) <> ''"
         )
     )

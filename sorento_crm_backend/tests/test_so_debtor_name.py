@@ -382,3 +382,62 @@ class TestSoScreensShowTheOrderName:
 
         rows = so_outstanding_rows(db, customer_ids=[str(master.id)])
         assert sorted(r["customer"] for r in rows) == ["MASTER NAME", "ORDER NAME"]
+
+
+class TestReviewRound1SoCustomerChange:
+    def test_a_manual_customer_change_takes_the_new_customers_name(self, monkeypatch):
+        """Review M2: every SO now carries a name, so moving it to another customer by hand must
+        move the name too; an edit that keeps the customer leaves the name alone."""
+        from types import SimpleNamespace
+
+        from app.services.numbering_service import NumberingService
+        from app.services.scm.sales_order_service import SalesOrderService
+
+        register_company_scope_listeners()
+        with blank_session() as session:
+            set_company_scope(session, frozenset({DEFAULT_COMPANY_ID}))
+            first, second = unique_code(MARKER), unique_code(MARKER)
+            _customer(session, DEFAULT_COMPANY_ID, code=first, name="NAME-FIRST")
+            _customer(session, DEFAULT_COMPANY_ID, code=second, name="NAME-SECOND")
+            monkeypatch.setattr(
+                NumberingService, "get_next_number", lambda self, *a, **k: unique_code("SO")
+            )
+            svc = SalesOrderService(session)
+            created = svc.create(
+                SimpleNamespace(
+                    customer_code=first, sales_agent_id=None, requested_delivery_date=None,
+                    order_type="stock", priority="normal", lines=[],
+                ),
+                user_id=None,
+            )
+            so_id = str(created["id"])
+            session.execute(
+                text("UPDATE sales_orders SET debtor_name = 'NAME-AS-ISSUED' WHERE id = :i"), {"i": so_id}
+            )
+
+            def edit(code):
+                from app.schemas.scm_orders import SalesOrderUpdate
+
+                svc.update(so_id, SalesOrderUpdate(customer_code=code), user_id=None)
+
+            def name():
+                return session.execute(
+                    text("SELECT debtor_name FROM sales_orders WHERE id = :i"), {"i": so_id}
+                ).scalar()
+
+            edit(first)
+            assert name() == "NAME-AS-ISSUED"
+            edit(second)
+            assert name() == "NAME-SECOND"
+
+    def test_a_push_moving_the_order_to_another_customer_without_a_name_takes_its_name(self, env):
+        first, second = unique_code(MARKER), unique_code(MARKER)
+        _customer(env.db, env.company_a, code=first, name="NAME-FIRST")
+        _customer(env.db, env.company_a, code=second, name="NAME-SECOND")
+        ref = f"{MARKER}-SO-{uuid.uuid4().hex[:8]}"
+        env.post(INGEST_SO, [_so_record(env, ref=ref, customer_code=first)])
+        assert env.header("sales_orders", ref)["debtor_name"] == "NAME-FIRST"
+
+        env.post(INGEST_SO, [_so_record(env, ref=ref, customer_code=second)])
+
+        assert env.header("sales_orders", ref)["debtor_name"] == "NAME-SECOND"
