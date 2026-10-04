@@ -13,6 +13,12 @@ Run from sorento_crm_backend/:
     venv/bin/python scripts/merge_customers_by_code.py --apply --actor ops@example.com --create-index
     venv/bin/python scripts/merge_customers_by_code.py --revert dcu-20261004T120000 --actor ops@example.com
 
+    # owner 5 Oct, no sheets: preview, then the one-command run (conflicts keep the kept row's
+    # values, every held group merges, index added when nothing is left)
+    venv/bin/python scripts/merge_customers_by_code.py --default-resolutions --release-all-held
+    venv/bin/python scripts/merge_customers_by_code.py --apply --actor ops@example.com \\
+        --default-resolutions --release-all-held --create-index
+
 - The dry run changes nothing. Its CSV (one row per group: survivor, retired rows, rows that
   would move per table, conflicts) holds real customer data: it lands in `scripts/out/`
   (gitignored) and is never committed.
@@ -92,7 +98,7 @@ def _summary(groups: list[customer_merge.Group]) -> str:
     return "\n".join(lines)
 
 
-def main(argv: list[str] | None = None) -> int:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--dry-run", action="store_true", help="default: plan only, change nothing")
@@ -109,8 +115,22 @@ def main(argv: list[str] | None = None) -> int:
         "--releases", help="a held-review CSV with `release` = yes on the groups to merge anyway"
     )
     parser.add_argument("--create-index", action="store_true", help="after --apply: add the unique index")
+    parser.add_argument(
+        "--default-resolutions",
+        action="store_true",
+        help="merge conflict groups with no `keep` row, keeping the kept row's own values (owner 5 Oct)",
+    )
+    parser.add_argument(
+        "--release-all-held",
+        action="store_true",
+        help="merge every held (name mismatch) group too, no held-review CSV needed (owner 5 Oct)",
+    )
     parser.add_argument("--out-dir", default=str(DEFAULT_OUT))
-    args = parser.parse_args(argv)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -135,6 +155,14 @@ def main(argv: list[str] | None = None) -> int:
         print(_summary(groups))
         print(f"plan: {plan_path}")
         print(f"held for review ({n_held}): {held_path}  (write yes in `release` to merge anyway)")
+        would_merge = [
+            g for g in groups
+            if (not g.held or args.release_all_held) and (not g.conflicts or args.default_resolutions)
+        ]
+        print(
+            f"with these flags --apply merges {len(would_merge)} of {len(groups)} groups "
+            f"(retires {sum(len(g.retired_ids) for g in would_merge)} rows)"
+        )
         if not args.apply:
             db.rollback()
             return 0
@@ -156,6 +184,8 @@ def main(argv: list[str] | None = None) -> int:
                     resolutions=resolutions,
                     releases=releases,
                     actor_user_id=actor,
+                    default_resolutions=args.default_resolutions,
+                    release_all_held=args.release_all_held,
                 )
                 db.commit()
             except Exception:

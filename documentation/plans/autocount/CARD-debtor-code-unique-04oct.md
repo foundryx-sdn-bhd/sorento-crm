@@ -100,6 +100,13 @@ dev; the dry run (R11) re-measures them before anything is applied.
   `ALPHA TRADING HARDWARE` keeps TRADING. Tests: `tests/test_customer_merge.py::TestNameMismatchHold`.
   Fake-fixture dry run (204 tag/suffix-only + 59 different-name + 40 cash groups): 161 held by the
   old rule, 59 by this one. The unique index waits until every held and conflict group is resolved.
+- **R7d One-command run** (owner 5 Oct 00:20, no sheets): the 17 conflict groups take the
+  script's default (the kept row keeps its own values; nothing on a conflict field moves from a
+  retired row) and every held group merges; the owner reviews the result in prod. Flags
+  `--default-resolutions` and `--release-all-held` (explicit, so a plain `--apply` still waits);
+  the plan / held CSVs are written as an output log only. A dry run with the same flags prints
+  `with these flags --apply merges N of M groups`. `--revert <run id>` undoes every merged
+  group, held and conflict ones included. Tests: `tests/test_customer_merge.py::TestOneCommandRun`.
 - **R7c Cash-code customer group** (crew 4 Oct): on a `301-*` group the survivor keeps a customer
   group only when it is the AutoCount-linked row and already holds one; an unlinked survivor's
   group is cleared (logged, restored by revert). A retired buyer's group is never filled onto the

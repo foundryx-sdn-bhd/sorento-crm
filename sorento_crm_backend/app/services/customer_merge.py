@@ -531,10 +531,17 @@ def apply(
     resolutions: Optional[dict[tuple[str, str], str]] = None,
     releases: Optional[Iterable[tuple[str, str]]] = None,
     actor_user_id: Optional[str] = None,
+    default_resolutions: bool = False,
+    release_all_held: bool = False,
 ) -> ApplyResult:
     """Merge every group in scope. Does not commit. `resolutions` maps
     `(company_id, code_key)` to the row id whose values win on a conflict; `releases` names
-    the held groups the owner cleared to merge anyway."""
+    the held groups the owner cleared to merge anyway.
+
+    Owner 5 Oct (no sheets): `default_resolutions` merges a conflict group that has no named
+    `keep` row with the kept row's own values (nothing on a conflict field moves from a
+    retired row); `release_all_held` merges every held group. Both stay off unless asked, so a
+    plain `--apply` still waits for the owner."""
     resolutions = {(str(k[0]), k[1].strip().lower()): v for k, v in (resolutions or {}).items()}
     released = {(str(c), k.strip().lower()) for c, k in (releases or ())}
     result = ApplyResult()
@@ -544,10 +551,12 @@ def apply(
     fks = _referencing_fks(db)
     columns = _customer_columns(db)
     for group in groups:
-        if group.held and (group.company_id, group.code_key) not in released:
+        if group.held and not release_all_held and (group.company_id, group.code_key) not in released:
             result.held.append(group)
             continue
         keep = resolutions.get((group.company_id, group.code_key))
+        if keep is None and group.conflicts and default_resolutions:
+            keep = group.survivor_id
         if group.conflicts and keep is None:
             result.skipped.append(group)
             continue
