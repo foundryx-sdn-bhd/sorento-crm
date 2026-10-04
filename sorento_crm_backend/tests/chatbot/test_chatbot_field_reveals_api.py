@@ -22,6 +22,9 @@ from app.services.user_service import UserPermissionService
 
 from tests.chatbot.test_turns_admin_api import db  # noqa: F401 - reuses the blank-schema fixture
 
+# DO-ASK-SIMPLIFY (owner, 4 Oct 2026): every DO field reveal defaults ON for every contact.
+DO_KEYS = sorted(key for key, _label in FIELD_REVEAL_KEYS if key.startswith("delivery_orders."))
+
 BASE = "/api/v1/system/chatbot"
 CONTACT_VIEW = "user_management.contacts.view"
 CONTACT_EDIT = "user_management.contacts.edit"
@@ -91,11 +94,11 @@ class TestFieldRevealKeys:
 
 
 class TestContactFieldReveals:
-    def test_get_defaults_to_empty(self, client, db):
+    def test_get_defaults_to_the_do_keys(self, client, db):
         contact_id = _contact(db)
         resp = client.get(f"{BASE}/contacts/{contact_id}/field-reveals")
         assert resp.status_code == 200, resp.text
-        assert resp.json()["granted"] == []
+        assert resp.json()["granted"] == DO_KEYS
 
     def test_put_replaces_and_get_reflects_it(self, client, db):
         contact_id = _contact(db)
@@ -134,7 +137,7 @@ class TestContactFieldReveals:
 
         # Nothing was written by the rejected call.
         get_resp = client.get(f"{BASE}/contacts/{contact_id}/field-reveals")
-        assert get_resp.json()["granted"] == []
+        assert get_resp.json()["granted"] == DO_KEYS
 
     def test_put_requires_edit_permission(self, client, db):
         contact_id = _contact(db)

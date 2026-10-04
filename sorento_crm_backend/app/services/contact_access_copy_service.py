@@ -8,7 +8,8 @@ Linked customers, companies, CS routing, media limits and memory are never part 
 The access set is the `FACETS` tuple, read for many contacts at once (`snapshots`) and compared
 per facet (`diff`). The endpoint's dry run, its apply, and the contacts list's
 `access_differs_from` filter all go through the same two functions, so the preview, the write
-and the filter cannot disagree. ACCESS-MODEL (#1434) swaps the `field_reveals` and
+and the filter cannot disagree. Reveals are the effective set: DO keys default ON with no row (owner,
+4 Oct 2026). ACCESS-MODEL (#1434) swaps the `field_reveals` and
 `agent_access` facets for roles and overrides; nothing else here changes.
 """
 from __future__ import annotations
@@ -24,7 +25,6 @@ from app.models.access import (
     AccessAgent,
     ContactAccessType,
     ContactAgentAccess,
-    ContactFieldReveal,
     RespondContact,
     respond_contact_access_types,
 )
@@ -124,14 +124,11 @@ def snapshots(db: Session, contacts: Iterable[RespondContact]) -> dict[str, Acce
     ):
         out[str(contact_id)].access_types.append(code)
 
+    # The EFFECTIVE reveals, so a DO key that is ON by default with no row counts as held
+    # (owner, 4 Oct 2026; `contact_field_reveal_service.granted_keys_for`).
     known = {key for key, _ in contact_field_reveal_service.FIELD_REVEAL_KEYS}
-    for contact_id, key in (
-        db.query(ContactFieldReveal.respond_contact_id, ContactFieldReveal.field_key)
-        .filter(ContactFieldReveal.respond_contact_id.in_(ids), ContactFieldReveal.granted.is_(True))
-        .all()
-    ):
-        if key in known:
-            out[str(contact_id)].reveals.append(key)
+    for contact_id, keys in contact_field_reveal_service.granted_keys_for(db, ids).items():
+        out[contact_id].reveals.extend(k for k in keys if k in known)
 
     # Agent grants: by contact id, plus legacy rows keyed only by phone (NULL contact id).
     by_phone = {c.phone_number: str(c.id) for c in contacts}

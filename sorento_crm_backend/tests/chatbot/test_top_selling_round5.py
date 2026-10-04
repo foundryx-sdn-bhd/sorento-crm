@@ -31,6 +31,7 @@ from typing import Any
 import pytest
 
 from app.services.company_scope import DEFAULT_COMPANY_ID
+from tests.chatbot._turn_helpers import do_window
 from tests.chatbot import test_outstanding_lane as outstanding_lane
 from tests.chatbot.test_engine import _parser_output
 from tests.chatbot.test_outstanding_lane import (
@@ -469,12 +470,14 @@ class TestOwnerTranscripts:
             assert _calls(captured, ORDERS) and not _calls(captured)
             (args,) = _calls(captured, ORDERS)
             assert "customer_ids" not in args
-            assert args["actual_delivery_date_from"] == "2026-01-01" and args["actual_delivery_date_to"] == "2026-12-31"
+            assert args["actual_delivery_date_from"] == "2026-01-01" and args["actual_delivery_date_to"] == "2026-01-31"
             # Fix lane round 8: the filters carry silently.
             assert "Filters from the ranking" not in text and "is not a filter for" not in text
-            assert "Dates: 01/01/2026 to 31/12/2026" in text
+            assert "Dates: 01/01/2026 to 31/01/2026" in text
 
-        r.say(_report(None, document=["DO"]), "can show me the DO", do)
+        # Dated: the carried calendar year is over the 31-day cap and a dateless DO list ask asks
+        # which period first (DO-ASK-SIMPLIFY, owner 4 Oct 2026), so this step names January.
+        r.say(_report(None, document=["DO"], date_filter_start="2026-01-01", date_filter_end="2026-01-31"), "can show me the DO", do)
 
         def worst(text, captured):
             assert text == ASK_METRIC
@@ -748,11 +751,12 @@ class TestR4NoisyTokens:
 # --------------------------------------------------------------------------- #
 
 
-def _ranked_with_filters(session_factory, monkeypatch, cat) -> None:
-    """A ranking narrowed by agent FANNY, category Water Closet and brand Sorento."""
+def _ranked_with_filters(session_factory, monkeypatch, cat, **window: str) -> None:
+    """A ranking narrowed by agent FANNY, category Water Closet and brand Sorento. `window`
+    names the ranking's own dates; the default is the calendar year the lane injects."""
     _turn(
         session_factory, monkeypatch,
-        _ask(top_n=100, rank_by="amount", entities=[_e("water closet", "category"), _e("fanny", "sales_agent"), _e("sorento", "brand")]),
+        _ask(top_n=100, rank_by="amount", entities=[_e("water closet", "category"), _e("fanny", "sales_agent"), _e("sorento", "brand")], **window),
         "top 100 hot selling water closet sold by fanny sorento brand by amount",
     )
 
@@ -792,7 +796,9 @@ class TestR5Continuity:
         ],
     )
     def test_a_report_after_a_ranking_carries_its_filters(self, session_factory, monkeypatch, cat, message, qf) -> None:
-        _ranked_with_filters(session_factory, monkeypatch, cat)
+        # Dated: a dateless DO list ask asks which period first (DO-ASK-SIMPLIFY, owner 4 Oct 2026).
+        # A ranking over a whole year would carry a range over the 31-day cap and be refused.
+        _ranked_with_filters(session_factory, monkeypatch, cat, date_filter_start="2026-01-01", date_filter_end="2026-01-31")
         text, captured = _turn(session_factory, monkeypatch, qf, message)
         assert not _calls(captured)
         (args,) = _calls(captured, ORDERS)
@@ -814,20 +820,24 @@ class TestR5Continuity:
     def test_the_customer_carries(self, session_factory, monkeypatch, cat) -> None:
         _asked_who(session_factory, monkeypatch)
         _turn(session_factory, monkeypatch, _position(1), "1")
-        text, captured = _turn(session_factory, monkeypatch, _report(None, document=["DO"]), "can show me the DO")
+        # Dated: a dateless DO list ask asks which period first (DO-ASK-SIMPLIFY, owner 4 Oct 2026).
+        text, captured = _turn(session_factory, monkeypatch, _report(None, document=["DO"], **do_window()), "can show me the DO")
         (args,) = _calls(captured, ORDERS)
         assert args["customer_ids"] == [cat.customers["SAMPLE - FANNY NG"]]
         assert "Filters from the ranking" not in text
 
-    def test_a_named_year_carries(self, session_factory, monkeypatch, cat) -> None:
-        _turn(session_factory, monkeypatch, _ask(top_n=10, rank_by="amount", date_filter_start="2025-01-01", date_filter_end="2025-12-31"), "top 10 hot selling in 2025 by amount")
+    def test_a_named_month_in_a_ranking_carries_to_the_next_report(self, session_factory, monkeypatch, cat) -> None:
+        # Dated: a dateless DO list ask asks which period first (DO-ASK-SIMPLIFY, owner 4 Oct 2026).
+        # January 2025, not the whole year: a range over the 31-day cap is refused, not carried.
+        _turn(session_factory, monkeypatch, _ask(top_n=10, rank_by="amount", date_filter_start="2025-01-01", date_filter_end="2025-01-31"), "top 10 hot selling in 2025 by amount")
         text, captured = _turn(session_factory, monkeypatch, _report(None, document=["DO"]), "can show me the DO")
         (args,) = _calls(captured, ORDERS)
-        assert args["actual_delivery_date_from"] == "2025-01-01" and args["actual_delivery_date_to"] == "2025-12-31"
+        assert args["actual_delivery_date_from"] == "2025-01-01" and args["actual_delivery_date_to"] == "2025-01-31"
         assert "Filters from the ranking" not in text
 
     def test_the_next_report_carries_the_same_and_a_new_ranking_starts_over(self, session_factory, monkeypatch, cat) -> None:
-        _ranked_with_filters(session_factory, monkeypatch, cat)
+        # Dated: a dateless DO list ask asks which period first (DO-ASK-SIMPLIFY, owner 4 Oct 2026).
+        _ranked_with_filters(session_factory, monkeypatch, cat, date_filter_start="2026-01-01", date_filter_end="2026-01-31")
         _turn(session_factory, monkeypatch, _report(None), "show me the orders")
         text, captured = _turn(session_factory, monkeypatch, _report(None, document=["DO"]), "can show me the DO")
         (args,) = _calls(captured, ORDERS)
