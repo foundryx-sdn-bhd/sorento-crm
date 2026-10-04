@@ -101,6 +101,8 @@ export interface PromptVersionsResponse {
   active: boolean;
   activates_in: string | null;
   variables: string[];
+  /** PROMPT-DYNAMIC: tokens the backend fills from registry tables itself (chips). */
+  registry_variables?: string[];
   labels: { production: number | null; staging: number | null };
   versions: PromptVersionRow[];
   /** Slice E: the code fallback the backend always sends - optional here
@@ -308,5 +310,24 @@ export interface PromptBlocksStatus {
 export async function getPromptBlocksStatus(): Promise<PromptBlocksStatus> {
   const r = await apiFetch('/api/v1/system/chatbot/prompt-blocks/status');
   if (!r.ok) throw new Error(await extractApiError(r, 'Failed to load the prompt block status'));
+  return r.json();
+}
+
+/** One source on the "Wired to this agent" panel, and one chip's metadata (R5a). */
+export interface RegistryVariableRow {
+  name: string;
+  label: string;
+  source: string;
+  href: string;
+  count: number;
+  last_changed: string | null;
+  /** The text the model receives for this variable right now. */
+  rendered: string;
+  used: boolean;
+}
+
+export async function getRegistryVariables(name: string): Promise<RegistryVariableRow[]> {
+  const r = await apiFetch(`${BASE}/${encodeURIComponent(name)}/registry-variables`);
+  if (!r.ok) throw new Error(await extractApiError(r, 'Failed to load the wired sources'));
   return r.json();
 }

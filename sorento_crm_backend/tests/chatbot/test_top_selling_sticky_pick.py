@@ -76,7 +76,7 @@ def test_arms_one_option_per_printed_row_numbered_by_rank():
     assert pending.options[1]["entity_type"] == "product"
     # A pick goes back to the ask that printed the list (contract 121 / AC-1704's
     # `status` carry), and the stored filters re-run it.
-    assert pending.payload["domain"] == "order"
+    assert pending.payload["domain"] == "sales"  # R7 (PLAN-prompt-dynamic-30sep D9)
     assert pending.payload["status"] == "top_selling"
     assert pending.payload["filters"] == _FILTERS
 

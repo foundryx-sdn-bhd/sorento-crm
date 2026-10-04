@@ -97,12 +97,16 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # prompt without MEMORY_ADDENDUM to 44,883 est. tokens and the whole prompt to 45,399
 # (crew design review round: "supplier_category" only when BOTH are named);
 # CEILING is 45,399 - 512 = 44,887 so both assertions hold.
-# Seventh re-pin, 4 Oct 2026 (INTENT-FRAMES, owner ruling Q4): INTENT_FRAMES_ADDENDUM (defines
+# Seventh re-pin, 4 Oct 2026 (PROMPT-DYNAMIC merged over LOWSTOCK-SEMANTIC, PLAN-prompt-dynamic-30sep
+# D9): main 690d41fc measures 44,883 without MEMORY_ADDENDUM; the owner's `sales` domain row adds one
+# domain line to the policy blocks (+88): 44,971 without MEMORY_ADDENDUM and 45,487 with it;
+# CEILING is 45,487 - 512 = 44,975 so both assertions hold. Nothing else grew.
+# Eighth re-pin, 5 Oct 2026 (INTENT-FRAMES, owner ruling Q4): INTENT_FRAMES_ADDENDUM (defines
 # `continuation`, the frame carry signal, and the clear / reset / start over topic reset,
 # 368 est. tokens) sits between LOW_STOCK_FILTERS and MEMORY and takes the prompt without
-# MEMORY_ADDENDUM to 45,251 est. tokens and the whole prompt to 45,767; CEILING is
-# 45,767 - 512 = 45,255 so both assertions hold.
-CEILING = 45_255
+# MEMORY_ADDENDUM to 45,339 est. tokens and the whole prompt to 45,855; CEILING is
+# 45,855 - 512 = 45,343 so both assertions hold.
+CEILING = 45_343
 # The memory addendum on its own, bounded separately so this PR's growth stays bounded.
 # 26 Sep baseline (lane d89110c0): 339 est. tokens. Round 4 (baf4c813, 28 Sep: the history
 # question in any wording, the number re-run, commercial_request) took it to 512, which is

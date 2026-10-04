@@ -75,6 +75,15 @@ def escalation_teams() -> tuple[str, ...]:
     return ESCALATION_TEAMS
 
 
+def suggested_agents() -> tuple[str, ...]:
+    """The agent codes the parser may name (`contracts.SUGGESTED_AGENTS`), for the
+    prompt's `{{agents}}` fallback on a database with no `access_agents` rows yet
+    (PLAN-prompt-dynamic-30sep D3). Through this doorway for the AC-002 reason above."""
+    from app.services.chatbot import contracts
+
+    return contracts.SUGGESTED_AGENTS
+
+
 def default_tier_order() -> list[str]:
     """The tier order default (chatbot turn re-architecture, AC-1502 captain ruling
     16 Sep 2026, AC-1594 captain ruling 16 Sep 2026).
