@@ -56,7 +56,7 @@ class TestNothingEscapesRunTurn:
         stub_parser()
         stub_access()
 
-        def _boom(db, *, current_date, override_version_id=None):
+        def _boom(db, *, current_date, override_version_id=None, grants=None):
             raise parser_mod.ParserError("AI assistant configuration is not set")
 
         monkeypatch.setattr(parser_mod, "resolve_config", _boom)

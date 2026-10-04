@@ -40,6 +40,7 @@ from app.schemas.chatbot_field_reveal import (
     FieldRevealKeysResponse,
 )
 from app.services import contact_field_reveal_service as service
+from app.services.prompt_gates import prompt_blocks_for
 from app.services.error_handler import handle_not_found, handle_unprocessable
 
 router = APIRouter(prefix="/chatbot")
@@ -61,7 +62,9 @@ def list_field_reveal_keys(
 ):
     """Every restricted key that exists, with its label (AC-963, AC-964)."""
     _ = current_user
-    return FieldRevealKeysResponse(items=service.field_reveal_keys())
+    return FieldRevealKeysResponse(
+        items=[{**item, "prompt_blocks": prompt_blocks_for(item["key"])} for item in service.field_reveal_keys()]
+    )
 
 
 @router.get(

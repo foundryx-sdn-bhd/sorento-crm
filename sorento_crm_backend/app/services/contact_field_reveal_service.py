@@ -87,18 +87,13 @@ DEFAULT_ON_KEYS: frozenset[str] = frozenset(
 )
 
 
-def field_reveal_keys() -> list[dict[str, Any]]:
+def field_reveal_keys() -> list[dict[str, str]]:
     """Every restricted key that exists, with its label, sorted by key.
 
     Sourced from the `FIELD_REVEAL_KEYS` literal above, not from `mcp_tools` - see the
     module docstring for why a live query cannot be used here.
     """
-    from app.services.chatbot.prompt_gates import prompt_blocks_for
-
-    return [
-        {"key": key, "label": label, "prompt_blocks": prompt_blocks_for(key)}
-        for key, label in sorted(FIELD_REVEAL_KEYS)
-    ]
+    return [{"key": key, "label": label} for key, label in sorted(FIELD_REVEAL_KEYS)]
 
 
 def granted_keys_for(db: Session, respond_contact_ids: list[str]) -> dict[str, list[str]]:
