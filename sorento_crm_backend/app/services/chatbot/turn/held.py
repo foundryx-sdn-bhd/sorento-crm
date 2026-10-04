@@ -153,15 +153,21 @@ def consume(
     # Only a change between two KNOWN intents counts: `intent_hint` is the parser's own
     # snake_case phrase, and a synonym it drifts to between turns is not a new question.
     changed = bool(intent and prior and intent != prior and {intent, prior} <= KNOWN_INTENTS)
-    if changed:
+    holding = bool(held_slots(state))
+    answers = holding and (bool(answered) or _answers(state, verdict))
+    if changed and not answers:
+        # INTENT-FRAMES: a message that answers the held question is inside that question's
+        # frame whatever intent rides on it (a bare "2" carrying a stale hint picks the
+        # tier for the product the roster was asked about, #1353), so only a message that
+        # answers nothing starts a new frame.
         verdict[NEW_INTENT] = True
     if intent and intent != prior:
         state = replace(state, focus=replace(state.focus, intent=intent))
-    if not held_slots(state):
+    if not holding:
         return state, None
     if verdict.get("topic_reset") is True:
         return _cleared(state), "topic_reset"
-    if changed and not answered and not _answers(state, verdict):
+    if changed and not answers:
         # A question that accepts ONLY a position or one of its own offered labels is kept
         # (the new question is still answered as itself; it cannot be captured): an
         # escalation offer (`decide`, #1323; the subject a miss offered it over is what
