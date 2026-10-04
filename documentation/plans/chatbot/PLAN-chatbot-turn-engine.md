@@ -720,7 +720,7 @@ Steps, and what each one proved:
 2. List loads: `GET /api/v1/system/chat-history?date_from=..&date_to=..&page=1&limit=50`.
 3. Filters > "Failed turns only: off" -> on. Two calls follow, in order:
    `GET /api/v1/system/chatbot/turns/failed-contacts?from=..&to=..` then
-   `GET /api/v1/system/chat-history?...&contact_id=ZZT9001&contact_id=445239397&page=1...`.
+   `GET /api/v1/system/chat-history?...&contact_id=ZZT9001&contact_id=900000111&page=1...`.
    That second call IS B1: the contacts the aggregate named are sent back as repeated
    `contact_id`, so the rows, the total and the pager describe one set. Each row carries the
    "failed at understood" badge.

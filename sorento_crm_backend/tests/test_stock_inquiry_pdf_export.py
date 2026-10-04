@@ -58,7 +58,7 @@ def _seed_inquiry(db: Session) -> StockInquiry:
         id=str(uuid.uuid4()),
         inquiry_number=f"SIPDF-{uuid.uuid4().hex[:6]}",
         status="pending_purchasing",
-        salesperson="Eric Ng",
+        salesperson="CONTACT Y",
         product_code="SRTWC8518-SH",
         item_description="One piece water closet",
         project_customer="ECO WORLD TRADING SDN BHD (PROJECT)",

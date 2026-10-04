@@ -21,7 +21,7 @@ def test_orders_list_one_item_per_order_products_inline():
             "order_number": "202606-1622", "debtor_name": "HANLIM",
             "order_date": "2026-06-10", "actual_delivery_date": "2026-06-11",
             "order_status": "Picked Up / In Transit", "pickup_time": "09:34:00",
-            "transporter": "SORENTO", "driver_name": "AZHAR", "lorry_plate": "VQP1678",
+            "transporter": "SORENTO", "driver_name": "DRIVER B", "lorry_plate": "PLATE-34",
             "warehouse": "BRW",
             "lines": [{"quantity": 3, "product": {"product_code": "SRTWB7109"}}],
         }],

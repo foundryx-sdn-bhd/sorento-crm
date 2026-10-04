@@ -66,11 +66,11 @@ in CRM as the thing every later check compares against.
 
 Weeks later a PO arrives. Someone uploads it: a scan, sometimes with pencil on it.
 
-The system reads it and shows Yana what it found beside the page image: 21 lines, the PO
+The system reads it and shows CONTACT AH what it found beside the page image: 21 lines, the PO
 number, the term, the customer's order reference. Two handwritten notes are pulled out as
 their own cards, each with a crop of the handwriting: *"26/1/26 amend code and description
 for item (5), (20), (23)"* and *"15/5/26 cancel item (7) due to changed the price, refer to
-new P/O HQ/26/05/087"*. Yana accepts one, rejects one, edits the third. She approves the PO;
+new P/O HQ/26/05/087"*. CONTACT AH accepts one, rejects one, edits the third. She approves the PO;
 Baser countersigns. Nothing was retyped.
 
 ### 5. The schedule arrives as a spreadsheet nobody designed for us
@@ -145,7 +145,7 @@ unmoved remainder is cancelled with a number on it, exactly as `CANCEL BALANCE 3
 
 - **Marketing** sees which of their leads were accepted and what became of them.
 - **The salesperson** has a project whose quotation, PO, schedule and SOs are one chain.
-- **Yana** approves documents instead of retyping them.
+- **CONTACT AH** approves documents instead of retyping them.
 - **CS** reviews exceptions instead of reading 21 pages line by line, and does not lose a day
   waiting for the PO to be walked to her desk.
 - **Eling** decides allocation with stock figures on screen.
@@ -179,7 +179,7 @@ unmoved remainder is cancelled with a number on it, exactly as `CANCEL BALANCE 3
 | D18 | **Pre-order is an SO**, flagged, anchored on the project, excluded from customer analytics and credit; re-point moves quantity date by date with an explicit cancelled balance | Hong Bee was a parking route; the project stayed constant while the customer changed |
 | D19 | **Sponsorship**: the approved sponsorship form is the source document, same machinery, price zero, quotation checks skipped, costing left for Accounts | It already carries an approver, so it plays the PO's evidentiary role |
 | D20 | Approved-PO-awaiting-SO runs on the **existing form SLA and handling lock**; a breached draft becomes claimable by any eligible project CS | Answers their "no backup when she is on leave" with machinery already built and tested |
-| D21 | The Yana then CS **sequence is preserved** (client decision). The AI removes retyping at both steps rather than removing a step | Client's call, recorded here rather than quietly optimised away |
+| D21 | The CONTACT AH then CS **sequence is preserved** (client decision). The AI removes retyping at both steps rather than removing a step | Client's call, recorded here rather than quietly optimised away |
 | D22 | Double order: quotation balance is the hard rule, same product+phase on another SO warns, cross project is shown as information only | On a 15 phase schedule every phase legitimately repeats the same products |
 | D23 | **AR outstanding is ingested** from AutoCount on the existing inbound pipe | We hold `credit_limit` and `payment_terms_days` but not what they owe |
 | D24 | `PS26-0143` is project sales admin's **filing reference**, stored as the project's `admin_ref` alias | Client correction: it is not a project code and not a purchase document |
@@ -263,7 +263,7 @@ unmoved remainder is cancelled with a number on it, exactly as `CANCEL BALANCE 3
 - **AC-D6** A struck through line is proposed as CANCELLED, never removed from the extraction.
 - **AC-D7** An annotation naming a successor PO (`refer to new P/O HQ/26/05/087`) creates a
   link to that PO once it is uploaded, and flags it as expected until then.
-- **AC-D8** The PO is approved by Yana and countersigned per the existing signature rule.
+- **AC-D8** The PO is approved by CONTACT AH and countersigned per the existing signature rule.
   CS cannot open the SO draft until it is approved (D21).
 - **AC-D9** A PO carries `admin_ref` (the PS filing reference) and it is searchable.
 

@@ -1,6 +1,6 @@
 {
   "name": "owner-history-question-after-stock-and-incoming",
-  "about": "Owner hand test of round 3 (28 Sep 2026, console contact 437264483, memory On at Full): after `check stock srtwc286` and `incoming`, every wording of the history question gets the numbered list naming both asks, never the clarify menu. Plan 7.3 example 3, AC-MEM082.",
+  "about": "Owner hand test of round 3 (28 Sep 2026, console contact 900000008, memory On at Full): after `check stock srtwc286` and `incoming`, every wording of the history question gets the numbered list naming both asks, never the clarify menu. Plan 7.3 example 3, AC-MEM082.",
   "needs_memory": true,
   "given": {
     "memory_level": "full",

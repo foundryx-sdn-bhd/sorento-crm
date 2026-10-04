@@ -184,7 +184,7 @@ def seeded(db):
     db.add(
         RespondContact(
             id=contact_id,
-            phone_number="+60128880001",
+            phone_number="+60120000550",
             name="ZZT Clock Contact",
             respond_io_id="zzt-clock-io",
             session_vars={},

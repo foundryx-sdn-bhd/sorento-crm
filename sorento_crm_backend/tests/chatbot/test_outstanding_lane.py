@@ -3219,7 +3219,7 @@ class TestDateNarrowingUnderAnOpenOffer:
 
 # --------------------------------------------------------------------------- #
 # Owner round 5 (13 Sep 2026, lane stack, prompt v22): a live turn (`outstanding
-# dealer quantity for hanlim`, contact 437264483) hit an ambiguous CUSTOMER picker
+# dealer quantity for hanlim`, contact 900000008) hit an ambiguous CUSTOMER picker
 # (7 families: HANLIM TRADING SDN BHD (SRT) plus six "STOCK TRANSFER - BRW TO ..."
 # companies), and picking "1" replayed the OLD per-product order summary via
 # `crm_order_management_orders_list` instead of the outstanding scope question. Trace:

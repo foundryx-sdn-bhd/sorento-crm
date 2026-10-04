@@ -8,9 +8,9 @@ message is replayed here twice where it matters: with the verdict the round 4 wo
 verdict the owner's own trace shows version 34 produced. Both must land the same way.
 
 * R1 "1" / "2" under "customer or sales agent?" binds to that question only;
-* R2 the same question answered in words ("yeah sales agent", "fanny sales agent");
+* R2 the same question answered in words ("yeah sales agent", "contactz sales agent");
 * R3 "neither" / "customer is everyone" clears the customer, never picks every row;
-* R4 a noisy token ("fanny water closet", "bathtub by sean") splits into its parts;
+* R4 a noisy token ("contactz water closet", "bathtub by sean") splits into its parts;
 * R5 "outstanding" / "the DO" / "the orders" after a ranking carries its filters;
 * R6 "worst 100 hot selling" is a least sold ranking, never out of scope;
 * R7 over a ranked list only a bare 1..N is a rank pick; "2025?" is the year;
@@ -51,7 +51,7 @@ ORDERS = "crm_order_management_orders_list"
 GRANTS = ["sales_orders.sales_report", "sales_orders.outstanding"]
 ASK_METRIC = "By quantity or by amount?"
 FANNY_WHO = (
-    "Do you mean customer SAMPLE - FANNY NG or sales agent FANNY I, FANNY III, FANNY IV? "
+    "Do you mean customer SAMPLE - CONTACTZ X or sales agent CONTACTZ I, CONTACTZ III, CONTACTZ IV? "
     "Reply 1 for the customer, 2 for the sales agent."
 )
 SEAN_WHO = (
@@ -69,8 +69,8 @@ STAFF_CUSTOMERS = [
 
 
 class Catalogue:
-    """The rows the owner's transcripts name: the agents FANNY I / III / IV and SEAN I /
-    III / IV, the customers SAMPLE - FANNY NG, SAMPLE - SEAN and the staff purchase
+    """The rows the owner's transcripts name: the agents CONTACTZ I / III / IV and SEAN I /
+    III / IV, the customers SAMPLE - CONTACTZ X, SAMPLE - SEAN and the staff purchase
     ledgers, and the Water Closet / Bathtub categories (names are copies of the codes,
     the words live in `class_label` and `search_synonyms`, as on every live row)."""
 
@@ -94,7 +94,7 @@ def _seed(session_factory) -> Catalogue:
     db = session_factory()
     agents = {
         code: SalesAgent(id=str(uuid.uuid4()), sales_agent=code, person_label=None, company_id=DEFAULT_COMPANY_ID)
-        for code in ("FANNY I", "FANNY III", "FANNY IV", "SEAN I", "SEAN III", "SEAN IV")
+        for code in ("CONTACTZ I", "CONTACTZ III", "CONTACTZ IV", "SEAN I", "SEAN III", "SEAN IV")
     }
     sorento = Brand(id=str(uuid.uuid4()), brand_code="SRT", brand_name="Sorento", company_id=DEFAULT_COMPANY_ID)
     categories = [
@@ -106,14 +106,14 @@ def _seed(session_factory) -> Catalogue:
     ]
     db.add_all([*agents.values(), sorento, *categories])
     db.flush()
-    for name in ("SAMPLE - FANNY NG", *STAFF_CUSTOMERS):
+    for name in ("SAMPLE - CONTACTZ X", *STAFF_CUSTOMERS):
         cid = str(customer(db, company_id=DEFAULT_COMPANY_ID, name=name).id)
         cat.customers[name] = cid
         cat.names[cid] = name
     db.commit()
     for code, agent in agents.items():
         cat.names[str(agent.id)] = code
-        (cat.fanny_agents if code.startswith("FANNY") else cat.sean_agents).append(str(agent.id))
+        (cat.fanny_agents if code.startswith("CONTACTZ") else cat.sean_agents).append(str(agent.id))
     cat.sorento = str(sorento.id)
     cat.names[cat.sorento] = "Sorento"
     cat.water_closet = [str(c.id) for c in categories[:2]]
@@ -332,7 +332,7 @@ def _header(text: str, **axes: str) -> None:
         assert _line(labels[key], value) in text, (labels[key], value, text)
 
 
-FANNY = "FANNY I, FANNY III, FANNY IV"
+CONTACTZ = "CONTACTZ I, CONTACTZ III, CONTACTZ IV"
 SEAN = "SEAN I, SEAN III, SEAN IV"
 YEAR = "01/01/2026 to 31/12/2026"
 NEVER = ("Could not find", "Couldn't find", "escalate", "Which one do you mean?", "Hi! How can I help", "out of the scope")
@@ -377,7 +377,7 @@ class Replay:
 
 class TestOwnerTranscripts:
     def test_transcript_1(self, session_factory, monkeypatch, cat) -> None:
-        """"product category is water closet, product is everything, agent is fanny" then
+        """"product category is water closet, product is everything, agent is contactz" then
         "2" then "outstanding". The ask says "agent" next to the name: the agent, no
         question (R2), the category kept; "2" is then rank 2 of the list on screen (R7);
         "outstanding" carries the filters (R5)."""
@@ -390,12 +390,12 @@ class TestOwnerTranscripts:
             assert sorted(args["sales_agent_ids"]) == sorted(cat.fanny_agents)
             assert sorted(args["category_ids"]) == sorted(cat.water_closet)
             assert "customer_ids" not in args
-            _header(text, customer="all", category="Water Closet", agent=FANNY, date=YEAR)
+            _header(text, customer="all", category="Water Closet", agent=CONTACTZ, date=YEAR)
 
-        # version 34 hinted "fanny" a customer; the round 4 words hint it an agent
+        # version 34 hinted "contactz" a customer; the round 4 words hint it an agent
         r.say(
-            _narrow(_e("water closet", "category"), _e("fanny", "customer")),
-            "product category is water closet, product is everything, agent is fanny", ask,
+            _narrow(_e("water closet", "category"), _e("contactz", "customer")),
+            "product category is water closet, product is everything, agent is contactz", ask,
         )
 
         def two(text, captured):
@@ -527,12 +527,12 @@ class TestOwnerTranscripts:
 
 
 def _asked_who(session_factory, monkeypatch, *, rank_by: str | None = "amount") -> str:
-    """"top 100 hot selling water closet by fanny": the customer or agent question, the
+    """"top 100 hot selling water closet by contactz": the customer or agent question, the
     ask already naming the category, the count and (by default) the metric."""
     text, captured = _turn(
         session_factory, monkeypatch,
-        _ask(top_n=100, rank_by=rank_by, entities=[_e("water closet", "category"), _e("fanny", "customer")]),
-        "top 100 hot selling water closet by fanny",
+        _ask(top_n=100, rank_by=rank_by, entities=[_e("water closet", "category"), _e("contactz", "customer")]),
+        "top 100 hot selling water closet by contactz",
     )
     assert text == FANNY_WHO and not _calls(captured)
     return text
@@ -540,7 +540,7 @@ def _asked_who(session_factory, monkeypatch, *, rank_by: str | None = "amount") 
 
 _PROMOTION_MISREAD = _parser_output(
     message_type="business_query", domain_hint="promotion", intent_hint="check_promotion",
-    entities=[_e("fanny water closet", "promotion")], order_status=None,
+    entities=[_e("contactz water closet", "promotion")], order_status=None,
 )
 
 
@@ -552,7 +552,7 @@ class TestR1TheAnswerBindsToTheQuestion:
     )
     def test_two_sets_the_agent_and_runs_the_ranking(self, session_factory, monkeypatch, cat, qf) -> None:
         """Transcript 1: "2" picked both the agent and the customer, then drifted to a
-        promotion lookup of "fanny water closet"."""
+        promotion lookup of "contactz water closet"."""
         _asked_who(session_factory, monkeypatch)
         text, captured = _turn(session_factory, monkeypatch, qf, "2")
         (args,) = _calls(captured)
@@ -560,16 +560,16 @@ class TestR1TheAnswerBindsToTheQuestion:
         assert "customer_ids" not in args and "customer_query" not in args
         assert sorted(args["category_ids"]) == sorted(cat.water_closet)
         assert args["n"] == 100 and args["rank_by"] == "amount"
-        _header(text, customer="all", category="Water Closet", agent=FANNY)
+        _header(text, customer="all", category="Water Closet", agent=CONTACTZ)
         assert not any(bad in text for bad in NEVER), text
 
     def test_one_sets_the_customer_and_clears_the_agent(self, session_factory, monkeypatch, cat) -> None:
         _asked_who(session_factory, monkeypatch)
         text, captured = _turn(session_factory, monkeypatch, _position(1), "1")
         (args,) = _calls(captured)
-        assert args["customer_ids"] == [cat.customers["SAMPLE - FANNY NG"]]
+        assert args["customer_ids"] == [cat.customers["SAMPLE - CONTACTZ X"]]
         assert "sales_agent_ids" not in args
-        _header(text, customer="SAMPLE - FANNY NG", category="Water Closet", agent="all")
+        _header(text, customer="SAMPLE - CONTACTZ X", category="Water Closet", agent="all")
 
     def test_with_no_metric_the_answer_leads_to_the_metric_question(self, session_factory, monkeypatch, cat) -> None:
         _asked_who(session_factory, monkeypatch, rank_by=None)
@@ -596,7 +596,7 @@ class TestR2AnswersInWords:
             ("sales agent", _low_signal()),
             ("i mean sales agent sean", _narrow(_e("sean", "sales_agent"), correction=True)),
             ("neither, i mean sales agent sean", _narrow(_e("sean", "customer"), correction=True, is_affirmative=False)),
-            ("fanny sales agent", _narrow(_e("fanny sales agent", "customer"))),
+            ("contactz sales agent", _narrow(_e("contactz sales agent", "customer"))),
             ("yeah sales agent", _position(2, message_type="business_query", order_status="top_selling", domain_hint="order")),
         ],
     )
@@ -606,14 +606,14 @@ class TestR2AnswersInWords:
         (args,) = _calls(captured)
         assert sorted(args["sales_agent_ids"]) == sorted(cat.fanny_agents)
         assert "customer_ids" not in args
-        _header(text, customer="all", category="Water Closet", agent=FANNY)
+        _header(text, customer="all", category="Water Closet", agent=CONTACTZ)
         assert "Reply 1 for the customer" not in text
 
     def test_customer_in_words_answers_like_one(self, session_factory, monkeypatch, cat) -> None:
         _asked_who(session_factory, monkeypatch)
         _text, captured = _turn(session_factory, monkeypatch, _low_signal(), "the customer")
         (args,) = _calls(captured)
-        assert args["customer_ids"] == [cat.customers["SAMPLE - FANNY NG"]] and "sales_agent_ids" not in args
+        assert args["customer_ids"] == [cat.customers["SAMPLE - CONTACTZ X"]] and "sales_agent_ids" not in args
 
     @pytest.mark.parametrize(
         "message",
@@ -708,12 +708,12 @@ class TestR4NoisyTokens:
     @pytest.mark.parametrize("hint", ["category", "customer", "promotion", "sales_agent"])
     def test_fanny_water_closet_splits(self, session_factory, monkeypatch, cat, hint) -> None:
         _ranked(session_factory, monkeypatch)
-        text, captured = _turn(session_factory, monkeypatch, _narrow(_e("fanny water closet", hint)), "fanny water closet")
+        text, captured = _turn(session_factory, monkeypatch, _narrow(_e("contactz water closet", hint)), "contactz water closet")
         (args,) = _calls(captured)
         assert sorted(args["sales_agent_ids"]) == sorted(cat.fanny_agents)
         assert sorted(args["category_ids"]) == sorted(cat.water_closet)
         assert "customer_ids" not in args
-        _header(text, customer="all", category="Water Closet", agent=FANNY)
+        _header(text, customer="all", category="Water Closet", agent=CONTACTZ)
         assert not any(bad in text for bad in NEVER), text
 
     @pytest.mark.parametrize("message, raw", [("bathtub by sean", "bathtub by sean"), ("sean bathtub", "sean bathtub")])
@@ -727,7 +727,7 @@ class TestR4NoisyTokens:
 
     def test_one_unknown_leftover_is_said_once_and_the_ranking_runs(self, session_factory, monkeypatch, cat) -> None:
         _ranked(session_factory, monkeypatch)
-        text, captured = _turn(session_factory, monkeypatch, _narrow(_e("fanny marble water closet", "category")), "fanny marble water closet")
+        text, captured = _turn(session_factory, monkeypatch, _narrow(_e("contactz marble water closet", "category")), "contactz marble water closet")
         (args,) = _calls(captured)
         assert sorted(args["category_ids"]) == sorted(cat.water_closet)
         assert text.startswith("I don't know 'marble'.\n\n*Top 100 selling items*")
@@ -735,9 +735,9 @@ class TestR4NoisyTokens:
         assert "I don't know" not in text
 
     def test_a_whole_name_is_not_split(self, session_factory, monkeypatch, cat) -> None:
-        """"SAMPLE - FANNY NG" is one customer and "water tap" one class, never split."""
+        """"SAMPLE - CONTACTZ X" is one customer and "water tap" one class, never split."""
         _ranked(session_factory, monkeypatch)
-        _text, captured = _turn(session_factory, monkeypatch, _narrow(_e("SAMPLE - FANNY NG", "customer")), "for SAMPLE - FANNY NG")
+        _text, captured = _turn(session_factory, monkeypatch, _narrow(_e("SAMPLE - CONTACTZ X", "customer")), "for SAMPLE - CONTACTZ X")
         assert not any("sales_agent_ids" in a for a in _calls(captured))
 
     def test_the_prompt_teaches_the_split(self) -> None:
@@ -752,12 +752,12 @@ class TestR4NoisyTokens:
 
 
 def _ranked_with_filters(session_factory, monkeypatch, cat, **window: str) -> None:
-    """A ranking narrowed by agent FANNY, category Water Closet and brand Sorento. `window`
+    """A ranking narrowed by agent CONTACTZ, category Water Closet and brand Sorento. `window`
     names the ranking's own dates; the default is the calendar year the lane injects."""
     _turn(
         session_factory, monkeypatch,
-        _ask(top_n=100, rank_by="amount", entities=[_e("water closet", "category"), _e("fanny", "sales_agent"), _e("sorento", "brand")], **window),
-        "top 100 hot selling water closet sold by fanny sorento brand by amount",
+        _ask(top_n=100, rank_by="amount", entities=[_e("water closet", "category"), _e("contactz", "sales_agent"), _e("sorento", "brand")], **window),
+        "top 100 hot selling water closet sold by contactz sorento brand by amount",
     )
 
 
@@ -823,7 +823,7 @@ class TestR5Continuity:
         # Dated: a dateless DO list ask asks which period first (DO-ASK-SIMPLIFY, owner 4 Oct 2026).
         text, captured = _turn(session_factory, monkeypatch, _report(None, document=["DO"], **do_window()), "can show me the DO")
         (args,) = _calls(captured, ORDERS)
-        assert args["customer_ids"] == [cat.customers["SAMPLE - FANNY NG"]]
+        assert args["customer_ids"] == [cat.customers["SAMPLE - CONTACTZ X"]]
         assert "Filters from the ranking" not in text
 
     def test_a_named_month_in_a_ranking_carries_to_the_next_report(self, session_factory, monkeypatch, cat) -> None:

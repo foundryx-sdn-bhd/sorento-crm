@@ -2,7 +2,7 @@
 
 Lane: `feat/reorder-feedback-9sep`, stack :3083/:8083. Tool: `npx -y agent-browser@0.27.0`,
 isolated `--session reorder-s14` (default daemon session shared with other agents).
-Logged in as `tehjayson@gmail.com` via the sign-in form (E2E creds from `.env.local`).
+Logged in as `person38@example.com` via the sign-in form (E2E creds from `.env.local`).
 
 ## 1. Navigate to the plan (sidebar clicks from `/`) - PASS
 

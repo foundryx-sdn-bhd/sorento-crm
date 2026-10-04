@@ -527,7 +527,7 @@ def test_two_open_tickets_for_one_contact_are_allowed_by_the_database(db):
 # ticket on a coincidental id collision.
 # ---------------------------------------------------------------------------
 
-OTHER_PHONE = "+60129998888"
+OTHER_PHONE = "+60120000988"
 
 
 def _second_contact(db, seed) -> str:

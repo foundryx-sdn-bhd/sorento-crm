@@ -140,7 +140,7 @@ class PortalService:
     def _resolve_contact(self, contact_id: str) -> RespondContact:
         """Resolve a RespondContact by internal `id` or `respond_io_id`.
 
-        External callers (MCP/n8n) pass the Respond.io contact id (e.g. "437264483"),
+        External callers (MCP/n8n) pass the Respond.io contact id (e.g. "900000008"),
         while internal endpoints pass the internal UUID. Accept either; raise NOT_FOUND
         if neither matches.
         """

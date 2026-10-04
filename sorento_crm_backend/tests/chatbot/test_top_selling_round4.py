@@ -51,8 +51,8 @@ NO_SALE_LINE = "Items with no sale in this period are not ranked."
 
 
 class Catalogue:
-    """The rows the owner's words name: the sales agent FANNY, the customer SAMPLE -
-    FANNY NG (the one "sold by fanny" was wrongly read as), the brands Sorento and
+    """The rows the owner's words name: the sales agent CONTACTZ, the customer SAMPLE -
+    CONTACTZ X (the one "sold by contactz" was wrongly read as), the brands Sorento and
     Cabana, and the Water Closet / Tap categories. Category names are copies of the
     codes (as on every live row, `ProductCategory.class_label`'s comment); the words
     customers use live in `class_label` and `search_synonyms`."""
@@ -75,7 +75,7 @@ def _seed_catalogue(session_factory, *, with_fanny_customer: bool = False) -> Ca
 
     cat = Catalogue()
     db = session_factory()
-    agent = SalesAgent(id=str(uuid.uuid4()), sales_agent="FANNY", person_label="Fanny Ng", company_id=DEFAULT_COMPANY_ID)
+    agent = SalesAgent(id=str(uuid.uuid4()), sales_agent="CONTACTZ", person_label="Contactz X", company_id=DEFAULT_COMPANY_ID)
     sorento = Brand(id=str(uuid.uuid4()), brand_code="SRT", brand_name="Sorento", company_id=DEFAULT_COMPANY_ID)
     cabana = Brand(id=str(uuid.uuid4()), brand_code="CBN", brand_name="Cabana", company_id=DEFAULT_COMPANY_ID)
     categories = [
@@ -88,11 +88,11 @@ def _seed_catalogue(session_factory, *, with_fanny_customer: bool = False) -> Ca
     db.add_all([agent, sorento, cabana, *categories])
     db.flush()
     if with_fanny_customer:
-        cat.fanny_customer = str(customer(db, company_id=DEFAULT_COMPANY_ID, name="SAMPLE - FANNY NG").id)
-        cat.names[cat.fanny_customer] = "SAMPLE - FANNY NG"
+        cat.fanny_customer = str(customer(db, company_id=DEFAULT_COMPANY_ID, name="SAMPLE - CONTACTZ X").id)
+        cat.names[cat.fanny_customer] = "SAMPLE - CONTACTZ X"
     db.commit()
     cat.fanny_agent, cat.sorento, cat.cabana = str(agent.id), str(sorento.id), str(cabana.id)
-    cat.names.update({cat.fanny_agent: "FANNY", cat.sorento: "Sorento", cat.cabana: "Cabana"})
+    cat.names.update({cat.fanny_agent: "CONTACTZ", cat.sorento: "Sorento", cat.cabana: "Cabana"})
     cat.water_closet = [str(c.id) for c in categories[:2]]
     cat.tap = [str(categories[2].id)]
     for cid in cat.water_closet:
@@ -229,7 +229,7 @@ def _answer(**overrides: Any) -> dict[str, Any]:
 
 
 def _narrow(*entities: dict[str, Any], **overrides: Any) -> dict[str, Any]:
-    """A message that only narrows the ranking on screen ("sold by fanny", "water
+    """A message that only narrows the ranking on screen ("sold by contactz", "water
     closet only"): a refinement, no ask of its own (the SALES REPORT addendum's
     "narrowing reply" rule, which the round 4 addendum extends to the ranking)."""
     base: dict[str, Any] = dict(
@@ -323,23 +323,23 @@ class TestF1QuickReplies:
 
 
 class TestF2SalesAgent:
-    @pytest.mark.parametrize("message", ["sold by fanny", "sales agent is fanny", "by agent fanny"])
+    @pytest.mark.parametrize("message", ["sold by contactz", "sales agent is contactz", "by agent contactz"])
     def test_an_agent_word_sets_the_sales_agent_filter(self, session_factory, monkeypatch, cat, message) -> None:
-        """Transcript item 2: "sold by fanny" answered Customer: SAMPLE - FANNY NG."""
+        """Transcript item 2: "sold by contactz" answered Customer: SAMPLE - CONTACTZ X."""
         _ranked(session_factory, monkeypatch)
-        reply, calls = _turn(session_factory, monkeypatch, _narrow(_e("fanny", "sales_agent")), message)
+        reply, calls = _turn(session_factory, monkeypatch, _narrow(_e("contactz", "sales_agent")), message)
         (args,) = calls
         assert args["sales_agent_ids"] == [cat.fanny_agent]
         assert "customer_ids" not in args and "customer_query" not in args
         assert args["rank_by"] == "quantity" and args["n"] == 100
-        assert "\nSales agent: FANNY\n" in _text(reply)
+        assert "\nSales agent: CONTACTZ\n" in _text(reply)
         assert "\nCustomer: all\n" in _text(reply)
 
     def test_a_customer_hinted_word_that_names_only_an_agent_is_the_agent(
         self, session_factory, monkeypatch, cat
     ) -> None:
         _ranked(session_factory, monkeypatch)
-        _reply, calls = _turn(session_factory, monkeypatch, _narrow(_e("fanny", "customer")), "sold by fanny")
+        _reply, calls = _turn(session_factory, monkeypatch, _narrow(_e("contactz", "customer")), "sold by contactz")
         (args,) = calls
         assert args["sales_agent_ids"] == [cat.fanny_agent]
         assert "customer_ids" not in args
@@ -351,10 +351,10 @@ class TestF2SalesAgent:
         cat = _seed_catalogue(session_factory, with_fanny_customer=True)
         route.names = cat.names
         _ranked(session_factory, monkeypatch)
-        reply, calls = _turn(session_factory, monkeypatch, _narrow(_e("fanny", "customer")), "for fanny")
+        reply, calls = _turn(session_factory, monkeypatch, _narrow(_e("contactz", "customer")), "for contactz")
         assert calls == []
         assert _text(reply) == (
-            "Do you mean customer SAMPLE - FANNY NG or sales agent FANNY? "
+            "Do you mean customer SAMPLE - CONTACTZ X or sales agent CONTACTZ? "
             "Reply 1 for the customer, 2 for the sales agent."
         )
         _reply, calls = _turn(session_factory, monkeypatch, _position(2), "2")
@@ -366,11 +366,11 @@ class TestF2SalesAgent:
         cat = _seed_catalogue(session_factory, with_fanny_customer=True)
         route.names = cat.names
         _ranked(session_factory, monkeypatch)
-        _turn(session_factory, monkeypatch, _narrow(_e("fanny", "customer")), "for fanny")
+        _turn(session_factory, monkeypatch, _narrow(_e("contactz", "customer")), "for contactz")
         reply, calls = _turn(session_factory, monkeypatch, _position(1), "1")
         (args,) = calls
         assert args["customer_ids"] == [cat.fanny_customer] and "sales_agent_ids" not in args
-        assert "\nCustomer: SAMPLE - FANNY NG\n" in _text(reply)
+        assert "\nCustomer: SAMPLE - CONTACTZ X\n" in _text(reply)
 
     def test_an_agent_word_matching_no_agent_is_said_and_the_ranking_kept(
         self, session_factory, monkeypatch, cat
@@ -390,12 +390,12 @@ class TestF2SalesAgent:
 class TestF3Correction:
     def _customer_fanny(self, session_factory, monkeypatch, route) -> Catalogue:
         """The state the owner corrected: the ranking filtered to the customer SAMPLE -
-        FANNY NG."""
+        CONTACTZ X."""
         _seed_contact(session_factory, variables={})
         cat = _seed_catalogue(session_factory, with_fanny_customer=True)
         route.names = cat.names
         _ranked(session_factory, monkeypatch)
-        _turn(session_factory, monkeypatch, _narrow(_e("fanny", "customer")), "for fanny")
+        _turn(session_factory, monkeypatch, _narrow(_e("contactz", "customer")), "for contactz")
         _reply, calls = _turn(session_factory, monkeypatch, _position(1), "1")
         assert calls[0]["customer_ids"] == [cat.fanny_customer]
         return cat
@@ -406,13 +406,13 @@ class TestF3Correction:
         cat = self._customer_fanny(session_factory, monkeypatch, route)
         reply, calls = _turn(
             session_factory, monkeypatch,
-            _narrow(_e("fanny", "sales_agent"), correction=True, broaden_axis="customer", broaden_to="all"),
-            "hmm no, customer is everyone, but saless agent is fanny",
+            _narrow(_e("contactz", "sales_agent"), correction=True, broaden_axis="customer", broaden_to="all"),
+            "hmm no, customer is everyone, but saless agent is contactz",
         )
         (args,) = calls
         assert "customer_ids" not in args and "customer_query" not in args
         assert args["sales_agent_ids"] == [cat.fanny_agent]
-        assert "\nCustomer: all\n" in _text(reply) and "\nSales agent: FANNY\n" in _text(reply)
+        assert "\nCustomer: all\n" in _text(reply) and "\nSales agent: CONTACTZ\n" in _text(reply)
 
     @pytest.mark.parametrize("message", ["everyone", "all customers", "any customer"])
     def test_everyone_clears_the_customer(self, session_factory, monkeypatch, route, message) -> None:
@@ -672,12 +672,12 @@ class TestOwnerTranscript:
         text, (args,) = say(_answer(rank_by="quantity"), "qty")
         assert args["rank_by"] == "quantity" and args["n"] == 100 and text.endswith(ITEM_OFFER)
         # 2. the agent (F2)
-        text, (args,) = say(_narrow(_e("fanny", "sales_agent")), "sold by fanny")
+        text, (args,) = say(_narrow(_e("contactz", "sales_agent")), "sold by contactz")
         assert args["sales_agent_ids"] == [cat.fanny_agent] and "customer_ids" not in args
         # 3. the correction (F3)
         text, (args,) = say(
-            _narrow(_e("fanny", "sales_agent"), correction=True, broaden_axis="customer", broaden_to="all"),
-            "hmm no, customer is everyone, but saless agent is fanny",
+            _narrow(_e("contactz", "sales_agent"), correction=True, broaden_axis="customer", broaden_to="all"),
+            "hmm no, customer is everyone, but saless agent is contactz",
         )
         assert args["sales_agent_ids"] == [cat.fanny_agent] and "customer_ids" not in args
         assert "\nCustomer: all\n" in text
@@ -734,13 +734,13 @@ class TestNarrowingNeverRestarts:
     def test_a_narrowing_marked_as_naming_the_ask_keeps_the_metric_and_count(
         self, session_factory, monkeypatch, cat
     ) -> None:
-        """"sold by fanny" read with order_status top_selling AND `domain_in_message`
+        """"sold by contactz" read with order_status top_selling AND `domain_in_message`
         true still narrows the ranking on screen: no metric question, the count kept."""
         _ranked(session_factory, monkeypatch)
         reply, calls = _turn(
             session_factory, monkeypatch,
-            _narrow(_e("fanny", "sales_agent"), order_status="top_selling", domain_hint="order", domain_in_message=True),
-            "sold by fanny",
+            _narrow(_e("contactz", "sales_agent"), order_status="top_selling", domain_hint="order", domain_in_message=True),
+            "sold by contactz",
         )
         (args,) = calls
         assert args["sales_agent_ids"] == [cat.fanny_agent]

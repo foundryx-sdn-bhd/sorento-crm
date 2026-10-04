@@ -208,7 +208,7 @@ class TestToolPick:
                         entities=[], top_selling={"rank_by": "quantity", "basis": "delivered", "top_n": 5},
                     )
                 },
-                "contact": {"id": 437264483},
+                "contact": {"id": 900000008},
                 "access": {"attributes": [GRANT]},
             },
         }

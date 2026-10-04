@@ -50,8 +50,8 @@ def test_two_lookups_inside_the_ttl_hit_respond_once(monkeypatch):
     client = _CountingClient(_recent_incoming())
     _patch_client(monkeypatch, client)
 
-    first = rms.get_window_state(None, "437264483")
-    second = rms.get_window_state(None, "437264483")
+    first = rms.get_window_state(None, "900000008")
+    second = rms.get_window_state(None, "900000008")
 
     assert client.calls == 1, "the second lookup must be served from the cache"
     assert first["open"] is True
@@ -66,9 +66,9 @@ def test_the_lookup_repeats_once_the_ttl_has_passed(monkeypatch):
     clock = {"t": 1000.0}
     monkeypatch.setattr(rms, "_monotonic", lambda: clock["t"])
 
-    rms.get_window_state(None, "437264483")
+    rms.get_window_state(None, "900000008")
     clock["t"] += rms.WINDOW_CACHE_TTL_SECONDS + 1
-    rms.get_window_state(None, "437264483")
+    rms.get_window_state(None, "900000008")
 
     assert client.calls == 2
 
@@ -77,7 +77,7 @@ def test_each_contact_gets_its_own_entry(monkeypatch):
     client = _CountingClient(_recent_incoming())
     _patch_client(monkeypatch, client)
 
-    rms.get_window_state(None, "437264483")
+    rms.get_window_state(None, "900000008")
     rms.get_window_state(None, "10025531")
 
     assert client.calls == 2
@@ -91,8 +91,8 @@ def test_checked_at_is_recomputed_on_a_cache_hit(monkeypatch):
     client = _CountingClient([{"traffic": "incoming", "messageId": 1, "status": [{"timestamp": old_ms}]}])
     _patch_client(monkeypatch, client)
 
-    first = rms.get_window_state(None, "437264483")
-    second = rms.get_window_state(None, "437264483")
+    first = rms.get_window_state(None, "900000008")
+    second = rms.get_window_state(None, "900000008")
 
     assert client.calls == 1
     assert first["open"] is False and second["open"] is False
@@ -103,8 +103,8 @@ def test_reset_window_cache_forces_a_fresh_lookup(monkeypatch):
     client = _CountingClient(_recent_incoming())
     _patch_client(monkeypatch, client)
 
-    rms.get_window_state(None, "437264483")
+    rms.get_window_state(None, "900000008")
     rms.reset_window_cache()
-    rms.get_window_state(None, "437264483")
+    rms.get_window_state(None, "900000008")
 
     assert client.calls == 2

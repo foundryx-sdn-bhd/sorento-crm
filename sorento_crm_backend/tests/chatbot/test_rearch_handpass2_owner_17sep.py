@@ -1,5 +1,5 @@
 """Owner hand pass 2 (AC-1593), 17 Sep 2026 MYT, 27-turn console chain, contact
-437264483. One unit red per ruling row that is not already red (per the brief), against
+900000008. One unit red per ruling row that is not already red (per the brief), against
 `turn/apply.py::apply` + `turn/route.py::route` (the same seam this lane's other ports
 already use) or a direct `turn/policy_rows.py` read where the ruling is a seed-config
 fact, not a decision.

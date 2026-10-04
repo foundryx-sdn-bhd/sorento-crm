@@ -646,17 +646,17 @@ describe('layerDisplay', () => {
 
   it('draws the override instead of the bound barcode when both exist', () => {
     const barcodeData = { kind: 'product' as const, product: product({ barcode: '4006381333931' }) };
-    const layer = barcodeLayer({ text_override: '111222333' });
+    const layer = barcodeLayer({ text_override: '110000526' });
     expect(layerDisplay(layer, barcodeData, {})).toEqual({
-      text: '111222333',
+      text: '110000526',
       code: 'SK-1234',
     });
   });
 
   it('draws the override even while no product is bound', () => {
-    const layer = barcodeLayer({ text_override: '111222333' });
+    const layer = barcodeLayer({ text_override: '110000526' });
     expect(layerDisplay(layer, null, {})).toEqual({
-      text: '111222333',
+      text: '110000526',
       code: null,
     });
   });
@@ -677,13 +677,13 @@ describe('resolveBarcodeValue', () => {
 
   it('prefers the override over the bound barcode', () => {
     expect(
-      resolveBarcodeValue(barcodeLayer({ text_override: '111222333' }), barcodeData),
-    ).toBe('111222333');
+      resolveBarcodeValue(barcodeLayer({ text_override: '110000526' }), barcodeData),
+    ).toBe('110000526');
   });
 
   it('returns the override even while unbound', () => {
-    expect(resolveBarcodeValue(barcodeLayer({ text_override: '111222333' }), null)).toBe(
-      '111222333',
+    expect(resolveBarcodeValue(barcodeLayer({ text_override: '110000526' }), null)).toBe(
+      '110000526',
     );
   });
 
@@ -692,7 +692,7 @@ describe('resolveBarcodeValue', () => {
   });
 
   it('clearing the override (Relink) falls back to the bound barcode again', () => {
-    const overridden = barcodeLayer({ text_override: '111222333' });
+    const overridden = barcodeLayer({ text_override: '110000526' });
     const relinked = { ...overridden, text_override: null };
     expect(resolveBarcodeValue(relinked, barcodeData)).toBe('4006381333931');
   });
@@ -709,7 +709,7 @@ describe('resolveBarcodeValue', () => {
 
 describe('bindTemplateLayers clears a barcode override on clone (S9 review S5)', () => {
   it('drops a barcode layer\'s text_override when binding the clone to a line', () => {
-    const layers = [barcodeLayer({ text_override: '111222333' })];
+    const layers = [barcodeLayer({ text_override: '110000526' })];
     const bound = bindTemplateLayers(layers, { product_id: 'p1' });
 
     expect(bound[0].text_override).toBeNull();

@@ -165,9 +165,9 @@ class TestEnvelopeContactIdWireShape:
         }
 
     def test_an_integer_contact_id_is_accepted_and_stays_an_integer(self) -> None:
-        envelope = contracts.Envelope(**self._payload(437264483))
+        envelope = contracts.Envelope(**self._payload(900000008))
 
-        assert envelope.contact["id"] == 437264483
+        assert envelope.contact["id"] == 900000008
         assert isinstance(envelope.contact["id"], int)
 
     def test_a_string_contact_id_is_still_accepted_unchanged(self) -> None:

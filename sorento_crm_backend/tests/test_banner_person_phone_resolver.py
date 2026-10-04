@@ -82,9 +82,9 @@ def test_no_contact_no_match_returns_none(db):
 
 # ---- PR-4 ---------------------------------------------------------------
 def test_respond_user_id_path(db):
-    cid = _contact(db, "60111222333")
+    cid = _contact(db, "60110000526")
     _user(db, respond_contact_id=cid, respond_user_id="respond-abc")
-    assert wa_phone_for_respond_user_id(db, "respond-abc") == "60111222333"
+    assert wa_phone_for_respond_user_id(db, "respond-abc") == "60110000526"
 
 
 def test_respond_user_id_no_user_returns_none(db):
@@ -93,10 +93,10 @@ def test_respond_user_id_no_user_returns_none(db):
 
 # ---- PR-5 ---------------------------------------------------------------
 def test_users_id_path_direct(db):
-    cid = _contact(db, "60123000111")
+    cid = _contact(db, "60120000539")
     uid = _user(db, respond_contact_id=cid)
     name, phone = name_and_wa_phone_for_user_id(db, uid)
-    assert phone == "60123000111"
+    assert phone == "60120000539"
     assert name  # resolved display name, never a raw id
 
 

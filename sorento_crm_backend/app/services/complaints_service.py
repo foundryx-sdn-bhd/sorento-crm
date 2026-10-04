@@ -20,6 +20,7 @@ from app.models.procurement import ViewToken
 from app.models.sla import ConversationSLATracking
 from app.services.sla_scope import open_tracker_scope
 from app.schemas.complaints import ComplaintCreate, ComplaintUpdate
+from app.services.contact_brand_scope import complaint_in_scope_clauses, in_scope_product_codes
 from app.services.error_handler import handle_not_found
 from app.services.response_gate import (
     ALLOWED_RESPONSE_STATUSES,
@@ -313,6 +314,11 @@ class ComplaintService:
         """
         data = {attr.key: getattr(complaint, attr.key) for attr in inspect(complaint).mapper.column_attrs}
         data["system_id"] = str(complaint.id)
+        # CONTACT-BRAND-SCOPE: a scoped contact is told only the products it may see.
+        _csv = [p.strip() for p in (data.get("product_code") or "").split(",") if p.strip()]
+        _allowed = in_scope_product_codes(self.db, _csv)
+        if _allowed is not None:
+            data["product_code"] = ",".join(p for p in _csv if p in _allowed) or None
         data["print_count"] = int(print_count or 0)
         data["form_type"] = "complaint"
         # A python property, so column_attrs skips it. The detail page gates its
@@ -429,6 +435,9 @@ class ComplaintService:
         when the primary sort column has equal values.
         """
         q = self.db.query(Complaint)
+        # CONTACT-BRAND-SCOPE: only complaints with a product line the contact may see.
+        for clause in complaint_in_scope_clauses(self.db):
+            q = q.filter(clause)
 
         if query:
             like = f"%{query}%"
@@ -588,6 +597,8 @@ class ComplaintService:
 
         col = getattr(Complaint, date_field)
         q = self.db.query(Complaint)
+        for clause in complaint_in_scope_clauses(self.db):
+            q = q.filter(clause)
         if status and status.strip():
             q = q.filter(func.lower(Complaint.status) == status.strip().lower())
         # resolved_at scoping implies the complaint was actually resolved.
@@ -638,6 +649,9 @@ class ComplaintService:
                     _bump(_month_key(val), _month_key(val))
                 else:  # product - one complaint may cover several product codes
                     codes = self._complaint_product_codes(c)
+                    allowed = in_scope_product_codes(self.db, codes)
+                    if allowed is not None:
+                        codes = [x for x in codes if x in allowed]
                     for code in codes or ["(unspecified)"]:
                         k = code.strip() or "(unspecified)"
                         _bump(k.lower(), k)

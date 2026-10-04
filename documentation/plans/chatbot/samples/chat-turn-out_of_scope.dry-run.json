@@ -3,18 +3,18 @@
   "is_test": true,
   "ctx": {
     "contact": {
-      "id": "437264483",
+      "id": "900000008",
       "firstName": "ZZT",
       "custom_fields": []
     },
     "text": {
       "event_type": "message.received",
       "contact": {
-        "id": "437264483"
+        "id": "900000008"
       },
       "message": {
         "messageId": "chat-turn-out_of_scope-dry-run",
-        "contactId": "437264483",
+        "contactId": "900000008",
         "channelId": "whatsapp",
         "traffic": "incoming",
         "message": {
@@ -24,7 +24,7 @@
       }
     },
     "session": {
-      "respond_io_id": "437264483",
+      "respond_io_id": "900000008",
       "session_vars": {
         "variables": {}
       }
@@ -144,7 +144,7 @@
     },
     {
       "kind": "add_comment",
-      "text": "Team: customer_service\n\u23f0 SLA Alert: This contact is routed to you at <preview>.\nYou have until <preview> to respond.\nYou have until <preview> to resolve.\nReference message: https://app.respond.io/space/364817/inbox/437264483#chat-turn-out_of_scope-dry-run",
+      "text": "Team: customer_service\n\u23f0 SLA Alert: This contact is routed to you at <preview>.\nYou have until <preview> to respond.\nYou have until <preview> to resolve.\nReference message: https://app.respond.io/space/364817/inbox/900000008#chat-turn-out_of_scope-dry-run",
       "dry_run": true,
       "preview": true,
       "mention_user_ids": []

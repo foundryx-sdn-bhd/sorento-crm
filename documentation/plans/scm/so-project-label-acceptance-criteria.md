@@ -7,12 +7,12 @@ Plan: `PLAN-so-project-label.md`. Every AC has a test unless marked "browser".
 - AC-R1 `label_from_inquiry_cell("URC ENGINEERING / BAMBOO RESIDENCE / KUALA LUMPUR")` -> `BAMBOO RESIDENCE / KUALA LUMPUR`.
 - AC-R2 `label_from_inquiry_cell("KNUSFORD/EKOTITIWANGSA/KL")` -> `EKOTITIWANGSA / KL` (slashes normalised to one space either side).
 - AC-R3 `label_from_inquiry_cell("GLOBAL INGRESS/ 252U RMMJ TAMAN IMPIAN EMAS")` -> `252U RMMJ TAMAN IMPIAN EMAS`.
-- AC-R4 `label_from_inquiry_cell("OTM GROUP SDN BHD (SMC-JENNIFER)")` -> `None`; blank -> `None`; `"A / "` -> `None`.
+- AC-R4 `label_from_inquiry_cell("OTM GROUP SDN BHD (SMC-contact-o)")` -> `None`; blank -> `None`; `"A / "` -> `None`.
 - AC-R5 `label_from_note` on `***PROJECT : TAIGA RESIDENCE` -> (`TAIGA RESIDENCE`, `note`); on `**PROJECT; 72U LUMIERE SETIA ALAM` -> (`72U LUMIERE SETIA ALAM`, `note`); on `PROJ: PARK GREEN @ BUKIT JALIL` -> (`PARK GREEN @ BUKIT JALIL`, `note`).
 - AC-R6 `PROJECT CODE: 50-02` with no name line -> (`50-02`, `note`). `PROJECT CODE : ES(S)-DUDUK` followed by `***PROJECT : DUDUK SANTAI 1 & 2` -> (`DUDUK SANTAI 1 & 2`, `note`). `PROJECT CODE: 110-EF(C)-01` followed by `PROJECT TITLE: PROPOSED CONSTRUCTION OF 110 UNITS ...` -> the title text, `note`.
 - AC-R7 Delivery block: `DELIVERY ADDRESS` newline `A-25-07 MAYA ARA RESIDENCES` newline `1 JALAN PJU 1A/1, ...` -> (`MAYA ARA RESIDENCES`, `delivery`). `DELIVERY TO : THE MET KL` -> (`THE MET KL`, `delivery`). `DELIVERY TO ADDRESS` newline `12-09 ASTER GREEN RESIDENCE,` -> (`ASTER GREEN RESIDENCE`, `delivery`). `DELIVERY ADDRESS : ` newline `DENSO (MALAYSIA) SDN BHD` -> (`DENSO (MALAYSIA) SDN BHD`, `delivery`).
 - AC-R8 A `PROJECT` line beats a delivery block in the same note (`PROJECT: ZUS COFFEE @ KLANG VALLEY AREA` above `DELIVERY ADDRESS` -> `ZUS COFFEE @ KLANG VALLEY AREA`, `note`), regardless of order.
-- AC-R9 `***OWN COLLECT`, `EXCHANGE MODEL FROM SRT6638 - INV: ...` newline `OWN COLLECT`, `***DELIVERY 27/08/2026`, `CONTACT : 016-771 1912`, empty, `None` -> `(None, None)`.
+- AC-R9 `***OWN COLLECT`, `EXCHANGE MODEL FROM SRT6638 - INV: ...` newline `OWN COLLECT`, `***DELIVERY 27/08/2026`, `CONTACT : 016-000 0522`, empty, `None` -> `(None, None)`.
 - AC-R10 `label_from_ref`: `JF- 9/9 3.50`, `JH - 8/9  10.17 PM`, `JH-21/08/2026  11.32 AM`, `RETAIL`, `END USER`, `REPLACEMENT`, `REPLACEMENT ORDER`, blank, `None` -> `None`. `THE MET KL`, `PINNACLE SUBANG`, `KSL BLOSSOM 733U @ SETIA ALAM` -> the trimmed text.
 - AC-R11 `apply_project_label(order, label, source)`: writes when the order has no label; writes when the new source rank is >= the stored rank; leaves the order untouched (label, source, and `updated_at`) when the new rank is lower; never writes a `None` label. Rank: `inquiry` 4 > `note` 3 > `ref` 2 > `delivery` 1.
 

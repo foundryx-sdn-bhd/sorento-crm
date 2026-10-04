@@ -1,6 +1,6 @@
 {
   "name": "handpass5-eta-typo-and-attachment-carry",
-  "source": "hand pass 5 owner console turns 29, 30, 36 (contact_respond_id 437264483, 2026-09-17 05:23-05:27 +09) / ruling R4: 'ETA cb2805q' never offers '1. cb2805q' as a roster option (recorded pre-fix reply IS exactly that: 'Which product do you mean? 1. cb2805q') - the reply is a did-you-mean naming CB2805A or a not-found line. Ruling R5: after 'container setatus reports' (resource attachments), a later incoming/stock ask never lists an .xlsx name in its own header; with nothing resolved the reply is a miss, never 'products have stock. Showing'.",
+  "source": "hand pass 5 owner console turns 29, 30, 36 (contact_respond_id 900000008, 2026-09-17 05:23-05:27 +09) / ruling R4: 'ETA cb2805q' never offers '1. cb2805q' as a roster option (recorded pre-fix reply IS exactly that: 'Which product do you mean? 1. cb2805q') - the reply is a did-you-mean naming CB2805A or a not-found line. Ruling R5: after 'container setatus reports' (resource attachments), a later incoming/stock ask never lists an .xlsx name in its own header; with nothing resolved the reply is a miss, never 'products have stock. Showing'.",
   "cases": [
     {
       "name": "eta-cb2805q-typo-is-a-did-you-mean-not-a-roster-of-the-typo-itself",

@@ -3,7 +3,7 @@
 Status: reviewed, PR pending. Track: small fix. Owner ruling 24 Sep 2026 ("okay then i agree,
 proceed"). UAC: `chatbot-roster-label-vs-ask-24sep-acceptance-criteria.md`.
 
-## Evidence (prod, 23 Sep 2026 19:48-19:50 MYT, contact 487555417, turns 336-342)
+## Evidence (prod, 23 Sep 2026 19:48-19:50 MYT, contact 900000039, turns 336-342)
 
 | Turn | Message | Open question on entry | Parser said | Engine did |
 | --- | --- | --- | --- | --- |
@@ -92,7 +92,7 @@ at the end of the lane.
 
 ## AC-1866 live probe (24 Sep 2026, lane backend :8088 from this worktree, real parser, prod-copy DB)
 
-`scripts/chatbot_console_check.py --say` chain, contact 487555417, four turns as one
+`scripts/chatbot_console_check.py --say` chain, contact 900000039, four turns as one
 conversation. Tool fetches fail locally (no MCP up), so the reply header is the evidence:
 
 | Turn | Message | Parser `domain_in_message` | Parser `domain_hint` | Parser `reference_positions` | Reply header |

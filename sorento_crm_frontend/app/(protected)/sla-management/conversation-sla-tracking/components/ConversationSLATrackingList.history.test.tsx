@@ -102,7 +102,7 @@ describe('ConversationSLATrackingList history deep links (AC-M2)', () => {
         {
           id: 'r1',
           contact_name: 'Aisyah Rahman',
-          contact_phone: '+60123345566',
+          contact_phone: '+60120000553',
           current_tier: 1,
           is_resolved: false,
           initiated_at: '2026-08-15T02:00:00',

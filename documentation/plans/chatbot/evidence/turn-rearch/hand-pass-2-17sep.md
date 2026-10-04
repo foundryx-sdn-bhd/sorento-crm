@@ -1,4 +1,4 @@
-# Owner hand pass 2 (AC-1593), 17 Sep 2026 15:40 to 15:49 MYT, phone via tunnel, stack :3081/:8081 on 2453e64d0, clone `sorento_ai_automation_rearch`, contact 437264483
+# Owner hand pass 2 (AC-1593), 17 Sep 2026 15:40 to 15:49 MYT, phone via tunnel, stack :3081/:8081 on 2453e64d0, clone `sorento_ai_automation_rearch`, contact 900000008
 
 27 console turns, all stored on the clone (`chatbot.turns`, ingress console). Turn ids are the first 8 hex chars. Each finding becomes a replay case (expected written per the ruling) BEFORE the fix.
 

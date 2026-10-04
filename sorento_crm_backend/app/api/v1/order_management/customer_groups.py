@@ -38,12 +38,13 @@ async def list_customer_groups(
     query: Optional[str] = Query(None),
     sort: Optional[str] = Query(None),
     dir: str = Query("asc"),
+    agent_mixed: bool = Query(False),
     current_user: dict = Depends(require_permission(_VIEW)),
     db: Session = Depends(get_db),
 ):
     try:
         return CustomerGroupService(db).list_groups(
-            page=page, limit=limit, query=query, sort=sort, dir=dir
+            page=page, limit=limit, query=query, sort=sort, dir=dir, agent_mixed=agent_mixed
         )
     except HTTPException:
         raise

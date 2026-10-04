@@ -156,7 +156,7 @@ def names_its_own_ask(verdict: dict[str, Any]) -> bool:
     """Did the parser read THIS message as an ask of its own: an intent, a domain, an
     entity it named or a brand filter?
 
-    #1323 case 2 (owner hand test, 28 Sep 2026, contact 487555417): "mocha brand" over
+    #1323 case 2 (owner hand test, 28 Sep 2026, contact 900000039): "mocha brand" over
     "Would you like me to escalate to Mocha customer service team?" handed the person to
     customer service. A company name is the pick only when it is the whole answer; one
     that arrives beside any of these is that ask's brand or filter, so a `company_pick`

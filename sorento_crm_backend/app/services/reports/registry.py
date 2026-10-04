@@ -143,6 +143,10 @@ class Dataset:
     #: The engine checks the value against the caller's grant (403 outside it), defaults
     #: it to the caller's current company, and names the company in the title block.
     company_param: Optional[str] = None
+    #: The line's product id column, when the rows are product lines. A brand-scoped session
+    #: (CONTACT-BRAND-SCOPE) keeps only lines of in-scope products: the datasets outer-join
+    #: Product, where the ORM criterion would blank the product but still count the line.
+    product_id_column: Optional[ColumnElement] = None
 
     def __post_init__(self) -> None:
         if self.scope not in SCOPES:

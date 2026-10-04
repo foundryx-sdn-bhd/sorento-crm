@@ -240,7 +240,7 @@ def test_rules_read_both_switches_off_the_contact(db):
 
 def test_a_new_contact_defaults_to_the_offset_on_and_no_packing_list(db):
     row = RespondContact(
-        id=unique_code("CONTACT"), phone_number="+60111222333", name="ZZT default"
+        id=unique_code("CONTACT"), phone_number="+60110000526", name="ZZT default"
     )
     db.add(row)
     db.flush()

@@ -1,6 +1,0 @@
-[     343ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7242/ingest/82ff2983-30f8-41d1-a335-d37b94435673:0
-[     344ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7242/ingest/82ff2983-30f8-41d1-a335-d37b94435673:0
-[     345ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7242/ingest/82ff2983-30f8-41d1-a335-d37b94435673:0
-[     345ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7242/ingest/82ff2983-30f8-41d1-a335-d37b94435673:0
-[     405ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7242/ingest/82ff2983-30f8-41d1-a335-d37b94435673:0
-[     406ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7242/ingest/82ff2983-30f8-41d1-a335-d37b94435673:0

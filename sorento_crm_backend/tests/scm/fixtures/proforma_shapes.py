@@ -204,7 +204,7 @@ KAILU_ROWS: list[list] = [
      None],
     ["BANDAR BUKIT RAJA,41050 KLANG,", None, None, None, None, None, None, None, None],
     ["SELANGOR DARUL EHSAN", None, None, None, None, None, None, None, None],
-    ["Tel ：03-3393 1278 / 1678", None, None, None, None, None, None, None, None],
+    ["Tel ：03-3000 0559 / 1678", None, None, None, None, None, None, None, None],
     [None] * 9,
     ["序号", "品名", "编号", "产品数量", "单价(元)", "总价（元）", "其他", None, None],
     [None, "BASIN COLD TAP", "SRTWT7443", 490, 65.5, 32095, None, None, None],

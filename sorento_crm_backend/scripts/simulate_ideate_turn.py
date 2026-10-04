@@ -331,7 +331,7 @@ def build_client(script: list[Turn]):
         _ALICE: {_CRM_KEY: [dict(x) for x in _CRM_VALUE]},
         _BOB: {_CRM_KEY: [dict(x) for x in _CRM_VALUE]},
     }
-    phones = {_ALICE: "+60123456701", _BOB: "+60123456702"}
+    phones = {_ALICE: "+60100000004", _BOB: "+60100000003"}
 
     # Per-(contact,message) scripted extraction, so the endpoint's real extractor call
     # is replaced by the scripted D-CONFIRM structured update.
