@@ -1,6 +1,6 @@
 # PLAN: Contact copy also copies location, stock check mode, companies, market segment (CONTACT-COPY-FIELDS)
 
-Status: In build. Track: small fix (no migration, no new permission slug; the diff adds per-facet permission checks to an existing endpoint, so security review runs).
+Status: Review done - built, reviewer + security-reviewer clean after round 1, sandbox browser pass PASS; waiting on CI and owner hand test. Track: small fix (no migration, no new permission slug; security review ran because the copy now writes companies + stock visibility).
 
 Owner ask (4 Oct 2026): the contact copy (one source, one or many targets) must also copy location, stock
 check mode, companies and market segment. UAC: `contact-copy-fields-4oct-acceptance-criteria.md`.
