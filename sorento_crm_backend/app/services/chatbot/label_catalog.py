@@ -306,8 +306,8 @@ LABELS: dict[str, dict[str, str]] = {
     "Reply 'all dates' to search without the date filter.": {"ms": "Balas 'all dates' untuk mencari tanpa penapis tarikh.", "zh": "回复 'all dates' 可不限日期搜索。"},
     "Reply 'all dates' to search without the date filter, or would you like me to escalate to {team} team?": {"ms": "Balas 'all dates' untuk mencari tanpa penapis tarikh, atau adakah anda mahu saya rujuk kepada pasukan {team}?", "zh": "回复 'all dates' 可不限日期搜索，或需要我转交给 {team} 团队吗？"},
     # Slice 4 fix round: escalation lane copy, short questions, entities-only copy, top selling who-ask.
-    'Your request is out of the scope of my ability and require human assistance. We are directing your enquiry to the correct person. Please wait for a moment.': {"ms": 'Permintaan anda di luar kemampuan saya dan memerlukan bantuan kakitangan. Kami sedang menghubungkan pertanyaan anda kepada orang yang betul. Sila tunggu sebentar.', "zh": '您的请求超出了我的能力范围，需要人工协助。我们正在将您的询问转交给相关负责人，请稍候。'},
-    'This inquiry has been routed to the respective person-in-charge (PIC) from {team} team. We will get back to you soon. Thanks for your patience.': {"ms": 'Pertanyaan ini telah diserahkan kepada pegawai bertanggungjawab (PIC) daripada pasukan {team}. Kami akan menghubungi anda tidak lama lagi. Terima kasih atas kesabaran anda.', "zh": '此询问已转交给 {team} 团队的相关负责人（PIC）。我们会尽快回复您，感谢您的耐心等待。'},
+    # WA-MSG-TRIM (owner, 3 Oct 2026): the escalation lane's ONE customer message.
+    'Routed to your PIC, they will reply shortly.': {"ms": 'Telah diserahkan kepada PIC anda, mereka akan membalas tidak lama lagi.', "zh": '已转交给您的负责人（PIC），他们会尽快回复。'},
     '{header} I found {count}, please type a little more of the name.': {"ms": '{header} Saya menemui {count}, sila taip lebih sedikit daripada nama itu.', "zh": '{header}我找到 {count} 个，请多输入一些名称。'},
     'and {n} others, reply with the full code.': {"ms": 'dan {n} lagi, balas dengan kod penuh.', "zh": '还有 {n} 个，请回复完整代码。'},
     "Couldn't find {names}.": {"ms": 'Tidak dapat menemui {names}.', "zh": '找不到 {names}。'},
@@ -527,8 +527,7 @@ INLINE = frozenset(
         "What would you like me to do with it?",
         "Ask again with the correct code.",
         "I read {codes} from that photo.",
-        'Your request is out of the scope of my ability and require human assistance. We are directing your enquiry to the correct person. Please wait for a moment.',
-        'This inquiry has been routed to the respective person-in-charge (PIC) from {team} team. We will get back to you soon. Thanks for your patience.',
+        'Routed to your PIC, they will reply shortly.',
         '{header} I found {count}, please type a little more of the name.',
         'and {n} others, reply with the full code.',
         "Couldn't find {names}.",

@@ -84,8 +84,8 @@ def test_item7_the_accepted_escalation_confirmation_is_malay(session_factory, mo
     assert c.say(MS_ASK, stock(product("ZZNOPE999"))) == MS_OFFER
     c.say("ya", _confirmation())
     sent = [a["text"] for a in _latest_row(session_factory).response["actions"] if a.get("kind") == "send_message"]
-    assert any("Pertanyaan ini telah diserahkan kepada pegawai bertanggungjawab (PIC) daripada pasukan" in t for t in sent), sent
-    assert not any("routed" in t for t in sent), sent
+    # WA-MSG-TRIM: one fixed line, in the reply language.
+    assert sent == ["Telah diserahkan kepada PIC anda, mereka akan membalas tidak lama lagi."], sent
 
 
 def test_final_a_message_answered_ahead_keeps_its_own_language_in_the_action_and_the_row(
