@@ -876,6 +876,9 @@ def parse(config: ParserConfig, user_block: str) -> ParsedOutput:
         "prompt_tokens": int(getattr(result, "prompt_tokens", 0) or 0),
         "completion_tokens": int(getattr(result, "completion_tokens", 0) or 0),
         "total_tokens": int(getattr(result, "total_tokens", 0) or 0),
+        # The prompt-cache hit (LLM-TEST-COST): how much of `prompt_tokens` was billed
+        # at the cached rate.
+        "cached_tokens": int(getattr(result, "cached_tokens", 0) or 0),
     }
     try:
         content = (result.content or "").strip()

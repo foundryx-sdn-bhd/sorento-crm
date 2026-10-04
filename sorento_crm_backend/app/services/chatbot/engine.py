@@ -37,6 +37,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models.base import set_company_scope
 from app.models.chatbot_turn import ChatbotTurn
+from app.services import llm_cassette
 from app.services.chatbot import dispatch, jsc, llm_call, media_intake, send_order, trace as trace_mod
 from app.services.chatbot.contracts import (
     BUSINESS_BRANCH_KINDS,
@@ -4072,6 +4073,10 @@ def _run_stages_body(  # noqa: PLR0915
             # alongside the total the trace already carried.
             "prompt_tokens": int(parser_usage.get("prompt_tokens") or 0),
             "completion_tokens": int(parser_usage.get("completion_tokens") or 0),
+            # LLM-TEST-COST: the prompt-cache hit, and whether this parse was live,
+            # recorded or replayed (`off` everywhere but a test run).
+            "cached_tokens": int(parser_usage.get("cached_tokens") or 0),
+            "llm_cassette": llm_cassette.mode(),
             "parser_bypassed": parser_bypassed,
             "recalled_frames": len(recalled),
             # D17: WHICH options the parser was shown, on the record.

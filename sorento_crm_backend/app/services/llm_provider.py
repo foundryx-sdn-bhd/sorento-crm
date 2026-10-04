@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import time
 from dataclasses import dataclass, field
@@ -35,6 +36,9 @@ class ChatResult:
     total_tokens: int
     tool_calls: list[dict] = field(default_factory=list)  # [{id, name, arguments}]
     raw: Any = None  # provider-native response
+    # The part of `prompt_tokens` the provider served from its prompt cache (billed at a
+    # discount). 0 when the provider reports none (LLM-TEST-COST).
+    cached_tokens: int = 0
 
 
 @dataclass
@@ -371,9 +375,16 @@ class OpenAIProvider:
     # Lazy-import the SDK so importing this module is cheap and we don't fail
     # in environments without the SDK present (tests monkey-patch it anyway).
     def _client(self, **overrides: Any):
-        """The SDK seam. `overrides` reach the constructor (timeouts for listing)."""
+        """The SDK seam. `overrides` reach the constructor (timeouts for listing).
+
+        `LLM_BASE_URL` points the client at another OpenAI-compatible endpoint, read only
+        when set (LLM-TEST-COST: room for a cheaper hosted model; set nowhere yet).
+        """
         from openai import OpenAI
 
+        base_url = os.environ.get("LLM_BASE_URL")
+        if base_url:
+            overrides = {"base_url": base_url, **overrides}
         return OpenAI(api_key=self.api_key, **overrides)
 
     def chat(
@@ -390,14 +401,14 @@ class OpenAIProvider:
         json_schema_name: Optional[str] = None,
         timeout: Optional[float] = None,
     ) -> ChatResult:
-        # A caller-set timeout turns the SDK's own retries off: the caller owns the retry
-        # loop and the budget (`chatbot/llm_call.py`), and a silent second attempt doubles it.
-        client = self._client(timeout=timeout, max_retries=0) if timeout is not None else self._client()
+        from app.services import llm_cassette
+
         outbound_messages = (
             _attach_images_openai(messages, images) if images else messages
         )
         kwargs: dict[str, Any] = {
-            "model": model or self.default_model,
+            # `LLM_MODEL_OVERRIDE` wins only when set (LLM-TEST-COST; set nowhere yet).
+            "model": os.environ.get("LLM_MODEL_OVERRIDE") or model or self.default_model,
             "messages": outbound_messages,
             "temperature": temperature,
         }
@@ -420,7 +431,22 @@ class OpenAIProvider:
         elif response_format is not None:
             kwargs["response_format"] = response_format
 
-        completion = _create_chat_completion(client, kwargs)
+        def live() -> Any:
+            # A caller-set timeout turns the SDK's own retries off: the caller owns the retry
+            # loop and the budget (`chatbot/llm_call.py`), and a silent second attempt doubles it.
+            client = self._client(timeout=timeout, max_retries=0) if timeout is not None else self._client()
+            return _create_chat_completion(client, kwargs)
+
+        # Test runs only: `LLM_CASSETTE_MODE` unset (production) is a plain live call.
+        completion = llm_cassette.through(
+            kind="chat",
+            key=llm_cassette.chat_key(kwargs),
+            model=kwargs["model"],
+            secret=self.api_key,
+            live=live,
+            dump=lambda c: c.model_dump(mode="json"),
+            load=_chat_completion_from_json,
+        )
 
         # Defensive normalization - tests use simple stub objects.
         choice = completion.choices[0]
@@ -446,6 +472,8 @@ class OpenAIProvider:
         prompt_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
         completion_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
         total_tokens = int(getattr(usage, "total_tokens", prompt_tokens + completion_tokens) or 0)
+        details = getattr(usage, "prompt_tokens_details", None)
+        cached_tokens = int(getattr(details, "cached_tokens", 0) or 0)
 
         return ChatResult(
             content=content,
@@ -454,12 +482,27 @@ class OpenAIProvider:
             total_tokens=total_tokens,
             tool_calls=normalized_calls,
             raw=completion,
+            cached_tokens=cached_tokens,
         )
 
     def embed(self, text: str) -> list[float]:
-        client = self._client()
-        resp = client.embeddings.create(model="text-embedding-3-small", input=text)
-        return list(resp.data[0].embedding)
+        from app.services import llm_cassette
+
+        model = "text-embedding-3-small"
+
+        def live() -> list[float]:
+            resp = self._client().embeddings.create(model=model, input=text)
+            return list(resp.data[0].embedding)
+
+        return llm_cassette.through(
+            kind="embed",
+            key=llm_cassette.embed_key(model, text),
+            model=model,
+            secret=self.api_key,
+            live=live,
+            dump=lambda vector: vector,
+            load=lambda vector: list(vector),
+        )
 
     def test_connection(self) -> tuple[bool, str, int]:
         """Retrieve the selected model: authenticated, free, no thinking-token trap.
@@ -503,6 +546,13 @@ class OpenAIProvider:
             rows.append((created, ProviderModel(value=model_id, label=model_id)))
         rows.sort(key=lambda row: (row[0], row[1].value), reverse=True)
         return [model for _, model in rows]
+
+
+def _chat_completion_from_json(data: Any) -> Any:
+    """A recorded completion back as the SDK's own type, so `raw` reads as it did live."""
+    from openai.types.chat import ChatCompletion
+
+    return ChatCompletion.model_validate(data)
 
 
 # The non-chat families in OpenAI's flat model list. Substring match, because the
@@ -682,6 +732,9 @@ class AnthropicProvider:
         json_schema_name: Optional[str] = None,
         timeout: Optional[float] = None,
     ) -> ChatResult:
+        from app.services import llm_cassette
+
+        llm_cassette.refuse_uncovered(self.name)
         # A caller-set timeout turns the SDK's own retries off: the caller owns the retry
         # loop and the budget (`chatbot/llm_call.py`), and a silent second attempt doubles it.
         client = self._client(timeout=timeout, max_retries=0) if timeout is not None else self._client()
@@ -734,6 +787,7 @@ class AnthropicProvider:
                 total_tokens=pt + ct,
                 tool_calls=[],
                 raw=resp,
+                cached_tokens=int(getattr(usage, "cache_read_input_tokens", 0) or 0),
             )
         # Anthropic has no native JSON-mode flag; emulate by appending an
         # explicit instruction to the system prompt. The extract service
@@ -787,6 +841,7 @@ class AnthropicProvider:
             total_tokens=total_tokens,
             tool_calls=normalized_calls,
             raw=resp,
+            cached_tokens=int(getattr(usage, "cache_read_input_tokens", 0) or 0),
         )
 
     def embed(self, text: str) -> list[float]:
@@ -1239,6 +1294,9 @@ class GeminiProvider:
         json_schema_name: Optional[str] = None,
         timeout: Optional[float] = None,
     ) -> ChatResult:
+        from app.services import llm_cassette
+
+        llm_cassette.refuse_uncovered(self.name)
         system_text, rest = _split_system_messages(messages)
         contents = _convert_messages_to_gemini(rest)
         if images:
@@ -1370,6 +1428,7 @@ class GeminiProvider:
             total_tokens=total_tokens,
             tool_calls=normalized_calls,
             raw=body,
+            cached_tokens=int(usage.get("cachedContentTokenCount") or 0),
         )
 
     def embed(self, text: str) -> list[float]:
