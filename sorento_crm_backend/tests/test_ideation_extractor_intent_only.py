@@ -101,20 +101,20 @@ def test_migration_is_single_head_and_upgrade_wires_seed_and_publish():
     revision = _assign(src, "revision")
     assert isinstance(revision, str) and 0 < len(revision) <= 32
 
-    # The graph has ONE head and this revision is on its line. A later lane's migration
-    # chained on top (`scripts/alembic-reparent.sh`) is the normal case, never a failure
-    # (LOWSTOCK-SEMANTIC #1470: "lss_0001_parser_vocab sits on top of ...: not the head").
-    from alembic.config import Config
-    from alembic.script import ScriptDirectory
-
-    backend_root = VERSIONS_DIR.parents[1]
-    cfg = Config(str(backend_root / "alembic.ini"))
-    cfg.set_main_option("script_location", str(backend_root / "alembic"))
-    script = ScriptDirectory.from_config(cfg)
-    heads = script.get_heads()
-    assert len(heads) == 1, f"multiple alembic heads: {heads}"
-    lineage = {rev.revision for rev in script.walk_revisions(base="base", head=heads[0])}
-    assert revision == REVISION and REVISION in lineage, f"{REVISION} is not on the head's line"
+    # Single head across the whole versions dir, not "this revision is the head": a later
+    # lane's migration legitimately chains on top of it (DEBTOR-CODE-LINK's sdn_0002 did).
+    revisions, parents = set(), set()
+    for p in VERSIONS_DIR.glob("*.py"):
+        p_src = p.read_text(encoding="utf-8")
+        rev = _assign(p_src, "revision")
+        if not isinstance(rev, str):
+            continue
+        revisions.add(rev)
+        down = _assign(p_src, "down_revision")
+        parents.update(down if isinstance(down, (tuple, list)) else [down])
+    assert REVISION in revisions
+    heads = revisions - parents
+    assert len(heads) == 1, f"alembic heads: {sorted(heads)}"
 
     upgrade = next(
         n for n in ast.parse(src).body if isinstance(n, ast.FunctionDef) and n.name == "upgrade"

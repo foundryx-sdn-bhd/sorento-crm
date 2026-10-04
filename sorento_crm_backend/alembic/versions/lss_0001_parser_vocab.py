@@ -18,7 +18,7 @@ Idempotent, and safe on a fresh database: `seed_prompt_registry` runs first, and
 publish is skipped when a version already carries this exact template.
 
 Revision ID: lss_0001_parser_vocab
-Revises: ideation_capture_0001
+Revises: sdn_0002_so_debtor_backfill
 """
 import importlib.util
 import logging
@@ -31,7 +31,7 @@ from app.models.ai_prompt import AIPromptLabel, AIPromptVersion
 from app.services.ai_prompt_registry import PROMPT_KEYS
 
 revision = "lss_0001_parser_vocab"
-down_revision = "ideation_capture_0001"
+down_revision = "sdn_0002_so_debtor_backfill"
 branch_labels = None
 depends_on = None
 
