@@ -881,30 +881,13 @@ class TestD1FailedPreviewRowsAreVisible:
         _patch_foundryx(monkeypatch, fake, db)
         owner_id = _seed_permitted_user(db, "master_data.products.autocount_pull")
 
-        # A product already linked under a DIFFERENT source system - the same shape
-        # the live report named ("product_code='ACC-SRT8001' is already linked to
-        # another source"): a same-source-system mismatch is adopted by code and
-        # reported updated instead (code-wins, #1049), so this must be cross-source
-        # to still raise the adopt-by-code ladder's ReferenceConflict.
-        category = ProductCategory(category_code=unique_code(MARKER), category_name="cat")
-        uom = UnitOfMeasure(uom_code=unique_code(MARKER)[:20], uom_name="unit")
-        db.add_all([category, uom])
-        db.flush()
-        refs = IntegrationReferenceService(db, company_id=DEFAULT_COMPANY_ID)
-        conflict_rows = []
-        for i in range(7):
-            conflicted_code = f"{MARKER}-D1CONFLICT{i}"
-            existing = Product(
-                product_code=conflicted_code, product_name="Existing", category_id=category.id,
-                base_uom_id=uom.id, list_price=Decimal("50.00"), company_id=DEFAULT_COMPANY_ID,
-            )
-            db.add(existing)
-            db.flush()
-            refs.link(
-                entity_type="products", entity_id=str(existing.id),
-                source_ref=f"{MARKER}-OTHER-SOURCE-{i}", source_system="othersys",
-            )
-            conflict_rows.append(_canonical_row(conflicted_code))
+        # Products match by code only now (owner rulings, 3 Oct), so a code that another
+        # source system "owns" no longer fails a preview row. A row the canonical schema
+        # rejects (a non-numeric list_price) still does, which is all this test needs:
+        # 7 failed rows that must stay visible next to the created one.
+        conflict_rows = [
+            _canonical_row(f"{MARKER}-D1BAD{i}", list_price="not-a-number") for i in range(7)
+        ]
         db.commit()
 
         ok_row = _canonical_row(f"{MARKER}-D1OK")
@@ -927,7 +910,7 @@ class TestD1FailedPreviewRowsAreVisible:
         assert len([r for r in written if r["outcome"] == "created"]) == 1, written
         failed_written = [r for r in written if r["outcome"] == "failed"]
         assert len(failed_written) == 7, written
-        assert all("already linked to another source" in (r["message"] or "") for r in failed_written)
+        assert all((r["message"] or "").strip() for r in failed_written), failed_written
 
         def _override_get_db():
             yield db

@@ -681,26 +681,14 @@ class DocumentIngestService(MasterRefResolver):
         anything in the batch has written) rather than once per record.
 
         Product ids are pre-resolved CHEAPLY rather than by running the real
-        ladder a second time: a `product_ref` resolves through the same
-        `IntegrationReferenceService.resolve` the ladder itself calls first
-        (a plain read, no back-create - products are never back-created
-        anyway), and every `product_code` in the batch resolves through ONE
-        query rather than one per line. Best-effort like the upload's own
-        equivalent: a defect here must cost the route's plan-exception hook
-        (which simply has less to compare against), never any record in the
-        batch - a document ingest is not the operation this diff is FOR.
-
-        Perf round 5 (B): resolved through `self._resolve_ref` - the SAME
-        ladder rung a line's own `product_ref` resolution calls, and the
-        thing that populates `self._memo` - rather than a bare
-        `self.refs.resolve()`, for two reasons at once: it shares the memo
-        (this runs FIRST, so a ref resolved here is a ref the record loop
-        never re-queries, and vice versa for anything this loop misses), and
-        it applies the SAME cross-company check the ladder's own resolution
-        would, so a memo entry is never trusted without it. `MissingReference`/
-        `ReferenceConflict` are swallowed here exactly as a bare miss was
-        silently dropped before - this is an input to a best-effort snapshot,
-        never the reason a record fails.
+        ladder a second time, and by CODE only (PRODUCT-REF-COLLISION, owner
+        ruling 3 Oct: a product reference is never read): every
+        `product_code` in the batch resolves through ONE query rather than one
+        per line, and a line with no code has no product to snapshot. Best-effort
+        like the upload's own equivalent: a defect here must cost the route's
+        plan-exception hook (which simply has less to compare against), never
+        any record in the batch - a document ingest is not the operation this
+        diff is FOR.
         """
         product_ids: set[str] = set()
         codes: set[str] = set()
@@ -710,15 +698,8 @@ class DocumentIngestService(MasterRefResolver):
             for line in raw.get("lines") or []:
                 if not isinstance(line, dict):
                     continue
-                ref = line.get("product_ref")
-                if ref:
-                    try:
-                        resolved = self._resolve_ref("product_ref", ref, Product)
-                    except (MissingReference, ReferenceConflict):
-                        resolved = None
-                    if resolved:
-                        product_ids.add(resolved)
-                    continue
+                # PRODUCT-REF-COLLISION (owner ruling 3 Oct): code only, a
+                # ref-only line has no product to snapshot.
                 code = (line.get("product_code") or "").strip()
                 if code:
                     codes.add(code)

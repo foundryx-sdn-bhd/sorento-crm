@@ -42,6 +42,7 @@ from tests.test_ingest_documents import (
     INGEST_PO,
     INGEST_SO,
     MARKER,
+    _code_of_ref,
     _po_line,
     _po_record,
     _ref,
@@ -432,6 +433,7 @@ class TestWarehouseUnresolvedIsAWarningNotARetry:
         line = {
             "source_ref": _ref("SOL"),
             "product_ref": env.product_ref,
+            "product_code": _code_of_ref(env, env.product_ref),
             "qty_ordered": 5,
             "warehouse_code": f"{MARKER}-NOT-SYNCED-YET",
         }
