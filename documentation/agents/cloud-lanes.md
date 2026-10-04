@@ -86,3 +86,33 @@ workflow's `NOT_DOCS_RE`). A test that reads a new documentation path must add i
 
 A PR with no `ci` label shows no checks and therefore cannot merge under branch protection - that
 is intended, not a bug: it is what keeps a not-yet-ready PR from being mergeable by accident.
+
+## LLM spend in test runs: replay by default (LLM-TEST-COST, 4 Oct 2026)
+
+A scripted or browser-pass run answers the parser from recorded cassettes, not OpenAI. The
+switch is `LLM_CASSETTE_MODE` on the BACKEND process (`off` is the default and the only value
+production ever has; `record` calls live and writes a cassette; `replay` answers from the
+cassette and fails a turn with "LLM cassette miss: ... key <sha256>" rather than calling live).
+Cassettes live in `LLM_CASSETTE_DIR` (default `~/.cache/sorento-llm-cassettes`); a directory
+inside the repository is refused, because a recording holds the model's answer to a real
+message. Never commit one.
+
+- Harness launchers (`documentation/plans/chatbot/evidence/*/harness/run_backend_live.py`,
+  `run_worker_local.py`) start in replay; pass `--record` once to fill the cassettes, `--live` to
+  spend without recording. Copy that pattern into a new lane's harness.
+- `scripts/chatbot_console_check.py` stops after the first turn the backend answered live, unless
+  `--live` is passed (a `--record` backend needs `--live` too).
+- A recording is keyed on the exact request, and the parser's system prompt carries today's
+  date, so by default a cassette is good for the day and
+  prompt version it was recorded on. Set `LLM_CASSETTE_DATE` (e.g. `Saturday, 04 October 2026`)
+  on the backend to pin the parser's "today" while recording AND replaying: the same cassettes
+  then stay valid on later days. It is ignored when the mode is `off`.
+- The OpenAI provider and the direct-HTTP embedding calls are recorded. In replay an Anthropic or
+  Gemini call, Whisper transcription and the market-research call are refused: use `--live`
+  when a pass needs them.
+- Any mode but `off` runs only when `ENVIRONMENT` is development, dev, local, test or ci. A cassette dir inside any git checkout, or one not
+  owned by you with mode 0700, is refused. Clear old cassettes with
+  `find ~/.cache/sorento-llm-cassettes -name '*.json' -mtime +7 -delete`.
+
+`LLM_BASE_URL` / `LLM_MODEL_OVERRIDE` point the OpenAI client at another OpenAI-compatible
+endpoint or model when set. Nothing sets them today.
