@@ -120,6 +120,9 @@ def _real_turn(session_factory, monkeypatch, *, attributes: list[str]) -> str:
             "attributes": list(attributes), "all_attributes_allowed": None,
         },
     )
+    monkeypatch.setattr(
+        engine_mod, "contact_reveal_grants", lambda db, *, contact_id, space_id: list(attributes)
+    )
     monkeypatch.setattr(engine_mod, "default_space_id", lambda db: "364817")
     monkeypatch.setattr("app.services.llm_provider.resolve_api_key", lambda cfg, provider: "sk-test")
 
