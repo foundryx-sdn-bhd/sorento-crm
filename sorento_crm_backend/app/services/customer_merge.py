@@ -360,9 +360,19 @@ def plan(
     return groups
 
 
-#: Words that carry no identity in a Malaysian business name.
-_NAME_NOISE = frozenset(
-    {"sdn", "bhd", "berhad", "enterprise", "ent", "trading", "co", "company", "plt", "m", "the"}
+#: Words stripped from the END of a business name only (repeatedly), because they state the
+#: legal form or the business type, not who the business is (crew 4 Oct dry run: ~204 of 263
+#: held groups differed only by these or by account tags):
+#: - legal form: SDN, BHD, BERHAD, SENDIRIAN (Sdn Bhd / Sendirian Berhad), PLT, LLP, M (the
+#:   `(M)` "Malaysia" marker when written without brackets);
+#: - business-type suffixes a sole proprietorship / partnership is registered with: ENTERPRISE,
+#:   ENTERPRISES, ENT, TRADING, CO, COMPANY.
+#: Trailing only: `ALPHA TRADING HARDWARE` keeps TRADING, which is part of that name there.
+_NAME_SUFFIXES = frozenset(
+    {
+        "sdn", "bhd", "berhad", "sendirian", "plt", "llp", "m",
+        "enterprise", "enterprises", "ent", "trading", "co", "company",
+    }
 )
 
 #: Codes AutoCount keeps as ONE debtor for many buyers (cash sales, Shopee, walk-in): their
@@ -373,24 +383,40 @@ CASH_CODE_PREFIXES = ("301-",)
 
 
 def normalise_name(name: Optional[str]) -> str:
-    """The core of a business name, for `name_mismatch` only (owner 4 Oct, decision (b)).
+    """The core of a business name, for `name_mismatch` only (owner 4 Oct, decision (b); crew
+    4 Oct dry run: hold only when the CORE names differ). In order:
 
     1. case-insensitive;
-    2. parenthesised parts dropped: `(M)`, `(KTN)`;
-    3. everything from the first `&` dropped: `F-PLY & DESIGN` -> `F-PLY`, so an `& ...`
-       variant counts as the same company only when the core before it matches;
-    4. punctuation becomes a space: `ALPHA-BRAVO` = `ALPHA BRAVO`, `SDN. BHD.` = `SDN BHD`;
-    5. noise words dropped: SDN, BHD, BERHAD, ENTERPRISE, ENT, TRADING, CO, COMPANY, PLT, M, THE.
+    2. bracketed and parenthesised segments dropped: `[A/C I]`, `(CERAMIC & ELLECI)`, `(M)`,
+       `(KTN)`, including an unclosed one at the end;
+    3. everything from the first ` - ` (space, dash, space) dropped: the account tag AutoCount
+       ledgers carry, `ALPHA SDN BHD - SMT - I` -> `ALPHA SDN BHD`. A dash inside a word stays
+       (`F-PLY`);
+    4. everything from the first `&` dropped: `F-PLY & DESIGN` -> `F-PLY`, so an `& ...` variant
+       is the same company only when the core before it matches;
+    5. punctuation becomes a space: `SDN. BHD.` = `SDN BHD`, `ALPHA-BRAVO` = `ALPHA BRAVO`;
+    6. a leading `THE` and trailing `_NAME_SUFFIXES` words dropped, repeatedly.
 
-    `Alpha Bravo Hardware Sdn. Bhd.` -> `alpha bravo hardware`; `CHARLIEMART SDN BHD` -> `charliemart`.
+    A name that is nothing but brackets / suffixes keeps its punctuation-free full form, so it
+    never compares equal to everything. Examples: `Alpha Bravo Hardware Sdn. Bhd. - [A/C I]` ->
+    `alpha bravo hardware`; `CHARLIEMART SDN BHD` -> `charliemart`.
     """
     import re
 
-    text_ = (name or "").lower()
-    text_ = re.sub(r"\([^)]*\)", " ", text_)
+    def _words(text_: str) -> list[str]:
+        return re.sub(r"[^a-z0-9]+", " ", text_).split()
+
+    raw = (name or "").lower()
+    text_ = re.sub(r"\[[^\]]*\]|\([^)]*\)", " ", raw)
+    text_ = re.sub(r"[\[(][^\])]*$", " ", text_)
+    text_ = re.split(r"\s+-\s+", text_, maxsplit=1)[0]
     text_ = text_.split("&", 1)[0]
-    words = re.sub(r"[^a-z0-9]+", " ", text_).split()
-    return " ".join(w for w in words if w not in _NAME_NOISE)
+    words = _words(text_)
+    if words and words[0] == "the":
+        words = words[1:]
+    while words and words[-1] in _NAME_SUFFIXES:
+        words.pop()
+    return " ".join(words) or " ".join(_words(raw))
 
 
 def is_cash_code(code_key: str) -> bool:
@@ -990,11 +1016,37 @@ def write_plan_csv(groups: list[Group], path: Path | str) -> None:
             )
 
 
+HELD_CSV_FIELDS = ("company_id", "code", "survivor_name", "other_names", "reason", "release")
+
+
+def write_held_csv(groups: list[Group], path: Path | str) -> int:
+    """The held groups only, for the owner / CS to review: one row per group, `other_names` the
+    names whose core differs from the kept name, and an empty `release` column to write `yes`
+    in to merge it anyway (read back by `read_releases`). Real data: keep it out of the repo."""
+    held = [g for g in groups if g.held]
+    with open(path, "w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=HELD_CSV_FIELDS)
+        writer.writeheader()
+        for g in held:
+            writer.writerow(
+                {
+                    "company_id": g.company_id,
+                    "code": g.code_key,
+                    "survivor_name": g.survivor_name,
+                    "other_names": "; ".join(g.name_mismatch),
+                    "reason": g.held,
+                    "release": "",
+                }
+            )
+    return len(held)
+
+
 def read_releases(path: Path | str) -> set[tuple[str, str]]:
-    """`(company_id, code_key)` of every held group the owner marked `release=yes`."""
+    """`(company_id, code_key)` of every held group the owner marked `release=yes`, from the
+    plan CSV or the held-review CSV (`write_held_csv`)."""
     with open(path, newline="", encoding="utf-8") as fh:
         return {
-            (row["company_id"], row["code_key"])
+            (row["company_id"], (row.get("code_key") or row.get("code") or "").strip().lower())
             for row in csv.DictReader(fh)
             if (row.get("release") or "").strip().lower() in ("yes", "y", "true", "1")
         }

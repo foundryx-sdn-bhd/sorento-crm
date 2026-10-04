@@ -85,16 +85,21 @@ dev; the dry run (R11) re-measures them before anything is applied.
   conflict: a retired row's phone that differs (on digits) from the kept row's own phone is
   listed and blocks the group until `keep` is named (crew 4 Oct); two buyers' phones with no
   kept phone are not a conflict, since neither is carried.
-- **R7b Held groups** (owner 4 Oct, decision (b)): a group with a `name_mismatch` is HELD:
-  `--apply` skips it (CSV column `held=name_mismatch`) until the owner writes `release=yes` on
-  its row. Every other group merges. `301-*` cash / Shopee / walk-in codes are never held: their
-  retired rows are buyers' names by design (`CASH_CODE_PREFIXES`). The normalisation rule is
-  `normalise_name` in `app/services/customer_merge.py` (case; `(...)` dropped; everything from the
-  first `&` dropped, so an `& DESIGN` variant is the same company only when the core before it
-  matches; punctuation to spaces; SDN / BHD / BERHAD / ENTERPRISE / ENT / TRADING / CO / COMPANY /
-  PLT / M / THE dropped), tested in `tests/test_customer_merge.py::TestNameMismatchHold`.
-  Runbook: the unique index waits until every held and conflict group is resolved;
-  `--create-index` only succeeds when no code holds two rows.
+- **R7b Held groups** (owner 4 Oct, decision (b); tightened after the crew dev dry run, 4 Oct:
+  263 held of 374, ~204 of them only account tags / brackets / legal suffixes): a group is HELD
+  when a retired row's CORE name differs from the kept row's; `--apply` skips it until the owner
+  writes `release=yes` (plan CSV, or the held-review CSV `customer_merge_held_<ts>.csv`: columns
+  `company_id, code, survivor_name, other_names, reason, release`, read back with `--releases`).
+  `301-*` cash codes are never held (`CASH_CODE_PREFIXES`). The core name (`normalise_name` in
+  `app/services/customer_merge.py`), in order: lower case; `[...]` and `(...)` segments dropped
+  (also an unclosed one at the end); everything from the first ` - ` dropped (AutoCount account
+  tags `- SMT - I`; a dash inside a word stays); everything from the first `&` dropped; punctuation
+  to spaces; a leading THE and TRAILING legal-form / business-type words dropped repeatedly: SDN,
+  BHD, BERHAD, SENDIRIAN, PLT, LLP, M (legal form) and ENTERPRISE(S), ENT, TRADING, CO, COMPANY
+  (the suffixes a sole proprietorship or partnership is registered with). Trailing only, so
+  `ALPHA TRADING HARDWARE` keeps TRADING. Tests: `tests/test_customer_merge.py::TestNameMismatchHold`.
+  Fake-fixture dry run (204 tag/suffix-only + 59 different-name + 40 cash groups): 161 held by the
+  old rule, 59 by this one. The unique index waits until every held and conflict group is resolved.
 - **R7c Cash-code customer group** (crew 4 Oct): on a `301-*` group the survivor keeps a customer
   group only when it is the AutoCount-linked row and already holds one; an unlinked survivor's
   group is cleared (logged, restored by revert). A retired buyer's group is never filled onto the

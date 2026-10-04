@@ -365,6 +365,15 @@ class TestNameMismatchHold:
             ("ALPHA-BRAVO HARDWARE (M) SDN BHD", "alpha bravo hardware"),
             ("F-PLY & DESIGN SDN BHD", "F-PLY ENTERPRISE"),
             ("DELTA SANITARY BERHAD", "Delta Sanitary Trading"),
+            # crew 4 Oct dry run: account tags and bracketed segments are not identity
+            ("ALPHA BRAVO HARDWARE SDN BHD - [A/C I]", "ALPHA BRAVO HARDWARE SDN BHD"),
+            ("ALPHA BRAVO HARDWARE SDN BHD [A/C I]", "Alpha Bravo Hardware"),
+            ("KILO TILES (CERAMIC & ELLECI)", "KILO TILES SDN BHD"),
+            ("KILO TILES SDN BHD - SMT - I", "KILO TILES SDN. BHD."),
+            ("LIMA HOME SENDIRIAN BERHAD", "LIMA HOME (M) SDN BHD"),
+            ("THE MIKE STORE PLT", "MIKE STORE"),
+            ("NOVEMBER DECOR ENTERPRISES", "NOVEMBER DECOR CO"),
+            ("OSCAR BUILD (JB", "OSCAR BUILD"),
         ],
     )
     def test_same_core_name(self, a, b):
@@ -377,6 +386,12 @@ class TestNameMismatchHold:
             ("DELTA SANITARY", "ECHOMART"),
             ("F-PLY", "GOLF & HOTEL-X"),
             ("INDIAWORKS", "JULIET BUSINESS HOTEL"),
+            ("MODERNA MED", "1 LIVING DEPOT"),
+            ("CHEN YU LAND - [A/C I]", "CONCEPT NETWORK STONE"),
+            # a trade word in the middle of a name is identity, only trailing ones are not
+            ("ALPHA TRADING HARDWARE", "ALPHA HARDWARE"),
+            # a name that is nothing but a bracket keeps its full form
+            ("[A/C I]", "[A/C II]"),
         ],
     )
     def test_different_core_name(self, a, b):
@@ -416,6 +431,50 @@ class TestNameMismatchHold:
         _seed(db, code, "AISAH", NEW)
         g = _group(customer_merge.plan(db, codes=[code]), code)
         assert g.name_mismatch == ["AISAH"] and g.held == ""
+
+    def test_fixture_dry_run_holds_only_really_different_names(self, db):
+        """Crew 4 Oct: of 263 held groups on dev ~204 differed only by account tags, brackets
+        or legal suffixes. A fake fixture of the same shapes: only the 6 different-name groups
+        are held."""
+        tag_variants = [
+            ("{n} SDN BHD", "{n} SDN BHD - [A/C I]"),
+            ("{n} SDN BHD", "{n} (CERAMIC & ELLECI) SDN BHD"),
+            ("{n} SDN BHD", "{n} SDN BHD - SMT - I"),
+            ("{n}", "{n} SDN. BHD."),
+            ("{n} (M) SDN BHD", "{n} SENDIRIAN BERHAD [A/C II]"),
+        ]
+        codes = []
+        for i in range(20):
+            code = _dealer_code(f"T{i}")
+            a, b = tag_variants[i % len(tag_variants)]
+            name = f"QUEBEC {i} HARDWARE"
+            _seed(db, code, a.format(n=name), OLD)
+            _seed(db, code, b.format(n=name), NEW)
+            codes.append(code)
+        different = []
+        for i in range(6):
+            code = _dealer_code(f"D{i}")
+            _seed(db, code, f"ROMEO {i} TILES SDN BHD - [A/C I]", OLD)
+            _seed(db, code, f"SIERRA {i} STONE SDN BHD", NEW)
+            different.append(code.lower())
+            codes.append(code)
+        groups = customer_merge.plan(db, codes=codes)
+        assert len(groups) == 26
+        assert sorted(g.code_key for g in groups if g.held) == sorted(different)
+
+    def test_held_review_csv_round_trips_release(self, db, tmp_path):
+        code = _dealer_code("HV")
+        _seed(db, code, "ROMEO TILES SDN BHD", OLD)
+        _seed(db, code, "SIERRA STONE", NEW)
+        _seed(db, code, "ROMEO TILES - [A/C I]", MID)
+        path = tmp_path / "held.csv"
+        n = customer_merge.write_held_csv(customer_merge.plan(db, codes=[code]), path)
+        assert n == 1
+        lines = path.read_text().strip().splitlines()
+        assert lines[0] == "company_id,code,survivor_name,other_names,reason,release"
+        assert ",ROMEO TILES SDN BHD,SIERRA STONE,name_mismatch," in lines[1]
+        path.write_text(lines[0] + "\n" + lines[1] + "yes\n")
+        assert customer_merge.read_releases(path) == {(DEFAULT_COMPANY_ID, code.lower())}
 
     def test_release_column_is_read_from_the_csv(self, db, tmp_path):
         code = _dealer_code("RL")

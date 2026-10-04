@@ -105,6 +105,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--company", help="company id or code (default: every company)")
     parser.add_argument("--code", action="append", help="limit to this debtor code (repeatable)")
     parser.add_argument("--resolutions", help="a plan CSV with the owner's `keep` column filled")
+    parser.add_argument(
+        "--releases", help="a held-review CSV with `release` = yes on the groups to merge anyway"
+    )
     parser.add_argument("--create-index", action="store_true", help="after --apply: add the unique index")
     parser.add_argument("--out-dir", default=str(DEFAULT_OUT))
     args = parser.parse_args(argv)
@@ -127,14 +130,19 @@ def main(argv: list[str] | None = None) -> int:
         groups = customer_merge.plan(db, company_id=company_id, codes=args.code)
         plan_path = out_dir / f"customer_merge_plan_{stamp}.csv"
         customer_merge.write_plan_csv(groups, plan_path)
+        held_path = out_dir / f"customer_merge_held_{stamp}.csv"
+        n_held = customer_merge.write_held_csv(groups, held_path)
         print(_summary(groups))
         print(f"plan: {plan_path}")
+        print(f"held for review ({n_held}): {held_path}  (write yes in `release` to merge anyway)")
         if not args.apply:
             db.rollback()
             return 0
 
         resolutions = customer_merge.read_resolutions(args.resolutions) if args.resolutions else {}
         releases = customer_merge.read_releases(args.resolutions) if args.resolutions else set()
+        if args.releases:
+            releases |= customer_merge.read_releases(args.releases)
         run_id = f"dcu-{stamp}"
         companies = sorted({g.company_id for g in groups})
         merged = skipped = held = 0
