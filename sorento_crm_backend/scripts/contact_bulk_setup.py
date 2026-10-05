@@ -1036,7 +1036,7 @@ def _parse_locations(value: Any, wh_by_label: dict) -> tuple:
     """(include, exclude, hide) as warehouse id lists; ValueError names what is wrong."""
     s = _unsafe(value)
     if not s:
-        return None, None, False
+        raise ValueError("stock_locations_effective is blank: type the locations the override should allow")
     hide = s.endswith(HIDE_ZERO)
     if hide:
         s = s[: -len(HIDE_ZERO)].strip()
