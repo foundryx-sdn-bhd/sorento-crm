@@ -1,5 +1,5 @@
 /**
- * AI-ALLOWED-GATE (AC-AI-9): the Contact > Chatbot card gains an "AI replies allowed" switch,
+ * AI-ALLOWED-GATE (AC-AI-21): the Contact > Chatbot card gains an "AI replies allowed" switch,
  * id `contact-chatbot-ai-allowed`, bound to `profile.chatbot_allowed` and saved through its OWN
  * mutation (`useSaveContactChatbotAllowed`), never the card save, so a stale page cannot switch
  * it back on. RED until the section renders the switch and the hook exists.

@@ -45,7 +45,7 @@ MAX_TARGETS = 500
 
 TIER_LABELS = {"dealer": "Dealer", "office": "Office", "end_user": "End user"}
 
-#: The seven chatbot switches, column -> label, in card order.
+#: The seven chatbot switches, column -> label (the Chatbot card shows AI replies first; this order is the copy dialog's).
 SWITCHES: tuple[tuple[str, str], ...] = (
     ("chatbot_stock_allowed", "Stock checks"),
     ("notify_salesman", "Notify salesman"),

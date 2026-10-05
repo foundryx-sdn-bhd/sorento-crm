@@ -1,8 +1,8 @@
 """AI-ALLOWED-GATE: the per-contact "AI replies allowed" flag over the API, sync, copy and script.
 
-Plan `documentation/plans/chatbot/PLAN-ai-allowed-gate-5oct.md`, UAC AC-AI-9 .. AC-AI-13.
+Plan `documentation/plans/chatbot/PLAN-ai-allowed-gate-5oct.md`, UAC AC-AI-12 .. AC-AI-20.
 
-`respond_contacts.chatbot_allowed` (BOOLEAN NOT NULL, default true). Every contact read carries
+`respond_contacts.chatbot_allowed` (BOOLEAN NOT NULL, production default false, backfilled true). Every contact read carries
 it (asserted here because `contact_to_response_dict` is built by hand and `response_model`
 drops undeclared fields), `PUT .../contacts/{id}/chatbot` writes it (absent = leave alone,
 `contacts.edit` needed), the list filters on it (`ai=yes|no`), the n8n and scheduled syncs
@@ -159,6 +159,12 @@ def test_put_blocks_and_allows_the_contact_and_absent_leaves_it_alone(client, db
     assert _stored(db, contact.id) is False
 
     resp = client.put(f"{BASE}/{contact.id}/chatbot", json={"chatbot_allowed": True})
+    assert resp.json()["chatbot_allowed"] is True
+    assert _stored(db, contact.id) is True
+
+    # The other leg: absent key while the flag is True must not write it False.
+    resp = client.put(f"{BASE}/{contact.id}/chatbot", json={"notify_salesman": True})
+    assert resp.status_code == 200, resp.text
     assert resp.json()["chatbot_allowed"] is True
     assert _stored(db, contact.id) is True
 

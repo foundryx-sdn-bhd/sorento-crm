@@ -2,7 +2,7 @@
 
 Plan `documentation/plans/chatbot/PLAN-ai-allowed-gate-5oct.md`, UAC AC-AI-3 .. AC-AI-8.
 
-`respond_contacts.chatbot_allowed` (BOOLEAN NOT NULL, default true). The gate sits in
+`respond_contacts.chatbot_allowed` (BOOLEAN NOT NULL, production default false, backfilled true). The gate sits in
 `engine._run_turn` right after the contact's respond id is known, BEFORE the worker offload
 and before any session-vars read. A contact is allowed when at least one `respond_contacts` row
 has that `respond_io_id` and EVERY such row has the flag true; no row, or any unticked row, is "not allowed".
@@ -241,7 +241,7 @@ class TestAllowedContact:
     def test_human_intervened_handling_is_unchanged_for_an_allowed_contact(
         self, session_factory, seeded, stub_parser, stub_access
     ):
-        """AC-AI-7."""
+        """AC-AI-5."""
         _set_flag(session_factory, True)
         stub_parser()
         stub_access()
@@ -255,7 +255,7 @@ class TestAllowedContact:
 
 
 class TestGateOrdering:
-    """AC-AI-8: the gate runs before the worker offload and before any ticket."""
+    """AC-AI-7: the gate runs before the worker offload and before any ticket."""
 
     def test_a_gated_turn_never_enqueues_even_with_the_worker_offload_on(
         self, session_factory, seeded, stub_parser, stub_access, monkeypatch
@@ -272,6 +272,26 @@ class TestGateOrdering:
 
         _assert_silent(result)
         _assert_closed_row(session_factory, result)
+
+    def test_a_database_error_in_the_check_never_reads_as_allowed(
+        self, session_factory, seeded, stub_parser, stub_access, monkeypatch
+    ):
+        from sqlalchemy.exc import OperationalError
+
+        from app.services import chatbot_allowed_service
+
+        def _down(db, rid):
+            raise OperationalError("SELECT 1", {}, Exception("db down"))
+
+        monkeypatch.setattr(chatbot_allowed_service, "is_allowed", _down)
+        calls: list[str] = []
+        stub_parser(on_call=calls.append)
+        stub_access()
+
+        with pytest.raises(OperationalError):
+            engine_mod.run_turn(_envelope(), session_factory=session_factory)
+
+        assert calls == []
 
     def test_an_unknown_contact_never_enqueues_either(
         self, session_factory, stub_parser, stub_access, monkeypatch

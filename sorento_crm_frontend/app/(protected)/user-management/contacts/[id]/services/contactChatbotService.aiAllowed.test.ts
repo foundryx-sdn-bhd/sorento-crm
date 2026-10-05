@@ -1,6 +1,6 @@
 /**
- * AI-ALLOWED-GATE (AC-AI-9): `chatbot_allowed` rides the contact GET and the
- * PUT .../chatbot body. It is read onto the card's profile (default on), written ONLY by
+ * AI-ALLOWED-GATE (AC-AI-22): `chatbot_allowed` rides the contact GET and the
+ * PUT .../chatbot body. It is read onto the card's profile (absent reads as blocked, the production default is off), written ONLY by
  * `saveContactChatbotAllowed`, and the card save never sends it.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
