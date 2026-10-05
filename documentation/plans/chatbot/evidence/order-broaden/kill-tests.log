@@ -1,32 +1,32 @@
-### head 6581577e
+### head 5b2c8599
 
 ### A. both fixes in place (expected: 4 passed)
 test_order_broaden_presentation.py::test_a_dealer_view_block_never_prints_the_order_date_line PASSED
 test_order_broaden_presentation.py::test_an_order_block_still_states_the_window_under_its_header PASSED
 test_order_broaden_presentation.py::test_the_owners_miss_then_all_products_under_the_v42_verdict PASSED
 test_order_broaden_presentation.py::test_all_products_after_the_miss_reruns_the_same_window_for_every_product PASSED
-============================== 4 passed in 30.91s ==============================
+============================== 4 passed in 35.14s ==============================
 
 ### B. red first: BOTH fixes reverted to origin/main (expected: 3 failed, control passes)
 test_order_broaden_presentation.py::test_a_dealer_view_block_never_prints_the_order_date_line FAILED
 test_order_broaden_presentation.py::test_an_order_block_still_states_the_window_under_its_header PASSED
 test_order_broaden_presentation.py::test_the_owners_miss_then_all_products_under_the_v42_verdict FAILED
 test_order_broaden_presentation.py::test_all_products_after_the_miss_reruns_the_same_window_for_every_product PASSED
-========================= 2 failed, 2 passed in 31.32s =========================
+========================= 2 failed, 2 passed in 36.08s =========================
 
 ### C. kill 1: compose.py alone reverted (dealer-view date line)
 test_order_broaden_presentation.py::test_a_dealer_view_block_never_prints_the_order_date_line FAILED
 test_order_broaden_presentation.py::test_an_order_block_still_states_the_window_under_its_header PASSED
 test_order_broaden_presentation.py::test_the_owners_miss_then_all_products_under_the_v42_verdict PASSED
 test_order_broaden_presentation.py::test_all_products_after_the_miss_reruns_the_same_window_for_every_product PASSED
-========================= 1 failed, 3 passed in 32.11s =========================
+========================= 1 failed, 3 passed in 33.99s =========================
 
 ### D. kill 2: apply.py alone reverted (domain change drops window)
 test_order_broaden_presentation.py::test_a_dealer_view_block_never_prints_the_order_date_line PASSED
 test_order_broaden_presentation.py::test_an_order_block_still_states_the_window_under_its_header PASSED
 test_order_broaden_presentation.py::test_the_owners_miss_then_all_products_under_the_v42_verdict FAILED
 test_order_broaden_presentation.py::test_all_products_after_the_miss_reruns_the_same_window_for_every_product PASSED
-========================= 1 failed, 3 passed in 34.18s =========================
+========================= 1 failed, 3 passed in 37.00s =========================
 
 ### E. kill 3: addendum emptied (static patch tests)
 test_order_broaden_prompt_patch.py::test_the_anchor_is_the_keep_rules_last_line_in_the_production_text PASSED
@@ -35,6 +35,6 @@ test_order_broaden_prompt_patch.py::test_the_patched_text_keeps_the_block_struct
 test_order_broaden_prompt_patch.py::test_the_committed_patch_is_the_diff_of_the_addendum FAILED
 test_order_broaden_prompt_patch.py::test_the_committed_patch_applies_cleanly_to_the_production_text FAILED
 test_order_broaden_prompt_patch.py::test_the_production_file_itself_is_untouched PASSED
-========================= 4 failed, 2 passed in 1.03s ==========================
+========================= 4 failed, 2 passed in 0.89s ==========================
 
 ### worktree clean? (expect no output)
