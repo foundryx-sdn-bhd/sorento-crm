@@ -2875,7 +2875,10 @@ def _run_turn(
         session_factory, contact_scope, _contact_brand_scope(session_factory, contact_respond_id)
     )
 
-    # AI-ALLOWED-GATE: after the scope is known, BEFORE the offload and the ticket.
+    # AI-ALLOWED-GATE: after the scope is known, BEFORE the offload and the ticket. A
+    # database error inside `_ai_allowed` propagates (fails closed, the route answers 500 and
+    # the integration log records it); no turn row exists for that call, accepted because
+    # "could not tell" must never answer the customer.
     if not _ai_allowed(session_factory, contact_respond_id):
         return _ai_not_allowed_turn(
             envelope, session_factory=session_factory, contact_respond_id=contact_respond_id

@@ -9,6 +9,11 @@ existing row TRUE (prod behaviour unchanged on release); SET DEFAULT false then 
 new rows only. A second run finds the column present, skips the ADD, and re-applies the
 same default, so it never re-allows a row somebody blocked. The downgrade drops the column.
 
+A downgrade followed by an upgrade re-backfills every row TRUE (operator blocks are lost), so
+downgrade is for a rollback of the release, never a reset. `SET LOCAL lock_timeout` lasts for
+the whole alembic transaction, so later migrations in the same `upgrade head` run inherit the
+10 s cap (harmless, named so nobody is surprised).
+
 Revision ID: aig_0001_chatbot_allowed
 Revises: dps_0001_skip_period_questions
 Create Date: 2026-10-05

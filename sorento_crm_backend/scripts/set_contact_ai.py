@@ -6,6 +6,9 @@ who the AI answers. Reads and every other channel are untouched. `--off --all` t
 silences the chatbot for every customer at once, which is exactly why every mutating mode
 needs an explicit `--yes`.
 
+With duplicate rows for one respond.io id, `--on` for one row does not allow the contact
+until every row is on (the gate blocks when any row is off); `--status --contact` reads one row.
+
 Run from sorento_crm_backend/ AFTER `alembic upgrade head`:
 
     python scripts/set_contact_ai.py --status [--contact <respond_io_id|phone|uuid>]

@@ -370,21 +370,23 @@ def test_is_allowed_follows_the_flag(db):
     assert svc.is_allowed(db, no.respond_io_id) is False
 
 
-def test_is_allowed_is_true_when_any_row_with_that_respond_id_is_true(db):
+def test_is_allowed_is_false_when_any_row_with_that_respond_id_is_blocked(db):
     from app.services import chatbot_allowed_service as svc
 
-    first = _seed(db, name="ZZT Dup A", allowed=False)
+    first = _seed(db, name="ZZT Dup A", allowed=True)
     twin = RespondContact(
         id=str(uuid.uuid4()),
         phone_number=f"+6012{str(uuid.uuid4().int)[:8]}",
         name="ZZT Dup B",
         respond_io_id=first.respond_io_id,
         session_vars={},
-        chatbot_allowed=True,
+        chatbot_allowed=False,
     )
     db.add(twin)
     db.commit()
 
+    assert svc.is_allowed(db, first.respond_io_id) is False
+    _set_flag(db, twin.id, True)
     assert svc.is_allowed(db, first.respond_io_id) is True
 
 

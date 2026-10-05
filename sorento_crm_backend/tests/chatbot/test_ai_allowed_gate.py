@@ -4,8 +4,8 @@ Plan `documentation/plans/chatbot/PLAN-ai-allowed-gate-5oct.md`, UAC AC-AI-3 .. 
 
 `respond_contacts.chatbot_allowed` (BOOLEAN NOT NULL, default true). The gate sits in
 `engine._run_turn` right after the contact's respond id is known, BEFORE the worker offload
-and before any session-vars read. A contact is allowed when ANY `respond_contacts` row with
-that `respond_io_id` has the flag true; no row at all, or no true row, is "not allowed".
+and before any session-vars read. A contact is allowed when at least one `respond_contacts` row
+has that `respond_io_id` and EVERY such row has the flag true; no row, or any unticked row, is "not allowed".
 
 A gated turn: no parser call, no reply, no actions (not even the `is_human_intervened`
 `update_contact_fields`), no session write, no ticket, no enqueue. It is still a recorded,
@@ -335,23 +335,13 @@ class TestDryRunAndDuplicate:
         assert len(_turns(session_factory)) == 1
 
 
-class TestTwoRowsOneAllowed:
-    """Two respond_contacts rows share a respond_io_id: allowed when ANY row is true."""
+class TestTwoRowsOneBlocked:
+    """Two respond_contacts rows share a respond_io_id: allowed only when EVERY row is true."""
 
-    def test_one_true_row_among_blocked_rows_allows_the_turn(
+    def test_one_blocked_row_among_allowed_rows_gates_the_turn(
         self, session_factory, seeded, stub_parser, stub_access
     ):
-        _set_flag(session_factory, False)
-        _add_second_row(session_factory, allowed=True)
-        stub_parser()
-        stub_access()
-
-        result = engine_mod.run_turn(_envelope(), session_factory=session_factory)
-
-        assert result.branch_kind == "business_query"
-
-    def test_every_row_blocked_gates_the_turn(self, session_factory, seeded, stub_parser, stub_access):
-        _set_flag(session_factory, False)
+        _set_flag(session_factory, True)
         _add_second_row(session_factory, allowed=False)
         stub_parser()
         stub_access()
@@ -359,3 +349,13 @@ class TestTwoRowsOneAllowed:
         result = engine_mod.run_turn(_envelope(), session_factory=session_factory)
 
         _assert_silent(result)
+
+    def test_every_row_allowed_answers(self, session_factory, seeded, stub_parser, stub_access):
+        _set_flag(session_factory, True)
+        _add_second_row(session_factory, allowed=True)
+        stub_parser()
+        stub_access()
+
+        result = engine_mod.run_turn(_envelope(), session_factory=session_factory)
+
+        assert result.branch_kind == "business_query"
