@@ -3616,15 +3616,24 @@ def _carried_line(
     memory_intake: dict[str, Any],
     contact_respond_id: str,
     dry_run: bool,
+    decision: dict[str, Any] | None = None,
 ) -> str | None:
     """AC-MEM083: a business answer whose subject the parser carried from memory (every
     entity `current_message: false`, none in the live conversation) opens with one line
     naming what was carried - from a closed conversation ("Carrying on from Tue 23 Sep:
     outstanding DO for CC001 Chin Chun Trading."), else from the usual products ("Your
-    usual: SRTWB1455, M486-75-BL."). None when nothing came from memory."""
+    usual: SRTWB1455, M486-75-BL."). None when nothing came from memory.
+
+    `decision` is `plan.trace.decision`. PHOTO-PICKER (owner, 5 Oct 2026): a turn that
+    ANSWERED this conversation's open question took its subject off our own roster, not
+    from memory. The picked code is one the customer never typed, so the text check below
+    missed it, and the line named an older closed conversation's topic ("incoming stock
+    for SRTWC286-SH") over a photo pick."""
     from app.models.conversation_frame import ConversationFrame
     from app.services.chatbot import copy as copy_mod
 
+    if isinstance(decision, dict) and decision.get("kind") == "answer":
+        return None
     level = memory_intake.get("effective_level") or "off"
     if level not in ("episodes", "full"):
         return None
@@ -5026,6 +5035,7 @@ def _run_stages_body(  # noqa: PLR0915
                     memory_intake=memory_intake,
                     contact_respond_id=contact_respond_id,
                     dry_run=dry_run,
+                    decision=plan.trace.decision,
                 )
             except Exception:  # noqa: BLE001 - the answer stands without the line
                 logger.warning("chatbot: the carried line did not build", exc_info=True)
