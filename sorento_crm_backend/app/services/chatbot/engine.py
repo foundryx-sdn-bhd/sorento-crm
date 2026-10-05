@@ -456,10 +456,9 @@ def _as_a_stock_ask_by_its_own_words(verdict: dict[str, Any], message: str) -> d
     }
 
 
-def _code_like(token: str) -> bool:
-    """A typed token that can be a product code: letters AND digits ("srtwc286"). A word
-    ("xx", "basin") or a bare number ("2", "10") is not one."""
-    return any(ch.isdigit() for ch in token) and any(ch.isalpha() for ch in token)
+#: A typed token that can be a product code: letters AND digits. One copy, in
+#: `turn/task.py`, shared with the family grouping and the quantity carry (AVAIL-PICKER).
+_code_like = turn_task.code_like
 
 
 def _unsure_capture_as_codes(verdict: dict[str, Any]) -> dict[str, Any]:
@@ -523,6 +522,12 @@ def _exact_codes_only(
       after "srtw2000 20" listed SRTW2000-SS-CR, -A and -NL as well);
     * else a code-like token keeps the codes it is the prefix of, the family the
       which-one picker steers from ("srtwc286");
+    * else a code-like token keeps the codes it is a SUBSTRING of (AVAIL-PICKER, owner
+      live trace 5 Oct 2026: "wc286 check stock" dead-ended on "Couldn't find" although
+      the resolver had placed the SRTWC286-SH family off its own substring probe on
+      product_code, `entity_resolver._prefix_probe_product`). The same prefix-then-
+      substring order as that probe: this filter keeps what the resolver placed, it
+      matches nothing of its own;
     * else a code-like token is not found, and goes to the did-you-mean ("srt5764");
     * a word or a bare number with no exact code is not a product at all: the describe /
       semantic matches the resolver found for "xx", "10" or a "2" typed over a
@@ -547,7 +552,11 @@ def _exact_codes_only(
     ignored: set[str] = set()
     for fold, typed in tokens:
         exact = [c for c in candidates if code_of(c) == fold]
-        family = [c for c in candidates if code_of(c).startswith(fold)] if _code_like(fold) else []
+        family: list[dict[str, Any]] = []
+        if _code_like(fold):
+            family = [c for c in candidates if code_of(c).startswith(fold)] or [
+                c for c in candidates if fold in code_of(c)
+            ]
         chosen = exact or family
         if chosen:
             keep.update(str(c.get("uuid")) for c in chosen)
