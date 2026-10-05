@@ -4835,6 +4835,12 @@ def build_suggest_offer(
     dym_ann = dym_annotate if isinstance(dym_annotate, dict) else None
     dym_meta = jsc.get(dym_ann, "dym_probe_meta") if dym_ann is not None else None
     dym_ok = bool(jsc.truthy(dym_ann) and jsc.truthy(dym_meta) and jsc.get(dym_meta, "ok") is True)
+    # PHOTO-PICKER (owner, 5 Oct 2026, crew answer (a)): the incoming picker's own rule
+    # (`pickers.annotate_incoming`) - a dealer (an "Availability only" contact) is told
+    # nothing about a variant before picking it. Every code is still listed; no stamp and
+    # no has-first sort, on every surface below and for every attachment type.
+    if getattr(profile, "stock_availability_only", False):
+        dym_ok = False
     # #750: `product_attachment` is stamped PER UUID (`probe_uuid_keyed`, Fix 4 / Fix 5), and
     # every surface below keys by the CODE it printed, so the two sets are projected into code
     # space ONCE, here, and the three renders are untouched. A code that cannot be attributed

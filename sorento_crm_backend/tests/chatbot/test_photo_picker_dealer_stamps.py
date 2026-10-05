@@ -141,7 +141,7 @@ def test_the_dealer_code_mode_keeps_the_resolvers_order() -> None:
     """No has-first sort for a dealer: with nothing printed about photos, a sort by them
     would leak the same fact the stamp would have stated."""
     text = _code_mode(DEALER)
-    assert text.startswith('Couldn\'t find "srtwc286x" (product). Did you mean SRTWC286-SH-P or SRTWC286-SH?'), text
+    assert text.startswith('Couldn\'t find "srtwc286x" (product). Did you mean SRTWC286-SH-P, or SRTWC286-SH?'), text
 
 
 def _several_type_probe() -> dict[str, Any]:
