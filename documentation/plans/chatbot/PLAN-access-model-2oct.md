@@ -172,6 +172,20 @@ and adds migration `ppa_0001`. Build NOW only what touches none of those:
   `contact_field_reveal_service`); S7 (prompt tags, generalising #1429's `PROMPT_GATES`). The S1
   migration is re-parented onto `ppa_0001` if #1429 merges first.
 
+## Interim review (6 Oct): findings and decisions
+
+Reviewer + security-reviewer on S1/S3/S4/S6 (no blocker in code). Merge gates: alembic re-parented onto
+`dcu_0001` (022d7a681); do NOT merge before S2 lands (the Access tab no longer edits the legacy grants
+the live turn still reads). Lead decisions (no behaviour change from today): lapsed agent grants
+(`valid_to`/`valid_from`) earn no role; `effective_access` resolves strictly inside the workspace (no
+NULL-workspace fallback, as today's agent gate); the on-order key has ONE path (inventory field; the
+`purchase_order` row's reveal_key becomes NULL and S2 gates the PO rung on the domain grant instead of
+`_CROSSDOMAIN_RUNG_GRANT`); an accepted hand-off keeps the offer's agent. Owner calls pending (crew ask
+6 Oct): Q1 no contact may gain customer scope in the mapping (rec: linked non-office contacts -> Dealer +
+add-overrides, plus a no-gain test), Q2 internal roles carry tier Office (rec accept), Q3 granting roles
+or plus-overrides needs `reference_data.manage` (rec), Q4 Access tab reads accept `access_agents.view`
+OR `contacts.view` (rec). Pre-existing, separate ticket: `access_agents.py` write routes need only sign-in.
+
 ## Migration on a dev copy + hand test
 
 Idempotent SQL for crew at `crew/state/migrations/ACCESS-MODEL.sql` (CREATE ... IF NOT EXISTS, INSERT
