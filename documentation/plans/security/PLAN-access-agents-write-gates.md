@@ -1,7 +1,8 @@
 # PLAN - access-agents write gates
 
-**Status:** In progress. Small fix track (owner rulings 18 Sep + 24 Sep 2026): no migration, no
-new permission, one file of route dependencies plus its tests. Red-first.
+**Status:** In review, PR #1496. Small fix track (owner rulings 18 Sep + 24 Sep 2026): no
+migration, no new permission, one file of route dependencies plus the copy-route skip (D5) and
+their tests. Red-first; reviewer kill test green on all ten routes.
 **UAC:** `documentation/plans/security/access-agents-write-gates-acceptance-criteria.md`
 **Classification:** CORE (`user_management` is base-platform; not an installable module).
 **Lane:** ACCESS-AGENTS-AUTH (crew), branch `claude/access-agents-auth-1n9g8n`.
@@ -67,9 +68,22 @@ caller uses it today (grep over `sorento_crm_frontend/` finds none). It is gated
 slug as the dialog it serves rather than left open as a PII lookup.
 
 **D4 - frontend untouched.** The admin role bypasses `check_user_has_permission` outright
-(`app/services/user_service.py:1551`), so every admin-driven screen keeps working. A role
-holding `.view` without `.add` / `.edit` now gets a 403 toast from the Add and Edit modals
-instead of a silent success. Hiding those buttons behind `useHasPermission` is a small,
+(`app/services/user_service.py:1551`), so every admin-driven screen keeps working. Three
+screens call the gated writes, through the Next.js proxy that forwards the signed-in user's
+own bearer token (`lib/api-proxy.ts:117-127`):
+
+- `/user-management/access-agents` and `/[id]`: the Add and Edit modals (`.add` / `.edit`),
+  the field-access card and the contact-grant dialogs (`.edit`); Delete was already hidden
+  behind `.delete`.
+- `/user-management/contacts/[id]`: `ContactAccessAgentsTable` reuses the same grant dialogs
+  and `ContactFieldAccessDialog`, so adding or removing a grant or a per-contact field
+  override from a contact page now needs `access_agents.edit` as well as the page's own
+  `contacts.view`. The same table already needed `access_agents.view` for its agent dropdown.
+- `/user-management/contact-access-agents`: `ContactAccessAgentsGroupedList` reuses the grant
+  dialog; same slug.
+
+A role holding `.view` (or `contacts.edit`) without `.add` / `.edit` now gets a 403 toast from
+those buttons instead of a silent success. Hiding them behind `useHasPermission` is a small,
 separate frontend change and is noted in the PR body, not folded into a security fix.
 
 **D5 - the contact bulk-copy is not a side door (security review, 5 Oct 2026).**

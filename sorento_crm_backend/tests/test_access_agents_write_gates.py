@@ -19,6 +19,7 @@ service wherever the route does not reach Respond.io.
 """
 from __future__ import annotations
 
+import inspect
 import uuid
 
 import pytest
@@ -275,8 +276,13 @@ def _mounted_access_agent_routes():
     ]
 
 
-def _dependant_chain_names(route) -> list[str]:
-    names: list[str] = []
+def _gate_slugs(route) -> set[str]:
+    """The slugs `require_permission(...)` closures in this route's dependency tree
+    check. Exact: `require_permission_with_api_key` (a different, api-key-tolerant
+    gate) and a bare `get_current_user` both contribute nothing, so a route is
+    gated here only by the dependency the plan names, on the slug it names.
+    """
+    slugs: set[str] = set()
     seen: set[int] = set()
 
     def _walk(dependant):
@@ -284,17 +290,15 @@ def _dependant_chain_names(route) -> list[str]:
             return
         seen.add(id(dependant))
         call = getattr(dependant, "call", None)
-        if call is not None:
-            names.append(getattr(call, "__qualname__", "") or "")
+        if call is not None and (getattr(call, "__qualname__", "") or "").startswith(
+            "require_permission.<locals>."
+        ):
+            slugs.add(inspect.getclosurevars(call).nonlocals["permission_slug"])
         for sub in getattr(dependant, "dependencies", []) or []:
             _walk(sub)
 
     _walk(route.dependant)
-    return names
-
-
-def _is_gated(route) -> bool:
-    return any("require_permission" in n for n in _dependant_chain_names(route))
+    return slugs
 
 
 class TestStructuralCoverage:
@@ -303,7 +307,7 @@ class TestStructuralCoverage:
         ungated = sorted(
             f"{sorted(r.methods)} {r.path}"
             for r in _mounted_access_agent_routes()
-            if r.methods - {"GET", "HEAD", "OPTIONS"} and not _is_gated(r)
+            if r.methods - {"GET", "HEAD", "OPTIONS"} and not (_gate_slugs(r) & {ADD, EDIT, DELETE})
         )
         assert ungated == [], f"write route(s) without a permission dependency: {ungated}"
 
@@ -318,7 +322,7 @@ class TestStructuralCoverage:
         """UAC4.2 (REG): the fix must not graze the GETs beside the writes."""
         reads = [r for r in _mounted_access_agent_routes() if "GET" in r.methods]
         assert len(reads) == 6
-        assert all(_is_gated(r) for r in reads)
+        assert {r.path: _gate_slugs(r) for r in reads} == {r.path: {VIEW} for r in reads}
 
     def test_the_three_write_slugs_are_already_registered(self):
         """UAC4.3 (REG): no migration - the slugs the routes name exist."""
