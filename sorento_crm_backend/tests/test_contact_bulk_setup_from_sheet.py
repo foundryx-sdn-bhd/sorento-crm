@@ -86,9 +86,9 @@ def _full(db, w, c, **over):
         "contact_id": c.id,
         "phone": int(c.phone_number),
         "name": c.name,
-        "access_types": ", ".join(s["types"]) or None,
-        "companies": ", ".join(sorted(code_of[i] for i in s["companies"])) or None,
-        "market_segments": ", ".join(s["segments"]) or None,
+        "access_types": ", ".join(s["types"]) or "-",
+        "companies": ", ".join(sorted(code_of[i] for i in s["companies"])) or "-",
+        "market_segments": ", ".join(s["segments"]) or "-",
         "stock_source": "default",
         "stock_mode_effective": "detailed",
         "stock_locations_effective": "All locations",
@@ -173,11 +173,11 @@ def test_key_fallback_contact_id_then_respond_io_id_then_phone(db, tmp_path, w):
 def test_stock_override_sets_mode_includes_and_hide_zero(db, tmp_path, w):
     c1, c2, c3 = _contact(db, 1), _contact(db, 2), _contact(db, 3)
     rows = [
-        _full(db, w, c1, stock_mode_contact_override="availability", stock_source="contact",
+        _full(db, w, c1, companies="ZMCH, ZSRT", stock_mode_contact_override="availability", stock_source="contact",
               stock_mode_effective="availability", stock_locations_effective="Only ZMCH:ZHQ, ZSRT:ZBRW"),
-        _full(db, w, c2, stock_mode_contact_override="compact", stock_source="contact",
+        _full(db, w, c2, companies="ZSRT", stock_mode_contact_override="compact", stock_source="contact",
               stock_mode_effective="compact", stock_locations_effective="All locations"),
-        _full(db, w, c3, stock_mode_contact_override="detailed", stock_source="contact",
+        _full(db, w, c3, companies="ZSRT", stock_mode_contact_override="detailed", stock_source="contact",
               stock_mode_effective="detailed", stock_locations_effective="Only ZSRT:ZMWH; hide zero-quantity"),
     ]
     res = _go(db, w, _sheet(tmp_path, rows), apply=True)
@@ -198,7 +198,7 @@ def test_blank_override_clears_row_unless_source_is_contact(db, tmp_path, w):
     db.flush()
     rows = [
         _full(db, w, c1, stock_mode_contact_override=None, stock_source="access_type",
-              stock_mode_effective="availability", stock_locations_effective="All locations"),
+              stock_mode_effective="compact", stock_locations_effective="All locations"),
         _full(db, w, c2, stock_mode_contact_override=None, stock_source="contact",
               stock_mode_effective="compact", stock_locations_effective="All locations"),
     ]
@@ -231,8 +231,8 @@ def test_customers_add_remove_markers_and_fallback(db, tmp_path, w):
     cu_fb.is_active = False
     db.add(RespondContactCustomer(contact_id=c.id, customer_id=gone.id, company_id=w.a.id, is_primary=False, source="manual"))
     db.flush()
-    text = "ZSRT ZZT-N1 ZZT New Dealer (primary); ZMCH ZZT-F1 Renamed In Sheet (inactive)"
-    path = _sheet(tmp_path, [_full(db, w, c, customers=text)])
+    text = "ZSRT ZZT-N1 ZZT New Dealer (primary); ZMCH ZZT-F1 (inactive)"
+    path = _sheet(tmp_path, [_full(db, w, c, companies="ZSRT, ZMCH", customers=text)])
     res = _go(db, w, path)
     acts = sorted((p["action"]) for p in _fields(res, "customers"))
     assert acts == ["add", "add", "remove"]
@@ -309,7 +309,7 @@ def test_apply_audits_per_changed_contact_and_second_apply_is_a_noop(db, tmp_pat
     c1, c2, c3 = _contact(db, 1), _contact(db, 2), _contact(db, 3)
     cu = _customer(db, w.a, "ZZT Dealer One", "ZZT-A1")
     path = _sheet(tmp_path, [
-        _full(db, w, c1, access_types="zzt_extra", customers="ZSRT ZZT-A1 ZZT Dealer One"),
+        _full(db, w, c1, access_types="zzt_extra", companies="ZSRT", customers="ZSRT ZZT-A1 ZZT Dealer One"),
         _full(db, w, c2, market_segments="zzt_project"),
         _full(db, w, c3),  # already exact
     ])
@@ -360,3 +360,133 @@ def test_cli_from_sheet_requires_out(tmp_path, capsys):
     assert exc.value.code == 2
     err = capsys.readouterr().err
     assert "--out" in err and "--excel" not in err, "from-sheet mode must not demand --excel"
+
+
+# ---------------------------------------------------------------- review round
+def _override(db, c, mode="compact", **kw):
+    db.add(StockVisibilityPolicy(contact_id=c.id, mode=mode, warehouse_ids=None, hide_zero_locations=False, **kw))
+    db.flush()
+
+
+# A1 (blocker): derived cells are compared with the current database values
+def test_a1_changed_override_with_stale_effective_cell_is_not_an_error(db, tmp_path, w):
+    c = _contact(db, 1)
+    _override(db, c, "compact")
+    row = _full(db, w, c, stock_mode_contact_override="availability", stock_source="contact",
+                stock_mode_effective="compact", stock_locations_effective="All locations")
+    res = _go(db, w, _sheet(tmp_path, [row]), apply=True)
+    assert res["counts"]["errors"] == 0, res["errors"]
+    assert _policy(db, c.id).mode == "availability"
+
+
+# A2
+def test_a2_edited_effective_mode_with_blank_override_becomes_a_contact_override(db, tmp_path, w):
+    c = _contact(db, 1)
+    row = _full(db, w, c, companies="ZSRT", stock_mode_contact_override=None, stock_source="default",
+                stock_mode_effective="compact", stock_locations_effective="Only ZSRT:ZBRW")
+    res = _go(db, w, _sheet(tmp_path, [row]), apply=True)
+    assert res["counts"]["errors"] == 0, res["errors"]
+    (p,) = _fields(res, "stock_override")
+    assert p["action"] == "set" and "compact" in str(p["after"])
+    pol = _policy(db, c.id)
+    assert pol.mode == "compact" and pol.warehouse_ids == [w.wh["ZBRW"].id]
+
+
+VALID = {"access_types": "zzt_extra", "companies": "ZSRT", "market_segments": "zzt_retail"}  # real codes only
+
+
+# A4
+def test_a4_override_and_effective_both_edited_to_different_values_is_an_error(db, tmp_path, w):
+    c = _contact(db, 1)
+    row = _full(db, w, c, **VALID, stock_mode_contact_override="availability", stock_source="contact",
+                stock_mode_effective="compact")
+    res = _go(db, w, _sheet(tmp_path, [row]), apply=True)
+    assert res["counts"]["errors"] == 1 and _policy(db, c.id) is None
+    assert "stock_mode_effective" in res["errors"][0]["reason"]
+
+
+# A5
+def test_a5_edited_locations_without_a_resulting_override_is_an_error(db, tmp_path, w):
+    c = _contact(db, 1)
+    row = _full(db, w, c, **VALID, stock_locations_effective="Only ZSRT:ZBRW")
+    res = _go(db, w, _sheet(tmp_path, [row]), apply=True)
+    assert res["counts"]["errors"] == 1 and _policy(db, c.id) is None
+    assert "locations" in res["errors"][0]["reason"]
+
+
+# B
+@pytest.mark.parametrize("field", ["access_types", "companies", "market_segments"])
+def test_b_blank_set_cell_is_a_row_error(db, tmp_path, w, field):
+    c = _contact(db, 1)
+    c.access_types.append(w.types["zzt_dealer"])
+    db.flush()
+    before = _state(db, c.id)
+    res = _go(db, w, _sheet(tmp_path, [_full(db, w, c, **{field: None})]), apply=True)
+    assert res["counts"]["errors"] == 1 and "blank" in res["errors"][0]["reason"]
+    assert _state(db, c.id) == before
+
+
+def test_b_dash_empties_the_sets(db, tmp_path, w):
+    from app.models.company import RespondContactCompany
+
+    c = _contact(db, 1)
+    c.access_types.append(w.types["zzt_dealer"])
+    c.market_segments.append(w.seg)
+    db.add(RespondContactCompany(respond_contact_id=c.id, company_id=w.a.id))
+    db.flush()
+    row = _full(db, w, c, access_types="-", companies="-", market_segments="-")
+    res = _go(db, w, _sheet(tmp_path, [row]), apply=True)
+    assert res["counts"]["errors"] == 0, res["errors"]
+    s = _state(db, c.id)
+    assert (s["types"], s["companies"], s["segments"]) == ([], [], [])
+
+
+# C
+def test_c_customer_name_that_does_not_match_is_an_error(db, tmp_path, w):
+    c = _contact(db, 1)
+    _customer(db, w.a, "ZZT Real Name", "ZZT-C1")
+    row = _full(db, w, c, **VALID, customers="ZSRT ZZT-C1 ZZT Wrong Name")
+    res = _go(db, w, _sheet(tmp_path, [row]), apply=True)
+    assert res["counts"]["errors"] == 1 and _links(db, c.id) == 0
+    assert "name does not match" in res["errors"][0]["reason"]
+
+
+def test_c_customer_company_outside_the_rows_companies_is_an_error(db, tmp_path, w):
+    c = _contact(db, 1)
+    _customer(db, w.b, "ZZT Mocha Dealer", "ZZT-C2")
+    row = _full(db, w, c, **VALID, customers="ZMCH ZZT-C2 ZZT Mocha Dealer")
+    res = _go(db, w, _sheet(tmp_path, [row]), apply=True)
+    assert res["counts"]["errors"] == 1 and _links(db, c.id) == 0
+    assert "not in the row" in res["errors"][0]["reason"]
+
+
+def test_c_warehouse_company_outside_the_rows_companies_is_an_error(db, tmp_path, w):
+    c = _contact(db, 1)
+    row = _full(db, w, c, **VALID, stock_mode_contact_override="compact", stock_source="contact",
+                stock_mode_effective="compact", stock_locations_effective="Only ZMCH:ZHQ")
+    res = _go(db, w, _sheet(tmp_path, [row]), apply=True)
+    assert res["counts"]["errors"] == 1 and _policy(db, c.id) is None
+    assert "warehouse" in res["errors"][0]["reason"]
+
+
+# D
+def test_d_a_contact_matched_by_two_rows_errors_every_row(db, tmp_path, w):
+    c, other = _contact(db, 1), _contact(db, 2)
+    rows = [_full(db, w, c, access_types="zzt_extra"),
+            {**_full(db, w, c, access_types="zzt_end_user"), "contact_id": None},
+            _full(db, w, other, access_types="zzt_extra")]
+    res = _go(db, w, _sheet(tmp_path, rows), apply=True)
+    assert res["counts"]["errors"] == 2 and sorted(e["row"] for e in res["errors"]) == [2, 3]
+    assert _state(db, c.id)["types"] == []
+    assert _state(db, other.id)["types"] == ["zzt_extra"]
+
+
+# E
+@pytest.mark.parametrize("over,word", [({"phone": 601700009998}, "phone"), ({"respond_io_id": 998877}, "respond_io_id")])
+def test_e_contact_id_disagreeing_with_phone_or_respond_io_id_is_an_error(db, tmp_path, w, over, word):
+    c = _contact(db, 1)
+    c.respond_io_id = "112233"
+    db.flush()
+    res = _go(db, w, _sheet(tmp_path, [_full(db, w, c, **{**VALID, **over})]), apply=True)
+    assert res["counts"]["errors"] == 1 and _state(db, c.id)["types"] == []
+    assert word in res["errors"][0]["reason"]
