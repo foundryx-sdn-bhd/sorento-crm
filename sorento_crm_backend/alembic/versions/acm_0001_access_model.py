@@ -9,12 +9,12 @@ The seeding goes through `app.services.chatbot.access_seed`, which is plain SQL 
 ORM model, so a from-scratch upgrade does not break when a model gains a column later.
 
 Revision ID: acm_0001_access_model
-Revises: creg_0001_contact_regions
+Revises: dcu_0001
 """
 from alembic import op
 
 revision = "acm_0001_access_model"
-down_revision = "creg_0001_contact_regions"
+down_revision = "dcu_0001"
 branch_labels = None
 depends_on = None
 
