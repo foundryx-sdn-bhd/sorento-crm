@@ -182,8 +182,9 @@ NULL-workspace fallback, as today's agent gate); the on-order key has ONE path (
 `purchase_order` row's reveal_key becomes NULL and S2 gates the PO rung on the domain grant instead of
 `_CROSSDOMAIN_RUNG_GRANT`); an accepted hand-off keeps the offer's agent. Rulings (crew 6 Oct): Q1 (a) no contact gains customer scope: linked non-office contacts map to Dealer +
 add-overrides, with `access_gain_report` beside the loss report; Q4 (a) Access tab reads accept
-`access_agents.view` OR `contacts.view`. Still with the owner: Q2 internal roles carry tier Office (rec
-accept), Q3 granting roles or plus-overrides needs `reference_data.manage` (rec). Pre-existing: `access_agents.py` write routes need only sign-in; crew runs it as a separate S lane.
+`access_agents.view` OR `contacts.view`. Owner (5 Oct 23:58): Q2 (a) mapped internal contacts
+are staff (tier Office), exceptions move to Dealer; Q3 (a) adding role holders or PLUS overrides needs
+`user_management.reference_data.manage`; `contacts.edit` may only remove. Pre-existing: `access_agents.py` write routes need only sign-in; crew runs it as a separate S lane.
 
 ## Migration on a dev copy + hand test
 

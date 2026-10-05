@@ -14,7 +14,7 @@ Mock: `documentation/mockups/ACCESS-MODEL/index.html` (v3). IDs AC-AM-n.
 - AC-AM-3 Deleting a role is a 10 s deferred action with Cancel, no confirm dialog. A role held by any
   contact is refused (409, message names the number of contacts); a role held by none is hard-deleted
   with its ticks.
-- AC-AM-4 Adding/removing a contact on the role page and on the contact Access tab write the same row; contact role/override writes need `user_management.contacts.edit` (as field reveals today, `system/chatbot_field_reveals.py:48,86`; owner Q3 pending); every Access tab read accepts `user_management.access_agents.view` OR `user_management.contacts.view` (crew Q4, 6 Oct).
+- AC-AM-4 Adding/removing a contact on the role page and on the contact Access tab write the same row; adding a role holder or a PLUS override needs `user_management.reference_data.manage`; `user_management.contacts.edit` may only remove a role or add/remove a MINUS override (owner Q3, 5 Oct); every Access tab read accepts `user_management.access_agents.view` OR `user_management.contacts.view` (crew Q4, 6 Oct).
 
 - AC-AM-4b The tree has two sections, Domains and Reports. Reports lists every report-type grant: Low
   stock report, Outstanding SO report, Sales report. A report answers only when its owning domain is
