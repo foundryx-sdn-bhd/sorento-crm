@@ -139,8 +139,24 @@ menu "Internal Users - Respond contacts"); console and Chat History sit under Sy
 | 375px / 1280px | PASS | AI switch row readable, no clipping, no horizontal overflow (scrollWidth 360 / 1265) |
 | Console / errors | clean | one transient next-auth `CLIENT_FETCH_ERROR` on a reload in the first session, not reproduced in the second; nothing from the lane's screens |
 
-Screenshots (under 200 KB each): `evidence/ai-allowed-gate/card-ai-switch-off.png`,
-`evidence/ai-allowed-gate/console-ai-not-allowed.png`.
+Rerun on the review head (36c25b9a tree, after the S1 fix and the merge with main; crew asked for
+the Chat History drawer and an UNKNOWN contact):
+
+| Row | Result | Evidence |
+| --- | --- | --- |
+| 1 list column | PASS | +60100000101 Allowed, +60100000102 Blocked; list GET 200. Reached from the topbar apps menu "Internal Users - Respond contacts" (the sidebar "Internal Users" entry lands on contact access agents on this build) |
+| 2 filter | PASS | "AI replies: AI replies blocked" leaves 102 only, call carries `ai=no`; Clear selection restores both |
+| 3 card switch | PASS | OFF with the approved hint; tick PUT `{"chatbot_allowed":true}`, ON after reload; untick `{"chatbot_allowed":false}` + toast, OFF after reload; Stock checks PUTs carry no `chatbot_allowed` key |
+| 4 console, blocked | PASS | "(no reply)" + chip `ai_not_allowed`; `branch_kind ai_not_allowed`, `reply_text ""`, `send_messages []`, `actions []` |
+| 5 console, UNKNOWN 551719711 (envelope, no contact row) | PASS | the picker refuses a bare id ("No results found."); the tester set the console's remembered contact in localStorage to that id; request `contact_respond_id "551719711"`; same silent outcome, `known_contact false` on the stored turn |
+| 6 console, allowed | PASS (not gated) | `branch_kind null`, generic parser-error reply (no LLM key) |
+| 7 Chat History drawer via the console "trace" link | PASS after fix | drawer "Turn #94c9": one stage `received`, line "AI not allowed for this contact; sent no reply", `lane ai_not_allowed`, `known contact true`, nothing after. First read: the stage badge was the green success style because `TurnDetailDrawer` and `TurnPanel` only knew `failed`; fixed to render trace status `skipped` as a muted badge with the word "skipped" (and the muted dot on the panel). The headline word "Not allowed" lives on the transcript's turn panel under a real WhatsApp message, which this sandbox has none of; covered by `turnPresentation.test.ts` and the owner's hand test step 7 |
+| 8 viewports | PASS | 375: scrollWidth 360, switch at x 283-323, label from x 37; 1280: scrollWidth 1265 |
+| 9 console / errors | PASS | `errors` empty after rows 1, 3, 4, 5, 7; console only debug / auth-fallback warning / Fast Refresh lines |
+
+Screenshots (under 200 KB each, the lane's two): `evidence/ai-allowed-gate/console-ai-not-allowed.png`,
+`evidence/ai-allowed-gate/chat-history-not-allowed.png` (the drawer after the fix). The earlier
+card screenshot was dropped to stay within the two-per-lane cap.
 
 ### Tests (red first)
 - `tests/chatbot/test_ai_allowed_gate.py`: unknown contact silent; flag false silent (no parser
