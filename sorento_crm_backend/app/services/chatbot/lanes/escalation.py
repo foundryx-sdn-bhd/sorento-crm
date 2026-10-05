@@ -78,21 +78,13 @@ CO_ALIASES: dict[str, list[str]] = {
     "cabana": ["cabana", "cbn"],
 }
 
-# `sorento-sub-respond-sendmsg-respond-routed-to-pic2`'s `message`, verbatim. Sent BEFORE
-# the assignment work, which is why the customer hears something even when the round robin
-# is slow.
-OUT_OF_SCOPE_REPLY = (
-    "Your request is out of the scope of my ability and require human assistance. "
-    "We are directing your enquiry to the correct person. Please wait for a moment."
-)
-
-# `sorento-sub-respond-sendmsg-respond-routed-to-pic`'s `message`, with `{{ ...team }}`
-# prettified the way `tail/outcome.pretty_team` prettifies every other team in customer
-# copy (the raw slug `customer_service` was reaching WhatsApp).
-ROUTED_TO_PIC_REPLY = (
-    "This inquiry has been routed to the respective person-in-charge (PIC) from {team} "
-    "team. We will get back to you soon. Thanks for your patience."
-)
+# The ONE customer message an out-of-scope handover sends (WA-MSG-TRIM, owner 3 Oct 2026).
+# It replaces the old pair, `sorento-sub-respond-sendmsg-respond-routed-to-pic2`'s "Please
+# wait for a moment." before the assignment and `...-routed-to-pic`'s "routed to the
+# respective person-in-charge (PIC) from {team} team" after it: since 1 Oct 2026 Meta
+# charges every outgoing WhatsApp message, so one handover is one message. Owner-approved
+# wording, verbatim; the team is on the comment the PIC reads, not in the customer's line.
+ROUTED_TO_PIC_REPLY = "Routed to your PIC, they will reply shortly."
 
 # `Call 'sub-add-comment-respond'`'s `comment`, and the timezone its DateTime conversion
 # uses. Asia/Kuala_Lumpur is +08:00 with no DST, so a fixed offset is the whole rule.
@@ -1442,19 +1434,19 @@ def _assignment_actions(
     dry_run: bool,
     preview: bool,
 ) -> list[dict[str, Any]]:
-    """The four actions, in the order the live graph performs them.
+    """The three actions (assign, comment, one customer message), in execution order.
 
     ONE builder for the live list and the preview list, so the two can only differ in the
     values a seam would have supplied - never in the shape, the order or the set of keys.
     That is the whole point of AC-507: the executor renders one template against both.
 
-    Neither `send_message` depends on the assignee: the first is a fixed sentence and the
-    second interpolates the TEAM, which the ladder resolved before any seam was reached. So
-    both carry their real text even in a preview, and only the assignee id, the mention and
-    the three timestamps are placeholders.
+    The `send_message` does not depend on the assignee (a fixed sentence), so it carries
+    its real text even in a preview, and only the assignee id, the mention and the three
+    timestamps are placeholders. It is the only customer message: the "please wait" that
+    used to go before the assignment was folded into it (WA-MSG-TRIM, owner 3 Oct 2026).
     """
     respond_user_id = jsc.get(assignee, "assignee_respond_user_id") if assignee is not None else None
-    actions: list[dict[str, Any]] = [_send_message(OUT_OF_SCOPE_REPLY, dry_run)]
+    actions: list[dict[str, Any]] = []
     if include_assign:
         action: dict[str, Any] = {
             "kind": "assign_conversation",
@@ -1476,7 +1468,7 @@ def _assignment_actions(
     if preview:
         comment["preview"] = True
     actions.append(comment)
-    actions.append(_send_message(ROUTED_TO_PIC_REPLY.format(team=_pretty_team(team)), dry_run))
+    actions.append(_send_message(ROUTED_TO_PIC_REPLY, dry_run))
     return actions
 
 

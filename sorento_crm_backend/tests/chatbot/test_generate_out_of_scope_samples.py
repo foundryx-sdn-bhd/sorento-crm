@@ -214,7 +214,6 @@ def test_generate_out_of_scope_samples(client, api_key, session_factory, _stub_s
     dry_body = dry_resp.json()
     assert dry_body["branch_kind"] == "out_of_scope"
     assert [a["kind"] for a in dry_body["actions"]] == [
-        "send_message",
         "assign_conversation",
         "add_comment",
         "send_message",
@@ -227,7 +226,6 @@ def test_generate_out_of_scope_samples(client, api_key, session_factory, _stub_s
     live_body = live_resp.json()
     assert live_body["branch_kind"] == "out_of_scope"
     assert [a["kind"] for a in live_body["actions"]] == [
-        "send_message",
         "assign_conversation",
         "add_comment",
         "send_message",
