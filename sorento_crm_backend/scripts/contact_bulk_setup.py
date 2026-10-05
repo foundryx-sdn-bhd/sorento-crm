@@ -38,6 +38,13 @@ Run from sorento_crm_backend/. Stdout carries counts only; names and phones go t
         --db-url postgresql://user@localhost:5432/dbname --out /path/to/out --auto-links
     docker exec <container> python scripts/contact_bulk_setup.py --excel /tmp/<file>.xlsx \\
         --db-url "$DATABASE_URL" --out /tmp/contact-bulk --auto-links
+
+    # 5. write the owner's edited contact access export back (no --excel). Dry run writes
+    #    out/writeback-plan.csv + writeback-errors.csv; --apply is ONE transaction; customer
+    #    removals only with --allow-removals. Plan: PLAN-contact-bulk-setup-4oct.md addendum.
+    python scripts/contact_bulk_setup.py --from-sheet edited.xlsx [--sheet Sheet2] \\
+        --db-url postgresql://user@localhost:5432/dbname --out /path/to/out \\
+        [--apply --actor-email someone@example.com] [--allow-removals]
 """
 from __future__ import annotations
 
@@ -64,6 +71,8 @@ from sqlalchemy.orm import load_only  # noqa: E402
 from app import audit_context  # noqa: E402
 from app.models.access import (  # noqa: E402
     AccessAgent,
+    ContactAccessType,
+    MarketSegment,
     ContactAgentAccess,
     RespondContact,
     RespondContactCustomer,
@@ -902,6 +911,403 @@ def apply_links(db, path, reviewed_path, *, actor_id: Optional[str], rules: dict
     return result
 
 
+# ---------------------------------------------------------------- from-sheet write-back
+
+SHEET_FIELDS = ("access_types", "companies", "market_segments", "stock_override", "customers")
+SHEET_REQUIRED = (
+    "access_types", "companies", "market_segments", "stock_mode_contact_override", "stock_source",
+    "stock_mode_effective", "stock_locations_effective", "customers",
+)
+PLAN_COLUMNS = ["contact", "field", "before", "after", "action"]
+STOCK_MODES = ("detailed", "compact", "availability")
+HIDE_ZERO = "; hide zero-quantity"
+_MARKER = re.compile(r"\s*\((primary|inactive)\)\s*$", re.I)
+
+
+def _id_text(value: Any) -> str:
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    return _unsafe(value)
+
+
+def _read_sheet(path, sheet: str) -> list[tuple[int, dict]]:
+    wb = openpyxl.load_workbook(path, data_only=True, read_only=True)
+    try:
+        if sheet not in wb.sheetnames:
+            raise SystemExit(f"The workbook has no sheet named {sheet}.")
+        it = wb[sheet].iter_rows(values_only=True)
+        header = [_text(h).lower() for h in next(it, [])]
+        missing = [h for h in SHEET_REQUIRED if h not in header]
+        if missing or not any(k in header for k in ("contact_id", "respond_io_id", "phone")):
+            raise SystemExit(f"The sheet needs these columns: {', '.join(missing) or 'a contact key'}.")
+        out = []
+        for number, cells in enumerate(it, start=2):
+            row = {h: v for h, v in zip(header, cells) if h}
+            if any(_text(v) for v in row.values()):
+                out.append((number, row))
+        return out
+    finally:
+        wb.close()
+
+
+def _split_list(value: Any) -> list[str]:
+    return list(dict.fromkeys(p.strip() for p in _unsafe(value).split(",") if p.strip()))
+
+
+def _contact_keys(db, rows: list[tuple[int, dict]]) -> dict[int, Optional[SimpleNamespace]]:
+    """Sheet row number -> plain contact (id, name), or None when the row's key matches no single contact."""
+    ids = {_id_text(r.get("contact_id")) for _, r in rows} - {""}
+    rios = {_id_text(r.get("respond_io_id")) for _, r in rows} - {""}
+    by_id = {
+        str(c.id): c for c in db.query(RespondContact.id, RespondContact.name).filter(RespondContact.id.in_(ids))
+    } if ids else {}
+    by_rio: dict[str, list] = {}
+    if rios:
+        for c in db.query(RespondContact.id, RespondContact.name, RespondContact.respond_io_id).filter(
+            RespondContact.respond_io_id.in_(rios)
+        ):
+            by_rio.setdefault(str(c.respond_io_id), []).append(c)
+    phones = {normalise_phone(r.get("phone")) for _, r in rows} - {None}
+    by_phone, _ambiguous = _find_contacts(db, phones)
+    out: dict[int, Optional[SimpleNamespace]] = {}
+    for number, r in rows:
+        cid, rio, phone = _id_text(r.get("contact_id")), _id_text(r.get("respond_io_id")), normalise_phone(r.get("phone"))
+        hit = None
+        if cid:
+            hit = by_id.get(cid)
+        elif rio:
+            hit = by_rio[rio][0] if len(by_rio.get(rio, [])) == 1 else None
+        elif phone:
+            hit = by_phone.get(phone)
+        out[number] = SimpleNamespace(id=str(hit.id), name=hit.name or "") if hit is not None else None
+    return out
+
+
+def _read_state(db, ids: list[str]) -> dict[str, dict]:
+    state = {i: {"types": set(), "companies": set(), "segments": set(), "policy": None, "links": {}} for i in ids}
+    if not ids:
+        return state
+    for cid, code in db.query(respond_contact_access_types.c.contact_id, respond_contact_access_types.c.access_type_code).filter(
+        respond_contact_access_types.c.contact_id.in_(ids)
+    ):
+        state[str(cid)]["types"].add(code)
+    for cid, company_id in db.query(RespondContactCompany.respond_contact_id, RespondContactCompany.company_id).filter(
+        RespondContactCompany.respond_contact_id.in_(ids)
+    ):
+        state[str(cid)]["companies"].add(str(company_id))
+    for cid, code in db.query(respond_contact_market_segments.c.contact_id, respond_contact_market_segments.c.segment_code).filter(
+        respond_contact_market_segments.c.contact_id.in_(ids)
+    ):
+        state[str(cid)]["segments"].add(code)
+    for p in db.query(
+        StockVisibilityPolicy.contact_id, StockVisibilityPolicy.mode, StockVisibilityPolicy.warehouse_ids,
+        StockVisibilityPolicy.excluded_warehouse_ids, StockVisibilityPolicy.hide_zero_locations,
+    ).filter(StockVisibilityPolicy.contact_id.in_(ids)):
+        state[str(p.contact_id)]["policy"] = _policy_key(
+            p.mode, None if p.warehouse_ids is None else [str(x) for x in p.warehouse_ids],
+            [str(x) for x in p.excluded_warehouse_ids] if p.excluded_warehouse_ids else None, bool(p.hide_zero_locations),
+        )
+    for link in db.query(
+        RespondContactCustomer.contact_id, RespondContactCustomer.customer_id, Customer.customer_code,
+        Customer.customer_name, Company.code.label("company_code"),
+    ).join(Customer, Customer.id == RespondContactCustomer.customer_id).join(Company, Company.id == Customer.company_id).filter(
+        RespondContactCustomer.contact_id.in_(ids)
+    ):
+        state[str(link.contact_id)]["links"][str(link.customer_id)] = f"{link.company_code} {link.customer_code} {link.customer_name or ''}".strip()
+    return state
+
+
+def _policy_key(mode, include, exclude, hide) -> tuple:
+    return (mode, None if include is None else tuple(sorted(include)), tuple(sorted(exclude)) if exclude else None, bool(hide))
+
+
+def _parse_locations(value: Any, wh_by_label: dict) -> tuple:
+    """(include, exclude, hide) as warehouse id lists; ValueError names what is wrong."""
+    s = _unsafe(value)
+    if not s:
+        raise ValueError("stock_locations_effective is blank while stock_mode_contact_override is set")
+    hide = s.endswith(HIDE_ZERO)
+    if hide:
+        s = s[: -len(HIDE_ZERO)].strip()
+    include = exclude = None
+    low = s.lower()
+    if low == "all locations":
+        pass
+    elif low == "no locations":
+        include = []
+    elif low.startswith("only ") or low.startswith("all except "):
+        labels = [p.strip() for p in s[5:].split(",")] if low.startswith("only ") else [p.strip() for p in s[11:].split(",")]
+        ids = []
+        for label in labels:
+            wid = wh_by_label.get(label.upper())
+            if wid is None:
+                raise ValueError(f"unknown warehouse {label} in stock_locations_effective")
+            ids.append(wid)
+        include, exclude = (ids, None) if low.startswith("only ") else (None, ids)
+    else:
+        raise ValueError("stock_locations_effective is not a recognised locations text")
+    return include, exclude, hide
+
+
+def _locations_label(key: tuple, label_of: dict) -> str:
+    mode, include, exclude, hide = key
+
+    def codes(ids) -> str:
+        return ", ".join(sorted(label_of.get(i, "(removed)") for i in ids))
+
+    if exclude:
+        text_ = f"All except {codes(exclude)}"
+    elif include is None:
+        text_ = "All locations"
+    elif not include:
+        text_ = "No locations"
+    else:
+        text_ = f"Only {codes(include)}"
+    return f"{mode}; {text_}{HIDE_ZERO if hide else ''}"
+
+
+def _match_customer(db, cache: dict, company_ids: dict, item: str):
+    """(customer row, None) or (None, reason). `CO CODE NAME[ (primary)][ (inactive)]`."""
+    s = item.strip()
+    while _MARKER.search(s):
+        s = _MARKER.sub("", s)
+    parts = s.split(None, 2)
+    if len(parts) < 2:
+        return None, "a customer entry is not 'CO CODE NAME'"
+    co, code = parts[0], parts[1]
+    name = parts[2].strip().casefold() if len(parts) > 2 else ""
+    company_id = company_ids.get(co.upper())
+    if company_id is None:
+        return None, f"unknown company {co} in customers"
+    key = (company_id, code.strip().lower())
+    if key not in cache:
+        cache[key] = db.query(
+            Customer.id, Customer.customer_code, Customer.customer_name, Customer.company_id
+        ).filter(Customer.company_id == company_id, func.lower(func.btrim(Customer.customer_code)) == key[1]).all()
+    rows = cache[key]
+    exact = [r for r in rows if (r.customer_name or "").strip().casefold() == name]
+    pick = exact if exact else rows
+    if len(pick) == 1:
+        return SimpleNamespace(id=str(pick[0].id), company_id=str(pick[0].company_id), code=pick[0].customer_code,
+                               label=f"{co.upper()} {pick[0].customer_code} {pick[0].customer_name or ''}".strip(),
+                               short=f"{co.upper()} {pick[0].customer_code}"), None
+    if not pick:
+        return None, f"unknown customer {co} {code}"
+    return None, f"customer {co} {code} matches more than one customer"
+
+
+def from_sheet(db, path, *, sheet: str = "Sheet2", apply: bool = False, allow_removals: bool = False,
+               actor_id: Optional[str] = None, out_dir=None) -> dict:
+    """Write the owner's edited contact access export back. Dry run unless `apply`; with `apply`
+    ONE transaction for every contact (any failure rolls back all of it and is raised)."""
+    rows = _read_sheet(path, sheet)
+    contacts = _contact_keys(db, rows)
+    ids = sorted({c.id for c in contacts.values() if c is not None})
+    state = _read_state(db, ids)
+
+    company_ids = {str(c.code).upper(): str(c.id) for c in db.query(Company.id, Company.code)}
+    company_code = {v: k for k, v in company_ids.items()}
+    type_codes = {str(c.code).lower(): c.code for c in db.query(ContactAccessType.code)}
+    segment_codes = {str(c.code).lower(): c.code for c in db.query(MarketSegment.code)}
+    wh_by_label, label_of = {}, {}
+    for wh in db.query(Warehouse.id, Warehouse.warehouse_code, Warehouse.company_id):
+        label = f"{company_code.get(str(wh.company_id), '?')}:{wh.warehouse_code}"
+        wh_by_label[label.upper()] = str(wh.id)
+        label_of[str(wh.id)] = label
+
+    errors: list[dict] = []
+    plan: list[dict] = []
+    todo: list[dict] = []
+    cust_cache: dict = {}
+    seen: set = set()
+    for number, r in rows:
+        contact = contacts[number]
+        if contact is None:
+            errors.append({"row": number, "reason": "no single contact matches contact_id, respond_io_id or phone"})
+            continue
+        if contact.id in seen:
+            errors.append({"row": number, "reason": "this contact appears on more than one row"})
+            continue
+        seen.add(contact.id)
+        cur = state[contact.id]
+        bad: list[str] = []
+        items: list[dict] = []
+
+        def item(field, before, after, action):
+            items.append({"contact_id": contact.id, "contact": contact.name, "field": field,
+                          "before": before, "after": after, "action": action})
+
+        # access types, companies, market segments: set exactly
+        def want(cell, lookup, label):
+            out = set()
+            for code in _split_list(r.get(cell)):
+                if code.lower() not in lookup:
+                    bad.append(f"unknown {label} {code}")
+                else:
+                    out.add(lookup[code.lower()])
+            return out
+
+        want_types = want("access_types", type_codes, "access type")
+        want_cos = want("companies", {k.lower(): v for k, v in company_ids.items()}, "company")
+        want_segs = want("market_segments", segment_codes, "market segment")
+        ops: dict[str, Any] = {}
+        for field, have, wanted, shown in (
+            ("access_types", cur["types"], want_types, lambda x: x),
+            ("market_segments", cur["segments"], want_segs, lambda x: x),
+            ("companies", cur["companies"], want_cos, lambda x: company_code.get(x, "?")),
+        ):
+            add, rem = sorted(wanted - have), sorted(have - wanted)
+            ops[field] = (add, rem)
+            for x in add:
+                item(field, "", shown(x), "add")
+            for x in rem:
+                item(field, shown(x), "", "remove")
+
+        # stock: the contact override only
+        override = _unsafe(r.get("stock_mode_contact_override")).lower()
+        source = _unsafe(r.get("stock_source")).lower()
+        effective = _unsafe(r.get("stock_mode_effective")).lower()
+        stock_op = None
+        if override:
+            if override not in STOCK_MODES:
+                bad.append("stock_mode_contact_override is not detailed, compact or availability")
+            else:
+                if source == "contact" and effective != override:
+                    bad.append("stock_mode_effective does not match stock_mode_contact_override: edit stock_mode_contact_override")
+                try:
+                    include, exclude, hide = _parse_locations(r.get("stock_locations_effective"), wh_by_label)
+                    key = _policy_key(override, include, exclude, hide)
+                    if key != cur["policy"]:
+                        stock_op = ("set", key)
+                        item("stock_override", None if cur["policy"] is None else _locations_label(cur["policy"], label_of),
+                             _locations_label(key, label_of), "set")
+                except ValueError as exc:
+                    bad.append(str(exc))
+        elif source == "contact":
+            bad.append("stock_mode_contact_override is blank but stock_source is contact: edit stock_mode_contact_override")
+        elif cur["policy"] is not None:
+            stock_op = ("clear", None)
+            item("stock_override", _locations_label(cur["policy"], label_of), None, "clear")
+
+        # customers
+        want_links: dict[str, Any] = {}
+        for text_item in [p for p in _unsafe(r.get("customers")).split("; ") if p.strip()]:
+            found, why = _match_customer(db, cust_cache, company_ids, text_item)
+            if why:
+                bad.append(why)
+            else:
+                want_links[found.id] = found
+        add_links = [want_links[i] for i in sorted(set(want_links) - set(cur["links"]))]
+        rem_links = sorted(set(cur["links"]) - set(want_links))
+        for c in add_links:
+            item("customers", "", c.label, "add")
+        for i in rem_links:
+            item("customers", cur["links"][i], "", "remove")
+
+        if bad:
+            errors.append({"row": number, "reason": "; ".join(bad)})
+            continue
+        plan.extend(items)
+        if items:
+            todo.append({"contact": contact, "ops": ops, "stock": stock_op, "add_links": add_links,
+                         "rem_links": rem_links if allow_removals else [], "items": items, "cur": cur})
+
+    counts: dict[str, Any] = {f: {"add": 0, "remove": 0, "set": 0} for f in SHEET_FIELDS}
+    for p in plan:
+        counts[p["field"]]["remove" if p["action"] == "clear" else p["action"]] += 1
+
+    def effective(t: dict) -> bool:
+        ops = t["ops"]
+        return bool(any(a or r_ for a, r_ in ops.values()) or t["stock"] or t["add_links"] or t["rem_links"])
+
+    changed = [t for t in todo if effective(t)]
+    counts["errors"] = len(errors)
+    counts["contacts_changed"] = len(changed)
+    result = {"apply": apply, "counts": counts, "plan": plan, "errors": errors}
+
+    if out_dir is not None:
+        out = Path(out_dir)
+        for name, header, body in (
+            ("writeback-plan.csv", PLAN_COLUMNS,
+             ([_safe(p["contact"]), p["field"], _safe(_cell(p["before"])), _safe(_cell(p["after"])), p["action"]] for p in plan)),
+            ("writeback-errors.csv", ["row", "reason"], ([e["row"], _safe(e["reason"])] for e in errors)),
+        ):
+            with open(out / name, "w", newline="") as fh:
+                w = csv.writer(fh)
+                w.writerow(header)
+                w.writerows(body)
+            _private(out / name)
+
+    if not apply or not changed:
+        return result
+    actor = audit_context.AuditActor(actor_type="user", user_id=actor_id) if actor_id else None
+    try:
+        if actor:
+            audit_context.stamp_actor(actor, db=db)
+        for t in changed:
+            cid, ops = t["contact"].id, t["ops"]
+            add, rem = ops["access_types"]
+            if rem:
+                db.execute(respond_contact_access_types.delete().where(
+                    respond_contact_access_types.c.contact_id == cid, respond_contact_access_types.c.access_type_code.in_(rem)))
+            if add:
+                db.execute(respond_contact_access_types.insert(), [{"contact_id": cid, "access_type_code": c} for c in add])
+            add, rem = ops["market_segments"]
+            if rem:
+                db.execute(respond_contact_market_segments.delete().where(
+                    respond_contact_market_segments.c.contact_id == cid, respond_contact_market_segments.c.segment_code.in_(rem)))
+            if add:
+                db.execute(respond_contact_market_segments.insert(), [{"contact_id": cid, "segment_code": c} for c in add])
+            add, rem = ops["companies"]
+            if rem:
+                db.query(RespondContactCompany).filter(
+                    RespondContactCompany.respond_contact_id == cid, RespondContactCompany.company_id.in_(rem)
+                ).delete(synchronize_session=False)
+            for company_id in add:
+                db.add(RespondContactCompany(respond_contact_id=cid, company_id=company_id))
+            if t["stock"]:
+                kind, key = t["stock"]
+                if kind == "clear" or t["cur"]["policy"] is not None:
+                    db.query(StockVisibilityPolicy).filter(StockVisibilityPolicy.contact_id == cid).delete(synchronize_session=False)
+                if kind == "set":
+                    mode, include, exclude, hide = key
+                    db.add(StockVisibilityPolicy(
+                        contact_id=cid, mode=mode, warehouse_ids=None if include is None else list(include),
+                        excluded_warehouse_ids=list(exclude) if exclude else None, hide_zero_locations=hide))
+            if t["rem_links"]:
+                db.query(RespondContactCustomer).filter(
+                    RespondContactCustomer.contact_id == cid, RespondContactCustomer.customer_id.in_(t["rem_links"])
+                ).delete(synchronize_session=False)
+            for c in t["add_links"]:
+                db.add(RespondContactCustomer(contact_id=cid, customer_id=c.id, company_id=c.company_id,
+                                              is_primary=False, source="bulk_setup", linked_by=actor_id))
+            db.flush()
+            applied = [i for i in t["items"] if i["field"] != "customers" or i["action"] == "add" or allow_removals]
+            old, new = {}, {}
+            for i in applied:
+                old.setdefault(i["field"], [])
+                new.setdefault(i["field"], [])
+                if i["before"] not in ("", None):
+                    old[i["field"]].append(i["before"])
+                if i["after"] not in ("", None):
+                    new[i["field"]].append(i["after"])
+            audit_service.record(
+                db, event="contact.sheet_writeback", entity_type="respond_contacts", entity_id=cid,
+                old_values=old, new_values=new, description="Contact access written back from the edited export sheet",
+            )
+            for c in t["add_links"]:
+                audit_service.record(
+                    db, event="contact.customer_linked_bulk", entity_type="respond_contacts", entity_id=cid,
+                    old_values={"customer": None}, new_values={"customer": c.code},
+                    description="Customer linked from the edited contact access export sheet",
+                )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return result
+
+
 # ---------------------------------------------------------------- cli
 
 
@@ -927,8 +1333,14 @@ def _actor_id(db, email: Optional[str]) -> str:
 
 
 def main(argv: Optional[list[str]] = None) -> int:
-    ap = argparse.ArgumentParser(description="Contact bulk setup from the dealer Excel (see the module docstring).")
-    ap.add_argument("--excel", required=True)
+    ap = argparse.ArgumentParser(
+        description="Contact bulk setup from the dealer Excel (see the module docstring).",
+        usage="contact_bulk_setup.py --db-url URL [mode options] (see the module docstring)",
+    )
+    ap.add_argument("--excel", help="the dealer Excel (every mode except --from-sheet)")
+    ap.add_argument("--from-sheet", metavar="EDITED.xlsx", help="write the edited contact access export back")
+    ap.add_argument("--sheet", default="Sheet2", help="the --from-sheet worksheet")
+    ap.add_argument("--allow-removals", action="store_true", help="--from-sheet: also unlink customers the sheet drops")
     ap.add_argument("--db-url", required=True, help="explicit target database; never defaulted")
     ap.add_argument("--apply", action="store_true", help="write; omit for a dry run")
     ap.add_argument("--out", help="directory for the CSV files (required for a dry run or --apply)")
@@ -938,7 +1350,14 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap.add_argument("--actor-email")
     ap.add_argument("--debug", action="store_true", help="re-raise errors with the full traceback")
     args = ap.parse_args(argv)
-    if not (args.links_review or args.apply_links) and not args.out:
+    if args.from_sheet:
+        if not args.out:
+            ap.error("--out is required with --from-sheet")
+        if args.apply and not args.actor_email:
+            ap.error("--actor-email is required with --apply")
+    elif not args.excel:
+        ap.error("--excel is required")
+    if not args.from_sheet and not (args.links_review or args.apply_links) and not args.out:
         ap.error("--out is required for a dry run or --apply")
     if args.auto_links and not args.out:
         ap.error("--out is required with --auto-links")
@@ -947,6 +1366,18 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     db = _session(args.db_url)
     try:
+        if args.from_sheet:
+            out = Path(args.out)
+            out.mkdir(parents=True, exist_ok=True)
+            res = from_sheet(db, args.from_sheet, sheet=args.sheet, apply=args.apply, allow_removals=args.allow_removals,
+                             out_dir=out, actor_id=_actor_id(db, args.actor_email) if args.apply else None)
+            for field in SHEET_FIELDS:
+                c = res["counts"][field]
+                print(f"{field:15}: add {c['add']}  remove {c['remove']}  set {c['set']}")
+            print(f"{'contacts_changed':15}: {res['counts']['contacts_changed']}")
+            print(f"{'errors':15}: {res['counts']['errors']}")
+            print("APPLIED" if args.apply else "DRY RUN - nothing written. Re-run with --apply.")
+            return 0
         if args.auto_links:
             out = Path(args.out)
             out.mkdir(parents=True, exist_ok=True)
