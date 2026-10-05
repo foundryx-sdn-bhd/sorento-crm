@@ -108,6 +108,29 @@ decides who the AI replies to; a contact not allowed, or unknown to the CRM, see
   "When off, the chatbot sends this contact nothing, not even an error."; `ContactsList.tsx`
   `yesNoColumn('chatbot_allowed', 'AI replies', ...)` beside Escalation.
 
+### Browser pass (cloud sandbox, 5 Oct, agent-browser against the working tree)
+Sandbox: empty `sorento_ci` migrated to `aig_0001`, dev auto-login as a seeded superadmin, two
+seeded contacts (ZZT Allowed Dealer 900000101 allowed, ZZT Blocked Dealer 900000102 blocked), one
+seeded webhook envelope each so the console can borrow a session. No LLM key, so an allowed
+contact's console turn fails at the parser with the generic error reply; that is the evidence the
+gate let it through. Navigation by sidebar from Home; the contacts list is "Internal Users" (apps
+menu "Internal Users - Respond contacts"); console and Chat History sit under System > Messaging.
+
+| Step | Result | Evidence |
+| --- | --- | --- |
+| Contacts list column + filter | PASS | "AI replies" reads Allowed / Blocked per row; "AI replies: any" select; blocked option leaves one row and the list call carries `ai=no`; clear restores both |
+| Chatbot card switch | PASS | first switch "AI replies allowed" with the approved hint, OFF for the blocked contact; tick -> `PUT .../contacts/{id}/chatbot` body exactly `{"chatbot_allowed":true}`, toast, ON after reload; untick -> `{"chatbot_allowed":false}`, OFF after reload; a "Stock checks" toggle PUTs the card body with NO `chatbot_allowed` key; other switches unchanged |
+| Console, blocked contact | PASS | `POST /system/chatbot/console/turn` 200: `branch_kind ai_not_allowed`, `reply_text ""`, `send_messages []`, `actions []`; one bubble "(no reply)" with chip `ai_not_allowed`; no "Sorry" text |
+| Console, allowed contact | PASS (not gated) | `branch_kind null`, one `send_message` action with the generic parser-error reply (no LLM key); no `ai_not_allowed` chip |
+| Stored gated turn | PASS (API) | `GET /system/chatbot/turns/{id}`: status done, stage received, branch `ai_not_allowed`, ONE trace stage `received` status `skipped`, summary "AI not allowed for this contact; sent no reply", `known_contact true`, `response.actions []`, `reply.text ""` |
+| Chat History drawer | NOT WALKABLE HERE | the screen lists n8n chat messages; the sandbox has none, so no row opens a drawer. Headline/lane words covered by `turnPresentation.test.ts`; the owner's hand test (step 7) walks it on the dev copy |
+| Respond.io Contacts | PASS | both rows, Outbound columns only (the lane adds the API field + `ai=` filter there, no column); no console errors |
+| 375px / 1280px | PASS | AI switch row readable, no clipping, no horizontal overflow (scrollWidth 360 / 1265) |
+| Console / errors | clean | one transient next-auth `CLIENT_FETCH_ERROR` on a reload in the first session, not reproduced in the second; nothing from the lane's screens |
+
+Screenshots (under 200 KB each): `evidence/ai-allowed-gate/card-ai-switch-off.png`,
+`evidence/ai-allowed-gate/console-ai-not-allowed.png`.
+
 ### Tests (red first)
 - `tests/chatbot/test_ai_allowed_gate.py`: unknown contact silent; flag false silent (no parser
   call, no actions even when human-intervened, no session write); flag true normal; gate before
