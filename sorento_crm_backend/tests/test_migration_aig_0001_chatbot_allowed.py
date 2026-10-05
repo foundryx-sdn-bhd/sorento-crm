@@ -1,8 +1,9 @@
 """Migration `aig_0001_chatbot_allowed` (AI-ALLOWED-GATE): up, down, up on scratch tables.
 
-`respond_contacts.chatbot_allowed` BOOLEAN NOT NULL DEFAULT true. Every contact that exists at
-migration time reads TRUE (production behaviour does not change on release, AC-AI-1); a row
-inserted afterwards reads TRUE by the column default. Re-runnable (ADD COLUMN IF NOT EXISTS)
+`respond_contacts.chatbot_allowed` BOOLEAN NOT NULL DEFAULT false (owner ruling 5 Oct 2026, Q1 a).
+Every contact that exists at migration time is backfilled TRUE (production behaviour does not
+change on release, AC-AI-1); a row inserted afterwards reads FALSE by the column default, so a
+new contact is blocked until a human ticks it. Re-runnable (ADD COLUMN IF NOT EXISTS)
 and the downgrade drops the column (AC-AI-2). Its SQL names the table unqualified, so
 `search_path` points it at a scratch schema's copy, never the shared relation. Named
 `test_migration_*.py` so CI runs it in the serial migration pass.
@@ -69,7 +70,7 @@ def test_revision_chains_onto_mains_head():
     assert module.down_revision == "creg_0001_contact_regions"
 
 
-def test_every_existing_contact_reads_true_after_upgrade_and_a_new_row_defaults_true():
+def test_existing_contacts_read_true_after_upgrade_and_a_new_row_defaults_false():
     module = _load()
     with engine.connect() as conn:
         schema = _scratch(conn)
@@ -78,20 +79,20 @@ def test_every_existing_contact_reads_true_after_upgrade_and_a_new_row_defaults_
 
             _run(conn, module.upgrade)
             col = _column(conn, schema, "respond_contacts")
-            assert col is not None and col.is_nullable == "NO" and "true" in (col.column_default or "")
+            assert col is not None and col.is_nullable == "NO" and "false" in (col.column_default or "")
             assert conn.execute(
                 sa.text("SELECT count(*) FROM respond_contacts WHERE chatbot_allowed IS NOT TRUE")
             ).scalar() == 0
             conn.execute(sa.text("INSERT INTO respond_contacts (id) VALUES ('new')"))
             assert conn.execute(
                 sa.text("SELECT chatbot_allowed FROM respond_contacts WHERE id = 'new'")
-            ).scalar() is True
+            ).scalar() is False
             conn.rollback()
         finally:
             _drop(conn, schema)
 
 
-def test_upgrade_is_rerunnable_and_downgrade_drops_the_column_then_upgrade_restores_it():
+def test_upgrade_is_rerunnable_without_flipping_a_blocked_row_back():
     module = _load()
     with engine.connect() as conn:
         schema = _scratch(conn)
@@ -100,11 +101,22 @@ def test_upgrade_is_rerunnable_and_downgrade_drops_the_column_then_upgrade_resto
             _run(conn, module.upgrade)
             conn.execute(sa.text("UPDATE respond_contacts SET chatbot_allowed = false WHERE id = 'a'"))
 
-            _run(conn, module.upgrade)  # re-runnable against a create_all schema; keeps the data
+            _run(conn, module.upgrade)
             assert conn.execute(
                 sa.text("SELECT chatbot_allowed FROM respond_contacts WHERE id = 'a'")
             ).scalar() is False
+            conn.rollback()
+        finally:
+            _drop(conn, schema)
 
+
+def test_downgrade_drops_the_column_and_upgrade_restores_it():
+    module = _load()
+    with engine.connect() as conn:
+        schema = _scratch(conn)
+        try:
+            conn.execute(sa.text("INSERT INTO respond_contacts (id) VALUES ('a')"))
+            _run(conn, module.upgrade)
             _run(conn, module.downgrade)
             assert _column(conn, schema, "respond_contacts") is None
             _run(conn, module.upgrade)

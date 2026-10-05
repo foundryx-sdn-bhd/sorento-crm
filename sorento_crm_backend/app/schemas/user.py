@@ -78,6 +78,8 @@ class RespondContactResponse(RespondContactBase):
     chatbot_eta_offset_applied: bool = True
     # ESCALATION-CONTROL: may the chatbot hand this contact to a person. Default on.
     escalation_allowed: bool = True
+    # AI-ALLOWED-GATE: may the chatbot answer this contact at all. New contacts start off.
+    chatbot_allowed: bool = False
     # CONTACT-BULK-ACCESS (UAC A2.1): `chatbot_profile.tier` flattened, and whether the
     # contact holds the `purchase_orders.cost` reveal (filled by the list only; null on detail).
     chatbot_tier: Optional[str] = None

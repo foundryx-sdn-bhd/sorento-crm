@@ -2751,6 +2751,98 @@ def _localize_result(result: TurnResult, session_factory: SessionFactory, dry_ru
         result.reply, result.actions = reply, actions
 
 
+def _ai_allowed(session_factory: SessionFactory, contact_respond_id: str) -> bool:
+    """AI-ALLOWED-GATE: may the chatbot answer this contact at all.
+
+    One session, one SELECT. A database error is NOT caught: "we could not tell" must not
+    read as allowed, the same rule `respond_outbound_service.assert_outbound_enabled` keeps.
+    """
+    from app.services import chatbot_allowed_service
+
+    with _session(session_factory) as db:
+        return chatbot_allowed_service.is_allowed(db, contact_respond_id)
+
+
+def _ai_not_allowed_turn(
+    envelope: Envelope, *, session_factory: SessionFactory, contact_respond_id: str
+) -> TurnResult:
+    """Close a turn for a contact the CRM does not let the AI answer, sending nothing.
+
+    Owner ask, 5 Oct 2026: the CRM decides who the AI replies to; a blocked contact, or one
+    that is not in the CRM, sees nothing, not even the generic error reply. The gate runs
+    before the worker offload (the worker must never see a turn nobody answers) and before
+    the ordering ticket (a gated turn must not hold the contact's queue slot). It is still a
+    recorded, terminal turn, deduplicated like any other (D15): `done` at `received`, branch
+    `ai_not_allowed`, one trace line, an empty reply and no actions (not even the
+    `is_human_intervened` field write). No parser config, no session vars, no memory.
+    """
+    from app.models.access import RespondContact
+
+    turn_trace = trace_mod.TurnTrace()
+    turn_trace.start()
+    dry_run = envelope.dry_run
+    message_id = _message_id(envelope)
+    with _session(session_factory) as db:
+        existing = _existing_turn(
+            db, contact_respond_id=contact_respond_id, message_id=message_id, is_test=dry_run
+        )
+        retrying = existing if _awaiting_retry(existing) else None
+        if existing is not None and retrying is None:
+            return _duplicate_result(existing)
+        known_contact = (
+            db.query(RespondContact.id)
+            .filter(RespondContact.respond_io_id == contact_respond_id)
+            .first()
+            is not None
+        )
+        try:
+            row = _insert_turn(
+                db,
+                envelope=envelope,
+                contact_respond_id=contact_respond_id,
+                retrying=retrying,
+                queued=False,
+            )
+        except IntegrityError:
+            # Same TOCTOU as `_run_turn`: a racing delivery inserted first; read its row.
+            db.rollback()
+            winner = _select_turn(
+                db, contact_respond_id=contact_respond_id, message_id=message_id, is_test=dry_run
+            )
+            if winner is None or _awaiting_retry(winner):
+                raise
+            return _duplicate_result(winner)
+        turn_id = str(row.id)
+        turn_trace.record(
+            "received",
+            status="skipped",
+            summary="AI not allowed for this contact; sent no reply",
+            why="The CRM decides which contacts the chatbot answers; this contact is not allowed, or is not in the CRM.",
+            facts={"lane": "ai_not_allowed", "known_contact": known_contact},
+            raw=None,
+        )
+        _close_turn(
+            db,
+            turn_id,
+            status="done",
+            stage="received",
+            branch_kind="ai_not_allowed",
+            error=None,
+            records=turn_trace.persisted(),
+            response={"actions": [], "reply": {"text": "", "quick_replies": None}},
+        )
+    return TurnResult(
+        turn_id=turn_id,
+        is_test=dry_run,
+        branch_kind="ai_not_allowed",
+        delegate=None,
+        reply={"text": "", "quick_replies": None},
+        actions=[],
+        status="done",
+        stage="received",
+    )
+
+
 @_refer_tracked
 def _run_turn(
     envelope: Envelope, *, session_factory: SessionFactory, offload: bool | None = None
@@ -2782,6 +2874,12 @@ def _run_turn(
     session_factory = _scoped_factory(
         session_factory, contact_scope, _contact_brand_scope(session_factory, contact_respond_id)
     )
+
+    # AI-ALLOWED-GATE: after the scope is known, BEFORE the offload and the ticket.
+    if not _ai_allowed(session_factory, contact_respond_id):
+        return _ai_not_allowed_turn(
+            envelope, session_factory=session_factory, contact_respond_id=contact_respond_id
+        )
 
     if offload is None:
         offload = bool(getattr(settings, "chatbot_turn_on_worker", False))

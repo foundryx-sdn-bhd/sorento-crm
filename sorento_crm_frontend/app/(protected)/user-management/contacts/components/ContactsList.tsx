@@ -403,6 +403,7 @@ export default function ContactsList() {
         meta: { headerTitle: 'Tier', skeleton: <Skeleton className="h-4 w-16" /> },
       },
       yesNoColumn('cost_visible', 'Cost', (r) => r.cost_visible === true, 'Visible', 'Hidden'),
+      yesNoColumn('chatbot_allowed', 'AI replies', (r) => r.chatbot_allowed === true, 'Allowed', 'Blocked'),
       yesNoColumn('escalation_allowed', 'Escalation', (r) => r.escalation_allowed !== false, 'Allowed', 'Blocked'),
       yesNoColumn('packing_list_allowed', 'Packing list', (r) => r.packing_list_allowed === true, 'Allowed', 'No'),
       {

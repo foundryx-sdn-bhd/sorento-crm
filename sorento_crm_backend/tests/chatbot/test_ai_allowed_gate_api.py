@@ -95,8 +95,8 @@ def client(db, perms, monkeypatch):
         app.dependency_overrides.clear()
 
 
-def _seed(db, *, name: str = "ZZT Contact", allowed: bool | None = None) -> RespondContact:
-    """A contact through the ORM; `allowed=None` leaves the column default in place."""
+def _seed(db, *, name: str = "ZZT Contact", allowed: bool = True) -> RespondContact:
+    """A contact through the ORM, with the flag explicit (the production default for a new row is blocked)."""
     row = RespondContact(
         id=str(uuid.uuid4()),
         phone_number=f"+6011{str(uuid.uuid4().int)[:8]}",
@@ -105,9 +105,7 @@ def _seed(db, *, name: str = "ZZT Contact", allowed: bool | None = None) -> Resp
         session_vars={},
     )
     db.add(row)
-    db.flush()
-    if allowed is not None:
-        _set_flag(db, row.id, allowed)
+    row.chatbot_allowed = allowed
     db.commit()
     return row
 
@@ -131,10 +129,14 @@ def _stored(db, contact_id: str) -> bool:
 # --------------------------------------------------------------------------
 
 
-def test_a_fresh_contact_reads_ai_allowed(client, db):
-    contact = _seed(db)
-    body = client.get(f"{BASE}/{contact.id}").json()
-    assert body["chatbot_allowed"] is True
+def test_a_contact_created_through_the_service_reads_blocked(client, db):
+    """Owner ruling 5 Oct 2026 (Q1 a): the ORM default for a new contact is blocked."""
+    from app.services.contact_service import ContactService
+
+    created = ContactService(db).create_contact(
+        RespondContactCreate(phone_number=f"+6011{str(uuid.uuid4().int)[:8]}", name="ZZT Fresh")
+    )
+    assert client.get(f"{BASE}/{created.id}").json()["chatbot_allowed"] is False
 
 
 def test_a_blocked_contact_reads_blocked(client, db):
@@ -216,26 +218,11 @@ def test_list_filter_ai_rejects_any_other_value(client, db):
 # --------------------------------------------------------------------------
 
 
-def test_create_contact_leaves_the_default_allowed(db):
+def test_create_contact_leaves_the_default_blocked(db):
     from app.services.contact_service import ContactService
 
     created = ContactService(db).create_contact(
         RespondContactCreate(phone_number=f"+6011{str(uuid.uuid4().int)[:8]}", name="ZZT Default")
-    )
-    assert _stored(db, created.id) is True
-
-
-def test_respond_contact_create_carries_an_optional_chatbot_allowed_defaulting_to_none():
-    assert RespondContactCreate(phone_number="+60110000001").chatbot_allowed is None
-
-
-def test_create_contact_stores_an_explicit_chatbot_allowed_false(db):
-    from app.services.contact_service import ContactService
-
-    created = ContactService(db).create_contact(
-        RespondContactCreate(
-            phone_number=f"+6011{str(uuid.uuid4().int)[:8]}", name="ZZT Blocked", chatbot_allowed=False
-        )
     )
     assert _stored(db, created.id) is False
 
@@ -250,7 +237,7 @@ def test_the_n8n_sync_creates_a_new_contact_blocked(client, db):
 
 
 def test_the_n8n_sync_updating_an_existing_contact_leaves_the_flag_alone(client, db):
-    contact = _seed(db, name="ZZT Existing")
+    contact = _seed(db, name="ZZT Existing", allowed=True)
     resp = client.post(EXTERNAL, json={"phone_number": contact.phone_number, "name": "ZZT Renamed"})
     assert resp.status_code == 200, resp.text
     assert resp.json()["action"] == "updated"
@@ -393,6 +380,7 @@ def test_is_allowed_is_true_when_any_row_with_that_respond_id_is_true(db):
         name="ZZT Dup B",
         respond_io_id=first.respond_io_id,
         session_vars={},
+        chatbot_allowed=True,
     )
     db.add(twin)
     db.commit()

@@ -214,12 +214,29 @@ class TestAllowedContact:
         assert row.status == "done"
         assert row.stage == "sent"
 
-    def test_a_fresh_row_defaults_to_allowed(self, session_factory, seeded):
-        flag = session_factory().execute(
-            text("SELECT chatbot_allowed FROM respond_contacts WHERE respond_io_id = :c"),
-            {"c": str(CONTACT_ID)},
-        ).scalar()
-        assert flag is True
+    def test_a_contact_created_by_the_service_is_blocked_until_ticked(
+        self, session_factory, stub_parser, stub_access
+    ):
+        """Owner ruling 5 Oct 2026 (Q1 a): a NEW contact (ORM default) is blocked until a human ticks it."""
+        from app.schemas.user import RespondContactCreate
+        from app.services.contact_service import ContactService
+
+        db = session_factory()
+        ContactService(db).create_contact(
+            RespondContactCreate(phone_number="+60111100099", respond_io_id=str(CONTACT_ID))
+        )
+        stub_parser()
+        stub_access()
+
+        blocked = engine_mod.run_turn(_envelope(), session_factory=session_factory)
+        assert blocked.branch_kind == "ai_not_allowed"
+        assert blocked.actions == []
+
+        _set_flag(session_factory, True)
+        other = _envelope()
+        other.message["message"]["messageId"] = "ZZT-msg-2"
+        answered = engine_mod.run_turn(other, session_factory=session_factory)
+        assert answered.branch_kind == "business_query"
 
     def test_human_intervened_handling_is_unchanged_for_an_allowed_contact(
         self, session_factory, seeded, stub_parser, stub_access

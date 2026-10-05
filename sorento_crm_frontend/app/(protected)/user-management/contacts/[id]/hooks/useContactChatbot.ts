@@ -5,6 +5,7 @@ import { toast } from '@/lib/toast';
 import {
   getContactChatbotMemory,
   getContactChatbotProfile,
+  saveContactChatbotAllowed,
   saveContactChatbotProfile,
   saveContactEscalation,
   saveContactFact,
@@ -82,6 +83,20 @@ export function useSaveContactFact(contactId: string) {
     onSuccess: (memory) => {
       queryClient.setQueryData(contactChatbotMemoryQueryKey(contactId), memory);
       toast.success('Fact saved');
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to save'),
+  });
+}
+
+/** AI-ALLOWED-GATE: the "AI replies allowed" switch's own save (only that key goes over the wire). */
+export function useSaveContactChatbotAllowed(contactId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (allowed: boolean) => saveContactChatbotAllowed(contactId, allowed),
+    onSuccess: (profile) => {
+      queryClient.setQueryData(contactChatbotQueryKey(contactId), profile);
+      queryClient.invalidateQueries({ queryKey: contactChatbotQueryKey(contactId) });
+      toast.success('Chatbot settings saved');
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to save'),
   });

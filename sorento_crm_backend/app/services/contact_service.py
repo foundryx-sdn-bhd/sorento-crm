@@ -260,6 +260,7 @@ class ContactService:
             )
             q = q.filter(holds if cost else ~holds)
         for name, column in (
+            ("ai", RespondContact.chatbot_allowed),
             ("escalation", RespondContact.escalation_allowed),
             ("packing_list", RespondContact.packing_list_allowed),
             ("stock", RespondContact.chatbot_stock_allowed),
@@ -824,6 +825,8 @@ class ContactService:
             # ESCALATION-CONTROL: the one per-contact switch, default ON - a row without
             # the attribute is allowed. Listed by hand, like every field above.
             "escalation_allowed": getattr(contact, "escalation_allowed", True) is not False,
+            # AI-ALLOWED-GATE: may the chatbot answer this contact at all. Listed by hand.
+            "chatbot_allowed": bool(getattr(contact, "chatbot_allowed", False)),
             # CONTACT-BRAND-SCOPE: listed by hand like every field above. The list endpoint
             # fills it for a whole page in one query; here, one contact when a session is given.
             "brands": brands,

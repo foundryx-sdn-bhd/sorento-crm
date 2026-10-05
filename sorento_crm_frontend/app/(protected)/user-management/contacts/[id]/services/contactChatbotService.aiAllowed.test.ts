@@ -35,9 +35,9 @@ describe('contactChatbotService - AI replies allowed (AI-ALLOWED-GATE)', () => {
     expect((await getContactChatbotProfile('c1')).chatbot_allowed).toBe(true);
   });
 
-  it('a contact without the field defaults to allowed', async () => {
+  it('a contact without the field defaults to blocked (the read is chatbot_allowed === true)', async () => {
     getContact.mockResolvedValueOnce({});
-    expect((await getContactChatbotProfile('c1')).chatbot_allowed).toBe(true);
+    expect((await getContactChatbotProfile('c1')).chatbot_allowed).toBe(false);
   });
 
   it('the AI save sends only chatbot_allowed and returns the profile with the new value', async () => {

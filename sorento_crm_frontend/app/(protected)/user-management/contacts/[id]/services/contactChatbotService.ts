@@ -67,6 +67,8 @@ export interface ContactChatbotProfile {
   eta_offset_applied: boolean;
   /** ESCALATION-CONTROL: may the chatbot hand this contact to a person. Default on. */
   escalation_allowed: boolean;
+  /** AI-ALLOWED-GATE: may the chatbot answer this contact at all. Absent reads as blocked. */
+  chatbot_allowed: boolean;
 }
 
 export type ChatbotFactSource = 'crm' | 'tallied' | 'stated' | 'staff';
@@ -170,6 +172,7 @@ function profileFromContact(contact: {
   regions?: string[] | null;
   chatbot_eta_offset_applied?: boolean;
   escalation_allowed?: boolean;
+  chatbot_allowed?: boolean;
 }): ContactChatbotProfile {
   const profile = contact.chatbot_profile ?? null;
   return {
@@ -184,6 +187,7 @@ function profileFromContact(contact: {
       : DEFAULT_PACKING_LIST_REGIONS,
     eta_offset_applied: contact.chatbot_eta_offset_applied !== false,
     escalation_allowed: contact.escalation_allowed !== false,
+    chatbot_allowed: contact.chatbot_allowed === true,
   };
 }
 
@@ -214,7 +218,8 @@ export async function saveContactChatbotProfile(
       chatbot_eta_offset_applied: input.eta_offset_applied,
       // `escalation_allowed` is NOT sent here: it has its own save
       // (`saveContactEscalation`), so another switch saved from a stale page can never
-      // switch a contact's escalation back on (security review S3).
+      // switch a contact's escalation back on (security review S3). `chatbot_allowed` is
+      // left out for the same reason (`saveContactChatbotAllowed`).
     }),
   });
   if (!response.ok) {
@@ -345,4 +350,20 @@ export async function searchUsualSiteOptions(query: string): Promise<SearchableM
         company: warehouse.company_name,
       })),
   );
+}
+
+/**
+ * AI-ALLOWED-GATE: "AI replies allowed", saved on its own - the body carries this one key, and the
+ * route leaves every field it does not name alone.
+ */
+export async function saveContactChatbotAllowed(contactId: string, allowed: boolean): Promise<ContactChatbotProfile> {
+  const response = await apiFetch(`/api/v1/user-management/contacts/${contactId}/chatbot`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chatbot_allowed: allowed }),
+  });
+  if (!response.ok) {
+    throw new Error(await extractApiError(response, 'Failed to save chatbot settings'));
+  }
+  return profileFromContact(await response.json());
 }
