@@ -37,10 +37,10 @@ def _domain_json(client, name):
     return {d["name"]: d for d in resp.json()["domains"]}[name]
 
 
-def _team(db, name):
+def _team(db, name, company_id=DEFAULT_COMPANY_ID):
     from app.models.access import Team
 
-    team = Team(name=name, company_id=DEFAULT_COMPANY_ID)
+    team = Team(name=name, company_id=company_id)
     db.add(team)
     db.flush()
     return team.id
@@ -56,10 +56,19 @@ def _agent(db, code):
     ).scalar()
 
 
-def _agent_team(db, agent_id, code, team_id, tier):
+def _company(db):
+    cid = str(uuid.uuid4())
+    db.execute(
+        text("INSERT INTO companies (id, name, code) VALUES (:i, 'ZZT Other Co', :c)"),
+        {"i": cid, "c": f"ZZT{uuid.uuid4().hex[:6]}"},
+    )
+    return cid
+
+
+def _agent_team(db, agent_id, code, team_id, tier, company_id=DEFAULT_COMPANY_ID):
     from app.models.access import AgentTeam
 
-    db.add(AgentTeam(agent_id=agent_id, code=code, team_id=team_id, tier=tier, company_id=DEFAULT_COMPANY_ID))
+    db.add(AgentTeam(agent_id=agent_id, code=code, team_id=team_id, tier=tier, company_id=company_id))
     db.flush()
 
 
@@ -84,17 +93,33 @@ class TestRegistryLabels:
         )
         assert d["label"] != "Stock available", "the parser label stays untouched"
 
-    def test_tier1_team_names_only_joined_with_comma_space(self, client, db):
+    def _two_company_tier1(self, db):
         make_domain(db, "zzt_esc", escalation_team_code="zzt_set")
         agent = _agent(db, "zzt_esc_agent")
         db.execute(
             text("UPDATE chatbot_domains SET escalation_agent_code = 'zzt_esc_agent' WHERE name = 'zzt_esc'")
         )
+        other = _company(db)
         _agent_team(db, agent, "zzt_set", _team(db, "Zzt Tier One B"), 1)
-        _agent_team(db, agent, "zzt_set", _team(db, "Zzt Tier One A"), 1)
+        _agent_team(db, agent, "zzt_set", _team(db, "Zzt Tier One A", other), 1, other)
         _agent_team(db, agent, "zzt_set", _team(db, "Zzt Tier Two"), 2)
         db.commit()
+        return other
+
+    def test_tier1_team_names_only_joined_with_comma_space(self, client, db):
+        self._two_company_tier1(db)
         assert _domain_json(client, "zzt_esc")["escalation_tier1_team"] == "Zzt Tier One A, Zzt Tier One B"
+
+    def test_company_scoped_session_sees_only_its_own_tier1_team(self, client, db):
+        from app.main import app
+        from app.models.base import set_company_scope
+        from app.services.company_scope_resolver import apply_company_scope
+
+        self._two_company_tier1(db)
+        # The request-entry resolver would overwrite the scope from the actor's grants; pin ours.
+        app.dependency_overrides[apply_company_scope] = lambda: None
+        set_company_scope(db, frozenset({DEFAULT_COMPANY_ID}))
+        assert _domain_json(client, "zzt_esc")["escalation_tier1_team"] == "Zzt Tier One B"
 
     def test_a_single_tier1_team_is_a_bare_name(self, client, db):
         make_domain(db, "zzt_one", escalation_team_code="zzt_one_set")
