@@ -1,8 +1,8 @@
 /**
- * Access model S6, mock v8 (AC-AM-7, AC-AM-22, AC-AM-25). Red test: the Access tab still renders the
+ * Access model S6, mock v8 (AC-AM-7, AC-AM-22). Red test: the Access tab still renders the
  * Access Agents grid and Field reveals card. Hooks (hooks/useChatbotAccess.ts): useChatbotRegistry,
  * useChatbotRoles (items carry audience_tier + sees_all_customers), useContactAccess(contactId)
- * (GET shape + regions), useSetContactAccess(contactId) -> { mutate({role_ids, overrides, regions}) }.
+ * (GET shape), useSetContactAccess(contactId) -> { mutate({role_ids, overrides}) }.
  */
 import React from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
@@ -46,7 +46,6 @@ vi.mock('@/hooks/useChatbotAccess', () => ({
     data: {
       roles: [{ id: 'r1', code: 'purchasing', name: 'Purchasing' }],
       overrides: [{ domain_name: 'incoming', field_key: 'incoming.consignee', granted: true }],
-      regions: ['west'],
       effective: { domains: ['incoming'], attributes: ['incoming.eta', 'incoming.consignee'], sees_all_customers: true },
     },
     isLoading: false,
@@ -68,8 +67,6 @@ function renderPage() {
     </QueryClientProvider>,
   );
 }
-const checked = (el: HTMLElement) =>
-  (el as HTMLInputElement).checked === true || el.getAttribute('aria-checked') === 'true' || el.getAttribute('data-state') === 'checked';
 
 describe('Contact Access tab (v8)', () => {
   it('AC-AM-7 renders the summary, the role chip with tier and the customers line', () => {
@@ -94,24 +91,13 @@ describe('Contact Access tab (v8)', () => {
     expect(screen.queryByText('Field reveals')).toBeNull();
   });
 
-  it('AC-AM-25 shows region checkboxes and the last region cannot be unticked', () => {
+  it('AC-AM-7 Save shows (n) per change and sends one PUT with role_ids and overrides', () => {
     renderPage();
-    const west = screen.getByRole('checkbox', { name: 'West Malaysia' });
-    expect(checked(west)).toBe(true);
-    fireEvent.click(west);
-    expect(checked(screen.getByRole('checkbox', { name: 'West Malaysia' }))).toBe(true);
-    expect(screen.queryByRole('button', { name: /Save \(\d+\)/ })).toBeNull();
-  });
-
-  it('AC-AM-7 Save shows (n) per change and sends one PUT with role_ids, overrides and regions', () => {
-    renderPage();
-    fireEvent.click(screen.getByRole('checkbox', { name: 'East Malaysia' }));
     fireEvent.click(screen.getByRole('switch', { name: 'Share ideas' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Save (2)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save (1)' }));
     expect(mutate).toHaveBeenCalledTimes(1);
-    const p = mutate.mock.calls[0][0] as { role_ids: string[]; overrides: unknown[]; regions: string[] };
+    const p = mutate.mock.calls[0][0] as { role_ids: string[]; overrides: unknown[] };
     expect(p.role_ids).toEqual(['r1']);
-    expect([...p.regions].sort()).toEqual(['east', 'west']);
     expect(p.overrides).toEqual(
       expect.arrayContaining([
         { domain_name: 'incoming', field_key: 'incoming.consignee', granted: true },

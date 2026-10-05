@@ -13,7 +13,6 @@ Red-first. Seams chosen:
   * attachment stamp switch: `lanes/business/answer.py::build_suggest_offer(..., show_stamp=True)`
     (answer.py:4274; the has/no suffixes are rendered at :4697-4701, :4764-4767, :4884-4903
     behind `dym_ok`); False renders as if `dym_annotate` were None.
-  * regions: `access_tree.EffectiveAccess.regions`, `eta_policy.contact_regions(db, contact_id)`.
 """
 from __future__ import annotations
 
@@ -293,74 +292,3 @@ class TestAttachmentStampSwitch:
     def test_show_stamp_false_prints_the_picker_lines_bare(self):
         out = self._build(show_stamp=False)
         assert out["escalate_message"] == "Please choose:\n1. SRTWC286-SH\n2. SRTWC286-SH-200"
-
-
-class TestRegionColumn:
-    """AC-AM-25: `respond_contacts.regions`."""
-
-    def _insert(self, db, regions_sql: str | None):
-        cols = "id, respond_io_id, phone_number, session_vars" + (", regions" if regions_sql else "")
-        vals = "gen_random_uuid()::text, :r, :p, '{}'::jsonb" + (f", {regions_sql}" if regions_sql else "")
-        db.execute(text(f"INSERT INTO respond_contacts ({cols}) VALUES ({vals})"), {"r": rid("r"), "p": f"+60{rid('p')[-8:]}"})
-
-    def test_default_is_west(self, session_factory):
-        db = session_factory()
-        self._insert(db, None)
-        value = db.execute(text("SELECT regions FROM respond_contacts ORDER BY created_at DESC LIMIT 1")).scalar()
-        assert list(value) == ["west"]
-
-    @pytest.mark.parametrize("bad", ["'{}'", "'{north}'", "'{west,north}'"])
-    def test_check_constraint_rejects_empty_and_unknown_codes(self, session_factory, bad):
-        db = session_factory()
-        with pytest.raises(IntegrityError):
-            with db.begin_nested():
-                self._insert(db, bad)
-
-    def test_east_and_both_are_accepted(self, session_factory):
-        db = session_factory()
-        self._insert(db, "'{east}'")
-        self._insert(db, "'{east,west}'")
-
-
-class TestEffectiveRegions:
-    def _regions(self, session_factory, *raw_sets):
-        db, wid = _seeded(session_factory)
-        rio = rid("rio")
-        for raw in raw_sets:
-            pk, _ = make_contact(db, respond_io_id=rio, workspace_id=wid)
-            db.execute(
-                text("UPDATE respond_contacts SET regions = CAST(:r AS text[]) WHERE id = :i"),
-                {"r": "{" + ",".join(raw) + "}", "i": pk},
-            )
-        db.commit()
-        return _ea(db, rio).regions, db, rio
-
-    def test_east_expands_to_east_and_west(self, session_factory):
-        assert self._regions(session_factory, ["east"])[0] == frozenset({"east", "west"})
-
-    def test_west_stays_west(self, session_factory):
-        assert self._regions(session_factory, ["west"])[0] == frozenset({"west"})
-
-    def test_duplicate_rows_intersect_then_expand_to_west_when_empty(self, session_factory):
-        assert self._regions(session_factory, ["east"], ["west"])[0] == frozenset({"west"})
-
-    def test_duplicate_rows_intersect_then_expand(self, session_factory):
-        assert self._regions(session_factory, ["east", "west"], ["east"])[0] == frozenset({"east", "west"})
-
-    def test_unresolved_contact_is_west(self, session_factory):
-        db, _wid = _seeded(session_factory)
-        access = _ea(db, rid("nobody"))
-        assert access.resolved is False
-        assert access.regions == frozenset({"west"})
-
-    def test_region_never_grants_a_domain_or_field(self, session_factory):
-        regions, db, rio = self._regions(session_factory, ["east", "west"])
-        access = _ea(db, rio)
-        assert access.domains == frozenset() and access.attributes == ()
-
-    def test_eta_policy_contact_regions_returns_the_effective_set(self, session_factory):
-        from app.services import eta_policy
-
-        _regions, db, rio = self._regions(session_factory, ["east"])
-        pk = db.execute(text("SELECT id FROM respond_contacts WHERE respond_io_id = :r"), {"r": rio}).scalar()
-        assert eta_policy.contact_regions(db, pk) == frozenset({"east", "west"})

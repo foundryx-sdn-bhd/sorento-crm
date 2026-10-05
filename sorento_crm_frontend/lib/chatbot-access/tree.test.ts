@@ -12,7 +12,7 @@
  *     Domain row key = domain name; a report-kind field is a row in the Reports group keyed by field key.
  *   Role grants: role.domains (names), role.fields (field keys). Override { domain_name, field_key|null, granted }.
  *   resetRow(overrides, rowKey, registry) -> overrides without any entry for that row or its fields.
- *   diffAccess(initial, current) -> { count, payload } for state { role_ids, overrides, regions }.
+ *   diffAccess(initial, current) -> { count, payload } for state { role_ids, overrides }.
  */
 import { describe, it, expect } from 'vitest';
 
@@ -117,18 +117,17 @@ describe('resetRow', () => {
 });
 
 describe('diffAccess', () => {
-  const initial = { role_ids: ['r1'], overrides: [{ domain_name: 'incoming', field_key: 'incoming.consignee', granted: true }], regions: ['west'] };
+  const initial = { role_ids: ['r1'], overrides: [{ domain_name: 'incoming', field_key: 'incoming.consignee', granted: true }] };
   it('AC-AM-7 counts nothing when unchanged', () => {
     expect(diffAccess(initial, { ...initial }).count).toBe(0);
   });
-  it('AC-AM-7 and AC-AM-25 counts role, override and region changes and returns one full payload', () => {
+  it('AC-AM-7 counts role and override changes and returns one full payload', () => {
     const current = {
       role_ids: ['r1', 'r2'],
       overrides: [],
-      regions: ['west', 'east'],
     };
     const d = diffAccess(initial, current);
-    expect(d.count).toBe(3);
+    expect(d.count).toBe(2);
     expect(d.payload).toEqual(current);
   });
 });

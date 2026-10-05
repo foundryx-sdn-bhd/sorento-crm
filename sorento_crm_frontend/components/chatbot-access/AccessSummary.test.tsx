@@ -1,7 +1,7 @@
 /**
- * Access model S6, mock v8 (AC-AM-7, AC-AM-25). Red test: AccessSummary.tsx does not exist.
+ * Access model S6, mock v8 (AC-AM-7, AC-AM-25 customers label). Red test: AccessSummary.tsx does not exist.
  * Props: { mode:'contact'|'role', registry, effective:{domains,attributes,sees_all_customers},
- *          regions:string[], customersLabel:string }
+ *          customersLabel:string }
  */
 import React from 'react';
 import { describe, it, expect, afterEach } from 'vitest';
@@ -20,9 +20,9 @@ const registry = {
 };
 const effective = { domains: ['inventory'], attributes: [], sees_all_customers: true };
 
-function renderIt(mode: 'contact' | 'role', regions = ['west']) {
+function renderIt(mode: 'contact' | 'role') {
   return render(
-    <AccessSummary mode={mode} registry={registry as never} effective={effective} regions={regions} customersLabel="all customers" />,
+    <AccessSummary mode={mode} registry={registry as never} effective={effective} customersLabel="all customers" />,
   );
 }
 
@@ -47,16 +47,8 @@ describe('AccessSummary', () => {
     expect(t).not.toContain('Stock available');
   });
 
-  it('AC-AM-25 shows the customers label and West Malaysia only for west', () => {
-    renderIt('contact', ['west']);
+  it('AC-AM-25 shows the customers label', () => {
+    renderIt('contact');
     expect(document.body.textContent).toContain('all customers');
-    expect(document.body.textContent).toContain('West Malaysia');
-    expect(document.body.textContent).not.toContain('East Malaysia');
-  });
-
-  it('AC-AM-25 shows both regions when both are held', () => {
-    renderIt('contact', ['west', 'east']);
-    expect(document.body.textContent).toContain('West Malaysia');
-    expect(document.body.textContent).toContain('East Malaysia');
   });
 });

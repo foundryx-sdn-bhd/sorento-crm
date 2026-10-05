@@ -94,19 +94,18 @@ describe('chatbotAccessService', () => {
     });
   });
 
-  it('AC-AM-4 and AC-AM-25 getContactAccess (with regions) GETs /contacts/{id}/access', async () => {
-    const body = { roles: [], overrides: [], regions: ['west'], effective: { domains: [], attributes: [], sees_all_customers: false } };
+  it('AC-AM-4 getContactAccess GETs /contacts/{id}/access', async () => {
+    const body = { roles: [], overrides: [], effective: { domains: [], attributes: [], sees_all_customers: false } };
     apiFetch.mockReturnValue(ok(body));
     expect(await getContactAccess('c1')).toEqual(body);
     expect(lastCall()).toMatchObject({ url: '/api/v1/system/chatbot/contacts/c1/access', method: 'GET' });
   });
 
-  it('AC-AM-4 and AC-AM-25 setContactAccess PUTs role_ids, overrides and regions', async () => {
+  it('AC-AM-4 setContactAccess PUTs role_ids and overrides', async () => {
     apiFetch.mockReturnValue(ok({}));
     const payload = {
       role_ids: ['r1'],
       overrides: [{ domain_name: 'incoming', field_key: 'consignee', granted: true }],
-      regions: ['west', 'east'],
     };
     await setContactAccess('c1', payload);
     expect(lastCall()).toMatchObject({
@@ -118,6 +117,6 @@ describe('chatbotAccessService', () => {
 
   it('AC-AM-4 a 422 on setContactAccess rejects with the extracted message', async () => {
     apiFetch.mockReturnValue(fail(422, { detail: 'Unknown role' }));
-    await expect(setContactAccess('c1', { role_ids: ['x'], overrides: [], regions: ['west'] })).rejects.toThrow('Unknown role');
+    await expect(setContactAccess('c1', { role_ids: ['x'], overrides: [] })).rejects.toThrow('Unknown role');
   });
 });

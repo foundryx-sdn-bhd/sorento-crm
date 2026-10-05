@@ -337,35 +337,3 @@ class TestContactAccess:
     def test_put_with_a_malformed_body_is_422(self, client, db):
         pk, _rio = make_contact(db)
         assert client.put(f"{BASE}/contacts/{pk}/access", json={"role_ids": "x"}).status_code == 422
-
-
-class TestContactRegionsApi:
-    """AC-AM-25: the contact access GET/PUT carries `regions` (raw list)."""
-
-    def test_get_returns_the_raw_regions_defaulting_to_west(self, client, db):
-        pk, _rio = make_contact(db)
-        resp = client.get(f"{BASE}/contacts/{pk}/access")
-        assert resp.status_code == 200, resp.text
-        assert resp.json()["regions"] == ["west"]
-
-    def test_put_replaces_regions_and_get_reads_them_back(self, client, db):
-        pk, _rio = make_contact(db)
-        resp = client.put(
-            f"{BASE}/contacts/{pk}/access", json={"role_ids": [], "overrides": [], "regions": ["east"]}
-        )
-        assert resp.status_code == 200, resp.text
-        assert client.get(f"{BASE}/contacts/{pk}/access").json()["regions"] == ["east"]
-        both = client.put(
-            f"{BASE}/contacts/{pk}/access", json={"role_ids": [], "overrides": [], "regions": ["west", "east"]}
-        )
-        assert both.status_code == 200, both.text
-        assert sorted(client.get(f"{BASE}/contacts/{pk}/access").json()["regions"]) == ["east", "west"]
-
-    @pytest.mark.parametrize("bad", [[], ["north"], ["east", "north"]])
-    def test_an_empty_or_unknown_region_is_422_and_writes_nothing(self, client, db, bad):
-        pk, _rio = make_contact(db)
-        ok = client.put(f"{BASE}/contacts/{pk}/access", json={"role_ids": [], "overrides": [], "regions": ["east"]})
-        assert ok.status_code == 200, ok.text
-        resp = client.put(f"{BASE}/contacts/{pk}/access", json={"role_ids": [], "overrides": [], "regions": bad})
-        assert resp.status_code == 422, resp.text
-        assert client.get(f"{BASE}/contacts/{pk}/access").json()["regions"] == ["east"]

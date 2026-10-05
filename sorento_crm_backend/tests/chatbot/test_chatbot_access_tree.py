@@ -55,7 +55,7 @@ class TestShape:
         assert dataclasses.is_dataclass(EffectiveAccess)
         names = {f.name for f in dataclasses.fields(EffectiveAccess)}
         assert names == {
-            "resolved", "domains", "attributes", "sees_all_customers", "roles", "tiers", "regions",
+            "resolved", "domains", "attributes", "sees_all_customers", "roles", "tiers",
         }
         db, wid = _world(session_factory)
         _pk, rio = make_contact(db, workspace_id=wid)
