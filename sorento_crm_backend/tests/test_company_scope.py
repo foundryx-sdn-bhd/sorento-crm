@@ -594,7 +594,10 @@ def test_every_company_id_table_is_registered():
     # CUSTOMER-GROUP adds 1: `customer_groups` is one company's own grouping of its ledgers,
     # unique per (company, name) = 154.
     # + 1 (ITEM-TYPE-CRM): `item_types`, AutoCount ItemType reference data = 155.
-    expected_owned = 155
+    # + 2 (DEBTOR-CODE-UNIQUE): `customer_aliases` (another name of ONE company's customer,
+    #   read by the chatbot's name join) and `customer_merge_map` (that company's merge
+    #   record, written and reverted per company) = 157.
+    expected_owned = 157
     assert len(owned) == expected_owned, (
         f"expected {expected_owned} owned tables, found {len(owned)}: {sorted(owned)}"
     )
