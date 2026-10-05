@@ -48,7 +48,7 @@ from tests.chatbot.test_rearch_s3_attribute_first import SORENTO, _link_contact_
 from tests.chatbot.test_rearch_s3_roster_from_resolver import _seed_contact
 
 TOO_BIG = "🚫 the quantity is more than what I can confirm here. Please refer to your salesman."
-IN_STOCK = "✅ Please refer to your salesman."
+IN_STOCK = "✅ Got stock."
 NO_INCOMING = "❌ No stock and no incoming. Please refer to your salesman."
 
 # One product per branch, so a single four-product ask exercises all four.
@@ -306,7 +306,7 @@ def test_the_fixture_codes_are_typed_codes():
         assert _names_a_typed_code({"entities": [product(code, 1)]}), code
 
 
-def test_ac_sa401_toggle_on_enqueues_one_job_per_b1_b2_b4_and_none_for_b3(
+def test_ac_sa401_toggle_on_enqueues_one_job_per_b1_b4_and_none_for_b2_b3(
     session_factory, monkeypatch, stub_access
 ):
     dealer = LiveDealer(session_factory, monkeypatch, stub_access, notify=True)
@@ -316,9 +316,11 @@ def test_ac_sa401_toggle_on_enqueues_one_job_per_b1_b2_b4_and_none_for_b3(
     assert f"ZZTSA4-INC x 150: ❌ ETA 19/10/2026." in reply
 
     facts = dealer.notified
-    assert sorted(f["branch"] for f in facts) == ["in_stock", "no_incoming", "too_big"]
-    assert {f["product_code"] for f in facts} == {"ZZTSA4-BIG", "ZZTSA4-INS", "ZZTSA4-NOI"}
-    assert {f["quantity"] for f in facts} == {300, 50, 20}
+    # AVAIL-RENDER (owner, 5 Oct 2026, card Q3/Q5 = a): B2 `in_stock` says "Got stock" and
+    # refers nobody, so like B3 it neither logs nor notifies.
+    assert sorted(f["branch"] for f in facts) == ["no_incoming", "too_big"]
+    assert {f["product_code"] for f in facts} == {"ZZTSA4-BIG", "ZZTSA4-NOI"}
+    assert {f["quantity"] for f in facts} == {300, 20}
     for _func, _args, kwargs in dealer.jobs:
         assert kwargs.get("queue_name") == "respond_io"
 
@@ -372,8 +374,8 @@ def test_ac_sa401_a_chat_console_turn_enqueues_the_real_notify_job(
     assert out.is_test is True
 
     facts = dealer.notified
-    assert sorted(f["branch"] for f in facts) == ["in_stock", "no_incoming", "too_big"]
-    assert {f["product_code"] for f in facts} == {"ZZTSA4-BIG", "ZZTSA4-INS", "ZZTSA4-NOI"}
+    assert sorted(f["branch"] for f in facts) == ["no_incoming", "too_big"]
+    assert {f["product_code"] for f in facts} == {"ZZTSA4-BIG", "ZZTSA4-NOI"}
     for func, _args, kwargs in dealer.jobs:
         assert func is stock_ask_tasks.notify_salesman
         assert kwargs.get("queue_name") == "respond_io"
@@ -463,13 +465,14 @@ def test_ac_sa411_agent_not_allowed_to_send_enqueues_nothing_but_writes_and_logs
     assert dealer.notified == []
 
     asks, logs = _asks_and_logs(session_factory, dealer.contact_id)
-    # CUSTOMER-ASKS-REFER-ONLY: B3 `incoming` does not refer, so it is not a row.
-    assert sorted(a.branch for a in asks) == ["in_stock", "no_incoming", "too_big"]
+    # CUSTOMER-ASKS-REFER-ONLY: B3 `incoming` does not refer, so it is not a row; nor is
+    # B2 `in_stock` since AVAIL-RENDER ("Got stock", no refer).
+    assert sorted(a.branch for a in asks) == ["no_incoming", "too_big"]
     assert {a.source for a in asks} == {"console" if console else "live"}
     notified = asks
     assert all(a.notified_agent is False for a in notified)
     assert {a.notify_skip_reason for a in notified} == {"contact_not_allowed_to_send"}
-    assert len(logs) == 3
+    assert len(logs) == 2
     for log in logs:
         assert log.status == "skipped"
         assert log.error_message == "not sent: contact not allowed to send"
@@ -486,9 +489,9 @@ def test_ac_sa411_agent_allowed_to_send_enqueues_the_jobs(
     out = dealer.ask_all_four(console=console)
     assert out.error is None, out.error
     facts = dealer.notified
-    assert sorted(f["branch"] for f in facts) == ["in_stock", "no_incoming", "too_big"]
+    assert sorted(f["branch"] for f in facts) == ["no_incoming", "too_big"]
     asks, logs = _asks_and_logs(session_factory, dealer.contact_id)
-    assert len(asks) == 3
+    assert len(asks) == 2
     assert logs == []
 
 

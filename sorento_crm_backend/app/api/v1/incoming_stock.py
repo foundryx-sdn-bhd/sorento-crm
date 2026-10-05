@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
@@ -144,7 +144,40 @@ def _for_contact(
         # row only means none in that window.
         windowed = eta_from is not None or eta_to is not None
         result = dealer_view(result, asked=None if windowed else _asked_codes(db, asked))
+        _stamp_discontinued(db, result)
     return result
+
+
+def _stamp_discontinued(db: Session, dealer_rows: Any) -> None:
+    """AVAIL-RENDER (owner, 5 Oct 2026): each dealer row's `is_discontinued`, so its ETA
+    line carries the marker compact/detailed print. A code is discontinued only when every
+    company row of it is (the availability entry's rule, `inventory_service`): a sister
+    company still selling it can still supply the dealer."""
+    from app.models.product import Product
+    from sqlalchemy import func
+
+    rows = dealer_rows.get("data") if isinstance(dealer_rows, dict) else None
+    if not isinstance(rows, list):
+        return
+    codes = {str(r.get("product_code")).lower() for r in rows if isinstance(r, dict) and r.get("product_code")}
+    if not codes:
+        return
+    live: set[str] = set()
+    seen: set[str] = set()
+    for code, flag in (
+        db.query(Product.product_code, Product.is_discontinued)
+        .filter(func.lower(Product.product_code).in_(list(codes)))
+        .all()
+    ):
+        if not code:
+            continue
+        seen.add(code.lower())
+        if flag is not True:
+            live.add(code.lower())
+    discontinued = seen - live
+    for row in rows:
+        if isinstance(row, dict) and row.get("product_code"):
+            row["is_discontinued"] = str(row["product_code"]).lower() in discontinued
 
 
 def _asked_codes(db: Session, tokens: Optional[list[str]]) -> list[str]:

@@ -253,7 +253,7 @@ class TestAvailabilityWording:
     def test_some_stock_short_of_the_ask_and_no_incoming_keeps_its_wording(self, console) -> None:
         c = console(SRTWC286_SH=Stock(on_hand=3, x=100))
         assert c.say("SRTWC286-SH x 5", stock(product("SRTWC286-SH", 5))) == (
-            f"SRTWC286-SH x 5: {TICK} 3 available. {REFER_TO_SALESMAN}"
+            f"SRTWC286-SH x 5: {TICK} Got stock, 3 available."
         )
 
     def test_no_stock_with_a_shipment_due_keeps_its_eta(self, console) -> None:

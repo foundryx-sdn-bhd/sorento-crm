@@ -58,12 +58,12 @@ def _eta_ask(*codes: str):
 
 def test_S01_exact_code_enough_stock(console):
     c = console(SRT5674=Stock(on_hand=100))
-    assert c.say("SRT5674 x 50 got stock?", stock(product("SRT5674", 50))) == f"SRT5674 x 50: {TICK} {R}"
+    assert c.say("SRT5674 x 50 got stock?", stock(product("SRT5674", 50))) == f"SRT5674 x 50: {TICK} Got stock."
 
 
 def test_S02_exact_code_short_within_the_cap_names_the_count(console):
     c = console(SRT5674=Stock(on_hand=30, x=100))
-    assert c.say("SRT5674 x 50", stock(product("SRT5674", 50))) == f"SRT5674 x 50: {TICK} 30 available. {R}"
+    assert c.say("SRT5674 x 50", stock(product("SRT5674", 50))) == f"SRT5674 x 50: {TICK} Got stock, 30 available."
 
 
 def test_S03_no_stock_shipment_due(console):
@@ -93,18 +93,18 @@ def test_S06_no_category_max_set_is_above_it(console):
 def test_S07_exact_code_without_a_quantity_asks_for_it(console):
     c = console(SRT5674=Stock(on_hand=100))
     assert c.say("SRT5674 got stock?", stock(product("SRT5674"))) == "How many units of SRT5674?"
-    assert c.say("50", reply(demand_qty=50)) == f"SRT5674 x 50: {TICK} {R}"
+    assert c.say("50", reply(demand_qty=50)) == f"SRT5674 x 50: {TICK} Got stock."
 
 
 def test_S08_prefix_of_exactly_one_code_is_that_code(console):
     c = console(SRTWC287_S_150=Stock(on_hand=9))
-    assert c.say("SRTWC287-S x 3", stock(product("SRTWC287-S", 3))) == f"SRTWC287-S-150 x 3: {TICK} {R}"
+    assert c.say("SRTWC287-S x 3", stock(product("SRTWC287-S", 3))) == f"SRTWC287-S-150 x 3: {TICK} Got stock."
 
 
 def test_S09_vague_code_with_a_quantity_picks_then_answers(console):
     c = console(SRTWC286_SH_150=Stock(on_hand=50))
     assert c.say("srtwc286 x 10", stock(product("srtwc286", 10))) == PICK10
-    assert c.say("2", _pick(2)) == f"SRTWC286-SH-150 x 10: {TICK} {R}"
+    assert c.say("2", _pick(2)) == f"SRTWC286-SH-150 x 10: {TICK} Got stock."
 
 
 def test_S10_vague_code_without_a_quantity_picks_then_asks_it(console):
@@ -118,7 +118,7 @@ def test_S10_vague_code_without_a_quantity_picks_then_asks_it(console):
 def test_S11_not_found_with_a_near_code_is_a_did_you_mean(console):
     c = console(ELP3754=Stock(on_hand=20))
     assert c.say("ELP3753 x 10", stock(product("ELP3753", 10))) == "Couldn't find ELP3753. Did you mean ELP3754?"
-    assert c.say("yes", reply(is_affirmative=True, open_question_answer=answer("yes"))) == f"ELP3754 x 10: {TICK} {R}"
+    assert c.say("yes", reply(is_affirmative=True, open_question_answer=answer("yes"))) == f"ELP3754 x 10: {TICK} Got stock."
 
 
 def test_S12_not_found_and_nothing_near(console):
@@ -158,7 +158,7 @@ def test_S17_all_exact_one_line_each_in_asked_order(console):
         stock(product("SRT5674", 50), product("CWCX604", 40), product("SRTW2000", 10)),
     )
     assert out == (
-        f"SRT5674 x 50: {TICK} {R}\n\nCWCX604 x 40: {TICK} 30 available. {R}\n\n"
+        f"SRT5674 x 50: {TICK} Got stock.\n\nCWCX604 x 40: {TICK} Got stock, 30 available.\n\n"
         f"SRTW2000 x 10: {CROSS} ETA 19/10/2026."
     )
 
@@ -166,21 +166,21 @@ def test_S17_all_exact_one_line_each_in_asked_order(console):
 def test_S18_exact_and_not_found(console):
     c = console(SRT5674=Stock(on_hand=100))
     out = c.say("SRT5674 x 5, FOO99 x 1", stock(product("SRT5674", 5), product("FOO99", 1)))
-    assert out == f"SRT5674 x 5: {TICK} {R}\n\nCouldn't find: FOO99."
+    assert out == f"SRT5674 x 5: {TICK} Got stock.\n\nCouldn't find: FOO99."
 
 
 def test_S19_exact_and_a_prefix_of_one_code(console):
     c = console(SRT5674=Stock(on_hand=100), SRTWC287_S_150=Stock(on_hand=9))
     out = c.say("SRT5674 x 5, SRTWC287-S x 3", stock(product("SRT5674", 5), product("SRTWC287-S", 3)))
-    assert out == f"SRT5674 x 5: {TICK} {R}\n\nSRTWC287-S-150 x 3: {TICK} {R}"
+    assert out == f"SRT5674 x 5: {TICK} Got stock.\n\nSRTWC287-S-150 x 3: {TICK} Got stock."
 
 
 def test_S20_exact_and_vague_answers_the_exact_and_picks_the_vague(console):
     c = console(SRT5674=Stock(on_hand=100), SRTWC286_SH_150=Stock(on_hand=50))
     out = c.say("SRT5674 x 5, srtwc286 x 10", stock(product("SRT5674", 5), product("srtwc286", 10)))
-    assert out == f"SRT5674 x 5: {TICK} {R}\n\n{PICK10}"
+    assert out == f"SRT5674 x 5: {TICK} Got stock.\n\n{PICK10}"
     assert c.stored_question["kind"] == "product_pick"
-    assert c.say("2", _pick(2)) == f"SRTWC286-SH-150 x 10: {TICK} {R}"
+    assert c.say("2", _pick(2)) == f"SRTWC286-SH-150 x 10: {TICK} Got stock."
 
 
 def test_S21_two_vague_codes_both_pickers_in_one_message(console):
@@ -192,14 +192,14 @@ def test_S21_two_vague_codes_both_pickers_in_one_message(console):
         "SRTWC6022-SH-UF-NEW",
     ]
     assert c.say("2 and 11", _pick(2, 11)) == (
-        f"SRTWC286-SH-150 x 10: {TICK} {R}\n\nSRTWC6022-SH-UF x 4: {CROSS} No stock and no incoming. {R}"
+        f"SRTWC286-SH-150 x 10: {TICK} Got stock.\n\nSRTWC6022-SH-UF x 4: {CROSS} No stock and no incoming. {R}"
     )
 
 
 def test_S21b_one_list_answered_the_other_asked_again_with_its_numbers(console):
     c = console(SRTWC286_SH_150=Stock(on_hand=50))
     c.say("srtwc286 x 10, srtwc6022 x 4", stock(product("srtwc286", 10), product("srtwc6022", 4)))
-    assert c.say("2", _pick(2)) == f"SRTWC286-SH-150 x 10: {TICK} {R}\n\n{PICK6022}"
+    assert c.say("2", _pick(2)) == f"SRTWC286-SH-150 x 10: {TICK} Got stock.\n\n{PICK6022}"
     assert c.say("12", _pick(12)) == f"SRTWC6022-SH-UF-NEW x 4: {CROSS} No stock and no incoming. {R}"
 
 
@@ -215,7 +215,7 @@ def test_S22b_exact_two_vague_and_not_found_in_one_reply(console):
         "SRT5674 x 5, srtwc286 x 10, srtwc6022 x 4, FOO99 x 1",
         stock(product("SRT5674", 5), product("srtwc286", 10), product("srtwc6022", 4), product("FOO99", 1)),
     )
-    assert out == f"SRT5674 x 5: {TICK} {R}\n\nCouldn't find: FOO99.\n\n{PICK2}"
+    assert out == f"SRT5674 x 5: {TICK} Got stock.\n\nCouldn't find: FOO99.\n\n{PICK2}"
 
 
 def test_S23_all_not_found(console):
@@ -228,7 +228,7 @@ def test_S24_a_code_named_twice_adds_up_into_one_line(console):
     """Owner Q2 (a)."""
     c = console(SRT5674=Stock(on_hand=100))
     out = c.say("SRT5674 x 2, SRT5674 x 3", stock(product("SRT5674", 2), product("SRT5674", 3)))
-    assert out == f"SRT5674 x 5: {TICK} {R}"
+    assert out == f"SRT5674 x 5: {TICK} Got stock."
 
 
 def test_S25_several_codes_without_quantities_point_form_then_per_line(console):
@@ -240,7 +240,7 @@ def test_S25_several_codes_without_quantities_point_form_then_per_line(console):
         "1. 10, 2. 5",
         reply(open_question_answer=answer("fill", items=[(1, "SRT5674", 10), (2, "CWCX604", 5)])),
     )
-    assert out == f"SRT5674 x 10: {TICK} {R}\n\nCWCX604 x 5: {TICK} {R}"
+    assert out == f"SRT5674 x 10: {TICK} Got stock.\n\nCWCX604 x 5: {TICK} Got stock."
 
 
 def test_S26_no_quantities_and_not_found_names_the_miss_first(console):
@@ -252,20 +252,20 @@ def test_S26_no_quantities_and_not_found_names_the_miss_first(console):
 def test_S27_some_with_quantities_answers_those_and_asks_the_rest(console):
     c = console(SRT5674=Stock(on_hand=100), CWCX604=Stock(on_hand=100, x=200))
     out = c.say("SRT5674 x 5 and CWCX604", stock(product("SRT5674", 5), product("CWCX604")))
-    assert out == f"SRT5674 x 5: {TICK} {R}\n\nHow many units of CWCX604?"
-    assert c.say("7", reply(demand_qty=7)) == f"CWCX604 x 7: {TICK} {R}"
+    assert out == f"SRT5674 x 5: {TICK} Got stock.\n\nHow many units of CWCX604?"
+    assert c.say("7", reply(demand_qty=7)) == f"CWCX604 x 7: {TICK} Got stock."
 
 
 def test_S28_one_number_applies_to_every_product_asked(console):
     c = console(SRT5674=Stock(on_hand=100), CWCX604=Stock(on_hand=100, x=200))
     c.say("SRT5674, CWCX604 got stock?", stock(product("SRT5674"), product("CWCX604")))
-    assert c.say("10", reply(demand_qty=10)) == f"SRT5674 x 10: {TICK} {R}\n\nCWCX604 x 10: {TICK} {R}"
+    assert c.say("10", reply(demand_qty=10)) == f"SRT5674 x 10: {TICK} Got stock.\n\nCWCX604 x 10: {TICK} Got stock."
 
 
 def test_S29_short_stock_beside_an_eta_line(console):
     c = console(SRT5674=Stock(on_hand=30), SRTW2000=Stock(x=200, eta=ETA))
     out = c.say("SRT5674 x 50, SRTW2000 x 150", stock(product("SRT5674", 50), product("SRTW2000", 150)))
-    assert out == f"SRT5674 x 50: {TICK} 30 available. {R}\n\nSRTW2000 x 150: {CROSS} ETA 19/10/2026."
+    assert out == f"SRT5674 x 50: {TICK} Got stock, 30 available.\n\nSRTW2000 x 150: {CROSS} ETA 19/10/2026."
 
 
 # ================================================================== picker replies
@@ -296,7 +296,7 @@ def test_S32_picking_every_number_is_allowed_and_answered(console):
     every = list(range(1, len(OWNER_FAMILY) + 1))
     out = c.say(",".join(map(str, every)), _pick(*every))
     assert out.split("\n\n") == [
-        f"{code} x 10: {TICK if code == 'SRTWC286-SH-150' else CROSS + ' No stock and no incoming.'} {R}"
+        f"{code} x 10: {TICK + ' Got stock.' if code == 'SRTWC286-SH-150' else CROSS + ' No stock and no incoming. ' + R}"
         for code in OWNER_FAMILY
     ]
 
@@ -305,7 +305,7 @@ def test_S33_after_a_refusal_a_number_answers_that_code(console):
     c = console(SRTWC286_SH_150=Stock(on_hand=50))
     c.say("srtwc286 x 10", stock(product("srtwc286", 10)))
     assert c.say("all", reply(broaden_axis="all", open_question_answer=answer("all"))) == NOT_ALL
-    assert c.say("2", _pick(2)) == f"SRTWC286-SH-150 x 10: {TICK} {R}"
+    assert c.say("2", _pick(2)) == f"SRTWC286-SH-150 x 10: {TICK} Got stock."
 
 
 @pytest.mark.parametrize("typed", ["all", "All of them", "semua", "all pls"])
@@ -322,7 +322,7 @@ def test_S35_several_numbers_each_answered(console):
     c = console(SRTWC286_SH_150=Stock(on_hand=50))
     c.say("srtwc286 x 10", stock(product("srtwc286", 10)))
     assert c.say("1 and 2", _pick(1, 2)) == (
-        f"SRTWC286-SH x 10: {CROSS} No stock and no incoming. {R}\n\nSRTWC286-SH-150 x 10: {TICK} {R}"
+        f"SRTWC286-SH x 10: {CROSS} No stock and no incoming. {R}\n\nSRTWC286-SH-150 x 10: {TICK} Got stock."
     )
 
 
@@ -360,7 +360,7 @@ def test_S38_several_quantity_position_pairs(console):
 def test_S39_a_quantity_in_the_pick_replaces_the_typed_one(console):
     c = console(SRTWC286_SH_150=Stock(on_hand=50))
     assert c.say("srtwc286 x 10", stock(product("srtwc286", 10))) == PICK10
-    assert c.say("2 of 2", _qty_of((2, 2))) == f"SRTWC286-SH-150 x 2: {TICK} {R}"
+    assert c.say("2 of 2", _qty_of((2, 2))) == f"SRTWC286-SH-150 x 2: {TICK} Got stock."
 
 
 # ================================================================== reviewer round 1
@@ -380,8 +380,8 @@ def test_S40_exact_code_without_a_quantity_beside_a_vague_one_asks_the_pick_firs
     code's quantity is asked once the pick is answered, and the pick's own x 10 stays."""
     c = console(SRT5674=Stock(on_hand=100), SRTWC286_SH_150=Stock(on_hand=50))
     assert c.say("SRT5674 and srtwc286 x 10", stock(product("SRT5674"), product("srtwc286", 10))) == PICK10
-    assert c.say("2", _pick(2)) == f"SRTWC286-SH-150 x 10: {TICK} {R}\n\nHow many units of SRT5674?"
-    assert c.say("5", reply(demand_qty=5)) == f"SRT5674 x 5: {TICK} {R}"
+    assert c.say("2", _pick(2)) == f"SRTWC286-SH-150 x 10: {TICK} Got stock.\n\nHow many units of SRT5674?"
+    assert c.say("5", reply(demand_qty=5)) == f"SRT5674 x 5: {TICK} Got stock."
 
 
 def test_S41_a_picked_code_owing_a_quantity_does_not_drop_the_other_list(console):
@@ -393,14 +393,14 @@ def test_S41_a_picked_code_owing_a_quantity_does_not_drop_the_other_list(console
     assert c.say("11", _pick(11)) == (
         f"SRTWC6022-SH-UF x 4: {CROSS} No stock and no incoming. {R}\n\nHow many units of SRTWC286-SH-150?"
     )
-    assert c.say("3", reply(demand_qty=3)) == f"SRTWC286-SH-150 x 3: {TICK} {R}"
+    assert c.say("3", reply(demand_qty=3)) == f"SRTWC286-SH-150 x 3: {TICK} Got stock."
 
 
 def test_S42_a_near_miss_inside_a_mix_is_listed_without_a_did_you_mean(console):
     """Reviewer S4: the did-you-mean is for a message that names one code (S11)."""
     c = console(SRT5674=Stock(on_hand=100), ELP3754=Stock(on_hand=20))
     out = c.say("SRT5674 x 5, ELP3753 x 1", stock(product("SRT5674", 5), product("ELP3753", 1)))
-    assert out == f"SRT5674 x 5: {TICK} {R}\n\nCouldn't find: ELP3753."
+    assert out == f"SRT5674 x 5: {TICK} Got stock.\n\nCouldn't find: ELP3753."
 
 
 # ================================================================== tester-local pass on 7fa5d654
@@ -445,12 +445,12 @@ def test_S44_a_code_named_twice_merged_by_the_live_parser_still_adds_up(console)
     the last quantity (`entity_op: replace_combine`), so the S24 sum never ran."""
     c = console(SRT5674=Stock(on_hand=100))
     merged = stock(product("SRT5674", 3), entity_op="replace_combine")
-    assert c.say("SRT5674 x 2, SRT5674 x 3", merged) == f"SRT5674 x 5: {TICK} {R}"
+    assert c.say("SRT5674 x 2, SRT5674 x 3", merged) == f"SRT5674 x 5: {TICK} Got stock."
 
 
 def test_S44b_a_code_named_once_is_not_summed_with_another_number(console):
     c = console(SRT5674=Stock(on_hand=100))
-    assert c.say("SRT5674 x 2 for site 3", stock(product("SRT5674", 2))) == f"SRT5674 x 2: {TICK} {R}"
+    assert c.say("SRT5674 x 2 for site 3", stock(product("SRT5674", 2))) == f"SRT5674 x 2: {TICK} Got stock."
 
 
 def test_S45_eta_ask_for_a_code_with_no_shipment_and_a_code_not_found(console):
@@ -483,7 +483,7 @@ def test_S46_code_x_qty_misread_as_an_eta_ask_is_still_a_stock_ask(console):
 def test_S46b_misread_through_asks_too(console):
     c = console(SRT5674=Stock(on_hand=30))
     misread = _misread_as_eta(product("SRT5674", 50), asks=[{"domain": "incoming"}])
-    assert c.say("SRT5674 x 50", misread) == f"SRT5674 x 50: {TICK} 30 available. {R}"
+    assert c.say("SRT5674 x 50", misread) == f"SRT5674 x 50: {TICK} Got stock, 30 available."
 
 
 @pytest.mark.parametrize("typed", ["SRTW2000 x 10 when arrive?", "ETA SRTW2000 x 10", "SRTW2000 x 10 bila sampai"])
@@ -572,7 +572,7 @@ def test_S48_a_number_over_a_did_you_mean_is_that_option(console, picked):
     made of the number)."""
     c = console(SRT5713=Stock(on_hand=50))
     n = _dym5764_positions(c.say("srt5764 10", stock(product("srt5764", 10))))["SRT5713"]
-    assert c.say(str(n), picked(n)) == f"SRT5713 x 10: {TICK} {R}"
+    assert c.say(str(n), picked(n)) == f"SRT5713 x 10: {TICK} Got stock."
 
 
 def test_S48b_a_number_past_the_list_is_still_a_quantity(console):
@@ -709,7 +709,7 @@ def test_S54_a_code_with_a_quantity_read_as_a_product_info_ask_is_still_a_stock_
 def test_S54b_an_exact_code_with_a_quantity_read_as_product_info_answers_stock(console):
     c = console(SRT5674=Stock(on_hand=30))
     out = c.say("SRT5674 x 50", _misread_as_product_info(product("SRT5674", 50)))
-    assert out == f"SRT5674 x 50: {TICK} 30 available. {R}"
+    assert out == f"SRT5674 x 50: {TICK} Got stock, 30 available."
 
 
 @pytest.mark.parametrize(
@@ -727,3 +727,48 @@ def test_S54c_the_quantity_need_not_follow_the_code(console, parsed):
     makes it a stock ask."""
     c = console()
     _dym5764_positions(c.say("srt5764 xx 10", parsed))
+
+
+# ================================================================== AVAIL-RENDER (owner, 5 Oct 2026)
+# Plan: documentation/plans/chatbot/PLAN-avail-render-05oct.md. The tick says got stock and
+# does not refer (S01/S02 above); a discontinued product carries the marker compact/detailed
+# print, under its own line, on an availability line and on a dealer ETA line.
+
+BLOCKED = "\U0001F6AB"
+DISCONTINUED = "\u26a0\ufe0f  *(PRODUCT DISCONTINUED)*"
+
+
+def test_S51_the_owners_trace_a_discontinued_product_too_big_carries_the_marker(console):
+    """Owner, 5 Oct 2026: "check stock SRTWT2634-RG x 5" printed the blocked line with no
+    hint the product is discontinued; only the product-info card said so."""
+    c = console(SRT5674=Stock(on_hand=100, x=0, discontinued=True))
+    assert c.say("SRT5674 x 5", stock(product("SRT5674", 5))) == (
+        f"SRT5674 x 5: {BLOCKED} the quantity is more than what I can confirm here. {R}\n{DISCONTINUED}"
+    )
+
+
+def test_S52_a_discontinued_product_in_stock_says_got_stock_and_the_marker(console):
+    c = console(SRT5674=Stock(on_hand=100, discontinued=True))
+    assert c.say("SRT5674 x 5", stock(product("SRT5674", 5))) == f"SRT5674 x 5: {TICK} Got stock.\n{DISCONTINUED}"
+
+
+def test_S53_a_discontinued_products_eta_line_carries_the_marker(console):
+    c = console(SRTW2000=Stock(eta=ETA, discontinued=True))
+    assert c.say("ETA SRTW2000 and MWT5727SS-CR", _eta_ask("SRTW2000", "MWT5727SS-CR")) == (
+        f"SRTW2000: {TICK} ETA 19/10/2026\n{DISCONTINUED}\n\nMWT5727SS-CR: No ETA\n\n{R}"
+    )
+
+
+def test_S54_a_mixed_reply_marks_only_the_discontinued_line(console):
+    c = console(SRT5674=Stock(on_hand=30, x=100, discontinued=True), CWCX604=Stock(on_hand=100))
+    out = c.say("SRT5674 x 50, CWCX604 x 5", stock(product("SRT5674", 50), product("CWCX604", 5)))
+    assert out == (
+        f"SRT5674 x 50: {TICK} Got stock, 30 available.\n{DISCONTINUED}\n\nCWCX604 x 5: {TICK} Got stock."
+    )
+
+
+def test_S55_a_no_stock_no_incoming_line_keeps_its_refer_and_the_marker(console):
+    c = console(SRT5674=Stock(on_hand=0, x=100, discontinued=True))
+    assert c.say("SRT5674 x 5", stock(product("SRT5674", 5))) == (
+        f"SRT5674 x 5: {CROSS} No stock and no incoming. {R}\n{DISCONTINUED}"
+    )

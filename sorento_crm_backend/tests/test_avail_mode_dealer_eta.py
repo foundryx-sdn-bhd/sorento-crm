@@ -48,7 +48,11 @@ def test_a_dealer_is_told_the_eta_as_dd_mm_yyyy(client, db):
     body = _ask(client, contact, p.product_code)
     padded = PADDED.split("-")
     assert body["data"] == [
-        {"product_code": p.product_code, "etas": [f"{padded[2]}/{padded[1]}/{padded[0]}"]}
+        {
+            "product_code": p.product_code,
+            "etas": [f"{padded[2]}/{padded[1]}/{padded[0]}"],
+            "is_discontinued": False,
+        }
     ]
 
 
@@ -67,8 +71,27 @@ def test_only_a_product_with_no_shipment_is_still_answered(client, db):
     bare = product(db, company_id=DEFAULT_COMPANY_ID)
     contact = _dealer(db)
     body = _ask(client, contact, bare.product_code)
-    assert body["data"] == [{"product_code": bare.product_code, "etas": []}]
+    assert body["data"] == [{"product_code": bare.product_code, "etas": [], "is_discontinued": False}]
     assert body["empty"] is False
+
+
+def test_a_discontinued_products_row_says_so_with_or_without_an_eta(client, db):
+    """AVAIL-RENDER AC-AR02 (owner, 5 Oct 2026): the dealer's ETA line carries the
+    discontinued marker compact/detailed print, so the row carries the flag."""
+    p, _ = _seed(db)
+    p.is_discontinued = True
+    bare = product(db, company_id=DEFAULT_COMPANY_ID)
+    bare.is_discontinued = True
+    live = product(db, company_id=DEFAULT_COMPANY_ID)
+    db.flush()
+    contact = _dealer(db)
+    body = _ask(client, contact, p.product_code, bare.product_code, live.product_code)
+    assert [(row["product_code"], row["is_discontinued"]) for row in body["data"]] == [
+        (p.product_code, True),
+        (bare.product_code, True),
+        (live.product_code, False),
+    ]
+    assert body["data"][0]["etas"] and body["data"][1]["etas"] == []
 
 
 def test_staff_still_get_iso_dates_and_shipment_rows(client, db):

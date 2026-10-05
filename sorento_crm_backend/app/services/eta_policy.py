@@ -407,7 +407,11 @@ def dealer_view(payload: Any, asked: Optional[list[str]] = None) -> Any:
     (`/shipments/{id}/...`) is not a chat answer and passes through.
 
     `asked`: the product codes the dealer asked about. One with no shipment is still a
-    row, with no ETA ("CODE: No ETA", owner hand test 3 Oct 2026), never a miss."""
+    row, with no ETA ("CODE: No ETA", owner hand test 3 Oct 2026), never a miss.
+
+    Every row also carries `is_discontinued`, False here: the route stamps the real
+    flag from the product rows (`incoming_stock._stamp_discontinued`, AVAIL-RENDER), so
+    the dealer's ETA line prints the marker compact/detailed print."""
     if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
         return payload
     etas: dict[Optional[str], set[str]] = {}
@@ -430,7 +434,7 @@ def dealer_view(payload: Any, asked: Optional[list[str]] = None) -> Any:
             seen.add(str(code).casefold())
             etas[code] = set()
     rows = [
-        {"product_code": code, "etas": [_ddmmyyyy(d) for d in sorted(dates)]}
+        {"product_code": code, "etas": [_ddmmyyyy(d) for d in sorted(dates)], "is_discontinued": False}
         for code, dates in etas.items()
     ]
     out = {

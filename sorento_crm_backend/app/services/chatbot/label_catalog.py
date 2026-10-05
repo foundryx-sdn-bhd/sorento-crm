@@ -71,9 +71,11 @@ LABELS: dict[str, dict[str, str]] = {
         "ms": "Tiada stok dan tiada stok masuk. Sila rujuk jurujual anda.",
         "zh": "没有库存，也没有到货。请联系您的销售员。",
     },
-    f"{{available}} available. {REFER_TO_SALESMAN}": {
-        "ms": "{available} ada. Sila rujuk jurujual anda.",
-        "zh": "有 {available} 件。请联系您的销售员。",
+    # AVAIL-RENDER (owner, 5 Oct 2026): the tick says got stock and does not refer.
+    "Got stock.": {"ms": "Stok ada.", "zh": "有库存。"},
+    "Got stock, {available} available.": {
+        "ms": "Stok ada, {available} tersedia.",
+        "zh": "有库存，可供 {available} 件。",
     },
     "ETA {eta}.": {"ms": "ETA {eta}.", "zh": "ETA {eta}。"},
     "No ETA": {"ms": "Tiada ETA", "zh": "暂无 ETA"},
