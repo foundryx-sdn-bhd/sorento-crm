@@ -79,8 +79,13 @@ def _annotate_lines(source: str, suffix_for) -> str:
     return "\n".join(out_lines)
 
 
-def annotate_incoming(gate: dict[str, Any] | None, *, probe: Any) -> dict[str, Any]:
-    """`annotate-incoming-picker` - "- has incoming" / "- no incoming" per numbered line."""
+def annotate_incoming(
+    gate: dict[str, Any] | None, *, probe: Any, show_stamp: bool = True
+) -> dict[str, Any]:
+    """`annotate-incoming-picker` - "- has incoming" / "- no incoming" per numbered line.
+
+    `show_stamp=False` (a contact without `stamp.incoming`) prints bare lines and omits the
+    "None of these" sentence; `incoming_by_code` is unchanged."""
     out = gate if isinstance(gate, dict) else {}
     probe = probe if jsc.truthy(probe) else {}
 
@@ -119,10 +124,13 @@ def annotate_incoming(gate: dict[str, Any] | None, *, probe: Any) -> dict[str, A
     clarification = jsc.get(out, "gate_clarification")
     source = jsc.js_string(clarification) if jsc.truthy(clarification) else ""
     annotated = _annotate_lines(
-        source, lambda label: " - has incoming" if _norm(label) in has_incoming else " - no incoming"
+        source,
+        lambda label: ""
+        if not show_stamp
+        else (" - has incoming" if _norm(label) in has_incoming else " - no incoming"),
     )
     message = annotated
-    if len(has_incoming) == 0:
+    if show_stamp and len(has_incoming) == 0:
         message += "\n\nNone of these have incoming stock right now."
     out["escalate_message"] = message
     out["is_clarification"] = False  # parity with the not-found require_specific branch

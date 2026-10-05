@@ -253,6 +253,21 @@ SUGGESTED_AGENTS = (
     # access check keys on suggested_agent and an unknown agent fails CLOSED.
     "ideation",
 )
+
+
+def suggested_agents(db: Any) -> tuple[str, ...]:
+    """Active `access_agents.code` values, sorted. `SUGGESTED_AGENTS` stays the blank-install
+    default (no rows, or an unreadable table)."""
+    try:
+        from sqlalchemy import text
+
+        rows = db.execute(text("SELECT code FROM access_agents WHERE is_active IS TRUE ORDER BY code")).fetchall()
+        codes = tuple(r[0] for r in rows)
+    except Exception:  # noqa: BLE001 - a blank install keeps the literal
+        return SUGGESTED_AGENTS
+    return codes or SUGGESTED_AGENTS
+
+
 SuggestedAgent = Literal[SUGGESTED_AGENTS]  # type: ignore[valid-type]
 
 # The agent an escalation's round-robin draw falls to when the parser named none - a
