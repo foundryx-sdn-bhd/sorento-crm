@@ -757,8 +757,8 @@ def test_S55b_substring_of_a_family_with_a_quantity_picks_then_answers(console):
 def test_S55c_substring_of_exactly_one_code_is_that_code(console):
     """Like S08's prefix of one code: nothing to pick, so it is answered as that code."""
     c = console(SRT5674=Stock(on_hand=100))
-    assert c.say("tr5674 x 3", stock(product("tr5674", 3))) == f"SRT5674 x 3: {TICK} {R}"
-    assert c.say("tr5674 got stock?", stock(product("tr5674"))) == "How many units of SRT5674?"
+    assert c.say("rt5674 x 3", stock(product("rt5674", 3))) == f"SRT5674 x 3: {TICK} {R}"
+    assert c.say("rt5674 got stock?", stock(product("rt5674"))) == "How many units of SRT5674?"
 
 
 def test_S55d_an_exact_code_still_never_brings_its_family(console):

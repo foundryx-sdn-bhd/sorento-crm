@@ -777,11 +777,12 @@ def _asked_tokens(asked: list[dict[str, Any]]) -> list[tuple[str, str, dict[str,
 
 def _group(rows: list[dict[str, Any]], token: str) -> list[dict[str, Any]]:
     """The rows one typed token placed: its own code, or the family it is a prefix of
-    (the same link `apply._in_family_of` reads, D29)."""
-    return [
-        row
-        for row in rows
-        if (_row_label(row) or "").casefold().startswith(token)
+    (the same link `apply._in_family_of` reads, D29), else (AVAIL-PICKER, owner trace
+    5 Oct 2026, "wc286") the family it is a substring of, the rows the resolver's own
+    substring probe on product_code placed and `engine._exact_codes_only` kept."""
+    labelled = [(row, (_row_label(row) or "").casefold()) for row in rows]
+    return [row for row, label in labelled if label.startswith(token)] or [
+        row for row, label in labelled if token and token in label
     ]
 
 
