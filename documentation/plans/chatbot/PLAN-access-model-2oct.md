@@ -180,11 +180,10 @@ the live turn still reads). Lead decisions (no behaviour change from today): lap
 (`valid_to`/`valid_from`) earn no role; `effective_access` resolves strictly inside the workspace (no
 NULL-workspace fallback, as today's agent gate); the on-order key has ONE path (inventory field; the
 `purchase_order` row's reveal_key becomes NULL and S2 gates the PO rung on the domain grant instead of
-`_CROSSDOMAIN_RUNG_GRANT`); an accepted hand-off keeps the offer's agent. Owner calls pending (crew ask
-6 Oct): Q1 no contact may gain customer scope in the mapping (rec: linked non-office contacts -> Dealer +
-add-overrides, plus a no-gain test), Q2 internal roles carry tier Office (rec accept), Q3 granting roles
-or plus-overrides needs `reference_data.manage` (rec), Q4 Access tab reads accept `access_agents.view`
-OR `contacts.view` (rec). Pre-existing, separate ticket: `access_agents.py` write routes need only sign-in.
+`_CROSSDOMAIN_RUNG_GRANT`); an accepted hand-off keeps the offer's agent. Rulings (crew 6 Oct): Q1 (a) no contact gains customer scope: linked non-office contacts map to Dealer +
+add-overrides, with `access_gain_report` beside the loss report; Q4 (a) Access tab reads accept
+`access_agents.view` OR `contacts.view`. Still with the owner: Q2 internal roles carry tier Office (rec
+accept), Q3 granting roles or plus-overrides needs `reference_data.manage` (rec). Pre-existing: `access_agents.py` write routes need only sign-in; crew runs it as a separate S lane.
 
 ## Migration on a dev copy + hand test
 

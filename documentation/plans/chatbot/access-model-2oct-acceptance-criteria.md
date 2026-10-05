@@ -14,7 +14,7 @@ Mock: `documentation/mockups/ACCESS-MODEL/index.html` (v3). IDs AC-AM-n.
 - AC-AM-3 Deleting a role is a 10 s deferred action with Cancel, no confirm dialog. A role held by any
   contact is refused (409, message names the number of contacts); a role held by none is hard-deleted
   with its ticks.
-- AC-AM-4 Adding/removing a contact on the role page and on the contact Access tab write the same row; contact role/override writes need `user_management.contacts.edit` (as field reveals today, `system/chatbot_field_reveals.py:48,86`); reads need `user_management.access_agents.view`.
+- AC-AM-4 Adding/removing a contact on the role page and on the contact Access tab write the same row; contact role/override writes need `user_management.contacts.edit` (as field reveals today, `system/chatbot_field_reveals.py:48,86`; owner Q3 pending); every Access tab read accepts `user_management.access_agents.view` OR `user_management.contacts.view` (crew Q4, 6 Oct).
 
 - AC-AM-4b The tree has two sections, Domains and Reports. Reports lists every report-type grant: Low
   stock report, Outstanding SO report, Sales report. A report answers only when its owning domain is
@@ -99,4 +99,7 @@ Mock: `documentation/mockups/ACCESS-MODEL/index.html` (v3). IDs AC-AM-n.
   CONTACT O (+20 incoming fields).
 - AC-AM-20 Loss check: for every contact, every reveal key and agent-reachable domain it had before is
   still granted after (test on a seeded chain + a read-only script run on the dev copy, zero lost rows).
+- AC-AM-20b No gain: a contact with linked customers and no office access type maps to Dealer (linked
+  customers only) plus add-overrides; `access_gain_report` lists any contact wider after mapping than today
+  (customer scope, reveal keys, domains) and must be empty.
 - AC-AM-21 Migration applied and checked on a dev copy before the hand test; idempotent SQL handed to crew.
