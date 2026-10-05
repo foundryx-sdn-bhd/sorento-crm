@@ -595,6 +595,52 @@ class TestOneCommandRun:
         assert not plain.release_all_held and not plain.default_resolutions
 
 
+# ==================================== the real audit_logs CHECK (shared-dev apply, 5 Oct)
+def _add_real_audit_action_check(db) -> None:
+    """The scratch schema is built from the models, which do not carry
+    `audit_logs_action_check`; migration `aud_0001` does. Add exactly that constraint (read
+    from the migration, so the test cannot drift from what ships) inside the test's own
+    transaction. The shared-dev `--apply` died on it with action='CUSTOMER_MERGE'."""
+    import importlib.util
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parent.parent / "alembic" / "versions" / "aud_0001_audit_standard_s0.py"
+    spec = importlib.util.spec_from_file_location("aud_0001_for_test", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    db.execute(text("ALTER TABLE audit_logs DROP CONSTRAINT IF EXISTS audit_logs_action_check"))
+    db.execute(
+        text(
+            "ALTER TABLE audit_logs ADD CONSTRAINT audit_logs_action_check "
+            f"CHECK (action IN {module._NEW_ALLOWED})"
+        )
+    )
+
+
+class TestRealAuditConstraint:
+    def test_apply_and_revert_pass_the_real_audit_action_check(self, db):
+        _add_real_audit_action_check(db)
+        code = _dealer_code("AC")
+        survivor = _seed(db, code, "ROMEO TILES SDN BHD", OLD)
+        retired = _seed(db, code, "SIERRA STONE", NEW)
+        customer_merge.apply(
+            db, run_id="run-ac", codes=[code], default_resolutions=True, release_all_held=True
+        )
+        customer_merge.revert(db, "run-ac")
+        rows = db.execute(
+            text(
+                "SELECT action, event FROM audit_logs WHERE entity_type = 'customer' "
+                "AND entity_id = :s AND correlation_id = 'run-ac' ORDER BY event"
+            ),
+            {"s": survivor},
+        ).all()
+        assert [(r[0], r[1]) for r in rows] == [
+            ("EVENT", "customer.merge"),
+            ("EVENT", "customer.merge_revert"),
+        ]
+        assert _exists(db, retired)
+
+
 # ============================================================================== R7-R10 apply
 class TestApply:
     def test_repoints_documents_fills_names_and_deletes_retired_rows(self, db):
@@ -653,7 +699,7 @@ class TestApply:
         audit = _scalar(
             db,
             "SELECT count(*) FROM audit_logs WHERE entity_type = 'customer' AND entity_id = :s "
-            "AND action = 'CUSTOMER_MERGE' AND old_values->>'id' = :r "
+            "AND action = 'EVENT' AND event = 'customer.merge' AND old_values->>'id' = :r "
             "AND user_id = :u AND actor_type = 'user'",
             s=survivor,
             r=retired,
