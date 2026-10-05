@@ -1174,6 +1174,7 @@ def _focus_rules(
         focus.sort = None
         trace.rules_fired.append("new_ask_drops_sort")
 
+    carried_domains = list(focus.domains or [])
     if not domain_locked:
         if domain_override:
             focus.domains = [domain_override]
@@ -1185,6 +1186,25 @@ def _focus_rules(
             focus.domains = [verdict["domain_hint"]]
             trace.rules_fired.append("domains_from_asks")
         # else: no domain word this turn - focus.domains carries over unchanged.
+    if (
+        focus.date_window
+        and carried_domains
+        and focus.domains
+        and set(focus.domains) != set(carried_domains)
+    ):
+        # ORDER-BROADEN (owner, 5 Oct 2026): a window narrows the question it was asked
+        # on, and a DIFFERENT domain is a different question, so the carried window
+        # never rides into it. "check delivery for last week" (28/09 to 04/10) missed,
+        # and the next turn's verdict moved to incoming: the delivery window reached the
+        # incoming tool as `eta_from`/`eta_to` and the dealer read "Order date: 28/09/2026
+        # to 04/10/2026" between two ETA lines. `new_ask_drops_date_window` above fires
+        # only when the message names an entity kind; "all products" names none. The
+        # SAME domain keeps it (an order MISS then "all products" re-runs the same window
+        # with the product filter dropped), and a window THIS message names is re-set
+        # from the verdict at the tail of these rules (N2), so a dated domain switch is
+        # untouched.
+        focus.date_window = None
+        trace.rules_fired.append("domain_change_drops_date_window")
 
     _broaden(focus, verdict, decision, by_kind, carried_rows, trace)
 
