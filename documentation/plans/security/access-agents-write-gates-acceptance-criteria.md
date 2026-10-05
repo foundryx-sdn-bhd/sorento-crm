@@ -48,6 +48,7 @@ caller holding `.edit`.
 UAC3.2 - `POST /access-agents/contact-access/lookup` returns 403 naming `.edit` for a
 `.view`-only caller and 200 for a caller holding `.edit`. The Respond.io call is stubbed; the
 gate is what is under test.
+UAC3.3 - the contacts list `access_differs_from` filter follows the copy permission: a caller without `.edit` cannot copy agent grants, so contacts that differ from the source only on agent grants are not listed for them (and are listed for a caller holding `.edit`). Guarded by the two A2.5 tests in `tests/test_contacts_access_filters.py` (lane ACCESS-FILTER-FIX, 5 Oct 2026).
 
 ## Item 4 - structural coverage and regression
 

@@ -36,6 +36,7 @@ from tests._pg_fixture import blank_session, unique_code
 SORENTO = DEFAULT_COMPANY_ID
 CONTACTS = "/api/v1/user-management/contacts/"
 VIEW = "user_management.contacts.view"
+AGENTS_EDIT = "user_management.access_agents.edit"
 COST = "purchase_orders.cost"
 SELLABLE = "inventory.sellable"
 
@@ -54,7 +55,13 @@ def state():
 
 
 @pytest.fixture
-def client(db, state, monkeypatch):
+def perms():
+    """Permission slugs the actor holds; a test adds to the set before its request."""
+    return {VIEW}
+
+
+@pytest.fixture
+def client(db, state, perms, monkeypatch):
     from app.models.user import User
 
     actor = User(id=str(uuid.uuid4()), email=f"zzt-{uuid.uuid4().hex[:8]}@test.com", name="ZZT Actor")
@@ -76,7 +83,7 @@ def client(db, state, monkeypatch):
     monkeypatch.setattr(
         UserPermissionService,
         "check_user_has_permission",
-        lambda self, uid, slug: slug == VIEW,
+        lambda self, uid, slug: slug in perms,
     )
     try:
         yield TestClient(app)
@@ -270,7 +277,12 @@ def test_a2_4_filtered_total_and_paging_match(client, seeded):
 # ---------------------------------------------------------------- A2.5
 
 
-def test_a2_5_access_differs_from_lists_exactly_contacts_a_copy_would_change(client, db, seeded):
+AGENT_ONLY = ("agent_flag", "agent_dates", "agent_extra")
+
+
+def _differs_seed(db, seeded):
+    """One source X, one contact equal to it on every access facet, and eleven that each differ
+    on exactly one facet (three of them only on agent grants). Returns (tag, x, same, differs)."""
     ta, tb = seeded["ta"], seeded["tb"]
     ag_a, ag_b = _agent(db, "a"), _agent(db, "b")
     d1, d2 = datetime(2026, 1, 1), datetime(2026, 12, 31)
@@ -298,12 +310,33 @@ def test_a2_5_access_differs_from_lists_exactly_contacts_a_copy_would_change(cli
         "agent_dates": base("agent_dates", agents=[(ag_a, True, None, None)]),
         "agent_extra": base("agent_extra", agents=[(ag_a, True, d1, d2), (ag_b, True, None, None)]),
     }
+    return tag, x, same, differs
+
+
+def test_a2_5_access_differs_from_lists_exactly_contacts_a_copy_would_change(client, db, seeded, perms):
+    # This actor may copy agent grants, so agent-only differences are differences to them.
+    perms.add(AGENTS_EDIT)
+    tag, x, same, differs = _differs_seed(db, seeded)
     resp = _list(client, query=tag, access_differs_from=x.id)
     ids = _ids(resp)
     assert ids == {c.id for c in differs.values()}
     assert x.id not in ids
     assert same.id not in ids
     assert resp.json()["pagination"]["total"] == len(differs)
+
+
+def test_a2_5_access_differs_from_hides_agent_only_differences_without_access_agents_edit(client, db, seeded, perms):
+    """A copy by a `contacts.view`-only actor skips the agent facet (ACCESS-AGENTS-AUTH), so the
+    list shows exactly what that copy would change: the three agent-only contacts are not listed."""
+    assert perms == {VIEW}
+    tag, x, same, differs = _differs_seed(db, seeded)
+    resp = _list(client, query=tag, access_differs_from=x.id)
+    ids = _ids(resp)
+    assert ids == {c.id for name, c in differs.items() if name not in AGENT_ONLY}
+    assert not ids & {differs[name].id for name in AGENT_ONLY}
+    assert x.id not in ids
+    assert same.id not in ids
+    assert resp.json()["pagination"]["total"] == len(differs) - len(AGENT_ONLY)
 
 
 def test_a2_5_access_differs_from_combines_with_other_filters(client, db, seeded):
