@@ -1,6 +1,8 @@
 # PLAN - AI replies allowed per contact (AI-ALLOWED-GATE)
 
-Status: behaviour card posted (crew-ask on the lane PR), awaiting owner answers. Track: L by rule
+Status: building. Card answered 5 Oct 23:52: Q1 (a) default FALSE for new rows + backfill TRUE,
+Q2 (a) status done + branch kind `ai_not_allowed`, Q3 console/dry-run gated too, Q4 wording as
+proposed, Q5 copy facet + list filter + system API filter. Track: L by rule
 (additive migration + engine rule + toggle on an existing screen; mock skipped, reuses the Chatbot
 card's `SwitchRow`). Lane AI-ALLOWED-GATE, one PR.
 UAC: `ai-allowed-gate-acceptance-criteria.md`. Paths under `sorento_crm_backend/app/` unless shown.
@@ -40,19 +42,23 @@ decides who the AI replies to; a contact not allowed, or unknown to the CRM, see
   naming the new column (raw `INSERT INTO respond_contacts` or `RespondContact(...)`), so under a
   FALSE schema default every one of them would answer a silent turn.
 
-## Design (on the card's recommendations; revised where the owner answers differently)
+## Design (as answered)
 
 ### Schema (one additive revision, `aig_0001_chatbot_allowed`, down_revision = main head)
-- `respond_contacts.chatbot_allowed` BOOLEAN NOT NULL DEFAULT true (Q1 recommendation b), the
-  `esc1_0001_escalation_allowed` shape: `SET LOCAL lock_timeout`, `ADD COLUMN IF NOT EXISTS`,
-  downgrade drops it. Every row existing at migration time reads TRUE; nothing else to backfill.
-  (If the owner picks Q1 a: `DEFAULT false` plus `UPDATE respond_contacts SET chatbot_allowed = true`
-  in the same migration, and the 148 turn-test fixtures name the flag.)
-- Model `RespondContact.chatbot_allowed` (`models/access.py:230`), default True both sides.
-- `RespondContactCreate.chatbot_allowed: Optional[bool] = None` (`schemas/user.py`), None = the
-  column default; the n8n sync (`api/v1/external/respond_contacts.py:104`) and the scheduled sync
-  (`services/respond_sync_handler.py:262`) pass `False` when they CREATE a row; an existing row is
-  never touched by a sync.
+- `respond_contacts.chatbot_allowed` BOOLEAN NOT NULL, default FALSE for every NEW row (owner, Q1 a:
+  sync-created and hand-added alike start blocked until a human ticks the switch). The migration
+  adds the column `NOT NULL DEFAULT true` (every row existing at migration time is backfilled TRUE,
+  so prod behaviour is unchanged on release) and then `ALTER COLUMN ... SET DEFAULT false`. Two
+  steps rather than add-false-then-UPDATE so a re-run on a converged copy never re-allows a row
+  somebody has blocked. `SET LOCAL lock_timeout`, `ADD COLUMN IF NOT EXISTS`, downgrade drops it.
+- Model `RespondContact.chatbot_allowed` (`models/access.py:230`), `default=False`,
+  `server_default false`. No create-schema field and no sync-path code: the column default is the
+  one place the rule lives, for the n8n sync, the scheduled sync and the Contacts page alike.
+- Test seeds (owner: one shared place): `tests/_pg_fixture.py::blank_schema_engine` sets the SCRATCH
+  schema's default to true right after `create_all`, so the suite's ~150 pre-existing contact seeds
+  keep answering; the measured 7 real-DB raw inserts and 3 ORM seeds that run turns name the flag;
+  the migration, create-path and sync tests assert the production default through the migration's
+  own SQL and the ORM default.
 
 ### Engine gate (`services/chatbot/engine.py::_run_turn`)
 - `services/chatbot_allowed_service.py::is_allowed(db, respond_io_id)`: one SELECT, True when ANY
@@ -85,9 +91,10 @@ decides who the AI replies to; a contact not allowed, or unknown to the CRM, see
 
 ### Contact card, list, copy, system API, script
 - `ContactChatbotUpdate.chatbot_allowed: bool | None` (`api/v1/user_management/contacts.py:363`),
-  absent = leave alone; handler sets it; response schema + `contact_to_response_dict`
+  absent = leave alone; handler sets it; response schema (default False) + `contact_to_response_dict`
   (`contact_service.py:765`) carry it; list filter `ai=yes|no` through `access_filters` into the
-  `(name, column)` loop at `contact_service.py:262`.
+  `(name, column)` loop at `contact_service.py:262`. FE reads `chatbot_allowed === true` (absent =
+  blocked, the production default).
 - Copy access: `("chatbot_allowed", "AI replies")` appended to `SWITCHES`
   (`contact_access_copy_service.py:49`); snapshot, diff, summary and write follow for free.
 - System API (`api/v1/system/respond_contacts.py`): `RespondContactOutboundRow.chatbot_allowed`,
