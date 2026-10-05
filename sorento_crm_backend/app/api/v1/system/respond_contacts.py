@@ -55,6 +55,7 @@ def list_respond_contacts(
     outbound: Optional[str] = Query(
         None, description="enabled | disabled (omit for all)"
     ),
+    ai: Optional[str] = Query(None, description="allowed | blocked (omit for all)"),
     _user: dict = Depends(require_permission(VIEW_PERMISSION)),
     db: Session = Depends(get_db),
 ):
@@ -87,6 +88,18 @@ def list_respond_contacts(
             status_code=status.HTTP_400_BAD_REQUEST,
             message="outbound must be 'enabled' or 'disabled'.",
             code="INVALID_OUTBOUND_FILTER",
+        )
+
+    wanted_ai = (ai or "").strip().lower()
+    if wanted_ai == "allowed":
+        q = q.filter(RespondContact.chatbot_allowed.is_(True))
+    elif wanted_ai == "blocked":
+        q = q.filter(RespondContact.chatbot_allowed.is_(False))
+    elif wanted_ai:
+        raise AppException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            message="ai must be 'allowed' or 'blocked'.",
+            code="INVALID_AI_FILTER",
         )
 
     total = q.count()

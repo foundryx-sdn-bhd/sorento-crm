@@ -138,6 +138,16 @@ export default function ContactAccessFilters({ value, onChange }: Props) {
       <SearchableSelect
         triggerClassName={cls}
         truncateTriggerLabel
+        value={value.ai ?? ''}
+        onChange={set('ai')}
+        options={YES_NO('AI replies allowed', 'AI replies blocked')}
+        placeholder="AI replies: any"
+        renderTriggerLabel={(opt) => `AI replies: ${opt.label}`}
+        clearable
+      />
+      <SearchableSelect
+        triggerClassName={cls}
+        truncateTriggerLabel
         value={value.escalation ?? ''}
         onChange={set('escalation')}
         options={YES_NO('Escalation allowed', 'Escalation blocked')}

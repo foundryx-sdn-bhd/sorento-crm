@@ -51,6 +51,7 @@ class Seed:
         row = RespondContact(
             respond_io_id=self.contact_id, phone_number=f"+6{unique_code('PH')[:10]}",
             workspace_id=workspace_id, session_vars={"variables": {}}, **kwargs,
+            chatbot_allowed=True,  # AI-ALLOWED-GATE: a new contact is blocked by default
         )
         db.add(row)
         db.flush()

@@ -26,6 +26,7 @@ vi.mock('../hooks/useContactChatbot', () => ({
   useContactChatbotProfile: (...a: unknown[]) => useContactChatbotProfile(...a),
   useSaveContactChatbotProfile: () => ({ mutate, isPending: false }),
   useSaveContactEscalation: () => ({ mutate: vi.fn(), isPending: false }),
+  useSaveContactChatbotAllowed: () => ({ mutate: vi.fn(), isPending: false }),
   useContactChatbotMemory: () => ({
     data: {
       level: { own: null, effective: 'off', system_default: 'off' },
@@ -87,6 +88,7 @@ const BASE_PROFILE = {
   packing_list_allowed: false,
   eta_offset_applied: true,
   escalation_allowed: true,
+  chatbot_allowed: true,
   regions: ['west'],
 };
 

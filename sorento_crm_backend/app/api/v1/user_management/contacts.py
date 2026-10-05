@@ -103,6 +103,7 @@ async def get_contacts(
     access_type: Optional[str] = Query(None),
     tier: Optional[Literal["dealer", "office", "end_user", "none"]] = Query(None),
     cost: Optional[Literal["yes", "no"]] = Query(None),
+    ai: Optional[Literal["yes", "no"]] = Query(None),
     escalation: Optional[Literal["yes", "no"]] = Query(None),
     packing_list: Optional[Literal["yes", "no"]] = Query(None),
     stock: Optional[Literal["yes", "no"]] = Query(None),
@@ -133,6 +134,7 @@ async def get_contacts(
                 "access_type": access_type,
                 "tier": tier,
                 "cost": cost,
+                "ai": ai,
                 "escalation": escalation,
                 "packing_list": packing_list,
                 "stock": stock,
@@ -374,6 +376,8 @@ class ContactChatbotUpdate(BaseModel):
     chatbot_eta_offset_applied: bool | None = None
     # ESCALATION-CONTROL: "Chatbot hands over to support teams". Absent = leave alone.
     escalation_allowed: bool | None = None
+    # AI-ALLOWED-GATE: "AI replies allowed". Absent = leave alone.
+    chatbot_allowed: bool | None = None
     # DO-PERIOD-SKIP: absent = leave alone.
     chatbot_skip_period_questions: bool | None = None
     # CONTACT-REGION: absent = leave alone; empty, unknown or explicit null = 422.
@@ -420,6 +424,8 @@ async def update_contact_chatbot(
             contact.chatbot_eta_offset_applied = body.chatbot_eta_offset_applied
         if body.escalation_allowed is not None:
             contact.escalation_allowed = body.escalation_allowed
+        if body.chatbot_allowed is not None:
+            contact.chatbot_allowed = body.chatbot_allowed
         if body.chatbot_skip_period_questions is not None:
             contact.chatbot_skip_period_questions = body.chatbot_skip_period_questions
         if "regions" in body.model_fields_set:
