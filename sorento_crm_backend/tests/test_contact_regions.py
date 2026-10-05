@@ -109,6 +109,7 @@ def _set_raw(db, contact_id: str, regions: list[str]) -> None:
         {"r": "{" + ",".join(regions) + "}", "i": contact_id},
     )
     db.flush()
+    db.expire_all()
 
 
 def _stored(db, contact_id: str) -> list[str]:

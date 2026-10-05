@@ -319,9 +319,6 @@ class RespondContact(Base):
     )
     workspace = relationship("RespondWorkspace", back_populates="respond_contacts")
 
-    # Server defaults are read on first access, not fetched with the INSERT, so `regions`
-    # is never a stale in-memory copy of a value written by a raw UPDATE.
-    __mapper_args__ = {"eager_defaults": False}
     __table_args__ = (
         Index("ix_respond_contacts_phone_number", "phone_number"),
         Index("ix_respond_contacts_respond_io_id", "respond_io_id"),
