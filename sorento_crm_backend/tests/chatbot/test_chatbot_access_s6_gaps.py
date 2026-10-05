@@ -38,6 +38,15 @@ def _lapse(db, action_id: str) -> None:
     db.commit()
 
 
+def _seed_actor(db) -> None:
+    """The park insert has an FK on requested_by_id, so the acting user needs a real row."""
+    from app.models.user import User
+    from tests.chatbot.test_chatbot_roles_api import _ACTOR
+
+    db.add(User(id=_ACTOR["id"], email=f"zzt_s6_{uuid.uuid4().hex[:8]}@test.com", name="ZZT S6 Actor", status="ACTIVE"))
+    db.commit()
+
+
 def _park(client, key, entity_type, entity_id, payload=None):
     return client.post(
         PENDING,
@@ -72,6 +81,7 @@ class TestRoleDeleteIsDeferred:
 
         role_id = make_role(db, "zzt_s6_del")
         db.commit()
+        _seed_actor(db)
         parked = _park(client, "chatbot_role.delete", "chatbot_role", role_id)
         assert parked.status_code == 202, parked.text
         assert parked.json()["window_seconds"] == 10
@@ -173,6 +183,7 @@ class TestRoleContactUnlinkIsDeferred:
         b, _ = make_contact(db)
         give_role(db, a, role_id)
         give_role(db, b, role_id)
+        _seed_actor(db)
         entity_id = f"{role_id}:{a}"
         parked = _park(client, "chatbot_role_contact.unlink", "chatbot_role_contact", entity_id)
         assert parked.status_code == 202, parked.text
