@@ -1268,16 +1268,19 @@ _NEIGHBOUR = [
 ]
 
 
-def test_summary_modes_never_offer_alternatives(db, monkeypatch):
-    """B14. A `compact` or `availability` contact must never be handed a list of
-    OTHER products that do have stock.
+def test_availability_never_offers_alternatives(db, monkeypatch):
+    """B14. An `availability` contact (the dealer mode) must never be handed a list
+    of OTHER products that do have stock.
 
     The data-miss probe fires on `total == 0`, which is exactly the state a
     dealer asking about an out-of-stock product produces, and its answer rides
-    the envelope as `alternatives` / `relaxed_axis`. The neighbour it names is
-    found by a has-stock test over EVERY active warehouse, so the block leaks
-    both the product list and the fact that stock exists somewhere the policy
-    hides - to the one mode whose entire purpose is to disclose neither.
+    the envelope as `alternatives` / `relaxed_axis`. The neighbour it names
+    discloses the product list and the fact that stock exists somewhere, which
+    is what the dealer mode exists to withhold.
+
+    WA-MSG-TRIM (owner, 3 Oct 2026): `compact` is no longer in this rule. Every
+    contact moved to compact, and the owner kept the "try these instead"
+    suggestions for everyone - see `test_compact_offers_alternatives`.
     """
     capture: dict = {}
     _neighbour_probe(monkeypatch, returns=_NEIGHBOUR, capture=capture)
@@ -1287,27 +1290,61 @@ def test_summary_modes_never_offer_alternatives(db, monkeypatch):
         db, company_id=DEFAULT_COMPANY_ID, product_id=asked.id, warehouse_id=dc1.id, on_hand=999
     )
     contact = _contact(db)
+    _policy_row(db, mode="availability", warehouse_ids=[brw.id], contact=contact)
     db.flush()
 
-    for mode in ("compact", "availability"):
-        db.query(StockVisibilityPolicy).filter(
-            StockVisibilityPolicy.contact_id == contact.id
-        ).delete()
-        _policy_row(db, mode=mode, warehouse_ids=[brw.id], contact=contact)
-        db.flush()
-        capture.clear()
+    result = StockService(db).list_stock(product_ids=[asked.id], contact_id=contact.id)
 
-        result = StockService(db).list_stock(product_ids=[asked.id], contact_id=contact.id)
+    assert "alternatives" not in result
+    assert "relaxed_axis" not in result
+    # Not even asked: the probe's own queries name products this contact is
+    # not being told about.
+    assert capture == {}
 
-        assert "alternatives" not in result, mode
-        assert "relaxed_axis" not in result, mode
-        # Not even asked: the probe's own queries name products this contact is
-        # not being told about.
-        assert capture == {}, mode
+
+def test_compact_offers_alternatives(db, monkeypatch):
+    """B14 as amended by WA-MSG-TRIM (owner, 3 Oct 2026): a `compact` contact
+    gets the data-miss suggestions, exactly like `detailed`."""
+    _neighbour_probe(monkeypatch, returns=_NEIGHBOUR)
+    brw, _, _ = _three_warehouses(db)
+    asked = product(db, company_id=DEFAULT_COMPANY_ID, code="ZZT-SKU-ASKED")
+    contact = _contact(db)
+    _policy_row(db, mode="compact", warehouse_ids=[brw.id], contact=contact)
+    db.flush()
+
+    result = StockService(db).list_stock(product_ids=[asked.id], contact_id=contact.id)
+
+    assert result["alternatives"] == _NEIGHBOUR
+    assert result["relaxed_axis"] == "entity"
+
+
+def test_compact_alternatives_only_count_stock_the_policy_allows(db, monkeypatch):
+    """B14. Same has-data gate as `detailed`: a compact contact restricted to BRW
+    is never offered a product whose only stock sits in a hidden location."""
+    capture: dict = {}
+    _neighbour_probe(monkeypatch, returns=[], capture=capture)
+    brw, _, dc1 = _three_warehouses(db)
+    asked = product(db, company_id=DEFAULT_COMPANY_ID, code="ZZT-SKU-ASKED")
+    allowed = product(db, company_id=DEFAULT_COMPANY_ID, code="ZZT-SKU-ALLOWED")
+    hidden = product(db, company_id=DEFAULT_COMPANY_ID, code="ZZT-SKU-HIDDEN")
+    stock(
+        db, company_id=DEFAULT_COMPANY_ID, product_id=allowed.id, warehouse_id=brw.id, on_hand=5
+    )
+    stock(
+        db, company_id=DEFAULT_COMPANY_ID, product_id=hidden.id, warehouse_id=dc1.id, on_hand=500
+    )
+    contact = _contact(db)
+    _policy_row(db, mode="compact", warehouse_ids=[brw.id], contact=contact)
+    db.flush()
+
+    StockService(db).list_stock(product_ids=[asked.id], contact_id=contact.id)
+
+    assert capture["code"] == asked.product_code
+    assert capture["has_data"]([allowed.id, hidden.id]) == {allowed.id}
 
 
 def test_detailed_still_offers_alternatives(db, monkeypatch):
-    """B14, the other half. Suppression is scoped to the two summary modes - a
+    """B14, the other half. Suppression is scoped to the availability mode - a
     `detailed` contact still gets the data-miss suggestions every caller has had
     since §3.3, or the fix would quietly delete a working feature."""
     _neighbour_probe(monkeypatch, returns=_NEIGHBOUR)
