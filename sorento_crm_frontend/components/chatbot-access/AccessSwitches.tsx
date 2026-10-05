@@ -14,13 +14,17 @@ export interface AccessSwitchesProps {
   onToggle: (rowKey: string) => void;
   onResetRow: (rowKey: string) => void;
   onToggleField: (fieldKey: string) => void;
+  /** Without it nothing can be switched ON unless it only undoes a change; turning OFF stays. */
+  canGrant?: boolean;
 }
 
 function changedText(row: SwitchRow): string {
   const parts: string[] = [];
   if (row.addedCount) parts.push(`+${row.addedCount} details`);
   if (row.removedCount) parts.push(`-${row.removedCount} details`);
-  return parts.length ? `Changed for this contact: ${parts.join(' ')}` : 'Changed for this contact';
+  return parts.length
+    ? `Changed for this contact: ${parts.join(' ')}`
+    : 'Changed for this contact';
 }
 
 function Row({
@@ -29,6 +33,7 @@ function Row({
   onToggle,
   onResetRow,
   onToggleField,
+  canGrant = true,
 }: { row: SwitchRow } & Omit<AccessSwitchesProps, 'groups'>) {
   const [open, setOpen] = useState(false);
   const shownCount = row.fields.filter((f) => f.on).length;
@@ -54,7 +59,11 @@ function Row({
             <Badge variant="warning" appearance="light" size="sm">
               {changedText(row)}
             </Badge>
-            <Button variant="ghost" size="sm" onClick={() => onResetRow(row.key)}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onResetRow(row.key)}
+            >
               Reset to role
             </Button>
           </div>
@@ -80,10 +89,14 @@ function Row({
                 {row.fields.map((f) => (
                   <label
                     key={f.key}
-                    className={'flex items-center gap-2 text-sm ' + (mode === 'contact' && f.changed ? 'text-warning' : '')}
+                    className={
+                      'flex items-center gap-2 text-sm ' +
+                      (mode === 'contact' && f.changed ? 'text-warning' : '')
+                    }
                   >
                     <Checkbox
                       checked={f.on}
+                      disabled={!canGrant && !f.on && !f.changed}
                       aria-label={f.label}
                       onCheckedChange={() => onToggleField(f.key)}
                     />
@@ -97,6 +110,7 @@ function Row({
                 <div className="flex items-center gap-3">
                   <Switch
                     checked={row.stamp.on}
+                    disabled={!canGrant && !row.stamp.on}
                     aria-label={row.stamp.label}
                     onCheckedChange={() => onToggleField(row.stamp!.key)}
                   />
@@ -104,13 +118,17 @@ function Row({
                 </div>
                 <div className="grid gap-2 sm:grid-cols-2">
                   <div>
-                    <div className="text-xs font-medium text-muted-foreground">On: they see</div>
+                    <div className="text-xs font-medium text-muted-foreground">
+                      On: they see
+                    </div>
                     <pre className="whitespace-pre-wrap rounded-md border bg-muted/40 p-2 text-xs">
                       {row.stamp.previewOn}
                     </pre>
                   </div>
                   <div>
-                    <div className="text-xs font-medium text-muted-foreground">Off: they see</div>
+                    <div className="text-xs font-medium text-muted-foreground">
+                      Off: they see
+                    </div>
                     <pre className="whitespace-pre-wrap rounded-md border bg-muted/40 p-2 text-xs">
                       {row.stamp.previewOff}
                     </pre>
@@ -121,12 +139,20 @@ function Row({
           </div>
         )}
       </div>
-      <Switch checked={row.on} aria-label={row.label} onCheckedChange={() => onToggle(row.key)} />
+      <Switch
+        checked={row.on}
+        aria-label={row.label}
+        disabled={!canGrant && !row.on && !row.changed}
+        onCheckedChange={() => onToggle(row.key)}
+      />
     </div>
   );
 }
 
-export default function AccessSwitches({ groups, ...rest }: AccessSwitchesProps) {
+export default function AccessSwitches({
+  groups,
+  ...rest
+}: AccessSwitchesProps) {
   return (
     <div>
       {groups.map((g) => (

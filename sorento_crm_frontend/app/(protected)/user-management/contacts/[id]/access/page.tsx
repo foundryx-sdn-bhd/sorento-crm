@@ -31,6 +31,7 @@ import type {
   ContactAccess,
   Registry,
 } from '@/services/chatbotAccessService';
+import { useHasPermission } from '@/hooks/usePermissions';
 import { useContact } from '../components/contact-context';
 import ContactMediaAccessSection from '../components/ContactMediaAccessSection';
 
@@ -46,6 +47,7 @@ function AccessEditor({
   registry: Registry;
 }) {
   const save = useSetContactAccess(contactId);
+  const canGrant = useHasPermission('user_management.reference_data.manage');
   const initial = useMemo(
     () => ({ role_ids: access.roles.map((r) => r.id), overrides: access.overrides }),
     [access],
@@ -90,6 +92,7 @@ function AccessEditor({
       <Card>
         <CardHeader>
           <CardTitle>Roles</CardTitle>
+          {canGrant && (
           <div className="min-w-[200px]">
             <SearchableMultiSelect
               value={roleIds}
@@ -99,6 +102,7 @@ function AccessEditor({
               renderTriggerLabel={() => 'Add role...'}
             />
           </div>
+          )}
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">
           {held.length === 0 && (
@@ -141,6 +145,7 @@ function AccessEditor({
         <AccessSwitches
           groups={groups}
           mode="contact"
+          canGrant={canGrant}
           onToggle={(key) => setOverrides((o) => toggleKey(o, key, registry, grants))}
           onToggleField={(key) => setOverrides((o) => toggleKey(o, key, registry, grants))}
           onResetRow={(key) => setOverrides((o) => resetRow(o, key, registry))}

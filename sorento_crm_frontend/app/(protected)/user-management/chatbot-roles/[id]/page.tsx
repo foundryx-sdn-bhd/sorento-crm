@@ -27,6 +27,7 @@ import AccessSummary from '@/components/chatbot-access/AccessSummary';
 import AccessSwitches from '@/components/chatbot-access/AccessSwitches';
 import HandoffAdvanced from '@/components/chatbot-access/HandoffAdvanced';
 import SaveBar from '@/components/chatbot-access/SaveBar';
+import { useHasPermission } from '@/hooks/usePermissions';
 import { useDeferredAction } from '@/hooks/useDeferredAction';
 import { useDeferredRowAction } from '@/hooks/useDeferredRowAction';
 import {
@@ -51,6 +52,7 @@ function RoleEditor({ role, registry }: { role: ChatbotRole; registry: Registry 
   const setGrants = useSetRoleGrants(role.id);
   const update = useUpdateChatbotRole(role.id);
   const addContacts = useAddRoleContacts(role.id);
+  const canGrant = useHasPermission('user_management.reference_data.manage');
   const roles = useChatbotRoles();
   const [addOpen, setAddOpen] = useState(false);
   const [picked, setPicked] = useState<string[]>([]);
@@ -259,10 +261,12 @@ function RoleEditor({ role, registry }: { role: ChatbotRole; registry: Registry 
         <Card>
           <CardHeader>
             <CardTitle>Contacts with this role</CardTitle>
-            <Button variant="outline" size="sm" onClick={() => setAddOpen(true)}>
-              <Plus className="size-4 mr-1" />
-              Add contacts
-            </Button>
+            {canGrant && (
+              <Button variant="outline" size="sm" onClick={() => setAddOpen(true)}>
+                <Plus className="size-4 mr-1" />
+                Add contacts
+              </Button>
+            )}
           </CardHeader>
           <CardContent>
             {held.length > 0 ? (
