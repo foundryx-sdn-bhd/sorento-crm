@@ -29,13 +29,13 @@ Mock: `documentation/mockups/ACCESS-MODEL/index.html` (v3). IDs AC-AM-n.
   ask gets the canned no-access reply (`lanes/canned.py`), and its prompt holds no domain-tagged block.
 - AC-AM-7 (mock v8, final) The contact Access tab is one page read top-down: a summary box ("This
   contact can ask about ...", customers, region, extra details, "cannot ask: ..."), then 1 Roles (chips
-  with tier, add/remove), 2 Customers they can ask about (read-only, from the roles), 3 Region (West /
-  East checkboxes, at least one), 4 What they can ask (one switch per domain, grouped in plain-English
+  with tier, add/remove), 2 Customers they can ask about (read-only, from the roles), 3 Region
+  (CONTACT-REGION lane, not built here), 4 What they can ask (one switch per domain, grouped in plain-English
   sections; details open ONE level as a checklist; the two stamp switches with their before/after
   preview sit in the details of Incoming stock and Product photos and documents). A row that follows the
   roles shows nothing extra; a row the contact differs on is highlighted with "Changed for this contact"
   and a "Reset to role" action that removes that contact's overrides for the row. One sticky Save bar
-  shows the number of unsaved changes and sends one PUT. No keys, codes or prompt hints are shown;
+  shows the number of unsaved changes and sends one PUT (roles + overrides). No keys, codes or prompt hints are shown;
   hand-off teams sit in a collapsed "Advanced" section. The old Access Agents grid and Field reveals
   switches are gone. The role page has the same shape (name and tier, customers radio, switches,
   contacts, Advanced).
@@ -57,13 +57,7 @@ Mock: `documentation/mockups/ACCESS-MODEL/index.html` (v3). IDs AC-AM-n.
   role; unticking one for a contact makes that contact's rosters print without it (and without the
   "None of these have incoming stock right now." line); the roster rows and order are unchanged.
 
-- AC-AM-25 Region is a per-contact scope (West, East, or both; East also sees West), set on the
-  contact Access tab. `EffectiveAccess.regions` carries the expanded set and is the only thing the
-  incoming / packing-list answers read for region (`eta_policy.contact_regions`). Stored as
-  `respond_contacts.regions` (`west`/`east`, non-empty, default West). Duplicate respond.io rows get the
-  intersection of raw sets then expansion; an empty or unresolved set gets West only. The contact
-  access GET/PUT carries `regions`; an empty list or an unknown code is 422. Region never grants or
-  removes a domain or field.
+- AC-AM-25 MOVED to lane CONTACT-REGION (owner 5 Oct): no region behaviour in this lane.
 
 ## Enforcement and prompt read ONE tree
 
