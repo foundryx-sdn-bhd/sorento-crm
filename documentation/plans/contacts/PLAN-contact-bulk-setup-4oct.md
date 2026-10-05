@@ -38,3 +38,25 @@ notify / packing switches, removing anything.
 ## Tickets
 T1 tests (tester, red) -> T2 script (coder) -> T3 dry run + review sheet on snapshot, rehearsal on a
 copy of `sorento_cagent_stack` -> reviewer + security-reviewer (PII handling).
+
+## Addendum 5 Oct: `--from-sheet` write-back (owner ask 10:15, S track)
+
+Input: the owner's edited copy of the crew contact access export (one row per contact; columns
+contact_id, respond_io_id, phone, name, access_types, companies, market_segments,
+stock_mode_contact_override, stock_source, stock_mode_effective, stock_locations_effective, customers).
+Proposed semantics (sent to crew with the counts):
+- Key: contact_id; else respond_io_id; else normalised phone. No match -> row error.
+- access_types, companies, market_segments: set exactly (adds and removes).
+- Stock: written only as the contact override. stock_mode_contact_override + stock_locations_effective
+  ("Only CO:WH, ..." / "All locations" / "All except ..." / "No locations", optional "; hide zero-quantity")
+  set the override row. Override blank and stock_source not 'contact' -> the override row is deleted.
+  stock_source / stock_mode_effective are derived: checked for consistency, never written; a mismatch
+  is a row error naming the column to edit instead.
+- customers ("CO CODE NAME[ (primary)][ (inactive)]; ..."): matched on company code + customer code +
+  name (fallback company + code when unique). Adds applied; removals listed as action `remove` and
+  applied only with `--allow-removals`. The (primary)/(inactive) markers are not written.
+- Unknown access type / company / segment / warehouse / customer -> row error; a row with any error
+  is skipped whole. Nothing is ever created.
+- Dry run default: per-field counts + writeback-plan.csv (contact, field, before, after, action).
+  `--apply --actor-email` writes all rows in ONE transaction, one `contact.sheet_writeback` audit row
+  per changed contact, link audit as `--apply-links`. Re-run = 0 changes.
