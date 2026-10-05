@@ -50,8 +50,8 @@ describe('chatbotAccessService', () => {
     expect(lastCall()).toMatchObject({ url: '/api/v1/system/chatbot/access/registry', method: 'GET' });
   });
 
-  it('AC-AM-1 listRoles GETs /roles and returns the items array', async () => {
-    apiFetch.mockReturnValue(ok({ items: [{ id: 'r1', name: 'Purchasing' }] }));
+  it('AC-AM-1 listRoles GETs /roles; the backend answers a bare array', async () => {
+    apiFetch.mockReturnValue(ok([{ id: 'r1', name: 'Purchasing' }]));
     expect(await listRoles()).toEqual([{ id: 'r1', name: 'Purchasing' }]);
     expect(lastCall()).toMatchObject({ url: '/api/v1/system/chatbot/roles', method: 'GET' });
   });

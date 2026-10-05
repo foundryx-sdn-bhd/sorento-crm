@@ -29,7 +29,7 @@ vi.mock('@/hooks/useChatbotAccess', () => ({
   useChatbotRegistry: () => ({
     data: {
       domains: [
-        { name: 'incoming', label: 'Incoming stock', group: 'Stock and incoming', supported: true, access_section: null, escalation_agent_code: 'inc', escalation_team_code: 'purchasing',
+        { name: 'incoming', label: 'Incoming stock', group: 'Stock and incoming', supported: true, access_section: null, escalation_agent_code: 'inc', escalation_agent_name: 'Incoming Stock Agent', escalation_team_code: 'purchasing',
           fields: [{ key: 'incoming.eta', label: 'ETA', kind: 'field' }, { key: 'incoming.consignee', label: 'Consignee', kind: 'field' }] },
         { name: 'ideate', label: 'Share ideas', group: 'Other', supported: true, access_section: null, escalation_agent_code: null, escalation_team_code: null, fields: [] },
       ],
@@ -104,6 +104,12 @@ describe('Contact Access tab (v8)', () => {
         { domain_name: 'ideate', field_key: null, granted: true },
       ]),
     );
+  });
+
+  it('AC-AM-7 the Advanced table shows the agent display name, not a title-cased code', () => {
+    renderPage();
+    expect(screen.getByText('Incoming Stock Agent')).toBeTruthy();
+    expect(screen.queryByText('Inc')).toBeNull();
   });
 
   it('AC-AM-7 Reset to role counts as a change and drops that row overrides from the PUT', () => {
