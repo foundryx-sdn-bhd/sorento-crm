@@ -51,21 +51,22 @@ merge (a `ci` run reports `CI gate`, a different name, so it cannot stand in).
 
 ## Timeouts
 
-Every test and gate job carries `timeout-minutes`: 120 on the three backend test jobs (main
-shards, SCM shards, changed tests), 90 on everything else. GitHub's default is 6 hours and a
+Every test and gate job carries `timeout-minutes`: 35 on the three backend test jobs (main
+shards, SCM shards, changed tests), 15 on everything else. GitHub's default is 6 hours and a
 hung job bills all of it. The caps are for a hung runner, not targets: a main shard measures
-18 to 24 minutes, 29 in the worst run seen (37158487882).
-
-The caps are far above the run times because GitHub's job clock starts when the job is
-queued, not when a runner picks it up. The first `ci-full` run (37369427779, 5 Oct 2026)
-cancelled its gitleaks job 15 minutes after it was queued, under a 15-minute cap, before any
-runner took it, because the account's 20 runner slots were busy with other PRs. A cap sized to
-the run time alone cancels the merge gate whenever the queue is deep, and queue waits of 30 to
-50 minutes are on record. So each cap is run time plus that wait. If a balanced shard runs
-past 30 minutes, rebalance `.test_durations`; if queue waits grow past an hour, raise the caps
-with that evidence rather than letting the gate go red for a queue. The deploy jobs
+18 to 24 minutes, 29 in the worst run seen (37158487882). If a balanced shard runs past 30
+minutes, rebalance `.test_durations` or raise the cap with that evidence. The deploy jobs
 (`build-images`, `build-and-deploy`, `notify-owner`) are deliberately outside this: the deploy
 step already has its own 70-minute command timeout for the worker drain.
+
+A job that shows `cancelled` with no runner and no steps did not hit its cap. The first
+`ci-full` run (37369427779, 5 Oct 2026) lost eleven jobs that way, each exactly 15 minutes
+after it was queued whatever its cap, with the check-run annotation "The job was not acquired
+by Runner of type hosted even after multiple attempts": GitHub gave up finding a hosted runner
+while the account's 20 concurrent job slots were held by other PRs' runs. The workflow cannot
+cause or cure that; the gate job goes red, and the fix is to re-add the label once the queue
+has drained (or to run fewer runs at once, or to add runners). Read the annotation under the
+job before blaming a cap.
 
 ## The budget
 

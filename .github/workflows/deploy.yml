@@ -143,7 +143,7 @@ jobs:
   check-migration-heads:
     name: Single alembic head (fast gate)
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 15
     # Root job (no `needs`): gates the whole `pull_request` run on the `ci`
     # or `ci-full` label. `github.event_name != 'pull_request'` keeps push/
     # merge_group/schedule/workflow_dispatch running exactly as before; on a
@@ -211,7 +211,7 @@ jobs:
   pii-guard:
     name: PII guard (fast gate)
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 15
     if: github.event_name != 'pull_request' || github.event.label.name == 'ci' || github.event.label.name == 'ci-full'
     steps:
       - name: Checkout
@@ -225,7 +225,7 @@ jobs:
   gitleaks:
     name: Secret scan (gitleaks)
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 15
     if: github.event_name == 'push' || (github.event_name == 'pull_request' && (github.event.label.name == 'ci' || github.event.label.name == 'ci-full'))
     steps:
       - name: Checkout
@@ -361,7 +361,7 @@ jobs:
   changes:
     name: Changed areas
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 15
     # Same gate as check-migration-heads above, and for the same reason: this
     # is the other root job (no `needs`), so skipping it here skips every job
     # that depends on it transitively (validate-backend, validate-mcp,
@@ -609,7 +609,7 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -699,7 +699,7 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs.mcp == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -803,16 +803,15 @@ jobs:
   # `changes`); a `ci-full` PR, a merge-queue entry, a nightly and a release
   # run it regardless (`changes` sets every area there).
   #
-  # timeout-minutes 120: a shard measured 10-16 min over 29 Sep-5 Oct; the
-  # cap is for a hung runner (the default is 6 hours, billed). It is far
-  # above the run time because the clock COUNTS QUEUE TIME: see the
-  # test-backend comment below.
+  # timeout-minutes 35: a shard measured 10-16 min over 29 Sep-5 Oct; the
+  # cap is for a hung runner (the default is 6 hours, billed). A job that
+  # never got a runner is a different thing, see the test-backend comment.
   test-backend-scm:
     name: Backend test suite - SCM (Postgres, xdist)
     needs: [changes]
     if: needs.changes.outputs.scm == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
@@ -1012,20 +1011,22 @@ jobs:
   # backend PRs and was the single biggest cost; the selection now runs in
   # full under `ci-full` before merge instead.
   #
-  # timeout-minutes 120: a shard measured 18-24 min typical, 29 min worst
+  # timeout-minutes 35: a shard measured 18-24 min typical, 29 min worst
   # (run 37158487882, shards 1 and 6) over 29 Sep-5 Oct; the cap is for a
-  # hung runner (the default is 6 hours, billed), not a target. The cap is
-  # four times the run time on purpose: GitHub's job clock starts when the
-  # job is QUEUED, not when a runner picks it up. Run 37369427779 (the
-  # first `ci-full`, 5 Oct 2026) cancelled the gitleaks job 15:02 after it
-  # was queued, under a 15-minute cap, before any runner took it, while the
-  # account's 20 runner slots were busy with other PRs' runs. A cap sized
-  # to the run time alone (35 here, 15 on the light jobs, as first
-  # written) therefore cancels the merge gate whenever the queue is deep,
-  # and queue waits of 30-50 min are on record (2026-09-25, trigger
-  # comment). Every cap in this file is run time plus that queue wait:
-  # 120 on the three backend test jobs, 90 on everything else. A hung
-  # shard still costs 120 billed minutes instead of 360.
+  # hung runner (the default is 6 hours, billed), not a target. Raise it
+  # with evidence if a balanced shard ever runs past 30 min.
+  #
+  # A `cancelled` job with no runner and no steps is NOT this cap. Run
+  # 37369427779 (the first `ci-full`, 5 Oct 2026) lost gitleaks, the
+  # type-check, three vitest shards, five of these shards and an SCM shard
+  # that way, each exactly 15 min after it was queued, whatever its cap
+  # (15 or 35): the check-run annotation reads "The job was not acquired by
+  # Runner of type hosted even after multiple attempts". That is GitHub
+  # giving up on finding a hosted runner while the account's 20 concurrent
+  # job slots were held by other PRs' runs; nothing in this file causes or
+  # cures it, and `CI gate (full)` goes red so the run is re-labelled
+  # rather than trusted. Read the annotation before blaming a cap (lesson
+  # 118 in LESSONS-LEARNT.md).
   test-backend:
     name: Backend test suite (Postgres, xdist)
     needs: [changes]
@@ -1033,7 +1034,7 @@ jobs:
       needs.changes.outputs.backend == 'true'
       && (github.event_name != 'pull_request' || github.event.label.name == 'ci-full')
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 35
     # The suite is CPU-bound (~3 s of CPU per test across 9k tests) and a
     # standard runner has 4 vCPUs, so one job takes ~29 min no matter how the
     # database is tuned. Six runners in parallel, each still xdist across its
@@ -1279,9 +1280,8 @@ jobs:
   # tests/test_migration_*.py files serially. `ci` only: on `ci-full` the
   # shards run every file and `changes` lists nothing here anyway.
   #
-  # timeout-minutes 120: 3600 CPU-s under xdist on 4 vCPUs is about 15 min
-  # plus 2 min of setup; the cap is for a hung runner, and it counts queue
-  # time (see test-backend).
+  # timeout-minutes 35: 3600 CPU-s under xdist on 4 vCPUs is about 15 min
+  # plus 2 min of setup; the cap is for a hung runner.
   test-backend-changed:
     name: Backend changed tests (Postgres)
     needs: [changes]
@@ -1290,7 +1290,7 @@ jobs:
       && github.event.label.name == 'ci'
       && needs.changes.outputs.backend_tests != ''
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 35
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -1433,9 +1433,8 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
-    # A shard measured about 8.5 min over 29 Sep-5 Oct; the cap counts queue
-    # time (see test-backend).
-    timeout-minutes: 90
+    # A shard measured about 8.5 min over 29 Sep-5 Oct.
+    timeout-minutes: 15
     # The FULL vitest suite (~950 files / ~10.5k tests) on a 2-vCPU runner was
     # the single longest gate (19.5 min). Split into 4 shards that run in
     # parallel matrix jobs instead of one job iterating serially; together
@@ -1489,7 +1488,7 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -1894,7 +1893,7 @@ jobs:
   release-ci-label:
     name: Release ci label (one-shot trigger)
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 15
     if: always() && github.event_name == 'pull_request' && (github.event.label.name == 'ci' || github.event.label.name == 'ci-full')
     permissions:
       pull-requests: write
@@ -1911,8 +1910,8 @@ jobs:
   # One check that says whether the run as a whole passed, whatever the
   # path filters skipped. Every test and validate job above is a `need`;
   # `always()` makes this run after all of them, and the step fails when any
-  # need failed or was cancelled (a job that hits its timeout-minutes
-  # reports `cancelled`, run 37369427779's gitleaks job did), or when
+  # need failed or was cancelled (a timed-out job and a job GitHub never
+  # found a runner for both report `cancelled`), or when
   # either root job did not succeed. A need that SKIPPED is fine: that is a
   # path filter at work, and the test jobs only skip through `changes`,
   # which must itself have succeeded. So a docs-only `ci` run reports this
@@ -1939,7 +1938,7 @@ jobs:
   ci-gate:
     name: ${{ (github.event_name == 'pull_request' && github.event.label.name == 'ci' && 'CI gate') || 'CI gate (full)' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 15
     needs:
       [
         check-migration-heads,

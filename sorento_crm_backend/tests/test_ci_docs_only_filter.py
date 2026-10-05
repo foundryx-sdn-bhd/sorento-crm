@@ -974,14 +974,13 @@ DEPLOY_JOBS = {"build-images", "build-and-deploy", "notify-owner"}
 
 
 def test_every_test_and_gate_job_carries_a_timeout():
-    """Backend test jobs 120 min, everything else 90; the deploy jobs are out of this lane's scope.
+    """Shards 35 min, everything else 15; the deploy jobs are out of this lane's scope.
 
-    The caps count QUEUE time: run 37369427779 (5 Oct 2026) cancelled the
-    gitleaks job 15:02 after it was queued, before any runner picked it up,
-    under a 15-minute cap. A cap sized to the job's own run time (35/15)
-    cancels the merge gate whenever the account's 20 runner slots are busy,
-    so the caps are run time plus the queue waits the 2026-09-25 incident
-    measured (30-50 min), and never below 90.
+    The caps bound run time only. Run 37369427779 (5 Oct 2026) cancelled
+    eleven queued jobs exactly 15 min after queueing whatever their cap (15
+    or 35); the check-run annotation was "not acquired by Runner of type
+    hosted even after multiple attempts", GitHub's own give-up when the
+    account's 20 runner slots stay busy, not these caps (lesson 118).
     """
     text = _workflow_text()
     jobs = _job_ifs()
@@ -993,8 +992,7 @@ def test_every_test_and_gate_job_carries_a_timeout():
     for job_id, minutes in timeouts.items():
         if job_id in DEPLOY_JOBS:
             continue
-        assert minutes == (120 if job_id in shards else 90), (job_id, minutes)
-        assert minutes >= 90, "a cap below the queue wait cancels a queued job, not a hung one"
+        assert minutes == (35 if job_id in shards else 15), (job_id, minutes)
     assert "cancel-in-progress: ${{ github.event_name == 'pull_request'" in text
 
 
