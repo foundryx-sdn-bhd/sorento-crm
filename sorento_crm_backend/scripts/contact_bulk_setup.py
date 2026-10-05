@@ -959,7 +959,9 @@ def _contact_keys(db, rows: list[tuple[int, dict]]) -> dict[int, Optional[Simple
     ids = {_id_text(r.get("contact_id")) for _, r in rows} - {""}
     rios = {_id_text(r.get("respond_io_id")) for _, r in rows} - {""}
     by_id = {
-        str(c.id): c for c in db.query(RespondContact.id, RespondContact.name).filter(RespondContact.id.in_(ids))
+        str(c.id): c for c in db.query(
+            RespondContact.id, RespondContact.name, RespondContact.respond_io_id, RespondContact.phone_number
+        ).filter(RespondContact.id.in_(ids))
     } if ids else {}
     by_rio: dict[str, list] = {}
     if rios:
@@ -979,7 +981,16 @@ def _contact_keys(db, rows: list[tuple[int, dict]]) -> dict[int, Optional[Simple
             hit = by_rio[rio][0] if len(by_rio.get(rio, [])) == 1 else None
         elif phone:
             hit = by_phone.get(phone)
-        out[number] = SimpleNamespace(id=str(hit.id), name=hit.name or "") if hit is not None else None
+        if hit is None:
+            out[number] = None
+            continue
+        key_error = None
+        if cid:  # the id wins; a phone or respond_io_id that points elsewhere is a typo to surface
+            if rio and rio != _id_text(hit.respond_io_id):
+                key_error = "respond_io_id does not match the contact_id"
+            elif _text(r.get("phone")) and phone != normalise_phone(hit.phone_number):
+                key_error = "phone does not match the contact_id"
+        out[number] = SimpleNamespace(id=str(hit.id), name=hit.name or "", key_error=key_error)
     return out
 
 
@@ -1025,7 +1036,7 @@ def _parse_locations(value: Any, wh_by_label: dict) -> tuple:
     """(include, exclude, hide) as warehouse id lists; ValueError names what is wrong."""
     s = _unsafe(value)
     if not s:
-        raise ValueError("stock_locations_effective is blank while stock_mode_contact_override is set")
+        return None, None, False
     hide = s.endswith(HIDE_ZERO)
     if hide:
         s = s[: -len(HIDE_ZERO)].strip()
@@ -1047,6 +1058,36 @@ def _parse_locations(value: Any, wh_by_label: dict) -> tuple:
     else:
         raise ValueError("stock_locations_effective is not a recognised locations text")
     return include, exclude, hide
+
+
+def _derive_stock(cur: dict, type_rules: dict, default_rule, label_of: dict) -> tuple[str, str, str]:
+    """(stock_source, stock_mode_effective, stock_locations_effective) as the export SQL computes them."""
+    if cur["policy"] is not None:
+        return "contact", cur["policy"][0], _loc_text(cur["policy"], label_of)
+    rows = [type_rules[t] for t in cur["types"] if t in type_rules]
+    if rows:
+        rank = {"availability": 2, "compact": 1, "detailed": 0}
+        mode = max((r[0] for r in rows), key=lambda m: rank[m])
+        include_rows = [r for r in rows if r[1] is not None]
+        parts = []
+        if include_rows:
+            allowed = sorted(l for i, l in label_of.items() if all(i in r[1] for r in include_rows))
+            parts.append(f"Only {', '.join(allowed)}" if allowed else "No locations")
+        excluded = sorted({label_of.get(i, "(removed)") for r in rows if r[2] for i in r[2]})
+        if excluded:
+            parts.append(f"All except {', '.join(excluded)}")
+        if not parts:
+            parts.append("All locations")
+        if any(r[3] for r in rows):
+            parts.append("hide zero-quantity")
+        return "access_type", mode, "; ".join(parts)
+    if default_rule is not None:
+        return "default", default_rule[0], _loc_text(default_rule, label_of)
+    return "default", "detailed", "All locations"
+
+
+def _loc_text(key: tuple, label_of: dict) -> str:
+    return _locations_label(key, label_of).split("; ", 1)[1]
 
 
 def _locations_label(key: tuple, label_of: dict) -> str:
@@ -1086,7 +1127,9 @@ def _match_customer(db, cache: dict, company_ids: dict, item: str):
         ).filter(Customer.company_id == company_id, func.lower(func.btrim(Customer.customer_code)) == key[1]).all()
     rows = cache[key]
     exact = [r for r in rows if (r.customer_name or "").strip().casefold() == name]
-    pick = exact if exact else rows
+    if name and rows and not exact:
+        return None, f"customer {co} {code}: name does not match"
+    pick = exact if name else rows
     if len(pick) == 1:
         return SimpleNamespace(id=str(pick[0].id), company_id=str(pick[0].company_id), code=pick[0].customer_code,
                                label=f"{co.upper()} {pick[0].customer_code} {pick[0].customer_name or ''}".strip(),
@@ -1109,26 +1152,46 @@ def from_sheet(db, path, *, sheet: str = "Sheet2", apply: bool = False, allow_re
     company_code = {v: k for k, v in company_ids.items()}
     type_codes = {str(c.code).lower(): c.code for c in db.query(ContactAccessType.code)}
     segment_codes = {str(c.code).lower(): c.code for c in db.query(MarketSegment.code)}
-    wh_by_label, label_of = {}, {}
+    wh_by_label, label_of, wh_company = {}, {}, {}
     for wh in db.query(Warehouse.id, Warehouse.warehouse_code, Warehouse.company_id):
+        wh_company[str(wh.id)] = str(wh.company_id)
         label = f"{company_code.get(str(wh.company_id), '?')}:{wh.warehouse_code}"
         wh_by_label[label.upper()] = str(wh.id)
         label_of[str(wh.id)] = label
 
+    type_rules: dict[str, tuple] = {}
+    default_rule = None
+    for p in db.query(
+        StockVisibilityPolicy.id, StockVisibilityPolicy.contact_id, StockVisibilityPolicy.access_type_code, StockVisibilityPolicy.mode,
+        StockVisibilityPolicy.warehouse_ids, StockVisibilityPolicy.excluded_warehouse_ids, StockVisibilityPolicy.hide_zero_locations,
+    ).filter(StockVisibilityPolicy.contact_id.is_(None)).order_by(StockVisibilityPolicy.id):
+        key = _policy_key(p.mode, None if p.warehouse_ids is None else [str(x) for x in p.warehouse_ids],
+                          [str(x) for x in p.excluded_warehouse_ids] if p.excluded_warehouse_ids is not None else None,
+                          p.hide_zero_locations)
+        if p.access_type_code:
+            type_rules[p.access_type_code] = key
+        elif default_rule is None:
+            default_rule = key
     errors: list[dict] = []
     plan: list[dict] = []
     todo: list[dict] = []
     cust_cache: dict = {}
-    seen: set = set()
+    tally: dict[str, int] = {}
+    for c in contacts.values():
+        if c is not None:
+            tally[c.id] = tally.get(c.id, 0) + 1
+    dups = {i for i, n in tally.items() if n > 1}
     for number, r in rows:
         contact = contacts[number]
         if contact is None:
             errors.append({"row": number, "reason": "no single contact matches contact_id, respond_io_id or phone"})
             continue
-        if contact.id in seen:
-            errors.append({"row": number, "reason": "this contact appears on more than one row"})
+        if contact.id in dups:
+            errors.append({"row": number, "reason": "this contact is matched by more than one row"})
             continue
-        seen.add(contact.id)
+        if contact.key_error:
+            errors.append({"row": number, "reason": contact.key_error})
+            continue
         cur = state[contact.id]
         bad: list[str] = []
         items: list[dict] = []
@@ -1140,7 +1203,10 @@ def from_sheet(db, path, *, sheet: str = "Sheet2", apply: bool = False, allow_re
         # access types, companies, market segments: set exactly
         def want(cell, lookup, label):
             out = set()
-            for code in _split_list(r.get(cell)):
+            if not _unsafe(r.get(cell)):
+                bad.append(f"{cell} is blank; type - to remove all")
+                return out
+            for code in ([] if _unsafe(r.get(cell)) == "-" else _split_list(r.get(cell))):
                 if code.lower() not in lookup:
                     bad.append(f"unknown {label} {code}")
                 else:
@@ -1163,31 +1229,57 @@ def from_sheet(db, path, *, sheet: str = "Sheet2", apply: bool = False, allow_re
             for x in rem:
                 item(field, shown(x), "", "remove")
 
-        # stock: the contact override only
+        # stock: the contact override only; derived cells are compared with the current database values
         override = _unsafe(r.get("stock_mode_contact_override")).lower()
         source = _unsafe(r.get("stock_source")).lower()
         effective = _unsafe(r.get("stock_mode_effective")).lower()
+        loc_cell = _unsafe(r.get("stock_locations_effective"))
+        d_source, d_mode, d_loc = _derive_stock(cur, type_rules, default_rule, label_of)
+        cur_override = cur["policy"][0] if cur["policy"] else ""
+        ov_ed, eff_ed = override != cur_override, bool(effective) and effective != d_mode
+        src_ed, loc_ed = bool(source) and source != d_source, bool(loc_cell) and loc_cell != d_loc
         stock_op = None
+        new_mode = None
         if override:
             if override not in STOCK_MODES:
                 bad.append("stock_mode_contact_override is not detailed, compact or availability")
+            elif eff_ed and effective != override:
+                bad.append("stock_mode_effective and stock_mode_contact_override were both edited to different values: edit one")
             else:
-                if source == "contact" and effective != override:
-                    bad.append("stock_mode_effective does not match stock_mode_contact_override: edit stock_mode_contact_override")
-                try:
-                    include, exclude, hide = _parse_locations(r.get("stock_locations_effective"), wh_by_label)
-                    key = _policy_key(override, include, exclude, hide)
-                    if key != cur["policy"]:
-                        stock_op = ("set", key)
-                        item("stock_override", None if cur["policy"] is None else _locations_label(cur["policy"], label_of),
-                             _locations_label(key, label_of), "set")
-                except ValueError as exc:
-                    bad.append(str(exc))
-        elif source == "contact":
-            bad.append("stock_mode_contact_override is blank but stock_source is contact: edit stock_mode_contact_override")
-        elif cur["policy"] is not None:
+                new_mode = override
+        elif not cur["policy"]:
+            if eff_ed and not (src_ed and source != "contact"):
+                if effective not in STOCK_MODES:
+                    bad.append("stock_mode_effective is not detailed, compact or availability")
+                else:
+                    new_mode = effective
+            elif eff_ed:
+                bad.append("stock_mode_effective was edited but stock_source says there is no contact override")
+            elif loc_ed:
+                bad.append("stock_locations_effective was edited but there is no contact override: set stock_mode_contact_override")
+            elif src_ed and source == "contact":
+                bad.append("stock_source is contact but there is no override: set stock_mode_contact_override")
+        elif src_ed and source != "contact":
             stock_op = ("clear", None)
             item("stock_override", _locations_label(cur["policy"], label_of), None, "clear")
+        else:
+            bad.append("stock_mode_contact_override is blank but stock_source is contact: set stock_source to default or access_type to clear it")
+        if new_mode:
+            try:
+                if loc_ed or not cur["policy"]:
+                    include, exclude, hide = _parse_locations(loc_cell, wh_by_label)
+                else:
+                    include, exclude, hide = cur["policy"][1], cur["policy"][2], cur["policy"][3]
+                for wid in [*(include or []), *(exclude or [])]:
+                    if wh_company.get(wid) not in want_cos:
+                        bad.append(f"warehouse {label_of.get(wid, '?')} is not in the row's companies")
+                key = _policy_key(new_mode, include, exclude, hide)
+                if key != cur["policy"]:
+                    stock_op = ("set", key)
+                    item("stock_override", None if cur["policy"] is None else _locations_label(cur["policy"], label_of),
+                         _locations_label(key, label_of), "set")
+            except ValueError as exc:
+                bad.append(str(exc))
 
         # customers
         want_links: dict[str, Any] = {}
@@ -1195,6 +1287,8 @@ def from_sheet(db, path, *, sheet: str = "Sheet2", apply: bool = False, allow_re
             found, why = _match_customer(db, cust_cache, company_ids, text_item)
             if why:
                 bad.append(why)
+            elif found.id not in cur["links"] and found.company_id not in want_cos:
+                bad.append(f"customer {found.short} is in a company that is not in the row's companies")
             else:
                 want_links[found.id] = found
         add_links = [want_links[i] for i in sorted(set(want_links) - set(cur["links"]))]
