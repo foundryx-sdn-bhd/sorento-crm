@@ -72,6 +72,17 @@ holding `.view` without `.add` / `.edit` now gets a 403 toast from the Add and E
 instead of a silent success. Hiding those buttons behind `useHasPermission` is a small,
 separate frontend change and is noted in the PR body, not folded into a security fix.
 
+**D5 - the contact bulk-copy is not a side door (security review, 5 Oct 2026).**
+`POST /contacts/bulk-copy-access` (`contacts.py:205`, gated on `contacts.edit`) writes
+`contact_agent_access` rows for up to 500 targets through
+`contact_access_copy_service._write_agents`, which ran unconditionally. The service already
+has the mechanism for exactly this case: `facets_to_skip` leaves out any facet the actor could
+not set directly (companies, stock). The agent-grant facet joins that list, keyed on
+`user_management.access_agents.edit`: it is left out of the diff, the write, the summary, and
+named under "Not copied" in the dialog, with no frontend change (the dialog already renders
+`not_copied`). PR #1434 (ACCESS-MODEL) plans to swap the `agent_access` facet for roles and
+overrides; this gate is four lines on the same facet and is flagged as the overlap in the PR.
+
 ## Tests
 
 `sorento_crm_backend/tests/test_access_agents_write_gates.py`, written before the fix:
@@ -88,4 +99,19 @@ separate frontend change and is noted in the PR body, not folded into a security
 
 ## Coordination
 
-PR #1434 (ACCESS-MODEL) touches `chatbot_roles.py`, not this file. No overlap.
+PR #1434 (ACCESS-MODEL) touches `chatbot_roles.py`, not `access_agents.py`. The D5 change in
+`contact_access_copy_service.py` touches the `agent_access` facet that #1434 plans to replace;
+whichever merges second re-applies the four-line skip on the replacement facet.
+
+## Follow-ups found by the security review, out of this lane
+
+- `teams.py`: six writes (create, update, delete, add member, patch member, remove member) still
+  take only `get_current_user`; the `user_management.teams.{add,edit,delete}` slugs already exist.
+  Team membership drives agent routing, so this is the next lane of the same shape.
+- `AccessAgentService.set_agent_teams` does not check `team_id` against the active company.
+- The three contact-grant routes look the grant up by its own id and ignore the path `agent_id`;
+  `ContactAgentAccessUpdate` also accepts `respond_contact_*`, so a grant can be re-pointed past
+  the create path's duplicate check. No privilege gain (the slug is global), data integrity only.
+- The Add / Edit buttons on the access-agents screens and the contact detail page's grant table
+  are not hidden behind `useHasPermission`; a role holding `.view` or `contacts.edit` without
+  `access_agents.edit` now sees a 403 toast instead of a silent success.
