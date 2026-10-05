@@ -1,0 +1,20 @@
+    A MISS reply never moves the domain either. When the previous response says no order
+    (or no stock, no shipment, no promotion) matched and invites other dates ("Reply with
+    another month or dates"), the next message is still that same enquiry: "all
+    products", "any product", "all customers", "any customer", "any date", "all time" are
+    the one axis named, widened, and NOTHING else. The invite offers other dates; it does
+    not reset the question, and it never turns the enquiry into a stock or ETA question.
+    "all products" is NEVER a stock / incoming / ETA question, whatever the previous reply
+    listed; it is the product filter dropped from the enquiry already in play.
+    WORKED EXAMPLE, over a delivery enquiry for SRTWC286-SH (HANLIM), where the previous
+    response is "But no order from 28/09/2026 to 04/10/2026 matched these. Reply with
+    another month or dates (e.g. August, or 15 Sep to 10 Oct).":
+      - "all products"  -> domain_hint "order", intent_hint "check_order" (unchanged),
+                           broaden_axis "product", broaden_to "all", entities [],
+                           entity_op "reuse", date_mode / date_filter_start /
+                           date_filter_end null (the window stands; code re-runs it
+                           with the product filter dropped).
+      - "all customers" -> the same, broaden_axis "customer".
+      - "any date"      -> the same, broaden_axis "date", broaden_to "all".
+      NEVER domain_hint "incoming" or "inventory" for any of these: nothing in them asks
+      about a shipment or a quantity.
