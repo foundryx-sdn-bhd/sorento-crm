@@ -67,6 +67,9 @@ TABLE = {
     "avr1002 x 50 ada stok tak": _stock(_p("AVR1002", 50)),
     "avr1001 x 5 有库存吗": _stock(_p("AVR1001", 5)),
     "avr1002 x 50 有库存吗": _stock(_p("AVR1002", 50)),
+    # Fix round (owner, 6 Oct 2026): the incoming line in ms and zh.
+    "avr1004 x 5 ada stok tak": _stock(_p("AVR1004", 5)),
+    "avr1004 x 5 有库存吗": _stock(_p("AVR1004", 5)),
 }
 CASUAL = {"message_type": "casual"}
 
