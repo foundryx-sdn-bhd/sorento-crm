@@ -95,7 +95,7 @@ from app.models.ai_prompt import AIPromptVersion, AIPromptLabel
 from app.models.chat_history import ChatHistory
 from app.models.chatbot_turn import ChatbotTurn
 from app.models.conversation_frame import ConversationFrame
-from app.models.chatbot_policy import ChatbotDomain, ChatbotEntityKind
+from app.models.chatbot_policy import ChatbotDomain, ChatbotDomainWord, ChatbotEntityKind, ChatbotStatusWord
 from app.models.lookup import LookupSet, LookupOption, LookupOptionKeyword, LookupBinding
 from app.models.portal import (
     PortalToken,
@@ -333,6 +333,8 @@ __all__ = [
     "ConversationFrame",
     "ChatbotDomain",
     "ChatbotEntityKind",
+    "ChatbotStatusWord",
+    "ChatbotDomainWord",
     "LookupSet",
     "LookupOption",
     "LookupOptionKeyword",

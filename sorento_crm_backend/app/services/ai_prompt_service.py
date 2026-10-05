@@ -162,6 +162,7 @@ class AIPromptService:
             "active": spec.active,
             "activates_in": spec.activates_in,
             "variables": list(spec.variables),
+            "registry_variables": list(spec.registry_variables),
             "labels": self._labels_map(name),
             "versions": versions,
             # Slice E: always present, so the FE can seed the editor from it

@@ -139,7 +139,8 @@ def top_selling_pick(
         "top_selling_pick",
         options,
         asked_at_turn=asked_at_turn,
-        payload={"domain": "order", "status": "top_selling", "filters": dict(filters)},
+        # R7 (PLAN-prompt-dynamic-30sep D9): the ranking is the `sales` domain's.
+        payload={"domain": "sales", "status": "top_selling", "filters": dict(filters)},
     )
 
 

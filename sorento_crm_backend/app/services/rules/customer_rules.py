@@ -5,9 +5,10 @@ name (e.g. "300-D093" for both "Deluxe Home Center (KTN)" and "Deluxe Home
 Center AC (I)"), so a code-only match can silently adopt or rename the wrong
 row. `order_service.CustomerService.create_customer` matches on
 `lower(btrim(code)), lower(btrim(name))` - the same key as the
-`uq_customers_company_code_name_lower` composite unique index - and the
-masters ingest (`master_ingest_service.py`) uses this same function so the two
-can never drift apart.
+`uq_customers_company_code_name_lower` composite unique index. The masters
+ingest (`master_ingest_service._customer_by_code`, DEBTOR-CODE-LINK, owner
+4 Oct 2026) matches a pushed debtor by code and uses this same pair only to
+prefer the exact-name row among same-code rows.
 """
 from __future__ import annotations
 

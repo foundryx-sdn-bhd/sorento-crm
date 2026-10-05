@@ -8,9 +8,8 @@ No implementation for this slice exists yet beyond what `master_ingest_service.p
 already does for Phase C. Every test below targets a SPECIFIC, already-read gap in
 that module:
 
-  AC-P0-1  `_lookup_id` for `customers` matches on `customer_code` ALONE
-           (`normalized_code=False`), never `(code, name)` - so a push naming an
-           existing code but a different name can adopt/rename the wrong row.
+  AC-P0-1  (superseded 4 Oct 2026 by DEBTOR-CODE-LINK: customer identity is the
+           debtor code, first row wins; the original D13 (code, name) pair is gone.)
   AC-P0-2  Every optional field on every canonical schema is a plain default
            (`Optional[X] = None` or a bare `bool = True` / `int = 0`), and every
            `_xxx_columns` builder writes it unconditionally - so an OMITTED field
@@ -44,6 +43,7 @@ or leaks into the shared dev database. Two companies where the AC calls for two.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from decimal import Decimal
 
 import pytest
@@ -140,18 +140,29 @@ def _row_values(db, table: str, code_column: str, code: str, company_id: str, co
     return dict(row) if row else None
 
 
-class TestAcP01CustomerIdentityCodeAndName:
-    """D13: customer identity on the masters push is the lower-trimmed (code,
-    name) pair, never the code alone. `_lookup_id("customers", ...)` today
-    matches on `customer_code` only, so it cannot tell two same-code,
-    different-name rows apart.
+class TestAcP01CustomerIdentityDebtorCodeFirstRow:
+    """D13 refined (owner ruling 4 Oct 2026, DEBTOR-CODE-LINK, card
+    documentation/plans/autocount/CARD-debtor-code-link-04oct.md): customer
+    identity on the masters push is company + debtor code (trimmed,
+    case-insensitive). Within that code, a row whose name matches exactly
+    (btrim, case-insensitive) is the one updated; otherwise the oldest row
+    (tie: lowest id) is updated and keeps its name (never rename, owner
+    decision 4 Oct). The name never picks a row alone
+    and the source_ref is bookkeeping only. D13 alone used the (code, name)
+    pair and created a third row for an unknown name.
     """
 
     def test_pushing_an_existing_name_updates_that_row_and_leaves_the_sibling(self, db):
         set_company_scope(db, frozenset({DEFAULT_COMPANY_ID}))
         code = _code("CUST1")
-        alpha = Customer(customer_code=code, customer_name="ALPHA", email="alpha@old.com")
-        beta = Customer(customer_code=code, customer_name="BETA", email="beta@old.com")
+        alpha = Customer(
+            customer_code=code, customer_name="ALPHA", email="alpha@old.com",
+            created_at=datetime(2025, 1, 1, 9, 0, 0),
+        )
+        beta = Customer(
+            customer_code=code, customer_name="BETA", email="beta@old.com",
+            created_at=datetime(2026, 9, 1, 9, 0, 0),
+        )
         db.add_all([alpha, beta])
         db.flush()
         alpha_id, beta_id = str(alpha.id), str(beta.id)
@@ -169,16 +180,20 @@ class TestAcP01CustomerIdentityCodeAndName:
         beta_row = db.execute(
             text("SELECT customer_name, email FROM customers WHERE id = :i"), {"i": beta_id}
         ).first()
-        assert alpha_row == ("ALPHA", "alpha@old.com"), "ALPHA must be untouched"
-        assert beta_row == ("BETA", "beta@new.com"), "BETA is the row that should have updated"
+        assert alpha_row == ("ALPHA", "alpha@old.com"), "ALPHA (oldest, not the name match) is untouched"
+        assert beta_row == ("BETA", "beta@new.com"), "BETA is the exact-name row and should update"
 
-    def test_pushing_a_new_name_under_a_known_code_creates_a_third_row_never_renames(self, db):
+    def test_pushing_a_new_name_under_a_known_code_updates_the_oldest_row_no_rename_no_third_row(self, db):
         set_company_scope(db, frozenset({DEFAULT_COMPANY_ID}))
         code = _code("CUST2")
         db.add_all(
             [
-                Customer(customer_code=code, customer_name="ALPHA"),
-                Customer(customer_code=code, customer_name="BETA"),
+                Customer(
+                    customer_code=code, customer_name="ALPHA", created_at=datetime(2025, 1, 1, 9, 0, 0)
+                ),
+                Customer(
+                    customer_code=code, customer_name="BETA", created_at=datetime(2026, 9, 1, 9, 0, 0)
+                ),
             ]
         )
         db.flush()
@@ -188,20 +203,25 @@ class TestAcP01CustomerIdentityCodeAndName:
             "customers", [{"source_ref": f"DK-{code}-G", "code": code, "name": "GAMMA"}]
         )
 
-        assert result.created == 1, result.records[0].errors
+        assert result.updated == 1, result.records[0].errors
+        assert result.created == 0
         names = set(
             db.execute(
                 text("SELECT lower(customer_name) FROM customers WHERE customer_code = :c"),
                 {"c": code},
             ).scalars()
         )
-        assert names == {"alpha", "beta", "gamma"}, "neither existing row may be renamed"
+        assert names == {"alpha", "beta"}, "no row is renamed and no third row is created"
 
     def test_integration_reference_links_the_row_matched_by_name_not_an_arbitrary_one(self, db):
         set_company_scope(db, frozenset({DEFAULT_COMPANY_ID}))
         code = _code("CUST3")
-        alpha = Customer(customer_code=code, customer_name="ALPHA")
-        beta = Customer(customer_code=code, customer_name="BETA")
+        alpha = Customer(
+            customer_code=code, customer_name="ALPHA", created_at=datetime(2025, 1, 1, 9, 0, 0)
+        )
+        beta = Customer(
+            customer_code=code, customer_name="BETA", created_at=datetime(2026, 9, 1, 9, 0, 0)
+        )
         db.add_all([alpha, beta])
         db.flush()
         beta_id = str(beta.id)
@@ -611,8 +631,11 @@ class TestAcP06AuditEmbeddingUpdatedAtAndAgentSource:
         )
         assert create_rows == 1
 
+        # A phone change, not a rename: the masters push never renames a customer
+        # (DEBTOR-CODE-LINK, owner decision 4 Oct 2026).
         svc.ingest(
-            "customers", [{"source_ref": f"DK-{code}", "code": code, "name": "Audit Me Updated"}]
+            "customers",
+            [{"source_ref": f"DK-{code}", "code": code, "name": "Audit Me", "phone_number": "0100000001"}],
         )
         update_rows = (
             db.query(AuditLog)
@@ -643,7 +666,10 @@ class TestAcP06AuditEmbeddingUpdatedAtAndAgentSource:
         code = _code("UPDAT")
         svc = _esb(db, DEFAULT_COMPANY_ID)
         svc.ingest("customers", [{"source_ref": f"DK-{code}", "code": code, "name": "V1"}])
-        svc.ingest("customers", [{"source_ref": f"DK-{code}", "code": code, "name": "V2"}])
+        svc.ingest(
+            "customers",
+            [{"source_ref": f"DK-{code}", "code": code, "name": "V1", "phone_number": "0100000002"}],
+        )
 
         updated_at = db.execute(
             text("SELECT updated_at FROM customers WHERE customer_code = :c"), {"c": code}
@@ -907,11 +933,21 @@ class TestAcP07ManualVsEsbParity:
 
         set_company_scope(db, frozenset({DEFAULT_COMPANY_ID}))
         CustomerService(db).update_customer(
-            manual.id, CustomerUpdate(customer_name="Test Sdn Bhd (Updated)", is_active=False)
+            manual.id, CustomerUpdate(phone_number="0199999999", is_active=False)
         )
+        # The masters push never renames (DEBTOR-CODE-LINK), so the update compared here is a
+        # phone + active change on both channels.
         esb.ingest(
             "customers",
-            [{"source_ref": f"DK-{code}", "code": code, "name": "Test Sdn Bhd (Updated)", "is_active": False}],
+            [
+                {
+                    "source_ref": f"DK-{code}",
+                    "code": code,
+                    "name": "Test Sdn Bhd",
+                    "phone_number": "0199999999",
+                    "is_active": False,
+                }
+            ],
         )
 
         columns = _mapped_columns(Customer)

@@ -24,10 +24,9 @@ from app.services.chatbot.lanes.business import low_stock_ask as lsa
 from tests.chatbot.test_low_stock_filter_ask import (
     GRANT,
     SUPPLIER_KEY,
+    _answer,
     _ask,
     _console,
-    _e,
-    _reply,
 )
 
 APP = Path(rf.__file__).resolve().parents[2]  # .../app
@@ -351,26 +350,27 @@ def test_cl53_an_ms_turn_asks_in_malay_then_the_ms_reply_settles_the_field(ms_co
     text, calls = ms_console.say(_ask(), "tunjuk laporan stok rendah")
     assert text == MS["category_question"]
     assert calls == [], "no run before the category is settled"
-    # The answer is read from the slot, not from the Malay question: 'semua' settles it as all.
-    _text, calls = ms_console.say(_reply(intent_hint=None, message_type="casual"), "semua")
+    # The answer is the parser's declared one (LOWSTOCK-SEMANTIC), not the Malay question:
+    # 'semua' read as "all" settles it.
+    _text, calls = ms_console.say(_answer("all"), "semua")
     assert len(calls) == 1, "the field settled, the report ran"
     assert not calls[0].get("categories"), calls[0]
 
 
 def test_cl53_an_ms_miss_is_said_in_malay_and_the_slot_survives(ms_console):
     ms_console.say(_ask(), "tunjuk laporan stok rendah")
-    text, calls = ms_console.say(_reply(_e("kapal angkasa", "product")), "kapal angkasa")
+    text, calls = ms_console.say(_answer("fill", categories=["kapal angkasa"]), "kapal angkasa")
     assert calls == []
     assert text == MS["miss_category"].format(word="kapal angkasa") + "\n\n" + MS["category_question"]
     # Still open: a real category word answers it.
-    _text, calls = ms_console.say(_reply(_e("water closet", "product")), "water closet")
+    _text, calls = ms_console.say(_answer("fill", categories=["water closet"]), "tandas")
     (args,) = calls
     assert args.get("categories") == ["SRT-WC"], args
 
 
 def test_cl53_an_ms_cancel_is_said_in_malay(ms_console):
     ms_console.say(_ask(), "tunjuk laporan stok rendah")
-    text, calls = ms_console.say(_reply(intent_hint=None, message_type="casual"), "batal")
+    text, calls = ms_console.say(_answer("cancel"), "batal")
     assert calls == [] and text == MS["cancelled"]
 
 

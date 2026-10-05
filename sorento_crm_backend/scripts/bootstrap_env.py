@@ -734,6 +734,12 @@ def seed_chatbot_policy() -> None:
     spk = _load("_spk_0001_specification_kind", "spk_0001_specification_kind.py")
     top_selling = _load("_chatbot_top_selling_tool", "chatbot_top_selling_tool.py")
     sales_s1 = _load("_sales_s1_reports_module", "sales_s1_reports_module.py")
+    pdyn1 = _load("_pdyn_0001_status_words_sales", "pdyn_0001_status_words_sales.py")
+    pdyn2 = _load("_pdyn_0002_wording_layer", "pdyn_0002_wording_layer.py")
+    pdyn3 = _load("_pdyn_0003_prod_identical", "pdyn_0003_prod_identical.py")
+    pdyn4 = _load("_pdyn_0004_prompt_lists", "pdyn_0004_prompt_lists.py")
+    pdyn5 = _load("_pdyn_0005_access_level_order", "pdyn_0005_access_level_order.py")
+    pdyn6 = _load("_pdyn_0006_agents_in_prompt", "pdyn_0006_agents_in_prompt.py")
 
     with engine.begin() as conn:
         domains_inserted, kinds_inserted = s0.seed_domains_and_kinds(conn)
@@ -758,10 +764,26 @@ def seed_chatbot_policy() -> None:
         s11.apply_narrowing(conn)
     with engine.begin() as conn:
         s12.apply_narrowing(conn)
+    # After every narrowing step: the `sales` row copies the `order` row's narrowing.
+    with engine.begin() as conn:
+        pdyn1.apply(conn)
+    # The owner's prompt-list tags and his curated domain words (answers 2 and 4).
+    with engine.begin() as conn:
+        pdyn4.apply(conn)
+        pdyn5.apply(conn)
+        pdyn6.apply(conn)
     # LAST, and after every narrowing step: it renders the blocks from the tables as
     # they now stand and leaves `production` on that version.
     with engine.begin() as conn:
         s12.republish_and_promote(conn)
+    # After the republish: the wording layer is built from the version it promoted, and
+    # published unlabelled (the owner promotes).
+    with engine.begin() as conn:
+        pdyn2.apply(conn)
+    # The owner's production text of 1 Oct 2026, unlabelled, variables only where the
+    # tables reproduce it exactly.
+    with engine.begin() as conn:
+        pdyn3.apply(conn)
     log.info(
         "chatbot policy seeded -> domains=%d kinds=%d (narrowing + first prompt "
         "version applied)",

@@ -310,10 +310,6 @@ class EntitySpec:
     # stored string. True only where the column has one canonical spelling that
     # the rows do not all carry yet -- see ``_lookup_id``.
     normalized_code: bool = False
-    # Overrides the default code-only adoption match. None means the default
-    # (``_lookup_id`` on ``code_column`` alone). Customers are the only user so
-    # far (D13): the (code, name) pair, not the code alone.
-    adopt_lookup: Optional[Callable[[Session, Any, str], Optional[str]]] = None
 
 
 # `SHARED_TABLES` / `_is_company_scoped` (tables where a row serves every
@@ -658,16 +654,18 @@ def _sales_agent_columns(payload: Any, db: Session, company_id: str, warnings: l
     return columns
 
 
-def _adopt_customer(db: Session, payload: Any, company_id: str) -> Optional[str]:
-    """D13: adoption match for a customer is the (code, name) pair, never the
-    code alone - the same key as `uq_customers_company_code_name_lower` and
-    `order_service.CustomerService.create_customer`, via the shared
-    `customer_identity` rule."""
+def _customer_by_code(db: Session, payload: Any, company_id: str) -> Optional[str]:
+    """DEBTOR-CODE-LINK (owner, 4 Oct 2026; card `CARD-debtor-code-link-04oct.md` R1/R3): a
+    pushed debtor is the company's row with that debtor code. Codes are not unique yet
+    (DEBTOR-CODE-UNIQUE follows), so among same-code rows the one whose name matches exactly
+    (the unique index's own `lower(btrim())` comparison) wins, else the oldest row, ties to the
+    lowest id. A name never picks a row on its own, and the source_ref never picks one."""
     code_norm, name_norm = customer_identity(payload.code, payload.name)
     row = db.execute(
         text(
-            "SELECT id FROM customers WHERE lower(btrim(customer_code)) = :code "
-            "AND lower(btrim(customer_name)) = :name AND company_id = :cid LIMIT 1"
+            "SELECT id FROM customers WHERE company_id = :cid "
+            "AND lower(btrim(customer_code)) = :code "
+            "ORDER BY (lower(btrim(customer_name)) = :name) DESC, created_at, id::text LIMIT 1"
         ),
         {"code": code_norm, "name": name_norm, "cid": company_id},
     ).first()
@@ -698,8 +696,7 @@ ENTITY_SPECS: dict[str, EntitySpec] = {
         "suppliers", CanonicalSupplier, "supplier_code", _supplier_columns, Supplier
     ),
     "customers": EntitySpec(
-        "customers", CanonicalCustomer, "customer_code", _customer_columns, Customer,
-        adopt_lookup=_adopt_customer,
+        "customers", CanonicalCustomer, "customer_code", _customer_columns, Customer
     ),
     "products": EntitySpec("products", CanonicalProduct, "product_code", _product_columns, Product),
     # The only shared master here: the row carries no company (see SHARED_TABLES)
@@ -1095,7 +1092,7 @@ class MasterIngestService:
     ) -> tuple[IngestOutcome, str, Optional[dict[str, dict[str, Any]]], list[str]]:
         """Pins `company_scope` for the WHOLE record, not just `_insert`/`_update`'s
         own writes: `_product_columns` (`ensure_reference`/`resolve_master_by_code`)
-        and the generic adopt-fallback below both run ordinary ORM queries against
+        and the adopt-fallback below (and `_apply_customer`) run ordinary ORM queries against
         company-scoped tables, and without this those queries are filtered by
         whatever the ambient session scope happens to be - which a caller running
         two companies through one session (this module's own parity tests) never
@@ -1122,6 +1119,8 @@ class MasterIngestService:
         else:
             columns = spec.to_columns(payload, self.db, self.company_id, warnings)
         _apply_not_null_defaults(entity_type, columns)
+        if entity_type == "customers":
+            return self._apply_customer(spec, payload, columns, warnings)
 
         # BL-056 (D15): `self.refs` is scoped to this anchor company, so a ref
         # linked under a DIFFERENT company simply never resolves here - the
@@ -1154,8 +1153,6 @@ class MasterIngestService:
             return IngestOutcome.CREATED, new_id, None, warnings
         existing_id = self._resolve_ref(entity_type, payload.source_ref)
         if existing_id is not None:
-            if entity_type == "customers":
-                self._finalize_customer_segment_fill_only(columns, existing_id)
             diff = self._diff(spec, existing_id, columns)
             if diff != {}:
                 # C1: `{}` is a real answer ("nothing to write"), not "diff
@@ -1164,20 +1161,17 @@ class MasterIngestService:
                 self._update(spec, existing_id, columns)
             self._link(entity_type, existing_id, payload)
             self._post_write_product_hooks(entity_type, existing_id)
-            self._fan_out_customer_agent(entity_type, spec, existing_id, columns)
             return IngestOutcome.UPDATED, existing_id, diff, warnings
 
         # First sync: adopt a local record with the same business identity
-        # rather than creating a duplicate under a new id. Customers override
-        # this with the (code, name) pair (D13); everything else matches on
+        # rather than creating a duplicate under a new id. Customers never get
+        # here (`_apply_customer`); everything else matches on
         # the bare business code. Sales agents keep their own normalised-code
         # match (`_lookup_id`) - shared table, not company-scoped the way
         # `resolve_master_by_code` assumes. Every other master matches
         # case/whitespace-insensitively (D17), through the same function the
         # manual create services now use too.
-        if spec.adopt_lookup is not None:
-            adopted = spec.adopt_lookup(self.db, payload, self.company_id)
-        elif spec.normalized_code:
+        if spec.normalized_code:
             adopted = _lookup_id(
                 self.db, spec.table, spec.code_column, payload.code, self.company_id, normalized=True
             )
@@ -1191,8 +1185,6 @@ class MasterIngestService:
                 raise ReferenceConflict(
                     f"{spec.code_column}={payload.code!r} is already linked to another source"
                 )
-            if entity_type == "customers":
-                self._finalize_customer_segment_fill_only(columns, adopted)
             # Captured before the UPDATE (dry run) or the skip (C1, real run):
             # an adoption overwrites a row somebody typed in by hand, and the
             # operator/audit trail gets no other chance to see what it replaces.
@@ -1204,26 +1196,66 @@ class MasterIngestService:
             # it, whether or not it changes a single column.
             self._link(entity_type, adopted, payload)
             self._post_write_product_hooks(entity_type, adopted)
-            self._fan_out_customer_agent(entity_type, spec, adopted, columns)
             return IngestOutcome.UPDATED, adopted, diff, warnings
 
         new_id = self._insert(entity_type, spec, columns)
         self._link(entity_type, new_id, payload)
         self._post_write_product_hooks(entity_type, new_id)
-        self._fan_out_customer_agent(entity_type, spec, new_id, columns)
         # Nothing existed to overwrite, so there is no diff to report. Distinct
         # from {} -- see RecordResult.diff.
         return IngestOutcome.CREATED, new_id, None, warnings
 
+    def _apply_customer(
+        self, spec: EntitySpec, payload: Any, columns: dict[str, Any], warnings: list[str]
+    ) -> tuple[IngestOutcome, str, Optional[dict[str, dict[str, Any]]], list[str]]:
+        """DEBTOR-CODE-LINK (card R1-R6): matched by company + debtor code only
+        (`_customer_by_code`), never renamed, and the pushed ref is bookkeeping that never
+        fails the record: it is linked only when both the row and the ref are free, kept when
+        the row already holds it, and otherwise left as stored with `ref_mismatch`."""
+        from app.services.master_ref_resolver import WARN_REF_MISMATCH
+
+        target = _customer_by_code(self.db, payload, self.company_id)
+        holder = self._resolve_ref("customers", payload.source_ref)
+        # The agent goes to every same-code ledger (#1468), keyed by the pushed code.
+        fan_out = {"customer_code": columns["customer_code"], "sales_agent_id": columns.get("sales_agent_id")}
+        if target is None:
+            new_id = self._insert("customers", spec, columns)
+            if holder is None:
+                self._link("customers", new_id, payload)
+            else:
+                warnings.append(WARN_REF_MISMATCH)
+            self._fan_out_customer_agent(spec, new_id, fan_out)
+            return IngestOutcome.CREATED, new_id, None, warnings
+
+        # Never rename (owner decision, 4 Oct 2026): the name only ever matches, and the code
+        # keeps the row's own spelling, as its same-code siblings do. Same-code rows converge
+        # when DEBTOR-CODE-UNIQUE merges them.
+        columns.pop("customer_name", None)
+        columns.pop("customer_code", None)
+        self._finalize_customer_segment_fill_only(columns, target)
+        diff = self._diff(spec, target, columns)
+        if diff != {}:
+            self._update(spec, target, columns)
+        # `holder` is resolved under this company and source system, so `holder == target`
+        # is the one proof the row already holds this exact ref; a same-text ref under another
+        # source system or company is not, and must not reach `link()`.
+        origin = self._origin_of("customers", target)
+        if holder == target or (origin is None and holder is None):
+            self._link("customers", target, payload)
+        else:
+            warnings.append(WARN_REF_MISMATCH)
+        self._fan_out_customer_agent(spec, target, fan_out)
+        return IngestOutcome.UPDATED, target, diff, warnings
+
     def _fan_out_customer_agent(
-        self, entity_type: str, spec: EntitySpec, customer_id: str, columns: dict[str, Any]
+        self, spec: EntitySpec, customer_id: str, columns: dict[str, Any]
     ) -> None:
         """Set the resolved agent on every other ledger of this company with the same debtor
         code (back-created rows an order import made under the same code). Each sibling goes
         through `_update`, so the audit listener and `updated_at` fire. Runs inside the
         record's savepoint, so a dry run or a failed record rolls it back."""
         agent_id = columns.get("sales_agent_id")
-        if entity_type != "customers" or agent_id is None:
+        if agent_id is None:
             return
         with company_scope(self.db, frozenset({self.company_id})):
             sibling_ids = [

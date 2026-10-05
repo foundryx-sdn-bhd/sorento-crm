@@ -244,6 +244,28 @@ register(
     )
 )
 
+def _delete_chatbot_status_word(db: Session, payload: dict):
+    """The same delete `DELETE /system/chatbot/status-words/{id}` runs, by id."""
+    from app.models.chatbot_policy import ChatbotStatusWord
+
+    row = db.query(ChatbotStatusWord).filter(ChatbotStatusWord.id == _entity_id(payload)).first()
+    if row is None:
+        return None
+    db.delete(row)
+    return None
+
+
+register(
+    FormAction(
+        key="chatbot_status_word.delete",
+        entity_types=("chatbot_status_word",),
+        execute=_delete_chatbot_status_word,
+        window=WINDOW_DESTRUCTIVE,
+        permission="system.chatbot_config.manage",
+        label="Delete chatbot status word",
+    )
+)
+
 register(
     FormAction(
         key="order.delete",

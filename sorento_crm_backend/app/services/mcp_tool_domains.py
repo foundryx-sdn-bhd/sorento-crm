@@ -51,10 +51,13 @@ CHATBOT_TOOL_DOMAINS: dict[str, str] = {
     "crm_order_management_orders_list": "order",
     "crm_order_management_orders_by_product_list": "order",
     "crm_outstanding_report": "order",
-    "crm_sales_report": "order",
-    "crm_top_selling_report": "order",
-    "crm_sales_analysis": "order",
     "crm_master_customers_list": "order",
+    # PLAN-prompt-dynamic-30sep D9 (owner, 30 Sep 2026): the sales figures are the `sales`
+    # domain's (migration `pdyn_0001_status_words_sales`). The `order` seed row still lists
+    # them as allow-list members; this map names the domain they answer FROM.
+    "crm_sales_report": "sales",
+    "crm_top_selling_report": "sales",
+    "crm_sales_analysis": "sales",
     "crm_incoming_stock_list": "incoming",
     "crm_incoming_stock_by_product": "incoming",
     "crm_incoming_stock_shipments": "incoming",

@@ -155,6 +155,9 @@ class Focus:
     # read and consumed by `required_fields.reply_verdict` on the NEXT message only. One
     # turn long: a lane that asks again hands back a fresh one.
     required_ask: dict[str, Any] | None = None
+    # LOWSTOCK-SEMANTIC: the filters the last low stock report was built with
+    # (`low_stock_ask.route_filters` "frame"), so a refinement narrows it.
+    low_stock: dict[str, Any] | None = None
     # Ported from PR #1118 (not merged) for chatbot-stock-ask-v2 S3: what the
     # conversation still OWES (Focus.tasks, D21). A tuple of `turn/task.py::Task`, at
     # most one per kind. Its own axis rather than a flag on `products`, because
@@ -260,6 +263,7 @@ def focus_to_wire(focus: Focus) -> dict[str, Any]:
     wire["set_clarify"] = focus.set_clarify
     wire["top_selling"] = dict(focus.top_selling) if focus.top_selling else None
     wire["required_ask"] = dict(focus.required_ask) if focus.required_ask else None
+    wire["low_stock"] = dict(focus.low_stock) if focus.low_stock else None
     # Ported from PR #1118 (not merged): the open tasks travel INSIDE the focus, not
     # on a session key of their own - the focus is the context, and a second key
     # could disagree with it.
@@ -321,6 +325,8 @@ def focus_from_wire(raw: Any) -> Focus:
     focus.top_selling = dict(top_selling) if isinstance(top_selling, dict) else None
     required_ask = raw.get("required_ask")
     focus.required_ask = dict(required_ask) if isinstance(required_ask, dict) else None
+    low_stock = raw.get("low_stock")
+    focus.low_stock = dict(low_stock) if isinstance(low_stock, dict) else None
     tasks = raw.get("tasks")
     if isinstance(tasks, list):
         # Ported from PR #1118 (not merged): a focus persisted before this slice
