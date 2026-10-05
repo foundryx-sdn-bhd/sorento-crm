@@ -18,7 +18,7 @@ Plan: `PLAN-contact-region-5oct.md`. IDs AC-CR-n. Owner answers 5 Oct: Q1 multi-
 ## Chatbot effect (`eta_policy.contact_regions` / `rules_for_contact`)
 - AC-CR-10: `contact_regions(db, id)` returns the contact's stored set; unknown / missing id returns `{west}`.
 - AC-CR-11: a contact holding `{west}` is told only about packing lists whose regions overlap West; an East-only packing list stays hidden.
-- AC-CR-12: a contact holding East sees East-only, West-only and West + East packing lists (expansion `visible_regions`).
+- AC-CR-12 (owner ruling 5 Oct 11:50, LITERAL): a contact holding only East sees East-only and West + East packing lists, NOT West-only; holding both sees all three; holding only West sees West-only and West + East. Changes #1439 behaviour for any contact holding East.
 - AC-CR-13: staff screens and a bare API key with no contact in play are unfiltered (unchanged).
 
 ## Screen (Contact > Access > Chatbot card)
@@ -34,5 +34,6 @@ Plan: `PLAN-contact-region-5oct.md`. IDs AC-CR-n. Owner answers 5 Oct: Q1 multi-
 - AC-CR-19: the list response carries `regions` per row; the list shows a Regions column (one Badge per region, labels West Malaysia / East Malaysia), explicit `size`, truncate + title.
 - AC-CR-20: list filter `region=west|east` returns contacts whose stored set contains that code (array contains); absent = no filter; other value -> 422.
 
-## Expansion (owner ruling open)
-- AC-CR-21: the stored-set -> visible-set rule lives ONLY in `eta_policy.visible_regions`; no other code expands regions. Today: East held -> {east, west}. If the owner rules "literal", that one function changes and AC-CR-12 becomes: East alone sees East-only and West + East lists, not West-only.
+## Region rule (owner ruling 5 Oct 11:50: literal)
+- AC-CR-21: `eta_policy.visible_regions(held)` returns the held set as-is, filtered to west/east; empty / None / only unknown codes -> {west}. It is the only place that turns a stored set into a visible set.
+- AC-CR-22: the Regions control on the card is the packing-list picker reused unchanged: `SearchableMultiSelect` + `PACKING_LIST_REGION_OPTIONS`, last region cannot be removed (same as `AttachmentUploadDialog.tsx:551-558`, `PackingListForm.tsx:338-344`).

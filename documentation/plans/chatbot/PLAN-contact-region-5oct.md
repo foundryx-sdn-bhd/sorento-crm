@@ -1,7 +1,7 @@
 # PLAN - Contact region (West / East Malaysia)
 
 Status: building. Owner answers 5 Oct: Q1 = multi-select West/East, Q2 = copy regions, Q3 = list Region column + filter.
-Open: owner may rule the expansion literal (East alone = East only); kept in `visible_regions` only, one-line switch.
+Owner ruling 5 Oct 11:50: LITERAL. `visible_regions` (`services/eta_policy.py:67`) returns the held set (East alone = East only); changes #1439 behaviour for East holders. Control = same picker as `AttachmentUploadDialog.tsx:551-558`.
 Track: M (migration, existing screen). Lane CONTACT-REGION, branch `crew/contact-region`, one PR.
 UAC: `contact-region-acceptance-criteria.md`. Paths under `sorento_crm_backend/app/` unless shown.
 
