@@ -1630,6 +1630,11 @@ def lane_parse_output(
         routing["suggested_team"] = (
             domain_team or _prior_suggested_team(prior_session) or DEFAULT_SUGGESTED_TEAM
         )
+    # ACCESS-MODEL S3: the hand-off agent is the DOMAIN row's, not the parser's guess; the
+    # parser value stays only when the row names none. `contact_agent_access` plays no part.
+    agent_row = policy.domain(out.get("domain_hint")) if policy else None
+    if agent_row is not None and agent_row.escalation_agent_code:
+        routing["suggested_agent"] = agent_row.escalation_agent_code
     # `suggested_agent`'s default is applied once, upstream, by `with_routing_agent_default`
     # (finding 2b) - the access read and the lanes see the same value.
     out["routing"] = routing
