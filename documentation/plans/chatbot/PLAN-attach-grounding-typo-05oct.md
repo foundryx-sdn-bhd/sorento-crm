@@ -1,6 +1,6 @@
 # PLAN: a typo'd attachment type is no longer demoted to an empty spec (ATTACH-GROUNDING-TYPO)
 
-Status: in progress (small fix track: backend only, no migration, no auth change).
+Status: in review, PR #1490 (small fix track: backend only, no migration, no auth change). Tests green, reviewer clean.
 
 ## Bug (prod 5 Oct 2026 12:02, prompt v42)
 
@@ -22,7 +22,7 @@ Grounding demoted it to `{hint: "specification", spec_key: ""}` and flipped the 
 
 ## Fix
 
-1. The parser's `canonical_code` counts as the document type when it is on the attachment
+1. Only where nothing in `raw` grounds (the empty-spec case), the parser's `canonical_code` counts as the document type when it is on the attachment
    list AND the customer's own words back it: at least one word of `raw` is, exactly (case,
    NFKC and a plural "s" aside, the `_same` rule), a word of that canonical code. "techincal
    drawings" -> "technical drawing" shares "drawing": kept as the document type. The #833
