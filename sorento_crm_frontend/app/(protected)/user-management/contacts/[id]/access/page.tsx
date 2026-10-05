@@ -158,7 +158,7 @@ function AccessEditor({
                   <tr key={d.name} className="border-t">
                     <td className="py-2 pr-4">{d.access_label || d.label}</td>
                     <td className="py-2 pr-4">{d.escalation_tier1_team || '-'}</td>
-                    <td className="py-2">{humanize(d.escalation_agent_code)}</td>
+                    <td className="py-2">{d.escalation_agent_name || humanize(d.escalation_agent_code)}</td>
                   </tr>
                 ))}
             </tbody>

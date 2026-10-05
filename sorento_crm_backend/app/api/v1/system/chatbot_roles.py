@@ -15,6 +15,7 @@ import re
 from typing import Any
 
 from fastapi import APIRouter, Depends, Response
+from pydantic import BaseModel
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
@@ -133,6 +134,7 @@ def get_registry(
     for f in db.query(ChatbotDomainField).order_by(ChatbotDomainField.sort_order, ChatbotDomainField.key):
         fields.setdefault(f.domain_name, []).append(f)
     tier1 = _tier1_names(db)
+    agent_names = dict(db.execute(text("SELECT code, name FROM access_agents")).fetchall())
     out = []
     for d in db.query(ChatbotDomain).order_by(ChatbotDomain.sort_order, ChatbotDomain.name):
         team = None
@@ -148,6 +150,7 @@ def get_registry(
                 access_label=d.access_label or d.label,
                 access_description=d.access_description,
                 escalation_agent_code=d.escalation_agent_code,
+                escalation_agent_name=agent_names.get(d.escalation_agent_code),
                 escalation_team_code=d.escalation_team_code,
                 escalation_tier1_team=team,
                 fields=[RegistryField(key=f.key, label=f.label, kind=f.kind) for f in fields.get(d.name, [])],
@@ -242,7 +245,13 @@ def delete_role(
     db: Session = Depends(get_db),
 ):
     _ = current_user
-    role = _role_or_404(db, role_id)
+    delete_role_row(db, _role_or_404(db, role_id))
+    db.commit()
+    return Response(status_code=204)
+
+
+def delete_role_row(db: Session, role: ChatbotRole) -> None:
+    """The delete both the route and the deferred `chatbot_role.delete` action run (no commit)."""
     held = db.query(ContactChatbotRole).filter(ContactChatbotRole.role_id == role.id).count()
     if held:
         raise handle_conflict(
@@ -253,8 +262,6 @@ def delete_role(
             db.delete(row)
     db.flush()
     db.delete(role)
-    db.commit()
-    return Response(status_code=204)
 
 
 @router.put("/roles/{role_id}/grants", response_model=RoleResponse)
@@ -305,6 +312,53 @@ def list_role_contacts(
         .all()
     )
     return [RoleContact(id=i, name=n) for i, n in rows]
+
+
+class RoleContactsAdd(BaseModel):
+    contact_ids: list[str]
+
+
+@router.post("/roles/{role_id}/contacts", response_model=list[RoleContact])
+def add_role_contacts(
+    role_id: str,
+    payload: RoleContactsAdd,
+    current_user: dict = Depends(require_permission(CONTACT_EDIT)),
+    db: Session = Depends(get_db),
+):
+    _ = current_user
+    role = _role_or_404(db, role_id)
+    ids = list(dict.fromkeys(payload.contact_ids))
+    for cid in ids:
+        _contact_or_404(db, cid)
+    held = {c for (c,) in db.query(ContactChatbotRole.contact_id).filter(ContactChatbotRole.role_id == role.id)}
+    for cid in ids:
+        if cid not in held:
+            db.add(ContactChatbotRole(contact_id=cid, role_id=role.id))
+    db.commit()
+    return list_role_contacts(role.id, current_user, db)
+
+
+@router.delete("/roles/{role_id}/contacts/{contact_id}", status_code=204)
+def remove_role_contact(
+    role_id: str,
+    contact_id: str,
+    current_user: dict = Depends(require_permission(CONTACT_EDIT)),
+    db: Session = Depends(get_db),
+):
+    _ = current_user
+    role = _role_or_404(db, role_id)
+    _contact_or_404(db, contact_id)
+    unlink_role_contact(db, role.id, contact_id)
+    db.commit()
+    return Response(status_code=204)
+
+
+def unlink_role_contact(db: Session, role_id: str, contact_id: str) -> None:
+    """The unlink both the route and the deferred `chatbot_role_contact.unlink` action run (no commit)."""
+    for row in db.query(ContactChatbotRole).filter(
+        ContactChatbotRole.role_id == role_id, ContactChatbotRole.contact_id == contact_id
+    ):
+        db.delete(row)
 
 
 # --- contact access -------------------------------------------------------------------------

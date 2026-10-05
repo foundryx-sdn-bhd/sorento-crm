@@ -26,6 +26,7 @@ export interface RegistryDomain {
   access_label?: string | null;
   access_description?: string | null;
   escalation_agent_code?: string | null;
+  escalation_agent_name?: string | null;
   escalation_team_code?: string | null;
   escalation_tier1_team?: string | null;
   fields: RegistryField[];
@@ -137,6 +138,13 @@ export function setRoleGrants(id: string, grants: RoleGrants): Promise<ChatbotRo
 
 export function listRoleContacts(id: string): Promise<RoleContact[]> {
   return send(`${BASE}/roles/${id}/contacts`, 'Failed to load the role contacts');
+}
+
+export function addRoleContacts(id: string, contactIds: string[]): Promise<RoleContact[]> {
+  return send(`${BASE}/roles/${id}/contacts`, 'Failed to add the contacts', {
+    method: 'POST',
+    body: { contact_ids: contactIds },
+  });
 }
 
 export function getContactAccess(contactId: string): Promise<ContactAccess> {

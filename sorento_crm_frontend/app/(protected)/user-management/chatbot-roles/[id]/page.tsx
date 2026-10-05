@@ -1,38 +1,112 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
+import { Plus, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Container } from '@/components/common/container';
 import { PageHeader } from '@/components/common/PageHeader';
+import RecordNavigation from '@/components/common/RecordNavigation';
+import { SearchableMultiSelect } from '@/components/common/SearchableMultiSelect';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import AccessSummary from '@/components/chatbot-access/AccessSummary';
 import AccessSwitches from '@/components/chatbot-access/AccessSwitches';
 import SaveBar from '@/components/chatbot-access/SaveBar';
+import { useDeferredAction } from '@/hooks/useDeferredAction';
+import { useDeferredRowAction } from '@/hooks/useDeferredRowAction';
 import {
+  useAddRoleContacts,
   useChatbotRegistry,
   useChatbotRole,
   useChatbotRoleContacts,
-  useDeleteChatbotRole,
+  useChatbotRoles,
   useSetRoleGrants,
   useUpdateChatbotRole,
 } from '@/hooks/useChatbotAccess';
 import { TIER_OPTIONS } from '@/lib/chatbot-access/labels';
 import { buildRows, diffGrants, toggleGrant, type GrantSet } from '@/lib/chatbot-access/tree';
+import { getContacts } from '@/app/(protected)/user-management/contacts/[id]/services/contactService';
 import type { AudienceTier, ChatbotRole, Registry } from '@/services/chatbotAccessService';
 
-const WRAP = 'mx-auto w-full max-w-[1920px] px-4 lg:px-6';
+const LIST_PATH = '/user-management/chatbot-roles';
 
 function RoleEditor({ role, registry }: { role: ChatbotRole; registry: Registry }) {
   const router = useRouter();
   const contacts = useChatbotRoleContacts(role.id);
   const setGrants = useSetRoleGrants(role.id);
   const update = useUpdateChatbotRole(role.id);
-  const remove = useDeleteChatbotRole();
+  const addContacts = useAddRoleContacts(role.id);
+  const roles = useChatbotRoles();
+  const [addOpen, setAddOpen] = useState(false);
+  const [picked, setPicked] = useState<string[]>([]);
+
+  // Delete asks nothing (D7): the countdown takes the button's place.
+  const deletion = useDeferredAction({
+    actionKey: 'chatbot_role.delete',
+    entityType: 'chatbot_role',
+    entityId: role.id,
+    verb: 'Deleting',
+    subject: role.name,
+    surface: 'inline',
+    watchFromMount: true,
+    successMessage: 'Role deleted',
+    invalidateKeys: [['chatbot-access']],
+    onCommitted: () => router.push(LIST_PATH),
+  });
+  const unlink = useDeferredRowAction({
+    actionKey: 'chatbot_role_contact.unlink',
+    entityType: 'chatbot_role_contact',
+    verb: 'Removing',
+    successMessage: 'Contact removed from the role',
+    invalidateKeys: [['chatbot-access']],
+  });
+
+  const roleIds = (roles.data ?? []).map((r) => r.id);
+  const position = roleIds.indexOf(role.id);
+
+  const held = useMemo(() => contacts.data ?? [], [contacts.data]);
+  const fetchContactOptions = useCallback(
+    async (query: string) => {
+      const heldIds = new Set(held.map((c) => c.id));
+      const page = await getContacts(
+        { pageIndex: 0, pageSize: 50, sorting: [{ id: 'name', desc: false }], searchQuery: query },
+        {},
+      );
+      return page.data
+        .filter((c) => !heldIds.has(c.id))
+        .map((c) => ({
+          value: c.id,
+          label: c.name ? `${c.name} (${c.phone_number})` : c.phone_number,
+        }));
+    },
+    [held],
+  );
+  const submitAdd = () => {
+    if (picked.length === 0) return;
+    addContacts.mutate(
+      { contact_ids: picked },
+      {
+        onSuccess: () => {
+          setAddOpen(false);
+          setPicked([]);
+        },
+      },
+    );
+  };
 
   const saved: GrantSet = useMemo(
     () => ({ domains: role.domains, fields: role.fields }),
@@ -70,7 +144,7 @@ function RoleEditor({ role, registry }: { role: ChatbotRole; registry: Registry 
 
   return (
     <>
-      <div className={WRAP}>
+      <Container>
         <PageHeader
           title={role.name}
           crumbs={[
@@ -79,21 +153,32 @@ function RoleEditor({ role, registry }: { role: ChatbotRole; registry: Registry 
             { title: role.name },
           ]}
           actions={
-            <Button
-              variant="outline"
-              disabled={remove.isPending}
-              onClick={() =>
-                remove.mutate(role.id, {
-                  onSuccess: () => router.push('/user-management/chatbot-roles'),
-                })
-              }
-            >
-              Delete
-            </Button>
+            <div className="flex items-center gap-2">
+              {position >= 0 ? (
+                <RecordNavigation
+                  index={position + 1}
+                  total={roleIds.length}
+                  hasPrevious={position > 0}
+                  hasNext={position < roleIds.length - 1}
+                  onPrevious={() => router.push(`${LIST_PATH}/${roleIds[position - 1]}`)}
+                  onNext={() => router.push(`${LIST_PATH}/${roleIds[position + 1]}`)}
+                  ariaLabel="role"
+                />
+              ) : null}
+              {deletion.countdown ?? (
+                <Button
+                  variant="outline"
+                  disabled={deletion.isPending || deletion.isBlocked}
+                  onClick={() => deletion.start()}
+                >
+                  Delete
+                </Button>
+              )}
+            </div>
           }
         />
-      </div>
-      <div className={`${WRAP} space-y-5`}>
+      </Container>
+      <Container className="space-y-5">
         <div className="text-sm text-muted-foreground">
           {role.contact_count} contact{role.contact_count === 1 ? '' : 's'}
         </div>
@@ -128,27 +213,20 @@ function RoleEditor({ role, registry }: { role: ChatbotRole; registry: Registry 
           <CardHeader>
             <CardTitle>Customers they can ask about</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2">
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="radio"
-                name="customers"
-                aria-label="All customers"
-                checked={seesAll}
-                onChange={() => setSeesAll(true)}
-              />
-              All customers
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="radio"
-                name="customers"
-                aria-label="Only the customers linked to the contact"
-                checked={!seesAll}
-                onChange={() => setSeesAll(false)}
-              />
-              Only the customers linked to the contact
-            </label>
+          <CardContent>
+            <RadioGroup
+              value={seesAll ? 'all' : 'linked'}
+              onValueChange={(v) => setSeesAll(v === 'all')}
+            >
+              <div className="flex items-center gap-2 text-sm">
+                <RadioGroupItem value="all" id="customers-all" />
+                <Label htmlFor="customers-all">All customers</Label>
+              </div>
+              <div className="flex items-center gap-2 text-sm">
+                <RadioGroupItem value="linked" id="customers-linked" />
+                <Label htmlFor="customers-linked">Only the customers linked to the contact</Label>
+              </div>
+            </RadioGroup>
           </CardContent>
         </Card>
 
@@ -168,23 +246,40 @@ function RoleEditor({ role, registry }: { role: ChatbotRole; registry: Registry 
         <Card>
           <CardHeader>
             <CardTitle>Contacts with this role</CardTitle>
+            <Button variant="outline" size="sm" onClick={() => setAddOpen(true)}>
+              <Plus className="size-4 mr-1" />
+              Add contacts
+            </Button>
           </CardHeader>
           <CardContent>
-            {contacts.data && contacts.data.length > 0 ? (
+            {held.length > 0 ? (
               <ul className="divide-y text-sm">
-                {contacts.data.map((c) => (
-                  <li key={c.id} className="py-2">
+                {held.map((c) => (
+                  <li key={c.id} className="flex items-center justify-between gap-2 py-2">
                     <Link
                       href={`/user-management/contacts/${c.id}/access`}
-                      className="hover:underline"
+                      className="truncate hover:underline"
+                      title={c.name ?? ''}
                     >
                       {c.name}
                     </Link>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`Unlink ${c.name ?? 'contact'}`}
+                      disabled={unlink.targetId === `${role.id}:${c.id}`}
+                      onClick={() => unlink.run({ id: `${role.id}:${c.id}`, subject: c.name ?? 'Contact' })}
+                    >
+                      <X className="size-4" />
+                    </Button>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="text-sm text-muted-foreground">No contacts have this role.</p>
+              <div className="py-4 text-center">
+                <p className="text-sm font-medium">No contacts have this role</p>
+                <p className="text-sm text-muted-foreground">Add contacts to give them this role.</p>
+              </div>
             )}
           </CardContent>
         </Card>
@@ -195,7 +290,32 @@ function RoleEditor({ role, registry }: { role: ChatbotRole; registry: Registry 
           onDiscard={discard}
           onSave={save}
         />
-      </div>
+      </Container>
+
+      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add contacts</DialogTitle>
+          </DialogHeader>
+          <DialogBody>
+            <SearchableMultiSelect
+              value={picked}
+              onChange={setPicked}
+              fetchOptions={fetchContactOptions}
+              placeholder="Search contacts"
+              emptyMessage="No contacts match."
+            />
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={submitAdd} disabled={picked.length === 0 || addContacts.isPending}>
+              Add
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
@@ -208,16 +328,16 @@ export default function ChatbotRolePage() {
 
   if (registry.isLoading || role.isLoading) {
     return (
-      <div className={WRAP}>
+      <Container>
         <Skeleton className="h-96 w-full" />
-      </div>
+      </Container>
     );
   }
   if (!registry.data || !role.data) {
     return (
-      <div className={WRAP}>
+      <Container>
         <p className="text-sm text-muted-foreground">This role could not be loaded.</p>
-      </div>
+      </Container>
     );
   }
   const r = role.data;

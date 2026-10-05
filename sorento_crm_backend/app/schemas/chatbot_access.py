@@ -23,6 +23,7 @@ class RegistryDomain(BaseModel):
     access_label: str
     access_description: Optional[str] = None
     escalation_agent_code: Optional[str] = None
+    escalation_agent_name: Optional[str] = None
     escalation_team_code: Optional[str] = None
     escalation_tier1_team: Optional[str] = None
     fields: list[RegistryField]

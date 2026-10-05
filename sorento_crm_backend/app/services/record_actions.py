@@ -132,6 +132,27 @@ def _delete_chatbot_domain(db: Session, payload: dict):
     return None
 
 
+def _delete_chatbot_role(db: Session, payload: dict):
+    """The delete `DELETE /system/chatbot/roles/{id}` runs; a held role is refused 409."""
+    from app.api.v1.system.chatbot_roles import delete_role_row
+    from app.models.chatbot_access import ChatbotRole
+
+    row = db.query(ChatbotRole).filter(ChatbotRole.id == _entity_id(payload)).first()
+    if row is None:
+        return None
+    delete_role_row(db, row)
+    return None
+
+
+def _unlink_chatbot_role_contact(db: Session, payload: dict):
+    """The unlink `DELETE /system/chatbot/roles/{id}/contacts/{cid}` runs; entity_id is `role:contact`."""
+    from app.api.v1.system.chatbot_roles import unlink_role_contact
+
+    role_id, _, contact_id = _entity_id(payload).partition(":")
+    unlink_role_contact(db, role_id, contact_id)
+    return None
+
+
 def _delete_user(db: Session, payload: dict):
     from app.services.user_service import UserService
 
@@ -230,6 +251,28 @@ register(
         window=WINDOW_DESTRUCTIVE,
         permission="master_data.products.delete",
         label="Delete product",
+    )
+)
+
+register(
+    FormAction(
+        key="chatbot_role.delete",
+        entity_types=("chatbot_role",),
+        execute=_delete_chatbot_role,
+        window=WINDOW_DESTRUCTIVE,
+        permission="user_management.reference_data.manage",
+        label="Delete chatbot role",
+    )
+)
+
+register(
+    FormAction(
+        key="chatbot_role_contact.unlink",
+        entity_types=("chatbot_role_contact",),
+        execute=_unlink_chatbot_role_contact,
+        window=WINDOW_REVERSIBLE,
+        permission="user_management.contacts.edit",
+        label="Remove contact from chatbot role",
     )
 )
 

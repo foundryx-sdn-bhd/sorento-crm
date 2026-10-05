@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/lib/toast';
 import {
+  addRoleContacts,
   createRole,
   deleteRole,
   getContactAccess,
@@ -92,6 +93,18 @@ export function useDeleteChatbotRole() {
     onSuccess: () => {
       invalidate();
       toast.success('Role deleted');
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
+export function useAddRoleContacts(id: string) {
+  const invalidate = useInvalidateAccess();
+  return useMutation({
+    mutationFn: (input: { contact_ids: string[] }) => addRoleContacts(id, input.contact_ids),
+    onSuccess: () => {
+      invalidate();
+      toast.success('Contacts added');
     },
     onError: (e: Error) => toast.error(e.message),
   });

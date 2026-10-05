@@ -18,6 +18,7 @@ import { Label } from '@/components/ui/label';
 import { DataGrid } from '@/components/ui/data-grid';
 import { DataGridColumnHeader } from '@/components/ui/data-grid-column-header';
 import { DataGridTable } from '@/components/ui/data-grid-table';
+import { Container } from '@/components/common/container';
 import { PageHeader } from '@/components/common/PageHeader';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { useChatbotRoles, useCreateChatbotRole } from '@/hooks/useChatbotAccess';
@@ -98,7 +99,7 @@ export default function ChatbotRolesPage() {
 
   return (
     <>
-      <div className="mx-auto w-full max-w-[1920px] px-4 lg:px-6">
+      <Container>
         <PageHeader
           title="Chatbot Roles"
           actions={
@@ -108,15 +109,15 @@ export default function ChatbotRolesPage() {
             </Button>
           }
         />
-      </div>
-      <div className="mx-auto w-full max-w-[1920px] px-4 lg:px-6">
+      </Container>
+      <Container>
         <DataGrid
           table={table}
           recordCount={roles.length}
           isLoading={isLoading}
           error={isError ? new Error('Failed to load roles') : undefined}
           emptyMessage="No roles yet."
-          listingKey={null}
+          listingKey="user_management.access_agents.view::chatbot_roles"
           tableLayout={{ width: 'fixed', columnsResizable: true }}
           rowHref={(r: ChatbotRole) => `/user-management/chatbot-roles/${r.id}`}
         >
@@ -127,7 +128,7 @@ export default function ChatbotRolesPage() {
             </CardContent>
           </Card>
         </DataGrid>
-      </div>
+      </Container>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
