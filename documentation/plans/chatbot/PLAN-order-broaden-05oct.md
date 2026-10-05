@@ -1,6 +1,8 @@
 # PLAN: "all products" after a delivery MISS stays an order enquiry (ORDER-BROADEN)
 
-Status: IN PROGRESS (5 Oct 2026). Lane `ORDER-BROADEN`, small fix track (prompt rule +
+Status: BUILT, in review on PR #1495 (5 Oct 2026; reviewer blocker fixed at 5b2c8599, full
+`tests/chatbot` green: 6574 passed, 254 skipped, 33 xfailed; the prompt migration waits for
+crew's confirmation of the #1429 base). Lane `ORDER-BROADEN`, small fix track (prompt rule +
 presentation fix, no migration, no auth change, no UI). Cloud sandbox, LEAD pattern.
 UAC: `order-broaden-acceptance-criteria.md`.
 Behaviour card: `CARD-order-broaden-05oct.md`.
