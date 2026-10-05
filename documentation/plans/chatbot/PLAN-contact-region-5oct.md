@@ -1,6 +1,7 @@
 # PLAN - Contact region (West / East Malaysia)
 
-Status: card filed to crew 5 Oct 2026, awaiting answers (Q1 control shape, Q2 copy access, Q3 list column).
+Status: building. Owner answers 5 Oct: Q1 = multi-select West/East, Q2 = copy regions, Q3 = list Region column + filter.
+Open: owner may rule the expansion literal (East alone = East only); kept in `visible_regions` only, one-line switch.
 Track: M (migration, existing screen). Lane CONTACT-REGION, branch `crew/contact-region`, one PR.
 UAC: `contact-region-acceptance-criteria.md`. Paths under `sorento_crm_backend/app/` unless shown.
 
@@ -22,13 +23,15 @@ drops its own `respond_contacts.regions` column and Regions control and repoints
 2. Response: `RespondContactResponse.regions: list[str] = ["west"]` (`schemas/user.py:~75`) and the hand-built dict in
    `ContactService.contact_to_response_dict` (`services/contact_service.py:~817`).
 3. `eta_policy.contact_regions` (`services/eta_policy.py:72`) reads the column; missing row -> `{west}`. Signature kept.
-4. Copy access (Q2): `contact_access_copy_service.py` copies `regions` beside `SWITCHES` (`:46`).
+4. Copy access (Q2): `contact_access_copy_service.py` snapshot (`:185`), diff (`:356`), summary (`:460`) and write (`:490`) carry `regions` beside `SWITCHES` (`:49`).
+6. List (Q3): `region: Literal['west','east'] | None` query (`api/v1/user_management/contacts.py:104`) -> access_filters -> `RespondContact.regions.contains([code])` in `services/contact_service.py:~247`; list row dict carries `regions`.
 5. Audit: automatic (RespondContact has no `__audit_skip__`, `services/audit_service.py:100`).
 
 ## Frontend
 - `contact.types.ts` + `contactChatbotService.ts`: `regions` read + sent on the chatbot PUT.
 - `ContactChatbotSection.tsx`: Regions control in the switch grid beside "Packing list allowed" (`:225`), options from
-  `lib/packing-list-regions.ts`; `SearchableMultiSelect` (Q1 a) or `SearchableSelect` West only / West + East (Q1 b).
+  `lib/packing-list-regions.ts`; `SearchableMultiSelect` (Q1), at least one region.
+- `ContactsList.tsx`: Regions column (Badge per region) beside Packing list (`:406`) + Region filter beside the access filters (`:112`).
 
 ## Tests (red first, `test(red):` commit alone)
 - `tests/test_contact_regions.py`: AC-CR-1..10 (schema, PUT/GET, 422s, 403, audit, contact_regions).
@@ -36,4 +39,4 @@ drops its own `respond_contacts.regions` column and Regions control and repoints
 - vitest `ContactChatbotSection.regions.test.tsx`: AC-CR-14..16.
 
 ## Not in scope
-Contact access export, contacts list Region column (Q3), guessing region from names (owner rule).
+Contact access export, guessing region from names (owner rule).

@@ -1,6 +1,6 @@
 # UAC - Contact region (West / East Malaysia)
 
-Plan: `PLAN-contact-region-5oct.md`. IDs AC-CR-n.
+Plan: `PLAN-contact-region-5oct.md`. IDs AC-CR-n. Owner answers 5 Oct: Q1 multi-select West/East, Q2 copy regions, Q3 list column + filter.
 
 ## Schema
 - AC-CR-1: `respond_contacts.regions` exists, text[] NOT NULL, server default `{west}`; every existing contact reads `{west}` after upgrade.
@@ -22,10 +22,17 @@ Plan: `PLAN-contact-region-5oct.md`. IDs AC-CR-n.
 - AC-CR-13: staff screens and a bare API key with no contact in play are unfiltered (unchanged).
 
 ## Screen (Contact > Access > Chatbot card)
-- AC-CR-14: the card shows a Regions control with labels "West Malaysia" / "East Malaysia" (from `lib/packing-list-regions.ts`), showing the stored value.
+- AC-CR-14: the card shows a Regions `SearchableMultiSelect` with labels "West Malaysia" / "East Malaysia" (from `lib/packing-list-regions.ts`), showing the stored value.
 - AC-CR-15: changing it saves at once through the card's save, sending `regions`; success toast like the other switches.
 - AC-CR-16: the control cannot be left empty (no save of an empty set).
 - AC-CR-17: no UUID shown; usable and not clipped at 375px and 1280px.
 
-## Copy access (pending Q2)
-- AC-CR-18: "Copy access from contact" copies `regions` with the other chatbot switches and lists "Regions" in the preview.
+## Copy access (Q2 = yes)
+- AC-CR-18: "Copy access from contact" copies `regions` with the other chatbot switches; the preview/diff lists a "Regions" change (labels West Malaysia / East Malaysia) when source and target differ, and no change when equal.
+
+## Contacts list (Q3 = yes)
+- AC-CR-19: the list response carries `regions` per row; the list shows a Regions column (one Badge per region, labels West Malaysia / East Malaysia), explicit `size`, truncate + title.
+- AC-CR-20: list filter `region=west|east` returns contacts whose stored set contains that code (array contains); absent = no filter; other value -> 422.
+
+## Expansion (owner ruling open)
+- AC-CR-21: the stored-set -> visible-set rule lives ONLY in `eta_policy.visible_regions`; no other code expands regions. Today: East held -> {east, west}. If the owner rules "literal", that one function changes and AC-CR-12 becomes: East alone sees East-only and West + East lists, not West-only.
