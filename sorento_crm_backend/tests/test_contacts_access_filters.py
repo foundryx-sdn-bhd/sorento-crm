@@ -28,6 +28,7 @@ from app.models.base import set_company_scope
 from app.models.order import Customer
 from app.services.company_scope import DEFAULT_COMPANY_ID
 from app.services.company_scope_resolver import apply_company_scope
+from app.services.contact_access_copy_service import AGENTS_EDIT_PERMISSION
 from app.services.user_service import UserPermissionService
 
 from tests._mc_lookup_seed import MOCHA_ID, seed_mocha
@@ -36,7 +37,7 @@ from tests._pg_fixture import blank_session, unique_code
 SORENTO = DEFAULT_COMPANY_ID
 CONTACTS = "/api/v1/user-management/contacts/"
 VIEW = "user_management.contacts.view"
-AGENTS_EDIT = "user_management.access_agents.edit"
+AGENTS_EDIT = AGENTS_EDIT_PERMISSION
 COST = "purchase_orders.cost"
 SELLABLE = "inventory.sellable"
 
