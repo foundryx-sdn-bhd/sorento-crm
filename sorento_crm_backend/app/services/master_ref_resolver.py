@@ -24,6 +24,7 @@ from app.models.order import Customer
 from app.models.procurement import Supplier
 from app.models.product import Product
 from app.models.sales_agent import SalesAgent
+from app.services import customer_identity
 from app.services.integration_reference_service import (
     IntegrationReferenceService,
     ReferenceConflict,
@@ -370,14 +371,10 @@ class MasterRefResolver:
         if memo_key in self._memo:
             return self._memo[memo_key]
         if model is Customer:
-            row = (
-                self.db.query(model.id)
-                .filter(func.upper(func.btrim(Customer.customer_code)) == normalized)
-                .order_by(model.id.desc())
-                .filter(model.company_id == self.company_id)
-                .first()
-            )
-            entity_id = str(row[0]) if row else None
+            # DEBTOR-CODE-UNIQUE: one customer per code per company; while a code still
+            # holds several rows (before the merge), the one the merge keeps.
+            row = customer_identity.customer_by_code(self.db, code, company_id=self.company_id)
+            entity_id = str(row.id) if row is not None else None
         else:
             company_id = (
                 self.company_id if _is_company_scoped(model.__tablename__) else None

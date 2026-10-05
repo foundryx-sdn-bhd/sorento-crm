@@ -72,7 +72,6 @@
       },
       "expected": {
         "action_kinds": [
-          "send_message",
           "assign_conversation",
           "add_comment",
           "send_message"

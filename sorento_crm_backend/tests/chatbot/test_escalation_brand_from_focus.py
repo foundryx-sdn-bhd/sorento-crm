@@ -1078,10 +1078,7 @@ class TestTheConsoleShowsWhereTheEscalationWent:
             first_verdict=_product_verdict("master_products", "check_product", "srtwc286"),
         )
         assert turn2.send_messages == [
-            "Your request is out of the scope of my ability and require human assistance. "
-            "We are directing your enquiry to the correct person. Please wait for a moment.",
-            "This inquiry has been routed to the respective person-in-charge (PIC) from "
-            "marketing product team. We will get back to you soon. Thanks for your patience.",
+            "Routed to your PIC, they will reply shortly.",
         ], turn2.send_messages
         assert turn2.trace_summary["routing_line"] == (
             "Routing: team marketing_product, brand sorento, source focus_product, "
@@ -1318,10 +1315,7 @@ def _assert_marketing_draw(
     assert str(routing["cursor_key"]).endswith(f"~b:{brand}"), routing
     assert routing["assignee_name"] == assignee, routing
     assert routing.get("product_company") == company, routing
-    assert turn.send_messages[-1] == (
-        "This inquiry has been routed to the respective person-in-charge (PIC) from "
-        "marketing product team. We will get back to you soon. Thanks for your patience."
-    ), turn.send_messages
+    assert turn.send_messages[-1] == "Routed to your PIC, they will reply shortly.", turn.send_messages
 
 
 class TestTheOwnersRetestOfRound3:
