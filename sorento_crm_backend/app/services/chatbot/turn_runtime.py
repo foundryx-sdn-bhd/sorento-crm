@@ -35,6 +35,7 @@ from app.services.chatbot import jsc
 from app.services.chatbot.contracts import (
     DEFAULT_SUGGESTED_AGENT,
     DEFAULT_SUGGESTED_TEAM,
+    ORDER_OR_SALES_DOMAINS,
     SALES_REPORT_GROUP_BYS,
     named_count,
 )
@@ -1395,7 +1396,16 @@ def with_routing_agent_default(
 
 
 def _report_status_means_order_domain(out: dict[str, Any]) -> None:
-    """A REPORT status word always routes to the `order` domain. Mutates `out`.
+    """A REPORT status word always routes to its report's domain: `sales` for a sales
+    figure status, `order` for every other one. Mutates `out`.
+
+    PLAN-prompt-dynamic-30sep D9 (owner, 30 Sep 2026: "better own sales domain otherwise
+    jumble up with order"): `contracts.SALES_FIGURE_STATUSES` (`sales_report`,
+    `sales_analysis`, `top_selling`) is the `sales` domain. The parser prompt still
+    teaches `domain_hint "order"` for those asks in the owner's wording, so this seam maps
+    them; `order` is corrected to `sales` here the same way `master_products` is. When
+    `asks` names several domains, an `order` ask of the sales kind becomes `sales` in
+    place and every other ask is left as it is.
 
     Main's finding 3(b) (owner live testing, 19 Sep 2026,
     PLAN-chatbot-sales-report.md), re-homed: it lived in the retired
@@ -1411,6 +1421,7 @@ def _report_status_means_order_domain(out: dict[str, Any]) -> None:
     rule already shares between the outstanding buckets and `sales_report`, so this
     extends one existing normalisation rather than adding a second.
     """
+    from app.services.chatbot import contracts
     from app.services.chatbot.lanes.business import _LOW_STOCK_INTENT
     from app.services.chatbot.lanes.business.resolve_gate import OUTSTANDING_ORDER_STATUS
 
@@ -1424,21 +1435,41 @@ def _report_status_means_order_domain(out: dict[str, Any]) -> None:
         # `-lsr-002`, `handbuilt-rp-003`: `pending options ['stock'] -> ['orders']`).
         # Same precedence, stated at both seams.
         return
+    report_statuses = OUTSTANDING_ORDER_STATUS | set(contracts.SALES_FIGURE_STATUSES)
     status = jsc.js_string(out.get("status") or "").strip()
-    if status not in OUTSTANDING_ORDER_STATUS:
+    # PROMPT-DYNAMIC reviewer pass 2: the parser can now name `sales` off the switch word
+    # ("sales orders for hanlim") with no sales status. Only the three sales statuses are
+    # the sales domain; anything else under `sales` is the order ask it was before R7.
+    if out.get("domain_hint") == contracts.SALES_DOMAIN:
+        either = {status, jsc.js_string(out.get("order_status") or "").strip()}
+        if not either & set(contracts.SALES_FIGURE_STATUSES):
+            out["domain_hint"] = "order"
+            out["domain_corrected"] = "sales->order (no sales status)"
+    if status not in report_statuses:
         status = jsc.js_string(out.get("order_status") or "").strip()
-    if status not in OUTSTANDING_ORDER_STATUS:
+    if status not in report_statuses:
         return
+    target = contracts.SALES_DOMAIN if status in contracts.SALES_FIGURE_STATUSES else "order"
     prior = out.get("domain_hint")
-    if prior == "order":
+    if prior == target:
         return
     # A message that names SEVERAL domains ("stock and outstanding for 7445") states its
     # own list and this rule is not about it: `asks` is what the plan fans out on, and
-    # rewriting the single hint under it would drop the other ask.
-    if out.get("asks"):
+    # rewriting the single hint under it would drop the other ask. Renaming the `order`
+    # ask of a sales status to `sales` drops nothing, so that one rename is made.
+    asks = out.get("asks")
+    if asks:
+        if target == contracts.SALES_DOMAIN and isinstance(asks, list):
+            out["asks"] = [
+                {**a, "domain": target} if isinstance(a, dict) and a.get("domain") == "order" else a
+                for a in asks
+            ]
+            if prior == "order":
+                out["domain_hint"] = target
+                out["domain_corrected"] = f"order->{target} (order_status {status})"
         return
-    out["domain_hint"] = "order"
-    out["domain_corrected"] = f"{prior}->order (order_status {status})"
+    out["domain_hint"] = target
+    out["domain_corrected"] = f"{prior}->{target} (order_status {status})"
 
 
 def lane_parse_output(
@@ -1984,8 +2015,12 @@ def resolve_kinds(
     # function's own ctx), so the entity still settles onto `focus.brands` exactly as
     # any other confident entity would (`turn/apply.py::_focus_rules`'s generic
     # per-hint grouping) - untouched by either strip.
+    # R7 (PLAN-prompt-dynamic-30sep D9): the `sales` domain too - every sales ask ran
+    # under `order` until it had its own, and its brand word must stay out of the same
+    # shared-resolver fan-out.
     is_order_domain = (
-        jsc.nullish_str(output_block_for_domain.get("domain_hint")).strip().lower() == "order"
+        jsc.nullish_str(output_block_for_domain.get("domain_hint")).strip().lower()
+        in ORDER_OR_SALES_DOMAINS
     )
     live_brands_read = True
     try:
@@ -2789,7 +2824,9 @@ def make_tool_runner(
                 focus.document = ["SO"]
         brand_names: list[str] = []
         ranking = jsc.js_string(lane_out.get("order_status") or "").strip() == "top_selling"
-        if domain == "order" and not ranking:
+        # R7 (PLAN-prompt-dynamic-30sep D9): a sales report or analysis ask carried the
+        # brand under `order` and still does under `sales`; the ranking still does not.
+        if domain in ORDER_OR_SALES_DOMAINS and not ranking:
             # A top selling ranking narrows by its own brand (`focus.top_selling`'s
             # `brand_ids`, `engine._top_selling_narrowing`); written onto this carry it
             # outlived the ranking and filtered the next report by it (PR #1273, main
@@ -4281,6 +4318,9 @@ def envelope_of(
         # LOWSTOCK-FILTER-ASK: the `required_fields` slot a lane left open, recorded on
         # `focus.required_ask` by `engine.py` for the next message only.
         "required_ask": fetched.get("required_ask"),
+        # LOWSTOCK-SEMANTIC: the filters a low stock report ran with, recorded on
+        # `focus.low_stock` by `engine.py` so a refinement narrows that report.
+        "low_stock_frame": fetched.get("low_stock_frame"),
     }
     if raw_fragment is not None:
         # R4 (PLAN-chatbot-answer-half-reattach.md): the UNTOUCHED `business.run_fetch`

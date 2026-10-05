@@ -249,7 +249,7 @@ def test_ac_s1_19_the_seed_rows_carry_the_same_tool():
     assert TOOL in order["tools"] and order["tools"][0] != TOOL
     assert TOOL in CHATBOT_READ_ONLY_TOOLS
     assert TOOL in policy_rows.DATE_PARAM_TOOLS
-    assert TOOL_DOMAINS[TOOL] == "order"
+    assert TOOL_DOMAINS[TOOL] == "sales"  # R7 (PLAN-prompt-dynamic-30sep D9)
 
 
 # ------------------------------------------------ finance S1 (#1309): basis invoiced

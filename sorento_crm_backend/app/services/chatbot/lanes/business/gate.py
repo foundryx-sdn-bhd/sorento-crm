@@ -89,6 +89,9 @@ ALLOWED: dict[str, list[str]] = {
     # `resolve_gate.py`'s own pre-resolver intercept), never sent through the
     # shared resolver's order-domain fan-out to customer/transporter.
     "order": ["order", "customer_order", "transporter", "customer", "product", "warehouse", "brand"],
+    # R7 (PLAN-prompt-dynamic-30sep D9): the `sales` domain gates exactly as its asks did
+    # under `order`.
+    "sales": ["order", "customer_order", "transporter", "customer", "product", "warehouse", "brand"],
     "incoming": ["product", "inbound_shipment", "category", "brand"],
     "forms": ["form"],
     "portal_link": [],
@@ -146,6 +149,7 @@ ALLOWS_EMPTY: dict[str, bool] = {
     "product_attachment": False,
     "inventory": False,
     "order": False,
+    "sales": False,
     # PLAN-po-spo-warehouse-29sep W1: a bare "PO" lists the open book, as the old pass-through did.
     "purchase_order": True,
 }

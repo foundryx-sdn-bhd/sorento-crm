@@ -95,6 +95,7 @@ class TestTheAddendumIsTaught:
             ACCOUNT_LEDGER_ADDENDUM,
             ESCALATION_CONFIRMATION_ADDENDUM,
             MEMORY_ADDENDUM,
+            LOW_STOCK_FILTERS_ADDENDUM,
             SEMANTIC_PARSER_PROMPT,
         )
 
@@ -102,6 +103,8 @@ class TestTheAddendumIsTaught:
         assert SEMANTIC_PARSER_PROMPT.endswith(MEMORY_ADDENDUM)
         # ACCOUNT_LEDGER_ADDENDUM (ACCOUNT-LEDGER) now sits between this one and MEMORY.
         before_memory = SEMANTIC_PARSER_PROMPT.removesuffix(MEMORY_ADDENDUM).removesuffix(
+            LOW_STOCK_FILTERS_ADDENDUM
+        ).removesuffix(
             ACCOUNT_LEDGER_ADDENDUM
         )
         assert before_memory.endswith(addendum), (

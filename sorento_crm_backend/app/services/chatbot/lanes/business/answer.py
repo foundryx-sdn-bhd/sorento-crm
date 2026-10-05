@@ -240,6 +240,7 @@ DOMAIN_LABELS = {
     "product_attachment": "product attachments",
     "inventory": "stock",
     "order": "orders",
+    "sales": "sales",
     "incoming": "incoming stock",
     "forms": "forms",
     "portal_link": "this request",
@@ -1165,7 +1166,13 @@ _CROSSDOMAIN_RUNG_GRANT: dict[str, str] = {"purchase_order": "purchase_orders.pl
 #: its cost is a different answer from the one asked, so a per-field drop is not enough
 #: (that drop still runs too, belt and braces: AC-18). A domain with no row here is
 #: ungated, same convention as `_CROSSDOMAIN_RUNG_GRANT` above.
-DOMAIN_GRANT_REQUIRED: dict[str, str] = {"purchase_cost": "purchase_orders.cost"}
+#: R7 (PLAN-prompt-dynamic-30sep D9): the `sales` domain is the sales figures, read under
+#: the key every sales figure ask was already gated on (`contracts.SALES_FIGURE_STATUSES`);
+#: `run_fetch` refuses it in that ask's own words.
+DOMAIN_GRANT_REQUIRED: dict[str, str] = {
+    "purchase_cost": "purchase_orders.cost",
+    "sales": "sales_orders.sales_report",
+}
 #: What the refusal CALLS the domain it just refused, for the one registered
 #: `access_denied` template (`canned.field_grant_denied_text`). A plain-language FEATURE
 #: name, not the domain's own label ("last purchase cost") and not the parser's agent
@@ -2260,8 +2267,9 @@ _VOWEL_HEAD_RE = re.compile(r"^[aeiou]", re.IGNORECASE)
 
 # The header describes a DELIVERY ORDER search specifically. It used to gate on "domains the
 # CRM date-filters", which let it fire where it is actively wrong (a container has no
-# customer and nobody date-filters incoming in practice).
-_DATE_SCOPE_DOMAINS = frozenset({"order"})
+# customer and nobody date-filters incoming in practice). R7 (PLAN-prompt-dynamic-30sep
+# D9): `sales` too, whose asks were `order` asks and missed with this header until then.
+_DATE_SCOPE_DOMAINS = frozenset({"order", "sales"})
 
 _ORDER_TYPES = frozenset({"order", "customer_order", "order_number"})
 
@@ -2296,6 +2304,7 @@ NO_TOOL_ID = _NO_TOOL_ID
 
 _SCOPE_WORD = {
     "order": "delivery order",
+    "sales": "sales order",
     "incoming": "incoming shipment",
     # PLAN-po-spo-warehouse-29sep W1: `purchase_order` now has a gate row, so it can miss.
     "purchase_order": "purchase order",
@@ -4826,6 +4835,12 @@ def build_suggest_offer(
     dym_ann = dym_annotate if isinstance(dym_annotate, dict) else None
     dym_meta = jsc.get(dym_ann, "dym_probe_meta") if dym_ann is not None else None
     dym_ok = bool(jsc.truthy(dym_ann) and jsc.truthy(dym_meta) and jsc.get(dym_meta, "ok") is True)
+    # PHOTO-PICKER (owner, 5 Oct 2026, crew answer (a)): the incoming picker's own rule
+    # (`pickers.annotate_incoming`) - a dealer (an "Availability only" contact) is told
+    # nothing about a variant before picking it. Every code is still listed; no stamp and
+    # no has-first sort, on every surface below and for every attachment type.
+    if getattr(profile, "stock_availability_only", False):
+        dym_ok = False
     # #750: `product_attachment` is stamped PER UUID (`probe_uuid_keyed`, Fix 4 / Fix 5), and
     # every surface below keys by the CODE it printed, so the two sets are projected into code
     # space ONCE, here, and the three renders are untouched. A code that cannot be attributed
