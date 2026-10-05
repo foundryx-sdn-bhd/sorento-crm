@@ -53,7 +53,9 @@ def _ask_purchase_order(session_factory, monkeypatch, rows):
         _parser_output(
             domain_hint="purchase_order", intent_hint="check_order", order_status=None, entities=[_entity()],
         ),
-        "purchase orders for heng account 2", attributes=(),
+        # The contact may ask about purchase orders (PARSER-PER-AUDIENCE G2): without the
+        # grant the domain refusal answers first and the account rule is never reached.
+        "purchase orders for heng account 2", attributes=("purchase_orders.placed",),
         resolve_services=_services(rows, {"heng": [FOREIGN]}),
     )
 

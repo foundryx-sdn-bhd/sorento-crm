@@ -200,7 +200,7 @@ _SALES_ASKS = [
         id="sales_report",
     ),
     pytest.param(
-        "sales_analysis", "crm_sales_analysis", SALES_ANALYSIS_HIT(), "total sales this year",
+        "sales_analysis", "crm_sales_analysis", SALES_ANALYSIS_HIT, "total sales this year",
         id="sales_analysis",
     ),
     pytest.param(
@@ -214,6 +214,10 @@ class TestSalesMatrix:
     @pytest.mark.parametrize("grants", AUDIENCES)
     @pytest.mark.parametrize("status,tool,hit,body", _SALES_ASKS)
     def test_sales_figure_ask(self, session_factory, monkeypatch, grants, status, tool, hit, body) -> None:
+        # Built here, not at collection: it presents through the MCP package, which the
+        # backend image does not ship (pytest.skip outside a test breaks collect-only).
+        if callable(hit):
+            hit = hit()
         entities = _qf()["entities"] if status == "sales_report" else []
         extra = (
             {"rank_by": "quantity", "basis": None, "rank_group": None, "top_n": 5}

@@ -174,12 +174,14 @@ def _outstanding_filters_from(entities: Any, semantic_input: dict[str, Any]) -> 
 
 
 def _low_stock_not_enabled() -> dict[str, Any]:
-    """AC-64: refuse the low stock ask BEFORE any fetch, with ONE line and nothing else.
+    """AC-64: refuse the low stock ask BEFORE any fetch.
 
-    A TERMINAL answer (`has_result: True`, the shape of `_sales_report_not_enabled`):
-    the refusal reaches the customer verbatim. It used to ride the lane's `not_found`
-    route into the miss half, and the miss composer replaced it with the inventory
-    domain's generic "Could not find inventory" line (PARSER-PER-AUDIENCE finding).
+    The refusal line reaches the customer verbatim (`lane_text`), and the turn still
+    offers the stock team picker after it, the owner-recorded shape the console journeys
+    pin (lsr-001, lsr-002, rp-003): `has_result: False` makes the envelope a miss, so the
+    composer arms the team pick. No `outcome: not_found`: that sent the fragment into the
+    miss half, whose composer replaced the line with the inventory domain's generic
+    "Could not find inventory" (PARSER-PER-AUDIENCE finding).
 
     No tool is called, so no reorder run is created - which is the whole point of gating
     here rather than letting the route answer 403 after the fetch.
@@ -191,7 +193,7 @@ def _low_stock_not_enabled() -> dict[str, Any]:
         "attachments": [],
         "action_links": [],
         "last_updated_at": None,
-        "has_result": True,
+        "has_result": False,
         "alternatives": [],
         "relaxed_axis": None,
         "field_access": None,
@@ -206,8 +208,8 @@ def _low_stock_not_enabled() -> dict[str, Any]:
         "delegate": DELEGATE,
         "delegate_payload": {"fetch": item},
         "fetch": item,
-        # States on the fragment that the team picker follows, for a reader of the
-        # fragment or its trace; the miss half is NOT entered (no `not_found` outcome).
+        # The team picker follows the line; the miss half is NOT entered (no
+        # `not_found` outcome), so the line is not replaced.
         "escalate": True,
         "response": LOW_STOCK_NOT_ENABLED_MESSAGE,
     }
