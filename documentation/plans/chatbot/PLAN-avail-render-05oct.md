@@ -1,6 +1,6 @@
 # PLAN: availability-mode wording and discontinued marker (AVAIL-RENDER)
 
-Status: Build. Track: small fix (rendering only, no migration, no auth/RBAC change, no new
+Status: Review (PR #1493). Track: small fix (rendering only, no migration, no auth/RBAC change, no new
 ingest surface, no prompt change, no UI).
 
 Owner ask (5 Oct 2026, live traces, contact on AVAILABILITY stock access, prompt v42):

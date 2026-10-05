@@ -70,6 +70,21 @@ Rendering:
 FIELD_KEYS (slice 1): company_name, product_code, product_name, warehouse, system_location,
 quantity_on_hand, open_so_qty -> Outstanding, total_on_hand -> Total.
 
+Availability tails since AVAIL-MODE-REPLIES (#1430) and AVAIL-RENDER (PR #1493, owner 5 Oct 2026):
+the status mark (✅ ❌ 🚫) is not text and stays as printed; the sentence after it is the row.
+`{available} available. Please refer to your salesman.` is retired (nothing prints it).
+
+| English | ms | zh |
+|---|---|---|
+| Got stock. | Stok ada. | 有库存。 |
+| Got stock, {available} available. | Stok ada, {available} tersedia. | 有库存，可供 {available} 件。 |
+| No stock and no incoming. Please refer to your salesman. | Tiada stok dan tiada stok masuk. Sila rujuk jurujual anda. | 没有库存，也没有到货。请联系您的销售员。 |
+| ETA {eta}. | ETA {eta}. | ETA {eta}。 |
+| No ETA | Tiada ETA | 暂无 ETA |
+
+The discontinued marker under an availability or dealer ETA line is the same flag line
+compact/detailed print (`PRODUCT DISCONTINUED`, above).
+
 ## Criteria
 
 - **AC-CL01:** every catalog entry has ms and zh, and each passes `tokens_match`.
