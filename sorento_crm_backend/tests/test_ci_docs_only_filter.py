@@ -995,6 +995,25 @@ def test_ci_gate_needs_every_test_and_validate_job():
     assert set(jobs["ci-gate"]["needs"]) == expected, jobs["ci-gate"]["needs"]
 
 
+def test_ci_gate_reports_a_different_name_for_the_full_suite():
+    """A ruleset reads the latest check of a name on the head: `ci` must not
+    stand in for `ci-full`, so the full run reports as `CI gate (full)`."""
+    name = _expression(re.search(r"^    name: (.*)$", _job_block("ci-gate"), re.M).group(1))
+    github = lambda event, label=None: {"github": {"event_name": event, "event": {"label": {"name": label}} if label else {}}}
+    assert _gh_eval(name, github("pull_request", "ci")) == "CI gate"
+    assert _gh_eval(name, github("pull_request", "ci-full")) == "CI gate (full)"
+    for event in ("merge_group", "schedule", "workflow_dispatch"):
+        assert _gh_eval(name, github(event)) == "CI gate (full)", event
+
+
+def test_changes_job_token_can_read_the_pr_files_and_the_nightly_runs():
+    """Private repo: a restricted default token would fail both `gh api` calls
+    and the fail-safe would turn every `ci` run into every area changed."""
+    block = _job_block("changes")
+    perms = re.search(r"^    permissions:\n((?:      .*\n)+)", block, re.M).group(1)
+    assert {"contents: read", "pull-requests: read", "actions: read"} <= {line.strip() for line in perms.splitlines()}
+
+
 def test_ci_gate_runs_on_every_gated_event_and_on_nothing_else():
     assert _simulate("pull_request", label="ci", outputs=TESTS_ONLY_OUTPUTS)["ci-gate"] == "success"
     assert _simulate("pull_request", label="ci-full", outputs=FULL_PIPELINE)["ci-gate"] == "success"

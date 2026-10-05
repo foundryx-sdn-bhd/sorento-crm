@@ -53,10 +53,15 @@ gate" was the full suite on most PRs.
    group: a `ci-full` added while `ci` runs makes the cheap run redundant, and a `ci` added
    while `ci-full` runs means the head moved, so the full run on the old head would be
    about 200 job-minutes of waste.
-4. A final `CI gate` job (`if: always()`) that fails only when a needed job failed or was
-   cancelled, so a path-filtered run still reports one green check. The ruleset
+4. A final gate job (`if: always()`) that fails only when a needed job failed or was
+   cancelled, so a path-filtered run still reports one green check. It reports as `CI gate`
+   on a `ci` run and `CI gate (full)` on every full-suite run (reviewer finding: one name
+   would let a green `ci` run stand in for a `ci-full` that never ran). The ruleset
    `protect-main-branch` requires the five fast-gate names only (crew, 5 Oct); those are
-   untouched and still report on every `ci` and `ci-full` run.
+   untouched and still report on every `ci` and `ci-full` run. Requiring `CI gate (full)`
+   is the owner's lever to make a green `ci-full` a merge condition.
+   The `changes` job declares `permissions` (contents, pull-requests, actions: read) so its
+   two `gh api` calls keep working once the repo is private (reviewer finding).
 5. Deploy steps, image builds, secrets and the nightly smoke workflow's content are not
    touched (the smoke already has `timeout-minutes: 120`).
 6. One page in `documentation/reference/CI-LABELS-AND-MINUTES.md`: what `ci` and `ci-full`

@@ -1,8 +1,9 @@
 name: Build and Deploy Sorento
 
 on:
-  # A push to main runs ONLY the alembic fast gate (`check-migration-heads`,
-  # about 20 seconds): no test suite, no image build, no deploy. Owner
+  # A push to main runs ONLY the fast gates (`check-migration-heads`, the
+  # PII guard and gitleaks, about a minute): no test suite, no image build,
+  # no deploy. Owner
   # decision 2026-09-29 23:05: "control the running of main branch CI so not
   # every merge will trigger the CI automatically", and a live deploy waits
   # for the owner's approval. A release is the `workflow_dispatch` below.
@@ -39,9 +40,11 @@ on:
   # five fast-gate names only ("Single alembic head (fast gate)", "Changed
   # areas", "Validate backend imports", "Validate MCP imports", "Type-check
   # frontend"; crew, 5 Oct 2026), which both labels report; a path-filtered
-  # job reports "skipped", which a ruleset accepts. The `CI gate` job at the
-  # bottom is the one name to require instead, should the owner want a
-  # single check that also covers the shards on a `ci-full` run.
+  # job reports "skipped", which a ruleset accepts. The gate job at the
+  # bottom reports as `CI gate` on a `ci` run and as `CI gate (full)` on a
+  # `ci-full` run (and on the queue, the nightly and a release): requiring
+  # `CI gate (full)` makes a green `ci-full` on the head being merged a
+  # condition of the merge, which the five names above do not.
   pull_request:
     branches:
       - main
@@ -369,6 +372,16 @@ jobs:
     if: >-
       github.event_name != 'push'
       && (github.event_name != 'pull_request' || github.event.label.name == 'ci' || github.event.label.name == 'ci-full')
+    # Explicit, because the repo is going private: the PR file list needs
+    # pull-requests read and the nightly's last-green lookup needs actions
+    # read. With the account default at "restricted" both calls would fail,
+    # and the fail-safe below turns a failed call into every area changed:
+    # a `ci` run would then cost about 90 minutes instead of about 20 and
+    # the nightly would never skip, silently. contents read is the checkout.
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
@@ -393,6 +406,8 @@ jobs:
           SKIP_TESTS: ${{ inputs.skip_tests }}
           # push: the range main moved by. `before` is the zero SHA only on a
           # branch-creation push, which main never sees; guarded anyway.
+          # schedule: PUSH_AFTER is main's head, compared with the last
+          # green nightly's.
           PUSH_BEFORE: ${{ github.event.before }}
           PUSH_AFTER: ${{ github.sha }}
           # merge_group: the candidate merge result against the base it was
@@ -1887,15 +1902,27 @@ jobs:
   # path filter at work, and the test jobs only skip through `changes`,
   # which must itself have succeeded. So a docs-only `ci` run reports this
   # green with nothing but the fast gates, and a `ci-full` run reports it
-  # red when a shard fails. The ruleset requires the five fast-gate names
-  # today (trigger comment); this is the one name to require instead or
-  # beside them, so that a `ci-full` shard failure also blocks the merge
-  # (owner's call, not this file's). Only on a `ci` / `ci-full` label, a
-  # merge-queue entry, a nightly or a release: never on another label (its
-  # run skips everything, and a green gate on it would be a lie) and never
-  # on a push to main (the alembic gate alone, by owner decision).
+  # red when a shard fails.
+  #
+  # Two NAMES, one job: `CI gate` on a `ci` run, `CI gate (full)` on every
+  # run of the full suite (`ci-full`, a merge-queue entry, the nightly, a
+  # release). A ruleset reads the latest check run of a required name on
+  # the head commit, so a single name would let a green `ci` run stand in
+  # for a `ci-full` that never ran, or ran red before it (reviewer, 5 Oct
+  # 2026). Requiring `CI gate (full)` is therefore what makes a green
+  # `ci-full` on the head being merged a condition of the merge; the five
+  # fast-gate names the ruleset requires today do not (owner's call, not
+  # this file's). `always()` rather than `!cancelled()` on purpose: a run
+  # cancelled by the concurrency group then posts a red gate for the old
+  # head instead of a "skipped" one, which a ruleset would accept.
+  #
+  # Only on a `ci` / `ci-full` label, a merge-queue entry, a nightly or a
+  # release: never on another label (its run skips everything, and a green
+  # gate on it would be a lie) and never on a push to main (the fast gates
+  # alone, by owner decision). Asserted by test_ci_gate_* in
+  # sorento_crm_backend/tests/test_ci_docs_only_filter.py.
   ci-gate:
-    name: CI gate
+    name: ${{ (github.event_name == 'pull_request' && github.event.label.name == 'ci' && 'CI gate') || 'CI gate (full)' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs:
@@ -1917,8 +1944,6 @@ jobs:
       && github.event_name != 'push'
       && (github.event_name != 'pull_request' || github.event.label.name == 'ci' || github.event.label.name == 'ci-full')
     steps:
-      # Asserted by sorento_crm_backend/tests/test_ci_docs_only_filter.py
-      # (test_ci_gate_*), which runs this step's shell with canned `needs`.
       - name: Fail when a needed job failed or was cancelled
         env:
           NEEDS: ${{ toJSON(needs) }}

@@ -10,15 +10,17 @@ comments are the authority on the mechanics; this page is the operator's view.
 | Trigger | Runs | Job-minutes (typical) |
 | --- | --- | --- |
 | PR labelled `ci` | The cheap gate: alembic single head, PII guard, gitleaks, changed areas, validate backend and MCP imports, type-check and vitest only when the frontend changed, the SCM shards only when SCM paths changed, and the changed backend tests (the PR's changed test files plus the files that import a changed module, up to 3600 estimated CPU-s). The six main backend shards never run here. | 12 to 25 for a backend-only change, up to about 90 when frontend and SCM both changed |
-| PR labelled `ci-full` | The full suite, the merge gate: everything above plus the six main backend shards and the serial entry, the three SCM shards, the four vitest shards and the type-check, whatever changed. Deploys nothing. | 190 to 230 |
+| PR labelled `ci-full` | The full suite, the merge gate: the fast gates and validate imports, plus the six main backend shards and the serial entry, the three SCM shards, the four vitest shards and the type-check, whatever changed (the changed-tests job skips: the shards cover every file). Deploys nothing. | 190 to 230 |
 | `workflow_dispatch` on main (the release) | The full suite, then build images and the owner-approved deploy. With `skip_tests=true`, the build and the deploy only. | 230, or about 15 with `skip_tests` |
 | `schedule` (nightly, 03:17 Malaysia time) | The full suite on main's head, unless the last green nightly already tested that head (then the fast gates only, under a minute). Deploys nothing. | 200 on a day main moved, under 2 otherwise |
 | Push to main | The alembic single-head gate, PII guard and gitleaks. No tests, no deploy. | under 2 |
 | Any other label | Nothing (every job skips). | under 1 |
 
-Every run also reports `CI gate`, one job that fails only when a needed job failed, was
-cancelled or timed out. A job skipped by a path filter does not fail it, so a docs-only `ci`
-run is green with the fast gates alone.
+Every labelled, queued, nightly or release run also reports one gate job that fails only when
+a needed job failed, was cancelled or timed out: `CI gate` on a `ci` run, `CI gate (full)` on
+every run of the full suite. A job skipped by a path filter does not fail it, so a docs-only
+`ci` run is green with the fast gates alone. A push to main or any other label reports no
+gate.
 
 ## The labels
 
@@ -43,8 +45,9 @@ The ruleset `protect-main-branch` requires five check names: `Single alembic hea
 gate)`, `Changed areas`, `Validate backend imports`, `Validate MCP imports` and `Type-check
 frontend`. Both labels report all five (a path-filtered one reports "skipped", which a ruleset
 accepts). The ruleset does not require any shard, so a merge on a `ci`-only PR is possible by
-hand; the `ci-full` run before merge is crew discipline, or the owner adds `CI gate` to the
-required checks, which makes a failed shard on the last `ci-full` run block the merge.
+hand; the `ci-full` run before merge is crew discipline, or the owner adds `CI gate (full)` to
+the required checks, which makes a green `ci-full` on the head being merged a condition of the
+merge (a `ci` run reports `CI gate`, a different name, so it cannot stand in).
 
 ## Timeouts
 
@@ -99,5 +102,5 @@ fewer full runs. The levers, cheapest first:
 - A period: crew's `ci_minutes.py` (the script behind the numbers above) lists every run of a
   window with `gh run list --json databaseId,event,createdAt` and sums the jobs the same way.
 - The skip reasons: a `ci` run's `Changed areas` job log says which areas changed, which test
-  files were selected and whether the selection was above the budget; the `CI gate` job log
+  files were selected and whether the selection was above the budget; the gate job's log
   lists every needed job's result.
