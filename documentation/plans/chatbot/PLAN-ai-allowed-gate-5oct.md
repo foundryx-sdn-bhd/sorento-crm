@@ -76,7 +76,12 @@ decides who the AI replies to; a contact not allowed, or unknown to the CRM, see
   FE `chatbotTurn.types.ts` BranchKind, `turnPresentation.ts` LANE_WORDS + `turnHeadline` case
   ("Not allowed", tone ok). The console needs no change: `useChatbotConsole.ts:95` already renders a
   "(no reply)" bubble carrying the branch-kind chip when a turn sends nothing.
-- n8n untouched: the response is `delegate: null, actions: [], branch_kind: "ai_not_allowed"`.
+- n8n untouched. Crew checked the LIVE consume-main S7 flow (5 Oct): after chat-turn the only
+  Switch is head-arm keyed on `$json.duplicate` (fallback "finished"), split-actions maps
+  `actions || []` so an empty list sends nothing, `reply.text` is never read, no node reads
+  `status`/`branch_kind`/`delegate`, and no respond.io field is written after chat-turn. Hard
+  requirement on the gated `TurnResult`: `duplicate=False`, `actions=[]`, `delegate=None`,
+  `reply={"text": "", "quick_replies": None}`, exactly an empty media-denied result.
 
 ### Contact card, list, copy, system API, script
 - `ContactChatbotUpdate.chatbot_allowed: bool | None` (`api/v1/user_management/contacts.py:363`),
