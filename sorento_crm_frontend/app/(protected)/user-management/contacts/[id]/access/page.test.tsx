@@ -11,6 +11,23 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import ContactAccessPage from './page';
 
+class ResizeObserverStub {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = ResizeObserverStub;
+if (!window.matchMedia) {
+  (window as unknown as { matchMedia: unknown }).matchMedia = () => ({
+    matches: false,
+    addEventListener() {},
+    removeEventListener() {},
+    addListener() {},
+    removeListener() {},
+    dispatchEvent: () => false,
+  });
+}
+
 const mutate = vi.fn();
 const view = vi.hoisted(() => ({ withAgent: true, extraOverrides: 0 }));
 
@@ -19,10 +36,6 @@ vi.mock('@/components/ui/collapsible', () => ({
   CollapsibleTrigger: ({ children }: { children: React.ReactNode }) => <button type="button">{children}</button>,
   CollapsibleContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
-vi.mock('@/components/ui/data-grid', () => ({
-  DataGrid: ({ children }: { children: React.ReactNode }) => <div data-testid="data-grid">{children}</div>,
-}));
-vi.mock('@/components/ui/data-grid-table', () => ({ DataGridTable: () => <div data-testid="data-grid-table" /> }));
 vi.mock('@/lib/api', () => ({ apiFetch: () => new Promise(() => {}) }));
 vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock('next/navigation', () => ({
@@ -138,8 +151,10 @@ describe('Contact Access tab (v8)', () => {
   it('S6 Advanced is a Collapsible holding a DataGrid, not a raw table', () => {
     renderPage();
     expect(screen.getAllByTestId('collapsible').length).toBeGreaterThan(0);
-    expect(screen.getAllByTestId('data-grid').length).toBeGreaterThan(0);
-    expect(document.querySelector('table')).toBeNull();
+    // Every table on the page is the DataGrid's own, never a hand-written one.
+    const tables = Array.from(document.querySelectorAll('table'));
+    expect(tables.length).toBeGreaterThan(0);
+    for (const t of tables) expect(t.getAttribute('data-slot')).toBe('data-grid-table');
   });
 
   it('S6 Advanced shows an empty state when no granted domain has an agent', () => {

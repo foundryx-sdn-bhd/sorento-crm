@@ -38,6 +38,16 @@ def _domain_json(client, name):
     return {d["name"]: d for d in resp.json()["domains"]}[name]
 
 
+def _all_companies(db):
+    """An all-companies scope (None); the request-entry resolver would otherwise leave UNSET."""
+    from app.main import app
+    from app.models.base import set_company_scope
+    from app.services.company_scope_resolver import apply_company_scope
+
+    app.dependency_overrides[apply_company_scope] = lambda: None
+    set_company_scope(db, None)
+
+
 def _team(db, name, company_id=DEFAULT_COMPANY_ID):
     from app.models.access import Team
 
@@ -109,6 +119,7 @@ class TestRegistryLabels:
 
     def test_tier1_team_names_only_joined_with_comma_space(self, client, db):
         self._two_company_tier1(db)
+        _all_companies(db)
         assert _domain_json(client, "zzt_esc")["escalation_tier1_team"] == "Zzt Tier One A, Zzt Tier One B"
 
     def test_company_scoped_session_sees_only_its_own_tier1_team(self, client, db):
@@ -129,6 +140,7 @@ class TestRegistryLabels:
         _agent_team(db, agent, "zzt_one_set", _team(db, "Zzt Only Tier One"), 1)
         _agent_team(db, agent, "zzt_one_set", _team(db, "Zzt Escalation"), 2)
         db.commit()
+        _all_companies(db)
         assert _domain_json(client, "zzt_one")["escalation_tier1_team"] == "Zzt Only Tier One"
 
     def test_no_team_or_no_agent_is_null(self, client, db):
