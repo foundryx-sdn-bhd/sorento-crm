@@ -13,8 +13,8 @@ category's, else 0. Available = on hand in the contact's allowed locations minus
 
 ## Rules
 
-1. One line per product, "CODE x Q:", then ✅ (got stock) or ❌ (no stock). Never the words.
-2. 1 <= available < Q and Q <= X: `✅ N available.` Q > X: `🚫 the quantity is more than what I can confirm here.` with no count.
+1. One line per product, "CODE x Q:", then ✅ or ❌. AVAIL-RENDER (owner, 5 Oct 2026): the tick SAYS it, `✅ Got stock.`, and does not refer; ❌ and 🚫 lines refer.
+2. 1 <= available < Q and Q <= X: `✅ Got stock, N available.` (no refer). Q > X: `🚫 the quantity is more than what I can confirm here.` with no count.
 3. ETA ask: `CODE: ✅ ETA dd/mm/yyyy`, or `CODE: No ETA`, one line per product (owner hand test, 3 Oct 2026).
 4. A picker never offers "all" and refuses a bare "all" / "all of them" / "semua" (the list stays open). Typing every number is a pick.
 5. Several codes: answered lines (asked order), then `Couldn't find: X, Y.`, then at most one question. Every vague code's list is in that one question, numbered on from the list before it. A code named twice adds up.
@@ -24,17 +24,17 @@ category's, else 0. Available = on hand in the contact's allowed locations minus
 
 | Id | Dealer | Bot (availability) | Full mode |
 | --- | --- | --- | --- |
-| S01 | SRT5674 x 50 (100 on hand) | `SRT5674 x 50: ✅ R` | Total on hand per product |
-| S02 | SRT5674 x 50 (30 on hand, X 100) | `SRT5674 x 50: ✅ 30 available. R` | same |
-| S03 | SRTW2000 x 150 (0, shipment 19/10) | `SRTW2000 x 150: ❌ ETA 19/10/2026.` | same |
+| S01 | SRT5674 x 50 (100 on hand) | `SRT5674 x 50: ✅ Got stock.` | Total on hand per product |
+| S02 | SRT5674 x 50 (30 on hand, X 100) | `SRT5674 x 50: ✅ Got stock, 30 available.` | same |
+| S03 | SRTW2000 x 150 (0, shipment 19/10) | `SRTW2000 x 150: ❌ No stock, ETA 19/10/2026.` | same |
 | S04 | SRT5674 x 5 (0, nothing incoming) | `SRT5674 x 5: ❌ No stock and no incoming. R` | same |
 | S05 | CWCX604 x 300 (X 200) | `CWCX604 x 300: 🚫 the quantity is more than what I can confirm here. R` | no cap in full mode |
 | S06 | CWCX604 x 5 (X not set) | same 🚫 line | no cap |
 | S07 | SRT5674 got stock? / 50 | `How many units of SRT5674?` / the S01 line | no quantity asked |
-| S08 | SRTWC287-S x 3 (prefix of one code) | `SRTWC287-S-150 x 3: ✅ R` | that code's total |
-| S09 | srtwc286 x 10 / 2 | `SRTWC286 x 10: which one?` + 1-10 / `SRTWC286-SH-150 x 10: ✅ R` | every match listed |
+| S08 | SRTWC287-S x 3 (prefix of one code) | `SRTWC287-S-150 x 3: ✅ Got stock.` | that code's total |
+| S09 | srtwc286 x 10 / 2 | `SRTWC286 x 10: which one?` + 1-10 / `SRTWC286-SH-150 x 10: ✅ Got stock.` | every match listed |
 | S10 | check stock srtwc286 / 2 | `SRTWC286 matches 10 products. Which one?` + 1-10 / `How many units of SRTWC286-SH-150?` | every match listed |
-| S11 | ELP3753 x 10 / yes | `Couldn't find ELP3753. Did you mean ELP3754?` / `ELP3754 x 10: ✅ R` | did-you-mean |
+| S11 | ELP3753 x 10 / yes | `Couldn't find ELP3753. Did you mean ELP3754?` / `ELP3754 x 10: ✅ Got stock.` | did-you-mean |
 | S12 | FOO99 x 1 | `Couldn't find: "FOO99" (product).` + R | same sentence |
 
 ## ETA asks
@@ -58,12 +58,12 @@ category's, else 0. Available = on hand in the contact's allowed locations minus
 | S22 | srtwc286 x 10, FOO99 x 1 | `Couldn't find: FOO99.` + picker |
 | S22b | SRT5674 x 5, srtwc286 x 10, srtwc6022 x 4, FOO99 x 1 | answered, missing, both lists |
 | S23 | FOO99 x 1, BAR12 x 2 | `Couldn't find: "FOO99" (product), "BAR12" (product).` + R |
-| S24 | SRT5674 x 2, SRT5674 x 3 | `SRT5674 x 5: ✅ R` |
+| S24 | SRT5674 x 2, SRT5674 x 3 | `SRT5674 x 5: ✅ Got stock.` |
 | S25 | SRT5674, CWCX604 / 1. 10, 2. 5 | point form `How many units for each?` / two lines |
 | S26 | SRT5674, CWCX604, FOO99 | `Couldn't find: FOO99.` + point form |
-| S27 | SRT5674 x 5 and CWCX604 / 7 | answered line + `How many units of CWCX604?` / `CWCX604 x 7: ✅ R` |
+| S27 | SRT5674 x 5 and CWCX604 / 7 | answered line + `How many units of CWCX604?` / `CWCX604 x 7: ✅ Got stock.` |
 | S28 | SRT5674, CWCX604 / 10 | point form / both x 10 |
-| S29 | SRT5674 x 50, SRTW2000 x 150 | `✅ 30 available` line + `❌ ETA` line |
+| S29 | SRT5674 x 50, SRTW2000 x 150 | `✅ Got stock, 30 available.` line + `❌ No stock, ETA` line |
 
 Full mode answers every code with its quantities at once: no quantity question, no picker
 for a family (every match is listed), and the shared miss sentence for codes not found.
@@ -86,8 +86,8 @@ for a family (every match is listed), and the shared miss sentence for codes not
 | --- | --- | --- | --- |
 | S43, S43b | 2 of 3 / 2 of the third one / i want 2 of 3rd product / 2 of no 3 / 2 pcs of 3 | option 2, qty 3 | `SRTWC286-SH-200 x 2: ...` (the engine reads "N of M" itself) |
 | S43c | 2 of 1 and 5 of 3 | options 2 and 5 | `SRTWC286-SH x 2` and `SRTWC286-SH-200 x 5` lines |
-| S44 | SRT5674 x 2, SRT5674 x 3 | one entity, qty 3 (`replace_combine`) | `SRT5674 x 5: ✅ R` |
-| S44b | SRT5674 x 2 for site 3 | qty 2 | `SRT5674 x 2: ✅ R` (a code named once is not summed) |
+| S44 | SRT5674 x 2, SRT5674 x 3 | one entity, qty 3 (`replace_combine`) | `SRT5674 x 5: ✅ Got stock.` |
+| S44b | SRT5674 x 2 for site 3 | qty 2 | `SRT5674 x 2: ✅ Got stock.` (a code named once is not summed) |
 | S45 | ETA SRTW2000 and FOO99 (no shipment) | both codes | `SRTW2000: No ETA`, `Couldn't find: FOO99.`, R |
 
 The dealer ETA view lists every product asked (no shipment: "No ETA") and
@@ -100,7 +100,7 @@ tells dates as dd/mm/yyyy (`eta_policy.dealer_view`, `tests/test_avail_mode_deal
 | Id | Dealer | Bot |
 | --- | --- | --- |
 | S47 | srt5764 xx 10 (the resolver also matched catalogue rows for "xx" / "10") | `Couldn't find SRT5764. Did you mean:` SRT57-CR, SRT5713, SRT5732 numbered 1-3 (tied scores, so their order is the database's collation); never a quantity list of the catalogue |
-| S48 | srt5764 10 / 2 (parsed as a product "2", a pick, or a quantity) | did-you-mean / SRT5713's number gives `SRT5713 x 10: ✅ R` |
+| S48 | srt5764 10 / 2 (parsed as a product "2", a pick, or a quantity) | did-you-mean / SRT5713's number gives `SRT5713 x 10: ✅ Got stock.` |
 | S48b | srtwc286 / 88 | `SRTWC286 x 88: which one?` (a number past the list is the quantity) |
 | S49 | ETA SRTW2000 and MWT5727SS-CR | `SRTW2000: ✅ ETA 19/10/2026`, `MWT5727SS-CR: No ETA`, R |
 | S50, S50c | srtw2000 20 / eta | the stock line / `SRTW2000: ✅ ETA 19/10/2026` + R: SRTW2000 only, never -SS-CR / -A / -NL |
@@ -123,7 +123,20 @@ discarding the resolver's substring rows. Before: `SRTWC286-SH (+9 more)` /
 | Id | Dealer | Bot | Full mode |
 | --- | --- | --- | --- |
 | S55 | wc286 check stock / 2 | `WC286 matches 10 products. Which one?` + 1-10 / `How many units of SRTWC286-SH-150?` | lists all 10 with totals (unchanged) |
-| S55b | wc286 x 5 / 2 | `WC286 x 5: which one?` + 1-10 / `SRTWC286-SH-150 x 5: ✅ R` | same |
-| S55c | rt5674 x 3 (inside one code only) | `SRT5674 x 3: ✅ R`; without a quantity, `How many units of SRT5674?` | same |
-| S55d | SRTWC286-SH x 3 | `SRTWC286-SH x 3: ✅ R`, never its variants | - |
+| S55b | wc286 x 5 / 2 | `WC286 x 5: which one?` + 1-10 / `SRTWC286-SH-150 x 5: ✅ Got stock.` | same |
+| S55c | rt5674 x 3 (inside one code only) | `SRT5674 x 3: ✅ Got stock.`; without a quantity, `How many units of SRT5674?` | same |
+| S55d | SRTWC286-SH x 3 | `SRTWC286-SH x 3: ✅ Got stock.`, never its variants | - |
 | S55e | SRT5674 x 5, wc286 x 10 / 2 | answered line + `WC286 x 10: which one?` / the picked line | - |
+
+## Discontinued products (AVAIL-RENDER, owner 5 Oct 2026)
+
+A product with `is_discontinued` carries the marker compact/detailed print, `⚠️  *(PRODUCT
+DISCONTINUED)*`, directly under its own line, on every availability branch and on its ETA line.
+
+| Id | Dealer | Bot |
+| --- | --- | --- |
+| S60 | SRT5674 x 5 (discontinued, X 0: the owner's SRTWT2634-RG trace) | `SRT5674 x 5: 🚫 the quantity is more than what I can confirm here. R` + marker line |
+| S61 | SRT5674 x 5 (discontinued, 100 on hand) | `SRT5674 x 5: ✅ Got stock.` + marker line |
+| S62 | ETA SRTW2000 and MWT5727SS-CR (SRTW2000 discontinued) | `SRTW2000: ✅ ETA 19/10/2026` + marker line, `MWT5727SS-CR: No ETA`, R |
+| S63 | SRT5674 x 50, CWCX604 x 5 (SRT5674 discontinued, 30 on hand) | `SRT5674 x 50: ✅ Got stock, 30 available.` + marker line, `CWCX604 x 5: ✅ Got stock.` (no marker) |
+| S64 | SRT5674 x 5 (discontinued, nothing on hand, no shipment) | `SRT5674 x 5: ❌ No stock and no incoming. R` + marker line |

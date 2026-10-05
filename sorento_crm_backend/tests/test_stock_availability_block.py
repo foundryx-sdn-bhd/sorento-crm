@@ -355,8 +355,10 @@ def test_entry_shape_is_the_v2_shape_not_1118s(db):
         "eta",
         "packing_list",
         "available_qty",
+        "is_discontinued",
     }
     assert entry["available_qty"] is None
+    assert entry["is_discontinued"] is False
     assert entry["needs_quantity"] is False
     assert entry["requested_qty"] == 10
     assert entry["branch"] == "in_stock"
@@ -423,6 +425,7 @@ def test_per_product_map_wins_scalar_fills(db):
         "eta": None,
         "packing_list": None,
         "available_qty": None,
+        "is_discontinued": False,
     }
 
     with_scalar = StockService(db).list_stock(
@@ -642,7 +645,7 @@ def test_route_rejects_bad_requested_quantities_and_declares_the_new_keys(client
     from app.schemas.inventory import StockAvailabilityEntry
 
     declared = set(StockAvailabilityEntry.model_fields)
-    assert {"branch", "cap_unset", "category_name", "eta", "packing_list"} <= declared
+    assert {"branch", "cap_unset", "category_name", "eta", "packing_list", "is_discontinued"} <= declared
     assert not declared & {"verdict", "running_low", "disclaimer", "available"}
 
     brw = _wh(db, "ZZTBRW")
@@ -1067,3 +1070,91 @@ def test_compact_with_no_product_named_still_pages_the_catalogue(db):
 
     assert [row["product_id"] for row in result["stock_summary"]] == [p.id]
     assert "needs_product" not in result["stock_visibility"]
+
+
+# ============================================================ AVAIL-RENDER (owner, 5 Oct 2026)
+# AC-AR01: the availability entry carries the product's `is_discontinued`, the flag the
+# compact/detailed marker already reads, so the dealer's line can print it too.
+
+
+def test_entry_carries_is_discontinued_answered_or_still_owed(db):
+    brw = _wh(db, "ZZTBRW")
+    p = product(db, company_id=DEFAULT_COMPANY_ID)
+    p.is_discontinued = True
+    _category_of(db, p).chatbot_max_qty = 100
+    stock(db, company_id=DEFAULT_COMPANY_ID, product_id=p.id, warehouse_id=brw.id, on_hand=100)
+    contact = _contact(db)
+    _policy_row(db, mode="availability", warehouse_ids=[brw.id], contact=contact)
+    db.flush()
+
+    answered = _entry(
+        StockService(db).list_stock(product_ids=[p.id], contact_id=contact.id, requested_quantities={p.id: 10}),
+        p.id,
+    )
+    assert answered["branch"] == "in_stock"
+    assert answered["is_discontinued"] is True
+
+    owed = _entry(StockService(db).list_stock(product_ids=[p.id], contact_id=contact.id), p.id)
+    assert owed["needs_quantity"] is True
+    assert owed["is_discontinued"] is True
+
+
+def test_a_merged_code_is_discontinued_only_when_every_company_row_is(db):
+    """One code in two companies (the round 5 merge): a sister company still selling it
+    means the dealer can still be supplied, so the merged entry is not discontinued until
+    both rows are."""
+    seed_mocha(db)
+    set_company_scope(db, frozenset({DEFAULT_COMPANY_ID, MOCHA_ID}))
+    sorento_wh = _wh(db, unique_code("ZZTDSS")[:50])
+    mocha_wh = warehouse(db, company_id=MOCHA_ID, code=unique_code("ZZTDSM")[:50])
+    code = unique_code("ZZTDSC")[:50]
+    sorento_p = product(db, company_id=DEFAULT_COMPANY_ID, code=code)
+    mocha_p = product(db, company_id=MOCHA_ID, code=code)
+    _category_of(db, sorento_p).chatbot_max_qty = 50
+    stock(db, company_id=DEFAULT_COMPANY_ID, product_id=sorento_p.id, warehouse_id=sorento_wh.id, on_hand=10)
+    stock(db, company_id=MOCHA_ID, product_id=mocha_p.id, warehouse_id=mocha_wh.id, on_hand=10)
+    contact = _contact(db)
+    _policy_row(db, mode="availability", warehouse_ids=[sorento_wh.id, mocha_wh.id], contact=contact)
+    sorento_p.is_discontinued = True
+    db.flush()
+
+    def told():
+        result = StockService(db).list_stock(
+            product_ids=[sorento_p.id, mocha_p.id],
+            contact_id=contact.id,
+            requested_quantities={sorento_p.id: 5},
+        )
+        assert len(result["stock_availability"]) == 1
+        return result["stock_availability"][0]["is_discontinued"]
+
+    assert told() is False
+    mocha_p.is_discontinued = True
+    db.flush()
+    assert told() is True
+
+
+def test_route_returns_is_discontinued_on_the_wire(client, db):
+    """`response_model` drops an undeclared field (LESSONS-LEARNT), so the flag is asserted
+    on the route's own body, not only on the service's dict."""
+    brw = _wh(db, "ZZTBRW")
+    p = product(db, company_id=DEFAULT_COMPANY_ID)
+    p.is_discontinued = True
+    _category_of(db, p).chatbot_max_qty = 100
+    stock(db, company_id=DEFAULT_COMPANY_ID, product_id=p.id, warehouse_id=brw.id, on_hand=10)
+    contact = _contact(db)
+    _policy_row(db, mode="availability", warehouse_ids=[brw.id], contact=contact)
+    db.flush()
+
+    res = client.get(
+        "/api/v1/inventory/stock/balance",
+        params={
+            "product_ids": p.id,
+            "contact_id": contact.id,
+            "space_id": "364817",
+            "requested_quantities": json.dumps({p.id: 5}),
+        },
+    )
+    assert res.status_code == 200, res.text
+    (entry,) = res.json()["stock_availability"]
+    assert entry["branch"] == "in_stock"
+    assert entry["is_discontinued"] is True

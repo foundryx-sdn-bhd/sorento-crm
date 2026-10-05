@@ -1736,6 +1736,14 @@ class StockService:
                 # AVAIL-MODE-REPLIES rule 2: set only on an `in_stock` answer short of
                 # the ask (within X); the one figure of ours this mode ever returns.
                 "available_qty": None,
+                # AVAIL-RENDER (owner, 5 Oct 2026): the flag the compact/detailed marker
+                # reads, so the dealer's line prints it too. A merged code (one code in
+                # two companies) is discontinued only when every company row of it is: a
+                # sister company still selling it can still supply the dealer.
+                "is_discontinued": all(
+                    getattr(products_by_id.get(gid), "is_discontinued", False) is True
+                    for gid in group_ids
+                ),
             }
             if ask is not None and product is not None and category is not None:
                 x, y = effective_limits(product, category)
