@@ -1134,12 +1134,15 @@ class StockService:
         # built first, a probe that trips can lose only its own suggestions instead
         # of taking the contact's whole stock answer down with it.
         #
-        # A contact on `compact` or `availability` gets NO probe at all (AC-B14).
-        # Its answer names OTHER products that do have stock, which is the one
-        # thing those two modes exist to withhold: a dealer told "we have none,
-        # but try these three" has been handed the product list and the fact
-        # that stock exists in a location the policy hides.
-        suppress_alternatives = policy is not None and policy.mode != "detailed"
+        # A contact on `availability` gets NO probe at all (AC-B14). Its answer
+        # names OTHER products that do have stock, which is the one thing the
+        # dealer mode exists to withhold: a dealer told "we have none, but try
+        # these three" has been handed the product list and the fact that stock
+        # exists in a location the policy hides. `compact` gets the probe like
+        # `detailed` (WA-MSG-TRIM, owner 3 Oct 2026: every contact moved to
+        # compact and keeps the suggestions); the has-data gate still counts only
+        # the policy's locations.
+        suppress_alternatives = policy is not None and policy.mode == "availability"
         if total == 0 and not suppress_alternatives:
             # Best-effort: a suggestion probe must never turn a legitimately-empty
             # listing into a 500 (AC-R1). The pre-lookup + neighbour query run after

@@ -160,12 +160,13 @@ class TestPort866AsRunTurnCases:
 
         # `result.reply["text"]` is legitimately None on this arm (`branch_kind ==
         # "out_of_scope"`): the sealed reply is never sent to the customer on its own -
-        # the acknowledgement lives in the two `send_message` actions instead (measured;
-        # coordinator ruling 16 Sep 2026). Assert on the actions, not on `reply.text`.
+        # the acknowledgement lives in the `send_message` action instead (measured;
+        # coordinator ruling 16 Sep 2026). Since WA-MSG-TRIM it is ONE fixed line that
+        # does not name the team; the team is pinned on the comment below.
         send_messages = [a for a in result.actions if a.get("kind") == "send_message"]
-        assert any("marketing" in (a.get("text") or "").lower() for a in send_messages), (
-            result.actions
-        )
+        assert [a.get("text") for a in send_messages] == [
+            "Routed to your PIC, they will reply shortly."
+        ], result.actions
         comments = [a for a in result.actions if a.get("kind") == "add_comment"]
         assert any("marketing_product" in (a.get("text") or "") for a in comments), (
             f"add_comment body must name the team: {result.actions!r}"

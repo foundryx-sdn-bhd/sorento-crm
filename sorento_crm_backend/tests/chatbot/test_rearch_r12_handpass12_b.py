@@ -895,7 +895,7 @@ def _escalation_lane_spy(monkeypatch, *, team_label: str) -> list[dict[str, Any]
     `plan.trace.assignee`'s own documented destination (`turn/plan.py`'s own
     `Trace.assignee` docstring)."""
     from app.services.chatbot import engine as engine_mod
-    from app.services.chatbot.lanes.escalation import OUT_OF_SCOPE_REPLY, ROUTED_TO_PIC_REPLY
+    from app.services.chatbot.lanes.escalation import ROUTED_TO_PIC_REPLY
 
     calls: list[dict[str, Any]] = []
 
@@ -906,7 +906,6 @@ def _escalation_lane_spy(monkeypatch, *, team_label: str) -> list[dict[str, Any]
         return {
             "arm": "assign",
             "actions": [
-                {"kind": "send_message", "text": OUT_OF_SCOPE_REPLY, "dry_run": dry_run},
                 {
                     "kind": "assign_conversation",
                     "respond_user_id": assignee_id or "zzt-round-robin",
@@ -920,7 +919,7 @@ def _escalation_lane_spy(monkeypatch, *, team_label: str) -> list[dict[str, Any]
                 },
                 {
                     "kind": "send_message",
-                    "text": ROUTED_TO_PIC_REPLY.format(team=team_label),
+                    "text": ROUTED_TO_PIC_REPLY,
                     "dry_run": dry_run,
                 },
             ],
