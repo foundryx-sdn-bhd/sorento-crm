@@ -1,8 +1,10 @@
 # PLAN: availability picker for a substring code token (AVAIL-PICKER)
 
-Status: Plan. Track: small fix (expected diff under 300 lines, no migration, no auth/RBAC
-change, no new ingest surface). LEAD pattern: behaviour card as one crew-ask before code.
-UAC: `avail-picker-substring-acceptance-criteria.md`.
+Status: Built on PR #1494 (track: small fix, diff under 300 lines, no migration, no
+auth/RBAC change, no new ingest surface); review + console browser pass pending. LEAD
+pattern: behaviour card posted as crew-ask on the PR, built on its recommendations
+(Q1 (a) print every option, Q2 (a) one substring hit answers directly, Q3 (a) full mode
+untouched). UAC: `avail-picker-substring-acceptance-criteria.md`.
 
 ## Owner trace (5 Oct 2026, AVAILABILITY contact 437264483, prompt v42)
 

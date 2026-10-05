@@ -782,7 +782,7 @@ def _group(rows: list[dict[str, Any]], token: str) -> list[dict[str, Any]]:
     substring probe on product_code placed and `engine._exact_codes_only` kept."""
     labelled = [(row, (_row_label(row) or "").casefold()) for row in rows]
     return [row for row, label in labelled if label.startswith(token)] or [
-        row for row, label in labelled if token and token in label
+        row for row, label in labelled if token in label
     ]
 
 

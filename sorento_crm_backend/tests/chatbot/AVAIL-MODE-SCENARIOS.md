@@ -111,3 +111,19 @@ tells dates as dd/mm/yyyy (`eta_policy.dealer_view`, `tests/test_avail_mode_deal
 | S53 | eta SRTWC286 / 2 | which-one picker with no ETA or stock of any variant / `SRTWC286-SH-150: ✅ ETA 19/10/2026` + R |
 
 Full mode keeps its own resolution (prefix families, described products) and its own ETA rows.
+
+## Owner live trace, 5 Oct 2026 (AVAIL-PICKER: a substring of the code)
+
+A code-like token inside the codes ("wc286" is a substring of SRTWC286-SH-*) is read like
+a prefix: exact first, then prefix, then substring, the order the resolver's own product
+probe reads product_code in. Nothing new is matched; the availability filter stops
+discarding the resolver's substring rows. Before: `SRTWC286-SH (+9 more)` /
+`Couldn't find: "wc286" (product).` / `But no inventory matched these.`
+
+| Id | Dealer | Bot | Full mode |
+| --- | --- | --- | --- |
+| S55 | wc286 check stock / 2 | `WC286 matches 10 products. Which one?` + 1-10 / `How many units of SRTWC286-SH-150?` | lists all 10 with totals (unchanged) |
+| S55b | wc286 x 5 / 2 | `WC286 x 5: which one?` + 1-10 / `SRTWC286-SH-150 x 5: ✅ R` | same |
+| S55c | rt5674 x 3 (inside one code only) | `SRT5674 x 3: ✅ R`; without a quantity, `How many units of SRT5674?` | same |
+| S55d | SRTWC286-SH x 3 | `SRTWC286-SH x 3: ✅ R`, never its variants | - |
+| S55e | SRT5674 x 5, wc286 x 10 / 2 | answered line + `WC286 x 10: which one?` / the picked line | - |
