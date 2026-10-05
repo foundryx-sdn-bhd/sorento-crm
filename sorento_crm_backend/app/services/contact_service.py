@@ -267,6 +267,8 @@ class ContactService:
             value = yes(name)
             if value is not None:
                 q = q.filter(column.is_(value))
+        if f.get("region") in ("west", "east"):
+            q = q.filter(RespondContact.regions.contains([f["region"]]))
         if f.get("customer_id"):
             from app.models.base import get_company_scope
             from app.services.company_scope import build_company_predicate
@@ -815,6 +817,8 @@ class ContactService:
             # default OFF, unlike chatbot_stock_allowed above.
             "notify_salesman": bool(getattr(contact, "notify_salesman", False)),
             "packing_list_allowed": bool(getattr(contact, "packing_list_allowed", False)),
+            # CONTACT-REGION: held literally, default West only.
+            "regions": list(getattr(contact, "regions", None) or ["west"]),
             # Issue #1328: default ON, like chatbot_stock_allowed.
             "chatbot_eta_offset_applied": bool(getattr(contact, "chatbot_eta_offset_applied", True)),
             # ESCALATION-CONTROL: the one per-contact switch, default ON - a row without

@@ -10,9 +10,20 @@ import type { FindController } from './useFindController';
  * previous/next, close. Enter = next, Shift+Enter = previous, Escape = close.
  * Rendered top-right inside a `relative` container.
  */
-export function FindBar({ controller }: { controller: FindController }) {
+export function FindBar({
+  controller,
+  onDismiss,
+}: {
+  controller: FindController;
+  /** Called after the bar closes, so a host can take focus back (caret stays on the match). */
+  onDismiss?: () => void;
+}) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const { open, query, matches, activeIndex, setQuery, close, next, prev } = controller;
+  const { open, query, matches, activeIndex, setQuery, close: closeFind, next, prev } = controller;
+  const close = () => {
+    closeFind();
+    onDismiss?.();
+  };
 
   useEffect(() => {
     if (open) inputRef.current?.focus();

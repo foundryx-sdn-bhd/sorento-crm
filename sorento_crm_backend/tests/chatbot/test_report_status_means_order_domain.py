@@ -58,13 +58,14 @@ class TestReportOrderStatusAlwaysRoutesToOrderDomain:
     a REPORT status word always routes to the `order` domain. Reads ONLY the parser's
     own structured fields, never the message text."""
 
-    def test_master_products_domain_with_sales_report_status_is_corrected_to_order(
+    def test_master_products_domain_with_sales_report_status_is_corrected_to_sales(
         self,
     ) -> None:
+        # R7 (PLAN-prompt-dynamic-30sep D9): a sales figure status is the `sales` domain.
         out = _domain_out(domain_hint="master_products", order_status="sales_report")
-        assert out["domain_hint"] == "order", out
+        assert out["domain_hint"] == "sales", out
         assert out.get("domain_corrected") == (
-            "master_products->order (order_status sales_report)"
+            "master_products->sales (order_status sales_report)"
         ), out
 
     @pytest.mark.parametrize("order_status", ["outstanding", "so_outstanding"])
@@ -75,10 +76,11 @@ class TestReportOrderStatusAlwaysRoutesToOrderDomain:
         assert out["domain_hint"] == "order", out
         assert out.get("domain_corrected") == f"inventory->order (order_status {order_status})", out
 
-    def test_domain_hint_order_already_is_left_untouched(self) -> None:
+    def test_domain_hint_order_with_sales_report_is_corrected_to_sales(self) -> None:
+        # R7 (PLAN-prompt-dynamic-30sep D9): the parser still says `order` for a sales ask.
         out = _domain_out(domain_hint="order", order_status="sales_report")
-        assert out["domain_hint"] == "order", out
-        assert "domain_corrected" not in out, out
+        assert out["domain_hint"] == "sales", out
+        assert out.get("domain_corrected") == "order->sales (order_status sales_report)", out
 
     def test_a_null_order_status_with_master_products_domain_is_left_alone(self) -> None:
         """Guard: this correction is keyed on `order_status`, never fired just because

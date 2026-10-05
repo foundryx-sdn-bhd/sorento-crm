@@ -53,3 +53,11 @@ describe('contactsListFilters access filters', () => {
     });
   });
 });
+
+describe('contactsListFilters region filter (CONTACT-REGION AC-CR-20)', () => {
+  it('maps the region filter to the region param and back from the URL', () => {
+    const filters = contactsListFilters({ chatbotMemoryLevel: null, access: { region: 'east' } });
+    expect(filters).toEqual({ region: 'east' });
+    expect(contactAccessFiltersFromUrl({ region: 'east' })).toEqual({ region: 'east' });
+  });
+});

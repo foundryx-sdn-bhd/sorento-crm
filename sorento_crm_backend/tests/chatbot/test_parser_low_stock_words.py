@@ -96,6 +96,7 @@ class TestBothPublishedBodiesCarryTheVocabulary:
             SELF_REFERENCE_ADDENDUM,
             KNOWN_BRANDS_ADDENDUM,
             MEMORY_ADDENDUM,
+            LOW_STOCK_FILTERS_ADDENDUM,
             PO_SPO_WAREHOUSE_ADDENDUM,
             QUANTITY_ADDENDUM,
             SALES_ANALYSIS_ADDENDUM,
@@ -111,7 +112,7 @@ class TestBothPublishedBodiesCarryTheVocabulary:
         _mod, addendum = _prompt()
         for name, body in _bodies().items():
             assert (
-                body.removesuffix(MEMORY_ADDENDUM).removesuffix(ACCOUNT_LEDGER_ADDENDUM).removesuffix(PO_SPO_WAREHOUSE_ADDENDUM)
+                body.removesuffix(MEMORY_ADDENDUM).removesuffix(LOW_STOCK_FILTERS_ADDENDUM).removesuffix(ACCOUNT_LEDGER_ADDENDUM).removesuffix(PO_SPO_WAREHOUSE_ADDENDUM)
                 .removesuffix(ESCALATION_CONFIRMATION_ADDENDUM).removesuffix(SELF_REFERENCE_ADDENDUM)
                 .removesuffix(TOP_SELLING_ADDENDUM)
                 .removesuffix(KNOWN_BRANDS_ADDENDUM)
@@ -140,6 +141,7 @@ class TestBothPublishedBodiesCarryTheVocabulary:
             LAST_COST_ADDENDUM,
             ESCALATION_CONFIRMATION_ADDENDUM,
             MEMORY_ADDENDUM,
+            LOW_STOCK_FILTERS_ADDENDUM,
             PO_SPO_WAREHOUSE_ADDENDUM,
             SELF_REFERENCE_ADDENDUM,
             QUANTITY_ADDENDUM,
@@ -153,7 +155,7 @@ class TestBothPublishedBodiesCarryTheVocabulary:
         _mod, addendum = _prompt()
         for name, body in _bodies().items():
             assert (
-                body.removesuffix(MEMORY_ADDENDUM).removesuffix(ACCOUNT_LEDGER_ADDENDUM).removesuffix(PO_SPO_WAREHOUSE_ADDENDUM)
+                body.removesuffix(MEMORY_ADDENDUM).removesuffix(LOW_STOCK_FILTERS_ADDENDUM).removesuffix(ACCOUNT_LEDGER_ADDENDUM).removesuffix(PO_SPO_WAREHOUSE_ADDENDUM)
                 .removesuffix(ESCALATION_CONFIRMATION_ADDENDUM).removesuffix(SELF_REFERENCE_ADDENDUM)
                 .removesuffix(TOP_SELLING_ADDENDUM)
                 .removesuffix(KNOWN_BRANDS_ADDENDUM)

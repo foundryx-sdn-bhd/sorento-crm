@@ -55,6 +55,9 @@ SWITCHES: tuple[tuple[str, str], ...] = (
     ("chatbot_skip_period_questions", "Skip date-range questions"),
 )
 
+REGION_ORDER = ("west", "east")
+REGION_LABELS = {"west": "West Malaysia", "east": "East Malaysia"}
+
 REMOVED_LOCATION = "removed location"
 REMOVED_COMPANY = "removed company"
 STOCK_MODE_LABELS = {"detailed": "Detailed", "compact": "Compact", "availability": "Availability only"}
@@ -154,6 +157,8 @@ class AccessSnapshot:
     access_types: list[str] = field(default_factory=list)
     tier: Optional[str] = None
     switches: dict[str, bool] = field(default_factory=dict)
+    #: CONTACT-REGION: the held packing list regions, canonical order (west, east).
+    regions: list[str] = field(default_factory=lambda: ["west"])
     reveals: list[str] = field(default_factory=list)
     agents: dict[str, AgentGrant] = field(default_factory=dict)  # agent_id -> grant
     #: The contact-tier stock visibility row, or None when the contact inherits.
@@ -197,6 +202,7 @@ def snapshots(db: Session, contacts: Iterable[RespondContact]) -> dict[str, Acce
             label=contact_label(c),
             tier=profile.get("tier") or None,
             switches={col: bool(getattr(c, col)) for col, _ in SWITCHES},
+            regions=[r for r in REGION_ORDER if r in (c.regions or ["west"])],
         )
 
     for contact_id, code in db.execute(
@@ -386,6 +392,18 @@ def diff(
         if source.switches[col] != target.switches[col]:
             changes.append(_change(col, label, target.switches[col], source.switches[col]))
 
+    if source.regions != target.regions:
+        changes.append(
+            _change(
+                "regions",
+                "Regions",
+                [REGION_LABELS.get(c, c) for c in target.regions],
+                [REGION_LABELS.get(c, c) for c in source.regions],
+                [REGION_LABELS.get(c, c) for c in source.regions if c not in target.regions],
+                [REGION_LABELS.get(c, c) for c in target.regions if c not in source.regions],
+            )
+        )
+
     if source.reveals != target.reveals:
         labels = dict(contact_field_reveal_service.FIELD_REVEAL_KEYS)
         changes.append(
@@ -470,6 +488,7 @@ def summary(source: AccessSnapshot, names: Names, skip: frozenset[str] = frozens
             "label": "Chatbot switches",
             "value": ", ".join(f"{label} {'on' if source.switches[col] else 'off'}" for col, label in SWITCHES),
         },
+        {"label": "Regions", "value": ", ".join(REGION_LABELS.get(r, r) for r in source.regions)},
         {"label": "Field reveals", "value": ", ".join(labels.get(k, k) for k in source.reveals)},
         {"label": "Agent access", "value": ", ".join(agents)},
     ]
@@ -515,6 +534,8 @@ def _write(
     for col, _label in SWITCHES:
         if getattr(target, col) != source.switches[col]:
             setattr(target, col, source.switches[col])
+    if list(target.regions or ["west"]) != source.regions:
+        target.regions = list(source.regions)
     db.flush()
 
     if snap.tier != source.tier:

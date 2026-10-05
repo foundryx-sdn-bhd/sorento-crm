@@ -26,6 +26,11 @@ import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { SearchableMultiSelect } from '@/components/common/SearchableMultiSelect';
 import { FormDialogScaffold } from '@/components/common/FormDialogScaffold';
 import { useDeferredRowAction } from '@/hooks/useDeferredRowAction';
+import {
+  DEFAULT_PACKING_LIST_REGIONS,
+  PACKING_LIST_REGION_OPTIONS,
+  type PackingListRegion,
+} from '@/lib/packing-list-regions';
 import { formatDate, formatDateSafe, formatDateTimeInMalaysia } from '@/lib/helpers';
 
 import {
@@ -229,6 +234,18 @@ function ChatbotSettingsCard({
             disabled={save.isPending}
             onCheckedChange={(checked) => save.mutate({ ...profile, packing_list_allowed: checked })}
           />
+          <div className="space-y-1.5">
+            <Label htmlFor="contact-chatbot-regions">Regions</Label>
+            <SearchableMultiSelect
+              id="contact-chatbot-regions"
+              value={profile.regions ?? DEFAULT_PACKING_LIST_REGIONS}
+              onChange={(next) => {
+                if (next.length > 0) save.mutate({ ...profile, regions: next as PackingListRegion[] });
+              }}
+              options={PACKING_LIST_REGION_OPTIONS}
+              disabled={save.isPending}
+            />
+          </div>
           <SwitchRow
             id="contact-chatbot-eta-offset"
             label="ETA buffer days"

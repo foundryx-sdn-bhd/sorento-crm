@@ -141,6 +141,7 @@ DASH_HITS="$(git diff --unified=0 origin/main...HEAD -- \
     ':(exclude)*.json' \
     ':(exclude)*.lock' \
     ':(exclude)package-lock.json' \
+    ':(exclude)sorento_crm_backend/alembic/data/*.txt' \
   | awk '
       /^\+\+\+ / { file=$0; sub(/^\+\+\+ b\//, "", file); next }
       /^@@ / {

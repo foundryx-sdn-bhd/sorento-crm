@@ -990,6 +990,25 @@ class DocumentIngestService(MasterRefResolver):
         customer_name = (getattr(payload, "customer_name", None) or "").strip()
         if customer_name:
             values["debtor_name"] = customer_name
+        elif (
+            hasattr(payload, "customer_name")
+            and values.get("customer_id")
+            and (
+                not (getattr(header, "debtor_name", None) or "").strip()
+                or str(values["customer_id"]) != str(getattr(header, "customer_id", None))
+            )
+        ):
+            # DEBTOR-CODE-LINK (crew, 4 Oct 2026): an SO pushed without a name still carries
+            # the one it was issued under - the resolved customer's name as of now, written
+            # when the order has none or moves to another customer - so a later rename of the
+            # master never rewrites it on this order.
+            master_name = (
+                self.db.query(Customer.customer_name)
+                .filter(Customer.id == values["customer_id"])
+                .scalar()
+            )
+            if (master_name or "").strip():
+                values["debtor_name"] = master_name.strip()
         # `is_transferable` (SO-TRANSFERABLE): AutoCount's `Transferable` flag, written
         # whenever it is SENT and left alone when it is not - the same shape rule as the two
         # above. Explicit `is not None`: an F is a False, and a falsy check would drop it.

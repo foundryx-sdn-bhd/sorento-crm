@@ -49,6 +49,8 @@ export interface RespondContact {
   /** Chatbot card switches the list shows as columns. */
   notify_salesman?: boolean;
   packing_list_allowed?: boolean;
+  /** CONTACT-REGION: the packing list regions held, 'west' and/or 'east'. */
+  regions?: string[];
   chatbot_eta_offset_applied?: boolean;
   escalation_allowed?: boolean;
   chatbot_skip_period_questions?: boolean;

@@ -25,6 +25,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.order import Customer, SalesOrder, SalesOrderLine
+from app.services.chatbot.contracts import SALES_DOMAIN, SALES_FIGURE_STATUSES
 from app.services.contact_brand_scope import product_in_scope_clauses
 
 #: AutoCount's SO numbering ("SO422056"). A word of this shape that nothing placed is an SO ask.
@@ -446,6 +447,12 @@ def carried_status_verdict(
         "status": None if status in _CARRIED_REPORT_STATUSES else status,
         "order_status": None if order_status in _CARRIED_REPORT_STATUSES else order_status,
     }
+    # PROMPT-DYNAMIC R7: a carried `sales_report` was what made the verdict `sales`
+    # (`turn_runtime._report_status_means_order_domain`); with it gone the ask is `order`.
+    if verdict.get("domain_hint") == SALES_DOMAIN and not {cleared["status"], cleared["order_status"]} & set(
+        SALES_FIGURE_STATUSES
+    ):
+        cleared["domain_hint"] = "order"
     if pending_kind == "outstanding_detail":
         raw_positions = verdict.get("reference_positions")
         oqa = verdict.get("open_question_answer") if isinstance(verdict.get("open_question_answer"), dict) else {}
@@ -547,7 +554,9 @@ def so_list_verdict(verdict: dict[str, Any], text: str) -> tuple[dict[str, Any],
     the order domain, no status, whatever the parser read. Leaves a verdict the parser put
     in another domain (a product or a promotion question) alone."""
     domain = str(verdict.get("domain_hint") or "").strip()
-    if domain not in ("", "order") or not names_sales_orders(text):
+    # PROMPT-DYNAMIC R7: a `sales_report` the parser read off "all my sales orders" is
+    # remapped to `sales` before this runs; the words still make it the SO list.
+    if domain not in ("", "order", SALES_DOMAIN) or not names_sales_orders(text):
         return verdict, None
     fixed = {
         **verdict,

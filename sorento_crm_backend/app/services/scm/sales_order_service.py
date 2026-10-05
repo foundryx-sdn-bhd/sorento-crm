@@ -1437,6 +1437,9 @@ class SalesOrderService:
         so = SalesOrder(
             so_number=so_number,
             customer_id=customer.id,
+            # The name the order is issued under (sdn_0001, DEBTOR-CODE-LINK), so a later
+            # rename of the customer never rewrites it.
+            debtor_name=(customer.customer_name or "").strip() or None,
             sales_agent_id=agent_id,
             order_date=date.today(),
             requested_delivery_date=(
@@ -1470,7 +1473,11 @@ class SalesOrderService:
     def update(self, so_id: str, data, user_id: Optional[str]) -> dict:
         so = self._get_or_404(so_id)
         if data.customer_code is not None:
-            so.customer_id = self._customer(data.customer_code).id
+            customer = self._customer(data.customer_code)
+            if str(customer.id) != str(so.customer_id):
+                # A different customer is a different issue name (sdn_0001, DEBTOR-CODE-LINK).
+                so.debtor_name = (customer.customer_name or "").strip() or None
+            so.customer_id = customer.id
         if data.order_type is not None:
             so.order_type = data.order_type
             # A hand-set type follows the same vocabulary the importer classifies demand
