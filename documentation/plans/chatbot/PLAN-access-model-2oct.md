@@ -155,6 +155,23 @@ weaken or edit a tester assertion without the lead's sign-off; each run capped a
 note every 20; then a separate REVIEWER subagent and a SECURITY-REVIEWER subagent (RBAC/permission
 boundary) in parallel; conclusions at most 15 lines each. Kill-proof after green per slice group.
 
+## Build split while #1429 is open (crew go, 5 Oct)
+
+#1429 (head fbc88b8f) changes `head/access.py`, `head/parser.py`, `engine.py`, `lanes/business/answer.py`,
+`lanes/business/__init__.py`, `contact_field_reveal_service.py`, `api/v1/system/chatbot_field_reveals.py`,
+`schemas/chatbot_field_reveal.py`, FE `ContactFieldRevealsSection.tsx` + `contactFieldRevealService.ts`,
+and adds migration `ppa_0001`. Build NOW only what touches none of those:
+- **Now:** S1 (models, migration chained after `creg_0001_contact_regions`, `access_seed.py`, plus the
+  pure `access_tree.effective_access` module that the loss report and the contact access API read; no
+  turn wiring); S3 (`turn/policy.py`, `turn_runtime.lane_parse_output`, `lanes/escalation.py`); S4 (new
+  `api/v1/system/chatbot_roles.py` + mount); S6 (frontend: new pages/components; the contact Access tab
+  stops rendering `ContactFieldRevealsSection` but the component file is left alone).
+- **Held until #1429 merges, then rebase:** S2 turn wiring (`check_access`, `load_profile` grants,
+  `apply.py` gate, access read before the parser render, customer scope flag, tier/staff, stamp
+  switches incl. `build_suggest_offer` in `answer.py`); S5 (registry derivations incl.
+  `contact_field_reveal_service`); S7 (prompt tags, generalising #1429's `PROMPT_GATES`). The S1
+  migration is re-parented onto `ppa_0001` if #1429 merges first.
+
 ## Migration on a dev copy + hand test
 
 Idempotent SQL for crew at `crew/state/migrations/ACCESS-MODEL.sql` (CREATE ... IF NOT EXISTS, INSERT
