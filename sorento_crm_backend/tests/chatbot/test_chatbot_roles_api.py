@@ -129,6 +129,7 @@ class TestRegistry:
 
     def test_requires_view_permission(self, client, db):
         _GRANTS.discard(ACCESS_VIEW)
+        _GRANTS.discard(CONTACT_VIEW)
         assert client.get(f"{BASE}/access/registry").status_code == 403
 
 
@@ -214,6 +215,7 @@ class TestRolesCrud:
     def test_reads_require_the_view_slug(self, client, db):
         created = _create(client)
         _GRANTS.discard(ACCESS_VIEW)
+        _GRANTS.discard(CONTACT_VIEW)
         assert client.get(f"{BASE}/roles").status_code == 403
         assert client.get(f"{BASE}/roles/{created['id']}").status_code == 403
 
@@ -332,6 +334,7 @@ class TestContactAccess:
         assert client.put(f"{BASE}/contacts/{pk}/access", json={"role_ids": [], "overrides": []}).status_code == 403
         assert client.get(f"{BASE}/contacts/{pk}/access").status_code == 200
         _GRANTS.discard(CONTACT_VIEW)
+        _GRANTS.discard(ACCESS_VIEW)
         assert client.get(f"{BASE}/contacts/{pk}/access").status_code == 403
 
     def test_put_with_a_malformed_body_is_422(self, client, db):

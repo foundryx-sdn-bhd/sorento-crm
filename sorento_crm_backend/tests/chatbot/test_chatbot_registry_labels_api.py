@@ -22,6 +22,7 @@ from tests.chatbot._access_seed import give_role, make_contact, make_domain, mak
 from tests.chatbot.test_chatbot_access_migration import _registry
 from tests.chatbot.test_chatbot_roles_api import (  # noqa: F401 - fixtures and constants
     ACCESS_VIEW,
+    CONTACT_VIEW,
     BASE,
     _GRANTS,
     _create,
@@ -209,6 +210,7 @@ class TestRoleContacts:
     def test_requires_view_permission(self, client, db):
         role = _create(client)["id"]
         _GRANTS.discard(ACCESS_VIEW)
+        _GRANTS.discard(CONTACT_VIEW)
         assert client.get(f"{BASE}/roles/{role}/contacts").status_code == 403
 
     def test_unknown_role_is_404(self, client, db):

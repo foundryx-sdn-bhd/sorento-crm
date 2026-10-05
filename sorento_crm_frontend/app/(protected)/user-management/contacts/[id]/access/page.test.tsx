@@ -12,7 +12,17 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import ContactAccessPage from './page';
 
 const mutate = vi.fn();
+const view = vi.hoisted(() => ({ withAgent: true, extraOverrides: 0 }));
 
+vi.mock('@/components/ui/collapsible', () => ({
+  Collapsible: ({ children }: { children: React.ReactNode }) => <div data-testid="collapsible">{children}</div>,
+  CollapsibleTrigger: ({ children }: { children: React.ReactNode }) => <button type="button">{children}</button>,
+  CollapsibleContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+}));
+vi.mock('@/components/ui/data-grid', () => ({
+  DataGrid: ({ children }: { children: React.ReactNode }) => <div data-testid="data-grid">{children}</div>,
+}));
+vi.mock('@/components/ui/data-grid-table', () => ({ DataGridTable: () => <div data-testid="data-grid-table" /> }));
 vi.mock('@/lib/api', () => ({ apiFetch: () => new Promise(() => {}) }));
 vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock('next/navigation', () => ({
@@ -29,7 +39,7 @@ vi.mock('@/hooks/useChatbotAccess', () => ({
   useChatbotRegistry: () => ({
     data: {
       domains: [
-        { name: 'incoming', label: 'Incoming stock', group: 'Stock and incoming', supported: true, access_section: null, escalation_agent_code: 'inc', escalation_agent_name: 'Incoming Stock Agent', escalation_team_code: 'purchasing',
+        { name: 'incoming', label: 'Incoming stock', group: 'Stock and incoming', supported: true, access_section: null, escalation_agent_code: view.withAgent ? 'inc' : null, escalation_agent_name: view.withAgent ? 'Incoming Stock Agent' : null, escalation_team_code: 'purchasing',
           fields: [{ key: 'incoming.eta', label: 'ETA', kind: 'field' }, { key: 'incoming.consignee', label: 'Consignee', kind: 'field' }] },
         { name: 'ideate', label: 'Share ideas', group: 'Other', supported: true, access_section: null, escalation_agent_code: null, escalation_team_code: null, fields: [] },
       ],
@@ -45,7 +55,10 @@ vi.mock('@/hooks/useChatbotAccess', () => ({
   useContactAccess: () => ({
     data: {
       roles: [{ id: 'r1', code: 'purchasing', name: 'Purchasing' }],
-      overrides: [{ domain_name: 'incoming', field_key: 'incoming.consignee', granted: true }],
+      overrides: [
+        { domain_name: 'incoming', field_key: 'incoming.consignee', granted: true },
+        ...Array.from({ length: view.extraOverrides }, (_, i) => ({ domain_name: 'incoming', field_key: `incoming.extra${i}`, granted: true })),
+      ],
       effective: { domains: ['incoming'], attributes: ['incoming.eta', 'incoming.consignee'], sees_all_customers: true },
     },
     isLoading: false,
@@ -57,6 +70,8 @@ vi.mock('@/hooks/useChatbotAccess', () => ({
 afterEach(() => {
   cleanup();
   mutate.mockReset();
+  view.withAgent = true;
+  view.extraOverrides = 0;
 });
 
 function renderPage() {
@@ -118,5 +133,25 @@ describe('Contact Access tab (v8)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save (1)' }));
     const p = mutate.mock.calls[0][0] as { overrides: { domain_name: string }[] };
     expect(p.overrides.filter((o) => o.domain_name === 'incoming')).toEqual([]);
+  });
+
+  it('S6 Advanced is a Collapsible holding a DataGrid, not a raw table', () => {
+    renderPage();
+    expect(screen.getAllByTestId('collapsible').length).toBeGreaterThan(0);
+    expect(screen.getAllByTestId('data-grid').length).toBeGreaterThan(0);
+    expect(document.querySelector('table')).toBeNull();
+  });
+
+  it('S6 Advanced shows an empty state when no granted domain has an agent', () => {
+    view.withAgent = false;
+    renderPage();
+    expect(screen.getByText(/no hand-off/i)).toBeTruthy();
+  });
+
+  it('S6 the summary shows an extra details line when the contact has field add-overrides', () => {
+    view.extraOverrides = 7;
+    renderPage();
+    // 7 extras plus the one consignee add-override on the incoming domain.
+    expect(screen.getByText(/8 extra incoming details/)).toBeTruthy();
   });
 });

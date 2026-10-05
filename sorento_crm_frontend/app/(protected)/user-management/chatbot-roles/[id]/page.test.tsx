@@ -16,6 +16,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import ChatbotRolePage from './page';
 
 const mutate = vi.fn();
+const updateMutate = vi.fn();
+const contactsData = vi.hoisted(() => ({ rows: [{ id: 'c1', name: 'CONTACT O' }] as { id: string; name: string | null }[] }));
 const deleteMutate = vi.fn();
 const addMutate = vi.fn();
 const deferredStart = vi.fn();
@@ -33,6 +35,11 @@ vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 // Container pulls SettingsProvider context this unit test does not need.
 vi.mock('@/components/common/container', () => ({
   Container: ({ children }: { children: React.ReactNode }) => <div data-testid="container">{children}</div>,
+}));
+vi.mock('@/components/ui/collapsible', () => ({
+  Collapsible: ({ children }: { children: React.ReactNode }) => <div data-testid="collapsible">{children}</div>,
+  CollapsibleTrigger: ({ children }: { children: React.ReactNode }) => <button type="button">{children}</button>,
+  CollapsibleContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 vi.mock('@/components/common/RecordNavigation', () => ({
   default: () => <div data-testid="record-nav" />,
@@ -79,15 +86,17 @@ vi.mock('@/hooks/useChatbotAccess', () => ({
     isError: false,
   }),
   useAddRoleContacts: () => ({ mutate: addMutate, isPending: false }),
-  useChatbotRoleContacts: () => ({ data: [{ id: 'c1', name: 'CONTACT O' }], isLoading: false, isError: false }),
+  useChatbotRoleContacts: () => ({ data: contactsData.rows, isLoading: false, isError: false }),
   useSetRoleGrants: () => ({ mutate, isPending: false }),
-  useUpdateChatbotRole: () => ({ mutate: vi.fn(), isPending: false }),
+  useUpdateChatbotRole: () => ({ mutate: updateMutate, isPending: false }),
   useDeleteChatbotRole: () => ({ mutate: deleteMutate, isPending: false }),
 }));
 
 afterEach(() => {
   cleanup();
   mutate.mockReset();
+  updateMutate.mockReset();
+  contactsData.rows = [{ id: 'c1', name: 'CONTACT O' }];
   deleteMutate.mockReset();
   addMutate.mockReset();
   deferredStart.mockReset();
@@ -175,5 +184,27 @@ describe('Chatbot role page (v8)', () => {
     fireEvent.click(screen.getByRole('button', { name: /Unlink CONTACT O/ }));
     expect(rowRun).toHaveBeenCalledTimes(1);
     expect(rowRun.mock.calls[0][0]).toMatchObject({ id: 'r1:c1', subject: 'CONTACT O' });
+  });
+
+  it('S6 has the same collapsible Advanced hand-off section as the contact page', () => {
+    renderPage();
+    expect(screen.getAllByTestId('collapsible').length).toBeGreaterThan(0);
+    expect(screen.getByText('Advanced')).toBeTruthy();
+  });
+
+  it('S6 the role description is editable and saved through the update hook', () => {
+    renderPage();
+    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'Buys stock' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save (1)' }));
+    expect(updateMutate).toHaveBeenCalledTimes(1);
+    expect(updateMutate.mock.calls[0][0]).toMatchObject({ description: 'Buys stock' });
+  });
+
+  it('S6 a contact with no name renders a non-empty fallback label', () => {
+    contactsData.rows = [{ id: 'c2', name: null }];
+    renderPage();
+    const link = document.querySelector('a[href="/user-management/contacts/c2/access"]');
+    expect(link).not.toBeNull();
+    expect((link?.textContent ?? '').trim().length).toBeGreaterThan(0);
   });
 });

@@ -6,7 +6,7 @@
  */
 import React from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import ChatbotRolesPage from './page';
@@ -90,5 +90,12 @@ describe('Chatbot Roles list page', () => {
   it('S6 the page is wrapped in the shared Container', () => {
     renderPage();
     expect(screen.getAllByTestId('container').length).toBeGreaterThan(0);
+  });
+
+  it('S6 a search box filters the rows by name', () => {
+    renderPage();
+    fireEvent.change(screen.getByPlaceholderText(/search/i), { target: { value: 'Deal' } });
+    expect(screen.queryByText('Purchasing')).toBeNull();
+    expect(screen.getAllByText('Dealer').length).toBeGreaterThan(0);
   });
 });

@@ -95,15 +95,16 @@ class TestDenyByDefault:
         _pk, rio = make_contact(db, workspace_id=other)
         assert _ea(db, rio, SPACE_ID).resolved is False
 
-    def test_null_workspace_contact_resolves_through_the_fallback(self, session_factory):
-        """Same NULL-workspace fallback the reveal path uses today."""
+    def test_null_workspace_contact_is_not_resolved_for_a_real_workspace(self, session_factory):
+        """Strict workspace for the gate (security review): no NULL-workspace fallback, so a
+        namesake without a workspace cannot borrow another workspace's access."""
         db, _wid = _world(session_factory)
         pk, rio = make_contact(db, workspace_id=None)
         rid_ = make_role(db, rid("r"), domains=["zzt_stock"])
         give_role(db, pk, rid_)
         access = _ea(db, rio)
-        assert access.resolved is True
-        assert access.domains == frozenset({"zzt_stock"})
+        assert access.resolved is False
+        assert access.domains == frozenset()
 
     def test_a_new_registry_row_is_ticked_on_no_role(self, session_factory):
         """AC-AM-16: inserting a domain + field grants it to nobody."""

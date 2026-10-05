@@ -525,3 +525,69 @@ class TestAccessLossReport:
         db, contacts = self._mapped(session_factory)
         report = access_loss_report(db)
         assert not [r for r in report if contacts["no_agent"] in set(map(str, r.values()))]
+
+
+def _office_type(db, pk, name="Sorento Office") -> None:
+    code = rid("at")[:50]
+    db.execute(
+        text("INSERT INTO contact_access_types (code, name, is_active, keywords) VALUES (:c, :n, true, '[]'::jsonb)"),
+        {"c": code, "n": name},
+    )
+    db.execute(
+        text("INSERT INTO respond_contact_access_types (contact_id, access_type_code) VALUES (:c, :t)"),
+        {"c": pk, "t": code},
+    )
+    db.commit()
+
+
+class TestLinkedNonOfficeContactsMapToDealer:
+    """Owner answer Q1 (AC-AM-19/20): customer scope is never widened by the mapping."""
+
+    def _world(self, session_factory):
+        from app.services.chatbot.access_seed import map_legacy_contacts
+        from tests.chatbot._access_seed import make_customer_link
+
+        db, wid = _seeded(session_factory)
+        agents = _agents(db)
+        keys = (K_SELLABLE, K_PLACED)
+        dealer = _legacy_contact(db, wid, agents, agents=FIVE_AGENTS, keys=keys, name="Linked A")
+        make_customer_link(db, dealer)
+        office = _legacy_contact(db, wid, agents, agents=FIVE_AGENTS, keys=keys, name="Linked Office")
+        make_customer_link(db, office)
+        _office_type(db, office)
+        unlinked = _legacy_contact(db, wid, agents, agents=FIVE_AGENTS, keys=keys, name="Unlinked A")
+        map_legacy_contacts(db)
+        db.commit()
+        return db, dealer, office, unlinked
+
+    def test_linked_non_office_contact_gets_dealer_plus_add_overrides(self, session_factory):
+        db, dealer, _office, _unlinked = self._world(session_factory)
+        assert _role_codes(db, dealer) == ["dealer"]
+        access = _access(db, dealer)
+        assert access.sees_all_customers is False
+        assert {K_SELLABLE, K_PLACED} <= set(access.attributes)
+        assert _override_count(db, dealer) > 0
+
+    def test_a_linked_office_contact_keeps_the_internal_role(self, session_factory):
+        db, _dealer, office, _unlinked = self._world(session_factory)
+        assert _role_codes(db, office) == ["sales_office"]
+
+    def test_an_unlinked_non_office_contact_keeps_todays_mapping(self, session_factory):
+        db, _dealer, _office, unlinked = self._world(session_factory)
+        assert _role_codes(db, unlinked) == ["sales_office"]
+
+    def test_the_gain_report_is_empty_after_mapping(self, session_factory):
+        from app.services.chatbot.access_seed import access_gain_report
+
+        db, *_ = self._world(session_factory)
+        assert access_gain_report(db) == []
+
+    def test_the_gain_report_names_a_contact_that_became_wider_on_customers(self, session_factory):
+        from app.services.chatbot.access_seed import access_gain_report
+        from tests.chatbot._access_seed import give_role as _give
+
+        db, dealer, _office, _unlinked = self._world(session_factory)
+        _give(db, dealer, _role(db, "sales_office").id)
+        report = access_gain_report(db)
+        assert [r["contact_id"] for r in report] == [dealer]
+        assert report[0]["kind"] == "customers"
