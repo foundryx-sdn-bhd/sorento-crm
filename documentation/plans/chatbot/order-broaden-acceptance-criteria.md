@@ -27,7 +27,9 @@ AC-5  Presentation: a compose block whose figures carry `flags.dealer_view` neve
 AC-6  Engine: a turn whose `focus.domains` changes to a different set clears the carried
       `date_window` (`domain_change_drops_date_window`); the incoming tool call carries no
       `eta_from` / `eta_to` from the delivery window, and the dealer reply has no "Order
-      date" line. Engine journey test through the dealer console, v42 verdict.
+      date" line. Engine journey test through the dealer console, v42 verdict. Exception:
+      a carried top selling ranking keeps its period for the report drilled out of it
+      (existing `test_top_selling_round5.py` / `round7.py` tests stay green).
 AC-7  Engine: the same domain keeps the window. With the patched verdict (order), "all
       products" after the miss re-runs the orders tool with the SAME
       `actual_delivery_date_from/to` and no `product_ids`, never an incoming call, never an
