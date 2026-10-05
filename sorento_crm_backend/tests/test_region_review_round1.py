@@ -264,14 +264,14 @@ def test_a_matched_reupload_takes_the_uploads_regions(client, db, how):
     assert _stored(db, sid) == expected
 
 
-# ------------------------------------------------------------------ 4. rules expansion
+# ------------------------------------------------------------------ 4. rules (literal)
 
 
-def test_rules_for_contact_expands_east_to_east_and_west(db, monkeypatch):
-    """Red today: rules.regions is the raw reader output, not expanded."""
+def test_rules_for_contact_keeps_east_literal(db, monkeypatch):
+    """Owner ruling 5 Oct: east held stays {east}, no expansion."""
     monkeypatch.setattr(eta_policy, "contact_regions", lambda db_, cid: frozenset({"east"}))
     rules = eta_policy.rules_for_contact(db, _contact(db).id)
-    assert rules.regions == frozenset({"east", "west"})
+    assert rules.regions == frozenset({"east"})
 
 
 # ------------------------------------------------------------------ 5. ambiguous identifier

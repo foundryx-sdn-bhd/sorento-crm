@@ -41,6 +41,10 @@ import { getProductsForLineSelect } from '@/app/(protected)/master-data-manageme
 import { getBrands } from '@/app/(protected)/master-data-management/brands/services/brandService';
 import { getWarehouses } from '@/app/(protected)/inventory-management/warehouses/services/warehouseService';
 import type { SearchableMultiSelectOption } from '@/components/common/SearchableMultiSelect';
+import {
+  DEFAULT_PACKING_LIST_REGIONS,
+  type PackingListRegion,
+} from '@/lib/packing-list-regions';
 import { getContact } from './contactService';
 
 export type ChatbotMemoryLevel = 'off' | 'conversation' | 'episodes' | 'full';
@@ -57,6 +61,8 @@ export interface ContactChatbotProfile {
   notify_salesman: boolean;
   /** R7: the shipment's packing list is attached on a B3 answer. Default off. */
   packing_list_allowed: boolean;
+  /** CONTACT-REGION: the packing list regions this contact may be told about. */
+  regions?: PackingListRegion[];
   /** #1328: the ETA this contact is told carries the +x days offset. Default on. */
   eta_offset_applied: boolean;
   /** ESCALATION-CONTROL: may the chatbot hand this contact to a person. Default on. */
@@ -161,6 +167,7 @@ function profileFromContact(contact: {
   chatbot_stock_allowed?: boolean;
   notify_salesman?: boolean;
   packing_list_allowed?: boolean;
+  regions?: string[] | null;
   chatbot_eta_offset_applied?: boolean;
   escalation_allowed?: boolean;
 }): ContactChatbotProfile {
@@ -172,6 +179,9 @@ function profileFromContact(contact: {
     stock_allowed: contact.chatbot_stock_allowed !== false,
     notify_salesman: Boolean(contact.notify_salesman),
     packing_list_allowed: Boolean(contact.packing_list_allowed),
+    regions: contact.regions?.length
+      ? (contact.regions as PackingListRegion[])
+      : DEFAULT_PACKING_LIST_REGIONS,
     eta_offset_applied: contact.chatbot_eta_offset_applied !== false,
     escalation_allowed: contact.escalation_allowed !== false,
   };
@@ -200,6 +210,7 @@ export async function saveContactChatbotProfile(
       chatbot_stock_allowed: input.stock_allowed,
       notify_salesman: input.notify_salesman,
       packing_list_allowed: input.packing_list_allowed,
+      regions: input.regions,
       chatbot_eta_offset_applied: input.eta_offset_applied,
       // `escalation_allowed` is NOT sent here: it has its own save
       // (`saveContactEscalation`), so another switch saved from a stale page can never
