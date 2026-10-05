@@ -98,10 +98,19 @@ def _is_quantity_ask(semantic_input: dict[str, Any]) -> bool:
     )
 
 
+def skips_period_questions(ctx: Any) -> bool:
+    """DO-PERIOD-SKIP: does this contact never get asked a date range? The ONLY reader of the
+    switch on `ctx.access`; anything that is not a literal True is False."""
+    access = ctx.get("access") if isinstance(ctx, dict) else None
+    return isinstance(access, dict) and access.get("skip_period_questions") is True
+
+
 def range_reply(
     *, ctx: dict[str, Any], tool_name: str, order_tools: Any, entities: list[Any], semantic_input: dict[str, Any]
 ) -> str | None:
     """The line that answers this DO list ask instead of a fetch, or None to fetch."""
+    if skips_period_questions(ctx):
+        return None
     if tool_name not in order_tools:
         return None
     if jsc.js_string(semantic_input.get("order_status") or "").strip() in _EXEMPT_STATUSES:

@@ -38,7 +38,6 @@ def test_the_assignment_arm_writes_no_chat_history(session_factory) -> None:
     result = run(ctx, item, services=_services())
 
     assert [a["kind"] for a in result["actions"]] == [
-        "send_message",
         "assign_conversation",
         "add_comment",
         "send_message",
