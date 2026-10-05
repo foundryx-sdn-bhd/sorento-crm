@@ -410,6 +410,19 @@ def _on_attachment_list(db: "Session", raw: str, vocab: Vocabulary) -> bool:
     return bool(_lookup_resolve(db, "attachment_type_alias", raw))
 
 
+def _parser_document_type(db: "Session", entity: dict[str, Any], vocab: Vocabulary) -> bool:
+    """The parser's own `canonical_code` is a document type on the list AND one word the
+    customer typed is, exactly (`_same`), a word of it: "techincal drawings" read as
+    "technical drawing" shares "drawing". Only the parser understands the misspelt word;
+    a code that shares no word with what was typed ("zebra" read as "photo") is a
+    misfiled descriptor and gets no say. No fuzzy match: the typo itself is never read."""
+    canonical = str(entity.get("canonical_code") or "").strip()
+    if not canonical or not _on_attachment_list(db, canonical, vocab):
+        return False
+    code_words = _words(canonical)
+    return any(_same(said, word) for said in _words(str(entity.get("raw") or "")) for word in code_words)
+
+
 def _corrected_class(db: "Session", text: str, vocab: Vocabulary) -> str:
     """A class phrase said in the plural put in the singular against the class vocabulary
     ("kitchen sinks" -> "kitchen sink"), only when the singular phrase names a class and
@@ -671,6 +684,14 @@ def ground(
             if rest and _covered_by_class(_words(rest), vocab):
                 out.append({**entity, "raw": _corrected_class(db, rest, vocab), "hint": "category", "canonical_code": None})
                 rest = ""
+            if not grounded and rest and _parser_document_type(db, entity, vocab):
+                # ATTACH-GROUNDING-TYPO (prod 5 Oct 2026, "m495 techincal drawings"): the
+                # parser read the words as a document type on the list, and a word the
+                # customer typed is a word of that type. It stays the document type, never
+                # an empty specification.
+                out.append(entity)
+                notes.append({"from": hint, "raw": raw, "to": "kept: parser canonical_code"})
+                continue
             if not grounded and rest:
                 # Named by nothing the system holds: not a document type, not a value of
                 # any key. Said back as a descriptor it does not know, never a document.
