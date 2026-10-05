@@ -26,6 +26,7 @@ from app.models.order import Customer, SalesOrder, SalesOrderLine
 from app.models.procurement import PurchaseOrder, PurchaseOrderLine, Supplier
 from app.models.inventory import Warehouse
 from app.models.product import Product
+from app.services import customer_identity
 from app.services import import_outcome_codes as oc
 from app.services.import_outcome import ImportOutcome
 from app.services.import_alias_service import AliasResolver
@@ -476,7 +477,20 @@ def _resolve_parties(db: Session, read: ReadResult, bind: _Binding) -> dict[str,
         return {}
     code_col = getattr(bind.party, bind.party_code_col)
     rows = _in_chunks(db.query(bind.party.id, code_col), func.upper(code_col), codes)
-    return {_norm(code): str(pid) for pid, code in rows}
+    out = {_norm(code): str(pid) for pid, code in rows}
+    if bind.party is Customer:
+        # DEBTOR-CODE-UNIQUE: until the merge has run a code can still hold several
+        # customers; resolve those to the one the merge keeps instead of whichever row the
+        # database returned last.
+        counts: dict[str, int] = {}
+        for _pid, code in rows:
+            counts[_norm(code)] = counts.get(_norm(code), 0) + 1
+        for code, n in counts.items():
+            if n > 1:
+                row = customer_identity.customer_by_code(db, code)
+                if row is not None:
+                    out[code] = str(row.id)
+    return out
 
 
 def _resolve_parties_by_name(db: Session, read: ReadResult, bind: _Binding) -> dict[str, str]:
@@ -1642,7 +1656,12 @@ def _would_create_parties(db: Session, resolved: _Resolved, bind: _Binding) -> t
     if resolved.party_raw_code_by_code:
         code_col = getattr(bind.party, bind.party_code_col)
         for code in sorted(resolved.party_raw_code_by_code):
-            existing = db.query(bind.party).filter(func.upper(code_col) == code).one_or_none()
+            if bind.party is Customer:
+                # Not `.one_or_none()`: a customer code can still hold several rows until
+                # the DEBTOR-CODE-UNIQUE merge has run, and that raised MultipleResultsFound.
+                existing = customer_identity.customer_by_code(db, code)
+            else:
+                existing = db.query(bind.party).filter(func.upper(code_col) == code).one_or_none()
             if existing is not None:
                 continue
             raw_code = resolved.party_raw_code_by_code.get(code, code)
@@ -2679,7 +2698,12 @@ def apply(db: Session, file_data: bytes, doc_type: str = SO,
         # optional (`_MINIMAL` PO uploads carry no SUPPLIER name at all), and a code with
         # no label is still a code to create - it just falls back to naming itself.
         for code in sorted(resolved.party_raw_code_by_code):
-            existing = db.query(bind.party).filter(func.upper(code_col) == code).one_or_none()
+            if bind.party is Customer:
+                # Not `.one_or_none()`: a customer code can still hold several rows until
+                # the DEBTOR-CODE-UNIQUE merge has run, and that raised MultipleResultsFound.
+                existing = customer_identity.customer_by_code(db, code)
+            else:
+                existing = db.query(bind.party).filter(func.upper(code_col) == code).one_or_none()
             if existing is not None:
                 party_ids_by_code[code] = str(existing.id)
                 continue
