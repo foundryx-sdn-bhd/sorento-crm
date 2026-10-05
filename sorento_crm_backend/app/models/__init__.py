@@ -11,7 +11,7 @@ from app.models.product_companion import ProductCompanionRule, ProductCompanionR
 from app.models.product_combo import ProductCombo, ProductComboPart
 from app.models.product_set_proposal import ProductSetProposalBatch, ProductSetProposal
 from app.models.product_spec import ProductSpecRegistry, ProductSpecifications, ProductSpecException, ProductSpecVerification, ProductSpecFlyerBatch, ProductSpecFlyerProposal
-from app.models.order import Order, OrderStatus, Customer, CustomerContact, OrderLine, SalesOrder, SalesOrderLine
+from app.models.order import Order, OrderStatus, Customer, CustomerAlias, CustomerContact, CustomerMergeMap, OrderLine, SalesOrder, SalesOrderLine
 from app.models.sales_agent import SalesAgent
 from app.models.sales import SalesTeam, SalesTeamMember
 from app.models.stock_ask import StockAsk
@@ -209,7 +209,9 @@ __all__ = [
     "Order",
     "OrderStatus",
     "Customer",
+    "CustomerAlias",
     "CustomerContact",
+    "CustomerMergeMap",
     "OrderLine",
     "SalesOrder",
     "SalesOrderLine",
