@@ -3,8 +3,11 @@
 # running suite in the primary checkout is untouched. Each fix is reverted to origin/main
 # on its own, then both together; the addendum is emptied for the static tests.
 set -u
-WT=/tmp/claude-0/-home-user-sorento-crm/e53bb4b6-9c73-5655-af46-fa46c9399236/scratchpad/kill-wt
-PY=/home/user/sorento-crm/sorento_crm_backend/venv/bin/python
+# Usage: kill-tests.sh <detached worktree of the branch head> [python with the backend venv]
+#   git worktree add --detach /tmp/kill-wt HEAD && cp sorento_crm_backend/.env.ci-tests /tmp/kill-wt/sorento_crm_backend/
+WT=${1:?worktree path}
+PY=${2:-$(git -C "$WT" rev-parse --show-toplevel)/sorento_crm_backend/venv/bin/python}
+BAK=$(mktemp)
 cd "$WT/sorento_crm_backend"
 export SORENTO_ENV_FILE=.env.ci-tests
 T=tests/chatbot/test_order_broaden_presentation.py
@@ -25,7 +28,7 @@ revert $COMPOSE; run $T -v | sed 's/ \[.*//'; restore $COMPOSE
 echo; echo "### D. kill 2: apply.py alone reverted (domain change drops window)"
 revert $APPLY; run $T -v | sed 's/ \[.*//'; restore $APPLY
 echo; echo "### E. kill 3: addendum emptied (static patch tests)"
-cp $ADD /tmp/ob-addendum.bak; printf '    nothing\n' > $ADD
+cp $ADD "$BAK"; printf '    nothing\n' > $ADD
 run tests/chatbot/test_order_broaden_prompt_patch.py -v | sed 's/ \[.*//'
-cp /tmp/ob-addendum.bak $ADD
+cp "$BAK" $ADD
 echo; echo "### worktree clean? (expect no output)"; git status --short

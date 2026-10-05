@@ -1186,19 +1186,7 @@ def _focus_rules(
             focus.domains = [verdict["domain_hint"]]
             trace.rules_fired.append("domains_from_asks")
         # else: no domain word this turn - focus.domains carries over unchanged.
-    if (
-        focus.date_window
-        and carried_domains
-        and focus.domains
-        and set(focus.domains) != set(carried_domains)
-        # The ONE standing exception: a report drilled out of a top selling ranking
-        # carries the ranking's own filters, its period included ("top 10 in q1 2026"
-        # then "can see its outstanding?" is the outstanding report for Q1 2026,
-        # `_top_selling_rules` / `tests/chatbot/test_top_selling_round5.py::
-        # test_a_report_after_a_ranking_carries_its_filters`). `focus.status` still
-        # reads the carried value here; the status rules below rewrite it.
-        and focus.status != TOP_SELLING_STATUS
-    ):
+    if focus.date_window and _left_every_carried_domain(carried_domains, focus.domains):
         # ORDER-BROADEN (owner, 5 Oct 2026): a window narrows the question it was asked
         # on, and a DIFFERENT domain is a different question, so the carried window
         # never rides into it. "check delivery for last week" (28/09 to 04/10) missed,
@@ -1671,6 +1659,27 @@ def _answer_top_selling_pick(pending: Pending, decision: Decision, focus: Focus,
     focus.domains = [contracts.SALES_DOMAIN]
     trace.rules_fired.append("answer_top_selling_pick")
     return focus, with_answered_positions(pending, positions), None, True
+
+
+def _domain_family(domains: list[str]) -> set[str]:
+    """`order` and `sales` are ONE family for the window's sake: a sales report's
+    follow-up ("and srtwc286-sh-new?") comes back as `order` (`turn_runtime.
+    _report_status_means_order_domain` maps a report status to `sales` and a plain
+    follow-up to `order`), and a report drilled out of a top selling ranking carries
+    the ranking's period (`test_top_selling_round5.py::
+    test_a_report_after_a_ranking_carries_its_filters`)."""
+    return {"order" if d in contracts.ORDER_OR_SALES_DOMAINS else d for d in domains or []}
+
+
+def _left_every_carried_domain(carried: list[str], current: list[str]) -> bool:
+    """True when this turn's domains share NOTHING with the carried ones (by family):
+    the question moved somewhere else entirely. A subset or superset of a multi-domain
+    ask ("stock and orders" then "just the orders") keeps every carried domain it still
+    names, and so keeps the window; a reconciliation or a refinement never leaves the
+    family. Empty on either side is not a move."""
+    before = _domain_family(carried)
+    after = _domain_family(current)
+    return bool(before) and bool(after) and not (before & after)
 
 
 def _broaden(

@@ -50,7 +50,7 @@ def test_the_addendum_states_the_rule_and_the_worked_verdict():
     ):
         assert needle in addendum, needle
     # The repo's own writing rule: no em or en dashes anywhere in the prompt.
-    assert not re.search("[–—]", addendum)
+    assert not re.search("[\u2013\u2014]", addendum)
     # Indented like the bullet it extends (four spaces), every non-blank line.
     assert all(line.startswith("    ") for line in addendum.splitlines() if line.strip())
     assert addendum.endswith("\n") and not addendum.endswith("\n\n")
