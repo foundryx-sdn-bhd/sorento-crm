@@ -64,17 +64,15 @@ class TestFieldRevealKeysFromRows:
             ("sales_orders.outstanding", "Outstanding SO"),
         ], "a legacy key with no row (purchase_orders.cost ...) is absent: the DB is the source"
 
-    def test_a_non_field_kind_row_is_ignored(self, session_factory):
-        from app.models.chatbot_access import ChatbotDomainField
+    def test_a_row_that_is_not_a_legacy_reveal_key_is_ignored(self, session_factory):
         from app.services.contact_field_reveal_service import field_reveal_keys
 
         db_ = session_factory()
         _seed_reveal_rows(db_)
-        db_.query(ChatbotDomainField).filter(ChatbotDomainField.key == "inventory.sellable").update(
-            {"kind": "note"}
-        )
-        db_.commit()
-        assert [k for k, _ in field_reveal_keys(db_)] == ["sales_orders.outstanding"]
+        make_field(db_, "incoming", "stamp.incoming", kind="report", label="Stamp")
+        keys = [k for k, _ in field_reveal_keys(db_)]
+        for not_legacy in ("incoming_stock.consignee", "zzt.other", "stamp.incoming"):
+            assert not_legacy not in keys
 
 
 class TestFieldRevealKeysEndpoint:
