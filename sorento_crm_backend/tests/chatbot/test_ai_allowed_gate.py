@@ -223,7 +223,7 @@ class TestAllowedContact:
 
         db = session_factory()
         ContactService(db).create_contact(
-            RespondContactCreate(phone_number="+60111100099", respond_io_id=str(CONTACT_ID))
+            RespondContactCreate(phone_number="+60100000099", respond_io_id=str(CONTACT_ID))
         )
         stub_parser()
         stub_access()
