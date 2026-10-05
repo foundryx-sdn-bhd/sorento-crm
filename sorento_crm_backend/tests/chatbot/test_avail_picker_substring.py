@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from app.services.chatbot import turn_runtime
 from app.services.chatbot.engine import _exact_codes_only
 from app.services.chatbot.turn import task as turn_task
@@ -102,6 +104,16 @@ def test_group_keeps_the_prefix_reading_first():
     assert [r["product_code"] for r in turn_task._group(rows, "srtwc286-sh-2")] == ["SRTWC286-SH-200"]
 
 
+@pytest.mark.parametrize("token", ["2", "new", "sh"])
+def test_group_never_reads_a_word_or_bare_number_as_a_substring_family(token):
+    """Reviewer finding 1: the parser does tag "2" or "new" as a product beside a code
+    ("2 srtwc286", "new srtwc286 x 10"); on main the prefix rule never matched them, and
+    the substring rule must not either, or the picker header reads "2 matches 10
+    products" and the real token's quantity is lost."""
+    rows = _rows("SRT5674", *FAMILY, "SRTWC286-SH-NEW")
+    assert turn_task._group(rows, token) == []
+
+
 # ---------------------------------------------------------------- turn_runtime quantity carry
 
 
@@ -125,3 +137,9 @@ def test_a_substring_of_several_resolved_codes_is_a_family_and_carries_none():
 
 def test_a_prefix_of_exactly_one_code_still_carries_as_before():
     assert _quantities("srtwc287-s", 3, _resolved("SRTWC287-S-150")) == {"uuid-SRTWC287-S-150": 3}
+
+
+@pytest.mark.parametrize("token", ["2", "new"])
+def test_a_word_or_bare_number_inside_one_code_carries_no_quantity(token):
+    """Reviewer finding 2: "new x 4" beside SRTWC286-SH-NEW is not that code's quantity."""
+    assert _quantities(token, 4, _resolved("SRTWC286-SH-NEW", "SRT5674")) == {}

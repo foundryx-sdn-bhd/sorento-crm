@@ -68,8 +68,11 @@ of exactly ONE resolved code carries its quantity to that code.
 
 ## Slices (one branch, one PR)
 
-1. Red tests: `tests/chatbot/test_avail_mode_scenarios.py` console journeys (S43+) and a
-   unit test on `engine._exact_codes_only` / `turn_runtime` quantity carry.
-2. `engine._exact_codes_only` substring fallback; `turn_runtime` quantity carry aligned.
+1. Red tests: `tests/chatbot/test_avail_mode_scenarios.py` console journeys (S55-S55e) and
+   `tests/chatbot/test_avail_picker_substring.py` on the three seams.
+2. `engine._exact_codes_only` substring fallback; `turn/task.py::_group` and the
+   `turn_runtime` quantity carry aligned, every substring reading gated on a code-like
+   token (letters AND digits, `turn/task.py::code_like`) so a word or bare number the
+   parser tagged as a product never names a family (reviewer finding 1).
 3. Catalogue row in `tests/chatbot/AVAIL-MODE-SCENARIOS.md`; hand-test script
    `laneboard/scripts/<PR>.md`.

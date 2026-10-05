@@ -456,10 +456,9 @@ def _as_a_stock_ask_by_its_own_words(verdict: dict[str, Any], message: str) -> d
     }
 
 
-def _code_like(token: str) -> bool:
-    """A typed token that can be a product code: letters AND digits ("srtwc286"). A word
-    ("xx", "basin") or a bare number ("2", "10") is not one."""
-    return any(ch.isdigit() for ch in token) and any(ch.isalpha() for ch in token)
+#: A typed token that can be a product code: letters AND digits. One copy, in
+#: `turn/task.py`, shared with the family grouping and the quantity carry (AVAIL-PICKER).
+_code_like = turn_task.code_like
 
 
 def _unsure_capture_as_codes(verdict: dict[str, Any]) -> dict[str, Any]:

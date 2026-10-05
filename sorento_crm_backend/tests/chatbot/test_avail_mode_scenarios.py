@@ -773,3 +773,11 @@ def test_S55e_a_substring_family_beside_an_exact_code_answers_one_and_picks_the_
     out = c.say("SRT5674 x 5, wc286 x 10", stock(product("SRT5674", 5), product("wc286", 10)))
     assert out == f"SRT5674 x 5: {TICK} {R}\n\n" + numbered("WC286 x 10: which one?", OWNER_FAMILY)
     assert c.say("2", _pick(2)) == f"SRTWC286-SH-150 x 10: {TICK} {R}"
+
+
+def test_S55f_a_bare_number_the_parser_tagged_as_a_product_never_names_the_family(console):
+    """Reviewer finding 1 on the AVAIL-PICKER fix: "2 srtwc286" parsed as two products.
+    "2" sits inside half the family's codes and is not code-like, so the picker is
+    SRTWC286's, exactly as on main; "2" is ignored, never "2 matches 10 products"."""
+    c = console()
+    assert c.say("2 srtwc286", stock(product("2"), product("srtwc286"))) == FAMILY_ASK
