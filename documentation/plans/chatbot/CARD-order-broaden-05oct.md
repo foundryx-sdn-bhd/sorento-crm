@@ -49,11 +49,13 @@ R3. After a MISS, a widened axis re-runs the SAME window with that filter droppe
     customer who answers it names new dates; the one who widens an axis keeps the dates.
 R4. A date window never carries across a domain change (Q2). The engine clears the carried
     window when `focus.domains` changes this turn (`domain_change_drops_date_window`); a
-    window THIS message names is set from the verdict as today. One standing exception,
-    found by the drift run: a report drilled out of a top selling ranking carries the
-    ranking's filters, period included (earlier owner ruling on that lane,
-    `test_top_selling_round5.py::test_a_report_after_a_ranking_carries_its_filters`), so a
-    carried focus whose status is the ranking keeps its window.
+    window THIS message names is set from the verdict as today. "Changes" means the turn
+    LEAVES every carried domain (`_left_every_carried_domain`), with `order` and `sales`
+    counted as one family: a sales report's plain follow-up comes back as `order` (the
+    report seam's own mapping) and a report drilled out of a top selling ranking keeps the
+    ranking's period (`test_top_selling_round5.py::test_a_report_after_a_ranking_carries_
+    its_filters`); a subset or superset of a multi-domain ask ("stock and orders" then
+    "just the orders") still names a carried domain and keeps the window too.
 R5. A dealer-view block never prints the window line (presentation, `turn/compose.py`): the
     one-line ETA answers have no header for it to sit under.
 

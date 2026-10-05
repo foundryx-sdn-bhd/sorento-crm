@@ -3,10 +3,12 @@
 # running suite in the primary checkout is untouched. Each fix is reverted to origin/main
 # on its own, then both together; the addendum is emptied for the static tests.
 set -u
-# Usage: kill-tests.sh <detached worktree of the branch head> [python with the backend venv]
+# Usage: kill-tests.sh <detached worktree of the branch head> <python of the backend venv>
 #   git worktree add --detach /tmp/kill-wt HEAD && cp sorento_crm_backend/.env.ci-tests /tmp/kill-wt/sorento_crm_backend/
+#   bash documentation/plans/chatbot/evidence/order-broaden/kill-tests.sh /tmp/kill-wt sorento_crm_backend/venv/bin/python
+# (the worktree has no venv of its own, so the python is the primary checkout's)
 WT=${1:?worktree path}
-PY=${2:-$(git -C "$WT" rev-parse --show-toplevel)/sorento_crm_backend/venv/bin/python}
+PY=$(readlink -f "${2:?python of the backend venv}")
 BAK=$(mktemp)
 cd "$WT/sorento_crm_backend"
 export SORENTO_ENV_FILE=.env.ci-tests
