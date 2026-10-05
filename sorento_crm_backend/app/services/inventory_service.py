@@ -1737,8 +1737,7 @@ class StockService:
                 # reads, so the dealer's line prints it too. A merged code (one code in
                 # two companies) is discontinued only when every company row of it is: a
                 # sister company still selling it can still supply the dealer.
-                "is_discontinued": bool(group_ids)
-                and all(
+                "is_discontinued": all(
                     getattr(products_by_id.get(gid), "is_discontinued", False) is True
                     for gid in group_ids
                 ),

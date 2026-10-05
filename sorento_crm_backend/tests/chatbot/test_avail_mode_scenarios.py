@@ -734,11 +734,10 @@ def test_S54c_the_quantity_need_not_follow_the_code(console, parsed):
 # does not refer (S01/S02 above); a discontinued product carries the marker compact/detailed
 # print, under its own line, on an availability line and on a dealer ETA line.
 
-BLOCKED = "\U0001F6AB"
 DISCONTINUED = "\u26a0\ufe0f  *(PRODUCT DISCONTINUED)*"
 
 
-def test_S51_the_owners_trace_a_discontinued_product_too_big_carries_the_marker(console):
+def test_S55_the_owners_trace_a_discontinued_product_too_big_carries_the_marker(console):
     """Owner, 5 Oct 2026: "check stock SRTWT2634-RG x 5" printed the blocked line with no
     hint the product is discontinued; only the product-info card said so."""
     c = console(SRT5674=Stock(on_hand=100, x=0, discontinued=True))
@@ -747,19 +746,19 @@ def test_S51_the_owners_trace_a_discontinued_product_too_big_carries_the_marker(
     )
 
 
-def test_S52_a_discontinued_product_in_stock_says_got_stock_and_the_marker(console):
+def test_S56_a_discontinued_product_in_stock_says_got_stock_and_the_marker(console):
     c = console(SRT5674=Stock(on_hand=100, discontinued=True))
     assert c.say("SRT5674 x 5", stock(product("SRT5674", 5))) == f"SRT5674 x 5: {TICK} Got stock.\n{DISCONTINUED}"
 
 
-def test_S53_a_discontinued_products_eta_line_carries_the_marker(console):
+def test_S57_a_discontinued_products_eta_line_carries_the_marker(console):
     c = console(SRTW2000=Stock(eta=ETA, discontinued=True))
     assert c.say("ETA SRTW2000 and MWT5727SS-CR", _eta_ask("SRTW2000", "MWT5727SS-CR")) == (
         f"SRTW2000: {TICK} ETA 19/10/2026\n{DISCONTINUED}\n\nMWT5727SS-CR: No ETA\n\n{R}"
     )
 
 
-def test_S54_a_mixed_reply_marks_only_the_discontinued_line(console):
+def test_S58_a_mixed_reply_marks_only_the_discontinued_line(console):
     c = console(SRT5674=Stock(on_hand=30, x=100, discontinued=True), CWCX604=Stock(on_hand=100))
     out = c.say("SRT5674 x 50, CWCX604 x 5", stock(product("SRT5674", 50), product("CWCX604", 5)))
     assert out == (
@@ -767,7 +766,7 @@ def test_S54_a_mixed_reply_marks_only_the_discontinued_line(console):
     )
 
 
-def test_S55_a_no_stock_no_incoming_line_keeps_its_refer_and_the_marker(console):
+def test_S59_a_no_stock_no_incoming_line_keeps_its_refer_and_the_marker(console):
     c = console(SRT5674=Stock(on_hand=0, x=100, discontinued=True))
     assert c.say("SRT5674 x 5", stock(product("SRT5674", 5))) == (
         f"SRT5674 x 5: {CROSS} No stock and no incoming. {R}\n{DISCONTINUED}"

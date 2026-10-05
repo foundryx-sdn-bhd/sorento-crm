@@ -51,7 +51,7 @@ A dealer ETA line (`CODE: ✅ ETA dd/mm/yyyy`, `CODE: No ETA`) gets the same.
 3. `incoming_stock.py` + `eta_policy.dealer_view`: dealer rows carry `is_discontinued`;
    `presenters.py::_incoming_dealer` flags `discontinued`.
 4. `presenters.py::_AVAILABILITY_TAILS` / `_availability_tail`: the two in-stock tails.
-5. `label_catalog.py`: ms + zh rows for the two new tails; the two retired rows go.
+5. `label_catalog.py`: ms + zh rows for the two new tails; the retired `{available} available. REFER` row goes (the bare REFER row stays, other lines print it).
 6. Tests red-first (MCP + backend), the chat-language doc table, the handtest script.
 
 Side effect, stated: an in-stock line no longer ends with the refer, so `_stamp_refers`
