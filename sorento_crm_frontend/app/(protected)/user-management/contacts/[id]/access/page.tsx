@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SearchableMultiSelect } from '@/components/common/SearchableMultiSelect';
 import AccessSummary from '@/components/chatbot-access/AccessSummary';
+import HandoffAdvanced from '@/components/chatbot-access/HandoffAdvanced';
 import AccessSwitches from '@/components/chatbot-access/AccessSwitches';
 import SaveBar from '@/components/chatbot-access/SaveBar';
 import {
@@ -32,9 +33,6 @@ import type {
 } from '@/services/chatbotAccessService';
 import { useContact } from '../components/contact-context';
 import ContactMediaAccessSection from '../components/ContactMediaAccessSection';
-
-const humanize = (code?: string | null) =>
-  code ? code.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase()) : '-';
 
 function AccessEditor({
   contactId,
@@ -63,6 +61,16 @@ function AccessEditor({
   const state = resolveState({ roles: grants, overrides });
   const seesAll = held.some((r) => r.sees_all_customers);
   const { count, payload } = diffAccess(initial, { role_ids: roleIds, overrides });
+  // Details this contact gets on top of its roles: field add-overrides no held role ticks.
+  const roleFields = new Set(grants.flatMap((g) => g.fields));
+  const extras = Object.entries(
+    overrides
+      .filter((o) => o.granted && o.field_key && !roleFields.has(o.field_key))
+      .reduce<Record<string, number>>((acc, o) => {
+        acc[o.domain_name] = (acc[o.domain_name] ?? 0) + 1;
+        return acc;
+      }, {}),
+  ).map(([domain, count]) => ({ domain, count }));
   const allCustomersFrom = held.filter((r) => r.sees_all_customers).map((r) => r.name);
 
   return (
@@ -76,6 +84,7 @@ function AccessEditor({
           sees_all_customers: seesAll,
         }}
         customersLabel={seesAll ? 'all customers' : 'only their linked customers'}
+        extras={extras}
       />
 
       <Card>
@@ -138,33 +147,7 @@ function AccessEditor({
         />
       </Card>
 
-      <details className="rounded-lg border bg-card">
-        <summary className="cursor-pointer px-5 py-3 font-medium">
-          Advanced <span className="text-xs text-muted-foreground">hand-off teams</span>
-        </summary>
-        <div className="overflow-x-auto px-5 pb-4">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-muted-foreground">
-                <th className="py-2 pr-4 font-medium">Topic</th>
-                <th className="py-2 pr-4 font-medium">Hand-off team</th>
-                <th className="py-2 font-medium">Agent</th>
-              </tr>
-            </thead>
-            <tbody>
-              {registry.domains
-                .filter((d) => state.domains.has(d.name) && d.escalation_agent_code)
-                .map((d) => (
-                  <tr key={d.name} className="border-t">
-                    <td className="py-2 pr-4">{d.access_label || d.label}</td>
-                    <td className="py-2 pr-4">{d.escalation_tier1_team || '-'}</td>
-                    <td className="py-2">{d.escalation_agent_name || humanize(d.escalation_agent_code)}</td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
-        </div>
-      </details>
+      <HandoffAdvanced registry={registry} domains={state.domains} />
 
       <SaveBar
         count={count}

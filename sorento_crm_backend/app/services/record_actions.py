@@ -148,7 +148,12 @@ def _unlink_chatbot_role_contact(db: Session, payload: dict):
     """The unlink `DELETE /system/chatbot/roles/{id}/contacts/{cid}` runs; entity_id is `role:contact`."""
     from app.api.v1.system.chatbot_roles import unlink_role_contact
 
+    from app.api.v1.system.chatbot_roles import _contact_or_404, _role_or_404
+
     role_id, _, contact_id = _entity_id(payload).partition(":")
+    # The route's own checks: an unknown role or contact is refused, the holder stays.
+    _role_or_404(db, role_id)
+    _contact_or_404(db, contact_id)
     unlink_role_contact(db, role_id, contact_id)
     return None
 

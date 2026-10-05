@@ -25,6 +25,7 @@ K_SALES = "sales_orders.sales_report"
 K_LOW = "scm.low_stock_report"
 K_PO_NUMBER = "purchase_orders.po_number"
 K_SPO_NUMBER = "spo_allocation.spo_number"
+K_COST_SUPPLIER = "purchase_cost.supplier"
 K_STAMP_INCOMING = "stamp.incoming"
 K_STAMP_ATTACHMENT = "stamp.product_attachment"
 LEGACY_KEYS = (K_SELLABLE, K_PLACED, K_SUPPLIER, K_COST, K_OUTSTANDING, K_SALES, K_LOW)
@@ -69,6 +70,7 @@ FIELD_REGISTRY: tuple[tuple[str, str, str, str], ...] = (
     (K_SUPPLIER, "purchase_order", "Supplier", "field"),
     (K_PO_NUMBER, "purchase_order", "PO number", "field"),
     (K_SPO_NUMBER, "spo_allocation", "SPO number", "field"),
+    (K_COST_SUPPLIER, "purchase_cost", "Supplier", "field"),
     *((f"incoming_stock.{k}", "incoming", label, "field") for k, label in INCOMING_FIELDS),
     (K_STAMP_INCOMING, "incoming", "Show has / no incoming in pick lists", "field"),
     (K_STAMP_ATTACHMENT, "product_attachment", "Show has / no photos in pick lists", "field"),
@@ -94,7 +96,7 @@ _ROLES: tuple[tuple[str, str, str, bool, str, Any, Any], ...] = (
     ("sales_office", "Sales office", "Sales office staff", True, "office", _SALES_OFFICE_DOMAINS,
      _SALES_OFFICE_FIELDS),
     ("purchasing", "Purchasing", "Purchasing staff", True, "office", _PURCHASING_DOMAINS,
-     _SALES_OFFICE_FIELDS + (K_SUPPLIER,)),
+     _SALES_OFFICE_FIELDS + (K_SUPPLIER, K_COST_SUPPLIER)),
     ("warehouse", "Warehouse", "Warehouse staff", True, "office", _WAREHOUSE_DOMAINS,
      (K_LOW, K_SPO_NUMBER, *(f"incoming_stock.{k}" for k, _ in INCOMING_FIELDS), *_STAMPS)),
     ("management", "Management", "Every supported topic", True, "office", None, None),
@@ -138,7 +140,11 @@ def _rows(db: Any, sql: str, **params: Any) -> list[Any]:
 
 
 def seed_field_registry(db: Any) -> None:
-    """The field and report rows, idempotent. Skips a row whose domain row does not exist."""
+    """The field and report rows, idempotent. Skips a row whose domain row does not exist.
+
+    Also clears the `purchase_order` reveal_key: the on-order key has ONE path, the inventory
+    field (review 6 Oct)."""
+    db.execute(text("UPDATE chatbot_domains SET reveal_key = NULL WHERE name = 'purchase_order'"))
     for order, (key, domain, label, kind) in enumerate(FIELD_REGISTRY):
         db.execute(
             text(
@@ -258,12 +264,16 @@ def _legacy_contacts(db: Any) -> dict[str, dict[str, Any]]:
     out: dict[str, dict[str, Any]] = {}
 
     def entry(cid: str) -> dict[str, Any]:
-        return out.setdefault(cid, {"agents": set(), "keys": set(), "inc_on": set(), "inc_off": set()})
+        return out.setdefault(
+            cid, {"agents": set(), "keys": set(), "inc_on": set(), "inc_off": set(), "linked": False, "office": False}
+        )
 
     for cid, code in _rows(
         db,
         "SELECT c.respond_contact_id, a.code FROM contact_agent_access c "
-        "JOIN access_agents a ON a.id = c.agent_id WHERE c.is_allowed AND a.is_active",
+        "JOIN access_agents a ON a.id = c.agent_id WHERE c.is_allowed AND a.is_active "
+        "AND (c.valid_to IS NULL OR c.valid_to > (now() AT TIME ZONE 'utc')) "
+        "AND (c.valid_from IS NULL OR c.valid_from <= (now() AT TIME ZONE 'utc'))",
     ):
         entry(cid)["agents"].add(code)
     for cid, key in _rows(db, "SELECT respond_contact_id, field_key FROM contact_field_reveals WHERE granted"):
@@ -274,10 +284,25 @@ def _legacy_contacts(db: Any) -> dict[str, dict[str, Any]]:
         "WHERE contact_id IS NOT NULL AND resource = 'incoming_stock'",
     ):
         entry(cid)["inc_on" if allowed else "inc_off"].add(f"incoming_stock.{field}")
+    for (cid,) in _rows(db, "SELECT DISTINCT contact_id FROM respond_contact_customers"):
+        if cid in out:
+            out[cid]["linked"] = True
+    for (cid,) in _rows(
+        db,
+        "SELECT DISTINCT rt.contact_id FROM respond_contact_access_types rt "
+        "JOIN contact_access_types t ON t.code = rt.access_type_code "
+        "WHERE t.name ILIKE '%office%' OR t.code ILIKE '%office%'",
+    ):
+        if cid in out:
+            out[cid]["office"] = True
     return out
 
 
-def _role_for(keys: set[str]) -> str:
+def _role_for(keys: set[str], *, linked_non_office: bool = False) -> str:
+    # Ruling Q1: a linked contact outside the office keeps linked-only customers (Dealer);
+    # whatever else it held comes back as add-overrides below.
+    if linked_non_office:
+        return "dealer"
     if {K_SALES, K_LOW, K_COST} <= keys:
         return "management"
     if {K_COST, K_SUPPLIER} <= keys:
@@ -299,7 +324,7 @@ def map_legacy_contacts(db: Any) -> None:
     """Give every contact that held an agent a role plus the overrides that reproduce its
     legacy reveal keys and incoming-field overrides. Idempotent: a contact that already holds
     a role is left alone."""
-    grants = {code: _role_grants(db, code) for code in ("sales_office", "purchasing", "management")}
+    grants = {code: _role_grants(db, code) for code in ("dealer", "sales_office", "purchasing", "management")}
     if any(g is None for g in grants.values()):
         return
     paths = _key_paths(db)
@@ -309,7 +334,7 @@ def map_legacy_contacts(db: Any) -> None:
     for cid, legacy in _legacy_contacts(db).items():
         if cid in already or cid not in existing or not legacy["agents"]:
             continue
-        code = _role_for(legacy["keys"])
+        code = _role_for(legacy["keys"], linked_non_office=legacy["linked"] and not legacy["office"])
         role_id, role_domains, role_fields = grants[code]  # type: ignore[misc]
         db.execute(
             text("INSERT INTO contact_chatbot_roles (contact_id, role_id) VALUES (:c, CAST(:r AS uuid))"),
@@ -385,4 +410,20 @@ def access_loss_report(db: Any) -> list[dict[str, str]]:
         for key in sorted(legacy["inc_on"]):
             if key not in have:
                 lost("incoming", key)
+    return report
+
+
+def access_gain_report(db: Any) -> list[dict[str, str]]:
+    """Contacts that now see MORE customers than they did: linked-only customers before (a
+    linked contact outside the office), all customers now. One row per contact
+    `{"contact_id", "name", "kind": "customers", "key"}`. Empty list = nobody gained (ruling Q1)."""
+    from app.services.chatbot.access_tree import tree_for_contact
+
+    names = {r[0]: r[1] for r in _rows(db, "SELECT id, name FROM respond_contacts")}
+    report: list[dict[str, str]] = []
+    for cid, legacy in sorted(_legacy_contacts(db).items()):
+        if cid not in names or not legacy["agents"] or not legacy["linked"] or legacy["office"]:
+            continue
+        if tree_for_contact(db, cid).sees_all_customers:
+            report.append({"contact_id": cid, "name": names[cid] or "", "kind": "customers", "key": "customers"})
     return report

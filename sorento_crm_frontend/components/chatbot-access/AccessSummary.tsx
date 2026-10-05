@@ -5,10 +5,12 @@ export interface AccessSummaryProps {
   registry: Registry;
   effective: Pick<ContactAccess['effective'], 'domains' | 'attributes' | 'sees_all_customers'>;
   customersLabel: string;
+  /** Field add-overrides per topic, beyond what the roles tick. */
+  extras?: { domain: string; count: number }[];
 }
 
 /** The plain "can / cannot" box at the top of the contact and role pages. */
-export default function AccessSummary({ mode, registry, effective, customersLabel }: AccessSummaryProps) {
+export default function AccessSummary({ mode, registry, effective, customersLabel, extras = [] }: AccessSummaryProps) {
   const can: string[] = [];
   const cannot: string[] = [];
   for (const d of registry.domains.filter((x) => x.supported !== false)) {
@@ -26,6 +28,11 @@ export default function AccessSummary({ mode, registry, effective, customersLabe
       <ul className="space-y-1">
         <li>ask about: {can.length ? can.join(', ') : 'nothing yet'}</li>
         {cannot.length > 0 && <li className="text-muted-foreground">cannot ask: {cannot.join(', ')}</li>}
+        {extras.map((e) => (
+          <li key={e.domain}>
+            plus {e.count} extra {e.domain.replace(/_/g, ' ')} details
+          </li>
+        ))}
         <li>see {customersLabel}</li>
       </ul>
     </div>

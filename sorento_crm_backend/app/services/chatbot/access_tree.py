@@ -45,9 +45,9 @@ def _empty(resolved: bool = False) -> EffectiveAccess:
 def contact_rows(db: Any, contact_respond_id: str, space_id: str | None) -> list[str]:
     """Every `respond_contacts.id` behind this respond.io id in this workspace.
 
-    Workspace first; only when that finds nothing, the NULL-workspace rows (the same fallback as
-    `field_access.resolve_contact_with_null_workspace_fallback`). A contact in a different,
-    non-default workspace stays unresolved. With no `space_id` every row of the id counts.
+    Strict: only rows in this workspace. A contact with no workspace, or in another one, stays
+    unresolved (no NULL-workspace fallback: security review 6 Oct). With no `space_id` every row
+    of the id counts.
     """
     cid = str(contact_respond_id)
     if not space_id:
@@ -64,11 +64,7 @@ def contact_rows(db: Any, contact_respond_id: str, space_id: str | None) -> list
     ).fetchall()
     if scoped:
         return [r[0] for r in scoped]
-    rows = db.execute(
-        text("SELECT id FROM respond_contacts WHERE respond_io_id = :cid AND workspace_id IS NULL"),
-        {"cid": cid},
-    ).fetchall()
-    return [r[0] for r in rows]
+    return []
 
 
 def tree_for_contact(db: Any, contact_pk: str) -> EffectiveAccess:

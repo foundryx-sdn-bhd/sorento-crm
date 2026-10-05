@@ -1633,7 +1633,8 @@ def lane_parse_output(
     # ACCESS-MODEL S3: the hand-off agent is the DOMAIN row's, not the parser's guess; the
     # parser value stays only when the row names none. `contact_agent_access` plays no part.
     agent_row = policy.domain(out.get("domain_hint")) if policy else None
-    if agent_row is not None and agent_row.escalation_agent_code:
+    # An accepted offer keeps the agent the offer named (review 6 Oct): only a fresh question takes the row's.
+    if not accepted_team and agent_row is not None and agent_row.escalation_agent_code:
         routing["suggested_agent"] = agent_row.escalation_agent_code
     # `suggested_agent`'s default is applied once, upstream, by `with_routing_agent_default`
     # (finding 2b) - the access read and the lanes see the same value.

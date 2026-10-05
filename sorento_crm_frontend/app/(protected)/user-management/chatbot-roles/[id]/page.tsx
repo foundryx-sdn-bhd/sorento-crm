@@ -25,6 +25,7 @@ import { SearchableMultiSelect } from '@/components/common/SearchableMultiSelect
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import AccessSummary from '@/components/chatbot-access/AccessSummary';
 import AccessSwitches from '@/components/chatbot-access/AccessSwitches';
+import HandoffAdvanced from '@/components/chatbot-access/HandoffAdvanced';
 import SaveBar from '@/components/chatbot-access/SaveBar';
 import { useDeferredAction } from '@/hooks/useDeferredAction';
 import { useDeferredRowAction } from '@/hooks/useDeferredRowAction';
@@ -114,6 +115,7 @@ function RoleEditor({ role, registry }: { role: ChatbotRole; registry: Registry 
   );
   const [grants, setLocalGrants] = useState<GrantSet>(saved);
   const [name, setName] = useState(role.name);
+  const [description, setDescription] = useState(role.description ?? '');
   const [tier, setTier] = useState<string>(role.audience_tier ?? '');
   const [seesAll, setSeesAll] = useState(role.sees_all_customers);
 
@@ -121,6 +123,7 @@ function RoleEditor({ role, registry }: { role: ChatbotRole; registry: Registry 
   const grantChanges = diffGrants(saved, grants);
   const metaChanges =
     Number(name.trim() !== role.name) +
+    Number(description !== (role.description ?? '')) +
     Number(tier !== (role.audience_tier ?? '')) +
     Number(seesAll !== role.sees_all_customers);
   const count = grantChanges + metaChanges;
@@ -129,6 +132,7 @@ function RoleEditor({ role, registry }: { role: ChatbotRole; registry: Registry 
     if (metaChanges > 0) {
       update.mutate({
         name: name.trim(),
+        description,
         sees_all_customers: seesAll,
         ...(tier ? { audience_tier: tier as AudienceTier } : { clear_audience_tier: true }),
       });
@@ -138,6 +142,7 @@ function RoleEditor({ role, registry }: { role: ChatbotRole; registry: Registry 
   const discard = () => {
     setLocalGrants(saved);
     setName(role.name);
+    setDescription(role.description ?? '');
     setTier(role.audience_tier ?? '');
     setSeesAll(role.sees_all_customers);
   };
@@ -206,6 +211,14 @@ function RoleEditor({ role, registry }: { role: ChatbotRole; registry: Registry 
               <Label>Tier</Label>
               <SearchableSelect value={tier} onChange={setTier} options={TIER_OPTIONS} clearable />
             </div>
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label htmlFor="role-description">Description</Label>
+              <Input
+                id="role-description"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
+            </div>
           </CardContent>
         </Card>
 
@@ -259,16 +272,16 @@ function RoleEditor({ role, registry }: { role: ChatbotRole; registry: Registry 
                     <Link
                       href={`/user-management/contacts/${c.id}/access`}
                       className="truncate hover:underline"
-                      title={c.name ?? ''}
+                      title={c.name || 'Unnamed contact'}
                     >
-                      {c.name}
+                      {c.name || 'Unnamed contact'}
                     </Link>
                     <Button
                       variant="ghost"
                       size="icon"
-                      aria-label={`Unlink ${c.name ?? 'contact'}`}
+                      aria-label={`Unlink ${c.name || 'Unnamed contact'}`}
                       disabled={unlink.targetId === `${role.id}:${c.id}`}
-                      onClick={() => unlink.run({ id: `${role.id}:${c.id}`, subject: c.name ?? 'Contact' })}
+                      onClick={() => unlink.run({ id: `${role.id}:${c.id}`, subject: c.name || 'Unnamed contact' })}
                     >
                       <X className="size-4" />
                     </Button>
@@ -283,6 +296,8 @@ function RoleEditor({ role, registry }: { role: ChatbotRole; registry: Registry 
             )}
           </CardContent>
         </Card>
+
+        <HandoffAdvanced registry={registry} domains={grants.domains} />
 
         <SaveBar
           count={count}

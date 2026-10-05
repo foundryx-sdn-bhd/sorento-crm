@@ -14,13 +14,15 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from fastapi import APIRouter, Depends, Response
+import uuid
+
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import require_permission
+from app.dependencies import get_current_user, require_permission
 from app.models.access import RespondContact
 from app.models.chatbot_access import (
     ChatbotDomainField,
@@ -48,6 +50,7 @@ from app.schemas.chatbot_access import (
 )
 from app.services.chatbot.access_tree import tree_for_contact
 from app.services.company_scope import get_company_scope
+from app.services.user_service import UserPermissionService
 from app.services.error_handler import handle_conflict, handle_not_found, handle_unprocessable
 
 router = APIRouter(prefix="/chatbot")
@@ -56,6 +59,28 @@ ACCESS_VIEW = "user_management.access_agents.view"
 ROLE_MANAGE = "user_management.reference_data.manage"
 CONTACT_VIEW = "user_management.contacts.view"
 CONTACT_EDIT = "user_management.contacts.edit"
+
+
+def _read_access(current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
+    """Any Access tab read: either view slug is enough (ruling Q4), neither is 403."""
+    service = UserPermissionService(db)
+    if not any(service.check_user_has_permission(current_user["id"], s) for s in (ACCESS_VIEW, CONTACT_VIEW)):
+        raise HTTPException(status_code=403, detail=f"Permission required: {ACCESS_VIEW} or {CONTACT_VIEW}")
+    return current_user
+
+
+def _require_manage(db: Session, current_user: dict) -> None:
+    """Granting access (a role holder, a plus override) needs the role-manage slug (ruling Q3)."""
+    if not UserPermissionService(db).check_user_has_permission(current_user["id"], ROLE_MANAGE):
+        raise HTTPException(status_code=403, detail=f"Permission required: {ROLE_MANAGE}")
+
+
+def _is_uuid(value: str) -> bool:
+    try:
+        uuid.UUID(str(value))
+    except (ValueError, AttributeError, TypeError):
+        return False
+    return True
 
 
 def _actor(current_user: dict) -> str | None:
@@ -94,6 +119,14 @@ def _role_out(db: Session, role: ChatbotRole) -> RoleResponse:
     )
 
 
+def _refuse_duplicate_name(db: Session, name: str, except_id: str | None = None) -> None:
+    q = db.query(ChatbotRole.id).filter(func.lower(ChatbotRole.name) == name.lower())
+    if except_id:
+        q = q.filter(ChatbotRole.id != except_id)
+    if q.first():
+        raise handle_conflict(f"A role named {name} already exists.")
+
+
 def _slug(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_") or "role"
 
@@ -109,7 +142,9 @@ def _tier1_names(db: Session) -> dict[tuple[str, str], str]:
     a single-company admin sees that company's rows, an unscoped one sees all.
     """
     scope = get_company_scope(db)
-    scoped = isinstance(scope, frozenset) and bool(scope)
+    if scope is not None and not (isinstance(scope, frozenset) and scope):
+        return {}  # UNSET or empty: fail closed, no names
+    scoped = scope is not None
     rows = db.execute(
         text(
             "SELECT a.code, at.code, t.name FROM access_agents a "
@@ -126,7 +161,7 @@ def _tier1_names(db: Session) -> dict[tuple[str, str], str]:
 
 @router.get("/access/registry", response_model=RegistryResponse)
 def get_registry(
-    current_user: dict = Depends(require_permission(ACCESS_VIEW)),
+    current_user: dict = Depends(_read_access),
     db: Session = Depends(get_db),
 ):
     _ = current_user
@@ -164,7 +199,7 @@ def get_registry(
 
 @router.get("/roles", response_model=list[RoleResponse])
 def list_roles(
-    current_user: dict = Depends(require_permission(ACCESS_VIEW)),
+    current_user: dict = Depends(_read_access),
     db: Session = Depends(get_db),
 ):
     _ = current_user
@@ -181,6 +216,7 @@ def create_role(
     name = payload.name.strip()
     if not name:
         raise handle_unprocessable("A role needs a name.")
+    _refuse_duplicate_name(db, name)
     base = _slug(name)
     code, n = base, 2
     while db.query(ChatbotRole.id).filter(ChatbotRole.code == code).first():
@@ -205,7 +241,7 @@ def create_role(
 @router.get("/roles/{role_id}", response_model=RoleResponse)
 def get_role(
     role_id: str,
-    current_user: dict = Depends(require_permission(ACCESS_VIEW)),
+    current_user: dict = Depends(_read_access),
     db: Session = Depends(get_db),
 ):
     _ = current_user
@@ -223,6 +259,7 @@ def update_role(
     if payload.name is not None:
         if not payload.name.strip():
             raise handle_unprocessable("A role needs a name.")
+        _refuse_duplicate_name(db, payload.name.strip(), role.id)
         role.name = payload.name.strip()
     if payload.description is not None:
         role.description = payload.description
@@ -273,7 +310,17 @@ def put_role_grants(
 ):
     role = _role_or_404(db, role_id)
     domains, fields = set(payload.domains), set(payload.fields)
-    known_d = {n for (n,) in db.query(ChatbotDomain.name).filter(ChatbotDomain.name.in_(domains))} if domains else set()
+    ticked = {d for (d,) in db.query(ChatbotRoleDomain.domain_name).filter(ChatbotRoleDomain.role_id == role.id)}
+    known_d = (
+        {
+            n
+            for (n,) in db.query(ChatbotDomain.name).filter(
+                ChatbotDomain.name.in_(domains), ChatbotDomain.supported.is_(True)
+            )
+        }
+        if domains
+        else set()
+    ) | (domains & ticked)
     known_f = {k for (k,) in db.query(ChatbotDomainField.key).filter(ChatbotDomainField.key.in_(fields))} if fields else set()
     bad = sorted(domains - known_d) + sorted(fields - known_f)
     if bad:
@@ -299,7 +346,7 @@ def _replace_ticks(db: Session, role_id: str, model: Any, column: str, wanted: s
 @router.get("/roles/{role_id}/contacts", response_model=list[RoleContact])
 def list_role_contacts(
     role_id: str,
-    current_user: dict = Depends(require_permission(ACCESS_VIEW)),
+    current_user: dict = Depends(_read_access),
     db: Session = Depends(get_db),
 ):
     _ = current_user
@@ -325,7 +372,7 @@ def add_role_contacts(
     current_user: dict = Depends(require_permission(CONTACT_EDIT)),
     db: Session = Depends(get_db),
 ):
-    _ = current_user
+    _require_manage(db, current_user)
     role = _role_or_404(db, role_id)
     ids = list(dict.fromkeys(payload.contact_ids))
     for cid in ids:
@@ -365,7 +412,7 @@ def unlink_role_contact(db: Session, role_id: str, contact_id: str) -> None:
 
 
 def _contact_or_404(db: Session, contact_id: str) -> RespondContact:
-    contact = db.query(RespondContact).filter(RespondContact.id == contact_id).first()
+    contact = db.query(RespondContact).filter(RespondContact.id == contact_id).first() if _is_uuid(contact_id) else None
     if contact is None:
         raise handle_not_found("Contact", contact_id)
     return contact
@@ -404,7 +451,7 @@ def _contact_access_out(db: Session, contact_id: str) -> ContactAccessResponse:
 @router.get("/contacts/{contact_id}/access", response_model=ContactAccessResponse)
 def get_contact_access(
     contact_id: str,
-    current_user: dict = Depends(require_permission(CONTACT_VIEW)),
+    current_user: dict = Depends(_read_access),
     db: Session = Depends(get_db),
 ):
     _ = current_user
@@ -421,6 +468,11 @@ def put_contact_access(
 ):
     _contact_or_404(db, contact_id)
     role_ids = list(dict.fromkeys(payload.role_ids))
+    if not all(_is_uuid(r) for r in role_ids):
+        raise handle_unprocessable("Unknown role: malformed id.")
+    seen_keys = [(o.domain_name, o.field_key) for o in payload.overrides]
+    if len(set(seen_keys)) != len(seen_keys):
+        raise handle_unprocessable("Two overrides on the same topic or detail.")
     known_roles = (
         {i for (i,) in db.query(ChatbotRole.id).filter(ChatbotRole.id.in_(role_ids))} if role_ids else set()
     )
@@ -438,6 +490,17 @@ def put_contact_access(
         raise handle_unprocessable(f"Unknown role, domain or field: {', '.join(bad)}.")
 
     held = {r.role_id: r for r in db.query(ContactChatbotRole).filter(ContactChatbotRole.contact_id == contact_id)}
+    plus_now = {
+        (o.domain_name, o.field_key)
+        for o in db.query(ContactAccessOverride).filter(
+            ContactAccessOverride.contact_id == contact_id, ContactAccessOverride.granted.is_(True)
+        )
+    }
+    adds = [r for r in role_ids if r not in held] + [
+        k for k, o in ((k, o) for k, o in zip(seen_keys, payload.overrides)) if o.granted and k not in plus_now
+    ]
+    if adds:
+        _require_manage(db, current_user)
     for rid, row in held.items():
         if rid not in role_ids:
             db.delete(row)

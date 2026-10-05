@@ -144,6 +144,7 @@ def downgrade() -> None:
     # The two reveal_key values are restored from the code seed; the legacy tables were never touched.
     op.execute("UPDATE chatbot_domains SET reveal_key = 'inventory.sellable' WHERE name = 'inventory'")
     op.execute("UPDATE chatbot_domains SET reveal_key = 'sales_orders.outstanding' WHERE name = 'order'")
+    op.execute("UPDATE chatbot_domains SET reveal_key = 'purchase_orders.placed' WHERE name = 'purchase_order'")
     for table in (
         "contact_access_overrides",
         "contact_chatbot_roles",

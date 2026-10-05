@@ -19,6 +19,7 @@ import { DataGrid } from '@/components/ui/data-grid';
 import { DataGridColumnHeader } from '@/components/ui/data-grid-column-header';
 import { DataGridTable } from '@/components/ui/data-grid-table';
 import { Container } from '@/components/common/container';
+import { ListSearchInput } from '@/components/common/ListSearchInput';
 import { PageHeader } from '@/components/common/PageHeader';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { useChatbotRoles, useCreateChatbotRole } from '@/hooks/useChatbotAccess';
@@ -32,6 +33,11 @@ export default function ChatbotRolesPage() {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [tier, setTier] = useState('');
+  const [search, setSearch] = useState('');
+  const shown = useMemo(
+    () => roles.filter((r) => r.name.toLowerCase().includes(search.trim().toLowerCase())),
+    [roles, search],
+  );
 
   const columns = useMemo<ColumnDef<ChatbotRole>[]>(
     () => [
@@ -71,7 +77,7 @@ export default function ChatbotRolesPage() {
 
   const table = useReactTable({
     columns,
-    data: roles,
+    data: shown,
     getRowId: (r) => r.id,
     columnResizeMode: 'onChange',
     enableColumnResizing: true,
@@ -111,9 +117,12 @@ export default function ChatbotRolesPage() {
         />
       </Container>
       <Container>
+        <div className="mb-3 max-w-sm">
+          <ListSearchInput value={search} onChange={setSearch} placeholder="Search roles" />
+        </div>
         <DataGrid
           table={table}
-          recordCount={roles.length}
+          recordCount={shown.length}
           isLoading={isLoading}
           error={isError ? new Error('Failed to load roles') : undefined}
           emptyMessage="No roles yet."
