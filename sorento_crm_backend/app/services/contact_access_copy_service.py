@@ -66,8 +66,12 @@ STOCK_MODE_LABELS = {"detailed": "Detailed", "compact": "Compact", "availability
 #: Facets an actor may only copy when they could set them directly; the route names the ones to
 #: leave out (`skip`). Companies: superadmin/admin (`PUT /contacts/{id}/companies`). Stock check
 #: mode + locations: `inventory.stock.edit` (`PUT /inventory/stock-visibility/contacts/{id}`).
+#: Agent grants: `user_management.access_agents.edit` (`POST/PUT/DELETE
+#: /access-agents/{id}/contact-access`, gated since 5 Oct 2026, lane ACCESS-AGENTS-AUTH).
 STOCK_FACETS = frozenset({"stock_check_mode", "stock_locations"})
 COMPANIES_FACET = "companies"
+AGENTS_FACET = "agent_access"
+AGENTS_EDIT_PERMISSION = "user_management.access_agents.edit"
 
 #: Always named under "Not copied" in the dialog; a skipped facet's label is added to it.
 NOT_COPIED = ("Linked customers", "CS routing", "Media limits", "Memory")
@@ -76,6 +80,7 @@ FACET_LABELS = {
     "stock_locations": "Locations",
     "companies": "Companies",
     "market_segments": "Market segments",
+    "agent_access": "Agent access",
 }
 
 
@@ -88,7 +93,10 @@ def facets_to_skip(db: Session, user_id: str) -> frozenset[str]:
     is_admin = _is_superadmin(db, user_id)
     if not is_admin:
         skip.add(COMPANIES_FACET)
-    if not UserPermissionService(db).check_user_has_permission(user_id, "inventory.stock.edit"):
+    permissions = UserPermissionService(db)
+    if not permissions.check_user_has_permission(user_id, AGENTS_EDIT_PERMISSION):
+        skip.add(AGENTS_FACET)
+    if not permissions.check_user_has_permission(user_id, "inventory.stock.edit"):
         skip |= STOCK_FACETS
     elif not is_admin and _inventory_module_off(db):
         # `require_permission` on the direct editor also refuses a non-admin when the strict
@@ -420,7 +428,7 @@ def diff(
 
     src_keys = {aid: g.key() for aid, g in source.agents.items()}
     tgt_keys = {aid: g.key() for aid, g in target.agents.items()}
-    if src_keys != tgt_keys:
+    if AGENTS_FACET not in skip and src_keys != tgt_keys:
         added = [g.agent_name for aid, g in source.agents.items() if tgt_keys.get(aid) != g.key()]
         removed = [g.agent_name for aid, g in target.agents.items() if src_keys.get(aid) != g.key()]
         order = lambda grants: sorted((g.as_dict() for g in grants), key=lambda d: d["agent_code"])  # noqa: E731
@@ -491,8 +499,9 @@ def summary(source: AccessSnapshot, names: Names, skip: frozenset[str] = frozens
         },
         {"label": "Regions", "value": ", ".join(REGION_LABELS.get(r, r) for r in source.regions)},
         {"label": "Field reveals", "value": ", ".join(labels.get(k, k) for k in source.reveals)},
-        {"label": "Agent access", "value": ", ".join(agents)},
     ]
+    if AGENTS_FACET not in skip:
+        lines.append({"label": FACET_LABELS[AGENTS_FACET], "value": ", ".join(agents)})
     extra = {
         "stock_check_mode": STOCK_MODE_LABELS.get(source.stock.mode, source.stock.mode) if source.stock else "Inherited",
         "stock_locations": locations_text(source.stock, names) or "Inherited",
@@ -556,7 +565,8 @@ def _write(
             db, target_id, source.reveals, actor_id=actor_id, commit=False
         )
 
-    _write_agents(db, source, target, actor_id)
+    if AGENTS_FACET in changed:
+        _write_agents(db, source, target, actor_id)
 
     if changed & STOCK_FACETS:
         _write_stock(db, source.stock, target_id)
