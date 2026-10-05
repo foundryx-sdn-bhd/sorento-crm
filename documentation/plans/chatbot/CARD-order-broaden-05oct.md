@@ -1,7 +1,11 @@
 # CARD - "all products" after a delivery miss (ORDER-BROADEN)
 
-Status: ASKED 5 Oct 2026 (crew-ask on PR #1495, Q1-Q3 below with recommendations); building
-on the recommendations meanwhile. Plan: `PLAN-order-broaden-05oct.md`.
+Status: ANSWERED by owner 5 Oct 2026 via crew, all three as recommended: Q1 (a) after a MISS
+"all products" re-runs the SAME window with the product filter dropped (owner: "I am thinking
+to find all products"); Q2 (a) a window never carries across a domain change; Q3 (a) one
+example set covering all products / all customers / any date after a MISS. The prompt change
+ships as patch + test now; the migration only after crew confirms the base (#1429 combined
+version). Plan: `PLAN-order-broaden-05oct.md`.
 
 Owner (5 Oct, live, AVAILABILITY contact, prompt v42): "check delivery for last week" missed
 (HANLIM, SRTWC286-SH, 28/09 to 04/10, "no order ... matched these. Reply with another month or
