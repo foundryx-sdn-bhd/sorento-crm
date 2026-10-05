@@ -28,7 +28,7 @@ class EffectiveAccess:
     attributes: tuple[str, ...]
     sees_all_customers: bool
     roles: tuple[str, ...]
-    tiers: frozenset[str]
+    tiers: frozenset[str] = frozenset()
 
 
 def _empty(resolved: bool = False) -> EffectiveAccess:

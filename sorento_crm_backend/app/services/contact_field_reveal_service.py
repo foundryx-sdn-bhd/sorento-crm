@@ -87,13 +87,29 @@ DEFAULT_ON_KEYS: frozenset[str] = frozenset(
 )
 
 
-def field_reveal_keys() -> list[dict[str, str]]:
+def field_reveal_keys(db: Session | None = None):
     """Every restricted key that exists, with its label, sorted by key.
 
-    Sourced from the `FIELD_REVEAL_KEYS` literal above, not from `mcp_tools` - see the
-    module docstring for why a live query cannot be used here.
+    Without `db`: sourced from the `FIELD_REVEAL_KEYS` literal above, not from `mcp_tools` -
+    see the module docstring for why a live query cannot be used here (list of dicts).
+
+    With `db` (ACCESS-MODEL S5): a tuple of `(key, label)` read from the `chatbot_domain_fields`
+    rows of kind field/report whose key is a legacy reveal key. The literal is the fallback
+    only when no such row exists (blank install).
     """
-    return [{"key": key, "label": label} for key, label in sorted(FIELD_REVEAL_KEYS)]
+    if db is None:
+        return [{"key": key, "label": label} for key, label in sorted(FIELD_REVEAL_KEYS)]
+    from app.models.chatbot_access import ChatbotDomainField
+
+    legacy = {key for key, _label in FIELD_REVEAL_KEYS}
+    rows = (
+        db.query(ChatbotDomainField.key, ChatbotDomainField.label)
+        .filter(ChatbotDomainField.kind.in_(("field", "report")), ChatbotDomainField.key.in_(legacy))
+        .all()
+    )
+    if not rows:
+        return tuple(sorted(FIELD_REVEAL_KEYS))
+    return tuple(sorted((k, l) for k, l in rows))
 
 
 def granted_keys_for(db: Session, respond_contact_ids: list[str]) -> dict[str, list[str]]:
