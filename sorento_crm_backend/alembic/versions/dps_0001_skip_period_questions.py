@@ -4,14 +4,14 @@
 re-runnable; nobody is pre-set (the owner sets it per contact).
 
 Revision ID: dps_0001_skip_period_questions
-Revises: creg_0001_contact_regions
+Revises: wa_trim_0001_stock_compact
 Create Date: 2026-10-04
 """
 from alembic import op
 import sqlalchemy as sa
 
 revision = "dps_0001_skip_period_questions"
-down_revision = "creg_0001_contact_regions"
+down_revision = "wa_trim_0001_stock_compact"
 branch_labels = None
 depends_on = None
 
