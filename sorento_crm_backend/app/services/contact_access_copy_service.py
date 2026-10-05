@@ -52,6 +52,7 @@ SWITCHES: tuple[tuple[str, str], ...] = (
     ("packing_list_allowed", "Packing list"),
     ("chatbot_eta_offset_applied", "ETA buffer days"),
     ("escalation_allowed", "Escalation"),
+    ("chatbot_skip_period_questions", "Skip date-range questions"),
 )
 
 REGION_ORDER = ("west", "east")

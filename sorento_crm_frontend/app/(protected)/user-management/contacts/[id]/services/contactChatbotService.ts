@@ -67,6 +67,8 @@ export interface ContactChatbotProfile {
   eta_offset_applied: boolean;
   /** ESCALATION-CONTROL: may the chatbot hand this contact to a person. Default on. */
   escalation_allowed: boolean;
+  /** DO-PERIOD-SKIP: never ask this contact for a date range. Default off. */
+  skip_period_questions: boolean;
 }
 
 export type ChatbotFactSource = 'crm' | 'tallied' | 'stated' | 'staff';
@@ -170,6 +172,7 @@ function profileFromContact(contact: {
   regions?: string[] | null;
   chatbot_eta_offset_applied?: boolean;
   escalation_allowed?: boolean;
+  chatbot_skip_period_questions?: boolean;
 }): ContactChatbotProfile {
   const profile = contact.chatbot_profile ?? null;
   return {
@@ -184,6 +187,7 @@ function profileFromContact(contact: {
       : DEFAULT_PACKING_LIST_REGIONS,
     eta_offset_applied: contact.chatbot_eta_offset_applied !== false,
     escalation_allowed: contact.escalation_allowed !== false,
+    skip_period_questions: Boolean(contact.chatbot_skip_period_questions),
   };
 }
 
@@ -212,6 +216,7 @@ export async function saveContactChatbotProfile(
       packing_list_allowed: input.packing_list_allowed,
       regions: input.regions,
       chatbot_eta_offset_applied: input.eta_offset_applied,
+      chatbot_skip_period_questions: input.skip_period_questions,
       // `escalation_allowed` is NOT sent here: it has its own save
       // (`saveContactEscalation`), so another switch saved from a stale page can never
       // switch a contact's escalation back on (security review S3).
