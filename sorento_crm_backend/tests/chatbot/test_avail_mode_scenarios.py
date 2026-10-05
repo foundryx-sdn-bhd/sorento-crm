@@ -727,3 +727,49 @@ def test_S54c_the_quantity_need_not_follow_the_code(console, parsed):
     makes it a stock ask."""
     c = console()
     _dym5764_positions(c.say("srt5764 xx 10", parsed))
+
+
+# ================================================================== owner live trace, 5 Oct 2026 (AVAIL-PICKER)
+# "wc286 check stock" dead-ended with `SRTWC286-SH (+9 more)` / `Couldn't find: "wc286"` /
+# "But no inventory matched these." The resolver placed the token (its substring probe on
+# product_code, 10 hits), and the availability filter `engine._exact_codes_only` threw
+# them away because the token is a SUBSTRING of the codes rather than a prefix. A
+# substring hit on the CODE is the family, read off the resolver's own deterministic
+# lookup; no new matching. Plan: documentation/plans/chatbot/PLAN-avail-picker-substring-05oct.md.
+
+WC286_ASK = numbered("WC286 matches 10 products. Which one?", OWNER_FAMILY)
+WC286_PICK5 = numbered("WC286 x 5: which one?", OWNER_FAMILY)
+
+
+def test_S55_substring_of_a_family_without_a_quantity_picks_then_asks_it(console):
+    """The owner's turn as typed. The reply is the which-one picker, never the dead end."""
+    c = console()
+    assert c.say("wc286 check stock", stock(product("wc286"))) == WC286_ASK
+    assert c.say("2", _pick(2)) == "How many units of SRTWC286-SH-150?"
+
+
+def test_S55b_substring_of_a_family_with_a_quantity_picks_then_answers(console):
+    c = console(SRTWC286_SH_150=Stock(on_hand=50))
+    assert c.say("wc286 x 5", stock(product("wc286", 5))) == WC286_PICK5
+    assert c.say("2", _pick(2)) == f"SRTWC286-SH-150 x 5: {TICK} {R}"
+
+
+def test_S55c_substring_of_exactly_one_code_is_that_code(console):
+    """Like S08's prefix of one code: nothing to pick, so it is answered as that code."""
+    c = console(SRT5674=Stock(on_hand=100))
+    assert c.say("tr5674 x 3", stock(product("tr5674", 3))) == f"SRT5674 x 3: {TICK} {R}"
+    assert c.say("tr5674 got stock?", stock(product("tr5674"))) == "How many units of SRT5674?"
+
+
+def test_S55d_an_exact_code_still_never_brings_its_family(console):
+    """S50b / rule 1 regression: an exact code is the product, substring or not."""
+    c = console(SRTWC286_SH=Stock(on_hand=9))
+    assert c.say("SRTWC286-SH x 3", stock(product("SRTWC286-SH", 3))) == f"SRTWC286-SH x 3: {TICK} {R}"
+
+
+def test_S55e_a_substring_family_beside_an_exact_code_answers_one_and_picks_the_other(console):
+    """S20's shape with the substring token: the answered line first, then the picker."""
+    c = console(SRT5674=Stock(on_hand=100), SRTWC286_SH_150=Stock(on_hand=50))
+    out = c.say("SRT5674 x 5, wc286 x 10", stock(product("SRT5674", 5), product("wc286", 10)))
+    assert out == f"SRT5674 x 5: {TICK} {R}\n\n" + numbered("WC286 x 10: which one?", OWNER_FAMILY)
+    assert c.say("2", _pick(2)) == f"SRTWC286-SH-150 x 10: {TICK} {R}"
