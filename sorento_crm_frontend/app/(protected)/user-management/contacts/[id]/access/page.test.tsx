@@ -36,6 +36,11 @@ vi.mock('@/components/ui/collapsible', () => ({
   CollapsibleTrigger: ({ children }: { children: React.ReactNode }) => <button type="button">{children}</button>,
   CollapsibleContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
+const perms = vi.hoisted(() => ({ manage: true }));
+vi.mock('@/hooks/usePermissions', () => ({
+  useHasPermission: (slug: string) => (slug === 'user_management.reference_data.manage' ? perms.manage : true),
+  usePermissions: () => ({ permissions: [], permissionSet: new Set(), isLoading: false }),
+}));
 vi.mock('@/lib/api', () => ({ apiFetch: () => new Promise(() => {}) }));
 vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock('next/navigation', () => ({
@@ -82,6 +87,7 @@ vi.mock('@/hooks/useChatbotAccess', () => ({
 
 afterEach(() => {
   cleanup();
+  perms.manage = true;
   mutate.mockReset();
   view.withAgent = true;
   view.extraOverrides = 0;
@@ -168,5 +174,22 @@ describe('Contact Access tab (v8)', () => {
     renderPage();
     // 7 extras plus the one consignee add-override on the incoming domain.
     expect(screen.getByText(/8 extra incoming details/)).toBeTruthy();
+  });
+
+  it('Q3 without reference_data.manage the grant actions are unavailable but removals stay', () => {
+    perms.manage = false;
+    renderPage();
+    expect(screen.queryByText('Add role...')).toBeNull();
+    const ideas = screen.getByRole('switch', { name: 'Share ideas' }) as HTMLButtonElement;
+    expect(ideas.disabled).toBe(true);
+    const incoming = screen.getByRole('switch', { name: 'Incoming stock' }) as HTMLButtonElement;
+    expect(incoming.disabled).toBe(false);
+    expect(screen.getByRole('button', { name: 'Remove role Purchasing' })).toBeTruthy();
+  });
+
+  it('Q3 with reference_data.manage everything is available', () => {
+    renderPage();
+    expect(screen.getByText('Add role...')).toBeTruthy();
+    expect((screen.getByRole('switch', { name: 'Share ideas' }) as HTMLButtonElement).disabled).toBe(false);
   });
 });

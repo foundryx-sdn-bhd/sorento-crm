@@ -31,6 +31,11 @@ vi.mock('next/navigation', () => ({
   usePathname: () => '/user-management/chatbot-roles/r1',
   useSearchParams: () => new URLSearchParams(),
 }));
+const perms = vi.hoisted(() => ({ manage: true }));
+vi.mock('@/hooks/usePermissions', () => ({
+  useHasPermission: (slug: string) => (slug === 'user_management.reference_data.manage' ? perms.manage : true),
+  usePermissions: () => ({ permissions: [], permissionSet: new Set(), isLoading: false }),
+}));
 vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 // Container pulls SettingsProvider context this unit test does not need.
 vi.mock('@/components/common/container', () => ({
@@ -94,6 +99,7 @@ vi.mock('@/hooks/useChatbotAccess', () => ({
 
 afterEach(() => {
   cleanup();
+  perms.manage = true;
   mutate.mockReset();
   updateMutate.mockReset();
   contactsData.rows = [{ id: 'c1', name: 'CONTACT O' }];
@@ -206,5 +212,17 @@ describe('Chatbot role page (v8)', () => {
     const link = document.querySelector('a[href="/user-management/contacts/c2/access"]');
     expect(link).not.toBeNull();
     expect((link?.textContent ?? '').trim().length).toBeGreaterThan(0);
+  });
+
+  it('Q3 without reference_data.manage Add contacts is hidden and Unlink stays', () => {
+    perms.manage = false;
+    renderPage();
+    expect(screen.queryByRole('button', { name: /Add contacts/ })).toBeNull();
+    expect(screen.getByRole('button', { name: /Unlink CONTACT O/ })).toBeTruthy();
+  });
+
+  it('Q3 with reference_data.manage Add contacts is available', () => {
+    renderPage();
+    expect(screen.getByRole('button', { name: /Add contacts/ })).toBeTruthy();
   });
 });
