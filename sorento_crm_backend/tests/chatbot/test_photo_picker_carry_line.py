@@ -17,6 +17,7 @@ from datetime import datetime, timedelta
 
 from app.models.conversation_frame import ConversationFrame
 from app.services.chatbot import engine as engine_mod
+from tests.chatbot.test_engine import stub_access  # noqa: F401 - fixture import
 
 CID = "ZZT-photo-picker-carry"
 
@@ -92,3 +93,37 @@ def test_a_real_carry_from_memory_still_names_what_it_carried(session_factory) -
     )
     assert line is not None and line.startswith("Carrying on from "), line
     assert "SRTWC286-SH" in line
+
+
+def test_the_engine_hands_the_turns_decision_to_the_carried_line(
+    session_factory, stub_access, monkeypatch
+) -> None:
+    """The wiring (reviewer should-fix): `run_turn` passes `plan.trace.decision`, so the
+    guard above is reachable from a real turn and not only from a direct call."""
+    from tests.chatbot.test_engine import CONTACT_ID
+    from tests.chatbot.test_memory_replay_ablation import _run_turn, _seed_contact
+
+    seen: list[dict] = []
+
+    def spy(db, **kwargs):
+        seen.append(kwargs)
+        return None
+
+    monkeypatch.setattr(engine_mod, "_carried_line", spy)
+    _seed_contact(session_factory, str(CONTACT_ID), memory_level="episodes")
+    _run_turn(
+        session_factory,
+        stub_access,
+        message="stock srtwb1455",
+        verdict_overrides={
+            "domain_hint": "inventory",
+            "entities": [
+                {"raw": "SRTWB1455", "hint": "product", "canonical_code": "SRTWB1455", "current_message": True, "confident": True}
+            ],
+        },
+        message_id="ZZT-photo-picker-wiring",
+    )
+
+    assert seen, "the business turn never asked for a carried line"
+    decision = seen[-1].get("decision")
+    assert isinstance(decision, dict) and decision.get("kind"), seen[-1]
