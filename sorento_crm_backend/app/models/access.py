@@ -279,6 +279,9 @@ class RespondContact(Base):
     # packing_list_allowed - the shipment's packing list is attached on a B3 answer.
     notify_salesman = Column(Boolean, nullable=False, server_default=text("false"), default=False)
     packing_list_allowed = Column(Boolean, nullable=False, server_default=text("false"), default=False)
+    # CONTACT-REGION: the packing list regions this contact may be told about, held
+    # literally ('west' and/or 'east'). Default West only.
+    regions = Column(ARRAY(Text), nullable=False, server_default=text("'{west}'"))
     # Issue #1328: whether the ETA this contact is told carries the product-or-category
     # `chatbot_eta_offset_days`. One switch for every chat route that prints an ETA (the
     # stock ask and the incoming routes, `app/services/eta_policy.py`). Default ON: the
@@ -327,6 +330,10 @@ class RespondContact(Base):
             "chatbot_memory_level IS NULL OR chatbot_memory_level IN "
             "('off', 'conversation', 'episodes', 'full')",
             name="ck_respond_contacts_chatbot_memory_level",
+        ),
+        CheckConstraint(
+            "cardinality(regions) >= 1 AND regions <@ ARRAY['west','east']::text[]",
+            name="ck_respond_contacts_regions",
         ),
     )
 

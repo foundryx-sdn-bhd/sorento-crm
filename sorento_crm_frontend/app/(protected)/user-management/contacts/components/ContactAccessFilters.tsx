@@ -13,6 +13,7 @@ import {
   searchCustomersSelect,
 } from '@/app/(protected)/order-management/customers/services/customerService';
 import { getContact, getContacts } from '../[id]/services/contactService';
+import { PACKING_LIST_REGION_OPTIONS } from '@/lib/packing-list-regions';
 import type { ContactAccessFilters as Filters } from '../lib/listQuery';
 
 /**
@@ -162,6 +163,16 @@ export default function ContactAccessFilters({ value, onChange }: Props) {
         options={YES_NO('Stock checks allowed', 'Stock checks blocked')}
         placeholder="Stock checks: any"
         renderTriggerLabel={(opt) => `Stock checks: ${opt.label}`}
+        clearable
+      />
+      <SearchableSelect
+        triggerClassName={cls}
+        truncateTriggerLabel
+        value={value.region ?? ''}
+        onChange={set('region')}
+        options={PACKING_LIST_REGION_OPTIONS}
+        placeholder="Region: any"
+        renderTriggerLabel={(opt) => `Region: ${opt.label}`}
         clearable
       />
       <SearchableSelect

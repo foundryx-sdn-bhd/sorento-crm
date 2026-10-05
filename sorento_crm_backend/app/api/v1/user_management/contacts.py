@@ -106,6 +106,7 @@ async def get_contacts(
     escalation: Optional[Literal["yes", "no"]] = Query(None),
     packing_list: Optional[Literal["yes", "no"]] = Query(None),
     stock: Optional[Literal["yes", "no"]] = Query(None),
+    region: Optional[Literal["west", "east"]] = Query(None),
     customer_id: Optional[uuid.UUID] = Query(None),
     access_differs_from: Optional[str] = Query(None),
     current_user: dict = Depends(require_permission("user_management.contacts.view")),
@@ -135,6 +136,7 @@ async def get_contacts(
                 "escalation": escalation,
                 "packing_list": packing_list,
                 "stock": stock,
+                "region": region,
                 "customer_id": str(customer_id) if customer_id else None,
                 "access_differs_from": access_differs_from,
                 # What this viewer's copy would leave alone is not a difference to them.
@@ -372,6 +374,8 @@ class ContactChatbotUpdate(BaseModel):
     chatbot_eta_offset_applied: bool | None = None
     # ESCALATION-CONTROL: "Chatbot hands over to support teams". Absent = leave alone.
     escalation_allowed: bool | None = None
+    # CONTACT-REGION: absent = leave alone; empty, unknown or explicit null = 422.
+    regions: list[Literal["west", "east"]] = Field(default=None, min_length=1)  # type: ignore[assignment]
 
 
 @router.put("/{contact_id}/chatbot", response_model=RespondContactResponse)
@@ -414,6 +418,8 @@ async def update_contact_chatbot(
             contact.chatbot_eta_offset_applied = body.chatbot_eta_offset_applied
         if body.escalation_allowed is not None:
             contact.escalation_allowed = body.escalation_allowed
+        if "regions" in body.model_fields_set:
+            contact.regions = [r for r in ("west", "east") if r in body.regions]
         # `get_db` never commits (it only closes), so a flush here rolled back on
         # return: PUT 200, row untouched. Main's convention is the commit in the route.
         db.commit()

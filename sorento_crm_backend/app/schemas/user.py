@@ -72,6 +72,8 @@ class RespondContactResponse(RespondContactBase):
     # Chatbot stock ask v2 S2 (PLAN-chatbot-stock-ask-v2-24sep.md, R7): both default off.
     notify_salesman: bool = False
     packing_list_allowed: bool = False
+    # CONTACT-REGION: the packing list regions this contact holds, default West only.
+    regions: list[str] = ["west"]
     # Issue #1328: the ETA this contact is told carries the +x days offset. Default on.
     chatbot_eta_offset_applied: bool = True
     # ESCALATION-CONTROL: may the chatbot hand this contact to a person. Default on.
