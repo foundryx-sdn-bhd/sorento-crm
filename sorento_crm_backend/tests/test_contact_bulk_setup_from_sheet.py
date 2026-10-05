@@ -490,3 +490,17 @@ def test_e_contact_id_disagreeing_with_phone_or_respond_io_id_is_an_error(db, tm
     res = _go(db, w, _sheet(tmp_path, [_full(db, w, c, **{**VALID, **over})]), apply=True)
     assert res["counts"]["errors"] == 1 and _state(db, c.id)["types"] == []
     assert word in res["errors"][0]["reason"]
+
+
+def test_blank_locations_cell_never_becomes_all_locations(db, tmp_path, w):
+    c = _contact(db, 1)
+    c.access_types.append(w.types["zzt_dealer"])
+    db.add(StockVisibilityPolicy(access_type_code="zzt_dealer", mode="availability",
+                                 warehouse_ids=[w.wh["ZBRW"].id], hide_zero_locations=False))
+    db.flush()
+    row = _full(db, w, c, companies="ZSRT", market_segments="zzt_retail", stock_mode_contact_override="availability",
+                stock_source="access_type", stock_mode_effective="availability", stock_locations_effective=None)
+    res = _go(db, w, _sheet(tmp_path, [row]), apply=True)
+    assert res["counts"]["errors"] == 1, res["counts"]
+    assert "locations" in res["errors"][0]["reason"]
+    assert _policy(db, c.id) is None
