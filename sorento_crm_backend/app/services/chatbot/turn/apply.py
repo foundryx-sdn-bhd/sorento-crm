@@ -1191,6 +1191,13 @@ def _focus_rules(
         and carried_domains
         and focus.domains
         and set(focus.domains) != set(carried_domains)
+        # The ONE standing exception: a report drilled out of a top selling ranking
+        # carries the ranking's own filters, its period included ("top 10 in q1 2026"
+        # then "can see its outstanding?" is the outstanding report for Q1 2026,
+        # `_top_selling_rules` / `tests/chatbot/test_top_selling_round5.py::
+        # test_a_report_after_a_ranking_carries_its_filters`). `focus.status` still
+        # reads the carried value here; the status rules below rewrite it.
+        and focus.status != TOP_SELLING_STATUS
     ):
         # ORDER-BROADEN (owner, 5 Oct 2026): a window narrows the question it was asked
         # on, and a DIFFERENT domain is a different question, so the carried window
