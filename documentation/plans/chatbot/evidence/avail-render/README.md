@@ -1,8 +1,9 @@
 # AVAIL-RENDER cloud browser pass (5 Oct 2026)
 
-Code under test: branch `crew/avail-render`, PR #1493, head at the time of the pass 8cef8202
-plus the uncommitted harness in this folder (the commit that adds this folder carries the
-same code plus one test-pin fix, `tests/test_stock_visibility_policy.py`).
+Code under test: branch `crew/avail-render`, PR #1493, head a9b2e9af (the lane merged with
+origin/main 3a231689, WA-MSG-TRIM). A first run on a075c4a6 gave the same ten results; the
+crew asked for the pass on the merged head because that merge touched `label_catalog.py` and
+`inventory_service.py`.
 
 ## Stack (all inside the cloud sandbox)
 
@@ -45,13 +46,13 @@ renders the WhatsApp `*(...)*` bold as bold, so the marker reads `⚠️  (PRODU
 | 9 | `AVR1001 x 5 有库存吗` (zh) | `✅ 有库存。` + zh marker | `AVR1001 x 5: ✅ 有库存。` / `⚠️  (产品已停产)` | PASS |
 | 10 | `AVR1002 x 50 有库存吗` (zh) | `✅ 有库存，可供 30 件。` | `AVR1002 x 50: ✅ 有库存，可供 30 件。` | PASS |
 
-One seed defect found on the way, not a product one: the first run of case 5 answered
+One seed defect found on the first run, not a product one: case 5 answered
 `❌ No stock and no incoming.` because the seeded shipment had no packing list, and the stock
 ask's R5 read counts only a shipment that carries one (`incoming_stock_service.
 earliest_packing_list_shipment`); the ETA ask (case 6) reads every shipment and already showed
-the date. The seed now attaches one and case 5 was re-run.
+the date. The seed attaches one now (`seed_avail.py`).
 
-Screenshots: `console-thread-1280.png`, `console-thread-375.png` (the thread after case 10
-and the re-run of case 5).
+Screenshots: `console-thread-1280.png`, `console-thread-375.png` (the thread after case 10 on
+a9b2e9af).
 
-Raw transcript of the pass: `browser-pass.txt`.
+Raw transcript of the pass on a9b2e9af: `browser-pass.txt`.

@@ -1,3 +1,8 @@
+=== cloud browser pass on a9b2e9af, 2026-10-05T16:58Z ===
+=== check stock AVR1001 x 5 ===
+check stock AVR1001 x 5
+AVR1001 x 5: ✅ Got stock.
+⚠️  (PRODUCT DISCONTINUED)
 === check stock AVR1001 x 500 ===
 check stock AVR1001 x 500
 AVR1001 x 500: 🚫 the quantity is more than what I can confirm here. Please refer to your salesman.
@@ -10,7 +15,7 @@ check stock AVR1003 x 5
 AVR1003 x 5: ❌ No stock and no incoming. Please refer to your salesman.
 === check stock AVR1004 x 5 ===
 check stock AVR1004 x 5
-AVR1004 x 5: ❌ No stock and no incoming. Please refer to your salesman.
+AVR1004 x 5: ❌ ETA 19/10/2026.
 ⚠️  (PRODUCT DISCONTINUED)
 === ETA AVR1004 and AVR1003 ===
 ETA AVR1004 and AVR1003
@@ -32,6 +37,3 @@ AVR1001 x 5: ✅ 有库存。
 === AVR1002 x 50 有库存吗 ===
 AVR1002 x 50 有库存吗
 AVR1002 x 50: ✅ 有库存，可供 30 件。
-check stock AVR1004 x 5
-AVR1004 x 5: ❌ ETA 19/10/2026.
-⚠️  (PRODUCT DISCONTINUED)
