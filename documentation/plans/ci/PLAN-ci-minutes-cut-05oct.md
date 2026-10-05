@@ -1,8 +1,9 @@
 # PLAN: CI minutes cut (CI-MINUTES-CUT)
 
-Status: in progress (small fix track: `.github/workflows` only, no app behaviour; reviewer pass required because it changes merge safety)
+Status: built, awaiting the `ci` and `ci-full` evidence runs and the reviewer pass (small fix track: `.github/workflows` only, no app behaviour; reviewer pass required because it changes merge safety)
 
-Lane: `crew/ci-minutes-cut`. UAC: `ci-minutes-cut-acceptance-criteria.md` beside this file.
+Lane: PR #1492 on `claude/ci-minutes-cut-3nb19t` (the sandbox's branch; `crew/ci-minutes-cut` was
+not pushable from it). UAC: `ci-minutes-cut-acceptance-criteria.md` beside this file.
 
 ## Why
 
@@ -48,8 +49,10 @@ gate" was the full suite on most PRs.
    head. The full suite also runs on `workflow_dispatch` (the release, unchanged) and on a
    nightly `schedule` against main.
 3. `timeout-minutes` on every test job: 35 on the shards and the changed-tests job, 15 on
-   everything else. `cancel-in-progress` stays on for both labels, each label in its own
-   per-PR concurrency group so a `ci` re-run never cancels a running `ci-full`.
+   everything else. `cancel-in-progress` stays on for both labels, in ONE per-PR concurrency
+   group: a `ci-full` added while `ci` runs makes the cheap run redundant, and a `ci` added
+   while `ci-full` runs means the head moved, so the full run on the old head would be
+   about 200 job-minutes of waste.
 4. A final `CI gate` job (`if: always()`) that fails only when a needed job failed or was
    cancelled, so a path-filtered run still reports one green check. The ruleset
    `protect-main-branch` requires the five fast-gate names only (crew, 5 Oct); those are
@@ -58,6 +61,13 @@ gate" was the full suite on most PRs.
    touched (the smoke already has `timeout-minutes: 120`).
 6. One page in `documentation/reference/CI-LABELS-AND-MINUTES.md`: what `ci` and `ci-full`
    run, the minute budget, how to read usage.
+
+## Budget reality
+
+The cut makes the cheap gate cheap; it does not fit October's pace into 3,000 minutes a
+month on GitHub-hosted runners (one `ci-full` per merged PR at about 210 minutes is about 30
+times the allowance by itself). The levers beyond this lane, and the self-hosted runner
+profile, are in `documentation/reference/CI-LABELS-AND-MINUTES.md` and the PR body.
 
 ## Evidence (filled in as the lane runs)
 
