@@ -16,11 +16,12 @@ comments are the authority on the mechanics; this page is the operator's view.
 | Push to main | The alembic single-head gate, PII guard and gitleaks. No tests, no deploy. | under 2 |
 | Any other label | Nothing (every job skips). | under 1 |
 
-Every labelled, queued, nightly or release run also reports one gate job that fails only when
-a needed job failed, was cancelled or timed out: `CI gate` on a `ci` run, `CI gate (full)` on
-every run of the full suite. A job skipped by a path filter does not fail it, so a docs-only
-`ci` run is green with the fast gates alone. A push to main or any other label reports no
-gate.
+Every labelled, queued, nightly or release run also reports one gate job that passes only
+when every needed job is `success` or `skipped` (a path filter) and fails on anything else:
+`failure`, `cancelled`, the `abandoned` GitHub reports for a job it never found a runner for
+or a matrix whose shard hit its cap, or any new value. It reports as `CI gate` on a `ci` run
+and `CI gate (full)` on every run of the full suite. A docs-only `ci` run is therefore green
+with the fast gates alone. A push to main or any other label reports no gate.
 
 ## The labels
 
@@ -51,13 +52,16 @@ merge (a `ci` run reports `CI gate`, a different name, so it cannot stand in).
 
 ## Timeouts
 
-Every test and gate job carries `timeout-minutes`: 35 on the three backend test jobs (main
-shards, SCM shards, changed tests), 15 on everything else. GitHub's default is 6 hours and a
-hung job bills all of it. The caps are for a hung runner, not targets: a main shard measures
-18 to 24 minutes, 29 in the worst run seen (37158487882). If a balanced shard runs past 30
-minutes, rebalance `.test_durations` or raise the cap with that evidence. The deploy jobs
-(`build-images`, `build-and-deploy`, `notify-owner`) are deliberately outside this: the deploy
-step already has its own 70-minute command timeout for the worker drain.
+Every test and gate job carries `timeout-minutes`: 60 on the three backend test jobs (main
+shards, SCM shards, changed tests), 20 on everything else. GitHub's default is 6 hours and a
+hung job bills all of it. The caps are for a hung runner, not targets, and they sit at about
+twice the worst observed run time: a main shard measures 18 to 24 minutes, 29 in the worst
+run seen (37158487882), and a cap at 35 cut a healthy shard at 94% on run 37369427779 (33:55
+of pytest, a shard that took 22 minutes two days earlier, so run-to-run variance is about
+1.6x). If a balanced shard runs past 45 minutes, rebalance `.test_durations` or raise the cap
+with that evidence. The deploy jobs (`build-images`, `build-and-deploy`, `notify-owner`) are
+deliberately outside this: the deploy step already has its own 70-minute command timeout for
+the worker drain.
 
 A job that shows `cancelled` with no runner and no steps did not hit its cap. The first
 `ci-full` run (37369427779, 5 Oct 2026) lost eleven jobs that way, each exactly 15 minutes

@@ -974,13 +974,15 @@ DEPLOY_JOBS = {"build-images", "build-and-deploy", "notify-owner"}
 
 
 def test_every_test_and_gate_job_carries_a_timeout():
-    """Shards 35 min, everything else 15; the deploy jobs are out of this lane's scope.
+    """Backend test jobs 60 min, everything else 20; the deploy jobs are out of this lane's scope.
 
-    The caps bound run time only. Run 37369427779 (5 Oct 2026) cancelled
-    eleven queued jobs exactly 15 min after queueing whatever their cap (15
-    or 35); the check-run annotation was "not acquired by Runner of type
-    hosted even after multiple attempts", GitHub's own give-up when the
-    account's 20 runner slots stay busy, not these caps (lesson 118).
+    The caps bound run time only, at about twice the worst observed run:
+    on run 37369427779 (5 Oct 2026) a 35-minute cap cut a healthy shard at
+    94% (33:55 of pytest, 22 min two days earlier). The same run's eleven
+    queued jobs were cancelled 15 min after queueing whatever their cap;
+    that was "not acquired by Runner of type hosted even after multiple
+    attempts", GitHub's give-up under a saturated account, not the caps
+    (lesson 118).
     """
     text = _workflow_text()
     jobs = _job_ifs()
@@ -992,7 +994,7 @@ def test_every_test_and_gate_job_carries_a_timeout():
     for job_id, minutes in timeouts.items():
         if job_id in DEPLOY_JOBS:
             continue
-        assert minutes == (35 if job_id in shards else 15), (job_id, minutes)
+        assert minutes == (60 if job_id in shards else 20), (job_id, minutes)
     assert "cancel-in-progress: ${{ github.event_name == 'pull_request'" in text
 
 
@@ -1059,11 +1061,16 @@ def test_ci_gate_step_passes_when_every_need_succeeded_or_was_path_filtered(tmp_
 @pytest.mark.parametrize("job,result", [
     ("test-backend", "failure"), ("test-backend-scm", "cancelled"), ("validate-frontend", "failure"),
     ("test-backend-changed", "failure"), ("gitleaks", "failure"), ("pii-guard", "failure"),
+    # Run 37369427779 (5 Oct 2026): GitHub reports `abandoned` for a job it
+    # never found a runner for and for a matrix whose shard hit its cap; a
+    # deny-list of failure/cancelled passed that run green.
+    ("test-backend", "abandoned"), ("gitleaks", "abandoned"), ("validate-frontend", "abandoned"),
+    ("typecheck-frontend", "timed_out"), ("validate-mcp", "something-new"), ("test-backend", ""),
 ])
-def test_ci_gate_step_fails_on_a_failed_or_cancelled_need(tmp_path, job, result):
+def test_ci_gate_step_fails_on_anything_but_success_or_skipped(tmp_path, job, result):
     rc, out = _run_gate(tmp_path, {**GATE_NEEDS_GREEN, job: result})
     assert rc != 0
-    assert f"{job} {result}" in out
+    assert f"{job} {result or 'missing'}" in out
 
 
 @pytest.mark.parametrize("job", ["check-migration-heads", "changes"])

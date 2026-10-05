@@ -48,16 +48,20 @@ gate" was the full suite on most PRs.
    `ci`: the label is removed at the start of the run, so adding it again re-runs on the new
    head. The full suite also runs on `workflow_dispatch` (the release, unchanged) and on a
    nightly `schedule` against main.
-3. `timeout-minutes` on every test job: 35 on the shards and the changed-tests job, 15 on
-   everything else. The first `ci-full` run (37369427779) lost eleven queued jobs 15 min
-   after queueing whatever their cap; that was GitHub's "not acquired by Runner of type
-   hosted" give-up under a saturated 20-slot account, not the caps (lesson 118), so the
-   caps stay as the brief set them. `cancel-in-progress` stays on for both labels, in ONE per-PR concurrency
+3. `timeout-minutes` on every test job: 60 on the shards and the changed-tests job, 20 on
+   everything else, about twice the worst observed run. The brief said 35 and 15; the first
+   `ci-full` run (37369427779) showed a 35-minute cap cutting a healthy shard at 94% (33:55
+   of pytest, 22 min two days earlier). The same run's eleven queued jobs cancelled 15 min
+   after queueing were GitHub's "not acquired by Runner of type hosted" give-up under a
+   saturated 20-slot account, not the caps (lesson 118). `cancel-in-progress` stays on for both labels, in ONE per-PR concurrency
    group: a `ci-full` added while `ci` runs makes the cheap run redundant, and a `ci` added
    while `ci-full` runs means the head moved, so the full run on the old head would be
    about 200 job-minutes of waste.
-4. A final gate job (`if: always()`) that fails only when a needed job failed or was
-   cancelled, so a path-filtered run still reports one green check. It reports as `CI gate`
+4. A final gate job (`if: always()`) that passes only when every needed job is `success` or
+   `skipped` and fails on anything else (run 37369427779 handed it `abandoned` for the
+   jobs GitHub never found a runner for and for the matrix with the capped shard, and the
+   first deny-list version passed that run green), so a path-filtered run still reports one
+   green check. It reports as `CI gate`
    on a `ci` run and `CI gate (full)` on every full-suite run (reviewer finding: one name
    would let a green `ci` run stand in for a `ci-full` that never ran). The ruleset
    `protect-main-branch` requires the five fast-gate names only (crew, 5 Oct); those are
