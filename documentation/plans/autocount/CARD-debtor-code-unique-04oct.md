@@ -143,7 +143,7 @@ dev; the dry run (R11) re-measures them before anything is applied.
     is dropped (logged).
 - **R10 Retired rows** are deleted after the repoint. Each one's full row, every repointed FK row
   id and every dropped collision row is written to `customer_merge_map` first, plus one
-  `audit_logs` row `CUSTOMER_MERGE` per retired id (entity = survivor, old_values = the retired
+  `audit_logs` row (`action = EVENT`, `event = customer.merge`) per retired id (entity = survivor, old_values = the retired
   row). Existing audit history is never rewritten (it is append-only by trigger).
 - **R11 Modes:** `--dry-run` (default) writes one CSV row per group (company, code, survivor,
   retired ids + names, FK counts per table, collisions, conflicts) and changes nothing.
@@ -207,6 +207,6 @@ the owner as a `crew-ask` so the `keep` column can be filled.
   migration (`CREATE UNIQUE INDEX IF NOT EXISTS`) lands after prod is merged (b) this PR's
   migration creates the index (deploy fails on prod until merged). Recommend (a): a merge or
   deploy never depends on a destructive run.
-- **Q5 Old audit history:** (a) leave it on the retired ids, add a `CUSTOMER_MERGE` row on the
+- **Q5 Old audit history:** (a) leave it on the retired ids, add an `EVENT` row (`event = customer.merge`) on the
   survivor naming each retired id (b) rewrite old rows to the survivor (needs the audit
   maintainer role). Recommend (a): audit is append-only by design.

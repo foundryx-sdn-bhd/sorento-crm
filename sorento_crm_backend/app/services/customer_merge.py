@@ -23,7 +23,9 @@ Per group (company + `lower(btrim(customer_code))` holding more than one row):
   dropped (`uq_integration_ref_entity`: one per row; the survivor's wins).
 - The retired names become `customer_aliases`; the retired row is deleted.
 - `customer_merge_map` holds everything `revert` needs, and one `audit_logs` row
-  `CUSTOMER_MERGE` per retired id names it on the survivor. Old audit rows are never rewritten.
+  `action = 'EVENT'`, `event = 'customer.merge'` per retired id names it on the survivor (the
+  `audit_logs_action_check` from migration `aud_0001` allows only CREATE / READ / UPDATE /
+  DELETE / IMPORT / EVENT; the business verb lives in `event`). Old audit rows are never rewritten.
 
 Everything here is raw SQL against whatever `customers` the session's search_path resolves, so
 the caller decides the transaction (`--apply` commits once per company).
@@ -742,7 +744,7 @@ def _merge_group(
                 "upd": _jsonb(updated[rid]),
             },
         )
-        _audit(db, group, survivor, rid, retired_rows[rid], run_id, "CUSTOMER_MERGE", actor_user_id)
+        _audit(db, group, survivor, rid, retired_rows[rid], run_id, MERGE_EVENT, actor_user_id)
 
         remaining = [
             f"{table}.{column}"
@@ -776,20 +778,24 @@ def _drop_where(db: Session, qualified: str, where: str, params: dict) -> list[d
     return [{"table": qualified, "row": row} for row in rows]
 
 
-def _audit(db, group, survivor, retired_id, retired_row, run_id, action, actor_user_id) -> None:
+#: The audit `event` (dotted business verb) a merge / revert writes; `action` is always `EVENT`.
+MERGE_EVENT = "customer.merge"
+REVERT_EVENT = "customer.merge_revert"
+
+
+def _audit(db, group, survivor, retired_id, retired_row, run_id, event, actor_user_id) -> None:
     db.execute(
         text(
             """
             INSERT INTO audit_logs
                 (id, entity_type, entity_id, action, user_id, company_id, old_values, new_values,
                  description, actor_type, source, root_entity_type, root_entity_id, event, correlation_id)
-            VALUES (gen_random_uuid(), 'customer', :s, :a, :u, :cid, CAST(:old AS jsonb),
+            VALUES (gen_random_uuid(), 'customer', :s, 'EVENT', :u, :cid, CAST(:old AS jsonb),
                     CAST(:new AS jsonb), :d, :actor_type, 'script', 'customer', :s, :e, :run)
             """
         ),
         {
             "s": survivor,
-            "a": action,
             "u": actor_user_id,
             "actor_type": "user" if actor_user_id else "system",
             "cid": group.company_id if group else None,
@@ -797,9 +803,9 @@ def _audit(db, group, survivor, retired_id, retired_row, run_id, action, actor_u
             "new": _jsonb({"survivor_id": survivor, "retired_id": retired_id, "run_id": run_id}),
             "d": f"Debtor code {retired_row.get('customer_code', '').strip()}: "
             f"{retired_row.get('customer_name')} merged into this customer"
-            if action == "CUSTOMER_MERGE"
+            if event == MERGE_EVENT
             else f"Merge of {retired_row.get('customer_name')} undone",
-            "e": "customer.merge" if action == "CUSTOMER_MERGE" else "customer.merge_revert",
+            "e": event,
             "run": run_id,
         },
     )
@@ -879,7 +885,7 @@ def revert(db: Session, run_id: str, *, actor_user_id: Optional[str] = None) -> 
             retired,
             row,
             run_id,
-            "CUSTOMER_MERGE_REVERT",
+            REVERT_EVENT,
             actor_user_id,
         )
     if maps:
