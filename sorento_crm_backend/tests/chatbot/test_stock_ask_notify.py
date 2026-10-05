@@ -313,7 +313,7 @@ def test_ac_sa401_toggle_on_enqueues_one_job_per_b1_b4_and_none_for_b2_b3(
     out = dealer.ask_all_four()
     assert out.error is None, out.error
     reply = (out.reply or {}).get("text") or ""
-    assert f"ZZTSA4-INC x 150: ❌ ETA 19/10/2026." in reply
+    assert f"ZZTSA4-INC x 150: ❌ No stock, ETA 19/10/2026." in reply
 
     facts = dealer.notified
     # AVAIL-RENDER (owner, 5 Oct 2026, card Q3/Q5 = a): B2 `in_stock` says "Got stock" and

@@ -259,5 +259,5 @@ class TestAvailabilityWording:
     def test_no_stock_with_a_shipment_due_keeps_its_eta(self, console) -> None:
         c = console(SRTW2000=Stock(on_hand=0, x=200, eta=date(2026, 10, 19)))
         assert c.say("SRTW2000 x 150", stock(product("SRTW2000", 150))) == (
-            f"SRTW2000 x 150: {CROSS} ETA 19/10/2026."
+            f"SRTW2000 x 150: {CROSS} No stock, ETA 19/10/2026."
         )

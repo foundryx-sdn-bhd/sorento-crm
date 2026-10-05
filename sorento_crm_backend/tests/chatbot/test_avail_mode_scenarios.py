@@ -68,7 +68,7 @@ def test_S02_exact_code_short_within_the_cap_names_the_count(console):
 
 def test_S03_no_stock_shipment_due(console):
     c = console(SRTW2000=Stock(on_hand=0, x=200, eta=ETA))
-    assert c.say("SRTW2000 x 150", stock(product("SRTW2000", 150))) == f"SRTW2000 x 150: {CROSS} ETA 19/10/2026."
+    assert c.say("SRTW2000 x 150", stock(product("SRTW2000", 150))) == f"SRTW2000 x 150: {CROSS} No stock, ETA 19/10/2026."
 
 
 def test_S04_no_stock_nothing_incoming(console):
@@ -159,7 +159,7 @@ def test_S17_all_exact_one_line_each_in_asked_order(console):
     )
     assert out == (
         f"SRT5674 x 50: {TICK} Got stock.\n\nCWCX604 x 40: {TICK} Got stock, 30 available.\n\n"
-        f"SRTW2000 x 10: {CROSS} ETA 19/10/2026."
+        f"SRTW2000 x 10: {CROSS} No stock, ETA 19/10/2026."
     )
 
 
@@ -265,7 +265,7 @@ def test_S28_one_number_applies_to_every_product_asked(console):
 def test_S29_short_stock_beside_an_eta_line(console):
     c = console(SRT5674=Stock(on_hand=30), SRTW2000=Stock(x=200, eta=ETA))
     out = c.say("SRT5674 x 50, SRTW2000 x 150", stock(product("SRT5674", 50), product("SRTW2000", 150)))
-    assert out == f"SRT5674 x 50: {TICK} Got stock, 30 available.\n\nSRTW2000 x 150: {CROSS} ETA 19/10/2026."
+    assert out == f"SRT5674 x 50: {TICK} Got stock, 30 available.\n\nSRTW2000 x 150: {CROSS} No stock, ETA 19/10/2026."
 
 
 # ================================================================== picker replies

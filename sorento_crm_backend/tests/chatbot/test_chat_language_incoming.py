@@ -199,7 +199,13 @@ def test_a_dealer_eta_line_translates_its_verdict_and_keeps_the_mark():
     )
     assert _loc("ms").tail("SRT5674 x 50: \u2705 Got stock.") == "SRT5674 x 50: \u2705 Stok ada."
     assert _loc("zh").tail("SRT5674 x 50: \u2705 Got stock.") == "SRT5674 x 50: \u2705 有库存。"
-    assert _loc("ms").tail("SRTW2000 x 150: \u274c ETA 19/10/2026.") == "SRTW2000 x 150: \u274c ETA 19/10/2026."
+    # AVAIL-RENDER fix round (owner, 6 Oct 2026): the incoming line says the stock state too.
+    assert _loc("ms").tail("SRTW2000 x 150: \u274c No stock, ETA 19/10/2026.") == (
+        "SRTW2000 x 150: \u274c Tiada stok, ETA 19/10/2026."
+    )
+    assert _loc("zh").tail("SRTW2000 x 150: \u274c No stock, ETA 19/10/2026.") == (
+        "SRTW2000 x 150: \u274c 没有库存，ETA 19/10/2026。"
+    )
 
 
 def test_couldnt_find_then_the_offer_both_translate_on_one_line():

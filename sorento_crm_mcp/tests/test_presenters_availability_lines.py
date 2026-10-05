@@ -54,7 +54,7 @@ def test_incoming_sentence_names_the_eta():
     line = _availability_line(
         _entry(product_code="SRTW2000", requested_qty=150, branch="incoming", eta="19/10/2026")
     )
-    assert line == "SRTW2000 x 150: ❌ ETA 19/10/2026."
+    assert line == "SRTW2000 x 150: ❌ No stock, ETA 19/10/2026."
 
 
 def test_no_incoming_sentence():

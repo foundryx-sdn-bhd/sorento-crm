@@ -82,7 +82,7 @@ def test_ac_sa501_a_live_turn_writes_one_open_row_per_answered_product(
     # salesman, so it is answered but not a Customer ask. AVAIL-RENDER (5 Oct 2026): the
     # B2 in-stock line says "Got stock" and refers nobody either, so it is not a row.
     assert set(rows) == {"ZZTSA4-BIG", "ZZTSA4-NOI"}
-    assert "ZZTSA4-INC x 150: ❌ ETA 19/10/2026." in reply
+    assert "ZZTSA4-INC x 150: ❌ No stock, ETA 19/10/2026." in reply
     assert f"ZZTSA4-INS x 50: {IN_STOCK}" in reply
     expected = {
         "ZZTSA4-BIG": ("too_big", 300, f"ZZTSA4-BIG x 300: {TOO_BIG}"),

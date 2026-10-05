@@ -391,7 +391,7 @@ def test_render_availability_incoming_names_the_eta():
         )
     )
 
-    assert out["items"][0]["title"] == "SRTBF11201-NEW x 50: ❌ ETA 19/10/2026."
+    assert out["items"][0]["title"] == "SRTBF11201-NEW x 50: ❌ No stock, ETA 19/10/2026."
 
 
 def test_render_availability_several_products_that_disagree():

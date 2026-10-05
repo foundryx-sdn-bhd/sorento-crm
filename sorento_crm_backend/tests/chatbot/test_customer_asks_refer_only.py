@@ -310,7 +310,7 @@ def test_a_live_stock_ask_logs_the_two_refer_lines_and_not_in_stock_or_b3_incomi
     dealer = LiveDealer(session_factory, monkeypatch, stub_access, notify=False)
     out = dealer.ask_all_four()
     assert out.error is None, out.error
-    assert "ZZTSA4-INC x 150: \u274c ETA 19/10/2026." in out.reply["text"]
+    assert "ZZTSA4-INC x 150: \u274c No stock, ETA 19/10/2026." in out.reply["text"]
     assert "ZZTSA4-INS x 50: \u2705 Got stock." in out.reply["text"]
     assert [(r.product_code, r.branch) for r in _rows(session_factory)] == [
         ("ZZTSA4-BIG", "too_big"),

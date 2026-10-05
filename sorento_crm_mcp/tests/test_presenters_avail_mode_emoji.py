@@ -44,7 +44,7 @@ def test_incoming_is_a_cross_with_the_eta():
     line = _availability_line(
         _entry(product_code="SRTW2000", requested_qty=150, branch="incoming", eta="19/10/2026")
     )
-    assert line == "SRTW2000 x 150: ❌ ETA 19/10/2026."
+    assert line == "SRTW2000 x 150: ❌ No stock, ETA 19/10/2026."
 
 
 def test_no_incoming_is_a_cross():
@@ -75,16 +75,19 @@ def test_available_count_is_the_only_new_digit_and_only_on_a_short_in_stock():
         assert re.findall(r"\d+", other) == ["50"], other
 
 
-def test_a_tick_says_got_stock_and_a_cross_eta_says_neither():
+def test_a_tick_says_got_stock_and_the_incoming_cross_says_no_stock_and_the_eta():
     """AVAIL-RENDER (owner, 5 Oct 2026, "need to say got stock"): a tick line says
-    "Got stock" and never refers; the incoming cross keeps its date and no stock words.
+    "Got stock" and never refers; the incoming cross says "No stock" and its date (owner hand
+    test, 6 Oct 2026).
     `no_incoming` still says "No stock and no incoming" (REFER-ONLY-FIXES, 3 Oct 2026)."""
     for extra in ({}, {"available_qty": 3}):
         line = _availability_line(_entry(branch="in_stock", **extra))
         assert line.startswith("SRT-CODE x 50: ✅ Got stock"), line
         assert "we have stock" not in line.lower() and "refer" not in line.lower(), line
-    incoming = _availability_line(_entry(branch="incoming", eta="19/10/2026")).lower()
-    assert "got stock" not in incoming and "no stock" not in incoming, incoming
+    # Owner hand test, 6 Oct 2026: the incoming cross says the stock state too.
+    incoming = _availability_line(_entry(branch="incoming", eta="19/10/2026"))
+    assert incoming == "SRT-CODE x 50: ❌ No stock, ETA 19/10/2026."
+    assert "Got stock" not in incoming and "refer" not in incoming.lower()
 
 
 def _dealer_incoming(rows):

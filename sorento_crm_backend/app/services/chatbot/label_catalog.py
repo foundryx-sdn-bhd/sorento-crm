@@ -77,7 +77,9 @@ LABELS: dict[str, dict[str, str]] = {
         "ms": "Stok ada, {available} tersedia.",
         "zh": "有库存，可供 {available} 件。",
     },
-    "ETA {eta}.": {"ms": "ETA {eta}.", "zh": "ETA {eta}。"},
+    # AVAIL-RENDER fix round (owner hand test, 6 Oct 2026): the incoming line says the stock
+    # state too; the bare "ETA {eta}." row it replaces is printed by nothing now.
+    "No stock, ETA {eta}.": {"ms": "Tiada stok, ETA {eta}.", "zh": "没有库存，ETA {eta}。"},
     "No ETA": {"ms": "Tiada ETA", "zh": "暂无 ETA"},
     "Data last updated: {ts}": {
         "ms": "Data dikemas kini: {ts}",

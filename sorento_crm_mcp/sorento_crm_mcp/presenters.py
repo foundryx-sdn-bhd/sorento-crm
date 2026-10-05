@@ -1532,7 +1532,9 @@ def _availability_tail(entry: dict) -> str:
     """The sentence after "<code> x <Q>:" for one answered entry."""
     branch = entry.get("branch")
     if branch == "incoming":
-        return f"{STOCK_NO} ETA {entry.get('eta')}."
+        # AVAIL-RENDER fix round (owner hand test, 6 Oct 2026): the cross says the stock
+        # state too, not the date alone. Still no refer: the ETA is the answer.
+        return f"{STOCK_NO} No stock, ETA {entry.get('eta')}."
     available = entry.get("available_qty")
     if (
         branch == "in_stock"

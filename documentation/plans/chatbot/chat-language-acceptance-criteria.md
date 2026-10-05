@@ -79,7 +79,7 @@ the status mark (✅ ❌ 🚫) is not text and stays as printed; the sentence af
 | Got stock. | Stok ada. | 有库存。 |
 | Got stock, {available} available. | Stok ada, {available} tersedia. | 有库存，可供 {available} 件。 |
 | No stock and no incoming. Please refer to your salesman. | Tiada stok dan tiada stok masuk. Sila rujuk jurujual anda. | 没有库存，也没有到货。请联系您的销售员。 |
-| ETA {eta}. | ETA {eta}. | ETA {eta}。 |
+| No stock, ETA {eta}. | Tiada stok, ETA {eta}. | 没有库存，ETA {eta}。 |
 | No ETA | Tiada ETA | 暂无 ETA |
 
 The discontinued marker under an availability or dealer ETA line is the same flag line
