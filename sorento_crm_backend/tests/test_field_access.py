@@ -40,14 +40,12 @@ from app.models.access import (
     RespondContact,
 )
 from app.services.field_access import (
-    AGENT_NOT_ASSIGNED,
     ALLOWED,
     CONTACT_NOT_FOUND,
     DEFAULT_ALLOWED,
     FIELD_NOT_ALLOWED,
     GATED_FIELDS,
     NOT_GATED,
-    allowed_fields_for,
     apply_field_access,
     check_attributes,
     contact_agent_codes,
@@ -116,14 +114,46 @@ def _field(db, field_key, *, agent_code=OWNER, contact=None, allowed=True):
     db.flush()
 
 
+def _tree_fields(*fields):
+    return [f"incoming_stock.{f}" for f in fields]
+
+
+def _seed_registry(db):
+    """The incoming domain and its 23 field rows, as the migration leaves them."""
+    from tests.chatbot._access_seed import make_domain, make_field
+
+    make_domain(db, "incoming")
+    for f in GATED_FIELDS[RESOURCE]:
+        make_field(db, "incoming", f"incoming_stock.{f}")
+
+
+def _give_tree(db, contact, *fields, domain=True):
+    """S5a: the gate reads the access tree. Give `contact` a role ticking `fields`
+    (and the incoming domain unless `domain` is False)."""
+    from tests.chatbot._access_seed import give_role, make_role, rid
+
+    _seed_registry(db)
+    role = make_role(
+        db, rid("r"), domains=["incoming"] if domain else [], fields=_tree_fields(*fields)
+    )
+    give_role(db, contact.id, role)
+    return role
+
+
 def _entitled_contact(db, *fields):
-    """A contact holding the agent, with `fields` ticked on it agent-wide."""
+    """A contact whose role ticks `fields` (and the incoming domain). It also holds the
+    legacy agent, which must make no difference."""
     contact = _contact(db)
     agent = _agent(db)
     _grant(db, contact, agent)
-    for field in fields:
-        _field(db, field)
+    _give_tree(db, contact, *fields)
     return contact, agent
+
+
+def _role_of(db, contact):
+    from app.models.chatbot_access import ContactChatbotRole
+
+    return db.query(ContactChatbotRole.role_id).filter(ContactChatbotRole.contact_id == contact.id).scalar()
 
 
 def _payload() -> dict:
@@ -199,34 +229,38 @@ def test_the_public_eta_still_flows(db):
     assert "estimated_arrival_date" in DEFAULT_ALLOWED, "but allowed by default"
 
 
-def test_eta_reaches_a_contact_holding_no_agent_at_all(db):
-    """The strongest form of inert: even a contact with no grants keeps the ETA,
-    because every caller receives it today."""
+def test_a_contact_with_no_role_gets_no_eta_not_even_the_default(db):
+    """S5a: for a chat contact the tree decides. ETA is ticked on the presets, so it
+    reaches whoever holds a preset; a contact with no role reaches nothing."""
     contact = _contact(db)
-
-    (decision,) = decide(
-        db, resource=RESOURCE, fields=["estimated_arrival_date"], contact_id=contact.id
-    )
-    assert decision.outcome == ALLOWED
-
-
-def test_eta_can_still_be_revoked_agent_wide(db):
-    """Default-allowed is a default, not a guarantee - otherwise the tick on the
-    admin screen would be decorative."""
-    contact, _ = _entitled_contact(db)
-    _field(db, "estimated_arrival_date", allowed=False)
-
     (decision,) = decide(
         db, resource=RESOURCE, fields=["estimated_arrival_date"], contact_id=contact.id
     )
     assert decision.outcome == FIELD_NOT_ALLOWED
 
 
+def test_a_role_tick_reveals_eta_and_a_remove_override_takes_it_back(db):
+    from tests.chatbot._access_seed import override
+
+    contact, _ = _entitled_contact(db, "estimated_arrival_date")
+    (shown,) = decide(
+        db, resource=RESOURCE, fields=["estimated_arrival_date"], contact_id=contact.id
+    )
+    assert shown.outcome == ALLOWED
+    override(db, contact.id, "incoming", field_key="incoming_stock.estimated_arrival_date", granted=False)
+    (hidden,) = decide(
+        db, resource=RESOURCE, fields=["estimated_arrival_date"], contact_id=contact.id
+    )
+    assert hidden.outcome == FIELD_NOT_ALLOWED
+
+
 def test_eta_can_be_revoked_for_one_contact_only(db):
-    contact, agent = _entitled_contact(db)
+    from tests.chatbot._access_seed import give_role, override
+
+    contact, _ = _entitled_contact(db, "estimated_arrival_date")
     other = _contact(db)
-    _grant(db, other, agent)
-    _field(db, "estimated_arrival_date", contact=contact, allowed=False)
+    give_role(db, other.id, _role_of(db, contact))
+    override(db, contact.id, "incoming", field_key="incoming_stock.estimated_arrival_date", granted=False)
 
     (denied,) = decide(
         db, resource=RESOURCE, fields=["estimated_arrival_date"], contact_id=contact.id
@@ -254,51 +288,45 @@ def test_an_unknown_resource_is_passed_straight_through(db):
 # ------------------------------------------------- the denial says WHICH problem
 
 
-def test_not_holding_the_agent_reports_agent_not_assigned(db):
+def test_a_contact_with_no_role_is_denied_with_a_reason(db):
     contact = _contact(db)
-    _agent(db)  # exists; this contact simply does not hold it
-
-    (decision,) = decide(db, resource=RESOURCE, fields=["eta_delay_date"], contact_id=contact.id)
-
-    assert decision.outcome == AGENT_NOT_ASSIGNED
-    assert decision.agent_code == OWNER, "name the agent so an admin knows what to grant"
-    assert "does not hold" in decision.as_dict()["reason"]
-
-
-def test_holding_the_agent_without_the_field_reports_field_not_allowed(db):
-    """The distinction the whole redesign exists for: same denial, different fix."""
-    contact, _ = _entitled_contact(db)  # agent granted, nothing ticked
+    _agent(db)
 
     (decision,) = decide(db, resource=RESOURCE, fields=["eta_delay_date"], contact_id=contact.id)
 
     assert decision.outcome == FIELD_NOT_ALLOWED
-    assert "not allowed on it" in decision.as_dict()["reason"]
+    assert decision.as_dict()["reason"]
 
 
-def test_the_two_denials_are_distinguishable_on_one_call(db):
-    """A contact can hit both reasons at once - one field owned by an agent they
-    hold, another by one they do not."""
+def test_a_role_without_the_field_reports_field_not_allowed(db):
+    """Holding the incoming domain is not enough: the field has to be ticked."""
+    contact, _ = _entitled_contact(db)  # incoming domain granted, no field ticked
+
+    (decision,) = decide(db, resource=RESOURCE, fields=["eta_delay_date"], contact_id=contact.id)
+
+    assert decision.outcome == FIELD_NOT_ALLOWED
+
+
+def test_a_field_tick_counts_only_when_the_incoming_domain_is_granted(db):
+    contact = _contact(db)
+    _give_tree(db, contact, "eta_delay_date", domain=False)
+
+    (decision,) = decide(db, resource=RESOURCE, fields=["eta_delay_date"], contact_id=contact.id)
+
+    assert decision.outcome == FIELD_NOT_ALLOWED
+
+
+def test_each_field_is_decided_on_its_own_in_one_call(db):
     contact, _ = _entitled_contact(db, "eta_delay_date")
-    other = _agent(db, code="some_other_agent")
-    _field(db, "gatepass_date", agent_code=other.code)
-    GATED_FIELDS[RESOURCE]["gatepass_date"] = other.code
-    try:
-        outcomes = {
-            d.field: d.outcome
-            for d in decide(
-                db,
-                resource=RESOURCE,
-                fields=["eta_delay_date", "gatepass_date"],
-                contact_id=contact.id,
-            )
-        }
-    finally:
-        GATED_FIELDS[RESOURCE]["gatepass_date"] = OWNER
 
-    assert outcomes == {
-        "eta_delay_date": ALLOWED,
-        "gatepass_date": AGENT_NOT_ASSIGNED,
+    outcomes = {
+        d.field: d.outcome
+        for d in decide(
+            db, resource=RESOURCE, fields=["eta_delay_date", "gatepass_date"], contact_id=contact.id
+        )
     }
+
+    assert outcomes == {"eta_delay_date": ALLOWED, "gatepass_date": FIELD_NOT_ALLOWED}
 
 
 def test_an_ungated_field_is_reported_as_not_gated(db):
@@ -368,14 +396,14 @@ def test_a_grant_that_has_not_started_holds_nothing(db):
     assert contact_agent_codes(db, contact.id) == set()
 
 
-def test_deactivating_the_agent_revokes_everyone_at_once(db):
+def test_a_legacy_agent_grant_and_field_row_reveal_nothing_without_the_tree(db):
     contact = _contact(db)
-    agent = _agent(db, active=False)
+    agent = _agent(db)
     _grant(db, contact, agent)
     _field(db, "eta_delay_date")
 
     (decision,) = decide(db, resource=RESOURCE, fields=["eta_delay_date"], contact_id=contact.id)
-    assert decision.outcome == AGENT_NOT_ASSIGNED
+    assert decision.outcome == FIELD_NOT_ALLOWED
 
 
 def test_an_unknown_contact_says_so_instead_of_blaming_the_grant(db):
@@ -399,9 +427,7 @@ def test_a_respond_io_id_resolves_to_the_internal_contact(db):
     """n8n thinks in Respond.io ids; grants key on the internal one. Guessing wrong
     denies a contact who IS entitled, which reads as a broken feature."""
     contact = _contact(db, respond_io_id="respondio-12345")
-    agent = _agent(db)
-    _grant(db, contact, agent)
-    _field(db, "eta_delay_date")
+    _give_tree(db, contact, "eta_delay_date")
 
     assert resolve_contact_id(db, "respondio-12345") == contact.id
 
@@ -414,77 +440,66 @@ def test_a_respond_io_id_resolves_to_the_internal_contact(db):
 # ------------------------------------------------------- default and override
 
 
-def test_a_gated_field_with_no_row_is_denied(db):
-    """Default deny. Adding a sensitive column must not expose it to the contacts
-    already holding the agent."""
+def test_a_gated_field_with_no_tick_is_denied(db):
+    """Default deny. A newly registered field reaches nobody until a role ticks it."""
     contact, _ = _entitled_contact(db, "eta_delay_date")
 
-    allowed = allowed_fields_for(
-        db, contact_id=contact.id, resource=RESOURCE, agent_codes=[OWNER]
-    )
+    outcomes = {
+        d.field: d.outcome
+        for d in decide(
+            db, resource=RESOURCE, fields=["eta_delay_date", "gatepass_date"], contact_id=contact.id
+        )
+    }
+    assert outcomes == {"eta_delay_date": ALLOWED, "gatepass_date": FIELD_NOT_ALLOWED}
 
-    # ETA is in there by default; everything else needs a row.
-    assert "eta_delay_date" in allowed
-    assert "gatepass_date" not in allowed
 
+def test_a_per_contact_add_override_reveals_what_the_role_does_not(db):
+    from tests.chatbot._access_seed import override
 
-def test_a_per_contact_row_can_grant_what_the_agent_denies(db):
     contact, _ = _entitled_contact(db)
-    _field(db, "gatepass_date", allowed=False)  # agent-wide: no
-    _field(db, "gatepass_date", contact=contact, allowed=True)  # this contact: yes
+    override(db, contact.id, "incoming", field_key="incoming_stock.gatepass_date", granted=True)
 
     (decision,) = decide(db, resource=RESOURCE, fields=["gatepass_date"], contact_id=contact.id)
     assert decision.outcome == ALLOWED
 
 
-def test_a_per_contact_row_can_revoke_what_the_agent_grants(db):
-    """The override works in both directions, or "everyone but that one dealer" is
-    impossible without stripping the field from all 53."""
+def test_a_per_contact_remove_override_hides_what_the_role_ticks(db):
+    from tests.chatbot._access_seed import override
+
     contact, _ = _entitled_contact(db, "eta_delay_date")
-    _field(db, "eta_delay_date", contact=contact, allowed=False)
+    override(db, contact.id, "incoming", field_key="incoming_stock.eta_delay_date", granted=False)
 
     (decision,) = decide(db, resource=RESOURCE, fields=["eta_delay_date"], contact_id=contact.id)
     assert decision.outcome == FIELD_NOT_ALLOWED
 
 
 def test_one_contacts_override_does_not_touch_another(db):
-    contact, agent = _entitled_contact(db, "eta_delay_date")
+    from tests.chatbot._access_seed import give_role, override
+
+    contact, _ = _entitled_contact(db, "eta_delay_date")
     other = _contact(db)
-    _grant(db, other, agent)
-    _field(db, "eta_delay_date", contact=other, allowed=False)
+    give_role(db, other.id, _role_of(db, contact))
+    override(db, other.id, "incoming", field_key="incoming_stock.eta_delay_date", granted=False)
 
-    assert "eta_delay_date" in allowed_fields_for(
-        db, contact_id=contact.id, resource=RESOURCE, agent_codes=[OWNER]
-    )
-    assert "eta_delay_date" not in allowed_fields_for(
-        db, contact_id=other.id, resource=RESOURCE, agent_codes=[OWNER]
-    )
+    (kept,) = decide(db, resource=RESOURCE, fields=["eta_delay_date"], contact_id=contact.id)
+    (hidden,) = decide(db, resource=RESOURCE, fields=["eta_delay_date"], contact_id=other.id)
+    assert kept.outcome == ALLOWED
+    assert hidden.outcome == FIELD_NOT_ALLOWED
 
 
-def test_a_row_on_an_agent_the_contact_does_not_hold_grants_nothing(db):
-    """Ticking a field on an agent is not a grant to everyone - the contact must
-    hold that agent too."""
+def test_an_agent_field_row_is_inert_for_the_gate(db):
+    """The legacy `agent_field_access` rows no longer decide anything."""
     contact = _contact(db)
-    _agent(db)
+    _grant(db, contact, _agent(db))
     _field(db, "eta_delay_date")
+    _field(db, "eta_delay_date", contact=contact, allowed=True)
 
-    assert allowed_fields_for(
-        db, contact_id=contact.id, resource=RESOURCE, agent_codes=[]
-    ) == set()
+    (decision,) = decide(db, resource=RESOURCE, fields=["eta_delay_date"], contact_id=contact.id)
+    assert decision.outcome == FIELD_NOT_ALLOWED
 
 
-def test_a_row_for_another_resource_is_inert(db):
-    contact, _ = _entitled_contact(db)
-    db.add(
-        AgentFieldAccess(
-            id=str(uuid.uuid4()),
-            agent_code=OWNER,
-            resource="something_else",
-            field_key="eta_delay_date",
-            is_allowed=True,
-        )
-    )
-    db.flush()
+def test_an_unticked_field_stays_hidden_whatever_other_fields_are_ticked(db):
+    contact, _ = _entitled_contact(db, "gatepass_date")
 
     (decision,) = decide(db, resource=RESOURCE, fields=["eta_delay_date"], contact_id=contact.id)
     assert decision.outcome == FIELD_NOT_ALLOWED
@@ -566,14 +581,13 @@ def test_a_broken_grant_lookup_holds_nothing_rather_than_everything(db):
         def query(self, *a, **k):
             raise RuntimeError("connection reset")
 
+        def execute(self, *a, **k):
+            raise RuntimeError("connection reset")
+
     assert contact_agent_codes(_Broken(), "anyone") == set()
-    assert (
-        allowed_fields_for(
-            _Broken(), contact_id="anyone", resource=RESOURCE, agent_codes=[OWNER]
-        )
-        == set()
-    )
     assert resolve_contact_id(_Broken(), "anyone") is None
+    (decision,) = decide(_Broken(), resource=RESOURCE, fields=["eta_delay_date"], contact_id="anyone")
+    assert decision.allowed is False
 
 
 # ------------------------------------------------------------- the preflight
@@ -594,8 +608,8 @@ def test_check_attributes_reports_each_field_separately(db):
     assert by_field == {
         "eta_delay_date": ALLOWED,
         "gatepass_date": FIELD_NOT_ALLOWED,
-        # Gated, but default-allowed - not the same as ungated.
-        "estimated_arrival_date": ALLOWED,
+        # No longer default-allowed for a contact: the tree has to tick it.
+        "estimated_arrival_date": FIELD_NOT_ALLOWED,
     }
 
 
@@ -741,17 +755,14 @@ def test_space_id_reaches_the_decision(db):
     contact = _contact(db, respond_io_id="io-1")
     contact.workspace_id = ws.id
     db.flush()
-    agent = _agent(db)
-    _grant(db, contact, agent)
-    _field(db, "estimated_arrival_date")
+    _give_tree(db, contact, "estimated_arrival_date")
 
     (ok,) = decide(
         db, resource=RESOURCE, fields=["estimated_arrival_date"], contact_id="io-1", space_id="space-A"
     )
     assert ok.outcome == ALLOWED
 
-    # The wrong workspace resolves to NOBODY - which is a lookup failure, not a
-    # revoked grant. The contact's grants are untouched and still say "allowed".
+    # The wrong workspace resolves to NOBODY - a lookup failure, not a revoked tick.
     (denied,) = decide(
         db, resource=RESOURCE, fields=["estimated_arrival_date"], contact_id="io-1", space_id="space-B"
     )
