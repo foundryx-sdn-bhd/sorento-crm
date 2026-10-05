@@ -61,9 +61,12 @@ decides who the AI replies to; a contact not allowed, or unknown to the CRM, see
   own SQL and the ORM default.
 
 ### Engine gate (`services/chatbot/engine.py::_run_turn`)
-- `services/chatbot_allowed_service.py::is_allowed(db, respond_io_id)`: one SELECT, True when ANY
-  `respond_contacts` row with that `respond_io_id` has the flag on, False when no row (the same
-  fail-direction `escalation_allowed` takes for a respond.io id on two rows).
+- `services/chatbot_allowed_service.py::is_allowed(db, respond_io_id)`: one SELECT, True only when
+  at least one `respond_contacts` row has that `respond_io_id` AND every such row has the flag on;
+  no row, or ANY row unticked, is not allowed (security review S1, 5 Oct: the same rule
+  `turn_runtime.py:464-472` applies to `escalation_allowed`, "an operator who unticks the row they
+  can see must not be undone by the duplicate"; `respond_io_id` has no unique constraint and the
+  n8n sync matches by phone, so duplicates exist). The card first stated any-row-allows; corrected.
 - In `_run_turn`, after the scoped factory is built (`:2784`) and BEFORE `if offload is None`
   (`:2786`): `if not _ai_allowed(session_factory, contact_respond_id): return
   _ai_not_allowed_turn(...)`. The helper copies the media-denied close (`:3958-4015`) without the
@@ -107,6 +110,14 @@ decides who the AI replies to; a contact not allowed, or unknown to the CRM, see
   `useSaveContactChatbotAllowed`; `ContactChatbotSection.tsx` SwitchRow "AI replies allowed", hint
   "When off, the chatbot sends this contact nothing, not even an error."; `ContactsList.tsx`
   `yesNoColumn('chatbot_allowed', 'AI replies', ...)` beside Escalation.
+
+### Security review (5 Oct, L): S1 fixed as above. Notes kept as written, no code change:
+N1 a DB error inside the gate fails closed as a 500 with no turn row (integration log only);
+N2 downgrade + upgrade re-backfills every row TRUE, so downgrade is a release rollback, never a
+reset, and `SET LOCAL lock_timeout` covers the rest of the same alembic run; N3 the script's flips
+are not audited (bulk `query.update()`, same as `set_contact_outbound.py`); N4 copy access carries
+the AI flag by owner choice (Q5), the dry-run preview lists it; N5 a turn already delegated to n8n
+before a block still completes (narrow window, `/turn/complete` does not re-check the gate).
 
 ### Browser pass (cloud sandbox, 5 Oct, agent-browser against the working tree)
 Sandbox: empty `sorento_ci` migrated to `aig_0001`, dev auto-login as a seeded superadmin, two

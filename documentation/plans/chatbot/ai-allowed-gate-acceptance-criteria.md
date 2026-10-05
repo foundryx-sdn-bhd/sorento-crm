@@ -30,8 +30,9 @@ not even an error."; Q5 copy facet, list filter and system API filter all in. Ev
   (never takes one). `TestGateOrdering` (3 tests)
 - AC-AI-8: a dry-run envelope is gated the same way; a duplicate delivery replays the silent turn.
   `TestDryRunAndDuplicate` (2 tests)
-- AC-AI-9: a respond.io id on two rows is allowed when ANY row is true, blocked when every row is
-  false. `TestTwoRowsOneAllowed` (2 tests)
+- AC-AI-9: a respond.io id on two rows is blocked when ANY row is unticked and allowed only when
+  every row is ticked (security review S1, the `escalation_allowed` duplicate rule).
+  `TestTwoRowsOneBlocked` (2 tests), `test_is_allowed_is_false_when_any_row_with_that_respond_id_is_blocked`
 - AC-AI-10: `ai_not_allowed` is a declared branch kind. `tests/chatbot/test_contracts.py`
 - AC-AI-11: n8n untouched; the gated result is `duplicate=False, actions=[], delegate=None`, reply
   text "" (crew's route-turn check, plan "Engine gate"). Asserted by AC-AI-3/4.
