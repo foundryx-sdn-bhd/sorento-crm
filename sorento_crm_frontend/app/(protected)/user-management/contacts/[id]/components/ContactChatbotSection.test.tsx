@@ -82,6 +82,7 @@ const BASE_PROFILE = {
   eta_offset_applied: true,
   escalation_allowed: true,
   chatbot_allowed: true,
+  skip_period_questions: false,
 };
 
 function renderWithClient(ui: React.ReactElement) {
@@ -315,5 +316,56 @@ describe('ContactChatbotSection - Chatbot hands over to support teams switch', (
     useContactChatbotProfile.mockReturnValue({ data: BASE_PROFILE, isLoading: false, isError: false });
     renderWithClient(<ContactChatbotSection contactId="c1" />);
     expect(screen.queryByText(/Inherited/)).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * DO-PERIOD-SKIP AC-16: "Skip date-range questions" switch directly under the escalation
+ * switch, off by default; toggling saves through the card save with the field true/false.
+ */
+describe('ContactChatbotSection - Skip date-range questions switch', () => {
+  it('renders unchecked by default', () => {
+    useContactChatbotProfile.mockReturnValue({ data: BASE_PROFILE, isLoading: false, isError: false });
+    renderWithClient(<ContactChatbotSection contactId="c1" />);
+    const toggle = screen.getByLabelText('Skip date-range questions');
+    expect(toggle).toHaveAttribute('id', 'contact-chatbot-skip-period');
+    expect(toggle).toHaveAttribute('data-state', 'unchecked');
+  });
+
+  it('renders checked for a contact with the switch on', () => {
+    useContactChatbotProfile.mockReturnValue({
+      data: { ...BASE_PROFILE, skip_period_questions: true },
+      isLoading: false,
+      isError: false,
+    });
+    renderWithClient(<ContactChatbotSection contactId="c1" />);
+    expect(screen.getByLabelText('Skip date-range questions')).toHaveAttribute('data-state', 'checked');
+  });
+
+  it('sits directly after the escalation switch', () => {
+    useContactChatbotProfile.mockReturnValue({ data: BASE_PROFILE, isLoading: false, isError: false });
+    renderWithClient(<ContactChatbotSection contactId="c1" />);
+    const esc = screen.getByLabelText('Chatbot hands over to support teams');
+    const skip = screen.getByLabelText('Skip date-range questions');
+    expect(esc.compareDocumentPosition(skip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const switches = screen.getAllByRole('switch');
+    expect(switches.indexOf(skip)).toBe(switches.indexOf(esc) + 1);
+  });
+
+  it('turning it on saves skip_period_questions true with every other field unchanged', () => {
+    const loaded = { ...BASE_PROFILE, notify_salesman: true };
+    useContactChatbotProfile.mockReturnValue({ data: loaded, isLoading: false, isError: false });
+    renderWithClient(<ContactChatbotSection contactId="c1" />);
+    fireEvent.click(screen.getByLabelText('Skip date-range questions'));
+    expect(mutate).toHaveBeenCalledTimes(1);
+    expect(mutate.mock.calls[0][0]).toEqual({ ...loaded, skip_period_questions: true });
+  });
+
+  it('turning it off saves skip_period_questions false', () => {
+    const loaded = { ...BASE_PROFILE, skip_period_questions: true };
+    useContactChatbotProfile.mockReturnValue({ data: loaded, isLoading: false, isError: false });
+    renderWithClient(<ContactChatbotSection contactId="c1" />);
+    fireEvent.click(screen.getByLabelText('Skip date-range questions'));
+    expect(mutate.mock.calls[0][0]).toEqual({ ...loaded, skip_period_questions: false });
   });
 });

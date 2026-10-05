@@ -80,6 +80,8 @@ class RespondContactResponse(RespondContactBase):
     escalation_allowed: bool = True
     # AI-ALLOWED-GATE: may the chatbot answer this contact at all. New contacts start off.
     chatbot_allowed: bool = False
+    # DO-PERIOD-SKIP: never ask this contact for a date range. Default off.
+    chatbot_skip_period_questions: bool = False
     # CONTACT-BULK-ACCESS (UAC A2.1): `chatbot_profile.tier` flattened, and whether the
     # contact holds the `purchase_orders.cost` reveal (filled by the list only; null on detail).
     chatbot_tier: Optional[str] = None

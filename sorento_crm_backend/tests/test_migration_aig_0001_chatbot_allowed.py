@@ -67,7 +67,7 @@ def test_revision_chains_onto_mains_head():
     module = _load()
     assert module.revision == "aig_0001_chatbot_allowed"
     assert len(module.revision) <= 32
-    assert module.down_revision == "creg_0001_contact_regions"
+    assert module.down_revision == "dps_0001_skip_period_questions"
 
 
 def test_existing_contacts_read_true_after_upgrade_and_a_new_row_defaults_false():

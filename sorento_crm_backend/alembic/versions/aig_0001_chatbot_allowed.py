@@ -10,14 +10,14 @@ new rows only. A second run finds the column present, skips the ADD, and re-appl
 same default, so it never re-allows a row somebody blocked. The downgrade drops the column.
 
 Revision ID: aig_0001_chatbot_allowed
-Revises: creg_0001_contact_regions
+Revises: dps_0001_skip_period_questions
 Create Date: 2026-10-05
 """
 from alembic import op
 import sqlalchemy as sa
 
 revision = "aig_0001_chatbot_allowed"
-down_revision = "creg_0001_contact_regions"
+down_revision = "dps_0001_skip_period_questions"
 branch_labels = None
 depends_on = None
 

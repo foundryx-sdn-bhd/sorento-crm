@@ -45,6 +45,7 @@ const SAVED_PROFILE = {
   eta_offset_applied: true,
   escalation_allowed: true,
   chatbot_allowed: true,
+  skip_period_questions: false,
 };
 
 beforeEach(() => {

@@ -272,6 +272,13 @@ function ChatbotSettingsCard({
             disabled={save.isPending || saveEscalation.isPending || saveAiAllowed.isPending}
             onCheckedChange={(checked) => saveEscalation.mutate(checked)}
           />
+          <SwitchRow
+            id="contact-chatbot-skip-period"
+            label="Skip date-range questions"
+            checked={profile.skip_period_questions}
+            disabled={save.isPending || saveEscalation.isPending}
+            onCheckedChange={(checked) => save.mutate({ ...profile, skip_period_questions: checked })}
+          />
         </div>
       </CardContent>
     </Card>

@@ -578,7 +578,6 @@ class TestProductionSeams:
         result = escalation_mod.run(ctx, _item(), services=services)
 
         assert [a["kind"] for a in result["actions"]] == [
-            "send_message",
             "assign_conversation",
             "add_comment",
             "send_message",

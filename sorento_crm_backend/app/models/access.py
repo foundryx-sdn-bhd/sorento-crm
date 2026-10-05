@@ -297,6 +297,8 @@ class RespondContact(Base):
     # switches: every row that existed when the column arrived was backfilled ON by the
     # migration, every new contact (sync or hand-added) waits for a human to tick it.
     chatbot_allowed = Column(Boolean, nullable=False, server_default=text("false"), default=False)
+    # DO-PERIOD-SKIP (owner, 4 Oct 2026): never ask this contact for a date range on a list ask.
+    chatbot_skip_period_questions = Column(Boolean, nullable=False, server_default=text("false"), default=False)
     created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=False), server_default=func.now(), onupdate=func.now(), nullable=False)
     created_by = Column(Text, nullable=True)
