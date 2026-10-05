@@ -12,6 +12,9 @@ import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/re
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import ContactChatbotSection from './ContactChatbotSection';
+import { PACKING_LIST_REGION_OPTIONS } from '@/lib/packing-list-regions';
+
+const seenOptions: unknown[] = [];
 
 const useContactChatbotProfile = vi.fn();
 const mutate = vi.fn();
@@ -48,6 +51,7 @@ vi.mock('@/components/common/SearchableMultiSelect', () => ({
     placeholder?: string;
   }) => {
     const opts = props.options ?? props.selectedOptions ?? [];
+    seenOptions.push(props.options);
     // Only the region control passes static options; the facts grid's multi has none here.
     if (!opts.some((o) => /malaysia/i.test(o.label))) return null;
     return (
@@ -100,6 +104,7 @@ beforeEach(() => {
   useContactChatbotProfile.mockReset();
   mutate.mockReset();
   apiFetchMock.mockReset();
+  seenOptions.length = 0;
 });
 afterEach(() => cleanup());
 
@@ -114,6 +119,12 @@ describe('ContactChatbotSection - Regions (AC-CR-14..16)', () => {
     renderCard();
     expect(screen.getByLabelText('West Malaysia')).toBeChecked();
     expect(screen.getByLabelText('East Malaysia')).not.toBeChecked();
+  });
+
+  it('AC-CR-22: the control gets PACKING_LIST_REGION_OPTIONS unchanged', () => {
+    renderCard();
+    expect(seenOptions.length).toBeGreaterThan(0);
+    expect(seenOptions).toContainEqual(PACKING_LIST_REGION_OPTIONS);
   });
 
   it('AC-CR-14: no UUID or raw code is shown as text', () => {

@@ -245,10 +245,32 @@ def test_ac_cr_11_stored_west_sees_west_only(db):
     assert eta_policy.rules_for_contact(db, c.id).regions == frozenset({"west"})
 
 
-def test_ac_cr_12_stored_east_expands_to_east_and_west(db):
+def test_ac_cr_12_stored_east_is_literal(db):
     c = _contact(db)
     _set_raw(db, c.id, ["east"])
+    assert eta_policy.rules_for_contact(db, c.id).regions == frozenset({"east"})
+
+
+def test_ac_cr_12_stored_both_sees_both(db):
+    c = _contact(db)
+    _set_raw(db, c.id, ["west", "east"])
     assert eta_policy.rules_for_contact(db, c.id).regions == frozenset({"east", "west"})
+
+
+@pytest.mark.parametrize(
+    "held, expected",
+    [
+        (["east"], {"east"}),
+        (["west"], {"west"}),
+        (["west", "east"], {"west", "east"}),
+        ([], {"west"}),
+        (None, {"west"}),
+        (["north"], {"west"}),
+        (["east", "north"], {"east"}),
+    ],
+)
+def test_ac_cr_21_visible_regions_is_literal(held, expected):
+    assert eta_policy.visible_regions(held) == frozenset(expected)
 
 
 def test_ac_cr_21_rules_follow_visible_regions_only(db, monkeypatch):
