@@ -1,6 +1,6 @@
 # PLAN - AI replies allowed per contact (AI-ALLOWED-GATE)
 
-Status: building. Card answered 5 Oct 23:52: Q1 (a) default FALSE for new rows + backfill TRUE,
+Status: in review on PR #1491 (reviewer + security review running, hand test with the owner). Card answered 5 Oct 23:52: Q1 (a) default FALSE for new rows + backfill TRUE,
 Q2 (a) status done + branch kind `ai_not_allowed`, Q3 console/dry-run gated too, Q4 wording as
 proposed, Q5 copy facet + list filter + system API filter. Track: L by rule
 (additive migration + engine rule + toggle on an existing screen; mock skipped, reuses the Chatbot
