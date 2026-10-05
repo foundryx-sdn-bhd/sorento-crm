@@ -4266,8 +4266,8 @@ def _run_stages_body(  # noqa: PLR0915
     # before APPLY reads the verdict: the category keeps what the thing IS, a colour or
     # a size becomes a `specification` entity, and nothing is a document type unless it
     # is on the list.
-    # ATTACH-GROUNDING-TYPO: `ctx.parse._parser_raw` is what the parser said, so it is
-    # copied before grounding rewrites the entities (the trace showed the demoted one).
+    # ATTACH-GROUNDING-TYPO: `ctx.parse._parser_raw` is the verdict as it stood before
+    # grounding rewrote the entities (the trace showed the demoted one).
     parser_verdict = copy.deepcopy(verdict)
     with _session(session_factory) as grounding_db:
         verdict, grounding_notes = grounding.ground(

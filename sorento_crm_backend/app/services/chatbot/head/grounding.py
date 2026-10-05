@@ -419,8 +419,9 @@ def _parser_document_type(db: "Session", entity: dict[str, Any], vocab: Vocabula
     canonical = str(entity.get("canonical_code") or "").strip()
     if not canonical or not _on_attachment_list(db, canonical, vocab):
         return False
-    code_words = _words(canonical)
-    return any(_same(said, word) for said in _words(str(entity.get("raw") or "")) for word in code_words)
+    code_words = [w for w in _words(canonical) if w not in _STOPWORDS]
+    said_words = [w for w in _words(str(entity.get("raw") or "")) if w not in _STOPWORDS]
+    return any(_same(said, word) for said in said_words for word in code_words)
 
 
 def _corrected_class(db: "Session", text: str, vocab: Vocabulary) -> str:

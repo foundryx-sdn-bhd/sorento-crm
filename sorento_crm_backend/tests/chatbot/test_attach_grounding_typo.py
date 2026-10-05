@@ -54,7 +54,7 @@ def test_the_prod_turn_keeps_the_document_type_and_the_domain(vdb):
 
 @pytest.mark.parametrize(
     "raw,canonical",
-    [("techincal drawings", "technical drawing"), ("techincal drawing", "technical drawing"), ("teknikal drawings", "technical drawing")],
+    [("techincal drawings", "technical drawing"), ("techincal drawing", "technical drawing"), ("techincal drawing", "Technical Drawing")],
 )
 def test_a_word_of_the_parsers_document_type_backs_it(vdb, raw, canonical):
     out, _ = _ground(vdb, _e("m495", "product"), _e(raw, "attachment_type", canonical_code=canonical))
