@@ -175,7 +175,7 @@ function StageRow({
 
   return (
     <li className="relative ps-4 pb-2.5">
-      <Dot tone={failed ? 'failed' : 'ok'} />
+      <Dot tone={failed ? 'failed' : record.status === 'skipped' ? 'skipped' : 'ok'} />
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-xs font-medium">{label}</span>
         <span className="text-2xs text-muted-foreground tabular-nums shrink-0">

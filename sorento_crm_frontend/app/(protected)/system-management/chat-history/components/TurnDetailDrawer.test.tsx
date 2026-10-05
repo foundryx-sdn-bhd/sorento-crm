@@ -262,6 +262,19 @@ describe('TurnDetailDrawer', () => {
     expect(screen.getByText('boom')).toBeInTheDocument();
   });
 
+  it('a skipped stage shows a neutral badge and the word skipped', () => {
+    const detail = emptyDetail();
+    detail.stages = [
+      { name: 'received', started_at: null, ms: 3, status: 'skipped', summary: 'AI not allowed', error: null },
+    ];
+    turnState = { data: detailTurn(detail), isLoading: false, isError: false };
+    render(<TurnDetailDrawer turnId="ZZT-turn-detail-1" onOpenChange={vi.fn()} />);
+
+    const badge = screen.getByText('received');
+    expect(badge.className).not.toMatch(/destructive|success/);
+    expect(screen.getByText('skipped')).toBeInTheDocument();
+  });
+
   it('browser pass follow-up: the Stages tab shows a media_intake stage\'s facts, not just its badge and summary', () => {
     // Copied VERBATIM from a real chatbot.turns.trace row on 0921 (turn
     // 767e0472-2388-47f8-9b40-efef429b45a8), projected through the SAME

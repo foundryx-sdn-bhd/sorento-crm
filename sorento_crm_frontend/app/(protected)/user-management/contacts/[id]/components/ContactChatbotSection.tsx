@@ -38,6 +38,7 @@ import {
   useContactChatbotMemory,
   useContactChatbotProfile,
   useSaveContactChatbotProfile,
+  useSaveContactChatbotAllowed,
   useSaveContactEscalation,
   useSaveContactFact,
 } from '../hooks/useContactChatbot';
@@ -142,6 +143,7 @@ function ChatbotSettingsCard({
   const { data: profile, isLoading, isError } = useContactChatbotProfile(contactId);
   const save = useSaveContactChatbotProfile(contactId);
   const saveEscalation = useSaveContactEscalation(contactId);
+  const saveAiAllowed = useSaveContactChatbotAllowed(contactId);
 
   if (isLoading) {
     return (
@@ -214,6 +216,14 @@ function ChatbotSettingsCard({
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <SwitchRow
+            id="contact-chatbot-ai-allowed"
+            label="AI replies allowed"
+            hint="When off, the chatbot sends this contact nothing, not even an error."
+            checked={profile.chatbot_allowed}
+            disabled={save.isPending || saveEscalation.isPending || saveAiAllowed.isPending}
+            onCheckedChange={(checked) => saveAiAllowed.mutate(checked)}
+          />
+          <SwitchRow
             id="contact-chatbot-stock"
             label="Stock checks"
             checked={profile.stock_allowed}
@@ -259,8 +269,15 @@ function ChatbotSettingsCard({
             // Owner-approved wording (1 Oct 2026, hand test of #1406).
             hint="When off, the chatbot tells this contact to refer to their salesman."
             checked={profile.escalation_allowed}
-            disabled={save.isPending || saveEscalation.isPending}
+            disabled={save.isPending || saveEscalation.isPending || saveAiAllowed.isPending}
             onCheckedChange={(checked) => saveEscalation.mutate(checked)}
+          />
+          <SwitchRow
+            id="contact-chatbot-skip-period"
+            label="Skip date-range questions"
+            checked={profile.skip_period_questions}
+            disabled={save.isPending || saveEscalation.isPending || saveAiAllowed.isPending}
+            onCheckedChange={(checked) => save.mutate({ ...profile, skip_period_questions: checked })}
           />
         </div>
       </CardContent>

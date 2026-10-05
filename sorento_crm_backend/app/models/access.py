@@ -292,6 +292,13 @@ class RespondContact(Base):
     # decide it); default ON, every existing contact backfilled ON, unticked on the
     # contact page's Chatbot card to block.
     escalation_allowed = Column(Boolean, nullable=False, server_default=text("true"), default=True)
+    # AI-ALLOWED-GATE (owner, 5 Oct 2026): may the chatbot answer this contact at all.
+    # Off, or no row, and the engine ends the turn silently. Default OFF, unlike the other
+    # switches: every row that existed when the column arrived was backfilled ON by the
+    # migration, every new contact (sync or hand-added) waits for a human to tick it.
+    chatbot_allowed = Column(Boolean, nullable=False, server_default=text("false"), default=False)
+    # DO-PERIOD-SKIP (owner, 4 Oct 2026): never ask this contact for a date range on a list ask.
+    chatbot_skip_period_questions = Column(Boolean, nullable=False, server_default=text("false"), default=False)
     created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=False), server_default=func.now(), onupdate=func.now(), nullable=False)
     created_by = Column(Text, nullable=True)

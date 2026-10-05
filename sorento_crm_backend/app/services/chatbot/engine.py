@@ -456,10 +456,9 @@ def _as_a_stock_ask_by_its_own_words(verdict: dict[str, Any], message: str) -> d
     }
 
 
-def _code_like(token: str) -> bool:
-    """A typed token that can be a product code: letters AND digits ("srtwc286"). A word
-    ("xx", "basin") or a bare number ("2", "10") is not one."""
-    return any(ch.isdigit() for ch in token) and any(ch.isalpha() for ch in token)
+#: A typed token that can be a product code: letters AND digits. One copy, in
+#: `turn/task.py`, shared with the family grouping and the quantity carry (AVAIL-PICKER).
+_code_like = turn_task.code_like
 
 
 def _unsure_capture_as_codes(verdict: dict[str, Any]) -> dict[str, Any]:
@@ -523,6 +522,12 @@ def _exact_codes_only(
       after "srtw2000 20" listed SRTW2000-SS-CR, -A and -NL as well);
     * else a code-like token keeps the codes it is the prefix of, the family the
       which-one picker steers from ("srtwc286");
+    * else a code-like token keeps the codes it is a SUBSTRING of (AVAIL-PICKER, owner
+      live trace 5 Oct 2026: "wc286 check stock" dead-ended on "Couldn't find" although
+      the resolver had placed the SRTWC286-SH family off its own substring probe on
+      product_code, `entity_resolver._prefix_probe_product`). The same prefix-then-
+      substring order as that probe: this filter keeps what the resolver placed, it
+      matches nothing of its own;
     * else a code-like token is not found, and goes to the did-you-mean ("srt5764");
     * a word or a bare number with no exact code is not a product at all: the describe /
       semantic matches the resolver found for "xx", "10" or a "2" typed over a
@@ -547,7 +552,11 @@ def _exact_codes_only(
     ignored: set[str] = set()
     for fold, typed in tokens:
         exact = [c for c in candidates if code_of(c) == fold]
-        family = [c for c in candidates if code_of(c).startswith(fold)] if _code_like(fold) else []
+        family: list[dict[str, Any]] = []
+        if _code_like(fold):
+            family = [c for c in candidates if code_of(c).startswith(fold)] or [
+                c for c in candidates if fold in code_of(c)
+            ]
         chosen = exact or family
         if chosen:
             keep.update(str(c.get("uuid")) for c in chosen)
@@ -2751,6 +2760,98 @@ def _localize_result(result: TurnResult, session_factory: SessionFactory, dry_ru
         result.reply, result.actions = reply, actions
 
 
+def _ai_allowed(session_factory: SessionFactory, contact_respond_id: str) -> bool:
+    """AI-ALLOWED-GATE: may the chatbot answer this contact at all.
+
+    One session, one SELECT. A database error is NOT caught: "we could not tell" must not
+    read as allowed, the same rule `respond_outbound_service.assert_outbound_enabled` keeps.
+    """
+    from app.services import chatbot_allowed_service
+
+    with _session(session_factory) as db:
+        return chatbot_allowed_service.is_allowed(db, contact_respond_id)
+
+
+def _ai_not_allowed_turn(
+    envelope: Envelope, *, session_factory: SessionFactory, contact_respond_id: str
+) -> TurnResult:
+    """Close a turn for a contact the CRM does not let the AI answer, sending nothing.
+
+    Owner ask, 5 Oct 2026: the CRM decides who the AI replies to; a blocked contact, or one
+    that is not in the CRM, sees nothing, not even the generic error reply. The gate runs
+    before the worker offload (the worker must never see a turn nobody answers) and before
+    the ordering ticket (a gated turn must not hold the contact's queue slot). It is still a
+    recorded, terminal turn, deduplicated like any other (D15): `done` at `received`, branch
+    `ai_not_allowed`, one trace line, an empty reply and no actions (not even the
+    `is_human_intervened` field write). No parser config, no session vars, no memory.
+    """
+    from app.models.access import RespondContact
+
+    turn_trace = trace_mod.TurnTrace()
+    turn_trace.start()
+    dry_run = envelope.dry_run
+    message_id = _message_id(envelope)
+    with _session(session_factory) as db:
+        existing = _existing_turn(
+            db, contact_respond_id=contact_respond_id, message_id=message_id, is_test=dry_run
+        )
+        retrying = existing if _awaiting_retry(existing) else None
+        if existing is not None and retrying is None:
+            return _duplicate_result(existing)
+        known_contact = (
+            db.query(RespondContact.id)
+            .filter(RespondContact.respond_io_id == contact_respond_id)
+            .first()
+            is not None
+        )
+        try:
+            row = _insert_turn(
+                db,
+                envelope=envelope,
+                contact_respond_id=contact_respond_id,
+                retrying=retrying,
+                queued=False,
+            )
+        except IntegrityError:
+            # Same TOCTOU as `_run_turn`: a racing delivery inserted first; read its row.
+            db.rollback()
+            winner = _select_turn(
+                db, contact_respond_id=contact_respond_id, message_id=message_id, is_test=dry_run
+            )
+            if winner is None or _awaiting_retry(winner):
+                raise
+            return _duplicate_result(winner)
+        turn_id = str(row.id)
+        turn_trace.record(
+            "received",
+            status="skipped",
+            summary="AI not allowed for this contact; sent no reply",
+            why="The CRM decides which contacts the chatbot answers; this contact is not allowed, or is not in the CRM.",
+            facts={"lane": "ai_not_allowed", "known_contact": known_contact},
+            raw=None,
+        )
+        _close_turn(
+            db,
+            turn_id,
+            status="done",
+            stage="received",
+            branch_kind="ai_not_allowed",
+            error=None,
+            records=turn_trace.persisted(),
+            response={"actions": [], "reply": {"text": "", "quick_replies": None}},
+        )
+    return TurnResult(
+        turn_id=turn_id,
+        is_test=dry_run,
+        branch_kind="ai_not_allowed",
+        delegate=None,
+        reply={"text": "", "quick_replies": None},
+        actions=[],
+        status="done",
+        stage="received",
+    )
+
+
 @_refer_tracked
 def _run_turn(
     envelope: Envelope, *, session_factory: SessionFactory, offload: bool | None = None
@@ -2782,6 +2883,15 @@ def _run_turn(
     session_factory = _scoped_factory(
         session_factory, contact_scope, _contact_brand_scope(session_factory, contact_respond_id)
     )
+
+    # AI-ALLOWED-GATE: after the scope is known, BEFORE the offload and the ticket. A
+    # database error inside `_ai_allowed` propagates (fails closed, the route answers 500 and
+    # the integration log records it); no turn row exists for that call, accepted because
+    # "could not tell" must never answer the customer.
+    if not _ai_allowed(session_factory, contact_respond_id):
+        return _ai_not_allowed_turn(
+            envelope, session_factory=session_factory, contact_respond_id=contact_respond_id
+        )
 
     if offload is None:
         offload = bool(getattr(settings, "chatbot_turn_on_worker", False))
