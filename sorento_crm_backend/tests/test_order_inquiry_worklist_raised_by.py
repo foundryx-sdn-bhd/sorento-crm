@@ -256,7 +256,10 @@ def _seed(db, company_id: str) -> dict:
     """Two CS users, one inquiry each, so every assertion below is about telling them
     apart rather than about the only row there is."""
     contact_w = _user(db, f"{MARKER} CONTACT W", f"contact w.{_uid()[:8]}@zzt.test")
-    contact_aa = _user(db, f"{MARKER} CONTACT AA Tan", f"contact aa.{_uid()[:8]}@zzt.test")
+    # The email search test searches this address's first ten characters. Keep them ONE word
+    # that no hex can contain: "contact aa" split into "contact" + "aa", and the other row's
+    # random SO number and product code held "aa" in about one run in twenty.
+    contact_aa = _user(db, f"{MARKER} CONTACT AA Tan", f"zztaacontact.{_uid()[:8]}@zzt.test")
     # A third CS user who has raised nothing: the filter's own list must not offer them.
     idle = _user(db, f"{MARKER} Never Raised", f"idle.{_uid()[:8]}@zzt.test")
 
