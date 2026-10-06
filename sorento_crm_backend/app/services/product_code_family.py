@@ -176,9 +176,17 @@ def narrow_code_tokens(
             continue
         # The code's own line(s): the ones holding the code word and, when the token folds
         # more than the code (the words typed beside it), the token's words too, so a code
-        # typed on two lines with two descriptors reads each line for its own token.
+        # typed on two lines with two descriptors reads each line for its own token. The
+        # bare code leaves the lines where another token typed this code with words beside
+        # it ("SRTWC8840 x 1" over "SRTWC8840 p trap"). A token with no such line (the
+        # parser shortened "white seat cover" to "seat cover") reads every line of its code.
         code_lines = [words for words in lines if any(_fold(w) == code_word for w in words)]
-        own_lines = [words for words in code_lines if folded in "".join(_fold(w) for w in words)] or code_lines
+        joined = ["".join(_fold(w) for w in words) for words in code_lines]
+        own_lines = [words for words, text in zip(code_lines, joined) if folded in text]
+        if folded == code_word:
+            longer = [f for f in folded_tokens if f != code_word and f.startswith(code_word)]
+            own_lines = [words for words, text in zip(code_lines, joined) if not any(f in text for f in longer)] or own_lines
+        own_lines = own_lines or code_lines
         descriptor = [
             w for words in own_lines for raw in words if _fold(raw) != code_word for w in _words(raw) if not _CODE_WORD.match(w)
         ]
