@@ -291,6 +291,28 @@ def test_a_fetch_scoped_to_a_resolved_product_carries_no_set_predicate(session_f
     assert "predicate" not in carried_gate, carried_gate
     assert set_gate.get("predicate") == set_predicate
 
+    # A DESCRIBED set ("which basins have stock"): its members reach the spec as resolved
+    # uuids too, and the predicate carries the set's own bindings, so it is kept.
+    described = {**set_predicate, "description": [{"key": "class", "label": "Product type", "value": "Wash basin"}]}
+    member = {**row, "uuid": "22222222-2222-4222-8222-222222222222", "canonical_code": "ZZT-MEMBER"}
+    gates.clear()
+    member_runner = turn_runtime.make_tool_runner(
+        session_factory(),
+        ctx={"parse": {"output": verdict(domain_hint="inventory", intent_hint="check_stock")}},
+        verdict=verdict(domain_hint="inventory", intent_hint="check_stock"),
+        focus=Focus(domains=["inventory"]),
+        compatible_entities=[member],
+        predicate=described,
+        resolver_gate={"gate_passed": True, "predicate": described},
+        unplaced={},
+        space_id=None,
+        dry_run=True,
+        turn_trace=type("Trace", (), {"add": lambda self, *a, **k: None})(),
+    )
+    member_runner("inventory", FetchSpec(domain="inventory", entities=[member], filters={}, date_window=None))
+    (member_gate,) = gates
+    assert member_gate.get("predicate") == described
+
 
 # --------------------------------------------------------------------------- #
 # B. Never-stuck: a one-product inventory section with an empty lane_text
@@ -302,12 +324,14 @@ def _policy() -> Policy:
     return Policy.from_rows(domains=[row], kinds=[], tier_order=TIER_ORDER_FIXTURE)
 
 
-def _empty_section(code: str, *, tool_has_result: bool) -> dict[str, Any]:
+def _empty_section(code: str, *, tool_has_result: bool, tool_ran: bool = True) -> dict[str, Any]:
     """`turn_runtime.envelope_of`'s shape for a fetch that rendered nothing: the lane's
     text stripped to "", no rows, the code in `miss`. `tool_has_result` is the tool's
     own verdict: False for a miss, True for the prod shape (a withheld set whose only
-    line was the header `envelope_of` strips)."""
+    line was the header `envelope_of` strips). `tool_ran` is whether a tool was called
+    FOR this code at all (owner, 6 Oct 17:50: no claim without a lookup)."""
     return {
+        "tool_ran": tool_ran,
         "domain": "inventory",
         "denied": False,
         "entities": [code],
@@ -331,11 +355,38 @@ def _compose(env: dict[str, Any]) -> str:
 
 
 def test_a_one_product_section_with_empty_lane_text_never_composes_to_a_bare_header():
-    text = _compose(_empty_section(CODE, tool_has_result=False))
+    """The stock tool ran for the code and came back empty: the existing miss line."""
+    text = _compose(_empty_section(CODE, tool_has_result=False, tool_ran=True))
 
     assert f"No stock found for {CODE}." in text, text
     assert BARE_HEADER not in text, text
     assert text.strip() != "", text
+
+
+def test_a_section_no_tool_ran_for_never_claims_no_stock():
+    """Owner, 6 Oct 17:50 (the #1501 principle): no tool ran for this code (a set
+    predicate's refusal, a gate refusal), so "No stock found" would be a claim nothing
+    looked up. The existing retry wording under the header, never a stock claim."""
+    text = _compose(_empty_section(CODE, tool_has_result=False, tool_ran=False))
+
+    assert "No stock found" not in text, text
+    assert text.strip() != BARE_HEADER, text
+    assert text.startswith(f"{BARE_HEADER}\nI could not fetch stock just now, please try again."), text
+
+
+def test_envelope_of_says_whether_a_tool_ran_for_the_codes():
+    """`turn_runtime.envelope_of`: `tool_ran` is True only for a fragment a real tool
+    call produced (`fetch.tool` stamped by `fetch_result`) that was about these codes
+    (no `outcome: not_found`)."""
+    spec = FetchSpec(domain="inventory", entities=[], filters={}, date_window=None)
+    row = {"entity_type": "product", "uuid": "11111111-1111-4111-8111-111111111111", "code": CODE}
+    empty_from_tool = {"fetch": {"has_result": False, "response": "", "answers": [], "tool": {"name": "crm_inventory_stock_balance_list"}}}
+    refused_before_any_tool = {"fetch": {"has_result": False, "response": "No matching results found."}, "outcome": "not_found"}
+    tool_ran_but_not_for_the_code = {"fetch": {"has_result": False, "response": "", "tool": {"name": "x"}}, "outcome": "not_found"}
+
+    assert turn_runtime.envelope_of(empty_from_tool, spec, [row])["tool_ran"] is True
+    assert turn_runtime.envelope_of(refused_before_any_tool, spec, [row])["tool_ran"] is False
+    assert turn_runtime.envelope_of(tool_ran_but_not_for_the_code, spec, [row])["tool_ran"] is False
 
 
 def test_a_section_the_tool_answered_but_the_lane_left_empty_never_says_no_stock():

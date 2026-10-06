@@ -55,10 +55,15 @@ A. (Owner ruling, 6 Oct 2026 17:40: the principle, not the turn type.) A fetch a
    unset: the gate starts as the resolver's own gate dict, which already carries it. The
    engine's carry hand-off is unchanged (an earlier revision skipped the carry on task
    fetch turns; the general rule made that special case unnecessary).
-B. `turn/compose.py` never-stuck: a section that rendered nothing for its named subjects
-   prints the existing "No {label} found for {codes}." miss line when the tool found
-   nothing, and the `error` arm's existing retry sentence when the tool answered but the
-   lane rendered nothing (a withheld set), never a bare header and never a false "no stock".
+B. `turn/compose.py` never-stuck, with the #1501 principle (owner, 6 Oct 17:50: no claim
+   without a lookup). A section that rendered nothing for its named subjects prints the
+   existing "No {label} found for {codes}." miss line ONLY when a tool actually ran for
+   those codes and came back empty (`envelope_of`'s `tool_ran`: `fetch.tool` is stamped by
+   a real call, and an `outcome: not_found` fragment was a call not about them). When the
+   tool answered but the lane rendered nothing (a withheld set), or when no tool ran for
+   the codes at all (a set predicate's refusal, a gate refusal), it prints the `error`
+   arm's existing retry sentence under the header. Never a bare header, never a stock
+   claim nothing looked up.
 
 Chosen seam: the gate guard is the one place a predicate is attached to a fetch, and the
 plan's spec is the one record of whether the question is about a specific product.

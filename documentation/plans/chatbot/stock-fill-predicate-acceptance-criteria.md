@@ -19,8 +19,9 @@ Plan: `PLAN-stock-fill-predicate-06oct.md`.
 - AC-SFP-5: the reply for a product with no stock and no incoming is
   `<code> x <qty>: ❌ No stock and no incoming. Please refer to your salesman.`, no bare
   header.
-- AC-SFP-6 (never-stuck): a one-product section with an empty lane text and no rows never
-  composes to a header-only block: the tool's miss prints "No {label} found for {code}.";
-  a tool that answered but rendered nothing prints the existing retry sentence under the
-  header, never "No stock found".
+- AC-SFP-6 (never-stuck, no claim without a lookup): a one-product section with an empty
+  lane text and no rows never composes to a header-only block. A tool that ran for the
+  code and came back empty prints "No {label} found for {code}."; a tool that answered but
+  rendered nothing, or no tool run for the code at all, prints the existing retry sentence
+  under the header, never "No stock found".
 - AC-SFP-7: no new wording; every sentence printed exists on main today.

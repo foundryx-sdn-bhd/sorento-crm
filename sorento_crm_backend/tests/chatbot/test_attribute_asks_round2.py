@@ -665,9 +665,10 @@ def test_w6_a_long_subject_list_is_counted_never_dumped_as_one_line_of_codes():
     assert first == "*stock* for 12 products:", answer.text
     assert codes[5] not in first, answer.text
 
-    # The same subject rule on the section that rendered nothing at all: the miss
-    # line it prints instead of a bare header counts the subjects too.
-    empty = _compose([_envelope("inventory", entities=codes)], policy=_policy(row))
+    # The same subject rule on the section that rendered nothing at all (the tool ran
+    # for the codes and found nothing): the miss line it prints instead of a bare
+    # header counts the subjects too.
+    empty = _compose([_envelope("inventory", entities=codes, tool_ran=True)], policy=_policy(row))
     assert one_line_header(empty.text) == "No stock found for 12 products.", empty.text
 
 

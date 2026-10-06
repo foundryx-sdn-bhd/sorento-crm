@@ -2925,9 +2925,14 @@ def make_tool_runner(
         # turn 121). POPPED, not merely left unset: `gate` starts as the resolver's own
         # gate dict (above), and that dict is where this turn's `predicate` was read
         # from in the first place (`resolve_kinds`).
+        # A set question's own members ALSO reach the spec as resolved uuids (the
+        # reconciled plan carries the population the resolver placed), so "specific"
+        # is told apart from "the set" by the predicate itself: a described set carries
+        # its bindings (`description`, off a class word, a spec or a brand); the bare
+        # intent leg over the whole catalogue describes nothing.
         if page_predicate is not None:
             block = page_predicate
-        elif _scoped_to_a_resolved_product(spec):
+        elif _scoped_to_a_resolved_product(spec) and not _describes_a_set(predicate):
             block = None
             gate.pop("predicate", None)
         else:
@@ -4024,12 +4029,23 @@ def _spec_row(entity: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _describes_a_set(predicate: Any) -> bool:
+    """Does this predicate describe a set at all? `description` is the resolver's own
+    labelled bindings (`product_predicate_service.describe_set`: brand, product type,
+    spec values) and exists only when a class word, a grounded spec or a brand scoped the
+    read; the bare intent leg (`check_stock` -> `{"stock": true}` over the whole
+    catalogue) carries none. The same test `lanes/business/fetch.py` applies for
+    `set_described`."""
+    return isinstance(predicate, dict) and bool(jsc.array(jsc.get(predicate, "description")))
+
+
 def _scoped_to_a_resolved_product(spec: FetchSpec) -> bool:
-    """Does the plan's own spec name a specific product by a real uuid? Read off
-    `spec.entities` (what the plan says the question is about), never off the resolver's
-    rows: a set question's qualifying population reaches `compatible_entities` with uuids
-    of its own (`references._emit_spec_matches`) and is exactly the case that keeps its
-    predicate. `_spec_row`'s uuid test, so a label promoted into `uuid` never counts."""
+    """Does the plan's own spec name a product by a real uuid? Read off `spec.entities`
+    (what the plan says the question is about), never off the resolver's rows.
+    `_spec_row`'s uuid test, so a label promoted into `uuid` never counts. On its own this
+    cannot tell a specific product from a set's members (the reconciled plan carries a set
+    question's population with uuids too), which is why the gate reads it together with
+    `_describes_a_set`."""
     return any(
         isinstance(e, dict)
         and jsc.nullish_str(e.get("hint")).strip().lower() == "product"
@@ -4256,6 +4272,14 @@ def envelope_of(
         # The lane's own failure, when the fetch did not complete: neither a hit nor a
         # miss, so the composer offers nothing on it (the error text is the answer).
         "error": fragment.get("error") if isinstance(fragment.get("error"), str) else None,
+        # STOCK-FILL-PREDICATE (owner ruling, 6 Oct 2026 17:50, the #1501 principle: no
+        # claim without a lookup): did a tool actually run FOR these codes? `fetch.tool`
+        # is stamped only by a real call (`lanes/business/fetch.py::fetch_result`, the
+        # lane's synthetic refusals pass `tool=None`), and an `outcome: "not_found"`
+        # fragment is a call that was not about them (`_answered_unfiltered`, the
+        # runner's own refusals). The composer's never-stuck fallback says "No stock
+        # found for X" only when this is True.
+        "tool_ran": bool(fetched.get("tool")) and fragment.get("outcome") != "not_found",
         # The lane's OWN rendered sentence. The composer renders the rows itself
         # (#930's grammar, contract 102); this is what a tool with no rows to render -
         # a report, a refusal, a miss suggestion - has to say instead. A refused domain
