@@ -1,9 +1,12 @@
 # PLAN: rogue dealer conversation, 6 Oct (ROGUE-CONVO-REVIEW)
 
-Status: PLANNED, waiting on the owner's answers to the single `crew-ask` on PR #1506
-(6 Oct 2026). Scout + plan lane, cloud sandbox. No code until the owner picks. Track per
-PR below: both are small fix track (backend only, no migration, no auth/RBAC change, no
-new ingest surface, no UI).
+Status: PLANNED, waiting on the owner's answers to Q1, Q2 and Q3 of the single `crew-ask`
+on PR #1506 (6 Oct 2026). Decided so far (crew, 6 Oct): Q4 = (a), the miss header lists
+only what the customer named and the resolver placed, and a miss carries no set_page
+(existing rules decide it: no name or word matching in code, no auto-joins); Q5 = (a), two
+PRs (PR-1 class A; PR-2 classes B + C + G with the class F addenda and live eval). Scout +
+plan lane, cloud sandbox. No code until Q1 to Q3 land. Track per PR below: both are small
+fix track (backend only, no migration, no auth/RBAC change, no new ingest surface, no UI).
 UAC: `rogue-convo-review-acceptance-criteria.md`.
 Related lanes: #1502 STOCK-FILL-PREDICATE (class E, handed over), #1504 BRAND-PROMO-EXPAND
 (class D, handed over), #1501 merged (no stock claim without a lookup).
