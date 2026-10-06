@@ -2117,10 +2117,22 @@ def resolve_kinds(
     # this turn's matches; under inventory the gate already rejects them as incompatible).
     # The hint is looked up the way `reconcile.hits_for_token` looks the token up: the
     # entity's `raw` first, folded through `token_key`, so the echoed token maps back to
-    # the hint that asked for it. The DOMAIN overrides (`_DOMAIN_HINT_EXPANSIONS`, brand ->
-    # customer under order) are NOT folded: there the re-type is the intended reading
-    # ("super ceramic" names a customer), and the live-brand intercept above already keeps
-    # a real brand out of that fan-out.
+    # the hint that asked for it.
+    #
+    # A BRAND hint goes one step further outside order/sales (ROGUE-CONVO-REVIEW, prod 6 Oct
+    # 2026 18:50 MYT, "SORENTO S-TRAP 250MM ONE PIECE WC-ZZWC8318-RL-250"): the resolver
+    # answered the confident brand word with FOUR kinds at once, promotion, customer, form
+    # and transporter, none of which inventory even accepts, and reconciliation armed
+    # "Which one do you mean? 1. SORENTO (promotion) 2. SORENTO (customer) 3. SORENTO (form)
+    # 4. SORENTO (transporter)" over a product the parser had read perfectly. The resolver
+    # has no brand probe, so nothing it answers a brand word with can contradict the parser's
+    # brand hint ("Sorento is always a brand"): every hit counts as the brand, the hint
+    # stands, no pick is armed and no row of those kinds reaches the focus. The DOMAIN
+    # overrides (`_DOMAIN_HINT_EXPANSIONS`, brand -> customer / transporter under order) are
+    # NOT folded: there the re-type is the intended reading ("super ceramic" names a
+    # customer), and the live-brand intercept above already keeps a real brand out of that
+    # fan-out. Category hints keep today's reading beyond the promotion fold: a class word
+    # that the resolver places as products is still re-typed (no evidence against it yet).
     hint_by_key: dict[str, str] = {}
     for e in entities:
         if not isinstance(e, dict):
@@ -2137,11 +2149,12 @@ def resolve_kinds(
         hits = by_token.setdefault(token, {})
         hinted = hint_by_key.get(_token_key(token))
         fan_out = RESOLVER_FAN_OUT.get(hinted or "", frozenset())
+        brand_word = hinted == "brand" and not is_order_domain
         for match in jsc.array(jsc.get(resolution, "matches")):
             kind = jsc.nullish_str(jsc.get(match, "entity_type")).strip().lower()
             if not kind:
                 continue
-            if hinted and kind in fan_out:
+            if hinted and (kind in fan_out or brand_word):
                 kind = hinted
             hits[kind] = hits.get(kind, 0) + 1
 

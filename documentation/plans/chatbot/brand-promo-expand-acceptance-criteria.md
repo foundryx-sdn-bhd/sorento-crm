@@ -15,3 +15,6 @@ Plan: `PLAN-brand-promo-expand-06oct.md`.
 - AC-5 Photo shape: a product with uuid plus the brand SORENTO under inventory leaves the brand
   on the focus as a brand; the fill turn "1" answers with the availability line.
 - AC-6 No parser prompt change; no typo/word/fuzzy matching added; fixtures use fake ids only.
+- AC-7 (ROGUE-CONVO-REVIEW shape) A confident brand hint beside a product code under inventory
+  never arms a kind pick, whatever kinds the resolver answers the brand word with; the product's
+  own stock question is asked and the focus holds the brand as a brand only.

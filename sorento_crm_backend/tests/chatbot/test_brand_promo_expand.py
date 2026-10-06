@@ -559,6 +559,70 @@ def test_prod_photo_shape_brand_beside_product_under_inventory_then_fill_turn(co
     assert "promotion_ids" not in c.stock_calls[-1], c.stock_calls[-1]
 
 
+def _seed_rows_named_sorento(session_factory) -> None:
+    """A customer, a form and a transporter whose names carry the brand word, so the real
+    resolver can answer SORENTO with the kinds the ROGUE-CONVO-REVIEW prod turn listed
+    (customer, form, transporter) beside the seeded promotion. Fake codes."""
+    from app.models.forms import Form
+    from app.models.order import Customer, Transporter
+
+    db = session_factory()
+    db.info["company_scope"] = frozenset({SORENTO})
+    db.add(Customer(id=str(uuid.uuid4()), customer_code="ZZT-C-SRT", customer_name="SORENTO TRADING SDN BHD", company_id=SORENTO))
+    db.add(
+        Transporter(
+            id=str(uuid.uuid4()), code="ZZT-T-SRT", name="SORENTO LOGISTICS", normalized_name="sorento logistics", company_id=SORENTO
+        )
+    )
+    db.add(Form(id=str(uuid.uuid4()), code="ZZT-F-SRT", name="SORENTO Dealer Form", form_type="marketing", language="en", version=1, is_active=True))
+    db.commit()
+
+
+def test_rogue_shape_through_the_engine_a_confident_brand_beside_a_code_asks_no_kind_pick(console, session_factory):
+    """The ROGUE-CONVO-REVIEW prod turn through the real engine and resolver: the brand word
+    SORENTO (a live brand, a promotion, a customer, a form and a transporter all carry it)
+    beside the product ZZWC8318-RL-250 under inventory. The reply is the product's own
+    quantity question, never "Which one do you mean?", and the focus holds the brand as a
+    brand with no promotion / customer / form / transporter row for it. The assertion
+    message carries the kinds the sandbox resolver actually returned for the word, since the
+    blank schema need not reproduce prod's four."""
+    c, _product_id, _promo_id = console(**{ROGUE_CODE.replace("-", "_"): Stock(on_hand=100)})
+    seeded = _seed(session_factory, [ROGUE_CODE])
+    c.codes.update(seeded)
+    c.uuid_of.update({code: pid for pid, code in seeded.items()})
+    rogue_id = c.uuid_of[ROGUE_CODE]
+    _seed_rows_named_sorento(session_factory)
+
+    text = c.say(
+        f"SORENTO S-TRAP 250MM ONE PIECE WC-{ROGUE_CODE}",
+        verdict(
+            domain_hint="inventory",
+            intent_hint="check_stock",
+            entity_op="replace_combine",
+            entities=[entity("SORENTO", hint="brand", canonical_code="SORENTO"), entity(ROGUE_CODE, hint="product", canonical_code=None)],
+        ),
+    )
+
+    kinds_for_word = sorted(
+        {
+            str(m.get("entity_type"))
+            for payload in c.resolver_payloads
+            if isinstance(payload, dict)
+            for r in ((payload.get("resolved") or {}).get("resolutions") or [])
+            if str(r.get("token")).upper() == "SORENTO"
+            for m in (r.get("matches") or [])
+        }
+    )
+    evidence = f"resolver kinds for SORENTO: {kinds_for_word}; reply: {text!r}"
+    assert "Which one do you mean?" not in text, evidence
+    assert f"How many units of {ROGUE_CODE}?" in text.split("\n"), evidence
+    focus = _focus_of(c)
+    assert focus.get("brands") == ["SORENTO"], evidence
+    assert [p.get("uuid") for p in focus.get("products") or []] == [rogue_id], evidence
+    assert focus.get("customers") == [], evidence
+    assert not any((focus.get("extra") or {}).get(k) for k in ("promotion", "customer", "form", "transporter")), evidence
+
+
 @pytest.mark.parametrize(
     "brand_word",
     [

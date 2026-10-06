@@ -68,6 +68,15 @@ Paths under `sorento_crm_backend/app/services/`.
   through the gate's `compatible_entities` (the promotion fetch is derived there, nothing is
   persisted); under inventory the gate already rejects it as incompatible. The domain overrides
   (brand -> customer under order) are not folded: that re-type is the intended reading there.
+- A BRAND hint outside order/sales goes one step further (ROGUE-CONVO-REVIEW shape, prod 6 Oct
+  18:50 MYT: "SORENTO S-TRAP 250MM ONE PIECE WC-ZZWC8318-RL-250" armed "Which one do you mean?
+  1. SORENTO (promotion) 2. SORENTO (customer) 3. SORENTO (form) 4. SORENTO (transporter)"
+  under inventory): every hit the resolver answers a brand word with counts as the brand. The
+  resolver has no brand probe, so none of those kinds can contradict the parser's confident
+  hint; no kind pick is armed, no row of those kinds reaches the focus, the product is the
+  subject. Under order/sales the resolver's own override (brand -> customer / transporter) is
+  the intended reading and is left alone; category hints keep today's reading beyond the
+  promotion fold.
 - `turn/reconcile.py` untouched: the pure core keeps its contract and one seam decides what the
   resolver's answer means.
 - Sessions already holding a stale `focus.extra["promotion"]` row are not repaired here; PR
