@@ -138,6 +138,53 @@ def resolve_correlation_id(headers: Mapping[str, str]) -> Optional[str]:
     return value[:64] if value else None
 
 
+MAX_ERROR_MESSAGE_CHARS = 1024
+
+
+def summarize_validation_errors(status_code: Optional[int], response_body: Any) -> Optional[str]:
+    """Name the offending field(s) of a 422 so the row is the diagnosis.
+
+    A validation refusal never reaches the handler, so nothing route-side can log
+    it; the only evidence is the 422 body the app's RequestValidationError handler
+    emits (``{"detail": [{"loc": [...], "msg": ..., "type": ...}, ...]}``). The body
+    is already stored as ``response_payload``, but the UI surfaces and searches
+    ``error_message``, and "body.reply_to_message_id: Input should be a valid
+    string" is what somebody scanning the log needs to read, not a JSON blob.
+
+    Returns None for anything that is not a 422 with that shape, so a route that
+    hand-rolls its own 422 is stored exactly as before.
+    """
+    if status_code != 422 or response_body is None:
+        return None
+    raw = response_body
+    if isinstance(raw, (bytes, bytearray)):
+        raw = raw.decode("utf-8", errors="replace")
+    # Any failure here is a telemetry failure, and telemetry never reaches the
+    # caller: this runs in the middleware's send path, outside _write's guard.
+    try:
+        parsed = json.loads(raw)
+    except Exception:  # noqa: BLE001
+        return None
+    detail = parsed.get("detail") if isinstance(parsed, dict) else None
+    if not isinstance(detail, list):
+        return None
+
+    parts: list[str] = []
+    for error in detail:
+        if not isinstance(error, dict):
+            continue
+        loc = error.get("loc")
+        field = ".".join(str(p) for p in loc) if isinstance(loc, (list, tuple)) else "?"
+        msg = str(error.get("msg") or error.get("type") or "invalid")
+        parts.append(f"{field}: {msg}")
+    if not parts:
+        return None
+    summary = "validation failed - " + "; ".join(parts)
+    if len(summary) > MAX_ERROR_MESSAGE_CHARS:
+        summary = summary[:MAX_ERROR_MESSAGE_CHARS] + TRUNCATION_MARKER
+    return summary
+
+
 def classify_outcome(status_code: Optional[int]) -> str:
     """Bucket a status code. A missing status means the request died before
     producing one - our fault, and it must not land in `success`."""
