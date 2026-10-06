@@ -359,7 +359,38 @@ Change C (and the class B miss-line rule, one seam):
 * `resolve_gate.py:716` / `gate._CODE_SHAPED`: NOT widened (no word-matching in code,
   owner rule); the parse is class F's job and rule C holds regardless.
 
+* `engine.py` set_page carry (reviewer finding 2, built): the guard fires only when NO
+  class word of the customer's own named the set (`class_terms` empty), so "which tap has
+  cert ZZQ9917" lists the taps, names the missed code and stays carried for the follow-up
+  count; turn 5's shape (one description-line token, no class entity) still carries
+  nothing. Pinned on the counted-set harness (`seven_taps`, list limit 5): kill M7 is dead.
+
 Change G: `engine.py:4049` as above.
+
+### Follow-ups recorded, not built (each needs its own live turn as the trigger)
+
+* **Rule C on the HIT side.** The composer change covers the miss composer (the shapes
+  that occurred: no stock, no price). When a set read off the words of an unplaced
+  product token HAS data, the set-answer path lists it as "Here's what you want: <set>
+  (N, showing ...)"; the fix would be to drop the set predicate before the fetch when the
+  message's own product token is unplaced and no class word named the set (the same
+  condition as the carry guard), one seam over in the runner. Trigger: a live turn that
+  shows it.
+* **A product-hinted token that disappears from the resolver's verdict.** Measured on the
+  counted-set harness: "SORENTO TAP (CHROME)-ZZQNINE" came back with `unresolved_tokens:
+  []` and one resolution for the word "TAP" (substring of the seeded codes ZZT-ZZTAP-*).
+  The resolver's word synthesis replaced the typed token with a word that happened to sit
+  inside codes, so neither the composer nor the carry guard can see a miss. Real codes
+  rarely contain a class word; the prod turns listed the whole token unresolved. #1511
+  touches the head-code retry on that path; re-measure after it merges.
+* **Quoted raw text has no length or formatting cap** (security-reviewer nit): the quote
+  reaches only its own sender; a cap is more code than the risk buys today.
+* **F(i) before #1511 merges buys nothing in prod**: the addendum puts the code in
+  `canonical_code` and `_exact_codes_only` and the resolver read `raw` first until #1511
+  lands. Edit prod after #1511, or alongside it.
+* **A class word mis-tagged `product`** ("basin" with hint product) now reads `Couldn't
+  find: "basin" (product).` instead of a set answer: the parser decides, and the prompt
+  says class words are category entities. Said in the PR body.
 
 Red tests (new file `tests/chatbot/test_miss_says_what_it_could_not_find.py`):
 

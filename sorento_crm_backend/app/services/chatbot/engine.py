@@ -529,7 +529,8 @@ def _exact_codes_only(
       product_code, `entity_resolver._prefix_probe_product`). The same prefix-then-
       substring order as that probe: this filter keeps what the resolver placed, it
       matches nothing of its own;
-    * else a code-like token is not found, and goes to the did-you-mean ("srt5764");
+    * else a code-like token or a bare number is not found, and goes to the did-you-mean
+      ("srt5764");
     * a word with no exact code is not a product at all: the describe / semantic matches
       the resolver found for "xx" listed a page of the catalogue.
     ROGUE-CONVO-REVIEW (owner ruling, 6 Oct 2026, prod turn "8066 stock ?" answered with
@@ -6018,14 +6019,18 @@ def _run_stages_body(  # noqa: PLR0915
                 )
                 paged = bool(plan.fetch) and isinstance(plan.fetch[0].filters.get("set_page"), dict)
                 # ROGUE-CONVO-REVIEW (owner ruling Q4): a set the spec tier read off the
-                # words around an UNPLACED product token is not what the customer asked
+                # words INSIDE an unplaced product token is not what the customer asked
                 # for, so it is never carried (prod turn 5, 6 Oct 2026: 145 water closets
-                # carried off a miss on one description line).
+                # carried off a miss on one description line; `set_page_carry` alone keeps
+                # it, because the words gave the set a description). Reviewer finding 2:
+                # a set the customer described with a CLASS word of their own ("which tap
+                # has cert ZZQ9917") is listed by the reply and stays carried, so the
+                # follow-up count continues it; only the missed code is named beside it.
                 miss_on_typed_product = turn_runtime.typed_product_unplaced(verdict, unplaced_tokens)
                 if paged:
                     # A page of a carried set: the runner hands back where it stopped.
                     state_out.focus.set_page = envelopes[0].get("set_carry") if envelopes else None
-                elif miss_on_typed_product:
+                elif miss_on_typed_product and not class_terms:
                     state_out.focus.set_page = None
                 elif withheld or partly_listed or listed_to_the_limit:
                     state_out.focus.set_page = turn_runtime.set_page_carry(

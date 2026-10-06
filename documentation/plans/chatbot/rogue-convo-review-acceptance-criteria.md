@@ -39,7 +39,9 @@ are its red tests. Fake fixture ids in every test; product codes are catalogue c
 - AC-RC-B4 (control): bare "stock?" still gets the scope sentence; "Srts07" still gets
   "Couldn't find SRTS07. Did you mean: 1. SRTSC07 ..." with quick replies (turn 13).
 - AC-RC-B5: `test_rearch_r13_stock_no_subject` T4 has an availability-only twin that
-  fails on main.
+  fails on main (`test_miss_says_what_it_could_not_find.py::
+  TestBareNumberMatchesItsFamilyOnAvailability::test_the_stock_tool_is_never_called_unfiltered`
+  and the three picker tests beside it).
 - AC-RC-B7 (owner, 6 Oct, second round): the miss line names the token the customer
   TYPED, spelling and separators kept (`Couldn't find: "Srt-hp"`), never a folded token
   ("srthp") and never a word the set reader derived from it ("srt"). Red: turn 11.
@@ -52,8 +54,11 @@ are its red tests. Fake fixture ids in every test; product codes are catalogue c
   token in "Couldn't find". The "own token missed" join folds separators on both sides
   (the resolver lists the token as sent). Red: turns 4, 5 (35 and 145 spec_search members
   under the header), turn 11; the real-engine replay of turns 4 and 11.
-- AC-RC-C2: no `set_page` is carried when the message's own product token is unplaced.
-  Red: turn 5 (145 water closets, require price).
+- AC-RC-C2: no `set_page` is carried when the message's own product token is unplaced and
+  no class word of the customer's own named the set (the set was read off the words inside
+  the token). Red: turn 5 (145 water closets, require price). Control: "which tap has cert
+  ZZQ9917" lists the taps, names the missed code, and stays carried for the follow-up
+  count (reviewer finding 2: the reply and the carry agree).
 - AC-RC-C3 (control): a described-set miss with zero qualifying products keeps its
   described-members reply; a resolved product that missed stock keeps "Here's what you
   want: • product: X / But no inventory matched these."
@@ -64,8 +69,9 @@ are its red tests. Fake fixture ids in every test; product codes are catalogue c
 ## Class G: a missing media caption is None
 
 - AC-RC-G1: an attachment with no `description` (absent key or null) gives
-  `caption=None` to media intake; `rendered_text` carries no "null" or "undefined" line.
-  Red: turns 8 and 10.
+  `caption=None` to media intake, so `rendered_text` carries no "null" or "undefined"
+  line. Red: turns 8 and 10. Pinned on the caption handed to intake for the absent-key
+  envelope; the null case takes the same `jsc.truthy` read.
 - AC-RC-G2 (control): a caption "X5" still reaches `rendered_text` as its own first line
   above the code lines.
 

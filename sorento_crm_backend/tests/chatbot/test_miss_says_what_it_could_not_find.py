@@ -34,6 +34,7 @@ from app.services.chatbot.turn.state import token_key
 
 from tests.chatbot._avail_mode_console import AvailConsole, Stock, _seed
 from tests.chatbot._r9_engine_console import answer, numbered, product, reply, stock
+from tests.chatbot.test_counted_set_no_paging import seven_taps  # noqa: F401 - pytest fixture
 from tests.chatbot.test_engine import stub_access, stub_parser  # noqa: F401 - pytest fixtures
 from tests.chatbot.test_media_intake_turn import (  # noqa: F401 - pytest fixture (media_pipeline)
     _fresh_contact_id,
@@ -350,6 +351,65 @@ class TestAMissIsNamedAsTypedOnTheDealerConsole:
         c = console()
         out = c.say("stock?", stock())
         assert out.startswith(SCOPE_SENTENCE), out
+
+
+class TestASetReadOffAMissedTokenIsNotCarried:
+    """The engine's `set_page` seam on a profile that carries sets (the certificate
+    lane's counted-set harness, `test_counted_set_no_paging.seven_taps`: seven taps with
+    certificates, the list limit lowered to five so the set is "listed to the limit" and
+    `set_page_carry` is asked). Reviewer kill M7: the blank schema CAN produce this shape
+    once the class word sits inside the typed line."""
+
+    LINE = "SORENTO TAPS (CHROME)-ZZQNINE"
+
+    @staticmethod
+    def _run(session_factory, stub_parser, stub_access, seven_taps, monkeypatch, verdict: dict, text: str):
+        from app.services.chatbot.lanes.business import answer as answer_mod
+        from tests.chatbot.test_counted_set_no_paging import _turn
+        from tests.chatbot.test_lane_require import _s4_session_vars
+
+        monkeypatch.setattr(answer_mod, "SET_LIST_MAX", 5)
+        engine_mod, _codes, _calls, contact_id = seven_taps
+        stub_parser(verdict)
+        stub_access()
+        reply = _turn(engine_mod, session_factory, contact_id=contact_id, n=1, text=text)
+        focus = (_s4_session_vars(session_factory, contact_id) or {}).get("focus") or {}
+        return reply, focus.get("set_page")
+
+    def test_a_set_read_off_the_words_of_an_unplaced_line_is_not_carried(
+        self, session_factory, stub_parser, stub_access, seven_taps, monkeypatch
+    ) -> None:
+        """Turn 5's shape: ONE product token, a description with no digit, no class entity.
+        The spec tier reads the 7 taps off its words (qualifying 7 > 5, so the carry would
+        otherwise be written: the words gave the set a description, which is exactly what
+        `set_page_carry` accepts in place of a scope term)."""
+        from tests.chatbot.test_counted_set_no_paging import _tap_cert_verdict
+
+        verdict = _tap_cert_verdict(
+            entities=[{"raw": self.LINE, "hint": "product", "canonical_code": None, "current_message": True, "confident": True}],
+            user_goal=self.LINE,
+        )
+        reply, set_page = self._run(session_factory, stub_parser, stub_access, seven_taps, monkeypatch, verdict, self.LINE)
+        assert set_page is None, set_page
+        assert "Here's what you want" not in reply, reply
+        assert self.LINE in reply, reply
+
+    def test_a_set_the_customer_described_beside_a_missed_code_stays_carried(
+        self, session_factory, stub_parser, stub_access, seven_taps, monkeypatch
+    ) -> None:
+        """Control (reviewer finding 2): "which tap has cert ZZQ9917" names the set with
+        the customer's OWN class word; the reply lists it and names the missed code, so
+        the carry stays for the follow-up count. The reply and the carry agree."""
+        from tests.chatbot.test_counted_set_no_paging import _tap_cert_verdict
+
+        verdict = _tap_cert_verdict()
+        verdict["entities"].append({"raw": "ZZQ9917", "hint": "product", "canonical_code": None, "current_message": True, "confident": True})
+        reply, set_page = self._run(
+            session_factory, stub_parser, stub_access, seven_taps, monkeypatch, verdict, "which tap has cert ZZQ9917"
+        )
+        assert isinstance(set_page, dict) and set_page["set_key"]["scope_terms"] == ["tap"], set_page
+        assert "Here's what you want: taps with certificates (7, showing 1 to 5)" in reply, reply
+        assert "I could not find ZZQ9917." in reply, reply
 
 
 class TestAMissOnTheTypedProductCarriesNoSetPage:
