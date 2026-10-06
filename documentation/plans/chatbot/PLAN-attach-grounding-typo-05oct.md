@@ -43,6 +43,20 @@ consulted.
 "pink colour", "zebra", sizes) now assert the ruling; their spec-grounding assertions run on
 the category path, where the same words still ground.
 
+## Prod data task (before release)
+
+The set path ("which tap has technical drawings") turns the parser's code into a type through
+`product_predicate_service._leg_attachment_type`: exact type name or code, then the
+`attachment_type_alias` lookup set. The drawing files are filed under the type
+`Technical Specifications`, so the code `technical drawing` needs one alias row:
+
+- lookup set `attachment_type_alias`: option value and label `Technical Specifications`,
+  keyword `technical drawing`.
+
+It is on the shared dev copy (6 Oct 2026, fix round R2; real-parser replay of hand-test steps
+11-12 passes with it and answers "I don't know 'technical drawing' as a document type"
+without it, exactly as main does). The same row must exist on prod before release.
+
 ## Follow-ups (not in this PR)
 
 - A listed type that no product holds a file of and that has no alias (parser code "photo"
