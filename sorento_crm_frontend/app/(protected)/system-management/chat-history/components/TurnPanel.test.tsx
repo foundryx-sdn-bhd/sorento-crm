@@ -98,6 +98,20 @@ describe('TurnPanel - AC-251 status line', () => {
     expect(screen.getByText('Failed at Understood')).toBeInTheDocument();
   });
 
+  it('renders a skipped stage with the muted dot, not the green one', () => {
+    const { container } = renderWithClient(
+      <TurnPanel
+        turn={turn({
+          branch_kind: 'ai_not_allowed',
+          trace: [record({ stage: 'received', status: 'skipped', summary: 'AI not allowed' })],
+        })}
+      />,
+    );
+    fireEvent.click(screen.getByText('details'));
+    expect(container.querySelector('.bg-muted-foreground\\/40')).not.toBeNull();
+    expect(container.querySelector('.bg-destructive')).toBeNull();
+  });
+
   it('shows the lane in words for an answered turn, distinct from the status word', () => {
     renderWithClient(<TurnPanel turn={turn({ branch_kind: 'business_query' })} />);
     expect(screen.getByText('Answered')).toBeInTheDocument();

@@ -80,6 +80,13 @@ describe('turnHeadline (AC-251)', () => {
     );
   });
 
+  it('is Not allowed (ok) for an ai_not_allowed done turn', () => {
+    expect(turnHeadline(turn({ status: 'done', branch_kind: 'ai_not_allowed' }))).toEqual({
+      word: 'Not allowed',
+      tone: 'ok',
+    });
+  });
+
   it('is pending while the turn is still running or delegated', () => {
     expect(turnHeadline(turn({ status: 'processing' })).tone).toBe('pending');
     expect(turnHeadline(turn({ status: 'delegated' })).tone).toBe('pending');
@@ -89,6 +96,10 @@ describe('turnHeadline (AC-251)', () => {
 describe('laneWords / stageLabel', () => {
   it('says Lane not reached for a null branch_kind', () => {
     expect(laneWords(null)).toBe('Lane not reached');
+  });
+
+  it('says AI not allowed for an ai_not_allowed branch_kind', () => {
+    expect(laneWords('ai_not_allowed')).toBe('AI not allowed');
   });
 
   it('humanises an off-timeline failure stage', () => {

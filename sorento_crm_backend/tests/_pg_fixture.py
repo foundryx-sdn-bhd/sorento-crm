@@ -172,6 +172,15 @@ def blank_schema_engine():
             # create_all - so every owned insert's auto-stamped company_id resolves
             # against the FK. Nothing to seed by hand.
             Base.metadata.create_all(connection, checkfirst=False)
+            # AI-ALLOWED-GATE (owner ruling 5 Oct 2026): in production a new contact is
+            # blocked until a human ticks "AI replies allowed". The suite's ~150 contact
+            # seeds predate the flag and expect an answering contact, so the SCRATCH
+            # schema's default is flipped to allowed here, in one place, instead of
+            # touching every seed. Tests about the production default assert it through
+            # the migration's own SQL or the ORM default, never through this schema.
+            connection.exec_driver_sql(
+                f'ALTER TABLE "{name}".respond_contacts ALTER COLUMN chatbot_allowed SET DEFAULT true'
+            )
 
         _BLANK["engine"] = scoped
         _BLANK["name"] = name
@@ -350,6 +359,11 @@ def pg_empty_schema(tables) -> Session:
         # create_all rather than per-table create(): it sorts by dependency and
         # breaks FK cycles with a follow-up ALTER, which a naive loop cannot.
         Base.metadata.create_all(connection, tables=tables, checkfirst=True)
+        # Same scratch-schema default flip as `blank_schema_engine` (AI-ALLOWED-GATE).
+        if "respond_contacts" in {t.name for t in tables}:
+            connection.exec_driver_sql(
+                f'ALTER TABLE "{name}".respond_contacts ALTER COLUMN chatbot_allowed SET DEFAULT true'
+            )
         connection.commit()
 
         session = Session(bind=connection)

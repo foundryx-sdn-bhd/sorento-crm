@@ -57,9 +57,13 @@ PORTAL_TYPES = {
 
 
 @pytest.fixture
-def client():
+def client(monkeypatch):
     from app.database import get_db
+    from app.services.user_service import UserPermissionService
 
+    # LIST-API-PERMS: GET /revision-configs carries `user_management.settings.view` now; the
+    # office actor has no users row, so answer the role lookup as admin (the gate has its own tests).
+    monkeypatch.setattr(UserPermissionService, "get_user_role_slugs", lambda self, uid: {"admin"})
     with blank_session() as db:
 
         def _override_get_db():

@@ -65,6 +65,12 @@ def _permissions(monkeypatch):
         UserPermissionService, "check_user_has_permission", lambda self, uid, slug: True
     )
     monkeypatch.setattr(UserPermissionService, "get_user_role_slugs", lambda self, uid: set())
+    # GET /{id} is an any-of gate (LIST-API-PERMS, TRACKER_READERS), which reads the slug set.
+    monkeypatch.setattr(
+        UserPermissionService,
+        "get_user_permission_slugs",
+        lambda self, uid: {"sla_management.conversation_sla_tracking.view"},
+    )
 
 
 @pytest.fixture

@@ -1,0 +1,170 @@
+# PLAN - AI replies allowed per contact (AI-ALLOWED-GATE)
+
+Status: in review on PR #1491 (reviewer + security review running, hand test with the owner). Card answered 5 Oct 23:52: Q1 (a) default FALSE for new rows + backfill TRUE,
+Q2 (a) status done + branch kind `ai_not_allowed`, Q3 console/dry-run gated too, Q4 wording as
+proposed, Q5 copy facet + list filter + system API filter. Track: L by rule
+(additive migration + engine rule + toggle on an existing screen; mock skipped, reuses the Chatbot
+card's `SwitchRow`). Lane AI-ALLOWED-GATE, one PR.
+UAC: `ai-allowed-gate-acceptance-criteria.md`. Paths under `sorento_crm_backend/app/` unless shown.
+
+Owner (5 Oct 22:50): "I am thinking to add the is_allowed_ai field to our respond contact." A WhatsApp
+contact not yet synced into the CRM (respond_io_id 551719711) messaged 3 times and got 3x "Sorry, I
+ran into a problem understanding that..." because n8n forwards every inbound message (its only check
+is `is_human_intervened`) and the engine's only contact check is the 404 in
+`services/conversation_variables_service.py:86-95`, which the catch-all in
+`services/chatbot/engine.py:3028-3062` turns into the generic error reply. Owner wants: the CRM
+decides who the AI replies to; a contact not allowed, or unknown to the CRM, sees NOTHING.
+
+## Verified before the card
+
+- `outbound_enabled` does NOT block the chatbot reply. `/external/chat/turn` returns `actions`
+  (`api/v1/external/chat.py:218-219`) and n8n sends them through respond.io itself ("the caller
+  executes `actions` and nothing else", `chat.py:535-547`). `assert_outbound_enabled` is asserted
+  in exactly one place, `RespondClient._post_contact_message` (`services/integration_service.py:338`),
+  i.e. sends the CRM makes itself (stock-ask notify, SLA lines, ideation). It also fails OPEN for an
+  unknown identifier (`services/respond_outbound_service.py:40-44`), so even a CRM-side send to the
+  incident contact would have gone out. Two reasons the new flag is needed.
+- The engine resolves `contact_respond_id` at `engine.py:2775` from the envelope, BEFORE the
+  worker offload (`:2786-2789`) and before `_read_session_vars` (`:3798`, the 404). The company
+  scope lookup at `:2781` already fails closed to zero rows for an unknown contact but does not stop
+  the turn.
+- The silent-result shape to copy is the media-denied close (`engine.py:3958-4015`): trace
+  `replied` + `remembered` records, `_close_turn(... status, stage, branch_kind, response)`, a
+  `TurnResult` with the declared branch kind. Branch kinds are a declared vocabulary
+  (`services/chatbot/contracts.py:303-318`, asserted by `tests/chatbot/test_contracts.py:56`,
+  mirrored in `sorento_crm_frontend/.../chat-history/types/chatbotTurn.types.ts:37` and
+  `turnPresentation.ts:59-120`).
+- Rows are created in ONE place, `ContactService.create_contact` (`services/contact_service.py:364`),
+  called by the n8n sync (`api/v1/external/respond_contacts.py:105`), the scheduled sync
+  (`services/respond_sync_handler.py:261`) and the Contacts page. `scripts/contact_bulk_setup.py`
+  never creates a contact.
+- Test impact of a FALSE default: 148 of the 153 test files that run a turn seed a contact without
+  naming the new column (raw `INSERT INTO respond_contacts` or `RespondContact(...)`), so under a
+  FALSE schema default every one of them would answer a silent turn.
+
+## Design (as answered)
+
+### Schema (one additive revision, `aig_0001_chatbot_allowed`, down_revision = main head)
+- `respond_contacts.chatbot_allowed` BOOLEAN NOT NULL, default FALSE for every NEW row (owner, Q1 a:
+  sync-created and hand-added alike start blocked until a human ticks the switch). The migration
+  adds the column `NOT NULL DEFAULT true` (every row existing at migration time is backfilled TRUE,
+  so prod behaviour is unchanged on release) and then `ALTER COLUMN ... SET DEFAULT false`. Two
+  steps rather than add-false-then-UPDATE so a re-run on a converged copy never re-allows a row
+  somebody has blocked. `SET LOCAL lock_timeout`, `ADD COLUMN IF NOT EXISTS`, downgrade drops it.
+- Model `RespondContact.chatbot_allowed` (`models/access.py:230`), `default=False`,
+  `server_default false`. No create-schema field and no sync-path code: the column default is the
+  one place the rule lives, for the n8n sync, the scheduled sync and the Contacts page alike.
+- Test seeds (owner: one shared place): `tests/_pg_fixture.py::blank_schema_engine` sets the SCRATCH
+  schema's default to true right after `create_all`, so the suite's ~150 pre-existing contact seeds
+  keep answering; the measured 7 real-DB raw inserts and 3 ORM seeds that run turns name the flag;
+  the migration, create-path and sync tests assert the production default through the migration's
+  own SQL and the ORM default.
+
+### Engine gate (`services/chatbot/engine.py::_run_turn`)
+- `services/chatbot_allowed_service.py::is_allowed(db, respond_io_id)`: one SELECT, True only when
+  at least one `respond_contacts` row has that `respond_io_id` AND every such row has the flag on;
+  no row, or ANY row unticked, is not allowed (security review S1, 5 Oct: the same rule
+  `turn_runtime.py:464-472` applies to `escalation_allowed`, "an operator who unticks the row they
+  can see must not be undone by the duplicate"; `respond_io_id` has no unique constraint and the
+  n8n sync matches by phone, so duplicates exist). The card first stated any-row-allows; corrected.
+- In `_run_turn`, after the scoped factory is built (`:2784`) and BEFORE `if offload is None`
+  (`:2786`): `if not _ai_allowed(session_factory, contact_respond_id): return
+  _ai_not_allowed_turn(...)`. The helper copies the media-denied close (`:3958-4015`) without the
+  reply: D15 dedup first (`_existing_turn`, a duplicate replays `_duplicate_result`), then
+  `_insert_turn` (no ticket, no queue), a `TurnTrace` with one `received` record, status
+  `skipped`, summary "AI not allowed for this contact; sent no reply", why "The CRM decides which
+  contacts the chatbot answers; this contact is not allowed, or is not in the CRM.", then
+  `_close_turn(status="done", stage="received", branch_kind="ai_not_allowed", error=None,
+  response={"actions": [], "reply": {"text": ""}})` and a `TurnResult(actions=[], reply={"text":
+  "", "quick_replies": None}, status="done", stage="received", branch_kind="ai_not_allowed",
+  is_test=dry_run)`. No parser config is resolved, no session vars read or written, no memory, no
+  `update_contact_fields` action.
+- New declared branch kind `ai_not_allowed`: `contracts.py:303` BRANCH_KINDS, `trace.py:_LANE_WORDS`
+  ("AI not allowed"), the pinned external-contract fixture's enum
+  (`tests/chatbot/fixtures/external_contract_main_f14802a7c.json:366`, as `media_denied` was added),
+  FE `chatbotTurn.types.ts` BranchKind, `turnPresentation.ts` LANE_WORDS + `turnHeadline` case
+  ("Not allowed", tone ok). The console needs no change: `useChatbotConsole.ts:95` already renders a
+  "(no reply)" bubble carrying the branch-kind chip when a turn sends nothing.
+- n8n untouched. Crew checked the LIVE consume-main S7 flow (5 Oct): after chat-turn the only
+  Switch is head-arm keyed on `$json.duplicate` (fallback "finished"), split-actions maps
+  `actions || []` so an empty list sends nothing, `reply.text` is never read, no node reads
+  `status`/`branch_kind`/`delegate`, and no respond.io field is written after chat-turn. Hard
+  requirement on the gated `TurnResult`: `duplicate=False`, `actions=[]`, `delegate=None`,
+  `reply={"text": "", "quick_replies": None}`, exactly an empty media-denied result.
+
+### Contact card, list, copy, system API, script
+- `ContactChatbotUpdate.chatbot_allowed: bool | None` (`api/v1/user_management/contacts.py:363`),
+  absent = leave alone; handler sets it; response schema (default False) + `contact_to_response_dict`
+  (`contact_service.py:765`) carry it; list filter `ai=yes|no` through `access_filters` into the
+  `(name, column)` loop at `contact_service.py:262`. FE reads `chatbot_allowed === true` (absent =
+  blocked, the production default).
+- Copy access: `("chatbot_allowed", "AI replies")` appended to `SWITCHES`
+  (`contact_access_copy_service.py:49`); snapshot, diff, summary and write follow for free.
+- System API (`api/v1/system/respond_contacts.py`): `RespondContactOutboundRow.chatbot_allowed`,
+  query `ai=allowed|blocked` (400 otherwise), counts unchanged (they are the outbound audit line).
+- `chatbot_allowed_service.py` also holds `status_counts`, `set_all`, `set_contact` (the
+  `respond_outbound_service.py:126-178` shapes, reusing its `find_contact`);
+  `scripts/set_contact_ai.py` mirrors `scripts/set_contact_outbound.py` (dry run without `--yes`).
+- FE: `contact.types.ts` `chatbot_allowed?`; `contactChatbotService.ts` profile field +
+  `saveContactChatbotAllowed` (own PUT, one key, the escalation pattern); hook
+  `useSaveContactChatbotAllowed`; `ContactChatbotSection.tsx` SwitchRow "AI replies allowed", hint
+  "When off, the chatbot sends this contact nothing, not even an error."; `ContactsList.tsx`
+  `yesNoColumn('chatbot_allowed', 'AI replies', ...)` beside Escalation.
+
+### Security review (5 Oct, L): S1 fixed as above. Notes kept as written, no code change:
+N1 a DB error inside the gate fails closed as a 500 with no turn row (integration log only);
+N2 downgrade + upgrade re-backfills every row TRUE, so downgrade is a release rollback, never a
+reset, and `SET LOCAL lock_timeout` covers the rest of the same alembic run; N3 the script's flips
+are not audited (bulk `query.update()`, same as `set_contact_outbound.py`); N4 copy access carries
+the AI flag by owner choice (Q5), the dry-run preview lists it; N5 a turn already delegated to n8n
+before a block still completes (narrow window, `/turn/complete` does not re-check the gate).
+
+### Browser pass (cloud sandbox, 5 Oct, agent-browser against the working tree)
+Sandbox: empty `sorento_ci` migrated to `aig_0001`, dev auto-login as a seeded superadmin, two
+seeded contacts (ZZT Allowed Dealer 900000101 allowed, ZZT Blocked Dealer 900000102 blocked), one
+seeded webhook envelope each so the console can borrow a session. No LLM key, so an allowed
+contact's console turn fails at the parser with the generic error reply; that is the evidence the
+gate let it through. Navigation by sidebar from Home; the contacts list is "Internal Users" (apps
+menu "Internal Users - Respond contacts"); console and Chat History sit under System > Messaging.
+
+| Step | Result | Evidence |
+| --- | --- | --- |
+| Contacts list column + filter | PASS | "AI replies" reads Allowed / Blocked per row; "AI replies: any" select; blocked option leaves one row and the list call carries `ai=no`; clear restores both |
+| Chatbot card switch | PASS | first switch "AI replies allowed" with the approved hint, OFF for the blocked contact; tick -> `PUT .../contacts/{id}/chatbot` body exactly `{"chatbot_allowed":true}`, toast, ON after reload; untick -> `{"chatbot_allowed":false}`, OFF after reload; a "Stock checks" toggle PUTs the card body with NO `chatbot_allowed` key; other switches unchanged |
+| Console, blocked contact | PASS | `POST /system/chatbot/console/turn` 200: `branch_kind ai_not_allowed`, `reply_text ""`, `send_messages []`, `actions []`; one bubble "(no reply)" with chip `ai_not_allowed`; no "Sorry" text |
+| Console, allowed contact | PASS (not gated) | `branch_kind null`, one `send_message` action with the generic parser-error reply (no LLM key); no `ai_not_allowed` chip |
+| Stored gated turn | PASS (API) | `GET /system/chatbot/turns/{id}`: status done, stage received, branch `ai_not_allowed`, ONE trace stage `received` status `skipped`, summary "AI not allowed for this contact; sent no reply", `known_contact true`, `response.actions []`, `reply.text ""` |
+| Chat History drawer | NOT WALKABLE HERE | the screen lists n8n chat messages; the sandbox has none, so no row opens a drawer. Headline/lane words covered by `turnPresentation.test.ts`; the owner's hand test (step 7) walks it on the dev copy |
+| Respond.io Contacts | PASS | both rows, Outbound columns only (the lane adds the API field + `ai=` filter there, no column); no console errors |
+| 375px / 1280px | PASS | AI switch row readable, no clipping, no horizontal overflow (scrollWidth 360 / 1265) |
+| Console / errors | clean | one transient next-auth `CLIENT_FETCH_ERROR` on a reload in the first session, not reproduced in the second; nothing from the lane's screens |
+
+Rerun on the review head (36c25b9a tree, after the S1 fix and the merge with main; crew asked for
+the Chat History drawer and an UNKNOWN contact):
+
+| Row | Result | Evidence |
+| --- | --- | --- |
+| 1 list column | PASS | +60100000101 Allowed, +60100000102 Blocked; list GET 200. Reached from the topbar apps menu "Internal Users - Respond contacts" (the sidebar "Internal Users" entry lands on contact access agents on this build) |
+| 2 filter | PASS | "AI replies: AI replies blocked" leaves 102 only, call carries `ai=no`; Clear selection restores both |
+| 3 card switch | PASS | OFF with the approved hint; tick PUT `{"chatbot_allowed":true}`, ON after reload; untick `{"chatbot_allowed":false}` + toast, OFF after reload; Stock checks PUTs carry no `chatbot_allowed` key |
+| 4 console, blocked | PASS | "(no reply)" + chip `ai_not_allowed`; `branch_kind ai_not_allowed`, `reply_text ""`, `send_messages []`, `actions []` |
+| 5 console, UNKNOWN 551719711 (envelope, no contact row) | PASS | the picker refuses a bare id ("No results found."); the tester set the console's remembered contact in localStorage to that id; request `contact_respond_id "551719711"`; same silent outcome, `known_contact false` on the stored turn |
+| 6 console, allowed | PASS (not gated) | `branch_kind null`, generic parser-error reply (no LLM key) |
+| 7 Chat History drawer via the console "trace" link | PASS after fix | drawer "Turn #94c9": one stage `received`, line "AI not allowed for this contact; sent no reply", `lane ai_not_allowed`, `known contact true`, nothing after. First read: the stage badge was the green success style because `TurnDetailDrawer` and `TurnPanel` only knew `failed`; fixed to render trace status `skipped` as a muted badge with the word "skipped" (and the muted dot on the panel). The headline word "Not allowed" lives on the transcript's turn panel under a real WhatsApp message, which this sandbox has none of; covered by `turnPresentation.test.ts` and the owner's hand test step 7 |
+| 8 viewports | PASS | 375: scrollWidth 360, switch at x 283-323, label from x 37; 1280: scrollWidth 1265 |
+| 9 console / errors | PASS | `errors` empty after rows 1, 3, 4, 5, 7; console only debug / auth-fallback warning / Fast Refresh lines |
+
+Screenshots (under 200 KB each, the lane's two): `evidence/ai-allowed-gate/console-ai-not-allowed.png`,
+`evidence/ai-allowed-gate/chat-history-not-allowed.png` (the drawer after the fix). The earlier
+card screenshot was dropped to stay within the two-per-lane cap.
+
+### Tests (red first)
+- `tests/chatbot/test_ai_allowed_gate.py`: unknown contact silent; flag false silent (no parser
+  call, no actions even when human-intervened, no session write); flag true normal; gate before
+  offload (never enqueues) and before the ticket (never takes one); dry run gated; duplicate replays
+  empty; two rows one allowed.
+- `tests/chatbot/test_ai_allowed_gate_api.py`: contact GET/PUT/403/list/filter, sync creates
+  false, copy-access diff, system API row + filter, service functions.
+- `tests/test_migration_aig_0001_chatbot_allowed.py`: the `esc1_0001` test shape.
+- `tests/chatbot/test_contracts.py`: fifteen branch kinds.
+- vitest: `ContactChatbotSection.aiAllowed.test.tsx`, `contactChatbotService.aiAllowed.test.ts`.

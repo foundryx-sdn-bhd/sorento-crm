@@ -4,7 +4,11 @@ from sqlalchemy.orm import Session
 from typing import Optional
 from app.database import get_db
 from app.services.uuid_path_param import validate_uuid_path
-from app.dependencies import get_current_user, get_current_user_or_api_key
+from app.dependencies import (
+    get_current_user,
+    require_permission_with_api_key,
+    require_session_or_api_key_permission,
+)
 from app.services.resources_service import AttachmentTypeService
 from app.schemas.resources import AttachmentTypeCreate, AttachmentTypeUpdate, AttachmentTypeResponse
 from app.schemas.common import ListResponse, MAX_PAGE_LIMIT
@@ -20,7 +24,7 @@ async def get_attachment_types(
     query: Optional[str] = Query(None),
     sort: Optional[str] = Query(None),
     dir: Optional[str] = Query("desc", regex="^(asc|desc)$"),
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_session_or_api_key_permission("resource.attachment_types.view")),
     db: Session = Depends(get_db)
 ):
     """Get attachment types with pagination and filtering."""
@@ -42,7 +46,7 @@ async def get_attachment_types(
 @router.get("/{type_id}", response_model=AttachmentTypeResponse)
 async def get_attachment_type(
     type_id: str,
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key("resource.attachment_types.view")),
     db: Session = Depends(get_db)
 ):
     """Get a single attachment type by ID."""

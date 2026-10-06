@@ -31,7 +31,7 @@ import re
 from functools import cmp_to_key
 from typing import Any, Literal
 
-from app.services.chatbot import jsc, label_catalog
+from app.services.chatbot import jsc, label_catalog, quick_reply_guard
 from app.services.chatbot.lanes.business.fetch import DATE_PARAMS, space_id_or_default
 from app.services.ledger_family import customer_group_of, customer_header_words
 from app.services.product_spec_registry import SPEC_ACRONYMS
@@ -240,6 +240,7 @@ DOMAIN_LABELS = {
     "product_attachment": "product attachments",
     "inventory": "stock",
     "order": "orders",
+    "sales": "sales",
     "incoming": "incoming stock",
     "forms": "forms",
     "portal_link": "this request",
@@ -1165,7 +1166,13 @@ _CROSSDOMAIN_RUNG_GRANT: dict[str, str] = {"purchase_order": "purchase_orders.pl
 #: its cost is a different answer from the one asked, so a per-field drop is not enough
 #: (that drop still runs too, belt and braces: AC-18). A domain with no row here is
 #: ungated, same convention as `_CROSSDOMAIN_RUNG_GRANT` above.
-DOMAIN_GRANT_REQUIRED: dict[str, str] = {"purchase_cost": "purchase_orders.cost"}
+#: R7 (PLAN-prompt-dynamic-30sep D9): the `sales` domain is the sales figures, read under
+#: the key every sales figure ask was already gated on (`contracts.SALES_FIGURE_STATUSES`);
+#: `run_fetch` refuses it in that ask's own words.
+DOMAIN_GRANT_REQUIRED: dict[str, str] = {
+    "purchase_cost": "purchase_orders.cost",
+    "sales": "sales_orders.sales_report",
+}
 #: What the refusal CALLS the domain it just refused, for the one registered
 #: `access_denied` template (`canned.field_grant_denied_text`). A plain-language FEATURE
 #: name, not the domain's own label ("last purchase cost") and not the parser's agent
@@ -2260,8 +2267,9 @@ _VOWEL_HEAD_RE = re.compile(r"^[aeiou]", re.IGNORECASE)
 
 # The header describes a DELIVERY ORDER search specifically. It used to gate on "domains the
 # CRM date-filters", which let it fire where it is actively wrong (a container has no
-# customer and nobody date-filters incoming in practice).
-_DATE_SCOPE_DOMAINS = frozenset({"order"})
+# customer and nobody date-filters incoming in practice). R7 (PLAN-prompt-dynamic-30sep
+# D9): `sales` too, whose asks were `order` asks and missed with this header until then.
+_DATE_SCOPE_DOMAINS = frozenset({"order", "sales"})
 
 _ORDER_TYPES = frozenset({"order", "customer_order", "order_number"})
 
@@ -2296,6 +2304,7 @@ NO_TOOL_ID = _NO_TOOL_ID
 
 _SCOPE_WORD = {
     "order": "delivery order",
+    "sales": "sales order",
     "incoming": "incoming shipment",
     # PLAN-po-spo-warehouse-29sep W1: `purchase_order` now has a gate row, so it can miss.
     "purchase_order": "purchase order",
@@ -4403,6 +4412,20 @@ def _quick_reply(values: list) -> str:
     return ",".join(jsc.js_string(v).replace(",", "") for v in values)
 
 
+def _numbered_quick_reply(count: int) -> str:
+    """The buttons under a numbered did-you-mean list: "1", "2", "3" (QUICK-REPLY-NAMES).
+
+    WhatsApp shows three buttons, so a list of two or more picks fills them with its
+    numbers alone - the Yes / No pair rides only beside a single pick, where all three
+    fit. Never "1, 2, Yes": a Yes without its No is not an option pair, and the text
+    already offers the escalation in a sentence a typed yes answers.
+    """
+    numbers = [str(i + 1) for i in range(min(count, quick_reply_guard.MAX_BUTTONS))]
+    if len(numbers) + 2 <= quick_reply_guard.MAX_BUTTONS:
+        numbers.extend([_YES, _NO])
+    return _quick_reply(numbers)
+
+
 def miss_token_candidates(res: Any, allowed_types: list | None) -> list:
     """D1's own candidate set: PER TOKEN, GENUINE-MISS ONLY.
 
@@ -4826,6 +4849,12 @@ def build_suggest_offer(
     dym_ann = dym_annotate if isinstance(dym_annotate, dict) else None
     dym_meta = jsc.get(dym_ann, "dym_probe_meta") if dym_ann is not None else None
     dym_ok = bool(jsc.truthy(dym_ann) and jsc.truthy(dym_meta) and jsc.get(dym_meta, "ok") is True)
+    # PHOTO-PICKER (owner, 5 Oct 2026, crew answer (a)): the incoming picker's own rule
+    # (`pickers.annotate_incoming`) - a dealer (an "Availability only" contact) is told
+    # nothing about a variant before picking it. Every code is still listed; no stamp and
+    # no has-first sort, on every surface below and for every attachment type.
+    if getattr(profile, "stock_availability_only", False):
+        dym_ok = False
     # #750: `product_attachment` is stamped PER UUID (`probe_uuid_keyed`, Fix 4 / Fix 5), and
     # every surface below keys by the CODE it printed, so the two sets are projected into code
     # space ONCE, here, and the three renders are untouched. A code that cannot be attributed
@@ -5061,9 +5090,7 @@ def build_suggest_offer(
                         f", or would you like me to escalate to {team} team?",
                     )
                 )
-                out["suggest_quick_reply"] = _quick_reply(
-                    [str(i + 1) for i in range(len(picks))] + [_YES, _NO]
-                )
+                out["suggest_quick_reply"] = _numbered_quick_reply(len(picks))
                 out["suggest_last_result_set"] = [
                     {
                         "idx": i + 1,
@@ -5098,9 +5125,9 @@ def build_suggest_offer(
             else:
                 # Code mode. When the probe succeeded AND at least one offered code was
                 # actually probed, SORT has-first and render one labelled line per code. The
-                # sort runs BEFORE codes / roster / candidates are derived, so buttons, lines
-                # and the pick round trip stay index-consistent. `suggest_quick_reply` stays
-                # BARE CODES: the pick round-trips on that exact button string.
+                # sort runs BEFORE codes / roster / candidates are derived, so lines and the
+                # pick round trip stay index-consistent. `suggest_quick_reply` is None here
+                # (QUICK-REPLY-NAMES): codes are free text, so the typed code is the pick.
                 dym_annotate_on = dym_ok and any(
                     _dym_lookup(jsc.get(p["m"], "canonical_code"), dym_probed) is not None
                     for p in picks
@@ -5140,7 +5167,11 @@ def build_suggest_offer(
                             f", or would you like me to escalate to {team} team?",
                         )
                     )
-                out["suggest_quick_reply"] = _quick_reply([*codes, _YES, _NO])
+                # QUICK-REPLY-NAMES (owner, 6 Oct 2026): product codes are free text,
+                # never buttons. The sentence names them and "Reply with a code" is the
+                # picker; a typed code resolves through `suggest_last_result_set`. The
+                # escalation question the sentence ends on keeps its fixed Yes / No pair.
+                out["suggest_quick_reply"] = _quick_reply([_YES, _NO])
                 out["suggest_last_result_set"] = [
                     {
                         "idx": i + 1,
@@ -5297,9 +5328,12 @@ def build_suggest_offer(
             jsc.get(routing, "suggested_team") == "customer_service"
             and jsc.get(routing, "suggested_agent") == "order_enquiries"
         )
-        out["suggest_quick_reply"] = _quick_reply(
-            list(values) if (axis == "date" and is_cs_order) else [*values, _YES, _NO]
-        )
+        # QUICK-REPLY-NAMES (owner, 6 Oct 2026): the alternatives are free-text values
+        # (dates, codes, names), never buttons. "Reply with a date / code" is the
+        # picker; a typed value resolves through `suggest_last_result_set`. The
+        # escalation question keeps its fixed Yes / No pair, except on the customer
+        # service date miss, which never carried one (its sentence offers dates only).
+        out["suggest_quick_reply"] = None if (axis == "date" and is_cs_order) else _quick_reply([_YES, _NO])
         out["suggest_last_result_set"] = [
             {
                 "idx": i + 1,
@@ -5341,9 +5375,7 @@ def build_suggest_offer(
             f", or would you like me to escalate to {team} team?",
         )
     )
-    out["suggest_quick_reply"] = _quick_reply(
-        [str(i + 1) for i in range(len(alt_picks))] + [_YES, _NO]
-    )
+    out["suggest_quick_reply"] = _numbered_quick_reply(len(alt_picks))
     out["suggest_last_result_set"] = [
         {
             "idx": i + 1,

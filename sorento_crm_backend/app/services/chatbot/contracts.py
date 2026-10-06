@@ -315,6 +315,8 @@ BRANCH_KINDS = (
     "demand_qty",
     "business_query",
     "media_denied",
+    # AI-ALLOWED-GATE: the CRM declined to answer this contact (blocked, or not in the CRM).
+    "ai_not_allowed",
 )
 BranchKind = Literal[BRANCH_KINDS]  # type: ignore[valid-type]
 
@@ -465,6 +467,15 @@ SALES_REPORT_GROUP_BYS: tuple[str, ...] = ("customer", "product", "delivery_orde
 # check reads this one tuple, so the asks cannot be gated differently. `sales_analysis`
 # (PLAN-retail-sales-reports-26sep S1, #1269) is gated by the same key.
 SALES_FIGURE_STATUSES: tuple[str, ...] = ("sales_report", "top_selling", "sales_analysis")
+
+# PLAN-prompt-dynamic-30sep D9 (owner, 30 Sep 2026: "better own sales domain otherwise
+# jumble up with order"): a SALES_FIGURE_STATUSES ask is the `sales` domain
+# (`turn_runtime._report_status_means_order_domain` maps it). Every sales ask ran under
+# `order` until then, so the seams that treated a sales ask the order way (the customer
+# scope, the brand strip, the ranking's own reading) read this pair instead of `order`
+# alone. The order-only reports (outstanding, delivered, the DO list) stay `order`-only.
+SALES_DOMAIN = "sales"
+ORDER_OR_SALES_DOMAINS: frozenset[str] = frozenset({"order", SALES_DOMAIN})
 
 # --------------------------------------------------------------------------- #
 # Session state (R2: every key compile-current-state writes, nothing dropped)

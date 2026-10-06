@@ -33,7 +33,7 @@ from sqlalchemy.orm import Session
 
 from app.dependencies import get_db, require_permission
 from app.models.access import McpTool
-from app.models.chatbot_policy import ChatbotDomain, ChatbotEntityKind
+from app.models.chatbot_policy import ChatbotDomain, ChatbotEntityKind, ChatbotStatusWord
 from app.schemas.common import MAX_PAGE_LIMIT, ListResponse, PaginationResponse
 
 logger = logging.getLogger(__name__)
@@ -136,7 +136,8 @@ def _clean_text(value: str | None, *, field: str, max_chars: int = _TEXT_MAX) ->
         return None
     from app.services.chatbot_parser_prompt import BLOCKS_BEGIN, BLOCKS_END
 
-    cleaned = "".join(ch for ch in value if unicodedata.category(ch) not in ("Cc", "Cf"))
+    # Zl/Zp (U+2028/U+2029) too: most tokenizers read them as line breaks.
+    cleaned = "".join(ch for ch in value if unicodedata.category(ch) not in ("Cc", "Cf", "Zl", "Zp"))
     for marker in (BLOCKS_BEGIN, BLOCKS_END):
         if marker in cleaned:
             raise _unprocessable(
@@ -535,5 +536,194 @@ def delete_entity_kind(
 ):
     _ = current_user
     db.delete(_find_kind(db, kind))
+    db.commit()
+    return None
+
+
+# --------------------------------------------------------------------------- #
+# Status words (PLAN-prompt-dynamic-30sep D6). Per domain, the status values the parser
+# may emit and the customer words that set each one. The parser prompt renders
+# `{{statuses}}`, `{{status_values}}` and `{{domain_words}}` from these rows on the next
+# turn (`chatbot_prompt_vars`), so the same text limits as a domain's apply.
+# --------------------------------------------------------------------------- #
+
+_STATUS_SORTS = {"value", "label", "domain", "sort_order", "updated_at"}
+
+# Every row is rendered into every parser call twice (`{{statuses}}`, `{{domain_words}}`),
+# so the table has a ceiling like its word lists do (security review L1).
+STATUS_WORDS_MAX = 100
+
+#: The parser prompt lists a status row can be in (`pdyn_0004_prompt_lists.PROMPT_LISTS`).
+STATUS_PROMPT_LISTS = ("statuses", "status_values", "status_field_values")
+
+# A quote or backtick in a word or label would close the quotes the prompt renders it
+# in and read as an instruction (security review L2).
+_QUOTE_CHARS = ('"', "`")
+
+
+class ChatbotStatusWordBody(BaseModel):
+    domain: str = Field(min_length=1, max_length=64)
+    value: str = Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9_]*$")
+    label: str = Field(min_length=1, max_length=128)
+    trigger_words: list[str] = Field(default_factory=list)
+    sort_order: int = 0
+    # The parser prompt lists the row is in (owner answer 4, 2 Oct 2026). Optional: an
+    # update that leaves it out keeps the row's lists.
+    prompt_lists: list[str] | None = None
+
+
+class ChatbotStatusWordResponse(ChatbotStatusWordBody):
+    id: str
+    updated_at: datetime
+    prompt_lists: list[str] = Field(default_factory=list)
+
+
+def _status_out(row: ChatbotStatusWord) -> ChatbotStatusWordResponse:
+    return ChatbotStatusWordResponse(
+        id=str(row.id),
+        domain=row.domain,
+        value=row.value,
+        label=row.label,
+        trigger_words=list(row.trigger_words or []),
+        sort_order=int(row.sort_order or 0),
+        prompt_lists=list(row.prompt_lists or []),
+        updated_at=row.updated_at,
+    )
+
+
+def _validate_status(db: Session, body: ChatbotStatusWordBody) -> None:
+    body.domain = _clean_text(body.domain, field="domain") or ""
+    body.label = _clean_text(body.label, field="label", max_chars=128) or ""
+    body.trigger_words = [w for w in _clean_list(body.trigger_words, field="trigger_words") if w.strip()]
+    for text in (body.label, *body.trigger_words):
+        if any(ch in text for ch in _QUOTE_CHARS):
+            raise _unprocessable("Status words and their meaning may not contain quotes or backticks.")
+    if db.query(ChatbotDomain).filter(ChatbotDomain.name == body.domain).first() is None:
+        raise _unprocessable(f"Unknown chatbot domain {body.domain!r}.")
+    if body.prompt_lists is not None:
+        unknown = [name for name in body.prompt_lists if name not in STATUS_PROMPT_LISTS]
+        if unknown:
+            raise _unprocessable(f"Unknown parser prompt list(s): {', '.join(unknown)}.")
+        body.prompt_lists = list(dict.fromkeys(body.prompt_lists))
+
+
+def _find_status(db: Session, status_id: str) -> ChatbotStatusWord:
+    row = (
+        db.query(ChatbotStatusWord)
+        .filter(
+            (ChatbotStatusWord.value == status_id)
+            | (func.cast(ChatbotStatusWord.id, Text) == status_id)
+        )
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"No chatbot status word {status_id!r}.")
+    return row
+
+
+@router.get("/status-words", response_model=ListResponse[ChatbotStatusWordResponse])
+def list_status_words(
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=MAX_PAGE_LIMIT),
+    sort: str = Query("sort_order"),
+    dir: str = Query("asc"),
+    query: str | None = Query(None),
+    domain: str | None = Query(None),
+    current_user: dict = Depends(require_permission(VIEW)),
+    db: Session = Depends(get_db),
+):
+    _ = current_user
+    rows = db.query(ChatbotStatusWord)
+    if query:
+        needle = f"%{query.strip().lower()}%"
+        rows = rows.filter(
+            func.lower(ChatbotStatusWord.value).like(needle)
+            | func.lower(ChatbotStatusWord.label).like(needle)
+            | func.lower(func.array_to_string(ChatbotStatusWord.trigger_words, " ")).like(needle)
+        )
+    if domain:
+        rows = rows.filter(ChatbotStatusWord.domain == domain)
+    total = rows.count()
+    column = getattr(ChatbotStatusWord, sort if sort in _STATUS_SORTS else "sort_order")
+    rows = rows.order_by(column.desc() if dir == "desc" else column.asc(), ChatbotStatusWord.value)
+    page_rows = rows.offset((page - 1) * limit).limit(limit).all()
+    return ListResponse[ChatbotStatusWordResponse](
+        data=[_status_out(r) for r in page_rows],
+        pagination=PaginationResponse(total=total, page=page, limit=limit),
+        empty=total == 0,
+    )
+
+
+@router.get("/status-words/{status_id}", response_model=ChatbotStatusWordResponse)
+def get_status_word(
+    status_id: str,
+    current_user: dict = Depends(require_permission(VIEW)),
+    db: Session = Depends(get_db),
+):
+    _ = current_user
+    return _status_out(_find_status(db, status_id))
+
+
+@router.post(
+    "/status-words", response_model=ChatbotStatusWordResponse, status_code=status.HTTP_201_CREATED
+)
+def create_status_word(
+    body: ChatbotStatusWordBody,
+    current_user: dict = Depends(require_permission(MANAGE)),
+    db: Session = Depends(get_db),
+):
+    _ = current_user
+    _validate_status(db, body)
+    if db.query(func.count(ChatbotStatusWord.id)).scalar() >= STATUS_WORDS_MAX:
+        raise _unprocessable(f"There are already {STATUS_WORDS_MAX} status words; remove one first.")
+    if db.query(ChatbotStatusWord).filter(ChatbotStatusWord.value == body.value).first() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"A status word with value {body.value!r} already exists.",
+        )
+    row = ChatbotStatusWord(**{**body.model_dump(), "prompt_lists": body.prompt_lists or []})
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _status_out(row)
+
+
+@router.put("/status-words/{status_id}", response_model=ChatbotStatusWordResponse)
+def update_status_word(
+    status_id: str,
+    body: ChatbotStatusWordBody,
+    current_user: dict = Depends(require_permission(MANAGE)),
+    db: Session = Depends(get_db),
+):
+    _ = current_user
+    row = _find_status(db, status_id)
+    _validate_status(db, body)
+    clash = (
+        db.query(ChatbotStatusWord)
+        .filter(ChatbotStatusWord.value == body.value, ChatbotStatusWord.id != row.id)
+        .first()
+    )
+    if clash is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"A status word with value {body.value!r} already exists.",
+        )
+    for field, value in body.model_dump(exclude_none=True).items():
+        setattr(row, field, value)
+    db.commit()
+    db.refresh(row)
+    return _status_out(row)
+
+
+@router.delete("/status-words/{status_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_status_word(
+    status_id: str,
+    current_user: dict = Depends(require_permission(MANAGE)),
+    db: Session = Depends(get_db),
+):
+    """Hard delete (D7). The screen goes through the deferred pending action
+    (`record_actions.chatbot_status_word.delete`); this route is the immediate arm."""
+    _ = current_user
+    db.delete(_find_status(db, status_id))
     db.commit()
     return None

@@ -83,9 +83,10 @@
   "expected": {
     "branch_kind": "out_of_scope",
     "reply_contains": [
-      "customer service team"
+      "Routed to your PIC, they will reply shortly."
     ],
     "comment_contains": [
+      "Team: customer_service",
       "Conversation so far:",
       "Incoming stock: Asked about incoming stock for M486-75-BL"
     ]

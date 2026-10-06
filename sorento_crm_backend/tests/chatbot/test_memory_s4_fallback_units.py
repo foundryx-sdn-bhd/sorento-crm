@@ -385,9 +385,11 @@ class TestHandoverNamesWho:
         _seed_contact(session_factory, {"customer": {"name": "Acme", "code": "AC1"}}, level="full")
         result = _turn(session_factory, stub_access, "10% off pls", self.ASK, 0, console=True)
         text = sent_text(result)
-        assert "customer service team" in text and "looks after your account" not in text, text
+        # WA-MSG-TRIM: the one customer line no longer names the team; the PIC's comment does.
+        assert text.strip() == "Routed to your PIC, they will reply shortly.", text
         comments = [a["text"] for a in result.actions if a.get("kind") == "add_comment"]
         assert comments and "Salesperson:" not in comments[0]
+        assert comments[0].startswith("Team: customer_service"), comments[0]
 
     def test_a_non_commercial_ask_never_names_the_salesperson(self, session_factory, stub_access, lane) -> None:
         _seed_contact(

@@ -42,6 +42,8 @@ from app.services.chatbot import dispatch, jsc, llm_call, media_intake, send_ord
 from app.services.chatbot.contracts import (
     BUSINESS_BRANCH_KINDS,
     CRM_COMPLETED_BRANCH_KINDS,
+    ORDER_OR_SALES_DOMAINS,
+    SALES_DOMAIN,
     SELF_CLOSING_BRANCH_KINDS,
     TURN_FAILURE_STAGES,
     Envelope,
@@ -63,6 +65,7 @@ from app.services.chatbot.usage import record_parser_usage
 # APPLY, the narrower, the plan, the router, the composer, the tail - and `turn_runtime`
 # is everything that has to touch a database or a tool on its behalf.
 from app.services.chatbot import label_catalog, language as language_mod, session_state, turn_runtime
+from app.services.chatbot import quick_reply_guard
 from app.services.chatbot.turn import pending as turn_pending
 from app.services.chatbot.turn import question as turn_question
 from app.services.chatbot.turn import state as turn_state
@@ -454,10 +457,9 @@ def _as_a_stock_ask_by_its_own_words(verdict: dict[str, Any], message: str) -> d
     }
 
 
-def _code_like(token: str) -> bool:
-    """A typed token that can be a product code: letters AND digits ("srtwc286"). A word
-    ("xx", "basin") or a bare number ("2", "10") is not one."""
-    return any(ch.isdigit() for ch in token) and any(ch.isalpha() for ch in token)
+#: A typed token that can be a product code: letters AND digits. One copy, in
+#: `turn/task.py`, shared with the family grouping and the quantity carry (AVAIL-PICKER).
+_code_like = turn_task.code_like
 
 
 def _unsure_capture_as_codes(verdict: dict[str, Any]) -> dict[str, Any]:
@@ -521,6 +523,12 @@ def _exact_codes_only(
       after "srtw2000 20" listed SRTW2000-SS-CR, -A and -NL as well);
     * else a code-like token keeps the codes it is the prefix of, the family the
       which-one picker steers from ("srtwc286");
+    * else a code-like token keeps the codes it is a SUBSTRING of (AVAIL-PICKER, owner
+      live trace 5 Oct 2026: "wc286 check stock" dead-ended on "Couldn't find" although
+      the resolver had placed the SRTWC286-SH family off its own substring probe on
+      product_code, `entity_resolver._prefix_probe_product`). The same prefix-then-
+      substring order as that probe: this filter keeps what the resolver placed, it
+      matches nothing of its own;
     * else a code-like token is not found, and goes to the did-you-mean ("srt5764");
     * a word or a bare number with no exact code is not a product at all: the describe /
       semantic matches the resolver found for "xx", "10" or a "2" typed over a
@@ -545,7 +553,11 @@ def _exact_codes_only(
     ignored: set[str] = set()
     for fold, typed in tokens:
         exact = [c for c in candidates if code_of(c) == fold]
-        family = [c for c in candidates if code_of(c).startswith(fold)] if _code_like(fold) else []
+        family: list[dict[str, Any]] = []
+        if _code_like(fold):
+            family = [c for c in candidates if code_of(c).startswith(fold)] or [
+                c for c in candidates if fold in code_of(c)
+            ]
         chosen = exact or family
         if chosen:
             keep.update(str(c.get("uuid")) for c in chosen)
@@ -1777,7 +1789,9 @@ def _customer_scope_gate(
         return parse_output, None, False, None
     self_reference = verdict.get("self_reference") is True
     enforced = bool(scope.get("enforced"))
-    in_order = "order" in (domains or ())
+    # R7 (PLAN-prompt-dynamic-30sep D9): "my sales" is the `sales` domain now, and scopes
+    # to the links exactly as it did under `order`.
+    in_order = bool(ORDER_OR_SALES_DOMAINS & set(domains or ()))
     if not (enforced or (self_reference and in_order)):
         return parse_output, None, False, None
     entities = [e for e in (parse_output.get("entities") or []) if isinstance(e, dict)]
@@ -2298,7 +2312,7 @@ def _as_ranking_answer(verdict: dict[str, Any], **keys: Any) -> dict[str, Any]:
     out = {
         **verdict,
         "message_type": "business_query",
-        "domain_hint": "order",
+        "domain_hint": SALES_DOMAIN,
         "intent_hint": "check_order",
         "order_status": "top_selling",
         "domain_in_message": None,
@@ -2355,7 +2369,7 @@ def _ranking_words_claim(verdict: dict[str, Any], text: str) -> dict[str, Any] |
     out = {
         **verdict,
         "message_type": "business_query",
-        "domain_hint": "order",
+        "domain_hint": SALES_DOMAIN,
         "intent_hint": "check_order",
         "order_status": "top_selling",
         "domain_in_message": True,
@@ -2683,7 +2697,7 @@ def _top_selling_verdict(
     out = {**verdict, "entities": rebuilt}
     if leftover:
         out["top_selling_leftover"] = leftover
-    if not asks_ranking and out.get("domain_hint") not in (None, "", "order"):
+    if not asks_ranking and out.get("domain_hint") not in (None, "", *ORDER_OR_SALES_DOMAINS):
         # A word the parser sent to a promotion or document lookup, inside a ranking.
         out = _as_ranking_answer(out, entities=rebuilt)
     return out, state, "top_selling_split_token"
@@ -2747,6 +2761,98 @@ def _localize_result(result: TurnResult, session_factory: SessionFactory, dry_ru
         result.reply, result.actions = reply, actions
 
 
+def _ai_allowed(session_factory: SessionFactory, contact_respond_id: str) -> bool:
+    """AI-ALLOWED-GATE: may the chatbot answer this contact at all.
+
+    One session, one SELECT. A database error is NOT caught: "we could not tell" must not
+    read as allowed, the same rule `respond_outbound_service.assert_outbound_enabled` keeps.
+    """
+    from app.services import chatbot_allowed_service
+
+    with _session(session_factory) as db:
+        return chatbot_allowed_service.is_allowed(db, contact_respond_id)
+
+
+def _ai_not_allowed_turn(
+    envelope: Envelope, *, session_factory: SessionFactory, contact_respond_id: str
+) -> TurnResult:
+    """Close a turn for a contact the CRM does not let the AI answer, sending nothing.
+
+    Owner ask, 5 Oct 2026: the CRM decides who the AI replies to; a blocked contact, or one
+    that is not in the CRM, sees nothing, not even the generic error reply. The gate runs
+    before the worker offload (the worker must never see a turn nobody answers) and before
+    the ordering ticket (a gated turn must not hold the contact's queue slot). It is still a
+    recorded, terminal turn, deduplicated like any other (D15): `done` at `received`, branch
+    `ai_not_allowed`, one trace line, an empty reply and no actions (not even the
+    `is_human_intervened` field write). No parser config, no session vars, no memory.
+    """
+    from app.models.access import RespondContact
+
+    turn_trace = trace_mod.TurnTrace()
+    turn_trace.start()
+    dry_run = envelope.dry_run
+    message_id = _message_id(envelope)
+    with _session(session_factory) as db:
+        existing = _existing_turn(
+            db, contact_respond_id=contact_respond_id, message_id=message_id, is_test=dry_run
+        )
+        retrying = existing if _awaiting_retry(existing) else None
+        if existing is not None and retrying is None:
+            return _duplicate_result(existing)
+        known_contact = (
+            db.query(RespondContact.id)
+            .filter(RespondContact.respond_io_id == contact_respond_id)
+            .first()
+            is not None
+        )
+        try:
+            row = _insert_turn(
+                db,
+                envelope=envelope,
+                contact_respond_id=contact_respond_id,
+                retrying=retrying,
+                queued=False,
+            )
+        except IntegrityError:
+            # Same TOCTOU as `_run_turn`: a racing delivery inserted first; read its row.
+            db.rollback()
+            winner = _select_turn(
+                db, contact_respond_id=contact_respond_id, message_id=message_id, is_test=dry_run
+            )
+            if winner is None or _awaiting_retry(winner):
+                raise
+            return _duplicate_result(winner)
+        turn_id = str(row.id)
+        turn_trace.record(
+            "received",
+            status="skipped",
+            summary="AI not allowed for this contact; sent no reply",
+            why="The CRM decides which contacts the chatbot answers; this contact is not allowed, or is not in the CRM.",
+            facts={"lane": "ai_not_allowed", "known_contact": known_contact},
+            raw=None,
+        )
+        _close_turn(
+            db,
+            turn_id,
+            status="done",
+            stage="received",
+            branch_kind="ai_not_allowed",
+            error=None,
+            records=turn_trace.persisted(),
+            response={"actions": [], "reply": {"text": "", "quick_replies": None}},
+        )
+    return TurnResult(
+        turn_id=turn_id,
+        is_test=dry_run,
+        branch_kind="ai_not_allowed",
+        delegate=None,
+        reply={"text": "", "quick_replies": None},
+        actions=[],
+        status="done",
+        stage="received",
+    )
+
+
 @_refer_tracked
 def _run_turn(
     envelope: Envelope, *, session_factory: SessionFactory, offload: bool | None = None
@@ -2778,6 +2884,15 @@ def _run_turn(
     session_factory = _scoped_factory(
         session_factory, contact_scope, _contact_brand_scope(session_factory, contact_respond_id)
     )
+
+    # AI-ALLOWED-GATE: after the scope is known, BEFORE the offload and the ticket. A
+    # database error inside `_ai_allowed` propagates (fails closed, the route answers 500 and
+    # the integration log records it); no turn row exists for that call, accepted because
+    # "could not tell" must never answer the customer.
+    if not _ai_allowed(session_factory, contact_respond_id):
+        return _ai_not_allowed_turn(
+            envelope, session_factory=session_factory, contact_respond_id=contact_respond_id
+        )
 
     if offload is None:
         offload = bool(getattr(settings, "chatbot_turn_on_worker", False))
@@ -3612,15 +3727,24 @@ def _carried_line(
     memory_intake: dict[str, Any],
     contact_respond_id: str,
     dry_run: bool,
+    decision: dict[str, Any] | None = None,
 ) -> str | None:
     """AC-MEM083: a business answer whose subject the parser carried from memory (every
     entity `current_message: false`, none in the live conversation) opens with one line
     naming what was carried - from a closed conversation ("Carrying on from Tue 23 Sep:
     outstanding DO for CC001 Chin Chun Trading."), else from the usual products ("Your
-    usual: SRTWB1455, M486-75-BL."). None when nothing came from memory."""
+    usual: SRTWB1455, M486-75-BL."). None when nothing came from memory.
+
+    `decision` is `plan.trace.decision`. PHOTO-PICKER (owner, 5 Oct 2026): a turn that
+    ANSWERED this conversation's open question took its subject off our own roster, not
+    from memory. The picked code is one the customer never typed, so the text check below
+    missed it, and the line named an older closed conversation's topic ("incoming stock
+    for SRTWC286-SH") over a photo pick."""
     from app.models.conversation_frame import ConversationFrame
     from app.services.chatbot import copy as copy_mod
 
+    if isinstance(decision, dict) and decision.get("kind") == "answer":
+        return None
     level = memory_intake.get("effective_level") or "off"
     if level not in ("episodes", "full"):
         return None
@@ -4608,7 +4732,7 @@ def _run_stages_body(  # noqa: PLR0915
         customer_scope = (
             business_services.customer_scope(db, contact_respond_id, space_id_for_turn)
             if verdict.get("self_reference") is True
-            or {"order", "purchase_order"} & {*(plan.domains or ()), *(spec.domain for spec in plan.fetch)}
+            or {*ORDER_OR_SALES_DOMAINS, "purchase_order"} & {*(plan.domains or ()), *(spec.domain for spec in plan.fetch)}
             else None
         )
 
@@ -5022,6 +5146,7 @@ def _run_stages_body(  # noqa: PLR0915
                     memory_intake=memory_intake,
                     contact_respond_id=contact_respond_id,
                     dry_run=dry_run,
+                    decision=plan.trace.decision,
                 )
             except Exception:  # noqa: BLE001 - the answer stands without the line
                 logger.warning("chatbot: the carried line did not build", exc_info=True)
@@ -6999,20 +7124,27 @@ def _quick_replies_of(answer: Any) -> str | None:
     if answer.question is None:
         return None
     labels = [str(o.get("label")) for o in answer.question.options if o.get("label")]
-    return turn_pending.quick_replies(getattr(answer.question, "kind", None), labels)
+    # QUICK-REPLY-NAMES (owner rule, 6 Oct 2026): `turn_pending.quick_replies` keeps
+    # the string only for the fixed-option kinds; every roster kind's labels (customer,
+    # product, member, company names, ranked codes) are the numbered text list alone.
+    return turn_pending.quick_replies(
+        getattr(answer.question, "kind", None), labels, options=list(answer.question.options)
+    )
 
 
 def _reply_of(answer: Any) -> dict[str, Any]:
     """The three fields every `Answer`-shaped reply derives the same way: the text,
     the quick replies (through `_quick_replies_of`, so a suppressed kind stays
-    suppressed at every caller), and the roster a numbered follow-up resolves
-    against. Shared by `_run_answer`'s persisted reply and `_answer_actions`'s own
-    `send_message` action, which each add their own remaining key(s) on top
-    (`attachments_src` vs `kind`/`dry_run`) - one seam, so a fix here reaches both.
+    suppressed at every caller, then through `quick_reply_guard.guard`, the cap /
+    length / duplicate net every outgoing set crosses - QUICK-REPLY-NAMES), and the
+    roster a numbered follow-up resolves against. Shared by `_run_answer`'s persisted
+    reply and `_answer_actions`'s own `send_message` action, which each add their own
+    remaining key(s) on top (`attachments_src` vs `kind`/`dry_run`) - one seam, so a
+    fix here reaches both.
     """
     return {
         "text": getattr(answer, "text", "") or None,
-        "quick_replies": _quick_replies_of(answer),
+        "quick_replies": quick_reply_guard.guard(_quick_replies_of(answer), where="answer"),
         "result_set": list(answer.question.options) if answer.question is not None else [],
     }
 
@@ -7844,11 +7976,18 @@ def _seal_send(action: dict[str, Any], sealed: dict[str, Any]) -> dict[str, Any]
     # its OWN quick replies (the escalation clarifies name the teams so the answer is a
     # tap) must not have them erased by a turn whose tail composed none. Same rule for
     # `result_set`, for the same reason.
+    # QUICK-REPLY-NAMES: the sealed value already crossed the guard in `run_tail`; the
+    # lane's own fallback crosses it here, so a set the tail dropped as too long or too
+    # many cannot come back through the action the lane hand-built.
     sealed_replies = sealed.get("quick_replies")
     sealed_set = sealed.get("result_set")
     return {
         **action,
-        "quick_replies": sealed_replies if sealed_replies else action.get("quick_replies"),
+        "quick_replies": (
+            sealed_replies
+            if sealed_replies
+            else quick_reply_guard.guard(action.get("quick_replies"), where="lane action")
+        ),
         "result_set": sealed_set if sealed_set else action.get("result_set"),
     }
 
@@ -8698,11 +8837,15 @@ def run_tail(
     composed = reply_ladder.compose_reply(outcome)
     if question is None:
         question = _question_offered(ctx, values, outcome, composed)
-    quick_replies = composed.get("quick_replies")
+    # QUICK-REPLY-NAMES: the one seam every tail-composed set leaves through - at most
+    # three buttons, none over 20 characters, no duplicates. Guarded BEFORE the lane
+    # fallback is chosen, so a set the guard drops falls back the same way an absent one
+    # does and `_seal_send`'s own guarded fallback agrees with the persisted reply.
+    quick_replies = quick_reply_guard.guard(composed.get("quick_replies"), where="tail")
     if jsc.truthy(lane_quick_replies) and not jsc.truthy(quick_replies):
         # A lane may have composed quick replies of its own before the tail ran: the
         # escalation clarifies name the teams so the answer is a tap.
-        quick_replies = lane_quick_replies
+        quick_replies = quick_reply_guard.guard(lane_quick_replies, where="tail lane")
     barred_profile = profile
     if turn_state.escalation_barred(barred_profile):
         # ESCALATION-CONTROL: the same backstop `_run_answer` runs, for the lanes this
@@ -8719,6 +8862,8 @@ def run_tail(
             quick_replies = None
     reply = {
         "text": composed.get("text"),
+        # Already guarded above; the persisted reply, the trace fact and the send action
+        # all read this one value.
         "quick_replies": quick_replies,
         "result_set": composed.get("result_set") or [],
         "attachments_src": _attachments_src(values["answer"]),

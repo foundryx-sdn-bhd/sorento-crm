@@ -35,9 +35,11 @@ export const CONTACT_ACCESS_FILTER_PARAMS = {
   accessType: 'access_type',
   tier: 'tier',
   cost: 'cost',
+  ai: 'ai',
   escalation: 'escalation',
   packingList: 'packing_list',
   stock: 'stock',
+  region: 'region',
   customerId: 'customer_id',
   accessDiffersFrom: 'access_differs_from',
 } as const;

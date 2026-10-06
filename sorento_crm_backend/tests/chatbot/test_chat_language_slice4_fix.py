@@ -126,10 +126,10 @@ def test_item7_the_new_rows_translate_ms_and_zh():
         "Do you mean a customer named 'tan' or sales agent TAN? Reply 1 for the customer, 2 for the sales agent."
     ).startswith("Adakah anda maksudkan pelanggan bernama 'tan' atau ejen jualan TAN?")
     assert zh.reply("and 3 others, reply with the full code.") == "还有 3 个，请回复完整代码。"
-    assert ms.reply(
-        "This inquiry has been routed to the respective person-in-charge (PIC) from warehouse team. "
-        "We will get back to you soon. Thanks for your patience."
-    ).startswith("Pertanyaan ini telah diserahkan kepada pegawai bertanggungjawab (PIC) daripada pasukan warehouse.")
+    # WA-MSG-TRIM: the escalation lane sends one fixed line now.
+    assert ms.reply("Routed to your PIC, they will reply shortly.") == (
+        "Telah diserahkan kepada PIC anda, mereka akan membalas tidak lama lagi."
+    )
 
 
 def test_item7_the_short_question_header_reads_in_the_reply_language():

@@ -23,7 +23,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import get_current_user, get_current_user_or_api_key
+from app.dependencies import (
+    get_current_user,
+    get_current_user_or_api_key,
+    require_permission_with_api_key,
+)
 from app.models.portal import PortalRevisionConfig
 from app.services.error_handler import handle_validation_error
 from app.services.portal_revision_service import PortalRevisionService
@@ -122,7 +126,7 @@ def _clean_statuses(values: Optional[list[str]]) -> list[str]:
 
 @router.get("/revision-configs", response_model=PortalRevisionConfigListResponse)
 async def list_portal_revision_configs(
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key("user_management.settings.view")),
     db: Session = Depends(get_db),
 ):
     """One entry per portal submission type, in the portal's own type order."""

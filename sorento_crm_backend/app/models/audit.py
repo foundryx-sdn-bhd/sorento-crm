@@ -88,7 +88,8 @@ class AuditLog(Base):
     event = Column(String(100), nullable=True, index=True)
     # WHO acted is the identity actor above (actor_type, user_id, real_user_id, ...): S0 adds
     # no actor column of its own. ``source`` is the channel, not the actor:
-    # ui | portal | chatbot | mcp | n8n | external_api | import | worker | scheduler.
+    # ui | portal | chatbot | mcp | n8n | external_api | import | worker | scheduler | script
+    # (an operator-run maintenance script, e.g. scripts/merge_customers_by_code.py).
     # Derived server side, never read from a caller header.
     source = Column(String(20), nullable=True)
     reason = Column(Text, nullable=True)

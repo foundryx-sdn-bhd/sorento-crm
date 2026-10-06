@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import get_current_user_or_api_key, require_permission
+from app.dependencies import require_permission, require_session_or_api_key_permission
 from app.schemas.common import ListResponse
 from app.schemas.marketing import (
     PromotionTypeCreate,
@@ -31,7 +31,7 @@ router = APIRouter()
 
 @router.get("/", response_model=ListResponse[PromotionTypeResponse])
 async def get_promotion_types(
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_session_or_api_key_permission("marketing.promotion_types.view")),
     db: Session = Depends(get_db),
 ):
     """Every promotion type, in display order."""
@@ -51,7 +51,7 @@ async def get_promotion_types(
 @router.get("/{type_id}", response_model=PromotionTypeResponse)
 async def get_promotion_type(
     type_id: str,
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_session_or_api_key_permission("marketing.promotion_types.view")),
     db: Session = Depends(get_db),
 ):
     try:
