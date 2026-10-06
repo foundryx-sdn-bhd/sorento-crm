@@ -111,6 +111,72 @@ cases:
             - "basin (customer)"
           no_uuid: true
 
+  # Owner clarification: brand identity is the parser's canonical_code (the Known brands
+  # name), never the raw word and never a spelling tier in code. Trace, parse stage: the
+  # brand entity must carry canonical_code "Sorento"; if it does not, that is a prompt
+  # finding (KNOWN BRANDS addendum), not this lane's.
+  - name: a misspelt brand word the parser canonicalised is the brand
+    cold: true
+    turns:
+      - text: "Sorrento basin"
+        expect:
+          reply_contains:
+            - "Here are the matching products."
+          reply_not_contains:
+            - "Which one do you mean?"
+            - "Could not find"
+            - "Sorrento"
+          no_uuid: true
+
+  - name: staff shorthand the parser canonicalised is the brand
+    cold: true
+    turns:
+      - text: "srt basin"
+        expect:
+          reply_contains:
+            - "Here are the matching products."
+          reply_not_contains:
+            - "Which one do you mean?"
+            - "Could not find"
+          no_uuid: true
+
+  - name: shorthand brand beside a code answers the code alone
+    cold: true
+    turns:
+      - text: "SRT SRTWC8318"
+        expect:
+          reply_contains:
+            - "SRTWC8318"
+          reply_not_contains:
+            - "Which one do you mean?"
+            - "SRT (promotion)"
+            - "SRT (customer)"
+            - "could not find SRT"
+          no_uuid: true
+
+  # Owner evidence (console on the #1514 copy, prompt v58, contact Mr Loo): after "which tap
+  # has technical drawing" (298 set) the owner typed "sorentooooo?"; the parser mapped it to
+  # brand Sorento, then the kind pick fired (customer / promotion / form / transporter) and
+  # ~200 codes were dumped above the question. The dump is ROGUE class C (#1506); this lane
+  # owns the kind pick and the brand.
+  - name: owner evidence, a misspelt brand word narrowing a carried set is the brand, no kind pick
+    cold: true
+    turns:
+      - text: "which tap has technical drawing"
+        expect:
+          reply_not_contains:
+            - "Which one do you mean?"
+      - text: "sorentooooo?"
+        expect:
+          reply_not_contains:
+            - "Which one do you mean?"
+            - "(customer)"
+            - "(promotion)"
+            - "(form)"
+            - "(transporter)"
+            - "could not find sorentooooo"
+          no_uuid: true
+
   - name: control, the Cabana catalogue by filename coverage (r11 a-d)
     cold: true
     turns:

@@ -1335,6 +1335,17 @@ class ResolveReferenceRequest(BaseModel):
             "null / [] = today's behaviour, byte-identical."
         ),
     )
+    brand_tokens: dict[str, str] | None = Field(
+        default=None,
+        description=(
+            "Tokens the caller already knows to be BRANDS, `{token: brand name}` (CLASS-"
+            "HINT-KIND-PICK, owner ruling 6 Oct 2026: the parser's canonical_code names "
+            "the brand and the catalogue knows it). Each is resolved as one `brand` match "
+            "(exact tier, the name as its code) with no probe, so it is never an "
+            "unanswered search term and never opens the spec fallback; it is also locked "
+            "like `hint_locked_tokens`. Omit / null / {} = today's behaviour."
+        ),
+    )
     limit: int | None = Field(
         default=None,
         ge=1,
@@ -1977,31 +1988,75 @@ def _strip_name_kinds_for_locked(
     return result
 
 
-def _only_brand_words_unanswered_beside_a_code(
-    db: Session, result: dict[str, Any], tokens: list[str] | None
-) -> bool:
-    """A caller token matched a product BY CODE (`_code_matched`) and every token still
-    unanswered is a brand's name or code, exactly (case and separators aside). Such a word
-    scopes the code; it describes no set of its own, so the spec fallback has nothing to
-    find for it. One `brands` read, on this shape only; the catalogue's own brand rows,
-    never a word list."""
-    unanswered = [str(t) for t in (result.get("unresolved_tokens") or []) if str(t or "").strip()]
-    if not unanswered or not _code_matched(result, tokens):
-        return False
-    # The ONE brand reader the chatbot's lock already uses (`turn_runtime.active_brands`:
-    # active rows, company scope read off the session), so the two sides of the rule can
-    # never disagree on which words are brands. Imported here, not at module top: the
-    # chatbot runtime imports this route module's siblings.
-    from app.services.chatbot.turn_runtime import active_brands
+def _resolve_brand_tokens(result: dict[str, Any], brand_tokens: dict[str, str] | None) -> dict[str, Any]:
+    """A token the caller already knows to be a brand (`brand_tokens`, owner ruling 6 Oct
+    2026: "the brand word is a brand because the parser said so and the catalogue knows
+    it, so it must not count as an unanswered search term") is RESOLVED as that brand, no
+    probe needed: one `brand` match, exact tier, the brand's name as its code. The resolver
+    has no brand probe, so without this the word stayed in `unresolved_tokens` and opened
+    the spec fallback beside a code it was only scoping ("SORENTO ZZWC8318" listed every
+    Sorento product). OR shape only, in place: an AND intersection has no row for a brand to
+    join, and an empty one degrades to OR where this runs. Absent = untouched."""
+    if not brand_tokens:
+        return result
+    resolutions = result.get("resolutions")
+    if not isinstance(resolutions, list):
+        return result
+    by_norm = {_norm_locked_token(t): str(name or "").strip() for t, name in brand_tokens.items()}
+    by_norm.pop("", None)
+    changed = False
+    ambiguous = list(result.get("ambiguous_tokens") or [])
+    for tr in resolutions:
+        if not isinstance(tr, dict):
+            continue
+        name = by_norm.get(_norm_locked_token(tr.get("token")))
+        if not name:
+            continue
+        tr["matches"] = [
+            {
+                "entity_type": "brand",
+                "canonical_code": name,
+                "uuid": None,
+                "match_field": "brand",
+                "match_tier": "exact",
+                "similarity": None,
+                "company_id": None,
+                "company_name": None,
+                "company_code": None,
+                "display": {"brand_name": name},
+            }
+        ]
+        tr["resolved"] = True
+        tr["ambiguous"] = False
+        ambiguous = [t for t in ambiguous if t != tr.get("token")]
+        changed = True
+    if changed:
+        result["unresolved_tokens"] = [
+            tr["token"] for tr in resolutions if isinstance(tr, dict) and not (tr.get("matches") or [])
+        ]
+        if "ambiguous_tokens" in result:
+            result["ambiguous_tokens"] = ambiguous
+    return result
 
-    names = {
-        _norm_locked_token(value)
-        for row in active_brands(db)
-        for value in (row.get("brand_code"), row.get("brand_name"))
-        if str(value or "").strip()
-    }
-    return all(_norm_locked_token(t) in names for t in unanswered)
 
+
+def _with_parser_brand(specs: list[dict], brand_tokens: dict[str, str] | None) -> list[dict]:
+    """The brand the caller's parser already named (`brand_tokens`, one brand) scopes the
+    described set when the sentence reader bound none: brand identity is semantic (owner,
+    6 Oct 2026, "what if typo, what if SRT people type"), so "Sorrento basin" and "srt basin"
+    are Sorento basins because the parser's canonical_code says so, never because the typed
+    word happens to spell a brand name. The same `{"key": "brand", "value": name}` shape the
+    reader itself emits; two different brands in one message bind nothing here (the reader's
+    own call). Absent field = untouched."""
+    if not brand_tokens:
+        return specs
+    if any(str((e or {}).get("key")) == "brand" for e in specs):
+        return specs
+    names = {str(n).strip() for n in brand_tokens.values() if str(n or "").strip()}
+    if len(names) != 1:
+        return specs
+    name = next(iter(names))
+    return [*specs, {"key": "brand", "value": name, "evidence": name, "grounded": True}]
 
 def _result_has_zero_matches(result: dict[str, Any]) -> bool:
     """True when neither OR-mode nor AND-mode produced any match."""
@@ -2216,8 +2271,12 @@ def _resolve_input(
     raw_tokens: list[str] | None = None,
     regions: frozenset[str] | None = None,
     hint_locked_tokens: list[str] | None = None,
+    brand_tokens: dict[str, str] | None = None,
 ):
     mode = (match_mode or "or").strip().lower()
+    # A brand token is locked as well: its kind is final and it is never rerun.
+    if brand_tokens:
+        hint_locked_tokens = list(hint_locked_tokens or []) + [t for t in brand_tokens if t]
     if mode not in _ALLOWED_MATCH_MODES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -2395,6 +2454,7 @@ def _resolve_input(
         # downstream can read them as an answer - the AND exit, the OR degrade and the
         # spec fallback all judge "resolved" off what is left here.
         raw = _strip_name_kinds_for_locked(raw, hint_locked_tokens, hint)
+        raw = _resolve_brand_tokens(raw, brand_tokens)
         raw = _apply_promotion_access_levels_filter(db, raw, access_levels)
         # Promotion-domain hint: run the expander. It owns the dispatch:
         # - promo matches found → return promotion entries only
@@ -2973,6 +3033,7 @@ def resolve_reference_post(
             raw_tokens=payload.raw_tokens,
             regions=regions,
             hint_locked_tokens=payload.hint_locked_tokens,
+            brand_tokens=payload.brand_tokens,
         )
     except EntityPinMismatch as exc:
         raise AppException(
@@ -3073,6 +3134,7 @@ def resolve_reference_post(
             user_id=current_user.get("id"),
             log_usage=not payload.dry_run,
         )
+        specs = _with_parser_brand(specs, payload.brand_tokens)
         # D3: a brand scopes the WHOLE set - kept OUT of `specs`' union-membership
         # role (a brand binding there would union in every OTHER certified product
         # of that brand, not just the described ones) and applied only as the
@@ -3245,23 +3307,8 @@ def resolve_reference_post(
     # whole block - every other signal here answers "is a WORD unanswered", and a
     # query whose every token already resolved exactly has no unanswered word by
     # definition, whatever a coverage claim over punctuation says.
-    # CLASS-HINT-KIND-PICK (owner, 6 Oct 2026): a BRAND word typed beside a matched code
-    # ("SORENTO ZZWC8318") is now left unresolved on purpose rather than re-typed to
-    # whatever promotion carries it; without this guard that unresolved word opened the
-    # spec fallback, which bound the brand off the sentence and emitted the brand's WHOLE
-    # catalogue as spec matches beside the one code the customer asked about (measured on
-    # the sandbox replay: five Sorento products in a stock answer for ZZWC8318-RL-250).
-    # The code answers its own turn and the brand word scopes it. Narrow on purpose: an
-    # unanswered DESCRIPTION beside a code ("ZZTKS2B double bowl kitchen sink") still
-    # opens the spec path, as `test_resolve_brand_routing.py` pins. Gated on the field
-    # (security review, finding 1): a caller that sends no `hint_locked_tokens` keeps
-    # today's path byte for byte, as the field's own contract promises.
     if (
         payload.spec_fallback
-        and not (
-            payload.hint_locked_tokens
-            and _only_brand_words_unanswered_beside_a_code(db, result, payload.tokens)
-        )
         and not _every_caller_token_resolved(result)
         and (
             _result_has_zero_matches(result)
@@ -3329,6 +3376,7 @@ def resolve_reference_post(
                 log_usage=not payload.dry_run,
             )
         )
+        specs = _with_parser_brand(specs, payload.brand_tokens)
         semantic_used = bool(understanding and understanding.source == "semantic")
         semantic_ms = (
             int((time.monotonic() - started) * 1000) if understanding is not None else None

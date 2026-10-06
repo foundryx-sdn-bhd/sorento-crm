@@ -28,11 +28,17 @@ AC-9. Kill test: with the fix reverted, AC-1 to AC-5 and AC-7 are red again.
 AC-10. The brand read is exact only (`exact_brand_rows`: name or code, case-insensitive);
        "Sorrento" names no brand there, while `brand_rows_for_word` (order/sales intercept)
        keeps its spelling tier. Nothing is removed from the resolver's tokens.
-AC-11. A brand word typed beside a code ("SORENTO ZZWC8318") answers the code alone: the
-       spec fallback does not run when a caller token matched a product by code AND every
-       unanswered token is a brand's name or code. An unanswered description beside a code
-       ("ZZTKS2B double bowl kitchen sink") still opens the spec path
-       (`test_resolve_brand_routing.py`).
+AC-11. (Owner ruling 6 Oct 2026, replacing the rejected code gate.) A brand entity is
+       RESOLVED as the brand with no hits needed: the resolve body sends `brand_tokens`
+       (`{token: brand name}`), the resolver answers the token with one exact `brand` match,
+       the token is never in `unresolved_tokens`, so a brand word beside a matched code
+       ("SORENTO SRTWC8318") leaves nothing unanswered and the spec fallback does not open
+       for it. A description beside a code still opens the spec path
+       (`test_resolve_brand_routing.py`). No code gate anywhere.
+AC-13. (Owner clarification.) Brand identity keys on the parser's `canonical_code` (the
+       Known brands name), raw only when canonical_code is empty, never a spelling tier in
+       code, never a non-confident entity: "Sorrento" / "srt" with canonical_code "Sorento"
+       are Sorento; "Sorrento" with no canonical_code is not a brand.
 AC-12. The request domain's own kind is never stripped: "cabana promo" under promotion
        still finds the promotions whose description carries the brand; "cabana catalog"
        under resource_attachment still narrows to the Cabana catalogue.

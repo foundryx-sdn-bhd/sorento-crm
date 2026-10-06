@@ -22,7 +22,7 @@ from typing import Any
 import pytest
 
 from app.models.inventory import Stock
-from app.models.product import Brand, Product, ProductCategory
+from app.models.product import Brand, Product, ProductAttachment, ProductCategory
 from app.models.resources import Attachment, AttachmentType
 from app.services.company_scope import DEFAULT_COMPANY_ID
 from app.services.product_class_signal import backfill_category_signals
@@ -50,7 +50,7 @@ pytestmark = pytest.mark.skipif(
 
 ATTACHMENT_TOOLS = {"crm_resource_attachments_list", "crm_resource_attachments_catalogue"}
 CABANA_CATALOGUE = "@ CABANA CATALOG 2025 (RESEARCHABLE).pdf"
-ROGUE_CODE = "ZZWC8318-RL-250"
+ROGUE_CODE = "SRTWC8318-RL-250"
 ORDER_HINTED_CODE = "ZZT7445"
 
 
@@ -67,7 +67,7 @@ def _seed_replay_world(session_factory) -> dict[str, Any]:
     world = _seed_world(session_factory, cabana=True)
     db = session_factory()
     cabana_id = world["brand_id"]
-    sorento = Brand(id=str(uuid.uuid4()), brand_code="SORENTO", brand_name="Sorento", is_active=True, company_id=DEFAULT_COMPANY_ID)
+    sorento = Brand(id=str(uuid.uuid4()), brand_code="SRT", brand_name="Sorento", is_active=True, company_id=DEFAULT_COMPANY_ID)
     tap_cat = ProductCategory(
         id=str(uuid.uuid4()), category_code=unique_code("TP")[:50], category_name="ZZT Tap",
         class_label="Tap", search_synonyms=["tap", "water tap", "basin tap", "faucet"], company_id=DEFAULT_COMPANY_ID,
@@ -101,10 +101,26 @@ def _seed_replay_world(session_factory) -> dict[str, Any]:
 
     product(unique_code("ZZSRTB", alpha=True), "SORENTO WHITE WASH BASIN", brand_id=sorento.id, category_id=basin_cat_id, qty=3)
     product(unique_code("ZZSRTC", alpha=True), "SORENTO GREY WASH BASIN", brand_id=sorento.id, category_id=basin_cat_id, qty=0)
-    product(unique_code("ZZCBT", alpha=True), "CABANA CHROME BASIN TAP", brand_id=cabana_id, category_id=tap_cat.id, qty=4)
-    product(unique_code("ZZSRTT", alpha=True), "SORENTO BRASS WATER TAP", brand_id=sorento.id, category_id=tap_cat.id, qty=2)
+    taps = [
+        product(unique_code("ZZCBT", alpha=True), "CABANA CHROME BASIN TAP", brand_id=cabana_id, category_id=tap_cat.id, qty=4),
+        product(unique_code("ZZSRTT", alpha=True), "SORENTO BRASS WATER TAP", brand_id=sorento.id, category_id=tap_cat.id, qty=2),
+        product(ORDER_HINTED_CODE, "SORENTO BASIN MIXER TAP", brand_id=sorento.id, category_id=tap_cat.id, qty=1),
+    ]
     product(ROGUE_CODE, "SORENTO S-TRAP 250MM ONE PIECE WC", brand_id=sorento.id, category_id=wc_cat.id, qty=7)
-    product(ORDER_HINTED_CODE, "SORENTO BASIN MIXER TAP", brand_id=sorento.id, category_id=tap_cat.id, qty=1)
+    # Owner evidence (console on the #1514 copy, prompt v58): "which tap has technical
+    # drawing" (a 298 set) then "sorentooooo?". Every tap carries a technical drawing.
+    drawing_type = AttachmentType(type_name="Technical Drawing", code="technical_drawing", allowed_extensions="pdf", is_direct_access=False)
+    db.add(drawing_type)
+    db.flush()
+    for tap in taps:
+        drawing = Attachment(
+            attachment_type_id=drawing_type.id, original_filename=f"{tap.product_code} technical drawing.pdf",
+            stored_filename=f"zzt-td-{tap.product_code}.pdf", file_path=f"https://example.test/zzt-td-{tap.product_code}.pdf",
+            company_id=DEFAULT_COMPANY_ID,
+        )
+        db.add(drawing)
+        db.flush()
+        db.add(ProductAttachment(id=str(uuid.uuid4()), product_id=tap.id, attachment_id=drawing.id, company_id=DEFAULT_COMPANY_ID))
 
     direct_access = AttachmentType(type_name="Direct Access", code=None, allowed_extensions="pdf", is_direct_access=True)
     db.add(direct_access)
@@ -118,6 +134,7 @@ def _seed_replay_world(session_factory) -> dict[str, Any]:
     db.commit()
     world["stock_by_id"] = stock_by_id
     world["attachments"] = {catalogue.id: CABANA_CATALOGUE}
+    world["drawings"] = {tap.id: tap.product_code for tap in taps}
     return world
 
 
@@ -128,6 +145,7 @@ def _tool_stub(monkeypatch, world: dict[str, Any]) -> list[tuple[str, dict[str, 
     calls: list[tuple[str, dict[str, Any]]] = []
     stock_by_id = world["stock_by_id"]
     attachments = world["attachments"]
+    drawings = world.get("drawings") or {}
 
     def fake_call_tool(self, name: str, arguments: dict[str, Any]) -> str:
         calls.append((name, dict(arguments)))
@@ -142,6 +160,14 @@ def _tool_stub(monkeypatch, world: dict[str, Any]) -> list[tuple[str, dict[str, 
             return json.dumps({"items": rows, "has_result": bool(rows), "attachments": [], "action_links": [],
                                "result_type": "stock_compact",
                                "intro": "Stock summary for the requested products." if rows else "No matching results found."})
+        if name == "crm_master_product_attachments_list":
+            ids = [pid for pid in (arguments.get("product_ids") or []) if pid in drawings]
+            items = [{"title": drawings[pid], "flags": {}, "fields": [
+                {"key": "product_code", "label": "Product Code", "value": drawings[pid]},
+                {"key": "original_filename", "label": "File Name", "value": f"{drawings[pid]} technical drawing.pdf"},
+            ]} for pid in ids]
+            return json.dumps({"result_type": "product_attachments", "intro": "Here are the attachments." if items else "No matching results found.",
+                               "items": items, "has_result": bool(items), "attachments": [], "action_links": []})
         if name == "crm_master_products_list":
             ids = list(arguments.get("product_ids") or [])
             items = [{"title": f"product {pid}", "flags": {}, "fields": [{"key": "product_code", "label": "Product Code", "value": f"product {pid}"}]} for pid in ids]
@@ -160,23 +186,46 @@ def _tool_stub(monkeypatch, world: dict[str, Any]) -> list[tuple[str, dict[str, 
     return calls
 
 
-SENTENCES: list[tuple[str, dict[str, Any]]] = [
+SENTENCES: list[tuple[str, dict[str, Any]] | list[tuple[str, dict[str, Any]]]] = [
     ("any basin with thickness 1.0mm", dict(intent_hint="check_product", domain_hint="master_products", match_mode="and",
                                             entities=[_class_entity(), _thickness_entity()])),
     ("basin", dict(intent_hint="check_product", domain_hint="master_products", match_mode="and", entities=[_class_entity()])),
     ("cabana stock", dict(intent_hint="check_stock", domain_hint="inventory", match_mode="and", entities=[_entity("cabana", "product")])),
     ("cabana basin tap", dict(intent_hint="check_product", domain_hint="master_products", match_mode="and",
-                              entities=[_entity("cabana", "brand"), _entity("basin tap", "category")])),
-    ("SORENTO ZZWC8318", dict(intent_hint="check_stock", domain_hint="inventory", match_mode="and",
-                              entities=[_entity("SORENTO", "brand"), _entity("ZZWC8318", "product")])),
+                              entities=[_entity("cabana", "brand", canonical_code="Cabana"), _entity("basin tap", "category")])),
+    ("SORENTO SRTWC8318", dict(intent_hint="check_stock", domain_hint="inventory", match_mode="and",
+                               entities=[_entity("SORENTO", "brand", canonical_code="Sorento"), _entity("SRTWC8318", "product")])),
     ("water tap", dict(intent_hint="check_product", domain_hint="master_products", match_mode="and", entities=[_entity("water tap", "category")])),
     ("sorento basin", dict(intent_hint="check_product", domain_hint="master_products", match_mode="and",
-                           entities=[_entity("sorento", "brand"), _entity("basin", "category")])),
+                           entities=[_entity("sorento", "brand", canonical_code="Sorento"), _entity("basin", "category")])),
+    # Owner clarification: brand identity is the parser's canonical_code (the Known brands
+    # name), never the raw word. A misspelling and a staff shorthand the parser mapped.
+    ("Sorrento basin", dict(intent_hint="check_product", domain_hint="master_products", match_mode="and",
+                            entities=[_entity("Sorrento", "brand", canonical_code="Sorento"), _entity("basin", "category")])),
+    ("srt basin", dict(intent_hint="check_product", domain_hint="master_products", match_mode="and",
+                       entities=[_entity("srt", "brand", canonical_code="Sorento"), _entity("basin", "category")])),
+    ("SRT SRTWC8318", dict(intent_hint="check_stock", domain_hint="inventory", match_mode="and",
+                           entities=[_entity("SRT", "brand", canonical_code="Sorento"), _entity("SRTWC8318", "product")])),
     ("cabana catalog", dict(intent_hint="get_resource_attachment", domain_hint="resource_attachment", domain_in_message=True, match_mode="and",
-                            entities=[_entity("cabana", "brand"), _entity("catalog", "attachment", canonical_code="catalogue")],
+                            entities=[_entity("cabana", "brand", canonical_code="Cabana"), _entity("catalog", "attachment", canonical_code="catalogue")],
                             routing={"suggested_team": "purchasing", "suggested_agent": "general_enquiries", "team_source": None})),
     (f"{ORDER_HINTED_CODE} stock", dict(intent_hint="check_stock", domain_hint="inventory", match_mode="and",
                                        entities=[_entity(ORDER_HINTED_CODE, "order")])),
+    # Owner evidence (console on the #1514 copy, prompt v58, contact Mr Loo): after "which tap
+    # has technical drawing" (298 set) the owner typed "sorentooooo?"; the parser mapped it to
+    # brand Sorento, the kind pick fired (customer / promotion / form / transporter) and ~200
+    # codes were dumped above the question (the dump is ROGUE class C, #1506). A two-turn case:
+    # the table row is the SECOND turn.
+    [
+        ("which tap has technical drawing", dict(
+            intent_hint="check_product_attachment", domain_hint="product_attachment", match_mode="and",
+            entities=[_entity("tap", "category"), _entity("technical drawing", "attachment_type", canonical_code="technical drawing")],
+        )),
+        ("sorentooooo?", dict(
+            intent_hint="check_product_attachment", domain_hint="product_attachment", match_mode="and",
+            entity_op="replace_combine", entities=[_entity("sorentooooo", "brand", canonical_code="Sorento")],
+        )),
+    ],
 ]
 
 
@@ -199,9 +248,16 @@ def test_replay_table(session_factory, stub_parser, stub_access, monkeypatch) ->
     stub_access()
     rows: list[str] = ["| # | sentence | parser verdict (hand-written) | reply | open question | focus brands | tool calls |",
                        "|---|---|---|---|---|---|---|"]
-    for i, (text, verdict) in enumerate(SENTENCES, start=1):
+    for i, case in enumerate(SENTENCES, start=1):
+        turns = case if isinstance(case, list) else [case]
+        prior = turns[:-1]
+        text, verdict = turns[-1]
+        for j, (ptext, pverdict) in enumerate(prior):
+            _turn(session_factory, stub_parser, _parser_output(**pverdict), text=ptext, msg_id=f"ZZT-replay-{i}-{j}")
         calls.clear()
         result = _turn(session_factory, stub_parser, _parser_output(**verdict), text=text, msg_id=f"ZZT-replay-{i}")
+        if prior:
+            text = " -> ".join([p[0] for p in prior] + [text])
         if result.status == "done":
             # The reply text alone: `actions` repeats it as the sent message.
             said = (result.reply or {}).get("text") or _said(result)
@@ -209,7 +265,7 @@ def test_replay_table(session_factory, stub_parser, stub_access, monkeypatch) ->
             said = f"STATUS {result.status}: {result.error}"
         open_q = (_session_of(session_factory).get("open_question") or {}).get("kind")
         brands = ",".join(_focus_brand_words(session_factory))
-        ents = "; ".join(f"{e['raw']} ({e['hint']})" for e in verdict["entities"])
+        ents = "; ".join(f"{e['raw']} ({e['hint']}" + (f", canonical {e['canonical_code']}" if e.get("canonical_code") else "") + ")" for e in verdict["entities"])
         tools = "; ".join(
             f"{name}({', '.join(f'{k}={len(v) if isinstance(v, list) else v}' for k, v in args.items() if k in ('product_ids', 'attachment_ids', 'brand_ids', 'product_codes'))})"
             for name, args in calls

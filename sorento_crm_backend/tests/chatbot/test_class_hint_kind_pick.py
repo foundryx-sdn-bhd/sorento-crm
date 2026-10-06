@@ -571,14 +571,48 @@ class TestTheResolveBodyLocksTheParsersClassHints:
         body = resolve_entity_body(_ctx([_class_entity(), product, brand], text="cabana basin sorento"))
         assert body.get(LOCK_FIELD) == ["basin", "cabana", "Sorento"], body
 
-    def test_an_entity_the_caller_decided_is_locked_whatever_its_hint(self) -> None:
-        """`locked_entity_ids` is `turn_runtime.resolve_kinds`'s exact live-brand read: an
-        entity in it is locked even under an `order` hint or `confident: false`."""
+    def test_an_entity_the_engine_decided_is_a_brand_is_sent_as_one(self) -> None:
+        """`brand_entities` is `turn_runtime.resolve_kinds`'s exact live-brand read: the
+        entity's token is locked whatever its hint AND sent as `brand_tokens`, the resolver
+        resolving it as that brand with no probe (owner, 6 Oct 2026: a brand word is never
+        an unanswered search term)."""
         from app.services.chatbot.lanes.business.resolve_gate import resolve_entity_body
 
-        unsure = {"raw": "cabana", "hint": "order", "canonical_code": None, "current_message": True, "confident": False}
-        body = resolve_entity_body(_ctx([unsure], text="cabana"), locked_entity_ids=frozenset({id(unsure)}))
+        word = {"raw": "cabana", "hint": "order", "canonical_code": None, "current_message": True, "confident": True}
+        body = resolve_entity_body(_ctx([word], text="cabana"), brand_entities={id(word): "Cabana"})
         assert body.get(LOCK_FIELD) == ["cabana"], body
+        assert body.get("brand_tokens") == {"cabana": "Cabana"}, body
+
+    def test_no_brand_entity_means_no_brand_tokens_key(self) -> None:
+        from app.services.chatbot.lanes.business.resolve_gate import resolve_entity_body
+
+        body = resolve_entity_body(_ctx([_class_entity()]))
+        assert "brand_tokens" not in body, body
+
+
+class TestBrandIdentityIsTheParsersCanonicalCode:
+    """Owner clarification (6 Oct 2026, "what if typo, what if SRT people type"): brand
+    identity is semantic. The parser maps the typed word to `canonical_code` = the brand
+    name on the Known brands line; the exact brand read keys on that, raw only when the
+    parser gave none, never a spelling tier in code, and never a non-confident entity."""
+
+    BRANDS = [{"id": "b2", "brand_code": "SRT", "brand_name": "Sorento", "company_id": None, "is_active": True}]
+
+    @pytest.mark.parametrize("raw, canonical, confident, expected", [
+        ("Sorrento", "Sorento", True, "Sorento"),   # misspelling, canonicalised by the parser
+        ("srt", "Sorento", True, "Sorento"),        # staff shorthand, canonicalised by the parser
+        ("SRT", None, True, "Sorento"),             # no canonical code: the raw IS the brand code
+        ("Sorento", None, True, "Sorento"),
+        ("Sorrento", None, True, None),             # misspelling the parser did not canonicalise
+        ("Sorento", "Sorento", False, None),        # not confident: not a brand
+    ])
+    def test_brand_identity_word(self, raw, canonical, confident, expected, monkeypatch) -> None:
+        from app.services.chatbot import turn_runtime
+
+        monkeypatch.setattr(turn_runtime, "active_brands", lambda db: self.BRANDS)
+        entity = {"raw": raw, "hint": "brand", "canonical_code": canonical, "current_message": True, "confident": confident}
+        found = turn_runtime.entities_naming_a_live_brand(None, [entity])
+        assert found.get(id(entity)) == expected, found
 
 
 class TestOnlyTheExactBrandTierDecidesABrandWord:
@@ -697,6 +731,68 @@ class TestTheRerunLeavesALockedTokenAlone:
         assert not _kinds_under(result, "cabana") & {"promotion", "customer", "attachment"}, result
         assert [t.lower() for t in result.get("unresolved_tokens") or []] == ["cabana"], result.get("unresolved_tokens")
 
+    def test_a_brand_token_is_resolved_as_the_brand_and_never_opens_the_spec_fallback(self, session_factory) -> None:
+        """Owner ruling (6 Oct 2026) on the rejected code gate: the brand word is a brand
+        because the parser said so and the catalogue knows it, so it is resolved as the
+        brand with no probe and is never an unanswered search term. "SORENTO ZZWC8318"-shape:
+        beside a matched code the brand token carries one exact `brand` match, is not in
+        `unresolved_tokens`, and no spec_search row joins the code's own."""
+        world = _seed_world(session_factory, cabana=True)
+        code = _seed_digit_coded_cabana_product(session_factory, world, "ZZCB7318-RL")
+        body = _basin_body(
+            query=f"CABANA {code}", tokens=["CABANA", code], match_mode="and",
+            allowed_entity_types=["brand", "product"], domain="inventory", spec_fallback=True,
+            **{LOCK_FIELD: ["CABANA", code], "brand_tokens": {"CABANA": "Cabana"}},
+        )
+        result = _route_call(session_factory(), body)
+        brand_res = next(r for r in result.get("resolutions") or [] if str(r.get("token")).lower() == "cabana")
+        assert [(m.get("entity_type"), m.get("match_tier"), m.get("canonical_code")) for m in brand_res["matches"]] == [
+            ("brand", "exact", "Cabana")
+        ], brand_res
+        assert brand_res.get("resolved") is True and brand_res.get("ambiguous") is False, brand_res
+        assert "cabana" not in {str(t).lower() for t in result.get("unresolved_tokens") or []}, result
+        matches = [m for r in result.get("resolutions") or [] for m in (r.get("matches") or [])]
+        assert "spec_search" not in {m.get("match_tier") for m in matches}, result
+        assert code.lower() in {str(m.get("canonical_code") or "").lower() for m in matches}, result
+
+    def test_a_brand_token_alone_still_reaches_the_has_branch(self, session_factory) -> None:
+        """"cabana stock": the brand token resolved as the brand leaves nothing unanswered,
+        and the HAS branch (require stock, brand bound off the sentence) still counts the
+        brand's set. The spec FALLBACK is what stays closed, not the described-set path."""
+        world = _seed_world(session_factory, cabana=True)
+        body = _basin_body(
+            query="cabana stock", tokens=["cabana"], match_mode="and",
+            allowed_entity_types=["product"], domain="inventory", spec_fallback=True,
+            require={"stock": True}, predicate_words=["stock"],
+            **{LOCK_FIELD: ["cabana"], "brand_tokens": {"cabana": "Cabana"}},
+        )
+        result = _route_call(session_factory(), body)
+        predicate = result.get("predicate") or {}
+        assert predicate.get("qualifying_total") == len(world["cabana_basins"]), result
+        assert predicate.get("brand") == "Cabana", predicate
+
+    def test_the_parsers_canonical_brand_scopes_the_set_when_the_sentence_spells_it_wrong(self, session_factory) -> None:
+        """Owner clarification: "Sorrento basin" / "srt basin" are Sorento basins because the
+        parser's canonical_code says so; the sentence reader knows neither spelling, so the
+        resolver takes the brand from `brand_tokens` and the set is the brand's, not every
+        basin."""
+        world = _seed_world(session_factory, cabana=True)
+        body = _basin_body(
+            query="Sorrento basin", tokens=["Sorrento", "basin"], match_mode="and",
+            allowed_entity_types=["brand", "category"], domain="master_products", spec_fallback=True,
+            **{LOCK_FIELD: ["Sorrento", "basin"], "brand_tokens": {"Sorrento": "Cabana"}},
+        )
+        # The seeded brand is Cabana (two Cabana basins beside two brand-less ones): the
+        # parser's canonical name is what scopes, whatever the typed word was.
+        result = _route_call(session_factory(), body)
+        codes = {
+            str(m.get("canonical_code") or "")
+            for r in result.get("resolutions") or []
+            for m in (r.get("matches") or [])
+            if m.get("entity_type") == "product"
+        }
+        assert codes == set(world["cabana_basins"]), (codes, world)
+
     def test_a_lock_entry_meets_the_routes_stopword_trimmed_echo(self, session_factory) -> None:
         """Reviewer S1: the route trims filler words off a multi-word token before resolving
         ("basin items" is echoed as "basin"). The lock entry takes the same trim, or the
@@ -770,68 +866,6 @@ class TestTheRerunLeavesALockedTokenAlone:
         )
         result = _route_call(session_factory(), body)
         assert "promotion" in _kinds_under(result, "cabana"), result
-
-    def test_a_brand_word_beside_a_matched_code_opens_no_spec_path(self, session_factory) -> None:
-        """AC-11, measured on the replay: locked and unresolved, "SORENTO" beside a matched
-        code opened the spec fallback, which bound the brand and emitted its whole
-        catalogue beside the one code asked. A brand word scopes the code: no spec rows,
-        the code's own match alone."""
-        world = _seed_world(session_factory, cabana=True)
-        # A code WITH digits: `_code_matched` reads only a digit-bearing token as a code
-        # (a word, however coded, describes a set). The alpha-only seeds above are for
-        # the "basin" / "1.0mm" shapes and would not count here.
-        code = _seed_digit_coded_cabana_product(session_factory, world, "ZZCB7318-RL")
-        body = _basin_body(
-            query=f"CABANA {code}", tokens=["CABANA", code], match_mode="and",
-            allowed_entity_types=["brand", "product"], domain="inventory", spec_fallback=True,
-            **{LOCK_FIELD: ["CABANA", code]},
-        )
-        result = _route_call(session_factory(), body)
-        matches = [m for r in result.get("resolutions") or [] for m in (r.get("matches") or [])]
-        matches += list(result.get("intersection") or [])
-        assert "spec_search" not in {m.get("match_tier") for m in matches}, result
-        assert code.lower() in {str(m.get("canonical_code") or "").lower() for m in matches}, result
-
-    def test_without_the_field_a_brand_word_beside_a_code_still_opens_the_spec_path_today(self, session_factory) -> None:
-        """Byte-identical contract for n8n / MCP (security review, finding 1): the brand
-        guard is gated on the field, so a caller that sends none keeps today's spec path
-        for the same request."""
-        world = _seed_world(session_factory, cabana=True)
-        # A brand with NO promotion or customer named after it, so the word is unresolved
-        # today and today's path is the spec fallback (with "cabana" the promotion rows
-        # resolve the word first and no fallback runs either way).
-        db = session_factory()
-        mocha = Brand(id=str(uuid.uuid4()), brand_code="MOCHA", brand_name="Mocha", is_active=True, company_id=DEFAULT_COMPANY_ID)
-        db.add(mocha)
-        db.commit()
-        code = _seed_digit_coded_cabana_product(session_factory, {**world, "brand_id": mocha.id}, "ZZMC7319-RL")
-        body = _basin_body(
-            query=f"MOCHA {code}", tokens=["MOCHA", code], match_mode="and",
-            allowed_entity_types=["brand", "product"], domain="inventory", spec_fallback=True,
-        )
-        result = _route_call(session_factory(), body)
-        matches = [m for r in result.get("resolutions") or [] for m in (r.get("matches") or [])]
-        matches += list(result.get("intersection") or [])
-        assert "spec_search" in {m.get("match_tier") for m in matches}, result
-        locked = _route_call(session_factory(), {**body, LOCK_FIELD: ["MOCHA", code]})
-        locked_matches = [m for r in locked.get("resolutions") or [] for m in (r.get("matches") or [])]
-        locked_matches += list(locked.get("intersection") or [])
-        assert "spec_search" not in {m.get("match_tier") for m in locked_matches}, locked
-
-    def test_a_description_beside_a_matched_code_still_opens_the_spec_path(self, session_factory) -> None:
-        """Control (`test_resolve_brand_routing.py` pins the same): the guard is for a BRAND
-        word only; an unanswered class description beside a code still reaches the spec
-        fallback."""
-        world = _seed_world(session_factory, cabana=True)
-        code = next(iter(world["cabana_basins"]))
-        body = _basin_body(
-            query=f"{code} wash basin", tokens=[code, "wash basin"], match_mode="or",
-            allowed_entity_types=["product", "category"], domain="inventory", spec_fallback=True,
-            **{LOCK_FIELD: ["wash basin"]},
-        )
-        result = _route_call(session_factory(), body)
-        tiers = {m.get("match_tier") for r in result.get("resolutions") or [] for m in (r.get("matches") or [])}
-        assert "spec_search" in tiers, result
 
     def test_the_field_is_optional_and_absent_means_today(self, session_factory) -> None:
         """Byte-identical for n8n / MCP: a body without the field and a body with an

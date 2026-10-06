@@ -656,22 +656,42 @@ def _brand_hinted_entities_matching_live(
     return [e for e in candidates if brand_rows_for_word(live, brand_entity_word(e))]
 
 
-def entities_naming_a_live_brand(db: Session, entities: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """CLASS-HINT-KIND-PICK (owner, 6 Oct 2026): the entities among `entities`, WHATEVER
-    their hint, whose typed word is a live brand's name or code exactly
-    (`exact_brand_rows`; the spelling tier never runs here). "cabana" hinted `product`
-    under a stock ask is Cabana the brand, and the resolver is told so
-    (`hint_locked_tokens`) rather than left to re-type it to whatever row carries the
-    word in its name. Unlike `_brand_hinted_entities_matching_live`, nothing here is
-    removed from the resolver's token list: the entity still reaches the resolver, so the
-    HAS / spec branch still binds the brand off the sentence and answers the brand-scoped
-    set, and the entity-less early return below can never fire for it (#1504's measured
-    scope-sentence regression)."""
-    candidates = [e for e in entities if isinstance(e, dict)]
+def brand_identity_word(entity: dict[str, Any]) -> str:
+    """The word a brand is identified BY (owner clarification, 6 Oct 2026: "what if typo,
+    what if SRT people type"): brand identity is semantic, so the parser's `canonical_code`
+    (the brand name exactly as the Known brands line lists it, the prompt's own KNOWN
+    BRANDS rule) decides, and the typed `raw` only when the parser gave no canonical code.
+    The opposite order from `brand_entity_word` (the order/sales intercept's, where a
+    misspelt word must reach the resolver and be said back)."""
+    canonical = jsc.nullish_str(entity.get("canonical_code")).strip()
+    return canonical or jsc.nullish_str(entity.get("raw")).strip()
+
+
+def entities_naming_a_live_brand(db: Session, entities: list[dict[str, Any]]) -> dict[int, str]:
+    """CLASS-HINT-KIND-PICK (owner, 6 Oct 2026): `{id(entity): brand name}` for the entities
+    among `entities`, WHATEVER their hint, whose identity word (`brand_identity_word`:
+    canonical_code, else raw) is a live brand's name or code exactly (`exact_brand_rows`;
+    the spelling tier never runs here, a misspelling the parser did not canonicalise is
+    not a brand). An entity the parser is not confident about is not a brand (owner).
+    "cabana" hinted `product` under a stock ask is Cabana the brand, and the resolver is
+    told so (`brand_tokens`, resolved as the brand with no probe, and locked) rather than
+    left to re-type it to whatever row carries the word in its name. Unlike
+    `_brand_hinted_entities_matching_live`, nothing here is removed from the resolver's
+    token list: the entity still reaches the resolver, so the HAS / spec branch still binds
+    the brand off the sentence and answers the brand-scoped set, and the entity-less early
+    return below can never fire for it (#1504's measured scope-sentence regression)."""
+    candidates = [e for e in entities if isinstance(e, dict) and e.get("confident") is not False]
     if not candidates:
-        return []
+        return {}
     live = active_brands(db)
-    return [e for e in candidates if exact_brand_rows(live, brand_entity_word(e))]
+    out: dict[int, str] = {}
+    for e in candidates:
+        rows = exact_brand_rows(live, brand_identity_word(e))
+        if rows:
+            out[id(e)] = jsc.nullish_str(rows[0].get("brand_name")).strip() or jsc.nullish_str(
+                rows[0].get("brand_code")
+            ).strip()
+    return out
 
 
 def order_brand_filter(
@@ -2100,12 +2120,13 @@ def resolve_kinds(
     resolver_excluded_entity_ids = (
         frozenset(id(e) for e in matched_brands) if matched_brands else None
     )
-    # CLASS-HINT-KIND-PICK: every entity that names a live brand exactly, whatever its
-    # hint and whatever the domain, is locked to the brand kind. The ids reach
-    # `resolve_entity_body` (which adds the tokens to `hint_locked_tokens`, beside the
-    # confident class / product / brand hints it locks on its own) and `by_token` below.
-    # The order/sales intercept above still removes a brand-HINTED live brand from the
-    # token list; one that is also here is simply never sent, exactly as today.
+    # CLASS-HINT-KIND-PICK: every confident entity whose canonical_code (else raw) names a
+    # live brand exactly, whatever its hint and whatever the domain, IS that brand. The
+    # `{id: brand name}` map reaches `resolve_entity_body` (which sends the tokens as
+    # `brand_tokens`, resolved as the brand with no probe and locked, beside the confident
+    # class / product / brand hints it locks on its own) and `by_token` below. The
+    # order/sales intercept above still removes a brand-HINTED live brand from the token
+    # list; one that is also here is simply never sent, exactly as today.
     try:
         brand_named = entities_naming_a_live_brand(db, entities)
     except Exception:  # noqa: BLE001 - same reason as `matched_brands` above: a test
@@ -2113,8 +2134,8 @@ def resolve_kinds(
         # Logged (reviewer N2), so a live failure of the brand read is visible rather than
         # silently turning every brand word back into a re-typable token.
         logger.warning("chatbot: the live brand read failed; no token is brand-locked this turn", exc_info=True)
-        brand_named = []
-    hint_locked_entity_ids = frozenset(id(e) for e in brand_named) if brand_named else None
+        brand_named = {}
+    brand_entities = brand_named or None
     # The entities THIS call would resolve against, brand-excluded ids aside - used
     # ONLY for the entity-less early return just below, never handed to the resolver
     # itself as a replacement list (that stays `ctx`'s own, unmutated).
@@ -2159,7 +2180,7 @@ def resolve_kinds(
             dry_run=dry_run,
             roster_caps=roster_caps,
             resolver_excluded_entity_ids=resolver_excluded_entity_ids,
-            hint_locked_entity_ids=hint_locked_entity_ids,
+            brand_entities=brand_entities,
             account_levels=business_services.account_levels_reader(db),
             # ACCOUNT-LEDGER: an enforced contact's own ledger is never an exact-name sibling.
             account_exact_names=not enforced_scope,
@@ -2302,16 +2323,21 @@ def resolve_kinds(
     # live brand the order/sales intercept kept off the resolver is not here (it was never
     # resolved, so there is nothing to override) and lands on the focus as today. The
     # resolver's own answer for the word is unchanged on `payload` and the gate.
-    for e in brand_named:
+    for e in entities:
+        if not isinstance(e, dict) or id(e) not in brand_named:
+            continue
         if resolver_excluded_entity_ids and id(e) in resolver_excluded_entity_ids:
             continue
-        word = brand_entity_word(e)
+        # Keyed the way the resolver echoes the token (`resolve_gate._token_of`: canonical
+        # code first, else raw), the same key `reconcile.hits_for_token` folds.
+        word = jsc.nullish_str(e.get("canonical_code")).strip() or jsc.nullish_str(e.get("raw")).strip()
         key = _token_key(word)
         if not key:
             continue
         echoed = next((t for t in by_token if _token_key(t) == key), None)
         by_token[echoed if echoed is not None else word] = {"brand": 1}
         unplaced.pop(key, None)
+        unplaced.pop(_token_key(jsc.nullish_str(e.get("raw")).strip()), None)
 
     return ResolveOutcome(
         by_token,

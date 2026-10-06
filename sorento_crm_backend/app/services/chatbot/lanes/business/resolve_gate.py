@@ -533,25 +533,41 @@ HINT_LOCKED_KINDS = frozenset({"product_type", "category", "product", "brand"})
 
 
 def hint_locked_tokens(
-    entities: list[Any], *, locked_entity_ids: frozenset | None = None
+    entities: list[Any], *, brand_entities: Mapping[int, str] | None = None
 ) -> list[str]:
     """The resolver tokens of the entities whose kind is final this turn: a CONFIDENT
     entity hinted with one of `HINT_LOCKED_KINDS` (the parser's own `hint` and
-    `confident`, never the message text), plus any entity the caller already decided
-    (`locked_entity_ids`: `turn_runtime.resolve_kinds`'s exact live-brand words, whatever
-    their hint). `confident` missing counts as confident (`turn/apply.py::_focus_rules`
-    reads it the same way); only an explicit `False` leaves the token re-typable."""
+    `confident`, never the message text), plus every entity the caller already decided is
+    a brand (`brand_entities`, `{id(entity): brand name}`, `turn_runtime.resolve_kinds`'s
+    exact live-brand read, whatever the hint). `confident` missing counts as confident
+    (`turn/apply.py::_focus_rules` reads it the same way); only an explicit `False` leaves
+    the token re-typable."""
     out: list[str] = []
     for x in entities:
         if not isinstance(x, dict):
             continue
         hint = jsc.nullish_str(jsc.get(x, "hint")).strip().lower()
-        decided = bool(locked_entity_ids) and id(x) in locked_entity_ids
+        decided = bool(brand_entities) and id(x) in brand_entities
         if not decided and (hint not in HINT_LOCKED_KINDS or x.get("confident") is False):
             continue
         token = _token_of(x)
         if jsc.truthy(token) and token not in out:
             out.append(token)
+    return out
+
+
+def brand_tokens(entities: list[Any], brand_entities: Mapping[int, str] | None) -> dict[str, str]:
+    """`{resolver token: brand name}` for the entities the engine decided are brands
+    (owner ruling 6 Oct 2026): the resolver resolves each as that brand with no probe, so
+    the word is never an unanswered search term."""
+    out: dict[str, str] = {}
+    if not brand_entities:
+        return out
+    for x in entities:
+        if isinstance(x, dict) and id(x) in brand_entities:
+            token = _token_of(x)
+            if jsc.truthy(token) and token not in out:
+                out[token] = brand_entities[id(x)]
     return out
 
 
@@ -562,7 +578,7 @@ def resolve_entity_body(
     dry_run: bool = False,
     tier_gate: dict[str, Any] | None = None,
     excluded_entity_ids: frozenset | None = None,
-    locked_entity_ids: frozenset | None = None,
+    brand_entities: Mapping[int, str] | None = None,
 ) -> dict[str, Any]:
     """The `resolve-entity` httpRequest jsonBody, key for key.
 
@@ -675,9 +691,12 @@ def resolve_entity_body(
     # the word then counted as resolved the spec/class search that knows "basin" as Wash
     # Basin never ran. Present only when non-empty, so every body with nothing to lock is
     # byte-identical to today and every other caller of the route is untouched.
-    locked = hint_locked_tokens(entities, locked_entity_ids=locked_entity_ids)
+    locked = hint_locked_tokens(entities, brand_entities=brand_entities)
     if locked:
         body["hint_locked_tokens"] = locked
+    brands = brand_tokens(entities, brand_entities)
+    if brands:
+        body["brand_tokens"] = brands
     grounded_specs = [
         {"key": g.get("spec_key"), "value": g.get("spec_value"), "evidence": g.get("raw"), "grounded": True}
         for g in grounded
@@ -1186,16 +1205,17 @@ def run(
     dry_run: bool = False,
     roster_caps: Mapping[str, int] | None = None,
     resolver_excluded_entity_ids: frozenset | None = None,
-    hint_locked_entity_ids: frozenset | None = None,
+    brand_entities: Mapping[int, str] | None = None,
     account_levels: Callable[[list[str]], dict[str, int | None]] | None = None,
     account_exact_names: bool = True,
 ) -> dict[str, Any]:
     """One pass through `sub-resolve-and-gate`. Returns the exit arm's item.
 
-    `hint_locked_entity_ids` (CLASS-HINT-KIND-PICK) is `turn_runtime.resolve_kinds`'s own
-    set of entities that name a live brand exactly; `resolve_entity_body` adds their tokens
-    to `hint_locked_tokens` beside the confident class / product / brand hints it locks
-    itself. Nothing is removed from the token list.
+    `brand_entities` (CLASS-HINT-KIND-PICK) is `turn_runtime.resolve_kinds`'s own
+    `{id(entity): brand name}` for the entities that name a live brand; `resolve_entity_body`
+    sends their tokens as `brand_tokens` (resolved as the brand, no probe) and locks them
+    beside the confident class / product / brand hints it locks itself. Nothing is removed
+    from the token list.
 
     `account_levels` (ACCOUNT-LEDGER) reads `customers.account_level` by uuid; given, a
     customer word typed with an `account` keeps only the matches at that level, and a word
@@ -1273,7 +1293,7 @@ def run(
             dry_run=dry_run,
             tier_gate=tier_gate_out,
             excluded_entity_ids=resolver_excluded_entity_ids,
-            locked_entity_ids=hint_locked_entity_ids,
+            brand_entities=brand_entities,
         )
     )
 
