@@ -2127,19 +2127,26 @@ def is_product_shaped_entity(entity: dict[str, Any]) -> bool:
     return any(c.isdigit() for c in raw) and any(c.isalpha() for c in raw)
 
 
-# D5(b), hand pass 9: main's own `lanes/business/gate.py` `ALLOWS_EMPTY` (86-95) - a
-# domain named False there refuses a fetch that would otherwise run with NO entity and
-# NO filter at all, rather than answering broad and unscoped. `inventory` is the one
-# row main's own zero-entity refusal (`run_gate`, 350-363: "no entities and 'inventory'
-# requires a scoping entity") disagrees with this engine's `list_all` narrowing policy
-# value on - a subject-less "stock and incoming and PO" ran every domain broad,
-# printing 50 unrelated stock rows (live turn 554cf9c4-9249-4e45-ab2a-7a154b813009).
-# Only this one row is ported, not main's whole dict: `master_products`/
-# `product_attachment`/`order` all narrow on a `must_narrow_one`/`narrow_to_code`
-# policy that already asks before falling through to an empty fetch, so nothing else
-# is reachable with zero entities in practice today - a second domain earns its own
-# entry when a live turn proves the same gap, not before.
-_REFUSES_EMPTY_SUBJECT: frozenset[str] = frozenset({"inventory"})
+# D5(b), hand pass 9: main's own `lanes/business/gate.py` `ALLOWS_EMPTY` - a domain
+# named False there refuses a fetch that would otherwise run with NO entity and NO
+# filter at all, rather than answering broad and unscoped. A subject-less "stock and
+# incoming and PO" ran every domain broad, printing 50 unrelated stock rows (live turn
+# 554cf9c4-9249-4e45-ab2a-7a154b813009).
+#
+# ROGUE-CONVO-REVIEW PR-1 (owner ruling Q2, 6 Oct 2026): this was a one-row copy
+# (`{"inventory"}`) on the premise that `master_products` "narrows on a must_narrow_one
+# policy that already asks". That premise was false: the master_products domain row has
+# `narrowing={}` (`turn/policy_rows.py`), so the product kind's `list_all` default
+# applies and `narrow.decide` passes a zero-entity ask straight through; a dealer's one
+# word "product" reached `crm_master_products_list` unfiltered. The set is now READ off
+# the gate's own dict (every False row), one source for the fan-out seam here and the
+# runner's no-subject probe (`turn_runtime.make_tool_runner`).
+def _refuses_empty_subject(domain: str) -> bool:
+    """Does `gate.ALLOWS_EMPTY` say this domain needs a scoping entity? Imported at
+    call time: `lanes/business/gate.py` sits above this module."""
+    from app.services.chatbot.lanes.business.gate import ALLOWS_EMPTY
+
+    return ALLOWS_EMPTY.get(domain) is False
 
 
 # --------------------------------------------------------------------------- #
@@ -2388,7 +2395,7 @@ def _narrow_and_plan(
                 and not entities
                 and not filters
                 and not date_window
-                and name in _REFUSES_EMPTY_SUBJECT
+                and _refuses_empty_subject(name)
             ):
                 # D5(b): no entity, no filter, no date window - nothing to scope this
                 # domain's fetch by at all, on a MULTI-domain ask ("stock and

@@ -3002,8 +3002,23 @@ def make_tool_runner(
         # `unplaced` empty and still calls its tool - which is the distinction the
         # old `and bool(entities)` was standing in for, and got wrong for the case
         # where nothing survived to be counted at all.
+        #
+        # ROGUE-CONVO-REVIEW PR-1 (owner ruling Q2, 6 Oct 2026): the domain set is the
+        # gate's own `ALLOWS_EMPTY` False rows plus `incoming` (R6's original pair kept
+        # `incoming`, whose row is True because a bare "incoming?" lists the book, yet a
+        # NAMED code that missed must still not sweep it). A dealer typed "srtwc-8318"
+        # while a kind_pick was open; the token missed, `master_products` was neither
+        # here nor in the no-subject probe below, and `crm_master_products_list` ran
+        # with no ids and listed 50 arbitrary products under "I could not find
+        # srtwc-8318". This guard and the probe below MUST read the same domain set:
+        # the probe excludes `would_be_unfiltered` so a named-but-missed token keeps
+        # its own "Couldn't find" wording and never gets the scope sentence (reviewer
+        # S1 below); widening the probe alone would have handed it that sentence.
+        # `order` stays out by its row being False only where the outstanding-report
+        # carve-out does not apply - see `_answered_unfiltered`.
         would_be_unfiltered = (
-            domain in ("inventory", "incoming")
+            (domain == "incoming" or gate_mod.ALLOWS_EMPTY.get(domain) is False)
+            and domain != "order"
             and bool(unplaced)
             and all(_entity_is_unplaced(e, unplaced) for e in entities)
         )
@@ -3025,9 +3040,19 @@ def make_tool_runner(
         # "a bare 'stock?' must ask which product" - and `low_stock_report` is the one
         # intent exempted from it, PLAN-low-stock-report S6), and its verdict carries
         # both the reason string and the `allowed_lookup` production's own miss
-        # composer reads to build the scope-needed sentence. Scoped to `inventory`:
-        # the trigger to widen is a SECOND domain measured dumping unfiltered, not the
-        # fact that other `ALLOWS_EMPTY` rows are False too.
+        # composer reads to build the scope-needed sentence.
+        #
+        # ROGUE-CONVO-REVIEW PR-1 (owner ruling Q2, 6 Oct 2026): this used to be scoped
+        # to `inventory`, with "a SECOND domain measured dumping unfiltered" named as
+        # the trigger to widen. That turn arrived: a dealer typed the one word
+        # "product" (parser `master_products`, zero entities, `entity_op reuse`),
+        # nothing stood on the focus, `crm_master_products_list` ran with no filter
+        # and the route's default page of 50 arbitrary products went out, internal
+        # account-department lines among them; a code typed while a kind_pick was open
+        # fell through to the same empty fetch. The probe now asks the SAME question
+        # for every domain whose `ALLOWS_EMPTY` row is False (one source: the gate's
+        # dict, not a second list here), and the scope sentence takes its noun from
+        # `answer._SCOPE_WORD` ("every product we have").
         #
         # A predicate block IS a filter (the described-set ask, "which taps have
         # stock"), so a turn carrying one is never refused here.
@@ -3045,7 +3070,7 @@ def make_tool_runner(
         # `scope_gate` rides ONLY the hole this hotfix opened the guard for.
         no_subject_gate: dict[str, Any] | None = None
         if (
-            domain == "inventory"
+            gate_mod.ALLOWS_EMPTY.get(domain) is False
             and block is None
             and not would_be_unfiltered
             and not any(isinstance(e, dict) and e.get("uuid") for e in entities)
