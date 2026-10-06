@@ -91,14 +91,20 @@ table on the sandbox for the five card examples, crew-handtest.
 
 ## Owner evidence turn (replay case 13, "which tap has technical drawing" -> "sorentooooo?")
 
-On the sandbox after the fix: no kind pick (before: "Which one do you mean? 1. Sorento
-(customer) 2. (promotion) 3. (form) 4. (transporter)" on the owner's console), the brand
-entity is Sorento via canonical_code and lands on `focus.brands`. The carried set did NOT
-narrow to Sorento taps here: the second turn re-fetched the carried set by its ids (three
-taps, one of them Cabana's). Narrowing a carried set by a brand named on a later turn is
-the set-carry / narrow seam (`turn_runtime.set_page_carry`, `turn/narrow.py`), not the
-resolver lock; follow-up to raise with ROGUE class C (#1506), where the ~200-code dump
-above the question also belongs.
+On the sandbox after the fix (head ee8f4f92): no kind pick (on the owner's console with dev
+data: "Which one do you mean? 1. Sorento (customer) 2. (promotion) 3. (form) 4.
+(transporter)"), the brand entity is Sorento via canonical_code and lands on
+`focus.brands`. The reply is the same as origin/main's on this schema: "Please provide the
+attachment type for the requested product - e.g. product image, technical drawing, or
+certificate." with the attachments tool called for the three carried taps. Two things this
+lane does not do, recorded as the owner asked: (a) the carried set did NOT narrow to
+Sorento's two taps (the second turn re-fetched the carried set by its ids; narrowing a
+carried set by a brand named later is the set-carry / narrow seam, `turn_runtime.
+set_page_carry`, `turn/narrow.py`); (b) a brand-only second turn still opens the spec path
+(`_only_brand_scoping`: a brand alone describes "that brand's products", and only the spec
+path lists them), which is the whole-sentence spec reading the owner's rule "only
+unresolved tokens go to spec search" wants changed. Both are follow-ups for ROGUE class C
+(#1506), where the ~200-code dump above the question also belongs. No code gate was added.
 
 ## Seen on the replay, not this lane's (identical before and after)
 
