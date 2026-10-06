@@ -628,11 +628,18 @@ def decide(
             # reply "Delivery order list" came back as the declared pick (`open_question_
             # answer.picked [1]`, the positions above) AND the open report's own product,
             # re-stated as an entity with `current_message: true` - under `entity_op:
-            # "reuse"`, the parser's own declaration that the turn carries no new value
-            # (`_keeps_subject` reads the field the same way). D17 point 3 below read that
-            # entity as a new ask and the summary re-ran. A reused entity beside a declared
-            # pick names nothing new: the pick is read below. An entity the parser declares
-            # as a new value (`replace_combine`, `replace`) is still the new ask it was.
+            # "reuse"`, which the prompt defines as the op for a message that names no
+            # new entity (`chatbot_parser_prompt.py`, ENTITY_OP: "reuse" when the message
+            # names no new value, `replace_combine` when it names one). D17 point 3 below
+            # read that entity as a new ask and the summary re-ran. A reused entity beside
+            # a declared pick names nothing new: the pick is read below. An entity the
+            # parser declares as a new value (`replace_combine`, `replace`) is still the
+            # new ask it was. Read off the parser's own op rather than matched against the
+            # pending's stored filters on purpose: the prod offer (contact 551644114) stores
+            # `customer_ids` (uuids) and the parser's entity carries a raw name, so a
+            # stored-subject match could never hold there and the summary would re-run
+            # again. `_keeps_subject` is not reused here: its axis test calls a reused
+            # entity on the subject's own axis a new ask, which is the measured case.
             entities = []
         if entities:
             # D17 point 3: a stray position riding along with an entity is still a new

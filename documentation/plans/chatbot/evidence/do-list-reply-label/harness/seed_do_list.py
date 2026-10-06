@@ -43,6 +43,15 @@ def u() -> str:
     return str(uuid.uuid4())
 
 
+# Reviewer should-fix (6 Oct 2026): this writes an admin login and an integration key, so it
+# refuses any database that is not plainly a sandbox one. The shared dev copy is neither.
+_db_name = (engine.url.database or "").lower()
+if not os.environ.get("SORENTO_ENV_FILE") or not (_db_name.endswith("_browse") or _db_name.endswith("_ci")):
+    sys.exit(
+        f"refusing to seed {_db_name!r}: run with SORENTO_ENV_FILE=.env.browse against a "
+        "database named *_browse or *_ci (sandbox only, never the shared dev copy)"
+    )
+
 Session = sessionmaker(bind=engine)
 db = Session()
 
