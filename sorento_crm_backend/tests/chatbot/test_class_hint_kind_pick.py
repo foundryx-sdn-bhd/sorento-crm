@@ -19,10 +19,13 @@ Seam (crew ruling on the card, Q2 = S3): one optional request field,
 `hint` + `confident` (never from the message text) and read at the ONE place the rerun
 collects its tokens. Absent field = byte-identical response for every other caller.
 
-Q1 (reach) is with the owner: reading (a) locks confident CLASS hints only
-(`turn_runtime.CLASS_HINTS`, the owner-ruled D2 control "cabana stock" stands); reading
-(b) locks confident `product` hints too (D2 superseded). `Q1_READING` below is the one
-switch; the two tests that depend on it read it and nothing else flips.
+Q1 (reach), owner verbatim: "why is cabana asked either a promotion or attachment? that
+is absolutely wrong, cabana is a brand." So: a word the catalogue knows as a brand (exact,
+case-insensitive on `brands.brand_code` / `brand_name`, never the spelling tier) resolves
+as brand whatever the parser hinted; a confident `category` / `product_type` / `product` /
+`brand` hint keeps its kind; promotion, customer, attachment, transporter and form are
+never assigned by name substring to such a token. The D2 control in
+`test_rearch_r11_catalogue.py` is superseded and rewritten there on the real resolver.
 
 Harness: the REAL engine and the REAL resolver route in process (the same
 `business_services._resolve_entity` binding production uses, spec_fallback left ON), over
@@ -40,9 +43,11 @@ from typing import Any
 
 import pytest
 
+from app.models.inventory import Stock, Warehouse
 from app.models.marketing import Promotion
 from app.models.order import Customer
-from app.models.product import Product, ProductCategory, UnitOfMeasure
+from app.models.product import Brand, Product, ProductCategory, UnitOfMeasure
+from app.models.resources import Attachment, AttachmentType
 from app.services.company_scope import DEFAULT_COMPANY_ID
 from app.services.product_class_signal import backfill_category_signals
 from app.services.product_spec_derivation import derive_for_code
@@ -52,12 +57,9 @@ from tests.chatbot.test_engine import _envelope, _parser_output, stub_access, st
 from tests.chatbot.test_outstanding_lane import _seed_contact as _seed_business_contact
 from tests.chatbot.test_r3_pending_end_to_end import _session_of
 
-# Q1 reading. "a" = confident class hints only (recommended on the card, D2 stands).
-# "b" = confident product hints too (D2 superseded). Flip here and nowhere else.
-Q1_READING = "a"
-
 KIND_PICK_QUESTION = "Which one do you mean?"
 PRODUCTS_TOOL = "crm_master_products_list"
+STOCK_TOOL = "crm_inventory_stock_balance_list"
 LOCK_FIELD = "hint_locked_tokens"
 
 # The dev rows' shape: promotion descriptions are PDF filenames carrying the class word
@@ -71,11 +73,24 @@ CUSTOMER_NAME = "ZZT BASIN TRADING SDN BHD"
 # --------------------------------------------------------------------------- #
 
 
-def _seed_world(session_factory) -> dict[str, Any]:
+def _seed_world(session_factory, *, cabana: bool = False) -> dict[str, Any]:
     """Two Wash Basin products (class derived off the real description rule), two
     promotions and one customer whose NAMES contain "basin", plus the spec registry
-    and the category class signal the spec search reads. Returns the ids."""
+    and the category class signal the spec search reads. Returns the ids.
+
+    `cabana=True` adds the D2 shape the owner ruled on: a live Brand row Cabana, two
+    Cabana wash basins with stock, and an attachment PDF whose filename carries
+    "cabana" beside the promotion PDF that already does."""
     db = session_factory()
+    brand = None
+    warehouse = None
+    if cabana:
+        brand = Brand(id=str(uuid.uuid4()), brand_code="CABANA", brand_name="Cabana", is_active=True, company_id=DEFAULT_COMPANY_ID)
+        warehouse = Warehouse(
+            id=str(uuid.uuid4()), warehouse_code=unique_code("WH")[:20], warehouse_name="ZZT WH", company_id=DEFAULT_COMPANY_ID
+        )
+        db.add_all([brand, warehouse])
+        db.flush()
     category = ProductCategory(
         id=str(uuid.uuid4()),
         category_code=unique_code("WB")[:50],
@@ -113,6 +128,47 @@ def _seed_world(session_factory) -> dict[str, Any]:
         derive_for_code(db, code)
         basins[code] = product.id
 
+    cabana_basins: dict[str, str] = {}
+    if cabana:
+        assert brand is not None and warehouse is not None
+        for suffix, description in (("A", "CABANA WHITE WASH BASIN"), ("B", "CABANA GREY WASH BASIN")):
+            code = unique_code(f"ZZCBN{suffix}", alpha=True)
+            product = Product(
+                id=str(uuid.uuid4()),
+                product_code=code,
+                product_name=code,
+                description=description,
+                category_id=category.id,
+                base_uom_id=uom.id,
+                brand_id=brand.id,
+                list_price=Decimal("1.00"),
+                is_active=True,
+                company_id=DEFAULT_COMPANY_ID,
+            )
+            db.add(product)
+            db.flush()
+            derive_for_code(db, code)
+            db.add(
+                Stock(
+                    id=str(uuid.uuid4()), product_id=product.id, warehouse_id=warehouse.id,
+                    quantity_on_hand=5, company_id=DEFAULT_COMPANY_ID,
+                )
+            )
+            cabana_basins[code] = product.id
+        promo_type = AttachmentType(type_name="ZZT Promotion", code=None, allowed_extensions="pdf", is_direct_access=False)
+        db.add(promo_type)
+        db.flush()
+        db.add(
+            Attachment(
+                attachment_type_id=promo_type.id,
+                original_filename=PROMO_DESCRIPTIONS[1],
+                stored_filename=f"zzt-{PROMO_DESCRIPTIONS[1]}",
+                file_path=f"https://example.test/zzt-{PROMO_DESCRIPTIONS[1]}",
+                company_id=DEFAULT_COMPANY_ID,
+            )
+        )
+        db.flush()
+
     promotion_ids: list[str] = []
     for description in PROMO_DESCRIPTIONS:
         promo = Promotion(id=str(uuid.uuid4()), description=description, is_active=True)
@@ -129,18 +185,50 @@ def _seed_world(session_factory) -> dict[str, Any]:
     )
     db.add(customer)
     db.commit()
-    return {"basins": basins, "promotions": promotion_ids, "customer": customer.id, "customer_code": customer_code}
+    return {
+        "basins": basins,
+        "cabana_basins": cabana_basins,
+        "promotions": promotion_ids,
+        "customer": customer.id,
+        "customer_code": customer_code,
+    }
 
 
-def _capturing_call_tool(monkeypatch) -> list[tuple[str, dict[str, Any]]]:
-    """Only the network boundary is doubled. The products tool answers from the ids it
-    is sent, so a wrong id shows up as a wrong reply, never a canned one."""
+def _capturing_call_tool(
+    monkeypatch, *, stock_by_id: dict[str, str] | None = None
+) -> list[tuple[str, dict[str, Any]]]:
+    """Only the network boundary is doubled. The products and stock tools answer from the
+    ids they are sent, so a wrong id shows up as a wrong reply, never a canned one.
+    `stock_by_id` is `{product uuid: code}` for the rows the stock tool should hold."""
     from app.services.ai_assistant_service import MCPRuntimeClient
 
     calls: list[tuple[str, dict[str, Any]]] = []
 
     def fake_call_tool(self, name: str, arguments: dict[str, Any]) -> str:
         calls.append((name, dict(arguments)))
+        if name == STOCK_TOOL:
+            wanted = [pid for pid in (arguments.get("product_ids") or []) if pid in (stock_by_id or {})]
+            rows = [
+                {
+                    "flags": {},
+                    "title": stock_by_id[pid],
+                    "fields": [
+                        {"key": "product_code", "label": "Product Code", "value": stock_by_id[pid]},
+                        {"key": "total_on_hand", "label": "Total", "value": 5},
+                    ],
+                }
+                for pid in wanted
+            ]
+            return json.dumps(
+                {
+                    "items": rows,
+                    "has_result": bool(rows),
+                    "attachments": [],
+                    "action_links": [],
+                    "result_type": "stock_compact",
+                    "intro": "Stock summary for the requested products." if rows else "No matching results found.",
+                }
+            )
         if name == PRODUCTS_TOOL:
             ids = list(arguments.get("product_ids") or [])
             items = [
@@ -243,9 +331,20 @@ def _said(result) -> str:
 def _assert_no_kind_pick(session_factory, result, said: str) -> None:
     assert result.status == "done", result.error
     assert KIND_PICK_QUESTION not in said, said
-    assert "basin (promotion)" not in said and "basin (customer)" not in said, said
+    for kind in ("promotion", "customer", "attachment", "transporter", "form"):
+        assert f"({kind})" not in said, said
     open_question = _session_of(session_factory).get("open_question") or {}
     assert open_question.get("kind") != "kind_pick", open_question
+
+
+def _focus_brand_words(session_factory) -> list[str]:
+    """`focus.brands` holds plain code strings (`turn/apply._CODE_ONLY_FIELDS`), the
+    typed word when the parser gave no canonical code."""
+    focus = _session_of(session_factory).get("focus") or {}
+    return [
+        str(b.get("raw") or b.get("code") or "" if isinstance(b, dict) else b).lower()
+        for b in (focus.get("brands") or [])
+    ]
 
 
 # --------------------------------------------------------------------------- #
@@ -323,6 +422,58 @@ class TestAConfidentCategoryWordIsNeverReTyped:
         assert not sent_ids & set(world["promotions"]), (sent_ids, world["promotions"])
 
 
+class TestABrandWordIsTheBrandWhateverTheParserHinted:
+    """Owner Q1 verbatim: "cabana is a brand". The D2 shape (`test_rearch_r11_catalogue.py`,
+    "cabana stock" hinted `product`, a promotion PDF and an attachment PDF named cabana,
+    no product coded cabana) through the REAL resolver over a live Brand row Cabana."""
+
+    def _verdict(self, hint: str) -> dict[str, Any]:
+        return _parser_output(
+            intent_hint="check_stock",
+            domain_hint="inventory",
+            match_mode="and",
+            user_goal="checking cabana stock",
+            entities=[{"raw": "cabana", "hint": hint, "canonical_code": None, "current_message": True, "confident": True}],
+        )
+
+    @pytest.mark.parametrize("hint", ["product", "brand", "customer"])
+    def test_cabana_stock_is_the_brand_scoped_stock_answer(
+        self, hint, session_factory, stub_parser, stub_access, monkeypatch
+    ) -> None:
+        """Whatever the parser hinted the word as, the reply is the existing brand-scoped
+        counted set (card addendum item 1, measured), never "Which one do you mean?",
+        and the word lands on `focus.brands`."""
+        _seed_business_contact(session_factory, variables={})
+        world = _seed_world(session_factory, cabana=True)
+        stock_by_id = {pid: code for code, pid in world["cabana_basins"].items()}
+        calls = _capturing_call_tool(monkeypatch, stock_by_id=stock_by_id)
+        stub_access()
+        result = _turn(session_factory, stub_parser, self._verdict(hint), text="cabana stock", msg_id=f"ZZT-chkp-cabana-{hint}")
+        said = _said(result)
+        _assert_no_kind_pick(session_factory, result, said)
+        assert said.startswith("Here's what you want: Cabana wash basins with stock (2)"), said
+        for code in world["cabana_basins"]:
+            assert code in said, (code, said)
+        stock_calls = [args for name, args in calls if name == STOCK_TOOL]
+        assert stock_calls, calls
+        assert set(stock_calls[0].get("product_ids") or []) == set(world["cabana_basins"].values()), (stock_calls, world)
+        assert "cabana" in _focus_brand_words(session_factory), _session_of(session_factory).get("focus")
+
+    def test_a_word_no_brand_knows_still_walks_todays_path(
+        self, session_factory, stub_parser, stub_access, monkeypatch
+    ) -> None:
+        """Control: with NO Brand row Cabana the exact read finds nothing; the confident
+        `product` hint is still locked (Q1), so there is still no kind pick, and the word
+        is not on `focus.brands` (nothing in the catalogue says it is one)."""
+        _seed_business_contact(session_factory, variables={})
+        _seed_world(session_factory)
+        _capturing_call_tool(monkeypatch)
+        stub_access()
+        result = _turn(session_factory, stub_parser, self._verdict("product"), text="cabana stock", msg_id="ZZT-chkp-cabana-none")
+        _assert_no_kind_pick(session_factory, result, _said(result))
+        assert "cabana" not in _focus_brand_words(session_factory), _session_of(session_factory).get("focus")
+
+
 # --------------------------------------------------------------------------- #
 # The seam: what the engine sends, read off the parser's own hint + confident.
 # --------------------------------------------------------------------------- #
@@ -367,28 +518,62 @@ class TestTheResolveBodyLocksTheParsersClassHints:
         body = resolve_entity_body(_ctx([_class_entity(confident=False)]))
         assert LOCK_FIELD not in body, body
 
-    def test_a_body_with_no_class_hint_is_byte_identical_to_today(self) -> None:
-        """A record hint alone never grows the key: every other caller shape is unchanged."""
+    def test_a_body_with_no_lockable_hint_is_byte_identical_to_today(self) -> None:
+        """An `order` hint is not locked ("7445" hinted order and found as a product code is
+        the re-type AC-1527 exists for), so the key never appears and every other caller
+        shape is unchanged."""
         from app.services.chatbot.lanes.business.resolve_gate import resolve_entity_body
 
-        product = {"raw": "SRTWC8517", "hint": "product", "canonical_code": None, "current_message": True, "confident": True}
-        body = resolve_entity_body(_ctx([product], text="price for SRTWC8517"))
-        if Q1_READING == "a":
-            assert LOCK_FIELD not in body, body
-        else:
-            assert body.get(LOCK_FIELD) == ["SRTWC8517"], body
+        order = {"raw": "7445", "hint": "order", "canonical_code": None, "current_message": True, "confident": True}
+        body = resolve_entity_body(_ctx([order], text="7445"))
+        assert LOCK_FIELD not in body, body
 
-    def test_q1_reach_a_confident_product_hint(self) -> None:
-        """Q1 is the owner's: reading (a) keeps a product hint re-typable (D2 stands);
-        reading (b) locks it too. One assertion, keyed on `Q1_READING`."""
+    def test_confident_product_and_brand_hints_are_locked_too(self) -> None:
+        """Owner Q1: a confident `product` or `brand` hint keeps its kind as well."""
         from app.services.chatbot.lanes.business.resolve_gate import resolve_entity_body
 
         product = {"raw": "cabana", "hint": "product", "canonical_code": None, "current_message": True, "confident": True}
-        body = resolve_entity_body(_ctx([_class_entity(), product], text="cabana basin"))
-        if Q1_READING == "a":
-            assert body.get(LOCK_FIELD) == ["basin"], body
-        else:
-            assert sorted(body.get(LOCK_FIELD) or []) == ["basin", "cabana"], body
+        brand = {"raw": "Sorento", "hint": "brand", "canonical_code": None, "current_message": True, "confident": True}
+        body = resolve_entity_body(_ctx([_class_entity(), product, brand], text="cabana basin sorento"))
+        assert body.get(LOCK_FIELD) == ["basin", "cabana", "Sorento"], body
+
+    def test_an_entity_the_caller_decided_is_locked_whatever_its_hint(self) -> None:
+        """`locked_entity_ids` is `turn_runtime.resolve_kinds`'s exact live-brand read: an
+        entity in it is locked even under an `order` hint or `confident: false`."""
+        from app.services.chatbot.lanes.business.resolve_gate import resolve_entity_body
+
+        unsure = {"raw": "cabana", "hint": "order", "canonical_code": None, "current_message": True, "confident": False}
+        body = resolve_entity_body(_ctx([unsure], text="cabana"), locked_entity_ids=frozenset({id(unsure)}))
+        assert body.get(LOCK_FIELD) == ["cabana"], body
+
+
+class TestOnlyTheExactBrandTierDecidesABrandWord:
+    """Owner Q1 + addendum item 3: the catalogue's brand read is exact on name or code,
+    case-insensitive, and NEVER the spelling-distance tier #1504 measured reaching nine
+    more domains."""
+
+    BRANDS = [
+        {"id": "b1", "brand_code": "CAB", "brand_name": "Cabana", "company_id": None, "is_active": True},
+        {"id": "b2", "brand_code": "SRT", "brand_name": "Sorento", "company_id": None, "is_active": True},
+    ]
+
+    @pytest.mark.parametrize("word, expected", [
+        ("cabana", ["b1"]), ("CABANA", ["b1"]), ("  Cabana ", ["b1"]), ("cab", ["b1"]), ("srt", ["b2"]),
+        ("Sorrento", []), ("sorneto", []), ("cabana basin", []), ("basin", []), ("", []),
+    ])
+    def test_exact_brand_rows(self, word, expected) -> None:
+        from app.services.chatbot.turn_runtime import exact_brand_rows
+
+        assert [r["id"] for r in exact_brand_rows(self.BRANDS, word)] == expected
+
+    def test_the_spelling_tier_still_belongs_to_brand_rows_for_word_alone(self) -> None:
+        """`brand_rows_for_word` (the order/sales intercept's read) keeps its wider tiers:
+        the same misspelling it accepted yesterday it accepts today, and the exact read
+        does not."""
+        from app.services.chatbot.turn_runtime import brand_rows_for_word, exact_brand_rows
+
+        assert [r["id"] for r in brand_rows_for_word(self.BRANDS, "Sorrento")] == ["b2"]
+        assert exact_brand_rows(self.BRANDS, "Sorrento") == []
 
 
 # --------------------------------------------------------------------------- #
@@ -463,6 +648,32 @@ class TestTheRerunLeavesALockedTokenAlone:
         assert not _kinds_under(result, "basin") & {"promotion", "customer"}, result
         assert "customer" in _kinds_under(result, customer_code.lower()), result
         assert result.get("fallback_applied") is True, result.keys()
+
+    def test_a_locked_brand_word_loses_its_primary_pass_promotion_fan_out(self, session_factory) -> None:
+        """Under inventory a `brand` hint fans out to the PROMOTION probe in the primary
+        pass (`entity_resolver._ENTITY_TYPE_EXPANSIONS`), so "cabana" met "CABANA BASIN
+        TAP PROMO" before any rerun. Locked, the word keeps no promotion and stays
+        unresolved for the HAS / spec branch."""
+        _seed_world(session_factory)
+        body = _basin_body(
+            query="cabana stock", tokens=["cabana"], allowed_entity_types=["brand"], domain="inventory",
+            **{LOCK_FIELD: ["cabana"]},
+        )
+        result = _route_call(session_factory(), body)
+        assert not _kinds_under(result, "cabana") & {"promotion", "customer", "attachment"}, result
+        assert [t.lower() for t in result.get("unresolved_tokens") or []] == ["cabana"], result.get("unresolved_tokens")
+
+    def test_the_request_domains_own_kind_is_kept(self, session_factory) -> None:
+        """"cabana promo" under the PROMOTION domain is answered by the promotions whose
+        description carries the brand: that match is the question's answer, never a
+        re-type, so the lock leaves it."""
+        _seed_world(session_factory)
+        body = _basin_body(
+            query="cabana promo", tokens=["cabana"], allowed_entity_types=["brand"], domain="promotion",
+            **{LOCK_FIELD: ["cabana"]},
+        )
+        result = _route_call(session_factory(), body)
+        assert "promotion" in _kinds_under(result, "cabana"), result
 
     def test_the_field_is_optional_and_absent_means_today(self, session_factory) -> None:
         """Byte-identical for n8n / MCP: a body without the field and a body with an

@@ -1,8 +1,84 @@
 # CARD - a confident category hint is never re-typed by name match (CLASS-HINT-KIND-PICK)
 
-Status: DRAFT, posted as the lane's one crew-ask on its PR (6 Oct 2026). No code until the
-owner answers Q1 and Q2. Track: small fix (backend only, no migration, no auth/RBAC change,
-no new ingest surface, no UI). Lane PR carries `crew-lane: CLASS-HINT-KIND-PICK`.
+Status: ANSWERED (6 Oct 2026). Crew: Q2 = S3, Q3 = (a), Q4 = (a), Q5 = (a). Owner on Q1,
+verbatim: "why is cabana asked either a promotion or attachment? that is absolutely wrong,
+cabana is a brand." Reach is beyond (b): D2 is superseded. Rule as ruled: a word the
+catalogue knows as a BRAND (exact, case-insensitive on `brands.brand_code` / `brand_name`,
+never the spelling-distance tier) resolves as brand whatever the parser hint says; a
+confident parser hint of category / product_type / product / brand keeps its kind;
+promotion, customer, attachment, transporter and form are never assigned by name substring
+to such a token. Addendum below. Track: small fix (backend only, no migration, no auth/RBAC
+change, no new ingest surface, no UI). Lane PR #1509 carries `crew-lane:
+CLASS-HINT-KIND-PICK`.
+
+## Addendum after the owner's Q1 ruling (6 Oct 2026, before code)
+
+1. **What "cabana stock" answers after the rule.** Measured on this sandbox on origin/main
+   code with a Brand row Cabana, two Cabana wash basins in stock and NO promotion or
+   attachment row named cabana (which is exactly what the rule makes the resolver see),
+   for the parser hint `brand` AND for the hint `product`, identical reply:
+   `Here's what you want: Cabana wash basins with stock (2)` then one numbered row per
+   product (`*Product Code:* <code>` / `*Total:* 5`). Path: the resolver's HAS branch
+   (`references.py:2839`, `payload.require = {"stock": true}` from the intent and
+   `_code_matched` False for a word) binds the brand off the sentence
+   (`derive_search_inputs`, `:2909`), counts the set (`resolve_product_set`, `:2964`) and
+   emits the qualifying products (`_emit_spec_matches`, `:3066`); the engine calls the
+   stock tool with exactly those ids and `answer.build_set_header` (`answer.py:2846`)
+   prints the header. Zero Cabana products with stock: the same opener closed by
+   `But none matched.` (`answer.what_you_want_reply`, `answer.py:2711`). The word lands on
+   `focus.brands` (the engine's exact brand read sets its kind to brand; a `product`
+   hint is rewritten through the existing reconcile rule and traced `("cabana",
+   "product", "brand")`).
+2. **Pinned tests that flip, and the new assertion for each.**
+   - `tests/chatbot/test_rearch_r11_catalogue.py::TestGenuinelyAmbiguousWordStillAsks::
+     test_control_two_real_kinds_under_a_non_scope_hint_mint_the_kind_pick` ("cabana
+     stock", hint product, hand-rolled resolver stub with a promotion and an attachment
+     hit): rewritten on the REAL resolver over seeded rows (Brand Cabana, a promotion PDF
+     and an attachment PDF named cabana, two Cabana basins in stock). New assertion: no
+     "Which one do you mean?", no `kind_pick` open question, the reply above, "cabana" on
+     `focus.brands`.
+   - `tests/chatbot/test_class_hint_kind_pick.py` (this lane, red): the `Q1_READING`
+     switch goes; the locked set is `category`, `product_type`, `product`, `brand`; the
+     "no lockable hint" control uses an `order`-hinted code instead of a product one.
+   - PR #1504 (not on main) `test_brand_promo_expand.py::test_a_brand_word_under_order_
+     keeps_the_resolvers_own_customer_reading` ("super ceramic", hint brand, confident,
+     under order, one customer name hit, expects the re-type to customer): the owner's
+     rule has no domain qualifier, so when both lanes merge this control flips to "keeps
+     brand, no re-type" and the turn says `Couldn't find: "super ceramic" (brand)`. The
+     resolver's own order expansion (`_DOMAIN_HINT_EXPANSIONS`) is untouched for n8n/MCP
+     (field absent). Flagged for crew; one line excludes order/sales if preferred.
+   - Unchanged: `test_rearch_s2_reconciliation.py` (hint `order` is not locked, AC-1527
+     stands); `test_samantha_26sep_s7/s8/s11`, `test_attachment_multi_type.py` (hand-built
+     `resolved` dicts into `reconcile.apply_reconciliation`, which this lane does not
+     touch); the resolver route's own tests (`tests/test_entity_resolver_trgm.py`,
+     `test_resolve_entity_pins.py`, `test_promotion_and_mode_match_honesty.py`, field
+     absent); `test_samantha_26sep_s9_brand_resolve.py::test_brand_strip_is_order_domain_
+     only` (the new read never removes an entity from the resolver's tokens). The full
+     `tests/chatbot` run on the sandbox confirms the list; any further flip is posted
+     with its new assertion before the fix is pushed.
+3. **Only the exact tier.** `turn_runtime.brand_rows_for_word` (`:558-606`) has three
+   tiers: exact name/code, a message word that is a name/code, then spelling distance.
+   Its first tier is extracted as `exact_brand_rows(brands, word)` and `brand_rows_for_
+   word` calls it (no second copy); the new all-hints read uses `exact_brand_rows` ALONE.
+   `brand_rows_for_word` with its two wider tiers stays where it is today: the order/sales
+   intercept (`_brand_hinted_entities_matching_live`, `:616`). #1504's measured
+   regressions cannot recur: (a) the spelling tier never runs in the nine other domains
+   because the new read never calls it; (b) the scope sentence for "SORENTO stock" came
+   from the entity-less early return (`turn_runtime.py:2057`) after the brand entity was
+   REMOVED from the resolver's tokens; the new read removes nothing, it only locks the
+   token's kind, so the resolver is called and its HAS/spec branch answers as in item 1.
+
+   Domain exception, stated once: the request domain's own kind is never stripped (the
+   promotion domain still finds "cabana promo" by the promotion description, the
+   resource_attachment domain still narrows "cabana catalog" to the Cabana catalogue by
+   filename coverage). Everything else in the five name kinds is dropped for a locked
+   token, in the primary pass and in the rerun, OR and AND mode alike.
+
+   Merge gate (crew, 6 Oct): (1) console replay table on this sandbox before/after for
+   "any basin with thickness 1.0mm", "basin", "cabana stock", "cabana basin tap",
+   "SORENTO ZZWC8318", "water tap", "sorento basin" plus the D2-era controls "cabana
+   catalog" (r11 a-d) and "7445" hinted order (AC-1527); (2) crew's live real-parser dry
+   run of the same set on the Mac; (3) owner hand test from `laneboard/scripts/1509.md`.
 
 Owner (6 Oct 20:55, "unacceptable"): real-parser dry run on dev, `chatbot.turns`
 4d18caff-d2f1-4990-9ae8-b78a5213b70b, contact 437264483. "any basin with thickness 1.0mm"

@@ -1320,6 +1320,20 @@ class ResolveReferenceRequest(BaseModel):
             "from picking 'order' when the user actually meant 'customer'."
         ),
     )
+    hint_locked_tokens: list[str] | None = Field(
+        default=None,
+        description=(
+            "Tokens whose entity kind the caller has already decided (CLASS-HINT-KIND-PICK, "
+            "owner ruling 6 Oct 2026): a confident class, product or brand hint from the "
+            "parser, or a word the catalogue knows as a brand. Such a token is never "
+            "answered with a promotion, customer, attachment, transporter or form by a "
+            "name match (prefix, substring or neighbour) in any pass, and it is left out "
+            "of the `fallback_to_all_types` rerun, so it stays in `unresolved_tokens` "
+            "and the spec/class fallback reads it. The request domain's own kind is "
+            "never stripped (a promotion question is answered by promotions). Omit / "
+            "null / [] = today's behaviour, byte-identical."
+        ),
+    )
     limit: int | None = Field(
         default=None,
         ge=1,
@@ -1865,6 +1879,86 @@ def _has_turn_free_terms(
     return [" ".join(words)] if words else []
 
 
+#: CLASS-HINT-KIND-PICK (owner, 6 Oct 2026): the kinds a WORD can only ever reach through
+#: a match on a name - a promotion's description, a customer's name, an attachment's
+#: filename, a transporter's or a form's name. A token whose kind the caller has locked
+#: (`hint_locked_tokens`) is never given one of these; the resolver's product rows (code
+#: tiers and the spec tier) and every other kind are untouched.
+_NAME_MATCHED_KINDS: frozenset[str] = frozenset(
+    {"promotion", "customer", "attachment", "transporter", "form"}
+)
+
+
+def _norm_locked_token(value: Any) -> str:
+    """The resolver echoes a token stopword-stripped and the chatbot sends a product token
+    folded, so the two sides meet on letters and digits alone."""
+    return re.sub(r"[^0-9a-z]", "", str(value or "").lower())
+
+
+def _name_kinds_dropped_for(domain_hint: str | None) -> frozenset[str]:
+    """The name-matched kinds a locked token may not be given under this request's domain:
+    all of them but the domain's own. "cabana promo" under the promotion domain is still
+    answered by the promotions whose description carries the brand, and "cabana catalog"
+    under resource_attachment is still narrowed to the Cabana catalogue by filename
+    coverage - that match IS the question's answer, not a re-type of the word."""
+    domain = (domain_hint or "").strip().lower()
+    own: set[str] = {_canonical_entity_type(domain)} if domain else set()
+    if domain in {"resource_attachment", "attachment"}:
+        own.add("attachment")
+    return _NAME_MATCHED_KINDS - own
+
+
+def _strip_name_kinds_for_locked(
+    result: dict[str, Any], locked_tokens: list[str] | None, domain_hint: str | None
+) -> dict[str, Any]:
+    """Drop every name-matched kind from a locked token's matches, in place.
+
+    OR shape: per token, the locked tokens only; `resolved` and `unresolved_tokens` are
+    recomputed from what is left. AND shape: a row in the intersection covered EVERY
+    token, the locked one included, so the rows of those kinds go whatever the other
+    tokens were; an emptied intersection reads as the zero-intersection AND the caller
+    already degrades to OR-mode. `alternatives` (did-you-mean neighbours) are offers, not
+    assignments, and stay (AC-1703)."""
+    if not locked_tokens:
+        return result
+    locked = {_norm_locked_token(t) for t in locked_tokens} - {""}
+    if not locked:
+        return result
+    dropped = _name_kinds_dropped_for(domain_hint)
+    if "intersection" in result:
+        rows = result.get("intersection") or []
+        kept = [m for m in rows if (m or {}).get("entity_type") not in dropped]
+        if len(kept) != len(rows):
+            result["intersection"] = kept
+            by_type = result.get("by_entity_type")
+            if isinstance(by_type, dict):
+                result["by_entity_type"] = {k: v for k, v in by_type.items() if k not in dropped}
+            result["empty"] = not kept
+            if not kept:
+                result["unresolved_tokens"] = list(result.get("tokens") or [])
+        return result
+    resolutions = result.get("resolutions")
+    if not isinstance(resolutions, list):
+        return result
+    changed = False
+    for tr in resolutions:
+        if not isinstance(tr, dict) or _norm_locked_token(tr.get("token")) not in locked:
+            continue
+        matches = tr.get("matches") or []
+        kept_matches = [m for m in matches if (m or {}).get("entity_type") not in dropped]
+        if len(kept_matches) != len(matches):
+            tr["matches"] = kept_matches
+            tr["resolved"] = bool(kept_matches)
+            if not kept_matches:
+                tr["ambiguous"] = False
+            changed = True
+    if changed:
+        result["unresolved_tokens"] = [
+            tr["token"] for tr in resolutions if isinstance(tr, dict) and not (tr.get("matches") or [])
+        ]
+    return result
+
+
 def _result_has_zero_matches(result: dict[str, Any]) -> bool:
     """True when neither OR-mode nor AND-mode produced any match."""
     if "intersection" in result:
@@ -2077,6 +2171,7 @@ def _resolve_input(
     limit: int | None = None,
     raw_tokens: list[str] | None = None,
     regions: frozenset[str] | None = None,
+    hint_locked_tokens: list[str] | None = None,
 ):
     mode = (match_mode or "or").strip().lower()
     if mode not in _ALLOWED_MATCH_MODES:
@@ -2242,6 +2337,10 @@ def _resolve_input(
                 raw_tokens=raw_tokens if tokens_override is None else None,
                 regions=regions,
             ).as_dict()
+        # CLASS-HINT-KIND-PICK: a locked token's name-matched kinds go before anything
+        # downstream can read them as an answer - the AND exit, the OR degrade and the
+        # spec fallback all judge "resolved" off what is left here.
+        raw = _strip_name_kinds_for_locked(raw, hint_locked_tokens, hint)
         raw = _apply_promotion_access_levels_filter(db, raw, access_levels)
         # Promotion-domain hint: run the expander. It owns the dispatch:
         # - promo matches found → return promotion entries only
@@ -2297,10 +2396,14 @@ def _resolve_input(
             "the whitelist so per-token fallback can apply only to unresolved tokens."
         )
 
+    # CLASS-HINT-KIND-PICK: a locked token is not rerun. Its kind is the caller's, so no
+    # other kind may be found for it here; left in `unresolved_tokens`, it reaches the
+    # spec/class fallback below exactly as a word no name matched always has.
+    locked_norm = {_norm_locked_token(t) for t in (hint_locked_tokens or [])} - {""}
     unresolved = [
         r["token"]
         for r in result.get("resolutions", []) or []
-        if not (r.get("matches") or [])
+        if not (r.get("matches") or []) and _norm_locked_token(r.get("token")) not in locked_norm
     ]
     if not unresolved:
         # Tag and return - at least we've already noted the AND→OR switch.
@@ -2815,6 +2918,7 @@ def resolve_reference_post(
             limit=payload.limit,
             raw_tokens=payload.raw_tokens,
             regions=regions,
+            hint_locked_tokens=payload.hint_locked_tokens,
         )
     except EntityPinMismatch as exc:
         raise AppException(
