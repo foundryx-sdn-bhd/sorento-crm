@@ -142,6 +142,47 @@ cases:
         canonical_code: Srt 364-hp
         quantity: 1
 
+- name: 'prod 20:02 - the owner''s whole 15-line stock check, one product entity per line, TAP line carries SRTWT5608'
+  live_only: true
+  cold: true
+  text: |-
+    SRTWT7408 x 5
+    SRTWT6808 x 5
+    SRTWT162 x 5
+    SRTWT8258-GM x 5
+    SRTWT8258-GM x 5
+    SRTWT8212 x 5
+    SRTWT6832-RG x 5
+    TAP SRTWT5608 x 5
+    SRTWT5608-FRG x 5
+    SRTWT5608-GM x 10
+    SRTWT6201 x 5
+    SRTWT8301-RG x 5
+    SRTWT8301-GMB x 5
+    SRTWT8303-RG x 5
+    SRTWT8303-GMB x 5
+
+    check stock
+  expect:
+    parser:
+      domain_hint: inventory
+      entities:
+      - {raw: SRTWT7408, hint: product, canonical_code: SRTWT7408, quantity: 5}
+      - {raw: SRTWT6808, hint: product, canonical_code: SRTWT6808, quantity: 5}
+      - {raw: SRTWT162, hint: product, canonical_code: SRTWT162, quantity: 5}
+      - {raw: SRTWT8258-GM, hint: product, canonical_code: SRTWT8258-GM, quantity: 5}
+      - {raw: SRTWT8258-GM, hint: product, canonical_code: SRTWT8258-GM, quantity: 5}
+      - {raw: SRTWT8212, hint: product, canonical_code: SRTWT8212, quantity: 5}
+      - {raw: SRTWT6832-RG, hint: product, canonical_code: SRTWT6832-RG, quantity: 5}
+      - {raw: TAP SRTWT5608, hint: product, canonical_code: SRTWT5608, quantity: 5}
+      - {raw: SRTWT5608-FRG, hint: product, canonical_code: SRTWT5608-FRG, quantity: 5}
+      - {raw: SRTWT5608-GM, hint: product, canonical_code: SRTWT5608-GM, quantity: 10}
+      - {raw: SRTWT6201, hint: product, canonical_code: SRTWT6201, quantity: 5}
+      - {raw: SRTWT8301-RG, hint: product, canonical_code: SRTWT8301-RG, quantity: 5}
+      - {raw: SRTWT8301-GMB, hint: product, canonical_code: SRTWT8301-GMB, quantity: 5}
+      - {raw: SRTWT8303-RG, hint: product, canonical_code: SRTWT8303-RG, quantity: 5}
+      - {raw: SRTWT8303-GMB, hint: product, canonical_code: SRTWT8303-GMB, quantity: 5}
+
 - name: 'crew audit - basin SRTWB1086 x 2 is one product entity, canonical SRTWB1086, quantity 2'
   live_only: true
   cold: true
@@ -185,7 +226,6 @@ cases:
   text: SRTWT5608 x 5
   expect:
     parser:
-      domain_hint: inventory
       entities:
       - raw: SRTWT5608
         hint: product

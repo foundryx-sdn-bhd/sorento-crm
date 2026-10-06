@@ -274,6 +274,57 @@ class TestRealResolver:
         assert _uuids_passed(captured) == 1, captured
         assert "could not find" not in reply.lower(), reply
 
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "pre-existing on origin/main, outside this lane (PR #833's `product_code_family."
+            "narrow_code_tokens` on the resolve route): in a multi-line message the variant "
+            "suffix words of OTHER lines (FRG, GM) are read as descriptors for the bare base "
+            "code, so SRTWT5608 is narrowed to SRTWT5608-FRG and the base code's own line is "
+            "lost; 13 uuids reach the tool, not 14. Reported on PR #1511; this test flips "
+            "green the day that narrowing reads only the code's own line."
+        ),
+    )
+    def test_the_owners_fifteen_line_stock_check_reaches_the_tool_with_fourteen_codes(self, session_factory, monkeypatch):
+        """The prod message of 6 Oct 20:02 MYT, codes ZZT-prefixed: 15 product lines, one
+        duplicate (SRTWT8258-GM twice) and the TAP line with canonical_code filled as the
+        addendum now has it. Every unique code reaches the tool (14 uuids), nothing is
+        reported not found, and the reader is never asked (a clean turn)."""
+        from app.services import resolver_code_reader
+
+        lines = [
+            ("ZZTWT7408", 5), ("ZZTWT6808", 5), ("ZZTWT162", 5), ("ZZTWT8258-GM", 5), ("ZZTWT8258-GM", 5),
+            ("ZZTWT8212", 5), ("ZZTWT6832-RG", 5), ("ZZTWT5608", 5), ("ZZTWT5608-FRG", 5), ("ZZTWT5608-GM", 10),
+            ("ZZTWT6201", 5), ("ZZTWT8301-RG", 5), ("ZZTWT8301-GMB", 5), ("ZZTWT8303-RG", 5), ("ZZTWT8303-GMB", 5),
+        ]
+        unique = list(dict.fromkeys(code for code, _ in lines))
+        assert len(unique) == 14
+        _seed(session_factory, *unique)
+        monkeypatch.setattr(
+            resolver_code_reader, "read_codes", lambda *a, **k: pytest.fail("the reader was asked on a clean turn")
+        )
+        entities = [
+            {**_entity(f"TAP {code}" if code == "ZZTWT5608" else code, code), "quantity": qty} for code, qty in lines
+        ]
+        text_body = "\n".join(f"{'TAP ' if c == 'ZZTWT5608' else ''}{c} x {q}" for c, q in lines) + "\n\ncheck stock"
+
+        result, captured = _run_turn(
+            session_factory,
+            monkeypatch,
+            qf=_qf(order_status="so_outstanding", entities=entities),
+            text_body=text_body + " sales order outstanding",
+            msg_id="ZZT-canon-15",
+            attributes=["sales_orders.outstanding"],
+            mcp_response={**REPORT_HIT, "product_code": unique[0]},
+            real_resolver=True,
+        )
+
+        reply = (result.reply or {}).get("text") or ""
+        assert _uuids_passed(captured) == 14, captured
+        assert "could not find" not in reply.lower(), reply
+        assert "couldn't find" not in reply.lower(), reply
+        assert "not checked" not in reply.lower(), reply
+
     def test_a_clean_turn_never_asks_the_reader(self, session_factory, monkeypatch):
         from app.services import resolver_code_reader
 
