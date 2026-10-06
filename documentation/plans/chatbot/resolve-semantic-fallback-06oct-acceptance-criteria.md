@@ -1,0 +1,41 @@
+# UAC: unified product-code resolution, canonical_code first, semantic fallback on a miss
+
+Lane RESOLVE-SEMANTIC-FALLBACK, PR #1511. Plan: `PLAN-resolve-semantic-fallback-06oct.md`.
+Every criterion names its proof. "Red" means the proof failed on origin/main e3ea227e before the change.
+
+## A. The parser names the code (prompt addendum, owner Q1 = a)
+
+- AC-RSF-01 A product line with a type / colour / brand word beside the code is ONE product entity: `raw` the whole typed phrase (count stripped, as QUANTITY already rules), `canonical_code` the bare code exactly as typed, quantity on the entity. "TAP SRTWT5608 x 5" -> {raw "TAP SRTWT5608", canonical_code "SRTWT5608", quantity 5}. Proof: `tests/chatbot/console_cases/2026-10-06-canonical-code-type-word.yaml` through `tests/chatbot/test_canonical_code_live_parser.py` (live, opt-in): 0/3 on the current text, 3/3 with the addendum, every target case.
+- AC-RSF-02 The word beside the code is not a category entity of its own (one line, one entity). Proof: the same cases grade the entity LIST whole.
+- AC-RSF-03 A bare code carries its own code in `canonical_code`; a spaced or oddly cased code is copied as typed, never joined or re-spelt; the model never invents, completes or corrects. Proof: the "bare code", "M210-GM x5" and "Srt 364-hp" cases; the addendum text (`tests/chatbot/test_canonical_code_prompt.py`).
+- AC-RSF-04 Controls unchanged: the QUANTITY rule and two bare codes in one line. Proof: the two control cases, 3/3 on both texts.
+- AC-RSF-05 The addendum is stacked once before the memory tail, published as a new unlabelled `chatbot_semantic_parser` version by `alembic/versions/chatbot_canonical_code.py`, idempotent, downgrade drops only its own unlabelled row; the prompt budget pin is re-measured in the same commit. Proof: `tests/chatbot/test_canonical_code_prompt.py`, `tests/chatbot/test_parser_prompt_budget.py`, `tests/test_alembic_revision_ids.py`.
+
+## B. Canonical first, everywhere the chatbot reads a product token
+
+- AC-RSF-10 `engine._exact_codes_only` (availability-mode filter) folds `canonical_code or raw`; the product the resolver placed off the canonical token is kept, a canonical miss is named by the typed raw. Red. Proof: `tests/chatbot/test_canonical_code_resolution.py::test_exact_codes_only_*`.
+- AC-RSF-11 `turn_runtime.unplaced_tokens`, `not_checked_tokens`, `absorbed_tokens` key by the resolver's token (canonical first) and value the typed raw; a null canonical still joins by raw. Red. Proof: the same file's `test_*_tokens_*`.
+- AC-RSF-12 `_resolve_report_product_and_location` matches the typed subject on `canonical_code or raw`. Red. Proof: `test_the_report_subject_is_matched_on_the_canonical_code`.
+- AC-RSF-13 The entities-only arm sends `canonical_code or raw` as the token, with `raw_tokens`, and keys the answer back to the typed row. Red. Proof: `test_the_entities_only_arm_places_the_canonical_code_on_the_typed_row`.
+- AC-RSF-14 `resolve_entity_body` sends `raw_tokens` positionally parallel to `tokens`. Red. Proof: `test_resolve_entity_body_sends_raw_tokens_parallel_to_tokens`.
+- AC-RSF-15 End to end with the real resolver: a stock / outstanding turn with entity raw "TAP ZZTWT5608", canonical "ZZTWT5608" reaches the tool with that product's uuid and the reply has no not-found line; a canonical miss prints the typed phrase, never the folded key. Red. Proof: `TestRealResolver::test_a_type_word_beside_the_code_reaches_the_tool_as_that_code`, `::test_a_miss_on_the_canonical_token_is_named_as_typed`.
+
+## C. Semantic fallback in the shared resolver (owner Q2 = a, Q3 = b, Q5 = a)
+
+- AC-RSF-20 Never on a clean message: a resolve whose product tokens all placed makes no reader call; a token the substring tier already placed as a family (ambiguous) is not a miss. Proof: `tests/test_resolver_semantic_fallback.py::test_a_clean_message_never_asks_the_reader`, `::test_a_family_the_substring_tier_already_placed_is_not_a_miss`, `::test_an_ambiguous_token_is_not_a_miss_and_is_not_asked`; `TestRealResolver::test_a_clean_turn_never_asks_the_reader`.
+- AC-RSF-21 Only product-typed, pre-extracted tokens are asked (never a token whose allowed types exclude product, never a free-text extraction). Proof: `::test_a_non_product_token_is_never_asked`; the free-text rule in `resolve_references`.
+- AC-RSF-22 A `code` reading re-runs the exact product probe: a catalogue hit resolves the token with `match_tier` "exact" and `fallback {asked, kind code, value, matched 1}`; a code the catalogue lacks stays unresolved with `matched 0`. Proof: `::test_a_code_reading_resolves_the_token_on_the_exact_tier`, `::test_a_code_reading_the_catalogue_does_not_hold_stays_a_miss`.
+- AC-RSF-23 A `family` reading runs the prefix-then-substring product probe: several rows flag the token ambiguous (the existing picker), one row is that code, none is a miss. Proof: `::test_a_family_reading_*` (three).
+- AC-RSF-24 The value must sit inside the typed text (letters and digits, case folded; the raw when sent, else the token); anything else is `none` with a reason. No typo correction, ever. Proof: `::test_a_value_outside_the_typed_text_is_rejected_never_a_typo_fix`, `::test_the_guard_reads_the_raw_text_not_only_the_folded_token`; `tests/test_resolver_code_reader.py::test_guard_*`.
+- AC-RSF-25 A `none` reading, a reader error and a token the reader did not answer all leave the token unresolved with the verdict on `fallback`; the call never fails. Proof: `::test_a_none_reading_*`, `::test_a_reader_that_raises_*`, `::test_a_token_the_reader_did_not_answer_*`.
+- AC-RSF-26 Byte identity without a reader: no `fallback` key anywhere; `semantic_fallback: false` builds no reader. Proof: `::test_no_reader_means_no_fallback_key_anywhere`, `::test_the_post_route_builds_the_reader_unless_the_caller_opts_out`, `::test_semantic_fallback_defaults_on`.
+- AC-RSF-27 One model call per request: the route's `fallback_to_all_types` re-run never re-asks; at most 5 tokens per request, the rest `not_asked`; the per-request wrapper never raises. Proof: `::test_the_route_asks_once_even_when_it_reruns_the_unresolved_tokens`; `test_resolver_code_reader.py::test_at_most_five_tokens_*`, `::test_a_token_is_asked_once_per_request`, `::test_the_cap_counts_across_calls_in_one_request`, `::test_the_wrapper_never_raises`.
+- AC-RSF-28 The reader's call: system prompt from the registry key `resolver_code_reader`, user message = the message text and the tokens with their typed text, nothing else; `response_format` json_object; `timeout` 3.0 s; one attempt. A malformed answer, a provider failure or no configured provider is an `error` reading with its reason. Proof: `test_resolver_code_reader.py::test_the_model_sees_the_message_and_the_tokens_and_nothing_else`, `::test_the_system_prompt_is_the_registry_key_with_its_fallback_text`, `::test_a_malformed_answer_*`, `::test_a_provider_failure_*`, `::test_no_provider_configured_*`.
+- AC-RSF-29 Usage: one `ai_assistant_usage_logs` row (`feature resolver_code_reader`) per live call, none on a dry run. Proof: `::test_a_live_call_writes_one_usage_row`, `::test_a_dry_run_writes_no_usage_row`.
+- AC-RSF-30 Through the engine: a raw-only entity (parser not yet promoted) is asked about with its typed text and the message, and a `code` answer puts the product's uuid on the tool call. Proof: `TestRealResolver::test_the_fallback_resolves_a_raw_only_entity_through_the_engine`.
+
+## D. Unified (owner Q2 = a, Q4 = b)
+
+- AC-RSF-40 The same code path serves the chatbot (in-process route call), the API-key `POST /resolve` and `GET /resolve` (flag `semantic_fallback`, default on). Proof: the route tests above; `GET` carries the same query parameter.
+- AC-RSF-41 A `family` answer lands in the picker the gate already prints (ambiguous resolution, substring rows); the bare-number ladder itself stays in #1506 PR-2. Proof: AC-RSF-23; crew-note on #1506.
+- AC-RSF-42 Every existing resolver and chatbot suite touched by the token order stays green (chunks listed on the PR).

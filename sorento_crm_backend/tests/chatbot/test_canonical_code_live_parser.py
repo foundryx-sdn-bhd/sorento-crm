@@ -65,8 +65,8 @@ def _system_text(label: str) -> str:
 
     body = SEMANTIC_PARSER_PROMPT
     if label == "base":
-        assert body.endswith(CANONICAL_CODE_ADDENDUM), "the addendum is the constant's tail"
-        body = body.removesuffix(CANONICAL_CODE_ADDENDUM)
+        assert body.count(CANONICAL_CODE_ADDENDUM) == 1, "the addendum is stacked exactly once"
+        body = body.replace(CANONICAL_CODE_ADDENDUM, "")
     blocks = SEED.read_text(encoding="utf-8")
     text = f"{body.rstrip()}\n\n{BLOCKS_BEGIN}\n{blocks}{BLOCKS_END}\n"
     return text.replace("{{current_date}}", TODAY)

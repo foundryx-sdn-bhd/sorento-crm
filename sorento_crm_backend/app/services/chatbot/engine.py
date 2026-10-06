@@ -551,8 +551,12 @@ def _exact_codes_only(
     for e in parse_output.get("entities") or []:
         if not isinstance(e, dict) or e.get("hint") not in (None, "product"):
             continue
+        # RESOLVE-SEMANTIC-FALLBACK: the resolver's token is `canonical_code` first, raw
+        # second (`resolve_gate._token_of`), so the join folds the SAME value - "TAP
+        # SRTWT5608" with canonical_code SRTWT5608 is the code the resolver placed, not a
+        # phrase no code equals. The typed raw stays the word the reply quotes.
         typed = str(e.get("raw") or e.get("canonical_code") or "").strip()
-        fold = turn_state.token_key(typed)
+        fold = turn_state.token_key(str(e.get("canonical_code") or "").strip() or typed)
         if fold and fold not in {t for t, _ in tokens}:
             tokens.append((fold, typed))
     candidates = [c for c in resolved_candidates.get("product") or [] if isinstance(c, dict)]
@@ -7014,7 +7018,18 @@ def _run_entities_only_arm(
         # field, see below) is what made every code look unplaced regardless of
         # scope - not a missing re-stamp.
         services = business_services.production_services(db, space_id=space_id)
-        body = {"tokens": raws, "allowed_entity_types": ["product"]}
+        # RESOLVE-SEMANTIC-FALLBACK: the resolver's token is `canonical_code` first, raw
+        # second (`resolve_gate._token_of`'s order, unfolded here as this arm always sent
+        # its tokens), with the raw beside it for the shared code reader; the answer is
+        # keyed back to the raw through the token this arm sent for it.
+        token_by_raw = {
+            e["raw"]: (str(e.get("canonical_code") or "").strip() or e["raw"]) for e in entities
+        }
+        body = {
+            "tokens": [token_by_raw[raw] for raw in raws],
+            "raw_tokens": list(raws),
+            "allowed_entity_types": ["product"],
+        }
         ResolveReferenceRequest(**body)  # validated the same way every other caller is
         result = services.resolve_entity(body)
         # B2 fix, second half (browser pass): `resolve_reference_post`'s own
@@ -7040,7 +7055,7 @@ def _run_entities_only_arm(
         # dicts.
         before_products = copy.deepcopy(by_raw)
         for raw in raws:
-            resolution = resolutions.get(raw)
+            resolution = resolutions.get(token_by_raw[raw])
             matches = jsc.array(jsc.get(resolution, "matches")) if resolution else []
             row = by_raw.get(raw)
             if matches and row is not None:

@@ -38,6 +38,7 @@ from app.services.entity_resolver import (
     resolve_references_intersection,
     token_word_coverage_for_rows,
 )
+from app.services import resolver_code_reader as _resolver_code_reader
 from app.services.error_handler import AppException
 
 
@@ -1496,6 +1497,21 @@ class ResolveReferenceRequest(BaseModel):
             "one, or the shadow comparison it exists for compares two behaviours."
         ),
     )
+    semantic_fallback: bool = Field(
+        default=True,
+        description=(
+            "RESOLVE-SEMANTIC-FALLBACK (owner ruling, 6 Oct 2026: the same behaviour in "
+            "every place that resolves). On by default: a pre-extracted product token that "
+            "matched no code tier is put to the code reader ONCE (`app/services/"
+            "resolver_code_reader.py`, one model call per request, at most 5 tokens, 3 s), "
+            "which may only read a code or a code-family fragment out of the text the "
+            "caller typed; the catalogue then decides. A `code` answer resolves the token on "
+            "the exact tier, a `family` answer is the usual prefix / substring picker, "
+            "`none` leaves it in `unresolved_tokens`. The verdict rides each affected "
+            "resolution's `fallback` key (absent everywhere else). `false` opts this "
+            "request out: no model call, response byte-identical to before the feature."
+        ),
+    )
     domain_hint: str | None = Field(
         default=None,
         validation_alias=AliasChoices("domain_hint", "domain"),
@@ -2078,7 +2094,15 @@ def _resolve_input(
     limit: int | None = None,
     raw_tokens: list[str] | None = None,
     regions: frozenset[str] | None = None,
+    code_reader: Any = None,
 ):
+    # RESOLVE-SEMANTIC-FALLBACK: the one code reader for this REQUEST, wrapped once so
+    # the per-token memo and the per-request cap hold across the primary pass and the
+    # `fallback_to_all_types` re-run below (a `resolver_code_reader.CodeReader`, or None).
+    if code_reader is not None:
+        from app.services.resolver_code_reader import per_request
+
+        code_reader = per_request(code_reader)
     mode = (match_mode or "or").strip().lower()
     if mode not in _ALLOWED_MATCH_MODES:
         raise HTTPException(
@@ -2252,6 +2276,7 @@ def _resolve_input(
                 # positionally with it - see PLAN-resolver-head-code-retry.
                 raw_tokens=raw_tokens if tokens_override is None else None,
                 regions=regions,
+                code_reader=code_reader,
             ).as_dict()
         raw = _apply_promotion_access_levels_filter(db, raw, access_levels)
         # Promotion-domain hint: run the expander. It owns the dispatch:
@@ -2476,6 +2501,14 @@ def resolve_reference(
         ),
     ),
     domain: str | None = Query(None, description="Alias for `domain_hint`."),
+    semantic_fallback: bool = Query(
+        True,
+        description=(
+            "RESOLVE-SEMANTIC-FALLBACK: ask the code reader about a pre-extracted product "
+            "token that matched no code tier (see the POST body's field of the same name). "
+            "`false` opts out; the response is then byte-identical to before the feature."
+        ),
+    ),
     limit: int | None = Query(
         None,
         ge=1,
@@ -2497,6 +2530,16 @@ def resolve_reference(
     Entity pinning (`entity_pins`) is POST-only - see `ResolveReferenceRequest`; this GET variant
     has no equivalent parameter.
     """
+    code_reader = (
+        _resolver_code_reader.reader_for(
+            db,
+            message_text=query,
+            user_id=current_user.get("id") if isinstance(current_user, dict) else None,
+            dry_run=False,
+        )
+        if semantic_fallback
+        else None
+    )
     return _stamp_brand_on_products(
         db,
         _resolve_input(
@@ -2509,6 +2552,7 @@ def resolve_reference(
             fallback_to_all_types=fallback_to_all_types,
             domain_hint=domain_hint or domain,
             limit=limit,
+            code_reader=code_reader,
         ),
     )
 
@@ -2812,6 +2856,18 @@ def resolve_reference_post(
         regions = rules_for_contact(
             db, resolve_request_contact(db, payload.contact_id, payload.space_id)
         ).regions
+    # RESOLVE-SEMANTIC-FALLBACK: the code reader for this request (see the field's own
+    # description); `dry_run` keeps its usage row out, exactly as the spec reader's.
+    code_reader = (
+        _resolver_code_reader.reader_for(
+            db,
+            message_text=payload.query,
+            user_id=current_user.get("id") if isinstance(current_user, dict) else None,
+            dry_run=payload.dry_run,
+        )
+        if payload.semantic_fallback
+        else None
+    )
     try:
         result = _resolve_input(
             db,
@@ -2826,6 +2882,7 @@ def resolve_reference_post(
             limit=payload.limit,
             raw_tokens=payload.raw_tokens,
             regions=regions,
+            code_reader=code_reader,
         )
     except EntityPinMismatch as exc:
         raise AppException(

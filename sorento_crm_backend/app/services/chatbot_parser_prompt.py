@@ -719,8 +719,6 @@ SEMANTIC_PARSER_PROMPT += ESCALATION_CONFIRMATION_ADDENDUM
 SEMANTIC_PARSER_PROMPT += PO_SPO_WAREHOUSE_ADDENDUM
 SEMANTIC_PARSER_PROMPT += ACCOUNT_LEDGER_ADDENDUM
 SEMANTIC_PARSER_PROMPT += LOW_STOCK_FILTERS_ADDENDUM
-SEMANTIC_PARSER_PROMPT += MEMORY_ADDENDUM
-
 # RESOLVE-SEMANTIC-FALLBACK (owner report, 6 Oct 2026 20:02 MYT, prod: the stock-check
 # line "TAP SRTWT5608 x 5" came back "I could not find TAP SRTWT5608" while SRTWT5608
 # exists). The parser emitted ONE product entity, raw "TAP SRTWT5608", canonical_code
@@ -731,11 +729,13 @@ SEMANTIC_PARSER_PROMPT += MEMORY_ADDENDUM
 # first everywhere (`lanes/business/resolve_gate._token_of` and the sites #1511 unified),
 # so the resolver sees the code. No rule in code decides what a code is: this text does.
 #
-# ADDITIVE ONLY, appended for the same reason every addendum above is. Published as a new
-# UNLABELLED version of `chatbot_semantic_parser` by `alembic/versions/
-# chatbot_canonical_code.py`; nothing reaches a customer until the owner moves the
-# `production` label. Graded live by `tests/chatbot/test_canonical_code_live_parser.py`
-# over `tests/chatbot/console_cases/2026-10-06-canonical-code-type-word.yaml`.
+# ADDITIVE ONLY, stacked between LOW_STOCK_FILTERS_ADDENDUM and MEMORY_ADDENDUM (the
+# memory addendum carries the CURRENT DATE section and stays the tail, as
+# `test_parser_prompt_budget.py` pins). Published as a new UNLABELLED version of
+# `chatbot_semantic_parser` by `alembic/versions/chatbot_canonical_code.py`; nothing
+# reaches a customer until the owner moves the `production` label. Graded live by
+# `tests/chatbot/test_canonical_code_live_parser.py` over
+# `tests/chatbot/console_cases/2026-10-06-canonical-code-type-word.yaml`.
 CANONICAL_CODE_ADDENDUM = (
     "\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
     "PRODUCT CODE: entities[].canonical_code\n"
@@ -771,6 +771,7 @@ CANONICAL_CODE_ADDENDUM = (
     'section is about hint "product" only.\n'
 )
 SEMANTIC_PARSER_PROMPT += CANONICAL_CODE_ADDENDUM
+SEMANTIC_PARSER_PROMPT += MEMORY_ADDENDUM
 
 # S1b (D16, AC-151 to AC-155): the same parser, 40.0% fewer characters (28,124 against the
 # live 46,906). Classified section by section in

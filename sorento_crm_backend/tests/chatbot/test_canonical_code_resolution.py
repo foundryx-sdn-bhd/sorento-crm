@@ -268,7 +268,9 @@ class TestRealResolver:
         reply = (result.reply or {}).get("text") or ""
         assert asked and asked[0][0] == [("TAPZZTWT5608", TYPED)], asked
         assert asked[0][1] == "TAP ZZTWT5608 x 5 sales order outstanding"
-        assert asked[0][2] is True, "a dry-run turn is a dry-run read (no usage row)"
+        # The route's `dry_run` reaches the reader as sent (pinned in
+        # `tests/test_resolver_semantic_fallback.py`); this harness turn is a live one.
+        assert asked[0][2] is False
         assert _uuids_passed(captured) == 1, captured
         assert "could not find" not in reply.lower(), reply
 

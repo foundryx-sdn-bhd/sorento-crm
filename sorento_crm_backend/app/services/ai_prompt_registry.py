@@ -784,6 +784,36 @@ Reply with JSON only:
 "free_terms": ["..."], "notes": "<one short sentence on anything ambiguous>"}"""
 
 
+def _resolver_code_reader_fallback() -> str:
+    """System prompt for the shared resolver's code reader (`app/services/
+    resolver_code_reader.py`): one narrow question about product tokens that matched no
+    code in the catalogue. The model may only COPY characters the customer typed; the
+    code enforces that (`resolver_code_reader.guard`) and the catalogue decides whether
+    the code exists, so nothing here is a matching rule."""
+    return (
+        "You read product codes out of what a customer typed to a sanitary-ware dealer "
+        "assistant. You are given the customer's message and a list of tokens from it that "
+        "matched NO product code in the catalogue. Each token has `typed`, the customer's own "
+        "text for it.\n\n"
+        "For EACH token decide:\n"
+        '- "code": the typed text holds one complete product code (letters and digits, hyphens '
+        'allowed, like SRTWT5608 or MWT5727SS-CR) beside other words such as a type ("tap", '
+        '"WC", "basin"), a colour, a brand or a count. `value` is that code copied EXACTLY as '
+        "typed, nothing else.\n"
+        '- "family": the typed text holds only PART of a code - a number or a short fragment '
+        'that belongs to a code family ("8066", "wc286") beside other words. `value` is that '
+        "fragment copied exactly.\n"
+        '- "none": nothing in the typed text is a product code or part of one (a description, '
+        "a name, a filler word). `value` is null.\n\n"
+        "Rules: never invent, complete, join, re-spell or correct anything - `value` must be a "
+        "substring of `typed`, same characters. Do not guess a code from memory. The catalogue, "
+        "not you, decides whether the code exists. One reading per token, in the order given.\n\n"
+        "Answer JSON only, exactly this shape:\n"
+        '{"readings": [{"token": "<the token exactly as given>", "kind": "code" | "family" | '
+        '"none", "value": "<characters copied from typed>" | null}]}'
+    )
+
+
 def _spec_extractor_fallback() -> str:
     """System prompt for the paste-once spec extractor (`product_spec_understanding.
     extract_specs_from_text`), used by the product page's "Read specs from this" box.
@@ -1160,6 +1190,17 @@ PROMPT_KEYS: dict[str, PromptKeySpec] = {
         activates_in=None,
         variables=[],
         fallback=_spec_extractor_fallback,
+    ),
+    # --- The shared resolver's code reader (RESOLVE-SEMANTIC-FALLBACK, 6 Oct 2026) ---
+    # No declared variables: the message and the missed tokens travel as the user
+    # message, built by `resolver_code_reader.read_codes`.
+    "resolver_code_reader": PromptKeySpec(
+        name="resolver_code_reader",
+        role="Resolver code reader - is there a product code inside a token that matched nothing? (JSON)",
+        active=True,
+        activates_in=None,
+        variables=[],
+        fallback=_resolver_code_reader_fallback,
     ),
     # --- Translation memory (R15/R16, purchasing consolidation batch) ---
     # No declared variables: the numbered lines to translate travel as the user

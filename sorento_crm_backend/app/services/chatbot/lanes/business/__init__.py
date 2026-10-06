@@ -1092,7 +1092,7 @@ def _refinement_product_resolves(db: Any, token: str) -> bool:
 def typed_brand_words(parse_output: dict[str, Any]) -> set[str]:
     """The brand-hinted words this turn (or a refinement) typed, listed or not."""
     words = {
-        jsc.js_string(e.get("raw") or e.get("canonical_code") or "").strip()
+        jsc.js_string(e.get("canonical_code") or e.get("raw") or "").strip()
         for e in [
             *jsc.array(parse_output.get("entities")),
             *jsc.array(parse_output.get("outstanding_refinement_entities")),
@@ -1229,8 +1229,11 @@ def _resolve_report_product_and_location(
     elif jsc.truthy(carried_code):
         semantic_input["outstanding_product_code"] = jsc.js_string(carried_code)
     else:
+        # RESOLVE-SEMANTIC-FALLBACK: the code the customer typed is `canonical_code` first
+        # ("TAP SRTWT5608" carries SRTWT5608 there), raw second - the resolver's own token
+        # order (`resolve_gate._token_of`), so the subject match reads the same value.
         typed_codes = {
-            jsc.js_string(e.get("raw") or "").strip().casefold()
+            jsc.js_string(e.get("canonical_code") or e.get("raw") or "").strip().casefold()
             for e in jsc.array(parse_output.get("entities"))
             if isinstance(e, dict) and jsc.js_string(e.get("hint") or "") == "product"
         }
@@ -1247,7 +1250,7 @@ def _resolve_report_product_and_location(
             for e in jsc.array(parse_output.get("outstanding_refinement_entities")):
                 if not isinstance(e, dict) or jsc.js_string(e.get("hint") or "") != "product":
                     continue
-                token = jsc.js_string(e.get("raw") or e.get("canonical_code") or "").strip()
+                token = jsc.js_string(e.get("canonical_code") or e.get("raw") or "").strip()
                 if token and _refinement_product_resolves(db, token):
                     semantic_input["outstanding_product_code"] = token
                 break
@@ -1258,7 +1261,7 @@ def _resolve_report_product_and_location(
     ]:
         if not isinstance(e, dict) or jsc.js_string(e.get("hint") or "") != "warehouse":
             continue
-        token = jsc.js_string(e.get("raw") or e.get("canonical_code") or "").strip()
+        token = jsc.js_string(e.get("canonical_code") or e.get("raw") or "").strip()
         if not token or db is None:
             break
         codes = resolve_warehouse_token(db, token)
@@ -1719,7 +1722,7 @@ def run_fetch(
                 continue
             if e.get("current_message") is not True:
                 continue  # carried from an earlier turn - not this ask's scope
-            token = jsc.js_string(e.get("raw") or e.get("canonical_code") or "").strip()
+            token = jsc.js_string(e.get("canonical_code") or e.get("raw") or "").strip()
             if not token or db is None:
                 break
             codes = resolve_warehouse_token(db, token)

@@ -101,7 +101,13 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # D9): main 690d41fc measures 44,883 without MEMORY_ADDENDUM; the owner's `sales` domain row adds one
 # domain line to the policy blocks (+88): 44,971 without MEMORY_ADDENDUM and 45,487 with it;
 # CEILING is 45,487 - 512 = 44,975 so both assertions hold. Nothing else grew.
-CEILING = 44_975
+# Eighth re-pin, 6 Oct 2026 (RESOLVE-SEMANTIC-FALLBACK, PR #1511, owner ruling card Q1 = a):
+# CANONICAL_CODE_ADDENDUM (a type / colour / brand word beside a code is ONE product entity
+# whose canonical_code is the bare code as typed; 786 est. tokens) sits between
+# LOW_STOCK_FILTERS and MEMORY and takes the prompt without MEMORY_ADDENDUM to 45,757 est.
+# tokens and the whole prompt to 46,273; CEILING is 46,273 - 512 = 45,761 so both
+# assertions hold. A genuine new addendum the owner ruled must land, per the rule above.
+CEILING = 45_761
 # The memory addendum on its own, bounded separately so this PR's growth stays bounded.
 # 26 Sep baseline (lane d89110c0): 339 est. tokens. Round 4 (baf4c813, 28 Sep: the history
 # question in any wording, the number re-run, commercial_request) took it to 512, which is
