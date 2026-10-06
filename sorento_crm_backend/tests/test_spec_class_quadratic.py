@@ -203,9 +203,9 @@ def test_exact_classes_runs_once_per_distinct_free_term(db, monkeypatch):
     calls: Counter[str] = Counter()
     real = product_spec_search._exact_classes
 
-    def _counting(db_, term):
+    def _counting(db_, term, *args, **kwargs):
         calls[term] += 1
-        return real(db_, term)
+        return real(db_, term, *args, **kwargs)
 
     monkeypatch.setattr(product_spec_search, "_exact_classes", _counting)
     terms = [_message(tap_prefix=True), "tap", "check stock", "zztwt5608"]
@@ -215,23 +215,23 @@ def test_exact_classes_runs_once_per_distinct_free_term(db, monkeypatch):
     assert max(calls.values()) == 1, dict(calls)
 
 
-def test_the_class_vocabulary_is_read_once_per_session(db):
-    """AC-SCQ-02: however many spans are resolved, the three vocabulary sources
-    (ProductCategory rows, stored class labels, the `class` registry row) are each read
-    from the database at most once per session."""
-    from app.services.product_class_signal import resolve_classes_for_term
-
+def test_the_class_vocabulary_is_read_once_per_search(db):
+    """AC-SCQ-02: however many terms and spans one `search_specs` call resolves, the
+    three vocabulary sources (ProductCategory rows, stored class labels, the `class`
+    registry row) are each read from the database at most once."""
+    terms = ["tap", "basin", "kitchen sink", "zztwt5608 x 5", "check stock", "tap"]
     with _sql_counter(db) as statements:
-        for term in ("tap", "basin", "kitchen sink", "zztwt5608 x 5", "check stock", "tap"):
-            resolve_classes_for_term(db, term)
+        product_spec_search.search_specs(db, free_terms=terms, exact=True)
 
     assert _stored_label_reads(statements) <= 1, statements
-    assert len(statements) <= 3, statements
+    categories = [s for s in statements if "product_categories" in s and "class_label IS NOT NULL" in s]
+    assert len(categories) <= 1, categories
 
 
-def test_the_memo_sees_a_category_added_in_the_same_session(db):
-    """AC-SCQ-03: a memo keyed to the session must not hide a row written after it was
-    filled (`backfill_category_signals` runs in the same session on the admin path)."""
+def test_a_fresh_lookup_sees_a_category_added_in_the_same_session(db):
+    """AC-SCQ-03: the vocabulary is a per-call snapshot, never a process-wide cache: a
+    row written after one lookup is seen by the next (`backfill_category_signals` runs
+    in the same session on the admin path)."""
     from app.services.product_class_signal import resolve_classes_for_term
 
     assert resolve_classes_for_term(db, "squatting pan") == []
@@ -261,6 +261,11 @@ def test_the_tap_variant_opens_spec_search_and_stays_fast(client, db):
 
     assert response.status_code == 200, response.text
     body = response.json()
+    # Evidence line for the PR (run with -s): wall time and statement counts.
+    print(
+        f"\nTAP variant: {elapsed:.2f}s, {len(statements)} statements, "
+        f"{_stored_label_reads(statements)} stored_class_labels scans"
+    )
     assert "spec_candidates" in body, "the unresolved TAP token must open the spec fallback"
     assert _stored_label_reads(statements) <= 2, (
         f"stored_class_labels scanned {_stored_label_reads(statements)} times"
@@ -273,7 +278,10 @@ def test_without_the_tap_word_spec_search_never_runs(client, db):
     """20:06 MYT: every token resolves to its code, `_every_caller_token_resolved` is
     True and the spec fallback is skipped (the 8.4 s turn). Green on main; pinned so the
     fix cannot widen the gate."""
-    response = client.post(ENDPOINT, json=_chatbot_body(tap_prefix=False))
+    started = time.monotonic()
+    with _sql_counter(db) as statements:
+        response = client.post(ENDPOINT, json=_chatbot_body(tap_prefix=False))
+    print(f"\nno-TAP variant: {time.monotonic() - started:.2f}s, {len(statements)} statements")
 
     assert response.status_code == 200, response.text
     body = response.json()

@@ -225,15 +225,11 @@ def backfill_category_signals(db: Session, *, commit: bool = False) -> dict:
     return {"updated": updated, "unmapped": sorted(unmapped), "unmapped_count": len(unmapped)}
 
 
-def resolve_classes_for_term(db: Session, term: str) -> list[str]:
-    """Class labels a customer's word refers to, matched on label or synonym.
+class ClassVocabulary:
+    """Every word that names a class, read from the database ONCE, answered from memory.
 
-    Case-insensitive and whitespace-tolerant, because this is fed raw customer text.
-    Non-searchable categories can never match. Returns a sorted list rather than one
-    value: a term may legitimately span classes once the map widens.
-
-    THREE SOURCES, because a class can now be born in three places and a customer
-    cannot be expected to know which:
+    THREE SOURCES, because a class can be born in three places and a customer cannot be
+    expected to know which:
 
       1. a category's `class_label` and its `search_synonyms`
       2. a class value products ACTUALLY CARRY, however it got there
@@ -245,53 +241,83 @@ def resolve_classes_for_term(db: Session, term: str) -> list[str]:
     heard of - and "seat cover" resolved to nothing while 172 products sat there
     carrying `Seat Cover`, because the word could only be looked up in the wrong place.
     `Squatting Pan` had been unreachable the same way since the day it was added.
+
+    4. The customer words this module itself ships (`CLASS_SYNONYMS`), for a class the
+    catalogue has, consulted only when 1-3 found nothing. A database that converges
+    through `create_all` never ran the migration that appended "water basin" to its
+    categories, and the owner's "which water basin has stock" answered a clarify there
+    (hand test round 2, W6).
+
+    SPEC-CLASS-QUADRATIC (prod, 6 Oct 2026 20:02 MYT): `search_specs(exact=True)` resolves
+    EVERY word span of a free term, and the chatbot hands it the whole message, so a
+    15-line stock check resolved 3,406 terms at three statements each (10,581 statements,
+    18 s inside psycopg2) and the turn overran n8n's budget. The three reads now happen
+    once per snapshot; a span lookup is a dict probe. A snapshot is built per call
+    (`search_specs`, `_exact_classes`, `resolve_classes_for_term`) and handed down,
+    never kept on the process: rows added in the same session are seen by the next one.
     """
-    needle = (term or "").strip().lower()
-    if not needle:
-        return []
 
-    found: set[str] = set()
-    rows = (
-        db.query(ProductCategory)
-        .filter(ProductCategory.is_searchable.is_(True))
-        .filter(ProductCategory.class_label.isnot(None))
-        .all()
-    )
-    for row in rows:
-        label = row.class_label or ""
-        if label.lower() == needle:
-            found.add(label)
-            continue
-        synonyms = row.search_synonyms or []
-        if any(str(s).strip().lower() == needle for s in synonyms):
-            found.add(label)
+    __slots__ = ("_index", "_fallback")
 
-    for label in stored_class_labels(db):
-        if label.lower() == needle:
-            found.add(label)
+    def __init__(self, db: Session) -> None:
+        # So "toilet seat" can be taught to reach Seat Cover in the UI, without inventing
+        # a category for it.
+        from app.models.product_spec import ProductSpecRegistry
+        from app.services.product_spec_registry import merged_synonyms
 
-    # So "toilet seat" can be taught to reach Seat Cover in the UI, without inventing a
-    # category for it.
-    from app.models.product_spec import ProductSpecRegistry
-    from app.services.product_spec_registry import merged_synonyms
+        index: dict[str, set[str]] = {}
+        rows = (
+            db.query(ProductCategory)
+            .filter(ProductCategory.is_searchable.is_(True))
+            .filter(ProductCategory.class_label.isnot(None))
+            .all()
+        )
+        for row in rows:
+            label = row.class_label or ""
+            index.setdefault(label.lower(), set()).add(label)
+            for synonym in row.search_synonyms or []:
+                index.setdefault(str(synonym).strip().lower(), set()).add(label)
 
-    registry_row = db.query(ProductSpecRegistry).filter_by(spec_key="class").first()
-    if registry_row is not None:
-        for value, words in merged_synonyms(registry_row).items():
-            if any(str(w).strip().lower() == needle for w in words):
-                found.add(value)
+        for label in stored_class_labels(db):
+            index.setdefault(label.lower(), set()).add(label)
 
-    # 4. The customer words this module itself ships (`CLASS_SYNONYMS`), for a class the
-    # catalogue has. A database that converges through `create_all` never ran the
-    # migration that appended "water basin" to its categories, and the owner's "which
-    # water basin has stock" answered a clarify there (hand test round 2, W6).
-    if not found:
+        registry_row = db.query(ProductSpecRegistry).filter_by(spec_key="class").first()
+        if registry_row is not None:
+            for value, words in merged_synonyms(registry_row).items():
+                for word in words:
+                    index.setdefault(str(word).strip().lower(), set()).add(value)
+
+        fallback: dict[str, set[str]] = {}
         known = {r.class_label for r in rows if r.class_label}
         for label, words in CLASS_SYNONYMS.items():
-            if label in known and any(str(w).strip().lower() == needle for w in words):
-                found.add(label)
+            if label in known:
+                for word in words:
+                    fallback.setdefault(str(word).strip().lower(), set()).add(label)
 
-    return sorted(found)
+        self._index = index
+        self._fallback = fallback
+
+    def resolve(self, term: str) -> list[str]:
+        """Class labels a customer's word refers to, matched on label or synonym.
+
+        Case-insensitive and whitespace-tolerant, because this is fed raw customer text.
+        Non-searchable categories can never match. Returns a sorted list rather than one
+        value: a term may legitimately span classes once the map widens.
+        """
+        needle = (term or "").strip().lower()
+        if not needle:
+            return []
+        found = self._index.get(needle) or self._fallback.get(needle) or ()
+        return sorted(found)
+
+
+def resolve_classes_for_term(db: Session, term: str) -> list[str]:
+    """`ClassVocabulary(db).resolve(term)`: one fresh read of the vocabulary per call.
+
+    The entry point every one-off caller keeps. A caller resolving many terms builds the
+    snapshot once and calls `resolve` on it (`product_spec_search.search_specs`).
+    """
+    return ClassVocabulary(db).resolve(term)
 
 
 def stored_class_labels(db: Session) -> list[str]:

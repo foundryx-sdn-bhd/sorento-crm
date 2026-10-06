@@ -31,7 +31,11 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.models.product import Brand, Product, ProductCategory, chat_searchable_products
 from app.models.product_spec import ProductSpecifications
-from app.services.product_class_signal import resolve_classes_for_term, stored_class_labels
+from app.services.product_class_signal import (
+    ClassVocabulary,
+    resolve_classes_for_term,
+    stored_class_labels,
+)
 from app.services.product_spec_registry import (
     active_registry,
     merged_allowed_values,
@@ -1096,16 +1100,24 @@ def _fails_threshold(values: dict, specs: list[dict]) -> bool:
 _NO_CLASS = "\x00no class"
 
 
-def _exact_classes(db: Session, term: str) -> list[str] | None:
+def _exact_classes(
+    db: Session, term: str, vocabulary: ClassVocabulary | None = None
+) -> list[str] | None:
     """The product type(s) a phrase names word for word, for `search_specs(exact=True)`.
 
-    The whole phrase first (`resolve_classes_for_term`, an exact label or synonym), then
-    the longest class phrase inside it, word for word ("gunmetal basin" -> Wash Basin); a
-    word in the plural is read in the singular ("basins"). `[]` when the phrase names no
-    product type. None when it names two different ones ("water tap basin": "water tap"
-    is a tap and "basin" a wash basin), which is no one product type at all. No near
-    spelling: a word the class vocabulary does not hold names nothing."""
-    whole = resolve_classes_for_term(db, term)
+    The whole phrase first (an exact label or synonym), then the longest class phrase
+    inside it, word for word ("gunmetal basin" -> Wash Basin); a word in the plural is
+    read in the singular ("basins"). `[]` when the phrase names no product type. None
+    when it names two different ones ("water tap basin": "water tap" is a tap and "basin"
+    a wash basin), which is no one product type at all. No near spelling: a word the
+    class vocabulary does not hold names nothing.
+
+    Every word span of the phrase is looked up, so the lookups are answered from ONE
+    read of the class vocabulary (SPEC-CLASS-QUADRATIC: a 57-word message is 1,653
+    spans, and each used to cost three statements). A caller resolving several terms
+    hands in its own snapshot."""
+    vocabulary = vocabulary or ClassVocabulary(db)
+    whole = vocabulary.resolve(term)
     if whole:
         return whole
     words = [w for w in re.split(r"[^a-z0-9]+", str(term or "").lower()) if w]
@@ -1117,9 +1129,9 @@ def _exact_classes(db: Session, term: str) -> list[str] | None:
             if span & used:
                 continue
             phrase = words[start : start + size]
-            classes = resolve_classes_for_term(db, " ".join(phrase))
+            classes = vocabulary.resolve(" ".join(phrase))
             if not classes and phrase[-1].endswith("s") and len(phrase[-1]) > 3:
-                classes = resolve_classes_for_term(db, " ".join([*phrase[:-1], phrase[-1][:-1]]))
+                classes = vocabulary.resolve(" ".join([*phrase[:-1], phrase[-1][:-1]]))
             if classes:
                 used |= span
                 found.append(frozenset(classes))
@@ -1221,15 +1233,25 @@ def search_specs(
     # A free term that names a class IS a class match, and class is the strongest
     # signal we have. Without this, "sink" scored one weak text hit and fell below the
     # floor, so the single most natural query in the corpus returned nothing.
-    implied_classes = {
-        label.lower()
-        for term in free_terms
-        for label in ((_exact_classes(db, term) or []) if exact else resolve_classes_for_term(db, term))
-    }
-    if exact and any(_exact_classes(db, term) is None for term in free_terms):
-        # The words name two different product types ("water tap basin"): no one product
-        # is both, so none qualifies.
-        implied_classes = {_NO_CLASS}
+    #
+    # One read of the class vocabulary for every term and span below, and one
+    # `_exact_classes` verdict per distinct term, read twice (SPEC-CLASS-QUADRATIC: the
+    # two-types check used to re-run the whole span enumeration over every term it had
+    # just resolved).
+    vocabulary = ClassVocabulary(db)
+    if exact:
+        verdicts = {term: _exact_classes(db, term, vocabulary) for term in dict.fromkeys(free_terms)}
+        implied_classes = {
+            label.lower() for verdict in verdicts.values() for label in (verdict or [])
+        }
+        if any(verdict is None for verdict in verdicts.values()):
+            # The words name two different product types ("water tap basin"): no one
+            # product is both, so none qualifies.
+            implied_classes = {_NO_CLASS}
+    else:
+        implied_classes = {
+            label.lower() for term in free_terms for label in vocabulary.resolve(term)
+        }
 
     candidate_query = (
         db.query(ProductSpecifications, Product, ProductCategory)
