@@ -1,6 +1,6 @@
 # PLAN: AVAIL-ONHAND-BASIS - chatbot availability counts on hand only, outstanding SO ignored
 
-Status: implemented (small fix track, size S; owner ruling 6 Oct 2026 21:25, no further alignment needed). PR #1510.
+Status: built, PR #1510 open (small fix track, size S; owner ruling 6 Oct 2026 21:25, no further alignment needed). Move this plan to `_archive/chatbot/` once #1510 merges.
 
 ## Ruling
 

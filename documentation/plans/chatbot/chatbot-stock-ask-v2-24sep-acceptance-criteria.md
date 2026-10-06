@@ -9,7 +9,7 @@ Actor: a dealer contact on WhatsApp whose stock visibility policy mode is "Avail
 
 1. **Ask.** The dealer names one or more products. #1118's stock task collects a quantity per product (unchanged, R1).
    Owner ruling 26 Sep 2026 (R1 re-ruled after the owner's hand test on PR #1247, verbatim "for R1 - okay can"): R1's "keep #1118's quantity collection unchanged" is lifted; the collection is changed in PR #1247 by AC-SA319 to AC-SA326 below.
-2. **Decide.** Per product with quantity Q: X and Y resolved (product, else own category, else 0); available = on hand in the policy locations minus open SO (R4); the earliest non-draft still-incoming shipment with a packing list, any location (R5).
+2. **Decide.** Per product with quantity Q: X and Y resolved (product, else own category, else 0); available = on hand in the policy locations, open SO ignored (R4 as re-ruled by AVAIL-ONHAND-BASIS, owner 6 Oct 2026; was "minus open SO"); the earliest non-draft still-incoming shipment with a packing list, any location (R5).
 3. **Answer.** One R6 sentence per product in the order named. No number of ours except Q and the ETA date.
 4. **Attach.** B3 only, and only when "Packing list allowed" is on: the shipment's packing list is sent.
 5. **Notify.** B1, B2, B4 only, and only when "Notify salesman" is on: the customer's sales agent gets one WhatsApp message (template outside the window, text inside), logged in `integration_log`.

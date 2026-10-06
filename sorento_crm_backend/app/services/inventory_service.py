@@ -1110,16 +1110,10 @@ class StockService:
                 product_id_order=[str(pid) for pid in (product_ids or []) if pid],
                 page=page,
                 limit=limit,
-                # Ported from PR #1118 (not merged), SEC-S1: the SAME location
-                # narrowing the on-hand query above ran with ("stock at BRW"), so the
-                # supply reads cannot answer from a warehouse the question itself
-                # excluded. Merged with `resolved_wh_ids` (review round 2): the
-                # singular `warehouse_id` param narrows the on-hand read above but,
-                # unmerged, left the three supply reads unscoped - a question asking
-                # about ONE warehouse by its singular param still counted supply
-                # parked at every other one.
-                warehouse_ids=list({*(warehouse_ids or []), *(resolved_wh_ids or [])})
-                or None,
+                # AVAIL-ONHAND-BASIS: no `warehouse_ids=` any more. It scoped the
+                # availability mode's open-SO read (SEC-S1, #1118) to the same
+                # locations as the on-hand query; that read is gone, and the on-hand
+                # query above already carries the caller's narrowing in `policy_q`.
                 resolved_contact_id=resolved_contact_id,
             )
 
@@ -1370,7 +1364,6 @@ class StockService:
         page: int,
         limit: int,
         requested_quantities: Optional[dict] = None,
-        warehouse_ids: Optional[list[str]] = None,
         product_id_order: Optional[list[str]] = None,
         resolved_contact_id: Optional[str] = None,
     ) -> None:
