@@ -1,9 +1,8 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { useSession } from 'next-auth/react';
 import { ScreenLoader } from '@/components/common/screen-loader';
-import { isSuperadminUser } from '@/lib/is-superadmin';
+import { useEffectiveIsSuperadmin } from '@/hooks/useEffectiveIsSuperadmin';
 import { usePermissions } from '@/hooks/usePermissions';
 import AccessDenied from '@/app/components/common/AccessDenied';
 import LoadErrorState from '@/components/common/LoadErrorState';
@@ -22,7 +21,8 @@ type RequireAccessProps = {
  * denied state never flashes before permissions resolve.
  *
  * Two modes:
- * - <RequireAccess superadmin> - allowed only for superadmin/admin roles.
+ * - <RequireAccess superadmin> - allowed only for superadmin/admin roles, judged on the
+ *    EFFECTIVE user: an admin viewing as a non-admin is denied (MENU-PERM-GATE).
  * - <RequireAccess permission="slug"> - allowed only when the user's
  *    permission set includes `slug`.
  */
@@ -34,9 +34,9 @@ export default function RequireAccess(props: RequireAccessProps) {
 }
 
 function SuperadminGate({ children }: { children: ReactNode }) {
-  const { data: session, status } = useSession();
-  if (status === 'loading') return <ScreenLoader />;
-  if (!isSuperadminUser(session?.user)) return <AccessDenied />;
+  const isSuperadmin = useEffectiveIsSuperadmin();
+  if (isSuperadmin === null) return <ScreenLoader />;
+  if (!isSuperadmin) return <AccessDenied />;
   return <>{children}</>;
 }
 

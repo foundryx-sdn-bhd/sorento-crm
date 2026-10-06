@@ -19,7 +19,7 @@ from app.services.sla_service import ConversationSLATrackingService
 
 
 @pytest.fixture
-def client():
+def client(monkeypatch):
     from app.database import get_db as database_get_db
     from app.dependencies import (
         get_db as dependencies_get_db,
@@ -27,6 +27,11 @@ def client():
         get_current_user,
     )
     from app.main import app
+    from app.services.user_service import UserPermissionService
+
+    # LIST-API-PERMS: GET /integration/due-escalations carries a permission gate now; the db
+    # here is a MagicMock, so answer the role lookup as admin (the gate has its own tests).
+    monkeypatch.setattr(UserPermissionService, "get_user_role_slugs", lambda self, uid: {"admin"})
 
     def _user():
         return {"id": "system"}

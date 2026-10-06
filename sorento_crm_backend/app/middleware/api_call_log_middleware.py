@@ -20,6 +20,7 @@ import logging
 import time
 
 from app.config import settings
+from app.services.api_call_log_service import summarize_validation_errors
 
 logger = logging.getLogger(__name__)
 
@@ -178,6 +179,10 @@ class ApiCallLogMiddleware:
             )
             raise
 
+        # A 422 never reaches the handler, so this row is the ONLY place the
+        # refusal is recorded CRM-side. Name the field(s) in error_message (the
+        # column the log screen shows and searches) rather than leaving the
+        # reader to dig the `loc` out of the response payload.
         self._write(
             path=path,
             method=method,
@@ -186,7 +191,9 @@ class ApiCallLogMiddleware:
             request_body=_OVERSIZE_MARKER if oversize else body,
             response_body=_OVERSIZE_MARKER if response_oversize else response_body,
             latency_ms=int((time.perf_counter() - started) * 1000),
-            error_message=None,
+            error_message=summarize_validation_errors(
+                status_code, None if response_oversize else response_body
+            ),
             actor=_actor_label(state),
         )
 
