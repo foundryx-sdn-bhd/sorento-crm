@@ -190,13 +190,22 @@ def test_a_dealer_eta_line_translates_its_verdict_and_keeps_the_mark():
         "SRT5674 x 5: \u274c Tiada stok dan tiada stok masuk. Sila rujuk jurujual anda."
     )
     assert _loc("zh").tail(no_incoming) == "SRT5674 x 5: \u274c 没有库存，也没有到货。请联系您的销售员。"
-    assert _loc("zh").tail("SRT5674 x 50: \u2705 30 available. Please refer to your salesman.") == (
-        "SRT5674 x 50: \u2705 有 30 件。请联系您的销售员。"
+    # AVAIL-RENDER (owner, 5 Oct 2026): the tick says got stock and does not refer.
+    assert _loc("zh").tail("SRT5674 x 50: \u2705 Got stock, 30 available.") == (
+        "SRT5674 x 50: \u2705 有库存，可供 30 件。"
     )
-    assert _loc("ms").tail("SRT5674 x 50: \u2705 Please refer to your salesman.") == (
-        "SRT5674 x 50: \u2705 Sila rujuk jurujual anda."
+    assert _loc("ms").tail("SRT5674 x 50: \u2705 Got stock, 30 available.") == (
+        "SRT5674 x 50: \u2705 Stok ada, 30 tersedia."
     )
-    assert _loc("ms").tail("SRTW2000 x 150: \u274c ETA 19/10/2026.") == "SRTW2000 x 150: \u274c ETA 19/10/2026."
+    assert _loc("ms").tail("SRT5674 x 50: \u2705 Got stock.") == "SRT5674 x 50: \u2705 Stok ada."
+    assert _loc("zh").tail("SRT5674 x 50: \u2705 Got stock.") == "SRT5674 x 50: \u2705 有库存。"
+    # AVAIL-RENDER fix round (owner, 6 Oct 2026): the incoming line says the stock state too.
+    assert _loc("ms").tail("SRTW2000 x 150: \u274c No stock, ETA 19/10/2026.") == (
+        "SRTW2000 x 150: \u274c Tiada stok, ETA 19/10/2026."
+    )
+    assert _loc("zh").tail("SRTW2000 x 150: \u274c No stock, ETA 19/10/2026.") == (
+        "SRTW2000 x 150: \u274c 没有库存，ETA 19/10/2026。"
+    )
 
 
 def test_couldnt_find_then_the_offer_both_translate_on_one_line():
@@ -402,11 +411,11 @@ def test_a_malay_dealer_eta_ask_names_the_miss_before_the_refer_line(session_fac
     assert "SRTW2000" in blocks[0] and "19/10/2026" in blocks[0], out
 
 
-def test_a_leading_number_token_never_swallows_the_code_prefix():
-    """`{available} available. ...` opens with a token: it matches a number only, so neither
-    `tail` nor the final pass reads "SRT5674 x 50: ✅ 30" as the count."""
-    line = "SRT5674 x 50: ✅ 30 available. Please refer to your salesman."
+def test_the_available_count_token_never_swallows_the_code_prefix():
+    """`{available}` matches a number only (`_NUMERIC_TOKENS`), so neither `tail` nor the
+    final pass reads "SRT5674 x 50: ✅ Got stock, 30" as anything but the count."""
+    line = "SRT5674 x 50: ✅ Got stock, 30 available."
     for lang in ("ms", "zh"):
         assert _loc(lang).tail(line).startswith("SRT5674 x 50: ✅ ")
         assert _loc(lang).reply(line).startswith("SRT5674 x 50: ✅ ")
-    assert _loc("ms").text("30 available. Please refer to your salesman.") == "30 ada. Sila rujuk jurujual anda."
+    assert _loc("ms").text("Got stock, 30 available.") == "Stok ada, 30 tersedia."

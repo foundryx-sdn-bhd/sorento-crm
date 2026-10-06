@@ -4,7 +4,7 @@ AC-RPL-9 to AC-RPL-13, 15, 16 (AC-RPL-14 rides the same `/list` route).
 UAC: documentation/plans/procurement/region-packing-list-acceptance-criteria.md.
 
 A packing list (inbound shipment) carries `regions` ('west' / 'east'). A contact sees a
-shipment when its regions overlap the contact's set; `east` held expands to {east, west}.
+shipment when its regions overlap the contact's set; `east` held stays {east} (literal, owner ruling 5 Oct).
 No contact in play (staff, bare API key) means no filter. Until ACCESS-MODEL lands every
 contact's set is {west} (`eta_policy.contact_regions`).
 
@@ -59,6 +59,7 @@ EAST = ["east"]
 BOTH = ["west", "east"]
 W = frozenset({"west"})
 WE = frozenset({"east", "west"})
+E = frozenset({"east"})
 
 
 # --------------------------------------------------------------------- fixtures
@@ -151,12 +152,12 @@ def _numbers(rows):
         ([], W),
         (frozenset(), W),
         (["west"], W),
-        (["east"], WE),
+        (["east"], E),
         (["west", "east"], WE),
-        (frozenset({"east"}), WE),
+        (frozenset({"east"}), E),
     ],
 )
-def test_ac_rpl_9_visible_regions_expands_east_to_east_and_west(held, expected):
+def test_ac_rpl_9_visible_regions_is_literal(held, expected):
     assert eta_policy.visible_regions(held) == expected
 
 
@@ -299,12 +300,12 @@ def test_ac_rpl_9_a_set_holding_east_sees_every_shipment(db):
     }
 
 
-def test_ac_rpl_9_an_east_only_set_still_sees_west_shipments_through_its_expansion(db):
+def test_ac_rpl_9_an_east_only_set_does_not_see_a_west_only_shipment(db):
     p, west, east, both = _world(db)
     res = IncomingStockService(db, regions=eta_policy.visible_regions(["east"])).incoming_list(
         product_ids=[p.id]
     )
-    assert len(res["data"]) == 3
+    assert _numbers(res["data"]) == {east.shipment_number, both.shipment_number}
 
 
 def test_ac_rpl_12_no_regions_means_no_filter(db):

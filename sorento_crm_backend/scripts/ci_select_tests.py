@@ -23,10 +23,14 @@ changed `tests/conftest.py`, the harness of every test, reports `full=true`.
 The cap is time, not file count (crew ruling, 1 Oct 2026): the selection's
 estimated CPU seconds, summed per file from the committed `.test_durations` (the
 file the shards balance on; a file it does not hold counts at the median file),
-above BUDGET_SECONDS reports `full=true` and no list: the six main shards and the
-SCM shards then run on the PR instead. #1411 selects 216 files at ~2668 CPU-s,
-under the budget; one changed-files runner under xdist -n 4 takes it in ~12 min. Files under tests/scm/ are left out
-when the SCM shards run anyway (`--scm true`).
+above BUDGET_SECONDS reports `full=true` and no list. The workflow then falls
+back to the PR's own changed test files for the `ci` run, and the whole
+selection runs with the full suite under the `ci-full` label before merge
+(CI-MINUTES-CUT, 5 Oct 2026; until then `full=true` ran the six main shards
+and the SCM shards on the PR, which on a metered plan was the single biggest
+cost). #1411 selects 216 files at ~2668 CPU-s, under the budget; one
+changed-files runner under xdist -n 4 takes it in ~12 min. Files under
+tests/scm/ are left out when the SCM shards run anyway (`--scm true`).
 
 Stdlib only: the `changes` job runs it with the runner's own python3, before any
 dependency install.
@@ -57,7 +61,7 @@ DOTTED_RE = re.compile(r"(?<![\w.])((?:app|scripts|tests)(?:\.[A-Za-z_]\w*)+)")
 @dataclass
 class Selection:
     tests: list[str]  # the whole selection, also when `full` (printed, never run)
-    full: bool  # above the budget: the full shards run instead of `tests`
+    full: bool  # above the budget: no list goes out, the workflow falls back to the changed files
     count: int
     seconds: float  # estimated CPU seconds of `tests`
 
@@ -202,10 +206,11 @@ def main() -> int:
     changed = [line.strip() for line in sys.stdin if line.strip()]
     result = select(changed, Path(args.root), scm_runs=args.scm == "true", budget=args.budget)
     summary = f"{result.count} test files, estimated {result.seconds:.0f} CPU-s (budget {args.budget:.0f})"
+    fallback = "the ci run executes the changed test files alone; the whole suite runs under ci-full before merge"
     if result.full and f"{PREFIX}tests/conftest.py" in changed:
-        print("tests/conftest.py changed, the harness of every test: the full backend shards run on this PR")
+        print(f"tests/conftest.py changed, the harness of every test: {fallback}")
     elif result.full:
-        print(f"{summary}: above the budget, the full backend shards run on this PR instead. The selection was:")
+        print(f"{summary}: above the budget, {fallback}. The selection was:")
         for test in result.tests:
             print(f"  {test}")
     elif result.tests:
@@ -217,7 +222,8 @@ def main() -> int:
     output = os.environ.get("GITHUB_OUTPUT")
     if output:
         with open(output, "a", encoding="utf-8") as fh:
-            # Above the budget the shards run every file, so no list goes out.
+            # Above the budget no list goes out: the workflow falls back to the
+            # changed test files on `ci`, and `ci-full` runs everything.
             fh.write(f"tests={'' if result.full else ' '.join(result.tests)}\n")
             fh.write(f"full={'true' if result.full else 'false'}\n")
     return 0

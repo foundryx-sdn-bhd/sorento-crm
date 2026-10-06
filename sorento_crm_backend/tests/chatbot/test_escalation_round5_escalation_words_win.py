@@ -63,10 +63,7 @@ from tests.chatbot.test_rearch_s3_attribute_first import _link_contact_company
 
 pytestmark = pytest.mark.usefixtures("_no_real_mcp_calls", "_stub_casual_llm")
 
-ROUTED_TO_MARKETING = (
-    "This inquiry has been routed to the respective person-in-charge (PIC) from "
-    "marketing product team. We will get back to you soon. Thanks for your patience."
-)
+ROUTED_TO_PIC = "Routed to your PIC, they will reply shortly."
 DID_YOU_MEAN = (
     'Couldn\'t find "MWc-SC8609-)PP". Did you mean:\n'
     "1. MWC-SC8609-PP\n"
@@ -210,7 +207,7 @@ def _assert_escalated(session_factory, turn, calls, *, brand: str | None, assign
     assert routing["team_code"] == "marketing_product", routing
     assert routing["brand_code"] == brand, routing
     assert routing.get("product_company") == company, routing
-    assert turn.send_messages[-1] == ROUTED_TO_MARKETING, turn.send_messages
+    assert turn.send_messages[-1] == ROUTED_TO_PIC, turn.send_messages
 
 
 def _no_customer_service_offer(turn) -> None:

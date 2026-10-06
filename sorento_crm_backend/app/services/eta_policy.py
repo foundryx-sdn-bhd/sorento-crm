@@ -54,7 +54,7 @@ class ContactEtaRules:
     offset_applied: bool
     #: Attach the shipment's packing list.
     packing_list_allowed: bool
-    #: The packing list regions this contact may be told about (already expanded).
+    #: The packing list regions this contact may be told about (held literally).
     regions: frozenset[str] = frozenset({"west"})
 
 
@@ -65,17 +65,27 @@ UNRESOLVED = ContactEtaRules(
 
 
 def visible_regions(held: Iterable[str]) -> frozenset[str]:
-    """Expand a contact's held regions: `east` held means {east, west}, else {west}."""
-    return frozenset({"east", "west"}) if "east" in set(held or ()) else frozenset({"west"})
+    """A contact's held regions, literally: the held codes within {west, east}.
+
+    Holding `east` alone sees East only. Empty, None or only-unknown codes fall back to {west}.
+    """
+    known = frozenset(held or ()) & frozenset({"west", "east"})
+    return known or frozenset({"west"})
 
 
 def contact_regions(db: Session, resolved_contact_id: Optional[str]) -> frozenset[str]:
-    """The packing list regions this contact may be told about: West only for every contact.
+    """The packing list regions this contact holds (`respond_contacts.regions`).
 
-    Another lane (ACCESS-MODEL) repoints this body at `effective_access(...).regions`;
-    the signature must stay.
+    A missing row or contact id reads as West only.
     """
-    return frozenset({"west"})
+    if not resolved_contact_id:
+        return frozenset({"west"})
+    from app.models.access import RespondContact
+
+    row = db.query(RespondContact.regions).filter(RespondContact.id == str(resolved_contact_id)).first()
+    if row is None or not row[0]:
+        return frozenset({"west"})
+    return frozenset(row[0])
 
 
 def rules_for_contact(db: Session, resolved_contact_id: Optional[str]) -> ContactEtaRules:
@@ -397,7 +407,11 @@ def dealer_view(payload: Any, asked: Optional[list[str]] = None) -> Any:
     (`/shipments/{id}/...`) is not a chat answer and passes through.
 
     `asked`: the product codes the dealer asked about. One with no shipment is still a
-    row, with no ETA ("CODE: No ETA", owner hand test 3 Oct 2026), never a miss."""
+    row, with no ETA ("CODE: No ETA", owner hand test 3 Oct 2026), never a miss.
+
+    Every row also carries `is_discontinued`, False here: the route stamps the real
+    flag from the product rows (`incoming_stock._stamp_discontinued`, AVAIL-RENDER), so
+    the dealer's ETA line prints the marker compact/detailed print."""
     if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
         return payload
     etas: dict[Optional[str], set[str]] = {}
@@ -420,7 +434,7 @@ def dealer_view(payload: Any, asked: Optional[list[str]] = None) -> Any:
             seen.add(str(code).casefold())
             etas[code] = set()
     rows = [
-        {"product_code": code, "etas": [_ddmmyyyy(d) for d in sorted(dates)]}
+        {"product_code": code, "etas": [_ddmmyyyy(d) for d in sorted(dates)], "is_discontinued": False}
         for code, dates in etas.items()
     ]
     out = {

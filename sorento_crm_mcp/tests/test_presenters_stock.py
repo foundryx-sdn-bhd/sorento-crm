@@ -327,6 +327,7 @@ def _entry(
     cap_unset=None,
     category_name="Category",
     packing_list=None,
+    is_discontinued=False,
 ):
     return {
         "product_id": "33333333-3333-4333-8333-333333333333",
@@ -339,6 +340,7 @@ def _entry(
         "category_name": category_name,
         "eta": eta,
         "packing_list": packing_list,
+        "is_discontinued": is_discontinued,
     }
 
 
@@ -356,7 +358,7 @@ def test_render_availability_ask():
     assert out["intro"] == "How many units do you need?"
     assert out["items"][0]["title"] == "SRTBF11201-NEW"
     assert out["items"][0]["fields"] == []
-    assert out["items"][0]["flags"] == {"needs_quantity": True, "branch": None}
+    assert out["items"][0]["flags"] == {"needs_quantity": True, "branch": None, "discontinued": False}
     assert out["has_result"] is True
 
 
@@ -369,16 +371,15 @@ def test_render_availability_answer():
     no = env(_availability_payload([_entry("SRTBF11201-NEW", branch="too_big")]))
 
     assert yes["intro"] == ""
-    assert yes["items"][0]["title"] == (
-        "SRTBF11201-NEW x 50: ✅ Please refer to your salesman."
-    )
-    assert yes["items"][0]["flags"] == {"needs_quantity": False, "branch": "in_stock"}
+    # AVAIL-RENDER (owner, 5 Oct 2026): the tick says got stock and does not refer.
+    assert yes["items"][0]["title"] == "SRTBF11201-NEW x 50: ✅ Got stock."
+    assert yes["items"][0]["flags"] == {"needs_quantity": False, "branch": "in_stock", "discontinued": False}
     assert no["intro"] == ""
     assert no["items"][0]["title"] == (
         "SRTBF11201-NEW x 50: 🚫 the quantity is more than what I can confirm here. "
         "Please refer to your salesman."
     )
-    assert no["items"][0]["flags"] == {"needs_quantity": False, "branch": "too_big"}
+    assert no["items"][0]["flags"] == {"needs_quantity": False, "branch": "too_big", "discontinued": False}
 
 
 def test_render_availability_incoming_names_the_eta():
@@ -390,7 +391,7 @@ def test_render_availability_incoming_names_the_eta():
         )
     )
 
-    assert out["items"][0]["title"] == "SRTBF11201-NEW x 50: ❌ ETA 19/10/2026."
+    assert out["items"][0]["title"] == "SRTBF11201-NEW x 50: ❌ No stock, ETA 19/10/2026."
 
 
 def test_render_availability_several_products_that_disagree():
@@ -569,7 +570,24 @@ def test_sanitized_availability_renders_end_to_end():
     )
 
     assert out["intro"] == ""
-    assert out["items"][0]["flags"] == {"needs_quantity": False, "branch": "too_big"}
+    assert out["items"][0]["flags"] == {"needs_quantity": False, "branch": "too_big", "discontinued": False}
+
+
+def test_sanitized_availability_keeps_the_discontinued_flag_end_to_end():
+    """AVAIL-RENDER AC-AR01: the sanitizer must not strip `is_discontinued` off an
+    availability entry, or the marker never reaches the dealer."""
+    out = json.loads(
+        present_response(
+            TOOL,
+            json.dumps(
+                sanitized(
+                    _availability_payload([_entry("SRTBF11201-NEW", branch="too_big", is_discontinued=True)])
+                )
+            ),
+        )
+    )
+
+    assert out["items"][0]["flags"] == {"needs_quantity": False, "branch": "too_big", "discontinued": True}
 
 
 # ------------------------------------- the escalation hint, before the render

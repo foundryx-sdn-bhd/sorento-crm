@@ -92,7 +92,7 @@ def test_multi_product_turn_attaches_only_the_incoming_ones():
 
 def test_send_actions_emits_send_attachments_when_answer_files_carries_the_packing_list():
     files = _stock_ask_packing_list_files([_envelope([_incoming_entry()])])
-    answer = Answer(text="SRTW2000 x 150: ❌ ETA 19/10/2026.")
+    answer = Answer(text="SRTW2000 x 150: ❌ No stock, ETA 19/10/2026.")
     answer.files.extend(files)
     reply = {
         "text": answer.text,
@@ -158,7 +158,7 @@ def test_b3_toggle_off_produces_no_send_attachments_action(db):
     assert files == []
 
     reply = {
-        "text": "SRTW2000 x 5: ❌ ETA 19/10/2026.",
+        "text": "SRTW2000 x 5: ❌ No stock, ETA 19/10/2026.",
         "quick_replies": None,
         "result_set": None,
         "attachments_src": files or None,

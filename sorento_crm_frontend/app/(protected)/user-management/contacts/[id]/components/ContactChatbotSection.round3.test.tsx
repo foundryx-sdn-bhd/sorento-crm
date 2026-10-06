@@ -42,6 +42,7 @@ vi.mock('../hooks/useContactChatbot', () => ({
   useContactChatbotProfile: (...a: unknown[]) => useContactChatbotProfile(...a),
   useSaveContactChatbotProfile: () => ({ mutate, isPending: false }),
   useSaveContactEscalation: () => ({ mutate: vi.fn(), isPending: false }),
+  useSaveContactChatbotAllowed: () => ({ mutate: vi.fn(), isPending: false }),
   useContactChatbotMemory: (...a: unknown[]) => useContactChatbotMemory(...a),
   useSaveContactFact: () => ({ mutate: memoryMutate, isPending: false }),
   contactChatbotMemoryQueryKey: (contactId: string) => ['contact-chatbot-memory', contactId],
