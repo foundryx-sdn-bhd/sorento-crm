@@ -199,6 +199,22 @@ def test_a_bare_code_does_not_read_the_line_where_the_same_code_was_typed_with_w
     assert narrowed == ["ZZTWC8840", "ZZTWCX8840-P"], narrowed
 
 
+def test_a_bare_code_with_its_own_category_words_is_still_picked_beside_a_described_line(session_factory):
+    """Reviewer N1 on 884ef00b: rule 5 reads the family's real codes, so the described
+    token ZZTWC8840PTRAP on the second line is not a typed variant; the bare token's own
+    line still carries "seat cover" (the parser's category) and picks the seat cover,
+    the second line picks the P trap bowl, and the category token is consumed."""
+    _seed(session_factory, *_8840_NAMES, names=_8840_NAMES)
+    query = "ZZTWC8840 seat cover x 1\nZZTWC8840 p trap"
+    tokens = ["ZZTWC8840", "seat cover", "ZZTWC8840PTRAP"]
+
+    narrowed = narrow_code_tokens(
+        _scoped(session_factory), query=query, tokens=tokens, allowed_types=["product", "category", "product"]
+    )
+
+    assert narrowed == ["ZZTWC8840-SC", "ZZTWCX8840-P"], narrowed
+
+
 def test_a_bare_only_code_typed_on_two_lines_reads_both(session_factory):
     """One token for a code typed twice, bare and with words: there is no second token to
     own the second line, so the bare token reads both and the words pick the variant."""

@@ -182,11 +182,10 @@ def narrow_code_tokens(
         # parser shortened "white seat cover" to "seat cover") reads every line of its code.
         code_lines = [words for words in lines if any(_fold(w) == code_word for w in words)]
         joined = ["".join(_fold(w) for w in words) for words in code_lines]
-        own_lines = [words for words, text in zip(code_lines, joined) if folded in text]
-        if folded == code_word:
-            longer = [f for f in folded_tokens if f != code_word and f.startswith(code_word)]
-            own_lines = [words for words, text in zip(code_lines, joined) if not any(f in text for f in longer)] or own_lines
-        own_lines = own_lines or code_lines
+        longer = [f for f in folded_tokens if f != code_word and f.startswith(code_word)] if folded == code_word else []
+        own_lines = [
+            words for words, text in zip(code_lines, joined) if folded in text and not any(f in text for f in longer)
+        ] or code_lines
         descriptor = [
             w for words in own_lines for raw in words if _fold(raw) != code_word for w in _words(raw) if not _CODE_WORD.match(w)
         ]
