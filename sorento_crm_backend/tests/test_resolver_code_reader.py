@@ -197,18 +197,37 @@ def test_a_value_longer_than_any_code_is_refused_before_any_scan():
     assert out.kind == "none" and out.reason == reader_mod.REASON_VALUE_TOO_LONG
 
 
-def test_the_guard_is_fast_on_a_huge_typed_text():
-    """H1: the glued-hyphen check once scanned everything before each occurrence, so a
-    100k-character `raw_tokens` entry of "A-A-A-..." cost minutes of CPU per request."""
-    import time
-
+def test_the_guard_scans_a_bounded_window_per_occurrence_and_only_the_text_the_model_saw(monkeypatch):
+    """H1 (security review on a1eae3bb): the glued-hyphen check once copied everything
+    before each occurrence, so a 100k-character `raw_tokens` entry of "A-A-A-..." cost
+    minutes of CPU per request. Deterministic proof, no clock (crew ruling, CI run
+    37506662737): every occurrence is still tried, each one reads a window of at most
+    `_GLUE_WINDOW` characters a side, and `guard` hands the scan the whole typed text with
+    `limit=TYPED_CHARS`, so the scan tries only the occurrences that start inside the text
+    the model was shown."""
+    windows: list[int] = []
+    real_collapse = reader_mod._collapse
+    monkeypatch.setattr(reader_mod, "_collapse", lambda w: (windows.append(len(w)), real_collapse(w))[1])
     typed = "A-" * 20_000
-    started = time.perf_counter()
-    # The scan itself, not only the guard (which also cuts the text at TYPED_CHARS): the
-    # glued check reads an 8-character window either side of each occurrence.
+
     assert reader_mod._typed_span("A", typed) is False
-    guard(CodeReading("family", "A"), typed, "A")
-    assert time.perf_counter() - started < 0.5
+    assert len(windows) == 2 * 20_000, "every occurrence tried, two windows each"
+    assert max(windows) <= reader_mod._GLUE_WINDOW
+
+    windows.clear()
+    spans: list[tuple[int, int | None]] = []
+    real_span = reader_mod._typed_span
+    monkeypatch.setattr(
+        reader_mod, "_typed_span",
+        lambda value, text, *, limit=None: (spans.append((len(text), limit)), real_span(value, text, limit=limit))[1],
+    )
+    out = guard(CodeReading("family", "A"), typed, "A")
+    assert out.kind == "none" and out.reason == reader_mod.REASON_NOT_IN_TYPED_TEXT
+    assert spans == [(len(typed), reader_mod.TYPED_CHARS)]
+    # "A" sits at every even offset: the occurrences inside the first TYPED_CHARS characters,
+    # two windows each, and not one more.
+    assert len(windows) == 2 * (reader_mod.TYPED_CHARS // 2)
+    assert max(windows) <= reader_mod._GLUE_WINDOW
 
 
 @pytest.mark.parametrize(
