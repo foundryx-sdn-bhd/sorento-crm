@@ -2052,7 +2052,13 @@ def _with_parser_brand(specs: list[dict], brand_tokens: dict[str, str] | None) -
         return specs
     if any(str((e or {}).get("key")) == "brand" for e in specs):
         return specs
-    names = {str(n).strip() for n in brand_tokens.values() if str(n or "").strip()}
+    # Only entries keyed by a real token count (security review, nit): an empty key names
+    # no token, exactly as `_resolve_brand_tokens` drops it.
+    names = {
+        str(n).strip()
+        for t, n in brand_tokens.items()
+        if _norm_locked_token(t) and str(n or "").strip()
+    }
     if len(names) != 1:
         return specs
     name = next(iter(names))
