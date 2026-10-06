@@ -1,0 +1,58 @@
+# Console case for ATTACH-SET-BRAND-FOLLOWUP: a brand named after a counted document set
+# narrows the SAME set and lists the SAME document type.
+#
+# `documentation/plans/chatbot/PLAN-attach-set-brand-followup-06oct.md`. NOT collected by
+# pytest. Run with `scripts/chatbot_console_check.py`
+# (`documentation/agents/chatbot-verification.md`):
+#
+#   venv/bin/python scripts/chatbot_console_check.py \
+#       tests/chatbot/console_cases/2026-10-06-attach-set-brand-followup.yaml \
+#       --base-url http://127.0.0.1:8000
+#
+# The owner's two turns (6 Oct 2026 22:40, #1490 test copy, prompt v58), cold. The contact
+# must be a dealer under General Enquiries who may see product attachments. The counts
+# follow the test copy's data (298 / 215 on 6 Oct); what must hold is that turn 2's rows
+# are the document type turn 1 asked for. The `attachment_type_alias` row
+# 'technical drawing' -> Technical Specifications must exist on the copy (it does on the
+# shared dev copy) for turn 1 to resolve.
+
+contact: "900000008"
+
+cases:
+  - name: owner turns 1 and 2, the brand follow-up keeps the document type
+    cold: true
+    turns:
+      - text: "which tap has technical drawing"
+        expect:
+          reply_contains:
+            - "Here's what you want: taps with technical specifications ("
+          reply_not_contains:
+            - "as a document type"
+            - "Attachment Type:* Product Photos"
+          no_uuid: true
+      - text: "sorento"
+        expect:
+          reply_contains:
+            - "Here's what you want: Sorento taps with technical specifications ("
+            - "*Attachment Type:* Technical Specifications"
+          reply_not_contains:
+            - "*Attachment Type:* Product Photos"
+            - "*Attachment Type:* Certification"
+            - "as a document type"
+          no_uuid: true
+
+  - name: owner turn 1 then a count, the count keeps the document type
+    cold: true
+    turns:
+      - text: "which tap has technical drawing"
+        expect:
+          reply_contains:
+            - "Here's what you want: taps with technical specifications ("
+      - text: "10"
+        expect:
+          reply_contains:
+            - "showing 1 to 10"
+            - "*Attachment Type:* Technical Specifications"
+          reply_not_contains:
+            - "*Attachment Type:* Product Photos"
+          no_uuid: true

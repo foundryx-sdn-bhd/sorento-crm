@@ -1,7 +1,8 @@
 # PLAN: a brand follow-up on a document set keeps the document type (ATTACH-SET-BRAND-FOLLOWUP)
 
-Status: in progress (small fix track: backend only, no migration, no auth/RBAC change, no new
-ingest surface). Based on PR #1490's branch (ATTACH-GROUNDING-TYPO), where the owner found it.
+Status: in review, PR #1514 (small fix track: backend only, no migration, no auth/RBAC change,
+no new ingest surface). Based on PR #1490's branch (ATTACH-GROUNDING-TYPO), where the owner
+found it. Fix at 683d35bc; red test, kill tests and reviewer in the PR body.
 
 ## Bug (owner hand test, 6 Oct 2026 22:40, #1490 test copy at 117224451, prompt v58)
 
