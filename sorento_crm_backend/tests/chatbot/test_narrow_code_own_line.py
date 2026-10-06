@@ -142,9 +142,11 @@ def test_descriptor_words_are_read_from_the_codes_own_line_only(session_factory)
 def test_a_descriptor_on_the_codes_own_line_still_narrows_in_a_multi_line_message(session_factory):
     """The #833 behaviour is kept where it belongs: the words beside the code, on its line,
     pick the variant; the other line is another ask."""
+    # The base code is a product too (SRTWT5608 is, on prod): a bare token must never read
+    # ITSELF as a typed variant (reviewer S2 on b05987f6).
     _seed(
         session_factory,
-        "ZZTWC8840-SC", "ZZTWCX8840-P", "ZZTWCX8840-S",
+        "ZZTWC8840", "ZZTWC8840-SC", "ZZTWCX8840-P", "ZZTWCX8840-S",
         names={"ZZTWC8840-SC": "Seat cover", "ZZTWCX8840-P": "P trap bowl", "ZZTWCX8840-S": "S trap bowl"},
     )
     query = "ZZTWC8840 seat cover price\nZZTWT7408 x 5"
@@ -183,6 +185,45 @@ def test_a_bare_code_and_a_described_one_on_two_lines_each_keep_their_own_ask(se
     narrowed = narrow_code_tokens(_scoped(session_factory), query=query, tokens=tokens, allowed_types=["product"] * 3)
 
     assert narrowed == ["ZZTWC8840", "ZZTWC8840SC", "ZZTWCX8840-P"], narrowed
+
+
+def test_a_bare_code_does_not_read_the_line_where_the_same_code_was_typed_with_words(session_factory):
+    """Reviewer S1 on b05987f6: no variant typed, so rule 5 is silent; the bare line is the
+    bare ask and the P trap line belongs to the token carrying those words."""
+    _seed(session_factory, *_8840_NAMES, names=_8840_NAMES)
+    query = "ZZTWC8840 x 1\nZZTWC8840 p trap"
+    tokens = ["ZZTWC8840", "ZZTWC8840PTRAP"]
+
+    narrowed = narrow_code_tokens(_scoped(session_factory), query=query, tokens=tokens, allowed_types=["product", "product"])
+
+    assert narrowed == ["ZZTWC8840", "ZZTWCX8840-P"], narrowed
+
+
+def test_a_bare_only_code_typed_on_two_lines_reads_both(session_factory):
+    """One token for a code typed twice, bare and with words: there is no second token to
+    own the second line, so the bare token reads both and the words pick the variant."""
+    _seed(session_factory, *_8840_NAMES, names=_8840_NAMES)
+    query = "ZZTWC8840 x 1\nZZTWC8840 seat cover"
+
+    narrowed = narrow_code_tokens(_scoped(session_factory), query=query, tokens=["ZZTWC8840"], allowed_types=["product"])
+
+    assert narrowed == ["ZZTWC8840-SC"], narrowed
+
+
+def test_a_token_the_parser_shortened_still_reads_its_line(session_factory):
+    """Reviewer S3 on b05987f6: "ZZTWC8840 white seat cover price" typed, the parser's
+    token "ZZTWC8840SEATCOVER" is not a word-for-word run of the line, so the containment
+    filter finds no line and the lines holding the code word stand in (PR #833 behaviour)."""
+    _seed(session_factory, *_8840_NAMES, names=_8840_NAMES)
+
+    narrowed = narrow_code_tokens(
+        _scoped(session_factory),
+        query="ZZTWC8840 white seat cover price",
+        tokens=["ZZTWC8840SEATCOVER"],
+        allowed_types=["product"],
+    )
+
+    assert narrowed == ["ZZTWC8840-SC"], narrowed
 
 
 def test_a_code_with_its_own_words_still_narrows_beside_a_typed_sibling_variant(session_factory):
