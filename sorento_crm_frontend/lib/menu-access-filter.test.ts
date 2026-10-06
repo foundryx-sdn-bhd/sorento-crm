@@ -35,12 +35,17 @@ function collectSuperadminOnlyPaths(items: MenuConfig): string[] {
   const out: string[] = [];
   for (const item of items) {
     if (item.superadminOnly) out.push(...collectPaths([item]));
-    else if (item.children) out.push(...collectSuperadminOnlyPaths(item.children));
+    else if (item.children)
+      out.push(...collectSuperadminOnlyPaths(item.children));
   }
   return out;
 }
 
-const LOADED = { isLoading: false, enabledModuleKeys: null, modulesLoading: false } as const;
+const LOADED = {
+  isLoading: false,
+  enabledModuleKeys: null,
+  modulesLoading: false,
+} as const;
 
 describe('applyMenuAccess on the real MENU_SIDEBAR', () => {
   it('a user holding only ideation.board.view sees exactly Ideas, under OVERVIEW alone', () => {
@@ -50,7 +55,9 @@ describe('applyMenuAccess on the real MENU_SIDEBAR', () => {
       permissionSet: new Set(['ideation.board.view']),
     });
     expect(collectPaths(menu)).toEqual(['/ideas']);
-    expect(menu.filter((i) => i.heading).map((i) => i.heading)).toEqual(['OVERVIEW']);
+    expect(menu.filter((i) => i.heading).map((i) => i.heading)).toEqual([
+      'OVERVIEW',
+    ]);
   });
 
   it('a non-superadmin holding every slug never sees a superadminOnly entry', () => {

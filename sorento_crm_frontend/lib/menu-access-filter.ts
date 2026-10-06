@@ -8,12 +8,16 @@ import { filterMenuByModule } from '@/lib/menu-module-filter';
  */
 
 /** Hide items that require a permission the user doesn't have; recurse into children. */
-export function filterMenuByPermission(items: MenuConfig, permissionSet: Set<string>): MenuConfig {
+export function filterMenuByPermission(
+  items: MenuConfig,
+  permissionSet: Set<string>,
+): MenuConfig {
   return items
     .filter((item: MenuItem) => {
       if (item.heading) return true;
       if (item.permissionsAny?.length) {
-        if (!item.permissionsAny.some((p) => permissionSet.has(p))) return false;
+        if (!item.permissionsAny.some((p) => permissionSet.has(p)))
+          return false;
       } else if (item.permission && !permissionSet.has(item.permission)) {
         return false;
       }
@@ -24,13 +28,19 @@ export function filterMenuByPermission(items: MenuConfig, permissionSet: Set<str
     })
     .map((item: MenuItem) =>
       item.children?.length
-        ? { ...item, children: filterMenuByPermission(item.children, permissionSet) }
+        ? {
+            ...item,
+            children: filterMenuByPermission(item.children, permissionSet),
+          }
         : item,
     );
 }
 
 /** Hide superadmin-only entries from non-superadmins. `null` = still loading - show all (avoids flicker for real superadmins). */
-export function filterMenuBySuperadmin(items: MenuConfig, isSuperadmin: boolean | null): MenuConfig {
+export function filterMenuBySuperadmin(
+  items: MenuConfig,
+  isSuperadmin: boolean | null,
+): MenuConfig {
   if (isSuperadmin === null || isSuperadmin) return items;
   return items
     .filter((item: MenuItem) => {
@@ -43,7 +53,10 @@ export function filterMenuBySuperadmin(items: MenuConfig, isSuperadmin: boolean 
     })
     .map((item: MenuItem) =>
       item.children?.length
-        ? { ...item, children: filterMenuBySuperadmin(item.children, isSuperadmin) }
+        ? {
+            ...item,
+            children: filterMenuBySuperadmin(item.children, isSuperadmin),
+          }
         : item,
     );
 }
@@ -73,10 +86,15 @@ export type MenuAccess = {
 };
 
 /** Superadmin, then permission, then module, then orphan headings: the order the sidebar renders in. */
-export function applyMenuAccess(menu: MenuConfig, access: MenuAccess): MenuConfig {
+export function applyMenuAccess(
+  menu: MenuConfig,
+  access: MenuAccess,
+): MenuConfig {
   const bySuper = filterMenuBySuperadmin(menu, access.isSuperadmin);
   if (access.isLoading) return filterOrphanHeadings(bySuper);
   const byPerm = filterMenuByPermission(bySuper, access.permissionSet);
   if (access.modulesLoading) return filterOrphanHeadings(byPerm);
-  return filterOrphanHeadings(filterMenuByModule(byPerm, access.enabledModuleKeys));
+  return filterOrphanHeadings(
+    filterMenuByModule(byPerm, access.enabledModuleKeys),
+  );
 }

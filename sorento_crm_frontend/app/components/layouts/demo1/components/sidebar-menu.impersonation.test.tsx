@@ -17,16 +17,24 @@ const permissionsRef: { set: Set<string> } = { set: new Set() };
 vi.mock('next-auth/react', () => ({ useSession: () => sessionRef }));
 vi.mock('next/navigation', () => ({ usePathname: () => '/' }));
 vi.mock('@/hooks/usePermissions', () => ({
-  usePermissions: () => ({ permissionSet: permissionsRef.set, isLoading: false }),
+  usePermissions: () => ({
+    permissionSet: permissionsRef.set,
+    isLoading: false,
+  }),
   useHasAnyPermission: () => false,
 }));
 vi.mock('@/hooks/useTenantModules', () => ({
   useTenantModules: () => ({ enabledModuleKeys: null, isLoading: false }),
 }));
 vi.mock('@/hooks/usePrefetchOnce', () => ({ usePrefetchOnce: () => () => {} }));
-vi.mock('@/app/(protected)/workflow-forms-management/hooks/useWorkflowForms', () => ({
-  usePublishedWorkflowDefinitionsForSubmissionQuery: () => ({ data: undefined }),
-}));
+vi.mock(
+  '@/app/(protected)/workflow-forms-management/hooks/useWorkflowForms',
+  () => ({
+    usePublishedWorkflowDefinitionsForSubmissionQuery: () => ({
+      data: undefined,
+    }),
+  }),
+);
 vi.mock('./quick-access-block', () => ({ QuickAccessBlock: () => null }));
 vi.mock('./menu-item-pin-button', () => ({ MenuItemPinButton: () => null }));
 
@@ -36,7 +44,13 @@ import type { MenuConfig } from '@/config/types';
 import { SidebarMenu } from './sidebar-menu';
 
 const ADMIN = {
-  user: { id: 'admin-1', name: 'Admin', email: 'admin@x.test', roleName: 'Super Admin', status: 'ACTIVE' },
+  user: {
+    id: 'admin-1',
+    name: 'Admin',
+    email: 'admin@x.test',
+    roleName: 'Super Admin',
+    status: 'ACTIVE',
+  },
 };
 
 function allSlugs(items: MenuConfig): Set<string> {
@@ -53,12 +67,26 @@ function viewAsRetailSalesperson() {
   impersonationStore.setSession({
     sessionId: 'imp-1',
     startedAt: '2026-10-06T00:00:00Z',
-    targetUser: { id: 'u-9', name: 'Retail One', email: 'r@x.test', avatar: null, role_name: 'retail_salesperson' },
+    targetUser: {
+      id: 'u-9',
+      name: 'Retail One',
+      email: 'r@x.test',
+      avatar: null,
+      role_name: 'retail_salesperson',
+    },
   });
 }
 
 /** Top-level group titles and leaf titles, as rendered (collapsed sub-trees are not mounted). */
-const LEAKED_GROUPS = ['Marketing', 'Complaints', 'SLA', 'Forms', 'Resources', 'System', 'Users & Access'];
+const LEAKED_GROUPS = [
+  'Marketing',
+  'Complaints',
+  'SLA',
+  'Forms',
+  'Resources',
+  'System',
+  'Users & Access',
+];
 
 describe('SidebarMenu while impersonating (MENU-PERM-GATE)', () => {
   beforeEach(() => {
@@ -80,7 +108,13 @@ describe('SidebarMenu while impersonating (MENU-PERM-GATE)', () => {
       expect(screen.queryByText(title), title).not.toBeInTheDocument();
     }
     expect(screen.getByText('OVERVIEW')).toBeInTheDocument();
-    for (const heading of ['SALES', 'SUPPLY CHAIN', 'CATALOGUE', 'OPERATIONS', 'ADMINISTRATION']) {
+    for (const heading of [
+      'SALES',
+      'SUPPLY CHAIN',
+      'CATALOGUE',
+      'OPERATIONS',
+      'ADMINISTRATION',
+    ]) {
       expect(screen.queryByText(heading), heading).not.toBeInTheDocument();
     }
   });

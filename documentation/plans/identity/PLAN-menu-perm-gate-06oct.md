@@ -67,6 +67,14 @@ practice the flag is `false` for the whole impersonation, and the hook stays cor
 rule ever changes. Used by the sidebar and by `RequireAccess superadmin` so a hidden entry's page
 is denied too.
 
+Security review (6 Oct): the store is localStorage, so the target's role is ANDed with the
+session's own answer. It can only narrow an admin's flag, never widen a non-admin's: a forged
+entry reads `false`. (The backend ignores the view-as header for a non-admin and clears the
+store on the first response anyway.) Not this lane's, logged for its own backend lane: the
+routes behind Scheduled Tasks (`system/scheduled_tasks.py` PATCH and run-now), Work Calendar
+(`system/calendar.py` PUT and holiday writes) and System Health (`system/health.py`) are
+login-only on the backend, so for those pages the superadmin gate is browser-only today.
+
 ## Tests (red first)
 
 - `lib/menu-access-filter.test.ts`: the real `MENU_SIDEBAR` through the pure filter. A user with

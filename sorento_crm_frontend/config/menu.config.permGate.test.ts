@@ -20,15 +20,30 @@ function leafByPath(items: MenuConfig, path: string): MenuItem | undefined {
 
 const SINGLE_SLUG: Array<[string, string]> = [
   ['/marketing-management/promotions', 'marketing.promotions.view'],
-  ['/marketing-management/promotion-attachments', 'marketing.promotion_attachments.view'],
+  [
+    '/marketing-management/promotion-attachments',
+    'marketing.promotion_attachments.view',
+  ],
   ['/marketing-management/promotion-types', 'marketing.promotion_types.view'],
-  ['/marketing-management/promotion-products', 'marketing.promotion_products.view'],
+  [
+    '/marketing-management/promotion-products',
+    'marketing.promotion_products.view',
+  ],
   ['/marketing-management/campaigns', 'marketing.campaigns.view'],
   ['/complaint-management/complaints', 'complaint_management.complaints.view'],
   ['/sla-management/sla-policies', 'sla_management.sla_policies.view'],
-  ['/sla-management/conversation-sla-tracking', 'sla_management.conversation_sla_tracking.view'],
-  ['/sla-management/form-sla-tracking', 'sla_management.conversation_sla_tracking.view'],
-  ['/sla-management/team-pending', 'sla_management.conversation_sla_tracking.view'],
+  [
+    '/sla-management/conversation-sla-tracking',
+    'sla_management.conversation_sla_tracking.view',
+  ],
+  [
+    '/sla-management/form-sla-tracking',
+    'sla_management.conversation_sla_tracking.view',
+  ],
+  [
+    '/sla-management/team-pending',
+    'sla_management.conversation_sla_tracking.view',
+  ],
   ['/sla-management/form-sla-config', 'sla_management.form_sla_config.view'],
   ['/sla-management/escalation-logs', 'sla_management.escalation_logs.view'],
   ['/forms-management/forms', 'forms.forms.view'],
@@ -54,11 +69,17 @@ describe('menu.config - permission gates (MENU-PERM-GATE)', () => {
   });
 
   it('Files is the attachment drive, so either the attachments or the directories view slug shows it', () => {
-    const leaf = leafByPath(MENU_SIDEBAR, '/resource-management/attachment-directories');
+    const leaf = leafByPath(
+      MENU_SIDEBAR,
+      '/resource-management/attachment-directories',
+    );
     expect(leaf).toBeDefined();
     expect(leaf!.permission).toBeUndefined();
     expect([...(leaf!.permissionsAny ?? [])].sort()).toEqual(
-      ['resource.attachment_directories.view', 'resource.attachments.view'].sort(),
+      [
+        'resource.attachment_directories.view',
+        'resource.attachments.view',
+      ].sort(),
     );
   });
 
@@ -66,7 +87,12 @@ describe('menu.config - permission gates (MENU-PERM-GATE)', () => {
     const ungated: string[] = [];
     function walk(items: MenuConfig) {
       for (const item of items) {
-        if (item.path && !item.permission && !item.permissionsAny?.length && !item.superadminOnly) {
+        if (
+          item.path &&
+          !item.permission &&
+          !item.permissionsAny?.length &&
+          !item.superadminOnly
+        ) {
           ungated.push(item.path);
         }
         if (item.children) walk(item.children);

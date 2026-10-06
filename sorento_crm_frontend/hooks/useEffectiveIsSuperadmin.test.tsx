@@ -6,7 +6,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderHook } from '@testing-library/react';
 
-const sessionRef: { data: unknown; status: 'loading' | 'authenticated' | 'unauthenticated' } = {
+const sessionRef: {
+  data: unknown;
+  status: 'loading' | 'authenticated' | 'unauthenticated';
+} = {
   data: null,
   status: 'authenticated',
 };
@@ -18,14 +21,36 @@ vi.mock('next-auth/react', () => ({
 import { impersonationStore } from '@/lib/impersonation-store';
 import { useEffectiveIsSuperadmin } from './useEffectiveIsSuperadmin';
 
-const ADMIN = { user: { id: 'admin-1', name: 'Admin', email: 'admin@x.test', roleName: 'Super Admin', status: 'ACTIVE' } };
-const VIEWER = { user: { id: 'u-2', name: 'Viewer', email: 'v@x.test', roleName: 'Retail Salesperson', status: 'ACTIVE' } };
+const ADMIN = {
+  user: {
+    id: 'admin-1',
+    name: 'Admin',
+    email: 'admin@x.test',
+    roleName: 'Super Admin',
+    status: 'ACTIVE',
+  },
+};
+const VIEWER = {
+  user: {
+    id: 'u-2',
+    name: 'Viewer',
+    email: 'v@x.test',
+    roleName: 'Retail Salesperson',
+    status: 'ACTIVE',
+  },
+};
 
 function viewAs(roleName: string | null) {
   impersonationStore.setSession({
     sessionId: 'imp-1',
     startedAt: '2026-10-06T00:00:00Z',
-    targetUser: { id: 'u-9', name: 'Target', email: 't@x.test', avatar: null, role_name: roleName },
+    targetUser: {
+      id: 'u-9',
+      name: 'Target',
+      email: 't@x.test',
+      avatar: null,
+      role_name: roleName,
+    },
   });
 }
 
@@ -65,6 +90,13 @@ describe('useEffectiveIsSuperadmin', () => {
 
   it('is false for an admin impersonating a target with no role at all', () => {
     viewAs(null);
+    const { result } = renderHook(() => useEffectiveIsSuperadmin());
+    expect(result.current).toBe(false);
+  });
+
+  it('never widens: a non-admin with a forged superadmin target in the store stays false', () => {
+    sessionRef.data = VIEWER;
+    viewAs('superadmin');
     const { result } = renderHook(() => useEffectiveIsSuperadmin());
     expect(result.current).toBe(false);
   });
