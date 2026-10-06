@@ -1,6 +1,6 @@
 # PLAN: SPEC-CLASS-QUADRATIC - spec class lookup is quadratic in message words
 
-Status: in progress (small fix track: no migration, no auth/RBAC change, no new ingest surface; backend only, replies byte-identical)
+Status: in review, PR #1508 (small fix track: no migration, no auth/RBAC change, no new ingest surface; backend only, replies byte-identical; about 190 changed app lines, the rest of the diff is tests and this plan)
 
 ## Incident
 

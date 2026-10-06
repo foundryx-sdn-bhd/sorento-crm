@@ -19,6 +19,7 @@ Plan: documentation/plans/chatbot/PLAN-spec-class-quadratic.md (AC-SCQ-01 .. 06)
 """
 from __future__ import annotations
 
+import re
 import time
 import uuid
 from collections import Counter
@@ -186,7 +187,7 @@ def test_a_15_line_code_list_costs_a_bounded_number_of_statements(db):
     message as a free term. Red on main: ~10k statements, ~1.7k `stored_class_labels`
     scans."""
     message = _message(tap_prefix=True)
-    assert len([w for w in __import__("re").split(r"[^a-z0-9]+", message.lower()) if w]) == 57
+    assert len([w for w in re.split(r"[^a-z0-9]+", message.lower()) if w]) == 57
 
     with _sql_counter(db) as statements:
         product_spec_search.search_specs(db, free_terms=[message], exact=True)

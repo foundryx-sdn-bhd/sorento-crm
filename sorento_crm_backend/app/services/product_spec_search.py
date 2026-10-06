@@ -1238,8 +1238,10 @@ def search_specs(
     # `_exact_classes` verdict per distinct term, read twice (SPEC-CLASS-QUADRATIC: the
     # two-types check used to re-run the whole span enumeration over every term it had
     # just resolved).
-    vocabulary = ClassVocabulary(db)
-    if exact:
+    # No free term, no read: a search of specs alone never touched the vocabulary.
+    vocabulary = ClassVocabulary(db) if free_terms else None
+    implied_classes: set[str] = set()
+    if vocabulary is not None and exact:
         verdicts = {term: _exact_classes(db, term, vocabulary) for term in dict.fromkeys(free_terms)}
         implied_classes = {
             label.lower() for verdict in verdicts.values() for label in (verdict or [])
@@ -1248,7 +1250,7 @@ def search_specs(
             # The words name two different product types ("water tap basin"): no one
             # product is both, so none qualifies.
             implied_classes = {_NO_CLASS}
-    else:
+    elif vocabulary is not None:
         implied_classes = {
             label.lower() for term in free_terms for label in vocabulary.resolve(term)
         }

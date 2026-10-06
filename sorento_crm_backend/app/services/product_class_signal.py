@@ -315,8 +315,11 @@ def resolve_classes_for_term(db: Session, term: str) -> list[str]:
     """`ClassVocabulary(db).resolve(term)`: one fresh read of the vocabulary per call.
 
     The entry point every one-off caller keeps. A caller resolving many terms builds the
-    snapshot once and calls `resolve` on it (`product_spec_search.search_specs`).
+    snapshot once and calls `resolve` on it (`product_spec_search.search_specs`). An
+    empty term names nothing and reads nothing.
     """
+    if not (term or "").strip():
+        return []
     return ClassVocabulary(db).resolve(term)
 
 
