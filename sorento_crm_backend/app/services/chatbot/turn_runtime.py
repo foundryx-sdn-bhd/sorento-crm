@@ -2023,12 +2023,9 @@ def resolve_kinds(
     # under `order` until it had its own, and its brand word must stay out of the same
     # shared-resolver fan-out.
     #
-    # BRAND-PROMO-EXPAND (PR #1504) considered widening this intercept to every domain but
-    # promotion and did not: the reviewer measured a brand-only inventory ask skipping the
-    # resolver and the gate entirely (the early return below) and the spelling-distance
-    # tier of `brand_rows_for_word` deciding brands in nine more domains, against the
-    # owner's no-fuzzy rule. Outside order/sales a brand word still reaches the resolver,
-    # whose brand -> promotion fan-out is folded back onto the hint on `by_token` below.
+    # Order/sales only, on purpose (BRAND-PROMO-EXPAND, PR #1504, "Not in this PR"): outside
+    # them a brand word still reaches the resolver, whose brand -> promotion fan-out is
+    # folded back onto the hint on `by_token` below.
     is_order_domain = (
         jsc.nullish_str(output_block_for_domain.get("domain_hint")).strip().lower()
         in ORDER_OR_SALES_DOMAINS
@@ -2101,7 +2098,6 @@ def resolve_kinds(
         return ResolveOutcome({}, [], None, {}, {}, False, None)
 
     resolved = payload.get("resolved")
-    gate = payload.get("gate") if isinstance(payload.get("gate"), dict) else {}
     # BRAND-PROMO-EXPAND (owner, 6 Oct 2026: "Sorento is always a brand"): what the
     # resolver's answer MEANS for each token the parser hinted, before the pure core
     # (`turn/reconcile.py::apply_reconciliation`) reads it as `{token: {kind: hits}}` and
@@ -2149,6 +2145,7 @@ def resolve_kinds(
                 kind = hinted
             hits[kind] = hits.get(kind, 0) + 1
 
+    gate = payload.get("gate") if isinstance(payload.get("gate"), dict) else {}
     compatible = [e for e in jsc.array(gate.get("compatible_entities")) if isinstance(e, dict)]
     unplaced = unplaced_tokens(entities, resolved)
     for key, raw in absorbed_tokens(entities, resolved).items():

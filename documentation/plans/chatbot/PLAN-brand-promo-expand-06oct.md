@@ -78,7 +78,8 @@ Paths under `sorento_crm_backend/app/services/`.
 
 - Crew (A) as "brands table first in every domain but promotion": a brand-only inventory ask
   ("SORENTO stock") then skipped the resolver AND the gate (the entity-less early return) and
-  answered the generic "I need at least one filter" line instead of main's product ask; and
+  answered the generic "I need at least one filter" line where main answers "Here's what you
+  want: Sorento products with stock / But none matched"; and
   `brand_rows_for_word`'s spelling-distance tier (`turn_runtime.py` ~590-608) started deciding
   brands in nine more domains ("Sorrento" became Sorento under master_products), against the
   owner's no-fuzzy rule. It also meant rewriting the Security B1/SF3 pin
