@@ -340,10 +340,13 @@ class TestAMissIsNamedAsTypedOnTheDealerConsole:
         assert c.stock_calls == [], c.stock_calls
 
     def test_a_pasted_catalogue_line_is_named_as_typed_and_carries_no_set(self, console) -> None:
-        """Turn 4 as typed, on a catalogue whose vocabulary reads none of the line's words.
-        On main the reader's class words were both the header and the miss ('Here's what
-        you want: sorento one piece washdown toilet / Couldn't find: "sorento one piece
-        washdown toilet"')."""
+        """Turn 4 as typed, on a catalogue whose vocabulary reads none of the line's words,
+        so the described-set miss structure answers with the line itself. On main the
+        reader's class words were both the header and the miss ('Here's what you want:
+        sorento one piece washdown toilet / Couldn't find: "sorento one piece washdown
+        toilet"'). On a catalogue whose words DO read a set (prod's 35 water closets) the
+        same line takes the product-code miss instead; that branch is pinned by
+        `test_spec_search_members_under_an_unplaced_token_print_no_header`."""
         c = console()
         out = c.say(DESCRIPTION_LINE, stock(product(DESCRIPTION_LINE)))
         assert out == f"Here's what you want: {DESCRIPTION_LINE}\n\nCouldn't find: \"{DESCRIPTION_LINE}\".\n\n{REFER}", out

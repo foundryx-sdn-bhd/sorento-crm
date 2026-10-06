@@ -266,18 +266,30 @@ section's closing sentence.
 
 Change (as built):
 
-* `turn_runtime.make_tool_runner`: the no-subject probe runs for every domain whose
-  `gate.ALLOWS_EMPTY` row is False (read off the dict, not a second list), still excluding
-  `would_be_unfiltered` and still exempt for `INTENTS_ALLOWING_EMPTY`. The
-  `would_be_unfiltered` guard (R6, "named a token and none placed") reads the SAME set
-  (plus `incoming`, which R6 always had; `order` stays out by its outstanding-report
-  carve-out): widening the probe alone would have handed a typed-but-missed product code
-  the scope sentence in `master_products`, the class B shape one domain over. With both
-  widened, turn 7's "srtwc-8318" is refused with its own "Couldn't find" wording and no
-  fetch; turn 2's "product" gets the scope sentence.
+* `gate.REFUSES_EMPTY_FETCH = {inventory, master_products}`, one constant beside
+  `ALLOWS_EMPTY`, three readers. `turn_runtime.make_tool_runner`: the no-subject probe
+  runs for every domain in it, still excluding `would_be_unfiltered` and still exempt for
+  `INTENTS_ALLOWING_EMPTY`. The `would_be_unfiltered` guard (R6, "named a token and none
+  placed") reads the SAME set plus `incoming` (which R6 always had): widening the probe
+  alone would have handed a typed-but-missed product code the scope sentence in
+  `master_products`, the class B shape one domain over. With both widened, turn 7's
+  "srtwc-8318" is refused with its own "Couldn't find" wording and no fetch; turn 2's
+  "product" gets the scope sentence.
+* Why not every `ALLOWS_EMPTY` False row (the first cut, and AC-RC-A2's first wording):
+  the full chatbot suite measured eight `sales`, `order` and `promotion` pins broken by
+  the dict-wide read (the sales report for an unlinked or staff contact, top selling, the
+  order broaden "all products" re-run, a promotion read off the focus brand). Those
+  entity-less asks are whole-book or focus-driven asks with their own flows, so refusing
+  them is a regression, not a fix. A third domain joins the set on its own live turn.
 * `turn/apply._REFUSES_EMPTY_SUBJECT` becomes `_refuses_empty_subject(domain)`, the same
-  read of `ALLOWS_EMPTY` (one source; the "master_products already asks" premise in its
-  old comment was false).
+  read of `REFUSES_EMPTY_FETCH` (one source; the "master_products already asks" premise
+  in its old comment was false).
+* Two pins relied on the unfiltered zero-entity `master_products` read and were adjusted
+  to a scoped fetch, intent kept: `test_engine_failure_paths` (an MCP raise on a fetch
+  whose resolver now places the typed code) and `test_escalation_brand_from_focus` (a
+  "hit over a settled product" whose verdict now echoes the carried product the way the
+  real parser does, `current_message: False` under `entity_op: reuse`; measured on main,
+  the tool call carried no `product_ids` at all).
 * `_SCOPE_WORD` already has `master_products: "product"`, so the sentence reads "That
   would search every product we have - I need at least one filter to narrow it down. Give
   me a product code, category, or brand, and I can look it up." with no new wording.

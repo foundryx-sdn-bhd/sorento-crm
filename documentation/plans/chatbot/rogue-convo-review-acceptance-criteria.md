@@ -10,8 +10,12 @@ are its red tests. Fake fixture ids in every test; product codes are catalogue c
   replies with the scope sentence for that domain ("That would search every product we
   have - I need at least one filter ..."). Red: bare "product" (turn 2); "srtwc-8318"
   typed while a kind_pick is open falls to master_products with no uuid (turn 7).
-- AC-RC-A2: the refusal is one mechanism for every such domain (the `ALLOWS_EMPTY` dict),
-  not a per-domain list in the engine.
+- AC-RC-A2: the refusal is one mechanism (one constant, `gate.REFUSES_EMPTY_FETCH`, beside
+  `ALLOWS_EMPTY`) read by the runner's probe, the runner's "named but none placed" guard
+  and the fan-out seam, not a per-domain literal in the engine. Its members are
+  `inventory` and `master_products`: the suite measured that every other `ALLOWS_EMPTY`
+  False domain has an entity-less ask with its own flow (sales report, top selling, order
+  broaden, promotion from the focus brand).
 - AC-RC-A3 (control): a scoped product ask ("SRTWC286 price") fetches with that id; bare
   "PO" still lists the open book; `low_stock_report` with no entities still runs.
 - AC-RC-A4 (Q1 = a + brand): the chatbot's product list never returns a product whose
@@ -49,9 +53,10 @@ are its red tests. Fake fixture ids in every test; product codes are catalogue c
 ## Class C: a miss never lists what the customer did not name
 
 - AC-RC-C1: "Here's what you want:" lists only entities the customer named (typed this
-  message or carried on the focus) that the resolver placed. A miss on the customer's own
-  product token lists no set member and no "(+N more)" under the header, and names the
-  token AS TYPED in "Couldn't find": either the product-code miss (`Couldn't find:
+  message or carried on the focus) that the resolver placed, or, on the described-set
+  miss, the typed token itself with nothing under it (the #833 structure). A miss on the
+  customer's own product token lists no set member and no "(+N more)" under the header,
+  and names the token AS TYPED in "Couldn't find": either the product-code miss (`Couldn't find:
   "<line>" (product).`, when the words around the token read a set) or the described-set
   miss's own structure (`Here's what you want: Srt-hp / Couldn't find: "Srt-hp".`, fix
   round 9 on PR #833, when nothing was readable) with the typed token in place of the
