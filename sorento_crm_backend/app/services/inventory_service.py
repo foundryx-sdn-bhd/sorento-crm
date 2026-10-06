@@ -1110,16 +1110,10 @@ class StockService:
                 product_id_order=[str(pid) for pid in (product_ids or []) if pid],
                 page=page,
                 limit=limit,
-                # Ported from PR #1118 (not merged), SEC-S1: the SAME location
-                # narrowing the on-hand query above ran with ("stock at BRW"), so the
-                # supply reads cannot answer from a warehouse the question itself
-                # excluded. Merged with `resolved_wh_ids` (review round 2): the
-                # singular `warehouse_id` param narrows the on-hand read above but,
-                # unmerged, left the three supply reads unscoped - a question asking
-                # about ONE warehouse by its singular param still counted supply
-                # parked at every other one.
-                warehouse_ids=list({*(warehouse_ids or []), *(resolved_wh_ids or [])})
-                or None,
+                # AVAIL-ONHAND-BASIS: no `warehouse_ids=` any more. It scoped the
+                # availability mode's open-SO read (SEC-S1, #1118) to the same
+                # locations as the on-hand query; that read is gone, and the on-hand
+                # query above already carries the caller's narrowing in `policy_q`.
                 resolved_contact_id=resolved_contact_id,
             )
 
@@ -1370,7 +1364,6 @@ class StockService:
         page: int,
         limit: int,
         requested_quantities: Optional[dict] = None,
-        warehouse_ids: Optional[list[str]] = None,
         product_id_order: Optional[list[str]] = None,
         resolved_contact_id: Optional[str] = None,
     ) -> None:
@@ -1583,7 +1576,16 @@ class StockService:
         # date ever appear. Replaces #1118's verdict()/spo_allocations/purchase-order/
         # threshold read (ported as-is in an earlier step of this slice to reach
         # #1118 parity; superseded here, `app/services/stock_verdict.py` deleted).
-        from app.models.order import SalesOrderLine
+        #
+        # AVAIL-ONHAND-BASIS (owner ruling, 6 Oct 2026): the figure judged is ON HAND
+        # in the allowed locations, nothing subtracted. The open sales order read that
+        # used to net it (D2 / AC-SA303, "on hand minus open SO", with its own
+        # `_supply_scope` mirroring the on-hand filter) is gone from THIS path only:
+        # 6 on hand with 13 outstanding answered "no stock" to a dealer asking for 10,
+        # while the staff summary read Total 6 (O/S 13) at the same timestamp. The
+        # staff summary's O/S and sellable (`stock.py::_with_sellable`, through
+        # `open_so_qty_by_product*` above) keep subtracting: that reply is meant to
+        # show the outstanding. Wording unchanged (MCP presenter).
         from app.models.product import ProductCategory
         from app.models.resources import Attachment
         from app.services.incoming_stock_service import (
@@ -1594,51 +1596,6 @@ class StockService:
         from app.services.stock_ask_branch import branch as compute_branch
         from app.services.stock_ask_branch import short_of
         from app.services.stock_ask_limits import effective as effective_limits
-
-        # SEC-S1 (security review, round 1, kept from #1118): `warehouse_criterion` is only HALF of what
-        # the on-hand read filters by. That query also carries `Warehouse.is_active`
-        # (a retired location is not somewhere this contact can be supplied from) and
-        # the caller's own `warehouse_ids=` narrowing ("stock at BRW"), and a supply
-        # read that skipped both counted an allocation bound for a retired warehouse,
-        # or bound for MWH under a question that asked only about BRW, towards a
-        # verdict the dealer then read as a promise. Nit, review round 1: the
-        # incoming and purchase-order reads this scope also applied to under #1118
-        # are gone by R5 (this slice reads incoming stock a different way, ANY
-        # location, never scoped here) - only the open SO read below still uses it.
-        def _supply_scope(column):
-            scoped = [
-                column.isnot(None),
-                warehouse_criterion(policy, column),
-                column.in_(
-                    self.db.query(Warehouse.id).filter(Warehouse.is_active.is_(True))
-                ),
-            ]
-            if warehouse_ids:
-                scoped.append(column.in_(warehouse_ids))
-            return scoped
-
-        # D2: open SO subtracted from on-hand, per the SAME warehouse_criterion as
-        # `on hand` itself. A line with no destination is never subtracted - it
-        # cannot be placed at any warehouse the policy names, allowed or not.
-        so_rows = (
-            self.db.query(
-                SalesOrderLine.product_id,
-                func.sum(SalesOrderLine.qty_ordered - SalesOrderLine.qty_delivered).label(
-                    "open_qty"
-                ),
-            )
-            .filter(
-                SalesOrderLine.product_id.in_(page_ids),
-                *_supply_scope(SalesOrderLine.warehouse_id),
-                SalesOrderLine.line_status == "open",
-                SalesOrderLine.qty_ordered > SalesOrderLine.qty_delivered,
-            )
-            .group_by(SalesOrderLine.product_id)
-            .all()
-            if page_ids
-            else []
-        )
-        open_so_by_product = {str(r.product_id): float(r.open_qty or 0) for r in so_rows}
 
         def _resolve_ask(pid: str) -> Optional[int]:
             # D20 (kept from #1118): the per-product map wins; the scalar fills
@@ -1754,11 +1711,11 @@ class StockService:
                     product.chatbot_max_qty is None
                     and category.chatbot_max_qty is None
                 )
+                # AVAIL-ONHAND-BASIS: on hand over the allowed locations IS the figure;
+                # the outstanding is not netted off it (see the note at the top of this
+                # mode).
                 on_hand_total = sum(
                     int(r.on_hand or 0) for gid in group_ids for r in per_product[gid]
-                )
-                net_available = on_hand_total - int(
-                    sum(open_so_by_product.get(gid, 0) for gid in group_ids)
                 )
                 shipment_candidates = [
                     eta_by_product[gid] for gid in group_ids if gid in eta_by_product
@@ -1772,8 +1729,8 @@ class StockService:
                     else None
                 )
                 shipment_date = shipment[1] if shipment else None
-                entry["branch"] = compute_branch(ask, x, net_available, shipment_date)
-                entry["available_qty"] = short_of(ask, x, net_available)
+                entry["branch"] = compute_branch(ask, x, on_hand_total, shipment_date)
+                entry["available_qty"] = short_of(ask, x, on_hand_total)
                 entry["cap_unset"] = cap_unset
                 entry["category_name"] = category.category_name
                 if entry["branch"] == "incoming" and shipment is not None:

@@ -43,7 +43,7 @@ Paths under `sorento_crm_backend/app/services/chatbot/`.
 
 ## Availability outcome -> wording (`sorento_crm_mcp/sorento_crm_mcp/presenters.py:1476-1515`)
 
-Branch from `app/services/stock_ask_branch.py::branch`; `available` = on hand minus open SO.
+Branch from `app/services/stock_ask_branch.py::branch`; `available` = on hand in the policy locations (open SO ignored since AVAIL-ONHAND-BASIS, owner 6 Oct 2026; was "on hand minus open SO").
 
 | Outcome | Branch | Line |
 | --- | --- | --- |

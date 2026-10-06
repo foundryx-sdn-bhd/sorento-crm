@@ -507,6 +507,10 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
     missed_domains: list[str] = []
     files: list[dict[str, Any]] = []
     seen_file_keys: set[Any] = set()
+    # RESOLVER-TOKEN-CAP: a code the resolver cut at its ceiling rides every envelope
+    # (`envelope_of.not_checked`) but is a fact about the message, so it is named once
+    # per turn, under the first section that carries it.
+    named_not_checked: set[str] = set()
 
     for env in envelopes:
         domain = env.get("domain")
@@ -726,8 +730,13 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
         # out which of the products they asked about are missing from the answer.
         # LAST, under the rungs line: it is the closing note on this section, and it
         # read as part of the ladder sentence when it sat above one.
-        not_checked = [n for n in (env.get("not_checked") or []) if isinstance(n, str)]
+        not_checked = [
+            n
+            for n in (env.get("not_checked") or [])
+            if isinstance(n, str) and n not in named_not_checked
+        ]
         if not_checked:
+            named_not_checked.update(not_checked)
             block = block + "\n" + f"Not checked: {', '.join(not_checked)}."
         text_parts.append(block)
 
