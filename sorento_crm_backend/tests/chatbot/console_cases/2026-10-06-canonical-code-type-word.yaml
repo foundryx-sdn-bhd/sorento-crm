@@ -142,7 +142,55 @@ cases:
         canonical_code: Srt 364-hp
         quantity: 1
 
+- name: 'crew audit - basin SRTWB1086 x 2 is one product entity, canonical SRTWB1086, quantity 2'
+  live_only: true
+  cold: true
+  text: basin SRTWB1086 x 2
+  expect:
+    parser:
+      entities:
+      - raw: basin SRTWB1086
+        hint: product
+        canonical_code: SRTWB1086
+        quantity: 2
+
+- name: 'crew audit - a bare number typed as a product carries itself as canonical_code (8066)'
+  live_only: true
+  cold: true
+  text: 8066 stock ?
+  expect:
+    parser:
+      domain_hint: inventory
+      entities:
+      - raw: '8066'
+        hint: product
+        canonical_code: '8066'
+
+- name: 'crew audit - a nonsense code-shaped token is copied, never corrected or dropped'
+  live_only: true
+  cold: true
+  text: stock check XQZ9917V
+  expect:
+    parser:
+      domain_hint: inventory
+      entities:
+      - raw: XQZ9917V
+        hint: product
+        canonical_code: XQZ9917V
+
 # ---- controls: unchanged behaviour, graded WITHOUT canonical_code (green on both) -------
+- name: 'control - bare SRTWT5608 x 5 is raw SRTWT5608, quantity 5, one entity'
+  live_only: true
+  cold: true
+  text: SRTWT5608 x 5
+  expect:
+    parser:
+      domain_hint: inventory
+      entities:
+      - raw: SRTWT5608
+        hint: product
+        quantity: 5
+
 - name: 'control - QUANTITY rule, the count is never in raw and the entity is one product'
   live_only: true
   cold: true
