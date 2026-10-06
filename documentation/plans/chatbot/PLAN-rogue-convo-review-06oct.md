@@ -281,9 +281,11 @@ Change (as built):
   order broaden "all products" re-run, a promotion read off the focus brand). Those
   entity-less asks are whole-book or focus-driven asks with their own flows, so refusing
   them is a regression, not a fix. A third domain joins the set on its own live turn.
-* `turn/apply._REFUSES_EMPTY_SUBJECT` becomes `_refuses_empty_subject(domain)`, the same
-  read of `REFUSES_EMPTY_FETCH` (one source; the "master_products already asks" premise
-  in its old comment was false).
+* `turn/apply._REFUSES_EMPTY_SUBJECT` keeps its one inventory row; only its false
+  "master_products already asks" comment is corrected. The reviewer's kill showed the
+  runner's probe, which runs per fetch, already refuses the product leg of a multi-domain
+  ask ("product and incoming?", pinned), so widening this seam changed no reply and was
+  dropped. One reader of `REFUSES_EMPTY_FETCH`.
 * Two pins relied on the unfiltered zero-entity `master_products` read and were adjusted
   to a scoped fetch, intent kept: `test_engine_failure_paths` (an MCP raise on a fetch
   whose resolver now places the typed code) and `test_escalation_brand_from_focus` (a

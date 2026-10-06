@@ -12,8 +12,8 @@ are its red tests. Fake fixture ids in every test; product codes are catalogue c
   "product" (turn 2); "srtwc-8318" typed while a kind_pick is open falls to
   master_products with no uuid (turn 7).
 - AC-RC-A2: the refusal is one mechanism (one constant, `gate.REFUSES_EMPTY_FETCH`, beside
-  `ALLOWS_EMPTY`) read by the runner's probe, the runner's "named but none placed" guard
-  and the fan-out seam, not a per-domain literal in the engine. Its members are
+  `ALLOWS_EMPTY`) read by the runner's no-subject probe, which runs per fetch and so
+  covers the product leg of a multi-domain ask too, not a per-domain literal. Its members are
   `inventory` and `master_products`: the suite measured that every other `ALLOWS_EMPTY`
   False domain has an entity-less ask with its own flow (sales report, top selling, order
   broaden, promotion from the focus brand).
