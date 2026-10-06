@@ -1,12 +1,17 @@
 # PLAN: rogue dealer conversation, 6 Oct (ROGUE-CONVO-REVIEW)
 
-Status: PLANNED, waiting on the owner's answers to Q1, Q2 and Q3 of the single `crew-ask`
-on PR #1506 (6 Oct 2026). Decided so far (crew, 6 Oct): Q4 = (a), the miss header lists
-only what the customer named and the resolver placed, and a miss carries no set_page
-(existing rules decide it: no name or word matching in code, no auto-joins); Q5 = (a), two
-PRs (PR-1 class A; PR-2 classes B + C + G with the class F addenda and live eval). Scout +
-plan lane, cloud sandbox. No code until Q1 to Q3 land. Track per PR below: both are small
-fix track (backend only, no migration, no auth/RBAC change, no new ingest surface, no UI).
+Status: BUILDING PR-2 (classes B, C, G, F) on this branch; PR-1 (class A) waits on the
+owner's Q2 wording. Owner rulings (6 Oct 2026, via crew): Q1 = (a) PLUS the contact's
+brand scope: the chatbot list applies `is_searchable` (product and category), `is_active`
+and the contact's brand bound. Q2: the owner asked for the trigger turns (posted as a
+crew-note on #1506) and decides the wording. Q3: the owner REJECTS "Couldn't find 8066":
+a bare number typed as a product must match its code family (SRTWC8066-*) and offer the
+same picker compact mode gives (located: the resolver's substring probe already places the
+family; only `engine._exact_codes_only`'s `_code_like` gate discards it on availability
+profiles; crew-note on #1506 has the chain). Q4 = (a): the miss header lists only what the
+customer named and the resolver placed, and a miss carries no set_page. Q5 = (a): two PRs.
+Track per PR: small fix track (backend only, no migration, no auth/RBAC change, no new
+ingest surface, no UI). Cloud sandbox.
 UAC: `rogue-convo-review-acceptance-criteria.md`.
 Related lanes: #1502 STOCK-FILL-PREDICATE (class E, handed over), #1504 BRAND-PROMO-EXPAND
 (class D, handed over), #1501 merged (no stock claim without a lookup).
