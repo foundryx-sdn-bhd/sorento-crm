@@ -26,9 +26,10 @@ that runs after every parse, whatever kind the parser picked:
     is an UNKNOWN value of that key, said back with the ones the registry knows.
 
 No descriptor word list lives here (`DOCUMENT_TYPE_CODES` is the parser prompt's own
-taxonomy of document codes, not a list of customer words). The registry's keys, labels, choices, synonyms and units, the
-class vocabulary and the attachment-type table decide; staff editing any of them on
-Product Specifications changes what grounds, with no prompt or code change.
+taxonomy of document codes, not a list of customer words). The registry's keys, labels,
+choices, synonyms and units, the class vocabulary and the attachment-type table decide;
+staff editing any of them on Product Specifications changes what grounds, with no prompt
+or code change.
 """
 from __future__ import annotations
 
