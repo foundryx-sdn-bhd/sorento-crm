@@ -14,11 +14,16 @@ exact_brand_rows` (the first tier of `brand_rows_for_word`, extracted) and
 counts them as the brand so reconcile keeps or rewrites the hint to brand; (2) the lock
 covers confident `product` and `brand` hints too (`resolve_gate.HINT_LOCKED_KINDS`); (3)
 `references.py` strips the five name-matched kinds for a locked token in the primary pass
-as well (brand -> promotion fan-out), keeping the request domain's own kind; (4) the spec fallback
-stays closed when a code matched and every unanswered token is a brand's name or code
-(`_only_brand_words_unanswered_beside_a_code`), measured necessary on the replay: a locked
-brand word beside a code otherwise opened the spec fallback and listed the brand's whole
-catalogue in a stock answer. A blanket code-first guard was tried first and reverted: it
+as well (brand -> promotion fan-out), keeping the request domain's own kind; (4) EXTRA RULE (b),
+PENDING THE OWNER (crew audit 6 Oct: it goes beyond the ruling, crew is putting it to the
+owner): the spec fallback stays closed when a code matched and every unanswered token is an
+active brand's name or code (`_only_brand_words_unanswered_beside_a_code`, gated on
+`hint_locked_tokens`, brands read through `turn_runtime.active_brands`), measured necessary
+on the replay: a locked brand word beside a code otherwise opened the spec fallback and
+listed the brand's whole catalogue in a stock answer ("SORENTO ZZWC8318": five Sorento
+products before, the one code after). Behind its own tests
+(`test_a_brand_word_beside_a_matched_code_opens_no_spec_path`, the two controls beside it);
+an owner "no" removes the one guard clause and those three tests, nothing else moves. A blanket code-first guard was tried first and reverted: it
 broke `test_resolve_brand_routing.py::test_one_resolved_token_no_longer_hides_an_
 unanswered_one` (an unanswered description beside a code must still open the spec path).
 
