@@ -339,13 +339,75 @@ def test_a_set_ask_fetches_the_parsers_document_type(
     assert fetches[0]["args"].get("attachment_type_ids") == [drawing.id], fetches[0]["args"]
 
 
-def test_an_unlisted_code_under_a_category_is_a_product_ask(vdb):
-    """Fix round 9 on PR #833 holds after the drop: a category word with no document
-    type left never opens the "Which kind of file do you need?" menu (reviewer S1)."""
+def test_an_unlisted_code_under_a_category_keeps_the_parsers_domain(vdb):
+    """AC-4: dropping a document type never flips the domain. With only a category left the
+    ask stays the parser's `product_attachment` / `check_product_attachment`."""
     category = _e("water closet", "category")
-    out, _ = _ground(vdb, category, _e("pink", "attachment_type", canonical_code="pink"))
+    out, notes = _ground(vdb, category, _e("pink", "attachment_type", canonical_code="pink"))
     assert out["entities"] == [category], out
-    assert (out["domain_hint"], out["intent_hint"]) == ("master_products", "check_product"), out
+    assert (out["domain_hint"], out["intent_hint"]) == ("product_attachment", "check_product_attachment"), out
+    assert all(note.get("from") != "domain" for note in notes), notes
+
+
+def test_an_unlisted_code_under_a_category_asks_which_kind_of_file(
+    session_factory, stub_parser, stub_access, monkeypatch
+):
+    """"which tap has zebra", filed as a document type the list does not hold: the type is
+    dropped, the domain stays the parser's, and the reply is the file-kind menu. No product
+    answer and no file fetch (hand test Expected 7)."""
+    from tests.chatbot.test_engine import _parser_output
+    from tests.chatbot.test_lane_require import (
+        _s4_contact_id,
+        _s4_envelope,
+        _s4_real_resolve_entity,
+        _s4_seed_contact,
+        _s4_wire_engine,
+        _seed_category_and_uom,
+        _seed_registry,
+        _tap_product,
+    )
+
+    contact_id = _s4_contact_id("dropset")
+    db = session_factory()
+    category_id, uom_id = _seed_category_and_uom(db)
+    _seed_registry(db)
+    product = _tap_product(db, category_id=category_id, uom_id=uom_id)
+    code = product.product_code
+    db.commit()
+    _s4_seed_contact(session_factory, contact_id=contact_id, session_vars={"variables": {}})
+
+    calls: list[dict[str, Any]] = []
+
+    def fake_call_tool(name: str, args: dict[str, Any]) -> str:
+        calls.append({"name": name, "args": dict(args)})
+        return json.dumps({"items": []})
+
+    engine_mod = _s4_wire_engine(
+        session_factory, monkeypatch, resolve_entity=_s4_real_resolve_entity(db), fetch_mcp_call=fake_call_tool
+    )
+    stub_parser(
+        _parser_output(
+            intent_hint="check_product_attachment",
+            domain_hint="product_attachment",
+            match_mode="or",
+            entities=[
+                {"raw": "tap", "hint": "product_type", "canonical_code": None, "current_message": True, "confident": True},
+                {"raw": "zebra", "hint": "attachment_type", "canonical_code": "zebra", "current_message": True, "confident": True},
+            ],
+        )
+    )
+    stub_access()
+
+    turn = engine_mod.run_turn(
+        _s4_envelope(contact_id=contact_id, message_id="ZZT-dropset-1", text="which tap has zebra"),
+        session_factory=session_factory,
+    )
+    text = (turn.reply or {}).get("text", "")
+    assert turn.status == "done", turn.error
+    assert turn.ctx["parse"]["output"]["domain_hint"] == "product_attachment", turn.ctx["parse"]["output"]
+    assert "Which kind of file do you need?" in text, text
+    assert code not in text, text
+    assert not [c for c in calls if c["name"] == "crm_master_product_attachments_list"], calls
 
 
 def test_an_attachment_type_code_is_a_listed_type(vdb):
