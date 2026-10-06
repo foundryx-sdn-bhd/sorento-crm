@@ -538,19 +538,26 @@ class TestPromotionBrandGateFailsClosed:
             f"{gate.get('access_notice')!r}"
         )
 
-    def test_brand_strip_is_order_domain_only(self, session_factory, monkeypatch) -> None:
-        """The strip exists to keep a brand OUT of the shared resolver's order-domain
-        fan-out (F1a) - it must not also blind the resolver for inventory/promotion
-        domains, where `gate.py` (~1546-1556) reads `parser.get("entities")` for a
-        `hint: "brand"` entity ON PURPOSE (brand-grouping a promotion roster).
+    def test_brand_strip_spares_the_promotion_domain_only(self, session_factory, monkeypatch) -> None:
+        """The strip exists to keep a live brand OUT of the shared resolver's fan-out
+        (F1a: order -> customer/transporter). BRAND-PROMO-EXPAND (owner, 6 Oct 2026:
+        "Sorento is always a brand"; PR #1504) widened it from order/sales to EVERY
+        domain but promotion: the shared resolver has no brand probe at all and fans
+        `brand` out to the PROMOTION probe (`entity_resolver._ENTITY_TYPE_EXPANSIONS`),
+        which is how an inventory turn's SORENTO came back as 20 promotion matches and
+        was stored on `focus.extra["promotion"]` (prod turn 120).
 
-        Red: `turn_runtime.resolve_kinds` strips the brand-hinted entity
-        UNCONDITIONALLY (no domain/branch_kind check at all) - for an "inventory"
-        domain turn naming ONLY a brand token, the entities list is emptied before
-        `resolve_gate.run` is even reached, and the early-return guard
-        (`if not entities and entry != "access_check": return ...`) then skips the
-        resolver ENTIRELY, so `resolve_gate.run` (and gate.py's own brand-grouping
-        code behind it) never sees the token at all.
+        Promotion is the one domain that must still send the brand word: its fan-out is
+        what lists that brand's promotions, and `gate.py` (~1589) and `tier_gate.py`
+        (~215) read `parser.get("entities")` for the `hint: "brand"` entity ON PURPOSE.
+        Two invariants, one test: under PROMOTION the resolver is reached with the brand
+        entity in what it sees; under INVENTORY `ctx.parse.output.entities` is still never
+        mutated (the security second pass: only the TOKEN LIST is filtered), and with
+        nothing left to ask about, the resolver is not called at all (the same shape a
+        brand-only ORDER turn has had since F1a).
+
+        Superseded: `test_brand_strip_is_order_domain_only`, which pinned the order-only
+        carve-out this lane retired.
         """
         import uuid as _uuid
 
@@ -575,27 +582,43 @@ class TestPromotionBrandGateFailsClosed:
         def _fake_run(ctx, entry, extra, **kw):
             captured["ctx"] = ctx
             captured["entry"] = entry
+            captured["excluded"] = kw.get("resolver_excluded_entity_ids")
             return {"resolved": {"resolutions": []}, "gate": {"compatible_entities": []}}
 
         monkeypatch.setattr(resolve_gate_mod, "run", _fake_run)
         monkeypatch.setattr(business_services, "production_services", lambda db, **kw: object())
 
-        entities = [
-            {"raw": "Cabana", "hint": "brand", "canonical_code": None, "current_message": True, "confident": True},
-        ]
-        ctx = {"parse": {"output": {"domain_hint": "inventory", "entities": list(entities)}}}
-        turn_runtime.resolve_kinds(db, ctx=ctx, branch_kind="business_query", space_id=None, dry_run=True)
+        def _brand_only(domain: str) -> dict[str, Any]:
+            return {
+                "parse": {
+                    "output": {
+                        "domain_hint": domain,
+                        "entities": [
+                            {"raw": "Cabana", "hint": "brand", "canonical_code": None, "current_message": True, "confident": True},
+                        ],
+                    }
+                }
+            }
 
-        assert captured.get("entry") is not None, (
-            "an inventory-domain turn naming only a brand must still reach the "
-            "resolver (gate.py's own brand-grouping code needs to see the token) - "
-            f"it never got called at all: {captured!r}"
+        promo_ctx = _brand_only("promotion")
+        turn_runtime.resolve_kinds(db, ctx=promo_ctx, branch_kind="check_promotion", space_id=None, dry_run=True)
+        assert captured.get("entry") == "access_check", (
+            "a promotion-domain turn naming only a brand must still reach the resolver "
+            f"(its fan-out lists that brand's promotions): {captured!r}"
         )
-        surviving = (
-            ((captured.get("ctx") or {}).get("parse") or {}).get("output", {}).get("entities")
+        surviving = ((captured.get("ctx") or {}).get("parse") or {}).get("output", {}).get("entities")
+        assert surviving, f"the brand entity must survive into what the promotion gate sees: {surviving!r}"
+        assert not captured.get("excluded"), f"under promotion the brand word is sent, never excluded: {captured!r}"
+
+        captured.clear()
+        inventory_ctx = _brand_only("inventory")
+        turn_runtime.resolve_kinds(db, ctx=inventory_ctx, branch_kind="business_query", space_id=None, dry_run=True)
+        assert captured.get("entry") is None, (
+            "an inventory-domain turn naming only a LIVE brand has nothing left for the shared "
+            f"resolver (the brand is answered off the brands table), so it is not called: {captured!r}"
         )
-        assert surviving, (
-            f"the brand entity must not be stripped for a non-order domain: {surviving!r}"
+        assert inventory_ctx["parse"]["output"]["entities"], (
+            "`ctx.parse.output.entities` is never mutated by the strip (security second pass)"
         )
 
 
