@@ -47,14 +47,31 @@ A. (Owner ruling, 6 Oct 2026 17:40: the principle, not the turn type.) A fetch a
    scoped to a specific resolved product (a spec entity with a real uuid) never takes a
    set predicate, on ANY turn: a task fill, a plain reuse, a fresh pick. A set predicate
    exists only for a set question with no specific product. A stray non-product entity (a
-   stale brand / promotion / category row without uuid) may resolve on its own but never
-   gates or widens the product lookup. One place: `turn_runtime.make_tool_runner`'s gate,
-   where the predicate is attached (`_scoped_to_a_resolved_product(spec)` reads the plan's
-   own spec, never the resolver's rows, because a set question's qualifying population
-   reaches `compatible_entities` with uuids of its own). The key is popped, not left
-   unset: the gate starts as the resolver's own gate dict, which already carries it. The
-   engine's carry hand-off is unchanged (an earlier revision skipped the carry on task
-   fetch turns; the general rule made that special case unnecessary).
+   stale brand / promotion / category / product_type row without uuid) may resolve on its
+   own, and may even describe a set of its own, but never gates or widens the product
+   lookup. Three seams, each the narrowest place for its half:
+   - `turn_runtime.make_tool_runner`'s gate, where the predicate is attached: a spec that
+     names a product by uuid (`scoped_to_a_resolved_product`) drops the predicate unless
+     the spec's products ARE the population the resolver placed this turn
+     (`_spec_is_the_set`). A set question, and a follow-up over a carried set ("cert?"
+     after a basin set), re-resolve the members onto the spec (the reconciled plan's
+     `list_all` over `resolved_candidates`), so they keep theirs; a task slot or a carried
+     subject is not something the resolver placed this turn, so whatever set the stray
+     word described is not the fetch's subject. (An earlier revision keyed on the
+     predicate's `description`; reviewer round 5 showed a stale word tagged `category`
+     binding to a brand and describing a set, and the dealer's "1" refused for scope.) The
+     key is popped, not left unset: the gate starts as the resolver's own gate dict.
+   - `engine.py`, the `_pass_scope_gate` precedent: on a plan whose every fetch is scoped
+     to a resolved product, the resolver's "no entities and ... requires a scoping entity"
+     exit (it was asked about the stray word alone) is passed with reason "product
+     subject", so the answer bridge never answers a fetch that answered the product in
+     full as the turn's miss ("Couldn't find any product with stock.").
+   - `turn_runtime.unplaced_tokens`: a carried row (`current_message: False`) is not a
+     token this message named, so its miss is not said back ("Couldn't find: SORENTO."
+     under the product's line) and production's not-found composer does not re-render
+     the rows (which dropped the discontinued marker).
+   The engine's carry hand-off itself is unchanged: the stray word still reaches the
+   resolver and may resolve.
 B. `turn/compose.py` never-stuck, with the #1501 principle (owner, 6 Oct 17:50: no claim
    without a lookup). A section that rendered nothing for its named subjects prints the
    existing "No {label} found for {codes}." miss line ONLY when a tool actually ran for
@@ -65,23 +82,20 @@ B. `turn/compose.py` never-stuck, with the #1501 principle (owner, 6 Oct 17:50: 
    arm's existing retry sentence under the header. Never a bare header, never a stock
    claim nothing looked up.
 
-Chosen seam: the gate guard is the one place a predicate is attached to a fetch, and the
-plan's spec is the one record of whether the question is about a specific product.
-
-Observed on the blank test schema, reported and not changed here: a carried uuid-less word
-that the resolver cannot place is named by production's not-found composer ("Couldn't find:
-SORENTO.") although nobody typed it this turn, and that composer's row re-render carries no
-discontinued marker. In prod the word is a real brand and resolves.
-
 ## Tests
 
-`sorento_crm_backend/tests/chatbot/test_stock_fill_predicate.py`: two engine replays of the
-turn 121 state (in stock + discontinued; no stock, no incoming), the sibling replay (a plain
+`sorento_crm_backend/tests/chatbot/test_stock_fill_predicate.py` (14 tests): two engine
+replays of the turn 121 state (in stock + discontinued; no stock, no incoming) asserting the
+whole reply (the availability line and the discontinued marker, nothing else); the same fill
+with the stale word tagged promotion / brand / category / product_type and BINDING to a
+seeded brand of that name (reviewer round 5's shape); the sibling replay (a plain
 `check stock` reuse turn over the carried product and the stale extra, no task: the quantity
-question, then the availability line), each with a seam assertion on the gate the lane
-received (no predicate, the product alone) and on the stock tool's product ids; a
-tool-runner gate test (task spec and plain product spec drop the predicate, a class-word
-spec keeps it); two compose tests for the never-stuck rule. Four older expectations in three files pinned a bare header over an
+question, then the availability line) plain and with a binding category word; each replay
+also asserts the gate the lane received (no predicate, the product alone) and the stock
+tool's product ids. A tool-runner gate test (task and carried specs drop the predicate,
+described or not; a set question's member spec and a class-word spec keep it), an
+`unplaced_tokens` test (carried rows are not named), three compose tests (one per fallback
+branch) and an `envelope_of` test for `tool_ran`. Four older expectations in three files pinned a bare header over an
 empty hand-built envelope: the three header-grammar tests now read the header over a
 row, and the blocked-contact escalation test expects the miss line before the salesman
 line.

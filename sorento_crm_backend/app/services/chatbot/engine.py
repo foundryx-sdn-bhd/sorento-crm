@@ -2020,12 +2020,23 @@ def _scoped_compatible(
 
 
 def _pass_scope_gate(
-    payload: dict[str, Any] | None, compatible: list[dict[str, Any]], *, force: bool
+    payload: dict[str, Any] | None,
+    compatible: list[dict[str, Any]],
+    *,
+    force: bool,
+    reason: str = "customer scope",
 ) -> dict[str, Any] | None:
-    """The resolver's exit for a turn the scope gate answered. The linked customers are
-    the subject the gate's "no entities and 'order' requires a scoping entity" arm asked
-    for, so that arm (or, when `force`, any arm: the lane refuses before a fetch) is
-    passed instead of ending in the miss text and its escalate offer."""
+    """The resolver's exit for a turn whose subject is settled elsewhere. The linked
+    customers are the subject the gate's "no entities and 'order' requires a scoping
+    entity" arm asked for, so that arm (or, when `force`, any arm: the lane refuses
+    before a fetch) is passed instead of ending in the miss text and its escalate offer.
+
+    STOCK-FILL-PREDICATE (owner ruling, 6 Oct 2026): the same arm, `reason="product
+    subject"`, for a plan whose fetch is already scoped to a resolved product (a task
+    slot, a carried subject). The resolver was asked about the stray carried word alone,
+    placed nothing and said "no entities", while the lane's fetch answers the product in
+    full; that exit is not the turn's miss.
+    """
     if not isinstance(payload, dict):
         return payload
     gate = dict(payload.get("gate") if isinstance(payload.get("gate"), dict) else {})
@@ -2034,7 +2045,7 @@ def _pass_scope_gate(
         gate.get("gate_passed") is False and str(gate.get("gate_reason") or "").startswith("no entities and")
     ):
         gate["gate_passed"] = True
-        gate["gate_reason"] = "customer scope"
+        gate["gate_reason"] = reason
         gate["gate_clarification"] = ""
         exit_kind = "continue" if force or payload.get("_exit_kind") == "not_found" else payload.get("_exit_kind")
         return {**payload, "gate": gate, "_exit_kind": exit_kind}
@@ -5028,6 +5039,25 @@ def _run_stages_body(  # noqa: PLR0915
                         **({"dropped": screened_dropped} if screened_dropped else {}),
                     },
                 )
+            # STOCK-FILL-PREDICATE (owner ruling, 6 Oct 2026, the `_pass_scope_gate`
+            # precedent): this plan's fetch is already scoped to a resolved product (a
+            # task slot, a carried subject with its uuid), so the resolver's "no
+            # entities" exit - it was asked about the stray carried word alone - is
+            # passed, not answered as the turn's miss over a fetch that answers the
+            # product in full (prod turn 121's "1").
+            if (
+                not customer_scope_refused
+                and scope_ids is None
+                and plan.fetch
+                and all(turn_runtime.scoped_to_a_resolved_product(spec) for spec in plan.fetch)
+            ):
+                before = ((resolver_payload or {}).get("gate") or {}).get("gate_passed")
+                resolver_payload = _pass_scope_gate(
+                    resolver_payload, compatible_entities, force=False, reason="product subject"
+                )
+                after = ((resolver_payload or {}).get("gate") or {}).get("gate_passed")
+                if before is False and after is True:
+                    turn_trace.add("product_subject_passes_resolver_gate", {"fetch": [s.domain for s in plan.fetch]})
             answer_parse_output = turn_runtime.answer_parse_output(
                 resolver_ctx["parse"]["output"],
                 gate=(resolver_payload or {}).get("gate"),

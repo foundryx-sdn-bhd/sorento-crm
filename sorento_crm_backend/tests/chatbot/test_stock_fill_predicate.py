@@ -21,32 +21,32 @@ and printed only the set header, `envelope_of` stripped that header (not a count
 set), and the composer was left with a bare domain header over an empty body - which
 `envelope_missed` read as a total miss, so the salesman line closed it.
 
-Rules pinned here (owner ruling, 6 Oct 2026 17:40):
+Rules pinned here (owner rulings, 6 Oct 2026 17:40 and 17:50):
 
 A. A fetch already scoped to a specific resolved product (a spec entity with a uuid)
    never takes a set predicate, on ANY turn: a task fill, a plain reuse, a fresh pick.
-   A set predicate exists only for a set question with no specific product. A stray
-   non-product entity (a stale brand / promotion / category row without uuid) may
-   resolve on its own but never gates or widens the product lookup: the stock tool is
-   called with the product's id alone, and the gate handed to the lane carries no
-   `predicate`.
-B. Never-stuck: a lane header is never sent with an empty body. A section that misses
-   for its only product renders that product's miss line (`turn/compose.py`'s own "No
-   stock found for X."); a section whose tool answered but whose lane rendered nothing
-   says the `error` arm's own retry sentence, never a false "no stock".
-
-On the blank test schema the carried SORENTO word resolves to nothing, so production's
-own not-found composer also names it ("Couldn't find: SORENTO.") and re-renders the rows
-through its own grammar, which carries no discontinued marker; in prod the same word is a
-real brand and resolves. The replays therefore pin the product's own line and the gate,
-not the whole reply text. (That a carried word nobody typed this turn is named at all,
-and that the re-render drops the marker, are pre-existing behaviours of the unplaced-
-token path, reported on the PR and not changed here.)
+   A set predicate exists only for a set question with no specific product. At the
+   runner's gate "specific product" is told apart from "the set's members" by whether
+   the spec's products ARE the population the resolver placed this turn: a set question
+   (and a follow-up over a carried set) re-resolves its members onto the spec; a carried
+   subject or a task slot is not something the resolver placed this turn. A stray
+   non-product entity carried without a uuid (brand / promotion / category /
+   product_type row) may resolve on its own, and may even describe a set of its own,
+   but never gates or widens the product lookup: the stock tool is called with the
+   product's id alone and the gate the lane receives carries no `predicate`. Nor is
+   that carried word said back as a miss: `unplaced_tokens` names the tokens THIS
+   message typed.
+B. Never-stuck, and no claim without a lookup (the #1501 principle): a lane header is
+   never sent with an empty body. A section whose tool ran for its only product and
+   found nothing renders the existing miss line ("No stock found for X."); a section
+   whose tool answered but whose lane rendered nothing, or for which no tool ran at
+   all, says the `error` arm's own retry sentence, never a false "no stock".
 
 Every uuid here is synthetic; the codes are catalogue product codes (public repo).
 """
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 import pytest
@@ -70,9 +70,19 @@ pytestmark = pytest.mark.usefixtures("stub_access")
 CODE = "SRTWC8383-RL-GY"
 R = "Please refer to your salesman."
 TICK, CROSS = "✅", "❌"
+DISCONTINUED = "⚠️  *(PRODUCT DISCONTINUED)*"
 BARE_HEADER = f"*stock* for {CODE}:"
 SET_OPENER = "Here's what you want:"
-STALE_EXTRA = {"promotion": [{"raw": "SORENTO", "hint": "promotion", "canonical_code": "SORENTO", "confident": True}]}
+STALE_WORD = "SORENTO"
+GOT_STOCK = f"{CODE} x 1: {TICK} Got stock.\n{DISCONTINUED}"
+NO_STOCK = f"{CODE} x 1: {CROSS} No stock and no incoming. {R}"
+HOW_MANY = f"How many units of {CODE}?"
+
+
+def _stale_extra(hint: str, word: str = STALE_WORD) -> dict[str, list[dict[str, Any]]]:
+    """The brand word the photo read, mis-tagged `hint`, carried on `focus.extra` with
+    no uuid (prod: `promotion`)."""
+    return {hint: [{"raw": word, "hint": hint, "canonical_code": word, "confident": True}]}
 
 
 # --------------------------------------------------------------------------- #
@@ -80,10 +90,12 @@ STALE_EXTRA = {"promotion": [{"raw": "SORENTO", "hint": "promotion", "canonical_
 # --------------------------------------------------------------------------- #
 
 
-def _seed_product(session_factory, console: AvailConsole) -> str:
-    """The product the photo named, discontinued as it is on the catalogue. Returns its
-    uuid."""
-    from app.models.product import Product
+def _seed_product(session_factory, console: AvailConsole, *, brand_word: str | None = None) -> str:
+    """The product the photo named, discontinued as it is on the catalogue. With
+    `brand_word`, an active Brand row of that name is seeded and the product (and one
+    other) put under it, so a carried word of that name BINDS as a brand and describes a
+    set of its own (reviewer round 5's shape). Returns the product's uuid."""
+    from app.models.product import Brand, Product
 
     seeded = _seed(session_factory, [CODE])
     console.codes.update(seeded)
@@ -94,6 +106,15 @@ def _seed_product(session_factory, console: AvailConsole) -> str:
     db.info["company_scope"] = frozenset({SORENTO})
     product = db.query(Product).filter(Product.id == product_id).one()
     product.is_discontinued = True
+    if brand_word:
+        brand = Brand(
+            id=str(uuid.uuid4()), brand_code=brand_word, brand_name=brand_word, company_id=product.company_id, is_active=True
+        )
+        db.add(brand)
+        db.flush()
+        product.brand_id = brand.id
+        other = db.query(Product).filter(Product.id == console.uuid_of["SRT5674"]).one()
+        other.brand_id = brand.id
     db.commit()
     return product_id
 
@@ -109,10 +130,10 @@ def _product_row(product_id: str) -> dict[str, Any]:
     }
 
 
-def _turn_120_state(product_id: str) -> dict[str, Any]:
+def _turn_120_state(product_id: str, *, hint: str = "promotion") -> dict[str, Any]:
     """The state turn 120 left: the product (settled, with its uuid), the brand word
-    SORENTO mis-tagged `promotion` on `focus.extra` with no uuid, one open stock_qty
-    task with one empty slot."""
+    SORENTO mis-tagged `hint` on `focus.extra` with no uuid, one open stock_qty task
+    with one empty slot."""
     task = task_mod.Task(
         kind="stock_qty",
         domain="inventory",
@@ -121,14 +142,14 @@ def _turn_120_state(product_id: str) -> dict[str, Any]:
         touched_at_turn=120,
         slots=(task_mod.Slot(key=product_id, label=CODE, value=None),),
     )
-    focus = Focus(products=[_product_row(product_id)], domains=["inventory"], tasks=(task,), extra=dict(STALE_EXTRA))
+    focus = Focus(products=[_product_row(product_id)], domains=["inventory"], tasks=(task,), extra=_stale_extra(hint))
     return {"focus": focus_to_wire(focus), "open_question": None}
 
 
-def _carried_product_state(product_id: str) -> dict[str, Any]:
+def _carried_product_state(product_id: str, *, hint: str = "promotion") -> dict[str, Any]:
     """The sibling state: the product carried on the focus with its uuid, the same stale
     uuid-less extra, and no open task at all."""
-    focus = Focus(products=[_product_row(product_id)], domains=["inventory"], extra=dict(STALE_EXTRA))
+    focus = Focus(products=[_product_row(product_id)], domains=["inventory"], extra=_stale_extra(hint))
     return {"focus": focus_to_wire(focus), "open_question": None}
 
 
@@ -157,13 +178,6 @@ def _assert_product_scoped(console: AvailConsole, product_id: str) -> None:
         assert uuids == [product_id], gate.get("compatible_entities")
 
 
-def _assert_no_set_and_no_bare_header(text: str) -> None:
-    assert BARE_HEADER not in text, text
-    assert SET_OPENER not in text, text
-    assert "No stock found" not in text, text
-    assert f"\n\n{R}" not in text, text
-
-
 @pytest.fixture
 def fill_console(session_factory, monkeypatch, stub_access):
     """The dealer console with the product seeded. `fetch_gates` records every gate the
@@ -177,27 +191,30 @@ def fill_console(session_factory, monkeypatch, stub_access):
 
     monkeypatch.setattr(business, "run_fetch", recording_run_fetch)
 
-    def make(**stock_facts: Stock) -> tuple[AvailConsole, str]:
+    def make(brand_word: str | None = None, **stock_facts: Stock) -> tuple[AvailConsole, str]:
         console = AvailConsole(
             session_factory, monkeypatch, stub_access, phone="+60100000912", **stock_facts
         )
-        product_id = _seed_product(session_factory, console)
+        product_id = _seed_product(session_factory, console, brand_word=brand_word)
         console.fetch_gates = gates  # type: ignore[attr-defined]
         return console, product_id
 
     return make
 
 
+IN_STOCK = {CODE.replace("-", "_"): Stock(on_hand=100, discontinued=True)}
+
+
 def test_turn_121_fill_answers_the_products_availability_line(fill_console):
     """The owner's turn 121, product in stock and discontinued: the availability line
-    and the marker, no bare "*stock* for" header, no set, no salesman line."""
-    c, product_id = fill_console(**{CODE.replace("-", "_"): Stock(on_hand=100, discontinued=True)})
+    and the marker and nothing else. No bare "*stock* for" header, no set, no salesman
+    line, no sentence about the carried word."""
+    c, product_id = fill_console(**IN_STOCK)
     c.state = _turn_120_state(product_id)
 
     text = c.say("1", _turn_121_verdict())
 
-    assert text.split("\n")[0] == f"{CODE} x 1: {TICK} Got stock.", text
-    _assert_no_set_and_no_bare_header(text)
+    assert text == GOT_STOCK, text
     _assert_product_scoped(c, product_id)
 
 
@@ -209,8 +226,23 @@ def test_turn_121_fill_with_no_stock_and_no_incoming_says_so(fill_console):
 
     text = c.say("1", _turn_121_verdict())
 
-    assert text.split("\n")[0] == f"{CODE} x 1: {CROSS} No stock and no incoming. {R}", text
-    assert BARE_HEADER not in text and SET_OPENER not in text, text
+    assert text == NO_STOCK, text
+    _assert_product_scoped(c, product_id)
+
+
+@pytest.mark.parametrize("hint", ["promotion", "brand", "category", "product_type"])
+def test_a_stale_word_that_binds_as_a_brand_never_gates_the_fill(fill_console, hint):
+    """Reviewer round 5: the stale word tagged `category` or `product_type` becomes a
+    scope term, BINDS to an active brand of that name and describes a set of its own
+    (the brand's products with stock), the carried product among them. That set is not
+    the fetch's subject: the dealer's "1" still gets the product's own line, never the
+    scope-needed refusal, never a set, and the word is not said back."""
+    c, product_id = fill_console(brand_word=STALE_WORD, **IN_STOCK)
+    c.state = _turn_120_state(product_id, hint=hint)
+
+    text = c.say("1", _turn_121_verdict())
+
+    assert text == GOT_STOCK, text
     _assert_product_scoped(c, product_id)
 
 
@@ -219,19 +251,29 @@ def test_a_plain_reuse_turn_over_a_carried_product_and_a_stale_extra_stays_produ
     on the focus with its uuid beside the stale uuid-less SORENTO row, and the dealer
     sends a plain stock check (`entity_op reuse`, no entities). The reply is about the
     product (the quantity question, then its availability line), never a catalogue set."""
-    c, product_id = fill_console(**{CODE.replace("-", "_"): Stock(on_hand=100, discontinued=True)})
+    c, product_id = fill_console(**IN_STOCK)
     c.state = _carried_product_state(product_id)
 
     first = c.say("check stock", reply(entity_op="reuse"))
 
-    assert f"How many units of {CODE}?" in first.split("\n"), first
-    _assert_no_set_and_no_bare_header(first)
+    assert first == HOW_MANY, first
     _assert_product_scoped(c, product_id)
 
     second = c.say("1", _turn_121_verdict())
 
-    assert second.split("\n")[0] == f"{CODE} x 1: {TICK} Got stock.", second
-    _assert_no_set_and_no_bare_header(second)
+    assert second == GOT_STOCK, second
+    _assert_product_scoped(c, product_id)
+
+
+def test_a_plain_reuse_turn_with_a_binding_stale_category_word_stays_product_scoped(fill_console):
+    """The sibling case with reviewer round 5's shape: the stale word tagged `category`
+    binds as a brand."""
+    c, product_id = fill_console(brand_word=STALE_WORD, **IN_STOCK)
+    c.state = _carried_product_state(product_id, hint="category")
+
+    first = c.say("check stock", reply(entity_op="reuse"))
+
+    assert first == HOW_MANY, first
     _assert_product_scoped(c, product_id)
 
 
@@ -240,15 +282,31 @@ def test_a_plain_reuse_turn_over_a_carried_product_and_a_stale_extra_stays_produ
 # --------------------------------------------------------------------------- #
 
 
-def test_a_fetch_scoped_to_a_resolved_product_carries_no_set_predicate(session_factory, monkeypatch):
-    """`turn_runtime.make_tool_runner`: a spec whose entity is a product with a real uuid
-    hands `lanes.business.run_fetch` a gate with no `predicate`, whatever the resolver
-    derived this turn, task filter or not. A spec that names only a class word (a set
-    question) keeps it.
+def _runner(session_factory, *, compatible: list[dict[str, Any]], predicate: dict[str, Any]):
+    """`make_tool_runner` in the production shape: the runner's gate STARTS as the
+    resolver's own gate dict, which already carries the predicate the engine read off it
+    (reviewer round 2), and `compatible` is what the resolver placed this turn."""
+    return turn_runtime.make_tool_runner(
+        session_factory(),
+        ctx={"parse": {"output": verdict(domain_hint="inventory", intent_hint="check_stock")}},
+        verdict=verdict(domain_hint="inventory", intent_hint="check_stock"),
+        focus=Focus(domains=["inventory"]),
+        compatible_entities=compatible,
+        predicate=predicate,
+        resolver_gate={"gate_passed": True, "predicate": predicate},
+        unplaced={},
+        space_id=None,
+        dry_run=True,
+        turn_trace=type("Trace", (), {"add": lambda self, *a, **k: None})(),
+    )
 
-    Production shape: the runner's gate STARTS as the resolver's own gate dict, which
-    already carries the predicate the engine read off it, so the arm must remove the key,
-    not merely refrain from adding it."""
+
+def test_a_fetch_scoped_to_a_resolved_product_carries_no_set_predicate(session_factory, monkeypatch):
+    """`turn_runtime.make_tool_runner`: a spec whose product (a real uuid) is NOT the set
+    the resolver placed this turn hands `lanes.business.run_fetch` a gate with no
+    `predicate`, task filter or not, whether the predicate describes a set or not. A set
+    question's spec IS the resolver's population, so it keeps its predicate; so does a
+    spec that names only a class word."""
     gates: list[dict[str, Any]] = []
 
     def fake_run_fetch(payload, **kwargs):
@@ -258,60 +316,52 @@ def test_a_fetch_scoped_to_a_resolved_product_carries_no_set_predicate(session_f
     monkeypatch.setattr(business, "run_fetch", fake_run_fetch)
     product_id = "11111111-1111-4111-8111-111111111111"
     row = {"uuid": product_id, "entity_type": "product", "canonical_code": CODE, "hint": "product", "raw": CODE}
+    other = {**row, "uuid": "22222222-2222-4222-8222-222222222222", "canonical_code": "ZZT-OTHER", "raw": "ZZT-OTHER"}
     class_word = {"hint": "category", "raw": "basin", "canonical_code": "basin", "current_message": True}
-    set_predicate = {"require": {"stock": True}, "qualifying_total": 2000, "breakdown": {"rows": []}}
-    runner = turn_runtime.make_tool_runner(
-        session_factory(),
-        ctx={"parse": {"output": verdict(domain_hint="inventory", intent_hint="check_stock")}},
-        verdict=verdict(domain_hint="inventory", intent_hint="check_stock"),
-        focus=Focus(domains=["inventory"]),
-        compatible_entities=[row],
-        predicate=set_predicate,
-        resolver_gate={"gate_passed": True, "predicate": set_predicate},
-        unplaced={},
-        space_id=None,
-        dry_run=True,
-        turn_trace=type("Trace", (), {"add": lambda self, *a, **k: None})(),
+    bare_leg = {"require": {"stock": True}, "qualifying_total": 2000, "breakdown": {"rows": []}}
+    described = {**bare_leg, "description": [{"key": "brand", "label": "Brand", "value": "Zzt brand"}]}
+    task_spec = FetchSpec(
+        domain="inventory",
+        entities=[row],
+        filters={"task": "stock_qty", "requested_quantities": {product_id: 1}},
+        date_window=None,
     )
+    carried_spec = FetchSpec(domain="inventory", entities=[row], filters={}, date_window=None)
 
-    runner(
-        "inventory",
-        FetchSpec(
-            domain="inventory",
-            entities=[row],
-            filters={"task": "stock_qty", "requested_quantities": {product_id: 1}},
-            date_window=None,
-        ),
-    )
-    runner("inventory", FetchSpec(domain="inventory", entities=[row], filters={}, date_window=None))
+    # The turn 121 shape: the resolver saw only the stray word and placed no product.
+    runner = _runner(session_factory, compatible=[], predicate=bare_leg)
+    runner("inventory", task_spec)
+    runner("inventory", carried_spec)
+    # Reviewer round 5: the stray word (tagged category) bound to a brand and DESCRIBED a
+    # set whose population the resolver placed, the carried product among it. The
+    # spec's product is not that set, so the predicate still goes.
+    runner = _runner(session_factory, compatible=[row, other], predicate=described)
+    runner("inventory", task_spec)
+    runner("inventory", carried_spec)
+    # A set question ("which basins have stock"): the spec IS the resolver's population.
+    runner = _runner(session_factory, compatible=[row, other], predicate=described)
+    runner("inventory", FetchSpec(domain="inventory", entities=[row, other], filters={}, date_window=None))
+    # A spec that names only a class word has no product to be scoped to.
+    runner = _runner(session_factory, compatible=[], predicate=bare_leg)
     runner("inventory", FetchSpec(domain="inventory", entities=[class_word], filters={}, date_window=None))
 
-    task_gate, carried_gate, set_gate = gates
-    assert "predicate" not in task_gate, task_gate
-    assert "predicate" not in carried_gate, carried_gate
-    assert set_gate.get("predicate") == set_predicate
+    task_gate, carried_gate, task_described_gate, carried_described_gate, set_gate, class_gate = gates
+    for gate in (task_gate, carried_gate, task_described_gate, carried_described_gate):
+        assert "predicate" not in gate, gate
+    assert set_gate.get("predicate") == described
+    assert class_gate.get("predicate") == bare_leg
 
-    # A DESCRIBED set ("which basins have stock"): its members reach the spec as resolved
-    # uuids too, and the predicate carries the set's own bindings, so it is kept.
-    described = {**set_predicate, "description": [{"key": "class", "label": "Product type", "value": "Wash basin"}]}
-    member = {**row, "uuid": "22222222-2222-4222-8222-222222222222", "canonical_code": "ZZT-MEMBER"}
-    gates.clear()
-    member_runner = turn_runtime.make_tool_runner(
-        session_factory(),
-        ctx={"parse": {"output": verdict(domain_hint="inventory", intent_hint="check_stock")}},
-        verdict=verdict(domain_hint="inventory", intent_hint="check_stock"),
-        focus=Focus(domains=["inventory"]),
-        compatible_entities=[member],
-        predicate=described,
-        resolver_gate={"gate_passed": True, "predicate": described},
-        unplaced={},
-        space_id=None,
-        dry_run=True,
-        turn_trace=type("Trace", (), {"add": lambda self, *a, **k: None})(),
-    )
-    member_runner("inventory", FetchSpec(domain="inventory", entities=[member], filters={}, date_window=None))
-    (member_gate,) = gates
-    assert member_gate.get("predicate") == described
+
+def test_unplaced_tokens_name_only_what_this_message_typed():
+    """`turn_runtime.unplaced_tokens`: a carried row (`current_message: False`) the engine
+    handed to the resolver is not a token this message named, so its miss is not said
+    back; a typed token's miss still is."""
+    resolved = {"unresolved_tokens": ["sorento", "wc2867"]}
+    entities = [
+        {"raw": "SORENTO", "hint": "promotion", "current_message": False},
+        {"raw": "wc2867", "hint": "product", "current_message": True},
+    ]
+    assert turn_runtime.unplaced_tokens(entities, resolved) == {"wc2867": "wc2867"}
 
 
 # --------------------------------------------------------------------------- #
@@ -374,6 +424,17 @@ def test_a_section_no_tool_ran_for_never_claims_no_stock():
     assert text.startswith(f"{BARE_HEADER}\nI could not fetch stock just now, please try again."), text
 
 
+def test_a_section_the_tool_answered_but_the_lane_left_empty_never_says_no_stock():
+    """The prod turn 121 envelope exactly (reviewer round 1 S1): the tool had a result,
+    the withheld set left the lane with nothing under the header. Not a bare header, and
+    not a false "No stock found" over a product with stock: the retry sentence."""
+    text = _compose(_empty_section(CODE, tool_has_result=True))
+
+    assert "No stock found" not in text, text
+    assert text.strip() != BARE_HEADER, text
+    assert text.startswith(f"{BARE_HEADER}\nI could not fetch stock just now, please try again."), text
+
+
 def test_envelope_of_says_whether_a_tool_ran_for_the_codes():
     """`turn_runtime.envelope_of`: `tool_ran` is True only for a fragment a real tool
     call produced (`fetch.tool` stamped by `fetch_result`) that was about these codes
@@ -387,14 +448,3 @@ def test_envelope_of_says_whether_a_tool_ran_for_the_codes():
     assert turn_runtime.envelope_of(empty_from_tool, spec, [row])["tool_ran"] is True
     assert turn_runtime.envelope_of(refused_before_any_tool, spec, [row])["tool_ran"] is False
     assert turn_runtime.envelope_of(tool_ran_but_not_for_the_code, spec, [row])["tool_ran"] is False
-
-
-def test_a_section_the_tool_answered_but_the_lane_left_empty_never_says_no_stock():
-    """The prod turn 121 envelope exactly (reviewer S1): the tool had a result, the
-    withheld set left the lane with nothing under the header. Not a bare header, and
-    not a false "No stock found" over a product with stock: the retry sentence."""
-    text = _compose(_empty_section(CODE, tool_has_result=True))
-
-    assert "No stock found" not in text, text
-    assert text.strip() != BARE_HEADER, text
-    assert text.startswith(f"{BARE_HEADER}\nI could not fetch stock just now, please try again."), text

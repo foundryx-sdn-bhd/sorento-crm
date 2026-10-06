@@ -1743,6 +1743,14 @@ def unplaced_tokens(entities: list[Any], resolved: Any) -> dict[str, str]:
     """
     named: dict[str, str] = {}
     for entity in jsc.array(entities):
+        # STOCK-FILL-PREDICATE (owner ruling, 6 Oct 2026): a CARRIED row the engine
+        # handed over (`with_carried_entities`, `current_message: False`) may resolve on
+        # its own, but it is not a token THIS message named - the dealer typed "1" - so
+        # its miss is never said back ("Couldn't find: SORENTO." under the product's
+        # own line), and production's not-found composer never takes the reply over
+        # for it.
+        if isinstance(entity, dict) and entity.get("current_message") is False:
+            continue
         raw = jsc.nullish_str(jsc.get(entity, "raw")).strip()
         key = _token_key(raw)
         if key and key not in named:
@@ -2926,13 +2934,18 @@ def make_tool_runner(
         # gate dict (above), and that dict is where this turn's `predicate` was read
         # from in the first place (`resolve_kinds`).
         # A set question's own members ALSO reach the spec as resolved uuids (the
-        # reconciled plan carries the population the resolver placed), so "specific"
-        # is told apart from "the set" by the predicate itself: a described set carries
-        # its bindings (`description`, off a class word, a spec or a brand); the bare
-        # intent leg over the whole catalogue describes nothing.
+        # reconciled plan carries the population the resolver placed this turn), so
+        # "specific" is told apart from "the set" by whether the spec's products ARE
+        # that population (`_spec_is_the_set`): a set question, and a follow-up over a
+        # carried set ("cert?" after "any gunmetal basin has incoming?"), re-resolve
+        # the members onto the spec; a carried subject or a task slot is a product the
+        # resolver did not place this turn. A stale carried word may still describe a
+        # set of its own (reviewer round 5: tagged `category` it bound to a brand and
+        # the predicate survived, so "1" was refused for scope) - described or not,
+        # that set is not the fetch's subject and never rides it.
         if page_predicate is not None:
             block = page_predicate
-        elif _scoped_to_a_resolved_product(spec) and not _describes_a_set(predicate):
+        elif scoped_to_a_resolved_product(spec) and not _spec_is_the_set(spec, compatible_entities):
             block = None
             gate.pop("predicate", None)
         else:
@@ -4029,29 +4042,45 @@ def _spec_row(entity: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _describes_a_set(predicate: Any) -> bool:
-    """Does this predicate describe a set at all? `description` is the resolver's own
-    labelled bindings (`product_predicate_service.describe_set`: brand, product type,
-    spec values) and exists only when a class word, a grounded spec or a brand scoped the
-    read; the bare intent leg (`check_stock` -> `{"stock": true}` over the whole
-    catalogue) carries none. The same test `lanes/business/fetch.py` applies for
-    `set_described`."""
-    return isinstance(predicate, dict) and bool(jsc.array(jsc.get(predicate, "description")))
-
-
-def _scoped_to_a_resolved_product(spec: FetchSpec) -> bool:
-    """Does the plan's own spec name a product by a real uuid? Read off `spec.entities`
-    (what the plan says the question is about), never off the resolver's rows.
-    `_spec_row`'s uuid test, so a label promoted into `uuid` never counts. On its own this
-    cannot tell a specific product from a set's members (the reconciled plan carries a set
-    question's population with uuids too), which is why the gate reads it together with
-    `_describes_a_set`."""
-    return any(
-        isinstance(e, dict)
+def _spec_product_ids(spec: FetchSpec) -> set[str]:
+    """The real product uuids on the plan's own spec (`_spec_row`'s uuid test, so a label
+    promoted into `uuid` never counts)."""
+    return {
+        _spec_row(e)["uuid"]
+        for e in spec.entities
+        if isinstance(e, dict)
         and jsc.nullish_str(e.get("hint")).strip().lower() == "product"
         and _spec_row(e)["uuid"] is not None
-        for e in spec.entities
-    )
+    }
+
+
+def scoped_to_a_resolved_product(spec: FetchSpec) -> bool:
+    """Does the plan's own spec name a product by a real uuid? Read off `spec.entities`
+    (what the plan says the question is about). On its own this cannot tell a specific
+    product from a set's members (the reconciled plan carries a set question's population
+    with uuids too), which is why the gate reads it together with `_spec_is_the_set`."""
+    return bool(_spec_product_ids(spec))
+
+
+def _spec_is_the_set(spec: FetchSpec, compatible: list[dict[str, Any]]) -> bool:
+    """Are the spec's products exactly the product rows the RESOLVER placed this turn?
+
+    A set question ("which basins have stock") and a follow-up over a carried set
+    ("cert?" after "any gunmetal basin has incoming?") resolve the described set's
+    members this turn (`references._emit_spec_matches` -> `gate.compatible_entities`
+    -> `narrow.decide`'s `list_all`), so the plan's spec IS that population and the set
+    predicate belongs to it. A carried subject or a task slot is a product the resolver
+    did not place this turn: the resolver saw only the stray carried word, and whatever
+    set that word happened to describe is not the fetch's subject."""
+    spec_ids = _spec_product_ids(spec)
+    placed_ids = {
+        jsc.js_string(e.get("uuid"))
+        for e in compatible
+        if isinstance(e, dict)
+        and jsc.nullish_str(e.get("entity_type")).strip().lower() == "product"
+        and jsc.truthy(e.get("uuid"))
+    }
+    return bool(spec_ids) and spec_ids == placed_ids
 
 
 def _entities_for(spec: FetchSpec, compatible: list[dict[str, Any]]) -> list[dict[str, Any]]:
