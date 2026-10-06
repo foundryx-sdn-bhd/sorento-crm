@@ -122,15 +122,17 @@ class _KeepOpenSession:
 
     def __init__(self, session):
         self._s = session
+        self.calls: list[str] = []
 
     def __getattr__(self, name):
         return getattr(self._s, name)
 
     def commit(self):
+        self.calls.append("commit")
         self._s.flush()
 
     def rollback(self):
-        pass
+        self.calls.append("rollback")
 
     def close(self):
         pass
@@ -139,7 +141,9 @@ class _KeepOpenSession:
 @pytest.fixture()
 def patched_session(db, monkeypatch):
     mod = _script()
-    monkeypatch.setattr(mod, "SessionLocal", lambda: _KeepOpenSession(db))
+    handed = _KeepOpenSession(db)
+    monkeypatch.setattr(mod, "SessionLocal", lambda: handed)
+    mod._test_session = handed  # the CLI tests read `.calls` off it
     return mod
 
 
@@ -509,6 +513,8 @@ class TestCli:
         assert not path.exists()
         assert _stored(db, rid) == "AED_SORENTO:21"
         assert "--force" in capsys.readouterr().out
+        assert "commit" not in mod._test_session.calls
+        assert "rollback" in mod._test_session.calls
 
     def test_w22_cli_apply_then_revert_round_trip(self, db, patched_session, tmp_path):
         mod = patched_session
@@ -545,6 +551,10 @@ class TestCli:
 
         assert rc != 0
         assert "rolled back" in capsys.readouterr().out
+        # Reviewer kill test K1: a commit in the drift branch would keep the refs updated
+        # before the drifted one. The session must see a rollback and never a commit.
+        assert "commit" not in mod._test_session.calls
+        assert "rollback" in mod._test_session.calls
 
     def test_w23_cli_force_converts_the_clean_refs_and_keeps_the_flagged_ones(
         self, db, patched_session, tmp_path

@@ -313,7 +313,11 @@ def main(argv: Optional[list[str]] = None) -> int:
             return 2
         except ConversionDrift as exc:
             db.rollback()
-            print(f"aborted: {exc}; every update of this run was rolled back (backup: {args.csv})")
+            print(
+                f"aborted: {exc}; every update of this run was rolled back. The backup "
+                f"{args.csv} was already written and is left in place (reverting from it changes "
+                f"nothing); pass a new --csv path on the next --apply"
+            )
             return 3
         db.commit()
         print(f"converted: {count} (backup: {args.csv})")
