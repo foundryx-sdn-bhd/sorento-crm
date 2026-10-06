@@ -1,0 +1,333 @@
+"""QUICK-REPLY-NAMES (owner rule, 6 Oct 2026): quick replies are fixed short options only.
+
+Prod, 6 Oct 2026: the customer picker
+
+    Which customer do you mean? Please choose:
+    1. SAMPLE ONG BROTHERS (SRT)
+    2. ONG BROTHERS TILING TRADING SDN BHD (SRT)
+    3. ONG BROTHERS TILING TRADING SDN BHD (SAMPLE) (SRT)
+
+went out with the three names as WhatsApp quick-reply buttons and Meta refused the
+message with #131009 "Duplicate button title" (a title is cut at 20 characters; options
+2 and 3 are one string after the cut). The customer received nothing.
+
+Two layers, both pinned here:
+
+* rule 1 at the producers - a set goes out only when EVERY title is a fixed short option
+  (`turn/pending.py::quick_replies`, `lanes/business/answer.py`, `lanes/escalation.py`);
+* the safety net at the seam every reply crosses (`quick_reply_guard.guard`, applied in
+  `engine._reply_of`, `engine.run_tail` and `engine._seal_send`): at most 3 buttons, no
+  title over 20 characters (one drops the whole set), no duplicates, one log line.
+"""
+from __future__ import annotations
+
+import logging
+import uuid as uuid_mod
+from types import SimpleNamespace
+from typing import Any
+
+import pytest
+
+from app.services.chatbot import quick_reply_guard
+from app.services.chatbot.turn import pending as turn_pending
+from tests.chatbot._turn_helpers import do_window
+from tests.chatbot.test_engine import _parser_output
+from tests.chatbot.test_samantha_27sep_r5_do_list_carry import ORDERS_LIST, _order_ask
+from tests.chatbot.test_samantha_27sep_r7_owner_replay import owner_chat  # noqa: F401 - fixture
+
+#: The three names of the incident. Prod printed the third as "ONG BROTHERS TILING
+#: TRADING SDN BHD (SAMPLE)"; the harness's ledger-family grouping (`lanes/business/
+#: gate.py`, `_cust_base` drops every bracketed marker) folds that spelling into option
+#: 2 and prints two lines, so the marker is a plain word here. The property the incident
+#: turns on is kept: options 2 and 3 are one string once cut at 20 characters.
+INCIDENT_NAMES = (
+    "SAMPLE ONG BROTHERS",
+    "ONG BROTHERS TILING TRADING SDN BHD",
+    "ONG BROTHERS TILING TRADING SAMPLE SDN BHD",
+)
+INCIDENT_LABELS = tuple(f"{name} (SRT)" for name in INCIDENT_NAMES)
+
+
+# --------------------------------------------------------------------------- #
+# The guard: the net every outgoing set crosses
+# --------------------------------------------------------------------------- #
+
+
+class TestGuard:
+    def test_a_set_it_need_not_change_comes_back_byte_identical(self) -> None:
+        assert quick_reply_guard.guard("Mocha, Sorento") == "Mocha, Sorento"
+        assert quick_reply_guard.guard("Yes escalate,No it's okay") == "Yes escalate,No it's okay"
+
+    @pytest.mark.parametrize("empty", [None, "", "  ", ",", 42, ["a", "b"]])
+    def test_nothing_in_is_null_out_never_an_empty_string_or_a_list(self, empty) -> None:
+        assert quick_reply_guard.guard(empty) is None
+
+    def test_more_than_three_titles_keep_the_first_three(self) -> None:
+        """The did-you-mean numbered set used to be "1,2,3,Yes escalate,No it's okay":
+        WhatsApp shows three buttons, so the numbers stay and the Yes / No pair goes
+        (the text already offers the escalation in a sentence a typed yes answers)."""
+        assert quick_reply_guard.guard("1,2,3,Yes escalate,No it's okay") == "1, 2, 3"
+
+    def test_the_incident_names_send_no_buttons_at_all(self) -> None:
+        """One title over 20 characters drops the WHOLE set: a partial set would leave
+        the customer guessing which printed option is the tappable one."""
+        assert quick_reply_guard.guard(", ".join(INCIDENT_LABELS)) is None
+
+    def test_one_over_long_title_drops_the_set_even_beside_short_ones(self) -> None:
+        assert quick_reply_guard.guard("Yes, Project Customer Service") is None
+        # Exactly 20 is allowed; 21 is not.
+        assert quick_reply_guard.guard("a" * 20) == "a" * 20
+        assert quick_reply_guard.guard("a" * 21) is None
+
+    def test_duplicates_are_dropped_first_occurrence_kept(self) -> None:
+        """Meta's own check is what refused the message, and it compares the titles as
+        the transport sends them - so a repeat, in any case, never leaves here."""
+        assert quick_reply_guard.guard("Yes, No, yes") == "Yes, No"
+        assert quick_reply_guard.guard("1, 1, 2, 2, 3, 3, 4") == "1, 2, 3"
+
+    def test_titles_are_trimmed_before_they_are_measured(self) -> None:
+        assert quick_reply_guard.guard("  Yes ,  No  ") == "  Yes ,  No  "
+        assert quick_reply_guard.guard(f"  {'a' * 20}  ") == f"  {'a' * 20}  "
+        assert quick_reply_guard.guard(f"  {'a' * 21}  ") is None
+
+    def test_it_logs_once_when_it_drops_something_and_not_otherwise(self, caplog) -> None:
+        with caplog.at_level(logging.INFO, logger="app.services.chatbot.quick_reply_guard"):
+            quick_reply_guard.guard("Mocha, Sorento", where="unit")
+            assert caplog.records == []
+            quick_reply_guard.guard(", ".join(INCIDENT_LABELS), where="unit")
+            assert len(caplog.records) == 1
+            assert "unit" in caplog.records[0].getMessage()
+            caplog.clear()
+            quick_reply_guard.guard("1,2,3,Yes escalate,No it's okay", where="unit")
+            assert len(caplog.records) == 1
+
+
+# --------------------------------------------------------------------------- #
+# Rule 1 at the pending seam
+# --------------------------------------------------------------------------- #
+
+
+def _option(position: int, label: str, entity_type: str, **payload: Any) -> dict[str, Any]:
+    return {"position": position, "label": label, "entity_type": entity_type, "payload": payload}
+
+
+class TestPendingKinds:
+    def test_the_incident_customer_picker_sends_no_buttons(self) -> None:
+        labels = list(INCIDENT_LABELS)
+        assert turn_pending.quick_replies("customer_pick", labels) is None
+        # ... and not only because the names are long: a short customer name is a
+        # roster value all the same (owner rule: fixed short options ONLY).
+        assert turn_pending.quick_replies("customer_pick", ["ACME", "BETA"]) is None
+
+    @pytest.mark.parametrize(
+        "kind",
+        [
+            "product_pick",
+            "tier_pick",
+            "kind_pick",
+            "company_pick",
+            "attachment_type_ask",
+            "member_offer",
+            "top_selling_pick",
+            # minted off the operator-editable `chatbot_entity_kinds` table: a roster
+            # by construction, suppressed without being named anywhere.
+            "brand_pick",
+            "colour_ask",
+        ],
+    )
+    def test_every_roster_kind_sends_no_buttons(self, kind: str) -> None:
+        assert turn_pending.quick_replies_suppressed(kind) is True
+        assert turn_pending.quick_replies(kind, ["A", "B"]) is None
+
+    def test_team_pick_keeps_its_team_names(self) -> None:
+        options = [_option(1, "Mocha", "team", team="mocha"), _option(2, "Sorento", "team", team="sorento")]
+        assert turn_pending.quick_replies("team_pick", ["Mocha", "Sorento"], options=options) == "Mocha, Sorento"
+
+    def test_the_fixed_option_kinds_keep_theirs(self) -> None:
+        assert turn_pending.quick_replies("outstanding_scope", ["Sales orders", "Delivery orders", "Both"]) == (
+            "Sales orders, Delivery orders, Both"
+        )
+        assert turn_pending.quick_replies("outstanding_detail", ["Yes", "No"]) == "Yes, No"
+        assert turn_pending.quick_replies("sales_report_detail", ["DO", "SO"]) == "DO, SO"
+
+    def test_a_team_pick_that_carries_company_names_is_a_company_clarify_and_sends_none(self) -> None:
+        """`answer_bridge.py` mints the company clarify AS a `team_pick` whose options
+        name companies (`payload.company`). Company names are roster values."""
+        options = [
+            _option(1, "Mocha", "team", company="Mocha", company_id="m", brand_code="MCH"),
+            _option(2, "Sorento", "team", company="Sorento", company_id="s", brand_code="SRT"),
+        ]
+        assert turn_pending.quick_replies("team_pick", ["Mocha", "Sorento"], options=options) is None
+
+    def test_the_three_button_cap_still_holds_for_a_fixed_kind(self) -> None:
+        labels = [f"Option {i}" for i in range(1, 5)]
+        assert turn_pending.quick_replies("team_pick", labels) is None
+        assert turn_pending.quick_replies("team_pick", labels[:3]) == "Option 1, Option 2, Option 3"
+
+
+# --------------------------------------------------------------------------- #
+# Rule 1 at the did-you-mean producers
+# --------------------------------------------------------------------------- #
+
+
+class TestDidYouMeanSets:
+    def test_a_numbered_list_of_two_or_more_fills_the_buttons_with_its_numbers(self) -> None:
+        from app.services.chatbot.lanes.business import answer as answer_mod
+
+        assert answer_mod._numbered_quick_reply(1) == "1,Yes escalate,No it's okay"
+        assert answer_mod._numbered_quick_reply(2) == "1,2"
+        assert answer_mod._numbered_quick_reply(3) == "1,2,3"
+        assert answer_mod._numbered_quick_reply(5) == "1,2,3"
+
+    def test_the_engine_seam_hands_a_numbered_set_on_unchanged(self) -> None:
+        assert quick_reply_guard.guard("1,2,3") == "1,2,3"
+        assert quick_reply_guard.guard("1,Yes escalate,No it's okay") == "1,Yes escalate,No it's okay"
+
+
+# --------------------------------------------------------------------------- #
+# The engine seams
+# --------------------------------------------------------------------------- #
+
+
+class TestEngineSeams:
+    def test_reply_of_runs_the_guard_over_a_fixed_kind_with_long_labels(self) -> None:
+        """A producer that forgets rule 1 still cannot trip Meta: a `team_pick` label
+        over 20 characters drops the set at `_reply_of`."""
+        from app.services.chatbot import engine as engine_mod
+
+        question = turn_pending.ask(
+            "team_pick",
+            [
+                _option(1, "DO Customer Service", "team", team="do_cs"),
+                _option(2, "Project Customer Service", "team", team="project_cs"),
+            ],
+        )
+        reply = engine_mod._reply_of(SimpleNamespace(question=question, text="Which team?"))
+        assert reply["quick_replies"] is None
+        assert [o["label"] for o in reply["result_set"]] == ["DO Customer Service", "Project Customer Service"]
+
+    def test_reply_of_keeps_a_short_team_pick(self) -> None:
+        from app.services.chatbot import engine as engine_mod
+
+        question = turn_pending.ask(
+            "team_pick", [_option(1, "Mocha", "team", team="mocha"), _option(2, "Sorento", "team", team="sorento")]
+        )
+        reply = engine_mod._reply_of(SimpleNamespace(question=question, text="Which team?"))
+        assert reply["quick_replies"] == "Mocha, Sorento"
+
+    def test_seal_send_guards_the_lanes_own_fallback(self) -> None:
+        """A lane that hand-built its action's buttons (the escalation clarifies) has
+        them guarded too when the tail sealed none."""
+        from app.services.chatbot import engine as engine_mod
+
+        action = {"kind": "send_message", "text": "Which team?", "quick_replies": ", ".join(INCIDENT_LABELS)}
+        sealed = engine_mod._seal_send(action, {"quick_replies": None, "result_set": []})
+        assert sealed["quick_replies"] is None
+
+        short = {"kind": "send_message", "text": "Which team?", "quick_replies": "Mocha, Sorento"}
+        assert engine_mod._seal_send(short, {"quick_replies": None, "result_set": []})["quick_replies"] == (
+            "Mocha, Sorento"
+        )
+
+
+# --------------------------------------------------------------------------- #
+# The incident conversation, end to end through the real engine
+# --------------------------------------------------------------------------- #
+
+
+def _ong_brothers_ask(**extra: Any) -> dict[str, Any]:
+    return _order_ask(
+        entities=[{"raw": "ong brothers", "hint": "customer", "canonical_code": None, "current_message": True, "confident": True}],
+        document=["DO"],
+        status="delivered",
+        routing={"suggested_team": "customer_service", "suggested_agent": "order_enquiries", "team_source": None},
+        **{**do_window(), **extra},
+    )
+
+
+def _pick(position: int) -> dict[str, Any]:
+    """"2" typed back at the open picker: the parser resolves it onto a position."""
+    return _parser_output(
+        message_type="casual", intent_hint=None, domain_hint=None, entities=[],
+        reference_positions=[position], order_status=None, domain_in_message=False,
+    )
+
+
+@pytest.fixture
+def ong_brothers_is_three_customers(owner_chat, monkeypatch):  # noqa: F811 - fixture
+    """What prod resolved "ong brothers" to on 6 Oct 2026: three single-account
+    customers under Sorento, two of them one string once cut at 20 characters."""
+    from app.services.chatbot import engine as engine_mod
+    from app.services.chatbot.lanes.business.services import ResolveGateServices
+    from tests.chatbot.conftest import validating_resolve_entity
+
+    ids = {name: str(uuid_mod.uuid4()) for name in INCIDENT_NAMES}
+
+    def resolve_entity(body: dict[str, Any]) -> dict[str, Any]:
+        tokens = list(body.get("tokens") or [])
+        resolutions = []
+        unresolved = []
+        for t in tokens:
+            if t.casefold() == "ong brothers":
+                resolutions.append({"token": t, "resolved": True, "matches": [
+                    {
+                        "uuid": ids[name], "entity_type": "customer", "canonical_code": f"3000/O{i}",
+                        "match_tier": "fuzzy", "company_code": "SRT",
+                        "display": {"customer_name": name, "debtor_name": name},
+                    }
+                    for i, name in enumerate(INCIDENT_NAMES, 1)
+                ]})
+            else:
+                unresolved.append(t)
+        return {"tokens": tokens, "resolutions": resolutions, "unresolved_tokens": unresolved}
+
+    services = ResolveGateServices(
+        access_types=lambda **_: [{"name": "Sorento Dealer"}],
+        resolve_entity=validating_resolve_entity(resolve_entity),
+        probe=lambda **_: None,
+    )
+    monkeypatch.setattr(engine_mod.business_services, "production_services", lambda db, *, space_id=None: services)
+    return ids
+
+
+def _last_turn_row(chat):
+    from app.models.chatbot_turn import ChatbotTurn
+
+    db = chat.session_factory()
+    return db.query(ChatbotTurn).filter(ChatbotTurn.message_id == f"ZZT-r3-brand-carry-{chat._turn}").first()
+
+
+def _open_question(chat) -> dict[str, Any]:
+    from tests.chatbot.test_samantha_26sep_s9_brand_resolve import _open_question_of
+
+    return _open_question_of(chat.session_factory) or {}
+
+
+def test_the_incident_picker_prints_its_list_and_sends_no_buttons_then_2_picks(
+    owner_chat, ong_brothers_is_three_customers  # noqa: F811 - fixtures
+) -> None:
+    chat = owner_chat
+    ids = ong_brothers_is_three_customers
+
+    reply, calls, _ = chat.turn("DO for ong brothers", _ong_brothers_ask())
+
+    assert chat.kind() == "business_query", reply
+    assert "Which customer do you mean? Please choose:" in reply, reply
+    for n, label in enumerate(INCIDENT_LABELS, 1):
+        assert f"{n}. {label}" in reply, reply
+    assert _open_question(chat).get("kind") == "customer_pick", _open_question(chat)
+
+    row = _last_turn_row(chat)
+    persisted = row.response["reply"]
+    assert persisted["quick_replies"] is None, persisted
+    sends = [a for a in row.response["actions"] if a.get("kind") == "send_message"]
+    assert sends and all(a.get("quick_replies") is None for a in sends), sends
+    # The roster itself still travels with the message: that is what a typed "2" resolves against.
+    assert [o["label"] for o in persisted["result_set"]] == list(INCIDENT_LABELS), persisted["result_set"]
+
+    reply2, calls2, _ = chat.turn("2", _pick(2))
+
+    order_calls = [a for name, a in calls2 if name == ORDERS_LIST]
+    assert order_calls, (reply2, calls2)
+    assert order_calls[-1].get("customer_ids") == [ids[INCIDENT_NAMES[1]]], order_calls[-1]
+    assert "Which customer do you mean?" not in reply2, reply2

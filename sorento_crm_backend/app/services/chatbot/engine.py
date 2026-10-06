@@ -65,6 +65,7 @@ from app.services.chatbot.usage import record_parser_usage
 # APPLY, the narrower, the plan, the router, the composer, the tail - and `turn_runtime`
 # is everything that has to touch a database or a tool on its behalf.
 from app.services.chatbot import label_catalog, language as language_mod, session_state, turn_runtime
+from app.services.chatbot import quick_reply_guard
 from app.services.chatbot.turn import pending as turn_pending
 from app.services.chatbot.turn import question as turn_question
 from app.services.chatbot.turn import state as turn_state
@@ -7123,20 +7124,24 @@ def _quick_replies_of(answer: Any) -> str | None:
     if answer.question is None:
         return None
     labels = [str(o.get("label")) for o in answer.question.options if o.get("label")]
-    return turn_pending.quick_replies(getattr(answer.question, "kind", None), labels)
+    return turn_pending.quick_replies(
+        getattr(answer.question, "kind", None), labels, options=list(answer.question.options)
+    )
 
 
 def _reply_of(answer: Any) -> dict[str, Any]:
     """The three fields every `Answer`-shaped reply derives the same way: the text,
     the quick replies (through `_quick_replies_of`, so a suppressed kind stays
-    suppressed at every caller), and the roster a numbered follow-up resolves
-    against. Shared by `_run_answer`'s persisted reply and `_answer_actions`'s own
-    `send_message` action, which each add their own remaining key(s) on top
-    (`attachments_src` vs `kind`/`dry_run`) - one seam, so a fix here reaches both.
+    suppressed at every caller, then through `quick_reply_guard.guard`, the cap /
+    length / duplicate net every outgoing set crosses - QUICK-REPLY-NAMES), and the
+    roster a numbered follow-up resolves against. Shared by `_run_answer`'s persisted
+    reply and `_answer_actions`'s own `send_message` action, which each add their own
+    remaining key(s) on top (`attachments_src` vs `kind`/`dry_run`) - one seam, so a
+    fix here reaches both.
     """
     return {
         "text": getattr(answer, "text", "") or None,
-        "quick_replies": _quick_replies_of(answer),
+        "quick_replies": quick_reply_guard.guard(_quick_replies_of(answer), where="answer"),
         "result_set": list(answer.question.options) if answer.question is not None else [],
     }
 
@@ -7968,11 +7973,18 @@ def _seal_send(action: dict[str, Any], sealed: dict[str, Any]) -> dict[str, Any]
     # its OWN quick replies (the escalation clarifies name the teams so the answer is a
     # tap) must not have them erased by a turn whose tail composed none. Same rule for
     # `result_set`, for the same reason.
+    # QUICK-REPLY-NAMES: the sealed value already crossed the guard in `run_tail`; the
+    # lane's own fallback crosses it here, so a set the tail dropped as too long or too
+    # many cannot come back through the action the lane hand-built.
     sealed_replies = sealed.get("quick_replies")
     sealed_set = sealed.get("result_set")
     return {
         **action,
-        "quick_replies": sealed_replies if sealed_replies else action.get("quick_replies"),
+        "quick_replies": (
+            sealed_replies
+            if sealed_replies
+            else quick_reply_guard.guard(action.get("quick_replies"), where="lane action")
+        ),
         "result_set": sealed_set if sealed_set else action.get("result_set"),
     }
 
@@ -8843,7 +8855,10 @@ def run_tail(
             quick_replies = None
     reply = {
         "text": composed.get("text"),
-        "quick_replies": quick_replies,
+        # QUICK-REPLY-NAMES: the one seam every tail-composed set leaves through - at
+        # most three buttons, none over 20 characters, no duplicates. The persisted
+        # reply, the trace fact and the send action all read this guarded value.
+        "quick_replies": quick_reply_guard.guard(quick_replies, where="tail"),
         "result_set": composed.get("result_set") or [],
         "attachments_src": _attachments_src(values["answer"]),
     }

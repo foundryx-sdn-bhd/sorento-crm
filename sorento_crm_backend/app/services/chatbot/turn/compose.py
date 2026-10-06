@@ -1096,7 +1096,7 @@ def compose_question(pending: Any, state: State | None = None, localizer: Any = 
         # AC-1866: a `member_offer` re-print keeps its numbered text list but not the
         # names as quick-reply buttons (owner ruling 23 Sep 2026) - `result_set` below
         # still carries the roster, so a numbered reply still resolves.
-        "quick_replies": pending_quick_replies(pending.kind, labels),
+        "quick_replies": pending_quick_replies(pending.kind, labels, options=list(pending.options)),
         "result_set": list(pending.options),
     }
     return Answer(sections=[], question=pending, offer=None, canned=[], files=[], actions=[action], text=body)

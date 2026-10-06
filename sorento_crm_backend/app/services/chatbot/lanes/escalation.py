@@ -392,15 +392,6 @@ def _company_clarify_rows(ctx: dict[str, Any]) -> list[dict[str, Any]]:
     return rows
 
 
-def _company_clarify_options(ctx: dict[str, Any]) -> list[str]:
-    """The company names this clarify offers, in printed order.
-
-    Extracted so the ASK and the quick replies that answer it cannot list different
-    companies: `clarify_company_reply` prints these and `_clarify_actions` taps them.
-    """
-    return [row["company_name"] for row in _company_clarify_rows(ctx)]
-
-
 def _picker_was_shown(ctx: dict[str, Any]) -> bool:
     """Did the offer being clarified print a numbered member picker? n8n's own test
     (`clarify-company-reply` rev-3: `prev.selection_context === 'member_offer'`)."""
@@ -582,9 +573,14 @@ def run(
         # says WHY this turn asked instead of assigning.
         return {
             **result,
+            # QUICK-REPLY-NAMES (owner, 6 Oct 2026): company names are roster values,
+            # not fixed short options, so the company clarify sends NO buttons - its
+            # numbered text (`clarify_company_reply`) is the picker and a number, a
+            # name or the company typed back still resolves. The team clarify below
+            # keeps its team names as taps.
             "actions": _clarify_actions(
                 jsc.get(clarify, "clarify_text"),
-                options=_company_clarify_options(ctx),
+                options=[],
                 dry_run=dry_run,
             ),
             "pending": {"kind": "company_clarify"},
@@ -1489,7 +1485,10 @@ def _clarify_actions(text: Any, *, options: list[str], dry_run: bool) -> list[di
 
     `quick_replies` is n8n's own shape - a COMMA-JOINED STRING or null, never a list
     (AC-507) - and the options come from the same helper that printed them in the
-    sentence, so a tap can never name a team the ask did not.
+    sentence, so a tap can never name a team the ask did not. Only the TEAM clarify
+    passes options: team names are fixed short options; company names are not
+    (QUICK-REPLY-NAMES, owner 6 Oct 2026), so the company clarify passes `[]` and its
+    numbered text is the picker.
     """
     words = jsc.nullish_str(text).strip()
     if not words:
