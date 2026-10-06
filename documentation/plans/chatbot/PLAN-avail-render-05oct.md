@@ -36,7 +36,7 @@ B. A tick line says stock is available and does not refer. Owner decision (5 Oct
 | --- | --- | --- |
 | Q above the category max (or none set) | too_big | `🚫 the quantity is more than what I can confirm here. Please refer to your salesman.` (unchanged) |
 | available >= Q | in_stock | `✅ Got stock.` (was `✅ Please refer to your salesman.`) |
-| 1 <= available < Q, Q within the max | in_stock | `✅ Got stock, N available.` (was `✅ N available. Please refer to your salesman.`) |
+| 1 <= available < Q, Q within the max | in_stock | `✅ Only N got stock.` (AVAIL-ONHAND-BASIS, owner hand test 6 Oct 2026; was `✅ Got stock, N available.`, before that `✅ N available. Please refer to your salesman.`) |
 | available < 1, shipment due | incoming | `❌ No stock, ETA dd/mm/yyyy.` (was `❌ ETA dd/mm/yyyy.`; owner hand test 6 Oct 2026) |
 | available < 1, nothing incoming | no_incoming | `❌ No stock and no incoming. Please refer to your salesman.` (unchanged) |
 

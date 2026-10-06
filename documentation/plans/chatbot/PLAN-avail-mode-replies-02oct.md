@@ -76,7 +76,7 @@ Paths under `sorento_crm_backend/app/services/` unless marked `mcp:` (`sorento_c
 - (e) "FOO99 and BAR12 got stock?": the shared `Couldn't find: "FOO99" (product), "BAR12" (product).` + refer line (owner kept it, S23).
 
 ### Edge cases
-- available <= 0 (open SO over on hand): no stock, rules as before.
+- available <= 0 (open SO over on hand): no stock, rules as before. Superseded by AVAIL-ONHAND-BASIS (owner, 6 Oct 2026, `PLAN-avail-onhand-basis-06oct.md`): available is on hand alone, open SO is ignored, so the figure is never negative.
 - Q == available: full in-stock line, no number.
 - Q > X and some stock: too_big unchanged (the number is never shown above X).
 - X unset (0): every Q is too_big, unchanged.
