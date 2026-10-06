@@ -1,8 +1,9 @@
 # PLAN: a brand word never becomes a stored promotion (BRAND-PROMO-EXPAND)
 
-Status: built, tests green on PR #1504 (track: small fix, backend only, no migration, no
-auth/RBAC change, no new ingest surface, no UI); reviewer pass pending. UAC:
-`brand-promo-expand-acceptance-criteria.md`.
+Status: built on PR #1504, reviewer round 1 applied (the two crew additions reverted on
+measured regressions, raised as a crew-ask), lane file and related chatbot suites green
+(track: small fix, backend only, no migration, no auth/RBAC change, no new ingest surface,
+no UI). UAC: `brand-promo-expand-acceptance-criteria.md`.
 
 ## Owner trace (6 Oct 2026, prompt v47, turn 120 then 121)
 
@@ -59,21 +60,39 @@ Paths under `sorento_crm_backend/app/services/`.
 - (B) A candidate whose kind the gate rejected for the domain (`gate_debug.incompatible_only`)
   must never be written into focus state.
 
-## Change (code only, all in `chatbot/turn_runtime.py::resolve_kinds`)
+## Change (code only, one seam: `chatbot/turn_runtime.py::resolve_kinds`)
 
-- Brands table first, every domain but promotion: a brand-hinted word that is a live brand is
-  never sent to the shared resolver; it settles on `focus.brands` as the parser hinted it.
-  Promotion keeps sending it, because the fan-out is what lists that brand's promotions.
 - `by_token` (what reconciliation reads): a match under a kind the hint fans out to
   (`entity_resolver._ENTITY_TYPE_EXPANSIONS`, imported, not copied) is counted under the hint,
   so brand stays brand and category stays category. The match itself still reaches the fetch
   through the gate's `compatible_entities` (the promotion fetch is derived there, nothing is
-  persisted). The domain overrides (brand -> customer under order) are not folded: that re-type
-  is the intended reading there.
-- `by_token` drops every kind outside the gate's own `allowed_lookup` for the domain, so an
-  incompatible kind never re-types a hint, never arms a kind pick, never reaches the focus.
+  persisted); under inventory the gate already rejects it as incompatible. The domain overrides
+  (brand -> customer under order) are not folded: that re-type is the intended reading there.
 - `turn/reconcile.py` untouched: the pure core keeps its contract and one seam decides what the
   resolver's answer means.
+- Sessions already holding a stale `focus.extra["promotion"]` row are not repaired here; PR
+  #1502 keeps a task fill turn from handing that carry to the resolver, and the row stops being
+  written from this lane on.
+
+## Tried and reverted (reviewer round 1, measured in a throwaway worktree)
+
+- Crew (A) as "brands table first in every domain but promotion": a brand-only inventory ask
+  ("SORENTO stock") then skipped the resolver AND the gate (the entity-less early return) and
+  answered the generic "I need at least one filter" line instead of main's product ask; and
+  `brand_rows_for_word`'s spelling-distance tier (`turn_runtime.py` ~590-608) started deciding
+  brands in nine more domains ("Sorrento" became Sorento under master_products), against the
+  owner's no-fuzzy rule. It also meant rewriting the Security B1/SF3 pin
+  `test_brand_strip_is_order_domain_only`. No UAC needs it: with it reverted the photo shape
+  still passes for the live brand. The cause crew asked about stands as found: the shared
+  resolver has no brand probe (`entity_resolver.py:113-121`); fixing THAT is a resolver change
+  with n8n/MCP callers and is not this lane's.
+- Crew (B) as "drop every gate-rejected kind from `resolved_kinds`": broke the owner-ruled D2
+  kind-pick control (`test_rearch_r11_catalogue.py`, "cabana stock" hinted product hitting a
+  promotion and an attachment must still ask "Which one do you mean?") and dropped the typed
+  word in silence (not in `unresolved_tokens`, so never said back). For the traced shape the
+  fold already keeps the incompatible promotion candidate off the focus; the generic shape (a
+  product-hinted code re-typed to a single incompatible kind) has no prod evidence and needs an
+  owner ruling against D2 before it is built.
 
 ## Tests (red first)
 

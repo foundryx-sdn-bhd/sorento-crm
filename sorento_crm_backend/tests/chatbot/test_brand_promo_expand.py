@@ -22,18 +22,19 @@ probe at all (`entity_resolver._ENTITY_TYPE_EXPANSIONS`: brand/category fan out 
 promotion probe); the chatbot's own live-brand lookup (`turn_runtime._brand_hinted_entities_
 matching_live`, the `brands` table) ran for the order and sales domains only.
 
-Rules pinned here:
-1. The parser decides hints. A resolver hit reached only through the brand/category ->
-   promotion fan-out confirms the hint, it never re-types it. The carried row keeps `brand` /
-   `category`; a brand carried into inventory is a brand (on `focus.brands`), never a
-   promotion; the promotion domain's own fetch still lists a brand's promotions off the
-   resolver's matches for that turn.
-2. (crew A) A brand hint resolves against the `brands` table FIRST, in every domain: a word
-   that is a live brand is never sent to the shared resolver outside the promotion domain
-   (where the fan-out is what lists that brand's promotions).
-3. (crew B) A resolver kind the gate rejected for the domain (`incompatible_only`) is not a
-   kind for reconciliation: it never re-types a hint, never arms a kind pick, never reaches
-   the focus.
+Rule pinned here: the parser decides hints. A resolver hit reached only through the
+brand/category -> promotion fan-out confirms the hint, it never re-types it. The carried row
+keeps `brand` / `category`; a brand carried into inventory is a brand (on `focus.brands`),
+never a promotion; the promotion domain's own fetch still sees a brand's promotions off the
+resolver's matches for that turn, and the inventory gate still rejects them as incompatible
+(`gate_debug.incompatible_only`) without anything of that kind reaching the focus.
+
+Two crew additions were tried on this lane and reverted on the reviewer's measurements
+(PR #1504): reading the brands table first in every domain skipped the inventory gate for a
+brand-only ask and extended `brand_rows_for_word`'s spelling-distance tier to nine more
+domains; cutting every gate-rejected kind from `resolved_kinds` broke the D2 kind-pick
+control (`test_rearch_r11_catalogue.py`) and dropped the typed word in silence. The brand-only
+guards below pin today's behaviour for those shapes.
 
 Every uuid here is synthetic; the codes are catalogue product codes (public repo). No real
 contact ids.
@@ -206,14 +207,15 @@ def test_a_genuine_re_type_still_happens():
 
 
 # --------------------------------------------------------------------------- #
-# crew B: a kind the gate rejected for the domain is not a kind for reconciliation
+# The prod trace at the resolver seam, gate verdict included, and the re-type control
 # --------------------------------------------------------------------------- #
 
 
-def test_crew_b_an_incompatible_only_kind_never_re_types_the_hint(monkeypatch):
-    """The prod trace at the resolver seam: under inventory the token SORENTO (hint brand)
-    matched promotions only, `incompatible_only {SORENTO: [promotion]}`. `resolved_kinds`
-    carries no promotion for it, so APPLY keeps the brand and the focus holds no promotion."""
+def test_the_prod_trace_shape_keeps_the_brand_and_writes_no_promotion(monkeypatch):
+    """The prod trace at the resolver seam, gate included: under inventory the token SORENTO
+    (hint brand) matched promotions only and the gate marked it `incompatible_only
+    {SORENTO: [promotion]}`. `resolved_kinds` carries no promotion for it, so APPLY keeps
+    the brand and the focus holds no promotion."""
     promo = "22222222-2222-4222-8222-222222222222"
     product_id = "11111111-1111-4111-8111-111111111111"
     outcome = _resolve_kinds_with(
@@ -238,33 +240,9 @@ def test_crew_b_an_incompatible_only_kind_never_re_types_the_hint(monkeypatch):
     assert not state2.focus.extra.get("promotion"), state2.focus.extra
 
 
-def test_crew_b_an_incompatible_only_kind_never_arms_a_kind_pick_or_a_customer_on_an_inventory_focus(monkeypatch):
-    """The generic shape, no fan-out pair involved: a product-hinted code under inventory
-    whose only hits are customers. The gate already rejected `customer` for inventory, so
-    the hint stays `product` (the token is then unplaced, said back by the miss path) and
-    no customer row is written to the focus."""
-    customer = "44444444-4444-4444-4444-444444444444"
-    outcome = _resolve_kinds_with(
-        monkeypatch,
-        domain="inventory",
-        entities=[entity("7445", hint="product", canonical_code=None)],
-        resolutions=[{"token": "7445", "matches": [_match("customer", "7445 TRADING", customer)]}],
-        compatible=[],
-    )
-
-    assert "customer" not in (outcome.resolved_kinds.get("7445") or {}), outcome.resolved_kinds
-
-    v = verdict(domain_hint="inventory", intent_hint="check_stock", entities=[entity("7445", hint="product")])
-    state2, plan = _apply(v, outcome.resolved_kinds)
-    assert plan.trace.reconciled == [], plan.trace.reconciled
-    assert plan.ask is None or plan.ask.kind != "kind_pick", plan.ask
-    assert state2.focus.customers == [], state2.focus.customers
-    assert [p.get("hint") for p in state2.focus.products] == ["product"], state2.focus.products
-
-
-def test_crew_b_a_compatible_kind_still_re_types(monkeypatch):
+def test_a_kind_the_hint_does_not_fan_out_to_still_re_types(monkeypatch):
     """Control: a code hinted `order` under inventory that the resolver places as a product
-    (a kind inventory allows) is still rewritten, exactly as AC-1527 says."""
+    is still rewritten, exactly as AC-1527 says; the fold touches the fan-out pairs only."""
     product_id = "11111111-1111-4111-8111-111111111111"
     outcome = _resolve_kinds_with(
         monkeypatch,
@@ -362,7 +340,7 @@ def console(session_factory, monkeypatch, stub_access):
         # The live brand, as prod has it (the photo product's own `brand_code` is SORENTO).
         c.brand_id = _seed_brand(session_factory, name="Sorento", code="SORENTO", company_id=SORENTO)  # type: ignore[attr-defined]
         promo_id = _seed_promotion(session_factory, "ZZT Sorento WC promo", [product_id])
-        # A second promotion naming a word that is NOT a live brand (crew B's engine shape).
+        # A second promotion naming a word that is NOT a live brand (the unlisted-word shape).
         _seed_promotion(session_factory, f"ZZT {UNLISTED_BRAND.title()} WC promo", [product_id])
         c.resolver_bodies = bodies  # type: ignore[attr-defined]
         c.resolver_payloads = payloads  # type: ignore[attr-defined]
@@ -416,7 +394,7 @@ def test_dev_shape_promotion_ask_then_stock_check_carries_no_promotion_row(conso
 
     c.say("sorento wc promotion?", _promotion_verdict(_brand("sorento"), _category("wc")))
 
-    # AC-4 / crew A: under PROMOTION the brand word still reaches the shared resolver (its
+    # AC-4: under PROMOTION the brand word still reaches the shared resolver (its
     # fan-out is what lists that brand's promotions), and the gate of turn A still hands
     # the fetch that brand's promotion as a compatible entity. (The fetch arm itself is the
     # described-set path on this verdict - "wc with a promotion" - which this blank schema
@@ -491,9 +469,9 @@ def test_prod_photo_shape_brand_beside_product_under_inventory_then_fill_turn(co
     "1" (entity_op reuse) answers the availability line with the stock tool called for the
     product alone and nothing promotion-hinted sent to the resolver.
 
-    Two words: the live brand (prod's own SORENTO, crew A: resolved against the brands
-    table first, so the shared resolver is never asked about it) and a word that is on no
-    brands table (crew B alone keeps it off the focus as a promotion)."""
+    Two words: the live brand (prod's own SORENTO, a `brands` row) and a word that is on no
+    brands table; both reach the resolver under inventory as today, and the fold keeps both
+    off the focus as a promotion."""
     c, product_id, _promo_id = console(**{CODE.replace("-", "_"): Stock(on_hand=100)})
 
     first = c.say(f"how many units of {CODE} {brand_word}", _photo_verdict(brand_word))
@@ -514,28 +492,23 @@ def test_prod_photo_shape_brand_beside_product_under_inventory_then_fill_turn(co
     assert "promotion_ids" not in c.stock_calls[-1], c.stock_calls[-1]
 
 
-def test_crew_a_a_live_brand_under_inventory_resolves_against_the_brands_table_first(console):
-    """crew A: the photo turn's SORENTO is a live brand (`brands.brand_code`). It is matched
-    there, so the shared resolver (which has no brand probe and would fan the word out to
-    promotions) is never asked about it: no resolver body of the turn carries the token.
-    The product's own lookup is unaffected."""
-    c, product_id, _promo_id = console(**{CODE.replace("-", "_"): Stock(on_hand=100)})
-
-    first = c.say(f"how many units of {CODE} SORENTO", _photo_verdict("SORENTO"))
-
-    assert f"How many units of {CODE}?" in first.split("\n"), first
-    sent = _tokens_sent(c.resolver_bodies)
-    assert "SORENTO" not in {t.upper() for t in sent}, c.resolver_bodies
-    # The product code reaches the resolver as today, in the fold `resolve_gate._token_of` sends.
-    assert CODE.replace("-", "") in sent, c.resolver_bodies
-    assert _focus_of(c).get("brands") == ["SORENTO"], _focus_of(c)
-
-
-def test_crew_a_an_unlisted_brand_word_under_inventory_still_reaches_the_resolver(console):
-    """The guard of crew A's rule (AC-S9-3): a brand word on no brands table is not this
-    contact's brand to answer for, so it still goes to the resolver as today."""
+@pytest.mark.parametrize(
+    "brand_word",
+    [
+        pytest.param("SORENTO", id="live-brand"),
+        pytest.param(UNLISTED_BRAND, id="unlisted-brand-word"),
+    ],
+)
+def test_a_brand_word_under_inventory_still_reaches_the_resolver(console, brand_word):
+    """Guard (the brands-table-first widening was tried and reverted, see the module
+    docstring): outside order/sales a brand word, live or not, still goes to the resolver
+    beside the product code, exactly as today. The fold above is what keeps its promotion
+    matches from re-typing it."""
     c, _product_id, _promo_id = console(**{CODE.replace("-", "_"): Stock(on_hand=100)})
 
-    c.say(f"how many units of {CODE} {UNLISTED_BRAND}", _photo_verdict(UNLISTED_BRAND))
+    c.say(f"how many units of {CODE} {brand_word}", _photo_verdict(brand_word))
 
-    assert UNLISTED_BRAND in _tokens_sent(c.resolver_bodies), c.resolver_bodies
+    sent = _tokens_sent(c.resolver_bodies)
+    assert brand_word in sent, c.resolver_bodies
+    # The product code reaches the resolver in the fold `resolve_gate._token_of` sends.
+    assert CODE.replace("-", "") in sent, c.resolver_bodies
