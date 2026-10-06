@@ -214,7 +214,7 @@ def test_console_pass(console: _Console, capsys) -> None:
         r2.reply_text or "",
     )
 
-    # 3. A numbered did-you-mean shows exactly 1, 2, 3.
+    # 3. A numbered did-you-mean prints its 1, 2, 3 list and sends no buttons.
     r3 = console.say("check stock srt5764 x 10", stock(product("srt5764", 10)))
     text3 = r3.reply_text or ""
     check(

@@ -29,7 +29,9 @@ from typing import Any
 import pytest
 
 from app.services.chatbot import quick_reply_guard
+from app.services.chatbot.lanes import business as business_lane
 from app.services.chatbot.turn import pending as turn_pending
+from app.services.chatbot.turn.compose import _lane_question
 from tests.chatbot._turn_helpers import do_window
 from tests.chatbot.test_engine import _parser_output
 from tests.chatbot.test_samantha_27sep_r5_do_list_carry import ORDERS_LIST, _order_ask
@@ -143,12 +145,46 @@ class TestPendingKinds:
         options = [_option(1, "Mocha", "team", team="mocha"), _option(2, "Sorento", "team", team="sorento")]
         assert turn_pending.quick_replies("team_pick", ["Mocha", "Sorento"], options=options) == "Mocha, Sorento"
 
-    def test_the_fixed_option_kinds_keep_theirs(self) -> None:
-        assert turn_pending.quick_replies("outstanding_scope", ["Sales orders", "Delivery orders", "Both"]) == (
-            "Sales orders, Delivery orders, Both"
-        )
-        assert turn_pending.quick_replies("outstanding_detail", ["Yes", "No"]) == "Yes, No"
-        assert turn_pending.quick_replies("sales_report_detail", ["DO", "SO"]) == "DO, SO"
+    @pytest.mark.parametrize(
+        ("kind", "rows"),
+        [
+            (
+                "outstanding_scope",
+                [dict(r) for r in business_lane._OUTSTANDING_SCOPE_OPTIONS],
+            ),
+            (
+                "outstanding_detail",
+                [
+                    {"idx": 1, "label": "Sales order list", "value": "so"},
+                    {"idx": 2, "label": "Delivery order list", "value": "do"},
+                    {"idx": 3, "label": "Both lists", "value": "both"},
+                ],
+            ),
+            (
+                "sales_report_detail",
+                [
+                    {"idx": 1, "label": "By customer", "value": "customer", "aliases": []},
+                    {"idx": 2, "label": "By product", "value": "product", "aliases": []},
+                    {"idx": 3, "label": "Delivery orders", "value": "delivery_order", "aliases": ["DO"]},
+                ],
+            ),
+        ],
+    )
+    def test_the_fixed_option_kinds_keep_theirs_in_the_shape_production_builds(
+        self, kind: str, rows: list[dict[str, Any]]
+    ) -> None:
+        """`turn/compose.py::_lane_question` stamps an outstanding kind's options with
+        `entity_type = kind` and both production callers pass `options=`, so the
+        predicate must not read that stamp as a roster."""
+        from app.services.chatbot import engine as engine_mod
+
+        question = _lane_question([{"lane_ask": {"kind": kind, "last_result_set": rows}}])
+        assert question is not None and question.kind == kind
+        labels = [str(r["label"]) for r in rows]
+        expected = ", ".join(labels)
+        assert turn_pending.quick_replies(kind, labels, options=question.options) == expected
+        reply = engine_mod._reply_of(SimpleNamespace(question=question, text="Which one?"))
+        assert reply["quick_replies"] == expected
 
     def test_a_team_pick_that_carries_company_names_is_a_company_clarify_and_sends_none(self) -> None:
         """`answer_bridge.py` mints the company clarify AS a `team_pick` whose options
@@ -252,6 +288,65 @@ class TestDidYouMeanSets:
         parser = {"domain_hint": "promotion", "entities": [{"raw": "promo", "hint": "promotion"}]}
         out = build_suggest_offer({}, parser=parser, resolved=resolved, gate={"company_team": "marketing"})
         assert "Here are the closest matches:\n1. Spring promo\n2. Dealer launch promo\n3. Year end promo" in out["suggest_response"], out["suggest_response"]
+        assert out["suggest_quick_reply"] == "1,2,3", out["suggest_quick_reply"]
+
+    def test_the_alternatives_offer_sends_only_the_escalation_pair(self) -> None:
+        """`build_suggest_offer`, D2 "Try: ..." arm: the offered codes are free text, so
+        the set is the fixed Yes / No pair and none of the values rides as a button."""
+        from app.services.chatbot.lanes.business.answer import build_suggest_offer
+
+        values = ["SRTWC8517", "SRTWC8518", "SRTWC8519"]
+        out = build_suggest_offer(
+            {},
+            parser={"domain_hint": "inventory", "entities": [{"raw": "srtwc8500", "hint": "product"}]},
+            resolved={"resolutions": [], "unresolved_tokens": []},
+            gate={"company_team": "warehouse"},
+            get_results=[[{"alternatives": [{"value": v} for v in values], "relaxed_axis": "entity"}]],
+        )
+        assert out["suggest_offer"] is True
+        assert "Try: SRTWC8517, SRTWC8518, SRTWC8519." in out["suggest_response"], out["suggest_response"]
+        assert out["suggest_quick_reply"] == "Yes escalate,No it's okay", out["suggest_quick_reply"]
+        assert not any(v in out["suggest_quick_reply"] for v in values)
+
+    def test_the_customer_service_date_miss_sends_no_buttons(self) -> None:
+        """`build_suggest_offer`, D2 date arm on the customer service order enquiry
+        route: its sentence offers dates only, so no Yes / No pair goes out."""
+        from app.services.chatbot.lanes.business.answer import build_suggest_offer
+
+        out = build_suggest_offer(
+            {},
+            parser={
+                "domain_hint": "order",
+                "entities": [{"raw": "acme", "hint": "customer"}],
+                "date_filter_start": "2026-10-01",
+                "date_filter_end": "2026-10-01",
+                "routing": {"suggested_team": "customer_service", "suggested_agent": "order_enquiries"},
+            },
+            resolved={"resolutions": [], "unresolved_tokens": []},
+            gate={"company_team": "customer_service"},
+            get_results=[[{"alternatives": [{"value": "2026-10-03"}, {"value": "2026-10-05"}], "relaxed_axis": "date"}]],
+        )
+        assert out["suggest_offer"] is True
+        assert out["suggest_quick_reply"] is None, out["suggest_quick_reply"]
+
+    def test_the_uuid_coded_alternatives_offer_sends_its_numbers(self) -> None:
+        """`build_suggest_offer`, D2 numbered call site: uuid-coded alternatives print as
+        a numbered list and the buttons are "1,2,3"."""
+        from app.services.chatbot.lanes.business.answer import build_suggest_offer
+
+        alts = [
+            {"value": "aaaaaaaa-1111-4111-8111-111111111111", "display": "Spring promo"},
+            {"value": "bbbbbbbb-2222-4222-8222-222222222222", "display": "Dealer launch promo"},
+            {"value": "cccccccc-3333-4333-8333-333333333333", "display": "Year end promo"},
+        ]
+        out = build_suggest_offer(
+            {},
+            parser={"domain_hint": "promotion", "entities": [{"raw": "promo", "hint": "promotion"}]},
+            resolved={"resolutions": [], "unresolved_tokens": []},
+            gate={"company_team": "marketing"},
+            get_results=[[{"alternatives": alts, "relaxed_axis": "entity"}]],
+        )
+        assert "1. Spring promo\n2. Dealer launch promo\n3. Year end promo" in out["suggest_response"], out["suggest_response"]
         assert out["suggest_quick_reply"] == "1,2,3", out["suggest_quick_reply"]
 
 
