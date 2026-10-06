@@ -4396,6 +4396,9 @@ def _run_stages_body(  # noqa: PLR0915
     # before APPLY reads the verdict: the category keeps what the thing IS, a colour or
     # a size becomes a `specification` entity, and nothing is a document type unless it
     # is on the list.
+    # ATTACH-GROUNDING-TYPO: `ctx.parse._parser_raw` is the verdict as it stood before
+    # grounding rewrote the entities.
+    parser_verdict = copy.deepcopy(verdict)
     with _session(session_factory) as grounding_db:
         verdict, grounding_notes = grounding.ground(
             grounding_db, verdict, message=latest_user_message.split("\n", 1)[0] if isinstance(latest_user_message, str) else None
@@ -4736,7 +4739,7 @@ def _run_stages_body(  # noqa: PLR0915
             contact=_contact_block(envelope, known_phone),
             text=_tf_message(envelope),
             session=ctx_session,
-            parse={"output": parsed_output, "_parser_raw": verdict},
+            parse={"output": parsed_output, "_parser_raw": parser_verdict},
             access=access,
             media=getattr(envelope, "media", None),
         )[0]["json"]["ctx"]

@@ -15,18 +15,21 @@ that runs after every parse, whatever kind the parser picked:
   * a `category` / `product_type` token keeps only what the thing IS (class and type
     words, "basin"); every other registry word in it becomes a `specification` entity
     ("gunmetal" -> Finish or colour: Gunmetal);
-  * an `attachment_type` token stays one only when its words are on the attachment-type
-    list (a type name, an alias the owner entered, a certificate word or scheme); anything
-    else is grounded like any other descriptor, never read as a document;
+  * an `attachment_type` token is the parser's (ATTACH-GROUNDING-TYPO option (c), owner,
+    6 Oct 2026): kept as filed when the parser was confident and its code, whole, is a
+    listed document type (`DOCUMENT_TYPE_CODES` or an attachment-type name or code), and
+    dropped otherwise. The customer's words are never read for it;
   * a `specification` token the parser emitted is checked against the registry: its key
     must exist and its value must be one of that key's choices (or a number, for a
     numeric key);
   * a word next to a key's own word that is none of its choices ("pink colour", "f trap")
     is an UNKNOWN value of that key, said back with the ones the registry knows.
 
-No word list lives here. The registry's keys, labels, choices, synonyms and units, the
-class vocabulary and the attachment-type table decide; staff editing any of them on
-Product Specifications changes what grounds, with no prompt or code change.
+No descriptor word list lives here (`DOCUMENT_TYPE_CODES` is the parser prompt's own
+taxonomy of document codes, not a list of customer words). The registry's keys, labels,
+choices, synonyms and units, the class vocabulary and the attachment-type table decide;
+staff editing any of them on Product Specifications changes what grounds, with no prompt
+or code change.
 """
 from __future__ import annotations
 
@@ -410,6 +413,35 @@ def _on_attachment_list(db: "Session", raw: str, vocab: Vocabulary) -> bool:
     return bool(_lookup_resolve(db, "attachment_type_alias", raw))
 
 
+#: The document types the parser prompt's taxonomy names (ATTACHMENT TYPE EXTRACTION:
+#: "canonical_code is always the taxonomy value"), as the owner listed them on 6 Oct 2026.
+DOCUMENT_TYPE_CODES = frozenset(
+    {"photo", "video", "technical drawing", "3d model", "certificate", "installation guide"}
+)
+
+
+def _listed_document_type(db: "Session", entity: dict[str, Any]) -> bool:
+    """The parser was confident and its code, whole, is a listed document type: a taxonomy
+    value or an `attachment_types` name or code. An exact comparison (case aside); no word
+    of it and no alias is ever read."""
+    from app.models.resources import AttachmentType
+    from sqlalchemy import func, or_
+
+    if entity.get("confident") is False:
+        return False
+    code = _fold(str(entity.get("canonical_code") or entity.get("raw") or ""))
+    if not code:
+        return False
+    if code in DOCUMENT_TYPE_CODES:
+        return True
+    return (
+        db.query(AttachmentType.id)
+        .filter(or_(func.lower(AttachmentType.type_name) == code, func.lower(AttachmentType.code) == code))
+        .first()
+        is not None
+    )
+
+
 def _corrected_class(db: "Session", text: str, vocab: Vocabulary) -> str:
     """A class phrase said in the plural put in the singular against the class vocabulary
     ("kitchen sinks" -> "kitchen sink"), only when the singular phrase names a class and
@@ -664,43 +696,20 @@ def ground(
             add(grounded, entity)
             notes.append({"from": hint, "raw": raw, "to": [rest, *[g.__dict__ for g in grounded]]})
             continue
-        if hint == _ATTACHMENT_HINT and raw and not _on_attachment_list(db, raw, vocab):
-            tokens = _words(raw)
-            grounded, used = ground_words(raw, vocab, keep=_covered_by_class(tokens, vocab))
-            rest = _remainder(raw, used)
-            if rest and _covered_by_class(_words(rest), vocab):
-                out.append({**entity, "raw": _corrected_class(db, rest, vocab), "hint": "category", "canonical_code": None})
-                rest = ""
-            if not grounded and rest:
-                # Named by nothing the system holds: not a document type, not a value of
-                # any key. Said back as a descriptor it does not know, never a document.
-                grounded = [Grounded("", "", rest)]
-            add(grounded, entity)
-            notes.append({"from": hint, "raw": raw, "to": [g.__dict__ for g in grounded]})
-            continue
+        if hint == _ATTACHMENT_HINT:
+            # ATTACH-GROUNDING-TYPO, option (c) (owner, 6 Oct 2026): only the parser
+            # understands words. A confident document type whose code is listed stays that
+            # type, whatever the customer typed ("techincal drawings", "TD DRAW", "phtos");
+            # any other is dropped. The customer's words are never read here.
+            if not _listed_document_type(db, entity):
+                notes.append({"from": hint, "raw": raw, "to": "dropped: not a listed document type"})
+                continue
         out.append(entity)
     if moved:
         notes.append({"from": "domain", "raw": "product_attachment", "to": "master_products"})
     if not notes:
         return verdict, []
     grounded_verdict = {**verdict, "entities": out}
-    # The document domain was chosen for the misfiled descriptor alone ("any pink colour
-    # water closet?" read as a photo ask): with no document type left and no document
-    # word among the requested attributes, the ask is about the products themselves.
-    had_document = any(
-        isinstance(e, dict) and str(e.get("hint") or "").strip().lower() == _ATTACHMENT_HINT for e in entities
-    )
-    has_document = any(
-        isinstance(e, dict) and str(e.get("hint") or "").strip().lower() == _ATTACHMENT_HINT for e in out
-    )
-    asked_document = any(
-        isinstance(a, str) and a.strip() and _on_attachment_list(db, a, vocab)
-        for a in verdict.get("requested_attributes") or []
-    )
-    if had_document and not has_document and not asked_document and verdict.get("domain_hint") == "product_attachment":
-        grounded_verdict["domain_hint"] = "master_products"
-        grounded_verdict["intent_hint"] = "check_product"
-        notes.append({"from": "domain", "raw": "product_attachment", "to": "master_products"})
     return grounded_verdict, notes
 
 

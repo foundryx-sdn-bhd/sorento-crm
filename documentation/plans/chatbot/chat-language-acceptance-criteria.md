@@ -77,7 +77,7 @@ the status mark (✅ ❌ 🚫) is not text and stays as printed; the sentence af
 | English | ms | zh |
 |---|---|---|
 | Got stock. | Stok ada. | 有库存。 |
-| Got stock, {available} available. | Stok ada, {available} tersedia. | 有库存，可供 {available} 件。 |
+| Only {available} got stock. (AVAIL-ONHAND-BASIS, owner hand test 6 Oct 2026; was "Got stock, {available} available.") | Hanya {available} ada stok. | 只有 {available} 件有库存。 |
 | No stock and no incoming. Please refer to your salesman. | Tiada stok dan tiada stok masuk. Sila rujuk jurujual anda. | 没有库存，也没有到货。请联系您的销售员。 |
 | No stock, ETA {eta}. | Tiada stok, ETA {eta}. | 没有库存，ETA {eta}。 |
 | No ETA | Tiada ETA | 暂无 ETA |
