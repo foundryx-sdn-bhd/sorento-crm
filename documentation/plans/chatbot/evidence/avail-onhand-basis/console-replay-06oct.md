@@ -30,13 +30,27 @@ Runner: `scripts/chatbot_console_check.py --say ... --contact 900000012` (every 
 Staff route at the same data (`GET /inventory/stock/balance?include_sellable=true`, no contact),
 unchanged: `quantity_on_hand 6, open_so_qty 13, sellable -7`.
 
-## Before (main e3ea227e, same seed, same harness)
+## Before (main e3ea227e, same seed, same harness, same database)
 
-See the section appended below once replayed; the prod reply was:
+The stub backend started from a worktree at main's head reproduces the prod reply:
 
 ```
-MWC7632-SH-P x 10: ❌ No stock and no incoming. Please refer to your salesman.
+> MWC7632-SH-P
+  reply.text: How many units of MWC7632-SH-P?
+> 10
+  reply.text: MWC7632-SH-P x 10: ❌ No stock and no incoming. Please refer to your salesman.
+
+> MWC7632-SH-P
+  reply.text: How many units of MWC7632-SH-P?
+> 5
+  reply.text: MWC7632-SH-P x 5: ❌ No stock and no incoming. Please refer to your salesman.
+
+> OHB0000 x 5
+  reply.text: OHB0000 x 5: ❌ No stock and no incoming. Please refer to your salesman.
 ```
+
+Main judged `6 on hand - 13 open SO = -7`, which `branch()` reads as no stock. The control line
+(nothing on hand) is the same before and after, as it should be.
 
 ## Sandbox notes
 
