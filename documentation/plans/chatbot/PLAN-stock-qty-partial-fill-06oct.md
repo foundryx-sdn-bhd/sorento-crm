@@ -1,6 +1,6 @@
 # PLAN: a partial quantity answer closes the stock ask; trap specs parse and search reliably (STOCK-QTY-PARTIAL-FILL)
 
-Status: BUILDING (6 Oct 2026), red-first on PR #1513 (branch `claude/stock-qty-partial-fill-kv7i1d`,
+Status: BUILT, in review on PR #1513 (6 Oct 2026; all five card rulings in: Q1, Q2, Q3, Q5 (a) by crew, Q4 (a) by the owner), red-first (branch `claude/stock-qty-partial-fill-kv7i1d`,
 cloud sandbox, LEAD pattern). Track: full (engine behaviour change + parser prompt patch + DB
 search tests; no migration, no auth change, no UI). Card:
 `stock-qty-partial-fill-behaviour-card.md` (owner rulings R1, R2 recorded there; Q1 to Q5 open

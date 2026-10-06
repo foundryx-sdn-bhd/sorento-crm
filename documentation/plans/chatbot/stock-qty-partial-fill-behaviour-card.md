@@ -1,6 +1,8 @@
 # Behaviour card: a partial quantity answer closes the stock ask; trap specs parse and search reliably (STOCK-QTY-PARTIAL-FILL)
 
-Status: DRAFT (6 Oct 2026, crew-ask on the lane PR). Owner rulings so far (6 Oct 22:35): R1 "when
+Status: RULED (6 Oct 2026). Q1 (a), Q2 (a), Q3 (a), Q5 (a) by crew; Q4 (a) by the owner,
+parser-decided through the EXISTING fields (entity_op reuse + the specification entity), no
+new parser field. See "Rulings" at the end. Owner rulings before the card (6 Oct 22:35): R1 "when
 we ask how many units for each and the user answers like 5 for the 2nd one, we answer that one
 immediately; the remaining 4 stay OPEN, they can continue answering, or switch to other products,
 or other domains; the design must be flexible like this." R2 "apply the spec to the product in
@@ -142,12 +144,19 @@ product in focus was dropped and the set was counted class-wide (182 P trap wate
 parser's own fields already carry the other reading, and the code path for it exists:
 
 - `entity_op "reuse"` (or `"modify"`) keeps the product in focus beside the new specification
-  entity; `resolve_gate` then sends the code AND the spec words, and the resolver's
-  `narrow_code_tokens` picks the variant of that code which carries the spec (`SRTWC286-SH-P`),
-  as it does for "Srtwc7604 p trap price" today. No new code rule: the parser's `entity_op` is
-  the switch, and the prompt line that teaches it is one sentence in the addendum ("a bare spec
-  said right after a product answer, 'how about p trap', 'in black?', 'the 300 one', is that
-  product's variant: entity_op reuse, the specification entity added").
+  entity; `resolve_gate` then sends the carried code as a token and the grounded spec as
+  `extracted_specs`. CORRECTED after measurement (`test_trap_spec_search.py::test_the_message
+  _words_cannot_narrow_a_carried_product`): the existing `narrow_code_tokens` reads the variant
+  words OFF THE MESSAGE and needs the code word in it (`product_code_family.py:54`), so a
+  carried product is never narrowed by it. The resolver half is therefore one small addition,
+  `narrow_code_tokens_by_specs` (`product_code_family.py`): the code's family (the same family
+  rule) narrowed by the grounded spec VALUES the parser emitted, no word read. It picks
+  `SRTWC286-SH-P` for trap_type p_trap; a family every variant of which carries the spec is
+  left alone; a family with NO variant carrying it is left as it is (the product itself is
+  answered, exactly as a word no variant carries is ignored today, rule 3), never a silent
+  widening to the class. No heuristic over the message: the parser's `entity_op` is the switch,
+  and the prompt lines that teach it are in the trap-specs addendum ("A SPEC SAID RIGHT AFTER A
+  PRODUCT ANSWER").
 - When the parser does NOT carry the product (`replace_combine`, or no product in focus), the
   ask stays class-wide exactly as today.
 - When the product has no variant carrying the spec, the resolver reports the code's variants
@@ -220,3 +229,30 @@ Real prod sentences, plus paraphrases the lane covers. Codes are the prod ones w
   beside SRTWC8066-SH-250). (a) the spec filters the family first, then the colour pick over
   what is left; (b) the pick lists every variant as today. **Recommend (a)**: the dealer said
   250, a 300 is a wrong toilet.
+
+## Rulings (6 Oct 2026)
+
+- **Q1 (a)** (crew): the reply to a partial answer is that line's stock lines only; no "still
+  open" line.
+- **Q2 (a)** (crew): a code not on the list is a new stock ask; the list is parked silently.
+  One stock task per conversation (R1 scope cut), so the new ask's own answered check replaces
+  the parked list; a later "8357 x 10" is a plain stock ask for that code and gets the same
+  stock lines.
+- **Q3 (a)** (crew): one bare number over the open lines fills every open line (26 Sep F2).
+  The lines answered earlier are not fetched again.
+- **Q4 (a)** (owner): parser-decided, through the existing fields (`entity_op "reuse"` + the
+  specification entity). The resolver half is `narrow_code_tokens_by_specs` (above). No new
+  parser field: the existing ones express it, so none is named.
+- **Q5 (a)** (crew): the stated spec filters the family first; the colour pick runs over what
+  is left. Measured: `narrow_code_tokens` already does this when the catalogue text carries the
+  length ("S-TRAP 250MM"), and `narrow_code_tokens_by_specs` does it off the derived values.
+
+## Search finding (measured while proving P3)
+
+`resolve_product_set` keeps a NUMERIC binding as a ranking boost, not a membership filter
+(R27 / AC-1352 on PR #833: "trap_length 250 stays a boost inside the set"), EXCEPT a number the
+parser said and `head/grounding.py` checked against the registry: a `grounded: True` numeric
+spec defines membership like a named choice (`product_spec_search.filter_specs`, fix round 8 on
+#833). The chatbot sends every grounded spec that way (`resolve_gate.py:638`), so "S trap
+300mm" from the parser filters the set to the 300 ones; a length the deterministic reader bound
+by proximity only ranks. Both are pinned in `test_trap_spec_search.py`. No change to that rule.
