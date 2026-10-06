@@ -267,3 +267,18 @@ def test_negative_control_the_gain_report_flags_a_widened_holder_without_the_inc
     db.commit()
     assert CONSIGNEE in _incoming(db, pk)
     assert _mentions(access_gain_report(db), pk, f"incoming_stock.{CONSIGNEE}")
+
+
+def test_an_allow_row_under_another_held_agent_does_not_open_a_gated_field_without_the_incoming_agent(session_factory):
+    """Pins the owner-agent gate: the contact holds general_enquiries (not incoming_stock_enquiries)
+    and has a per-contact ALLOW under general_enquiries; the legacy decide still said no."""
+    from app.services.chatbot.access_seed import access_loss_report, map_legacy_contacts
+
+    db, wid, agents = _world(session_factory)
+    pk = _legacy_contact(db, wid, agents, agents=("general_enquiries",), keys=(K_SELLABLE, K_PLACED), name="Holder G1")
+    _row(db, DELAY, True, contact=pk, agent="general_enquiries")
+    map_legacy_contacts(db)
+    db.commit()
+    assert DELAY not in _incoming(db, pk)
+    assert _incoming(db, pk) == _expected()
+    assert _mentions(access_loss_report(db), pk) == []
