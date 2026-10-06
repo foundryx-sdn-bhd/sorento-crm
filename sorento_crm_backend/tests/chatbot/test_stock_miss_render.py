@@ -76,6 +76,61 @@ class TestDefect2ResolvedUuidReachesTheFetch:
         assert out == f"SRT364-HP x 1: {TICK} Got stock.", c.transcript
 
 
+class TestExactCodesOnlyKindsRewriteFoldsTheResolverToken:
+    """Crew audit of 260f6a7f, item 3 (intended, stated in the PR body): the
+    `resolved_kinds` rewrite in `engine._exact_codes_only` is keyed by the resolver's OWN
+    token, which keeps the typed case with separators dropped (`resolve_gate._token_of`:
+    "SRT364-HP" -> "SRT364HP"). The old loop looked that map up by the CASEFOLDED typed
+    word ("srt364-hp"), so it only ever fired for a code typed in lowercase with no
+    separator; for every uppercase or hyphenated code the row kept the resolver's own
+    count (2: the exact code and its -BL variant) after the candidates had already been
+    cut to the exact one. Both sides now fold through `token_key`, so the row says what
+    the kept candidates say."""
+
+    def test_uppercase_hyphenated_code_rewrites_its_kinds_row(self) -> None:
+        from app.services.chatbot import engine as engine_mod
+
+        exact = {"entity_type": "product", "canonical_code": "SRT364-HP", "uuid": "u-srt364-hp"}
+        variant = {"entity_type": "product", "canonical_code": "SRT364-HP-BL", "uuid": "u-srt364-hp-bl"}
+        parse_output = {
+            "domain_hint": "inventory",
+            "entities": [{"raw": "SRT364-HP", "hint": "product", "canonical_code": None, "quantity": 1}],
+        }
+        # The resolver's token for the typed "SRT364-HP" (product fold, case kept) and
+        # its two placed products: the exact code and the -BL variant it is a prefix of.
+        resolved_kinds = {"SRT364HP": {"product": 2}}
+        out = engine_mod._exact_codes_only(
+            parse_output,
+            resolved_kinds,
+            {"product": [exact, variant]},
+            [exact, variant],
+            {},
+        )
+        assert out is not None, "the -BL variant must be cut, so the filter has to answer"
+        kinds, candidates, compatible, unplaced = out
+        assert [c["uuid"] for c in candidates["product"]] == ["u-srt364-hp"]
+        assert [e["uuid"] for e in compatible] == ["u-srt364-hp"]
+        assert unplaced == {}
+        # The pinned path: the row under the resolver's own token is rewritten to the
+        # kept count. Under the old casefold join it stayed {"product": 2}.
+        assert kinds == {"SRT364HP": {"product": 1}}, kinds
+        assert resolved_kinds == {"SRT364HP": {"product": 2}}, "the input map is never mutated"
+
+    def test_lowercase_bare_code_still_rewrites_as_before(self) -> None:
+        """The one shape the old loop DID reach, unchanged: the resolver token and the
+        casefolded typed word were already equal."""
+        from app.services.chatbot import engine as engine_mod
+
+        exact = {"entity_type": "product", "canonical_code": "SRT5674", "uuid": "u-srt5674"}
+        variant = {"entity_type": "product", "canonical_code": "SRT5674-X", "uuid": "u-srt5674-x"}
+        parse_output = {"entities": [{"raw": "srt5674", "hint": "product", "canonical_code": None}]}
+        out = engine_mod._exact_codes_only(
+            parse_output, {"srt5674": {"product": 2}}, {"product": [exact, variant]}, [exact, variant], {}
+        )
+        assert out is not None
+        assert out[0] == {"srt5674": {"product": 1}}, out[0]
+
+
 class TestDefect1NoLadderClaimWithoutAToolCall:
     """`answer_bridge.answer_for`, the miss arm, with the exact state turn #f763 reached it
     in: the resolver placed the product (a uuid-carrying match), the runner refused the
