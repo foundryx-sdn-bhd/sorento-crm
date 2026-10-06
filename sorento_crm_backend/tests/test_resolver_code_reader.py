@@ -66,7 +66,21 @@ def test_guard_refuses_a_value_not_inside_the_typed_text():
     out = guard(CodeReading("code", "ZZTWT5608"), "zztw5608", "zztw5608")
     assert out.kind == "none"
     assert out.value is None
-    assert "typed" in (out.reason or "")
+    assert out.reason == reader_mod.REASON_NOT_IN_TYPED_TEXT
+
+
+@pytest.mark.parametrize("value", ["SRT_5608", "SRT%5608", "srt5608%", "ZZTWT5608;", "ZZT.WT5608"])
+def test_guard_refuses_a_value_with_characters_outside_letters_digits_space_hyphen(value):
+    """Security review finding 1: the fold let `SRT_5608` through for "SRT 5608" and the
+    probe's `ilike` then read `_` as a wildcard. Letters, digits, spaces and hyphens only;
+    the two separators are what the probes already fold away."""
+    out = guard(CodeReading("family", value), "TAP SRT 5608 ZZTWT5608", "TAPSRT5608ZZTWT5608")
+    assert out.kind == "none"
+    assert out.reason == reader_mod.REASON_BAD_CHARACTERS
+
+
+def test_guard_keeps_spaces_and_hyphens_the_dealer_typed():
+    assert guard(CodeReading("code", "Srt 364-hp"), "Srt 364-hp x 1", "Srt364hp") == CodeReading("code", "Srt 364-hp")
 
 
 def test_guard_refuses_an_empty_value_and_an_unknown_kind():
@@ -130,7 +144,7 @@ def test_the_answer_is_guarded_per_token(db, monkeypatch):
     out = reader_mod.read_codes(db, missed, message_text="", user_id=None, dry_run=True)
 
     assert out["TAPZZTWT5608"] == CodeReading("code", "ZZTWT5608")
-    assert out["zztw5608"].kind == "none" and out["zztw5608"].reason
+    assert out["zztw5608"].kind == "none" and out["zztw5608"].reason == reader_mod.REASON_NOT_IN_TYPED_TEXT
     assert out["TOILET8066"] == CodeReading("family", "8066")
     assert out["BIDET"] == CodeReading("none", None)
     assert "NOT-ASKED" not in out, "a token the caller never asked about is dropped"
@@ -140,6 +154,7 @@ def test_a_token_the_model_left_out_is_none(db, monkeypatch):
     _provider(monkeypatch, FakeProvider({"readings": []}))
     out = reader_mod.read_codes(db, [("TAPZZTWT5608", "TAP ZZTWT5608")], message_text="", user_id=None, dry_run=True)
     assert out["TAPZZTWT5608"].kind == "none"
+    assert out["TAPZZTWT5608"].reason == reader_mod.REASON_NO_READING
 
 
 @pytest.mark.parametrize("content", ["not json", "[]", '{"readings": "x"}', ""])
@@ -147,21 +162,28 @@ def test_a_malformed_answer_is_an_error_reading(db, monkeypatch, content):
     _provider(monkeypatch, FakeProvider(content))
     out = reader_mod.read_codes(db, [("TAPZZTWT5608", "TAP ZZTWT5608")], message_text="", user_id=None, dry_run=True)
     assert out["TAPZZTWT5608"].kind == "error"
-    assert out["TAPZZTWT5608"].reason
+    assert out["TAPZZTWT5608"].reason == reader_mod.REASON_ANSWER_UNREADABLE
 
 
-def test_a_provider_failure_is_an_error_reading_with_its_reason(db, monkeypatch):
+def test_a_provider_timeout_is_an_error_reading_with_a_fixed_reason(db, monkeypatch):
     _provider(monkeypatch, FakeProvider("", raises=TimeoutError("Request timed out.")))
     out = reader_mod.read_codes(db, [("TAPZZTWT5608", "TAP ZZTWT5608")], message_text="", user_id=None, dry_run=True)
     assert out["TAPZZTWT5608"].kind == "error"
-    assert "timed out" in out["TAPZZTWT5608"].reason
+    assert out["TAPZZTWT5608"].reason == reader_mod.REASON_TIMED_OUT
+
+
+def test_a_provider_error_never_echoes_its_own_text(db, monkeypatch):
+    """Security review finding 2: an SDK error can quote a masked key or a vendor body;
+    the response carries a fixed code, the log keeps the text."""
+    _provider(monkeypatch, FakeProvider("", raises=RuntimeError("Incorrect API key provided: sk-proj-****abcd")))
+    out = reader_mod.read_codes(db, [("TAPZZTWT5608", "TAP ZZTWT5608")], message_text="", user_id=None, dry_run=True)
+    assert out["TAPZZTWT5608"] == CodeReading("error", None, reason=reader_mod.REASON_PROVIDER_ERROR)
 
 
 def test_no_provider_configured_is_an_error_reading_not_a_call(db, monkeypatch):
     monkeypatch.setattr(reader_mod, "_resolve_provider", lambda db: (None, "openai", "gpt-test"))
     out = reader_mod.read_codes(db, [("TAPZZTWT5608", "TAP ZZTWT5608")], message_text="", user_id=None, dry_run=True)
-    assert out["TAPZZTWT5608"].kind == "error"
-    assert "provider" in out["TAPZZTWT5608"].reason
+    assert out["TAPZZTWT5608"] == CodeReading("error", None, reason=reader_mod.REASON_NO_PROVIDER)
 
 
 def test_the_real_provider_lookup_with_no_config_row_is_none(db):
@@ -222,7 +244,7 @@ def test_at_most_five_tokens_reach_the_model_the_rest_are_not_asked():
 
     assert inner.calls == [missed[:5]]
     assert all(out[f"T{i}"].kind == "code" for i in range(5))
-    assert out["T5"] == CodeReading("not_asked", None, reason="over the 5 tokens per request")
+    assert out["T5"] == CodeReading("not_asked", None, reason=reader_mod.REASON_OVER_CAP)
     assert out["T6"].kind == "not_asked"
 
 
@@ -249,7 +271,7 @@ def test_the_cap_counts_across_calls_in_one_request():
 def test_the_wrapper_never_raises():
     reader = per_request(Counting(raises=True))
     out = reader([("T1", "t 1")])
-    assert out["T1"].kind == "error" and "boom" in out["T1"].reason
+    assert out["T1"] == CodeReading("error", None, reason=reader_mod.REASON_READER_RAISED)
 
 
 def test_an_empty_ask_makes_no_call():

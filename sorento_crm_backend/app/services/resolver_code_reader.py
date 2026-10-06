@@ -83,6 +83,28 @@ class CodeReading:
 CodeReader = Callable[[list[Missed]], dict[str, CodeReading]]
 
 _NOT_ALNUM = re.compile(r"[^0-9A-Za-z]+")
+#: What a value may be made of: letters, digits, and the two separators the catalogue's
+#: own probes already fold away (`entity_resolver._strip_all_ws`). Anything else (`_`,
+#: `%`, punctuation) is refused BEFORE the value reaches an `ilike`, so the model cannot
+#: smuggle a wildcard or a character the dealer never typed into the probe
+#: (security review, 6 Oct 2026, finding 1).
+_VALUE_CHARS = re.compile(r"^[0-9A-Za-z -]+$")
+
+#: Fixed reason codes, the only text a `fallback.reason` ever carries: a provider's own
+#: error text (which can quote a masked key or a vendor body) stays in the log
+#: (security review, finding 2).
+REASON_NO_PROVIDER = "no_provider"
+REASON_PROVIDER_LOOKUP_FAILED = "provider_lookup_failed"
+REASON_PROVIDER_ERROR = "provider_error"
+REASON_TIMED_OUT = "timed_out"
+REASON_ANSWER_UNREADABLE = "answer_unreadable"
+REASON_NO_READING = "no_reading"
+REASON_UNKNOWN_KIND = "unknown_kind"
+REASON_EMPTY_VALUE = "empty_value"
+REASON_BAD_CHARACTERS = "bad_characters"
+REASON_NOT_IN_TYPED_TEXT = "not_in_typed_text"
+REASON_OVER_CAP = "over_cap"
+REASON_READER_RAISED = "reader_raised"
 
 
 def _fold(value: Any) -> str:
@@ -93,21 +115,23 @@ def _fold(value: Any) -> str:
 
 def guard(reading: CodeReading, typed: str | None, token: str) -> CodeReading:
     """The one rule that keeps the owner's "no typo matching": a `code` or `family` value
-    must sit inside what the dealer typed (letters and digits, case folded), else the
-    reading is `none` with the reason. `none`, `error` and `not_asked` pass through."""
+    must be made of letters, digits, spaces and hyphens only, and must sit inside what the
+    dealer typed (letters and digits, case folded), else the reading is `none` with a
+    reason code. `none`, `error` and `not_asked` pass through."""
     if reading.kind not in ("code", "family"):
         if reading.kind in ("none", "error", "not_asked"):
             return reading
-        return CodeReading("none", None, reason=f"unknown kind {reading.kind!r}")
-    value = _fold(reading.value)
+        return CodeReading("none", None, reason=REASON_UNKNOWN_KIND)
+    raw_value = str(reading.value or "").strip()
+    value = _fold(raw_value)
     if not value:
-        return CodeReading("none", None, reason="empty value")
+        return CodeReading("none", None, reason=REASON_EMPTY_VALUE)
+    if not _VALUE_CHARS.match(raw_value):
+        return CodeReading("none", None, reason=REASON_BAD_CHARACTERS)
     haystack = _fold(typed) if typed else _fold(token)
     if value not in haystack:
-        return CodeReading(
-            "none", None, reason=f"value {reading.value!r} is not inside the typed text"
-        )
-    return CodeReading(reading.kind, str(reading.value).strip())
+        return CodeReading("none", None, reason=REASON_NOT_IN_TYPED_TEXT)
+    return CodeReading(reading.kind, raw_value)
 
 
 def _resolve_provider(db: Session):
@@ -166,7 +190,7 @@ def _readings_from(content: str, missed: list[Missed]) -> dict[str, CodeReading]
         value = str(raw_value) if raw_value is not None else None
         out[token] = guard(CodeReading(str(item.get("kind") or ""), value), asked[token], token)
     for token in asked:
-        out.setdefault(token, CodeReading("none", None, reason="the model named no reading for it"))
+        out.setdefault(token, CodeReading("none", None, reason=REASON_NO_READING))
     return out
 
 
@@ -189,16 +213,17 @@ def read_codes(
 
     try:
         provider, provider_name, model_name = _resolve_provider(db)
+        if provider is None:
+            return failed(REASON_NO_PROVIDER)
+        from app.services.ai_prompt_registry import get_prompt
+
+        system_text = get_prompt(db, PROMPT_KEY).text
     except Exception as exc:  # noqa: BLE001 - never a failed resolve
         logger.warning("resolver code reader: provider lookup failed: %s", exc)
-        return failed(f"provider lookup failed: {exc}")
-    if provider is None:
-        return failed("no provider configured for the code reader")
-
-    from app.services.ai_prompt_registry import get_prompt
+        return failed(REASON_PROVIDER_LOOKUP_FAILED)
 
     messages = [
-        {"role": "system", "content": get_prompt(db, PROMPT_KEY).text},
+        {"role": "system", "content": system_text},
         {"role": "user", "content": _user_message(message_text, missed)},
     ]
     started = time.monotonic()
@@ -211,15 +236,17 @@ def read_codes(
             timeout=budget_seconds,
         )
     except Exception as exc:  # noqa: BLE001 - a provider failure is a miss, with its reason
+        from app.services.chatbot.llm_call import is_timeout
+
         logger.warning("resolver code reader: provider call failed: %s", exc)
-        return failed(f"provider call failed: {exc}")
+        return failed(REASON_TIMED_OUT if is_timeout(exc) else REASON_PROVIDER_ERROR)
     elapsed_ms = int((time.monotonic() - started) * 1000)
 
     try:
         readings = _readings_from(result.content or "", missed)
     except Exception as exc:  # noqa: BLE001 - a malformed answer is a miss, with its reason
         logger.warning("resolver code reader: answer not readable: %s", exc)
-        readings = failed(f"answer not readable: {exc}")
+        readings = failed(REASON_ANSWER_UNREADABLE)
 
     if not dry_run:
         _log_usage(db, provider_name, model_name, result, elapsed_ms, user_id, readings)
@@ -230,25 +257,31 @@ def _log_usage(db: Session, provider_name: str, model_name: str, result: Any, el
                user_id: str | None, readings: dict[str, CodeReading]) -> None:
     from app.models.ai_assistant import AIAssistantUsageLog
 
+    # The row is written under a SAVEPOINT so a failed insert (an `act_as_user_id` that is
+    # no `users.id`, say) rolls back the bookkeeping alone and never the caller's own
+    # pending work: on the chatbot path `db` is the turn's session (security review,
+    # 6 Oct 2026, finding 3). The commit that follows is the same one the spec reader
+    # in this route has always made.
     try:
-        db.add(
-            AIAssistantUsageLog(
-                user_id=user_id,
-                feature=FEATURE,
-                provider=provider_name,
-                model=model_name,
-                prompt_tokens=int(getattr(result, "prompt_tokens", 0) or 0),
-                completion_tokens=int(getattr(result, "completion_tokens", 0) or 0),
-                total_tokens=int(getattr(result, "total_tokens", 0) or 0),
-                tool_calls_count=0,
-                response_time_ms=elapsed_ms,
-                was_answered=any(r.kind in ("code", "family") for r in readings.values()),
+        with db.begin_nested():
+            db.add(
+                AIAssistantUsageLog(
+                    user_id=user_id,
+                    feature=FEATURE,
+                    provider=provider_name,
+                    model=model_name,
+                    prompt_tokens=int(getattr(result, "prompt_tokens", 0) or 0),
+                    completion_tokens=int(getattr(result, "completion_tokens", 0) or 0),
+                    total_tokens=int(getattr(result, "total_tokens", 0) or 0),
+                    tool_calls_count=0,
+                    response_time_ms=elapsed_ms,
+                    was_answered=any(r.kind in ("code", "family") for r in readings.values()),
+                )
             )
-        )
+            db.flush()
         db.commit()
     except Exception as exc:  # noqa: BLE001 - never fail a resolve over bookkeeping
         logger.warning("resolver code reader: usage log failed: %s", exc)
-        db.rollback()
 
 
 def per_request(reader: CodeReader, *, cap: int = TOKENS_PER_CALL) -> CodeReader:
@@ -271,14 +304,14 @@ def per_request(reader: CodeReader, *, cap: int = TOKENS_PER_CALL) -> CodeReader
             elif asked_count + len(fresh) < cap:
                 fresh.append((token, typed))
             else:
-                out[token] = CodeReading("not_asked", None, reason=f"over the {cap} tokens per request")
+                out[token] = CodeReading("not_asked", None, reason=REASON_OVER_CAP)
         if fresh:
             asked_count += len(fresh)
             try:
                 readings = reader(fresh)
             except Exception as exc:  # noqa: BLE001 - a reader failure is a miss, never a failed call
                 logger.warning("resolver code reader: reader raised: %s", exc)
-                readings = {token: CodeReading("error", None, reason=str(exc)) for token, _ in fresh}
+                readings = {token: CodeReading("error", None, reason=REASON_READER_RAISED) for token, _ in fresh}
             for token, _typed in fresh:
                 reading = readings.get(token) if isinstance(readings, dict) else None
                 if reading is not None:

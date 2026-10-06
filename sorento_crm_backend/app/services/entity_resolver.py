@@ -5230,7 +5230,8 @@ def resolve_references(
             except Exception as exc:  # noqa: BLE001 - a reader failure is a miss, never a failed call
                 logger.warning("resolver code reader raised; the tokens stay unresolved: %s", exc)
                 readings = {
-                    tok: _reader_mod.CodeReading("error", None, reason=str(exc)) for tok, _ in missed
+                    tok: _reader_mod.CodeReading("error", None, reason=_reader_mod.REASON_READER_RAISED)
+                    for tok, _ in missed
                 }
             if not isinstance(readings, dict):
                 readings = {}

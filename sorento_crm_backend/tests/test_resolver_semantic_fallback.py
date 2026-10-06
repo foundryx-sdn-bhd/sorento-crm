@@ -196,7 +196,7 @@ def test_a_value_outside_the_typed_text_is_rejected_never_a_typo_fix(db):
     assert result.unresolved_tokens == ["zztw5608"]
     assert row["fallback"]["kind"] == "none"
     assert row["fallback"]["asked"] is True
-    assert "typed" in row["fallback"]["reason"]
+    assert row["fallback"]["reason"] == "not_in_typed_text"
 
 
 def test_the_guard_reads_the_raw_text_not_only_the_folded_token(db):
@@ -331,14 +331,33 @@ def _route(db, tokens, raws, *, code_reader, fallback_to_all_types=True):
 
 
 def test_the_route_asks_once_even_when_it_reruns_the_unresolved_tokens(db):
-    """`fallback_to_all_types` re-runs the tokens still unresolved against every type;
-    the reader is a per-request seam, so the second pass must not spend a second call."""
+    """`fallback_to_all_types` re-runs the tokens still unresolved against every type
+    (`references._resolve_input`'s cross-type pass, which calls `resolve_references`
+    directly with no reader): the reader is asked in the primary pass only, so the
+    whole request spends one call and the primary pass's verdict is what the merged
+    resolution carries."""
     reader = FakeReader({"TAPZZTNOPE1": ("none", None)})
     result = _route(db, ["TAPZZTNOPE1"], ["TAP ZZTNOPE1"], code_reader=reader)
 
     assert len(reader.calls) == 1, reader.calls
     assert result["unresolved_tokens"] == ["TAPZZTNOPE1"]
     assert result["resolutions"][0]["fallback"]["kind"] == "none"
+
+
+def test_the_route_wraps_a_bare_reader_in_the_per_request_cap_and_memo(db):
+    """`_resolve_input` is the one place every caller's reader passes through, so it
+    owns the per-request bounds: a reader handed in bare (a test double, a future
+    caller) still sees at most 5 tokens, and the two past the cap are `not_asked`."""
+    tokens = [f"TAPZZTNOPE{i}" for i in range(1, 8)]
+    raws = [f"TAP ZZTNOPE{i}" for i in range(1, 8)]
+    reader = FakeReader({t: ("none", None) for t in tokens})
+
+    result = _route(db, tokens, raws, code_reader=reader, fallback_to_all_types=False)
+
+    assert len(reader.calls) == 1 and len(reader.calls[0]) == 5, reader.calls
+    kinds = {r["token"]: r["fallback"]["kind"] for r in result["resolutions"]}
+    assert [kinds[t] for t in tokens] == ["none"] * 5 + ["not_asked"] * 2, kinds
+    assert result["unresolved_tokens"] == tokens
 
 
 def test_the_route_resolves_the_owners_line(db):
