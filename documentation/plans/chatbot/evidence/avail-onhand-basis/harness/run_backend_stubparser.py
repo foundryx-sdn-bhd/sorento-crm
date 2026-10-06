@@ -65,6 +65,10 @@ TABLE = {
     "mwc7632-sh-p x 5": _stock(_p("MWC7632-SH-P", 5)),
     # Control: nothing on hand, nothing outstanding, nothing incoming.
     "ohb0000 x 5": _stock(_p("OHB0000", 5)),
+    # Owner wording tweak (6 Oct hand test): the ms and zh renderings of the short line (the
+    # reply language is detected from the message, `app/services/chatbot/language.py`).
+    "mwc7632-sh-p x 10 ada stok tak": _stock(_p("MWC7632-SH-P", 10)),
+    "mwc7632-sh-p x 10 有库存吗": _stock(_p("MWC7632-SH-P", 10)),
 }
 CASUAL = {"message_type": "casual"}
 

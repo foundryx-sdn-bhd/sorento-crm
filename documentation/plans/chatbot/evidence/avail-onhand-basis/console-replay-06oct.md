@@ -16,7 +16,7 @@ Runner: `scripts/chatbot_console_check.py --say ... --contact 900000012` (every 
 > MWC7632-SH-P
   reply.text: How many units of MWC7632-SH-P?
 > 10
-  reply.text: MWC7632-SH-P x 10: ✅ Got stock, 6 available.
+  reply.text: MWC7632-SH-P x 10: ✅ Only 6 got stock.
 
 > MWC7632-SH-P
   reply.text: How many units of MWC7632-SH-P?
@@ -29,6 +29,24 @@ Runner: `scripts/chatbot_console_check.py --say ... --contact 900000012` (every 
 
 Staff route at the same data (`GET /inventory/stock/balance?include_sellable=true`, no contact),
 unchanged: `quantity_on_hand 6, open_so_qty 13, sellable -7`.
+
+### Wording round (owner hand test on the dev copy, 6 Oct)
+
+Owner: keep the tick, the partial line says "Only N got stock." (it read "Got stock, 6 available."
+in the first replay above; the transcript there is updated to the shipped line). Replayed after
+the presenter and label catalogue change, same seed, the MCP server restarted:
+
+```
+> MWC7632-SH-P x 10
+  reply.text: MWC7632-SH-P x 10: ✅ Only 6 got stock.
+> MWC7632-SH-P x 10 ada stok tak
+  reply.text: MWC7632-SH-P x 10: ✅ Hanya 6 ada stok.
+> MWC7632-SH-P x 10 有库存吗
+  reply.text: MWC7632-SH-P x 10: ✅ 只有 6 件有库存。
+```
+
+The zh line is the owner's; the ms line is the lane's rendering of the same sentence, both for
+the owner to confirm.
 
 ## Before (main e3ea227e, same seed, same harness, same database)
 

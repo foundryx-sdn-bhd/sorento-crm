@@ -57,7 +57,7 @@ Truth table for `branch()` (x and y already resolved; unset = 0):
 | 5 | 150 | 200 | 149 | 2026-10-28 | 5 | incoming | 02/11/2026 |
 | 6 | 150 | 200 | 0 | none | 7 | no_incoming | - |
 | 7 | 150 | 200 | 0 | 2026-10-12 | 0 (unset) | incoming | 12/10/2026 |
-| 8 | 10 | 100 | 6 (on hand; 13 on open SO, ignored) | none | 0 | in_stock | "Got stock, 6 available." (AVAIL-ONHAND-BASIS, the MWC7632-SH-P prod case) |
+| 8 | 10 | 100 | 6 (on hand; 13 on open SO, ignored) | none | 0 | in_stock | "Only 6 got stock." (AVAIL-ONHAND-BASIS, the MWC7632-SH-P prod case; owner hand test 6 Oct: was "Got stock, 6 available.") |
 | 9 | 5 | 100 | 6 (on hand; 13 on open SO, ignored) | none | 0 | in_stock | "Got stock." |
 | 10 | 5 | 100 | 0 (on hand; no open SO) | none | 0 | no_incoming | "No stock and no incoming." |
 

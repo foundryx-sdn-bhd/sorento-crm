@@ -13,7 +13,14 @@ Availability-only contact, warehouse scope MOCHA-WH, asked "MWC7632-SH-P" then "
 
 - Before: `MWC7632-SH-P x 10: ❌ No stock and no incoming. Please refer to your salesman.`
 - Staff stock summary at the same data timestamp: Total 6 (O/S 13), MOCHA-WH 6 (O/S 13).
-- After: `MWC7632-SH-P x 10: ✅ Got stock, 6 available.` (asked 5: `✅ Got stock.`).
+- After: `MWC7632-SH-P x 10: ✅ Only 6 got stock.` (asked 5: `✅ Got stock.`).
+
+Owner hand test on the dev copy (6 Oct, after the calculation fix): the figure is right; one
+wording tweak, owner's words: keep the tick, the partial line says "Only N got stock." (was
+"Got stock, N available."). The covered line stays "Got stock.". zh "只有 N 件有库存。" as the
+owner gave it; ms "Hanya N ada stok." is the lane's rendering, both flagged in the PR body for
+the owner to confirm. Changed in `sorento_crm_mcp/sorento_crm_mcp/presenters.py` (the short_of
+line) and `app/services/chatbot/label_catalog.py` (the ms and zh of that sentence).
 
 ## Where it was
 

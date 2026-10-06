@@ -140,4 +140,5 @@ def test_an_in_stock_line_never_refers():
     for extra in ({}, {"available_qty": 2}):
         line = _availability_line(_entry(product_code="SRT1", requested_qty=3, **extra))
         assert "Please refer" not in line, line
-        assert "Got stock" in line, line
+        # "Got stock." covering the ask, "Only 2 got stock." short of it (AVAIL-ONHAND-BASIS).
+        assert "got stock" in line.lower(), line
