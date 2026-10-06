@@ -240,6 +240,73 @@ def test_the_prod_trace_shape_keeps_the_brand_and_writes_no_promotion(monkeypatc
     assert not state2.focus.extra.get("promotion"), state2.focus.extra
 
 
+ROGUE_CODE = "ZZWC8318-RL-250"
+
+
+def test_confident_brand_beside_a_code_never_arms_a_kind_pick(monkeypatch):
+    """ROGUE-CONVO-REVIEW shape (prod, 6 Oct 2026 18:50 MYT, prompt v47, General Enquiries
+    dealer): "SORENTO S-TRAP 250MM ONE PIECE WC-ZZWC8318-RL-250". The parser was right
+    (brand SORENTO confident, product ZZWC8318-RL-250, domain inventory); the resolver
+    answered SORENTO with FOUR kinds (promotion, customer, form, transporter), none of which
+    inventory accepts, and the engine asked "Which one do you mean? 1. SORENTO (promotion)
+    2. SORENTO (customer) 3. SORENTO (form) 4. SORENTO (transporter)" instead of the stock
+    answer. Owner rule: Sorento is always a brand. The resolver has no brand probe, so no
+    kind it answers a brand word with can contradict the parser's brand hint: `resolved_kinds`
+    says `brand`, APPLY asks nothing, the product is the subject."""
+    product_id = "11111111-1111-4111-8111-111111111111"
+    four = [
+        _match("promotion", PROMO_A, PROMO_A),
+        _match("customer", "SORENTO TRADING", "44444444-4444-4444-4444-444444444444"),
+        _match("form", "SORENTO-FORM", "55555555-5555-4555-8555-555555555555"),
+        _match("transporter", "SORENTO LOGISTICS", "66666666-6666-4666-8666-666666666666"),
+    ]
+    outcome = _resolve_kinds_with(
+        monkeypatch,
+        domain="inventory",
+        entities=[entity("SORENTO", hint="brand", canonical_code="SORENTO"), entity(ROGUE_CODE, hint="product", canonical_code=None)],
+        resolutions=[
+            {"token": "SORENTO", "matches": four},
+            {"token": ROGUE_CODE.replace("-", ""), "matches": [_match("product", ROGUE_CODE, product_id)]},
+        ],
+        compatible=[{"uuid": product_id, "entity_type": "product", "code": ROGUE_CODE}],
+    )
+
+    assert outcome.resolved_kinds.get("SORENTO") == {"brand": 4}, outcome.resolved_kinds
+
+    v = verdict(
+        domain_hint="inventory",
+        intent_hint="check_stock",
+        entities=[entity("SORENTO", hint="brand", canonical_code="SORENTO"), entity(ROGUE_CODE, hint="product")],
+    )
+    state2, plan = _apply(v, outcome.resolved_kinds)
+    assert plan.ask is None or plan.ask.kind != "kind_pick", plan.ask
+    assert plan.trace.reconciled == [], plan.trace.reconciled
+    assert state2.focus.brands == ["SORENTO"], state2.focus.brands
+    assert state2.focus.customers == [], state2.focus.customers
+    assert not any(state2.focus.extra.get(k) for k in ("promotion", "customer", "form", "transporter")), state2.focus.extra
+    assert [p.get("raw") for p in state2.focus.products] == [ROGUE_CODE], state2.focus.products
+
+
+def test_a_brand_word_under_order_keeps_the_resolvers_own_customer_reading(monkeypatch):
+    """Control: under ORDER the resolver's domain override (brand -> customer / transporter,
+    `entity_resolver._DOMAIN_HINT_EXPANSIONS`) is the intended reading of an unlisted brand
+    word ("super ceramic" names a customer), so a single customer hit still re-types it."""
+    customer = "44444444-4444-4444-4444-444444444444"
+    outcome = _resolve_kinds_with(
+        monkeypatch,
+        domain="order",
+        intent="check_order",
+        branch_kind="check_order",
+        entities=[entity("super ceramic", hint="brand", canonical_code=None)],
+        resolutions=[{"token": "super ceramic", "matches": [_match("customer", "SUPER CERAMIC SDN BHD", customer)]}],
+        compatible=[{"uuid": customer, "entity_type": "customer", "code": "SUPER CERAMIC SDN BHD"}],
+    )
+
+    assert outcome.resolved_kinds.get("super ceramic") == {"customer": 1}, outcome.resolved_kinds
+    _state2, plan = _apply(verdict(domain_hint="order", intent_hint="check_order", entities=[entity("super ceramic", hint="brand")]), outcome.resolved_kinds)
+    assert plan.trace.reconciled == [("super ceramic", "brand", "customer")], plan.trace.reconciled
+
+
 def test_a_kind_the_hint_does_not_fan_out_to_still_re_types(monkeypatch):
     """Control: a code hinted `order` under inventory that the resolver places as a product
     is still rewritten, exactly as AC-1527 says; the fold touches the fan-out pairs only."""
