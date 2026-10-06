@@ -293,6 +293,40 @@ def test_the_brand_follow_up_fetches_the_same_document_type(chat, world, small_l
     assert PHOTO not in second, second
 
 
+def test_the_brand_follow_up_on_a_set_listed_in_full_fetches_the_same_document_type(chat, world):
+    """Reviewer should-fix: the OFFER-ONLY carry (`engine.py`, a set listed in full whose
+    brands are carried so a brand named next narrows it) needs the ids too - it is the
+    same page branch once `set_brand_chosen` replans it."""
+    first = chat.say("which tap has technical drawing", _turn_1())
+    assert one_line_header(first) == "Here's what you want: taps with technical drawing (5)", first
+    assert _row_types(first) == [DRAWING] * 5, first
+
+    sorento = _display(world["sorento"].brand_name)
+    second = chat.say(world["sorento"].brand_name.lower(), _turn_2_brand(world["sorento"].brand_name.lower()))
+
+    assert one_line_header(second) == f"Here's what you want: {sorento} taps with technical drawing (4)", second
+    calls = chat.attachment_calls()
+    assert len(calls) == 2, chat.calls
+    assert calls[1].get("attachment_type_ids") == calls[0].get("attachment_type_ids") == [world["drawing"].id], calls[1]
+    assert set(calls[1].get("product_ids") or []) == {p.id for p in world["srt_taps"]}, calls[1]
+    assert _row_types(second) == [DRAWING] * 4, second
+
+
+def test_another_n_after_the_brand_page_fetches_the_same_document_type(chat, world, small_list):
+    """Reviewer nit: `page_the_set`'s `next_key` spreads the carried key, so "another N"
+    after the brand page still fetches under the document type."""
+    chat.say("which tap has technical drawing", _turn_1())
+    chat.say(world["sorento"].brand_name.lower(), _turn_2_brand(world["sorento"].brand_name.lower()))
+    third = chat.say("another 1", _turn_2_count())
+
+    calls = chat.attachment_calls()
+    assert len(calls) == 3, chat.calls
+    assert calls[2].get("attachment_type_ids") == [world["drawing"].id], calls[2]
+    listed = set(calls[1].get("product_ids") or []) | set(calls[2].get("product_ids") or [])
+    assert len(calls[2].get("product_ids") or []) == 1 and listed == {p.id for p in world["srt_taps"]}, calls[2]
+    assert _row_types(third) == [DRAWING], third
+
+
 # --------------------------------------------------------------------------- #
 # AC-3: the count answer                                                        #
 # --------------------------------------------------------------------------- #
