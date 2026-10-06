@@ -29,3 +29,12 @@ Plan: `PLAN-stock-fill-predicate-06oct.md`.
   rendered nothing, or no tool run for the code at all, prints the existing retry sentence
   under the header, never "No stock found".
 - AC-SFP-7: no new wording; every sentence printed exists on main today.
+- AC-SFP-8 (round 8, the live replay): AC-SFP-2 holds on a catalogue that HOLDS stock, where
+  the stray word plus the intent's `require` resolves to a population: the plan is not
+  re-made from that population, on a fill turn and on a plain reuse turn alike. The reply is
+  the product's (`How many units of <code>?`, then its availability line), the stock tool is
+  called with the product's id alone, and the focus the turn leaves is that product, never
+  the population.
+- AC-SFP-9: a carried DESCRIBED set is not a product subject. A no-entity follow-up over it
+  ("stock?" after "any gunmetal basin has incoming?") re-describes the set and answers in the
+  set's own shape (header and count), as before.

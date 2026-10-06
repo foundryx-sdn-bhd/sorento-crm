@@ -1,6 +1,6 @@
 # PLAN: stock_qty fill turn answers the task's product (STOCK-FILL-PREDICATE)
 
-Status: in review (PR #1502); track: small fix (backend only, under 300 changed lines, no migration, no auth/RBAC change, no new ingest surface)
+Status: in review (PR #1502, round 8: the live console replay found the no-task sibling open on real data; fixed, see "Round 8"); track: small fix (backend only, under 300 changed lines, no migration, no auth/RBAC change, no new ingest surface)
 
 UAC: `stock-fill-predicate-acceptance-criteria.md` (alongside).
 
@@ -77,8 +77,32 @@ A. (Owner ruling, 6 Oct 2026 17:40: the principle, not the turn type.) A fetch a
      discontinued marker). A carried product CODE that never resolved is the
      conversation's subject and stays counted: it is what the R6 "never unfiltered" guard
      reads to stop a zero-uuid tool call (reviewer round 6).
+   - Round 8 (live console replay, 6 Oct 2026, real parser on the shared dev data).
+     `engine.py`, the same `product_subject` condition, the resolver's OTHER exit. On a
+     catalogue that holds stock the stray word plus the intent's `require` is a
+     population (every product with stock; a word that binds as a brand: that brand's
+     products), the exit is `continue`, and the re-entry into apply re-made the plan
+     from it: the population replaced the carried product in the fetch and on the focus.
+     A plain `check stock` asked "How many units for each?" over the catalogue; the fill
+     turn answered right (the task drives its own fetch) and left the population as the
+     next turn's subject. Rounds 1 to 7 could not see it: the blank test schema held no
+     stock rows, so the word's set was empty and only the `not_found` exit was ever
+     exercised. Now, when the resolver was asked about carried NON-product words alone
+     and placed products, that population is dropped before the plan is re-made and
+     before the gate is read (`turn_runtime.drop_stray_population`; trace
+     `stray_carried_word_population_dropped`). The product stays the plan and the focus.
+   - Round 8, the other half: a carried DESCRIBED set ("stock?" after "any gunmetal
+     basin has incoming?") leaves exactly the same shape on the focus (products with
+     uuids beside uuid-less words) and must keep being re-described. Nothing on the
+     focus told the two apart, and comparing the carried products with the re-resolved
+     population does not either (a follow-up that changes the `require` changes the
+     population). So the resolver's rows for a described set (a predicate with a
+     `description`) are marked `described_set` when they are placed
+     (`turn_runtime.mark_described_set`), and a spec made of marked rows is not a
+     product subject for the drop (`spec_is_a_described_set`). A product the dealer
+     types or picks later is a fresh, unmarked row.
    The engine's carry hand-off itself is unchanged: the stray word still reaches the
-   resolver and may resolve.
+   resolver and may resolve, and it stays on `focus.extra`.
 B. `turn/compose.py` never-stuck, with the #1501 principle (owner, 6 Oct 17:50: no claim
    without a lookup). A section that rendered nothing for its named subjects prints the
    existing "No {label} found for {codes}." miss line ONLY when a tool actually ran for
@@ -91,7 +115,9 @@ B. `turn/compose.py` never-stuck, with the #1501 principle (owner, 6 Oct 17:50: 
 
 ## Tests
 
-`sorento_crm_backend/tests/chatbot/test_stock_fill_predicate.py` (14 tests): two engine
+`sorento_crm_backend/tests/chatbot/test_stock_fill_predicate.py` (17 tests; since round 8 every
+replay runs on a catalogue that holds stock rows, `_seed_stock_rows`, and asserts the focus the
+turn leaves is the one product): two engine
 replays of the turn 121 state (in stock + discontinued; no stock, no incoming) asserting the
 whole reply (the availability line and the discontinued marker, nothing else); the same fill
 with the stale word tagged promotion / brand / category / product_type and BINDING to a
@@ -106,3 +132,39 @@ branch) and an `envelope_of` test for `tool_ran`. Four older expectations in thr
 empty hand-built envelope: the three header-grammar tests now read the header over a
 row, and the blocked-contact escalation test expects the miss line before the salesman
 line.
+
+Round 8 adds `test_the_resolver_marks_the_members_of_a_described_set_and_nothing_else` and, in
+round 8 of the attribute asks (`test_attribute_asks_round8.py`),
+`test_a_one_word_stock_follow_up_answers_as_the_described_set`: a carried described set still
+answers a no-entity follow-up in the set's own shape (the guard for the marker).
+
+Live console cases (real parser, `scripts/chatbot_console_check.py --live`, not collected by
+pytest): `tests/chatbot/console_cases/2026-10-06-stock-fill-predicate.yaml` (the dealer steps:
+turn 121's state then "1", the no stock control, the no-task reuse) and
+`2026-10-06-stock-fill-predicate-set-control.yaml` (the set control, on a contact with the
+full stock view).
+
+## Follow-ups (not this PR)
+
+- For the owner: on the "Availability only" stock view a set question ("which basins have
+  stock") is answered `How many units for each?` over the first 20 codes of the set (the stock
+  tool is called with 50 ids), where the full stock view answers `Here's what you want: wash
+  basins with stock (541)` and a line per brand. Measured live on 6 Oct 2026 on the shared dev
+  data, identical on main (pre-fix code) and on this branch. Whether a dealer should be asked
+  a quantity for every member of a set is a product decision, not a defect of this change.
+- A set carried on a session from before this change has unmarked rows: its first no-entity
+  follow-up after deploy lists the same carried members under the lane's generic header
+  ("Stock summary for the requested products.") instead of the set's own header and count
+  (reviewer round 8, N1). One turn per such session; the next set question marks its rows.
+- Reviewer round 8, S1 (already so before round 8, not a regression of it): "cert?" over a
+  carried product beside a stray word that binds as a brand calls the attachment tool with
+  the product's id alone and keeps the focus, but when the product has no certificate the
+  miss reply reads `Here's what you want: Sorento products (2)` and lists the brand's other
+  product. The line comes from the miss composer (`lanes/business/answer.py`,
+  `build_breakdown_msg`), which reads the resolver's raw `resolved` payload; the drop leaves
+  that payload alone (N2: it also feeds `scope_block_mod` and `apply_crossdomain_hit`).
+  Rule A says the stray word's set is never said back, so this wants its own lane: either
+  the drop also clears the population from `resolved`, or the miss composer reads the gate.
+- The known limit recorded on `_spec_is_the_set` (a stray word whose described set is exactly
+  the carried product) is gone for carried subjects: the population is dropped before the
+  runner's gate is reached.
