@@ -3734,6 +3734,13 @@ def _with_carried_document_types(parse_output: dict[str, Any], focus: Focus) -> 
     return {**parse_output, "entities": [*own, *carried]}
 
 
+#: The verdict key `with_carried_entities` sets when a document word's subject is the
+#: settled products the plan already carries (uuids on `focus.products`), none of them
+#: handed to the resolver. `resolve_gate.resolve_entity_body` reads it: a turn about
+#: settled products describes no set, so it sends no `require` leg.
+SUBJECT_SETTLED_KEY = "subject_settled"
+
+
 def with_carried_entities(
     parse_output: dict[str, Any], focus: Focus, *, unsettled_only: bool = False
 ) -> dict[str, Any]:
@@ -3827,13 +3834,6 @@ def with_carried_entities(
     if not carried:
         return parse_output
     return {**parse_output, "entities": [*carried, *own]}
-
-
-#: The verdict key `with_carried_entities` sets when a document word's subject is the
-#: settled products the plan already carries (uuids on `focus.products`), none of them
-#: handed to the resolver. `resolve_gate.resolve_entity_body` reads it: a turn about
-#: settled products describes no set, so it sends no `require` leg.
-SUBJECT_SETTLED_KEY = "subject_settled"
 
 
 def attachment_type_labels(db: Session, entities: list[dict[str, Any]]) -> list[dict[str, Any]]:

@@ -89,7 +89,10 @@ def world(session_factory):
         return _product(db, brand_id=brand.id, category_id=tap_category, uom_id=uom_id, noun="BASIN TAP", prefix=prefix, name=name)
 
     srt_taps = [make(sorento, "ZZSBF", f"Sorento Basin Tap {i}") for i in range(4)]
-    mch_taps = [make(mocha, "ZZSBM", "Mocha Basin Tap")]
+    # Reviewer should-fix (round 2): the Mocha code sorts FIRST, so the Sorento page (the
+    # first three Sorento taps) is never the same three ids as the first page of EVERY tap;
+    # a document word that recounted the class set would fetch the Mocha tap and show it.
+    mch_taps = [make(mocha, "ZZSBA", "Mocha Basin Tap")]
     for p in srt_taps + mch_taps:
         _attach(db, p, types[PHOTO], f"{p.product_code}-01.jpg")
         _attach(db, p, types[DRAWING], f"{p.product_code}-td.pdf")
@@ -365,11 +368,15 @@ def test_a_document_word_after_the_brand_page_runs_over_the_listed_taps(chat, wo
 
     calls = chat.attachment_calls()
     assert len(calls) == 3, chat.calls
-    # The SAME products the page listed, no more and no fewer, under the photo type.
+    # The SAME products the page listed, no more and no fewer, under the photo type: never
+    # the Mocha tap, which heads the class set's own first page.
     assert set(calls[2].get("product_ids") or []) == set(listed), (calls[2], listed)
+    assert world["mch_taps"][0].id not in (calls[2].get("product_ids") or []), calls[2]
     assert calls[2].get("attachment_type_ids") == [world["photo"].id], calls[2]
     assert _row_types(third) == [PHOTO] * 3, third
     assert DRAWING not in third, third
+    # A product-scoped answer, not a recount of the set: no count line, no brand breakdown.
+    assert "Here's what you want" not in third and "•" not in third, third
 
 
 # --------------------------------------------------------------------------- #

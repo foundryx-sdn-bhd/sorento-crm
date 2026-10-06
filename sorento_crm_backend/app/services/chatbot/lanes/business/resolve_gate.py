@@ -722,11 +722,13 @@ def resolve_entity_body(
     # <the listed codes>", a product-scoped fetch, never a set. With the page having
     # retired the class word, the leg had no scope term left and counted every product
     # with a photo.
+    from app.services.chatbot.turn_runtime import SUBJECT_SETTLED_KEY
+
     if (
         require is not None
         and not scope_terms
         and not grounded_specs
-        and (_names_a_typed_code(parse_output) or parse_output.get("subject_settled") is True)
+        and (_names_a_typed_code(parse_output) or parse_output.get(SUBJECT_SETTLED_KEY) is True)
     ):
         require = None
     if require is not None:
