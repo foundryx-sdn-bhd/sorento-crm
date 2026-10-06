@@ -1776,6 +1776,9 @@ def answer_for(
     primary_tool_ran = via_fetched_empty or (
         isinstance(fetch_item, Mapping) and bool(fetch_item.get("tool"))
     )
+    if not primary_tool_ran and trace is not None:
+        # Turn #f763 was diagnosed from the trace screen, so the skipped rung says why.
+        trace.add("crossdomain", {"skipped": "primary_tool_not_run"})
     crossdomain_result = (
         _run_crossdomain_ladder(
             parser=parser,

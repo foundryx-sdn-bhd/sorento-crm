@@ -10,18 +10,19 @@ One minute later "SRT364-HP X 1" answered "SRT364-HP x 1: Got stock." The trace 
 first turn: tool=null, outcome=not_found, scope gate "no entities and 'inventory' requires
 a scoping entity". No stock lookup ran, yet the reply stated there was no stock.
 
-Two defects, one test each:
+Two defects, one test each (numbered as in the lane brief):
 
-1. The resolver DID place "Srt 364-hp" on SRT364-HP (that is where the uppercase code in
-   the reply came from), but the uuid never reached the fetch: the availability-mode
-   exact-code filter (`engine._exact_codes_only`) compared the typed word against the
-   resolver's code by casefold alone, while the resolver itself matches with separators
-   folded (`resolve_gate._PRODUCT_FOLD`, `entity_resolver._norm_token_map`). "srt 364-hp"
-   never equalled "srt364-hp", so the placed product was dropped and the fetch was
-   refused for having no subject.
-2. The miss arm ran the cross-domain ladder on a fetch that never called its tool, and
+1. The miss arm ran the cross-domain ladder on a fetch that never called its tool, and
    the ladder rendered "No stock and no incoming for SRT364-HP." over a refusal. Only a
    real empty tool result may say so.
+2. The resolver DID place "Srt 364-hp" on SRT364-HP (that is where the uppercase code in
+   the reply came from), but the uuid never reached the fetch: the availability-mode
+   exact-code filter (`engine._exact_codes_only`) and the quantity join
+   (`turn_runtime._spec_quantities`) compared the typed word against the resolver's code
+   by casefold alone, while the resolver itself matches with separators folded
+   (`resolve_gate._PRODUCT_FOLD`, `entity_resolver._norm_token_map`). "srt 364-hp" never
+   equalled "srt364-hp", so the placed product was dropped and the fetch was refused for
+   having no subject.
 
 Fake fixture ids only: the seeded codes are the owner's, the uuids are minted per test.
 """
@@ -75,7 +76,7 @@ class TestDefect2ResolvedUuidReachesTheFetch:
         assert out == f"SRT364-HP x 1: {TICK} Got stock.", c.transcript
 
 
-class TestDefect1NoLadderClaimWithoutATollCall:
+class TestDefect1NoLadderClaimWithoutAToolCall:
     """`answer_bridge.answer_for`, the miss arm, with the exact state turn #f763 reached it
     in: the resolver placed the product (a uuid-carrying match), the runner refused the
     fetch before any tool ran (`scope_gate`, outcome not_found), and the tenant ladder
