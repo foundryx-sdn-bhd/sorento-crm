@@ -1,10 +1,26 @@
 # PLAN - a confident class hint is never re-typed by name match (CLASS-HINT-KIND-PICK)
 
-Status: WAITING on owner Q1 (reach: class hints only, or product hints too). Red tests
-written and red on origin/main for the owner's exact reply (sandbox reproduction, 6 Oct
-2026). Track: small fix (backend only, no migration, no auth/RBAC change, no new ingest
+Status: BUILT, in review (6 Oct 2026). Owner Q1 ruled "cabana is a brand": reach is
+category / product_type / product / brand, plus any word the catalogue knows as a brand
+exactly; D2 superseded. Fix green on the sandbox (31 lane tests + rewritten r11 control),
+kill test 24 red / 7 controls green on origin/main, before/after replay table posted on
+PR #1509. Track: small fix (backend only, no migration, no auth/RBAC change, no new ingest
 surface, no UI). Card: `CARD-class-hint-kind-pick-06oct.md`. UAC:
-`class-hint-kind-pick-acceptance-criteria.md`. Lane PR #1509.
+`class-hint-kind-pick-acceptance-criteria.md`. Hand test: `laneboard/scripts/1509.md`.
+
+Built beyond the first draft below, per the owner's Q1 ruling: (1) `turn_runtime.
+exact_brand_rows` (the first tier of `brand_rows_for_word`, extracted) and
+`entities_naming_a_live_brand` over every hint; `resolve_kinds` locks those tokens and
+counts them as the brand so reconcile keeps or rewrites the hint to brand; (2) the lock
+covers confident `product` and `brand` hints too (`resolve_gate.HINT_LOCKED_KINDS`); (3)
+`references.py` strips the five name-matched kinds for a locked token in the primary pass
+as well (brand -> promotion fan-out), keeping the request domain's own kind; (4) the spec fallback
+stays closed when a code matched and every unanswered token is a brand's name or code
+(`_only_brand_words_unanswered_beside_a_code`), measured necessary on the replay: a locked
+brand word beside a code otherwise opened the spec fallback and listed the brand's whole
+catalogue in a stock answer. A blanket code-first guard was tried first and reverted: it
+broke `test_resolve_brand_routing.py::test_one_resolved_token_no_longer_hides_an_
+unanswered_one` (an unanswered description beside a code must still open the spec path).
 
 Crew rulings on the card (6 Oct 2026): Q2 = S3 (one optional resolver request field; the
 two `references.py` lines are this lane's), Q3 = (a) non-confident class hints keep
@@ -59,6 +75,14 @@ under reading (a).
 
 Then: kill test (fix reverted, the targets red again), opus reviewer, console replay
 table on the sandbox for the five card examples, crew-handtest.
+
+## Seen on the replay, not this lane's (identical before and after)
+
+"water tap" (category, master_products): the resolver answers three spec-tier taps, the
+engine fetches `crm_master_products_list` with no ids and the miss composer prints
+"Here's what you want: / • product: X (+2 more) / But no master products matched these."
+ROGUE-CONVO-REVIEW #1506 classes A (zero-scope fetch) and C (set members under a miss
+header) own it.
 
 ## Next trigger (Q4, out of scope)
 

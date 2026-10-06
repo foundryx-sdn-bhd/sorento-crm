@@ -185,13 +185,47 @@ def _seed_world(session_factory, *, cabana: bool = False) -> dict[str, Any]:
     )
     db.add(customer)
     db.commit()
+    # Ids, not rows: a plain test session has no company scope set, so a later ORM read of
+    # a company-scoped table on it returns nothing (fail-closed by design).
     return {
         "basins": basins,
         "cabana_basins": cabana_basins,
         "promotions": promotion_ids,
         "customer": customer.id,
         "customer_code": customer_code,
+        "category_id": category.id,
+        "uom_id": uom.id,
+        "brand_id": brand.id if brand is not None else None,
+        "warehouse_id": warehouse.id if warehouse is not None else None,
     }
+
+
+def _seed_digit_coded_cabana_product(session_factory, world: dict[str, Any], code: str) -> str:
+    """One more Cabana product, coded with digits, on the `cabana=True` world."""
+    db = session_factory()
+    product = Product(
+        id=str(uuid.uuid4()),
+        product_code=code,
+        product_name=code,
+        description="CABANA S-TRAP 250MM ONE PIECE WC",
+        category_id=world["category_id"],
+        base_uom_id=world["uom_id"],
+        brand_id=world["brand_id"],
+        list_price=Decimal("1.00"),
+        is_active=True,
+        company_id=DEFAULT_COMPANY_ID,
+    )
+    db.add(product)
+    db.flush()
+    derive_for_code(db, code)
+    db.add(
+        Stock(
+            id=str(uuid.uuid4()), product_id=product.id, warehouse_id=world["warehouse_id"],
+            quantity_on_hand=5, company_id=DEFAULT_COMPANY_ID,
+        )
+    )
+    db.commit()
+    return code
 
 
 def _capturing_call_tool(
@@ -674,6 +708,42 @@ class TestTheRerunLeavesALockedTokenAlone:
         )
         result = _route_call(session_factory(), body)
         assert "promotion" in _kinds_under(result, "cabana"), result
+
+    def test_a_brand_word_beside_a_matched_code_opens_no_spec_path(self, session_factory) -> None:
+        """AC-11, measured on the replay: locked and unresolved, "SORENTO" beside a matched
+        code opened the spec fallback, which bound the brand and emitted its whole
+        catalogue beside the one code asked. A brand word scopes the code: no spec rows,
+        the code's own match alone."""
+        world = _seed_world(session_factory, cabana=True)
+        # A code WITH digits: `_code_matched` reads only a digit-bearing token as a code
+        # (a word, however coded, describes a set). The alpha-only seeds above are for
+        # the "basin" / "1.0mm" shapes and would not count here.
+        code = _seed_digit_coded_cabana_product(session_factory, world, "ZZCB7318-RL")
+        body = _basin_body(
+            query=f"CABANA {code}", tokens=["CABANA", code], match_mode="and",
+            allowed_entity_types=["brand", "product"], domain="inventory", spec_fallback=True,
+            **{LOCK_FIELD: ["CABANA", code]},
+        )
+        result = _route_call(session_factory(), body)
+        matches = [m for r in result.get("resolutions") or [] for m in (r.get("matches") or [])]
+        matches += list(result.get("intersection") or [])
+        assert "spec_search" not in {m.get("match_tier") for m in matches}, result
+        assert code.lower() in {str(m.get("canonical_code") or "").lower() for m in matches}, result
+
+    def test_a_description_beside_a_matched_code_still_opens_the_spec_path(self, session_factory) -> None:
+        """Control (`test_resolve_brand_routing.py` pins the same): the guard is for a BRAND
+        word only; an unanswered class description beside a code still reaches the spec
+        fallback."""
+        world = _seed_world(session_factory, cabana=True)
+        code = next(iter(world["cabana_basins"]))
+        body = _basin_body(
+            query=f"{code} wash basin", tokens=[code, "wash basin"], match_mode="or",
+            allowed_entity_types=["product", "category"], domain="inventory", spec_fallback=True,
+            **{LOCK_FIELD: ["wash basin"]},
+        )
+        result = _route_call(session_factory(), body)
+        tiers = {m.get("match_tier") for r in result.get("resolutions") or [] for m in (r.get("matches") or [])}
+        assert "spec_search" in tiers, result
 
     def test_the_field_is_optional_and_absent_means_today(self, session_factory) -> None:
         """Byte-identical for n8n / MCP: a body without the field and a body with an

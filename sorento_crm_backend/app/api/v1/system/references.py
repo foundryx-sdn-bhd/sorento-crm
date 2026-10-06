@@ -1959,6 +1959,26 @@ def _strip_name_kinds_for_locked(
     return result
 
 
+def _only_brand_words_unanswered_beside_a_code(
+    db: Session, result: dict[str, Any], tokens: list[str] | None
+) -> bool:
+    """A caller token matched a product BY CODE (`_code_matched`) and every token still
+    unanswered is a brand's name or code, exactly (case and separators aside). Such a word
+    scopes the code; it describes no set of its own, so the spec fallback has nothing to
+    find for it. One `brands` read, on this shape only; the catalogue's own brand rows,
+    never a word list."""
+    unanswered = [str(t) for t in (result.get("unresolved_tokens") or []) if str(t or "").strip()]
+    if not unanswered or not _code_matched(result, tokens):
+        return False
+    names = {
+        _norm_locked_token(value)
+        for (code, name) in db.query(Brand.brand_code, Brand.brand_name).all()
+        for value in (code, name)
+        if str(value or "").strip()
+    }
+    return all(_norm_locked_token(t) in names for t in unanswered)
+
+
 def _result_has_zero_matches(result: dict[str, Any]) -> bool:
     """True when neither OR-mode nor AND-mode produced any match."""
     if "intersection" in result:
@@ -3191,8 +3211,18 @@ def resolve_reference_post(
     # whole block - every other signal here answers "is a WORD unanswered", and a
     # query whose every token already resolved exactly has no unanswered word by
     # definition, whatever a coverage claim over punctuation says.
+    # CLASS-HINT-KIND-PICK (owner, 6 Oct 2026): a BRAND word typed beside a matched code
+    # ("SORENTO ZZWC8318") is now left unresolved on purpose rather than re-typed to
+    # whatever promotion carries it; without this guard that unresolved word opened the
+    # spec fallback, which bound the brand off the sentence and emitted the brand's WHOLE
+    # catalogue as spec matches beside the one code the customer asked about (measured on
+    # the sandbox replay: five Sorento products in a stock answer for ZZWC8318-RL-250).
+    # The code answers its own turn and the brand word scopes it. Narrow on purpose: an
+    # unanswered DESCRIPTION beside a code ("ZZTKS2B double bowl kitchen sink") still
+    # opens the spec path, as `test_resolve_brand_routing.py` pins.
     if (
         payload.spec_fallback
+        and not _only_brand_words_unanswered_beside_a_code(db, result, payload.tokens)
         and not _every_caller_token_resolved(result)
         and (
             _result_has_zero_matches(result)
