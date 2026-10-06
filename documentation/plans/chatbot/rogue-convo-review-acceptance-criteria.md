@@ -14,9 +14,14 @@ are its red tests. Fake fixture ids in every test; product codes are catalogue c
   not a per-domain list in the engine.
 - AC-RC-A3 (control): a scoped product ask ("SRTWC286 price") fetches with that id; bare
   "PO" still lists the open book; `low_stock_report` with no entities still runs.
-- AC-RC-A4 (if Q1 = a): the chatbot's product list never returns a product whose
+- AC-RC-A4 (Q1 = a + brand): the chatbot's product list never returns a product whose
   `is_searchable` is false, whose category's `is_searchable` is false, or whose
-  `is_active` is false; the admin products list is unchanged.
+  `is_active` is false, and a brand-scoped contact sees only its brands' products (the
+  existing session criterion, stamped from `contact_id` + `space_id`); the admin products
+  list is unchanged.
+- AC-RC-A5: a product token typed in `master_products` that the resolver cannot place is
+  answered with its own miss wording (the token named) and no fetch, never the scope
+  sentence and never the catalogue. Red: turn 7's "srtwc-8318".
 
 ## Class B: an unplaced typed product token is "Couldn't find X"
 

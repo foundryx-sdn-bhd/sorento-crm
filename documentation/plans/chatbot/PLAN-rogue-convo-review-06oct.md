@@ -232,44 +232,82 @@ cd sorento_crm_backend && CHATBOT_LIVE_LLM=1 ROGUE_CONVO_PROMPT_FILE=/path/to/de
   venv/bin/pytest tests/chatbot/test_rogue_convo_live_parser.py -q -s 2>&1 | grep ROGUE-CONVO-EVAL
 ```
 
-| shape | message | base v60 | patched |
-|---|---|---|---|
-| F1-description-with-code | SORENTO ONE PIECE WASHDOWN TOILET (S-TRAP250MM)-SRTWC8354-SH | ?/5 | ?/5 |
-| F1-price-description-with-code | price SORENTO ONE PIECE ... SRTWC8354-SH | ?/5 | ?/5 |
-| F1-photo-brand-glued-to-code | SORENTO PSJLSRTSC07 x50 / SORENTO | ?/5 | ?/5 |
-| F2-X-50-unit | X 50 unit (after a photo named a product) | ?/5 | ?/5 |
-| F2-x46-pcs | x46 pcs | ?/5 | ?/5 |
-| C-turn6-sentence (control) | SORENTO S-TRAP 250MM ONE PIECE WC-SRTWC8318-RL-250 | ?/5 | ?/5 |
-| C-8066-stock (control) | 8066 stock ? | ?/5 | ?/5 |
-| C-Srts07 (control) | Srts07 | ?/5 | ?/5 |
-| C-Srtsc07-50-unit (control) | Srtsc07 50 unit | ?/5 | ?/5 |
-| C-50-fill (control) | 50 (open stock question) | ?/5 | ?/5 |
+Run 6 Oct 2026 from the cloud sandbox (api.openai.com reachable through its proxy; the dev
+v60 text is not, so the eval ran on the shipped `SEMANTIC_PARSER_PROMPT` and on the
+committed `alembic/data/chatbot_semantic_parser.prod-20261001.txt`; both anchors occur once
+in each). Model `gpt-5.4-mini`, 5 runs per shape:
 
-Pass bar: every target 5/5 on patched; every control 5/5 on both. The owner edits prod by
-hand once the table is green.
+| shape | message | shipped base | shipped patched | prod-20261001 base | prod-20261001 patched |
+|---|---|---|---|---|---|
+| F1-description-with-code | SORENTO ONE PIECE WASHDOWN TOILET (S-TRAP250MM)-SRTWC8354-SH | 0/5 | 5/5 | 0/5 | 5/5 |
+| F1-price-description-with-code | price SORENTO ONE PIECE ... SRTWC8354-SH | 0/5 | 5/5 | 0/5 | 5/5 |
+| F1-photo-brand-glued-to-code | SORENTO PSJLSRTSC07 x50 / SORENTO | 0/5 | 5/5 | 0/5 | 5/5 |
+| F2-X-50-unit | X 50 unit (after a photo named a product) | 0/5 | 5/5 | 0/5 | 5/5 |
+| F2-x46-pcs | x46 pcs | 0/5 | 5/5 | 0/5 | 5/5 |
+| C-turn6-sentence (control) | SORENTO S-TRAP 250MM ONE PIECE WC-SRTWC8318-RL-250 | 0/5 (xfail, see below) | 5/5 | 0/5 (xfail) | 5/5 |
+| C-8066-stock (control) | 8066 stock ? | 5/5 | 5/5 | 5/5 | 5/5 |
+| C-Srts07 (control) | Srts07 | 5/5 | 5/5 | 5/5 | 5/5 |
+| C-Srtsc07-50-unit (control) | Srtsc07 50 unit | 5/5 | 5/5 | 5/5 | 5/5 |
+| C-50-fill (control) | 50 (open stock question) | 5/5 (one echo ignored) | 5/5 | 5/5 | 5/5 |
+
+The F(i) targets and the turn-6 control grade the product entity's `canonical_code`
+(#1511 card Q1 = a); the base texts carry no canonical_code rule, so that control's base
+column measures nothing and is marked xfail (not strict). A carried echo
+(`current_message: false`, the standing product said back) is not a typed token and is
+ignored by the grader. Pass bar met: every target 5/5 patched; every control 5/5 patched
+and, where gradable, on base. The owner edits prod by hand (the v60 text) from the two
+addendum files; the anchors are the BARE FAMILY CODE bullet's last line and the QUANTITY
+section's closing sentence.
 
 ## Plan (A, B, C, G)
 
-### PR-1 "zero-scope list asks for a filter" (class A), size S without the visibility
-rule, M with it
+### PR-1 "zero-scope list asks for a filter" (class A), size M, branch
+`crew/rogue-convo-review-pr1` (from main e9aa88b2)
 
-Change:
+Change (as built):
 
-* `turn_runtime.py:3016`: the no-subject probe runs for every domain whose
-  `gate.ALLOWS_EMPTY` row is False (read the dict, not a second list), still excluding
-  `would_be_unfiltered` and still exempt for `INTENTS_ALLOWING_EMPTY`.
-* `turn/apply.py:2142`: `_REFUSES_EMPTY_SUBJECT` becomes the same read of `ALLOWS_EMPTY`
-  (one source), and the stale comment goes.
-* `_SCOPE_WORD` already has `master_products: "product"` (`answer.py:2305-2314`), so the
-  sentence reads "That would search every product we have - I need at least one filter
-  ... Give me a product code, category, or brand, and I can look it up." with no new
-  wording.
-* Visibility (owner decision Q1): `ProductService._build_list_query` takes a
-  `chat_visible: bool` argument that applies `chat_searchable_products()` AND
-  `is_active`; the chatbot's `crm_master_products_list` call sets it (one arg on the
-  tool call, read by the route as a query flag the admin UI never sends). No new column:
-  `is_searchable` is the flag that already means "the chatbot may answer with this".
-  Marking AC-EXP-* and masked rows `is_searchable=false` is a data task for the owner.
+* `turn_runtime.make_tool_runner`: the no-subject probe runs for every domain whose
+  `gate.ALLOWS_EMPTY` row is False (read off the dict, not a second list), still excluding
+  `would_be_unfiltered` and still exempt for `INTENTS_ALLOWING_EMPTY`. The
+  `would_be_unfiltered` guard (R6, "named a token and none placed") reads the SAME set
+  (plus `incoming`, which R6 always had; `order` stays out by its outstanding-report
+  carve-out): widening the probe alone would have handed a typed-but-missed product code
+  the scope sentence in `master_products`, the class B shape one domain over. With both
+  widened, turn 7's "srtwc-8318" is refused with its own "Couldn't find" wording and no
+  fetch; turn 2's "product" gets the scope sentence.
+* `turn/apply._REFUSES_EMPTY_SUBJECT` becomes `_refuses_empty_subject(domain)`, the same
+  read of `ALLOWS_EMPTY` (one source; the "master_products already asks" premise in its
+  old comment was false).
+* `_SCOPE_WORD` already has `master_products: "product"`, so the sentence reads "That
+  would search every product we have - I need at least one filter to narrow it down. Give
+  me a product code, category, or brand, and I can look it up." with no new wording.
+* Visibility (owner ruling Q1 = a + brand): `ProductService._build_list_query` /
+  `list_products` take `chat_visible: bool` (applies `chat_searchable_products()` AND
+  `is_active`), the products route exposes it as a query flag, the MCP catalog declares it
+  on `crm_master_products_list` (a param missing from `query_params` never reaches the
+  backend), and the chatbot fetch builder sets it on every call of that tool. The admin
+  list never sends it and is byte-identical. No new column: `is_searchable` already means
+  "the chatbot may answer with this". Marking AC-EXP-* and masked rows
+  `is_searchable=false` is a data task for the owner.
+* **The brand bound needed no build** (checked before designing it):
+  `company_scope_resolver.apply_company_scope`, the router-level dependency, already
+  stamps `set_brand_scope(contact_brand_scope(contact_id, space_id))` on every X-API-Key
+  request that carries both ids (#1512), and `fetch.py` forwards `contact_id` +
+  `space_id` on every chatbot tool call. PR-1 proves it with a route test (a SORENTO-scoped
+  contact with `chat_visible=true` sees the searchable SORENTO product alone) instead of
+  adding a second mechanism.
+* Consequence to know: every `ALLOWS_EMPTY` False domain (`promotion`, `product_attachment`,
+  `order`, `sales`) now takes the probe too. The full chatbot suite on the branch is the
+  measurement; any pin that moved is listed on the PR.
+
+Red tests (`tests/chatbot/test_zero_scope_list.py`, 9; 8 red on main, the bare-PO control
+green on both): bare "product" never calls the tool and gets the product scope sentence;
+"srtwc-8318" (missed) never sweeps the catalogue and keeps its own miss wording; control
+"<code> price" fetches once with the id, `chat_visible: True`, `contact_id` + `space_id`;
+control bare "PO" still reaches a procurement tool; service `chat_visible` drops a flagged
+product, a product in a flagged category and an inactive one while the admin list keeps
+all four; the route end to end for a brand-scoped contact; the MCP catalog declares the
+param. `test_rearch_r13` T3 (low stock with no entities) stays green.
 
 Red tests (new file `tests/chatbot/test_zero_scope_list.py`):
 
