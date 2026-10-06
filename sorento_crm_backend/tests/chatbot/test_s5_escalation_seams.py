@@ -851,7 +851,6 @@ def test_clarify_arm_surfaces_the_ask_and_re_persists_the_offer_state(
     }
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_CLARIFY_TEXT_IS_NONE)
 def _run_nurain_team_clarify(session_factory, system_settings_row, monkeypatch, *, teams):
     """Prod turn 9dd4cd0f driven through the REAL lane: "I want to escalate to Nurain",
     who is on the two `teams` (`(code, name)` pairs), so the lane asks which team. The
@@ -997,7 +996,9 @@ def test_a_clarifys_quick_replies_reach_the_persisted_reply(
     would have shown a different turn from the one the customer got (reviewer, #705).
 
     Team names short enough to be buttons (QUICK-REPLY-NAMES: a title is cut at 20
-    characters by the transport; the long-name twin is the test below).
+    characters by the transport; the long-name twin is the test below). The persisted
+    TEXT is the separate, still-open gap `_XFAIL_CLARIFY_TEXT_IS_NONE` names, pinned by
+    `test_a_clarifys_text_reaches_the_persisted_reply` so it stays visible.
     """
     result, row = _run_nurain_team_clarify(
         session_factory, system_settings_row, monkeypatch,
@@ -1006,17 +1007,33 @@ def test_a_clarifys_quick_replies_reach_the_persisted_reply(
     sends = [a for a in result.actions if a["kind"] == "send_message"]
     assert len(sends) == 1, result.actions
     assert "DO Customer Service" in sends[0]["quick_replies"]
+    assert "Project CS" in sends[0]["quick_replies"]
 
     persisted = row.response["reply"]
     assert persisted["quick_replies"] == sends[0]["quick_replies"], (
         "the reply Chat History shows must carry the buttons the customer was sent: "
         f"{persisted!r} vs {sends[0]!r}"
     )
-    assert persisted["text"] == sends[0]["text"]
     replied = next(r for r in row.trace if r["stage"] == "replied")
     assert replied["facts"]["quick_replies"] is True, (
         f"the trace says this turn offered nothing to tap: {replied['facts']!r}"
     )
+
+
+@pytest.mark.xfail(strict=True, reason=_XFAIL_CLARIFY_TEXT_IS_NONE)
+def test_a_clarifys_text_reaches_the_persisted_reply(
+    session_factory, system_settings_row, monkeypatch
+) -> None:
+    """The half of prod turn 9dd4cd0f still open: the tail composes no text on the
+    clarify arm, so the persisted reply's `text` is null while the action carries the
+    question. Kept as the xfail it was before QUICK-REPLY-NAMES split the buttons half
+    (now green above) out of it."""
+    result, row = _run_nurain_team_clarify(
+        session_factory, system_settings_row, monkeypatch,
+        teams=(("do_customer_service", "DO Customer Service"), ("project_customer_service", "Project CS")),
+    )
+    sends = [a for a in result.actions if a["kind"] == "send_message"]
+    assert row.response["reply"]["text"] == sends[0]["text"]
 
 
 def test_a_team_name_over_twenty_characters_drops_the_clarifys_buttons_everywhere(
@@ -1042,6 +1059,5 @@ def test_a_team_name_over_twenty_characters_drops_the_clarifys_buttons_everywher
 
     persisted = row.response["reply"]
     assert persisted["quick_replies"] is None, persisted
-    assert persisted["text"] == sends[0]["text"]
     replied = next(r for r in row.trace if r["stage"] == "replied")
     assert replied["facts"]["quick_replies"] is False, replied["facts"]
