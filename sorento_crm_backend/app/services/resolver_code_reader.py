@@ -120,9 +120,9 @@ _CODE_CHAR = re.compile(r"[0-9A-Za-z]")
 #: `X-`, `X -`, `X--` right before a run, and `-X`, `- X`, `--X` right after it: the run is
 #: then a cut out of a longer code. The dash class takes the en / em dashes and the minus
 #: sign a phone's smart punctuation makes of a typed `-` or `--` (reviewer, fifth pass),
-#: so "SRTWC8066" out of "WC SRTWC8066–SS" is the same cut; a value itself may carry only
+#: so "SRTWC8066" out of "WC SRTWC8066" + an en dash (U+2013) + "SS" is the same cut; a value itself may carry only
 #: the ASCII hyphen (`_VALUE_CHARS`), so such a dash never reaches a probe.
-_DASHES = "-‐-―−"
+_DASHES = "-\u2010-\u2015\u2212"
 _HYPHEN_GLUED_BEFORE = re.compile(rf"[0-9A-Za-z]\s*[{_DASHES}]+\s*$")
 _HYPHEN_GLUED_AFTER = re.compile(rf"\s*[{_DASHES}]+\s*[0-9A-Za-z]")
 

@@ -124,8 +124,9 @@ def test_guard_falls_back_to_the_token_when_no_typed_text_was_sent():
         ("code", "8066-SS", "SRTWC8066-SS"),
         # A phone's smart punctuation turns a typed `-` / `--` into an en or em dash: the
         # same cut (reviewer, fifth pass).
-        ("code", "SRTWC8066", "WC SRTWC8066–SS"),
-        ("code", "SRTWC8066", "WC SRTWC8066 — SS"),
+        ("code", "SRTWC8066", "WC SRTWC8066\u2013SS"),
+        ("code", "SRTWC8066", "WC SRTWC8066 \u2014 SS"),
+        ("code", "SRTWC8066", "WC SRTWC8066\u2212SS"),
     ],
 )
 def test_guard_refuses_a_value_cut_out_of_the_middle_of_a_typed_code(kind, value, typed):

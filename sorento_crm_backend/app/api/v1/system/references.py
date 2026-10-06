@@ -2526,7 +2526,7 @@ def resolve_reference(
             "RESOLVE-SEMANTIC-FALLBACK: the code reader (see the POST body's field of the "
             "same name) reads a code out of the text the caller TYPED for a token, which "
             "is the POST body's `raw_tokens`. This GET variant carries no `raw_tokens`, so "
-            "the reader is never asked here: a `tokens` entry that matched no code tier "
+            "the reader is never asked here: a product-typed `tokens` entry that matched no code tier "
             "gains `fallback: {asked: false, kind: not_asked, reason: no_typed_text}` and "
             "stays unresolved (a free-text `query` is never put to the reader at all). Use "
             "POST with `raw_tokens` to have the token read. `false` "
