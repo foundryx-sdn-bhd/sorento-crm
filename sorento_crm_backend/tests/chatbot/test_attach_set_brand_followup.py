@@ -379,6 +379,44 @@ def test_a_document_word_after_the_brand_page_runs_over_the_listed_taps(chat, wo
     assert "Here's what you want" not in third and "•" not in third, third
 
 
+def _turn_3_brand_and_document_word(brand: str) -> dict[str, Any]:
+    """"they got pic/" as the live parser read it on the sandbox pass (gpt-5.4-mini, this
+    checkout's production prompt): the page's own brand named again beside the document
+    word, `entity_op: replace_combine`, `match_mode: and`."""
+    from tests.chatbot.test_engine import _parser_output
+
+    return _parser_output(
+        intent_hint="check_product_attachment",
+        domain_hint="product_attachment",
+        match_mode="and",
+        user_goal="the picture attachment for the current Sorento tap results",
+        entities=[_entity(brand, "brand", brand), _entity("photo", "attachment_type", "photo")],
+        entity_op="replace_combine",
+    )
+
+
+def test_the_pages_own_brand_beside_a_document_word_still_reads_about_the_listed_taps(chat, world, small_list):
+    """Live console pass on the sandbox (7 Oct 2026, real parser): "they got pic/" after
+    the Sorento page came back as brand Sorento + photo, `replace_combine`. The brand
+    word names the brand the page is already narrowed to: it restates the subject, it
+    opens no new one. Read as a new ask it dropped the listed rows from the focus, ran a
+    described set the unplaced brand word qualified nothing for ("Couldn't find: they
+    pic"), and left "pic" with no subject at all (a blank header)."""
+    chat.say("which tap has technical drawing", _turn_1())
+    chat.say(world["sorento"].brand_name.lower(), _turn_2_brand(world["sorento"].brand_name.lower()))
+    listed = list(chat.attachment_calls()[1].get("product_ids") or [])
+    assert len(listed) == 3, chat.calls
+
+    third = chat.say("they got pic/", _turn_3_brand_and_document_word(world["sorento"].brand_name))
+
+    calls = chat.attachment_calls()
+    assert len(calls) == 3, chat.calls
+    assert set(calls[2].get("product_ids") or []) == set(listed), (calls[2], listed)
+    assert calls[2].get("attachment_type_ids") == [world["photo"].id], calls[2]
+    assert _row_types(third) == [PHOTO] * 3, third
+    assert "Couldn't find" not in third and "•" not in third, third
+
+
 # --------------------------------------------------------------------------- #
 # AC-3: the count answer                                                        #
 # --------------------------------------------------------------------------- #

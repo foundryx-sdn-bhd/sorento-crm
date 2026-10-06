@@ -4384,6 +4384,9 @@ def _run_stages_body(  # noqa: PLR0915
     verdict = turn_runtime.with_brand_from_offer(
         verdict, latest_user_message, carried=state_in.focus.set_page
     )
+    # ATTACH-SET-BRAND-FOLLOWUP round 2 (live console pass, 7 Oct 2026): the page's own
+    # brand named again beside a document word restates the subject, it is not a new ask.
+    verdict = turn_runtime.with_brand_of_the_page(verdict, carried=state_in.focus.set_page)
     # Round 3 W3 on PR #833: a class word of this message's own starts a new set.
     verdict = turn_runtime.with_new_set_words(verdict)
     # Fix round 8 on PR #833 (owner retest of round 7): every descriptor the parser
