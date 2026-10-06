@@ -771,7 +771,18 @@ def with_trap_specs(text: str, *, strict: bool = False) -> str:
     return text
 
 
-SEMANTIC_PARSER_PROMPT = with_trap_specs(SEMANTIC_PARSER_PROMPT)
+TRAP_SPECS_FALLBACK_BLOCK = (
+    "\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    "TRAP SPECS, AND A FRAGMENT OF A LISTED CODE\n"
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    "In addition to the SPECIFICATIONS rules above:\n"
+    + TRAP_SPECS_ADDENDUM
+    + "\nIn addition to QUANTITIES and LAST_ANSWER above:\n"
+    + LIST_FRAGMENT_ADDENDUM
+)
+SEMANTIC_PARSER_PROMPT = SEMANTIC_PARSER_PROMPT.removesuffix(MEMORY_ADDENDUM)
+SEMANTIC_PARSER_PROMPT += TRAP_SPECS_FALLBACK_BLOCK
+SEMANTIC_PARSER_PROMPT += MEMORY_ADDENDUM
 
 # S1b (D16, AC-151 to AC-155): the same parser, 40.0% fewer characters (28,124 against the
 # live 46,906). Classified section by section in

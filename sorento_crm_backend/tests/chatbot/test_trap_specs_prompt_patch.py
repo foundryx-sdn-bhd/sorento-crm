@@ -156,7 +156,9 @@ def test_the_order_broaden_patch_and_this_one_touch_different_lines():
 
 def test_the_code_fallback_carries_the_same_addenda_once():
     """AC-12: a fresh install's v1 (`seed_prompt_registry` from the constant) teaches the
-    rules in exactly the patch's words, inserted at the same anchors."""
+    rules in exactly the patch's words, stacked as one block beneath the other addenda
+    with MEMORY still the tail; the addenda the other prompt tests pin verbatim
+    (`STOCK_TASK_ADDENDUM`, `SPECIFICATION_ADDENDUM`) are left whole."""
     from app.services import chatbot_parser_prompt as cpp
 
     text = cpp.SEMANTIC_PARSER_PROMPT
@@ -164,10 +166,15 @@ def test_the_code_fallback_carries_the_same_addenda_once():
     assert cpp.LIST_FRAGMENT_ADDENDUM == tp.list_addendum_text()
     assert text.count(tp.trap_addendum_text()) == 1
     assert text.count(tp.list_addendum_text()) == 1
-    assert text.index(tp.SPEC_ANCHOR) < text.index("TRAP SPECS")
-    assert text.index("A FRAGMENT of ONE listed code") < text.index(tp.LIST_ANCHOR)
-    # Idempotent: applying again changes nothing.
+    assert text.index("SPECIFICATIONS: WHAT A PRODUCT IS DESCRIBED BY") < text.index("TRAP SPECS")
+    assert text.index("QUANTITIES and LAST_ANSWER:") < text.index("A FRAGMENT of ONE listed code")
+    assert text.endswith(cpp.MEMORY_ADDENDUM)
+    assert cpp.STOCK_TASK_ADDENDUM in text and cpp.SPECIFICATION_ADDENDUM in text
+    # The applier sees the addenda already there and changes nothing.
     assert cpp.with_trap_specs(text) == text
+    # The patched production text carries each addendum once too.
+    patched = tp.patched_text()
+    assert cpp.with_trap_specs(patched) == patched
 
 
 def test_the_applier_is_the_code_fallbacks_own():
