@@ -730,6 +730,21 @@ class TestTheRerunLeavesALockedTokenAlone:
         assert "spec_search" not in {m.get("match_tier") for m in matches}, result
         assert code.lower() in {str(m.get("canonical_code") or "").lower() for m in matches}, result
 
+    def test_without_the_field_a_brand_word_beside_a_code_still_opens_the_spec_path_today(self, session_factory) -> None:
+        """Byte-identical contract for n8n / MCP (security review, finding 1): the brand
+        guard is gated on the field, so a caller that sends none keeps today's spec path
+        for the same request."""
+        world = _seed_world(session_factory, cabana=True)
+        code = _seed_digit_coded_cabana_product(session_factory, world, "ZZCB7319-RL")
+        body = _basin_body(
+            query=f"CABANA {code}", tokens=["CABANA", code], match_mode="and",
+            allowed_entity_types=["brand", "product"], domain="inventory", spec_fallback=True,
+        )
+        result = _route_call(session_factory(), body)
+        matches = [m for r in result.get("resolutions") or [] for m in (r.get("matches") or [])]
+        matches += list(result.get("intersection") or [])
+        assert "spec_search" in {m.get("match_tier") for m in matches}, result
+
     def test_a_description_beside_a_matched_code_still_opens_the_spec_path(self, session_factory) -> None:
         """Control (`test_resolve_brand_routing.py` pins the same): the guard is for a BRAND
         word only; an unanswered class description beside a code still reaches the spec

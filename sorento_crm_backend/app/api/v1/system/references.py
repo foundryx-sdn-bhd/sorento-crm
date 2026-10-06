@@ -1970,9 +1970,13 @@ def _only_brand_words_unanswered_beside_a_code(
     unanswered = [str(t) for t in (result.get("unresolved_tokens") or []) if str(t or "").strip()]
     if not unanswered or not _code_matched(result, tokens):
         return False
+    # Active brands only, the same set `turn_runtime.active_brands` reads for the lock
+    # (security review, nit 2): a retired brand's name is a word like any other here.
     names = {
         _norm_locked_token(value)
-        for (code, name) in db.query(Brand.brand_code, Brand.brand_name).all()
+        for (code, name) in db.query(Brand.brand_code, Brand.brand_name)
+        .filter(Brand.is_active.is_(True))
+        .all()
         for value in (code, name)
         if str(value or "").strip()
     }
@@ -3219,10 +3223,15 @@ def resolve_reference_post(
     # the sandbox replay: five Sorento products in a stock answer for ZZWC8318-RL-250).
     # The code answers its own turn and the brand word scopes it. Narrow on purpose: an
     # unanswered DESCRIPTION beside a code ("ZZTKS2B double bowl kitchen sink") still
-    # opens the spec path, as `test_resolve_brand_routing.py` pins.
+    # opens the spec path, as `test_resolve_brand_routing.py` pins. Gated on the field
+    # (security review, finding 1): a caller that sends no `hint_locked_tokens` keeps
+    # today's path byte for byte, as the field's own contract promises.
     if (
         payload.spec_fallback
-        and not _only_brand_words_unanswered_beside_a_code(db, result, payload.tokens)
+        and not (
+            payload.hint_locked_tokens
+            and _only_brand_words_unanswered_beside_a_code(db, result, payload.tokens)
+        )
         and not _every_caller_token_resolved(result)
         and (
             _result_has_zero_matches(result)
