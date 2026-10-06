@@ -86,7 +86,10 @@ def test_aliased_product_is_filtered_per_company(dual_session, world) -> None:
 
 
 def test_a_query_that_joins_brands_itself_is_not_captured(dual_session, world) -> None:
-    """The companies-of-scope subquery must not correlate to an outer `brands` join."""
+    """Regression: a Product query that joins `brands` itself still gets the per-company result.
+    (`correlate(None)` on the companies-of-scope subquery is belt and braces: SQLAlchemy does
+    not auto-correlate a subquery whose only FROM is the enclosing table, so this test is the
+    same with or without it.)"""
     got = {
         p.product_code
         for p in dual_session.query(Product)
@@ -148,6 +151,21 @@ def test_out_of_scope_ids_leave_mch_ids_alone(dual_session, world) -> None:
     scope = frozenset({world.sorento.id})
     ids = [p.id for p in (*world.products, *mch.products)]
     assert _svc().out_of_scope_product_ids(dual_session, scope, ids) == {world.p_mocha.id, world.p_null.id}
+
+
+def test_out_of_scope_codes_keep_a_code_shared_by_an_mch_product_and_an_unbranded_srt_product(dual_session, world) -> None:
+    """Codes are unique per company, not across them: when MCH and SRT both carry code X and
+    only the MCH row passes, X stays in for the dual contact (the session criterion shows the
+    MCH row; the guard must not take it back)."""
+    from tests._mc_lookup_seed import product
+
+    mch = world.mch
+    shared = world.p_null.product_code  # the unbranded SRT product's code, reused under MCH
+    product(dual_session, company_id=mch.company_id, code=shared)
+    dual_session.flush()
+    assert _visible(dual_session, world) == _expected(world) | {shared}
+    out = _svc().out_of_scope_product_codes(dual_session, frozenset({world.sorento.id}), [shared, world.codes["mocha"]])
+    assert out == {world.codes["mocha"]}
 
 
 def test_guard_helpers_read_the_brands_companies_with_company_scope_off(db, world) -> None:

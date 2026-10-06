@@ -127,7 +127,12 @@ def _brand_scope_off(db: Session):
 
 def out_of_scope_product_codes(db: Session, scope: frozenset[str], codes: Iterable[str]) -> set[str]:
     """The codes whose product fails `brand_predicate` (a NULL or other brand inside a restricted
-    company); unknown codes and products of an unrestricted company are left alone."""
+    company); unknown codes and products of an unrestricted company are left alone.
+
+    A code is unique per company, not across companies (migration 305), so a dual contact can
+    see two rows for one code; the code is out only when EVERY row it can see fails (a Mocha
+    product sharing its code with an unbranded Sorento product stays in, as the session
+    criterion already shows it)."""
     from app.models.product import Product
 
     wanted = {str(c) for c in codes if c}
@@ -144,11 +149,12 @@ def out_of_scope_product_codes(db: Session, scope: frozenset[str], codes: Iterab
             .filter(func.lower(Product.product_code).in_(lowered))
             .all()
         )
-    bad = {
-        code.lower()
-        for code, brand_id, company_id in rows
-        if _product_out_of_scope(scope, restricted, brand_id, company_id)
-    }
+    verdicts: dict[str, bool] = {}
+    for code, brand_id, company_id in rows:
+        key = code.lower()
+        out = _product_out_of_scope(scope, restricted, brand_id, company_id)
+        verdicts[key] = verdicts.get(key, True) and out
+    bad = {key for key, out in verdicts.items() if out}
     return {c for c in wanted if c.lower() in bad}
 
 
