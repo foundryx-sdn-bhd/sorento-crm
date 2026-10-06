@@ -422,23 +422,31 @@ def _reader_lists():
     from app.api.v1.resources import attachments
     from app.api.v1.sla import sla_tracking
 
+    # getattr with a default, so a tree without the constants (the red run) fails these
+    # tests instead of erroring the whole module at collection.
+    def const(module, name):
+        return getattr(module, name, [])
+
+    def readers(source_type):
+        fn = getattr(sla_tracking, "tracker_reader_slugs", None)
+        return fn(source_type) if fn else []
+
     return {
-        "/api/v1/marketing/promotions/": (promotions.PROMOTION_LIST_READERS, [PROMOTIONS, DEALER_KIT]),
+        "/api/v1/marketing/promotions/": (const(promotions, "PROMOTION_LIST_READERS"), [PROMOTIONS, DEALER_KIT]),
         "/api/v1/marketing/promotion-products/": (
-            promotion_products.PROMOTION_PRODUCT_READERS, [PROMOTION_PRODUCTS, PRODUCTS]),
+            const(promotion_products, "PROMOTION_PRODUCT_READERS"), [PROMOTION_PRODUCTS, PRODUCTS]),
         f"/api/v1/marketing/promotion-attachments/promotion/{RID}": (
-            promotion_attachments.PROMOTION_ATTACHMENT_READERS, [PROMOTION_ATTACHMENTS, PROMOTIONS]),
-        f"{ATT}/": (attachments.ATTACHMENT_CATALOGUE_READERS, [
+            const(promotion_attachments, "PROMOTION_ATTACHMENT_READERS"), [PROMOTION_ATTACHMENTS, PROMOTIONS]),
+        f"{ATT}/": (const(attachments, "ATTACHMENT_CATALOGUE_READERS"), [
             ATTACHMENTS, COMPLAINTS, STOCK_INQUIRIES, "procurement.purchase_requests.view",
             "procurement.sponsorship_forms.view", PACKING_LISTS, PRODUCTS, "projects.projects.view",
             PROMOTIONS, FORMS, DEALER_KIT,
         ]),
-        f"{ATT}/collision-check?filename=zz.pdf": (attachments.ATTACHMENT_UPLOAD_READERS, [ATTACHMENTS, UPLOAD]),
-        f"{ATT}/current-stock-list": (attachments.STOCK_LIST_READERS, [ATTACHMENTS, STOCK]),
-        f"{ATT}/drive": (attachments.DRIVE_READERS, [ATTACHMENTS, DIRECTORIES]),
-        f"{TRACKING}/{TRACK_CONV}": (sla_tracking.tracker_reader_slugs(None), [SLA_TRACKING, SLA_EVENT_LOGS, KPI]),
-        f"{TRACKING}/{TRACK_FORM}": (
-            sla_tracking.tracker_reader_slugs("complaint"), [SLA_TRACKING, SLA_EVENT_LOGS, KPI, COMPLAINTS]),
+        f"{ATT}/collision-check?filename=zz.pdf": (const(attachments, "ATTACHMENT_UPLOAD_READERS"), [ATTACHMENTS, UPLOAD]),
+        f"{ATT}/current-stock-list": (const(attachments, "STOCK_LIST_READERS"), [ATTACHMENTS, STOCK]),
+        f"{ATT}/drive": (const(attachments, "DRIVE_READERS"), [ATTACHMENTS, DIRECTORIES]),
+        f"{TRACKING}/{TRACK_CONV}": (readers(None), [SLA_TRACKING, SLA_EVENT_LOGS, KPI]),
+        f"{TRACKING}/{TRACK_FORM}": (readers("complaint"), [SLA_TRACKING, SLA_EVENT_LOGS, KPI, COMPLAINTS]),
     }
 
 
