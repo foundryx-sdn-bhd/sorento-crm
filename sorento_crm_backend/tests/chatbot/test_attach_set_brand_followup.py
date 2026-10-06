@@ -94,6 +94,13 @@ def world(session_factory):
         _attach(db, p, types[PHOTO], f"{p.product_code}-01.jpg")
         _attach(db, p, types[DRAWING], f"{p.product_code}-td.pdf")
     db.commit()
+    # The dev copy's own `attachment_type_alias` row "photo" -> Product Photos (the one
+    # "technical drawing" -> Technical Specifications sits beside): a document word the
+    # resolver can place. Without one the word reaches the fetch with no uuid and is
+    # skipped there (`lanes/business/fetch.py` `missing_or_bad_uuid`), on main and here.
+    from tests.chatbot.test_escalation_agent_carry import _seed_photo_alias
+
+    _seed_photo_alias(session_factory)
     return {
         "db": db,
         "sorento": sorento,
@@ -325,6 +332,44 @@ def test_another_n_after_the_brand_page_fetches_the_same_document_type(chat, wor
     listed = set(calls[1].get("product_ids") or []) | set(calls[2].get("product_ids") or [])
     assert len(calls[2].get("product_ids") or []) == 1 and listed == {p.id for p in world["srt_taps"]}, calls[2]
     assert _row_types(third) == [DRAWING], third
+
+
+def _turn_3_document_word(raw: str, canonical: str) -> dict[str, Any]:
+    """"pic" after the brand page, as the parser prompt files a domain word alone
+    (`chatbot_parser_prompt.py` "A domain word alone after an answer ... keeps the
+    subject"): only the document entity, `entity_op: reuse`."""
+    from tests.chatbot.test_engine import _parser_output
+
+    return _parser_output(
+        intent_hint="check_product_attachment",
+        domain_hint="product_attachment",
+        match_mode="or",
+        user_goal=raw,
+        entities=[_entity(raw, "attachment_type", canonical)],
+        entity_op="reuse",
+    )
+
+
+def test_a_document_word_after_the_brand_page_runs_over_the_listed_taps(chat, world, small_list):
+    """Owner hand test on the local copy (crew, 7 Oct 2026): after "sorento" listed the
+    page, "pic" ran over the two taps the resolver's code tiers had matched on turn 1
+    (the COLD TAP family) instead of the taps the page LISTED. The listed page is the
+    conversation's subject once it is shown; a document word after it reads about
+    those products, every one of them, under the new document type."""
+    chat.say("which tap has technical drawing", _turn_1())
+    chat.say(world["sorento"].brand_name.lower(), _turn_2_brand(world["sorento"].brand_name.lower()))
+    listed = list(chat.attachment_calls()[1].get("product_ids") or [])
+    assert len(listed) == 3, chat.calls
+
+    third = chat.say("photo?", _turn_3_document_word("photo", "photo"))
+
+    calls = chat.attachment_calls()
+    assert len(calls) == 3, chat.calls
+    # The SAME products the page listed, no more and no fewer, under the photo type.
+    assert set(calls[2].get("product_ids") or []) == set(listed), (calls[2], listed)
+    assert calls[2].get("attachment_type_ids") == [world["photo"].id], calls[2]
+    assert _row_types(third) == [PHOTO] * 3, third
+    assert DRAWING not in third, third
 
 
 # --------------------------------------------------------------------------- #

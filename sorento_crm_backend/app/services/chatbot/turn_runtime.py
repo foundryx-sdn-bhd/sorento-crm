@@ -2827,6 +2827,7 @@ def make_tool_runner(
     def runner(domain: str, spec: FetchSpec) -> dict[str, Any]:
         page_predicate: dict[str, Any] | None = None
         page_ids: list[str] = []
+        listed_products: list[dict[str, Any]] = []
         carry = spec.filters.get("set_page")
         if isinstance(carry, dict):
             # Security B2: the entitlement comes off the CARRY (what the first answer
@@ -2913,6 +2914,14 @@ def make_tool_runner(
                 {"uuid": type_id, "entity_type": "attachment_type", "canonical_code": None}
                 for type_id in set_page_attachment_type_ids(carry)
             ]
+            # ATTACH-SET-BRAND-FOLLOWUP round 2 (owner hand test on the local copy, 7 Oct
+            # 2026): the rows this page LISTS are the conversation's subject from here on,
+            # handed back on the envelope (`listed_products`) for the engine to settle
+            # onto `focus.products`. A page turn never runs the resolver, and
+            # `turn/apply._narrow_and_plan` settles the focus only from what the resolver
+            # matched, so after "sorento" listed 50 taps the focus still held turn 1's
+            # code-tier rows (the COLD TAP family) and "pic" ran over those two.
+            listed_products = listed_product_rows(db, page_ids)
         elif spec.filters.get("task"):
             # Ported from PR #1118 (not merged): an OPEN TASK's own fetch is about the
             # TASK's subjects, all of them (`turn/task.py::StockQtyTask.to_fetch`): a
@@ -3229,6 +3238,8 @@ def make_tool_runner(
             # it stays, so a further count says "That is all" (round 3 W2). The engine
             # keeps it on `focus.set_page`.
             envelope["set_carry"] = page_predicate.get("next_carry") if (page_ids or exhausted) else None
+            # The focus rows for the products this page listed (`listed_product_rows`).
+            envelope["listed_products"] = listed_products
         return envelope
 
     return runner
@@ -3394,6 +3405,28 @@ def set_page_carry(
     if type_ids:
         key["attachment_type_ids"] = type_ids
     return {"set_key": key}
+
+
+def listed_product_rows(db: Session, product_ids: list[str]) -> list[dict[str, Any]]:
+    """The focus rows (`Focus.products`) for the products a set page listed, in page
+    order: the same shape `turn/apply._narrow_and_plan` settles off the resolver's own
+    candidates (`candidates_by_kind`): the code as `raw` and `canonical_code`, the uuid,
+    `current_message: False`. An id that is no product any more is left out."""
+    ids = [jsc.js_string(i) for i in product_ids if _UUID_TEXT.match(jsc.js_string(i))]
+    if not ids:
+        return []
+    from app.models.product import Product
+
+    code_by_id = {
+        str(pid): code
+        for pid, code in db.query(Product.id, Product.product_code).filter(Product.id.in_(ids)).all()
+        if code
+    }
+    return [
+        {"raw": code_by_id[pid], "hint": "product", "canonical_code": code_by_id[pid], "uuid": pid, "current_message": False}
+        for pid in ids
+        if pid in code_by_id
+    ]
 
 
 def set_page_attachment_type_ids(carry: Any) -> list[str]:
@@ -3751,6 +3784,7 @@ def with_carried_entities(
         for kind, rows in (getattr(focus, "extra", {}) or {}).items()
         if isinstance(rows, list)
     ]
+    settled_products = False
     for kind, rows in by_kind:
         if domain_word_only and kind == "attachment_type":
             # This turn's own document word replaces the carried one.
@@ -3759,6 +3793,7 @@ def with_carried_entities(
             if not isinstance(row, dict):
                 continue
             if unsettled_only and row.get("uuid"):
+                settled_products = settled_products or kind == "product"
                 continue
             code = row.get("canonical_code") or row.get("raw")
             if not jsc.truthy(code):
@@ -3779,9 +3814,26 @@ def with_carried_entities(
                 if name in row:
                     entity[name] = row[name]
             carried.append(entity)
+    if domain_word_only and settled_products:
+        # ATTACH-SET-BRAND-FOLLOWUP round 2 (owner hand test on the local copy, 7 Oct
+        # 2026): the document word's subject is the SETTLED products the plan already
+        # holds (the page "sorento" listed), and they are not handed over - nothing to
+        # look up. Said on the verdict instead, so `resolve_gate.resolve_entity_body`
+        # knows the ask is about those products and sends no `require` leg: with the
+        # class word retired by the page, a leg with no scope term counted every product
+        # with a photo ("photo?" after the page ran over 5 of 5 taps on fake data, and
+        # over the whole catalogue on a copy).
+        parse_output = {**parse_output, SUBJECT_SETTLED_KEY: True}
     if not carried:
         return parse_output
     return {**parse_output, "entities": [*carried, *own]}
+
+
+#: The verdict key `with_carried_entities` sets when a document word's subject is the
+#: settled products the plan already carries (uuids on `focus.products`), none of them
+#: handed to the resolver. `resolve_gate.resolve_entity_body` reads it: a turn about
+#: settled products describes no set, so it sends no `require` leg.
+SUBJECT_SETTLED_KEY = "subject_settled"
 
 
 def attachment_type_labels(db: Session, entities: list[dict[str, Any]]) -> list[dict[str, Any]]:

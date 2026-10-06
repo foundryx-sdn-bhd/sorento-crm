@@ -6009,6 +6009,21 @@ def _run_stages_body(  # noqa: PLR0915
                 if paged:
                     # A page of a carried set: the runner hands back where it stopped.
                     state_out.focus.set_page = envelopes[0].get("set_carry") if envelopes else None
+                    # ATTACH-SET-BRAND-FOLLOWUP round 2 (owner hand test on the local
+                    # copy, 7 Oct 2026): the rows the page LISTED are the subject now.
+                    # The page turn never ran the resolver, so nothing settled the focus
+                    # (`turn/apply._narrow_and_plan` writes it off the resolver's own
+                    # candidates only) and it still held turn 1's code-tier rows and
+                    # class word: "pic" after "sorento" listed 50 taps ran over the two
+                    # COLD TAP rows, and on a copy without that match re-counted every
+                    # tap. The listed rows replace both - the class word described the
+                    # set the page has now narrowed and shown, so a document word after
+                    # it reads about these products and nothing wider.
+                    listed = envelopes[0].get("listed_products") if envelopes else None
+                    if isinstance(listed, list) and listed:
+                        state_out.focus.products = [dict(row) for row in listed if isinstance(row, dict)]
+                        for kind in turn_runtime.CLASS_HINTS:
+                            state_out.focus.extra.pop(kind, None)
                 elif withheld or partly_listed or listed_to_the_limit:
                     state_out.focus.set_page = turn_runtime.set_page_carry(
                         predicate,
