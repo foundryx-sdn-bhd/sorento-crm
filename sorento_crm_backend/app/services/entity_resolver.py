@@ -568,6 +568,11 @@ class ResolutionResult:
     tokens: list[str]
     resolutions: list[TokenResolution]
     elapsed_ms: float
+    # Pre-extracted tokens past the call's ceiling (`PRE_EXTRACTED_TOKEN_CEILING`, or the
+    # caller's own `max_candidates`), in order, NEVER looked up: not resolved, not
+    # ambiguous, not unresolved - the caller has to say so rather than answer as if they
+    # had never been asked about. Empty for a free-text query.
+    truncated_tokens: list[str] = field(default_factory=list)
 
     @property
     def unresolved_tokens(self) -> list[str]:
@@ -696,6 +701,7 @@ class ResolutionResult:
                 for tr in self.resolutions
             ],
             "unresolved_tokens": self.unresolved_tokens,
+            "truncated_tokens": list(self.truncated_tokens),
         }
 
 
@@ -2892,6 +2898,21 @@ _ALL_TRGM_TYPES = frozenset({"product", "customer", "customer_order", "promotion
 # Max fuzzy alternatives surfaced per unresolved token (keep the suggestion tight).
 _ALTERNATIVES_CAP = 5
 
+# RESOLVER-TOKEN-CAP (owner report, 6 Oct 2026): how many PRE-EXTRACTED tokens one
+# `resolve_references` call looks up when the caller sets no `max_candidates` of its
+# own. A pre-extracted list is the caller's decision about what to look up (the chatbot
+# parser's entities, n8n's tokens), so it is never cut to the free-text extraction
+# count (8): a catalogue photo read 19 codes, the parser carried all 19, and the stock
+# reply listed the first 8 with nothing about the other 11. 50 is the stock balance
+# page's own default `limit` (`api/v1/inventory/stock.py::get_stock_balance`) and the
+# chatbot's lookup limit (`lanes/business/resolve_gate._LOOKUP_LIMIT`), so every code
+# the resolver answers has a row the renderer can print. Past it, the remainder is
+# reported in `ResolutionResult.truncated_tokens`, never dropped in silence.
+PRE_EXTRACTED_TOKEN_CEILING = 50
+# How many tokens are EXTRACTED from a free-text query (`extract_candidate_tokens`'s
+# own default), when the caller sets no `max_candidates`.
+_FREE_TEXT_CANDIDATES = 8
+
 
 def _trgm_lookup(
     db: Session,
@@ -4897,7 +4918,7 @@ def resolve_references(
     db: Session,
     query_or_tokens: str | list[str],
     *,
-    max_candidates: int = 8,
+    max_candidates: Optional[int] = None,
     enable_prefix_fallback: bool = True,
     enable_embedding_fallback: bool = True,
     allowed_entity_types: Optional[Iterable[str]] = None,
@@ -4941,9 +4962,18 @@ def resolve_references(
     the leading code-shaped word of its raw text is exact-probed against
     products only (`match_tier="head_code"` on a hit). Ignored when the two
     lists have different lengths, or when `query_or_tokens` is a plain string.
+
+    `max_candidates` is the caller's own cap. Unset, a free-text query extracts
+    `_FREE_TEXT_CANDIDATES` tokens and a pre-extracted list is looked up to
+    `PRE_EXTRACTED_TOKEN_CEILING`. A list cut at either is reported in
+    `ResolutionResult.truncated_tokens` (RESOLVER-TOKEN-CAP): a token the caller
+    handed over and this call never looked up is neither resolved nor unresolved,
+    and the caller must be able to say so.
     """
     t0 = time.perf_counter()
     raw_query: Optional[str] = None
+    truncated_tokens: list[str] = []
+    free_text_cap = max_candidates if max_candidates is not None else _FREE_TEXT_CANDIDATES
     # {token: pre-fold raw text} for the head-code retry, built by zipping
     # `query_or_tokens` with `raw_tokens` BEFORE the strip/empty-filter/cap
     # below, so positional alignment survives it. Empty (never populated) when
@@ -4963,12 +4993,14 @@ def resolve_references(
             tokens.append(s)
             if paired_raw is not None:
                 raw_by_token[s] = paired_raw[idx]
-        tokens = tokens[:max_candidates]
+        ceiling = max_candidates if max_candidates is not None else PRE_EXTRACTED_TOKEN_CEILING
+        truncated_tokens = tokens[ceiling:]
+        tokens = tokens[:ceiling]
         if paired_raw is not None:
             raw_by_token = {t: raw_by_token[t] for t in tokens}
     else:
         raw_query = query_or_tokens or ""
-        tokens = extract_candidate_tokens(raw_query, max_candidates=max_candidates)
+        tokens = extract_candidate_tokens(raw_query, max_candidates=free_text_cap)
 
     # Positional pairing: when caller passed parallel lists of tokens + entity types
     # of equal length, each token resolves ONLY against its paired type. Otherwise
@@ -5246,7 +5278,7 @@ def resolve_references(
         existing_lower = {t.lower() for t in tokens}
         freeword_candidates = [
             w
-            for w in extract_freeword_candidates(raw_query, max_candidates=max_candidates)
+            for w in extract_freeword_candidates(raw_query, max_candidates=free_text_cap)
             if w.lower() not in existing_lower
         ]
         if freeword_candidates:
@@ -5328,7 +5360,12 @@ def resolve_references(
 
     final_tokens = list(tokens) + [r.token for r in freeword_resolutions]
     elapsed_ms = (time.perf_counter() - t0) * 1000.0
-    return ResolutionResult(tokens=final_tokens, resolutions=resolutions, elapsed_ms=elapsed_ms)
+    return ResolutionResult(
+        tokens=final_tokens,
+        resolutions=resolutions,
+        elapsed_ms=elapsed_ms,
+        truncated_tokens=truncated_tokens,
+    )
 
 
 # --------------------------------------------------------------------------- #

@@ -4800,6 +4800,9 @@ def _run_stages_body(  # noqa: PLR0915
         predicate: dict[str, Any] | None = None
         resolved_candidates: dict[str, list[dict[str, Any]]] = {}
         unplaced_tokens: dict[str, str] = {}
+        # RESOLVER-TOKEN-CAP: the codes the resolver cut at its ceiling and never looked
+        # up, as typed - named by the reply's "Not checked:" line, never silently dropped.
+        not_checked_tokens: dict[str, str] = {}
         spec_tier = False
         # R2 (PLAN-chatbot-answer-half-reattach.md): the raw `resolve_gate.run` payload
         # (`resolved`, `gate`, `aggregate`, `tier_gate`, `_exit_kind`), carried through
@@ -4971,6 +4974,7 @@ def _run_stages_body(  # noqa: PLR0915
             predicate = resolve_outcome.predicate
             resolved_candidates = resolve_outcome.resolved_candidates
             unplaced_tokens = resolve_outcome.unplaced_tokens
+            not_checked_tokens = resolve_outcome.not_checked
             spec_tier = resolve_outcome.spec_tier
             resolver_payload = resolve_outcome.payload
             # Every turn of availability access, not only a stock / ETA one: a code the
@@ -5591,6 +5595,8 @@ def _run_stages_body(  # noqa: PLR0915
                     # MULTI-CODE-DYM: each unplaced token's did-you-mean, the same
                     # candidates a lone miss of that token offers.
                     unplaced_suggestions=_unplaced_suggestions(resolver_payload, unplaced_tokens),
+                    # RESOLVER-TOKEN-CAP: the codes the resolver never looked up, as typed.
+                    not_checked=list(not_checked_tokens.values()),
                     # R6 (fix round 2): so a null `routing.suggested_team` inside the
                     # per-domain fetch context gets the same domain-aware fill this
                     # turn's own `ctx.parse.output` already got above.

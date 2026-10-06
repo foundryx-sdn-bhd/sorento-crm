@@ -244,14 +244,10 @@ class TestRealResolverCeiling:
         )
 
         reply = (result.reply or {}).get("text") or ""
-        fetched_ids: set[str] = set()
-        for _name, args in captured:
-            for key in ("product_id", "product_ids"):
-                value = args.get(key)
-                if isinstance(value, str):
-                    fetched_ids.update(v.strip() for v in value.split(",") if v.strip())
-                elif isinstance(value, list):
-                    fetched_ids.update(str(v) for v in value)
-        assert len(fetched_ids) == 19, (fetched_ids, captured)
+        # `fetch.entity_ids_transformer`'s own count of the uuids it put on the call:
+        # before the fix this read 8 of 19 (the prod turn's exact shape).
+        diagnostics = [args.get("_diagnostics") or {} for _name, args in captured]
+        assert diagnostics, "the codes must be fetched"
+        assert max(d.get("total_uuids_passed", 0) for d in diagnostics) == 19, diagnostics
         assert "Not checked" not in reply, reply
         assert "I could not find" not in reply, reply
