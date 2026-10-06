@@ -113,23 +113,39 @@ def _fold(value: Any) -> str:
     return _NOT_ALNUM.sub("", str(value or "")).casefold()
 
 
+def _typed_span(value: str, typed: str) -> bool:
+    """Does `value` (letters and digits, in order, any dashes or spaces between them) occur
+    in `typed` as a WHOLE word run: nothing alphanumeric right before or right after it?
+    The owner's rule is "copy what the dealer typed, never complete or cut a code": a value
+    that stops in the middle of a typed code ("SRTWC8066" out of "WC SRTWC8066SS") would
+    resolve the base product instead of the variant the dealer named, and a fragment cut
+    out of a longer code ("5699" out of "SRTWT5699") would open another family's picker
+    (reviewer blocker, 6 Oct 2026). Case folded; separators inside the value are free, the
+    same `[-\\s]` the catalogue probes fold away."""
+    letters = [ch for ch in value if ch.isalnum()]
+    if not letters:
+        return False
+    pattern = r"(?<![0-9A-Za-z])" + r"[\s-]*".join(re.escape(ch) for ch in letters) + r"(?![0-9A-Za-z])"
+    return re.search(pattern, typed, flags=re.IGNORECASE) is not None
+
+
 def guard(reading: CodeReading, typed: str | None, token: str) -> CodeReading:
     """The one rule that keeps the owner's "no typo matching": a `code` or `family` value
-    must be made of letters, digits, spaces and hyphens only, and must sit inside what the
-    dealer typed (letters and digits, case folded), else the reading is `none` with a
-    reason code. `none`, `error` and `not_asked` pass through."""
+    must be made of letters, digits, spaces and hyphens only, and must occur in what the
+    dealer typed as a whole word run (`_typed_span`), else the reading is `none` with a
+    reason code. With no typed text sent (an API caller without `raw_tokens`) the folded
+    token is the only text, so only a value equal to the whole token can pass. `none`,
+    `error` and `not_asked` pass through."""
     if reading.kind not in ("code", "family"):
         if reading.kind in ("none", "error", "not_asked"):
             return reading
         return CodeReading("none", None, reason=REASON_UNKNOWN_KIND)
     raw_value = str(reading.value or "").strip()
-    value = _fold(raw_value)
-    if not value:
+    if not _fold(raw_value):
         return CodeReading("none", None, reason=REASON_EMPTY_VALUE)
     if not _VALUE_CHARS.match(raw_value):
         return CodeReading("none", None, reason=REASON_BAD_CHARACTERS)
-    haystack = _fold(typed) if typed else _fold(token)
-    if value not in haystack:
+    if not _typed_span(raw_value, typed or token):
         return CodeReading("none", None, reason=REASON_NOT_IN_TYPED_TEXT)
     return CodeReading(reading.kind, raw_value)
 
@@ -147,11 +163,20 @@ def _resolve_provider(db: Session):
         cfg = db.query(AIAssistantConfig).order_by(AIAssistantConfig.created_at.asc()).first()
     except Exception:  # noqa: BLE001 - no config row readable means no provider
         logger.warning("resolver code reader: assistant config unreadable", exc_info=True)
+        _recover(db)
         return None, "openai", ""
+    # The provider and the model come from ONE rung of the ladder (reviewer finding 3): a
+    # reader row set to one vendor with no model must not borrow the parser's model for
+    # another vendor and post it there.
     own_provider, own_model = agent_model(db, PROMPT_KEY)
     parser_provider, parser_model = agent_model(db, PARSER_PROMPT_KEY)
-    provider_name = own_provider or parser_provider or (cfg.provider if cfg else "openai") or "openai"
-    model_name = resolve_model(cfg, provider_name, own_model or parser_model)
+    if own_provider:
+        provider_name, model_override = own_provider, own_model
+    elif parser_provider:
+        provider_name, model_override = parser_provider, parser_model
+    else:
+        provider_name, model_override = (cfg.provider if cfg else "openai") or "openai", own_model or parser_model
+    model_name = resolve_model(cfg, provider_name, model_override)
     api_key = resolve_api_key(cfg, provider_name)
     if not api_key:
         return None, provider_name, model_name
@@ -162,11 +187,22 @@ def _resolve_provider(db: Session):
         return None, provider_name, model_name
 
 
+#: The most text one call sends to the model (security review, 6 Oct 2026, final head
+#: finding 1): the feature is on by default for every API-key caller, so an unbounded
+#: `query` would bill a maximum-size input per request. A dealer's longest real stock
+#: check is a few hundred characters; a code is under 40.
+MESSAGE_CHARS = 2000
+TYPED_CHARS = 200
+
+
 def _user_message(message_text: str | None, missed: list[Missed]) -> str:
     return json.dumps(
         {
-            "message": message_text or "",
-            "tokens": [{"token": token, "typed": typed} for token, typed in missed],
+            "message": (message_text or "")[:MESSAGE_CHARS],
+            "tokens": [
+                {"token": token[:TYPED_CHARS], "typed": (typed[:TYPED_CHARS] if typed else typed)}
+                for token, typed in missed
+            ],
         },
         ensure_ascii=False,
     )
@@ -188,7 +224,12 @@ def _readings_from(content: str, missed: list[Missed]) -> dict[str, CodeReading]
             continue
         raw_value = item.get("value")
         value = str(raw_value) if raw_value is not None else None
-        out[token] = guard(CodeReading(str(item.get("kind") or ""), value), asked[token], token)
+        # The model owns three answers; `error` / `not_asked` are the code's own verdicts
+        # and anything else is no reading at all.
+        kind = str(item.get("kind") or "")
+        if kind not in KINDS:
+            kind, value = "none", None
+        out[token] = guard(CodeReading(kind, value), asked[token], token)
     for token in asked:
         out.setdefault(token, CodeReading("none", None, reason=REASON_NO_READING))
     return out
@@ -282,6 +323,19 @@ def _log_usage(db: Session, provider_name: str, model_name: str, result: Any, el
         db.commit()
     except Exception as exc:  # noqa: BLE001 - never fail a resolve over bookkeeping
         logger.warning("resolver code reader: usage log failed: %s", exc)
+        _recover(db)
+
+
+def _recover(db: Session) -> None:
+    """A failed statement leaves a Postgres transaction aborted; the resolver's own
+    queries after this one would then raise `PendingRollbackError` and 500 the route or
+    fail the turn. Roll back only when the session says it needs it (security review,
+    6 Oct 2026, final head finding 2)."""
+    try:
+        if not db.is_active:
+            db.rollback()
+    except Exception:  # noqa: BLE001 - nothing more to do for a dead session
+        logger.warning("resolver code reader: session rollback failed", exc_info=True)
 
 
 def per_request(reader: CodeReader, *, cap: int = TOKENS_PER_CALL) -> CodeReader:

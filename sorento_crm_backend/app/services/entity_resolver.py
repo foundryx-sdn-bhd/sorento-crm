@@ -5003,10 +5003,21 @@ def resolve_references(
     # below, so positional alignment survives it. Empty (never populated) when
     # `query_or_tokens` is a plain string or the two lists' lengths differ.
     raw_by_token: dict[str, str] = {}
+    # {token: the caller's own type hint for it}, built the same positional way as
+    # `raw_by_token` when the caller sent one type per token (the chatbot does: one hint
+    # per parser entity). Read only by the code reader below, so a customer- or brand-
+    # hinted miss in a message that also names a product is never asked as a product.
+    hint_by_token: dict[str, str] = {}
     if isinstance(query_or_tokens, list):
         paired_raw = (
             raw_tokens
             if isinstance(raw_tokens, list) and len(raw_tokens) == len(query_or_tokens)
+            else None
+        )
+        allowed_list = list(allowed_entity_types) if allowed_entity_types is not None else None
+        paired_hint = (
+            allowed_list
+            if allowed_list is not None and len(allowed_list) == len(query_or_tokens) and len(allowed_list) > 1
             else None
         )
         tokens = []
@@ -5017,6 +5028,8 @@ def resolve_references(
             tokens.append(s)
             if paired_raw is not None:
                 raw_by_token[s] = paired_raw[idx]
+            if paired_hint is not None and s not in hint_by_token:
+                hint_by_token[s] = str(paired_hint[idx] or "").strip().lower()
         ceiling = max_candidates if max_candidates is not None else PRE_EXTRACTED_TOKEN_CEILING
         truncated_tokens = tokens[ceiling:]
         tokens = tokens[:ceiling]
@@ -5215,12 +5228,19 @@ def resolve_references(
     fallback_by_token: dict[str, dict[str, Any]] = {}
     if code_reader is not None and raw_query is None:
         missed: list[tuple[str, Optional[str]]] = []
+        seen_missed: set[str] = set()
         for tok in tokens:
-            if per_token[tok] or tok in ambiguous_tokens:
+            if per_token[tok] or tok in ambiguous_tokens or tok in seen_missed:
                 continue
             tok_allowed = _types_for(tok)
             if tok_allowed is not None and "product" not in tok_allowed:
                 continue
+            # The caller's OWN hint for this token, when it sent one per token: only a
+            # product-hinted (or unhinted) token is a product question (reviewer finding 2;
+            # `_types_for` is the request-wide union once pairing is off).
+            if hint_by_token.get(tok, "product") not in ("product", ""):
+                continue
+            seen_missed.add(tok)  # a line typed twice is one question, one of the 5 slots
             missed.append((tok, raw_by_token.get(tok) or None))
         if missed:
             from app.services import resolver_code_reader as _reader_mod

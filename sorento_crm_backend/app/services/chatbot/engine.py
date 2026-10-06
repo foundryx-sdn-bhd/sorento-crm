@@ -7033,6 +7033,11 @@ def _run_entities_only_arm(
             "raw_tokens": list(raws),
             "allowed_entity_types": ["product"],
         }
+        if dry_run:
+            # D14: a test or console turn writes nothing outside `chatbot.turns`; the
+            # shared route's code reader (on by default) keeps its usage row out on a dry
+            # run, the same key `resolve_gate.resolve_entity_body` already sends.
+            body["dry_run"] = True
         ResolveReferenceRequest(**body)  # validated the same way every other caller is
         result = services.resolve_entity(body)
         # B2 fix, second half (browser pass): `resolve_reference_post`'s own

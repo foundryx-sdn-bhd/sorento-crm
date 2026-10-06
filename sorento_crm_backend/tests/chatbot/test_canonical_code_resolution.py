@@ -151,6 +151,25 @@ def test_resolve_entity_body_sends_raw_tokens_parallel_to_tokens():
     assert body["query"] == "TAP ZZTWT5608 x 5 for hanlim"
 
 
+def test_the_refinement_word_check_asks_no_model(monkeypatch):
+    """`_refinement_product_resolves` is a yes/no check on a refinement WORD against the
+    catalogue, inside a turn whose subject already resolved: it opts out of the shared
+    route's code reader (reviewer finding 4)."""
+    from app.services.chatbot.lanes.business import _refinement_product_resolves
+    from app.services.chatbot.lanes.business import services as business_services
+
+    bodies: list[dict[str, Any]] = []
+
+    class _Services:
+        def resolve_entity(self, body):
+            bodies.append(dict(body))
+            return {"resolutions": [{"token": body["tokens"][0], "matches": []}], "unresolved_tokens": body["tokens"]}
+
+    monkeypatch.setattr(business_services, "production_services", lambda db, **kw: _Services())
+    assert _refinement_product_resolves(object(), "cheaper") is False
+    assert bodies and bodies[0]["semantic_fallback"] is False, bodies
+
+
 # --------------------------------------------------------------------------- #
 # The report's typed subject
 # --------------------------------------------------------------------------- #
@@ -348,6 +367,37 @@ class TestRealResolver:
 # --------------------------------------------------------------------------- #
 # The entities-only arm (bare codes, no domain)
 # --------------------------------------------------------------------------- #
+
+
+def test_the_entities_only_arm_sends_dry_run_through_to_the_resolver(session_factory, seeded, monkeypatch):
+    """D14 (reviewer blocker on 17301020): a test or console turn writes nothing outside
+    `chatbot.turns`; the arm's resolve body carries `dry_run` so the shared route's code
+    reader keeps its usage row out. The harness turn is a test turn (`is_test`)."""
+    from tests.chatbot import test_outstanding_lane as outstanding_lane
+    from tests.chatbot.test_engine import _envelope as _bare_envelope
+    from tests.chatbot.test_entities_only_arm import MATCHES, PRODUCT_A_CODE
+    from tests.chatbot.test_outstanding_lane import _resolve_services
+
+    # The harness envelope is a LIVE turn; this one is the console's (`is_test`), the
+    # shape `Envelope.dry_run` reads.
+    monkeypatch.setattr(outstanding_lane, "_envelope", lambda: _bare_envelope(is_test=True))
+    bodies: list[dict[str, Any]] = []
+    inner = _resolve_services(MATCHES)
+
+    def spy(body):
+        bodies.append(dict(body))
+        return inner.resolve_entity(body)
+
+    services = type(inner)(access_types=inner.access_types, resolve_entity=spy, probe=inner.probe)
+    qf = _parser_output(domain_hint=None, intent_hint=None, asks=[], entities=[_entity(PRODUCT_A_CODE, PRODUCT_A_CODE)])
+    _run_turn(
+        session_factory, monkeypatch, qf=qf, text_body=PRODUCT_A_CODE, msg_id="ZZT-canon-eo-dry", matches=MATCHES,
+        resolve_services=services,
+    )
+
+    assert bodies, "the arm resolved nothing"
+    assert bodies[-1].get("dry_run") is True, bodies[-1]
+    assert bodies[-1]["raw_tokens"] == [PRODUCT_A_CODE]
 
 
 def test_the_entities_only_arm_places_the_canonical_code_on_the_typed_row(session_factory, seeded, monkeypatch):

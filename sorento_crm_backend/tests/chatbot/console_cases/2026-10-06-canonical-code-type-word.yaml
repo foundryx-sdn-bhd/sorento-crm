@@ -219,6 +219,18 @@ cases:
         hint: product
         canonical_code: XQZ9917V
 
+- name: 'prod 21:14 - hi WC200-S got stock ? is one product entity, the family fragment copied as typed'
+  live_only: true
+  cold: true
+  text: hi WC200-S got stock ?
+  expect:
+    parser:
+      domain_hint: inventory
+      entities:
+      - raw: WC200-S
+        hint: product
+        canonical_code: WC200-S
+
 # ---- controls: unchanged behaviour, graded WITHOUT canonical_code (green on both) -------
 - name: 'control - bare SRTWT5608 x 5 is raw SRTWT5608, quantity 5, one entity'
   live_only: true

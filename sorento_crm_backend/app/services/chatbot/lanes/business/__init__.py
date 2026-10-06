@@ -1072,6 +1072,10 @@ def _refinement_product_resolves(db: Any, token: str) -> bool:
         "match_mode": "or",
         "allowed_entity_types": ["product"],
         "limit": 1,
+        # A yes/no check on a refinement WORD ("cheaper") against the catalogue, inside a
+        # turn that already resolved its subject: no model question here (it would cost
+        # the turn up to 3 s and a usage row for a word nobody typed as a code).
+        "semantic_fallback": False,
     }
     try:
         result = resolve_entity(body)
@@ -1092,7 +1096,10 @@ def _refinement_product_resolves(db: Any, token: str) -> bool:
 def typed_brand_words(parse_output: dict[str, Any]) -> set[str]:
     """The brand-hinted words this turn (or a refinement) typed, listed or not."""
     words = {
-        jsc.js_string(e.get("canonical_code") or e.get("raw") or "").strip()
+        # A BRAND word stays raw first (#1262 R1 below: the typed word, never the parser's
+        # canonical_code, which a misspelling makes a guess); the canonical-first rule of
+        # RESOLVE-SEMANTIC-FALLBACK is for hint "product" only.
+        jsc.js_string(e.get("raw") or e.get("canonical_code") or "").strip()
         for e in [
             *jsc.array(parse_output.get("entities")),
             *jsc.array(parse_output.get("outstanding_refinement_entities")),

@@ -1264,11 +1264,13 @@ class ResolveReferenceRequest(BaseModel):
             "raw text (with spaces) that produced `tokens[i]` - e.g. "
             "tokens=['SRTWB8004BASINTAP'], raw_tokens=['SRTWB8004 BASIN TAP']. "
             "Ignored unless `tokens` is also given and both lists have equal "
-            "length. Used only by the server-side product head-code retry - "
-            "when a folded token exact-misses, the resolver re-probes the "
-            "leading code-shaped word of its raw text (e.g. n8n folds a "
-            "spoken/typed 'code + description' into one token before calling "
-            "resolve). Absent or null = response byte-identical to today."
+            "length. Read by two server-side steps for a product token that "
+            "exact-misses: the head-code retry (the leading code-shaped word of "
+            "the raw text is re-probed, e.g. n8n folds a typed 'code + "
+            "description' into one token) and, since RESOLVE-SEMANTIC-FALLBACK, "
+            "the code reader, which is shown the raw text and may only read a "
+            "code out of it. Absent or null: the folded token is all the "
+            "resolver has, so neither step has anything beyond it."
         ),
     )
     match_mode: str = Field(
@@ -2276,7 +2278,10 @@ def _resolve_input(
                 # positionally with it - see PLAN-resolver-head-code-retry.
                 raw_tokens=raw_tokens if tokens_override is None else None,
                 regions=regions,
-                code_reader=code_reader,
+                # The reader answers a token a PARSER chose: words this route split out of
+                # a sentence for an alpha-only type (`_synthesize_alpha_tokens`) are not
+                # that, so they are never put to it (security review, final head item 5).
+                code_reader=None if synthesized_from_query else code_reader,
             ).as_dict()
         raw = _apply_promotion_access_levels_filter(db, raw, access_levels)
         # Promotion-domain hint: run the expander. It owns the dispatch:
@@ -2399,7 +2404,9 @@ def _resolve_input(
         has_matches = bool(r.get("matches") or [])
         fb_entry = fb_by_token.get(tok) if tok else None
         if not has_matches and fb_entry and (fb_entry.get("matches") or []):
-            merged.append(fb_entry)
+            # The primary pass's code-reader verdict stays on the trace (it is the pass
+            # that asked); the cross-type entry carries none of its own.
+            merged.append({**fb_entry, "fallback": r["fallback"]} if r.get("fallback") is not None else fb_entry)
             found_any_fallback = True
         elif (
             not has_matches

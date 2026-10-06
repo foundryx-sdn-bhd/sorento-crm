@@ -145,6 +145,22 @@ def test_a_non_product_token_is_never_asked(db):
     assert result.unresolved_tokens == ["TAPZZTWT5608"]
 
 
+def test_a_customer_hinted_miss_beside_a_product_is_not_asked(db):
+    """One hint per token (the chatbot's body): the request-wide type union includes
+    product, but the customer token's OWN hint is customer, so only the product token is a
+    question (reviewer finding 2)."""
+    reader = FakeReader({"TAPZZTNOPE1": ("none", None), "KEDAI88": ("family", "88")})
+    result = _resolve(
+        db, ["KEDAI88", "TAPZZTNOPE1"], ["Kedai 88", "TAP ZZTNOPE1"], reader=reader,
+        types=["customer", "product"],
+    )
+
+    assert reader.calls == [[("TAPZZTNOPE1", "TAP ZZTNOPE1")]], reader.calls
+    rows = _by_token(result)
+    assert "fallback" not in rows["KEDAI88"]
+    assert rows["TAPZZTNOPE1"]["fallback"]["kind"] == "none"
+
+
 def test_an_ambiguous_token_is_not_a_miss_and_is_not_asked(db):
     reader = FakeReader()
     _resolve(db, ["ZZTWC8066"], reader=reader)
@@ -395,6 +411,77 @@ def test_the_post_route_builds_the_reader_unless_the_caller_opts_out(db, monkeyp
     assert built == [], "opted out: no reader is built, no model is asked"
     assert result["unresolved_tokens"] == ["TAPZZTWT5608"]
     assert all("fallback" not in r for r in result["resolutions"])
+
+
+def test_words_the_route_split_out_of_a_sentence_are_never_asked(db):
+    """`_synthesize_alpha_tokens`: a free-text query sent for an alpha-only type is split
+    into words by the route itself; nobody decided those words were codes, so the reader
+    is not consulted even when `product` is among the allowed types (security review,
+    final head item 5)."""
+    from app.api.v1.system.references import _resolve_input
+
+    reader = FakeReader({"basin": ("code", TAP)})
+    _resolve_input(
+        db, "photo of a basin ZZTWT5608 tap", None,
+        allowed_entity_types=["attachment_type", "product"], code_reader=reader,
+    )
+    assert reader.calls == [], reader.calls
+
+
+def test_a_token_typed_twice_is_asked_once_and_uses_one_slot(db):
+    """The owner's 15-line message carried one line twice; one question, one of the 5
+    slots, one re-probe (reviewer nit 4)."""
+    reader = FakeReader({"TAPZZTNOPE1": ("none", None)})
+    result = _resolve(db, ["TAPZZTNOPE1", "TAPZZTNOPE1"], ["TAP ZZTNOPE1", "TAP ZZTNOPE1"], reader=reader)
+
+    assert reader.calls == [[("TAPZZTNOPE1", "TAP ZZTNOPE1")]], reader.calls
+    assert all(r["fallback"]["kind"] == "none" for r in result.as_dict()["resolutions"])
+
+
+def test_the_cross_type_rerun_keeps_the_primary_passes_verdict_on_the_trace(db):
+    """`fallback_to_all_types` replaces an unresolved resolution with the cross-type
+    entry when that pass finds something; the reader's verdict rides along (reviewer
+    nit 6). ZZTNOPE1 is a customer code here, so the cross-type pass finds it as a
+    customer while the product-typed primary pass asked and got `none`."""
+    from app.models.order import Customer
+
+    db.add(Customer(id=str(uuid.uuid4()), customer_code="ZZTNOPE1", customer_name="ZZT Nope", company_id=DEFAULT_COMPANY_ID))
+    db.flush()
+    reader = FakeReader({"ZZTNOPE1": ("none", None)})
+    result = _route(db, ["ZZTNOPE1"], ["ZZTNOPE1"], code_reader=reader)
+
+    row = result["resolutions"][0]
+    assert any(m["entity_type"] == "customer" for m in row["matches"]), row
+    assert row["fallback"] == {"asked": True, "kind": "none", "value": None}
+
+
+def test_the_get_route_builds_the_reader_unless_the_caller_opts_out(db, monkeypatch):
+    from app.api.v1.system import references
+    from app.services import resolver_code_reader
+
+    built: list[dict[str, Any]] = []
+
+    def fake_reader_for(session, *, message_text, user_id, dry_run):
+        built.append({"message_text": message_text, "user_id": user_id, "dry_run": dry_run})
+        return FakeReader({"TAPZZTWT5608": ("code", TAP)})
+
+    monkeypatch.setattr(resolver_code_reader, "reader_for", fake_reader_for)
+    kwargs = dict(
+        query="TAP ZZTWT5608", tokens=["TAPZZTWT5608"], match_mode="or", allowed_entity_types=["product"],
+        access_levels=None, fallback_to_all_types=False, domain_hint=None, domain=None, limit=None,
+        current_user={"id": "u1"}, db=db,
+    )
+    result = references.resolve_reference(semantic_fallback=True, **kwargs)
+    assert built == [{"message_text": "TAP ZZTWT5608", "user_id": "u1", "dry_run": False}]
+    # GET sends no `raw_tokens`, so the folded token is the only typed text the guard can
+    # check against and a value that is only PART of it is refused: asked, not placed.
+    assert result["resolutions"][0]["fallback"]["asked"] is True
+    assert result["resolutions"][0]["fallback"]["kind"] == "none"
+
+    built.clear()
+    result = references.resolve_reference(semantic_fallback=False, **kwargs)
+    assert built == []
+    assert result["unresolved_tokens"] == ["TAPZZTWT5608"]
 
 
 def test_semantic_fallback_defaults_on(db):

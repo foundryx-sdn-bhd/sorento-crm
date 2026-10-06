@@ -90,8 +90,44 @@ def test_guard_refuses_an_empty_value_and_an_unknown_kind():
 
 
 def test_guard_falls_back_to_the_token_when_no_typed_text_was_sent():
-    assert guard(CodeReading("code", "ZZTWT5608"), None, "TAPZZTWT5608").kind == "code"
+    """No `raw_tokens`: the folded token is the only text, so only the whole token can be
+    read out of it (a part has no word edge inside a folded run)."""
+    assert guard(CodeReading("code", "TAPZZTWT5608"), None, "TAPZZTWT5608").kind == "code"
+    assert guard(CodeReading("code", "ZZTWT5608"), None, "TAPZZTWT5608").kind == "none"
     assert guard(CodeReading("code", "ZZTWT5609"), None, "TAPZZTWT5608").kind == "none"
+
+
+@pytest.mark.parametrize(
+    ("kind", "value", "typed"),
+    [
+        ("code", "SRTWC8066", "WC SRTWC8066SS"),
+        ("family", "5699", "SRTWT5699"),
+        ("code", "WT56", "TAP SRTWT5608"),
+        ("code", "SRTWT5608", "TAP SRTWT5608X"),
+    ],
+)
+def test_guard_refuses_a_value_cut_out_of_the_middle_of_a_typed_code(kind, value, typed):
+    """Reviewer blocker (6 Oct 2026): "SRTWC8066" read out of "WC SRTWC8066SS" resolves the
+    BASE product instead of the variant the dealer typed, and "5699" out of "SRTWT5699"
+    opens another family's picker. A value must occur as a whole word run."""
+    out = guard(CodeReading(kind, value), typed, typed.replace(" ", ""))
+    assert out.kind == "none"
+    assert out.reason == reader_mod.REASON_NOT_IN_TYPED_TEXT
+
+
+@pytest.mark.parametrize(
+    ("kind", "value", "typed"),
+    [
+        ("code", "SRTWT5608", "TAP SRTWT5608"),
+        ("code", "ZZTWC8066-SS", "WC ZZTWC8066SS"),
+        ("code", "Srt 364-hp", "Srt 364-hp x 1"),
+        ("family", "8066", "toilet 8066"),
+        ("code", "SRTWT5608", "龙头SRTWT5608"),
+        ("code", "srtwt5608", "chrome tap SRTWT5608 got stock?"),
+    ],
+)
+def test_guard_accepts_the_owners_examples_as_whole_word_runs(kind, value, typed):
+    assert guard(CodeReading(kind, value), typed, typed.replace(" ", "")).kind == kind
 
 
 def test_guard_leaves_none_and_error_alone():
@@ -150,6 +186,32 @@ def test_the_answer_is_guarded_per_token(db, monkeypatch):
     assert "NOT-ASKED" not in out, "a token the caller never asked about is dropped"
 
 
+def test_the_text_sent_to_the_model_is_capped(db, monkeypatch):
+    """Security review (final head, finding 1): the feature is on by default for every
+    API-key caller, so an unbounded `query` would bill a maximum-size input per request."""
+    provider = _provider(monkeypatch, FakeProvider({"readings": []}))
+    long_message = "x" * 10_000
+    long_typed = "y" * 1_000
+    reader_mod.read_codes(db, [("T", long_typed)], message_text=long_message, user_id=None, dry_run=True)
+    user = json.loads(provider.calls[0]["messages"][1]["content"])
+    assert len(user["message"]) == reader_mod.MESSAGE_CHARS == 2000
+    assert len(user["tokens"][0]["typed"]) == reader_mod.TYPED_CHARS == 200
+
+
+def test_a_kind_the_model_invents_is_none_never_the_codes_own_verdicts(db, monkeypatch):
+    """`error` and `not_asked` are the code's verdicts; a model may not set them (or
+    anything else outside code / family / none) and smuggle a value through."""
+    _provider(monkeypatch, FakeProvider({"readings": [
+        {"token": "A", "kind": "error", "value": "leak"},
+        {"token": "B", "kind": "not_asked", "value": "leak"},
+        {"token": "C", "kind": "maybe", "value": "C"},
+    ]}))
+    out = reader_mod.read_codes(db, [("A", "a"), ("B", "b"), ("C", "c")], message_text="", user_id=None, dry_run=True)
+    assert out["A"] == CodeReading("none", None)
+    assert out["B"] == CodeReading("none", None)
+    assert out["C"] == CodeReading("none", None)
+
+
 def test_a_token_the_model_left_out_is_none(db, monkeypatch):
     _provider(monkeypatch, FakeProvider({"readings": []}))
     out = reader_mod.read_codes(db, [("TAPZZTWT5608", "TAP ZZTWT5608")], message_text="", user_id=None, dry_run=True)
@@ -184,6 +246,31 @@ def test_no_provider_configured_is_an_error_reading_not_a_call(db, monkeypatch):
     monkeypatch.setattr(reader_mod, "_resolve_provider", lambda db: (None, "openai", "gpt-test"))
     out = reader_mod.read_codes(db, [("TAPZZTWT5608", "TAP ZZTWT5608")], message_text="", user_id=None, dry_run=True)
     assert out["TAPZZTWT5608"] == CodeReading("error", None, reason=reader_mod.REASON_NO_PROVIDER)
+
+
+def test_provider_and_model_come_from_one_rung_of_the_ladder(db, monkeypatch):
+    """Reviewer finding 3: a reader row set to gemini with no model must not post the
+    parser's openai model to Gemini."""
+    captured: dict[str, Any] = {}
+
+    def fake_agent_model(session, name, label="production"):
+        return {"resolver_code_reader": ("gemini", None), "chatbot_semantic_parser": ("openai", "gpt-x")}[name]
+
+    def fake_get_provider(provider, api_key, model=None):
+        captured.update(provider=provider, model=model)
+        return object()
+
+    import app.services.ai_prompt_registry as registry
+    import app.services.llm_provider as llm
+
+    monkeypatch.setattr(registry, "agent_model", fake_agent_model)
+    monkeypatch.setattr(llm, "get_provider", fake_get_provider)
+    monkeypatch.setattr(llm, "resolve_api_key", lambda cfg, name: "key")
+    monkeypatch.setattr(llm, "resolve_model", lambda cfg, provider, explicit=None: explicit or f"default-for-{provider}")
+
+    provider, name, model = reader_mod._resolve_provider(db)
+    assert (name, model) == ("gemini", "default-for-gemini")
+    assert captured == {"provider": "gemini", "model": "default-for-gemini"}
 
 
 def test_the_real_provider_lookup_with_no_config_row_is_none(db):
