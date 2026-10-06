@@ -308,12 +308,15 @@ class TestF1QuickReplies:
     @pytest.mark.parametrize("count, expected", [(2, 2), (3, 3), (4, 0), (12, 0)])
     def test_never_more_than_three_chips(self, count, expected) -> None:
         """WhatsApp shows at most three reply buttons; a question with more options is
-        answered by its numbered list alone, never a wall of chips."""
+        answered by its numbered list alone, never a wall of chips. Measured on
+        `team_pick`, the fixed-option kind: a roster kind (`customer_pick`, the ranking)
+        sends no chips at any count (QUICK-REPLY-NAMES, owner rule 6 Oct 2026)."""
         from app.services.chatbot.turn import pending as turn_pending
 
         labels = [f"Option {i}" for i in range(1, count + 1)]
-        chips = turn_pending.quick_replies("customer_pick", labels)
+        chips = turn_pending.quick_replies("team_pick", labels)
         assert len(chips.split(", ") if chips else []) == expected
+        assert turn_pending.quick_replies("customer_pick", labels[:2]) is None
         assert turn_pending.quick_replies("top_selling_pick", labels[:2]) is None
 
 

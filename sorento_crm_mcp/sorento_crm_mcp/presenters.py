@@ -1546,8 +1546,10 @@ def _availability_tail(entry: dict) -> str:
         # AVAIL-MODE-REPLIES rule 2: some stock, short of the asked quantity, the ask
         # within the category max. The backend sets `available_qty` in that case only
         # (`inventory_service._apply_stock_visibility`), so it is the one figure of ours
-        # this mode ever prints.
-        return f"{STOCK_YES} {GOT_STOCK}, {available} available."
+        # this mode ever prints. AVAIL-ONHAND-BASIS hand test (owner, 6 Oct 2026): the
+        # line keeps the tick and reads "Only N got stock." (was "Got stock, N available.").
+        # `label_catalog.py` carries the ms and zh of this exact sentence.
+        return f"{STOCK_YES} Only {available} got stock."
     # Nit, review round 1: an unknown or missing branch is unreachable today
     # (`products.category_id` is NOT NULL, so `inventory_service.py` never
     # leaves `branch` unset) - but if a fallback is kept, `too_big` is the one

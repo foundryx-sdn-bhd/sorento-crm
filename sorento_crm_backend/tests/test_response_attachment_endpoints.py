@@ -80,6 +80,11 @@ def client(monkeypatch):
         def _override_current_user():
             return {"id": _USER_ID, "email": "staff@test.com"}
 
+        # LIST-API-PERMS: GET /complaints/{id} carries a permission gate now; this principal
+        # has no users row, so answer the role lookup as admin (the gate has its own tests).
+        from app.services.user_service import UserPermissionService
+
+        monkeypatch.setattr(UserPermissionService, "get_user_role_slugs", lambda self, uid: {"admin"})
         app.dependency_overrides[get_db] = _override_get_db
         app.dependency_overrides[get_current_user] = _override_current_user
         app.dependency_overrides[get_current_user_or_api_key] = _override_current_user

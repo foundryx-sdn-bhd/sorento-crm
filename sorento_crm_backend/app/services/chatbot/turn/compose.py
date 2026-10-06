@@ -507,6 +507,10 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
     missed_domains: list[str] = []
     files: list[dict[str, Any]] = []
     seen_file_keys: set[Any] = set()
+    # RESOLVER-TOKEN-CAP: a code the resolver cut at its ceiling rides every envelope
+    # (`envelope_of.not_checked`) but is a fact about the message, so it is named once
+    # per turn, under the first section that carries it.
+    named_not_checked: set[str] = set()
 
     for env in envelopes:
         domain = env.get("domain")
@@ -705,8 +709,13 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
         # out which of the products they asked about are missing from the answer.
         # LAST, under the rungs line: it is the closing note on this section, and it
         # read as part of the ladder sentence when it sat above one.
-        not_checked = [n for n in (env.get("not_checked") or []) if isinstance(n, str)]
+        not_checked = [
+            n
+            for n in (env.get("not_checked") or [])
+            if isinstance(n, str) and n not in named_not_checked
+        ]
         if not_checked:
+            named_not_checked.update(not_checked)
             block = block + "\n" + f"Not checked: {', '.join(not_checked)}."
         text_parts.append(block)
 
@@ -1093,10 +1102,12 @@ def compose_question(pending: Any, state: State | None = None, localizer: Any = 
     action: dict[str, Any] = {
         "kind": "send_message",
         "text": body,
-        # AC-1866: a `member_offer` re-print keeps its numbered text list but not the
-        # names as quick-reply buttons (owner ruling 23 Sep 2026) - `result_set` below
-        # still carries the roster, so a numbered reply still resolves.
-        "quick_replies": pending_quick_replies(pending.kind, labels),
+        # QUICK-REPLY-NAMES (owner rule, 6 Oct 2026, generalising AC-1866): a re-print
+        # keeps its numbered text list; only a fixed-option kind (`team_pick`, the
+        # outstanding and sales report offers) also sends its labels as buttons. A roster
+        # kind's names never do - `result_set` below still carries the roster, so a
+        # numbered reply still resolves.
+        "quick_replies": pending_quick_replies(pending.kind, labels, options=list(pending.options)),
         "result_set": list(pending.options),
     }
     return Answer(sections=[], question=pending, offer=None, canned=[], files=[], actions=[action], text=body)

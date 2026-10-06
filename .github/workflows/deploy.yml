@@ -1,8 +1,9 @@
 name: Build and Deploy Sorento
 
 on:
-  # A push to main runs ONLY the alembic fast gate (`check-migration-heads`,
-  # about 20 seconds): no test suite, no image build, no deploy. Owner
+  # A push to main runs ONLY the fast gates (`check-migration-heads`, the
+  # PII guard and gitleaks, about a minute): no test suite, no image build,
+  # no deploy. Owner
   # decision 2026-09-29 23:05: "control the running of main branch CI so not
   # every merge will trigger the CI automatically", and a live deploy waits
   # for the owner's approval. A release is the `workflow_dispatch` below.
@@ -11,34 +12,60 @@ on:
       - main
   # `types: [labeled]` ONLY - a push to the PR branch fires no `pull_request`
   # event at all (GitHub still fires `labeled` again on the PR's CURRENT head
-  # every time any label is added, so the orchestrator re-adds `ci` to re-run
-  # against a new head). Every root job below then gates on
-  # `github.event.label.name == 'ci'`, so labeling with anything else is a
-  # no-op. This exists because push-triggered PR runs were burning most of the
-  # account's 20 concurrent job slots and queuing push-to-main deploys behind
-  # them for 30-50+ minutes (2026-09-25: runs 36103575754/36105804527/36107711150
-  # all queued behind one PR run). A PR with no `ci` label therefore shows NO
-  # checks. Whether that blocks the merge is the ruleset's call, not this
-  # file's: as of 2026-09-29 the `protect-main-branch` ruleset requires no
-  # status checks and has no merge-queue rule, so an unlabelled PR can still
-  # be merged by hand. The required-check names and the merge-queue settings
-  # that make the label the real gate are listed in
-  # documentation/plans/ci/PLAN-ci-fast-gate-29sep.md for the owner to apply.
+  # every time any label is added, so the orchestrator re-adds a label to
+  # re-run against a new head). Two labels run anything; every root job below
+  # gates on them, so labeling with anything else is a no-op:
+  #
+  #   `ci`      the CHEAP gate: the fast gates (alembic head, PII guard,
+  #             gitleaks, changed areas), validate imports, typecheck and
+  #             vitest when the frontend changed, the SCM shards when SCM
+  #             paths changed, and the import-selected changed tests
+  #             (`test-backend-changed`). The six main backend shards NEVER
+  #             run here, whatever the selection's size (CI-MINUTES-CUT,
+  #             5 Oct 2026: on a metered plan the over-budget escape of
+  #             CI-SPEED ran all six shards plus the SCM shards on most PRs,
+  #             about 200 job-minutes a run, 59% of all minutes).
+  #   `ci-full` the FULL suite, the merge gate: every area counts as changed
+  #             (six shards plus the serial entry, SCM shards, vitest,
+  #             typecheck, validate imports, every fast gate). Crew adds it
+  #             once per PR, right before merge. The same one-shot mechanics
+  #             as `ci`: `release-ci-label` removes whichever of the two was
+  #             added, so adding it again re-runs on the new head.
+  #
+  # Label gating exists because push-triggered PR runs were burning most of
+  # the account's 20 concurrent job slots and queuing push-to-main deploys
+  # behind them for 30-50+ minutes (2026-09-25: runs 36103575754/
+  # 36105804527/36107711150 all queued behind one PR run). A PR with no label
+  # therefore shows NO checks. The `protect-main-branch` ruleset requires the
+  # five fast-gate names only ("Single alembic head (fast gate)", "Changed
+  # areas", "Validate backend imports", "Validate MCP imports", "Type-check
+  # frontend"; crew, 5 Oct 2026), which both labels report; a path-filtered
+  # job reports "skipped", which a ruleset accepts. The gate job at the
+  # bottom reports as `CI gate` on a `ci` run and as `CI gate (full)` on a
+  # `ci-full` run (and on the queue, the nightly and a release): requiring
+  # `CI gate (full)` makes a green `ci-full` on the head being merged a
+  # condition of the merge, which the five names above do not.
   pull_request:
     branches:
       - main
     types: [labeled]
   # Merge-queue entries: GitHub creates a temporary branch containing the
   # candidate merge result (this PR merged onto main plus every entry queued
-  # ahead of it) and fires this event. This is where the FULL suite runs: a
-  # `ci`-labelled PR run is the fast gate only (alembic head, image imports,
-  # typecheck, vitest, and the SCM shards when SCM paths changed), while the
-  # six main backend shards run here and nowhere else before main. The queue
-  # therefore also catches two individually-green branches that only break
-  # combined (duplicate alembic heads, a shared count assertion off by one).
-  # Until the ruleset carries a merge-queue rule, PRs merge directly and
-  # nothing but the alembic gate runs on the resulting push to main.
+  # ahead of it) and fires this event. The full suite runs here, as on
+  # `ci-full`. The queue is NOT in use (no merge_group run in the 30 days to
+  # 5 Oct 2026, and the ruleset carries no merge-queue rule); the trigger
+  # stays so that enabling the queue needs no workflow change.
   merge_group:
+  # The nightly full suite on main: the one run that tests what two
+  # individually green PRs produce once both are merged (a `ci-full` run
+  # tests a PR's head merged onto main as it was when the label was added).
+  # 03:17 Malaysia time, off the hour, half an hour after the never-stuck
+  # smoke. It skips itself (every area false, so the test jobs skip) when
+  # main has not moved since the last green nightly, see `changes`. Cost
+  # when it runs: about 200 job-minutes, so on a 3,000-minute plan this is
+  # the first schedule to make weekly if the budget is tight.
+  schedule:
+    - cron: "17 19 * * *"
   # THE RELEASE. Run on main by the orchestrator after the owner has merged a
   # batch:
   #   gh workflow run deploy.yml --repo jayson-odoo/sorento-crm --ref main
@@ -49,33 +76,40 @@ on:
   # in GitHub (environment "production", required reviewer jayson-odoo,
   # deployment branches: main only). On any other ref a dispatch runs the
   # suite only: build-images and build-and-deploy also require main.
+  # Every merged PR passed the full suite under `ci-full` already, so a
+  # release can usually be dispatched with skip_tests=true (about 15
+  # job-minutes instead of about 230).
   workflow_dispatch:
     inputs:
       skip_tests:
-        description: "Skip the test suite and go straight to build + deploy (main's head was already validated, e.g. by a green merge-queue run)"
+        description: "Skip the test suite and go straight to build + deploy (main's head was already validated, e.g. every merged PR passed a green ci-full run)"
         required: false
         default: false
         type: boolean
 
-# Cancels a PR's own superseded `ci` runs without touching anything else,
-# which is why the group key and cancel-in-progress both differ by event and
-# label instead of being one flat rule:
-#   - pull_request labeled `ci`: the group key is the PR number, so every
-#     `ci` run for the same PR lands in the same group, and cancel-in-progress
-#     is true, so GitHub cancels that PR's older queued/running `ci` run per
-#     the docs' per-group cancellation semantics
+# Cancels a PR's own superseded `ci` / `ci-full` runs without touching
+# anything else, which is why the group key and cancel-in-progress both
+# differ by event and label instead of being one flat rule:
+#   - pull_request labeled `ci` or `ci-full`: the group key is the PR number,
+#     so every run of either label for the same PR lands in the same group,
+#     and cancel-in-progress is true, so GitHub cancels that PR's older
+#     queued/running run per the docs' per-group cancellation semantics
 #     (https://docs.github.com/actions/using-jobs/using-concurrency). Re-adding
-#     `ci` against a new head therefore supersedes the run on the old head.
+#     a label against a new head therefore supersedes the run on the old
+#     head. ONE group for both labels on purpose: a `ci-full` added while
+#     `ci` runs makes the cheap run redundant (the full suite is a superset),
+#     and a `ci` added while `ci-full` runs means the head moved, so the
+#     full run on the old head would be about 200 job-minutes of waste.
 #   - pull_request labeled ANYTHING ELSE (needs-hand-test, lane-running,
 #     needs-decision, ...): the trigger fires for every label, and every job
 #     below skips on the label name, but the run still exists and still joins
 #     a concurrency group. When that group was the PR number, adding an
 #     orchestration label cancelled the PR's live `ci` run (2026-09-28, #1304,
-#     run 36387225667). So a non-`ci` label event falls through to
+#     run 36387225667). So any other label event falls through to
 #     github.run_id: a unique group that collides with nothing, and
 #     cancel-in-progress is false for it besides. It finishes in seconds with
 #     every job skipped and cancels nothing.
-#   - push (to main), merge_group and workflow_dispatch:
+#   - push (to main), merge_group, schedule and workflow_dispatch:
 #     github.event.pull_request.number is empty, so the group key is
 #     github.run_id here too, unique to this run, and cancel-in-progress is
 #     false, so two releases dispatched close together both run. The
@@ -83,14 +117,14 @@ on:
 #     (cancel-in-progress false) so the second release's deploy queues
 #     behind the first instead of overlapping it.
 # The expression is `a && b && c || d`, GitHub's ternary idiom: the PR number
-# when this is a `ci` label event (a truthy number), else the run id. Both
-# lines are evaluated as written by
+# when this is a `ci` or `ci-full` label event (a truthy number), else the
+# run id. Both lines are evaluated as written by
 # sorento_crm_backend/tests/test_ci_docs_only_filter.py (test_concurrency_*),
 # with the real context values of each event, so the rule cannot regress
 # silently.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ (github.event_name == 'pull_request' && github.event.label.name == 'ci' && github.event.pull_request.number) || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' && github.event.label.name == 'ci' }}
+  group: ci-${{ github.workflow }}-${{ (github.event_name == 'pull_request' && (github.event.label.name == 'ci' || github.event.label.name == 'ci-full') && github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && (github.event.label.name == 'ci' || github.event.label.name == 'ci-full') }}
 
 env:
   IMAGE_REPO: jayson1004/sorento-crm
@@ -109,19 +143,20 @@ jobs:
   check-migration-heads:
     name: Single alembic head (fast gate)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     # Root job (no `needs`): gates the whole `pull_request` run on the `ci`
-    # label. `github.event_name != 'pull_request'` keeps push/merge_group/
-    # workflow_dispatch running exactly as before; on a `pull_request` event
-    # (now `labeled` only) this only passes when the label just added is `ci`,
-    # so labeling with anything else no-ops. No status-check function
-    # (success()/always()/etc) appears in this expression, so every job that
-    # `needs` this one (directly or transitively) is skipped automatically
-    # when it is skipped - see https://docs.github.com/actions/using-jobs/using-conditions-to-control-job-execution.
-    # The job NAME is what a ruleset's required-status-check list matches; a
-    # PR with no `ci` label simply never reports this check. That only blocks
-    # the merge once the ruleset requires it (it does not as of 2026-09-29,
-    # see the trigger comment above and PLAN-ci-fast-gate-29sep.md).
-    if: github.event_name != 'pull_request' || github.event.label.name == 'ci'
+    # or `ci-full` label. `github.event_name != 'pull_request'` keeps push/
+    # merge_group/schedule/workflow_dispatch running exactly as before; on a
+    # `pull_request` event (`labeled` only) this only passes when the label
+    # just added is one of the two, so labeling with anything else no-ops.
+    # No status-check function (success()/always()/etc) appears in this
+    # expression, so every job that `needs` this one (directly or
+    # transitively) is skipped automatically when it is skipped - see
+    # https://docs.github.com/actions/using-jobs/using-conditions-to-control-job-execution.
+    # The job NAME is what the ruleset's required-status-check list matches
+    # (this is one of the five required names, see the trigger comment); a
+    # PR with neither label simply never reports this check.
+    if: github.event_name != 'pull_request' || github.event.label.name == 'ci' || github.event.label.name == 'ci-full'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -176,7 +211,8 @@ jobs:
   pii-guard:
     name: PII guard (fast gate)
     runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request' || github.event.label.name == 'ci'
+    timeout-minutes: 20
+    if: github.event_name != 'pull_request' || github.event.label.name == 'ci' || github.event.label.name == 'ci-full'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -184,12 +220,13 @@ jobs:
         run: python3 scripts/pii_guard.py
 
   # Secret scan over the PR's commits (the action's default on pull_request),
-  # rules in .gitleaks.toml. Runs on push and on a ci-labelled PR; never on
-  # merge_group or workflow_dispatch (the release).
+  # rules in .gitleaks.toml. Runs on push and on a `ci` / `ci-full` labelled
+  # PR; never on merge_group, schedule or workflow_dispatch (the release).
   gitleaks:
     name: Secret scan (gitleaks)
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.label.name == 'ci')
+    timeout-minutes: 20
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && (github.event.label.name == 'ci' || github.event.label.name == 'ci-full'))
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -240,19 +277,23 @@ jobs:
   #    SHA), a manual dispatch, or a list that hits the compare API's
   #    300-file cap (so it may be truncated) all report docs_only=false.
   #
-  # 2. `backend` / `frontend` / `mcp` / `scm`: which service trees a PULL
-  #    REQUEST touches. `scm` is the slice of the backend whose change makes
-  #    the three SCM shards run on a PR (`SCM_RE`: the scm API, service,
-  #    module and model files, `tests/scm/`, an scm migration, and the
-  #    test-harness files every backend test depends on); the six main
-  #    backend shards never run on a PR (see `test-backend`). A merge-queue
-  #    entry that is not docs-only, and a release (workflow_dispatch, which
-  #    has no diff to filter: it tests main's head as a whole), report every
-  #    area as changed, so the queue and the release gate on the full set.
-  #    The alembic gate above is deliberately NOT behind this: it is the fast
-  #    check, and it must run on every PR. The workflow file itself counts as
-  #    every area, or a change to it could never be exercised by the PR that
-  #    makes it.
+  # 2. `backend` / `frontend` / `mcp` / `scm`: which service trees a
+  #    `ci`-labelled PULL REQUEST touches. `scm` is the slice of the backend
+  #    whose change makes the three SCM shards run on a PR (`SCM_RE`: the
+  #    scm API, service, module and model files, `tests/scm/`, an scm
+  #    migration, and the test-harness files every backend test depends
+  #    on); the six main backend shards never run on a `ci` PR (see
+  #    `test-backend`). A `ci-full` PR that is not docs-only, a merge-queue
+  #    entry that is not docs-only, a nightly (schedule) and a release
+  #    (workflow_dispatch; neither has a diff to filter: they test main's
+  #    head as a whole) report every area as changed, so the merge gate, the
+  #    queue, the nightly and the release gate on the full set. The alembic
+  #    gate above is deliberately NOT behind this: it is the fast check, and
+  #    it must run on every PR. The workflow file itself counts as every
+  #    area, or a change to it could never be exercised by the PR that makes
+  #    it. The nightly skips itself (every area false) when main's head is
+  #    the head the last green nightly tested: nothing merged, nothing to
+  #    test, about 200 job-minutes kept.
   #
   # 3. `skip_tests` (release input): the orchestrator dispatching a release
   #    can declare main's head already validated (a green merge-queue run on
@@ -290,11 +331,16 @@ jobs:
   #    in `backend_tests` (tests/scm/ only when the SCM shards do not run
   #    anyway). When the selection's estimated cost (per-file sums of the
   #    committed .test_durations, a file without history at the median
-  #    file) exceeds 3600 CPU-s it sets `backend_full=true` instead: the
-  #    six main shards and the SCM shards then run on that PR, and
-  #    `test-backend-changed` steps aside. The script prints the list.
-  #    Asserted by tests/test_ci_select_tests.py (the script) and
-  #    tests/test_ci_docs_only_filter.py (the step and the job gating).
+  #    file) exceeds 3600 CPU-s, the script writes no list and
+  #    `backend_tests` falls back to the PR's own changed test files
+  #    (point 4): the changed-tests job stays bounded, and the whole
+  #    selection runs under `ci-full` before merge. Until CI-MINUTES-CUT
+  #    (5 Oct 2026) the over-budget case ran the six main shards and the
+  #    SCM shards on the PR instead, which in a tightly coupled app was
+  #    most backend PRs: the "fast gate" was the full suite. The script
+  #    prints the list either way. Asserted by tests/test_ci_select_tests.py
+  #    (the script) and tests/test_ci_docs_only_filter.py (the step and the
+  #    job gating).
   #
   # This job does not run on a push to main at all (see the `push` trigger
   # comment): nothing downstream of it does either, so there is nothing to
@@ -315,6 +361,7 @@ jobs:
   changes:
     name: Changed areas
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     # Same gate as check-migration-heads above, and for the same reason: this
     # is the other root job (no `needs`), so skipping it here skips every job
     # that depends on it transitively (validate-backend, validate-mcp,
@@ -324,7 +371,17 @@ jobs:
     # else.
     if: >-
       github.event_name != 'push'
-      && (github.event_name != 'pull_request' || github.event.label.name == 'ci')
+      && (github.event_name != 'pull_request' || github.event.label.name == 'ci' || github.event.label.name == 'ci-full')
+    # Explicit, because the repo is going private: the PR file list needs
+    # pull-requests read and the nightly's last-green lookup needs actions
+    # read. With the account default at "restricted" both calls would fail,
+    # and the fail-safe below turns a failed call into every area changed:
+    # a `ci` run would then cost about 90 minutes instead of about 20 and
+    # the nightly would never skip, silently. contents read is the checkout.
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
@@ -332,21 +389,25 @@ jobs:
       scm: ${{ steps.filter.outputs.scm }}
       docs_only: ${{ steps.filter.outputs.docs_only }}
       # The import-based selection when the PR changes backend code (step
-      # `select`), else the changed test files alone. Ignored when
-      # backend_full is true: the shards run instead.
+      # `select`), else the changed test files alone (also the fallback when
+      # the selection is above its budget: the script writes no list then).
       backend_tests: ${{ steps.select.outputs.tests || steps.filter.outputs.backend_tests }}
-      backend_full: ${{ steps.select.outputs.full == 'true' }}
     steps:
       - name: Detect changed areas
         id: filter
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT: ${{ github.event_name }}
+          # The label just added (pull_request only): `ci` filters by area,
+          # `ci-full` counts every area as changed.
+          LABEL: ${{ github.event.label.name }}
           PR: ${{ github.event.pull_request.number }}
           # Release input (workflow_dispatch only; empty on every other event).
           SKIP_TESTS: ${{ inputs.skip_tests }}
           # push: the range main moved by. `before` is the zero SHA only on a
           # branch-creation push, which main never sees; guarded anyway.
+          # schedule: PUSH_AFTER is main's head, compared with the last
+          # green nightly's.
           PUSH_BEFORE: ${{ github.event.before }}
           PUSH_AFTER: ${{ github.sha }}
           # merge_group: the candidate merge result against the base it was
@@ -382,6 +443,21 @@ jobs:
             merge_group)
               files=$(compare "$MG_BASE" "$MG_HEAD") \
                 || { files=""; why="compare $MG_BASE...$MG_HEAD failed"; }
+              ;;
+            schedule)
+              # The nightly tests main's whole head, unless the last green
+              # nightly already tested this very head: then every area is
+              # false below and the test jobs skip. A failed lookup is the
+              # fail-safe direction (run everything), like every other
+              # `why`.
+              last=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/deploy.yml/runs?branch=main&event=schedule&status=success&per_page=1" \
+                       --jq '.workflow_runs[0].head_sha // ""') || last=""
+              if [ -n "$last" ] && [ "$last" = "$PUSH_AFTER" ]; then
+                why="main is still at $last, which the last green nightly tested"
+                nightly_done=true
+              else
+                why="$EVENT never skips: every area counts as changed"
+              fi
               ;;
             *)
               why="$EVENT never skips: every area counts as changed"
@@ -438,13 +514,25 @@ jobs:
             echo "release with skip_tests=true: no test job runs"
             exit 0
           fi
-          # A PR whose file list could not be fetched is treated like a push:
-          # every area changed. Before docs_only existed the failed call
-          # failed this job (and skipped every gate with it, red); a swallowed
-          # failure must never turn into an all-flags-false green run.
-          if [ "$EVENT" != "pull_request" ] || [ -n "$why" ]; then
+          # A nightly on a head the last green nightly already tested: no
+          # test job runs (see the `schedule` case above).
+          if [ "${nightly_done:-false}" = "true" ]; then
+            for area in backend frontend mcp scm; do echo "$area=false"; done | tee -a "$GITHUB_OUTPUT"
+            printf '%s\n' "backend_tests=" "backend_code=" >> "$GITHUB_OUTPUT"
+            echo "$why: no test job runs"
+            exit 0
+          fi
+          # A `ci-full` PR is the merge gate: every area counts as changed,
+          # like a merge-queue entry, and the changed-tests job has nothing
+          # to add (the shards run every file). A PR whose file list could
+          # not be fetched is treated the same way. Before docs_only existed
+          # the failed call failed this job (and skipped every gate with it,
+          # red); a swallowed failure must never turn into an all-flags-false
+          # green run.
+          if [ "$EVENT" != "pull_request" ] || [ "$LABEL" = "ci-full" ] || [ -n "$why" ]; then
             for area in backend frontend mcp scm; do echo "$area=true"; done | tee -a "$GITHUB_OUTPUT"
             printf '%s\n' "backend_tests=" "backend_code=" >> "$GITHUB_OUTPUT"
+            if [ -z "$why" ] && [ "$LABEL" = "ci-full" ]; then why="ci-full label, the merge gate"; fi
             echo "${why:-$EVENT is not a pull_request}: every area counts as changed"
             exit 0
           fi
@@ -460,7 +548,7 @@ jobs:
           # migration, and the harness every backend test depends on
           # (conftest, the Postgres fixture, bootstrap_env, requirements, the
           # exclusion list, the durations file). A backend change outside
-          # these is covered by the queue's full run, not by the PR.
+          # these is covered by the `ci-full` run, not by the `ci` run.
           SCM_RE='^(sorento_crm_backend/(app/(api/v1/scm|services/scm|modules/scm)/|app/models/scm|app/schemas/scm_|tests/scm/|tests/conftest\.py$|tests/_pg_fixture\.py$|tests/ci_excluded\.txt$|\.test_durations$|scripts/bootstrap_env\.py$|requirements\.txt$|alembic/versions/[^/]*scm)|\.github/workflows/deploy\.yml$)'
           {
             flag backend  '^(sorento_crm_backend/|\.github/workflows/deploy\.yml$)'
@@ -521,6 +609,7 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -610,6 +699,7 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs.mcp == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -709,13 +799,20 @@ jobs:
   # every collected test to exactly one group, so the three groups together
   # are the full tests/scm suite and no test runs twice or is dropped.
   #
-  # On a PR this runs only when SCM paths changed (`scm` flag, see `changes`);
-  # a merge-queue entry and a release run it regardless.
+  # On a `ci` PR this runs only when SCM paths changed (`scm` flag, see
+  # `changes`); a `ci-full` PR, a merge-queue entry, a nightly and a release
+  # run it regardless (`changes` sets every area there).
+  #
+  # timeout-minutes 60: a shard measured 10-16 min over 29 Sep-5 Oct; the
+  # cap is for a hung runner (the default is 6 hours, billed), sized like
+  # the main shards' (see test-backend). A job that never got a runner is a
+  # different thing, also there.
   test-backend-scm:
     name: Backend test suite - SCM (Postgres, xdist)
     needs: [changes]
-    if: needs.changes.outputs.scm == 'true' || needs.changes.outputs.backend_full == 'true'
+    if: needs.changes.outputs.scm == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -902,24 +999,49 @@ jobs:
   # file. Those tests run in a dedicated serial step below, on the `serial`
   # matrix entry only.
   #
-  # Never on a `pull_request` event (owner ruling 2026-09-29, fast PR gate):
-  # six shards at ~15 min each were ~60% of a PR run's ~190 job-minutes on
-  # the 20-concurrent-job Free plan. The suite runs for the merge-queue
-  # entry (the exact merge result) and for a release (workflow_dispatch
-  # without skip_tests). A skipped job still reports, as "skipped", which a
-  # ruleset's required status check accepts, so listing these six as
-  # required blocks nothing on the PR and gates the queue for real. The
-  # test files a PR changes do run on the PR: `test-backend-changed` below.
-  # One exception (CI-SPEED, 1 Oct 2026): a PR whose import-based selection
-  # exceeds 3600 estimated CPU-s (`backend_full`, point 5 of `changes`) runs these six
-  # shards, and the SCM shards, instead of the changed-files job.
+  # Never on a `ci`-labelled `pull_request` event (owner ruling 2026-09-29,
+  # fast PR gate): six shards at 18-24 min each were 59% of all minutes over
+  # 29 Sep-5 Oct 2026. The suite runs for a `ci-full` PR (the merge gate),
+  # the merge-queue entry (the exact merge result), the nightly and a
+  # release (workflow_dispatch without skip_tests). A skipped job still
+  # reports, as "skipped", which a ruleset's required status check accepts.
+  # The test files a `ci` PR changes, and the files that import what it
+  # changes, run on the PR: `test-backend-changed` below. The CI-SPEED
+  # exception (1 Oct 2026: a selection above 3600 CPU-s ran these six shards
+  # on the PR) is gone with CI-MINUTES-CUT (5 Oct 2026): it fired on most
+  # backend PRs and was the single biggest cost; the selection now runs in
+  # full under `ci-full` before merge instead.
+  #
+  # timeout-minutes 60: a shard measured 18-24 min typical, 29 min worst
+  # (run 37158487882, shards 1 and 6) over 29 Sep-5 Oct, and the cap is
+  # for a hung runner (the default is 6 hours, billed), not a target. It is
+  # twice the worst run because a cap at 35 cut a HEALTHY shard: on run
+  # 37369427779 shard 2 was at 94% with progress every 10-40 s when the
+  # cap fired at 33:55 of pytest (35:13 of job), a shard that took 22 min
+  # two days earlier. Run-to-run variance is about 1.6x, so every cap in
+  # this file is about twice the worst observed run time: 60 on the three
+  # backend test jobs, 20 on everything else (vitest's worst is 9 min). A
+  # hung shard still costs 60 billed minutes instead of 360.
+  #
+  # A `cancelled` job with no runner and no steps is NOT this cap. Run
+  # 37369427779 (the first `ci-full`, 5 Oct 2026) lost gitleaks, the
+  # type-check, three vitest shards, five of these shards and an SCM shard
+  # that way, each exactly 15 min after it was queued, whatever its cap
+  # (15 or 35): the check-run annotation reads "The job was not acquired by
+  # Runner of type hosted even after multiple attempts". That is GitHub
+  # giving up on finding a hosted runner while the account's 20 concurrent
+  # job slots were held by other PRs' runs; nothing in this file causes or
+  # cures it, and `CI gate (full)` goes red so the run is re-labelled
+  # rather than trusted. Read the annotation before blaming a cap (lesson
+  # 118 in LESSONS-LEARNT.md).
   test-backend:
     name: Backend test suite (Postgres, xdist)
     needs: [changes]
     if: >-
       needs.changes.outputs.backend == 'true'
-      && (github.event_name != 'pull_request' || needs.changes.outputs.backend_full == 'true')
+      && (github.event_name != 'pull_request' || github.event.label.name == 'ci-full')
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     # The suite is CPU-bound (~3 s of CPU per test across 9k tests) and a
     # standard runner has 4 vCPUs, so one job takes ~29 min no matter how the
     # database is tuned. Six runners in parallel, each still xdist across its
@@ -1156,19 +1278,27 @@ jobs:
   #
   # Since CI-SPEED (1 Oct 2026) the list is the import-based selection
   # (point 5 of `changes`): the changed test files plus every test file
-  # that imports a changed backend module, up to 3600 estimated CPU-s (above that the
-  # shards run instead and this job skips). So the run step splits like the
-  # shards: tests/scm and the rest in separate sessions, xdist `--dist
-  # loadfile` for the bulk, then the `serial_ddl` and tests/test_migration_*.py
-  # files serially.
+  # that imports a changed backend module, up to 3600 estimated CPU-s.
+  # Above that (CI-MINUTES-CUT, 5 Oct 2026) the list is the changed test
+  # files alone, so this job stays one runner and about 15 min at most, and
+  # the whole selection runs under `ci-full` before merge. So the run step
+  # splits like the shards: tests/scm and the rest in separate sessions,
+  # xdist `--dist loadfile` for the bulk, then the `serial_ddl` and
+  # tests/test_migration_*.py files serially. `ci` only: on `ci-full` the
+  # shards run every file and `changes` lists nothing here anyway.
+  #
+  # timeout-minutes 60: 3600 CPU-s under xdist on 4 vCPUs is about 15 min
+  # plus 2 min of setup; the cap is for a hung runner, sized like the
+  # shards' (see test-backend).
   test-backend-changed:
     name: Backend changed tests (Postgres)
     needs: [changes]
     if: >-
       github.event_name == 'pull_request'
+      && github.event.label.name == 'ci'
       && needs.changes.outputs.backend_tests != ''
-      && needs.changes.outputs.backend_full != 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -1311,6 +1441,8 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
+    # A shard measured about 8.5 min over 29 Sep-5 Oct.
+    timeout-minutes: 20
     # The FULL vitest suite (~950 files / ~10.5k tests) on a 2-vCPU runner was
     # the single longest gate (19.5 min). Split into 4 shards that run in
     # parallel matrix jobs instead of one job iterating serially; together
@@ -1364,6 +1496,7 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -1755,28 +1888,112 @@ jobs:
         run: |
           echo "Email notification skipped: set SMTP_SERVER, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD, OWNER_EMAIL secrets."
 
-  # Makes the `ci` label a one-shot trigger rather than a standing state: the
-  # instant a `pull_request labeled` event with label `ci` fires (which is
-  # also what let every other job above run this time), this job removes the
-  # label again. GitHub fires a fresh `labeled` event every time the label is
-  # ADDED, even if it was already present and removed since, so the
-  # orchestrator re-labels the PR to re-run CI against its current head - a
-  # push alone never does, per the trigger comment above. `always()` plus no
-  # `needs` means this runs independently of whether the gated jobs above
-  # passed or failed; the label removal itself must not block on their
-  # result.
+  # Makes the `ci` and `ci-full` labels one-shot triggers rather than a
+  # standing state: the instant a `pull_request labeled` event with one of
+  # them fires (which is also what let every other job above run this
+  # time), this job removes that label again. GitHub fires a fresh `labeled`
+  # event every time the label is ADDED, even if it was already present and
+  # removed since, so the orchestrator re-labels the PR to re-run CI against
+  # its current head - a push alone never does, per the trigger comment
+  # above. `always()` plus no `needs` means this runs independently of
+  # whether the gated jobs above passed or failed; the label removal itself
+  # must not block on their result.
   release-ci-label:
     name: Release ci label (one-shot trigger)
     runs-on: ubuntu-latest
-    if: always() && github.event_name == 'pull_request' && github.event.label.name == 'ci'
+    timeout-minutes: 20
+    if: always() && github.event_name == 'pull_request' && (github.event.label.name == 'ci' || github.event.label.name == 'ci-full')
     permissions:
       pull-requests: write
     steps:
-      - name: Remove ci label so a future add re-triggers CI
+      - name: Remove the ci or ci-full label so a future add re-triggers CI
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LABEL: ${{ github.event.label.name }}
         run: |
           gh pr edit "${{ github.event.pull_request.number }}" \
             --repo "${{ github.repository }}" \
-            --remove-label ci
+            --remove-label "$LABEL"
+
+  # One check that says whether the run as a whole passed, whatever the
+  # path filters skipped. Every test and validate job above is a `need`;
+  # `always()` makes this run after all of them, and the step fails unless
+  # every need is `success` or `skipped` (so failure, cancelled, the
+  # `abandoned` GitHub reports for a job it never found a runner for or a
+  # matrix with a capped shard, and any value it adds later all fail it),
+  # or when
+  # either root job did not succeed. A need that SKIPPED is fine: that is a
+  # path filter at work, and the test jobs only skip through `changes`,
+  # which must itself have succeeded. So a docs-only `ci` run reports this
+  # green with nothing but the fast gates, and a `ci-full` run reports it
+  # red when a shard fails.
+  #
+  # Two NAMES, one job: `CI gate` on a `ci` run, `CI gate (full)` on every
+  # run of the full suite (`ci-full`, a merge-queue entry, the nightly, a
+  # release). A ruleset reads the latest check run of a required name on
+  # the head commit, so a single name would let a green `ci` run stand in
+  # for a `ci-full` that never ran, or ran red before it (reviewer, 5 Oct
+  # 2026). Requiring `CI gate (full)` is therefore what makes a green
+  # `ci-full` on the head being merged a condition of the merge; the five
+  # fast-gate names the ruleset requires today do not (owner's call, not
+  # this file's). `always()` rather than `!cancelled()` on purpose: a run
+  # cancelled by the concurrency group then posts a red gate for the old
+  # head instead of a "skipped" one, which a ruleset would accept.
+  #
+  # Only on a `ci` / `ci-full` label, a merge-queue entry, a nightly or a
+  # release: never on another label (its run skips everything, and a green
+  # gate on it would be a lie) and never on a push to main (the fast gates
+  # alone, by owner decision). Asserted by test_ci_gate_* in
+  # sorento_crm_backend/tests/test_ci_docs_only_filter.py.
+  ci-gate:
+    name: ${{ (github.event_name == 'pull_request' && github.event.label.name == 'ci' && 'CI gate') || 'CI gate (full)' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs:
+      [
+        check-migration-heads,
+        pii-guard,
+        gitleaks,
+        changes,
+        validate-backend,
+        validate-mcp,
+        test-backend-scm,
+        test-backend,
+        test-backend-changed,
+        validate-frontend,
+        typecheck-frontend,
+      ]
+    if: >-
+      always()
+      && github.event_name != 'push'
+      && (github.event_name != 'pull_request' || github.event.label.name == 'ci' || github.event.label.name == 'ci-full')
+    steps:
+      - name: Fail when a needed job failed or was cancelled
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+
+          # Allow-list, not a deny-list: a need passes only as `success`, or
+          # as `skipped` (a path filter). GitHub reports more than
+          # failure/cancelled for a job that did not finish: run 37369427779
+          # (5 Oct 2026) handed this step `abandoned` for every job it never
+          # found a runner for AND for the matrix whose shard hit its cap,
+          # and a deny-list of failure/cancelled let the gate pass green on
+          # a run GitHub itself marked failure. Anything unlisted is red.
+          needs = json.loads(os.environ["NEEDS"])
+          bad = []
+          for job, info in needs.items():
+              result = info.get("result", "")
+              print(f"{job}: {result}")
+              if job in ("check-migration-heads", "changes"):
+                  if result != "success":
+                      bad.append(f"{job} {result or 'missing'} (a root job must succeed)")
+              elif result not in ("success", "skipped"):
+                  bad.append(f"{job} {result or 'missing'}")
+          if bad:
+              sys.exit("CI gate failed: " + ", ".join(bad))
+          print("CI gate passed: every needed job succeeded or was skipped by a path filter")
+          PY
 

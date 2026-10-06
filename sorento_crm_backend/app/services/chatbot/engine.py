@@ -65,6 +65,7 @@ from app.services.chatbot.usage import record_parser_usage
 # APPLY, the narrower, the plan, the router, the composer, the tail - and `turn_runtime`
 # is everything that has to touch a database or a tool on its behalf.
 from app.services.chatbot import label_catalog, language as language_mod, session_state, turn_runtime
+from app.services.chatbot import quick_reply_guard
 from app.services.chatbot.turn import pending as turn_pending
 from app.services.chatbot.turn import question as turn_question
 from app.services.chatbot.turn import state as turn_state
@@ -532,17 +533,28 @@ def _exact_codes_only(
     * a word or a bare number with no exact code is not a product at all: the describe /
       semantic matches the resolver found for "xx", "10" or a "2" typed over a
       did-you-mean listed a page of the catalogue.
+    STOCK-MISS-RENDER (owner report, 6 Oct 2026, prod turn #f763 "Srt 364-hp x 1 stock
+    available?"): the typed word and the resolver's code are compared the way the
+    resolver itself matched them - case AND separators folded (`turn.state.token_key`,
+    the same fold `resolve_gate._PRODUCT_FOLD` sends the token through and
+    `turn_runtime.unplaced_tokens` keys its own map by). Casefold alone never equalled
+    "srt 364-hp" to "srt364-hp", so the product the resolver HAD placed was dropped here,
+    the fetch was refused for having no subject, and the dealer was told "Couldn't find".
+    This filter still matches nothing of its own: every candidate it reads is one the
+    resolver placed, and `misses` / `ignored` are keyed the way `unplaced` already is.
+
     Returns the four resolver answers, or None when nothing changes."""
     def code_of(row: dict[str, Any]) -> str:
-        return str(row.get("canonical_code") or row.get("code") or row.get("raw") or "").strip().casefold()
+        return turn_state.token_key(row.get("canonical_code") or row.get("code") or row.get("raw") or "")
 
     tokens: list[tuple[str, str]] = []
     for e in parse_output.get("entities") or []:
         if not isinstance(e, dict) or e.get("hint") not in (None, "product"):
             continue
         typed = str(e.get("raw") or e.get("canonical_code") or "").strip()
-        if typed and typed.casefold() not in {t for t, _ in tokens}:
-            tokens.append((typed.casefold(), typed))
+        fold = turn_state.token_key(typed)
+        if fold and fold not in {t for t, _ in tokens}:
+            tokens.append((fold, typed))
     candidates = [c for c in resolved_candidates.get("product") or [] if isinstance(c, dict)]
     if not tokens or not candidates:
         return None
@@ -569,12 +581,16 @@ def _exact_codes_only(
     if len(kept) == len(candidates) and not misses and not ignored:
         return None
     kinds = dict(resolved_kinds)
-    for fold, _typed in tokens:
-        if fold in kinds and isinstance(kinds[fold], dict):
-            row = {k: v for k, v in kinds[fold].items() if k != "product"}
-            if per_token.get(fold):
-                row["product"] = per_token[fold]
-            kinds[fold] = row
+    # `resolved_kinds` is keyed by the resolver's OWN token (`resolve_gate._token_of`:
+    # separators dropped, case kept - "Srt364hp"), so the join folds that side too.
+    for key, hits in list(kinds.items()):
+        fold = turn_state.token_key(key)
+        if fold in per_token or fold in misses or fold in ignored:
+            if isinstance(hits, dict):
+                row = {k: v for k, v in hits.items() if k != "product"}
+                if per_token.get(fold):
+                    row["product"] = per_token[fold]
+                kinds[key] = row
     compatible = [
         e
         for e in compatible_entities
@@ -4382,6 +4398,9 @@ def _run_stages_body(  # noqa: PLR0915
     # before APPLY reads the verdict: the category keeps what the thing IS, a colour or
     # a size becomes a `specification` entity, and nothing is a document type unless it
     # is on the list.
+    # ATTACH-GROUNDING-TYPO: `ctx.parse._parser_raw` is the verdict as it stood before
+    # grounding rewrote the entities.
+    parser_verdict = copy.deepcopy(verdict)
     # REPORT-ENGINE 1b code review S3: a sales ranking's brand / sales agent / category
     # words are the lane's own (matched against their tables, an exact name winning alone),
     # so grounding never splits one ("ZZT SINK" into the class SINK plus a spec word).
@@ -4735,7 +4754,7 @@ def _run_stages_body(  # noqa: PLR0915
             contact=_contact_block(envelope, known_phone),
             text=_tf_message(envelope),
             session=ctx_session,
-            parse={"output": parsed_output, "_parser_raw": verdict},
+            parse={"output": parsed_output, "_parser_raw": parser_verdict},
             access=access,
             media=getattr(envelope, "media", None),
         )[0]["json"]["ctx"]
@@ -4803,6 +4822,9 @@ def _run_stages_body(  # noqa: PLR0915
         predicate: dict[str, Any] | None = None
         resolved_candidates: dict[str, list[dict[str, Any]]] = {}
         unplaced_tokens: dict[str, str] = {}
+        # RESOLVER-TOKEN-CAP: the codes the resolver cut at its ceiling and never looked
+        # up, as typed - named by the reply's "Not checked:" line, never silently dropped.
+        not_checked_tokens: dict[str, str] = {}
         spec_tier = False
         # R2 (PLAN-chatbot-answer-half-reattach.md): the raw `resolve_gate.run` payload
         # (`resolved`, `gate`, `aggregate`, `tier_gate`, `_exit_kind`), carried through
@@ -4979,6 +5001,7 @@ def _run_stages_body(  # noqa: PLR0915
             predicate = resolve_outcome.predicate
             resolved_candidates = resolve_outcome.resolved_candidates
             unplaced_tokens = resolve_outcome.unplaced_tokens
+            not_checked_tokens = resolve_outcome.not_checked
             spec_tier = resolve_outcome.spec_tier
             resolver_payload = resolve_outcome.payload
             # Every turn of availability access, not only a stock / ETA one: a code the
@@ -5599,6 +5622,8 @@ def _run_stages_body(  # noqa: PLR0915
                     # MULTI-CODE-DYM: each unplaced token's did-you-mean, the same
                     # candidates a lone miss of that token offers.
                     unplaced_suggestions=_unplaced_suggestions(resolver_payload, unplaced_tokens),
+                    # RESOLVER-TOKEN-CAP: the codes the resolver never looked up, as typed.
+                    not_checked=list(not_checked_tokens.values()),
                     # R6 (fix round 2): so a null `routing.suggested_team` inside the
                     # per-domain fetch context gets the same domain-aware fill this
                     # turn's own `ctx.parse.output` already got above.
@@ -7155,20 +7180,27 @@ def _quick_replies_of(answer: Any) -> str | None:
     if answer.question is None:
         return None
     labels = [str(o.get("label")) for o in answer.question.options if o.get("label")]
-    return turn_pending.quick_replies(getattr(answer.question, "kind", None), labels)
+    # QUICK-REPLY-NAMES (owner rule, 6 Oct 2026): `turn_pending.quick_replies` keeps
+    # the string only for the fixed-option kinds; every roster kind's labels (customer,
+    # product, member, company names, ranked codes) are the numbered text list alone.
+    return turn_pending.quick_replies(
+        getattr(answer.question, "kind", None), labels, options=list(answer.question.options)
+    )
 
 
 def _reply_of(answer: Any) -> dict[str, Any]:
     """The three fields every `Answer`-shaped reply derives the same way: the text,
     the quick replies (through `_quick_replies_of`, so a suppressed kind stays
-    suppressed at every caller), and the roster a numbered follow-up resolves
-    against. Shared by `_run_answer`'s persisted reply and `_answer_actions`'s own
-    `send_message` action, which each add their own remaining key(s) on top
-    (`attachments_src` vs `kind`/`dry_run`) - one seam, so a fix here reaches both.
+    suppressed at every caller, then through `quick_reply_guard.guard`, the cap /
+    length / duplicate net every outgoing set crosses - QUICK-REPLY-NAMES), and the
+    roster a numbered follow-up resolves against. Shared by `_run_answer`'s persisted
+    reply and `_answer_actions`'s own `send_message` action, which each add their own
+    remaining key(s) on top (`attachments_src` vs `kind`/`dry_run`) - one seam, so a
+    fix here reaches both.
     """
     return {
         "text": getattr(answer, "text", "") or None,
-        "quick_replies": _quick_replies_of(answer),
+        "quick_replies": quick_reply_guard.guard(_quick_replies_of(answer), where="answer"),
         "result_set": list(answer.question.options) if answer.question is not None else [],
     }
 
@@ -8000,11 +8032,18 @@ def _seal_send(action: dict[str, Any], sealed: dict[str, Any]) -> dict[str, Any]
     # its OWN quick replies (the escalation clarifies name the teams so the answer is a
     # tap) must not have them erased by a turn whose tail composed none. Same rule for
     # `result_set`, for the same reason.
+    # QUICK-REPLY-NAMES: the sealed value already crossed the guard in `run_tail`; the
+    # lane's own fallback crosses it here, so a set the tail dropped as too long or too
+    # many cannot come back through the action the lane hand-built.
     sealed_replies = sealed.get("quick_replies")
     sealed_set = sealed.get("result_set")
     return {
         **action,
-        "quick_replies": sealed_replies if sealed_replies else action.get("quick_replies"),
+        "quick_replies": (
+            sealed_replies
+            if sealed_replies
+            else quick_reply_guard.guard(action.get("quick_replies"), where="lane action")
+        ),
         "result_set": sealed_set if sealed_set else action.get("result_set"),
     }
 
@@ -8854,11 +8893,15 @@ def run_tail(
     composed = reply_ladder.compose_reply(outcome)
     if question is None:
         question = _question_offered(ctx, values, outcome, composed)
-    quick_replies = composed.get("quick_replies")
+    # QUICK-REPLY-NAMES: the one seam every tail-composed set leaves through - at most
+    # three buttons, none over 20 characters, no duplicates. Guarded BEFORE the lane
+    # fallback is chosen, so a set the guard drops falls back the same way an absent one
+    # does and `_seal_send`'s own guarded fallback agrees with the persisted reply.
+    quick_replies = quick_reply_guard.guard(composed.get("quick_replies"), where="tail")
     if jsc.truthy(lane_quick_replies) and not jsc.truthy(quick_replies):
         # A lane may have composed quick replies of its own before the tail ran: the
         # escalation clarifies name the teams so the answer is a tap.
-        quick_replies = lane_quick_replies
+        quick_replies = quick_reply_guard.guard(lane_quick_replies, where="tail lane")
     barred_profile = profile
     if turn_state.escalation_barred(barred_profile):
         # ESCALATION-CONTROL: the same backstop `_run_answer` runs, for the lanes this
@@ -8875,6 +8918,8 @@ def run_tail(
             quick_replies = None
     reply = {
         "text": composed.get("text"),
+        # Already guarded above; the persisted reply, the trace fact and the send action
+        # all read this one value.
         "quick_replies": quick_replies,
         "result_set": composed.get("result_set") or [],
         "attachments_src": _attachments_src(values["answer"]),
