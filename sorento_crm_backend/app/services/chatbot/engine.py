@@ -6024,6 +6024,11 @@ def _run_stages_body(  # noqa: PLR0915
                             if listed_to_the_limit
                             else min(asked, business_answer.SET_LIST_MAX)
                         ),
+                        # ATTACH-SET-BRAND-FOLLOWUP: the document type this answer
+                        # fetched under is part of the set's description.
+                        attachment_type_ids=(
+                            envelopes[0].get("attachment_type_ids") if envelopes else None
+                        ),
                     )
                 elif predicate is not None and plan.fetch and spec_tier and (
                     predicate.get("other_brands") or predicate.get("set_brands")
@@ -6039,6 +6044,9 @@ def _run_stages_body(  # noqa: PLR0915
                         ),
                         shown=qualifying,
                         offer_only=True,
+                        attachment_type_ids=(
+                            envelopes[0].get("attachment_type_ids") if envelopes else None
+                        ),
                     )
                 else:
                     state_out.focus.set_page = None

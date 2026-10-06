@@ -2902,6 +2902,17 @@ def make_tool_runner(
                 {"uuid": pid, "entity_type": "product", "canonical_code": None}
                 for pid in page_ids
             ]
+            # ATTACH-SET-BRAND-FOLLOWUP (owner hand test, 6 Oct 2026): the document type the
+            # first answer fetched under is part of the carried set's description
+            # (`set_page_carry`), and it rides the page's fetch the same way it rode the
+            # first one - as an `attachment_type` entity `fetch.entity_ids_transformer`
+            # turns into `attachment_type_ids`. Without it "sorento" after "which tap has
+            # technical drawing" listed every file of the Sorento taps, photos first,
+            # under a header that still said technical drawings.
+            entities += [
+                {"uuid": type_id, "entity_type": "attachment_type", "canonical_code": None}
+                for type_id in set_page_attachment_type_ids(carry)
+            ]
         elif spec.filters.get("task"):
             # Ported from PR #1118 (not merged): an OPEN TASK's own fetch is about the
             # TASK's subjects, all of them (`turn/task.py::StockQtyTask.to_fetch`): a
@@ -3297,8 +3308,17 @@ def set_page_carry(
     access_levels: Any = None,
     shown: int = 0,
     offer_only: bool = False,
+    attachment_type_ids: Any = None,
 ) -> dict[str, Any] | None:
     """The set a too-long counted answer asked about, for `focus.set_page`.
+
+    `attachment_type_ids` (ATTACH-SET-BRAND-FOLLOWUP, owner hand test 6 Oct 2026) is the
+    same rule as `access_levels` one leg over: the `attachment_types` rows the first
+    answer's fetch was narrowed by (the envelope's own `attachment_type_ids`, off the
+    resolved `attachment_type` entities) belong INSIDE `set_key`. The `require` leg
+    ("technical drawing") recounts the set, but only the ids say which files to list,
+    and a page that carried none fetched every file of the paged products. Written only
+    when the fetch had one; a carry without the key pages exactly as before.
 
     `offer_only` (owner hand test of rounds 4 to 6 on PR #833, item 6): a set listed in
     full whose reply closed with "Other brands with stock: Cabana 3, Mocha 2. Name one to
@@ -3370,7 +3390,20 @@ def set_page_carry(
         key["other_brands"] = offered
     if offer_only:
         key["offer_only"] = True
+    type_ids = [jsc.js_string(i) for i in jsc.array(attachment_type_ids) if _UUID_TEXT.match(jsc.js_string(i))]
+    if type_ids:
+        key["attachment_type_ids"] = type_ids
     return {"set_key": key}
+
+
+def set_page_attachment_type_ids(carry: Any) -> list[str]:
+    """The `attachment_types` uuids a carried set was fetched under (`set_page_carry`),
+    or `[]` for a carry written without any - real uuids only, the same bar
+    `fetch.entity_ids_transformer` applies before it builds `attachment_type_ids`."""
+    if not isinstance(carry, dict):
+        return []
+    key = carry.get("set_key") if isinstance(carry.get("set_key"), dict) else {}
+    return [jsc.js_string(i) for i in jsc.array(key.get("attachment_type_ids")) if _UUID_TEXT.match(jsc.js_string(i))]
 
 
 #: The verdict key `with_brand_from_offer` sets: the offered brand the message chose.
@@ -4245,6 +4278,16 @@ def envelope_of(
         # ATTACHMENT-MULTI R3: the document types this fetch asked for, `{name, keys}`
         # (`attachment_type_labels`), so the composer can name a product lacking one.
         "attachment_types": list(attachment_types or []),
+        # ATTACH-SET-BRAND-FOLLOWUP: the same types by uuid, exactly what the fetch sent as
+        # `attachment_type_ids`, so a counted set's carry (`engine.py` -> `set_page_carry`)
+        # records the document type its page must fetch under.
+        "attachment_type_ids": [
+            jsc.js_string(e.get("uuid"))
+            for e in entities
+            if isinstance(e, dict)
+            and jsc.nullish_str(e.get("entity_type")).strip().lower() == "attachment_type"
+            and _UUID_TEXT.match(jsc.js_string(e.get("uuid")))
+        ],
         "figures": figures,
         "files": [f for f in files if isinstance(f, dict)] if isinstance(files, list) else [],
         "miss": [] if has_result else codes,
