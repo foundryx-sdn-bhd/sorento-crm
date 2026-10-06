@@ -333,7 +333,8 @@ class ProductService:
         ``chat_visible`` (ROGUE-CONVO-REVIEW PR-1, owner ruling Q1, 6 Oct 2026) is the
         chatbot's own read: the predicate every other chat-facing product read already
         applies (`Product.chat_searchable_products()`: the product's `is_searchable` and
-        its category's) AND `is_active`. A dealer who typed "product" was shown "FOR
+        its category's) AND, on an unscoped list (no `product_ids`), `is_active`. A
+        dealer who typed "product" was shown "FOR
         ACCOUNT DEPARTMENT ONLY (DISBURSEMENT)", a masked "****" description and
         discontinued rows, because the resolver honours the flag and this list did not.
         Off by default: the admin list is byte-identical. The contact's brand bound is
@@ -384,7 +385,13 @@ class ProductService:
             from app.models.product import chat_searchable_products
 
             filters.append(chat_searchable_products())
-            filters.append(Product.is_active.is_(True))
+            if not product_ids:
+                # `is_active` bounds the UNSCOPED list only: a code the customer named
+                # resolves whether or not the product is still active (the resolver
+                # returns it with `display.is_active`), and the answer says so; hiding
+                # the row here would turn "<discontinued code> price" into a miss. The
+                # owner's Q1 ruling was about the arbitrary list.
+                filters.append(Product.is_active.is_(True))
 
         # Base / Variant / All variant-graph filter.
         if variant_filter == "base":

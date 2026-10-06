@@ -184,8 +184,8 @@ def get_products(
         False,
         description=(
             "Chatbot read: only products the chatbot may answer with (the product's and "
-            "its category's `is_searchable` not false) that are active. The admin list "
-            "never sends it and is unchanged."
+            "its category's `is_searchable` not false); an unscoped list (no product_ids) "
+            "is also limited to active rows. The admin list never sends it and is unchanged."
         ),
     ),
     sort: Optional[str] = Query("created_at"),

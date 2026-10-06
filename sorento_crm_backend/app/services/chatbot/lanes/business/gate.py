@@ -155,11 +155,11 @@ ALLOWS_EMPTY: dict[str, bool] = {
 }
 
 #: ROGUE-CONVO-REVIEW PR-1 (owner ruling Q2, 6 Oct 2026): the domains whose fetch the
-#: ENGINE refuses outright when nothing scopes it (no entity with a uuid, no filter, no
-#: date window, no predicate block, no `INTENTS_ALLOWING_EMPTY` intent), answered with the
-#: scope sentence. Read by `turn_runtime.make_tool_runner` (the no-subject probe and the
-#: R6 "named a token and none placed" guard) and `turn/apply._refuses_empty_subject`: one
-#: source, three readers. `inventory` is the hotfix-22-Sep row; `master_products` is the
+#: ENGINE refuses outright when nothing scopes it, answered with the scope sentence. Two
+#: readers, one source: `turn_runtime.make_tool_runner`'s no-subject probe (no entity with
+#: a uuid, no predicate block, intent not in `INTENTS_ALLOWING_EMPTY`) and
+#: `turn/apply._refuses_empty_subject` (the multi-domain fan-out: no entity, no filter, no
+#: date window). `inventory` is the hotfix-22-Sep row; `master_products` is the
 #: measured second domain (a dealer's one word "product" listed 50 arbitrary rows). NOT
 #: every `ALLOWS_EMPTY` False row: the full chatbot suite measured that `sales`, `order` and
 #: `promotion` asks with no entity are real whole-book or focus-driven asks with their own

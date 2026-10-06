@@ -8,9 +8,9 @@ that missed. Both reached `crm_master_products_list` with no ids, and the route'
 page of 50 arbitrary products went out - "FOR ACCOUNT DEPARTMENT ONLY (DISBURSEMENT)", a
 masked "****" description and discontinued rows among them.
 
-Rulings (via crew): Q2, a domain-level refuse-empty read off `gate.ALLOWS_EMPTY` (one
-source, not a second list in the engine) answered with the inventory scope sentence worded
-for products; Q1, the chatbot's list applies `is_searchable` (product and category, the
+Rulings (via crew): Q2, a domain-level refuse-empty read off one constant beside the gate's
+own matrix (`gate.REFUSES_EMPTY_FETCH`, not a second list in the engine) answered with the
+inventory scope sentence worded for products; Q1, the chatbot's list applies `is_searchable` (product and category, the
 predicate the resolver already honours), `is_active`, and the contact's brand bound (the
 session criterion `set_brand_scope` stamps from `contact_id` + `space_id`, which the fetch
 builder already forwards on every tool call - proven here, not built).
@@ -122,7 +122,7 @@ def _products_calls(calls: list[tuple[str, dict[str, Any]]]) -> list[dict[str, A
 
 class TestABareProductAskNeverListsTheCatalogue:
     """AC-RC-A1 / A2: zero resolved entities, no filter, no date window, no broaden, in a
-    domain whose `ALLOWS_EMPTY` row is False - the same question `inventory` already asks."""
+    domain of `gate.REFUSES_EMPTY_FETCH` - the same question `inventory` already asks."""
 
     def test_the_products_tool_is_never_called(self, session_factory, monkeypatch) -> None:
         _seed_contact_and_get(session_factory)
@@ -189,9 +189,31 @@ class TestControlsAroundTheAsk:
         assert products[0].get("chat_visible") is True, products[0]
         assert products[0].get("contact_id") and products[0].get("space_id"), products[0]
 
+    def test_a_multi_domain_ask_with_no_subject_refuses_the_product_leg_only(
+        self, session_factory, monkeypatch
+    ) -> None:
+        """The fan-out seam (`turn/apply._refuses_empty_subject`, the second reader): "product
+        and incoming?" with nothing to scope either leg. The product leg is refused outright
+        (never an unfiltered list); the incoming leg (`ALLOWS_EMPTY` True, lists the book)
+        still runs."""
+        _seed_contact_and_get(session_factory)
+        mcp_call, calls = _double()
+        result = _run_turn_engine(
+            session_factory, monkeypatch,
+            qf=_product_ask(
+                domain_hint=None, intent_hint=None,
+                asks=[{"domain": "master_products"}, {"domain": "incoming"}],
+            ),
+            text_body="product and incoming?", msg_id=f"zzt-a2multi-{uuid.uuid4().hex[:8]}", mcp_call=mcp_call,
+        )
+        assert result.status == "done", result.error
+        assert _products_calls(calls) == [], _products_calls(calls)
+        assert any(name.startswith("crm_incoming") for name, _args in calls), calls
+
     def test_a_bare_po_ask_still_lists_the_open_book(self, session_factory, monkeypatch) -> None:
         """`ALLOWS_EMPTY["purchase_order"]` is True on purpose (PLAN-po-spo-warehouse-29sep
-        W1): the refusal is keyed on the dict, so this ask still reaches a PO tool."""
+        W1) and the domain is not in `REFUSES_EMPTY_FETCH`, so this ask still reaches a PO
+        tool."""
         _seed_contact_and_get(session_factory)
         mcp_call, calls = _double()
         result = _run_turn_engine(
@@ -266,6 +288,26 @@ class TestTheChatbotListShowsOnlyWhatItMayAnswerWith:
             prefix, codes = _seed_visibility_world(db)
             chat = ProductService(db).list_products(query=prefix, chat_visible=True, limit=50)
             assert _listed(chat) == {codes["ok"]}, _listed(chat)
+
+    def test_service_a_named_inactive_code_is_still_answered(self) -> None:
+        """A code the customer named resolves whether or not the product is active, so the
+        chat read keeps an inactive row the call asks for by id; only the unscoped list is
+        bounded to active rows. A flagged (`is_searchable=False`) row is out even by id: the
+        resolver never places it, and the list agrees."""
+        from app.models.product import Product
+        from app.services.product_service import ProductService
+
+        with blank_session() as db:
+            set_company_scope(db, frozenset({DEFAULT_COMPANY_ID}))
+            prefix, codes = _seed_visibility_world(db)
+            ids = {
+                row.product_code: str(row.id)
+                for row in db.query(Product).filter(Product.product_code.in_(list(codes.values()))).all()
+            }
+            by_id = ProductService(db).list_products(
+                product_ids=[ids[codes["inactive"]], ids[codes["flagged"]]], chat_visible=True, limit=50
+            )
+            assert _listed(by_id) == {codes["inactive"]}, _listed(by_id)
 
     def test_service_admin_list_still_returns_every_row(self) -> None:
         from app.services.product_service import ProductService

@@ -2402,7 +2402,7 @@ def _narrow_and_plan(
                 # incoming and PO", D5(b)'s own scenario - main's own `ALLOWS_EMPTY`
                 # is read at exactly this fan-out seam, `gate.py`'s own per-domain
                 # loop over an asks-shaped verdict). Refused outright rather than run
-                # broad (`_REFUSES_EMPTY_SUBJECT`'s own docstring); the OTHER domains
+                # broad (`_refuses_empty_subject`'s own comment); the OTHER domains
                 # this turn asked about (D5(b)'s own incoming/PO, allowed broad by
                 # main's design) still fetch normally.
                 #

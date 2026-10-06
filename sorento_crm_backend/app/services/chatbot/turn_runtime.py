@@ -3003,21 +3003,8 @@ def make_tool_runner(
         # old `and bool(entities)` was standing in for, and got wrong for the case
         # where nothing survived to be counted at all.
         #
-        # ROGUE-CONVO-REVIEW PR-1 (owner ruling Q2, 6 Oct 2026): the domain set is the
-        # gate's own `REFUSES_EMPTY_FETCH` plus `incoming` (R6's original pair kept
-        # `incoming`, whose `ALLOWS_EMPTY` row is True because a bare "incoming?" lists
-        # the book, yet a NAMED code that missed must still not sweep it). A dealer typed "srtwc-8318"
-        # while a kind_pick was open; the token missed, `master_products` was neither
-        # here nor in the no-subject probe below, and `crm_master_products_list` ran
-        # with no ids and listed 50 arbitrary products under "I could not find
-        # srtwc-8318". This guard and the probe below MUST read the same domain set:
-        # the probe excludes `would_be_unfiltered` so a named-but-missed token keeps
-        # its own "Couldn't find" wording and never gets the scope sentence (reviewer
-        # S1 below); widening the probe alone would have handed it that sentence. The
-        # set is deliberately not every `ALLOWS_EMPTY` False row: see the constant's own
-        # comment for the measurement.
         would_be_unfiltered = (
-            (domain == "incoming" or domain in gate_mod.REFUSES_EMPTY_FETCH)
+            domain in ("inventory", "incoming")
             and bool(unplaced)
             and all(_entity_is_unplaced(e, unplaced) for e in entities)
         )
@@ -3051,7 +3038,12 @@ def make_tool_runner(
         # fell through to the same empty fetch. The probe now asks the SAME question
         # for every domain in `gate.REFUSES_EMPTY_FETCH` (one source, beside the gate's
         # own `ALLOWS_EMPTY`; not a second list here), and the scope sentence takes its
-        # noun from `answer._SCOPE_WORD` ("every product we have").
+        # noun from `answer._SCOPE_WORD` ("every product we have"). A typed code that
+        # missed in `master_products` lands here too (no uuid, nothing unplaced the R6
+        # guard above reads for this domain): the fragment carries `scope_gate`, and
+        # `not_found_error_message`'s own `needs_scope ... and not has_unresolved` keeps
+        # the ordinary "Couldn't find" wording for it (measured: the reply is identical
+        # with and without widening the R6 guard, so that guard stays inventory/incoming).
         #
         # A predicate block IS a filter (the described-set ask, "which taps have
         # stock"), so a turn carrying one is never refused here.
