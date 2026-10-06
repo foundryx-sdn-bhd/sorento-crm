@@ -5083,7 +5083,10 @@ def _run_stages_body(  # noqa: PLR0915
                 # Reviewer round 6, S1: on a domain whose gate permits a broad query
                 # (`incoming`: "no entities; 'incoming' permits broad query") the gate
                 # PASSED and only the stray word's zero set made the exit `not_found`;
-                # the same exit, the same rule, the same subject.
+                # the same exit, the same rule, the same subject. Applied whatever the
+                # gate's reason (reviewer round 7, N1): under the ruling a stray carried
+                # word never gates the product lookup, so any `not_found` exit it earned
+                # is passed here, the "no entities and" arm having been passed above.
                 if isinstance(resolver_payload, dict) and resolver_payload.get("_exit_kind") == "not_found":
                     resolver_payload = {**resolver_payload, "_exit_kind": "continue"}
                 after_gate = ((resolver_payload or {}).get("gate") or {}).get("gate_passed")
