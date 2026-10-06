@@ -3871,20 +3871,7 @@ def not_found_error_message(
             # production's did-you-mean, and it has to be reachable: `build_suggest_offer`
             # skips its own D1 candidates entirely whenever a clarify fired here, so the
             # set answer does not merely come FIRST, it silences the other one.
-            # ROGUE-CONVO-REVIEW (owner ruling Q4 and the 6 Oct "miss line prints the
-            # typed text" ruling): the same four answers are false when THIS message's own
-            # product token is unplaced, whatever the set reader made of the words around
-            # or inside it. "Srt-hp" (no digit, so read as a description) came back as
-            # "Here's what you want: srt / Couldn't find: "srt"" - the reader's first
-            # unrecognised word, not the dealer's token - and a pasted catalogue line the
-            # same way over its class words (prod turns 11 and 4). Such a miss falls through
-            # to the product-code miss below, which quotes the token as typed
-            # (`label_token` -> `raw_of_token`).
-            described_set_answers = (
-                isinstance(predicate, dict)
-                and not _unplaced_token_has_neighbours(r, g)
-                and not product_token_missed
-            )
+            described_set_answers = isinstance(predicate, dict) and not _unplaced_token_has_neighbours(r, g)
             if jsc.truthy(require_specific):
                 escalate_message = jsc.get(g, "gate_clarification")
             elif described_set_answers and "schemes_on_file" in predicate:
@@ -3935,6 +3922,26 @@ def not_found_error_message(
                 # as lines either; a word said as the product type is named with its kind
                 # ("Couldn't find: water tap basin (product type)").
                 terms = [jsc.js_string(t) for t in jsc.array(jsc.get(predicate, "unrecognized_terms")) if jsc.truthy(t)]
+                # ROGUE-CONVO-REVIEW (owner ruling, 6 Oct 2026: the miss line prints the
+                # TYPED text, never a folded token or a word derived from it): when THIS
+                # message's own product token is what missed, the reader's unrecognised
+                # words are fragments of that token ("Srt-hp" has no digit, so it was read
+                # as a description, split into content words, and came back as "Here's
+                # what you want: srt / Couldn't find: "srt"", prod turn 11; a pasted
+                # catalogue line the same way over its class words). The structure stays
+                # (fix round 9/10 on PR #833: "I want that structure to stay", and a typed
+                # phrase such as "water tap" IS its own term); only the words are the
+                # dealer's own.
+                if product_token_missed:
+                    typed_misses = [
+                        jsc.js_string(jsc.get(e, "raw")).strip()
+                        for e in entities_list
+                        if jsc.get(e, "hint") in (None, "product")
+                        and jsc.truthy(jsc.get(e, "raw"))
+                        and _type_norm(jsc.get(e, "raw")) in unresolved_keys
+                    ]
+                    if typed_misses:
+                        terms = list(dict.fromkeys(typed_misses))
                 type_raws = [
                     jsc.js_string(jsc.get(e, "raw")).strip()
                     for e in entities_list

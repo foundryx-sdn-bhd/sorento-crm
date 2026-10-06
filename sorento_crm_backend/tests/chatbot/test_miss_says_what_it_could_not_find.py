@@ -245,10 +245,12 @@ class TestAMissNeverListsSetMembersAsWhatYouWant:
             predicate={"qualifying_total": 0, "unrecognized_terms": ["srt"], "require": {"stock": True}},
         )
         rendered = _rendered(out)
-        assert "Here's what you want" not in rendered, rendered
+        # The #833 structure stays (a typed phrase that binds nothing is its own term,
+        # `test_lane_require.test_unknown_term_clarifies_with_nearest_names`); the words
+        # are the dealer's, not the reader's fragments.
+        assert "Here's what you want: Srt-hp\n\nCouldn't find: \"Srt-hp\"." in rendered, rendered
         assert '"srt"' not in rendered, rendered
         assert "srthp" not in rendered.lower(), rendered
-        assert 'Couldn\'t find: "Srt-hp" (product).' in rendered, rendered
 
     def test_set_members_read_off_the_token_itself_never_count_as_placing_it(self) -> None:
         """A one-word token the parser tagged `product` that the spec tier read as a class
@@ -329,19 +331,23 @@ class TestAMissIsNamedAsTypedOnTheDealerConsole:
     token and nothing the set reader derived from it."""
 
     def test_a_word_shaped_product_token_is_named_as_typed(self, console) -> None:
-        """Turn 11 as typed. On main: 'Here's what you want: srt / Couldn't find: "srt".'"""
+        """Turn 11 as typed. On main: 'Here's what you want: srt / Couldn't find: "srt".'
+        The structure is the described-set miss's own (fix round 9 on PR #833); the words
+        are the dealer's."""
         c = console()
         out = c.say("Srt-hp", stock(product("Srt-hp")))
-        assert out == f'Couldn\'t find: "Srt-hp" (product).\n\n{REFER}', out
+        assert out == f"Here's what you want: Srt-hp\n\nCouldn't find: \"Srt-hp\".\n\n{REFER}", out
         assert c.stock_calls == [], c.stock_calls
 
     def test_a_pasted_catalogue_line_is_named_as_typed_and_carries_no_set(self, console) -> None:
-        """Turn 4 as typed. On main the reader's class words were both the header and the
-        miss ('Here's what you want: sorento one piece washdown toilet / Couldn't find:
-        "sorento one piece washdown toilet"')."""
+        """Turn 4 as typed, on a catalogue whose vocabulary reads none of the line's words.
+        On main the reader's class words were both the header and the miss ('Here's what
+        you want: sorento one piece washdown toilet / Couldn't find: "sorento one piece
+        washdown toilet"')."""
         c = console()
         out = c.say(DESCRIPTION_LINE, stock(product(DESCRIPTION_LINE)))
-        assert out == f'Couldn\'t find: "{DESCRIPTION_LINE}" (product).\n\n{REFER}', out
+        assert out == f"Here's what you want: {DESCRIPTION_LINE}\n\nCouldn't find: \"{DESCRIPTION_LINE}\".\n\n{REFER}", out
+        assert "sorento one piece washdown toilet" not in out, out
         assert c.state["focus"]["set_page"] is None, c.state["focus"]
         assert c.stock_calls == [], c.stock_calls
 
