@@ -103,8 +103,8 @@ def test_out_of_scope_codes_with_two_brands_in_scope(db, world) -> None:
 
 
 def test_brand_predicate_fails_a_null_brand(db, world) -> None:
-    """Q1: `brand_col IN scope` never matches NULL."""
-    pred = _svc().brand_predicate(frozenset({world.mocha.id}), Product.brand_id)
+    """Q1: inside a restricted company (SRT owns MOCHA) a NULL brand never matches."""
+    pred = _svc().brand_predicate(frozenset({world.mocha.id}), Product.brand_id, Product.company_id)
     ids = {
         p.product_code
         for p in db.query(Product).filter(Product.product_code.in_(list(world.codes.values()))).filter(pred)

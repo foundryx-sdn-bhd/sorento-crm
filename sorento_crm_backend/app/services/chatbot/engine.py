@@ -4403,6 +4403,9 @@ def _run_stages_body(  # noqa: PLR0915
     # before APPLY reads the verdict: the category keeps what the thing IS, a colour or
     # a size becomes a `specification` entity, and nothing is a document type unless it
     # is on the list.
+    # ATTACH-GROUNDING-TYPO: `ctx.parse._parser_raw` is the verdict as it stood before
+    # grounding rewrote the entities.
+    parser_verdict = copy.deepcopy(verdict)
     with _session(session_factory) as grounding_db:
         verdict, grounding_notes = grounding.ground(
             grounding_db, verdict, message=latest_user_message.split("\n", 1)[0] if isinstance(latest_user_message, str) else None
@@ -4743,7 +4746,7 @@ def _run_stages_body(  # noqa: PLR0915
             contact=_contact_block(envelope, known_phone),
             text=_tf_message(envelope),
             session=ctx_session,
-            parse={"output": parsed_output, "_parser_raw": verdict},
+            parse={"output": parsed_output, "_parser_raw": parser_verdict},
             access=access,
             media=getattr(envelope, "media", None),
         )[0]["json"]["ctx"]
@@ -4811,6 +4814,9 @@ def _run_stages_body(  # noqa: PLR0915
         predicate: dict[str, Any] | None = None
         resolved_candidates: dict[str, list[dict[str, Any]]] = {}
         unplaced_tokens: dict[str, str] = {}
+        # RESOLVER-TOKEN-CAP: the codes the resolver cut at its ceiling and never looked
+        # up, as typed - named by the reply's "Not checked:" line, never silently dropped.
+        not_checked_tokens: dict[str, str] = {}
         spec_tier = False
         # R2 (PLAN-chatbot-answer-half-reattach.md): the raw `resolve_gate.run` payload
         # (`resolved`, `gate`, `aggregate`, `tier_gate`, `_exit_kind`), carried through
@@ -4982,6 +4988,7 @@ def _run_stages_body(  # noqa: PLR0915
             predicate = resolve_outcome.predicate
             resolved_candidates = resolve_outcome.resolved_candidates
             unplaced_tokens = resolve_outcome.unplaced_tokens
+            not_checked_tokens = resolve_outcome.not_checked
             spec_tier = resolve_outcome.spec_tier
             resolver_payload = resolve_outcome.payload
             # Every turn of availability access, not only a stock / ETA one: a code the
@@ -5602,6 +5609,8 @@ def _run_stages_body(  # noqa: PLR0915
                     # MULTI-CODE-DYM: each unplaced token's did-you-mean, the same
                     # candidates a lone miss of that token offers.
                     unplaced_suggestions=_unplaced_suggestions(resolver_payload, unplaced_tokens),
+                    # RESOLVER-TOKEN-CAP: the codes the resolver never looked up, as typed.
+                    not_checked=list(not_checked_tokens.values()),
                     # R6 (fix round 2): so a null `routing.suggested_team` inside the
                     # per-domain fetch context gets the same domain-aware fill this
                     # turn's own `ctx.parse.output` already got above.
