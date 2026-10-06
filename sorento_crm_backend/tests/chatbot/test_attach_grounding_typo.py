@@ -252,6 +252,21 @@ def test_the_document_leg_is_the_parsers_code(raw, code, expected):
     assert derive_require(parser_output) == expected
 
 
+def test_the_document_leg_and_its_words_come_from_one_entity():
+    """The code is read off the same entity whose words are read: an entity with a code
+    and no words in front of it never lends its code to the next one (reviewer nit)."""
+    from app.services.chatbot.lanes.business.predicate import derive_require
+
+    parser_output = {
+        "intent_hint": "check_product_attachment",
+        "entities": [
+            {"hint": "attachment_type", "raw": "", "canonical_code": "photo"},
+            {"hint": "attachment_type", "raw": "TD DRAW", "canonical_code": "technical drawing"},
+        ],
+    }
+    assert derive_require(parser_output) == {"attachment_type": "technical drawing"}
+
+
 @pytest.mark.parametrize(
     "said,canonical,type_name",
     [
