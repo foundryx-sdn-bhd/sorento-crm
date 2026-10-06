@@ -246,6 +246,10 @@ Real prod sentences, plus paraphrases the lane covers. Codes are the prod ones w
 - **Q4 (a)** (owner): parser-decided, through the existing fields (`entity_op "reuse"` + the
   specification entity). The resolver half is `narrow_code_tokens_by_specs` (above). No new
   parser field: the existing ones express it, so none is named.
+- **Ceiling re-pin (a)** (crew, 6 Oct 2026, review round): the code-fallback prompt constant
+  carries the trap-specs block, so `test_parser_prompt_budget.CEILING` is re-pinned to the
+  measured 46,598 in the same commit (the test's own rule for a genuine new addendum; the
+  eighth such re-pin). The live prompt grows by the two addenda alone under either option.
 - **Q5 (a)** (crew): the stated spec filters the family first; the colour pick runs over what
   is left. Measured: `narrow_code_tokens` already does this when the catalogue text carries the
   length ("S-TRAP 250MM"), and `narrow_code_tokens_by_specs` does it off the derived values.

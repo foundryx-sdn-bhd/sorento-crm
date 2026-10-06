@@ -313,7 +313,7 @@ class StockQtyTask:
             slots = [replace(slot, value=bare) if slot.value is None else slot for slot in slots]
         return replace(task, slots=tuple(slots))
 
-    def answered_now(self, before: Task, after: Task, verdict: dict[str, Any]) -> tuple[Slot, ...]:
+    def answered_now(self, prior: Task, filled: Task, verdict: dict[str, Any]) -> tuple[Slot, ...]:
         """The slots THIS message gave or restated a quantity for, in task order: a slot
         whose value changed in the fill, or one the message named beside a quantity
         (`SLOT_QUANTITIES` by key, `entities[].quantity` by code) even when the number is
@@ -328,10 +328,10 @@ class StockQtyTask:
         for entity in verdict.get("entities") or []:
             if isinstance(entity, dict) and _number(entity.get("quantity")) is not None:
                 named |= _entity_codes(entity)
-        was = {slot.key: slot.value for slot in before.slots}
+        was = {slot.key: slot.value for slot in prior.slots}
         return tuple(
             slot
-            for slot in after.slots
+            for slot in filled.slots
             if slot.value is not None
             and (
                 was.get(slot.key) != slot.value

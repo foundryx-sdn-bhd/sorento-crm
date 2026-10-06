@@ -1,7 +1,10 @@
 # PLAN: a partial quantity answer closes the stock ask; trap specs parse and search reliably (STOCK-QTY-PARTIAL-FILL)
 
-Status: BUILT, in review on PR #1513 (6 Oct 2026; all five card rulings in: Q1, Q2, Q3, Q5 (a) by crew, Q4 (a) by the owner), red-first (branch `claude/stock-qty-partial-fill-kv7i1d`,
-cloud sandbox, LEAD pattern). Track: full (engine behaviour change + parser prompt patch + DB
+Status: BUILT and REVIEWED, waiting on CI and the owner's hand test on PR #1513 (6 Oct 2026; all
+five card rulings in: Q1, Q2, Q3, Q5 (a) by crew, Q4 (a) by the owner; reviewer and
+security-reviewer verdicts on the PR, their should-fix items taken in the review round),
+red-first (branch `claude/stock-qty-partial-fill-kv7i1d`, cloud sandbox, LEAD pattern). One
+open crew-ask: the code-fallback prompt ceiling re-pin (recommendation (a), keep). Track: full (engine behaviour change + parser prompt patch + DB
 search tests; no migration, no auth change, no UI). Card:
 `stock-qty-partial-fill-behaviour-card.md` (owner rulings R1, R2 and the five card rulings Q1
 to Q5 recorded there). UAC:
