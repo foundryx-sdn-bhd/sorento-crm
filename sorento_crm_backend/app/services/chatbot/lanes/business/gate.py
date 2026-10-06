@@ -159,13 +159,13 @@ ALLOWS_EMPTY: dict[str, bool] = {
 #: reader: `turn_runtime.make_tool_runner`'s no-subject probe (no entity with a uuid, no
 #: predicate block, intent not in `INTENTS_ALLOWING_EMPTY`), which runs per fetch and so
 #: covers the product leg of a multi-domain ask too (`turn/apply._REFUSES_EMPTY_SUBJECT`
-#: keeps its one inventory row; widening it changed no reply). `inventory` is the hotfix-22-Sep row; `master_products` is the
-#: measured second domain (a dealer's one word "product" listed 50 arbitrary rows). NOT
-#: every `ALLOWS_EMPTY` False row: the full chatbot suite measured that `sales`, `order` and
-#: `promotion` asks with no entity are real whole-book or focus-driven asks with their own
-#: flows (the sales report, top selling, the order broaden, a promotion read off the focus
-#: brand), and refusing them here broke eight pins. A third domain joins on its own live
-#: turn, not before.
+#: keeps its one inventory row; widening it changed no reply). `inventory` is the
+#: hotfix-22-Sep row; `master_products` is the measured second domain (a dealer's one word
+#: "product" listed 50 arbitrary rows). NOT every `ALLOWS_EMPTY` False row: the full chatbot
+#: suite measured that `sales`, `order` and `promotion` asks with no entity are real
+#: whole-book or focus-driven asks with their own flows (the sales report, top selling, the
+#: order broaden, a promotion read off the focus brand), and refusing them there broke eight
+#: pins. A third domain joins on its own live turn, not before.
 REFUSES_EMPTY_FETCH: frozenset[str] = frozenset({"inventory", "master_products"})
 
 # Domains that need a SPECIFIC type present to be scopable (beyond compatibility).
