@@ -157,21 +157,58 @@ def test_a_descriptor_on_the_codes_own_line_still_narrows_in_a_multi_line_messag
     assert narrowed == ["ZZTWC8840-SC", "ZZTWT7408"], narrowed
 
 
-def test_a_folded_code_phrase_is_not_a_typed_variant_of_its_own_code(session_factory):
-    """Rule 5 reads the family's REAL codes: "ZZTWC8840SEATCOVER" (the lane's fold of a
-    code plus its words) is not a typed variant of ZZTWC8840, so the P trap line is still
-    narrowed; only a token that IS a variant's code ("ZZTWC8840SC") stops the narrowing."""
-    _seed(
-        session_factory,
-        "ZZTWC8840-SC", "ZZTWCX8840-P", "ZZTWCX8840-S",
-        names={"ZZTWC8840-SC": "Seat cover", "ZZTWCX8840-P": "P trap bowl", "ZZTWCX8840-S": "S trap bowl"},
-    )
+_8840_NAMES = {"ZZTWC8840-SC": "Seat cover", "ZZTWCX8840-P": "P trap bowl", "ZZTWCX8840-S": "S trap bowl"}
+
+
+def test_a_code_typed_on_two_lines_with_two_descriptors_reads_each_line_for_its_own_token(session_factory):
+    """"ZZTWC8840SEATCOVER" (the lane's fold of a code plus its words) is not a typed
+    variant of ZZTWC8840, and each token's own line is the one carrying its words: the P
+    trap line picks the P trap bowl, the seat cover line the seat cover, in that order."""
+    _seed(session_factory, *_8840_NAMES, names=_8840_NAMES)
     query = "ZZTWC8840 p trap price\nZZTWC8840 seat cover price"
     tokens = ["ZZTWC8840PTRAP", "ZZTWC8840SEATCOVER"]
 
     narrowed = narrow_code_tokens(_scoped(session_factory), query=query, tokens=tokens, allowed_types=["product", "product"])
 
-    assert narrowed is not None and set(narrowed) == {"ZZTWCX8840-P", "ZZTWC8840-SC"}, narrowed
+    assert narrowed == ["ZZTWCX8840-P", "ZZTWC8840-SC"], narrowed
+
+
+def test_a_bare_code_and_a_described_one_on_two_lines_each_keep_their_own_ask(session_factory):
+    """Reviewer case on a793e315: the bare line stays the bare code (its variant -SC is
+    typed as its own token), the P trap line is still narrowed to the P trap bowl."""
+    _seed(session_factory, *_8840_NAMES, names=_8840_NAMES)
+    query = "ZZTWC8840 x 1\r\nZZTWC8840-SC x 2\r\nZZTWC8840 p trap"
+    tokens = ["ZZTWC8840", "ZZTWC8840SC", "ZZTWC8840PTRAP"]
+
+    narrowed = narrow_code_tokens(_scoped(session_factory), query=query, tokens=tokens, allowed_types=["product"] * 3)
+
+    assert narrowed == ["ZZTWC8840", "ZZTWC8840SC", "ZZTWCX8840-P"], narrowed
+
+
+def test_a_code_with_its_own_words_still_narrows_beside_a_typed_sibling_variant(session_factory):
+    """Rule 5 is about the BARE base code only (reviewer should-fix 1 on a793e315): a token
+    carrying its own descriptor is narrowed by those words even when another token is one of
+    the family's codes, exactly as on main for this single line."""
+    _seed(session_factory, *_8840_NAMES, names=_8840_NAMES)
+    query = "ZZTWC8840 seat cover, ZZTWCX8840-P x 2"
+    tokens = ["ZZTWC8840SEATCOVER", "ZZTWCX8840P"]
+
+    narrowed = narrow_code_tokens(_scoped(session_factory), query=query, tokens=tokens, allowed_types=["product", "product"])
+
+    assert narrowed == ["ZZTWC8840-SC", "ZZTWCX8840P"], narrowed
+
+
+def test_a_variant_typed_with_a_space_narrows_to_itself(session_factory):
+    """"ZZTWT5608 FRG x 5" joined by the lane into one token: the token is not the bare
+    base code, so rule 5 never reads the token as its own typed variant, and its word FRG
+    picks the variant it names."""
+    _seed(session_factory, BASE, f"{BASE}-FRG", f"{BASE}-GM")
+
+    narrowed = narrow_code_tokens(
+        _scoped(session_factory), query=f"{BASE} FRG x 5", tokens=[f"{BASE}FRG"], allowed_types=["product"]
+    )
+
+    assert narrowed == [f"{BASE}-FRG"], narrowed
 
 
 # --------------------------------------------------------------------------- #
