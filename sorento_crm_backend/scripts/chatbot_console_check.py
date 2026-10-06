@@ -345,8 +345,19 @@ def _pending_kind(body: dict[str, Any], turn_id: str | None) -> str | None:
 
 
 def _pending_of(variables: Any) -> str | None:
-    """`variables.pending.kind` as a string, or None - the one shape both sources use."""
-    pending = variables.get("pending") if isinstance(variables, dict) else None
+    """`variables.open_question.kind` as a string, or None - the one shape both sources use.
+
+    `open_question` is the key the tail writes (`turn/tail.py`, the re-architected turn);
+    `pending` was its name before that and is still read so an older recorded trace grades.
+    Measured 6 Oct 2026 (DO-LIST-REPLY-LABEL sandbox replay): with only `pending` read here,
+    every `pending_kind` expectation graded None on turns whose next turn answered the
+    question, so the check could never see an armed question.
+    """
+    if not isinstance(variables, dict):
+        return None
+    pending = variables.get("open_question")
+    if not isinstance(pending, dict):
+        pending = variables.get("pending")
     kind = pending.get("kind") if isinstance(pending, dict) else None
     return str(kind) if kind else None
 

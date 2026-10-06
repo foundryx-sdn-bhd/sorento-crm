@@ -623,6 +623,17 @@ def decide(
             # ENTITY (the label-match arm of `picked_positions`); that entity IS the pick,
             # not a new subject. The outstanding report's kinds keep their order.
             entities = []
+        if positions and entities and verdict.get("entity_op") == "reuse":
+            # DO-LIST-REPLY-LABEL, live-parser replay run 3 of 3 (6 Oct 2026): the quick
+            # reply "Delivery order list" came back as the declared pick (`open_question_
+            # answer.picked [1]`, the positions above) AND the open report's own product,
+            # re-stated as an entity with `current_message: true` - under `entity_op:
+            # "reuse"`, the parser's own declaration that the turn carries no new value
+            # (`_keeps_subject` reads the field the same way). D17 point 3 below read that
+            # entity as a new ask and the summary re-ran. A reused entity beside a declared
+            # pick names nothing new: the pick is read below. An entity the parser declares
+            # as a new value (`replace_combine`, `replace`) is still the new ask it was.
+            entities = []
         if entities:
             # D17 point 3: a stray position riding along with an entity is still a new
             # ask, because the parser is told never to emit both.

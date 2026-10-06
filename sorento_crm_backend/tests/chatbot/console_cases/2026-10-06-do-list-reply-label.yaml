@@ -47,7 +47,10 @@ cases:
           no_uuid: true
           pending_kind: outstanding_detail
           parser:
-            reference_positions: [1]
+            # The declared pick. The live parser (sandbox, 6 Oct 2026, 3 runs) states it
+            # here every time and in `reference_positions` only sometimes (run 1 [1], run
+            # 3 []); `apply._open_pick_answer` reads this object into the positions, so
+            # this is the field that decides and the one graded.
             open_question_answer: {mode: pick, picked: [1]}
             # The other half of the cause: the words "delivery order" fill the document
             # even as the whole message, and that is the field the old code read as a
@@ -63,5 +66,4 @@ cases:
           no_uuid: true
           pending_kind: outstanding_detail
           parser:
-            reference_positions: [1]
             open_question_answer: {mode: pick, picked: [1]}
