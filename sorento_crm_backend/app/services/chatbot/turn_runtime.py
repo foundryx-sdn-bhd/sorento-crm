@@ -2260,8 +2260,11 @@ def resolve_kinds(
         by_token,
         compatible,
         predicate,
-        candidates_by_kind(
-            stamps_from, compatible, customer_bases, product_stamp, company_names_by_uuid(resolved)
+        mark_described_set(
+            candidates_by_kind(
+                stamps_from, compatible, customer_bases, product_stamp, company_names_by_uuid(resolved)
+            ),
+            predicate,
         ),
         unplaced,
         spec_tier_matched(resolved),
@@ -4097,6 +4100,79 @@ def _spec_product_ids(spec: FetchSpec) -> set[str]:
         and jsc.nullish_str(e.get("hint")).strip().lower() == "product"
         and _spec_row(e)["uuid"] is not None
     }
+
+
+def mark_described_set(
+    candidates: dict[str, list[dict[str, Any]]], predicate: dict[str, Any] | None
+) -> dict[str, list[dict[str, Any]]]:
+    """Mark the product rows the resolver placed for a DESCRIBED set as its members.
+
+    A set the words describe ("which basins have stock": a class, a brand, a spec value)
+    comes back as a predicate with a `description`, and its members settle on the focus
+    exactly as a typed product does: the same row shape, beside the same uuid-less words.
+    Nothing on a later turn could tell "three gunmetal basins the dealer asked about as a
+    set" from "one product, and a brand word a photo read beside it", and the two need
+    opposite answers when the carried words are re-resolved (`drop_stray_population`).
+    So the row says which it is, at the one moment that is known. A bare intent leg
+    (`require` alone: prod turn 121's "every product with stock") describes nothing and
+    marks nothing; a row the dealer names or picks later is built fresh, unmarked.
+    """
+    if not (isinstance(predicate, dict) and predicate.get("description")):
+        return candidates
+    for row in candidates.get("product") or []:
+        row["described_set"] = True
+    return candidates
+
+
+def spec_is_a_described_set(spec: FetchSpec) -> bool:
+    """Is every resolved product on the plan's spec a member of a described set
+    (`mark_described_set`)? False for a spec with no resolved product at all."""
+    rows = [
+        e
+        for e in spec.entities
+        if isinstance(e, dict)
+        and jsc.nullish_str(e.get("hint")).strip().lower() == "product"
+        and _spec_row(e)["uuid"] is not None
+    ]
+    return bool(rows) and all(row.get("described_set") is True for row in rows)
+
+
+def drop_stray_population(
+    resolved_kinds: dict[str, dict[str, int]],
+    resolved_candidates: dict[str, list[dict[str, Any]]],
+    compatible: list[dict[str, Any]],
+    payload: dict[str, Any] | None,
+) -> tuple[dict[str, dict[str, int]], dict[str, list[dict[str, Any]]], list[dict[str, Any]], dict[str, Any] | None, list[str]]:
+    """The resolver's answer WITHOUT the products a stray carried word placed.
+
+    The caller has established that this turn's subject is a carried product and that
+    the resolver was asked about carried non-product words alone. Whatever products came
+    back are those words' population under the intent's `require`, not the subject: the
+    product kind leaves the kinds, the candidates, the compatible rows and the gate, and
+    the set predicate leaves the gate with them (it described that population). Every
+    other kind the words resolved to is untouched. Returns the four values and the codes
+    dropped, for the trace.
+    """
+    def is_product(row: Any) -> bool:
+        return isinstance(row, dict) and jsc.nullish_str(row.get("entity_type")).strip().lower() == "product"
+
+    dropped = [
+        jsc.js_string(row.get("canonical_code") or row.get("raw"))
+        for row in resolved_candidates.get("product") or []
+        if isinstance(row, dict)
+    ]
+    kinds = {
+        token: {kind: n for kind, n in (by_kind or {}).items() if kind != "product"}
+        for token, by_kind in resolved_kinds.items()
+    }
+    candidates = {kind: rows for kind, rows in resolved_candidates.items() if kind != "product"}
+    kept = [row for row in compatible if not is_product(row)]
+    if isinstance(payload, dict):
+        gate = dict(payload.get("gate") if isinstance(payload.get("gate"), dict) else {})
+        gate["compatible_entities"] = kept
+        gate.pop("predicate", None)
+        payload = {**payload, "gate": gate}
+    return kinds, candidates, kept, payload, dropped
 
 
 def scoped_to_a_resolved_product(spec: FetchSpec) -> bool:

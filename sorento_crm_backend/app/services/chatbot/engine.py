@@ -5074,14 +5074,15 @@ def _run_stages_body(  # noqa: PLR0915
             resolver_entities = [
                 e for e in (resolver_parse_output.get("entities") or []) if isinstance(e, dict)
             ]
-            if (
+            product_subject = bool(
                 not customer_scope_refused
                 and scope_ids is None
                 and plan.fetch
                 and resolver_entities
                 and all(e.get("current_message") is False for e in resolver_entities)
                 and all(turn_runtime.scoped_to_a_resolved_product(spec) for spec in plan.fetch)
-            ):
+            )
+            if product_subject:
                 before_gate = ((resolver_payload or {}).get("gate") or {}).get("gate_passed")
                 before_exit = (resolver_payload or {}).get("_exit_kind")
                 resolver_payload = _pass_scope_gate(
@@ -5103,6 +5104,40 @@ def _run_stages_body(  # noqa: PLR0915
                         "product_subject_passes_resolver_gate",
                         {"fetch": [s.domain for s in plan.fetch], "gate_was": before_gate, "exit_was": before_exit},
                     )
+            # The same subject, the resolver's OTHER exit (live console replay, 6 Oct
+            # 2026). On a catalogue that holds stock the stray word plus the intent's
+            # `require` is a population (prod: every product with stock; a word that
+            # binds as a brand: that brand's products), the exit is `continue`, and the
+            # re-entry below re-made the plan from it: the population replaced the
+            # carried product in the fetch and on the focus. "check stock" asked "How
+            # many units for each?" over the catalogue; turn 121's fill answered right
+            # (the task drives its own fetch) and left 50 products as the next turn's
+            # subject. The population is dropped here, before the re-entry and before
+            # the gate is read, so the product stays the plan. A carried product CODE
+            # that resolves is the dealer's own product and is not dropped; nor is the
+            # re-description of a carried SET (`spec_is_a_described_set`: "stock?" after
+            # "any gunmetal basin has incoming?"), whose members the carried words placed.
+            if (
+                product_subject
+                and resolved_candidates.get("product")
+                and all(str(e.get("hint") or "").strip().lower() != "product" for e in resolver_entities)
+                and not any(turn_runtime.spec_is_a_described_set(spec) for spec in plan.fetch)
+            ):
+                resolved_kinds, resolved_candidates, compatible_entities, resolver_payload, stray_codes = (
+                    turn_runtime.drop_stray_population(
+                        resolved_kinds, resolved_candidates, compatible_entities, resolver_payload
+                    )
+                )
+                predicate = None
+                turn_trace.add(
+                    "stray_carried_word_population_dropped",
+                    {
+                        "words": [str(e.get("raw") or e.get("canonical_code") or "") for e in resolver_entities],
+                        "dropped": len(stray_codes),
+                        "sample": stray_codes[:5],
+                        "fetch": [s.domain for s in plan.fetch],
+                    },
+                )
             answer_parse_output = turn_runtime.answer_parse_output(
                 resolver_ctx["parse"]["output"],
                 gate=(resolver_payload or {}).get("gate"),
