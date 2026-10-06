@@ -146,7 +146,11 @@ cross-record lists (tested).
 picker by design. The gate therefore refuses only a role outside every module (the lane's
 bystander) and adds little beyond that; the catalogue itself is not narrowed by the caller's
 module. Narrowing it (an `entity_type` filter for callers without `resource.attachments.view`) is
-a follow-up, listed below.
+a follow-up, listed below. One more reader by construction: `project_mcp_bootstrap.py:97` grants
+`projects.projects.view` at startup to every role an integration acts as, so every API key can
+list the catalogue (found in the live API pass, where a key acting as the test's retail user
+gave that user's role the slug). Integration roles are Admin-equivalent today (migration 297),
+so nothing changes for them; it matters once those roles are narrowed.
 
 ### Left as they are (and why)
 
