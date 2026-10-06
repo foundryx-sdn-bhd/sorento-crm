@@ -8,9 +8,6 @@ from typing import List, Optional, Tuple
 from app.database import get_db
 from app.dependencies import require_any_permission_with_api_key
 
-# Who reads promotion product lines (LIST-API-PERMS): the Promotion Products page, and the
-# product detail's Promotions tab (`getPromotionsByProductId`, `ProductPromotionsTab.tsx`).
-PROMOTION_PRODUCT_READERS = ["marketing.promotion_products.view", "master_data.products.view"]
 from app.services.marketing_service import PromotionProductService, _resolve_promotion_id_for_filter
 from app.services.uuid_list_param import parse_uuid_list
 from app.schemas.marketing import (
@@ -23,6 +20,11 @@ from app.schemas.common import MAX_PAGE_LIMIT
 from app.services.error_handler import handle_internal_error
 
 router = APIRouter()
+
+
+# Who reads promotion product lines (LIST-API-PERMS): the Promotion Products page, and the
+# product detail's Promotions tab (`getPromotionsByProductId`, `ProductPromotionsTab.tsx`).
+PROMOTION_PRODUCT_READERS = ["marketing.promotion_products.view", "master_data.products.view"]
 
 # Mistaken MCP usage: query="promotion_id='<uuid>'" or query="<uuid>" - treat as promotion filter when promotion_id is omitted.
 _PROMOTION_ID_ASSIGN_RE = re.compile(

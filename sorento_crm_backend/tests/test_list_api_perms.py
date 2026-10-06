@@ -30,6 +30,7 @@ from app.main import app
 import app.database as app_database
 from app.dependencies import get_current_user, get_current_user_or_api_key
 from app.models.integration import Integration
+from app.models.sla import ConversationSLATracking, SLAPolicy
 from app.models.user import (
     User,
     UserPermission,
@@ -41,8 +42,12 @@ from app.services.integration_key_service import IntegrationKeyService
 from tests._pg_fixture import blank_session
 
 P, S, L = "P", "S", "L"
-# Fixed, so xdist workers collect identical ids; it matches no row on a blank schema.
+# Fixed, so xdist workers collect identical ids. RID matches no row on a blank schema; the two
+# tracker ids are seeded by `env` (a conversation ticket with an assignee, and a complaint's
+# form-SLA tracker) so the typed per-tracker gates can be read against real rows.
 RID = "00000000-0000-4000-8000-00000000c0de"
+TRACK_CONV = "00000000-0000-4000-8000-0000000000c1"
+TRACK_FORM = "00000000-0000-4000-8000-0000000000f1"
 
 PROMOTIONS = "marketing.promotions.view"
 PROMOTION_PRODUCTS = "marketing.promotion_products.view"
@@ -65,6 +70,7 @@ PRODUCTS = "master_data.products.view"
 STOCK_INQUIRIES = "procurement.stock_inquiries.view"
 PACKING_LISTS = "procurement.packing_lists.view"
 TICKETS = "tickets.tickets.view"
+KPI = "sla.kpi.view"
 UPLOAD = "resource.attachments.upload"
 STOCK = "inventory.stock.view"
 
@@ -105,8 +111,9 @@ ROUTES = [
     (f"{TRACKING}/", SLA_TRACKING, P, "list"),
     (f"{TRACKING}/by-source?source_entity_type=complaint&source_entity_id={RID}", SLA_TRACKING, P, "list"),
     (f"{TRACKING}/event-logs", SLA_EVENT_LOGS, P, "list"),
-    (f"{TRACKING}/event-logs?tracking_id={RID}", SLA_EVENT_LOGS, P, "list"),
-    (f"{TRACKING}/{RID}", SLA_TRACKING, P, "detail"),
+    (f"{TRACKING}/event-logs?tracking_id={TRACK_FORM}", SLA_EVENT_LOGS, P, "list"),
+    (f"{TRACKING}/{TRACK_FORM}", SLA_TRACKING, P, "list"),
+    (f"{TRACKING}/{TRACK_CONV}", SLA_TRACKING, P, "list"),
     (f"{TRACKING}/integration/due-escalations", SLA_TRACKING, P, "list"),
     # forms
     ("/api/v1/forms-management/forms/", FORMS, P, "list"),
@@ -132,8 +139,11 @@ CROSS_MODULE_READERS = [
     ("/api/v1/marketing/promotion-products/", PRODUCTS, "list"),
     (f"/api/v1/marketing/promotion-attachments/promotion/{RID}", PROMOTIONS, "detail"),
     (f"{TRACKING}/by-source?source_entity_type=complaint&source_entity_id={RID}", COMPLAINTS, "list"),
-    (f"{TRACKING}/event-logs?tracking_id={RID}", COMPLAINTS, "list"),
-    (f"{TRACKING}/{RID}", STOCK_INQUIRIES, "detail"),
+    (f"{TRACKING}/by-source?source_entity_type=stock_inquiry&source_entity_id={RID}", STOCK_INQUIRIES, "list"),
+    (f"{TRACKING}/event-logs?tracking_id={TRACK_FORM}", COMPLAINTS, "list"),
+    (f"{TRACKING}/{TRACK_FORM}", COMPLAINTS, "list"),
+    (f"{TRACKING}/{TRACK_FORM}", KPI, "list"),
+    (f"{TRACKING}/{TRACK_CONV}", KPI, "list"),
     (f"{ATT}/", COMPLAINTS, "list"),
     (f"{ATT}/", PACKING_LISTS, "list"),
     (f"{ATT}/drive", DIRECTORIES, "list"),
@@ -142,12 +152,17 @@ CROSS_MODULE_READERS = [
 ]
 CROSS_IDS = [f"{path.removeprefix('/api/v1/')}<-{slug}" for path, slug, _ in CROSS_MODULE_READERS]
 
-# A per-tracker slug does NOT open the cross-tracker lists: (path, slug that must be refused).
+# A per-tracker slug does NOT open the cross-tracker lists, and a record's slug opens only
+# trackers of THAT type: (path, slug that must be refused).
 NOT_ENOUGH = [
     (f"{TRACKING}/", COMPLAINTS),
     (f"{TRACKING}/dashboard", COMPLAINTS),
     (f"{TRACKING}/event-logs", COMPLAINTS),
     (f"{TRACKING}/event-logs", SLA_TRACKING),
+    (f"{TRACKING}/{TRACK_FORM}", STOCK_INQUIRIES),
+    (f"{TRACKING}/{TRACK_CONV}", COMPLAINTS),
+    (f"{TRACKING}/event-logs?tracking_id={TRACK_FORM}", TICKETS),
+    (f"{TRACKING}/by-source?source_entity_type=complaint&source_entity_id={RID}", TICKETS),
     (f"{ATT}/drive", COMPLAINTS),
     ("/api/v1/marketing/promotions/", PRODUCTS),
 ]
@@ -199,10 +214,32 @@ def _api_key(db, label: str, permission_slugs=()) -> str:
     return IntegrationKeyService(db).issue_key(integration)
 
 
+def _seed_trackers(db) -> dict:
+    """A conversation ticket assigned to `assignee`, and a complaint's form-SLA tracker."""
+    from datetime import datetime, timedelta
+
+    assignee = _user(db, "assignee", None)
+    policy = SLAPolicy(id=str(uuid.uuid4()), code=f"ZZT-{uuid.uuid4().hex[:6]}", name="evidence", is_active=True)
+    db.add(policy)
+    db.flush()
+    due = datetime.utcnow() + timedelta(hours=4)
+    db.add(ConversationSLATracking(
+        id=TRACK_CONV, policy_id=policy.id, current_tier=1, due_at=due,
+        assigned_to_id=assignee["id"], source_entity_type=None,
+    ))
+    db.add(ConversationSLATracking(
+        id=TRACK_FORM, policy_id=policy.id, current_tier=1, due_at=due,
+        assigned_to_id=assignee["id"], source_entity_type="complaint", source_entity_id=RID,
+    ))
+    db.flush()
+    return assignee
+
+
 class _Env:
     def __init__(self, db):
         self.db = db
         self.caller: dict | None = None
+        self.assignee: dict | None = None
 
     def session(self, user: dict) -> TestClient:
         """A signed-in session: the principal dependencies answer `user`."""
@@ -222,6 +259,8 @@ class _Env:
 def env():
     with blank_session() as db:
         e = _Env(db)
+        e.assignee = _seed_trackers(db)
+        db.commit()
 
         def _override_db():
             yield db
@@ -320,28 +359,115 @@ def test_api_key_whose_act_as_user_lacks_the_slug(env, path, slug, shape, kind):
     assert slug in r.text, r.text
 
 
-# --- scoped per-record reads: 404 to an outsider, never a slug gate -------------------------------
+# --- scoped per-record reads on a REAL conversation ticket: 404 to an outsider ---------------------
 
-SCOPED = [f"{TRACKING}/{RID}/conversation", f"{TRACKING}/{RID}/takeover-state"]
+SCOPED = [f"{TRACKING}/{TRACK_CONV}/conversation", f"{TRACKING}/{TRACK_CONV}/takeover-state"]
+SCOPED_IDS = [p.removeprefix("/api/v1/") for p in SCOPED]
 
 
-@pytest.mark.parametrize("path", SCOPED, ids=[p.removeprefix("/api/v1/") for p in SCOPED])
-def test_a_scoped_tracker_read_answers_an_outsider_with_404(env, path):
-    # `require_ticket_in_scope` / `can_user_act_on_tracking`: a missing row and a viewer
-    # outside the task's scope get the same 404, so the id is never confirmed. A slug on
-    # another module does not change that, and neither does holding no slug at all.
-    outsider = _user(env.db, "outsider", "zz_outsider", [TICKETS, SLA_TRACKING])
+@pytest.fixture
+def no_respond(monkeypatch):
+    # The thread read ends in a Respond.io HTTP call; the gate under test runs before it.
+    from app.services.sla_service import ConversationSLATrackingService
+
+    monkeypatch.setattr(
+        ConversationSLATrackingService,
+        "fetch_respond_conversation_for_tracking",
+        lambda self, tracking_id, limit=50, cursor=None: {"items": [], "pagination": {}},
+    )
+
+
+@pytest.mark.parametrize("path", SCOPED, ids=SCOPED_IDS)
+def test_a_scoped_ticket_read_answers_an_outsider_with_404(env, no_respond, path):
+    # `can_user_act_on_tracking`: the row exists, the viewer is neither its assignee nor a
+    # manager of one, and the module slugs do not change that. 404, never 403 (the id is
+    # not confirmed to a stranger).
+    outsider = _user(env.db, "outsider", "zz_outsider", [TICKETS, SLA_TRACKING, COMPLAINTS])
     env.db.commit()
     r = env.session(outsider).get(path)
     assert r.status_code == 404, f"{path}: {r.status_code} {r.text}"
 
 
-@pytest.mark.parametrize("path", SCOPED, ids=[p.removeprefix("/api/v1/") for p in SCOPED])
-def test_a_scoped_tracker_read_is_session_only(env, path):
+@pytest.mark.parametrize("path", SCOPED, ids=SCOPED_IDS)
+def test_a_scoped_ticket_read_admits_its_assignee_without_any_slug(env, no_respond, path):
+    r = env.session(env.assignee).get(path)
+    assert r.status_code == 200, f"{path}: {r.status_code} {r.text}"
+
+
+@pytest.mark.parametrize("path", SCOPED, ids=SCOPED_IDS)
+def test_a_scoped_ticket_read_is_session_only(env, path):
     key = _api_key(env.db, "scoped", [SLA_TRACKING])
     env.db.commit()
     r = env.key().get(path, headers={"X-API-Key": key})
     assert r.status_code == 401, f"{path}: {r.status_code} {r.text}"
+
+
+def test_a_form_trackers_thread_is_read_with_the_records_slug(env, no_respond):
+    # The form-SLA tracker has no assignee rule for reading (the sibling reads admit by the
+    # record's slug); a complaints viewer reads its chat records, a bystander is refused.
+    path = f"{TRACKING}/{TRACK_FORM}/conversation"
+    reader = _user(env.db, "reader", "zz_reader", [COMPLAINTS])
+    bystander = _user(env.db, "bystander", "zz_retail", [BYSTANDER_SLUG])
+    env.db.commit()
+    assert env.session(reader).get(path).status_code == 200
+    r = env.session(bystander).get(path)
+    assert r.status_code == 403, f"{path}: {r.status_code} {r.text}"
+    assert COMPLAINTS in r.text
+
+
+# --- the reader lists are the contract: every entry admits alone, and nothing else is in them ----
+
+def _reader_lists():
+    from app.api.v1.marketing import promotion_attachments, promotion_products, promotions
+    from app.api.v1.resources import attachments
+    from app.api.v1.sla import sla_tracking
+
+    return {
+        "/api/v1/marketing/promotions/": (promotions.PROMOTION_LIST_READERS, [PROMOTIONS, DEALER_KIT]),
+        "/api/v1/marketing/promotion-products/": (
+            promotion_products.PROMOTION_PRODUCT_READERS, [PROMOTION_PRODUCTS, PRODUCTS]),
+        f"/api/v1/marketing/promotion-attachments/promotion/{RID}": (
+            promotion_attachments.PROMOTION_ATTACHMENT_READERS, [PROMOTION_ATTACHMENTS, PROMOTIONS]),
+        f"{ATT}/": (attachments.ATTACHMENT_CATALOGUE_READERS, [
+            ATTACHMENTS, COMPLAINTS, STOCK_INQUIRIES, "procurement.purchase_requests.view",
+            "procurement.sponsorship_forms.view", PACKING_LISTS, PRODUCTS, "projects.projects.view",
+            PROMOTIONS, FORMS, DEALER_KIT,
+        ]),
+        f"{ATT}/collision-check?filename=zz.pdf": (attachments.ATTACHMENT_UPLOAD_READERS, [ATTACHMENTS, UPLOAD]),
+        f"{ATT}/current-stock-list": (attachments.STOCK_LIST_READERS, [ATTACHMENTS, STOCK]),
+        f"{ATT}/drive": (attachments.DRIVE_READERS, [ATTACHMENTS, DIRECTORIES]),
+        f"{TRACKING}/{TRACK_CONV}": (sla_tracking.tracker_reader_slugs(None), [SLA_TRACKING, SLA_EVENT_LOGS, KPI]),
+        f"{TRACKING}/{TRACK_FORM}": (
+            sla_tracking.tracker_reader_slugs("complaint"), [SLA_TRACKING, SLA_EVENT_LOGS, KPI, COMPLAINTS]),
+    }
+
+
+def test_each_reader_list_holds_exactly_the_plans_slugs():
+    for path, (actual, expected) in _reader_lists().items():
+        assert list(actual) == expected, path
+
+
+def test_source_type_readers_cover_every_form_sla_type():
+    from app.api.v1.sla.sla_tracking import SOURCE_TYPE_READERS
+    from app.services.form_sla_service import FORM_SLA_TYPES
+
+    assert set(SOURCE_TYPE_READERS) == set(FORM_SLA_TYPES)
+
+
+_EACH_ENTRY = [(path, slug) for path, (actual, _) in _reader_lists().items() for slug in actual]
+
+
+@pytest.mark.parametrize("path,slug", _EACH_ENTRY, ids=[f"{p.removeprefix('/api/v1/')}<-{s}" for p, s in _EACH_ENTRY])
+def test_every_reader_list_entry_admits_on_its_own(env, path, slug):
+    reader = _user(env.db, "entry", "zz_entry", [slug])
+    env.db.commit()
+    r = env.session(reader).get(path)
+    assert r.status_code in (200, 404), f"{path}: {r.status_code} {r.text}"
+    # 404 is the handler's own answer only for a random id, or for the stock list, which a
+    # blank schema has no attachment type for; a seeded tracker must answer 200.
+    assert r.status_code != 404 or RID in path or path.endswith("current-stock-list"), (
+        f"{path}: a seeded row answered 404: {r.text}"
+    )
 
 
 # --- the guard against the next bare GET -----------------------------------------------------------
@@ -376,8 +502,11 @@ UNGATED_GET_ALLOWLIST = {
     f"{TRACKING}/{{tracking_id}}/conversation/search": "viewer scope, as the page",
     f"{TRACKING}/{{tracking_id}}/media": "require_ticket_in_scope, else 404",
     "/api/v1/sla-management/conversation-events/stream": "entitled_contacts only",
-    # gated inline, not by a dependency: unfiltered needs escalation_logs.view, filtered any TRACKER_READERS
-    f"{TRACKING}/event-logs": "_require_event_log_reader (tested above)",
+    # gated inline, not by a dependency, because the slug set follows the record's type
+    # (`tracker_reader_slugs`); each is tested above
+    f"{TRACKING}/event-logs": "_require_event_log_reader",
+    f"{TRACKING}/by-source": "_require_tracker_reader on the named source type",
+    f"{TRACKING}/{{tracking_id}}": "_require_tracker_reader on the row's source type, after the 404",
     # the shared chat panel routes on the SLA mount: the ticket drawer's composer reads them for
     # the assignee, who may hold no module slug; the ticket scope is a follow-up (complaints
     # mount is gated through `read_dependencies`)

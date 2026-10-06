@@ -11,9 +11,6 @@ from app.dependencies import (
     require_permission_with_api_key,
 )
 
-# Who reads one promotion's attachments (LIST-API-PERMS): the Promotion Attachments page and
-# the promotion detail / edit page's attachments tab (`PromotionAttachmentsTab.tsx`).
-PROMOTION_ATTACHMENT_READERS = ["marketing.promotion_attachments.view", "marketing.promotions.view"]
 from app.services.marketing_service import PromotionAttachmentService
 from app.services.uuid_list_param import parse_uuid_list
 from app.schemas.marketing import (
@@ -26,6 +23,11 @@ from app.schemas.common import MAX_PAGE_LIMIT
 from app.services.error_handler import handle_internal_error
 
 router = APIRouter()
+
+
+# Who reads one promotion's attachments (LIST-API-PERMS): the Promotion Attachments page and
+# the promotion detail / edit page's attachments tab (`PromotionAttachmentsTab.tsx`).
+PROMOTION_ATTACHMENT_READERS = ["marketing.promotion_attachments.view", "marketing.promotions.view"]
 
 
 def _promotion_attachment_to_response(pa: Any) -> dict:

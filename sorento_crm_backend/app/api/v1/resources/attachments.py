@@ -22,32 +22,6 @@ from app.dependencies import (
     require_permission,
 )
 
-# Who browses the attachment catalogue (LIST-API-PERMS). The catalogue is the shared Drive AND
-# every module's "link existing file" picker (`components/common/LinkAttachmentBrowserDialog`,
-# the products one, `projectDocumentService.ts`, `PromotionAttachmentsTab.tsx`, `FormForm.tsx`,
-# `UploadFlyerDialog.tsx`), so each screen that opens that picker admits with its own view slug.
-# A session holding none of these - a role outside every module - is what the gate refuses.
-ATTACHMENT_CATALOGUE_READERS = [
-    "resource.attachments.view",
-    "complaint_management.complaints.view",
-    "procurement.stock_inquiries.view",
-    "procurement.purchase_requests.view",
-    "procurement.sponsorship_forms.view",
-    "procurement.packing_lists.view",
-    "master_data.products.view",
-    "projects.projects.view",
-    "marketing.promotions.view",
-    "forms.forms.view",
-    "dealer_kit.page.view",
-]
-# The upload dialog's name check runs wherever the dialog is mounted: Resources and the Packing
-# Lists page, whose upload button is itself gated on `resource.attachments.upload`.
-ATTACHMENT_UPLOAD_READERS = ["resource.attachments.view", "resource.attachments.upload"]
-# The latest stock list is read by the Inventory Stock page (`StockBalanceGrid.tsx`) and the MCP.
-STOCK_LIST_READERS = ["resource.attachments.view", "inventory.stock.view"]
-# The Files page (`/resource-management/attachment-directories`) lists folders and files in one
-# call; its menu entry admits either slug (lane MENU-PERM-GATE), so the drive listing does too.
-DRIVE_READERS = ["resource.attachments.view", "resource.attachment_directories.view"]
 from app.services.resources_service import AttachmentService, AttachmentTypeService, AttachmentDirectoryService
 from app.services.attachment_company_service import AttachmentCompanyService
 from app.services.storage_router import (
@@ -96,6 +70,34 @@ from app.services.error_handler import handle_internal_error
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+# Who browses the attachment catalogue (LIST-API-PERMS). The catalogue is the shared Drive AND
+# every module's "link existing file" picker (`components/common/LinkAttachmentBrowserDialog`,
+# the products one, `projectDocumentService.ts`, `PromotionAttachmentsTab.tsx`, `FormForm.tsx`,
+# `UploadFlyerDialog.tsx`), so each screen that opens that picker admits with its own view slug.
+# A session holding none of these - a role outside every module - is what the gate refuses.
+ATTACHMENT_CATALOGUE_READERS = [
+    "resource.attachments.view",
+    "complaint_management.complaints.view",
+    "procurement.stock_inquiries.view",
+    "procurement.purchase_requests.view",
+    "procurement.sponsorship_forms.view",
+    "procurement.packing_lists.view",
+    "master_data.products.view",
+    "projects.projects.view",
+    "marketing.promotions.view",
+    "forms.forms.view",
+    "dealer_kit.page.view",
+]
+# The upload dialog's name check runs wherever the dialog is mounted: Resources and the Packing
+# Lists page, whose upload button is itself gated on `resource.attachments.upload`.
+ATTACHMENT_UPLOAD_READERS = ["resource.attachments.view", "resource.attachments.upload"]
+# The latest stock list is read by the Inventory Stock page (`StockBalanceGrid.tsx`) and the MCP.
+STOCK_LIST_READERS = ["resource.attachments.view", "inventory.stock.view"]
+# The Files page (`/resource-management/attachment-directories`) lists folders and files in one
+# call; its menu entry admits either slug (lane MENU-PERM-GATE), so the drive listing does too.
+DRIVE_READERS = ["resource.attachments.view", "resource.attachment_directories.view"]
 
 
 import re as _re

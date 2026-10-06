@@ -12,11 +12,6 @@ from app.dependencies import (
     require_permission_with_api_key,
 )
 
-# Who reads the promotions list (LIST-API-PERMS): the Promotions page, and the Dealer Kit
-# brochure / flyer / page pickers (`brochureImageService.ts`), which choose a promotion as their
-# own feature. The attachment detail modal's "link to promotion" picker is not listed: it is a
-# marketing action and an empty picker is its degraded state.
-PROMOTION_LIST_READERS = ["marketing.promotions.view", "dealer_kit.page.view"]
 from app.services.marketing_service import PromotionService, PromotionProductService
 from app.services.query_normalizer import strip_domain_stopwords
 from app.services.uuid_list_param import parse_uuid_list
@@ -36,6 +31,13 @@ from app.schemas.marketing import (
 from app.services.error_handler import handle_internal_error
 
 router = APIRouter()
+
+
+# Who reads the promotions list (LIST-API-PERMS): the Promotions page, and the Dealer Kit
+# brochure / flyer / page pickers (`brochureImageService.ts`), which choose a promotion as their
+# own feature. The attachment detail modal's "link to promotion" picker is not listed: it is a
+# marketing action and an empty picker is its degraded state.
+PROMOTION_LIST_READERS = ["marketing.promotions.view", "dealer_kit.page.view"]
 
 
 class BulkDeletePromotionsRequest(BaseModel):
