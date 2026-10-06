@@ -166,6 +166,12 @@ def test_turn_id_as_int_is_accepted(client, db):
     assert _row(db, r.json()["id"]).turn_id == "4242"
 
 
+def test_a_boolean_id_is_still_refused(client):
+    """bool is an int subclass in Python; it must not be stored as "True" / "1"."""
+    r = client.post(INGEST_URL, json=_payload(reply_to_message_id=True))
+    assert r.status_code == 422
+
+
 def test_null_ids_stay_null(client, db):
     r = client.post(
         INGEST_URL, json=_payload(message_id=None, reply_to_message_id=None, turn_id=None)

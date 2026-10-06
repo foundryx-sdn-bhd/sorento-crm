@@ -159,9 +159,11 @@ def summarize_validation_errors(status_code: Optional[int], response_body: Any) 
     raw = response_body
     if isinstance(raw, (bytes, bytearray)):
         raw = raw.decode("utf-8", errors="replace")
+    # Any failure here is a telemetry failure, and telemetry never reaches the
+    # caller: this runs in the middleware's send path, outside _write's guard.
     try:
         parsed = json.loads(raw)
-    except (ValueError, TypeError):
+    except Exception:  # noqa: BLE001
         return None
     detail = parsed.get("detail") if isinstance(parsed, dict) else None
     if not isinstance(detail, list):
