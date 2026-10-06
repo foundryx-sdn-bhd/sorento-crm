@@ -57,6 +57,8 @@ INCOMING_FIELDS: tuple[tuple[str, str], ...] = (
     ("shipping_container_number", "Container no."),
     ("remaining_incoming_quantity", "Remaining quantity"),
 )
+#: copied from `field_access.DEFAULT_ALLOWED`, like INCOMING_FIELDS
+_DEFAULT_ALLOWED = ("estimated_arrival_date", "shipping_container_number", "remaining_incoming_quantity")
 _ETA = "incoming_stock.estimated_arrival_date"
 _CONTAINER = "incoming_stock.shipping_container_number"
 _QTY = "incoming_stock.remaining_incoming_quantity"
@@ -265,7 +267,7 @@ def _legacy_contacts(db: Any) -> dict[str, dict[str, Any]]:
 
     def entry(cid: str) -> dict[str, Any]:
         return out.setdefault(
-            cid, {"agents": set(), "keys": set(), "inc_on": set(), "inc_off": set(), "linked": False, "office": False}
+            cid, {"agents": set(), "keys": set(), "inc_set": set(), "linked": False, "office": False}
         )
 
     for cid, code in _rows(
@@ -278,12 +280,33 @@ def _legacy_contacts(db: Any) -> dict[str, dict[str, Any]]:
         entry(cid)["agents"].add(code)
     for cid, key in _rows(db, "SELECT respond_contact_id, field_key FROM contact_field_reveals WHERE granted"):
         entry(cid)["keys"].add(key)
-    for cid, field, allowed in _rows(
+    defaults: dict[str, dict[str, bool]] = {}
+    mine: dict[str, dict[str, bool]] = {}
+    for agent, cid, field, allowed in _rows(
         db,
-        "SELECT contact_id, field_key, is_allowed FROM agent_field_access "
-        "WHERE contact_id IS NOT NULL AND resource = 'incoming_stock'",
+        "SELECT agent_code, contact_id, field_key, is_allowed FROM agent_field_access "
+        "WHERE resource = 'incoming_stock'",
     ):
-        entry(cid)["inc_on" if allowed else "inc_off"].add(f"incoming_stock.{field}")
+        if cid is None:
+            defaults.setdefault(agent, {})[field] = bool(allowed)
+        else:
+            mine.setdefault(cid, {})[field] = bool(allowed)
+    for cid in list(mine):
+        entry(cid)
+    for cid, legacy in out.items():
+        # What the incoming-stock endpoint showed this contact (field_access.allowed_fields_for):
+        # agent-wide rows of the agents it holds, DEFAULT_ALLOWED for any contact holding an
+        # agent (allowed_fields_for sets them whenever it has agent codes), the contact's own rows winning in either direction.
+        resolved: dict[str, bool] = {}
+        for agent in legacy["agents"]:
+            for field, allowed in defaults.get(agent, {}).items():
+                resolved[field] = resolved.get(field, False) or allowed
+        for field, allowed in mine.get(cid, {}).items():
+            resolved[field] = allowed
+        if legacy["agents"]:
+            for field in _DEFAULT_ALLOWED:
+                resolved.setdefault(field, True)
+        legacy["inc_set"] = {f"incoming_stock.{f}" for f, ok in resolved.items() if ok}
     for (cid,) in _rows(db, "SELECT DISTINCT contact_id FROM respond_contact_customers"):
         if cid in out:
             out[cid]["linked"] = True
@@ -370,11 +393,11 @@ def map_legacy_contacts(db: Any) -> None:
             _insert_override(db, cid, "ideate", None, True)
 
         registry = {r[0]: r[1] for r in _rows(db, "SELECT key, domain_name FROM chatbot_domain_fields WHERE key LIKE 'incoming_stock.%'")}
-        for key in sorted(legacy["inc_on"]):
-            if key in registry and key not in role_fields:
+        for key in sorted(registry):
+            wants = key in legacy["inc_set"]
+            if wants and key not in role_fields:
                 _insert_override(db, cid, registry[key], key, True)
-        for key in sorted(legacy["inc_off"]):
-            if key in registry and key in role_fields:
+            elif not wants and key in role_fields:
                 _insert_override(db, cid, registry[key], key, False)
 
 
@@ -407,23 +430,28 @@ def access_loss_report(db: Any) -> list[dict[str, str]]:
         for key in sorted(legacy["keys"] & set(LEGACY_KEYS)):
             if key not in have:
                 lost("reveal", key)
-        for key in sorted(legacy["inc_on"]):
-            if key not in have:
-                lost("incoming", key)
+        for key in sorted(legacy["inc_set"] - have):
+            lost("incoming", key)
     return report
 
 
 def access_gain_report(db: Any) -> list[dict[str, str]]:
-    """Contacts that now see MORE customers than they did: linked-only customers before (a
-    linked contact outside the office), all customers now. One row per contact
-    `{"contact_id", "name", "kind": "customers", "key"}`. Empty list = nobody gained (ruling Q1)."""
+    """Contacts that now see MORE than they did, one row per gained thing
+    `{"contact_id", "name", "kind", "key"}`: `customers` (linked-only before, all customers now,
+    a linked contact outside the office) or `incoming` (an incoming-stock field they could not
+    see before). Empty list = nobody gained (ruling Q1)."""
     from app.services.chatbot.access_tree import tree_for_contact
 
     names = {r[0]: r[1] for r in _rows(db, "SELECT id, name FROM respond_contacts")}
     report: list[dict[str, str]] = []
     for cid, legacy in sorted(_legacy_contacts(db).items()):
-        if cid not in names or not legacy["agents"] or not legacy["linked"] or legacy["office"]:
+        if cid not in names or not legacy["agents"]:
             continue
-        if tree_for_contact(db, cid).sees_all_customers:
-            report.append({"contact_id": cid, "name": names[cid] or "", "kind": "customers", "key": "customers"})
+        access = tree_for_contact(db, cid)
+        name = names[cid] or ""
+        if legacy["linked"] and not legacy["office"] and access.sees_all_customers:
+            report.append({"contact_id": cid, "name": name, "kind": "customers", "key": "customers"})
+        now = {a for a in access.attributes if a.startswith("incoming_stock.")}
+        for key in sorted(now - legacy["inc_set"]):
+            report.append({"contact_id": cid, "name": name, "kind": "incoming", "key": key})
     return report

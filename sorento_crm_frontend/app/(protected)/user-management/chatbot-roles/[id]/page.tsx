@@ -27,6 +27,7 @@ import AccessSummary from '@/components/chatbot-access/AccessSummary';
 import AccessSwitches from '@/components/chatbot-access/AccessSwitches';
 import HandoffAdvanced from '@/components/chatbot-access/HandoffAdvanced';
 import SaveBar from '@/components/chatbot-access/SaveBar';
+import { toast } from '@/lib/toast';
 import { useHasPermission } from '@/hooks/usePermissions';
 import { useDeferredAction } from '@/hooks/useDeferredAction';
 import { useDeferredRowAction } from '@/hooks/useDeferredRowAction';
@@ -53,6 +54,7 @@ function RoleEditor({ role, registry }: { role: ChatbotRole; registry: Registry 
   const update = useUpdateChatbotRole(role.id);
   const addContacts = useAddRoleContacts(role.id);
   const canGrant = useHasPermission('user_management.reference_data.manage');
+  const canEditContacts = useHasPermission('user_management.contacts.edit');
   const roles = useChatbotRoles();
   const [addOpen, setAddOpen] = useState(false);
   const [picked, setPicked] = useState<string[]>([]);
@@ -130,16 +132,25 @@ function RoleEditor({ role, registry }: { role: ChatbotRole; registry: Registry 
     Number(seesAll !== role.sees_all_customers);
   const count = grantChanges + metaChanges;
 
-  const save = () => {
-    if (metaChanges > 0) {
-      update.mutate({
-        name: name.trim(),
-        description,
-        sees_all_customers: seesAll,
-        ...(tier ? { audience_tier: tier as AudienceTier } : { clear_audience_tier: true }),
-      });
+  // PATCH first, then the grants PUT only once it resolved: a failed PATCH never leaves a
+  // half save, and the page shows one toast either way.
+  const save = async () => {
+    try {
+      if (metaChanges > 0) {
+        await update.mutateAsync({
+          name: name.trim(),
+          description,
+          sees_all_customers: seesAll,
+          ...(tier ? { audience_tier: tier as AudienceTier } : { clear_audience_tier: true }),
+        });
+      }
+      if (grantChanges > 0) {
+        await setGrants.mutateAsync({ domains: grants.domains, fields: grants.fields });
+      }
+      toast.success('Role saved');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not save the role');
     }
-    if (grantChanges > 0) setGrants.mutate({ domains: grants.domains, fields: grants.fields });
   };
   const discard = () => {
     setLocalGrants(saved);
@@ -172,15 +183,17 @@ function RoleEditor({ role, registry }: { role: ChatbotRole; registry: Registry 
                   ariaLabel="role"
                 />
               ) : null}
-              {deletion.countdown ?? (
-                <Button
-                  variant="outline"
-                  disabled={deletion.isPending || deletion.isBlocked}
-                  onClick={() => deletion.start()}
-                >
-                  Delete
-                </Button>
-              )}
+              {canGrant
+                ? (deletion.countdown ?? (
+                    <Button
+                      variant="outline"
+                      disabled={deletion.isPending || deletion.isBlocked}
+                      onClick={() => deletion.start()}
+                    >
+                      Delete
+                    </Button>
+                  ))
+                : null}
             </div>
           }
         />
@@ -280,22 +293,26 @@ function RoleEditor({ role, registry }: { role: ChatbotRole; registry: Registry 
                     >
                       {c.name || 'Unnamed contact'}
                     </Link>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label={`Unlink ${c.name || 'Unnamed contact'}`}
-                      disabled={unlink.targetId === `${role.id}:${c.id}`}
-                      onClick={() => unlink.run({ id: `${role.id}:${c.id}`, subject: c.name || 'Unnamed contact' })}
-                    >
-                      <X className="size-4" />
-                    </Button>
+                    {canEditContacts && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`Unlink ${c.name || 'Unnamed contact'}`}
+                        disabled={unlink.targetId === `${role.id}:${c.id}`}
+                        onClick={() => unlink.run({ id: `${role.id}:${c.id}`, subject: c.name || 'Unnamed contact' })}
+                      >
+                        <X className="size-4" />
+                      </Button>
+                    )}
                   </li>
                 ))}
               </ul>
             ) : (
               <div className="py-4 text-center">
                 <p className="text-sm font-medium">No contacts have this role</p>
-                <p className="text-sm text-muted-foreground">Add contacts to give them this role.</p>
+                {canGrant && (
+                  <p className="text-sm text-muted-foreground">Add contacts to give them this role.</p>
+                )}
               </div>
             )}
           </CardContent>

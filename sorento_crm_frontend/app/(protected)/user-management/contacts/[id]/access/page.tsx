@@ -48,6 +48,7 @@ function AccessEditor({
 }) {
   const save = useSetContactAccess(contactId);
   const canGrant = useHasPermission('user_management.reference_data.manage');
+  const canEdit = useHasPermission('user_management.contacts.edit');
   const initial = useMemo(
     () => ({ role_ids: access.roles.map((r) => r.id), overrides: access.overrides }),
     [access],
@@ -60,6 +61,22 @@ function AccessEditor({
     .filter((r): r is ChatbotRole => !!r);
   const grants: GrantSet[] = held.map((r) => ({ domains: r.domains, fields: r.fields }));
   const groups = buildRows(registry, { roles: grants, overrides });
+  // What was already ON when the page loaded: without manage only these may be switched back on.
+  const savedOn = useMemo(() => {
+    const on = new Set<string>();
+    const savedGrants = initial.role_ids
+      .map((id) => roles.find((r) => r.id === id))
+      .filter((r): r is ChatbotRole => !!r)
+      .map((r) => ({ domains: r.domains, fields: r.fields }));
+    for (const g of buildRows(registry, { roles: savedGrants, overrides: initial.overrides })) {
+      for (const row of g.rows) {
+        if (row.on) on.add(row.key);
+        for (const f of row.fields) if (f.on) on.add(f.key);
+        if (row.stamp?.on) on.add(row.stamp.key);
+      }
+    }
+    return on;
+  }, [initial, roles, registry]);
   const state = resolveState({ roles: grants, overrides });
   const seesAll = held.some((r) => r.sees_all_customers);
   const { count, payload } = diffAccess(initial, { role_ids: roleIds, overrides });
@@ -111,14 +128,16 @@ function AccessEditor({
           {held.map((r) => (
             <Badge key={r.id} variant="primary" appearance="light">
               {tierLabel(r.audience_tier) ? `${r.name} · ${tierLabel(r.audience_tier)}` : r.name}
-              <button
-                type="button"
-                aria-label={`Remove role ${r.name}`}
-                className="ml-1"
-                onClick={() => setRoleIds((ids) => ids.filter((x) => x !== r.id))}
-              >
-                <X className="size-3" />
-              </button>
+              {canEdit && (
+                <button
+                  type="button"
+                  aria-label={`Remove role ${r.name}`}
+                  className="ml-1"
+                  onClick={() => setRoleIds((ids) => ids.filter((x) => x !== r.id))}
+                >
+                  <X className="size-3" />
+                </button>
+              )}
             </Badge>
           ))}
         </CardContent>
@@ -133,7 +152,7 @@ function AccessEditor({
             {seesAll ? 'All customers' : 'Only the customers linked to this contact'}
           </span>
           {seesAll && allCustomersFrom.length > 0 && (
-            <span className="text-muted-foreground"> ({allCustomersFrom.join(', ')})</span>
+            <span className="text-muted-foreground"> (from {allCustomersFrom.join(', ')})</span>
           )}
         </CardContent>
       </Card>
@@ -146,6 +165,7 @@ function AccessEditor({
           groups={groups}
           mode="contact"
           canGrant={canGrant}
+          savedOn={savedOn}
           onToggle={(key) => setOverrides((o) => toggleKey(o, key, registry, grants))}
           onToggleField={(key) => setOverrides((o) => toggleKey(o, key, registry, grants))}
           onResetRow={(key) => setOverrides((o) => resetRow(o, key, registry))}

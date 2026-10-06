@@ -22,6 +22,7 @@ import { Container } from '@/components/common/container';
 import { ListSearchInput } from '@/components/common/ListSearchInput';
 import { PageHeader } from '@/components/common/PageHeader';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
+import { useHasPermission } from '@/hooks/usePermissions';
 import { useChatbotRoles, useCreateChatbotRole } from '@/hooks/useChatbotAccess';
 import { TIER_OPTIONS, tierLabel } from '@/lib/chatbot-access/labels';
 import type { AudienceTier, ChatbotRole } from '@/services/chatbotAccessService';
@@ -30,6 +31,7 @@ export default function ChatbotRolesPage() {
   const router = useRouter();
   const { data: roles = [], isLoading, isError } = useChatbotRoles();
   const createRole = useCreateChatbotRole();
+  const canManage = useHasPermission('user_management.reference_data.manage');
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [tier, setTier] = useState('');
@@ -109,10 +111,12 @@ export default function ChatbotRolesPage() {
         <PageHeader
           title="Chatbot Roles"
           actions={
-            <Button onClick={() => setOpen(true)}>
-              <Plus className="size-4 mr-2" />
-              Add role
-            </Button>
+            canManage ? (
+              <Button onClick={() => setOpen(true)}>
+                <Plus className="size-4 mr-2" />
+                Add role
+              </Button>
+            ) : undefined
           }
         />
       </Container>

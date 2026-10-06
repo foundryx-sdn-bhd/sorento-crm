@@ -499,7 +499,15 @@ def put_contact_access(
     adds = [r for r in role_ids if r not in held] + [
         k for k, o in ((k, o) for k, o in zip(seen_keys, payload.overrides)) if o.granted and k not in plus_now
     ]
-    if adds:
+    # Deleting a minus override restores the role's grant, so it counts as a grant.
+    minus_dropped = [
+        1
+        for o in db.query(ContactAccessOverride).filter(
+            ContactAccessOverride.contact_id == contact_id, ContactAccessOverride.granted.is_(False)
+        )
+        if (o.domain_name, o.field_key) not in set(seen_keys)
+    ]
+    if adds or minus_dropped:
         _require_manage(db, current_user)
     for rid, row in held.items():
         if rid not in role_ids:

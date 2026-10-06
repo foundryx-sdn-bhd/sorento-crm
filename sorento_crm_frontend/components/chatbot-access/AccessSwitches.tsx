@@ -14,8 +14,11 @@ export interface AccessSwitchesProps {
   onToggle: (rowKey: string) => void;
   onResetRow: (rowKey: string) => void;
   onToggleField: (fieldKey: string) => void;
-  /** Without it nothing can be switched ON unless it only undoes a change; turning OFF stays. */
+  /** Without it nothing can be switched ON unless it was ON when the page loaded (undoing this
+   * session's switch-off); turning OFF stays. */
   canGrant?: boolean;
+  /** Row, detail and stamp keys that are ON in the saved state. */
+  savedOn?: ReadonlySet<string>;
 }
 
 function changedText(row: SwitchRow): string {
@@ -34,11 +37,13 @@ function Row({
   onResetRow,
   onToggleField,
   canGrant = true,
+  savedOn,
 }: { row: SwitchRow } & Omit<AccessSwitchesProps, 'groups'>) {
   const [open, setOpen] = useState(false);
   const shownCount = row.fields.filter((f) => f.on).length;
   const hasDetails = row.fields.length > 0 || !!row.stamp;
   const changed = mode === 'contact' && row.changed;
+  const locked = (key: string, on: boolean) => !canGrant && !on && !savedOn?.has(key);
 
   return (
     <div
@@ -96,7 +101,7 @@ function Row({
                   >
                     <Checkbox
                       checked={f.on}
-                      disabled={!canGrant && !f.on && !f.changed}
+                      disabled={locked(f.key, f.on)}
                       aria-label={f.label}
                       onCheckedChange={() => onToggleField(f.key)}
                     />
@@ -110,7 +115,7 @@ function Row({
                 <div className="flex items-center gap-3">
                   <Switch
                     checked={row.stamp.on}
-                    disabled={!canGrant && !row.stamp.on}
+                    disabled={locked(row.stamp.key, row.stamp.on)}
                     aria-label={row.stamp.label}
                     onCheckedChange={() => onToggleField(row.stamp!.key)}
                   />
@@ -142,7 +147,7 @@ function Row({
       <Switch
         checked={row.on}
         aria-label={row.label}
-        disabled={!canGrant && !row.on && !row.changed}
+        disabled={locked(row.key, row.on)}
         onCheckedChange={() => onToggle(row.key)}
       />
     </div>

@@ -8,7 +8,7 @@ import {
   useReactTable,
   getCoreRowModel,
 } from '@tanstack/react-table';
-import { Plus, Edit, Trash2, Copy, SlidersHorizontal } from 'lucide-react';
+import { Plus, Edit, Trash2, Copy } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { CardContent } from '@/components/ui/card';
@@ -22,7 +22,6 @@ import { formatDate } from '@/lib/helpers';
 import ContactAgentAccessDialog from '../../../access-agents/components/ContactAgentAccessDialog';
 import ContactAgentAccessDeleteDialog from '../../../access-agents/components/contact-agent-access-delete-dialog';
 import CopyAccessAgentsFromContactDialog from './CopyAccessAgentsFromContactDialog';
-import ContactFieldAccessDialog from '../../../access-agents/components/ContactFieldAccessDialog';
 import type { ContactAgentAccess } from '../../../access-agents/types/accessAgent.types';
 import { LIST_QUERY_OPTIONS } from '@/lib/list-query/options';
 
@@ -40,8 +39,6 @@ export default function ContactAccessAgentsTable({ contactId }: ContactAccessAge
   const [contactAccessToDelete, setContactAccessToDelete] = useState<ContactAgentAccess | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string>('');
   const [copyFromDialogOpen, setCopyFromDialogOpen] = useState(false);
-  // Which agent's per-contact field exceptions are being edited.
-  const [fieldAccessFor, setFieldAccessFor] = useState<ContactAgentAccess | null>(null);
 
   const { data, isLoading, isPlaceholderData, error, refetch } = useQuery({
     ...LIST_QUERY_OPTIONS,
@@ -155,17 +152,6 @@ export default function ContactAccessAgentsTable({ contactId }: ContactAccessAge
         header: '',
         cell: ({ row }) => (
           <div className="flex gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              title="Fields this contact may be told"
-              onClick={(e) => {
-                e.stopPropagation();
-                setFieldAccessFor(row.original);
-              }}
-            >
-              <SlidersHorizontal className="size-4" />
-            </Button>
             <Button
               variant="ghost"
               size="sm"
@@ -284,17 +270,6 @@ export default function ContactAccessAgentsTable({ contactId }: ContactAccessAge
           currentContactPhone={contact.phone_number}
           currentContactName={contact.name ?? undefined}
           onSuccess={() => queryClient.invalidateQueries({ queryKey: ['contact-access-agents', contactId] })}
-        />
-      )}
-
-      {fieldAccessFor && (
-        <ContactFieldAccessDialog
-          open
-          onOpenChange={(open) => !open && setFieldAccessFor(null)}
-          agentId={fieldAccessFor.agent_id}
-          agentName={fieldAccessFor.agent_name || fieldAccessFor.agent_code || 'this agent'}
-          contactId={contactId}
-          contactName={fieldAccessFor.respond_contact_name}
         />
       )}
     </>

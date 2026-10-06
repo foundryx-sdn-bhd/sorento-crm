@@ -78,11 +78,8 @@ export function useUpdateChatbotRole(id: string) {
   const invalidate = useInvalidateAccess();
   return useMutation({
     mutationFn: (input: Partial<RoleInput>) => updateRole(id, input),
-    onSuccess: () => {
-      invalidate();
-      toast.success('Role updated');
-    },
-    onError: (e: Error) => toast.error(e.message),
+    // The role page saves in two steps and owns the toasts, so a half save shows one message.
+    onSuccess: () => invalidate(),
   });
 }
 
@@ -114,11 +111,7 @@ export function useSetRoleGrants(id: string) {
   const invalidate = useInvalidateAccess();
   return useMutation({
     mutationFn: (grants: RoleGrants) => setRoleGrants(id, grants),
-    onSuccess: () => {
-      invalidate();
-      toast.success('Role saved');
-    },
-    onError: (e: Error) => toast.error(e.message),
+    onSuccess: () => invalidate(),
   });
 }
 
