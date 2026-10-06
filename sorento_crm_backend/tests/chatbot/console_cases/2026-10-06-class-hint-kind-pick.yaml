@@ -188,6 +188,29 @@ cases:
             - "Which one do you mean?"
           no_uuid: true
 
+  # Owner evidence (console dry run, chatbot.turns 0a405823, 6 Oct 23:58 MYT): a product-page
+  # SCREENSHOT of SORENTO GOLD WATER CLOSET SRTWC8383-RL-GY under `product_attachment`; the
+  # parser (v58) read {raw Sorento, hint brand, confident, canonical_code Sorento} and main
+  # minted "Which one do you mean? Sorento (customer / promotion / form / transporter)". This
+  # runner sends text only, so the image itself is hand-test step 15 (`laneboard/scripts/
+  # 1509.md`); the text below is the stand-in the sandbox pass used. On the sandbox (real
+  # parser, image turn) the reply was "I read ... from that photo. / Product: ... / Which kind
+  # of file do you need?", brand Sorento on focus, no pick.
+  - name: owner evidence, a brand word read off a product-page screenshot is the brand, no kind pick
+    cold: true
+    turns:
+      - text: "product image of SORENTO GOLD WATER CLOSET SRTWC8383-RL-GY"
+        expect:
+          reply_contains:
+            - "SRTWC8383"
+          reply_not_contains:
+            - "Which one do you mean?"
+            - "(customer)"
+            - "(promotion)"
+            - "(form)"
+            - "(transporter)"
+          no_uuid: true
+
   - name: control, a code still resolves by code whatever the hint (AC-1527)
     cold: true
     turns:

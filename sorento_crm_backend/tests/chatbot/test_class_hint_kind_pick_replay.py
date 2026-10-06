@@ -52,6 +52,8 @@ ATTACHMENT_TOOLS = {"crm_resource_attachments_list", "crm_resource_attachments_c
 CABANA_CATALOGUE = "@ CABANA CATALOG 2025 (RESEARCHABLE).pdf"
 ROGUE_CODE = "SRTWC8318-RL-250"
 ORDER_HINTED_CODE = "ZZT7445"
+# The owner's product-page screenshot (chatbot.turns 0a405823): the code on the page.
+SCREENSHOT_CODE = "SRTWC8383-RL-GY"
 
 
 def _entity(raw: str, hint: str, **extra: Any) -> dict[str, Any]:
@@ -107,6 +109,10 @@ def _seed_replay_world(session_factory) -> dict[str, Any]:
         product(ORDER_HINTED_CODE, "SORENTO BASIN MIXER TAP", brand_id=sorento.id, category_id=tap_cat.id, qty=1),
     ]
     product(ROGUE_CODE, "SORENTO S-TRAP 250MM ONE PIECE WC", brand_id=sorento.id, category_id=wc_cat.id, qty=7)
+    # Owner evidence (console dry run, chatbot.turns 0a405823, 6 Oct 23:58 MYT): a product-page
+    # SCREENSHOT of this water closet under `product_attachment`; the parser read the brand as
+    # {raw Sorento, hint brand, canonical_code Sorento} and main minted the four-way kind pick.
+    gold_wc = product(SCREENSHOT_CODE, "SORENTO GOLD WATER CLOSET", brand_id=sorento.id, category_id=wc_cat.id, qty=2)
     # Owner evidence (console on the #1514 copy, prompt v58): "which tap has technical
     # drawing" (a 298 set) then "sorentooooo?". Every tap carries a technical drawing.
     drawing_type = AttachmentType(type_name="Technical Drawing", code="technical_drawing", allowed_extensions="pdf", is_direct_access=False)
@@ -134,7 +140,22 @@ def _seed_replay_world(session_factory) -> dict[str, Any]:
     db.commit()
     world["stock_by_id"] = stock_by_id
     world["attachments"] = {catalogue.id: CABANA_CATALOGUE}
-    world["drawings"] = {tap.id: tap.product_code for tap in taps}
+    image_type = AttachmentType(type_name="Product Image", code="product_image", allowed_extensions="jpg", is_direct_access=False)
+    db.add(image_type)
+    db.flush()
+    image = Attachment(
+        attachment_type_id=image_type.id, original_filename=f"{SCREENSHOT_CODE} product image.jpg",
+        stored_filename=f"zzt-img-{SCREENSHOT_CODE}.jpg", file_path=f"https://example.test/zzt-img-{SCREENSHOT_CODE}.jpg",
+        company_id=DEFAULT_COMPANY_ID,
+    )
+    db.add(image)
+    db.flush()
+    db.add(ProductAttachment(id=str(uuid.uuid4()), product_id=gold_wc.id, attachment_id=image.id, company_id=DEFAULT_COMPANY_ID))
+    db.commit()
+    # `{product id: (code, filename)}` for the product attachments tool stub: the taps' technical
+    # drawings and the gold water closet's product image.
+    world["drawings"] = {tap.id: (tap.product_code, f"{tap.product_code} technical drawing.pdf") for tap in taps}
+    world["drawings"][gold_wc.id] = (SCREENSHOT_CODE, f"{SCREENSHOT_CODE} product image.jpg")
     return world
 
 
@@ -162,9 +183,9 @@ def _tool_stub(monkeypatch, world: dict[str, Any]) -> list[tuple[str, dict[str, 
                                "intro": "Stock summary for the requested products." if rows else "No matching results found."})
         if name == "crm_master_product_attachments_list":
             ids = [pid for pid in (arguments.get("product_ids") or []) if pid in drawings]
-            items = [{"title": drawings[pid], "flags": {}, "fields": [
-                {"key": "product_code", "label": "Product Code", "value": drawings[pid]},
-                {"key": "original_filename", "label": "File Name", "value": f"{drawings[pid]} technical drawing.pdf"},
+            items = [{"title": drawings[pid][0], "flags": {}, "fields": [
+                {"key": "product_code", "label": "Product Code", "value": drawings[pid][0]},
+                {"key": "original_filename", "label": "File Name", "value": drawings[pid][1]},
             ]} for pid in ids]
             return json.dumps({"result_type": "product_attachments", "intro": "Here are the attachments." if items else "No matching results found.",
                                "items": items, "has_result": bool(items), "attachments": [], "action_links": []})
@@ -226,6 +247,17 @@ SENTENCES: list[tuple[str, dict[str, Any]] | list[tuple[str, dict[str, Any]]]] =
             entity_op="replace_combine", entities=[_entity("sorentooooo", "brand", canonical_code="Sorento")],
         )),
     ],
+    # Owner evidence (console dry run, chatbot.turns 0a405823, 6 Oct 23:58 MYT): a product-page
+    # SCREENSHOT of SORENTO GOLD WATER CLOSET SRTWC8383-RL-GY under `product_attachment`. The
+    # parser (v58) read {raw Sorento, hint brand, confident, canonical_code Sorento}; on main the
+    # resolver had no brand kind, the all-types rerun re-typed the word by name substring and
+    # reconcile minted "Which one do you mean? Sorento (customer / promotion / form /
+    # transporter)". The verdict below is the text the image read yields, hand-written.
+    (f"[screenshot] SORENTO GOLD WATER CLOSET {SCREENSHOT_CODE}", dict(
+        intent_hint="check_product_attachment", domain_hint="product_attachment", match_mode="and",
+        entities=[_entity("Sorento", "brand", canonical_code="Sorento"), _entity(SCREENSHOT_CODE, "product"),
+                  _entity("product image", "attachment_type", canonical_code="product image")],
+    )),
 ]
 
 

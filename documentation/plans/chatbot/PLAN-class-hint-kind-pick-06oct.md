@@ -108,6 +108,32 @@ path lists them), which is the whole-sentence spec reading the owner's rule "onl
 unresolved tokens go to spec search" wants changed. Both are follow-ups for ROGUE class C
 (#1506), where the ~200-code dump above the question also belongs. No code gate was added.
 
+## Owner evidence turn 2 (replay row 14, the product-page screenshot, chatbot.turns 0a405823)
+
+A screenshot of SORENTO GOLD WATER CLOSET SRTWC8383-RL-GY under `product_attachment`: the
+parser read {raw Sorento, hint brand, confident, canonical_code Sorento}; on main the
+resolver had no brand kind, the all-types rerun re-typed the word by name substring and
+reconcile minted "Which one do you mean? Sorento (customer / promotion / form /
+transporter)". On the final head, stubbed replay (row 14): the product image attachment,
+focus brands sorento, no pick. Live on the sandbox (real image turn, worker extraction,
+real parser gpt-5.4-mini): image read "SORRENTO, GOLD WATER CLOSET, SRTWC8383-RL-GY, Water
+Closet", entities product + category + {Sorento, brand, canonical Sorento}, reply "I read
+... from that photo. / Product: ... / Which kind of file do you need?", open question
+`attachment_type_ask`, focus brands Sorento, no pick. Hand test step 15.
+
+## Seen on the live pass, not this lane's (spec sentence reader)
+
+Real parser, sandbox, 6 Oct: "basin" / "sorento basin" / "Sorrento basin" / "srt basin"
+alternate between the Wash Basin set and the existing `Couldn't find: "basin" (category)`
+line. Measured with the resolver exchange recorded (8 in-process runs): a PASS binds
+`spec_asked: [{class: Wash Basin}]`; a MISS binds `product_type = art_basin` or
+`basin_tap`, `floor_missed: true`, zero rows. That is the LLM phrase reader inside the spec
+search (`product_spec_search`, `understand_phrase`), after the lock has already kept
+promotion / customer out; `product_type` has `art_basin` and `basin_tap` but no
+`wash_basin` (`product_spec_registry.py:655-680`). The lane's tests never reach it (no key
+in the harness, the lexical class tier answers). Seam: ROGUE class C (#1506); no code gate
+here (owner rule). The kind pick cannot come back on either reading.
+
 ## Seen on the replay, not this lane's (identical before and after)
 
 "water tap" (category, master_products): the resolver answers three spec-tier taps, the
