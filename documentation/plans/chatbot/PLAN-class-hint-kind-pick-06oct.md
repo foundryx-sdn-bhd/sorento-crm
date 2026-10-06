@@ -1,9 +1,11 @@
 # PLAN - a confident class hint is never re-typed by name match (CLASS-HINT-KIND-PICK)
 
-Status: BUILT, in review (6 Oct 2026). Owner Q1 ruled "cabana is a brand": reach is
-category / product_type / product / brand, plus any word the catalogue knows as a brand
-exactly; D2 superseded. Fix green on the sandbox (31 lane tests + rewritten r11 control),
-kill test 24 red / 7 controls green on origin/main, before/after replay table posted on
+Status: BUILT, reviewed, waiting on the owner's hand test and merge (6 Oct 2026). Owner Q1
+ruled "cabana is a brand": reach is category / product_type / product / brand, plus any
+word the catalogue knows as a brand exactly; D2 superseded. Final head carries origin/main
+e9aa88b2 (#1512) merged in: lane file 52 + r11 6 + brand-routing pin green (74 passed),
+related chunk 27 files 339 passed / 14 skipped, kill test on origin/main e9aa88b2 with the
+final test files 35 red / 11 controls green, before/after replay table (13 cases) posted on
 PR #1509. Track: small fix (backend only, no migration, no auth/RBAC change, no new ingest
 surface, no UI). Card: `CARD-class-hint-kind-pick-06oct.md`. UAC:
 `class-hint-kind-pick-acceptance-criteria.md`. Hand test: `laneboard/scripts/1509.md`.
