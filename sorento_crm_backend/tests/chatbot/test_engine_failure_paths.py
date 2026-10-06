@@ -458,7 +458,29 @@ class TestTheBusinessLaneOnFetchFailure:
         self, session_factory, seeded, stub_parser, stub_access, system_settings_row, monkeypatch
     ) -> None:
         set_chatbot_switches(session_factory, business_lane=True)
-        self._wire_resolver(monkeypatch)
+        # ROGUE-CONVO-REVIEW PR-1: the resolver PLACES the typed code. With the default
+        # empty resolver the token was unplaced and the tool still ran, with no filter
+        # at all; that zero-scope read is now refused before any tool call, so the
+        # outage this test is about has to happen on a scoped fetch.
+        import uuid as _uuid
+
+        match = {
+            "entity_type": "product",
+            "uuid": str(_uuid.uuid4()),
+            "canonical_code": "SRTWC8517",
+            "match_tier": "exact",
+            "display": {"product_name": "ZZT SRTWC8517"},
+        }
+        self._wire_resolver(
+            monkeypatch,
+            resolve_entity=lambda body: {
+                "tokens": ["SRTWC8517"],
+                "resolutions": [{"token": "SRTWC8517", "resolved": True, "ambiguous": False, "matches": [match]}],
+                "unresolved_tokens": [],
+                "intersection": [match],
+                "by_entity_type": {"product": [match]},
+            },
+        )
         monkeypatch.setattr(
             engine_mod.business,
             "run_fetch",

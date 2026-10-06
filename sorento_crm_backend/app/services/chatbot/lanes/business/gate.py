@@ -154,6 +154,20 @@ ALLOWS_EMPTY: dict[str, bool] = {
     "purchase_order": True,
 }
 
+#: ROGUE-CONVO-REVIEW PR-1 (owner ruling Q2, 6 Oct 2026): the domains whose fetch the
+#: ENGINE refuses outright when nothing scopes it (no entity with a uuid, no filter, no
+#: date window, no predicate block, no `INTENTS_ALLOWING_EMPTY` intent), answered with the
+#: scope sentence. Read by `turn_runtime.make_tool_runner` (the no-subject probe and the
+#: R6 "named a token and none placed" guard) and `turn/apply._refuses_empty_subject`: one
+#: source, three readers. `inventory` is the hotfix-22-Sep row; `master_products` is the
+#: measured second domain (a dealer's one word "product" listed 50 arbitrary rows). NOT
+#: every `ALLOWS_EMPTY` False row: the full chatbot suite measured that `sales`, `order` and
+#: `promotion` asks with no entity are real whole-book or focus-driven asks with their own
+#: flows (the sales report, top selling, the order broaden, a promotion read off the focus
+#: brand), and refusing them here broke eight pins. A third domain joins on its own live
+#: turn, not before.
+REFUSES_EMPTY_FETCH: frozenset[str] = frozenset({"inventory", "master_products"})
+
 # Domains that need a SPECIFIC type present to be scopable (beyond compatibility).
 REQUIRED_TYPES: dict[str, list[str]] = {"product_attachment": ["attachment_type"]}
 TYPE_PROMPT = {

@@ -2139,14 +2139,14 @@ def is_product_shaped_entity(entity: dict[str, Any]) -> bool:
 # `narrowing={}` (`turn/policy_rows.py`), so the product kind's `list_all` default
 # applies and `narrow.decide` passes a zero-entity ask straight through; a dealer's one
 # word "product" reached `crm_master_products_list` unfiltered. The set is now READ off
-# the gate's own dict (every False row), one source for the fan-out seam here and the
+# the gate's own `REFUSES_EMPTY_FETCH`, one source for the fan-out seam here and the
 # runner's no-subject probe (`turn_runtime.make_tool_runner`).
 def _refuses_empty_subject(domain: str) -> bool:
-    """Does `gate.ALLOWS_EMPTY` say this domain needs a scoping entity? Imported at
-    call time: `lanes/business/gate.py` sits above this module."""
-    from app.services.chatbot.lanes.business.gate import ALLOWS_EMPTY
+    """Does the gate say this domain's fetch is refused with nothing to scope it?
+    Imported at call time: `lanes/business/gate.py` sits above this module."""
+    from app.services.chatbot.lanes.business.gate import REFUSES_EMPTY_FETCH
 
-    return ALLOWS_EMPTY.get(domain) is False
+    return domain in REFUSES_EMPTY_FETCH
 
 
 # --------------------------------------------------------------------------- #
