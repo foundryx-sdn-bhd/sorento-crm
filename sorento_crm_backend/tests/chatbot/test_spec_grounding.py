@@ -62,6 +62,13 @@ def _kinds(entities) -> list[tuple[str, str]]:
     return [(e["hint"], e["raw"]) for e in entities]
 
 
+def _kept_as_document(out, document) -> None:
+    """ATTACH-GROUNDING-TYPO option (c) (owner, 6 Oct 2026): a confident attachment_type
+    whose code is a listed document type is the parser's, kept as filed, never re-read."""
+    assert document in out, out
+    assert not [e for e in out if e["hint"] == "specification"], out
+
+
 # --------------------------------------------------------------------------- #
 # The owner's four messages, as the traces read them                            #
 # --------------------------------------------------------------------------- #
@@ -76,11 +83,12 @@ def test_item2_gunmetal_basin_is_a_basin_with_a_gunmetal_finish(vdb):
     assert spec["raw"] == "gunmetal" and spec["spec_label"] == "Finish or colour", spec
 
 
-def test_item3_f_trap_is_an_unknown_trap_never_a_technical_drawing(vdb):
-    """"any water closet f trap?" -> [category "water closet", attachment_type "f trap"
-    canonical "technical drawing"]."""
-    out = _ground(vdb, _e("water closet", "category"), _e("f trap", "attachment_type", canonical_code="technical drawing"))
-    assert all(e["hint"] != "attachment_type" for e in out), out
+def test_item3_f_trap_is_an_unknown_trap(vdb):
+    """"any water closet f trap?". Read as the category's words, "f trap" is an unknown
+    trap. Filed by the parser as a technical drawing, it is the parser's (option (c))."""
+    document = _e("f trap", "attachment_type", canonical_code="technical drawing")
+    _kept_as_document(_ground(vdb, _e("water closet", "category"), document), document)
+    out = _ground(vdb, _e("water closet f trap", "category"))
     assert ("category", "water closet") in _kinds(out), out
     [spec] = [e for e in out if e["hint"] == "specification"]
     assert spec["spec_key"] == "trap_type" and spec["spec_value"] is None, spec
@@ -88,11 +96,12 @@ def test_item3_f_trap_is_an_unknown_trap_never_a_technical_drawing(vdb):
     assert spec["spec_known"] == ["P trap", "S trap"], spec
 
 
-def test_item4_pink_colour_is_an_unknown_finish_or_colour_never_a_photo(vdb):
-    """"any pink colour water closet?" -> [category "water closet", attachment_type "pink
-    colour" canonical "photo"]."""
-    out = _ground(vdb, _e("water closet", "category"), _e("pink colour", "attachment_type", canonical_code="photo"))
-    assert all(e["hint"] != "attachment_type" for e in out), out
+def test_item4_pink_colour_is_an_unknown_finish_or_colour(vdb):
+    """"any pink colour water closet?". Read as the category's words, pink is an unknown
+    finish. Filed by the parser as a photo, it is the parser's (option (c))."""
+    document = _e("pink colour", "attachment_type", canonical_code="photo")
+    _kept_as_document(_ground(vdb, _e("water closet", "category"), document), document)
+    out = _ground(vdb, _e("pink colour water closet", "category"))
     [spec] = [e for e in out if e["hint"] == "specification"]
     assert (spec["spec_key"], spec["spec_value"], spec["raw"]) == ("finish", None, "pink"), spec
     assert "Gunmetal" in spec["spec_known"] and "Chrome" in spec["spec_known"], spec
@@ -101,10 +110,9 @@ def test_item4_pink_colour_is_an_unknown_finish_or_colour_never_a_photo(vdb):
 def test_item5_thickness_1_2_mm_is_a_thickness_and_kitchen_sink_a_kitchen_sink(vdb):
     """"any kitchen sink with thickness 1.2 mm" -> [category "kitchen sink",
     attachment_type "thickness 1.2 mm" canonical "technical drawing"]."""
-    out = _ground(
-        vdb, _e("kitchen sink", "category"), _e("thickness 1.2 mm", "attachment_type", canonical_code="technical drawing")
-    )
-    assert all(e["hint"] != "attachment_type" for e in out), out
+    document = _e("thickness 1.2 mm", "attachment_type", canonical_code="technical drawing")
+    _kept_as_document(_ground(vdb, _e("kitchen sink", "category"), document), document)
+    out = _ground(vdb, _e("kitchen sink thickness 1.2 mm", "category"))
     assert ("category", "kitchen sink") in _kinds(out), out
     [spec] = [e for e in out if e["hint"] == "specification"]
     assert (spec["spec_key"], spec["spec_value"], spec["spec_unit"]) == ("thickness", 1.2, "mm"), spec
@@ -114,10 +122,10 @@ def test_item5_misspelt_kitchne_and_thicnkess_bind_nothing(vdb):
     """Fix round 10 on PR #833 (owner, 28 Sep 2026: "for #833 yeah exact only"). Round 8
     read "kitchne sink" as a kitchen sink and "thicnkess" as thickness, one typo apart
     (`_near`, retired). Neither is the catalogue's word: nothing binds, never a document."""
-    out = _ground(
-        vdb, _e("kitchne sink", "category"), _e("thicnkess 1.2 mm", "attachment_type", canonical_code="technical drawing")
-    )
-    assert all(e["hint"] != "attachment_type" for e in out), out
+    document = _e("thicnkess 1.2 mm", "attachment_type", canonical_code="technical drawing")
+    kept = _ground(vdb, _e("kitchne sink", "category"), document)
+    assert document in kept and not [s for s in _specs(kept) if s[1] is not None], kept
+    out = _ground(vdb, _e("kitchne sink thicnkess 1.2 mm", "category"))
     assert ("category", "kitchen sink") not in _kinds(out), out
     assert not [s for s in _specs(out) if s[1] is not None], out
 
@@ -138,9 +146,20 @@ def test_a_parser_specification_is_checked_against_the_registry(vdb):
     assert _specs(wrong_key) == [("finish", "gunmetal")], wrong_key
 
 
-@pytest.mark.parametrize("raw", ["cert", "certificate", "technical drawing", "photo", "photos", "sijil", "PPS cert"])
-def test_a_word_on_the_attachment_type_list_stays_a_document_type(vdb, raw):
-    entity = _e(raw, "attachment_type")
+@pytest.mark.parametrize(
+    "raw,code",
+    [
+        ("cert", "certificate"),
+        ("certificate", "certificate"),
+        ("technical drawing", "technical drawing"),
+        ("photo", "photo"),
+        ("photos", "photo"),
+        ("sijil", "certificate"),
+        ("PPS cert", "certificate"),
+    ],
+)
+def test_a_word_on_the_attachment_type_list_stays_a_document_type(vdb, raw, code):
+    entity = _e(raw, "attachment_type", canonical_code=code)
     out = _ground(vdb, _e("basin", "category"), entity)
     assert out == [_e("basin", "category"), entity], out
 
@@ -158,9 +177,14 @@ def test_a_registry_phrase_spanning_the_class_word_keeps_the_class(vdb):
     assert ("category", "tap") in _kinds(out) and _specs(out) == [("mounting", "pillar_mounted")], out
 
 
-def test_a_descriptor_no_key_holds_is_never_a_document_type(vdb):
-    out = _ground(vdb, _e("water closet", "category"), _e("zebra", "attachment_type", canonical_code="photo"))
-    assert all(e["hint"] != "attachment_type" for e in out), out
+def test_a_descriptor_no_key_holds(vdb):
+    """Filed by the parser as a photo, "zebra" is the parser's (option (c)); read as the
+    category's words it is a word nothing matched, with no key."""
+    document = _e("zebra", "attachment_type", canonical_code="photo")
+    _kept_as_document(_ground(vdb, _e("water closet", "category"), document), document)
+    unlisted = _ground(vdb, _e("water closet", "category"), _e("zebra", "attachment_type", canonical_code="zebra"))
+    assert unlisted == [_e("water closet", "category")], unlisted
+    out = _ground(vdb, _e("water closet zebra", "category"))
     [spec] = [e for e in out if e["hint"] == "specification"]
     assert spec["spec_key"] == "" and spec["spec_value"] is None and spec["raw"] == "zebra", spec
 
@@ -218,9 +242,9 @@ def test_a_number_with_its_key_word_grounds_to_that_measurement(vdb, raw, type_w
         out = _ground(vdb, _e(glued, "category"))
         assert ("category", type_word) in _kinds(out), (glued, out)
         assert (key, value) in _specs(out), (glued, out)
-        # Said as a document type, the same words ground the same way.
-        out = _ground(vdb, _e(type_word, "category"), _e(raw, "attachment_type", canonical_code="technical drawing"))
-        assert (key, value) in _specs(out) and all(e["hint"] != "attachment_type" for e in out), (raw, out)
+        # Filed by the parser as a technical drawing, the words are the parser's (option (c)).
+        document = _e(raw, "attachment_type", canonical_code="technical drawing")
+        _kept_as_document(_ground(vdb, _e(type_word, "category"), document), document)
 
 
 @pytest.mark.parametrize(
@@ -234,7 +258,7 @@ def test_a_number_with_its_key_word_grounds_to_that_measurement(vdb, raw, type_w
     ],
 )
 def test_a_word_beside_a_keys_own_word_that_is_no_choice_is_unknown(vdb, said, key, known):
-    out = _ground(vdb, _e("water closet", "category"), _e(said, "attachment_type", canonical_code="photo"))
+    out = _ground(vdb, _e(f"water closet {said}", "category"))
     [spec] = [e for e in out if e["hint"] == "specification"]
     assert spec["spec_key"] == key and spec["spec_value"] is None, spec
     assert known in spec["spec_known"], spec

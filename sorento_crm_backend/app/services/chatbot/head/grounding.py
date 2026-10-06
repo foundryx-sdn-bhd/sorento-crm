@@ -410,18 +410,33 @@ def _on_attachment_list(db: "Session", raw: str, vocab: Vocabulary) -> bool:
     return bool(_lookup_resolve(db, "attachment_type_alias", raw))
 
 
-def _parser_document_type(db: "Session", entity: dict[str, Any], vocab: Vocabulary) -> bool:
-    """The parser's own `canonical_code` is a document type on the list AND one word the
-    customer typed is, exactly (`_same`), a word of it: "techincal drawings" read as
-    "technical drawing" shares "drawing". Only the parser understands the misspelt word;
-    a code that shares no word with what was typed ("zebra" read as "photo") is a
-    misfiled descriptor and gets no say. No fuzzy match: the typo itself is never read."""
-    canonical = str(entity.get("canonical_code") or "").strip()
-    if not canonical or not _on_attachment_list(db, canonical, vocab):
+#: The document types the parser prompt's taxonomy names (ATTACHMENT TYPE EXTRACTION:
+#: "canonical_code is always the taxonomy value"), as the owner listed them on 6 Oct 2026.
+DOCUMENT_TYPE_CODES = frozenset(
+    {"photo", "video", "technical drawing", "3d model", "certificate", "installation guide"}
+)
+
+
+def _listed_document_type(db: "Session", entity: dict[str, Any]) -> bool:
+    """The parser was confident and its code, whole, is a listed document type: a taxonomy
+    value or an `attachment_types` name or code. An exact comparison (case aside); no word
+    of it and no alias is ever read."""
+    from app.models.resources import AttachmentType
+    from sqlalchemy import func, or_
+
+    if entity.get("confident") is False:
         return False
-    code_words = [w for w in _words(canonical) if w not in _STOPWORDS]
-    said_words = [w for w in _words(str(entity.get("raw") or "")) if w not in _STOPWORDS]
-    return any(_same(said, word) for said in said_words for word in code_words)
+    code = _fold(str(entity.get("canonical_code") or entity.get("raw") or ""))
+    if not code:
+        return False
+    if code in DOCUMENT_TYPE_CODES:
+        return True
+    return (
+        db.query(AttachmentType.id)
+        .filter(or_(func.lower(AttachmentType.type_name) == code, func.lower(AttachmentType.code) == code))
+        .first()
+        is not None
+    )
 
 
 def _corrected_class(db: "Session", text: str, vocab: Vocabulary) -> str:
@@ -678,51 +693,20 @@ def ground(
             add(grounded, entity)
             notes.append({"from": hint, "raw": raw, "to": [rest, *[g.__dict__ for g in grounded]]})
             continue
-        if hint == _ATTACHMENT_HINT and raw and not _on_attachment_list(db, raw, vocab):
-            tokens = _words(raw)
-            grounded, used = ground_words(raw, vocab, keep=_covered_by_class(tokens, vocab))
-            rest = _remainder(raw, used)
-            if rest and _covered_by_class(_words(rest), vocab):
-                out.append({**entity, "raw": _corrected_class(db, rest, vocab), "hint": "category", "canonical_code": None})
-                rest = ""
-            if not grounded and rest and _parser_document_type(db, entity, vocab):
-                # ATTACH-GROUNDING-TYPO (prod 5 Oct 2026, "m495 techincal drawings"): the
-                # parser read the words as a document type on the list, and a word the
-                # customer typed is a word of that type. It stays the document type, never
-                # an empty specification.
-                out.append(entity)
-                notes.append({"from": hint, "raw": raw, "to": "kept: parser canonical_code"})
+        if hint == _ATTACHMENT_HINT:
+            # ATTACH-GROUNDING-TYPO, option (c) (owner, 6 Oct 2026): only the parser
+            # understands words. A confident document type whose code is listed stays that
+            # type, whatever the customer typed ("techincal drawings", "TD DRAW", "phtos");
+            # any other is dropped. The customer's words are never read here.
+            if not _listed_document_type(db, entity):
+                notes.append({"from": hint, "raw": raw, "to": "dropped: not a listed document type"})
                 continue
-            if not grounded and rest:
-                # Named by nothing the system holds: not a document type, not a value of
-                # any key. Said back as a descriptor it does not know, never a document.
-                grounded = [Grounded("", "", rest)]
-            add(grounded, entity)
-            notes.append({"from": hint, "raw": raw, "to": [g.__dict__ for g in grounded]})
-            continue
         out.append(entity)
     if moved:
         notes.append({"from": "domain", "raw": "product_attachment", "to": "master_products"})
     if not notes:
         return verdict, []
     grounded_verdict = {**verdict, "entities": out}
-    # The document domain was chosen for the misfiled descriptor alone ("any pink colour
-    # water closet?" read as a photo ask): with no document type left and no document
-    # word among the requested attributes, the ask is about the products themselves.
-    had_document = any(
-        isinstance(e, dict) and str(e.get("hint") or "").strip().lower() == _ATTACHMENT_HINT for e in entities
-    )
-    has_document = any(
-        isinstance(e, dict) and str(e.get("hint") or "").strip().lower() == _ATTACHMENT_HINT for e in out
-    )
-    asked_document = any(
-        isinstance(a, str) and a.strip() and _on_attachment_list(db, a, vocab)
-        for a in verdict.get("requested_attributes") or []
-    )
-    if had_document and not has_document and not asked_document and verdict.get("domain_hint") == "product_attachment":
-        grounded_verdict["domain_hint"] = "master_products"
-        grounded_verdict["intent_hint"] = "check_product"
-        notes.append({"from": "domain", "raw": "product_attachment", "to": "master_products"})
     return grounded_verdict, notes
 
 
