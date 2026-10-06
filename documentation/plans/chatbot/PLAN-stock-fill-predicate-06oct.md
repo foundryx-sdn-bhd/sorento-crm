@@ -43,30 +43,40 @@ discontinued), or the no-stock line.
 
 ## Fix (code only; the parser prompt is not touched)
 
-A. `engine.py`: on a plan whose every fetch is a task's own (`spec.filters["task"]`), the
-   resolver is handed the verdict as it is, never the unsettled carry. The task's slots are
-   the fetch's subjects already (`turn/task.py::StockQtyTask.to_fetch`,
-   `turn_runtime.make_tool_runner`'s task arm), so a carried word resolves nothing the fetch
-   can use. With no entities `resolve_kinds` asks the resolver nothing: predicate None.
-   `turn_runtime.make_tool_runner`: a `filters["task"]` spec never takes the turn's set
-   predicate on its gate, so the rule holds even when the fill verdict itself carries a
-   stray non-code word.
+A. (Owner ruling, 6 Oct 2026 17:40: the principle, not the turn type.) A fetch already
+   scoped to a specific resolved product (a spec entity with a real uuid) never takes a
+   set predicate, on ANY turn: a task fill, a plain reuse, a fresh pick. A set predicate
+   exists only for a set question with no specific product. A stray non-product entity (a
+   stale brand / promotion / category row without uuid) may resolve on its own but never
+   gates or widens the product lookup. One place: `turn_runtime.make_tool_runner`'s gate,
+   where the predicate is attached (`_scoped_to_a_resolved_product(spec)` reads the plan's
+   own spec, never the resolver's rows, because a set question's qualifying population
+   reaches `compatible_entities` with uuids of its own). The key is popped, not left
+   unset: the gate starts as the resolver's own gate dict, which already carries it. The
+   engine's carry hand-off is unchanged (an earlier revision skipped the carry on task
+   fetch turns; the general rule made that special case unnecessary).
 B. `turn/compose.py` never-stuck: a section that rendered nothing for its named subjects
    prints the existing "No {label} found for {codes}." miss line when the tool found
    nothing, and the `error` arm's existing retry sentence when the tool answered but the
    lane rendered nothing (a withheld set), never a bare header and never a false "no stock".
 
-Chosen seams: the engine's carry hand-off is where `plan` is known, so the task fetch is
-recognised there and nowhere earlier; `with_carried_entities` itself cannot tell a fill
-turn from a later ask while a task is still open. The gate guard is the one place a
-predicate is attached to a fetch.
+Chosen seam: the gate guard is the one place a predicate is attached to a fetch, and the
+plan's spec is the one record of whether the question is about a specific product.
+
+Observed on the blank test schema, reported and not changed here: a carried uuid-less word
+that the resolver cannot place is named by production's not-found composer ("Couldn't find:
+SORENTO.") although nobody typed it this turn, and that composer's row re-render carries no
+discontinued marker. In prod the word is a real brand and resolves.
 
 ## Tests
 
 `sorento_crm_backend/tests/chatbot/test_stock_fill_predicate.py`: two engine replays of the
-turn 121 state (in stock + discontinued; no stock, no incoming) with a seam assertion on the
-resolver bodies, a tool-runner gate test for the predicate rule, two compose tests for the
-never-stuck rule. Four older expectations in three files pinned a bare header over an
+turn 121 state (in stock + discontinued; no stock, no incoming), the sibling replay (a plain
+`check stock` reuse turn over the carried product and the stale extra, no task: the quantity
+question, then the availability line), each with a seam assertion on the gate the lane
+received (no predicate, the product alone) and on the stock tool's product ids; a
+tool-runner gate test (task spec and plain product spec drop the predicate, a class-word
+spec keeps it); two compose tests for the never-stuck rule. Four older expectations in three files pinned a bare header over an
 empty hand-built envelope: the three header-grammar tests now read the header over a
 row, and the blocked-contact escalation test expects the miss line before the salesman
 line.

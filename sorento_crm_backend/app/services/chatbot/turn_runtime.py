@@ -2912,17 +2912,22 @@ def make_tool_runner(
         # `resolver_gate` itself carried under those two keys.
         gate: dict[str, Any] = dict(resolver_gate) if isinstance(resolver_gate, dict) else {}
         gate["compatible_entities"] = entities
-        # STOCK-FILL-PREDICATE: a task's own fetch is about its settled slots (above),
-        # never a described set, so the turn's set predicate (derived off the INTENT
-        # by `predicate.derive_require` whenever this turn's resolver saw no typed
-        # code) never rides it - with one, `output_structurer` withholds the rows of
-        # a set past `SET_LIST_MAX` and the dealer reads a header over nothing.
-        # POPPED, not merely left unset: `gate` starts as the resolver's own gate dict
-        # (above), and that dict is where this turn's `predicate` was read from in the
-        # first place (`resolve_kinds`), so on a task spec the key is removed.
+        # STOCK-FILL-PREDICATE (owner ruling, 6 Oct 2026): a set predicate exists only
+        # for a set question with no specific product ("which basins have stock"). A
+        # fetch the plan already scoped to a resolved product - a spec entity with a
+        # real uuid, whether a task slot, a carried subject or a fresh pick, on ANY
+        # turn - never takes one. The turn's predicate is derived off the INTENT
+        # (`predicate.derive_require`, `check_stock` -> `{"stock": true}`) whenever the
+        # resolver saw no typed code, so a stale uuid-less word on the carry (a brand
+        # read off a photo, mis-tagged `promotion`) was enough to build one over the
+        # whole catalogue; with it on the gate `output_structurer` withheld the rows of
+        # a set past `SET_LIST_MAX` and the dealer read a header over nothing (prod
+        # turn 121). POPPED, not merely left unset: `gate` starts as the resolver's own
+        # gate dict (above), and that dict is where this turn's `predicate` was read
+        # from in the first place (`resolve_kinds`).
         if page_predicate is not None:
             block = page_predicate
-        elif spec.filters.get("task"):
+        elif _scoped_to_a_resolved_product(spec):
             block = None
             gate.pop("predicate", None)
         else:
@@ -4017,6 +4022,20 @@ def _spec_row(entity: dict[str, Any]) -> dict[str, Any]:
         "raw": entity.get("raw"),
         **({"display_name": entity["name"]} if entity.get("name") else {}),
     }
+
+
+def _scoped_to_a_resolved_product(spec: FetchSpec) -> bool:
+    """Does the plan's own spec name a specific product by a real uuid? Read off
+    `spec.entities` (what the plan says the question is about), never off the resolver's
+    rows: a set question's qualifying population reaches `compatible_entities` with uuids
+    of its own (`references._emit_spec_matches`) and is exactly the case that keeps its
+    predicate. `_spec_row`'s uuid test, so a label promoted into `uuid` never counts."""
+    return any(
+        isinstance(e, dict)
+        and jsc.nullish_str(e.get("hint")).strip().lower() == "product"
+        and _spec_row(e)["uuid"] is not None
+        for e in spec.entities
+    )
 
 
 def _entities_for(spec: FetchSpec, compatible: list[dict[str, Any]]) -> list[dict[str, Any]]:
