@@ -5044,11 +5044,20 @@ def _run_stages_body(  # noqa: PLR0915
             # task slot, a carried subject with its uuid), so the resolver's "no
             # entities" exit - it was asked about the stray carried word alone - is
             # passed, not answered as the turn's miss over a fetch that answers the
-            # product in full (prod turn 121's "1").
+            # product in full (prod turn 121's "1"). ONLY when every token the resolver
+            # was asked about was CARRIED (`current_message: False`): a word the dealer
+            # typed this turn that resolves to nothing ("water tap basin" over carried
+            # products) is still a miss the reply must name (hand pass 2 item 6), so
+            # that exit stands.
+            resolver_entities = [
+                e for e in (resolver_parse_output.get("entities") or []) if isinstance(e, dict)
+            ]
             if (
                 not customer_scope_refused
                 and scope_ids is None
                 and plan.fetch
+                and resolver_entities
+                and all(e.get("current_message") is False for e in resolver_entities)
                 and all(turn_runtime.scoped_to_a_resolved_product(spec) for spec in plan.fetch)
             ):
                 before = ((resolver_payload or {}).get("gate") or {}).get("gate_passed")
