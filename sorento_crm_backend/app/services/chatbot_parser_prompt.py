@@ -732,8 +732,11 @@ SEMANTIC_PARSER_PROMPT += MEMORY_ADDENDUM
 # wordings. Since PROMPT-DYNAMIC (#1405) the live version is the owner's text and nothing
 # republishes it from here (`chatbot_prompt_vars.wording_layer_exists`); crew sequences the
 # patch onto the live version. The fallback carries the same rules so a fresh install's v1
-# teaches them. Inserted at the same two anchors the patch uses (each occurs once in the
-# production text and once here); a fallback whose text lost an anchor is left as it is.
+# teaches them: appended as ONE block (`TRAP_SPECS_FALLBACK_BLOCK`) beneath the other addenda
+# with MEMORY_ADDENDUM still the tail, not woven in at the patch's anchors, because the
+# other prompt tests pin `STOCK_TASK_ADDENDUM` and `SPECIFICATION_ADDENDUM` verbatim and the
+# anchors sit inside them. `with_trap_specs` below is the patch builder's applier (strict
+# mode, `tests/chatbot/_trap_specs_prompt.py`), kept beside the anchors it reads.
 from pathlib import Path as _Path
 
 _ADDENDA_DIR = _Path(__file__).resolve().parents[2] / "alembic" / "data"

@@ -1173,18 +1173,22 @@ def _rebuilt(
         # An answered entry with no quantity on it has nothing to revise.
         return others
     if (
-        existing is not None
+        answered
+        and existing is not None
         and existing.status == OPEN
         and len(existing.slots) > 1
         and {slot.key for slot in slots} < {slot.key for slot in existing.slots}
     ):
-        # STOCK-QTY-PARTIAL-FILL (owner ruling R1, 6 Oct 2026): the block answers SOME
+        # STOCK-QTY-PARTIAL-FILL (owner ruling R1, 6 Oct 2026): the block ANSWERS SOME
         # of the open list's own lines (a partial fetch, `run`'s
-        # `task_partial_answered_*`). Merge rather than rebuild: the covered lines take
-        # the tool's own `requested_qty`, the uncovered ones keep their position and
-        # stay owed, and the task is answered only once no line is owed. The reply
-        # itself is the answered lines (`after_reply` returns no text for a block with
-        # nothing still needing a quantity), so the list is never printed again.
+        # `task_partial_answered_*`, no row still needing a quantity). Merge rather than
+        # rebuild: the covered lines take the tool's own `requested_qty`, the uncovered
+        # ones keep their position and stay owed, and the task is answered only once no
+        # line is owed. The reply itself is the answered lines (`after_reply` returns no
+        # text for a block with nothing still needing a quantity), so the list is never
+        # printed again. A block that still needs a quantity for one of those lines is
+        # not a partial answer and rebuilds from the block as before (reviewer, 6 Oct:
+        # merging it wiped the noted quantity and printed the whole list again).
         covered = {slot.key: slot for slot in slots}
         slots = [covered.get(slot.key, slot) for slot in existing.slots]
         answered = answered and all(slot.value is not None for slot in slots)

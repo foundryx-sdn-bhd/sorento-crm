@@ -179,6 +179,12 @@ def narrow_code_tokens_by_specs(
         picked = [code for code, values, _text in family if all(_holds(values, key, value) for key, value in wanted)]
         if not picked or len(picked) == len(family):
             continue
+        if any(_fold(code) == code_word for code in picked):
+            # The product itself carries the spec ("how about s trap" over an S trap):
+            # it is its own answer, whatever its siblings carry. Replacing an exact code
+            # by itself plus its siblings would turn an answered product into a
+            # which-one pick (reviewer, 6 Oct 2026).
+            continue
         replaced[i] = picked
     if not replaced:
         return None

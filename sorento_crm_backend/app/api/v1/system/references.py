@@ -2808,8 +2808,12 @@ def resolve_reference_post(
     # parser carries the product (`entity_op "reuse"`) and the grounded spec arrives as
     # `extracted_specs`; the code's family is narrowed by those VALUES, since the words are
     # not beside the code in the message for `narrow_code_tokens` to read. A token the
-    # narrowing replaced loses its pin (the pin named the typed token, not its variant).
+    # narrowing replaced loses its pin (the pin named the typed token, not its variant);
+    # every other pin is kept. Pin keys are matched the way the resolver matches them
+    # (`_pin_key_norm`: stripped, case-blind), so a pin on an untouched token whose key
+    # differs from the token only in case survives (security review note 1, 6 Oct 2026).
     if payload.extracted_specs and payload.tokens:
+        from app.services.entity_resolver import _pin_key_norm
         from app.services.product_code_family import narrow_code_tokens_by_specs
 
         by_specs = narrow_code_tokens_by_specs(
@@ -2819,8 +2823,11 @@ def resolve_reference_post(
             specs=payload.extracted_specs,
         )
         if by_specs is not None:
-            kept = set(by_specs)
-            pins = {k: v for k, v in (payload.entity_pins or {}).items() if k in kept} or None
+            kept = {_pin_key_norm(t) for t in by_specs}
+            replaced = {_pin_key_norm(t) for t in payload.tokens} - kept
+            pins = {
+                k: v for k, v in (payload.entity_pins or {}).items() if _pin_key_norm(k) not in replaced
+            } or None
             payload = payload.model_copy(
                 update={"tokens": by_specs, "raw_tokens": None, "entity_pins": pins}
             )

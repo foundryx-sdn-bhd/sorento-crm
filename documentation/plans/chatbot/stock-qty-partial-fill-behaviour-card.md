@@ -99,7 +99,8 @@ by code, by a fragment of a listed code the parser resolves to exactly one line,
 - the parser keeps seeing the task as the `Open question:` (kind `quantities`, the filled lines
   with their quantity, `owed` the rest), so a later "8357 x 10", "line 4: 10" or "10 for the
   first" fills and answers that line the same way, and so on until the dealer stops;
-- "all N" / "N each" / "N for all of them" still fills every owed line (mode `all`, unchanged);
+- "all N" / "N each" / "N for all of them" still fills every line, the answered ones included
+  (mode `all`, 26 Sep F2, unchanged: "all" is the dealer's own word for every line);
 - a message naming a product NOT on the list, or another domain, simply proceeds: the task is
   parked exactly as today (`task.run` arm 4, silent), the open lines never block it, and the
   parser's own `entity_op` / continuation decides what the new ask reuses (no code rule);
@@ -112,8 +113,10 @@ not ask for them).
 
 ### P2. Trap specs: parser addendum, no regex
 
-A new `TRAP_SPECS_ADDENDUM` appended to `chatbot_semantic_parser` (published as the next
-UNLABELLED version by a migration in the `lss_0001_parser_vocab` shape; promoted by the owner):
+A new `TRAP_SPECS_ADDENDUM` for `chatbot_semantic_parser`, shipped as addendum text files plus
+a committed unified diff (`alembic/data/chatbot_semantic_parser.trap-specs.patch`) that crew
+sequences onto the live combined version as the next UNLABELLED version (PROMPT-DYNAMIC #1405:
+no migration rebuilds a version from code; promoted by the owner):
 
 - "s trap", "s-trap", "S trap", "strap" said of a toilet -> specification `trap_type` =
   `s_trap`; "p trap", "p-trap" -> `p_trap` (the value, never null; null stays for a letter the
@@ -159,9 +162,9 @@ parser's own fields already carry the other reading, and the code path for it ex
   PRODUCT ANSWER").
 - When the parser does NOT carry the product (`replace_combine`, or no product in focus), the
   ask stays class-wide exactly as today.
-- When the product has no variant carrying the spec, the resolver reports the code's variants
-  with no match and the reply says so ("SRTWC286-SH has no P trap variant"), never a silent
-  widening (question Q4 below).
+- When the product has no variant carrying the spec, the code is left as it is and the
+  product itself is answered (no new wording; the corrected bullet above), never a silent
+  widening to the class.
 
 ## Examples (expected parse -> reply)
 

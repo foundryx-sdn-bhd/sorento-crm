@@ -193,6 +193,21 @@ def test_after_reply_marks_the_task_answered_once_the_last_line_is_answered():
     assert [slot.value for slot in merged.slots] == [3, 6, 2, 10, 1]
 
 
+def test_a_partial_block_that_still_needs_a_quantity_is_not_merged():
+    """Reviewer, 6 Oct 2026 (AC-3's "none `needs_quantity`" made explicit): the stock tool
+    answers the partial fetch for line 2 but still marks that row `needs_quantity`. That is
+    not a partial answer, so the task rebuilds from the block as on main (one line, open,
+    its own "How many units of X?") and the noted 6 is not wiped into a re-printed list."""
+    task = _task([None, 6, None, None, None])
+    envelopes = ht.envelopes(ht.row("SRTWC8152-SH-300", needs_quantity=True, requested_qty=None))
+    reply = task_mod.after_reply((task,), envelopes, turn_no=4, asked=[], demand_qty=None)
+    (rebuilt,) = [t for t in reply.tasks if t.kind == "stock_qty"]
+    assert rebuilt.status == task_mod.OPEN
+    assert [slot.label for slot in rebuilt.slots] == ["SRTWC8152-SH-300"]
+    assert reply.text == "How many units of SRTWC8152-SH-300?"
+    assert LIST not in (reply.text or "")
+
+
 def test_a_full_first_answer_still_rebuilds_from_the_block_alone():
     """Every line answered in one go (today's path): the block IS the task, nothing to
     carry, status ANSWERED - unchanged."""
@@ -274,7 +289,10 @@ def test_changing_an_answered_line_reanswers_it_at_the_new_quantity():
 # --------------------------------------------------------------------------- #
 
 
-def test_all_still_fills_every_open_line_at_once():
+def test_all_still_fills_every_line_at_once_the_answered_one_included():
+    """"3 for all" (mode all, 26 Sep F2, `apply.py` unchanged): "all" is the dealer's own
+    word for every line, so the line answered earlier at 6 is re-noted at 3 and fetched
+    with the rest. Only a BARE number is limited to the owed lines (Q3 (a), below)."""
     state = _state_with(_task([None, 6, None, None, None]), turn_no=5)
     v = verdict(entities=[], open_question_answer={"mode": "all", "items": [], "qty_for_all": 3})
     new_state, plan = apply(state, v, build_policy())

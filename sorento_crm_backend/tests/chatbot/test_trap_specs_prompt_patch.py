@@ -169,6 +169,10 @@ def test_the_code_fallback_carries_the_same_addenda_once():
     assert text.index("SPECIFICATIONS: WHAT A PRODUCT IS DESCRIBED BY") < text.index("TRAP SPECS")
     assert text.index("QUANTITIES and LAST_ANSWER:") < text.index("A FRAGMENT of ONE listed code")
     assert text.endswith(cpp.MEMORY_ADDENDUM)
+    # The block is spliced in by peeling MEMORY and re-appending it; a later addendum that
+    # lands after MEMORY would make that peel a no-op and MEMORY would appear twice.
+    assert text.count(cpp.MEMORY_ADDENDUM) == 1
+    assert text.count(cpp.TRAP_SPECS_FALLBACK_BLOCK) == 1
     assert cpp.STOCK_TASK_ADDENDUM in text and cpp.SPECIFICATION_ADDENDUM in text
     # The applier sees the addenda already there and changes nothing.
     assert cpp.with_trap_specs(text) == text

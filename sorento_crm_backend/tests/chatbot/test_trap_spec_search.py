@@ -118,9 +118,12 @@ def family(world):
     world.product("ZZTWC8066-SH-MK", "SORENTO WATER CLOSET S-TRAP 250MM MATT BLACK", stock=2)
     world.product("ZZTWC8066-SH-MW", "SORENTO WATER CLOSET S-TRAP 300MM MATT WHITE", stock=2)
     world.product("ZZTWC8066-SH-UF", "SORENTO WATER CLOSET S-TRAP 300MM UF SEAT", stock=2)
-    # The 14:50 pair (Q4): a product and its P trap sibling.
+    # The 14:50 pair (Q4): a product and its P trap sibling, plus an S trap colour sibling
+    # (reviewer, 6 Oct: a spec the product ITSELF carries must not widen it to the siblings
+    # that carry it too).
     world.product("ZZTWC286-SH", "SORENTO WATER CLOSET S-TRAP 250MM", stock=1)
     world.product("ZZTWC286-SH-P", "SORENTO WATER CLOSET P-TRAP 180MM", stock=1)
+    world.product("ZZTWC286-SH-UF", "SORENTO WATER CLOSET S-TRAP 250MM UF SEAT", stock=1)
     return world
 
 
@@ -291,11 +294,15 @@ def test_the_grounded_p_trap_picks_the_sibling(family):
 
 
 def test_a_spec_the_product_itself_carries_keeps_the_product(family):
-    """"how about s trap" over ZZTWC286-SH (an S trap): the product is its own answer."""
+    """"how about s trap" over ZZTWC286-SH (an S trap): the product is its own answer, even
+    though its -UF sibling is an S trap too and its -P sibling is not (so the family is
+    neither all-matching nor none-matching). Replacing the code by itself plus -UF would
+    have turned an answered product into a which-one pick (reviewer, 6 Oct 2026)."""
+    assert family.values("ZZTWC286-SH-UF").get("trap_type") == "s_trap"
     out = narrow_code_tokens_by_specs(
         family.db, tokens=["ZZTWC286-SH"], allowed_types=["product"], specs=[{"key": "trap_type", "value": "s_trap"}]
     )
-    assert out == ["ZZTWC286-SH"]
+    assert out is None
 
 
 def test_a_spec_no_variant_carries_leaves_the_code_as_it_is(family):
@@ -341,3 +348,34 @@ def test_the_resolve_route_answers_the_sibling_for_a_carried_product(client, fam
     codes = sorted({m.get("canonical_code") or m.get("code") for m in matches if m.get("entity_type") == "product"})
     assert codes == ["ZZTWC286-SH-P"], payload
     assert "predicate" not in payload, "a code answered the ask; no class-wide set was counted"
+
+
+def test_narrowing_one_token_keeps_the_pin_on_an_untouched_token(client, family):
+    """Security review note 1 (6 Oct 2026): the pin pruning that follows a spec narrowing
+    drops ONLY the pin of a token the narrowing replaced. A pin on another token survives
+    even when its key differs from the token in case, the way the resolver itself matches
+    pin keys (`_pin_key_norm`); a case-exact prune silently lost it."""
+    # "ZZTWC8066-SH" names four colour variants; none carries p_trap, so the narrowing
+    # leaves that token as it is (rule 3) and only the pin settles which variant is meant.
+    pinned_to = family.codes["ZZTWC8066-SH-MG"]
+    body = {
+        "query": "How about p trap",
+        "tokens": ["ZZTWC286-SH", "ZZTWC8066-SH"],
+        "allowed_entity_types": ["product", "product"],
+        # Pins travel in OR mode only (`resolve_gate.py`, H38: omitted in AND mode; the
+        # route rejects the pair with a 400).
+        "match_mode": "or",
+        "spec_fallback": True,
+        "extracted_specs": [{"key": "trap_type", "value": "p_trap", "evidence": "p trap", "grounded": True}],
+        "entity_pins": {"zztwc8066-sh": pinned_to.id, "zztwc286-sh": family.codes["ZZTWC286-SH"].id},
+        "dry_run": True,
+    }
+    response = client.post(ENDPOINT, json=body)
+    # The pin on the replaced token is dropped (its uuid is not the sibling the narrowing
+    # picked); the pin on the untouched token is kept and honoured.
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    by_token = {r.get("token"): r for r in payload.get("resolutions") or []}
+    assert set(by_token) >= {"ZZTWC286-SH-P", "ZZTWC8066-SH"}, sorted(by_token)
+    pinned = by_token["ZZTWC8066-SH"].get("matches") or []
+    assert [m.get("canonical_code") or m.get("code") for m in pinned] == ["ZZTWC8066-SH-MG"], pinned

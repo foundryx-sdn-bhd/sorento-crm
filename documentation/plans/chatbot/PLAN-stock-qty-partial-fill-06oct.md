@@ -3,8 +3,8 @@
 Status: BUILT, in review on PR #1513 (6 Oct 2026; all five card rulings in: Q1, Q2, Q3, Q5 (a) by crew, Q4 (a) by the owner), red-first (branch `claude/stock-qty-partial-fill-kv7i1d`,
 cloud sandbox, LEAD pattern). Track: full (engine behaviour change + parser prompt patch + DB
 search tests; no migration, no auth change, no UI). Card:
-`stock-qty-partial-fill-behaviour-card.md` (owner rulings R1, R2 recorded there; Q1 to Q5 open
-on the PR, recommendations stand until answered). UAC:
+`stock-qty-partial-fill-behaviour-card.md` (owner rulings R1, R2 and the five card rulings Q1
+to Q5 recorded there). UAC:
 `stock-qty-partial-fill-acceptance-criteria.md`.
 
 ## Journey
@@ -80,9 +80,15 @@ D8 **Search proof.** `tests/chatbot/test_trap_spec_search.py` seeds S trap / P t
    `trap_type` + `trap_length` + class + brand + `require.stock` returns exactly the matching
    in-stock products; `narrow_code_tokens` on "SRTWC8066-SH s trap 250mm" keeps only the 250
    variants (Q5 (a), already the behaviour when the catalogue text carries the length).
-D9 **R2 / Q4 not built until ruled.** The carried-product variant narrowing does not exist
-   (`narrow_code_tokens` needs the code in the message); the card states that honestly and the
-   owner picks. A test pins today's class-wide behaviour as the documented baseline.
+D9 **R2 / Q4 (a), ruled by the owner, built.** `narrow_code_tokens` needs the code word in the
+   message, so a product carried from focus is never narrowed by it (pinned by
+   `test_the_message_words_cannot_narrow_a_carried_product`). The resolver half is
+   `product_code_family.narrow_code_tokens_by_specs`: the carried code's family narrowed by
+   the grounded spec VALUES the parser emitted, hooked into `resolve_reference_post` after
+   `narrow_code_tokens`. A family with no variant carrying the spec, or whose named product
+   itself carries it, is left as it is; no silent widening to the class. The parser side is
+   the "A SPEC SAID RIGHT AFTER A PRODUCT ANSWER" rule in the trap-specs addendum
+   (`entity_op "reuse"`, no new parser field).
 
 ## Slices
 
@@ -95,6 +101,9 @@ S4 Reviewer (opus) + kill tests; console replay table on the PR; hand test scrip
 ## Triggers deliberately not built
 
 - A "Still open: 1, 3, 4, 5" line (Q1 (b)): only if the owner asks.
-- Carried-product variant narrowing for "how about p trap" (Q4 (a)): a small resolver
-  extension, built only on the owner's pick.
 - A which-one clarify for a bare number over the mixed open task (Q3 (b)): on ruling.
+- A "no P trap variant" sentence for a carried product whose family has no such variant:
+  no new wording; the product itself is answered (card P4).
+- A `max_length` on the resolver's `tokens` / `extracted_specs` (security review note 2):
+  the per-token family query is the same shape `narrow_code_tokens` already has; bound both
+  when a caller other than the chatbot sends long token lists.

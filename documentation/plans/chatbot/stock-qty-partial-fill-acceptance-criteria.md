@@ -18,6 +18,9 @@ AC-3  After the stock tool answers the partial fetch (a block with only the fetc
       `needs_quantity`), `after_reply` returns no question text and the merged task: covered
       slots at their `requested_qty`, uncovered slots still owed, status OPEN while any is
       owed. The reply is the answered lines only; "How many units for each?" is not printed.
+      A block that still marks one of those rows `needs_quantity` is not a partial answer:
+      it rebuilds from the block as before (one line, "How many units of X?"), never the
+      merged list.
 AC-4  A later message filling another line answers that line alone (the earlier answered line
       is not fetched again). A bare number over the open lines fills and fetches the owed
       lines only (F2 kept, Q3 (a)).
@@ -28,7 +31,8 @@ AC-6  Console replay of the 6 Oct transcript (five S trap lines): "I need 8152 6
       "SRTWC8152-SH-300 x 6 Units Have stock?" -> the same one line; the list never appears
       after turn 1. A new product ask ("stock SRTWC9999 x 5") proceeds and parks the task
       silently (Q2 (a)).
-AC-7  Unchanged rulings, pinned: "10 for all" fills every owed line (mode all); "done" with
+AC-7  Unchanged rulings, pinned: "10 for all" fills every line, the answered ones included
+      (mode all, 26 Sep F2, `apply.py` unchanged); "done" with
       blanks and "just proceed" answer what is noted and name the rest `Not checked:`;
       "cancel" closes; a one-line task still asks "How many units of X?"; the resume arm
       ("back to the stock check") asks only what is still owed.
@@ -75,10 +79,14 @@ AC-16 `narrow_code_tokens(query="SRTWC8066-SH s trap 250mm 50pc", tokens=[...])`
       code token by the 250 mm variants only when the family carries 250 and 300 variants
       (Q5 (a)); when every variant carries the same trap spec the family is left alone (the
       colour pick, today's behaviour).
-AC-17 Baseline pinned for R2 / Q4: a product carried from focus with no code word in the
-      message is NOT narrowed by `narrow_code_tokens` (returns None), so "how about p trap"
-      stays class-wide until the owner picks Q4 (a). The test is the measurement the card
-      cites.
+AC-17 R2 / Q4 (a), owner ruled: a product carried from focus with no code word in the
+      message is NOT narrowed by `narrow_code_tokens` (returns None; the measurement the card
+      cites), so `narrow_code_tokens_by_specs` narrows the carried code's family by the
+      grounded spec values instead: `trap_type p_trap` over SRTWC286-SH picks SRTWC286-SH-P
+      (unit test and the resolve route); a family with no variant carrying the spec is left as
+      it is (None); a product that itself carries the spec stays the answer even when siblings
+      carry it too; a brand spec and a non-product token are never narrowed. The pin pruning
+      that follows drops only the replaced token's pin, matched the resolver's way.
 
 ## Process
 
