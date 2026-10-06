@@ -243,7 +243,7 @@ def quick_replies_suppressed(kind: str | None, options: list[dict[str, Any]] | N
     were the first roster kinds to lose their buttons. The kinds that KEEP them are the
     allowlist `FIXED_OPTION_KINDS`; a kind minted off the operator-editable
     `chatbot_entity_kinds` table (`brand_pick`, `attachment_type_ask`, ...) is a roster
-    by construction and is suppressed without being named here.
+    by construction and is suppressed without being named in that allowlist.
 
     `options` lets the two `team_pick`s whose options are NOT teams be told apart from
     a real team pick: the company clarify `answer_bridge.py` mints when a search spanned

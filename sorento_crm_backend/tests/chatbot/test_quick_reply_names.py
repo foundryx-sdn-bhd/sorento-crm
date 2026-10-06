@@ -195,11 +195,11 @@ class TestDidYouMeanSets:
         assert quick_reply_guard.guard("1,2,3") == "1,2,3"
         assert quick_reply_guard.guard("1,Yes escalate,No it's okay") == "1,Yes escalate,No it's okay"
 
-    def test_the_code_mode_offer_sends_no_buttons(self) -> None:
+    def test_the_code_mode_offer_sends_only_the_yes_no_pair(self) -> None:
         """`build_suggest_offer`, D1 code mode: one missed token with three close codes
-        reads "Did you mean SRT57-CR, SRT5713, or SRT5732?" - codes are free text, so
-        the sentence is the picker and `suggest_quick_reply` is None (it used to be the
-        bare codes plus Yes / No)."""
+        reads "Did you mean SRT57-CR, SRT5713, or SRT5732? ... or would you like me to
+        escalate?" - codes are free text, so the sentence is the picker and only the
+        fixed Yes / No pair goes out (it used to be the bare codes plus Yes / No)."""
         from app.services.chatbot.lanes.business.answer import build_suggest_offer
         from tests.chatbot.test_multi_code_dym import _PARSER, _two_token_resolved
 
@@ -208,7 +208,7 @@ class TestDidYouMeanSets:
         )
         assert out["suggest_offer"] is True
         assert "Did you mean SRT57-CR, SRT5713, or SRT5732?" in out["suggest_response"], out["suggest_response"]
-        assert out["suggest_quick_reply"] is None, out["suggest_quick_reply"]
+        assert out["suggest_quick_reply"] == "Yes escalate,No it's okay", out["suggest_quick_reply"]
         # The typed code still resolves: the roster rides with the offer.
         assert [r["label"] for r in out["suggest_last_result_set"]] == ["SRT57-CR", "SRT5713", "SRT5732"]
 

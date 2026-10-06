@@ -5169,8 +5169,9 @@ def build_suggest_offer(
                     )
                 # QUICK-REPLY-NAMES (owner, 6 Oct 2026): product codes are free text,
                 # never buttons. The sentence names them and "Reply with a code" is the
-                # picker; a typed code resolves through `suggest_last_result_set`.
-                out["suggest_quick_reply"] = None
+                # picker; a typed code resolves through `suggest_last_result_set`. The
+                # escalation question the sentence ends on keeps its fixed Yes / No pair.
+                out["suggest_quick_reply"] = _quick_reply([_YES, _NO])
                 out["suggest_last_result_set"] = [
                     {
                         "idx": i + 1,
@@ -5322,10 +5323,17 @@ def build_suggest_offer(
         out["suggest_offer"] = True
         out["suggest_selection_context"] = "suggest_offer"
         out["suggest_response"] = text
+        routing = jsc.get(q, "routing")
+        is_cs_order = (
+            jsc.get(routing, "suggested_team") == "customer_service"
+            and jsc.get(routing, "suggested_agent") == "order_enquiries"
+        )
         # QUICK-REPLY-NAMES (owner, 6 Oct 2026): the alternatives are free-text values
         # (dates, codes, names), never buttons. "Reply with a date / code" is the
-        # picker; a typed value resolves through `suggest_last_result_set`.
-        out["suggest_quick_reply"] = None
+        # picker; a typed value resolves through `suggest_last_result_set`. The
+        # escalation question keeps its fixed Yes / No pair, except on the customer
+        # service date miss, which never carried one (its sentence offers dates only).
+        out["suggest_quick_reply"] = None if (axis == "date" and is_cs_order) else _quick_reply([_YES, _NO])
         out["suggest_last_result_set"] = [
             {
                 "idx": i + 1,

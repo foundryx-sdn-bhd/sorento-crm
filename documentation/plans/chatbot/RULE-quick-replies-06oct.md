@@ -52,8 +52,8 @@ returned byte-identical.
 | Pending re-asks and first asks | `turn/pending.py` `quick_replies()` | allowlist `FIXED_OPTION_KINDS` = `team_pick`, `outstanding_scope`, `outstanding_detail`, `sales_report_detail` keep theirs; every other kind (`customer_pick`, `product_pick`, `tier_pick`, `kind_pick`, `company_pick`, `attachment_type_ask`, `member_offer`, `top_selling_pick`, any `<kind>_pick` / `<kind>_ask` minted off `chatbot_entity_kinds`) sends none. A `team_pick` whose options carry `payload.company` (the company clarify `answer_bridge.py` mints) sends none |
 | Did-you-mean, Yes / No | `lanes/business/answer.py` | unchanged ("Yes escalate, No it's okay") |
 | Did-you-mean, numbered (n8n-completed `/complete` suggest offer) | `lanes/business/answer.py` `_numbered_quick_reply` | "1,2" / "1,2,3" for two or more picks; "1,Yes escalate,No it's okay" for one. The CRM-completed lanes never take this path: their did-you-mean is a `product_pick` roster (`dealer_stock.py`, `answer_bridge._miss_question`) and sends no buttons |
-| Did-you-mean, product codes | `lanes/business/answer.py` | no buttons |
-| Did-you-mean, free-text alternatives (codes, dates, names) | `lanes/business/answer.py` | no buttons |
+| Did-you-mean, product codes in a sentence (`/complete` path) | `lanes/business/answer.py` | codes dropped; the fixed "Yes escalate, No it's okay" pair for the escalation question the sentence ends on stays |
+| Did-you-mean, free-text alternatives in a sentence (codes, dates, names; `/complete` path) | `lanes/business/answer.py` | values dropped; the fixed Yes / No pair stays, except the customer service date miss, which never carried one |
 | Escalation company clarify | `lanes/escalation.py` `_clarify_actions` | no buttons (company names) |
 | Escalation team clarify | `lanes/escalation.py` `_clarify_actions` | team names keep (the guard still drops a set with a name over 20 chars) |
 | Escalation product did-you-mean (`clarify_product`, minted as a `team_pick` with product options) | `engine._question_offered` + `turn/pending.py` | no buttons (options are products, not teams) |
