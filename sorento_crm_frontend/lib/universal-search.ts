@@ -1,4 +1,5 @@
 import type { MenuConfig, MenuItem } from '@/config/types';
+import { filterMenuBySuperadmin } from '@/lib/menu-access-filter';
 
 export type UniversalSearchSource = 'menu' | 'spo';
 
@@ -16,6 +17,12 @@ export interface UniversalSearchContext {
   permissionSet: Set<string>;
   /** When set, menu items with moduleKey outside this set are excluded. null = skip module filter. */
   enabledModuleKeys?: Set<string> | null;
+  /**
+   * The EFFECTIVE user's superadmin flag (the impersonation target's while viewing as).
+   * `false` drops `superadminOnly` entries, the same way the sidebar does; null / undefined =
+   * still loading, keep them (MENU-PERM-GATE).
+   */
+  isSuperadmin?: boolean | null;
 }
 
 export interface UniversalSearchProvider {
@@ -102,7 +109,7 @@ export function createMenuSearchProvider(menu: MenuConfig): UniversalSearchProvi
     label: 'Menus',
     search: (query, context) => {
       const records = collectMenuItems(
-        menu,
+        filterMenuBySuperadmin(menu, context.isSuperadmin ?? null),
         context.permissionSet,
         context.enabledModuleKeys,
       );
