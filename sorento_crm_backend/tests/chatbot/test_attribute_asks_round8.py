@@ -430,12 +430,14 @@ def _v5_spelt(kind: str = "stock") -> dict[str, Any]:
 def test_item5_misspelt_kitchne_and_thicnkess_are_said_back_never_read_as_the_words_they_resemble(compact, world):
     """Fix round 10 on PR #833 (owner, 28 Sep 2026: "for #833 yeah exact only"): round 8
     read "kitchne" as kitchen and "thicnkess" as thickness, one typo apart. Neither is the
-    catalogue's word, so neither binds; both are the "Couldn't find" line."""
+    catalogue's word, so neither binds; both are the "Couldn't find" line. Option (c) (owner,
+    6 Oct 2026): the words now reach grounding as the category's, not a misfiled document,
+    so the number stays with the sink and the two misspelt words are said back."""
     text = compact.say(M5, _v5("stock"))
     print(text)
     assert "document type" not in text.lower(), text
     assert not _codes(text, world) & {p.product_code for p in world["thick12"] + world["thick10"]}, text
-    assert 'Couldn\'t find: "kitchne" and "thicnkess 1.2 mm".' in text, text
+    assert 'Couldn\'t find: "kitchne" and "thicnkess".' in text, text
 
 
 @pytest.mark.parametrize("kind", ["stock", "cert"])
@@ -537,6 +539,6 @@ def test_the_retest_in_order(compact, world, list_max_3):
     # Amended to fix round 10 on PR #833 ("for #833 yeah exact only"): the misspelt
     # "kitchne" and "thicnkess" bind nothing and are said back.
     assert not _codes(replies[6], world), replies[6]
-    assert 'Couldn\'t find: "kitchne" and "thicnkess 1.2 mm".' in replies[6], replies[6]
+    assert 'Couldn\'t find: "kitchne" and "thicnkess".' in replies[6], replies[6]
     for text in replies:
         assert "document type" not in text.lower(), text
