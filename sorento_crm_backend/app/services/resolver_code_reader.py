@@ -125,7 +125,14 @@ def _typed_span(value: str, typed: str) -> bool:
     letters = [ch for ch in value if ch.isalnum()]
     if not letters:
         return False
-    pattern = r"(?<![0-9A-Za-z])" + r"[\s-]*".join(re.escape(ch) for ch in letters) + r"(?![0-9A-Za-z])"
+    # A hyphen glued to a letter or digit is INSIDE the code ("SRTWC8066-SS" is one code,
+    # the catalogue folds the hyphen away), so a run may not start right after `X-` nor
+    # end right before `-X`: "SRTWC8066" out of "WC SRTWC8066-SS" is a cut, not a copy.
+    pattern = (
+        r"(?<![0-9A-Za-z])(?<![0-9A-Za-z]-)"
+        + r"[\s-]*".join(re.escape(ch) for ch in letters)
+        + r"(?![0-9A-Za-z])(?!-[0-9A-Za-z])"
+    )
     return re.search(pattern, typed, flags=re.IGNORECASE) is not None
 
 
@@ -160,7 +167,12 @@ def _resolve_provider(db: Session):
     from app.services.llm_provider import get_provider, resolve_api_key, resolve_model
 
     try:
-        cfg = db.query(AIAssistantConfig).order_by(AIAssistantConfig.created_at.asc()).first()
+        # Under a SAVEPOINT: a failed SELECT leaves a Postgres transaction aborted, and
+        # `Session.is_active` stays True after a failed execute, so `_recover` alone would
+        # not roll it back and the resolver's next query would raise (reviewer, third
+        # pass, finding 3). The savepoint rolls back on its own, the caller's work survives.
+        with db.begin_nested():
+            cfg = db.query(AIAssistantConfig).order_by(AIAssistantConfig.created_at.asc()).first()
     except Exception:  # noqa: BLE001 - no config row readable means no provider
         logger.warning("resolver code reader: assistant config unreadable", exc_info=True)
         _recover(db)

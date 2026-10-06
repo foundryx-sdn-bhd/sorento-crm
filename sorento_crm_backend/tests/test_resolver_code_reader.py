@@ -104,6 +104,13 @@ def test_guard_falls_back_to_the_token_when_no_typed_text_was_sent():
         ("family", "5699", "SRTWT5699"),
         ("code", "WT56", "TAP SRTWT5608"),
         ("code", "SRTWT5608", "TAP SRTWT5608X"),
+        # A hyphen is part of the code, not a word edge (reviewer, third pass): the catalogue
+        # folds "SRTWC8066-SS" and "SRTWC8066SS" to one code, so a cut at the hyphen is the
+        # same cut as a cut inside the run.
+        ("code", "SRTWC8066", "WC SRTWC8066-SS"),
+        ("code", "SRTWC286", "SRTWC286-SH x 2"),
+        ("family", "364", "Srt 364-hp"),
+        ("family", "SH", "SRTWC286-SH"),
     ],
 )
 def test_guard_refuses_a_value_cut_out_of_the_middle_of_a_typed_code(kind, value, typed):

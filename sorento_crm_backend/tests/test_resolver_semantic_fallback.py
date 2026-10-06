@@ -145,6 +145,18 @@ def test_a_non_product_token_is_never_asked(db):
     assert result.unresolved_tokens == ["TAPZZTWT5608"]
 
 
+def test_a_lone_brand_hinted_miss_is_not_asked_even_as_the_only_token(db):
+    """One token, one hint: positional and set readings are the same thing, so a lone
+    brand- or category-hinted miss under a product domain is still not a product
+    question (reviewer, third pass, finding 2)."""
+    reader = FakeReader({"ZZQBRANDX": ("code", "ZZQBRANDX")})
+    from app.services.entity_resolver import resolve_references
+
+    result = resolve_references(db, ["ZZQBRANDX"], allowed_entity_types=["brand"], domain_hint="product", raw_tokens=["ZZQBRANDX"], code_reader=reader)
+    assert reader.calls == []
+    assert "fallback" not in _by_token(result)["ZZQBRANDX"]
+
+
 def test_a_customer_hinted_miss_beside_a_product_is_not_asked(db):
     """One hint per token (the chatbot's body): the request-wide type union includes
     product, but the customer token's OWN hint is customer, so only the product token is a
@@ -185,10 +197,15 @@ def test_a_code_reading_resolves_the_token_on_the_exact_tier(db):
     assert result.unresolved_tokens == []
 
 
-def test_the_reader_is_given_the_token_when_no_raw_text_was_sent(db):
+def test_a_token_with_no_typed_text_is_not_asked(db):
+    """No `raw_tokens` (a caller that sends only folded tokens): the guard could accept
+    nothing but the whole token, which the code tiers already missed on, so the call is
+    not made; the trace says why (reviewer, third pass, finding 4)."""
     reader = FakeReader({"TAPZZTWT5608": ("code", TAP)})
-    _resolve(db, ["TAPZZTWT5608"], None, reader=reader)
-    assert reader.calls == [[("TAPZZTWT5608", None)]]
+    result = _resolve(db, ["TAPZZTWT5608"], None, reader=reader)
+    assert reader.calls == []
+    assert _by_token(result)["TAPZZTWT5608"]["fallback"] == {"asked": False, "kind": "not_asked", "reason": "no_typed_text"}
+    assert result.unresolved_tokens == ["TAPZZTWT5608"]
 
 
 def test_a_code_reading_the_catalogue_does_not_hold_stays_a_miss(db):
@@ -473,10 +490,10 @@ def test_the_get_route_builds_the_reader_unless_the_caller_opts_out(db, monkeypa
     )
     result = references.resolve_reference(semantic_fallback=True, **kwargs)
     assert built == [{"message_text": "TAP ZZTWT5608", "user_id": "u1", "dry_run": False}]
-    # GET sends no `raw_tokens`, so the folded token is the only typed text the guard can
-    # check against and a value that is only PART of it is refused: asked, not placed.
-    assert result["resolutions"][0]["fallback"]["asked"] is True
-    assert result["resolutions"][0]["fallback"]["kind"] == "none"
+    # GET sends no `raw_tokens`, so the reader has nothing it could read a code out of
+    # beyond the folded token the tiers already missed on: built, never called.
+    assert result["resolutions"][0]["fallback"] == {"asked": False, "kind": "not_asked", "reason": "no_typed_text"}
+    assert result["unresolved_tokens"] == ["TAPZZTWT5608"]
 
     built.clear()
     result = references.resolve_reference(semantic_fallback=False, **kwargs)

@@ -104,13 +104,13 @@ def test_a_candidate_unrelated_to_every_typed_token_is_still_dropped():
 
 
 class TestThroughTheEngine:
-    def test_hi_wc200_s_got_stock_places_the_family_never_a_miss(self, session_factory, monkeypatch):
+    def test_hi_wc200_s_offers_the_family_picker_never_a_miss(self, session_factory, monkeypatch):
         """The real engine and the real resolver over the seeded family (the chatbot's own
-        single-token AND body): the family is the turn's subject, never "could not find"
-        and never a stranger's rows. Reproduced the prod reply shape before the gate fix
-        only in the REQUIRE_SPECIFIC domains; on inventory the resolver and gate placed
-        the family on this branch and on main alike, so a prod miss there is a visibility
-        question (`chat_searchable_products()`), reported on PR #1511."""
+        single-token AND body) in a REQUIRE_SPECIFIC domain: the gate's picker names both
+        codes, never "could not find" and never a stranger's rows. On inventory the
+        resolver and gate placed the family on this branch and on main alike, so the prod
+        miss there is a visibility question (`chat_searchable_products()`), reported on
+        PR #1511."""
         from app.services.company_scope import DEFAULT_COMPANY_ID
         from tests._mc_lookup_seed import product as seed_product
         from tests.chatbot.test_outstanding_lane import _qf, _run_turn, _seed_contact
@@ -125,20 +125,20 @@ class TestThroughTheEngine:
             session_factory,
             monkeypatch,
             qf=_qf(
-                domain_hint="inventory", intent_hint="check_stock", order_status=None,
+                domain_hint="incoming", intent_hint="check_incoming", order_status=None,
                 entities=[{"raw": "WC200-S", "hint": "product", "canonical_code": "WC200-S", "current_message": True, "confident": True}],
             ),
-            text_body="hi WC200-S got stock ?",
+            text_body="hi WC200-S incoming ?",
             msg_id="ZZT-wc200-1",
-            attributes=["inventory.stock"],
+            attributes=["incoming.view"],
             mcp_response={"data": []},
             real_resolver=True,
         )
 
         reply = (result.reply or {}).get("text") or ""
-        # Inventory lists the family (`list_all`), collapsed to the first code plus a count
-        # in this harness's header; what matters is that the family the resolver placed is
-        # what the turn is about, never a stranger's rows and never a miss.
-        assert FAMILY[0] in reply, reply
+        # `incoming` is a REQUIRE_SPECIFIC domain: the gate's picker lists the family the
+        # resolver placed, both codes, never a stranger's rows and never a miss.
+        for code in FAMILY:
+            assert code in reply, reply
         assert "IBWC" not in reply, reply
         assert "could not find" not in reply.lower() and "couldn't find" not in reply.lower(), reply

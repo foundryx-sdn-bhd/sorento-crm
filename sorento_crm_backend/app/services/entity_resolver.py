@@ -5015,9 +5015,12 @@ def resolve_references(
             else None
         )
         allowed_list = list(allowed_entity_types) if allowed_entity_types is not None else None
+        # One hint per token, including the one-token case (positional and set readings
+        # are the same thing there). A caller sending a type SET that happens to equal
+        # the token count only ever loses the reader on a token its hint rules out.
         paired_hint = (
             allowed_list
-            if allowed_list is not None and len(allowed_list) == len(query_or_tokens) and len(allowed_list) > 1
+            if allowed_list is not None and len(allowed_list) == len(query_or_tokens)
             else None
         )
         tokens = []
@@ -5026,10 +5029,11 @@ def resolve_references(
             if not s:
                 continue
             tokens.append(s)
-            if paired_raw is not None:
+            # A token typed twice keeps its FIRST line's raw text and hint, one rule for both.
+            if paired_raw is not None and s not in raw_by_token:
                 raw_by_token[s] = paired_raw[idx]
             if paired_hint is not None and s not in hint_by_token:
-                hint_by_token[s] = str(paired_hint[idx] or "").strip().lower()
+                hint_by_token[s] = _canonical_entity_type(str(paired_hint[idx] or "").strip())
         ceiling = max_candidates if max_candidates is not None else PRE_EXTRACTED_TOKEN_CEILING
         truncated_tokens = tokens[ceiling:]
         tokens = tokens[:ceiling]
@@ -5241,7 +5245,13 @@ def resolve_references(
             if hint_by_token.get(tok, "product") not in ("product", ""):
                 continue
             seen_missed.add(tok)  # a line typed twice is one question, one of the 5 slots
-            missed.append((tok, raw_by_token.get(tok) or None))
+            if not raw_by_token.get(tok):
+                # No typed text behind the folded token (a caller without `raw_tokens`): the
+                # guard could accept nothing but the whole token, which the code tiers
+                # already missed on, so the call would buy nothing. Said on the trace.
+                fallback_by_token[tok] = {"asked": False, "kind": "not_asked", "reason": "no_typed_text"}
+                continue
+            missed.append((tok, raw_by_token[tok]))
         if missed:
             from app.services import resolver_code_reader as _reader_mod
 

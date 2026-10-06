@@ -1299,7 +1299,13 @@ class ResolveReferenceRequest(BaseModel):
             "class label (e.g. 'catalogue', 'brochure', 'spec sheet') to the "
             "AttachmentType UUID for downstream `attachment_type_ids` filters; "
             "pure-alpha labels bypass the code-token regex so callers may pass "
-            "them via `query` (auto-split on whitespace) or `tokens` explicitly."
+            "them via `query` (auto-split on whitespace) or `tokens` explicitly.\n\n"
+            "One reader of this list IS positional: when it has exactly one entry per "
+            "`tokens` entry, the code reader (`semantic_fallback`) treats entry i as "
+            "token i's own hint and asks only about tokens hinted `product` (or left "
+            "unhinted). A set that happens to equal the token count therefore only ever "
+            "skips a reader call on a token whose entry is another type; resolution "
+            "itself still treats the list as a set."
         ),
     )
     access_levels: list[str] | None = Field(
@@ -2098,9 +2104,11 @@ def _resolve_input(
     regions: frozenset[str] | None = None,
     code_reader: Any = None,
 ):
-    # RESOLVE-SEMANTIC-FALLBACK: the one code reader for this REQUEST, wrapped once so
-    # the per-token memo and the per-request cap hold across the primary pass and the
-    # `fallback_to_all_types` re-run below (a `resolver_code_reader.CodeReader`, or None).
+    # RESOLVE-SEMANTIC-FALLBACK: the one code reader for this REQUEST, wrapped here so the
+    # per-token memo and the per-request cap hold whatever reader a caller hands in (a
+    # test double, a future caller) and across the two passes that share it (AND, then the
+    # OR retry on a zero intersection). The `fallback_to_all_types` cross-type re-run below
+    # carries no reader at all. A `resolver_code_reader.CodeReader`, or None.
     if code_reader is not None:
         from app.services.resolver_code_reader import per_request
 
