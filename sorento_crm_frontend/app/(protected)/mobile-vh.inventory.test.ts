@@ -53,6 +53,9 @@
  * PLAN-project-form-28sep.md (#1339) deleted `pipeline/components/RegisterProjectDialog.tsx`
  * outright - the dialog it fixed-height-scrolled is gone, moved to a page (`ProjectForm.tsx`,
  * no dialog, no `vh`), not converted. Baseline below is -1 file / -4 lines.
+ *
+ * ACCESS-MODEL retired `ContactFieldAccessDialog.tsx` (its `max-h-[55vh]` goes with it).
+ * Baseline below is -1 file / -1 line.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -167,7 +170,6 @@ const FRACTIONAL_VH_FILES = [
   'app/(protected)/system-management/status-graphs/components/StatusFormDialog.tsx',
   'app/(protected)/system-management/status-graphs/components/TransitionFormDialog.tsx',
   'app/(protected)/user-management/access-agents/components/AccessAgentFormModal.tsx',
-  'app/(protected)/user-management/access-agents/components/ContactFieldAccessDialog.tsx',
   'app/(protected)/user-management/contact-access-types/components/ContactAccessTypesAdmin.tsx',
   'app/(protected)/user-management/contacts/[id]/components/ContactAttachmentTypesSection.tsx',
   'app/(protected)/user-management/contacts/[id]/components/ContactMediaAccessSection.tsx',
@@ -275,13 +277,13 @@ describe('fixed viewport-height sweep (M6-02 / M6-03)', () => {
     }
   });
 
-  it('the allowlist matches its baseline (209 lines, 144 files)', () => {
+  it('the allowlist matches its baseline (208 lines, 143 files)', () => {
     let matchingLines = 0;
     for (const file of ALLOWLIST.keys()) {
       const lines = fs.readFileSync(file, 'utf8').split('\n');
       matchingLines += lines.filter((line) => PATTERN.test(line)).length;
     }
-    expect(ALLOWLIST.size).toBe(144);
-    expect(matchingLines).toBe(209);
+    expect(ALLOWLIST.size).toBe(143);
+    expect(matchingLines).toBe(208);
   });
 });
