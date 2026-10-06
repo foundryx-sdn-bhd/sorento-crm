@@ -2917,10 +2917,14 @@ def make_tool_runner(
         # by `predicate.derive_require` whenever this turn's resolver saw no typed
         # code) never rides it - with one, `output_structurer` withholds the rows of
         # a set past `SET_LIST_MAX` and the dealer reads a header over nothing.
+        # POPPED, not merely left unset: `gate` starts as the resolver's own gate dict
+        # (above), and that dict is where this turn's `predicate` was read from in the
+        # first place (`resolve_kinds`), so on a task spec the key is removed.
         if page_predicate is not None:
             block = page_predicate
         elif spec.filters.get("task"):
             block = None
+            gate.pop("predicate", None)
         else:
             block = predicate
         if block is not None:

@@ -66,5 +66,7 @@ predicate is attached to a fetch.
 `sorento_crm_backend/tests/chatbot/test_stock_fill_predicate.py`: two engine replays of the
 turn 121 state (in stock + discontinued; no stock, no incoming) with a seam assertion on the
 resolver bodies, a tool-runner gate test for the predicate rule, two compose tests for the
-never-stuck rule. Three older compose tests that pinned a bare header over an empty
-hand-built envelope were updated to read the header over a row.
+never-stuck rule. Four older expectations in three files pinned a bare header over an
+empty hand-built envelope: the three header-grammar tests now read the header over a
+row, and the blocked-contact escalation test expects the miss line before the salesman
+line.

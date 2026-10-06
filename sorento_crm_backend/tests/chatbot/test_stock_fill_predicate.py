@@ -214,7 +214,11 @@ def test_a_tasks_own_fetch_carries_no_set_predicate(session_factory, monkeypatch
     """`turn_runtime.make_tool_runner`: the gate handed to `lanes.business.run_fetch`
     for a `filters["task"]` spec has no `predicate`, whatever the resolver derived this
     turn (a stray non-code word on the fill verdict is enough for `derive_require` to
-    build one). A plain spec keeps it, as today."""
+    build one). A plain spec keeps it, as today.
+
+    The production shape (reviewer round 2): the runner's gate STARTS as the resolver's
+    own gate dict, which already carries the predicate the engine read off it, so the
+    task arm must remove the key, not merely refrain from adding it."""
     gates: list[dict[str, Any]] = []
 
     def fake_run_fetch(payload, **kwargs):
@@ -232,6 +236,7 @@ def test_a_tasks_own_fetch_carries_no_set_predicate(session_factory, monkeypatch
         focus=Focus(domains=["inventory"]),
         compatible_entities=[row],
         predicate=set_predicate,
+        resolver_gate={"gate_passed": True, "predicate": set_predicate},
         unplaced={},
         space_id=None,
         dry_run=True,
