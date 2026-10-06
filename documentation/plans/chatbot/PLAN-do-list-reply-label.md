@@ -81,7 +81,11 @@ reading of it.
 ## Owner question (NOT built here)
 
 The summary's "By product" section printed 300+ lines in one message (hundreds of 1-unit
-rows). Proposal for the owner to rule on: cap the "By product" block at the top N rows by
-outstanding quantity (N = 20, say) and close the block with "... and K more products,
-reply 1 for the full list", keeping the counts and "By location" blocks whole. An
-alternative is a hard character cap with the same trailer. Nothing is built until ruled.
+rows). The block is rendered by `sorento_crm_mcp/sorento_crm_mcp/presenters.py:2067`
+(`_outstanding_group`, one line per row, "in the order given"); the route already ranks the
+rows outstanding desc, total desc, name asc (R10), so the top of the list is already the
+part worth reading. Proposal for the owner to rule on: cap the "By product" (and "By
+customer") block at the top N rows (N = 20, say) and close the block with one trailer line,
+"... and K more products (reply 1 for the full list)", keeping the counts and the "By
+location" block whole. An alternative is a hard line cap on the whole message with the same
+trailer. Nothing is built until ruled; the detail list is unchanged either way.

@@ -661,6 +661,35 @@ def decide(
                     scope="delivery_order", **facts,
                 )
             return Decision(ANSWER, "named_document_not_offered", positions=(NOT_OFFERED,), window=window, **facts)
+        picked_scope = _picked_scope(pending, positions)
+        if (
+            named_scope is not None
+            and positions
+            and pending.kind != "sales_report_detail"
+            and picked_scope == named_scope
+        ):
+            # DO-LIST-REPLY-LABEL (owner, 6 Oct 2026, prod): the quick reply labelled
+            # "Delivery order list" arrives as the TEXT of its label, and the parser
+            # reads it two ways at once, both correctly - a pick of the option it names
+            # (`reference_positions`, the open question's own label in front of it) and
+            # `document: ["DO"]` (the prompt fills the document for the words "delivery
+            # order" even when they are the whole message). The named-document arm
+            # below read the second and dropped the first, and the REPORT re-ran for
+            # the scope already on screen - the same summary again, where "1" gave the
+            # list. A document that IS the picked option's own scope names nothing new:
+            # the message is the pick. Both halves are the parser's own fields read
+            # against the pending's own stored payload, never a word of the text. A
+            # document that differs from the pick ("Sales order" after the DO list,
+            # below) is still the new scope it always was; the sales report's drill
+            # options are group-bys, never a document, so they keep their own arms.
+            return Decision(
+                ANSWER,
+                "picked_scope",
+                positions=tuple(positions),
+                window=window,
+                scope=picked_scope,
+                **facts,
+            )
         if named_scope is not None:
             # "Sales order", typed straight after the DO detail list, emitted
             # `document: ["SO"]` AND `reference_positions: [1]`, and the position won:
@@ -675,7 +704,6 @@ def decide(
                 scope=named_scope,
                 **facts,
             )
-        picked_scope = _picked_scope(pending, positions)
         if picked_scope is not None:
             return Decision(
                 ANSWER,
