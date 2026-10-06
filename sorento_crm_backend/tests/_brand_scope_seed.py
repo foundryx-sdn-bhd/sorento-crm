@@ -78,7 +78,9 @@ def contact(
     """A contact in `companies` (Sorento alone by default) with the given brand list."""
     kwargs = {"brand_ids": brand_ids} if brand_ids else {}
     row = RespondContact(
-        id=str(uuid.uuid4()), phone_number=f"+6{unique_code('PH')[:10]}", **kwargs
+        # The full unique code: truncating it to 10 chars left 3 hex digits of entropy, and a
+        # world of four or five contacts collided on `respond_contacts_phone_number_key` in CI.
+        id=str(uuid.uuid4()), phone_number=f"+6{unique_code('PH')}", **kwargs
     )
     db.add(row)
     db.flush()

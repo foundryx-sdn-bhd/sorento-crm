@@ -63,7 +63,7 @@ class Seed:
         db = session_factory()
         kwargs = {"brand_ids": [self.sorento.id if dual else self.mocha.id]} if scoped else {}
         row = RespondContact(
-            respond_io_id=self.contact_id, phone_number=f"+6{unique_code('PH')[:10]}",
+            respond_io_id=self.contact_id, phone_number=f"+6{unique_code('PH')}",
             workspace_id=workspace_id, session_vars={"variables": {}}, **kwargs,
             chatbot_allowed=True,  # AI-ALLOWED-GATE: a new contact is blocked by default
         )
