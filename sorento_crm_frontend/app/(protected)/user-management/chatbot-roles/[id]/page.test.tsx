@@ -291,6 +291,31 @@ describe('Chatbot role page (v8)', () => {
     expect(toast.success).not.toHaveBeenCalled();
   });
 
+  it('without reference_data.manage the role page is read-only: fields locked, switches disabled, no Save bar', () => {
+    perms.manage = false;
+    renderPage();
+    const name = screen.getByLabelText('Name') as HTMLInputElement;
+    const description = screen.getByLabelText('Description') as HTMLInputElement;
+    expect(name.disabled || name.readOnly).toBe(true);
+    expect(description.disabled || description.readOnly).toBe(true);
+    for (const radio of screen.getAllByRole('radio')) {
+      expect((radio as HTMLButtonElement).disabled || radio.getAttribute('aria-disabled') === 'true').toBe(true);
+    }
+    for (const sw of screen.getAllByRole('switch')) {
+      expect((sw as HTMLButtonElement).disabled).toBe(true);
+    }
+    expect(screen.queryByRole('button', { name: /^Save/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Discard' })).toBeNull();
+  });
+
+  it('with reference_data.manage the same page is editable with a Save bar', () => {
+    renderPage();
+    expect((screen.getByLabelText('Name') as HTMLInputElement).disabled).toBe(false);
+    expect((screen.getByLabelText('Name') as HTMLInputElement).readOnly).toBe(false);
+    expect((screen.getByRole('switch', { name: 'Forms' }) as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.getByRole('button', { name: /^Save/ })).toBeTruthy();
+  });
+
   it('Q3 with reference_data.manage Add contacts is available', () => {
     renderPage();
     expect(screen.getByRole('button', { name: /Add contacts/ })).toBeTruthy();

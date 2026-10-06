@@ -34,13 +34,13 @@ CONSIGNEE = "consignee"
 CONTAINER = "shipping_container_number"
 
 
-def _row(db, field, allowed, contact=None) -> None:
+def _row(db, field, allowed, contact=None, agent=AGENT) -> None:
     db.execute(
         text(
             "INSERT INTO agent_field_access (id, agent_code, resource, field_key, contact_id, is_allowed) "
             "VALUES (gen_random_uuid(), :a, 'incoming_stock', :f, :c, :ok)"
         ),
-        {"a": AGENT, "f": field, "c": contact, "ok": allowed},
+        {"a": agent, "f": field, "c": contact, "ok": allowed},
     )
     db.commit()
 
@@ -189,3 +189,81 @@ def test_negative_control_the_loss_report_names_a_contact_and_incoming_key_when_
     assert DELAY not in _incoming(db, sales)
     rows = _mentions(access_loss_report(db), sales, f"incoming_stock.{DELAY}")
     assert rows, "a lost default-row incoming field must be reported with the contact and the key"
+
+
+# Legacy `field_access.decide` rules (re-check round): owner agent held; per-contact ALLOW rows
+# count only under held agents; DENY rows count regardless of agent; an agent-wide deny wins.
+HELD_PLAIN = ("general_enquiries", "incoming_stock_enquiries", "order_enquiries")
+NO_INCOMING = ("general_enquiries", "order_enquiries", "ideation")
+
+
+def test_a_stale_per_contact_allow_under_a_non_held_agent_is_ignored(session_factory):
+    from app.services.chatbot.access_seed import access_gain_report, map_legacy_contacts
+
+    db, wid, agents = _world(session_factory)
+    pk = _legacy_contact(db, wid, agents, agents=HELD_PLAIN, keys=(K_SELLABLE, K_PLACED), name="Holder T1")
+    _row(db, "loc", True, contact=pk, agent="lead_time_enquiries")  # dropped agent
+    map_legacy_contacts(db)
+    db.commit()
+    assert "loc" not in _incoming(db, pk)
+    assert _incoming(db, pk) == _expected()
+    assert _mentions(access_gain_report(db), pk) == []
+
+
+def test_a_per_contact_deny_under_a_non_held_agent_still_denies(session_factory):
+    from app.services.chatbot.access_seed import map_legacy_contacts
+
+    db, wid, agents = _world(session_factory)
+    pk = _legacy_contact(db, wid, agents, agents=HELD_PLAIN, keys=(K_SELLABLE, K_PLACED), name="Holder T2")
+    _row(db, ETA, False, contact=pk, agent="lead_time_enquiries")
+    map_legacy_contacts(db)
+    db.commit()
+    assert ETA not in _incoming(db, pk)
+    assert _incoming(db, pk) == _expected(mine_off=[ETA])
+
+
+def test_a_holder_without_the_incoming_agent_sees_no_gated_incoming_fields(session_factory):
+    from app.services.chatbot.access_seed import map_legacy_contacts
+
+    db, wid, agents = _world(session_factory)
+    _row(db, DELAY, True)  # agent-wide allow on an agent this contact does not hold
+    pk = _legacy_contact(db, wid, agents, agents=NO_INCOMING, keys=ALL_SEVEN, name="Holder T3")
+    map_legacy_contacts(db)
+    db.commit()
+    assert _role_codes(db, pk) == ["management"]
+    got = _incoming(db, pk)
+    assert got == _expected(), "only the DEFAULT_ALLOWED fields every caller already got"
+    assert DELAY not in got and CONSIGNEE not in got
+
+
+def test_two_held_agents_with_conflicting_agent_wide_rows_deny_wins(session_factory):
+    from app.services.chatbot.access_seed import map_legacy_contacts
+
+    db, wid, agents = _world(session_factory)
+    _row(db, "loc", True)
+    _row(db, "loc", False, agent="general_enquiries")
+    _row(db, DELAY, True, agent="general_enquiries")
+    _row(db, DELAY, False)
+    pk = _legacy_contact(db, wid, agents, agents=HELD_PLAIN, keys=(K_SELLABLE, K_PLACED), name="Holder T4")
+    map_legacy_contacts(db)
+    db.commit()
+    got = _incoming(db, pk)
+    assert "loc" not in got and DELAY not in got
+    assert got == _expected()
+
+
+def test_negative_control_the_gain_report_flags_a_widened_holder_without_the_incoming_agent(session_factory):
+    from app.models.chatbot_access import ContactAccessOverride
+    from app.services.chatbot.access_seed import access_gain_report, map_legacy_contacts
+
+    db, wid, agents = _world(session_factory)
+    pk = _legacy_contact(db, wid, agents, agents=NO_INCOMING, keys=ALL_SEVEN, name="Holder T5")
+    map_legacy_contacts(db)
+    db.commit()
+    assert _mentions(access_gain_report(db), pk) == []
+    db.query(ContactAccessOverride).filter(
+        ContactAccessOverride.contact_id == pk, ContactAccessOverride.granted.is_(False)
+    ).delete()
+    db.commit()
+    assert CONSIGNEE in _incoming(db, pk)
+    assert _mentions(access_gain_report(db), pk, f"incoming_stock.{CONSIGNEE}")

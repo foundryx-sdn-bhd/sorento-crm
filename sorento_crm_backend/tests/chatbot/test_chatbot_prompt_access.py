@@ -183,3 +183,15 @@ def test_tag_index_maps_each_tag_to_the_first_line_of_every_block_it_guards():
         "sales": ["ORDER OR SALES block"],
         "incoming": ["INCOMING block"],
     }
+
+
+@pytest.mark.parametrize("granted", [(), ("b",), ("a",), ("a", "b")])
+def test_nested_inline_spans_fail_closed_unless_the_outer_is_granted(granted):
+    text = "pre {{#only a}}x{{#only b}}y{{/only}}z{{/only}} post\n"
+    out = _render(text, _access(domains=granted), frozenset({"a", "b"}))
+    assert "{{" not in out
+    if "a" not in granted:
+        assert "x" not in out and "y" not in out and "z" not in out
+        assert out.startswith("pre") and out.rstrip("\n").endswith("post")
+    elif "b" not in granted:
+        assert "y" not in out
