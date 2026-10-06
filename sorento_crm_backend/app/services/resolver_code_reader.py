@@ -102,6 +102,7 @@ REASON_NO_READING = "no_reading"
 REASON_UNKNOWN_KIND = "unknown_kind"
 REASON_EMPTY_VALUE = "empty_value"
 REASON_BAD_CHARACTERS = "bad_characters"
+REASON_VALUE_TOO_LONG = "value_too_long"
 REASON_NOT_IN_TYPED_TEXT = "not_in_typed_text"
 REASON_OVER_CAP = "over_cap"
 REASON_READER_RAISED = "reader_raised"
@@ -118,13 +119,22 @@ def _fold(value: Any) -> str:
 #: SRTWT5608", the owner's example) is a word edge, not part of the code.
 _CODE_CHAR = re.compile(r"[0-9A-Za-z]")
 #: `X-`, `X -`, `X--` right before a run, and `-X`, `- X`, `--X` right after it: the run is
-#: then a cut out of a longer code. The dash class takes the en / em dashes and the minus
-#: sign a phone's smart punctuation makes of a typed `-` or `--` (reviewer, fifth pass),
-#: so "SRTWC8066" out of "WC SRTWC8066" + an en dash (U+2013) + "SS" is the same cut; a value itself may carry only
+#: then a cut out of a longer code. The dash class lists every code point a keyboard makes
+#: of a typed `-` or `--`: hyphen, the Unicode hyphens and dashes U+2010 to U+2015, the
+#: minus sign U+2212, the soft hyphen U+00AD, the small and full-width hyphens U+FE63 and
+#: U+FF0D (reviewer fifth pass; security review on a1eae3bb, nit 1). So "SRTWC8066" out
+#: of "WC SRTWC8066" + an en dash + "SS" is the same cut; a value itself may carry only
 #: the ASCII hyphen (`_VALUE_CHARS`), so such a dash never reaches a probe.
-_DASHES = "-\u2010-\u2015\u2212"
+_DASHES = "-\u2010\u2011\u2012\u2013\u2014\u2015\u2212\u00ad\ufe63\uff0d"
+#: The glued check reads a short window either side of the run, never the whole text
+#: (security review on a1eae3bb, H1: the text is the caller's, and a scan of all of it
+#: per occurrence grew with the square of its length).
+_GLUE_WINDOW = 8
 _HYPHEN_GLUED_BEFORE = re.compile(rf"[0-9A-Za-z]\s*[{_DASHES}]+\s*$")
 _HYPHEN_GLUED_AFTER = re.compile(rf"\s*[{_DASHES}]+\s*[0-9A-Za-z]")
+#: The longest value the guard considers: a product code is under 40 characters, and a
+#: longer "value" is nothing the catalogue could hold (security review on a1eae3bb, H1).
+VALUE_MAX_CHARS = 64
 
 
 def _typed_span(value: str, typed: str) -> bool:
@@ -142,9 +152,11 @@ def _typed_span(value: str, typed: str) -> bool:
     # Every occurrence is tried (the lookahead makes the search overlapping): the value may
     # sit twice in the text, once cut and once whole.
     core = r"[\s-]*".join(re.escape(ch) for ch in letters)
-    for found in re.finditer(r"(?=(" + core + r"))", typed, flags=re.IGNORECASE):
+    # ASCII case folding only: the long s or the Kelvin sign must not read as `s` / `K`
+    # (security review on a1eae3bb, nit 2).
+    for found in re.finditer(r"(?=(" + core + r"))", typed, flags=re.IGNORECASE | re.ASCII):
         start, end = found.start(1), found.end(1)
-        before, after = typed[:start], typed[end:]
+        before, after = typed[max(0, start - _GLUE_WINDOW):start], typed[end:end + _GLUE_WINDOW]
         # No code character right before or after.
         if _CODE_CHAR.match(before[-1:]) or _CODE_CHAR.match(after[:1]):
             continue
@@ -174,9 +186,14 @@ def guard(reading: CodeReading, typed: str | None, token: str) -> CodeReading:
     raw_value = str(reading.value or "").strip()
     if not _fold(raw_value):
         return CodeReading("none", None, reason=REASON_EMPTY_VALUE)
+    if len(raw_value) > VALUE_MAX_CHARS:
+        return CodeReading("none", None, reason=REASON_VALUE_TOO_LONG)
     if not _VALUE_CHARS.match(raw_value):
         return CodeReading("none", None, reason=REASON_BAD_CHARACTERS)
-    if not _typed_span(raw_value, typed or token):
+    # The guard reads exactly the text the model was shown (`_user_message` cuts the typed
+    # text at TYPED_CHARS), never the caller's whole uncapped `raw_tokens` entry (security
+    # review on a1eae3bb, H1): a value the model could not have seen is not a copy of it.
+    if not _typed_span(raw_value, (typed or token)[:TYPED_CHARS]):
         return CodeReading("none", None, reason=REASON_NOT_IN_TYPED_TEXT)
     return CodeReading(reading.kind, raw_value)
 

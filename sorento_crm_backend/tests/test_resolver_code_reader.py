@@ -157,6 +157,54 @@ def test_guard_accepts_the_owners_examples_as_whole_word_runs(kind, value, typed
     assert guard(CodeReading(kind, value), typed, typed.replace(" ", "")).kind == kind
 
 
+def test_the_guard_reads_only_the_text_the_model_was_shown():
+    """Security review on a1eae3bb, H1: `_user_message` cuts the typed text at TYPED_CHARS,
+    so a value that sits only beyond that cut was never shown to the model and is not a
+    copy of what it read; the guard reads the same capped text, never the caller's whole
+    `raw_tokens` entry."""
+    typed = "x " * 150 + "ZZTWT5608"
+    assert len(typed) > reader_mod.TYPED_CHARS
+    out = guard(CodeReading("code", "ZZTWT5608"), typed, "ZZTWT5608")
+    assert out.kind == "none" and out.reason == reader_mod.REASON_NOT_IN_TYPED_TEXT
+    assert guard(CodeReading("code", "ZZTWT5608"), "TAP ZZTWT5608" + " x" * 150, "TAPZZTWT5608").kind == "code"
+
+
+def test_a_value_longer_than_any_code_is_refused_before_any_scan():
+    long_value = "A" * (reader_mod.VALUE_MAX_CHARS + 1)
+    out = guard(CodeReading("code", long_value), long_value, long_value)
+    assert out.kind == "none" and out.reason == reader_mod.REASON_VALUE_TOO_LONG
+
+
+def test_the_guard_is_fast_on_a_huge_typed_text():
+    """H1: the glued-hyphen check once scanned everything before each occurrence, so a
+    100k-character `raw_tokens` entry of "A-A-A-..." cost minutes of CPU per request."""
+    import time
+
+    typed = "A-" * 20_000
+    started = time.perf_counter()
+    # The scan itself, not only the guard (which also cuts the text at TYPED_CHARS): the
+    # glued check reads an 8-character window either side of each occurrence.
+    assert reader_mod._typed_span("A", typed) is False
+    guard(CodeReading("family", "A"), typed, "A")
+    assert time.perf_counter() - started < 0.5
+
+
+@pytest.mark.parametrize(
+    ("value", "typed"),
+    [
+        ("SRTWC8066", "WC SRTWC8066­SS"),
+        ("SRTWC8066", "WC SRTWC8066－SS"),
+        ("SRTWC8066", "WC SRTWC8066﹣SS"),
+        # ASCII case folding only: the long s and the Kelvin sign are not `s` / `K`.
+        ("SRTWT5608", "ſRTWT5608"),
+        ("K100", "K100"),
+    ],
+)
+def test_guard_refuses_other_hyphen_code_points_and_lookalike_letters(value, typed):
+    out = guard(CodeReading("code", value), typed, typed.replace(" ", ""))
+    assert out.kind == "none" and out.reason == reader_mod.REASON_NOT_IN_TYPED_TEXT
+
+
 def test_a_failed_config_read_leaves_the_session_usable_and_pending_work_intact(db, monkeypatch):
     """`_resolve_provider` reads the assistant config under a SAVEPOINT (reviewer, third
     pass, finding 3): a failed SELECT aborts a Postgres transaction and `Session.is_active`

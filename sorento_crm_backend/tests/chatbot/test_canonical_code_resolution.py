@@ -79,6 +79,67 @@ def test_exact_codes_only_names_a_canonical_miss_by_the_typed_raw():
     assert unplaced == {"zztx9999": MISS_TYPED}, "keyed by the resolver's token, valued with the typed phrase"
 
 
+def test_exact_codes_only_compares_the_code_the_reader_read_out_of_a_raw_only_token():
+    """Console pass on a1eae3bb (the prod verdict shape, canonical_code null): the resolver
+    placed ZZTWT5608 through its code reader, but this join compared the folded token
+    "tapzztwt5608" with the code, kept nothing, and the dealer got "Here's what you want:"
+    with no stock line. The reader's value is the code the catalogue matched."""
+    from app.services.chatbot.engine import _read_values
+
+    parse = {"entities": [_entity("TAP ZZTWT5608", None)]}
+    candidates = [_candidate(TAP), _candidate("ZZTWT5608-FRG")]
+    kinds = {"TAPZZTWT5608": {"product": 2}}
+    resolved = {"resolutions": [{"token": "TAPZZTWT5608", "fallback": {"asked": True, "kind": "code", "value": TAP, "matched": 1}}]}
+    read_values = _read_values(resolved)
+    assert read_values == {"tapzztwt5608": "zztwt5608"}
+
+    out = _exact_codes_only(parse, kinds, {"product": candidates}, list(candidates), {}, read_values=read_values)
+    assert out is not None
+    kinds_out, candidates_out, compatible, placed = out
+    assert [c["canonical_code"] for c in candidates_out["product"]] == [TAP]
+    assert kinds_out == {"TAPZZTWT5608": {"product": 1}}
+    assert placed == {}
+    # Without the reader's value the same token is a code-like miss (what a1eae3bb did).
+    _, _, _, placed_before = _exact_codes_only(parse, kinds, {"product": candidates}, list(candidates), {})
+    assert placed_before == {"tapzztwt5608": "TAP ZZTWT5608"}
+    assert _read_values({"resolutions": [{"token": "ZZTWT5608"}]}) == {}
+    assert _read_values(None) == {}
+
+
+def test_a_read_out_code_becomes_the_entitys_canonical_code_for_the_rest_of_the_turn():
+    """`engine._with_read_codes`: the verdict `turn_apply` reads and the parse output the
+    resolver joins read both get the code the reader read out, on the entity whose raw
+    folds to the resolver's token, only where the parser left `canonical_code` null; a
+    `family` reading, a non-product entity and a turn the reader never answered are left
+    exactly as they came (same objects)."""
+    from app.services.chatbot.engine import _with_read_codes
+
+    tap = {"raw": "TAP ZZTWT5608", "hint": "product", "canonical_code": None, "quantity": 5}
+    # The parser sometimes copies the whole phrase into the field: the same resolver token.
+    copied = {"raw": "TAP ZZTWT5608", "hint": "product", "canonical_code": "TAP ZZTWT5608", "quantity": 5}
+    basin = {"raw": "basin", "hint": "category", "canonical_code": None}
+    bare = {"raw": "ZZTWT5608-GM", "hint": "product", "canonical_code": "ZZTWT5608-GM", "quantity": 10}
+    verdict = {"domain_hint": "inventory", "entities": [tap, basin, bare, copied]}
+    parse = {"entities": [tap, bare]}
+    resolved = {"resolutions": [
+        {"token": "TAPZZTWT5608", "fallback": {"asked": True, "kind": "code", "value": TAP, "matched": 1}},
+        {"token": "TOILET8066", "fallback": {"asked": True, "kind": "family", "value": "8066", "matched": 3}},
+        {"token": "ZZTWT5608GM"},
+    ]}
+
+    out_verdict, out_parse = _with_read_codes(verdict, parse, resolved)
+
+    assert out_verdict["entities"][0] == {**tap, "canonical_code": TAP}
+    assert out_verdict["entities"][1] is basin and out_verdict["entities"][2] is bare
+    assert out_verdict["entities"][3] == {**copied, "canonical_code": TAP}
+    assert out_parse["entities"] == [{**tap, "canonical_code": TAP}, bare]
+    assert tap["canonical_code"] is None, "nothing is mutated in place"
+    assert out_verdict["domain_hint"] == "inventory"
+    same_v, same_p = _with_read_codes(verdict, parse, {"resolutions": [{"token": "TAPZZTWT5608"}]})
+    assert same_v is verdict and same_p is parse
+    assert _with_read_codes(verdict, parse, None) == (verdict, parse)
+
+
 def test_exact_codes_only_still_reads_raw_when_canonical_is_null():
     parse = {"entities": [_entity(TAP, None)]}
     candidates = [_candidate(TAP)]
@@ -292,6 +353,37 @@ class TestRealResolver:
         assert asked[0][2] is False
         assert _uuids_passed(captured) == 1, captured
         assert "could not find" not in reply.lower(), reply
+
+    def test_the_fallback_answers_the_stock_line_in_the_availability_console(self, session_factory, monkeypatch, stub_access):
+        """The owner's journey end to end on the prod verdict shape ("TAP ZZTWT5608" as one
+        product entity, canonical_code null, quantity 5) through the availability-only
+        dealer console: real engine, real resolver, real stock decision, the reader stubbed
+        to read the code. Measured on a1eae3bb before the fix: the route ran the counted
+        set ("Couldn't find a TAP ZZTWT5608 with stock (checked ZZTWT5608)"), then the
+        engine's exact-codes join kept nothing ("Here's what you want:" with no tool call)."""
+        from app.services import resolver_code_reader
+        from app.services.resolver_code_reader import CodeReading
+        from tests.chatbot._avail_mode_console import AvailConsole, _seed as seed_codes
+        from tests.chatbot._r9_engine_console import product, stock
+
+        console = AvailConsole(session_factory, monkeypatch, stub_access, phone="+60900000097")
+        console.codes.update(seed_codes(session_factory, [TAP, "ZZTWT5608-FRG", "ZZTWT5608-GM"]))
+        console.uuid_of = {code: pid for pid, code in console.codes.items()}
+        asked: list[Any] = []
+
+        def fake_read_codes(db, missed, *, message_text, user_id, dry_run):
+            asked.append(list(missed))
+            return {token: CodeReading("code", TAP) for token, _ in missed}
+
+        monkeypatch.setattr(resolver_code_reader, "read_codes", fake_read_codes)
+
+        text = console.say("TAP ZZTWT5608 x 5", stock(product("TAP ZZTWT5608", 5)))
+
+        assert asked == [[("TAPZZTWT5608", "TAP ZZTWT5608")]], asked
+        assert text.startswith("ZZTWT5608 x 5:"), text
+        assert "couldn't find" not in text.lower() and "could not find" not in text.lower(), text
+        ids = [pid for name, args in console.tool_calls for pid in args.get("product_ids") or []]
+        assert ids == [console.uuid_of[TAP]], console.tool_calls
 
     @pytest.mark.xfail(
         strict=True,

@@ -374,6 +374,45 @@ def _route(db, tokens, raws, *, code_reader, fallback_to_all_types=True):
     )
 
 
+def test_a_stock_ask_on_a_read_out_code_is_a_forward_ask_never_the_counted_set(db, monkeypatch):
+    """The chatbot's stock ask (AND mode, `require: {stock: true}`) over the prod shape
+    "TAP ZZTWT5608 x 5": the reader reads the code, the catalogue places it, and the route
+    must treat the turn as it treats a typed "ZZTWT5608" (code first: no `predicate`, no
+    HAS / counted-set branch). Measured on a1eae3bb through the real engine: the route's
+    `_code_matched` compared the folded token with the code, found no containment and ran
+    the counted set, so the dealer read "Couldn't find a TAP ZZTWT5608 with stock (checked
+    ZZTWT5608)" for a code that exists."""
+    from app.api.v1.system.references import ResolveReferenceRequest, resolve_reference_post
+    from app.services import resolver_code_reader
+    from app.services.resolver_code_reader import CodeReading
+
+    monkeypatch.setattr(
+        resolver_code_reader, "read_codes",
+        lambda db_, missed, **kw: {tok: CodeReading("code", TAP) for tok, _ in missed},
+    )
+
+    def ask(query, tokens, raws):
+        payload = ResolveReferenceRequest(
+            query=query, tokens=tokens, raw_tokens=raws, allowed_entity_types=["product"],
+            match_mode="and", fallback_to_all_types=True, limit=15, dry_run=True,
+            domain="inventory", require={"stock": True},
+        )
+        return resolve_reference_post(payload, current_user={"id": None}, db=db)
+
+    typed = ask("ZZTWT5608 x 5", ["ZZTWT5608"], ["ZZTWT5608"])
+    read_out = ask("TAP ZZTWT5608 x 5", ["TAPZZTWT5608"], ["TAP ZZTWT5608"])
+
+    assert "predicate" not in typed
+    assert "predicate" not in read_out, read_out.get("predicate")
+    # The typed code answers in the AND shape (`intersection`); the read-out one degraded
+    # to the OR shape (`resolutions`) when the AND probe missed the folded token.
+    assert [m["canonical_code"] for m in typed["intersection"]] == [TAP]
+    codes = lambda r: [m["canonical_code"] for m in r["resolutions"][0]["matches"]]  # noqa: E731
+    assert codes(read_out) == [TAP]
+    assert read_out["resolutions"][0]["fallback"] == {"asked": True, "kind": "code", "value": TAP, "matched": 1}
+    assert read_out["unresolved_tokens"] == []
+
+
 def test_the_route_asks_once_even_when_it_reruns_the_unresolved_tokens(db):
     """`fallback_to_all_types` re-runs the tokens still unresolved against every type
     (`references._resolve_input`'s cross-type pass, which calls `resolve_references`

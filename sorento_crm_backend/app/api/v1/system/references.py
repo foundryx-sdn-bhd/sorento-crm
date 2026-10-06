@@ -1618,7 +1618,16 @@ def _code_matched(result: dict[str, Any], tokens: list[str] | None = None) -> bo
 
     for resolution in result.get("resolutions") or []:
         token = (resolution or {}).get("token")
-        if any(_hit(token, m) for m in (resolution or {}).get("matches") or []):
+        # RESOLVE-SEMANTIC-FALLBACK: a token the code reader read a code (or a family
+        # fragment) out of IS that code here: the resolver's own verdict, confirmed by the
+        # catalogue on its exact / prefix probe. The folded token ("TAPSRTWT5608") never
+        # contains the code read out of it ("SRTWT5608"), so without this the HAS /
+        # counted-set branch ran over a token the resolver had already placed by code and
+        # a dealer read "Couldn't find a TAP SRTWT5608 with stock (checked SRTWT5608)"
+        # (console pass on a1eae3bb) instead of the code's availability line.
+        read = ((resolution or {}).get("fallback") or {}).get("value")
+        matches = (resolution or {}).get("matches") or []
+        if any(_hit(token, m) or (read and _hit(read, m)) for m in matches):
             return True
     return any(
         _hit(token, match)

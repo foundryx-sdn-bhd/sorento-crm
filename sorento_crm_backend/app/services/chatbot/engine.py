@@ -514,6 +514,7 @@ def _exact_codes_only(
     resolved_candidates: dict[str, list[dict[str, Any]]],
     compatible_entities: list[dict[str, Any]],
     unplaced: dict[str, str],
+    read_values: dict[str, str] | None = None,
 ):
     """AVAIL-MODE-REPLIES (owner hand test, 3 Oct 2026): an availability-access stock or
     ETA turn answers EXACT codes only, and steers the dealer to one when they typed less.
@@ -567,17 +568,22 @@ def _exact_codes_only(
     misses: dict[str, str] = {}
     ignored: set[str] = set()
     for fold, typed in tokens:
-        exact = [c for c in candidates if code_of(c) == fold]
+        # RESOLVE-SEMANTIC-FALLBACK: the code (or family fragment) the resolver's code
+        # reader read out of this token is what the catalogue matched, so it is the value
+        # compared here ("TAP SRTWT5608" with canonical_code null: the token is
+        # "tapsrtwt5608", the placed code "srtwt5608"); the maps stay keyed by the token.
+        code = (read_values or {}).get(fold) or fold
+        exact = [c for c in candidates if code_of(c) == code]
         family: list[dict[str, Any]] = []
-        if _code_like(fold):
-            family = [c for c in candidates if code_of(c).startswith(fold)] or [
-                c for c in candidates if fold in code_of(c)
+        if _code_like(code):
+            family = [c for c in candidates if code_of(c).startswith(code)] or [
+                c for c in candidates if code in code_of(c)
             ]
         chosen = exact or family
         if chosen:
             keep.update(str(c.get("uuid")) for c in chosen)
             per_token[fold] = len(chosen)
-        elif _code_like(fold):
+        elif _code_like(code):
             misses[fold] = typed
         else:
             ignored.add(fold)
@@ -602,6 +608,64 @@ def _exact_codes_only(
     ]
     placed = {**{k: v for k, v in unplaced.items() if k not in ignored}, **misses}
     return kinds, {**resolved_candidates, "product": kept}, compatible, placed
+
+
+def _with_read_codes(verdict: dict[str, Any], parse_output: dict[str, Any], resolved: Any) -> tuple[dict[str, Any], dict[str, Any]]:
+    """RESOLVE-SEMANTIC-FALLBACK: a code the shared resolver's reader read out of a product
+    token (`fallback.kind == "code"`, confirmed by the catalogue's exact probe) is the
+    `canonical_code` the parser did not give (null, or the whole phrase copied), written
+    onto the entity whose resolver token that was (`resolve_gate._token_of`: canonical
+    first, raw second, folded) in BOTH the verdict `turn_apply` reads and the parse output
+    the resolver joins read, so the turn continues exactly as it does when the promoted
+    prompt fills the field (the quantity a line states, the focus row, every canonical-
+    first join). New dicts, nothing mutated; a turn the reader never answered is returned
+    as it came. Measured on a1eae3bb through the availability console: with the field
+    left as typed, "TAP SRTWT5608 x 5" answered "How many units of SRTWT5608?" over a
+    quantity the message had stated."""
+    values: dict[str, str] = {}
+    for row in (resolved or {}).get("resolutions") or [] if isinstance(resolved, dict) else []:
+        fb = row.get("fallback") if isinstance(row, dict) else None
+        if isinstance(fb, dict) and fb.get("kind") == "code" and fb.get("value"):
+            key = turn_state.token_key(str(row.get("token") or ""))
+            if key:
+                values[key] = str(fb["value"])
+    if not values:
+        return verdict, parse_output
+
+    def rewrite(output: dict[str, Any]) -> dict[str, Any]:
+        entities = output.get("entities")
+        if not isinstance(entities, list):
+            return output
+        changed = False
+        out: list[Any] = []
+        for e in entities:
+            if isinstance(e, dict) and e.get("hint") in (None, "product"):
+                key = turn_state.token_key(str(e.get("canonical_code") or "").strip() or str(e.get("raw") or ""))
+                if key in values and str(e.get("canonical_code") or "") != values[key]:
+                    out.append({**e, "canonical_code": values[key]})
+                    changed = True
+                    continue
+            out.append(e)
+        return {**output, "entities": out} if changed else output
+
+    return rewrite(verdict), rewrite(parse_output)
+
+
+def _read_values(resolved: Any) -> dict[str, str]:
+    """`{folded resolver token: folded value the code reader read out of it}` for every
+    resolution the shared resolver answered through its code reader (`fallback.kind`
+    `code` or `family`, RESOLVE-SEMANTIC-FALLBACK). Empty when the reader was never
+    consulted, so every other turn is untouched."""
+    out: dict[str, str] = {}
+    for row in (resolved or {}).get("resolutions") or [] if isinstance(resolved, dict) else []:
+        if not isinstance(row, dict):
+            continue
+        fb = row.get("fallback")
+        if isinstance(fb, dict) and fb.get("kind") in ("code", "family") and fb.get("value"):
+            key, value = turn_state.token_key(str(row.get("token") or "")), turn_state.token_key(str(fb["value"]))
+            if key and value:
+                out[key] = value
+    return out
 
 
 def _is_bare_all(message: str) -> bool:
@@ -4984,13 +5048,19 @@ def _run_stages_body(  # noqa: PLR0915
             not_checked_tokens = resolve_outcome.not_checked
             spec_tier = resolve_outcome.spec_tier
             resolver_payload = resolve_outcome.payload
+            # RESOLVE-SEMANTIC-FALLBACK: a code the reader read out of a token is the
+            # entity's `canonical_code` from here on (see `_with_read_codes`).
+            verdict, resolver_parse_output = _with_read_codes(
+                verdict, resolver_parse_output, (resolver_payload or {}).get("resolved")
+            )
             # Every turn of availability access, not only a stock / ETA one: a code the
             # dealer names on an order or outstanding turn is carried into the next one, and
             # a bare "eta" after "srtw2000" asked its whole prefix family (tester re-run on
             # a5ba9dc9f, fix 4).
             if getattr(getattr(state_out, "profile", None), "stock_availability_only", False):
                 exact = _exact_codes_only(
-                    resolver_parse_output, resolved_kinds, resolved_candidates, compatible_entities, unplaced_tokens
+                    resolver_parse_output, resolved_kinds, resolved_candidates, compatible_entities, unplaced_tokens,
+                    read_values=_read_values((resolver_payload or {}).get("resolved")),
                 )
                 if exact is not None:
                     resolved_kinds, resolved_candidates, compatible_entities, unplaced_tokens = exact

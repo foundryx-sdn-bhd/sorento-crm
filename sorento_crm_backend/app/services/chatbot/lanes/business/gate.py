@@ -847,6 +847,15 @@ def run_gate(  # noqa: PLR0912, PLR0915 - one JS node, one function; splitting i
         # ── shared: if we built options, require the user to pick ──
         if len(specific_options) > 0:
             typed = [t for t in (_code_key(t) for t in jsc.array(resolver.get("tokens"))) if t]
+            # RESOLVE-SEMANTIC-FALLBACK: a code or family fragment the resolver's code
+            # reader read out of a token is a typed token here: the resolver's own verdict,
+            # confirmed by the catalogue's probe. The folded token ("toiletwc200s") sits
+            # inside no code, so without this every candidate the reader's family answer
+            # had placed was dropped and the picker came out empty.
+            for res in (resolver.get("resolutions") if isinstance(resolver.get("resolutions"), list) else []):
+                fb = jsc.get(res, "fallback")
+                if isinstance(fb, dict) and fb.get("kind") in ("code", "family") and _code_key(fb.get("value")):
+                    typed.append(_code_key(fb.get("value")))
             # keep only candidates whose CODE relates to a typed token - both sides folded
             # the way the resolver matched them (see `typed_tokens` above)
             if len(typed) > 0:

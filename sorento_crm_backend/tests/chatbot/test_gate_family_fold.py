@@ -58,6 +58,61 @@ def test_or_mode_a_folded_token_keeps_the_dashed_family_the_resolver_placed():
     assert _picker_codes(out) == FAMILY, out["specific_options"]
 
 
+def test_or_mode_a_family_the_reader_read_out_of_a_token_keeps_its_picker():
+    """RESOLVE-SEMANTIC-FALLBACK: "WC 200-S" with canonical_code null reaches the resolver
+    as "WC200S"... and "TOILET WC200-S" as "TOILETWC200S": the code reader reads the family
+    fragment "WC200-S" out of it and the substring probe places the family. The gate's
+    "keep only candidates whose code relates to a typed token" filter compares candidate
+    codes with the RESOLVER'S tokens, and "toiletwc200s" is inside no code, so every
+    candidate was dropped and the picker came out empty. The value the reader read out is
+    a typed token for that filter: the resolver's own verdict, confirmed by the catalogue."""
+    resolver = {
+        "tokens": ["TOILETWC200S"],
+        "resolutions": [{
+            "token": "TOILETWC200S", "resolved": False, "ambiguous": True,
+            "matches": [_row(c, "substring") for c in FAMILY],
+            "fallback": {"asked": True, "kind": "family", "value": "WC200-S", "matched": 2},
+        }],
+        "unresolved_tokens": [],
+    }
+    parser = {"domain_hint": "product_attachment", "intent_hint": "check_product_attachment",
+              "entities": [{"hint": "product", "raw": "TOILET WC200-S", "canonical_code": None, "confident": True}]}
+    out = run_gate(dict(resolver), parser=parser, resolver=resolver)
+
+    assert out["gate_passed"] is False
+    assert out["require_specific"] is True
+    assert _picker_codes(out) == FAMILY, out["specific_options"]
+
+
+def test_or_mode_a_code_the_reader_read_out_of_a_token_answers_like_the_typed_code():
+    """A `code` reading placed exactly: the same outcome a TYPED "ZZTWC200-S-UF" gets on
+    this domain (the code kept as the subject, no picker, the gate asking only for the
+    attachment type)."""
+    resolver = {
+        "tokens": ["WCZZTWC200SUF"],
+        "resolutions": [{
+            "token": "WCZZTWC200SUF", "resolved": True, "ambiguous": False,
+            "matches": [_row("ZZTWC200-S-UF", "exact")],
+            "fallback": {"asked": True, "kind": "code", "value": "ZZTWC200-S-UF", "matched": 1},
+        }],
+        "unresolved_tokens": [],
+    }
+    parser = {"domain_hint": "product_attachment", "intent_hint": "check_product_attachment",
+              "entities": [{"hint": "product", "raw": "WC ZZTWC200-S-UF", "canonical_code": None, "confident": True}]}
+    out = run_gate(dict(resolver), parser=parser, resolver=resolver)
+    typed_resolver = {
+        "tokens": ["ZZTWC200SUF"],
+        "resolutions": [{"token": "ZZTWC200SUF", "resolved": True, "ambiguous": False, "matches": [_row("ZZTWC200-S-UF", "exact")]}],
+        "unresolved_tokens": [],
+    }
+    typed = run_gate(dict(typed_resolver), parser=_parser("ZZTWC200-S-UF"), resolver=typed_resolver)
+
+    assert [e["code"] for e in out["compatible_entities"]] == ["ZZTWC200-S-UF"], out
+    assert out["require_specific"] is False and out["specific_options"] == [], out
+    assert out["gate_reason"] == typed["gate_reason"]
+    assert out["gate_passed"] is typed["gate_passed"]
+
+
 def test_and_mode_a_folded_token_keeps_the_dashed_family_the_resolver_placed():
     """The chatbot sends a single product token in AND mode (`resolve_entity_body`); the
     route answers with an intersection, no per-token resolutions."""
