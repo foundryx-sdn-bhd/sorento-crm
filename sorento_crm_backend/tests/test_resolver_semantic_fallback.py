@@ -108,6 +108,17 @@ def _by_token(result) -> dict[str, Any]:
     return {r["token"]: r for r in result.as_dict()["resolutions"]}
 
 
+def _product(db, code: str) -> None:
+    """One more searchable product in the fixture's category and unit."""
+    template = db.query(Product).filter(Product.product_code == TAP).one()
+    db.add(
+        Product(
+            id=str(uuid.uuid4()), product_code=code, product_name=code, category_id=template.category_id,
+            base_uom_id=template.base_uom_id, list_price=10, is_active=True, company_id=DEFAULT_COMPANY_ID,
+        )
+    )
+
+
 def _codes(resolution: dict[str, Any]) -> list[str]:
     return [m["canonical_code"] for m in resolution["matches"]]
 
@@ -443,6 +454,55 @@ def test_words_the_route_split_out_of_a_sentence_are_never_asked(db):
         allowed_entity_types=["attachment_type", "product"], code_reader=reader,
     )
     assert reader.calls == [], reader.calls
+
+
+def test_a_hint_spelled_by_an_alias_is_still_a_product_question(db):
+    """The per-token hint is folded through the resolver's own aliases ("products",
+    "master_product" are `product`), so a caller using one is asked like any other
+    (reviewer, fourth pass, should-fix 2)."""
+    reader = FakeReader({"TAPZZTWT5608": ("code", TAP)})
+    result = _resolve(db, ["TAPZZTWT5608"], ["TAP ZZTWT5608"], reader=reader, types=["products"])
+
+    assert reader.calls == [[("TAPZZTWT5608", "TAP ZZTWT5608")]], reader.calls
+    assert [m.canonical_code for m in result.resolutions[0].matches] == [TAP]
+
+
+def test_a_code_reading_answers_the_exact_row_alone_never_its_variant_siblings(db):
+    """A typed exact code comes back with its variant siblings beside it (Tier 1's picker
+    aid), which the gate's AND-mode exactness test and `turn/narrow.typed_exact_settles`
+    then strip by comparing the TYPED token with the code. A code READ OUT of
+    "TAP ZZTKS6145" is not the typed token, so siblings here would turn a found code into a
+    "which one?" question (measured on the gate, reviewer fourth pass, should-fix 4): the
+    re-probe is the exact row alone, and the answer is the one the typed code settles to."""
+    _product(db, "ZZTKS6145")
+    _product(db, "ZZTKS6145-NEW")
+    db.flush()
+    reader = FakeReader({"TAPZZTKS6145": ("code", "ZZTKS6145")})
+    typed_alone = _resolve(db, ["ZZTKS6145"], ["ZZTKS6145"], reader=None)
+    read_out = _resolve(db, ["TAPZZTKS6145"], ["TAP ZZTKS6145"], reader=reader)
+
+    assert [m.canonical_code for m in typed_alone.resolutions[0].matches] == ["ZZTKS6145", "ZZTKS6145-NEW"]
+    assert [m.canonical_code for m in read_out.resolutions[0].matches] == ["ZZTKS6145"]
+    assert read_out.resolutions[0].matches[0].match_tier == "exact"
+    assert read_out.resolutions[0].ambiguous is False
+    assert read_out.resolutions[0].fallback == {"asked": True, "kind": "code", "value": "ZZTKS6145", "matched": 1}
+
+
+def test_a_code_reading_reaches_a_product_set_when_the_callers_types_do(db):
+    """A flyer / set code read out of "TAP ZZTWC8608-RL" is a product-domain hit for a caller
+    that asked for `product` (`allowed` widens to `product_set`, D10b), exactly as the exact
+    tier answers the typed code."""
+    from app.models.product_set import ProductSet
+
+    db.add(ProductSet(id=str(uuid.uuid4()), set_code="ZZTWC8608-RL", name="ZZT set", company_id=DEFAULT_COMPANY_ID))
+    db.flush()
+    reader = FakeReader({"TAPZZTWC8608RL": ("code", "ZZTWC8608-RL")})
+    typed_alone = _resolve(db, ["ZZTWC8608-RL"], ["ZZTWC8608-RL"], reader=None)
+    read_out = _resolve(db, ["TAPZZTWC8608RL"], ["TAP ZZTWC8608-RL"], reader=reader)
+
+    assert [(m.entity_type, m.canonical_code) for m in typed_alone.resolutions[0].matches] == [("product_set", "ZZTWC8608-RL")]
+    assert [(m.entity_type, m.canonical_code) for m in read_out.resolutions[0].matches] == [("product_set", "ZZTWC8608-RL")]
+    assert read_out.resolutions[0].fallback["matched"] == 1
 
 
 def test_a_token_typed_twice_is_asked_once_and_uses_one_slot(db):

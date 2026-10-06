@@ -236,6 +236,28 @@ def test_ac4_with_the_code_reader_on_only_its_trace_key_differs(client):
     assert tr_with == tr_without
 
 
+# A token typed twice keeps its LAST line's raw text, the rule this retry has always read
+# `raw_by_token` by (RESOLVE-SEMANTIC-FALLBACK reviewer, fourth pass, blocker 1: a
+# first-wins rule for the code reader silently turned this resolution into a miss).
+def test_a_duplicated_token_retries_on_its_last_lines_raw_text(db, client):
+    _product(db, code="ZZTWB8006")
+    db.flush()
+
+    body = client.post(
+        ENDPOINT,
+        json={
+            "tokens": ["ZZTWB8006BASIN", "ZZTWB8006BASIN"],
+            "raw_tokens": ["ZZTWB8006BASIN", "ZZTWB8006 BASIN"],
+            "semantic_fallback": False,
+        },
+    ).json()
+
+    tr = next(r for r in body["resolutions"] if r["token"] == "ZZTWB8006BASIN")
+    assert [m["canonical_code"] for m in tr["matches"]] == ["ZZTWB8006"]
+    assert tr["matches"][0]["match_tier"] == "head_code"
+    assert body["unresolved_tokens"] == []
+
+
 # AC-5: inert without raw_tokens - byte-identical to today.
 def test_ac5_inert_without_raw_tokens(db, client):
     _product(db, code="ZZTWB8005")

@@ -5029,10 +5029,13 @@ def resolve_references(
             if not s:
                 continue
             tokens.append(s)
-            # A token typed twice keeps its FIRST line's raw text and hint, one rule for both.
-            if paired_raw is not None and s not in raw_by_token:
+            # A token typed twice keeps its LAST line's raw text: the rule the head-code
+            # retry below has always read `raw_by_token` by, so a call with no reader
+            # stays byte-identical to before (reviewer, fourth pass, blocker 1). The hint
+            # follows the same rule, one rule for both.
+            if paired_raw is not None:
                 raw_by_token[s] = paired_raw[idx]
-            if paired_hint is not None and s not in hint_by_token:
+            if paired_hint is not None:
                 hint_by_token[s] = _canonical_entity_type(str(paired_hint[idx] or "").strip())
         ceiling = max_candidates if max_candidates is not None else PRE_EXTRACTED_TOKEN_CEILING
         truncated_tokens = tokens[ceiling:]
@@ -5277,7 +5280,18 @@ def resolve_references(
                     hits: list[ResolvedEntity] = []
                     try:
                         if reading.kind == "code":
+                            # The exact tier's probes for a typed code (reviewer, fourth
+                            # pass, should-fix 4): the product row, else the product set (a
+                            # flyer code) when the caller's types reach it. NOT the variant
+                            # siblings Tier 1 adds beside a typed exact hit: the gate's
+                            # AND-mode exactness test and `turn/narrow.typed_exact_settles`
+                            # strip those by comparing the TYPED token with the code, and
+                            # this token ("TAPSRTWT5608") is not the code read out of it, so
+                            # siblings here would turn the owner's found SRTWT5608 (which
+                            # has -FRG and -GM variants) into a "which one?" question.
                             hits = list(_probe_product(db, [reading.value]).get(reading.value, []))
+                            if not hits and (tok_allowed is None or "product_set" in tok_allowed):
+                                hits = list(_probe_product_set(db, [reading.value]).get(reading.value, []))
                         else:
                             hits = list(_prefix_probe_product(db, reading.value))
                     except Exception:

@@ -36,6 +36,6 @@ Every criterion names its proof. "Red" means the proof failed on origin/main e3e
 
 ## D. Unified (owner Q2 = a, Q4 = b)
 
-- AC-RSF-40 The same code path serves the chatbot (in-process route call), the API-key `POST /resolve` and `GET /resolve` (flag `semantic_fallback`, default on). Proof: the route tests above; `GET` carries the same query parameter.
+- AC-RSF-40 The same code path serves the chatbot (in-process route call) and the API-key `POST /resolve` (flag `semantic_fallback`, default on). The reader reads the text the caller TYPED for a token (`raw_tokens`); a token sent without it is not asked (`fallback.reason` `no_typed_text`), so `GET /resolve`, which carries no `raw_tokens`, never asks: its product misses only gain that trace key, and its `semantic_fallback=false` drops it (byte-identical). Proof: the route tests above; `test_the_get_route_builds_the_reader_unless_the_caller_opts_out`; `test_a_token_with_no_typed_text_is_not_asked`.
 - AC-RSF-41 A `family` answer lands in the picker the gate already prints (ambiguous resolution, substring rows); the bare-number ladder itself stays in #1506 PR-2. Proof: AC-RSF-23; crew-note on #1506.
 - AC-RSF-42 Every existing resolver and chatbot suite touched by the token order stays green (chunks listed on the PR).

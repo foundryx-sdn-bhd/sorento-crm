@@ -1513,11 +1513,15 @@ class ResolveReferenceRequest(BaseModel):
             "matched no code tier is put to the code reader ONCE (`app/services/"
             "resolver_code_reader.py`, one model call per request, at most 5 tokens, 3 s), "
             "which may only read a code or a code-family fragment out of the text the "
-            "caller typed; the catalogue then decides. A `code` answer resolves the token on "
-            "the exact tier, a `family` answer is the usual prefix / substring picker, "
-            "`none` leaves it in `unresolved_tokens`. The verdict rides each affected "
-            "resolution's `fallback` key (absent everywhere else). `false` opts this "
-            "request out: no model call, response byte-identical to before the feature."
+            "caller typed for it, i.e. its `raw_tokens` entry; the catalogue then decides. "
+            "A token sent with no `raw_tokens` entry is not asked (`fallback.reason` "
+            "`no_typed_text`): the folded token is all there is, and the code tiers already "
+            "missed on it. A `code` answer resolves the token on the exact tier (the product "
+            "row, else a product set, plus variant siblings, as for a typed code), a "
+            "`family` answer is the usual prefix / substring picker, `none` leaves it in "
+            "`unresolved_tokens`. The verdict rides each affected resolution's `fallback` "
+            "key (absent everywhere else). `false` opts this request out: no model call, "
+            "response byte-identical to before the feature."
         ),
     )
     domain_hint: str | None = Field(
@@ -2519,9 +2523,13 @@ def resolve_reference(
     semantic_fallback: bool = Query(
         True,
         description=(
-            "RESOLVE-SEMANTIC-FALLBACK: ask the code reader about a pre-extracted product "
-            "token that matched no code tier (see the POST body's field of the same name). "
-            "`false` opts out; the response is then byte-identical to before the feature."
+            "RESOLVE-SEMANTIC-FALLBACK: the code reader (see the POST body's field of the "
+            "same name) reads a code out of the text the caller TYPED for a token, which "
+            "is the POST body's `raw_tokens`. This GET variant carries no `raw_tokens`, so "
+            "the reader is never asked here: a product token that matched no code tier "
+            "gains `fallback: {asked: false, kind: not_asked, reason: no_typed_text}` and "
+            "stays unresolved. Use POST with `raw_tokens` to have the token read. `false` "
+            "drops the key; the response is then byte-identical to before the feature."
         ),
     ),
     limit: int | None = Query(

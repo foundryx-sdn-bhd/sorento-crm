@@ -113,6 +113,16 @@ def _fold(value: Any) -> str:
     return _NOT_ALNUM.sub("", str(value or "")).casefold()
 
 
+#: A code is made of ASCII letters and digits (`_VALUE_CHARS`, the catalogue's `_CODE_RE`),
+#: so only those are "inside a code": a letter of another script glued to a code ("龙头
+#: SRTWT5608", the owner's example) is a word edge, not part of the code.
+_CODE_CHAR = re.compile(r"[0-9A-Za-z]")
+#: `X-`, `X -`, `X--` right before a run, and `-X`, `- X`, `--X` right after it: the run is
+#: then a cut out of a longer code.
+_HYPHEN_GLUED_BEFORE = re.compile(r"[0-9A-Za-z]\s*-+\s*$")
+_HYPHEN_GLUED_AFTER = re.compile(r"\s*-+\s*[0-9A-Za-z]")
+
+
 def _typed_span(value: str, typed: str) -> bool:
     """Does `value` (letters and digits, in order, any dashes or spaces between them) occur
     in `typed` as a WHOLE word run: nothing alphanumeric right before or right after it?
@@ -125,15 +135,25 @@ def _typed_span(value: str, typed: str) -> bool:
     letters = [ch for ch in value if ch.isalnum()]
     if not letters:
         return False
-    # A hyphen glued to a letter or digit is INSIDE the code ("SRTWC8066-SS" is one code,
-    # the catalogue folds the hyphen away), so a run may not start right after `X-` nor
-    # end right before `-X`: "SRTWC8066" out of "WC SRTWC8066-SS" is a cut, not a copy.
-    pattern = (
-        r"(?<![0-9A-Za-z])(?<![0-9A-Za-z]-)"
-        + r"[\s-]*".join(re.escape(ch) for ch in letters)
-        + r"(?![0-9A-Za-z])(?!-[0-9A-Za-z])"
-    )
-    return re.search(pattern, typed, flags=re.IGNORECASE) is not None
+    # Every occurrence is tried (the lookahead makes the search overlapping): the value may
+    # sit twice in the text, once cut and once whole.
+    core = r"[\s-]*".join(re.escape(ch) for ch in letters)
+    for found in re.finditer(r"(?=(" + core + r"))", typed, flags=re.IGNORECASE):
+        start, end = found.start(1), found.end(1)
+        before, after = typed[:start], typed[end:]
+        # No code character right before or after.
+        if _CODE_CHAR.match(before[-1:]) or _CODE_CHAR.match(after[:1]):
+            continue
+        # A hyphen run between two alphanumerics is INSIDE one code whatever the spaces
+        # around it: the catalogue folds every `[-\s]+` away ("cgb9032b- new" is
+        # CGB9032B-NEW, "SRTWC8066 - SS" and "SRTWC8066--SS" are SRTWC8066-SS), so a run
+        # may not start right after `X-`, `X -`, `X--` nor end right before `-X`, `- X`,
+        # `--X`: "SRTWC8066" out of "WC SRTWC8066-SS" is a cut, not a copy (reviewer,
+        # third and fourth passes).
+        if _HYPHEN_GLUED_BEFORE.search(before) or _HYPHEN_GLUED_AFTER.match(after):
+            continue
+        return True
+    return False
 
 
 def guard(reading: CodeReading, typed: str | None, token: str) -> CodeReading:

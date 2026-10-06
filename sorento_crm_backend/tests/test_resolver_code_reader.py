@@ -111,6 +111,17 @@ def test_guard_falls_back_to_the_token_when_no_typed_text_was_sent():
         ("code", "SRTWC286", "SRTWC286-SH x 2"),
         ("family", "364", "Srt 364-hp"),
         ("family", "SH", "SRTWC286-SH"),
+        # A hyphen with spaces beside it, or doubled, is the same hyphen: the catalogue folds
+        # every `[-\s]+` run ("cgb9032b- new" IS CGB9032B-NEW, its own docstring example), so
+        # a cut at any of these is the cut of the third pass (reviewer, fourth pass).
+        ("code", "cgb9032b", "TAP cgb9032b- new"),
+        ("code", "CGB9032B", "TAP CGB9032B -NEW"),
+        ("code", "SRTWC8066", "WC SRTWC8066--SS"),
+        ("code", "SRTWC8066", "WC SRTWC8066 - SS"),
+        ("code", "srtkt71", "srtkt71 -ss x2"),
+        ("family", "SS", "SRTWC8066--SS"),
+        ("code", "SRTWC8066-SS", "SRTWC8066-SS-150"),
+        ("code", "8066-SS", "SRTWC8066-SS"),
     ],
 )
 def test_guard_refuses_a_value_cut_out_of_the_middle_of_a_typed_code(kind, value, typed):
@@ -131,10 +142,48 @@ def test_guard_refuses_a_value_cut_out_of_the_middle_of_a_typed_code(kind, value
         ("family", "8066", "toilet 8066"),
         ("code", "SRTWT5608", "龙头SRTWT5608"),
         ("code", "srtwt5608", "chrome tap SRTWT5608 got stock?"),
+        # A trailing hyphen with nothing after it, and a value that sits twice in the
+        # text, once cut and once whole: the whole occurrence counts.
+        ("code", "SRTWC8066", "SRTWC8066-"),
+        ("code", "SRTWC8066", "SRTWC8066-SS or SRTWC8066 ?"),
     ],
 )
 def test_guard_accepts_the_owners_examples_as_whole_word_runs(kind, value, typed):
     assert guard(CodeReading(kind, value), typed, typed.replace(" ", "")).kind == kind
+
+
+def test_a_failed_config_read_leaves_the_session_usable_and_pending_work_intact(db, monkeypatch):
+    """`_resolve_provider` reads the assistant config under a SAVEPOINT (reviewer, third
+    pass, finding 3): a failed SELECT aborts a Postgres transaction and `Session.is_active`
+    stays True after it, so without the savepoint the resolver's next query on the turn's
+    session would raise and the caller's pending work would be lost with the rollback."""
+    import uuid
+
+    from sqlalchemy import text
+
+    from app.models.order import Customer
+    from app.services.company_scope import DEFAULT_COMPANY_ID
+
+    marker = Customer(
+        id=str(uuid.uuid4()), customer_code="ZZT-SAVEPOINT", customer_name="ZZT Savepoint",
+        company_id=DEFAULT_COMPANY_ID,
+    )
+    db.add(marker)
+    db.flush()
+
+    real_query = db.query
+
+    def broken_query(*args, **kwargs):
+        # A real SQL failure inside the read, not a Python one: only that aborts the transaction.
+        return db.execute(text('SELECT 1 FROM "zzt_no_such_table_for_this_test"'))
+
+    monkeypatch.setattr(db, "query", broken_query)
+    provider, _name, _model = reader_mod._resolve_provider(db)
+    monkeypatch.setattr(db, "query", real_query)
+
+    assert provider is None
+    assert db.execute(text("SELECT 1")).scalar() == 1, "the session is still usable"
+    assert db.query(Customer).filter(Customer.customer_code == "ZZT-SAVEPOINT").one().id == marker.id
 
 
 def test_guard_leaves_none_and_error_alone():

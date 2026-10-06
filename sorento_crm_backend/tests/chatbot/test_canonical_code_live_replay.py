@@ -106,6 +106,8 @@ def test_a_three_line_stock_check_answers_every_line_in_one_call(db):
     )
     row = _report("three-line stock check", result)
     assert [m["canonical_code"] for m in row["TAPZZTWT5608"]["matches"]] == [TAP]
+    # The exact row alone, never the -SH-150 sibling: the gate settles a typed code to its
+    # exact row by comparing the TYPED token, which this folded token is not.
     assert [m["canonical_code"] for m in row["WCZZTWC8066SH"]["matches"]] == ["ZZTWC8066-SH"]
     assert [m["canonical_code"] for m in row["ZZTWC286SH"]["matches"]] == ["ZZTWC286-SH"]
     assert "fallback" not in row["ZZTWC286SH"], "the clean token was never asked about"
