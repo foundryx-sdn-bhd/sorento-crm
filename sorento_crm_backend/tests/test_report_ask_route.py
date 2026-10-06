@@ -21,9 +21,12 @@ Ambiguities the tester did NOT resolve by guessing (flagged to the captain):
 """
 from __future__ import annotations
 
+import importlib.util
+import sys
 import uuid
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -49,6 +52,11 @@ from tests._sales_report_do_seed import (  # noqa: F401  (client / db are fixtur
 )
 from tests.test_top_selling_report import _access
 from tests._pg_fixture import unique_code
+
+# The MCP server is a SIBLING package in this monorepo, not a backend dependency (CI's
+# changed-tests job does not install it) - see `tests/test_mcp_catalog_ideation.py`.
+if importlib.util.find_spec("sorento_crm_mcp") is None:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "sorento_crm_mcp"))
 
 D = Decimal
 ROUTE = "/api/v1/order-management/report-ask"
