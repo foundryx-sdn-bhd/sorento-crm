@@ -74,8 +74,27 @@ No n8n change: the `sendmsg` sub still posts `quick_reply.split(",")` untouched.
   service (`console_service.run_console_turn`) with the parser stubbed to recorded
   verdicts and the resolver real over seeded customers and products: the incident
   conversation, "2" picking, the stock did-you-mean (no buttons), "2" picking a code.
-- The console check (`scripts/chatbot_console_check.py`) needs the live parser and so runs
-  on the owner's test copy, not in the cloud sandbox: `laneboard/scripts/1500.md`.
-- Not covered by a sandbox test: the n8n-completed `/complete` suggest offer's numbered set.
-  Captures of `build-suggest-offer` in the full n8n corpus (not vendored here) that carry a
+- Round 2 (6 Oct, local lane): the fixed-option kinds are tested in the option shape
+  production builds (`turn/compose.py::_lane_question` stamps `entity_type = kind` on the
+  outstanding and sales report options), after review found the options inspection was
+  suppressing them; it now runs for `team_pick` only. The `/complete` suggest offer's
+  "Try: ..." arm, its customer service date miss and its numbered set are pinned by direct
+  `build_suggest_offer` tests.
+- Real parser pass (6 Oct, local lane, in-app Chatbot Console against the shared dev data,
+  nothing stubbed): "DO for ong brothers" prints the three ONG BROTHERS lines with no
+  buttons and "2" picks the second; a product did-you-mean prints three codes with no
+  buttons and a typed code picks; the escalation offer keeps "Yes"; the outstanding offer
+  keeps "Delivery order list". The same message on `origin/main` sends the customer names
+  as buttons. Steps and exact values: `laneboard/scripts/1500.md`.
+- Captures of `build-suggest-offer` in the full n8n corpus (not vendored here) that carry a
   code-mode or numbered `suggest_quick_reply` now differ on that one field.
+
+## Known, not changed here
+
+- "This month" / "Last month": the period question (`do_ask.py::range_reply`) is plain text
+  and has never carried buttons, so there is no set to keep.
+- Tapping "Delivery order list" under the outstanding summary prints the summary again; the
+  typed number opens the list. `origin/main` does the same.
+- The 20 character limit is measured on the trimmed title. n8n splits the string on ","
+  without trimming, so a title after the first in a ", " joined set travels with a leading
+  space. Unchanged by this lane (no n8n change).
