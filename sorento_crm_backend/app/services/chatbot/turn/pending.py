@@ -214,24 +214,62 @@ def offered_companies(pending: Pending | None) -> list[dict[str, Any]]:
     return rows
 
 
-def quick_replies_suppressed(kind: str | None) -> bool:
+#: The pending kinds whose option labels are FIXED SHORT OPTIONS, and so may go out as
+#: WhatsApp quick-reply buttons: the team pick (team / domain labels, "No it's okay"),
+#: the outstanding scope ("Sales orders" / "Delivery orders" / "Both") and the two
+#: detail offers. Every other kind's labels are ROSTER or free-text values - customer,
+#: product, tier, kind and company names, attachment types, member names, ranked codes
+#: - and those never become buttons (owner rule, 6 Oct 2026, QUICK-REPLY-NAMES).
+FIXED_OPTION_KINDS: frozenset[str] = frozenset(
+    {"team_pick", "outstanding_scope", "outstanding_detail", "sales_report_detail"}
+)
+
+
+def quick_replies_suppressed(kind: str | None, options: list[dict[str, Any]] | None = None) -> bool:
     """Does this pending's own options get withheld from `quick_replies`?
 
-    Owner ruling 23 Sep 2026: a `member_offer` (the CS member picker) already prints
-    its numbered text list ("Please choose who to route to (reply with the number):
-    1. Maryam Ariffin ..."), and that is enough - the same names must NOT also go out
-    as WhatsApp quick-reply buttons (a wall of up to a dozen taps). `result_set` stays
-    populated (a numbered reply still resolves through it); only `quick_replies` is
-    suppressed, and only for this one kind - `team_pick`, `company_pick` and every
-    roster kind keep theirs. The top X ranking (`top_selling_pick`) is the second
-    (owner retest of top selling, 27 Sep 2026: about 100 product chips under a Top 100
-    answer); its one "Reply with a rank number" line is the offer.
+    Owner rule, 6 Oct 2026 (QUICK-REPLY-NAMES, prod incident the same day): a quick-reply
+    set goes out only when EVERY title is a fixed short option. The customer picker sent
+    "SAMPLE ONG BROTHERS (SRT)", "ONG BROTHERS TILING TRADING SDN BHD (SRT)" and "ONG
+    BROTHERS TILING TRADING SDN BHD (SAMPLE) (SRT)" as buttons; Meta cuts a title at 20
+    characters, two of the three were then one string, and the whole message was refused
+    (#131009 "Duplicate button title"). The numbered text list IS the picker - a typed
+    number or the exact label still resolves (`turn/decide.py::picked_positions`) -
+    so a roster kind prints its list and sends no buttons. `result_set` stays populated
+    on every kind; only `quick_replies` is withheld.
+
+    This generalises the two earlier rulings: `member_offer` (23 Sep 2026, a wall of up
+    to a dozen member names) and `top_selling_pick` (27 Sep 2026, about 100 ranked codes)
+    were the first roster kinds to lose their buttons. The kinds that KEEP them are the
+    allowlist `FIXED_OPTION_KINDS`; a kind minted off the operator-editable
+    `chatbot_entity_kinds` table (`brand_pick`, `attachment_type_ask`, ...) is a roster
+    by construction and is suppressed without being named in that allowlist.
+
+    `options` is read only for a `team_pick`, to tell the two whose options are NOT teams
+    apart from a real team pick (the other fixed kinds stamp their own `entity_type` on
+    every option, so inspecting them would suppress every one): the company clarify `answer_bridge.py` mints when a search spanned
+    several companies (each option's payload naming its `company`), and the escalation
+    lane's own product did-you-mean (`engine._question_offered`, `clarify_product`:
+    options with `entity_type: "product"`). Company names and product codes are roster
+    values, so both sets are suppressed too.
 
     One predicate, called from every seam that turns a pending's options into the
     `quick_replies` string, so the rule lives in one place rather than being
     reimplemented (and risking drift) at each site.
     """
-    return kind in ("member_offer", "top_selling_pick")
+    if kind not in FIXED_OPTION_KINDS:
+        return True
+    if kind != "team_pick":
+        return False
+    for option in options or []:
+        if not isinstance(option, dict):
+            continue
+        payload = option.get("payload")
+        if isinstance(payload, dict) and ("company" in payload or "product_code" in payload):
+            return True
+        if option.get("entity_type") not in (None, "team"):
+            return True
+    return False
 
 
 #: WhatsApp shows at most three reply buttons (owner retest of top selling, 27 Sep
@@ -240,12 +278,17 @@ def quick_replies_suppressed(kind: str | None) -> bool:
 MAX_QUICK_REPLIES = 3
 
 
-def quick_replies(kind: str | None, labels: list[str]) -> str | None:
+def quick_replies(
+    kind: str | None, labels: list[str], *, options: list[dict[str, Any]] | None = None
+) -> str | None:
     """n8n's `quick_replies` for one question: the option labels comma joined, or None
     when the kind withholds them (`quick_replies_suppressed`) or there are more than
-    `MAX_QUICK_REPLIES` of them. The one seam every caller turns options into chips."""
+    `MAX_QUICK_REPLIES` of them. The one seam every caller turns options into chips.
+
+    `options` is the pending's own option list when the caller has it, read only by
+    `quick_replies_suppressed` (the company-clarify `team_pick` case)."""
     kept = [str(label) for label in labels if label]
-    if quick_replies_suppressed(kind) or not kept or len(kept) > MAX_QUICK_REPLIES:
+    if quick_replies_suppressed(kind, options) or not kept or len(kept) > MAX_QUICK_REPLIES:
         return None
     return ", ".join(kept)
 

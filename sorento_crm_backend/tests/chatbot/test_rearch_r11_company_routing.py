@@ -404,11 +404,12 @@ class TestBlocker2bBareYesOverAnUnresolvedMissAsksWhichCompany:
             f"the clarify must name BOTH, and only, the two companies actually "
             f"searched: {clarify_text!r}"
         )
-        from app.services.chatbot.lanes.escalation import _company_clarify_options
+        from app.services.chatbot.lanes.escalation import _company_clarify_rows
 
-        assert set(_company_clarify_options(ctx)) == {MOCHA, SORENTO}, (
+        pool = [row["company_name"] for row in _company_clarify_rows(ctx)]
+        assert set(pool) == {MOCHA, SORENTO}, (
             f"the clarify's own option pool must be exactly the two searched "
-            f"companies: {_company_clarify_options(ctx)!r}"
+            f"companies: {pool!r}"
         )
         # NOT pinned: literal "1"/"2" digits printed in the clarify copy. Captain
         # ruling (hand pass 11 re-check, coder 42's report): `clarify_company_reply`
