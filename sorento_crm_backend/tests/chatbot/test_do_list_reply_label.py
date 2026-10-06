@@ -189,6 +189,73 @@ class TestDecideReadsTheLabelReplyAsThePick:
         named = decide(v, _summary_focus(), _do_offer())
         assert (named.kind, named.why, named.scope) == (NEW_ASK, "named_document", "so"), named.as_trace()
 
+    def test_the_scope_question_answered_by_its_own_document_word_is_the_pick(self) -> None:
+        """The one behaviour change outside `outstanding_detail`: "Delivery orders" typed
+        at the SCOPE question (1. Sales orders, 2. Delivery orders, 3. Both) arrives as
+        positions [2] plus `document: ["DO"]` and now reads as the pick. The effect is the
+        same either way (the scope question clears on its answer, the report runs for DO,
+        `detail: None`), so the apply-level outcome is pinned beside the Decision."""
+        from app.services.chatbot.turn.decide import ANSWER, decide
+        from app.services.chatbot.turn.pending import ask
+        from app.services.chatbot.turn.state import Focus
+
+        rows = [("so", "Sales orders"), ("do", "Delivery orders"), ("both", "Both")]
+        scope_question = ask(
+            "outstanding_scope",
+            [
+                {"uuid": value, "label": label, "payload": {"value": value}, "position": i, "entity_type": "outstanding_scope"}
+                for i, (value, label) in enumerate(rows, start=1)
+            ],
+            expects="pick",
+            payload={"domain": "order", "filters": {"product_codes": ["SRTWT7445"]}},
+        )
+        v = verdict(**{**LABEL_REPLY, "reference_positions": [2], "open_question_answer": PICK_TWO})
+        focus = Focus(domains=["order"], status="outstanding")
+        picked = decide(v, focus, scope_question)
+        assert (picked.kind, picked.why, picked.scope, picked.positions) == (ANSWER, "picked_scope", "do", (2,)), (
+            picked.as_trace()
+        )
+        state, plan = _apply(v, pending=scope_question, focus=focus)
+        assert plan.trace.outstanding == {"kind": "outstanding_scope", "scope": "do", "detail": None}
+        assert state.pending is None, "the scope question clears on its answer"
+        assert state.focus.document == ["DO"]
+
+    def test_both_lists_named_with_both_documents_is_the_both_pick(self) -> None:
+        """`_picked_scope`'s "both" branch: "Both lists" over the three-option detail offer
+        arrives as positions [3] plus `document: ["SO", "DO"]` and runs both lists."""
+        from app.services.chatbot.turn.decide import ANSWER, decide
+
+        v = verdict(
+            **{
+                **LABEL_REPLY,
+                "reference_positions": [3],
+                "open_question_answer": {"mode": "pick", "picked": [3], "items": [], "qty_for_all": None},
+                "document": ["SO", "DO"],
+            }
+        )
+        both = decide(v, _summary_focus(), _both_offer())
+        assert (both.kind, both.why, both.scope, both.positions) == (ANSWER, "picked_scope", "both", (3,)), (
+            both.as_trace()
+        )
+        _state, plan = _apply(v, pending=_both_offer())
+        assert plan.trace.outstanding == {"kind": "outstanding_detail", "scope": "both", "detail": "both"}
+
+    def test_a_position_nobody_offered_is_not_a_scope_pick(self) -> None:
+        """A number past the end of the DO offer (positions [5], no document) is an attempt
+        at the question the generic arm re-prints; it must never read as `picked_scope`
+        (a picked scope of None equalling a named scope of None)."""
+        from app.services.chatbot.turn.decide import decide
+
+        v = verdict(
+            message_type="casual",
+            reference_positions=[5],
+            open_question_answer={"mode": "pick", "picked": [5], "items": [], "qty_for_all": None},
+            domain_in_message=False,
+        )
+        past_the_end = decide(v, _summary_focus(), _do_offer())
+        assert past_the_end.why != "picked_scope", past_the_end.as_trace()
+        assert past_the_end.scope is None, past_the_end.as_trace()
+
     def test_a_named_document_with_no_pick_stays_a_new_ask(self) -> None:
         """A document named with NO position (`reference_positions: []`) is still the new
         scope it always was - the rule only joins a declared pick to its own document."""

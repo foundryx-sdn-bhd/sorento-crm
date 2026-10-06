@@ -49,6 +49,10 @@ cases:
           parser:
             reference_positions: [1]
             open_question_answer: {mode: pick, picked: [1]}
+            # The other half of the cause: the words "delivery order" fill the document
+            # even as the whole message, and that is the field the old code read as a
+            # new scope. Graded so the live run proves it.
+            document: ["DO"]
 
       # C. The control. Same list as B.
       - text: "1"

@@ -1,6 +1,6 @@
 # PLAN - DO-LIST-REPLY-LABEL: a quick-reply label reply answers the pending detail offer, never re-runs the summary
 
-Status: small fix track (diff well under 300 lines, no migration, no auth change, no new ingest surface). Lane started 6 Oct 2026 from origin/main 198db40e. Build in progress.
+Status: small fix track (diff well under 300 lines, no migration, no auth change, no new ingest surface). Lane started 6 Oct 2026 from origin/main 198db40e. Built 6 Oct 2026 in PR #1515 (red-first, kill paste, reviewer verdict ready, chunk 1 of the chatbot suites green); the live-parser A/B/C console replay is the crew's Mac run of the YAML below. Owner question on the "By product" cap left open at the end of this file.
 Issue: crew lane DO-LIST-REPLY-LABEL (owner 6 Oct 22:55, prod, "quite frustrating"). Related: STUCK-QTY-LOOP #1471 (stale pending question replay), ROGUE #1506 class A (bare word under a pending question).
 UAC: `do-list-reply-label-acceptance-criteria.md`
 Classification: chatbot engine, `app/services/chatbot/turn/decide.py` (pure). No wording change, no prompt change.

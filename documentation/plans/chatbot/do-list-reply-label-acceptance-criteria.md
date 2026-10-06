@@ -7,8 +7,13 @@ Plan: `PLAN-do-list-reply-label.md`
   reads as a pick of position 1 that ALSO carries `document: ["DO"]` (the quick-reply label
   "Delivery order list") is answered exactly as "1" is: the delivery order LIST runs
   (`trace.outstanding.detail == "do"`), the offer stays open, the summary is not re-run.
-- AC-DLRL-2: The same over a two-option offer (1. Sales order list, 2. Delivery order
-  list): a pick of position 2 with `document: ["DO"]` runs the DO list.
+- AC-DLRL-2: The same over the two-scope (three-option) offer (1. Sales order list,
+  2. Delivery order list, 3. Both lists): a pick of position 2 with `document: ["DO"]`
+  runs the DO list; a pick of position 3 with `document: ["SO", "DO"]` runs both lists.
+  At the scope question (1. Sales orders, 2. Delivery orders, 3. Both), "Delivery orders"
+  read as position 2 plus `document: ["DO"]` answers the question (report for DO, question
+  cleared), the same outcome the named document gave before. A position nobody offered
+  never reads as a scope pick.
 - AC-DLRL-3: "Sales order" typed after the DO detail list (`document: ["SO"]` with
   `reference_positions: [1]` on the same verdict, the only option being "Delivery order
   list") still reads as a new ask for the SO scope (`NEW_ASK named_document`, scope "so").
