@@ -277,6 +277,44 @@ def test_a_plain_reuse_turn_with_a_binding_stale_category_word_stays_product_sco
     _assert_product_scoped(c, product_id)
 
 
+def test_an_incoming_ask_over_a_carried_product_and_a_stale_extra_answers_the_product(fill_console):
+    """Reviewer round 6, S1: a domain whose gate permits a broad query. "incoming?" over
+    the carried product and the stale SORENTO row: the resolver's gate PASSES ("permits
+    broad query") and only the stray word's zero set made its exit `not_found`, which
+    answered the turn as "Couldn't find any product with incoming stock." The dealer
+    reads the product's own ETA line, the incoming tool is called with its id alone."""
+    c, product_id = fill_console(**IN_STOCK)
+    c.state = _carried_product_state(product_id)
+
+    text = c.say("incoming?", reply(entity_op="reuse", domain_hint="incoming", intent_hint="check_incoming"))
+
+    assert text == f"{CODE}: No ETA\n{DISCONTINUED}\n\n{R}", text
+    incoming_calls = [
+        args for name, args in c.tool_calls if name in ("crm_incoming_stock_by_product", "crm_incoming_stock_list")
+    ]
+    assert [a.get("product_ids") for a in incoming_calls] == [[product_id]], c.tool_calls
+    for gate in c.fetch_gates:
+        assert "predicate" not in gate, gate
+
+
+def test_a_carried_unresolved_product_code_is_still_a_miss_and_never_an_unfiltered_call(fill_console):
+    """Reviewer round 6, B1: the carried-word rule is for a stray NON-product word. A
+    typed product code that never resolved is carried on the focus with no uuid; the
+    next turn's "incoming?" must still name it as not found and must NOT call the
+    incoming tool with zero uuids (the R6 "never unfiltered" guard reads it as unplaced)."""
+    c, _product_id = fill_console(**IN_STOCK)
+    code = "SRTZZ9999"
+
+    first = c.say(f"{code} stock", reply(entities=[{"raw": code, "hint": "product", "canonical_code": code, "current_message": True, "confident": True}]))
+    assert f'Couldn\'t find: "{code}" (product).' in first, first
+
+    second = c.say("incoming?", reply(entity_op="reuse", domain_hint="incoming", intent_hint="check_incoming"))
+
+    assert f'Couldn\'t find: "{code}" (product).' in second, second
+    assert SET_OPENER not in second, second
+    assert not [name for name, _args in c.tool_calls if name.startswith("crm_incoming_stock")], c.tool_calls
+
+
 # --------------------------------------------------------------------------- #
 # A at the runner's gate: the one place a predicate is attached to a fetch
 # --------------------------------------------------------------------------- #

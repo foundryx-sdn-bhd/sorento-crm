@@ -62,14 +62,21 @@ A. (Owner ruling, 6 Oct 2026 17:40: the principle, not the turn type.) A fetch a
      binding to a brand and describing a set, and the dealer's "1" refused for scope.) The
      key is popped, not left unset: the gate starts as the resolver's own gate dict.
    - `engine.py`, the `_pass_scope_gate` precedent: on a plan whose every fetch is scoped
-     to a resolved product, the resolver's "no entities and ... requires a scoping entity"
-     exit (it was asked about the stray word alone) is passed with reason "product
-     subject", so the answer bridge never answers a fetch that answered the product in
-     full as the turn's miss ("Couldn't find any product with stock.").
-   - `turn_runtime.unplaced_tokens`: a carried row (`current_message: False`) is not a
-     token this message named, so its miss is not said back ("Couldn't find: SORENTO."
-     under the product's line) and production's not-found composer does not re-render
-     the rows (which dropped the discontinued marker).
+     to a resolved product AND every token the resolver was asked about was carried
+     (`current_message: False` on each; a class word the dealer TYPED this turn that
+     resolves to nothing is still a miss the reply names, pinned by the attribute-asks
+     round 4 and 8 replays), the resolver's `not_found` exit is passed with reason
+     "product subject": the "no entities and ... requires a scoping entity" gate
+     (inventory) and the passed-but-zero-set exit of a domain whose gate permits a broad
+     query (incoming) alike, so the answer bridge never answers a fetch that answered the
+     product in full as the turn's miss ("Couldn't find any product with stock.").
+   - `turn_runtime.unplaced_tokens`: a carried NON-PRODUCT row (`current_message: False`,
+     a brand / promotion / category word) is not a token this message named, so its miss
+     is not said back ("Couldn't find: SORENTO." under the product's line) and
+     production's not-found composer does not re-render the rows (which dropped the
+     discontinued marker). A carried product CODE that never resolved is the
+     conversation's subject and stays counted: it is what the R6 "never unfiltered" guard
+     reads to stop a zero-uuid tool call (reviewer round 6).
    The engine's carry hand-off itself is unchanged: the stray word still reaches the
    resolver and may resolve.
 B. `turn/compose.py` never-stuck, with the #1501 principle (owner, 6 Oct 17:50: no claim

@@ -1743,13 +1743,20 @@ def unplaced_tokens(entities: list[Any], resolved: Any) -> dict[str, str]:
     """
     named: dict[str, str] = {}
     for entity in jsc.array(entities):
-        # STOCK-FILL-PREDICATE (owner ruling, 6 Oct 2026): a CARRIED row the engine
-        # handed over (`with_carried_entities`, `current_message: False`) may resolve on
-        # its own, but it is not a token THIS message named - the dealer typed "1" - so
-        # its miss is never said back ("Couldn't find: SORENTO." under the product's
-        # own line), and production's not-found composer never takes the reply over
-        # for it.
-        if isinstance(entity, dict) and entity.get("current_message") is False:
+        # STOCK-FILL-PREDICATE (owner ruling, 6 Oct 2026): a CARRIED non-product row
+        # the engine handed over (`with_carried_entities`, `current_message: False`; a
+        # brand / promotion / category word) may resolve on its own, but it is not a
+        # token THIS message named - the dealer typed "1" - so its miss is never said
+        # back ("Couldn't find: SORENTO." under the product's own line), and
+        # production's not-found composer never takes the reply over for it. A carried
+        # PRODUCT code that never resolved is the conversation's subject, and its miss
+        # stays one (reviewer round 6): it is what `would_be_unfiltered` reads to stop
+        # the zero-uuid tool call (R6), so it is still counted here.
+        if (
+            isinstance(entity, dict)
+            and entity.get("current_message") is False
+            and jsc.nullish_str(entity.get("hint")).strip().lower() != "product"
+        ):
             continue
         raw = jsc.nullish_str(jsc.get(entity, "raw")).strip()
         key = _token_key(raw)
@@ -4071,7 +4078,12 @@ def _spec_is_the_set(spec: FetchSpec, compatible: list[dict[str, Any]]) -> bool:
     -> `narrow.decide`'s `list_all`), so the plan's spec IS that population and the set
     predicate belongs to it. A carried subject or a task slot is a product the resolver
     did not place this turn: the resolver saw only the stray carried word, and whatever
-    set that word happened to describe is not the fetch's subject."""
+    set that word happened to describe is not the fetch's subject.
+
+    Known limit (reviewer round 6): a stray word whose described set is EXACTLY the
+    carried product (a brand with one product in stock) coincides with the spec and keeps
+    its predicate; the fetch then answers in the set shape over that one product rather
+    than the availability line. Not measured on any turn; recorded, not guarded."""
     spec_ids = _spec_product_ids(spec)
     placed_ids = {
         jsc.js_string(e.get("uuid"))

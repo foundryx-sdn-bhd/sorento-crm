@@ -5060,13 +5060,24 @@ def _run_stages_body(  # noqa: PLR0915
                 and all(e.get("current_message") is False for e in resolver_entities)
                 and all(turn_runtime.scoped_to_a_resolved_product(spec) for spec in plan.fetch)
             ):
-                before = ((resolver_payload or {}).get("gate") or {}).get("gate_passed")
+                before_gate = ((resolver_payload or {}).get("gate") or {}).get("gate_passed")
+                before_exit = (resolver_payload or {}).get("_exit_kind")
                 resolver_payload = _pass_scope_gate(
                     resolver_payload, compatible_entities, force=False, reason="product subject"
                 )
-                after = ((resolver_payload or {}).get("gate") or {}).get("gate_passed")
-                if before is False and after is True:
-                    turn_trace.add("product_subject_passes_resolver_gate", {"fetch": [s.domain for s in plan.fetch]})
+                # Reviewer round 6, S1: on a domain whose gate permits a broad query
+                # (`incoming`: "no entities; 'incoming' permits broad query") the gate
+                # PASSED and only the stray word's zero set made the exit `not_found`;
+                # the same exit, the same rule, the same subject.
+                if isinstance(resolver_payload, dict) and resolver_payload.get("_exit_kind") == "not_found":
+                    resolver_payload = {**resolver_payload, "_exit_kind": "continue"}
+                after_gate = ((resolver_payload or {}).get("gate") or {}).get("gate_passed")
+                after_exit = (resolver_payload or {}).get("_exit_kind")
+                if before_gate != after_gate or before_exit != after_exit:
+                    turn_trace.add(
+                        "product_subject_passes_resolver_gate",
+                        {"fetch": [s.domain for s in plan.fetch], "gate_was": before_gate, "exit_was": before_exit},
+                    )
             answer_parse_output = turn_runtime.answer_parse_output(
                 resolver_ctx["parse"]["output"],
                 gate=(resolver_payload or {}).get("gate"),
