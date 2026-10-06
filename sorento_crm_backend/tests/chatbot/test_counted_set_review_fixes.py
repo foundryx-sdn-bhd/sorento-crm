@@ -117,7 +117,7 @@ def test_an_unknown_scheme_as_an_attachment_type_entity_clarifies_too(
             requested_attributes=[],
             entities=[
                 {"raw": "tap", "hint": "product_type", "canonical_code": None, "current_message": True, "confident": True},
-                {"raw": "zzq cert", "hint": "attachment_type", "canonical_code": None, "current_message": True, "confident": True},
+                {"raw": "zzq cert", "hint": "attachment_type", "canonical_code": "certificate", "current_message": True, "confident": True},
             ],
         )
     )
