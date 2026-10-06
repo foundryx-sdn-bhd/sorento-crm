@@ -313,6 +313,33 @@ class StockQtyTask:
             slots = [replace(slot, value=bare) if slot.value is None else slot for slot in slots]
         return replace(task, slots=tuple(slots))
 
+    def answered_now(self, before: Task, after: Task, verdict: dict[str, Any]) -> tuple[Slot, ...]:
+        """The slots THIS message gave or restated a quantity for, in task order: a slot
+        whose value changed in the fill, or one the message named beside a quantity
+        (`SLOT_QUANTITIES` by key, `entities[].quantity` by code) even when the number is
+        the one already noted.
+
+        STOCK-QTY-PARTIAL-FILL (owner ruling R1, 6 Oct 2026): these are the lines the
+        reply answers NOW. A line answered on an earlier turn and not named again is not
+        fetched again; a line restated ("8152 x 6" a second time) is answered again rather
+        than met with the list.
+        """
+        named: set[str] = {key.strip().casefold() for key in _slot_quantities(verdict)}
+        for entity in verdict.get("entities") or []:
+            if isinstance(entity, dict) and _number(entity.get("quantity")) is not None:
+                named |= _entity_codes(entity)
+        was = {slot.key: slot.value for slot in before.slots}
+        return tuple(
+            slot
+            for slot in after.slots
+            if slot.value is not None
+            and (
+                was.get(slot.key) != slot.value
+                or slot.key.strip().casefold() in named
+                or slot.label.strip().casefold() in named
+            )
+        )
+
     def to_fetch(self, task: Task) -> FetchSpec | None:
         if not task.slots:
             # "just proceed" with nothing noted leaves no product to ask about.
@@ -591,12 +618,29 @@ def run(
             )
             moved = filled.slots != task.slots
             # The fill MERGES into the slots the task already has, so a quantity for
-            # one product leaves the others exactly as they were - and while any of
-            # them is still owed there is nothing to answer yet. A fetch happens when
-            # NO slot is missing, or on a `proceed_anyway`, which drops the missing
-            # ones and so leaves none behind either.
+            # one product leaves the others exactly as they were. A `proceed_anyway`
+            # drops the missing ones and fetches what is noted (naming the rest).
+            # STOCK-QTY-PARTIAL-FILL (owner ruling R1, 6 Oct 2026, prod contact
+            # 550337739: "I need 8152 6 unit" over a five-line list was met with the
+            # same five lines, three times): otherwise the lines this message gave a
+            # quantity for are answered NOW - the fetch carries those slots alone - and
+            # the lines still owed stay on the task, open, never re-listed. The dealer
+            # may fill another line next, say one number for the rest, or ask about
+            # something else.
             still_missing = impl.missing(filled) if hasattr(impl, "missing") else ()
-            spec = impl.to_fetch(filled) if (moved and not still_missing) else None
+            spec = None
+            if verdict.get("proceed_anyway") is True:
+                spec = impl.to_fetch(filled) if moved else None
+            else:
+                answered_now = (
+                    impl.answered_now(task, filled, verdict)
+                    if hasattr(impl, "answered_now")
+                    else (filled.slots if moved and not still_missing else ())
+                )
+                if answered_now:
+                    spec = impl.to_fetch(replace(filled, slots=tuple(answered_now)))
+                    if still_missing:
+                        rules.append(f"task_partial_answered_{task.kind}")
             if spec is None and moved and not filled.slots:
                 # The fill emptied the task (a "just proceed" with nothing noted). It
                 # is finished - it does not ride on as an empty task - and its own
@@ -1128,6 +1172,22 @@ def _rebuilt(
     if answered and any(slot.value is None for slot in slots):
         # An answered entry with no quantity on it has nothing to revise.
         return others
+    if (
+        existing is not None
+        and existing.status == OPEN
+        and len(existing.slots) > 1
+        and {slot.key for slot in slots} < {slot.key for slot in existing.slots}
+    ):
+        # STOCK-QTY-PARTIAL-FILL (owner ruling R1, 6 Oct 2026): the block answers SOME
+        # of the open list's own lines (a partial fetch, `run`'s
+        # `task_partial_answered_*`). Merge rather than rebuild: the covered lines take
+        # the tool's own `requested_qty`, the uncovered ones keep their position and
+        # stay owed, and the task is answered only once no line is owed. The reply
+        # itself is the answered lines (`after_reply` returns no text for a block with
+        # nothing still needing a quantity), so the list is never printed again.
+        covered = {slot.key: slot for slot in slots}
+        slots = [covered.get(slot.key, slot) for slot in existing.slots]
+        answered = answered and all(slot.value is not None for slot in slots)
     opened = existing.opened_at_turn if existing is not None else turn_no
     return others + (
         Task(

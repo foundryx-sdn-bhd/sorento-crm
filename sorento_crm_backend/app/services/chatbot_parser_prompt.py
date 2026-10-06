@@ -721,6 +721,58 @@ SEMANTIC_PARSER_PROMPT += ACCOUNT_LEDGER_ADDENDUM
 SEMANTIC_PARSER_PROMPT += LOW_STOCK_FILTERS_ADDENDUM
 SEMANTIC_PARSER_PROMPT += MEMORY_ADDENDUM
 
+
+# STOCK-QTY-PARTIAL-FILL (owner, 6 Oct 2026, "this is 80% of our problem"): the trap
+# specification rules ("S trap 300mm" is trap_type s_trap + trap_length 300, never
+# dim_width; a bare spec after a product answer is that product's variant) and the
+# list-fragment rule ("I need 8152 6 unit" fills the listed line SRTWC8152-SH-300). Both
+# live as the TEXT FILES under `alembic/data/` that the committed unified diff
+# (`chatbot_semantic_parser.trap-specs.patch`, built by `tests/chatbot/_trap_specs_prompt.py`)
+# inserts into the production text, so this fallback and the patch cannot carry two
+# wordings. Since PROMPT-DYNAMIC (#1405) the live version is the owner's text and nothing
+# republishes it from here (`chatbot_prompt_vars.wording_layer_exists`); crew sequences the
+# patch onto the live version. The fallback carries the same rules so a fresh install's v1
+# teaches them. Inserted at the same two anchors the patch uses (each occurs once in the
+# production text and once here); a fallback whose text lost an anchor is left as it is.
+from pathlib import Path as _Path
+
+_ADDENDA_DIR = _Path(__file__).resolve().parents[2] / "alembic" / "data"
+TRAP_SPECS_ADDENDUM = (_ADDENDA_DIR / "chatbot_semantic_parser.trap-specs.addendum.txt").read_text(
+    encoding="utf-8"
+)
+LIST_FRAGMENT_ADDENDUM = (
+    _ADDENDA_DIR / "chatbot_semantic_parser.list-fragment.addendum.txt"
+).read_text(encoding="utf-8")
+#: The last worked example of the SPECIFICATIONS block; the trap rules follow it.
+TRAP_SPECS_ANCHOR = '    - "cert?" after a described answer -> the same entities, the certificate ask\n'
+#: The QUANTITIES and LAST_ANSWER bullet the fragment rule goes right BEFORE.
+LIST_FRAGMENT_ANCHOR = "  - A product NOT on the list -> mode null, a new stock question as usual.\n"
+
+
+def with_trap_specs(text: str, *, strict: bool = False) -> str:
+    """`text` with `TRAP_SPECS_ADDENDUM` after `TRAP_SPECS_ANCHOR` and
+    `LIST_FRAGMENT_ADDENDUM` before `LIST_FRAGMENT_ANCHOR`. Each anchor must occur
+    exactly once; `strict` raises on any other count (the patch builder), else the text
+    is returned unchanged for that anchor (the fallback). A text that already carries an
+    addendum is returned as it is."""
+    for anchor, addendum, after in (
+        (TRAP_SPECS_ANCHOR, TRAP_SPECS_ADDENDUM, True),
+        (LIST_FRAGMENT_ANCHOR, LIST_FRAGMENT_ADDENDUM, False),
+    ):
+        if addendum in text:
+            continue
+        count = text.count(anchor)
+        if count != 1:
+            if strict:
+                raise ValueError(f"anchor line found {count} times, expected exactly once: {anchor!r}")
+            continue
+        head, tail = text.split(anchor)
+        text = head + anchor + addendum + tail if after else head + addendum + anchor + tail
+    return text
+
+
+SEMANTIC_PARSER_PROMPT = with_trap_specs(SEMANTIC_PARSER_PROMPT)
+
 # S1b (D16, AC-151 to AC-155): the same parser, 40.0% fewer characters (28,124 against the
 # live 46,906). Classified section by section in
 # `documentation/plans/chatbot/parser-prompt-inventory.md`.

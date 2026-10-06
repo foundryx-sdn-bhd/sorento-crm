@@ -63,7 +63,9 @@ def _code_word_for(token: str, message_words: list[str]) -> str | None:
     return best
 
 
-def _family(db: Session, code_word: str) -> list[Any]:
+def _family_rows(db: Session, code_word: str) -> list[tuple[str, dict[str, Any], str]]:
+    """`(product_code, derived spec values, searchable text)` per variant of the family
+    `code_word` names, one per code, in code order."""
     from app.models.product import Product
     from app.models.product_spec import ProductSpecifications
 
@@ -85,8 +87,9 @@ def _family(db: Session, code_word: str) -> list[Any]:
         if product.product_code in seen:
             continue
         seen.add(product.product_code)
+        values = values if isinstance(values, dict) else {}
         spec_words: list[str] = []
-        for entry in (values or {}).values() if isinstance(values, dict) else []:
+        for entry in values.values():
             value = entry.get("value") if isinstance(entry, dict) else entry
             for v in value if isinstance(value, list) else [value]:
                 if isinstance(v, str):
@@ -94,7 +97,96 @@ def _family(db: Session, code_word: str) -> list[Any]:
         text = " ".join(
             [" ".join(_words(product.product_code)), " ".join(_words(product.product_name)), " ".join(_words(product.description)), *spec_words]
         )
-        out.append((product.product_code, f" {text} "))
+        out.append((product.product_code, values, f" {text} "))
+    return out
+
+
+def _family(db: Session, code_word: str) -> list[Any]:
+    return [(code, text) for code, _values, text in _family_rows(db, code_word)]
+
+
+def _holds(values: dict[str, Any], key: str, wanted: Any) -> bool:
+    """Does a variant's derived spec row carry `wanted` under `key`? A string value
+    compares case-blind; a number as a number; a list value holds it when any member
+    does. A variant with no value under the key does not hold it."""
+    stored = values.get(key) if isinstance(values, dict) else None
+    actual = stored.get("value") if isinstance(stored, dict) else stored
+    if actual is None:
+        return False
+    for candidate in actual if isinstance(actual, list) else [actual]:
+        if isinstance(candidate, str) and isinstance(wanted, str):
+            if candidate.strip().casefold() == wanted.strip().casefold():
+                return True
+            continue
+        if isinstance(candidate, bool) or isinstance(wanted, bool):
+            if candidate == wanted:
+                return True
+            continue
+        try:
+            if float(candidate) == float(wanted):
+                return True
+        except (TypeError, ValueError):
+            if candidate == wanted:
+                return True
+    return False
+
+
+def narrow_code_tokens_by_specs(
+    db: Session,
+    *,
+    tokens: list[str] | None,
+    allowed_types: list[str] | None,
+    specs: list[dict[str, Any]] | None,
+) -> list[str] | None:
+    """`tokens` with each CODE token replaced by the variants of its family that carry
+    every grounded spec in `specs`, or None when nothing changes.
+
+    STOCK-QTY-PARTIAL-FILL, owner ruling Q4 (a), 6 Oct 2026 ("How about p trap" after
+    "SRTWC286-SH x 10" counted 182 P trap water closets class-wide): a spec said right
+    after a product answer is that product's VARIANT. The parser decides it carries the
+    product (`entity_op "reuse"` plus the specification entity, the trap-specs addendum);
+    this is the resolver half. `narrow_code_tokens` above reads the variant words OFF THE
+    MESSAGE and needs the code word in it, which a carried product never is, so the
+    grounded spec VALUES (`extracted_specs`, the registry's own keys and choices) pick
+    the variant here instead. No word is read.
+
+    The family rule is `narrow_code_tokens`'s own (rule 2). A code whose family has no
+    variant carrying the spec is left as it is, exactly as a word no variant carries is
+    (rule 3): the product itself is answered, never a silent widening to the class. A
+    family every variant of which carries the spec is left alone too (rule 4).
+    """
+    if not tokens or not specs:
+        return None
+    wanted = [
+        (str(s.get("key")), s.get("value"))
+        for s in specs
+        if isinstance(s, dict) and s.get("key") and s.get("key") != "brand" and s.get("value") is not None
+    ]
+    if not wanted:
+        return None
+    aligned = bool(allowed_types) and len(allowed_types or []) == len(tokens)
+    replaced: dict[int, list[str]] = {}
+    for i, token in enumerate(tokens):
+        kind = str((allowed_types or [])[i] or "").lower() if aligned else ""
+        if kind not in ("", "product"):
+            continue
+        code_word = _fold(token)
+        if not _CODE_WORD.match(code_word):
+            continue
+        family = _family_rows(db, code_word)
+        if len(family) < 2:
+            continue
+        picked = [code for code, values, _text in family if all(_holds(values, key, value) for key, value in wanted)]
+        if not picked or len(picked) == len(family):
+            continue
+        replaced[i] = picked
+    if not replaced:
+        return None
+    out: list[str] = []
+    for i, token in enumerate(tokens):
+        for code in replaced.get(i, [token]):
+            if code not in out:
+                out.append(code)
     return out
 
 

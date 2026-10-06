@@ -2803,6 +2803,27 @@ def resolve_reference_post(
     )
     if narrowed is not None:
         payload = payload.model_copy(update={"tokens": narrowed, "raw_tokens": None})
+    # STOCK-QTY-PARTIAL-FILL, owner ruling Q4 (a) (6 Oct 2026): a spec said right after a
+    # product answer ("How about p trap" after SRTWC286-SH) is that product's variant. The
+    # parser carries the product (`entity_op "reuse"`) and the grounded spec arrives as
+    # `extracted_specs`; the code's family is narrowed by those VALUES, since the words are
+    # not beside the code in the message for `narrow_code_tokens` to read. A token the
+    # narrowing replaced loses its pin (the pin named the typed token, not its variant).
+    if payload.extracted_specs and payload.tokens:
+        from app.services.product_code_family import narrow_code_tokens_by_specs
+
+        by_specs = narrow_code_tokens_by_specs(
+            db,
+            tokens=payload.tokens,
+            allowed_types=payload.allowed_entity_types,
+            specs=payload.extracted_specs,
+        )
+        if by_specs is not None:
+            kept = set(by_specs)
+            pins = {k: v for k, v in (payload.entity_pins or {}).items() if k in kept} or None
+            payload = payload.model_copy(
+                update={"tokens": by_specs, "raw_tokens": None, "entity_pins": pins}
+            )
     # A contact's packing list regions (unresolved = West) bound the shipments it can be
     # shown; no contact_id = no filter.
     regions = None

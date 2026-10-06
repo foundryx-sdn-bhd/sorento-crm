@@ -1,0 +1,192 @@
+# Parser eval for STOCK-QTY-PARTIAL-FILL problem 2: trap specs parse the same way every
+# time (owner, 6 Oct 2026, prompt v47: "Any WC with S trap 300mm available" came back
+# trap_length 300 at 10:07 and dim_width 300 at 14:19).
+#
+# `documentation/plans/chatbot/stock-qty-partial-fill-behaviour-card.md`. NOT collected by
+# pytest (`test_trap_specs_console_cases_shape.py` pins only this file's SHAPE). Every case
+# is `live_only: true`: it hits the real parser LLM and is run by crew on the Mac (the cloud
+# sandbox has no parser key), once BEFORE the trap-specs patch is sequenced onto the live
+# version (expected RED on the 14:19 sentence and on the "how about p trap" case) and once
+# after (expected GREEN), with `--prompt-version <id>` pinning the unpromoted version:
+#
+#   venv/bin/python scripts/chatbot_console_check.py \
+#       tests/chatbot/console_cases/2026-10-06-trap-specs.yaml \
+#       --base-url http://127.0.0.1:8000 --live --sleep-seconds 15 \
+#       --prompt-version <the patched version id>
+#
+# `expect.parser.entities` is graded as a WHOLE list (same length, same order, each item
+# graded on the keys it names): the entity order below is the sentence's own word order.
+# `spec_value` for a numeric key is the number the parser emits (300, not "300").
+#
+# Contact 550337739 is the dealer whose 10:07 turn is the owner's own example; any
+# availability-only dealer test copy works.
+
+contact: "550337739"
+
+cases:
+  - name: the 10:07 sentence, lower case s trap, parses trap_type + trap_length
+    text: "Any WC with s trap 300mm available?"
+    cold: true
+    live_only: true
+    expect:
+      parser:
+        intent_hint: "check_stock"
+        entities:
+          - hint: "category"
+          - hint: "specification"
+            spec_key: "trap_type"
+            spec_value: "s_trap"
+          - hint: "specification"
+            spec_key: "trap_length"
+            spec_value: 300
+      reply_not_contains:
+        - "no stock matched"
+
+  - name: the 14:19 sentence, capital S trap, parses EXACTLY the same (red on v47)
+    text: "Any WC with S trap 300mm available"
+    cold: true
+    live_only: true
+    expect:
+      parser:
+        intent_hint: "check_stock"
+        entities:
+          - hint: "category"
+          - hint: "specification"
+            spec_key: "trap_type"
+            spec_value: "s_trap"
+          - hint: "specification"
+            spec_key: "trap_length"
+            spec_value: 300
+      reply_not_contains:
+        - "no stock matched"
+
+  - name: the 12:45 sentence keeps the product, its quantity and both trap specs
+    text: "Srtwc8066-sh s trap 250mm 50pc"
+    cold: true
+    live_only: true
+    expect:
+      parser:
+        entities:
+          - hint: "product"
+            canonical_code: "SRTWC8066-SH"
+            quantity: 50
+          - hint: "specification"
+            spec_key: "trap_type"
+            spec_value: "s_trap"
+          - hint: "specification"
+            spec_key: "trap_length"
+            spec_value: 250
+
+  - name: the length before the trap word is still the trap length
+    text: "any 300mm s trap water closet got stock"
+    cold: true
+    live_only: true
+    expect:
+      parser:
+        intent_hint: "check_stock"
+        entities:
+          - hint: "specification"
+            spec_key: "trap_length"
+            spec_value: 300
+          - hint: "specification"
+            spec_key: "trap_type"
+            spec_value: "s_trap"
+          - hint: "category"
+
+  - name: p trap with a hyphen and no mm
+    text: "close couple wc p-trap 180 available?"
+    cold: true
+    live_only: true
+    expect:
+      parser:
+        intent_hint: "check_stock"
+        entities:
+          - hint: "category"
+          - hint: "specification"
+            spec_key: "trap_type"
+            spec_value: "p_trap"
+          - hint: "specification"
+            spec_key: "trap_length"
+            spec_value: 180
+
+  - name: Malay, the same three entities
+    text: "tandas s trap 300mm ada stok?"
+    cold: true
+    live_only: true
+    expect:
+      parser:
+        intent_hint: "check_stock"
+        entities:
+          - hint: "category"
+          - hint: "specification"
+            spec_key: "trap_type"
+            spec_value: "s_trap"
+          - hint: "specification"
+            spec_key: "trap_length"
+            spec_value: 300
+
+  - name: a size WORD still names its own size key (control)
+    text: "any water closet 600mm wide"
+    cold: true
+    live_only: true
+    expect:
+      parser:
+        entities:
+          - hint: "category"
+          - hint: "specification"
+            spec_key: "dim_width"
+            spec_value: 600
+
+  - name: the 15:29 brand sentence (control, owned by CLASS-HINT-KIND-PICK #1509)
+    # Once #1509 keeps SORENTO as the brand, the spec search gets brand + class +
+    # trap_type + trap_length 200 and answers; until then the kind pick is asked.
+    text: "FIND S TRAP 200MM SORENTO WC"
+    cold: true
+    live_only: true
+    expected_red_until: "#1509"
+    expect:
+      parser:
+        entities:
+          - hint: "specification"
+            spec_key: "trap_type"
+            spec_value: "s_trap"
+          - hint: "specification"
+            spec_key: "trap_length"
+            spec_value: 200
+          - hint: "brand"
+            canonical_code: "Sorento"
+          - hint: "category"
+      reply_not_contains:
+        - "Which one do you mean"
+        - "customer"
+
+  - name: the 14:50 follow-up keeps the product in focus (Q4 (a), owner 6 Oct 2026)
+    cold: true
+    live_only: true
+    turns:
+      - text: "SRTWC286-SH x 10"
+      - text: "How about p trap"
+        expect:
+          parser:
+            entity_op: "reuse"
+            entities:
+              - hint: "specification"
+                spec_key: "trap_type"
+                spec_value: "p_trap"
+          reply_not_contains:
+            - "P trap water closets ("
+            - "Here's what you want"
+
+  - name: a class word after a product answer is a new class-wide ask (control)
+    cold: true
+    live_only: true
+    turns:
+      - text: "SRTWC286-SH x 10"
+      - text: "any p trap water closet?"
+        expect:
+          parser:
+            entities:
+              - hint: "specification"
+                spec_key: "trap_type"
+                spec_value: "p_trap"
+              - hint: "category"

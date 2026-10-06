@@ -1,0 +1,9 @@
+  - A FRAGMENT of ONE listed code beside a quantity ("I need 8152 6 unit" when the list
+    holds SRTWC8152-SH-300, "8357 x 10" for SRTWC8357-300-RL, "the UF one 2 pcs") ->
+    "fill", one item with the LISTED code in full ("code": "SRTWC8152-SH-300") and that
+    quantity; a product entity emitted for it carries canonical_code = the listed code
+    (raw stays the dealer's own fragment). A fragment that fits two listed codes goes on
+    the line the other words single out ("8152 UF" -> SRTWC8152-SH-UF-300); when nothing
+    singles one out it is placed on none (mode null, a stock question for that fragment
+    as usual). The lines a message fills are answered at once; the other lines stay
+    open, and a later message may fill them the same way, one or several at a time.
