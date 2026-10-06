@@ -1093,9 +1093,11 @@ def compose_question(pending: Any, state: State | None = None, localizer: Any = 
     action: dict[str, Any] = {
         "kind": "send_message",
         "text": body,
-        # AC-1866: a `member_offer` re-print keeps its numbered text list but not the
-        # names as quick-reply buttons (owner ruling 23 Sep 2026) - `result_set` below
-        # still carries the roster, so a numbered reply still resolves.
+        # QUICK-REPLY-NAMES (owner rule, 6 Oct 2026, generalising AC-1866): a re-print
+        # keeps its numbered text list; only a fixed-option kind (`team_pick`, the
+        # outstanding and sales report offers) also sends its labels as buttons. A roster
+        # kind's names never do - `result_set` below still carries the roster, so a
+        # numbered reply still resolves.
         "quick_replies": pending_quick_replies(pending.kind, labels, options=list(pending.options)),
         "result_set": list(pending.options),
     }

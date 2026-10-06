@@ -575,9 +575,9 @@ def run(
             **result,
             # QUICK-REPLY-NAMES (owner, 6 Oct 2026): company names are roster values,
             # not fixed short options, so the company clarify sends NO buttons - its
-            # numbered text (`clarify_company_reply`) is the picker and a number, a
-            # name or the company typed back still resolves. The team clarify below
-            # keeps its team names as taps.
+            # text (`clarify_company_reply`) names the companies and a number, a name
+            # or the company typed back still resolves. The team clarify below keeps
+            # its team names as taps.
             "actions": _clarify_actions(
                 jsc.get(clarify, "clarify_text"),
                 options=[],

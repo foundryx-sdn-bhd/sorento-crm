@@ -159,6 +159,18 @@ class TestPendingKinds:
         ]
         assert turn_pending.quick_replies("team_pick", ["Mocha", "Sorento"], options=options) is None
 
+    def test_a_team_pick_whose_options_are_products_sends_none(self) -> None:
+        """The escalation lane's own product did-you-mean (`engine._question_offered`,
+        `clarify_product`) is minted as a `team_pick` whose options are products. Product
+        codes are roster values, whatever the kind says."""
+        options = [
+            {"position": 1, "label": "SRTWC8517", "uuid": None, "uuids": [], "entity_type": "product",
+             "payload": {"product_code": "SRTWC8517", "team": "warehouse"}},
+            {"position": 2, "label": "SRTWC8518", "uuid": None, "uuids": [], "entity_type": "product",
+             "payload": {"product_code": "SRTWC8518", "team": "warehouse"}},
+        ]
+        assert turn_pending.quick_replies("team_pick", ["SRTWC8517", "SRTWC8518"], options=options) is None
+
     def test_the_three_button_cap_still_holds_for_a_fixed_kind(self) -> None:
         labels = [f"Option {i}" for i in range(1, 5)]
         assert turn_pending.quick_replies("team_pick", labels) is None
@@ -182,6 +194,65 @@ class TestDidYouMeanSets:
     def test_the_engine_seam_hands_a_numbered_set_on_unchanged(self) -> None:
         assert quick_reply_guard.guard("1,2,3") == "1,2,3"
         assert quick_reply_guard.guard("1,Yes escalate,No it's okay") == "1,Yes escalate,No it's okay"
+
+    def test_the_code_mode_offer_sends_no_buttons(self) -> None:
+        """`build_suggest_offer`, D1 code mode: one missed token with three close codes
+        reads "Did you mean SRT57-CR, SRT5713, or SRT5732?" - codes are free text, so
+        the sentence is the picker and `suggest_quick_reply` is None (it used to be the
+        bare codes plus Yes / No)."""
+        from app.services.chatbot.lanes.business.answer import build_suggest_offer
+        from tests.chatbot.test_multi_code_dym import _PARSER, _two_token_resolved
+
+        out = build_suggest_offer(
+            {}, parser=_PARSER, resolved=_two_token_resolved(second_alts=False), gate={"company_team": "warehouse"}
+        )
+        assert out["suggest_offer"] is True
+        assert "Did you mean SRT57-CR, SRT5713, or SRT5732?" in out["suggest_response"], out["suggest_response"]
+        assert out["suggest_quick_reply"] is None, out["suggest_quick_reply"]
+        # The typed code still resolves: the roster rides with the offer.
+        assert [r["label"] for r in out["suggest_last_result_set"]] == ["SRT57-CR", "SRT5713", "SRT5732"]
+
+    def test_the_all_miss_offer_keeps_its_yes_no_pair(self) -> None:
+        """`build_suggest_offer`, two missed tokens (the all-miss paragraphs): the set is
+        the fixed Yes / No pair, unchanged, and it passes the guard as is."""
+        from app.services.chatbot.lanes.business.answer import build_suggest_offer
+        from tests.chatbot.test_multi_code_dym import _PARSER, _two_token_resolved
+
+        out = build_suggest_offer({}, parser=_PARSER, resolved=_two_token_resolved(), gate={"company_team": "warehouse"})
+        assert out["suggest_quick_reply"] == "Yes escalate,No it's okay", out["suggest_quick_reply"]
+        assert quick_reply_guard.guard(out["suggest_quick_reply"]) == "Yes escalate,No it's okay"
+
+    def test_the_numbered_offer_sends_its_first_three_numbers(self) -> None:
+        """`build_suggest_offer`, D1 numbered mode (a uuid-coded promotion candidate
+        switches the sentence to "Here are the closest matches: 1. ... 2. ... 3. ..."):
+        the buttons are "1,2,3" (owner confirmation 6 Oct 11:30: Yes / No dropped under
+        the cap). It used to be "1,2,3,Yes escalate,No it's okay"."""
+        from app.services.chatbot.lanes.business.answer import build_suggest_offer
+
+        promos = [
+            ("aaaaaaaa-1111-4111-8111-111111111111", "Spring promo"),
+            ("bbbbbbbb-2222-4222-8222-222222222222", "Dealer launch promo"),
+            ("cccccccc-3333-4333-8333-333333333333", "Year end promo"),
+        ]
+        resolved = {
+            "resolutions": [
+                {
+                    "token": "promo",
+                    "resolved": False,
+                    "matches": [],
+                    "alternatives": [
+                        {"entity_type": "promotion", "canonical_code": pid, "uuid": pid, "match_tier": "trgm",
+                         "similarity": 0.5, "display": {"name": name}}
+                        for pid, name in promos
+                    ],
+                }
+            ],
+            "unresolved_tokens": ["promo"],
+        }
+        parser = {"domain_hint": "promotion", "entities": [{"raw": "promo", "hint": "promotion"}]}
+        out = build_suggest_offer({}, parser=parser, resolved=resolved, gate={"company_team": "marketing"})
+        assert "Here are the closest matches:\n1. Spring promo\n2. Dealer launch promo\n3. Year end promo" in out["suggest_response"], out["suggest_response"]
+        assert out["suggest_quick_reply"] == "1,2,3", out["suggest_quick_reply"]
 
 
 # --------------------------------------------------------------------------- #

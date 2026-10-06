@@ -5125,9 +5125,9 @@ def build_suggest_offer(
             else:
                 # Code mode. When the probe succeeded AND at least one offered code was
                 # actually probed, SORT has-first and render one labelled line per code. The
-                # sort runs BEFORE codes / roster / candidates are derived, so buttons, lines
-                # and the pick round trip stay index-consistent. `suggest_quick_reply` stays
-                # BARE CODES: the pick round-trips on that exact button string.
+                # sort runs BEFORE codes / roster / candidates are derived, so lines and the
+                # pick round trip stay index-consistent. `suggest_quick_reply` is None here
+                # (QUICK-REPLY-NAMES): codes are free text, so the typed code is the pick.
                 dym_annotate_on = dym_ok and any(
                     _dym_lookup(jsc.get(p["m"], "canonical_code"), dym_probed) is not None
                     for p in picks

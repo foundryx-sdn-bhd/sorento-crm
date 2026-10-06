@@ -245,10 +245,12 @@ def quick_replies_suppressed(kind: str | None, options: list[dict[str, Any]] | N
     `chatbot_entity_kinds` table (`brand_pick`, `attachment_type_ask`, ...) is a roster
     by construction and is suppressed without being named here.
 
-    `options` lets the one `team_pick` that carries COMPANY names (the company clarify
-    `answer_bridge.py` mints when a search spanned several companies, each option's
-    payload naming its `company`) be told apart from a real team pick: company names
-    are roster values, so that set is suppressed too.
+    `options` lets the two `team_pick`s whose options are NOT teams be told apart from
+    a real team pick: the company clarify `answer_bridge.py` mints when a search spanned
+    several companies (each option's payload naming its `company`), and the escalation
+    lane's own product did-you-mean (`engine._question_offered`, `clarify_product`:
+    options with `entity_type: "product"`). Company names and product codes are roster
+    values, so both sets are suppressed too.
 
     One predicate, called from every seam that turns a pending's options into the
     `quick_replies` string, so the rule lives in one place rather than being
@@ -257,8 +259,12 @@ def quick_replies_suppressed(kind: str | None, options: list[dict[str, Any]] | N
     if kind not in FIXED_OPTION_KINDS:
         return True
     for option in options or []:
-        payload = option.get("payload") if isinstance(option, dict) else None
-        if isinstance(payload, dict) and "company" in payload:
+        if not isinstance(option, dict):
+            continue
+        payload = option.get("payload")
+        if isinstance(payload, dict) and ("company" in payload or "product_code" in payload):
+            return True
+        if option.get("entity_type") not in (None, "team"):
             return True
     return False
 

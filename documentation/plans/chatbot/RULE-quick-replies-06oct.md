@@ -51,11 +51,12 @@ returned byte-identical.
 | --- | --- | --- |
 | Pending re-asks and first asks | `turn/pending.py` `quick_replies()` | allowlist `FIXED_OPTION_KINDS` = `team_pick`, `outstanding_scope`, `outstanding_detail`, `sales_report_detail` keep theirs; every other kind (`customer_pick`, `product_pick`, `tier_pick`, `kind_pick`, `company_pick`, `attachment_type_ask`, `member_offer`, `top_selling_pick`, any `<kind>_pick` / `<kind>_ask` minted off `chatbot_entity_kinds`) sends none. A `team_pick` whose options carry `payload.company` (the company clarify `answer_bridge.py` mints) sends none |
 | Did-you-mean, Yes / No | `lanes/business/answer.py` | unchanged ("Yes escalate, No it's okay") |
-| Did-you-mean, numbered | `lanes/business/answer.py` `_numbered_quick_reply` | "1,2" / "1,2,3" for two or more picks; "1,Yes escalate,No it's okay" for one |
+| Did-you-mean, numbered (n8n-completed `/complete` suggest offer) | `lanes/business/answer.py` `_numbered_quick_reply` | "1,2" / "1,2,3" for two or more picks; "1,Yes escalate,No it's okay" for one. The CRM-completed lanes never take this path: their did-you-mean is a `product_pick` roster (`dealer_stock.py`, `answer_bridge._miss_question`) and sends no buttons |
 | Did-you-mean, product codes | `lanes/business/answer.py` | no buttons |
 | Did-you-mean, free-text alternatives (codes, dates, names) | `lanes/business/answer.py` | no buttons |
 | Escalation company clarify | `lanes/escalation.py` `_clarify_actions` | no buttons (company names) |
 | Escalation team clarify | `lanes/escalation.py` `_clarify_actions` | team names keep (the guard still drops a set with a name over 20 chars) |
+| Escalation product did-you-mean (`clarify_product`, minted as a `team_pick` with product options) | `engine._question_offered` + `turn/pending.py` | no buttons (options are products, not teams) |
 | Tail escalation offer | `tail/compose.py` | "Yes escalate, No it's okay" unchanged |
 
 No n8n change: the `sendmsg` sub still posts `quick_reply.split(",")` untouched.
@@ -69,5 +70,12 @@ No n8n change: the `sendmsg` sub still posts `quick_reply.split(",")` untouched.
   `test_top_selling_round4.py` (cap measured on `team_pick`), `test_s5_escalation_lane.py`
   (company clarify none), `test_s5_escalation_seams.py` (team clarify: short names reach
   the persisted reply, a 24-char name drops the set everywhere).
+- `tests/chatbot/test_console_pass_quick_reply_names.py`: the Chatbot Console's own
+  service (`console_service.run_console_turn`) with the parser stubbed to recorded
+  verdicts and the resolver real over seeded customers and products: the incident
+  conversation, "2" picking, the stock did-you-mean (no buttons), "2" picking a code.
 - The console check (`scripts/chatbot_console_check.py`) needs the live parser and so runs
   on the owner's test copy, not in the cloud sandbox: `laneboard/scripts/1500.md`.
+- Not covered by a sandbox test: the n8n-completed `/complete` suggest offer's numbered set.
+  Captures of `build-suggest-offer` in the full n8n corpus (not vendored here) that carry a
+  code-mode or numbered `suggest_quick_reply` now differ on that one field.

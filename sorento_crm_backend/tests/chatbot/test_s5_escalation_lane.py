@@ -429,8 +429,8 @@ def test_clarify_company_ask_always_in_reply() -> None:
     assert [a["kind"] for a in result["actions"]] == ["send_message"]
     assert result["actions"][0]["text"] == result["clarify"]["clarify_text"]
     # QUICK-REPLY-NAMES (owner rule, 6 Oct 2026): company names are roster values, not
-    # fixed short options, so the company clarify sends no buttons - the numbered text
-    # above is the picker and "a number, a name, or the company" typed back resolves.
+    # fixed short options, so the company clarify sends no buttons - the text above names
+    # the companies and "a number, a name, or the company" typed back resolves.
     assert result["actions"][0]["quick_replies"] is None
     services.next_assignee.assert_not_called()
 
