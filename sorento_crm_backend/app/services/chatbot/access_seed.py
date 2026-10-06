@@ -58,6 +58,7 @@ INCOMING_FIELDS: tuple[tuple[str, str], ...] = (
     ("remaining_incoming_quantity", "Remaining quantity"),
 )
 #: copied from `field_access.DEFAULT_ALLOWED`, like INCOMING_FIELDS
+_INCOMING_AGENT = "incoming_stock_enquiries"
 _DEFAULT_ALLOWED = ("estimated_arrival_date", "shipping_container_number", "remaining_incoming_quantity")
 _ETA = "incoming_stock.estimated_arrival_date"
 _CONTAINER = "incoming_stock.shipping_container_number"
@@ -280,33 +281,55 @@ def _legacy_contacts(db: Any) -> dict[str, dict[str, Any]]:
         entry(cid)["agents"].add(code)
     for cid, key in _rows(db, "SELECT respond_contact_id, field_key FROM contact_field_reveals WHERE granted"):
         entry(cid)["keys"].add(key)
-    defaults: dict[str, dict[str, bool]] = {}
-    mine: dict[str, dict[str, bool]] = {}
+    # Mirrors the legacy `field_access.decide`: a gated field is visible only while the contact
+    # holds the owner agent and `allowed_fields_for` lists it; a DEFAULT_ALLOWED field is
+    # visible without the agent unless `explicitly_denied`. Rows: agent-wide (contact NULL) and
+    # per-contact; per-contact ALLOW rows count under held agents only, DENY rows under any
+    # agent; across several agents a deny wins.
+    agent_wide: dict[str, dict[str, list[bool]]] = {}
+    per_contact: dict[str, dict[str, dict[str, list[bool]]]] = {}
     for agent, cid, field, allowed in _rows(
         db,
         "SELECT agent_code, contact_id, field_key, is_allowed FROM agent_field_access "
         "WHERE resource = 'incoming_stock'",
     ):
         if cid is None:
-            defaults.setdefault(agent, {})[field] = bool(allowed)
+            agent_wide.setdefault(agent, {}).setdefault(field, []).append(bool(allowed))
         else:
-            mine.setdefault(cid, {})[field] = bool(allowed)
-    for cid in list(mine):
+            per_contact.setdefault(cid, {}).setdefault(agent, {}).setdefault(field, []).append(bool(allowed))
+    for cid in list(per_contact):
         entry(cid)
+
+    def fold(rows: list[dict[str, list[bool]]]) -> dict[str, bool]:
+        merged: dict[str, bool] = {}
+        for row in rows:
+            for field, values in row.items():
+                merged[field] = merged.get(field, True) and all(values)
+        return merged
+
     for cid, legacy in out.items():
-        # What the incoming-stock endpoint showed this contact (field_access.allowed_fields_for):
-        # agent-wide rows of the agents it holds, DEFAULT_ALLOWED for any contact holding an
-        # agent (allowed_fields_for sets them whenever it has agent codes), the contact's own rows winning in either direction.
-        resolved: dict[str, bool] = {}
-        for agent in legacy["agents"]:
-            for field, allowed in defaults.get(agent, {}).items():
-                resolved[field] = resolved.get(field, False) or allowed
-        for field, allowed in mine.get(cid, {}).items():
-            resolved[field] = allowed
-        if legacy["agents"]:
+        held = legacy["agents"]
+        mine = per_contact.get(cid, {})
+        allowed = {
+            **fold([agent_wide[a] for a in held if a in agent_wide]),
+            **fold([mine[a] for a in held if a in mine]),
+        }
+        denied_any = {
+            **fold(list(agent_wide.values())),
+            **fold(list(mine.values())),
+        }
+        if held:
             for field in _DEFAULT_ALLOWED:
-                resolved.setdefault(field, True)
-        legacy["inc_set"] = {f"incoming_stock.{f}" for f, ok in resolved.items() if ok}
+                # a denial under any agent stands (the owner's rule), even one `allowed` cannot see
+                if denied_any.get(field, True):
+                    allowed.setdefault(field, True)
+        visible: set[str] = set()
+        for field, _label in INCOMING_FIELDS:
+            if field in _DEFAULT_ALLOWED and denied_any.get(field, True):
+                visible.add(field)
+            elif _INCOMING_AGENT in held and allowed.get(field, False):
+                visible.add(field)
+        legacy["inc_set"] = {f"incoming_stock.{f}" for f in visible}
     for (cid,) in _rows(db, "SELECT DISTINCT contact_id FROM respond_contact_customers"):
         if cid in out:
             out[cid]["linked"] = True

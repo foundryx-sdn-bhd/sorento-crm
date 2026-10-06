@@ -220,17 +220,24 @@ function RoleEditor({ role, registry }: { role: ChatbotRole; registry: Registry 
           <CardContent className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="role-name">Name</Label>
-              <Input id="role-name" value={name} onChange={(e) => setName(e.target.value)} />
+              <Input id="role-name" value={name} disabled={!canGrant} onChange={(e) => setName(e.target.value)} />
             </div>
             <div className="space-y-1.5">
               <Label>Tier</Label>
-              <SearchableSelect value={tier} onChange={setTier} options={TIER_OPTIONS} clearable />
+              <SearchableSelect
+                value={tier}
+                onChange={setTier}
+                options={TIER_OPTIONS}
+                clearable
+                disabled={!canGrant}
+              />
             </div>
             <div className="space-y-1.5 sm:col-span-2">
               <Label htmlFor="role-description">Description</Label>
               <Input
                 id="role-description"
                 value={description}
+                disabled={!canGrant}
                 onChange={(e) => setDescription(e.target.value)}
               />
             </div>
@@ -245,6 +252,7 @@ function RoleEditor({ role, registry }: { role: ChatbotRole; registry: Registry 
             <RadioGroup
               value={seesAll ? 'all' : 'linked'}
               onValueChange={(v) => setSeesAll(v === 'all')}
+              disabled={!canGrant}
             >
               <div className="flex items-center gap-2 text-sm">
                 <RadioGroupItem value="all" id="customers-all" />
@@ -265,6 +273,7 @@ function RoleEditor({ role, registry }: { role: ChatbotRole; registry: Registry 
           <AccessSwitches
             groups={groups}
             mode="role"
+            readOnly={!canGrant}
             onToggle={(key) => setLocalGrants((g) => toggleGrant(g, key, registry))}
             onToggleField={(key) => setLocalGrants((g) => toggleGrant(g, key, registry))}
             onResetRow={() => undefined}
@@ -320,12 +329,14 @@ function RoleEditor({ role, registry }: { role: ChatbotRole; registry: Registry 
 
         <HandoffAdvanced registry={registry} domains={grants.domains} />
 
-        <SaveBar
-          count={count}
-          saving={setGrants.isPending || update.isPending}
-          onDiscard={discard}
-          onSave={save}
-        />
+        {canGrant && (
+          <SaveBar
+            count={count}
+            saving={setGrants.isPending || update.isPending}
+            onDiscard={discard}
+            onSave={save}
+          />
+        )}
       </Container>
 
       <Dialog open={addOpen} onOpenChange={setAddOpen}>

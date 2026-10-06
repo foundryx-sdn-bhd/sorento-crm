@@ -19,9 +19,7 @@ logger = logging.getLogger(__name__)
 
 _OPEN_LINE = re.compile(r"^\{\{#only ([^}]*)\}\}$")
 _CLOSE_LINE = re.compile(r"^\{\{/only\}\}$")
-_INLINE = re.compile(r"\{\{#only ([^}]*)\}\}(.*?)\{\{/only\}\}")
-_OPEN_MARKER = re.compile(r"\{\{#only [^}]*\}\}")
-_ANY_MARKER = re.compile(r"\{\{#only [^}]*\}\}|\{\{/only\}\}")
+_MARKER = re.compile(r"\{\{#only ([^}]*)\}\}|\{\{/only\}\}")
 
 
 def _tags(raw: str) -> list[str]:
@@ -43,8 +41,28 @@ def _granted(tags: list[str], access: Any, known: frozenset[str]) -> bool:
 def render_for_access(text: str, access: Any, *, known_tags: Iterable[str]) -> str:
     known = frozenset(known_tags)
 
-    def inline(match: re.Match) -> str:
-        return match.group(2) if _granted(_tags(match.group(1)), access, known) else ""
+    # Inline spans may nest and may run over a line break (that fails closed): one stack of
+    # "this span is granted" flags for the whole text; text is kept only while every open span
+    # is granted, so an outer denied span drops everything inside it.
+    spans: list[bool] = []
+
+    def inline_line(line: str) -> str:
+        kept: list[str] = []
+        pos = 0
+        for m in _MARKER.finditer(line):
+            if all(spans):
+                kept.append(line[pos : m.start()])
+            pos = m.end()
+            if m.group(1) is not None:
+                spans.append(_granted(_tags(m.group(1)), access, known))
+            elif spans:
+                spans.pop()
+            # a close with nothing open is a stray marker: dropped
+        if all(spans):
+            kept.append(line[pos:])
+        if spans:
+            logger.warning("prompt_access: inline {{#only}} not closed on its line, guarded content dropped")
+        return "".join(kept)
 
     lines = text.split("\n")
     # Openers with no close drop everything to the end of the text: find them with a pre-pass.
@@ -59,7 +77,6 @@ def render_for_access(text: str, access: Any, *, known_tags: Iterable[str]) -> s
     out: list[str] = []
     # Each stack entry: whether this block (and all its parents) keeps its content.
     stack: list[bool] = []
-    in_span = False  # an inline opener whose close has not been seen yet
     for i, line in enumerate(lines):
         open_m = _OPEN_LINE.match(line)
         if open_m:
@@ -78,19 +95,7 @@ def render_for_access(text: str, access: Any, *, known_tags: Iterable[str]) -> s
             continue
         if stack and not stack[-1]:
             continue
-        if in_span:
-            close = line.find("{{/only}}")
-            if close < 0:
-                continue
-            in_span = False
-            line = line[close + len("{{/only}}") :]
-        rendered = _INLINE.sub(inline, line)
-        opener = _OPEN_MARKER.search(rendered)
-        if opener:
-            logger.warning("prompt_access: inline {{#only}} not closed on its line, guarded content dropped")
-            rendered = rendered[: opener.start()]
-            in_span = True
-        out.append(_ANY_MARKER.sub("", rendered))
+        out.append(inline_line(line))
     if text.endswith("\n") and out and out[-1] != "":
         out.append("")  # an unclosed block swallowed the trailing newline
     return "\n".join(out)

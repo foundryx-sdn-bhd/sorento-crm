@@ -17,6 +17,8 @@ export interface AccessSwitchesProps {
   /** Without it nothing can be switched ON unless it was ON when the page loaded (undoing this
    * session's switch-off); turning OFF stays. */
   canGrant?: boolean;
+  /** Nothing can be switched, either way. */
+  readOnly?: boolean;
   /** Row, detail and stamp keys that are ON in the saved state. */
   savedOn?: ReadonlySet<string>;
 }
@@ -38,12 +40,13 @@ function Row({
   onToggleField,
   canGrant = true,
   savedOn,
+  readOnly = false,
 }: { row: SwitchRow } & Omit<AccessSwitchesProps, 'groups'>) {
   const [open, setOpen] = useState(false);
   const shownCount = row.fields.filter((f) => f.on).length;
   const hasDetails = row.fields.length > 0 || !!row.stamp;
   const changed = mode === 'contact' && row.changed;
-  const locked = (key: string, on: boolean) => !canGrant && !on && !savedOn?.has(key);
+  const locked = (key: string, on: boolean) => readOnly || !canGrant && !on && !savedOn?.has(key);
 
   return (
     <div
