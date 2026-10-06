@@ -739,7 +739,9 @@ def test_the_composer_miss_ends_with_the_salesman_line_for_a_blocked_contact() -
     state = State(focus=Focus(), pending=None, profile=Profile(escalation_allowed=False), turn_no=11)
     answer = compose([_total_miss_envelope()], state, _policy(), ctx=None)
     assert answer.offer is None
-    assert answer.text == "*inventory* for M210-GM:\n\nPlease refer to your salesman."
+    # STOCK-FILL-PREDICATE (never-stuck): the miss names itself instead of a bare
+    # `*inventory* for M210-GM:` header over nothing; the salesman line still closes it.
+    assert answer.text == "No inventory found for M210-GM.\n\nPlease refer to your salesman."
 
     allowed = compose(
         [_total_miss_envelope()], State(focus=Focus(), pending=None, profile=Profile(), turn_no=11), _policy(), ctx=None
