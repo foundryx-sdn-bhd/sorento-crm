@@ -4839,11 +4839,33 @@ def _run_stages_body(  # noqa: PLR0915
             # and no hint at all when none does - message order alone decided it before,
             # so "incoming and orders for hanlim" handed the gate a row with no
             # `customer` and lost the ambiguous customer entirely.
-            resolver_parse_output = turn_runtime.with_carried_entities(
-                (ctx.get("parse") or {}).get("output") or {},
-                state_out.focus,
-                unsettled_only=plan.ask is None,
+            # STOCK-FILL-PREDICATE (prod turn 121, 6 Oct 2026): a TASK's own fetch is
+            # about the task's slots and nothing else - `turn_runtime.make_tool_runner`
+            # reads the subjects off `spec.entities` (`turn/task.py::StockQtyTask.
+            # to_fetch`, every slot a settled uuid) and never off what the resolver
+            # placed. Handing the unsettled carry over on that turn therefore resolves
+            # nothing the fetch can use, and it is how the brand word SORENTO (read off
+            # a photo, mis-tagged `promotion`, carried on `focus.extra` with no uuid)
+            # reached `resolve_gate.resolve_entity_body` as the only token of a
+            # `check_stock` turn: no typed CODE to drop the `require` leg, so the
+            # resolver counted every product with stock, that set predicate rode into
+            # the inventory fetch, and the dealer read a bare "*stock* for" header. The
+            # fill turn's own verdict is handed over as it is: with no entities of its
+            # own `resolve_kinds` asks the resolver nothing and the predicate is None.
+            task_fetch_turn = bool(plan.fetch) and all(
+                bool(spec.filters.get("task")) for spec in plan.fetch
             )
+            resolver_parse_output = (
+                (ctx.get("parse") or {}).get("output") or {}
+                if task_fetch_turn
+                else turn_runtime.with_carried_entities(
+                    (ctx.get("parse") or {}).get("output") or {},
+                    state_out.focus,
+                    unsettled_only=plan.ask is None,
+                )
+            )
+            if task_fetch_turn:
+                turn_trace.add("task_fetch_resolves_no_carry", {"fetch": [s.domain for s in plan.fetch]})
             resolver_parse_output = _without_carried_domain_on_a_roster_pick(
                 resolver_parse_output, plan.trace.rules_fired
             )

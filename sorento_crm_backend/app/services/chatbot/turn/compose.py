@@ -610,6 +610,16 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
             # the customer read `*orders* for HANLIM TRADING SDN BHD:` and nothing else,
             # which reads as "there are none" rather than "ask me again".
             block = header + "\n" + f"I could not fetch {shown_label} just now, please try again."
+        elif codes:
+            # Never-stuck (owner ruling, STOCK-FILL-PREDICATE, prod turn 121 of 6 Oct
+            # 2026): a lane header is never sent with an empty body. The lane rendered
+            # nothing for the subjects it was asked about (a `lane_text` emptied by
+            # `envelope_of`'s header strip, no rows), so the section says the same
+            # miss the `NO_RESULT_INTRO` arm above says for the same subjects, rather
+            # than `*stock* for SRTWC8383-RL-GY:` over nothing - which the dealer read
+            # as "there are none" and which `envelope_missed` still files as a miss.
+            subject_label = label.lower() if isinstance(label, str) else str(domain)
+            block = localizer.sentence(f"No {subject_label} found for {codes}.")
         else:
             block = header
         # Prod turn f0a2 (1 Oct 2026, "Srtswt3001 / Srtswt3001-gm stock"): both codes
