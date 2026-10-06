@@ -14,7 +14,7 @@ Mock: `documentation/mockups/ACCESS-MODEL/index.html` (v3). IDs AC-AM-n.
 - AC-AM-3 Deleting a role is a 10 s deferred action with Cancel, no confirm dialog. A role held by any
   contact is refused (409, message names the number of contacts); a role held by none is hard-deleted
   with its ticks.
-- AC-AM-4 Adding/removing a contact on the role page and on the contact Access tab write the same row; adding a role holder or a PLUS override needs `user_management.reference_data.manage`; `user_management.contacts.edit` may only remove a role or add/remove a MINUS override (owner Q3, 5 Oct); every Access tab read accepts `user_management.access_agents.view` OR `user_management.contacts.view` (crew Q4, 6 Oct).
+- AC-AM-4 Adding/removing a contact on the role page and on the contact Access tab write the same row; adding a role holder or a PLUS override needs `user_management.reference_data.manage`; `user_management.contacts.edit` may only NARROW: remove a role or add a MINUS override; deleting an existing MINUS override widens access and needs `reference_data.manage` too (owner Q3, 5 Oct; security review 7 Oct); every Access tab read accepts `user_management.access_agents.view` OR `user_management.contacts.view` (crew Q4, 6 Oct).
 
 - AC-AM-4b The tree has two sections, Domains and Reports. Reports lists every report-type grant: Low
   stock report, Outstanding SO report, Sales report. A report answers only when its owning domain is
@@ -101,5 +101,10 @@ Mock: `documentation/mockups/ACCESS-MODEL/index.html` (v3). IDs AC-AM-n.
   still granted after (test on a seeded chain + a read-only script run on the dev copy, zero lost rows).
 - AC-AM-20b No gain: a contact with linked customers and no office access type maps to Dealer (linked
   customers only) plus add-overrides; `access_gain_report` lists any contact wider after mapping than today
-  (customer scope, reveal keys, domains) and must be empty.
+  on customer scope, reveal keys and incoming-stock fields (agent-wide default rows, per-contact rows and
+  DEFAULT_ALLOWED folded in) and must be empty; `access_loss_report` covers the same incoming fields and
+  must be empty. Domains are not compared: today a domain is reached through the parser's agent guess (no
+  agent-to-domain map exists, card Q2), and the owner accepted that `general_enquiries`-only holders map to
+  Sales office (card Q2, 2 Oct). Contacts with no allowed agent get no role (deny by default) and lose the
+  incoming endpoint's DEFAULT_ALLOWED fields; they are refused in chat today.
 - AC-AM-21 Migration applied and checked on a dev copy before the hand test; idempotent SQL handed to crew.
