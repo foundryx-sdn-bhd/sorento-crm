@@ -17,6 +17,11 @@ vi.mock('next/navigation', () => ({
   usePathname: () => '/user-management/chatbot-roles',
   useSearchParams: () => new URLSearchParams(),
 }));
+const perms = vi.hoisted(() => ({ manage: true }));
+vi.mock('@/hooks/usePermissions', () => ({
+  useHasPermission: (slug: string) => (slug === 'user_management.reference_data.manage' ? perms.manage : true),
+  usePermissions: () => ({ permissions: [], permissionSet: new Set(), isLoading: false }),
+}));
 vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 const prefs = vi.hoisted(() => ({ useListingColumnPreferences: vi.fn() }));
 vi.mock('@/lib/listing-column-preferences/useListingColumnPreferences', () => ({
@@ -47,7 +52,10 @@ vi.mock('@/hooks/useChatbotAccess', () => ({
   useDeleteChatbotRole: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  perms.manage = true;
+});
 
 function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -79,6 +87,12 @@ describe('Chatbot Roles list page', () => {
   it('AC-AM-1 has an Add role button', () => {
     renderPage();
     expect(screen.getByRole('button', { name: /add role/i })).toBeTruthy();
+  });
+
+  it('Q3 without reference_data.manage the Add role button is hidden', () => {
+    perms.manage = false;
+    renderPage();
+    expect(screen.queryByRole('button', { name: /add role/i })).toBeNull();
   });
 
   it('S6 the grid has a listingKey so column order and visibility can be personalised', () => {

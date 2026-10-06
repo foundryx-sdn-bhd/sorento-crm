@@ -304,7 +304,7 @@ class TestGrantingNeedsManageEditOnlyRemoves:
         assert self._held(db, pk) == set()
         assert self._overrides(db, pk) == set()
 
-    def test_put_with_only_edit_may_remove_roles_and_overrides_and_add_minus(self, client, db):
+    def test_put_with_only_edit_may_remove_roles_and_plus_overrides_and_add_minus(self, client, db):
         from tests.chatbot._access_seed import override
 
         make_domain(db, "zzt_q3b")
@@ -322,6 +322,24 @@ class TestGrantingNeedsManageEditOnlyRemoves:
         assert resp.status_code == 200, resp.text
         assert self._held(db, pk) == set()
         assert self._overrides(db, pk) == {("zzt_q3c", None, False)}
+
+    def test_put_with_only_edit_cannot_delete_a_minus_override(self, client, db):
+        from tests.chatbot._access_seed import override
+        from tests.chatbot.test_chatbot_roles_api import ROLE_MANAGE
+
+        make_domain(db, "zzt_q3e")
+        pk, _ = make_contact(db)
+        override(db, pk, "zzt_q3e", granted=False)
+        db.commit()
+        self._only_edit()
+        url = f"{BASE}/contacts/{pk}/access"
+        resp = client.put(url, json={"role_ids": [], "overrides": []})
+        assert resp.status_code == 403, resp.text
+        assert self._overrides(db, pk) == {("zzt_q3e", None, False)}
+        _GRANTS.add(ROLE_MANAGE)
+        resp = client.put(url, json={"role_ids": [], "overrides": []})
+        assert resp.status_code == 200, resp.text
+        assert self._overrides(db, pk) == set()
 
     def test_put_with_manage_may_add_everything(self, client, db):
         from tests.chatbot.test_chatbot_roles_api import ROLE_MANAGE

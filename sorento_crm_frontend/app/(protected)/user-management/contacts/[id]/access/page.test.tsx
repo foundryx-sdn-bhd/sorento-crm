@@ -29,16 +29,24 @@ if (!window.matchMedia) {
 }
 
 const mutate = vi.fn();
-const view = vi.hoisted(() => ({ withAgent: true, extraOverrides: 0 }));
+const view = vi.hoisted(() => ({
+  withAgent: true,
+  extraOverrides: 0,
+  scenario: null as null | 'reportDomainOff' | 'domainMinus',
+}));
 
 vi.mock('@/components/ui/collapsible', () => ({
   Collapsible: ({ children }: { children: React.ReactNode }) => <div data-testid="collapsible">{children}</div>,
   CollapsibleTrigger: ({ children }: { children: React.ReactNode }) => <button type="button">{children}</button>,
   CollapsibleContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
-const perms = vi.hoisted(() => ({ manage: true }));
+const perms = vi.hoisted(() => ({ manage: true, edit: true }));
 vi.mock('@/hooks/usePermissions', () => ({
-  useHasPermission: (slug: string) => (slug === 'user_management.reference_data.manage' ? perms.manage : true),
+  useHasPermission: (slug: string) => {
+    if (slug === 'user_management.reference_data.manage') return perms.manage;
+    if (slug === 'user_management.contacts.edit') return perms.edit;
+    return true;
+  },
   usePermissions: () => ({ permissions: [], permissionSet: new Set(), isLoading: false }),
 }));
 vi.mock('@/lib/api', () => ({ apiFetch: () => new Promise(() => {}) }));
@@ -59,6 +67,8 @@ vi.mock('@/hooks/useChatbotAccess', () => ({
       domains: [
         { name: 'incoming', label: 'Incoming stock', group: 'Stock and incoming', supported: true, access_section: null, escalation_agent_code: view.withAgent ? 'inc' : null, escalation_agent_name: view.withAgent ? 'Incoming Stock Agent' : null, escalation_team_code: 'purchasing',
           fields: [{ key: 'incoming.eta', label: 'ETA', kind: 'field' }, { key: 'incoming.consignee', label: 'Consignee', kind: 'field' }] },
+        { name: 'order', label: 'Orders', group: 'Orders', supported: true, access_section: null, escalation_agent_code: null, escalation_team_code: null,
+          fields: [{ key: 'sales_orders.outstanding', label: 'Outstanding sales order report', kind: 'report' }] },
         { name: 'ideate', label: 'Share ideas', group: 'Other', supported: true, access_section: null, escalation_agent_code: null, escalation_team_code: null, fields: [] },
       ],
     },
@@ -66,7 +76,12 @@ vi.mock('@/hooks/useChatbotAccess', () => ({
     isError: false,
   }),
   useChatbotRoles: () => ({
-    data: [{ id: 'r1', code: 'purchasing', name: 'Purchasing', audience_tier: 'office', sees_all_customers: true, domains: ['incoming'], fields: ['incoming.eta'], contact_count: 5 }],
+    data: [{
+      id: 'r1', code: 'purchasing', name: 'Purchasing', audience_tier: 'office', sees_all_customers: true,
+      domains: view.scenario === 'domainMinus' ? ['incoming', 'order'] : ['incoming'],
+      fields: view.scenario === 'reportDomainOff' ? ['incoming.eta', 'sales_orders.outstanding'] : ['incoming.eta'],
+      contact_count: 5,
+    }],
     isLoading: false,
     isError: false,
   }),
@@ -75,6 +90,10 @@ vi.mock('@/hooks/useChatbotAccess', () => ({
       roles: [{ id: 'r1', code: 'purchasing', name: 'Purchasing' }],
       overrides: [
         { domain_name: 'incoming', field_key: 'incoming.consignee', granted: true },
+        ...(view.scenario === 'reportDomainOff'
+          ? [{ domain_name: 'order', field_key: 'sales_orders.outstanding', granted: false }]
+          : []),
+        ...(view.scenario === 'domainMinus' ? [{ domain_name: 'order', field_key: null, granted: false }] : []),
         ...Array.from({ length: view.extraOverrides }, (_, i) => ({ domain_name: 'incoming', field_key: `incoming.extra${i}`, granted: true })),
       ],
       effective: { domains: ['incoming'], attributes: ['incoming.eta', 'incoming.consignee'], sees_all_customers: true },
@@ -88,6 +107,8 @@ vi.mock('@/hooks/useChatbotAccess', () => ({
 afterEach(() => {
   cleanup();
   perms.manage = true;
+  perms.edit = true;
+  view.scenario = null;
   mutate.mockReset();
   view.withAgent = true;
   view.extraOverrides = 0;
@@ -191,5 +212,42 @@ describe('Contact Access tab (v8)', () => {
     renderPage();
     expect(screen.getByText('Add role...')).toBeTruthy();
     expect((screen.getByRole('switch', { name: 'Share ideas' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+});
+
+describe('Contact Access tab (final review)', () => {
+  it('the customers line reads "All customers (from Purchasing)"', () => {
+    renderPage();
+    expect(document.body.textContent ?? '').toContain('All customers (from Purchasing)');
+  });
+
+  it('without reference_data.manage a report whose owning domain is off cannot be switched on', () => {
+    view.scenario = 'reportDomainOff';
+    perms.manage = false;
+    renderPage();
+    const report = screen.getByRole('switch', { name: 'Outstanding sales order report' }) as HTMLButtonElement;
+    expect(report.getAttribute('aria-checked')).toBe('false');
+    expect(report.disabled).toBe(true);
+  });
+
+  it('without reference_data.manage a row that is OFF only because of an override cannot be switched on', () => {
+    view.scenario = 'domainMinus';
+    perms.manage = false;
+    renderPage();
+    const orders = screen.getByRole('switch', { name: 'Orders' }) as HTMLButtonElement;
+    expect(orders.getAttribute('aria-checked')).toBe('false');
+    expect(orders.disabled).toBe(true);
+  });
+
+  it('with reference_data.manage the same override-off row can be switched on', () => {
+    view.scenario = 'domainMinus';
+    renderPage();
+    expect((screen.getByRole('switch', { name: 'Orders' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('without contacts.edit the role chip has no remove button', () => {
+    perms.edit = false;
+    renderPage();
+    expect(screen.queryByRole('button', { name: 'Remove role Purchasing' })).toBeNull();
   });
 });

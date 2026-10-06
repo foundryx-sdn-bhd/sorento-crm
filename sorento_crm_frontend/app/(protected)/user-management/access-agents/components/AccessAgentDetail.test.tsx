@@ -195,4 +195,9 @@ describe('AccessAgentDetail team roster', () => {
     expect(screen.getByText(/no members in this team/i)).toBeInTheDocument();
     expect(screen.queryByTestId('brand-editor-stub')).not.toBeInTheDocument();
   });
+
+  it('no longer renders the legacy field access card (the access tree owns incoming fields)', () => {
+    renderDetail();
+    expect(screen.queryByTestId('field-access-stub')).not.toBeInTheDocument();
+  });
 });

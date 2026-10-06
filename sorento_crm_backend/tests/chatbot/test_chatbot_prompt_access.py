@@ -132,19 +132,36 @@ def test_nested_inner_is_kept_only_when_outer_and_inner_are_granted():
     assert neither == "a\nz\n"
 
 
-def test_an_unknown_tag_keeps_its_content_drops_the_markers_and_warns(caplog):
-    text = "a\n{{#only mystery}}\nkept body\n{{/only}}\nz\n"
+def test_an_unknown_tag_fails_closed_drops_the_content_and_the_markers_and_warns(caplog):
+    text = "a\n{{#only mystery}}\nsecret body\n{{/only}}\nz\n"
     with caplog.at_level(logging.WARNING):
         out = _render(text, _access(), KNOWN)
-    assert out == "a\nkept body\nz\n"
+    assert out == "a\nz\n"
     assert any("mystery" in r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING)
 
 
-def test_a_missing_close_marker_keeps_the_content_drops_the_marker_and_warns(caplog):
-    text = "a\n{{#only inventory}}\nstuff\nmore\n"
+def test_an_unknown_inline_tag_fails_closed():
+    out = _render("a {{#only mystery}}secret{{/only}} z\n", _access(), KNOWN)
+    assert "secret" not in out and "{{" not in out
+
+
+def test_a_missing_close_marker_fails_closed_drops_the_guarded_content_and_warns(caplog):
+    text = "a\n{{#only inventory}}\nsecret stuff\nmore secret\n"
     with caplog.at_level(logging.WARNING):
         out = _render(text, _access(), KNOWN)
-    assert out == "a\nstuff\nmore\n"
+    assert "secret" not in out
+    assert "{{" not in out
+    assert out.startswith("a\n")
+    assert [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+
+def test_an_inline_span_that_runs_over_a_line_break_fails_closed_and_warns(caplog):
+    text = "a\nPrice {{#only purchase_cost}}secret cost\nmore secret{{/only}} end\nz\n"
+    with caplog.at_level(logging.WARNING):
+        out = _render(text, _access(), KNOWN)
+    assert "secret" not in out
+    assert "{{" not in out
+    assert out.startswith("a\n") and out.rstrip("\n").endswith("z")
     assert [r for r in caplog.records if r.levelno >= logging.WARNING]
 
 

@@ -9,14 +9,17 @@
  * the RadioGroup component (role="radio" + aria-checked).
  */
 import React from 'react';
-import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
+import { toast } from '@/lib/toast';
 import ChatbotRolePage from './page';
 
 const mutate = vi.fn();
 const updateMutate = vi.fn();
+const updateAsync = vi.fn();
+const grantsAsync = vi.fn();
 const contactsData = vi.hoisted(() => ({ rows: [{ id: 'c1', name: 'CONTACT O' }] as { id: string; name: string | null }[] }));
 const deleteMutate = vi.fn();
 const addMutate = vi.fn();
@@ -31,9 +34,13 @@ vi.mock('next/navigation', () => ({
   usePathname: () => '/user-management/chatbot-roles/r1',
   useSearchParams: () => new URLSearchParams(),
 }));
-const perms = vi.hoisted(() => ({ manage: true }));
+const perms = vi.hoisted(() => ({ manage: true, edit: true }));
 vi.mock('@/hooks/usePermissions', () => ({
-  useHasPermission: (slug: string) => (slug === 'user_management.reference_data.manage' ? perms.manage : true),
+  useHasPermission: (slug: string) => {
+    if (slug === 'user_management.reference_data.manage') return perms.manage;
+    if (slug === 'user_management.contacts.edit') return perms.edit;
+    return true;
+  },
   usePermissions: () => ({ permissions: [], permissionSet: new Set(), isLoading: false }),
 }));
 vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
@@ -92,16 +99,21 @@ vi.mock('@/hooks/useChatbotAccess', () => ({
   }),
   useAddRoleContacts: () => ({ mutate: addMutate, isPending: false }),
   useChatbotRoleContacts: () => ({ data: contactsData.rows, isLoading: false, isError: false }),
-  useSetRoleGrants: () => ({ mutate, isPending: false }),
-  useUpdateChatbotRole: () => ({ mutate: updateMutate, isPending: false }),
+  useSetRoleGrants: () => ({ mutate, mutateAsync: grantsAsync, isPending: false }),
+  useUpdateChatbotRole: () => ({ mutate: updateMutate, mutateAsync: updateAsync, isPending: false }),
   useDeleteChatbotRole: () => ({ mutate: deleteMutate, isPending: false }),
 }));
 
 afterEach(() => {
   cleanup();
   perms.manage = true;
+  perms.edit = true;
   mutate.mockReset();
   updateMutate.mockReset();
+  updateAsync.mockReset();
+  grantsAsync.mockReset();
+  vi.mocked(toast.error).mockClear();
+  vi.mocked(toast.success).mockClear();
   contactsData.rows = [{ id: 'c1', name: 'CONTACT O' }];
   deleteMutate.mockReset();
   addMutate.mockReset();
@@ -109,6 +121,11 @@ afterEach(() => {
   deferredInput.mockReset();
   rowRun.mockReset();
   rowInput.mockReset();
+});
+
+beforeEach(() => {
+  updateAsync.mockResolvedValue({});
+  grantsAsync.mockResolvedValue({});
 });
 
 function renderPage() {
@@ -148,8 +165,8 @@ describe('Chatbot role page (v8)', () => {
     fireEvent.click(screen.getByRole('switch', { name: 'Their request portal link' }));
     fireEvent.click(screen.getByRole('switch', { name: 'Forms' }));
     fireEvent.click(screen.getByRole('button', { name: 'Save (2)' }));
-    expect(mutate).toHaveBeenCalledTimes(1);
-    const p = mutate.mock.calls[0][0] as { domains: string[]; fields: string[] };
+    expect(grantsAsync).toHaveBeenCalledTimes(1);
+    const p = grantsAsync.mock.calls[0][0] as { domains: string[]; fields: string[] };
     expect([...p.domains].sort()).toEqual(['forms', 'master_products', 'portal_link']);
     expect(p.fields).toEqual([]);
   });
@@ -202,8 +219,8 @@ describe('Chatbot role page (v8)', () => {
     renderPage();
     fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'Buys stock' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save (1)' }));
-    expect(updateMutate).toHaveBeenCalledTimes(1);
-    expect(updateMutate.mock.calls[0][0]).toMatchObject({ description: 'Buys stock' });
+    expect(updateAsync).toHaveBeenCalledTimes(1);
+    expect(updateAsync.mock.calls[0][0]).toMatchObject({ description: 'Buys stock' });
   });
 
   it('S6 a contact with no name renders a non-empty fallback label', () => {
@@ -214,11 +231,64 @@ describe('Chatbot role page (v8)', () => {
     expect((link?.textContent ?? '').trim().length).toBeGreaterThan(0);
   });
 
-  it('Q3 without reference_data.manage Add contacts is hidden and Unlink stays', () => {
+  it('Q3 without reference_data.manage Add contacts and Delete are hidden', () => {
     perms.manage = false;
     renderPage();
     expect(screen.queryByRole('button', { name: /Add contacts/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Delete/ })).toBeNull();
+  });
+
+  it('Q3 without contacts.edit the per-row Unlink is hidden; with it Unlink shows', () => {
+    perms.edit = false;
+    const first = renderPage();
+    expect(screen.queryByRole('button', { name: /Unlink CONTACT O/ })).toBeNull();
+    first.unmount();
+    perms.edit = true;
+    renderPage();
     expect(screen.getByRole('button', { name: /Unlink CONTACT O/ })).toBeTruthy();
+  });
+
+  it('Q3 the empty-state hint to add contacts is not shown without the add permission', () => {
+    contactsData.rows = [];
+    perms.manage = false;
+    renderPage();
+    expect(screen.getByText('No contacts have this role')).toBeTruthy();
+    expect(screen.queryByText(/Add contacts to give them this role/)).toBeNull();
+  });
+
+  it('Save sends the PATCH first and the grants PUT only after the PATCH succeeded', async () => {
+    let resolvePatch: (v: unknown) => void = () => undefined;
+    updateAsync.mockImplementation(() => new Promise((r) => { resolvePatch = r; }));
+    renderPage();
+    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'Buys stock' } });
+    fireEvent.click(screen.getByRole('switch', { name: 'Forms' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save (2)' }));
+    expect(updateAsync).toHaveBeenCalledTimes(1);
+    expect(grantsAsync).not.toHaveBeenCalled();
+    resolvePatch({});
+    await waitFor(() => expect(grantsAsync).toHaveBeenCalledTimes(1));
+    expect(updateAsync.mock.invocationCallOrder[0]).toBeLessThan(grantsAsync.mock.invocationCallOrder[0]);
+  });
+
+  it('a failed PATCH never sends the grants and shows exactly one error toast and no success toast', async () => {
+    updateAsync.mockRejectedValue(new Error('Name already taken'));
+    renderPage();
+    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'Buys stock' } });
+    fireEvent.click(screen.getByRole('switch', { name: 'Forms' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save (2)' }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(1));
+    expect(grantsAsync).not.toHaveBeenCalled();
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it('a failed grants PUT after a good PATCH shows exactly one error toast and no success toast', async () => {
+    grantsAsync.mockRejectedValue(new Error('Unknown domain'));
+    renderPage();
+    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'Buys stock' } });
+    fireEvent.click(screen.getByRole('switch', { name: 'Forms' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save (2)' }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(1));
+    expect(toast.success).not.toHaveBeenCalled();
   });
 
   it('Q3 with reference_data.manage Add contacts is available', () => {
