@@ -493,6 +493,32 @@ class TestABrandWordIsTheBrandWhateverTheParserHinted:
         assert set(stock_calls[0].get("product_ids") or []) == set(world["cabana_basins"].values()), (stock_calls, world)
         assert "cabana" in _focus_brand_words(session_factory), _session_of(session_factory).get("focus")
 
+    def test_a_brand_word_alone_lists_that_brands_products(
+        self, session_factory, stub_parser, stub_access, monkeypatch
+    ) -> None:
+        """Reviewer B1 on the owner's mechanism: "cabana products" (brand only, no stock
+        leg) must still open the brand-scoped set. A brand token scopes, it does not
+        answer: the products tool receives the two Cabana basins, never the unscoped
+        "That would search every product we have" refusal."""
+        _seed_business_contact(session_factory, variables={})
+        world = _seed_world(session_factory, cabana=True)
+        calls = _capturing_call_tool(monkeypatch)
+        stub_access()
+        verdict = _parser_output(
+            intent_hint="check_product", domain_hint="master_products", match_mode="and",
+            user_goal="cabana products",
+            entities=[{"raw": "cabana", "hint": "brand", "canonical_code": "Cabana", "current_message": True, "confident": True}],
+        )
+        result = _turn(session_factory, stub_parser, verdict, text="cabana products", msg_id="ZZT-chkp-brand-only")
+        said = _said(result)
+        _assert_no_kind_pick(session_factory, result, said)
+        assert "That would search every" not in said, said
+        product_calls = [args for name, args in calls if name == PRODUCTS_TOOL]
+        assert product_calls, calls
+        sent = set(product_calls[0].get("product_ids") or [])
+        assert sent and sent <= set(world["cabana_basins"].values()) | set(), (sent, world)
+        assert set(world["cabana_basins"].values()) <= sent, (sent, world)
+
     def test_a_word_no_brand_knows_still_walks_todays_path(
         self, session_factory, stub_parser, stub_access, monkeypatch
     ) -> None:
@@ -754,6 +780,24 @@ class TestTheRerunLeavesALockedTokenAlone:
         matches = [m for r in result.get("resolutions") or [] for m in (r.get("matches") or [])]
         assert "spec_search" not in {m.get("match_tier") for m in matches}, result
         assert code.lower() in {str(m.get("canonical_code") or "").lower() for m in matches}, result
+
+    def test_a_brand_token_alone_opens_the_spec_path_for_the_brands_set(self, session_factory) -> None:
+        """Route half of reviewer B1: a brand token with nothing else asked is a scoping,
+        not an answer, so the spec fallback lists the brand's products."""
+        world = _seed_world(session_factory, cabana=True)
+        body = _basin_body(
+            query="cabana products", tokens=["cabana"], match_mode="and",
+            allowed_entity_types=["brand"], domain="master_products", spec_fallback=True,
+            **{LOCK_FIELD: ["cabana"], "brand_tokens": {"cabana": "Cabana"}},
+        )
+        result = _route_call(session_factory(), body)
+        codes = {
+            str(m.get("canonical_code") or "")
+            for r in result.get("resolutions") or []
+            for m in (r.get("matches") or [])
+            if m.get("entity_type") == "product" and m.get("match_tier") == "spec_search"
+        }
+        assert set(world["cabana_basins"]) <= codes, (codes, result)
 
     def test_a_brand_token_alone_still_reaches_the_has_branch(self, session_factory) -> None:
         """"cabana stock": the brand token resolved as the brand leaves nothing unanswered,

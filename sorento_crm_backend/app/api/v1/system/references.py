@@ -2074,6 +2074,27 @@ def _result_has_zero_matches(result: dict[str, Any]) -> bool:
     return True
 
 
+
+def _brand_scoping(tr: Any) -> bool:
+    """A resolution whose every match is the `brand` kind: the caller's own brand token
+    (`_resolve_brand_tokens`). A brand SCOPES a question, it does not answer it, so the
+    spec gates below neither count it as a token that was answered nor as a product
+    question left open (reviewer B1 on the owner's mechanism: "cabana products" must still
+    open the brand-scoped set, "SORENTO SRTWC8318" must still not). Never true for a caller
+    without `brand_tokens`: the resolver has no brand probe of its own."""
+    matches = (tr or {}).get("matches") or [] if isinstance(tr, dict) else []
+    return bool(matches) and all((m or {}).get("entity_type") == "brand" for m in matches)
+
+
+def _only_brand_scoping(result: dict[str, Any]) -> bool:
+    """Every token the caller sent is a brand token and nothing else was asked of the
+    resolver: the described set is "that brand's products", which only the spec path can
+    list."""
+    resolutions = result.get("resolutions")
+    if "intersection" in result or not isinstance(resolutions, list) or not resolutions:
+        return False
+    return all(_brand_scoping(tr) for tr in resolutions)
+
 def _every_caller_token_resolved(result: dict[str, Any]) -> bool:
     """D13 (owner turn, 8 Sep 2026, "CB6622-PP?"): every token the caller supplied
     already resolved COMPLETELY, so the spec fallback - built for a word that did NOT -
@@ -2097,7 +2118,12 @@ def _every_caller_token_resolved(result: dict[str, Any]) -> bool:
     resolutions = result.get("resolutions")
     if not isinstance(resolutions, list) or not resolutions:
         return False
-    return all(bool(tr.get("matches")) for tr in resolutions if isinstance(tr, dict))
+    # A brand token scopes, it does not answer (`_brand_scoping`): left out here, so a
+    # brand beside a resolved code still closes the fallback and a brand alone never does.
+    considered = [tr for tr in resolutions if isinstance(tr, dict) and not _brand_scoping(tr)]
+    if not considered:
+        return False
+    return all(bool(tr.get("matches")) for tr in considered)
 
 
 def _product_words_unanswered(result: dict[str, Any]) -> bool:
@@ -2175,7 +2201,8 @@ def _no_product_row_answered(result: dict[str, Any], domain_hint: str | None) ->
         resolutions = result.get("resolutions")
         if not isinstance(resolutions, list):
             return False
-        shown = [tr.get("matches") or [] for tr in resolutions]
+        # A brand token is not an open product question either (`_brand_scoping`).
+        shown = [tr.get("matches") or [] for tr in resolutions if not _brand_scoping(tr)]
     return any(
         not any(m.get("entity_type") in _PRODUCT_ROW_TYPES for m in matches)
         for matches in shown
@@ -3321,6 +3348,7 @@ def resolve_reference_post(
             or _product_words_unanswered(result)
             or _has_unresolved_tokens(result)
             or _no_product_row_answered(result, payload.domain_hint)
+            or _only_brand_scoping(result)
         )
     ):
         import time
