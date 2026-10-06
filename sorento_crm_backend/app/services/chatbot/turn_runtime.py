@@ -3004,21 +3004,20 @@ def make_tool_runner(
         # where nothing survived to be counted at all.
         #
         # ROGUE-CONVO-REVIEW PR-1 (owner ruling Q2, 6 Oct 2026): the domain set is the
-        # gate's own `ALLOWS_EMPTY` False rows plus `incoming` (R6's original pair kept
-        # `incoming`, whose row is True because a bare "incoming?" lists the book, yet a
-        # NAMED code that missed must still not sweep it). A dealer typed "srtwc-8318"
+        # gate's own `REFUSES_EMPTY_FETCH` plus `incoming` (R6's original pair kept
+        # `incoming`, whose `ALLOWS_EMPTY` row is True because a bare "incoming?" lists
+        # the book, yet a NAMED code that missed must still not sweep it). A dealer typed "srtwc-8318"
         # while a kind_pick was open; the token missed, `master_products` was neither
         # here nor in the no-subject probe below, and `crm_master_products_list` ran
         # with no ids and listed 50 arbitrary products under "I could not find
         # srtwc-8318". This guard and the probe below MUST read the same domain set:
         # the probe excludes `would_be_unfiltered` so a named-but-missed token keeps
         # its own "Couldn't find" wording and never gets the scope sentence (reviewer
-        # S1 below); widening the probe alone would have handed it that sentence.
-        # `order` stays out by its row being False only where the outstanding-report
-        # carve-out does not apply - see `_answered_unfiltered`.
+        # S1 below); widening the probe alone would have handed it that sentence. The
+        # set is deliberately not every `ALLOWS_EMPTY` False row: see the constant's own
+        # comment for the measurement.
         would_be_unfiltered = (
-            (domain == "incoming" or gate_mod.ALLOWS_EMPTY.get(domain) is False)
-            and domain != "order"
+            (domain == "incoming" or domain in gate_mod.REFUSES_EMPTY_FETCH)
             and bool(unplaced)
             and all(_entity_is_unplaced(e, unplaced) for e in entities)
         )
@@ -3050,9 +3049,9 @@ def make_tool_runner(
         # and the route's default page of 50 arbitrary products went out, internal
         # account-department lines among them; a code typed while a kind_pick was open
         # fell through to the same empty fetch. The probe now asks the SAME question
-        # for every domain whose `ALLOWS_EMPTY` row is False (one source: the gate's
-        # dict, not a second list here), and the scope sentence takes its noun from
-        # `answer._SCOPE_WORD` ("every product we have").
+        # for every domain in `gate.REFUSES_EMPTY_FETCH` (one source, beside the gate's
+        # own `ALLOWS_EMPTY`; not a second list here), and the scope sentence takes its
+        # noun from `answer._SCOPE_WORD` ("every product we have").
         #
         # A predicate block IS a filter (the described-set ask, "which taps have
         # stock"), so a turn carrying one is never refused here.
@@ -3070,7 +3069,7 @@ def make_tool_runner(
         # `scope_gate` rides ONLY the hole this hotfix opened the guard for.
         no_subject_gate: dict[str, Any] | None = None
         if (
-            gate_mod.ALLOWS_EMPTY.get(domain) is False
+            domain in gate_mod.REFUSES_EMPTY_FETCH
             and block is None
             and not would_be_unfiltered
             and not any(isinstance(e, dict) and e.get("uuid") for e in entities)
