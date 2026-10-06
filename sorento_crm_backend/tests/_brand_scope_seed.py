@@ -289,13 +289,15 @@ class MochaWorld:
         self.do_one.debtor_name = "ZZT MOCHA CUSTOMER"
         self.do_one.source_book = "db1"
         self.do_one.order_date = date(2026, 6, 1)
-        db.add(
-            OrderLine(
-                id=str(uuid.uuid4()), order_id=self.do_one.id, product_id=self.p_one.id,
-                warehouse_id=self.wh.id, quantity=7, total=Decimal("70.00"),
-                total_excluding_tax=Decimal("70.00"), line_sequence=1, company_id=self.company_id,
+        for seq, (prod, qty, total) in enumerate(((self.p_one, 7, Decimal("70.00")), (self.p_two, 1, Decimal("5.00"))), start=1):
+            db.add(
+                OrderLine(
+                    id=str(uuid.uuid4()), order_id=self.do_one.id, product_id=prod.id,
+                    warehouse_id=self.wh.id, quantity=qty, total=total,
+                    total_excluding_tax=total, line_sequence=seq, company_id=self.company_id,
+                )
             )
-        )
+        self.do_one.total_amount = Decimal("75.00")
         db.flush()
         self.dual = contact(db, brand_ids=[world.sorento.id], companies=[DEFAULT_COMPANY_ID, self.company_id])
         self.mocha_only = contact(db, brand_ids=[world.sorento.id], companies=[self.company_id])

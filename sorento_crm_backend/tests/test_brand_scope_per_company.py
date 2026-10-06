@@ -74,7 +74,7 @@ def test_join_from_a_line_table_keeps_the_mch_line(dual_session, world) -> None:
         .filter(OrderLine.order_id.in_([world.do_mixed.id, mch.do_one.id]))
         .all()
     )
-    assert {str(r[0]) for r in rows} == {world.p_sorento.id, mch.p_one.id}
+    assert {str(r[0]) for r in rows} == {world.p_sorento.id, mch.p_one.id, mch.p_two.id}
 
 
 def test_aliased_product_is_filtered_per_company(dual_session, world) -> None:
@@ -106,7 +106,7 @@ def test_product_in_scope_clauses_keep_mch_lines(dual_session, world) -> None:
         OrderLine.order_id.in_([world.do_mixed.id, world.do_null_only.id, mch.do_one.id]),
         *_svc().product_in_scope_clauses(dual_session, OrderLine.product_id),
     )
-    assert {str(r[0]) for r in q.all()} == {world.p_sorento.id, mch.p_one.id}
+    assert {str(r[0]) for r in q.all()} == {world.p_sorento.id, mch.p_one.id, mch.p_two.id}
 
 
 def test_complaint_in_scope_clauses_keep_a_complaint_with_an_mch_line(dual_session, world) -> None:
@@ -232,15 +232,15 @@ def test_an_mch_brand_added_to_the_list_restricts_mch_too(db, world) -> None:
 
 
 def test_a_fresh_session_stamped_with_brand_ids_applies_the_per_company_rule(db, world) -> None:
-    """Both workers do `set_brand_scope(db, frozenset(brand_ids))` on a session of their own."""
-    from tests._pg_fixture import blank_session
-
+    """Both workers do `set_company_scope(db, None)` then `set_brand_scope(db,
+    frozenset(brand_ids))` on a session of their own: the all-companies scope with the brand
+    list the route forwarded (`sales/analysis.py`, `scm/low_stock_report.py` kwargs sites)."""
     mch = world.mch
-    with blank_session() as fresh:
-        set_company_scope(fresh, None)
-        set_brand_scope(fresh, frozenset(str(b) for b in [world.sorento.id]))
-        got = {p.product_code for p in fresh.query(Product).filter(Product.product_code.in_(_all_codes(world))).all()}
-    assert got == _expected(world), got
+    db.expire_all()
+    set_company_scope(db, None)
+    set_brand_scope(db, frozenset(str(b) for b in sorted([world.sorento.id])))
+    assert _visible(db, world) == _expected(world)
+    assert mch.p_two.product_code in _visible(db, world)
 
 
 # --------------------------------------------------------------------- AC-8 .. AC-10 REST via X-API-Key
