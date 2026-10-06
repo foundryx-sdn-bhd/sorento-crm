@@ -625,7 +625,9 @@ def _with_read_codes(verdict: dict[str, Any], parse_output: dict[str, Any], reso
     values: dict[str, str] = {}
     for row in (resolved or {}).get("resolutions") or [] if isinstance(resolved, dict) else []:
         fb = row.get("fallback") if isinstance(row, dict) else None
-        if isinstance(fb, dict) and fb.get("kind") == "code" and fb.get("value"):
+        # `matched`: only a code the catalogue holds is written; a reading no row answered
+        # stays a miss quoted as typed (security review on 4ce61a6c, nit 3).
+        if isinstance(fb, dict) and fb.get("kind") == "code" and fb.get("value") and fb.get("matched"):
             key = turn_state.token_key(str(row.get("token") or ""))
             if key:
                 values[key] = str(fb["value"])
@@ -639,7 +641,9 @@ def _with_read_codes(verdict: dict[str, Any], parse_output: dict[str, Any], reso
         changed = False
         out: list[Any] = []
         for e in entities:
-            if isinstance(e, dict) and e.get("hint") in (None, "product"):
+            # The same hints the resolver puts to the reader (`entity_resolver`: product,
+            # or none given).
+            if isinstance(e, dict) and e.get("hint") in (None, "", "product"):
                 key = turn_state.token_key(str(e.get("canonical_code") or "").strip() or str(e.get("raw") or ""))
                 if key in values and str(e.get("canonical_code") or "") != values[key]:
                     out.append({**e, "canonical_code": values[key]})

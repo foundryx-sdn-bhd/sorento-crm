@@ -137,6 +137,11 @@ def test_a_read_out_code_becomes_the_entitys_canonical_code_for_the_rest_of_the_
     assert out_verdict["domain_hint"] == "inventory"
     same_v, same_p = _with_read_codes(verdict, parse, {"resolutions": [{"token": "TAPZZTWT5608"}]})
     assert same_v is verdict and same_p is parse
+    # A reading the catalogue did not answer (`matched` 0) is not written: the miss is
+    # quoted as typed (security review on 4ce61a6c, nit 3).
+    unmatched = {"resolutions": [{"token": "TAPZZTWT5608", "fallback": {"asked": True, "kind": "code", "value": "ZZTWT5699", "matched": 0}}]}
+    same_v, same_p = _with_read_codes(verdict, parse, unmatched)
+    assert same_v is verdict and same_p is parse
     assert _with_read_codes(verdict, parse, None) == (verdict, parse)
 
 
@@ -384,6 +389,33 @@ class TestRealResolver:
         assert "couldn't find" not in text.lower() and "could not find" not in text.lower(), text
         ids = [pid for name, args in console.tool_calls for pid in args.get("product_ids") or []]
         assert ids == [console.uuid_of[TAP]], console.tool_calls
+
+    def test_a_family_the_reader_read_out_reaches_the_availability_picker(self, session_factory, monkeypatch, stub_access):
+        """`family` readings are deliberately NOT written onto the entity (`_with_read_codes`
+        takes `code` only), so the engine's exact-codes join reads them through
+        `read_values` (reviewer on 4ce61a6c, should-fix 2): "TOILET WC8066" misses every
+        code tier, the reader reads the family fragment WC8066, the substring probe places
+        the three ZZTWC8066 codes, and the availability console steers to the which-one
+        picker instead of "Couldn't find"."""
+        from app.services import resolver_code_reader
+        from app.services.resolver_code_reader import CodeReading
+        from tests.chatbot._avail_mode_console import AvailConsole, _seed as seed_codes
+        from tests.chatbot._r9_engine_console import product, stock
+
+        family = ["ZZTWC8066-RL", "ZZTWC8066-SH", "ZZTWC8066-SH-150"]
+        console = AvailConsole(session_factory, monkeypatch, stub_access, phone="+60900000095")
+        console.codes.update(seed_codes(session_factory, [TAP, *family]))
+        console.uuid_of = {code: pid for pid, code in console.codes.items()}
+        monkeypatch.setattr(
+            resolver_code_reader, "read_codes",
+            lambda db, missed, **kw: {token: CodeReading("family", "WC8066") for token, _ in missed},
+        )
+
+        text = console.say("TOILET WC8066 got stock?", stock(product("TOILET WC8066")))
+
+        assert "couldn't find" not in text.lower() and "could not find" not in text.lower(), text
+        assert all(code in text for code in family), text
+        assert TAP not in text
 
     @pytest.mark.xfail(
         strict=True,

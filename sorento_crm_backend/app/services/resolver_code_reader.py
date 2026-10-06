@@ -128,8 +128,11 @@ _CODE_CHAR = re.compile(r"[0-9A-Za-z]")
 _DASHES = "-\u2010\u2011\u2012\u2013\u2014\u2015\u2212\u00ad\ufe63\uff0d"
 #: The glued check reads a short window either side of the run, never the whole text
 #: (security review on a1eae3bb, H1: the text is the caller's, and a scan of all of it
-#: per occurrence grew with the square of its length).
-_GLUE_WINDOW = 8
+#: per occurrence grew with the square of its length). Separator runs inside the window
+#: are collapsed first, so a dash seven spaces away is still glued (its nit 1 on
+#: 4ce61a6c); 32 characters of separators before a dash is nothing a dealer types.
+_GLUE_WINDOW = 32
+_SEPARATOR_RUNS = re.compile(r"\s+|-+")
 _HYPHEN_GLUED_BEFORE = re.compile(rf"[0-9A-Za-z]\s*[{_DASHES}]+\s*$")
 _HYPHEN_GLUED_AFTER = re.compile(rf"\s*[{_DASHES}]+\s*[0-9A-Za-z]")
 #: The longest value the guard considers: a product code is under 40 characters, and a
@@ -137,7 +140,11 @@ _HYPHEN_GLUED_AFTER = re.compile(rf"\s*[{_DASHES}]+\s*[0-9A-Za-z]")
 VALUE_MAX_CHARS = 64
 
 
-def _typed_span(value: str, typed: str) -> bool:
+def _collapse(window: str) -> str:
+    return _SEPARATOR_RUNS.sub(lambda m: m.group(0)[0], window)
+
+
+def _typed_span(value: str, typed: str, *, limit: int | None = None) -> bool:
     """Does `value` (letters and digits, in order, any dashes or spaces between them) occur
     in `typed` as a WHOLE word run: nothing alphanumeric right before or right after it?
     The owner's rule is "copy what the dealer typed, never complete or cut a code": a value
@@ -153,10 +160,21 @@ def _typed_span(value: str, typed: str) -> bool:
     # sit twice in the text, once cut and once whole.
     core = r"[\s-]*".join(re.escape(ch) for ch in letters)
     # ASCII case folding only: the long s or the Kelvin sign must not read as `s` / `K`
-    # (security review on a1eae3bb, nit 2).
+    # (security review on a1eae3bb, nit 2). `re.ASCII` also makes the `\s` between the
+    # letters ASCII whitespace only, so a no-break space inside a typed code is refused
+    # rather than folded away: fails safe, and the catalogue's own fold is `[-\s]+`.
+    # `limit`: the run must START inside the first `limit` characters (the text the model
+    # was shown), while its edges are still read past it, so a cut that lands inside a
+    # code ("...SRTWT5608|SS") cannot make the prefix read whole (security review on
+    # 4ce61a6c, nit 2).
+    if limit is not None:
+        typed = typed[:limit + _GLUE_WINDOW]
     for found in re.finditer(r"(?=(" + core + r"))", typed, flags=re.IGNORECASE | re.ASCII):
         start, end = found.start(1), found.end(1)
-        before, after = typed[max(0, start - _GLUE_WINDOW):start], typed[end:end + _GLUE_WINDOW]
+        if limit is not None and start >= limit:
+            break
+        before = _collapse(typed[max(0, start - _GLUE_WINDOW):start])
+        after = _collapse(typed[end:end + _GLUE_WINDOW])
         # No code character right before or after.
         if _CODE_CHAR.match(before[-1:]) or _CODE_CHAR.match(after[:1]):
             continue
@@ -193,7 +211,7 @@ def guard(reading: CodeReading, typed: str | None, token: str) -> CodeReading:
     # The guard reads exactly the text the model was shown (`_user_message` cuts the typed
     # text at TYPED_CHARS), never the caller's whole uncapped `raw_tokens` entry (security
     # review on a1eae3bb, H1): a value the model could not have seen is not a copy of it.
-    if not _typed_span(raw_value, (typed or token)[:TYPED_CHARS]):
+    if not _typed_span(raw_value, typed or token, limit=TYPED_CHARS):
         return CodeReading("none", None, reason=REASON_NOT_IN_TYPED_TEXT)
     return CodeReading(reading.kind, raw_value)
 

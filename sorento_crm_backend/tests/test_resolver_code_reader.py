@@ -169,6 +169,28 @@ def test_the_guard_reads_only_the_text_the_model_was_shown():
     assert guard(CodeReading("code", "ZZTWT5608"), "TAP ZZTWT5608" + " x" * 150, "TAPZZTWT5608").kind == "code"
 
 
+def test_the_cut_cannot_make_a_codes_prefix_read_whole():
+    """Security review on 4ce61a6c, nit 2: the run must start inside the text the model saw,
+    but its edges are read past the cut, so "SRTWT5608" out of a "SRTWT5608SS" that the
+    cut split is still a cut; the same code typed whole at the cut is still whole."""
+    pad = "y " * 95 + " "
+    assert len(pad) == 191 and len(pad + "SRTWT5608") == reader_mod.TYPED_CHARS
+    cut = guard(CodeReading("code", "SRTWT5608"), pad + "SRTWT5608SS", "x")
+    assert cut.kind == "none" and cut.reason == reader_mod.REASON_NOT_IN_TYPED_TEXT
+    assert guard(CodeReading("code", "SRTWT5608"), pad + "SRTWT5608 x 5", "x").kind == "code"
+
+
+def test_a_dash_many_spaces_away_is_still_glued():
+    """Security review on 4ce61a6c, nit 1: separator runs in the window are collapsed, so a
+    dash seven (or twenty) spaces from the code is the same glued dash."""
+    for gap in (7, 20):
+        out = guard(CodeReading("code", "SRTWC8066"), "WC SRTWC8066" + " " * gap + "-SS", "x")
+        assert out.kind == "none" and out.reason == reader_mod.REASON_NOT_IN_TYPED_TEXT, gap
+        out = guard(CodeReading("family", "SS"), "WC SRTWC8066-" + " " * gap + "SS", "x")
+        assert out.kind == "none", gap
+    assert guard(CodeReading("code", "SRTWC8066"), "WC SRTWC8066" + " " * 7 + "x 5", "x").kind == "code"
+
+
 def test_a_value_longer_than_any_code_is_refused_before_any_scan():
     long_value = "A" * (reader_mod.VALUE_MAX_CHARS + 1)
     out = guard(CodeReading("code", long_value), long_value, long_value)
