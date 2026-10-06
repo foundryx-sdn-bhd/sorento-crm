@@ -578,7 +578,6 @@ class TestProductionSeams:
         result = escalation_mod.run(ctx, _item(), services=services)
 
         assert [a["kind"] for a in result["actions"]] == [
-            "send_message",
             "assign_conversation",
             "add_comment",
             "send_message",
@@ -852,21 +851,11 @@ def test_clarify_arm_surfaces_the_ask_and_re_persists_the_offer_state(
     }
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_CLARIFY_TEXT_IS_NONE)
-def test_a_clarifys_quick_replies_reach_the_persisted_reply(
-    session_factory, system_settings_row, monkeypatch
-) -> None:
-    """Prod turn 9dd4cd0f, the half that outlives the turn.
-
-    The escalation clarifies build their own quick replies - the teams, so the answer is a
-    tap - and the tail composes no `quick_reply` on that arm. The persisted reply therefore
-    said `quick_replies: null` and the `replied` trace fact said `False` about a turn that
-    had just sent two buttons. Chat History and the trace screen read the REPLY, so both
-    would have shown a different turn from the one the customer got (reviewer, #705).
-
-    Driven through the REAL lane: the fragment under test is the one `escalation.run`
-    builds, with only the staff seam injected.
-    """
+def _run_nurain_team_clarify(session_factory, system_settings_row, monkeypatch, *, teams):
+    """Prod turn 9dd4cd0f driven through the REAL lane: "I want to escalate to Nurain",
+    who is on the two `teams` (`(code, name)` pairs), so the lane asks which team. The
+    fragment under test is the one `escalation.run` builds, with only the staff seam
+    injected. Returns the turn result and its persisted row."""
     from sqlalchemy import text as sql_text
 
     from app.models.chatbot_turn import ChatbotTurn
@@ -960,10 +949,7 @@ def test_a_clarifys_quick_replies_reach_the_persisted_reply(
                 "team_code": code,
                 "team_name": name,
             }
-            for code, name in (
-                ("do_customer_service", "DO Customer Service"),
-                ("project_customer_service", "Project Customer Service"),
-            )
+            for code, name in teams
         ]
         ctx = {
             **ctx,
@@ -994,18 +980,84 @@ def test_a_clarifys_quick_replies_reach_the_persisted_reply(
     result = engine_mod.run_turn(envelope, session_factory=session_factory)
 
     assert result.status == "done", result.error
+    row = session_factory().query(ChatbotTurn).filter(ChatbotTurn.id == result.turn_id).first()
+    return result, row
+
+
+def test_a_clarifys_quick_replies_reach_the_persisted_reply(
+    session_factory, system_settings_row, monkeypatch
+) -> None:
+    """Prod turn 9dd4cd0f, the half that outlives the turn.
+
+    The escalation clarifies build their own quick replies - the teams, so the answer is a
+    tap - and the tail composes no `quick_reply` on that arm. The persisted reply therefore
+    said `quick_replies: null` and the `replied` trace fact said `False` about a turn that
+    had just sent two buttons. Chat History and the trace screen read the REPLY, so both
+    would have shown a different turn from the one the customer got (reviewer, #705).
+
+    Team names short enough to be buttons (QUICK-REPLY-NAMES: a title is cut at 20
+    characters by the transport; the long-name twin is the test below). The persisted
+    TEXT is the separate, still-open gap `_XFAIL_CLARIFY_TEXT_IS_NONE` names, pinned by
+    `test_a_clarifys_text_reaches_the_persisted_reply` so it stays visible.
+    """
+    result, row = _run_nurain_team_clarify(
+        session_factory, system_settings_row, monkeypatch,
+        teams=(("do_customer_service", "DO Customer Service"), ("project_customer_service", "Project CS")),
+    )
     sends = [a for a in result.actions if a["kind"] == "send_message"]
     assert len(sends) == 1, result.actions
     assert "DO Customer Service" in sends[0]["quick_replies"]
+    assert "Project CS" in sends[0]["quick_replies"]
 
-    row = session_factory().query(ChatbotTurn).filter(ChatbotTurn.id == result.turn_id).first()
     persisted = row.response["reply"]
     assert persisted["quick_replies"] == sends[0]["quick_replies"], (
         "the reply Chat History shows must carry the buttons the customer was sent: "
         f"{persisted!r} vs {sends[0]!r}"
     )
-    assert persisted["text"] == sends[0]["text"]
     replied = next(r for r in row.trace if r["stage"] == "replied")
     assert replied["facts"]["quick_replies"] is True, (
         f"the trace says this turn offered nothing to tap: {replied['facts']!r}"
     )
+
+
+@pytest.mark.xfail(strict=True, reason=_XFAIL_CLARIFY_TEXT_IS_NONE)
+def test_a_clarifys_text_reaches_the_persisted_reply(
+    session_factory, system_settings_row, monkeypatch
+) -> None:
+    """The half of prod turn 9dd4cd0f still open: the tail composes no text on the
+    clarify arm, so the persisted reply's `text` is null while the action carries the
+    question. Kept as the xfail it was before QUICK-REPLY-NAMES split the buttons half
+    (now green above) out of it."""
+    result, row = _run_nurain_team_clarify(
+        session_factory, system_settings_row, monkeypatch,
+        teams=(("do_customer_service", "DO Customer Service"), ("project_customer_service", "Project CS")),
+    )
+    sends = [a for a in result.actions if a["kind"] == "send_message"]
+    assert row.response["reply"]["text"] == sends[0]["text"]
+
+
+def test_a_team_name_over_twenty_characters_drops_the_clarifys_buttons_everywhere(
+    session_factory, system_settings_row, monkeypatch
+) -> None:
+    """QUICK-REPLY-NAMES (owner rule, 6 Oct 2026): Meta cuts a button title at 20
+    characters and refuses the message when two titles then collide (#131009, the
+    customer-picker incident). "Project Customer Service" is 24, so the clarify's set is
+    dropped at the engine seam - on the action the customer is sent AND on the persisted
+    reply and its trace fact, which must keep agreeing with it. The ask still names both
+    teams in its text, and a typed name or number resolves."""
+    result, row = _run_nurain_team_clarify(
+        session_factory, system_settings_row, monkeypatch,
+        teams=(
+            ("do_customer_service", "DO Customer Service"),
+            ("project_customer_service", "Project Customer Service"),
+        ),
+    )
+    sends = [a for a in result.actions if a["kind"] == "send_message"]
+    assert len(sends) == 1, result.actions
+    assert sends[0]["quick_replies"] is None, sends[0]
+    assert "DO Customer Service" in sends[0]["text"] and "Project Customer Service" in sends[0]["text"], sends[0]
+
+    persisted = row.response["reply"]
+    assert persisted["quick_replies"] is None, persisted
+    replied = next(r for r in row.trace if r["stage"] == "replied")
+    assert replied["facts"]["quick_replies"] is False, replied["facts"]

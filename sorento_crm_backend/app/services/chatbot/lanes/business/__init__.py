@@ -1441,7 +1441,16 @@ def run_fetch(
         names_by_id = so_status.customer_names(db, customer_ids)
         start = do_ask._parse(parse_output.get("date_filter_start"))
         end = do_ask._parse(parse_output.get("date_filter_end"))
-        asked = so_status.period_reply(start, end, family_words(list(names_by_id.values())))
+        skip_period = do_ask.skips_period_questions(ctx)
+        asked = None if skip_period else so_status.period_reply(start, end, family_words(list(names_by_id.values())))
+        if skip_period:
+            if start is not None and end is None:
+                end = do_ask.today_myt()
+            if start is not None and end is not None and start > end:
+                start, end = end, start
+            if trace is not None:
+                trace.add("so_list", {"period_skipped": True, "customers": len(names_by_id)})
+            return _so_list_reply(so_status.list_text(db, names_by_id, start, end, limit=so_status.SKIP_LIMIT))
         if asked is not None:
             if trace is not None:
                 trace.add("so_list", {"period_asked": True, "customers": len(names_by_id)})

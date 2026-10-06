@@ -974,7 +974,13 @@ def _incoming_dealer(rows: list[dict], b: _Builder) -> None:
         # AVAIL-MODE-REPLIES rule 3 (owner, 2 Oct 2026): one compact line per product,
         # "<code>: ETA <dates>", never the code with the ETA on a line of its own.
         # `dealer_view` tells the engine's zero-stock ladder this line is a whole answer.
-        b.raw_item(f"{code}: {when}" if _filled(code) else when, [], {"dealer_view": True})
+        # AVAIL-RENDER (owner, 5 Oct 2026): the discontinued marker rides on the ETA line
+        # the same way it does on a compact/detailed row (`fetch.py::_item_line`).
+        b.raw_item(
+            f"{code}: {when}" if _filled(code) else when,
+            [],
+            {"dealer_view": True, "discontinued": row.get("is_discontinued") is True},
+        )
 
 
 def _without_repeats(b: _Builder, start: int) -> None:
@@ -1491,15 +1497,20 @@ def _availability_label(entry: dict) -> Optional[str]:
 #: whose sentence carries a date. REFER-SALESMAN (30 Sep 2026): the verdict is its own
 #: sentence and the refer is exactly `REFER_TO_SALESMAN`, on the same line.
 #
-#: AVAIL-MODE-REPLIES (owner, 2 Oct 2026): got stock / no stock read as a tick and a cross,
-#: never as words. `too_big` keeps its words behind a blocked mark (owner v2 note 1): it
-#: says nothing about our stock either way, so it is never a tick or a cross.
+#: AVAIL-MODE-REPLIES (owner, 2 Oct 2026): got stock / no stock read as a tick and a cross.
+#: `too_big` keeps its words behind a blocked mark (owner v2 note 1): it says nothing about
+#: our stock either way, so it is never a tick or a cross.
+#:
+#: AVAIL-RENDER (owner, 5 Oct 2026, "need to say got stock"): the tick SAYS stock is there
+#: and does not refer; only a line that cannot confirm stock (too_big, no_incoming) refers.
+#: `_stamp_refers` reads the tail, so an in-stock line is no longer a Customer ask.
 STOCK_YES = "\u2705"
 STOCK_NO = "\u274c"
 STOCK_BLOCKED = "\U0001F6AB"
+GOT_STOCK = "Got stock"
 _AVAILABILITY_TAILS = {
     "too_big": f"{STOCK_BLOCKED} the quantity is more than what I can confirm here. {REFER_TO_SALESMAN}",
-    "in_stock": f"{STOCK_YES} {REFER_TO_SALESMAN}",
+    "in_stock": f"{STOCK_YES} {GOT_STOCK}.",
     # REFER-ONLY-FIXES (owner, 3 Oct 2026): `no_incoming` is reached only with no stock
     # (`stock_ask_branch.branch`: some stock is `in_stock`), so the line says both.
     "no_incoming": f"{STOCK_NO} No stock and no incoming. {REFER_TO_SALESMAN}",
@@ -1521,7 +1532,9 @@ def _availability_tail(entry: dict) -> str:
     """The sentence after "<code> x <Q>:" for one answered entry."""
     branch = entry.get("branch")
     if branch == "incoming":
-        return f"{STOCK_NO} ETA {entry.get('eta')}."
+        # AVAIL-RENDER fix round (owner hand test, 6 Oct 2026): the cross says the stock
+        # state too, not the date alone. Still no refer: the ETA is the answer.
+        return f"{STOCK_NO} No stock, ETA {entry.get('eta')}."
     available = entry.get("available_qty")
     if (
         branch == "in_stock"
@@ -1533,7 +1546,7 @@ def _availability_tail(entry: dict) -> str:
         # within the category max. The backend sets `available_qty` in that case only
         # (`inventory_service._apply_stock_visibility`), so it is the one figure of ours
         # this mode ever prints.
-        return f"{STOCK_YES} {available} available. {REFER_TO_SALESMAN}"
+        return f"{STOCK_YES} {GOT_STOCK}, {available} available."
     # Nit, review round 1: an unknown or missing branch is unreachable today
     # (`products.category_id` is NOT NULL, so `inventory_service.py` never
     # leaves `branch` unset) - but if a fallback is kept, `too_big` is the one
@@ -1587,6 +1600,9 @@ def _stock_availability(payload: dict, b: _Builder) -> None:
             {
                 "needs_quantity": bool(entry.get("needs_quantity")),
                 "branch": entry.get("branch"),
+                # AVAIL-RENDER (owner, 5 Oct 2026): the marker compact/detailed print
+                # (`fetch.py::_item_line` reads `flags.discontinued`) on this mode's line too.
+                "discontinued": entry.get("is_discontinued") is True,
             },
         )
 

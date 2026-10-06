@@ -306,6 +306,66 @@ class CustomerContact(Base, CompanyScopedMixin):
     )
 
 
+class CustomerAlias(Base, CompanyScopedMixin):
+    """Another name a customer has been known by (DEBTOR-CODE-UNIQUE, owner 4 Oct 2026).
+
+    One customer per debtor code per company, so the buyer names that used to be separate
+    rows under one code (a `301-*` cash code held hundreds) live on as aliases of the one
+    row. The chatbot's name join and fuzzy search read `customer_name` OR an alias, so a
+    question naming an old buyer still lands on the merged customer. Written by the merge
+    (`app.services.customer_merge`) and `customer_identity.record_alias`.
+    """
+
+    __tablename__ = "customer_aliases"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    customer_id = Column(UUID(as_uuid=False), ForeignKey("customers.id", ondelete="CASCADE"), nullable=False)
+    alias_name = Column(String(255), nullable=False)
+    # 'merge' (a retired row's name) or the path that recorded it.
+    source = Column(String(32), nullable=False, default="merge", server_default="merge")
+    # The merge run that wrote it, so a revert removes exactly its own aliases.
+    merge_run_id = Column(String(64), nullable=True)
+    created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index(
+            "uq_customer_aliases_customer_name",
+            "customer_id",
+            func.lower(func.btrim(alias_name)),
+            unique=True,
+        ),
+        Index("ix_customer_aliases_company_name", "company_id", func.lower(func.btrim(alias_name))),
+    )
+
+
+class CustomerMergeMap(Base, CompanyScopedMixin):
+    """One retired customer row folded into its survivor by a merge run (DEBTOR-CODE-UNIQUE).
+
+    Everything a revert needs, written BEFORE the retired row is deleted: the full row,
+    every referencing row that was repointed (by table and primary key), every row that
+    was dropped on a unique collision (in full), and every value that was overwritten.
+    `customer_id`-less on purpose: the retired id no longer exists once applied, and the
+    survivor may be reverted or deleted later, so neither is a foreign key.
+    """
+
+    __tablename__ = "customer_merge_map"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    run_id = Column(String(64), nullable=False, index=True)
+    code_key = Column(String(100), nullable=False)
+    survivor_id = Column(UUID(as_uuid=False), nullable=False, index=True)
+    retired_id = Column(UUID(as_uuid=False), nullable=False, index=True)
+    retired_row = Column(JSONB, nullable=False)
+    # {"<schema.table>.<column>": {"pk": "<pk column>", "ids": [...]}}
+    repointed = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    # [{"table": "<schema.table>", "row": {...}}] - rows deleted on a unique collision
+    dropped = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    # [{"table": ..., "pk": ..., "id": ..., "column": ..., "old": ...}] - values overwritten
+    updated = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
+    reverted_at = Column(DateTime(timezone=False), nullable=True)
+
+
 class Transporter(Base, CompanyScopedMixin):
     """Lookup table for distinct transporter names referenced by orders.transporter.
 

@@ -57,6 +57,8 @@ class Stock:
     on_hand: int = 0
     x: int = 100
     eta: date | None = None
+    #: AVAIL-RENDER: the product's `is_discontinued`, told on its availability and ETA lines.
+    discontinued: bool = False
 
 
 def _seed(session_factory, codes: list[str]) -> dict[str, str]:
@@ -118,6 +120,9 @@ class AvailConsole(EngineConsole):
                             {"product_code": self.codes[pid], "estimated_arrival_date": eta.isoformat()}
                         )
                 told = dealer_view({"data": rows}, asked=[self.codes[pid] for pid in ids])
+                # The route's own stamp (`incoming_stock._stamp_discontinued`), from the facts.
+                for row in told["data"]:
+                    row["is_discontinued"] = self._facts(row["product_code"]).discontinued
                 return present(name, json.dumps(told))
             if name != "crm_inventory_stock_balance_list":
                 return json.dumps({"answers": []})
@@ -141,6 +146,7 @@ class AvailConsole(EngineConsole):
                     "eta": None,
                     "packing_list": None,
                     "available_qty": None,
+                    "is_discontinued": facts.discontinued,
                 }
                 if qty is not None:
                     entry["branch"] = branch(qty, facts.x, facts.on_hand, facts.eta)

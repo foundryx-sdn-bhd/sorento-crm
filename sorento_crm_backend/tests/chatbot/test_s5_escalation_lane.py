@@ -428,7 +428,10 @@ def test_clarify_company_ask_always_in_reply() -> None:
     # returned an empty list left the customer in silence (prod turn 9dd4cd0f).
     assert [a["kind"] for a in result["actions"]] == ["send_message"]
     assert result["actions"][0]["text"] == result["clarify"]["clarify_text"]
-    assert result["actions"][0]["quick_replies"] == "Mocha, Sorento"
+    # QUICK-REPLY-NAMES (owner rule, 6 Oct 2026): company names are roster values, not
+    # fixed short options, so the company clarify sends no buttons - the text above names
+    # the companies and "a number, a name, or the company" typed back resolves.
+    assert result["actions"][0]["quick_replies"] is None
     services.next_assignee.assert_not_called()
 
 
@@ -503,10 +506,10 @@ def test_assignment_actions_in_order() -> None:
     assert result["arm"] == "human-intervention"
     assert result["clarify"] is None
     kinds = [a["kind"] for a in result["actions"]]
-    assert kinds == ["send_message", "assign_conversation", "add_comment", "send_message"]
+    # WA-MSG-TRIM (owner, 3 Oct 2026): ONE customer message, after the assignment work.
+    assert kinds == ["assign_conversation", "add_comment", "send_message"]
 
-    first_send, assign, comment, second_send = result["actions"]
-    assert "out of the scope" in first_send["text"].lower()
+    assign, comment, send = result["actions"]
     assert assign["respond_user_id"] == "respond-usr-7"
     # `Call 'sub-add-comment-respond'`'s own `user_id` input is
     # `$('get-round-robin-assignee').first().json.assignee_respond_user_id` - the RESPOND
@@ -530,7 +533,7 @@ def test_assignment_actions_in_order() -> None:
         f"{ctx['contact']['id']}#{ctx['text']['message']['messageId']}"
     )
     assert comment["text"] == expected_comment
-    assert "routed" in second_send["text"].lower() and "customer service" in second_send["text"].lower()
+    assert send["text"] == "Routed to your PIC, they will reply shortly."
 
     for action in result["actions"]:
         assert "Informed the user that request is out of scope" not in str(action)
@@ -571,7 +574,7 @@ def test_conversation_already_assigned_skips_assign() -> None:
 
     kinds = [a["kind"] for a in result["actions"]]
     assert "assign_conversation" not in kinds
-    assert kinds == ["send_message", "add_comment", "send_message"]
+    assert kinds == ["add_comment", "send_message"]
     services.sla_create.assert_called_once()
 
 
@@ -613,10 +616,10 @@ def test_dry_run_never_reaches_next_assignee(session_factory) -> None:
     result = run(ctx, item, services=services, dry_run=True)
 
     kinds = [a["kind"] for a in result["actions"]]
-    assert kinds == ["send_message", "assign_conversation", "add_comment", "send_message"]
+    assert kinds == ["assign_conversation", "add_comment", "send_message"]
     assert all(a.get("dry_run") is True for a in result["actions"])
 
-    _first_send, assign, comment, _second_send = result["actions"]
+    assign, comment, _send = result["actions"]
     assert assign["respond_user_id"] == "respond-usr-1", (
         "the preview names the assignee the live turn would draw (AC-507 as amended)"
     )

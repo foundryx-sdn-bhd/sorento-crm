@@ -162,8 +162,8 @@ def real_contacts(redis_client):
         try:
             db.execute(
                 text(
-                    "INSERT INTO respond_contacts (id, respond_io_id, phone_number, session_vars) "
-                    "VALUES (gen_random_uuid()::text, :cid, :phone, CAST(:sv AS jsonb)) "
+                    "INSERT INTO respond_contacts (id, respond_io_id, phone_number, session_vars, chatbot_allowed) "
+                    "VALUES (gen_random_uuid()::text, :cid, :phone, CAST(:sv AS jsonb), true) "
                     "ON CONFLICT DO NOTHING"
                 ),
                 {"cid": contact, "phone": f"+6000000{suffix}", "sv": json.dumps({"variables": {}})},

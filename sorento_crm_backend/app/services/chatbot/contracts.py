@@ -315,6 +315,8 @@ BRANCH_KINDS = (
     "demand_qty",
     "business_query",
     "media_denied",
+    # AI-ALLOWED-GATE: the CRM declined to answer this contact (blocked, or not in the CRM).
+    "ai_not_allowed",
 )
 BranchKind = Literal[BRANCH_KINDS]  # type: ignore[valid-type]
 

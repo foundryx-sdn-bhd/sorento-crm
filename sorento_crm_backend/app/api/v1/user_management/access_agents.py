@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from typing import Optional
 from app.database import get_db
 from app.services.uuid_path_param import validate_uuid_path
-from app.dependencies import get_current_user, require_permission
+from app.dependencies import require_permission
 from app.services.user_service import AccessAgentService
 from app.schemas.user import (
     AccessAgentCreate,
@@ -23,6 +23,19 @@ from app.services.error_handler import handle_internal_error
 
 router = APIRouter()
 
+# Write slugs, all registered by `_crud("user_management", "access_agents", ...)` in
+# app/rbac/permission_registry.py. Until 5 Oct 2026 every write below took only
+# `get_current_user`, so any signed-in user could create, delete or reconfigure a
+# chatbot access agent and its contact grants (ACCESS-MODEL security review, #1434).
+# Team routing, field reveals and contact grants reshape an existing agent, so they
+# take `.edit`; only the agent row itself takes `.add` / `.delete`. The Respond.io
+# lookup takes `.edit` too: it exists only to pre-fill the add-grant dialog, and is a
+# directory query by identifier otherwise.
+VIEW = "user_management.access_agents.view"
+ADD = "user_management.access_agents.add"
+EDIT = "user_management.access_agents.edit"
+DELETE = "user_management.access_agents.delete"
+
 
 @router.get("/contact-access", response_model=ListResponse[ContactAgentAccessResponse])
 async def get_all_contact_access_agents(
@@ -33,7 +46,7 @@ async def get_all_contact_access_agents(
     contact_id: Optional[str] = Query(None),
     sort: Optional[str] = Query("created_at"),
     dir: Optional[str] = Query("asc"),
-    current_user: dict = Depends(require_permission("user_management.access_agents.view")),
+    current_user: dict = Depends(require_permission(VIEW)),
     db: Session = Depends(get_db)
 ):
     """Get all contact access agents with pagination and filtering."""
@@ -58,7 +71,7 @@ async def get_access_agents(
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=1000),
     query: Optional[str] = Query(None),
-    current_user: dict = Depends(require_permission("user_management.access_agents.view")),
+    current_user: dict = Depends(require_permission(VIEW)),
     db: Session = Depends(get_db)
 ):
     """Get access agents with pagination and search."""
@@ -73,7 +86,7 @@ async def get_access_agents(
 @router.get("/{agent_id}", response_model=AccessAgentResponse)
 async def get_access_agent(
     agent_id: str,
-    current_user: dict = Depends(require_permission("user_management.access_agents.view")),
+    current_user: dict = Depends(require_permission(VIEW)),
     db: Session = Depends(get_db)
 ):
     """Get a single access agent by ID."""
@@ -92,7 +105,7 @@ async def get_access_agent(
 @router.post("/", response_model=AccessAgentResponse, status_code=status.HTTP_201_CREATED)
 async def create_access_agent(
     agent_data: AccessAgentCreate,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(ADD)),
     db: Session = Depends(get_db)
 ):
     """Create a new access agent."""
@@ -110,7 +123,7 @@ async def create_access_agent(
 async def update_access_agent(
     agent_id: str,
     agent_data: AccessAgentUpdate,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(EDIT)),
     db: Session = Depends(get_db)
 ):
     """Update an access agent."""
@@ -128,7 +141,7 @@ async def update_access_agent(
 @router.delete("/{agent_id}", status_code=status.HTTP_200_OK)
 async def delete_access_agent(
     agent_id: str,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(DELETE)),
     db: Session = Depends(get_db)
 ):
     """Delete an access agent."""
@@ -146,7 +159,7 @@ async def delete_access_agent(
 @router.get("/{agent_id}/teams")
 async def get_agent_teams(
     agent_id: str,
-    current_user: dict = Depends(require_permission("user_management.access_agents.view")),
+    current_user: dict = Depends(require_permission(VIEW)),
     db: Session = Depends(get_db),
 ):
     """List assignments with team name, members, last assigned and next in line (round-robin state)."""
@@ -163,7 +176,7 @@ async def get_agent_teams(
 async def set_agent_teams(
     agent_id: str,
     body: AgentTeamsUpdate,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(EDIT)),
     db: Session = Depends(get_db),
 ):
     """Set the team assignments for this agent (replaces existing). Body: assignments=[{code, team_id, tier?}]."""
@@ -198,7 +211,7 @@ async def get_agent_field_access(
             "(null = follows the agent) and `effective`."
         ),
     ),
-    current_user: dict = Depends(require_permission("user_management.access_agents.view")),
+    current_user: dict = Depends(require_permission(VIEW)),
     db: Session = Depends(get_db),
 ):
     """Which fields this agent may reveal, and to whom.
@@ -226,7 +239,7 @@ async def set_agent_field_access(
     contact_id: Optional[str] = Query(
         None, description="Echoed back on the response so the caller re-reads the same scope."
     ),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(EDIT)),
     db: Session = Depends(get_db),
 ):
     """Set which fields this agent may reveal.
@@ -254,7 +267,7 @@ async def set_agent_field_access(
 @router.get("/{agent_id}/contact-access", response_model=list[ContactAgentAccessResponse])
 async def get_contact_access_agents(
     agent_id: str,
-    current_user: dict = Depends(require_permission("user_management.access_agents.view")),
+    current_user: dict = Depends(require_permission(VIEW)),
     db: Session = Depends(get_db)
 ):
     """List contact access entries for an agent."""
@@ -278,7 +291,7 @@ async def get_contact_access_agents(
 async def create_contact_access_agent(
     agent_id: str,
     contact_data: ContactAgentAccessCreate,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(EDIT)),
     db: Session = Depends(get_db)
 ):
     """Create a contact access entry for an agent."""
@@ -300,7 +313,7 @@ async def update_contact_access_agent(
     agent_id: str,
     contact_id: str,
     contact_data: ContactAgentAccessUpdate,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(EDIT)),
     db: Session = Depends(get_db)
 ):
     """Update a contact access entry."""
@@ -318,7 +331,7 @@ async def update_contact_access_agent(
 async def delete_contact_access_agent(
     agent_id: str,
     contact_id: str,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(EDIT)),
     db: Session = Depends(get_db)
 ):
     """Delete a contact access entry."""
@@ -336,7 +349,7 @@ async def delete_contact_access_agent(
 @router.post("/contact-access/lookup", response_model=RespondContactLookupResponse)
 async def lookup_contact_name(
     payload: RespondContactLookupRequest,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(EDIT)),
     db: Session = Depends(get_db)
 ):
     """Lookup contact name from Respond.io by identifier."""
@@ -355,7 +368,7 @@ async def lookup_contact_name(
 async def sync_contact_name(
     agent_id: str,
     contact_id: str,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(EDIT)),
     db: Session = Depends(get_db)
 ):
     """Sync contact name from Respond.io for a contact access entry."""

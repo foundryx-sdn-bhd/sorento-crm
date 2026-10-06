@@ -149,6 +149,18 @@ def _file_key(f: dict[str, Any]) -> Any:
     return f.get("url") or f.get("id") or f.get("filename")
 
 
+def _dealer_view(figures: list[dict[str, Any]]) -> bool:
+    """True when the block is the dealer incoming view: any row the presenter flagged
+    `dealer_view` (`lanes/business/answer.py::crossdomain_zeroset` reads the same flag
+    to keep the ladder off such a reply)."""
+    return any(
+        isinstance(fig, dict)
+        and isinstance(fig.get("flags"), dict)
+        and fig["flags"].get("dealer_view") is True
+        for fig in figures
+    )
+
+
 def _team_pick_question(
     missed_domains: list[str],
     policy: Policy,
@@ -661,12 +673,18 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
         # report and the refusal both do, and the report's own four-line block already
         # carries this exact line (`own_header`), so printing it here too would say the
         # same dates twice in one answer.
+        # Never on a dealer-view block either (ORDER-BROADEN, owner 5 Oct 2026): the
+        # dealer incoming view is one "<code>: ETA <dates>" line per product with no
+        # header of its own (`sorento_crm_mcp/presenters.py::_incoming_dealer`, each
+        # line flagged `dealer_view`), so "the line under the header" landed BETWEEN two
+        # ETA answers, stating a delivery window the ETA question never asked for.
         date_line = env.get("date_line")
         if (
             isinstance(date_line, str)
             and date_line.strip()
             and not env.get("own_header")
             and not env.get("denied")
+            and not _dealer_view(figures)
         ):
             head, sep, rest = block.partition("\n")
             block = head + "\n" + date_line.strip() + (sep + rest if sep else "")
@@ -1075,10 +1093,12 @@ def compose_question(pending: Any, state: State | None = None, localizer: Any = 
     action: dict[str, Any] = {
         "kind": "send_message",
         "text": body,
-        # AC-1866: a `member_offer` re-print keeps its numbered text list but not the
-        # names as quick-reply buttons (owner ruling 23 Sep 2026) - `result_set` below
-        # still carries the roster, so a numbered reply still resolves.
-        "quick_replies": pending_quick_replies(pending.kind, labels),
+        # QUICK-REPLY-NAMES (owner rule, 6 Oct 2026, generalising AC-1866): a re-print
+        # keeps its numbered text list; only a fixed-option kind (`team_pick`, the
+        # outstanding and sales report offers) also sends its labels as buttons. A roster
+        # kind's names never do - `result_set` below still carries the roster, so a
+        # numbered reply still resolves.
+        "quick_replies": pending_quick_replies(pending.kind, labels, options=list(pending.options)),
         "result_set": list(pending.options),
     }
     return Answer(sections=[], question=pending, offer=None, canned=[], files=[], actions=[action], text=body)

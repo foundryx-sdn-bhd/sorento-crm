@@ -1,0 +1,43 @@
+=== MCP, code at origin/main, tests at head 8cef8202 ===
+FAILED tests/test_presenters_availability_lines.py::test_in_stock_sentence - ...
+FAILED tests/test_presenters_availability_lines.py::test_an_in_stock_line_never_refers
+FAILED tests/test_presenters_avail_mode_emoji.py::test_in_stock_covering_q_is_a_tick
+FAILED tests/test_presenters_avail_mode_emoji.py::test_in_stock_short_of_q_names_the_available_count
+FAILED tests/test_presenters_avail_mode_emoji.py::test_a_tick_says_got_stock_and_a_cross_eta_says_neither
+FAILED tests/test_presenters_avail_mode_emoji.py::test_a_mixed_block_stamps_each_answered_entry_and_leaves_the_owed_one
+FAILED tests/test_presenters_avail_mode_emoji.py::test_an_availability_item_carries_the_discontinued_flag_on_every_branch
+FAILED tests/test_presenters_avail_mode_emoji.py::test_a_discontinued_product_still_owing_its_quantity_keeps_the_flag_on_its_bare_code
+FAILED tests/test_presenters_avail_mode_emoji.py::test_a_dealer_eta_item_carries_the_discontinued_flag
+FAILED tests/test_presenters_stock.py::test_render_availability_ask - Asserti...
+FAILED tests/test_presenters_stock.py::test_render_availability_answer - Asse...
+FAILED tests/test_presenters_stock.py::test_sanitized_availability_renders_end_to_end
+FAILED tests/test_presenters_stock.py::test_sanitized_availability_keeps_the_discontinued_flag_end_to_end
+13 failed, 4 passed, 41 deselected in 0.96s
+
+=== backend RED run: app/ at origin/main, tests at head 8cef8202 ===
+FAILED tests/test_stock_availability_block.py::test_entry_shape_is_the_v2_shape_not_1118s
+FAILED tests/test_stock_availability_block.py::test_entry_carries_is_discontinued_answered_or_still_owed
+FAILED tests/test_stock_availability_block.py::test_a_merged_code_is_discontinued_only_when_every_company_row_is
+FAILED tests/test_stock_availability_block.py::test_route_returns_is_discontinued_on_the_wire
+4 failed, 135 warnings in 28.53s
+ERROR tests/test_avail_mode_dealer_eta.py
+!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+134 warnings, 1 error in 26.49s
+FAILED tests/chatbot/test_avail_mode_scenarios.py::test_S01_exact_code_enough_stock
+FAILED tests/chatbot/test_avail_mode_scenarios.py::test_S02_exact_code_short_within_the_cap_names_the_count
+FAILED tests/chatbot/test_avail_mode_scenarios.py::test_S55_the_owners_trace_a_discontinued_product_too_big_carries_the_marker
+FAILED tests/chatbot/test_avail_mode_scenarios.py::test_S56_a_discontinued_product_in_stock_says_got_stock_and_the_marker
+FAILED tests/chatbot/test_avail_mode_scenarios.py::test_S57_a_discontinued_products_eta_line_carries_the_marker
+FAILED tests/chatbot/test_avail_mode_scenarios.py::test_S58_a_mixed_reply_marks_only_the_discontinued_line
+FAILED tests/chatbot/test_avail_mode_scenarios.py::test_S59_a_no_stock_no_incoming_line_keeps_its_refer_and_the_marker
+7 failed, 130 warnings in 35.27s
+1 passed, 14 warnings in 0.43s
+FAILED tests/chatbot/test_customer_asks_refer_only.py::test_pin_only_the_lines_that_cannot_confirm_stock_refer
+FAILED tests/chatbot/test_customer_asks_refer_only.py::test_a_live_stock_ask_logs_the_two_refer_lines_and_not_in_stock_or_b3_incoming
+2 failed, 130 warnings in 23.53s
+FAILED tests/chatbot/test_chat_language_incoming.py::test_a_dealer_eta_line_translates_its_verdict_and_keeps_the_mark
+FAILED tests/chatbot/test_chat_language_incoming.py::test_the_available_count_token_never_swallows_the_code_prefix
+2 failed, 14 warnings in 0.65s
+FAILED tests/chatbot/test_stock_ask_notify.py::test_ac_sa401_toggle_on_enqueues_one_job_per_b1_b4_and_none_for_b2_b3
+FAILED tests/chatbot/test_stock_ask_record.py::test_ac_sa501_a_live_turn_writes_one_open_row_per_answered_product
+2 failed, 130 warnings in 24.47s

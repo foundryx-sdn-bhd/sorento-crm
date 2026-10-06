@@ -108,6 +108,25 @@ def _hidden_spec_keys(db: Session, *, contact_id: str, space_id: str | None) -> 
             return sorted(DEFAULT_HIDDEN_KEYS)
 
 
+def _skip_period_questions(db: Session, contact_id: str, space_id: str | None) -> bool:
+    """DO-PERIOD-SKIP: the contact's switch. Any failure or a missing row is False."""
+    from sqlalchemy import text
+
+    try:
+        internal_id = _resolve_contact_with_null_workspace_fallback(db, contact_id=contact_id, space_id=space_id)
+        if internal_id is None:
+            return False
+        with db.begin_nested():
+            value = db.execute(
+                text("SELECT chatbot_skip_period_questions FROM respond_contacts WHERE id = :c"),
+                {"c": str(internal_id)},
+            ).scalar()
+        return value is True
+    except Exception:
+        logger.warning("skip_period_questions read failed", exc_info=True)
+        return False
+
+
 def check_access(
     db: Session,
     *,
@@ -140,6 +159,7 @@ def check_access(
         "attributes": _granted_field_reveal_keys(db, contact_id=contact_id, space_id=space_id),
         "all_attributes_allowed": False,
         "hidden_spec_keys": _hidden_spec_keys(db, contact_id=contact_id, space_id=space_id),
+        "skip_period_questions": _skip_period_questions(db, contact_id, space_id),
     }
 
 

@@ -775,14 +775,28 @@ def _asked_tokens(asked: list[dict[str, Any]]) -> list[tuple[str, str, dict[str,
     return out
 
 
+def code_like(token: str) -> bool:
+    """A typed token that can be a product code: letters AND digits ("srtwc286"). A word
+    ("xx", "basin", "new") or a bare number ("2", "10") is not one. ONE copy, here in the
+    lowest module of the three that read a typed token against resolved codes
+    (`engine._exact_codes_only`, `turn_runtime._spec_quantities`, `_group` below)."""
+    return any(ch.isdigit() for ch in token) and any(ch.isalpha() for ch in token)
+
+
 def _group(rows: list[dict[str, Any]], token: str) -> list[dict[str, Any]]:
     """The rows one typed token placed: its own code, or the family it is a prefix of
-    (the same link `apply._in_family_of` reads, D29)."""
-    return [
-        row
-        for row in rows
-        if (_row_label(row) or "").casefold().startswith(token)
-    ]
+    (the same link `apply._in_family_of` reads, D29), else (AVAIL-PICKER, owner trace
+    5 Oct 2026, "wc286") the family it is a substring of, the rows the resolver's own
+    substring probe on product_code placed and `engine._exact_codes_only` kept.
+
+    The substring reading is for a code-like token only (reviewer finding 1): the parser
+    does tag a word or a bare number as a product ("2 srtwc286", "new srtwc286"), and
+    "2" or "new" sits inside half the family's codes without naming any of them."""
+    labelled = [(row, (_row_label(row) or "").casefold()) for row in rows]
+    prefixed = [row for row, label in labelled if label.startswith(token)]
+    if prefixed or not code_like(token):
+        return prefixed
+    return [row for row, label in labelled if token in label]
 
 
 def numbered(labels: list[str], start: int = 1) -> list[str]:
