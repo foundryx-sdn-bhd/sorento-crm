@@ -1,6 +1,6 @@
 # PLAN: the parser's document type is trusted (ATTACH-GROUNDING-TYPO, option c)
 
-Status: in review, PR #1490 (small fix track: backend only, no migration, no auth change).
+Status: in review, PR #1490 (small fix track: backend only, no migration, no auth change). Owner hand test PASS; reviewer VERDICT ready.
 Owner decision 6 Oct 2026 19:30: option (c), trust the parser. Supersedes the word-overlap
 guard this PR first shipped (rejected: no word or typo matching in code).
 
