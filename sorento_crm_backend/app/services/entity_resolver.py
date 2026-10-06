@@ -2911,7 +2911,7 @@ _ALTERNATIVES_CAP = 5
 PRE_EXTRACTED_TOKEN_CEILING = 50
 # How many tokens are EXTRACTED from a free-text query (`extract_candidate_tokens`'s
 # own default), when the caller sets no `max_candidates`.
-_FREE_TEXT_CANDIDATES = 8
+FREE_TEXT_CANDIDATES = 8
 
 
 def _trgm_lookup(
@@ -4964,7 +4964,7 @@ def resolve_references(
     lists have different lengths, or when `query_or_tokens` is a plain string.
 
     `max_candidates` is the caller's own cap. Unset, a free-text query extracts
-    `_FREE_TEXT_CANDIDATES` tokens and a pre-extracted list is looked up to
+    `FREE_TEXT_CANDIDATES` tokens and a pre-extracted list is looked up to
     `PRE_EXTRACTED_TOKEN_CEILING`. A list cut at either is reported in
     `ResolutionResult.truncated_tokens` (RESOLVER-TOKEN-CAP): a token the caller
     handed over and this call never looked up is neither resolved nor unresolved,
@@ -4973,7 +4973,7 @@ def resolve_references(
     t0 = time.perf_counter()
     raw_query: Optional[str] = None
     truncated_tokens: list[str] = []
-    free_text_cap = max_candidates if max_candidates is not None else _FREE_TEXT_CANDIDATES
+    free_text_cap = max_candidates if max_candidates is not None else FREE_TEXT_CANDIDATES
     # {token: pre-fold raw text} for the head-code retry, built by zipping
     # `query_or_tokens` with `raw_tokens` BEFORE the strip/empty-filter/cap
     # below, so positional alignment survives it. Empty (never populated) when

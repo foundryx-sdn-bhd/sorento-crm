@@ -176,3 +176,24 @@ def test_free_text_extraction_keeps_its_own_count(db):
 
     assert 0 < len(res.resolutions) <= 8
     assert res.truncated_tokens == []
+
+
+def test_free_text_honours_an_explicit_count(db):
+    from app.services.entity_resolver import resolve_references
+
+    res = resolve_references(db, " ".join(NINETEEN), allowed_entity_types=["product"], max_candidates=3)
+
+    assert len(res.resolutions) == 3
+    assert res.truncated_tokens == []
+
+
+def test_the_routes_synthesized_alpha_tokens_keep_the_free_text_count(db):
+    """Reviewer S1: an alpha-only hint with no `tokens` splits the QUERY into words
+    (`_synthesize_alpha_tokens`); those are not codes the caller chose, so they keep
+    the free-text count rather than the pre-extracted ceiling."""
+    from app.api.v1.system.references import _resolve_input
+
+    words = " ".join(f"zztword{i:02d}" for i in range(1, 13))
+    result = _resolve_input(db, words, None, match_mode="or", allowed_entity_types=["attachment_type"])
+
+    assert 0 < len(result["resolutions"]) <= 8, [r["token"] for r in result["resolutions"]]

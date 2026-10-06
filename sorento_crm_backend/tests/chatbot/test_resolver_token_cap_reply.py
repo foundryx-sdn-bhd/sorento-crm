@@ -183,6 +183,34 @@ def test_the_cut_codes_are_named_once_on_the_not_checked_line():
     assert "I could not find" not in text, text
 
 
+def test_two_sections_name_the_cut_codes_once():
+    """A cut code rides every envelope; it is a fact about the message, said once."""
+    rows = {code: i + 1 for i, code in enumerate(CODES[:50])}
+    first = _envelope(rows, CODES[50:])
+    second = {**_envelope(rows, CODES[50:]), "domain": "incoming"}
+    incoming = {**_domain_row("incoming", narrowing={"product": "list_all"}), "label": "incoming stock"}
+    stock = {**_domain_row("inventory", narrowing={"product": "list_all"}), "label": "stock"}
+    policy = Policy.from_rows(domains=[stock, incoming], kinds=[], tier_order=TIER_ORDER_FIXTURE)
+
+    text = compose([first, second], _state(), policy, ctx=None).text
+
+    assert text.count("Not checked") == 1, text
+    assert f"Not checked: {', '.join(CODES[50:])}." in text, text
+
+
+def test_a_tasks_own_dropped_slot_still_prints_per_section():
+    """The line the task stamps for a "just proceed" keeps its own per-section rule."""
+    first = _envelope({"ZZTCAP01": 1}, ["ZZTCAP09"])
+    second = {**_envelope({"ZZTCAP01": 1}, ["ZZTCAP09"]), "domain": "incoming"}
+    incoming = {**_domain_row("incoming", narrowing={"product": "list_all"}), "label": "incoming stock"}
+    stock = {**_domain_row("inventory", narrowing={"product": "list_all"}), "label": "stock"}
+    policy = Policy.from_rows(domains=[stock, incoming], kinds=[], tier_order=TIER_ORDER_FIXTURE)
+
+    text = compose([first, second], _state(), policy, ctx=None).text
+
+    assert text.count("Not checked: ZZTCAP09.") == 1, text
+
+
 # --------------------------------------------------------------------------- #
 # End to end: the real engine and the real resolver
 # --------------------------------------------------------------------------- #
