@@ -15,7 +15,37 @@ import io
 import mimetypes
 from app.database import get_db
 from app.services.uuid_path_param import validate_uuid_path
-from app.dependencies import get_current_user, get_current_user_or_api_key, require_permission
+from app.dependencies import (
+    get_current_user,
+    get_current_user_or_api_key,
+    require_any_permission_with_api_key,
+    require_permission,
+    require_permission_with_api_key,
+)
+
+# Who browses the attachment catalogue (LIST-API-PERMS). The catalogue is the shared Drive AND
+# every module's "link existing file" picker (`components/common/LinkAttachmentBrowserDialog`,
+# the products one, `projectDocumentService.ts`, `PromotionAttachmentsTab.tsx`, `FormForm.tsx`,
+# `UploadFlyerDialog.tsx`), so each screen that opens that picker admits with its own view slug.
+# A session holding none of these - a role outside every module - is what the gate refuses.
+ATTACHMENT_CATALOGUE_READERS = [
+    "resource.attachments.view",
+    "complaint_management.complaints.view",
+    "procurement.stock_inquiries.view",
+    "procurement.purchase_requests.view",
+    "procurement.sponsorship_forms.view",
+    "procurement.packing_lists.view",
+    "master_data.products.view",
+    "projects.projects.view",
+    "marketing.promotions.view",
+    "forms.forms.view",
+    "dealer_kit.page.view",
+]
+# The upload dialog's name check runs wherever the dialog is mounted: Resources and the Packing
+# Lists page, whose upload button is itself gated on `resource.attachments.upload`.
+ATTACHMENT_UPLOAD_READERS = ["resource.attachments.view", "resource.attachments.upload"]
+# The latest stock list is read by the Inventory Stock page (`StockBalanceGrid.tsx`) and the MCP.
+STOCK_LIST_READERS = ["resource.attachments.view", "inventory.stock.view"]
 from app.services.resources_service import AttachmentService, AttachmentTypeService, AttachmentDirectoryService
 from app.services.attachment_company_service import AttachmentCompanyService
 from app.services.storage_router import (
@@ -291,7 +321,7 @@ async def get_attachments(
         None,
         description="'shared' for company_id IS NULL only; a company UUID for that company only; omitted keeps the default (shared + the caller's own companies).",
     ),
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_any_permission_with_api_key(ATTACHMENT_CATALOGUE_READERS)),
     db: Session = Depends(get_db)
 ):
     """Get attachments with pagination and filtering (optional directory_id, query by filename, is_deleted for trash)."""
@@ -379,7 +409,7 @@ async def get_attachments(
 async def collision_check(
     filename: str = Query(..., description="Candidate display name (stored_filename) to test."),
     directory_id: Optional[str] = Query(None, description="Folder to check within; no folder → never collides."),
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_any_permission_with_api_key(ATTACHMENT_UPLOAD_READERS)),
     db: Session = Depends(get_db),
 ):
     """Pre-upload check: does a live attachment with this name already exist in this folder?
@@ -433,7 +463,7 @@ async def get_drive_contents(
         None,
         description="'shared' for company_id IS NULL only (folders and files); a company UUID for that company only; omitted keeps the default.",
     ),
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key("resource.attachments.view")),
     db: Session = Depends(get_db),
 ):
     """Unified Drive listing - folders + files as ONE server-sorted, server-paginated
@@ -549,7 +579,7 @@ STOCK_LIST_TYPE_NAMES = ("Stock List", "Stock_List")
 
 @router.get("/current-stock-list", response_model=AttachmentResponse)
 async def get_current_stock_list(
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_any_permission_with_api_key(STOCK_LIST_READERS)),
     db: Session = Depends(get_db),
 ):
     """Get the current (non-archived) Stock_List attachment, if any. For quick access from Stock page and n8n."""

@@ -6,7 +6,17 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.services.uuid_path_param import validate_uuid_path
-from app.dependencies import get_current_user, get_current_user_or_api_key
+from app.dependencies import (
+    get_current_user,
+    require_any_permission_with_api_key,
+    require_permission_with_api_key,
+)
+
+# Who reads the promotions list (LIST-API-PERMS): the Promotions page, and the Dealer Kit
+# brochure / flyer / page pickers (`brochureImageService.ts`), which choose a promotion as their
+# own feature. The attachment detail modal's "link to promotion" picker is not listed: it is a
+# marketing action and an empty picker is its degraded state.
+PROMOTION_LIST_READERS = ["marketing.promotions.view", "dealer_kit.page.view"]
 from app.services.marketing_service import PromotionService, PromotionProductService
 from app.services.query_normalizer import strip_domain_stopwords
 from app.services.uuid_list_param import parse_uuid_list
@@ -132,7 +142,7 @@ async def get_promotions(
             "Rows carry `promotion_type_code` / `promotion_type_name`."
         ),
     ),
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_any_permission_with_api_key(PROMOTION_LIST_READERS)),
     db: Session = Depends(get_db)
 ):
     """Get promotions with pagination. Search by query/period; optional access_levels filter (by name).
@@ -228,7 +238,7 @@ async def get_promotion(
         False,
         description="When true, include promotion product lines and nested Product details. When false, groups only (no lines).",
     ),
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key("marketing.promotions.view")),
     db: Session = Depends(get_db)
 ):
     """Get a single promotion by ID. Optional access_levels (names) intersection filter."""
@@ -508,7 +518,7 @@ async def get_promotion_products_nested(
             "contact_access_types.name; intersection with promotion.access_levels)."
         ),
     ),
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key("marketing.promotions.view")),
     db: Session = Depends(get_db)
 ):
     """Get products for a specific promotion (nested route). Optional access_levels (names) intersection filter."""

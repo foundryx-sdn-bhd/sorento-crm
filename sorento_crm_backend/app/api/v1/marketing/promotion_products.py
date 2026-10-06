@@ -6,7 +6,11 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Optional, Tuple
 from app.database import get_db
-from app.dependencies import get_current_user_or_api_key
+from app.dependencies import require_any_permission_with_api_key
+
+# Who reads promotion product lines (LIST-API-PERMS): the Promotion Products page, and the
+# product detail's Promotions tab (`getPromotionsByProductId`, `ProductPromotionsTab.tsx`).
+PROMOTION_PRODUCT_READERS = ["marketing.promotion_products.view", "master_data.products.view"]
 from app.services.marketing_service import PromotionProductService, _resolve_promotion_id_for_filter
 from app.services.uuid_list_param import parse_uuid_list
 from app.schemas.marketing import (
@@ -282,7 +286,7 @@ async def list_all_promotion_products(
             "not come back at all."
         ),
     ),
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_any_permission_with_api_key(PROMOTION_PRODUCT_READERS)),
     db: Session = Depends(get_db)
 ):
     """Get promotion products with pagination. Optional access_levels (names) intersection filter."""

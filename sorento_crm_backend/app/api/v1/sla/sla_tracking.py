@@ -9,7 +9,48 @@ from typing import Optional
 import httpx
 from app.database import get_db
 from pydantic import BaseModel, Field
-from app.dependencies import get_current_user_or_api_key, require_permission, get_current_user
+from app.dependencies import (
+    get_current_user,
+    get_current_user_or_api_key,
+    require_any_permission_with_api_key,
+    require_permission,
+    require_permission_with_api_key,
+)
+
+# Who reads ONE tracker (LIST-API-PERMS): the SLA tracking pages, and the SLA tab / handling
+# lock on the detail page of the record the tracker belongs to - complaint, stock inquiry,
+# purchase request, sponsorship form, ticket (`_shared/formSLAService.ts`,
+# `FormSLATrackerDetail.tsx`). Per-tracker reads (`/by-source`, `/{id}`, `/{id}/conversation`,
+# `/event-logs?tracking_id=`) accept any of them; the cross-tracker lists do not.
+TRACKER_READERS = [
+    "sla_management.conversation_sla_tracking.view",
+    "sla_management.escalation_logs.view",
+    "complaint_management.complaints.view",
+    "procurement.stock_inquiries.view",
+    "procurement.purchase_requests.view",
+    "procurement.sponsorship_forms.view",
+    "tickets.tickets.view",
+]
+EVENT_LOGS_VIEW = "sla_management.escalation_logs.view"
+
+
+def _require_event_log_reader(db: Session, current_user: dict, tracking_id: Optional[str]) -> None:
+    """Unfiltered, `/event-logs` is the SLA Event Logs page (every tracker's events) and needs
+    `sla_management.escalation_logs.view`. Filtered to one tracker it is that tracker's event
+    table on its own detail page, so any TRACKER_READERS slug admits. Superadmin/admin pass."""
+    from app.services.user_service import UserPermissionService
+
+    service = UserPermissionService(db)
+    uid = current_user["id"]
+    if service.get_user_role_slugs(uid) & {UserPermissionService.SUPERADMIN_ROLE_SLUG, "admin"}:
+        return
+    wanted = TRACKER_READERS if tracking_id else [EVENT_LOGS_VIEW]
+    held = service.get_user_permission_slugs(uid)
+    if not any(slug in held for slug in wanted):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"One of these permissions required: {', '.join(wanted)}",
+        )
 from app.services.sla_service import (
     ConversationSLATrackingService,
     append_clock_line,
@@ -362,7 +403,7 @@ def build_conversation_sla_tracking_response(
 
 @router.get("/dashboard")
 async def get_sla_tracking_dashboard(
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key("sla_management.conversation_sla_tracking.view")),
     db: Session = Depends(get_db)
 ):
     """Get dashboard metrics for SLA tracking."""
@@ -818,7 +859,7 @@ async def get_sla_tracking(
         ),
     ),
     scope: str = Query("conversation", description="conversation (contact-keyed) or form (per-entity stage rows)"),
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key("sla_management.conversation_sla_tracking.view")),
     db: Session = Depends(get_db)
 ):
     """Get SLA tracking records with pagination. query searches contact phone and contact name."""
@@ -2093,7 +2134,7 @@ async def delete_event_log(
 async def list_trackers_by_source(
     source_entity_type: str = Query(..., description="stock_inquiry | purchase_request | sponsorship_form | complaint | ticket"),
     source_entity_id: str = Query(..., description="Form row id"),
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_any_permission_with_api_key(TRACKER_READERS)),
     db: Session = Depends(get_db),
 ):
     """All SLA trackers attached to a form row, ordered oldest first (multi-stage chain)."""
@@ -2133,6 +2174,7 @@ async def get_event_logs(
     db: Session = Depends(get_db)
 ):
     """Get SLA event logs with pagination and filtering."""
+    _require_event_log_reader(db, current_user, tracking_id)
     try:
         service = ConversationSLATrackingService(db)
         result = service.list_event_logs(
@@ -2157,7 +2199,7 @@ async def get_sla_tracking_conversation(
     tracking_id: UUID,
     limit: int = Query(50, ge=1, le=MAX_PAGE_LIMIT),
     cursor: Optional[str] = Query(None),
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_any_permission_with_api_key(TRACKER_READERS)),
     db: Session = Depends(get_db),
 ):
     """List Respond.io messages for the contact linked to this SLA tracking (respond_io_id on respond_contacts).
@@ -2384,7 +2426,7 @@ async def create_ticket_comment(
 @router.get("/{tracking_id}", response_model=ConversationSLATrackingResponse)
 async def get_sla_tracking_record(
     tracking_id: UUID,
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_any_permission_with_api_key(TRACKER_READERS)),
     db: Session = Depends(get_db)
 ):
     """Get a single SLA tracking record by ID."""
