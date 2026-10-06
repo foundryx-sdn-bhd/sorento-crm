@@ -20,6 +20,7 @@ from app.schemas.order import (
     OrderStatusCreate, OrderStatusUpdate,
     OrderLineCreate, OrderLineUpdate,
 )
+from app.services import customer_identity
 from app.services.error_handler import handle_not_found, handle_conflict, handle_unprocessable
 from app.services.import_log_service import ImportLogService
 from app.services.contact_brand_scope import product_in_scope_clauses
@@ -2265,11 +2266,10 @@ class OrderService:
     ) -> Optional[str]:
         """Find-or-create a Customer row from order debtor fields, return its id.
 
-        Match key is the (customer_code, customer_name) PAIR - case + whitespace
-        insensitive - because one Sage code can carry multiple distinct debtor
-        names (e.g. "300-D093" maps to both "Deluxe Home Center (KTN)" and
-        "Deluxe Home Center AC (I)"). Each unique pair gets its own customers
-        row. Matches the composite unique index created in migration 220.
+        DEBTOR-CODE-UNIQUE (owner, 4 Oct 2026): one customer per debtor code per company,
+        so the match key is the CODE alone (`customer_identity.customer_by_code`). A second
+        buyer name under a known code links to the existing customer and never renames it;
+        the order keeps its own `debtor_name`. Only a code nobody holds creates a row.
 
         When debtor_code is missing, fall back to a deterministic `DBR-<hash>`
         slug derived from the name so the same blank-code debtor doesn't
@@ -2282,15 +2282,7 @@ class OrderService:
         if not code:
             import hashlib
             code = "DBR-" + hashlib.md5(name.lower().encode("utf-8")).hexdigest()[:10]
-        # Pair match (case + whitespace normalized on both columns).
-        existing = (
-            self.db.query(Customer)
-            .filter(
-                func.lower(func.btrim(Customer.customer_code)) == code.lower(),
-                func.lower(func.btrim(Customer.customer_name)) == name.lower(),
-            )
-            .first()
-        )
+        existing = customer_identity.customer_by_code(self.db, code)
         if existing is not None:
             return str(existing.id)
         new_customer = Customer(
@@ -3744,19 +3736,22 @@ class CustomerService:
     def create_customer(self, customer_data: CustomerCreate):
         """Create a new customer.
 
-        Uniqueness is on the (customer_code, customer_name) pair - case +
-        whitespace insensitive - so the same Sage code can legitimately host
-        multiple debtor names (e.g. "300-D093" for "Deluxe Home Center (KTN)"
-        and "Deluxe Home Center AC (I)").
+        DEBTOR-CODE-UNIQUE (owner, 4 Oct 2026): the debtor code is unique per company,
+        case + whitespace insensitive, whatever the name. The code and name are stored
+        trimmed.
         """
         code = (customer_data.customer_code or "").strip()
         name = (customer_data.customer_name or "").strip()
-        existing = self.db.query(Customer).filter(
-            func.lower(func.btrim(Customer.customer_code)) == code.lower(),
-            func.lower(func.btrim(Customer.customer_name)) == name.lower(),
-        ).first()
+        customer_data = customer_data.model_copy(
+            update={"customer_code": code, "customer_name": name}
+        )
+        # `customer_by_code` checks the company this row is about to be stamped with.
+        with self.db.no_autoflush:
+            existing = customer_identity.customer_by_code(self.db, code)
         if existing:
-            raise handle_conflict("Customer with this code + name already exists.")
+            raise handle_conflict(
+                f"Debtor code {code} already exists ({existing.customer_name})."
+            )
 
         # `sales_agent_id` is held out of the constructor and set only AFTER it validates:
         # `_resolve_sales_agent`'s `db.get(SalesAgent, ...)` autoflushes this row the moment

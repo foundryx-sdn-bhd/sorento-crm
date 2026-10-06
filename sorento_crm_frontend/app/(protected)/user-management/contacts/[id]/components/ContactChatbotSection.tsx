@@ -26,6 +26,11 @@ import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { SearchableMultiSelect } from '@/components/common/SearchableMultiSelect';
 import { FormDialogScaffold } from '@/components/common/FormDialogScaffold';
 import { useDeferredRowAction } from '@/hooks/useDeferredRowAction';
+import {
+  DEFAULT_PACKING_LIST_REGIONS,
+  PACKING_LIST_REGION_OPTIONS,
+  type PackingListRegion,
+} from '@/lib/packing-list-regions';
 import { formatDate, formatDateSafe, formatDateTimeInMalaysia } from '@/lib/helpers';
 
 import {
@@ -33,6 +38,7 @@ import {
   useContactChatbotMemory,
   useContactChatbotProfile,
   useSaveContactChatbotProfile,
+  useSaveContactChatbotAllowed,
   useSaveContactEscalation,
   useSaveContactFact,
 } from '../hooks/useContactChatbot';
@@ -137,6 +143,7 @@ function ChatbotSettingsCard({
   const { data: profile, isLoading, isError } = useContactChatbotProfile(contactId);
   const save = useSaveContactChatbotProfile(contactId);
   const saveEscalation = useSaveContactEscalation(contactId);
+  const saveAiAllowed = useSaveContactChatbotAllowed(contactId);
 
   if (isLoading) {
     return (
@@ -209,6 +216,14 @@ function ChatbotSettingsCard({
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <SwitchRow
+            id="contact-chatbot-ai-allowed"
+            label="AI replies allowed"
+            hint="When off, the chatbot sends this contact nothing, not even an error."
+            checked={profile.chatbot_allowed}
+            disabled={save.isPending || saveEscalation.isPending || saveAiAllowed.isPending}
+            onCheckedChange={(checked) => saveAiAllowed.mutate(checked)}
+          />
+          <SwitchRow
             id="contact-chatbot-stock"
             label="Stock checks"
             checked={profile.stock_allowed}
@@ -229,6 +244,18 @@ function ChatbotSettingsCard({
             disabled={save.isPending}
             onCheckedChange={(checked) => save.mutate({ ...profile, packing_list_allowed: checked })}
           />
+          <div className="space-y-1.5">
+            <Label htmlFor="contact-chatbot-regions">Regions</Label>
+            <SearchableMultiSelect
+              id="contact-chatbot-regions"
+              value={profile.regions ?? DEFAULT_PACKING_LIST_REGIONS}
+              onChange={(next) => {
+                if (next.length > 0) save.mutate({ ...profile, regions: next as PackingListRegion[] });
+              }}
+              options={PACKING_LIST_REGION_OPTIONS}
+              disabled={save.isPending}
+            />
+          </div>
           <SwitchRow
             id="contact-chatbot-eta-offset"
             label="ETA buffer days"
@@ -242,8 +269,15 @@ function ChatbotSettingsCard({
             // Owner-approved wording (1 Oct 2026, hand test of #1406).
             hint="When off, the chatbot tells this contact to refer to their salesman."
             checked={profile.escalation_allowed}
-            disabled={save.isPending || saveEscalation.isPending}
+            disabled={save.isPending || saveEscalation.isPending || saveAiAllowed.isPending}
             onCheckedChange={(checked) => saveEscalation.mutate(checked)}
+          />
+          <SwitchRow
+            id="contact-chatbot-skip-period"
+            label="Skip date-range questions"
+            checked={profile.skip_period_questions}
+            disabled={save.isPending || saveEscalation.isPending || saveAiAllowed.isPending}
+            onCheckedChange={(checked) => save.mutate({ ...profile, skip_period_questions: checked })}
           />
         </div>
       </CardContent>

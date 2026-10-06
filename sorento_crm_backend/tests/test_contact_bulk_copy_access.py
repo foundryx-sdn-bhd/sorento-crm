@@ -39,6 +39,8 @@ SORENTO = DEFAULT_COMPANY_ID
 BULK = "/api/v1/user-management/contacts/bulk-copy-access"
 VIEW = "user_management.contacts.view"
 EDIT = "user_management.contacts.edit"
+#: Agent grants are copied only by an actor who could set them directly (lane ACCESS-AGENTS-AUTH).
+AGENTS_EDIT = "user_management.access_agents.edit"
 LABELS = dict(FIELD_REVEAL_KEYS)
 COST = "purchase_orders.cost"
 SELLABLE = "inventory.sellable"
@@ -73,7 +75,7 @@ def db():
 @pytest.fixture
 def perms():
     """Mutable permission set the monkeypatched check reads on every call."""
-    return {"granted": {VIEW, EDIT}}
+    return {"granted": {VIEW, EDIT, AGENTS_EDIT}}
 
 
 @pytest.fixture
@@ -508,6 +510,27 @@ def test_a1_11_view_only_permission_is_403_and_writes_nothing(client, db, world,
     resp = _post(client, world["source"], [target], dry_run=False)
     assert resp.status_code == 403
     assert _snap(db, target.id) == before
+
+
+def test_a1_11b_agent_grants_left_out_without_access_agents_edit(client, db, world, perms):
+    """The direct grant routes need `access_agents.edit` (ACCESS-AGENTS-AUTH); the copy must not
+    be a side door past them. Everything else still copies, and the dialog says what was left."""
+    perms["granted"] = {VIEW, EDIT}
+    source, target = world["source"], world["target"]
+    agents_before = _snap(db, target.id)["agents"]
+    assert agents_before != _snap(db, source.id)["agents"], "the world differs on agents"
+
+    for dry_run in (True, False):
+        body = _post(client, source, [target], dry_run=dry_run).json()
+        (row,) = body["results"]
+        assert row["status"] == "changed", "the other facets still copy"
+        assert "agent_access" not in {c["facet"] for c in row["changes"]}
+        assert "Agent access" in body["source"]["not_copied"]
+        assert "Agent access" not in {line["label"] for line in body["source"]["summary"]}
+
+    after = _snap(db, target.id)
+    assert after["agents"] == agents_before, "the target's grants are untouched"
+    assert after["types"] == _snap(db, source.id)["types"], "the rest of the set was copied"
 
 
 def _legacy_pair(db, *, target_allowed=True):

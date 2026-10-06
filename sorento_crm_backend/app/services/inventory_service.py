@@ -1134,12 +1134,15 @@ class StockService:
         # built first, a probe that trips can lose only its own suggestions instead
         # of taking the contact's whole stock answer down with it.
         #
-        # A contact on `compact` or `availability` gets NO probe at all (AC-B14).
-        # Its answer names OTHER products that do have stock, which is the one
-        # thing those two modes exist to withhold: a dealer told "we have none,
-        # but try these three" has been handed the product list and the fact
-        # that stock exists in a location the policy hides.
-        suppress_alternatives = policy is not None and policy.mode != "detailed"
+        # A contact on `availability` gets NO probe at all (AC-B14). Its answer
+        # names OTHER products that do have stock, which is the one thing the
+        # dealer mode exists to withhold: a dealer told "we have none, but try
+        # these three" has been handed the product list and the fact that stock
+        # exists in a location the policy hides. `compact` gets the probe like
+        # `detailed` (WA-MSG-TRIM, owner 3 Oct 2026: every contact moved to
+        # compact and keeps the suggestions); the has-data gate still counts only
+        # the policy's locations.
+        suppress_alternatives = policy is not None and policy.mode == "availability"
         if total == 0 and not suppress_alternatives:
             # Best-effort: a suggestion probe must never turn a legitimately-empty
             # listing into a 500 (AC-R1). The pre-lookup + neighbour query run after
@@ -1748,6 +1751,14 @@ class StockService:
                 # AVAIL-MODE-REPLIES rule 2: set only on an `in_stock` answer short of
                 # the ask (within X); the one figure of ours this mode ever returns.
                 "available_qty": None,
+                # AVAIL-RENDER (owner, 5 Oct 2026): the flag the compact/detailed marker
+                # reads, so the dealer's line prints it too. A merged code (one code in
+                # two companies) is discontinued only when every company row of it is: a
+                # sister company still selling it can still supply the dealer.
+                "is_discontinued": all(
+                    getattr(products_by_id.get(gid), "is_discontinued", False) is True
+                    for gid in group_ids
+                ),
             }
             if ask is not None and product is not None and category is not None:
                 x, y = effective_limits(product, category)

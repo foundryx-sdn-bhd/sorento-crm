@@ -354,8 +354,8 @@ def state_contact():
     db = SessionLocal()
     db.execute(
         text(
-            "INSERT INTO respond_contacts (id, respond_io_id, phone_number, session_vars) "
-            "VALUES (gen_random_uuid()::text, :cid, :phone, CAST(:sv AS jsonb))"
+            "INSERT INTO respond_contacts (id, respond_io_id, phone_number, session_vars, chatbot_allowed) "
+            "VALUES (gen_random_uuid()::text, :cid, :phone, CAST(:sv AS jsonb), true)"
         ),
         {"cid": cid, "phone": f"+6013{uuid.uuid4().hex[:8]}", "sv": json.dumps({})},
     )

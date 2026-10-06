@@ -345,9 +345,12 @@ class TestAC1866MemberOfferSendsNoQuickReplies:
 
 
 class TestAC1867OtherPendingKindsKeepTheirQuickReplies:
-    """Regression guard for AC-1866's scope: `team_pick` / `company_pick` / a roster
-    kind still send the comma-joined `quick_replies` string exactly as before - the
-    suppression is `member_offer` ONLY."""
+    """Regression guard for AC-1866's scope, re-drawn by QUICK-REPLY-NAMES (owner rule,
+    6 Oct 2026): `team_pick` still sends the comma-joined `quick_replies` string exactly
+    as before; a ROSTER kind (`product_pick`, `customer_pick`, `company_pick`, ...) now
+    sends none, because its labels are free text, not fixed short options (prod incident
+    the same day: three customer names as buttons, Meta #131009). `result_set` is
+    untouched on every kind - the numbered text list is the picker."""
 
     def test_team_pick_still_yields_the_comma_joined_quick_replies_string(self) -> None:
         from app.services.chatbot import engine as engine_mod
@@ -364,7 +367,7 @@ class TestAC1867OtherPendingKindsKeepTheirQuickReplies:
         answer = SimpleNamespace(question=question)
         assert engine_mod._quick_replies_of(answer) == "Mocha, Sorento"
 
-    def test_product_pick_still_yields_the_comma_joined_quick_replies_string(self) -> None:
+    def test_product_pick_yields_no_quick_replies_its_codes_are_free_text(self) -> None:
         from app.services.chatbot import engine as engine_mod
         from app.services.chatbot.turn import pending as turn_pending
         from types import SimpleNamespace
@@ -376,10 +379,33 @@ class TestAC1867OtherPendingKindsKeepTheirQuickReplies:
                 {"position": 2, "label": "SRTWC8518", "entity_type": "product"},
             ],
         )
-        answer = SimpleNamespace(question=question)
-        assert engine_mod._quick_replies_of(answer) == "SRTWC8517, SRTWC8518"
+        answer = SimpleNamespace(question=question, text="Which product?")
+        assert engine_mod._quick_replies_of(answer) is None
+        # The roster still rides with the reply, so a typed "2" or a typed code resolves.
+        assert [o["label"] for o in engine_mod._reply_of(answer)["result_set"]] == ["SRTWC8517", "SRTWC8518"]
 
-    def test_compose_question_reask_suppresses_only_member_offer(self) -> None:
+    def test_the_incident_customer_pick_yields_no_quick_replies(self) -> None:
+        """Prod, 6 Oct 2026: these three labels went out as buttons and Meta refused the
+        message (#131009 "Duplicate button title", titles cut at 20 chars)."""
+        from app.services.chatbot import engine as engine_mod
+        from app.services.chatbot.turn import pending as turn_pending
+        from types import SimpleNamespace
+
+        labels = [
+            "SAMPLE ONG BROTHERS (SRT)",
+            "ONG BROTHERS TILING TRADING SDN BHD (SRT)",
+            "ONG BROTHERS TILING TRADING SDN BHD (SAMPLE) (SRT)",
+        ]
+        question = turn_pending.ask(
+            "customer_pick",
+            [{"position": i + 1, "label": label, "entity_type": "customer"} for i, label in enumerate(labels)],
+        )
+        answer = SimpleNamespace(question=question, text="Which customer do you mean? Please choose:")
+        reply = engine_mod._reply_of(answer)
+        assert reply["quick_replies"] is None
+        assert [o["label"] for o in reply["result_set"]] == labels
+
+    def test_compose_question_reask_suppresses_the_roster_kinds_and_keeps_team_pick(self) -> None:
         from app.services.chatbot.turn import compose as turn_compose
         from app.services.chatbot.turn import pending as turn_pending
 

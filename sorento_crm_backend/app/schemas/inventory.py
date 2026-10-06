@@ -260,6 +260,9 @@ class StockAvailabilityEntry(BaseModel):
     # AVAIL-MODE-REPLIES rule 2 (owner, 2 Oct 2026): how many are available, set ONLY on
     # an `in_stock` answer short of `requested_qty` within the category max.
     available_qty: Optional[int] = None
+    # AVAIL-RENDER (owner, 5 Oct 2026): the product's `is_discontinued`, so the dealer's
+    # line carries the marker compact/detailed already print. Not a quantity.
+    is_discontinued: bool = False
 
 
 class StockBalanceListResponse(ListResponse[StockResponse]):

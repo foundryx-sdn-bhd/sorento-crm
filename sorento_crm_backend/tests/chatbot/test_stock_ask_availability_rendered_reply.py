@@ -63,7 +63,7 @@ def test_answered_reply_carries_no_intro_and_no_numbering():
             "SRT-INSTOCK",
             5,
             "in_stock",
-            "\u2705 Please refer to your salesman.",
+            "\u2705 Got stock.",
         ),
     ]
     out = fetch.output_structurer(_availability_envelope(entries), {"semantic_input": {}})
@@ -76,7 +76,35 @@ def test_answered_reply_carries_no_intro_and_no_numbering():
     assert out["response"] == (
         "SRT-TOOBIG x 250: 🚫 the quantity is more than what I can confirm here. "
         "Please refer to your salesman.\n\n"
-        "SRT-INSTOCK x 5: \u2705 Please refer to your salesman."
+        "SRT-INSTOCK x 5: \u2705 Got stock."
+    )
+
+
+def test_a_discontinued_item_prints_the_marker_line_under_its_own_verdict():
+    """AVAIL-RENDER AC-AR01 (owner, 5 Oct 2026): the marker compact/detailed print
+    (`_item_line`, `flags.discontinued`), directly under the availability line it belongs
+    to, unnumbered like the line; a live product's line gets none."""
+    items = [
+        {
+            "title": (
+                "SRTWT2634-RG x 5: 🚫 the quantity is more than what I can confirm here. "
+                "Please refer to your salesman."
+            ),
+            "fields": [],
+            "flags": {"needs_quantity": False, "branch": "too_big", "discontinued": True},
+        },
+        {
+            "title": "SRT5674 x 50: \u2705 Got stock.",
+            "fields": [],
+            "flags": {"needs_quantity": False, "branch": "in_stock", "discontinued": False},
+        },
+    ]
+    out = fetch.output_structurer(_availability_envelope(items), {"semantic_input": {}})
+
+    assert out["response"] == (
+        "SRTWT2634-RG x 5: 🚫 the quantity is more than what I can confirm here. "
+        "Please refer to your salesman.\n\u26a0\ufe0f  *(PRODUCT DISCONTINUED)*\n\n"
+        "SRT5674 x 50: \u2705 Got stock."
     )
 
 

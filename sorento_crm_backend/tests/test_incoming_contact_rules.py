@@ -778,7 +778,9 @@ def test_dealer_list_is_one_row_per_product_with_deduped_padded_etas(client, db)
     _twin_shipment(db, p, eta=date(2026, 12, 1))
     body = _list(client, p, _dealer(db, salesperson="ZZT Sean"))
     assert body["dealer_view"] is True
-    assert body["data"] == [{"product_code": p.product_code, "etas": [_told(PADDED), "06/12/2026"]}]
+    assert body["data"] == [
+        {"product_code": p.product_code, "etas": [_told(PADDED), "06/12/2026"], "is_discontinued": False}
+    ]
     # REFER-SALESMAN (30 Sep 2026): the reply never names the salesperson, so the payload
     # does not carry the name either.
     assert "salesperson_name" not in body
@@ -789,7 +791,8 @@ def test_dealer_list_carries_no_container_quantity_allocation_or_file(client, db
     _twin_shipment(db, p)
     body = _list(client, p, _dealer(db))
     keys = set(_walk_keys(body["data"]))
-    assert keys == {"product_code", "etas"}
+    # AVAIL-RENDER: `is_discontinued` is a product fact, not a container, quantity or file.
+    assert keys == {"product_code", "etas", "is_discontinued"}
     assert "attachment" not in set(_walk_keys(body))
 
 
@@ -804,7 +807,7 @@ def test_dealer_by_product_is_the_same_view(client, db):
     _twin_shipment(db, p)
     body = _by_product(client, p, _dealer(db, salesperson="ZZT Sean"))
     assert body["dealer_view"] is True
-    assert body["data"] == [{"product_code": p.product_code, "etas": [_told(PADDED)]}]
+    assert body["data"] == [{"product_code": p.product_code, "etas": [_told(PADDED)], "is_discontinued": False}]
 
 
 def test_a_non_dealer_contact_keeps_the_full_rows(client, db):

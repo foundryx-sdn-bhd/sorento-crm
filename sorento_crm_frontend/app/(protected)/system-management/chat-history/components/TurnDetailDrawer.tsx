@@ -206,7 +206,9 @@ function StagesSection({ stages }: { stages: TurnDetail['stages'] }) {
         <li key={`${stage.name}-${i}`} className="text-xs">
           <div className="flex items-center gap-2">
             <Badge
-              variant={stage.status === 'failed' ? 'destructive' : 'success'}
+              variant={
+                stage.status === 'failed' ? 'destructive' : stage.status === 'skipped' ? 'secondary' : 'success'
+              }
               appearance="light"
               size="sm"
             >
@@ -215,6 +217,7 @@ function StagesSection({ stages }: { stages: TurnDetail['stages'] }) {
             {stage.ms != null && (
               <span className="text-muted-foreground tabular-nums">{stage.ms}ms</span>
             )}
+            {stage.status === 'skipped' && <span className="text-muted-foreground">skipped</span>}
           </div>
           {stage.status === 'failed' && stage.error ? (
             <p className="mt-1 rounded-md border border-destructive/30 bg-destructive/5 px-2 py-1.5 text-destructive">

@@ -39,11 +39,13 @@ def db():
 def client(db, monkeypatch):
     """A caller authenticated against the same session the assertions read.
 
-    GET .../field-access now requires user_management.access_agents.view
-    (PLAN-user-management-read-gates.md row 10). Grant it here so this file keeps
-    testing the field-access feature rather than re-deriving the permission gate
-    on every test - the gate itself has its own dedicated tests in
-    tests/test_user_management_read_gates.py.
+    GET .../field-access requires user_management.access_agents.view
+    (PLAN-user-management-read-gates.md row 10) and PUT .../field-access requires
+    user_management.access_agents.edit (PLAN-access-agents-write-gates.md row 5).
+    Grant both here so this file keeps testing the field-access feature rather
+    than re-deriving the permission gates on every test - the gates have their
+    own dedicated tests in tests/test_user_management_read_gates.py and
+    tests/test_access_agents_write_gates.py.
     """
     from app.services.user_service import UserPermissionService
 
@@ -55,7 +57,8 @@ def client(db, monkeypatch):
     monkeypatch.setattr(
         UserPermissionService,
         "check_user_has_permission",
-        lambda self, uid, slug: slug == "user_management.access_agents.view",
+        lambda self, uid, slug: slug
+        in {"user_management.access_agents.view", "user_management.access_agents.edit"},
     )
     try:
         yield TestClient(app)
