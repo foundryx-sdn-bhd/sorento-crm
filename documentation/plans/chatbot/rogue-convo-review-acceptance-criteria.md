@@ -20,14 +20,17 @@ are its red tests. Fake fixture ids in every test; product codes are catalogue c
 
 ## Class B: an unplaced typed product token is "Couldn't find X"
 
-- AC-RC-B1: a message that names a product token the resolver or the availability filter
-  could not place is answered "Couldn't find X" (with did-you-mean when candidates
-  exist), never with the scope sentence. Red: "8066 stock ?" (turn 3), photo text
-  "SORENTO PSJLSRTSC07 x50" (turn 8), "SORENTO PSJLSRT345-HP x46 pcs" (turn 10).
-- AC-RC-B2: a token the availability filter ignores (a bare number) loses its catalogue
-  page candidates but stays reported as unplaced.
-- AC-RC-B3 (Q3 = a): a bare number of 4+ digits typed as a product keeps the resolver's
-  substring family as its did-you-mean rows, the same way a code-like token does.
+- AC-RC-B1 (owner ruling Q3): a bare number typed as a product matches its code family
+  through the resolver's own probe and is offered the same which-one picker compact mode
+  gives ("8066 matches 3 products. Which one?"); a bare number inside exactly one code
+  answers as that code; the scope sentence never answers a message that named a product
+  token. Red: "8066 stock ?" (turn 3).
+- AC-RC-B2: a bare number inside no code stays an unplaced miss (named in the reply, never
+  the scope sentence); a WORD the parser tagged as a product is still never a product.
+- AC-RC-B3: the three seams that read a typed token against resolved codes
+  (`_exact_codes_only`, `_group`, the quantity carry) share one reader, `code_or_number`.
+- AC-RC-B6: the photo-text shapes (turns 8 and 10, "SORENTO PSJLSRTSC07 x50") are class F
+  (the parser glues the brand to the code); once split, the code token takes AC-RC-B1/B2.
 - AC-RC-B4 (control): bare "stock?" still gets the scope sentence; "Srts07" still gets
   "Couldn't find SRTS07. Did you mean: 1. SRTSC07 ..." with quick replies (turn 13).
 - AC-RC-B5: `test_rearch_r13_stock_no_subject` T4 has an availability-only twin that

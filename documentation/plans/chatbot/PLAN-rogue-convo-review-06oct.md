@@ -250,18 +250,23 @@ Red tests (new file `tests/chatbot/test_zero_scope_list.py`):
 
 ### PR-2 "a miss says what it could not find" (classes B, C, G), size M
 
-Change B:
+Change B (as built, owner ruling Q3: compact parity, not "Couldn't find 8066"):
 
-* `engine.py:599`: an `ignored` token stays in `unplaced` (its catalogue-page candidates
-  are still dropped, which is what the bucket was for); so "8066" reads "Couldn't find
-  8066" and goes through did-you-mean. Owner decision Q3: whether a bare number of 4+
-  digits also keeps the resolver's substring family (so "8066" offers SRTWC8066-*), the
-  way a code-like token does at `engine.py:569-571`.
-* `answer.py:3099-3100`: `has_unresolved` reads the engine's post-filter `unplaced` (the
-  envelope's `unresolved`, already merged at `answer_bridge.py:1695-1700`) in addition to
-  the resolver's list, so the scope sentence is impossible when the message named a
-  product token.
-* `test_rearch_r13` T4 gains an availability-only twin.
+* `turn/task.py` gains `code_or_number` (a code-like token OR a bare number), the one
+  reader shared by `engine._exact_codes_only`, `turn/task._group` (the picker grouping)
+  and `turn_runtime._spec_quantities` (the quantity carry). A bare number the parser
+  tagged as a product takes the same ladder as a code: exact, then the prefix family, then
+  the substring family the resolver's own probe placed, else an unplaced miss. So "8066
+  stock ?" asks "8066 matches 3 products. Which one?" (the picker compact mode gives) and
+  "9031 got stock?" over one code answers that code. A WORD ("xx", "new") is still never
+  a product (owner, 3 Oct 2026, S47).
+* `has_unresolved` needed no change: `answer_bridge._unlisted_words` (`:986-1000`) already
+  merges the envelope's post-filter `unresolved` into the resolver's list before the
+  composer; the token only has to survive the filter, which the ladder above guarantees.
+* Pins rewritten to the ruling: `test_avail_picker_substring.py` ("286" is the family;
+  "2" inside one code carries its quantity; `_group` reads a bare number) and S55f ("2
+  srtwc286" asks "2"'s own family first, then SRTWC286's; the parser's QUANTITY rule is
+  the defence for that mis-parse, flagged to the owner in the Q3 crew-note).
 
 Change C:
 
