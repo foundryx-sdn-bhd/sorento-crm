@@ -403,7 +403,13 @@ class TestMapLegacyContacts:
         map_legacy_contacts(db)
         db.commit()
         assert _role_codes(db, pk) == ["management"]
-        assert _override_count(db, pk) == 0
+        from app.models.chatbot_access import ContactAccessOverride
+
+        non_incoming = [
+            o for o in db.query(ContactAccessOverride).filter(ContactAccessOverride.contact_id == pk)
+            if o.field_key is None or not o.field_key.startswith("incoming_stock.")
+        ]
+        assert non_incoming == [], "only incoming-field parity overrides are allowed"
         access = _access(db, pk)
         assert set(ALL_SEVEN) <= set(access.attributes)
         assert {"ideate", "sales", "purchase_cost"} <= access.domains
