@@ -152,6 +152,8 @@ def _seed_contact(
         phone_number=phone,
         workspace_id=workspace_id,
         session_vars={"variables": {}},
+        # AI-ALLOWED-GATE: a new contact is blocked by default; this one must answer.
+        chatbot_allowed=True,
     )
     db.add(contact)
     db.flush()

@@ -41,6 +41,10 @@ import { getProductsForLineSelect } from '@/app/(protected)/master-data-manageme
 import { getBrands } from '@/app/(protected)/master-data-management/brands/services/brandService';
 import { getWarehouses } from '@/app/(protected)/inventory-management/warehouses/services/warehouseService';
 import type { SearchableMultiSelectOption } from '@/components/common/SearchableMultiSelect';
+import {
+  DEFAULT_PACKING_LIST_REGIONS,
+  type PackingListRegion,
+} from '@/lib/packing-list-regions';
 import { getContact } from './contactService';
 
 export type ChatbotMemoryLevel = 'off' | 'conversation' | 'episodes' | 'full';
@@ -57,10 +61,16 @@ export interface ContactChatbotProfile {
   notify_salesman: boolean;
   /** R7: the shipment's packing list is attached on a B3 answer. Default off. */
   packing_list_allowed: boolean;
+  /** CONTACT-REGION: the packing list regions this contact may be told about. */
+  regions?: PackingListRegion[];
   /** #1328: the ETA this contact is told carries the +x days offset. Default on. */
   eta_offset_applied: boolean;
   /** ESCALATION-CONTROL: may the chatbot hand this contact to a person. Default on. */
   escalation_allowed: boolean;
+  /** AI-ALLOWED-GATE: may the chatbot answer this contact at all. Absent reads as blocked. */
+  chatbot_allowed: boolean;
+  /** DO-PERIOD-SKIP: never ask this contact for a date range. Default off. */
+  skip_period_questions: boolean;
 }
 
 export type ChatbotFactSource = 'crm' | 'tallied' | 'stated' | 'staff';
@@ -161,8 +171,11 @@ function profileFromContact(contact: {
   chatbot_stock_allowed?: boolean;
   notify_salesman?: boolean;
   packing_list_allowed?: boolean;
+  regions?: string[] | null;
   chatbot_eta_offset_applied?: boolean;
   escalation_allowed?: boolean;
+  chatbot_allowed?: boolean;
+  chatbot_skip_period_questions?: boolean;
 }): ContactChatbotProfile {
   const profile = contact.chatbot_profile ?? null;
   return {
@@ -172,8 +185,13 @@ function profileFromContact(contact: {
     stock_allowed: contact.chatbot_stock_allowed !== false,
     notify_salesman: Boolean(contact.notify_salesman),
     packing_list_allowed: Boolean(contact.packing_list_allowed),
+    regions: contact.regions?.length
+      ? (contact.regions as PackingListRegion[])
+      : DEFAULT_PACKING_LIST_REGIONS,
     eta_offset_applied: contact.chatbot_eta_offset_applied !== false,
     escalation_allowed: contact.escalation_allowed !== false,
+    chatbot_allowed: contact.chatbot_allowed === true,
+    skip_period_questions: Boolean(contact.chatbot_skip_period_questions),
   };
 }
 
@@ -200,10 +218,13 @@ export async function saveContactChatbotProfile(
       chatbot_stock_allowed: input.stock_allowed,
       notify_salesman: input.notify_salesman,
       packing_list_allowed: input.packing_list_allowed,
+      regions: input.regions,
       chatbot_eta_offset_applied: input.eta_offset_applied,
+      chatbot_skip_period_questions: input.skip_period_questions,
       // `escalation_allowed` is NOT sent here: it has its own save
       // (`saveContactEscalation`), so another switch saved from a stale page can never
-      // switch a contact's escalation back on (security review S3).
+      // switch a contact's escalation back on (security review S3). `chatbot_allowed` is
+      // left out for the same reason (`saveContactChatbotAllowed`).
     }),
   });
   if (!response.ok) {
@@ -334,4 +355,20 @@ export async function searchUsualSiteOptions(query: string): Promise<SearchableM
         company: warehouse.company_name,
       })),
   );
+}
+
+/**
+ * AI-ALLOWED-GATE: "AI replies allowed", saved on its own - the body carries this one key, and the
+ * route leaves every field it does not name alone.
+ */
+export async function saveContactChatbotAllowed(contactId: string, allowed: boolean): Promise<ContactChatbotProfile> {
+  const response = await apiFetch(`/api/v1/user-management/contacts/${contactId}/chatbot`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chatbot_allowed: allowed }),
+  });
+  if (!response.ok) {
+    throw new Error(await extractApiError(response, 'Failed to save chatbot settings'));
+  }
+  return profileFromContact(await response.json());
 }

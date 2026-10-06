@@ -377,7 +377,8 @@
               "stock_denied",
               "demand_qty",
               "business_query",
-              "media_denied"
+              "media_denied",
+              "ai_not_allowed"
             ],
             "type": "string"
           },

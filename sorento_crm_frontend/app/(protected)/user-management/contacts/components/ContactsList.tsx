@@ -39,6 +39,7 @@ import ContactCreateDialog from './ContactCreateDialog';
 import ContactDeleteDialog from './ContactDeleteDialog';
 import ContactBulkDeleteDialog from './ContactBulkDeleteDialog';
 import BulkCopyAccessDialog from './BulkCopyAccessDialog';
+import { regionLabel } from '@/lib/packing-list-regions';
 import ContactAccessFilters from './ContactAccessFilters';
 import PortalLinkButton from '@/components/contacts/PortalLinkButton';
 import ContactOutboundCell from '@/components/contacts/ContactOutboundCell';
@@ -402,8 +403,29 @@ export default function ContactsList() {
         meta: { headerTitle: 'Tier', skeleton: <Skeleton className="h-4 w-16" /> },
       },
       yesNoColumn('cost_visible', 'Cost', (r) => r.cost_visible === true, 'Visible', 'Hidden'),
+      yesNoColumn('chatbot_allowed', 'AI replies', (r) => r.chatbot_allowed === true, 'Allowed', 'Blocked'),
       yesNoColumn('escalation_allowed', 'Escalation', (r) => r.escalation_allowed !== false, 'Allowed', 'Blocked'),
       yesNoColumn('packing_list_allowed', 'Packing list', (r) => r.packing_list_allowed === true, 'Allowed', 'No'),
+      {
+        id: 'regions',
+        accessorFn: (row) => (row.regions ?? ['west']).map(regionLabel).join(', '),
+        header: ({ column }) => <DataGridColumnHeader title="Regions" column={column} />,
+        size: 200,
+        enableSorting: false,
+        cell: ({ row }) => {
+          const text = (row.original.regions ?? ['west']).map(regionLabel).join(', ');
+          return (
+            <div className="flex flex-wrap gap-1 truncate" title={text}>
+              {(row.original.regions ?? ['west']).map((code) => (
+                <Badge key={code} variant="secondary" appearance="light">
+                  {regionLabel(code)}
+                </Badge>
+              ))}
+            </div>
+          );
+        },
+        meta: { headerTitle: 'Regions', skeleton: <Skeleton className="h-5 w-24" /> },
+      },
       yesNoColumn('chatbot_stock_allowed', 'Stock checks', (r) => r.chatbot_stock_allowed !== false, 'Allowed', 'Blocked'),
       // Identity S3 (AC-59): the linked user's name, a link; blank when none.
       // Hidden entirely without `users.view` - a caller who cannot open the

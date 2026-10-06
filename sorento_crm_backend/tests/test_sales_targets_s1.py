@@ -23,6 +23,7 @@ never needs a warehouse (`SalesOrderLine.warehouse_id` is nullable); the DO-seam
 from __future__ import annotations
 
 import re
+import itertools
 import uuid
 from datetime import date
 from decimal import Decimal
@@ -45,6 +46,17 @@ ALL = ALL_TARGET + ALL_TEAM
 
 def _uid() -> str:
     return str(uuid.uuid4())
+
+
+_RUN = uuid.uuid4().hex[:2].upper()
+_SEQ = itertools.count(1)
+
+
+def _code() -> str:
+    """A unique seeded code: `ZZT` + a per-run tag + a counter (11 characters, like the
+    uuid slices it replaces). Random 8-hex slices collided on
+    uq_orders_company_order_number once a test seeded thousands of orders."""
+    return f"ZZT{_RUN}{next(_SEQ):06d}"
 
 
 def _sorento(db) -> str:
@@ -72,7 +84,7 @@ def _category(db, company_id, name="ZZT Cat", parent_id=None):
     from app.models.product import ProductCategory
 
     row = ProductCategory(
-        id=_uid(), company_id=company_id, category_code=f"ZZT{_uid()[:8]}", category_name=name,
+        id=_uid(), company_id=company_id, category_code=_code(), category_name=name,
         parent_category_id=parent_id,
     )
     db.add(row)
@@ -83,7 +95,7 @@ def _category(db, company_id, name="ZZT Cat", parent_id=None):
 def _uom(db):
     from app.models.product import UnitOfMeasure
 
-    row = UnitOfMeasure(id=_uid(), company_id=None, uom_code=f"ZZT{_uid()[:8]}", uom_name="ZZT UOM")
+    row = UnitOfMeasure(id=_uid(), company_id=None, uom_code=_code(), uom_name="ZZT UOM")
     db.add(row)
     db.flush()
     return row
@@ -94,7 +106,7 @@ def _product(db, company_id, category_id, uom_id=None):
 
     uom_id = uom_id or _uom(db).id
     row = Product(
-        id=_uid(), company_id=company_id, product_code=f"ZZT{_uid()[:8]}", product_name="ZZT Product",
+        id=_uid(), company_id=company_id, product_code=_code(), product_name="ZZT Product",
         category_id=category_id, base_uom_id=uom_id, list_price=Decimal("0"),
     )
     db.add(row)
@@ -105,7 +117,7 @@ def _product(db, company_id, category_id, uom_id=None):
 def _warehouse(db, company_id):
     from app.models.inventory import Warehouse
 
-    row = Warehouse(id=_uid(), company_id=company_id, warehouse_code=f"ZZT{_uid()[:8]}", is_active=True)
+    row = Warehouse(id=_uid(), company_id=company_id, warehouse_code=_code(), is_active=True)
     db.add(row)
     db.flush()
     return row
@@ -118,7 +130,7 @@ def _so_line(
     from app.models.order import SalesOrder, SalesOrderLine
 
     so = SalesOrder(
-        id=_uid(), company_id=company_id, so_number=f"ZZT{_uid().replace('-', '')}", order_date=order_date,
+        id=_uid(), company_id=company_id, so_number=_code(), order_date=order_date,
         status=status, sales_agent_id=agent_id, customer_id=customer_id, demand_class=demand_class,
     )
     db.add(so)
@@ -137,7 +149,7 @@ def _do_line(db, company_id, product_id, warehouse_id, sales_order_line_id, *, q
     from app.models.order import Order, OrderLine
 
     order = Order(
-        id=_uid(), company_id=company_id, order_number=f"ZZT{_uid().replace('-', '')}", order_date=order_date,
+        id=_uid(), company_id=company_id, order_number=_code(), order_date=order_date,
         is_cancelled=is_cancelled,
     )
     db.add(order)
@@ -889,7 +901,7 @@ def test_do_salesman_text_ignored(api):
     from app.models.order import Order, OrderLine
 
     do_order = Order(
-        id=_uid(), company_id=company_id, order_number=f"ZZT{_uid()[:8]}", order_date=date(2026, 10, 6),
+        id=_uid(), company_id=company_id, order_number=_code(), order_date=date(2026, 10, 6),
         is_cancelled=False, agent="Someone Else", salesman="Someone Else",
     )
     db.add(do_order)
@@ -1521,12 +1533,12 @@ def test_do_cross_company_link_counts_nothing(api):
     db.flush()
     with company_scope(db, None):
         foreign_warehouse = Warehouse(
-            id=_uid(), company_id=other.id, warehouse_code=f"ZZT{_uid()[:8]}", is_active=True
+            id=_uid(), company_id=other.id, warehouse_code=_code(), is_active=True
         )
         db.add(foreign_warehouse)
         db.flush()
         foreign_order = Order(
-            id=_uid(), company_id=other.id, order_number=f"ZZT{_uid()[:8]}", order_date=date(2026, 10, 5),
+            id=_uid(), company_id=other.id, order_number=_code(), order_date=date(2026, 10, 5),
             is_cancelled=False,
         )
         db.add(foreign_order)
@@ -1608,17 +1620,17 @@ def test_company_scope_hardened(api):
     db.add(other)
     db.flush()
     with company_scope(db, None):
-        foreign_agent = SalesAgent(id=_uid(), sales_agent=f"ZZT{_uid()[:8]}", company_id=other.id)
+        foreign_agent = SalesAgent(id=_uid(), sales_agent=_code(), company_id=other.id)
         db.add(foreign_agent)
         db.flush()
         foreign_category = ProductCategory(
-            id=_uid(), company_id=other.id, category_code=f"ZZT{_uid()[:8]}", category_name="ZZT Foreign Cat",
+            id=_uid(), company_id=other.id, category_code=_code(), category_name="ZZT Foreign Cat",
         )
         db.add(foreign_category)
         db.flush()
         foreign_uom = _uom(db)
         foreign_product = Product(
-            id=_uid(), company_id=other.id, product_code=f"ZZT{_uid()[:8]}", product_name="ZZT Foreign Product",
+            id=_uid(), company_id=other.id, product_code=_code(), product_name="ZZT Foreign Product",
             category_id=foreign_category.id, base_uom_id=foreign_uom.id, list_price=Decimal("0"),
         )
         db.add(foreign_product)

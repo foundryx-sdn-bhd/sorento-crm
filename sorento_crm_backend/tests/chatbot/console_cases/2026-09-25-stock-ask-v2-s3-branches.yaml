@@ -255,7 +255,7 @@ cases:
         expect:
           branch_kind: business_query
           reply_contains:
-            - "SA318C x 50: ✅ Please refer to your salesman."
+            - "SA318C x 50: ✅ Got stock."
           reply_not_contains:
             - "Data last updated"
           no_uuid: true

@@ -260,6 +260,7 @@ class ContactService:
             )
             q = q.filter(holds if cost else ~holds)
         for name, column in (
+            ("ai", RespondContact.chatbot_allowed),
             ("escalation", RespondContact.escalation_allowed),
             ("packing_list", RespondContact.packing_list_allowed),
             ("stock", RespondContact.chatbot_stock_allowed),
@@ -267,6 +268,8 @@ class ContactService:
             value = yes(name)
             if value is not None:
                 q = q.filter(column.is_(value))
+        if f.get("region") in ("west", "east"):
+            q = q.filter(RespondContact.regions.contains([f["region"]]))
         if f.get("customer_id"):
             from app.models.base import get_company_scope
             from app.services.company_scope import build_company_predicate
@@ -815,11 +818,16 @@ class ContactService:
             # default OFF, unlike chatbot_stock_allowed above.
             "notify_salesman": bool(getattr(contact, "notify_salesman", False)),
             "packing_list_allowed": bool(getattr(contact, "packing_list_allowed", False)),
+            # CONTACT-REGION: held literally, default West only.
+            "regions": list(getattr(contact, "regions", None) or ["west"]),
             # Issue #1328: default ON, like chatbot_stock_allowed.
             "chatbot_eta_offset_applied": bool(getattr(contact, "chatbot_eta_offset_applied", True)),
             # ESCALATION-CONTROL: the one per-contact switch, default ON - a row without
             # the attribute is allowed. Listed by hand, like every field above.
             "escalation_allowed": getattr(contact, "escalation_allowed", True) is not False,
+            # AI-ALLOWED-GATE: may the chatbot answer this contact at all. Listed by hand.
+            "chatbot_allowed": bool(getattr(contact, "chatbot_allowed", False)),
+            "chatbot_skip_period_questions": bool(getattr(contact, "chatbot_skip_period_questions", False)),
             # CONTACT-BRAND-SCOPE: listed by hand like every field above. The list endpoint
             # fills it for a whole page in one query; here, one contact when a session is given.
             "brands": brands,

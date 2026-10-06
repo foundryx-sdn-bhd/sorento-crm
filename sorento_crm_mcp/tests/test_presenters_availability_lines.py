@@ -45,15 +45,16 @@ def test_too_big_sentence_identical_when_cap_unset():
 
 
 def test_in_stock_sentence():
+    # AVAIL-RENDER (owner, 5 Oct 2026): a tick says got stock and does not refer.
     line = _availability_line(_entry(product_code="SRT5674", requested_qty=50, branch="in_stock"))
-    assert line == "SRT5674 x 50: ✅ Please refer to your salesman."
+    assert line == "SRT5674 x 50: ✅ Got stock."
 
 
 def test_incoming_sentence_names_the_eta():
     line = _availability_line(
         _entry(product_code="SRTW2000", requested_qty=150, branch="incoming", eta="19/10/2026")
     )
-    assert line == "SRTW2000 x 150: ❌ ETA 19/10/2026."
+    assert line == "SRTW2000 x 150: ❌ No stock, ETA 19/10/2026."
 
 
 def test_no_incoming_sentence():
@@ -82,7 +83,7 @@ def test_asked_order_multi_product_reply_reads_line_by_line():
     ]
     lines = [_availability_line(e) for e in entries]
     assert lines == [
-        "SRT5674 x 50: ✅ Please refer to your salesman.",
+        "SRT5674 x 50: ✅ Got stock.",
         "CWCX604 x 300: 🚫 the quantity is more than what I can confirm here. "
         "Please refer to your salesman.",
     ]
@@ -123,11 +124,20 @@ def test_ac_sa312_no_digit_of_ours_besides_qty_and_eta_date():
 
 
 def test_every_refer_line_ends_with_the_one_refer_sentence():
-    """AC-RS01 / AC-RS03: no "to proceed", no "salesperson", no name, on any branch."""
-    for branch in ("too_big", "in_stock", "no_incoming"):
+    """AC-RS01 / AC-RS03: no "to proceed", no "salesperson", no name, on any branch that
+    refers. AVAIL-RENDER (owner, 5 Oct 2026): `in_stock` no longer refers, so the two
+    branches that cannot confirm stock are the refer lines."""
+    for branch in ("too_big", "no_incoming"):
         line = _availability_line(_entry(product_code="SRT1", requested_qty=3, branch=branch))
-        # AVAIL-MODE-REPLIES: the in-stock verdict is now the tick alone, so the refer
-        # sentence follows it rather than a full stop.
-        assert re.search(r"(\.|✅) Please refer to your salesman\.$", line), line
+        assert re.search(r"\. Please refer to your salesman\.$", line), line
         assert "to proceed" not in line and "salesperson" not in line
         assert line.count("Please refer") == 1
+
+
+def test_an_in_stock_line_never_refers():
+    """AVAIL-RENDER AC-AR03 / AC-AR04: a tick line says got stock, covering the ask or short
+    of it, and never carries the refer sentence."""
+    for extra in ({}, {"available_qty": 2}):
+        line = _availability_line(_entry(product_code="SRT1", requested_qty=3, **extra))
+        assert "Please refer" not in line, line
+        assert "Got stock" in line, line

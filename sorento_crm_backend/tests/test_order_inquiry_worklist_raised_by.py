@@ -57,6 +57,13 @@ def _uid() -> str:
     return str(uuid.uuid4())
 
 
+def _digits() -> str:
+    # Suffixes for searchable codes and emails: digits only, so a random suffix can
+    # never contain a search term (a hex suffix holding "aa" made the search for
+    # "contact aa" match the other CS user's row in about 3% of runs).
+    return f"{uuid.uuid4().int % 10**10:010d}"
+
+
 def _sorento(db) -> str:
     return db.execute(text("select id from companies where code = 'SRT'")).scalar()
 
@@ -69,9 +76,9 @@ def _user(db, name: str, email: str) -> User:
 
 
 def _product(db, code: str) -> Product:
-    uom = UnitOfMeasure(id=_uid(), uom_code=f"ZZT{_uid()[:6]}", uom_name="Unit")
+    uom = UnitOfMeasure(id=_uid(), uom_code=f"ZZT{_digits()[:6]}", uom_name="Unit")
     category = ProductCategory(
-        id=_uid(), category_code=f"ZZT-{_uid()[:8]}", category_name=f"{MARKER} cat"
+        id=_uid(), category_code=f"ZZT-{_digits()[:8]}", category_name=f"{MARKER} cat"
     )
     db.add_all([uom, category])
     db.flush()
@@ -94,7 +101,7 @@ def _adopted_order(db, company_id: str, so_number: str) -> ProjectSalesOrder:
     customer = Customer(
         id=_uid(),
         company_id=company_id,
-        customer_code=f"ZZT-{_uid()[:8]}",
+        customer_code=f"ZZT-{_digits()[:8]}",
         customer_name=f"{MARKER} Optad Sdn Bhd",
     )
     db.add(customer)
@@ -255,16 +262,13 @@ def _restore(originals) -> None:
 def _seed(db, company_id: str) -> dict:
     """Two CS users, one inquiry each, so every assertion below is about telling them
     apart rather than about the only row there is."""
-    contact_w = _user(db, f"{MARKER} CONTACT W", f"contact w.{_uid()[:8]}@zzt.test")
-    # The email search test searches this address's first ten characters. Keep them ONE word
-    # that no hex can contain: "contact aa" split into "contact" + "aa", and the other row's
-    # random SO number and product code held "aa" in about one run in twenty.
-    contact_aa = _user(db, f"{MARKER} CONTACT AA Tan", f"zztaacontact.{_uid()[:8]}@zzt.test")
+    contact_w = _user(db, f"{MARKER} CONTACT W", f"contact w.{_digits()[:8]}@zzt.test")
+    contact_aa = _user(db, f"{MARKER} CONTACT AA Tan", f"contact aa.{_digits()[:8]}@zzt.test")
     # A third CS user who has raised nothing: the filter's own list must not offer them.
-    idle = _user(db, f"{MARKER} Never Raised", f"idle.{_uid()[:8]}@zzt.test")
+    idle = _user(db, f"{MARKER} Never Raised", f"idle.{_digits()[:8]}@zzt.test")
 
-    cindy_order = _adopted_order(db, company_id, f"ZZTSO{_uid()[:8]}")
-    cindy_product = _product(db, f"ZZT-WESERP10B-{_uid()[:6]}")
+    cindy_order = _adopted_order(db, company_id, f"ZZTSO{_digits()[:8]}")
+    cindy_product = _product(db, f"ZZT-WESERP10B-{_digits()[:6]}")
     cindy_line = _line(db, company_id, cindy_order, cindy_product)
     cindy_inquiry = _inquiry(
         db,
@@ -290,8 +294,8 @@ def _seed(db, company_id: str) -> dict:
         decision=cindy_decision,
     )
 
-    contact_aa_order = _adopted_order(db, company_id, f"ZZTSO{_uid()[:8]}")
-    contact_aa_product = _product(db, f"ZZT-M310CRPJ-{_uid()[:6]}")
+    contact_aa_order = _adopted_order(db, company_id, f"ZZTSO{_digits()[:8]}")
+    contact_aa_product = _product(db, f"ZZT-M310CRPJ-{_digits()[:6]}")
     contact_aa_line = _line(db, company_id, contact_aa_order, contact_aa_product)
     contact_aa_inquiry = _inquiry(
         db,
@@ -369,8 +373,8 @@ def test_the_worklist_row_names_who_raised_it_and_when(api):
 def test_a_row_whose_inquiry_names_nobody_reads_blank_rather_than_breaking(api):
     client, db, company_id, seeded = api
 
-    order = _adopted_order(db, company_id, f"ZZTSO{_uid()[:8]}")
-    product = _product(db, f"ZZT-ANON-{_uid()[:6]}")
+    order = _adopted_order(db, company_id, f"ZZTSO{_digits()[:8]}")
+    product = _product(db, f"ZZT-ANON-{_digits()[:6]}")
     line = _line(db, company_id, order, product)
     inquiry = _inquiry(
         db, company_id, order, raised_by=None, raised_at=datetime(2026, 8, 20, 2, 0)
@@ -483,7 +487,7 @@ def test_a_reconfirm_by_somebody_else_leaves_the_earlier_rows_attributed_to_who_
     inquiry = seeded["cindy_inquiry"]
     first_line = seeded["cindy_line"]
     # A second line on the same order, so revision 2 has something of its own to raise.
-    second_product = _product(db, f"ZZT-CWCSC605-{_uid()[:6]}")
+    second_product = _product(db, f"ZZT-CWCSC605-{_digits()[:6]}")
     second_line = ProjectSalesOrderLine(
         id=_uid(),
         company_id=company_id,
@@ -667,8 +671,8 @@ def test_a_row_with_no_supply_revision_falls_back_to_its_own_headers_raiser(api)
     for those rows and the only one there is."""
     client, db, company_id, seeded = api
 
-    order = _adopted_order(db, company_id, f"ZZTSO{_uid()[:8]}")
-    product = _product(db, f"ZZT-AMEND-{_uid()[:6]}")
+    order = _adopted_order(db, company_id, f"ZZTSO{_digits()[:8]}")
+    product = _product(db, f"ZZT-AMEND-{_digits()[:6]}")
     line = _line(db, company_id, order, product)
     inquiry = _inquiry(
         db,

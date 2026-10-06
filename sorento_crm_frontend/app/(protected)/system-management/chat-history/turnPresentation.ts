@@ -71,6 +71,7 @@ const LANE_WORDS: Record<BranchKind, string> = {
   demand_qty: 'Asked for a quantity',
   business_query: 'Business query',
   media_denied: 'Media refused',
+  ai_not_allowed: 'AI not allowed',
 };
 
 export function laneWords(branchKind: BranchKind | null): string {
@@ -110,6 +111,8 @@ export function turnHeadline(turn: ChatbotTurn): TurnHeadline {
       return { word: 'Offered to escalate', tone: 'ok' };
     case 'escalation_declined':
       return { word: 'Escalation declined', tone: 'ok' };
+    case 'ai_not_allowed':
+      return { word: 'Not allowed', tone: 'ok' };
     case 'access_denied':
     case 'stock_denied':
     case 'not_supported':

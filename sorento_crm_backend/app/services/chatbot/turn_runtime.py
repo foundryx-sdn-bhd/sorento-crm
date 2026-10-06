@@ -2491,6 +2491,12 @@ def _spec_quantities(
     # AVAIL-MODE-REPLIES rule 5: a typed token that is the prefix of exactly ONE resolved
     # code ("SRTWC287-S" placed SRTWC287-S-150 alone) is that code, so its quantity goes
     # with it. A prefix of several codes is a family, asked as a pick, and carries none.
+    # AVAIL-PICKER (owner trace 5 Oct 2026): a code-like token that is a SUBSTRING of
+    # exactly one resolved code ("rt5674" placed SRT5674 alone) is read the same way,
+    # prefix first, the order `engine._exact_codes_only` and the resolver's product probe
+    # share. A word or bare number with a quantity ("2", "new") never reads as a code.
+    from app.services.chatbot.turn.task import code_like
+
     resolved_codes = {
         str(e["uuid"]): e.get("code") or e.get("canonical_code")
         for e in entities
@@ -2503,6 +2509,8 @@ def _spec_quantities(
         prefixed = [
             uuid for uuid, code in resolved_codes.items() if (code or "").casefold().startswith(token)
         ]
+        if not prefixed and code_like(token):
+            prefixed = [uuid for uuid, code in resolved_codes.items() if token in (code or "").casefold()]
         if len(prefixed) == 1 and prefixed[0] not in quantities:
             quantities[prefixed[0]] = quantity
     return {**out, "requested_quantities": quantities} if quantities else out

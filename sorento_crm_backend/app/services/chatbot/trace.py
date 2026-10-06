@@ -250,6 +250,7 @@ _LANE_WORDS = {
     "stock_denied": "Stock access refused",
     "demand_qty": "Asked for a quantity",
     "business_query": "Business query",
+    "ai_not_allowed": "AI not allowed",
 }
 
 

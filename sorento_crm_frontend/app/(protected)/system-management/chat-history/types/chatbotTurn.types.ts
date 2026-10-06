@@ -48,7 +48,9 @@ export type BranchKind =
   | 'stock_denied'
   | 'demand_qty'
   | 'business_query'
-  | 'media_denied';
+  | 'media_denied'
+  /** AI-ALLOWED-GATE: the CRM declined to answer this contact, nothing was sent. */
+  | 'ai_not_allowed';
 
 /**
  * One stage of one turn.
