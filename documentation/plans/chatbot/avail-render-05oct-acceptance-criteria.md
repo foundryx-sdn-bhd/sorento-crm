@@ -9,7 +9,8 @@ Plan: `PLAN-avail-render-05oct.md`.
   discontinued product prints the same marker line under it.
 - **AC-AR03:** `in_stock` covering the asked quantity prints `✅ Got stock.` and does not end
   with `Please refer to your salesman.`
-- **AC-AR04:** `in_stock` short of the asked quantity prints `✅ Got stock, N available.` and
+- **AC-AR04:** `in_stock` short of the asked quantity prints `✅ Only N got stock.` (owner hand
+  test 6 Oct 2026, AVAIL-ONHAND-BASIS PR #1510; was `✅ Got stock, N available.`) and
   does not end with the refer. N is the only figure of ours on the line.
 - **AC-AR05:** `too_big` and `no_incoming` still end with `Please refer to your salesman.`;
   `incoming` is unchanged (`❌ ETA dd/mm/yyyy.`).

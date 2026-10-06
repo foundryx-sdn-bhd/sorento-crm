@@ -1772,6 +1772,27 @@ class TestAC1804And1805And1806BrandCarriedToNextAssignee:
 # --------------------------------------------------------------------------- #
 
 
+
+def _seed_photo_alias(session_factory) -> None:
+    """The owner's `attachment_type_alias` entry "photo" -> Product Photos."""
+    import uuid as _uuid
+
+    from app.models.lookup import LookupOption, LookupOptionKeyword, LookupSet
+
+    db = session_factory()
+    lookup_set = db.query(LookupSet).filter(LookupSet.set_key == "attachment_type_alias").first()
+    if lookup_set is None:
+        lookup_set = LookupSet(
+            id=str(_uuid.uuid4()), tenant_id=None, set_key="attachment_type_alias", name="Attachment Type Alias", is_active=True
+        )
+        db.add(lookup_set)
+        db.flush()
+    option = LookupOption(id=str(_uuid.uuid4()), set_id=lookup_set.id, value="Product Photos", label="Product Photos", is_active=True)
+    db.add(option)
+    db.flush()
+    db.add(LookupOptionKeyword(id=str(_uuid.uuid4()), option_id=option.id, keyword="photo", locale=None))
+    db.commit()
+
 class TestAC1807And1808PhotoMissEscalationCarriesTheBrand:
     def _run_photo_miss_then_yes(
         self,
@@ -1789,6 +1810,10 @@ class TestAC1807And1808PhotoMissEscalationCarriesTheBrand:
         _seed_contact(session_factory, phone=phone)
         _seed_product_with_brand(session_factory, code=product_code, brand_code=brand_code)
         _seed_attachment_type(session_factory, "Product Photos")
+        # ATTACH-GROUNDING-TYPO option (c): the set leg is the parser's code ("photo"), so
+        # this world maps it to the type the way production does, through the owner's
+        # `attachment_type_alias` set (migration 511), not the customer's own words.
+        _seed_photo_alias(session_factory)
         _seed_escalation_team(
             session_factory,
             agent_code="general_enquiries",
