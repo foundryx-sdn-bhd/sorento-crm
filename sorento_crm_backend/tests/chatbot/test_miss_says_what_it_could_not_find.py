@@ -249,6 +249,25 @@ class TestAMissNeverListsSetMembersAsWhatYouWant:
         assert "srthp" not in rendered.lower(), rendered
         assert 'Couldn\'t find: "Srt-hp" (product).' in rendered, rendered
 
+    def test_set_members_read_off_the_token_itself_never_count_as_placing_it(self) -> None:
+        """A one-word token the parser tagged `product` that the spec tier read as a class
+        word: the members are emitted under the whole query as `via_token`
+        (`references._emit_spec_matches`), which is the typed token itself here. Those
+        rows must not count as having placed the token (`resolved_toks`), or the miss
+        falls to the generic "Could not find inventory for ..." instead of naming it."""
+        members = [_match(f"SRTB20{i}-GM", f"uuid-c{i}", "spec_search") for i in range(4)]
+        for m in members:
+            m["display"]["via_token"] = "basin"
+        out = _compose(
+            parser_entities=[{"hint": "product", "raw": "basin"}],
+            resolutions=[{"token": "basin", "matches": []}, {"token": "basin", "matches": members}],
+            unresolved=["basin"],
+            compat=[{"uuid": m["uuid"], "entity_type": "product", "code": m["canonical_code"]} for m in members],
+        )
+        rendered = _rendered(out)
+        assert "Here's what you want" not in rendered, rendered
+        assert 'Couldn\'t find: "basin" (product).' in rendered, rendered
+
     def test_a_described_set_that_named_nothing_readable_keeps_its_own_reply(self) -> None:
         """Control (AC-1320 / fix round 9 on PR #833): a CLASS word the catalogue cannot
         read, with no product token typed, still gets the described-set structure."""
