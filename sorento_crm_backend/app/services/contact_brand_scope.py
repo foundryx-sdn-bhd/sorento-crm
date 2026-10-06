@@ -290,26 +290,46 @@ def set_contact_brands(db: Session, contact_id: str, brand_ids: Iterable[str]) -
 def in_scope_product_codes(db: Session, codes: Iterable[str]) -> Optional[set[str]]:
     """The subset of `codes` whose product the session's brand scope allows; None when the
     session is unscoped. Codes that name no product are NOT in scope (a scoped contact is
-    shown only what it may see)."""
+    shown only what it may see).
+
+    A code here carries no company (complaint lines), and a code is unique per company only,
+    so it is in scope when at least one product the session can see under it passes
+    `brand_predicate` AND none fails: a code shared by a passing Mocha row and an out-of-scope
+    Sorento row stays out (fail closed; the complaint cannot say which product it meant)."""
     from app.models.base import get_brand_scope
     from app.models.product import Product
 
-    if not get_brand_scope(db):
+    scope = get_brand_scope(db)
+    if not scope:
         return None
     wanted = {str(c).strip() for c in codes if c and str(c).strip()}
     if not wanted:
         return set()
-    # The session criterion (brand IN scope) is active, so this ORM read returns only
-    # in-scope products.
-    return {str(c) for (c,) in db.query(Product.product_code).filter(Product.product_code.in_(wanted)).all()}
+    restricted = scoped_brand_companies(db, scope)
+    # Brand scope OFF so the failing twin of a shared code is seen; company scope stays ON,
+    # so only the products this contact can see take part.
+    with _brand_scope_off(db):
+        rows = (
+            db.query(Product.product_code, Product.brand_id, Product.company_id)
+            .filter(Product.product_code.in_(wanted))
+            .all()
+        )
+    verdicts: dict[str, bool] = {}
+    for code, brand_id, company_id in rows:
+        passes = not _product_out_of_scope(scope, restricted, brand_id, company_id)
+        verdicts[str(code)] = verdicts.get(str(code), True) and passes
+    return {code for code, passes in verdicts.items() if passes}
 
 
 def complaint_in_scope_clauses(db: Session) -> list:
     """Filters keeping complaints with at least one product line in the session's brand scope
-    (none when unscoped). Lines carry the product CODE, so the match is on the code."""
-    from sqlalchemy import exists, select
+    (none when unscoped). Lines carry the product CODE and complaints carry no company, so the
+    match is on the code, bounded the way `in_scope_product_codes` bounds it: a code is in
+    scope when a product the session's company scope can see under it passes
+    `brand_predicate` and none fails (a Core read, so the company bound is spelled here)."""
+    from sqlalchemy import exists, false, select
 
-    from app.models.base import get_brand_scope
+    from app.models.base import get_brand_scope, get_company_scope
     from app.models.complaints import Complaint, ComplaintProductLine
     from app.models.product import Product
 
@@ -317,9 +337,17 @@ def complaint_in_scope_clauses(db: Session) -> list:
     if not scope:
         return []
     products = Product.__table__
-    in_scope_codes = select(products.c.product_code).where(
-        brand_predicate(scope, products.c.brand_id, products.c.company_id)
-    )
+    companies = get_company_scope(db)
+    if companies is None:
+        visible = []
+    elif isinstance(companies, frozenset) and companies:
+        visible = [products.c.company_id.in_(sorted(companies))]
+    else:
+        visible = [false()]  # UNSET / empty: fail closed, as the company hook does
+    passing_ids = select(products.c.id).where(brand_predicate(scope, products.c.brand_id, products.c.company_id))
+    passing_codes = select(products.c.product_code).where(products.c.id.in_(passing_ids), *visible)
+    failing_codes = select(products.c.product_code).where(products.c.id.notin_(passing_ids), *visible)
+    in_scope_codes = passing_codes.where(products.c.product_code.notin_(failing_codes))
     return [
         exists().where(
             ComplaintProductLine.complaint_id == Complaint.id,

@@ -94,10 +94,31 @@ every MCH line and only the SORENTO lines of SRT.
   row. The helper reads the brands' companies with company scope OFF, matching the SQL.
 - **API-key path** (`_resolve_api_key_brand_scope`): unchanged; the session criterion is the same
   hook. The MCP server sends `contact_id` + `space_id` and gets the per-company rule for free.
-- **Company scope None (system caller) with a brand scope.** Not a shape that exists today (the
-  brand scope is only stamped where a contact is resolved), and the predicate does not depend on
-  the company scope anyway.
+- **Company scope None with a brand scope** (security review S2). This shape DOES exist: both
+  workers (`tasks/export_tasks.py:1138`, `tasks/report_export_tasks.py:66`) and two in-request
+  `company_scope(db, None)` blocks (`chatbot/lanes/escalation_services.py:297-313`,
+  `certificate_service.py:1323`). The predicate does not depend on the company scope, so inside
+  those blocks a brand-scoped contact sees other companies' products, which is what an unscoped
+  contact already sees there. The workers are bounded elsewhere: the low-stock worker adopts
+  the run's own company (or fails closed), and the report worker is limited to the
+  `company_grants` snapshot of the single company the route sends.
+- **A product code with no company** (complaint lines; `complaint_in_scope_clauses`,
+  `in_scope_product_codes`). Codes are unique per company only, and more than 11,000 codes exist
+  in both Sorento and Mocha. A code is in scope when at least one product the contact's company
+  scope can see under it passes the rule AND none fails; a code shared by a passing Mocha row and
+  an out-of-scope Sorento row stays out (fail closed: the complaint cannot say which product it
+  meant). The output guard (`out_of_scope_product_codes`, code-only items) keeps such a code,
+  because the two layers before it match on product id and already show the Mocha row; this is
+  the accepted trade-off of security review A1.
 - **Scope with a deleted brand id only.** Owns no company, so everything is hidden, as today.
+- **A list can widen instead of narrow** (security review S1, accepted risk). A company is
+  restricted only while a live brand row of the list belongs to it: a same-named brand picked
+  from the other company, a listed brand later hard-deleted or moved, or a company membership
+  removed, can leave a company unrestricted for that contact. Only staff with
+  `user_management.contacts.edit` write the list (`set_contact_brands`), brands are staff master
+  data, and no contact-facing write exists, so a contact cannot widen its own view. The PUT is
+  NOT made to reject brands outside the contact's companies: that is exactly the shape the
+  owner's script writes on Mocha-only contacts under Q4 (a).
 - **Staff UI GET/PUT `/contacts/{id}/brands`.** Unchanged: it stores the list; it never filters
   products.
 

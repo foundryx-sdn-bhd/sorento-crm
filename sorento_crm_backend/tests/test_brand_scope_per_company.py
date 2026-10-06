@@ -134,6 +134,75 @@ def test_complaint_in_scope_clauses_keep_a_complaint_with_an_mch_line(dual_sessi
     assert got == {c.id, world.complaints["mixed"].id, world.complaints["sorento_only"].id}
 
 
+# --------------------------------------------------------------------- complaints: code only, no company
+
+
+def _shared_code_world(db, world):
+    """MCH product reusing the code of the SRT MOCHA-brand product (out of scope under
+    [SORENTO]); complaint A names that shared code, complaint B an MCH-only code."""
+    from app.models.complaints import Complaint, ComplaintProductLine
+    from tests._mc_lookup_seed import product
+
+    mch = world.mch
+    shared = world.p_mocha.product_code
+    product(db, company_id=mch.company_id, code=shared)
+    out = {}
+    for key, code in (("shared", shared), ("mch_only", mch.p_two.product_code)):
+        c = Complaint(
+            id=str(uuid.uuid4()), complaint_number=unique_code("CMP"), complaint_date=None,
+            customer_name="ZZT MOCHA CUSTOMER", product_code=code, status="approved",
+        )
+        db.add(c)
+        db.flush()
+        db.add(ComplaintProductLine(id=str(uuid.uuid4()), complaint_id=c.id, product_code=code, quantity="1", sort_order=0))
+        out[key] = c
+    db.flush()
+    return out
+
+
+def _complaints_seen(db, world, extra) -> set[str]:
+    from app.models.complaints import Complaint
+
+    ids = [c.id for c in extra.values()] + [c.id for c in world.complaints.values()]
+    rows = db.query(Complaint.id).filter(Complaint.id.in_(ids), *_svc().complaint_in_scope_clauses(db)).all()
+    return {r[0] for r in rows}
+
+
+def test_sorento_only_contact_sees_no_mocha_complaint_and_no_shared_code(db, world) -> None:
+    """Security B1: a SRT-only session (company {SRT}, brands [SORENTO]) must not see a complaint
+    about a Mocha-only code, nor one about a code whose SRT product is out of scope even
+    though Mocha has the same code; `in_scope_product_codes` agrees."""
+    extra = _shared_code_world(db, world)
+    set_brand_scope(db, frozenset({world.sorento.id}))
+    assert _complaints_seen(db, world, extra) == {world.complaints["mixed"].id, world.complaints["sorento_only"].id}
+    codes = [world.p_mocha.product_code, world.mch.p_two.product_code, world.codes["sorento"]]
+    assert _svc().in_scope_product_codes(db, codes) == {world.codes["sorento"]}
+
+
+def test_dual_contact_sees_mocha_only_complaint_but_a_shared_code_fails_closed(dual_session, world) -> None:
+    """A code with no company that names a passing Mocha row AND an out-of-scope Sorento row
+    stays out (the complaint cannot say which product it meant); a Mocha-only code is in."""
+    extra = _shared_code_world(dual_session, world)
+    seen = _complaints_seen(dual_session, world, extra)
+    assert extra["mch_only"].id in seen
+    assert extra["shared"].id not in seen
+    assert seen >= {world.complaints["mixed"].id, world.complaints["sorento_only"].id}
+    codes = [world.p_mocha.product_code, world.mch.p_two.product_code, world.codes["sorento"]]
+    assert _svc().in_scope_product_codes(dual_session, codes) == {world.mch.p_two.product_code, world.codes["sorento"]}
+
+
+def test_complaint_clauses_fail_closed_under_an_unset_company_scope(db, world) -> None:
+    from app.models.base import UNSET
+
+    extra = _shared_code_world(db, world)
+    set_brand_scope(db, frozenset({world.sorento.id}))
+    set_company_scope(db, UNSET)
+    from app.models.complaints import Complaint
+
+    ids = [c.id for c in extra.values()] + [c.id for c in world.complaints.values()]
+    assert db.query(Complaint.id).filter(Complaint.id.in_(ids), *_svc().complaint_in_scope_clauses(db)).all() == []
+
+
 # --------------------------------------------------------------------- AC-4 output guard helpers
 
 
