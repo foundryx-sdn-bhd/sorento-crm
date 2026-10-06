@@ -2082,7 +2082,7 @@ def _brand_scoping(tr: Any) -> bool:
     question left open (reviewer B1 on the owner's mechanism: "cabana products" must still
     open the brand-scoped set, "SORENTO SRTWC8318" must still not). Never true for a caller
     without `brand_tokens`: the resolver has no brand probe of its own."""
-    matches = (tr or {}).get("matches") or [] if isinstance(tr, dict) else []
+    matches = (tr.get("matches") or []) if isinstance(tr, dict) else []
     return bool(matches) and all((m or {}).get("entity_type") == "brand" for m in matches)
 
 
