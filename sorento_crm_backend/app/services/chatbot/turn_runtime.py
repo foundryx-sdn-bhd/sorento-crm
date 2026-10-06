@@ -2110,6 +2110,9 @@ def resolve_kinds(
         brand_named = entities_naming_a_live_brand(db, entities)
     except Exception:  # noqa: BLE001 - same reason as `matched_brands` above: a test
         # double with no live `Brand` table has no opinion, and the token walks today's path.
+        # Logged (reviewer N2), so a live failure of the brand read is visible rather than
+        # silently turning every brand word back into a re-typable token.
+        logger.warning("chatbot: the live brand read failed; no token is brand-locked this turn", exc_info=True)
         brand_named = []
     hint_locked_entity_ids = frozenset(id(e) for e in brand_named) if brand_named else None
     # The entities THIS call would resolve against, brand-excluded ids aside - used

@@ -55,9 +55,15 @@ spec/class search that knows "basin" as Wash Basin never ran (`references.py:309
    `unresolved_tokens`, so the spec fallback at `:3090` runs as it does today for a class
    word that matches no promotion name. `_resolve_input` gains the parameter; the GET
    route does not expose it (n8n/MCP shapes unchanged).
-3. No change to `turn/reconcile.py`, `turn_runtime.py` (#1504's seam), the parser prompt,
-   or any wording. No word matching anywhere: the field is built from the parser's own
-   `hint` and `confident`.
+3. No change to `turn/reconcile.py`, the parser prompt, or any wording. `turn_runtime.py`
+   changes only as the "Built beyond the first draft" paragraph above says (the exact brand
+   read and the lock; #1504's `by_token` loop is untouched). No word matching anywhere: the
+   field is built from the parser's own `hint` and `confident` and the catalogue's brand
+   rows. Domain exceptions to the strip, stated once: the request domain's own kind
+   (promotion under promotion, attachment under resource_attachment) and, per crew ruling
+   Q4, customer and transporter under order/sales (the resolver's own expansion there, and
+   #1504's control). The owner's literal rule would remove the order/sales exception; that
+   is the Q4 trigger below, not this lane's call.
 
 ## Tests (red first, `tests/chatbot/test_class_hint_kind_pick.py`)
 
@@ -91,7 +97,9 @@ header) own it.
 
 ## Next trigger (Q4, out of scope)
 
-Under `order` / `sales` the PRIMARY pass expands a `category` hint to customer,
-customer_order and transporter (`entity_resolver.py:131-134`, shared with n8n/MCP), so a
-class word there meets customer rows in the first pass, not the rerun. Build it the day a
-recorded order-domain turn re-types a class word.
+Under `order` / `sales` the PRIMARY pass expands a `brand` or `category` hint to customer,
+customer_order and transporter (`entity_resolver.py:131-134`, shared with n8n/MCP), so such
+a word there meets customer rows in the first pass, not the rerun. This lane keeps that
+reading (`references._name_kinds_dropped_for`, the `customer_order` exception, pinned by
+`test_order_keeps_the_resolvers_customer_reading_for_a_locked_word`). Build the change the
+day the owner rules on it or a recorded order-domain turn re-types a class word.

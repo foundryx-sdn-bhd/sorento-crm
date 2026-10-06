@@ -1891,9 +1891,11 @@ _NAME_MATCHED_KINDS: frozenset[str] = frozenset(
 
 
 def _norm_locked_token(value: Any) -> str:
-    """The resolver echoes a token stopword-stripped and the chatbot sends a product token
-    folded, so the two sides meet on letters and digits alone."""
-    return re.sub(r"[^0-9a-z]", "", str(value or "").lower())
+    """The resolver echoes a token stopword-stripped (`_strip_entity_stopwords`: "basin
+    items" comes back as "basin") and the chatbot sends a product token folded, so a lock
+    entry takes the route's own trim first and the two sides then meet on letters and
+    digits alone. The route's own transform, not a word rule of this lane's (reviewer S1)."""
+    return re.sub(r"[^0-9a-z]", "", _strip_entity_stopwords(str(value or "")).lower())
 
 
 def _name_kinds_dropped_for(domain_hint: str | None) -> frozenset[str]:
@@ -1903,9 +1905,17 @@ def _name_kinds_dropped_for(domain_hint: str | None) -> frozenset[str]:
     under resource_attachment is still narrowed to the Cabana catalogue by filename
     coverage - that match IS the question's answer, not a re-type of the word."""
     domain = (domain_hint or "").strip().lower()
-    own: set[str] = {_canonical_entity_type(domain)} if domain else set()
+    canonical = _canonical_entity_type(domain) if domain else ""
+    own: set[str] = {canonical} if canonical else set()
     if domain in {"resource_attachment", "attachment"}:
         own.add("attachment")
+    if canonical == "customer_order":
+        # Order / sales (crew ruling Q4 on the lane card, 6 Oct 2026: out of scope): the
+        # resolver's own domain expansion reads a brand or category word there as the
+        # customer or transporter it names ("super ceramic" is a debtor,
+        # `_DOMAIN_HINT_EXPANSIONS["order"]`), and #1504 pins that reading. Those two kinds
+        # are the order domain's own answer, kept like promotion under promotion.
+        own.update({"customer", "transporter"})
     return _NAME_MATCHED_KINDS - own
 
 
@@ -1942,21 +1952,28 @@ def _strip_name_kinds_for_locked(
     if not isinstance(resolutions, list):
         return result
     changed = False
+    ambiguous = list(result.get("ambiguous_tokens") or [])
     for tr in resolutions:
         if not isinstance(tr, dict) or _norm_locked_token(tr.get("token")) not in locked:
             continue
         matches = tr.get("matches") or []
         kept_matches = [m for m in matches if (m or {}).get("entity_type") not in dropped]
-        if len(kept_matches) != len(matches):
-            tr["matches"] = kept_matches
-            tr["resolved"] = bool(kept_matches)
-            if not kept_matches:
-                tr["ambiguous"] = False
-            changed = True
+        if len(kept_matches) == len(matches):
+            continue
+        # The resolver's own meaning of the two flags (`_suppress_brand_prefix_junk`):
+        # resolved = exactly one match, ambiguous = more than one.
+        tr["matches"] = kept_matches
+        tr["resolved"] = len(kept_matches) == 1
+        tr["ambiguous"] = len(kept_matches) > 1
+        if not tr["ambiguous"]:
+            ambiguous = [t for t in ambiguous if t != tr.get("token")]
+        changed = True
     if changed:
         result["unresolved_tokens"] = [
             tr["token"] for tr in resolutions if isinstance(tr, dict) and not (tr.get("matches") or [])
         ]
+        if "ambiguous_tokens" in result:
+            result["ambiguous_tokens"] = ambiguous
     return result
 
 

@@ -697,6 +697,68 @@ class TestTheRerunLeavesALockedTokenAlone:
         assert not _kinds_under(result, "cabana") & {"promotion", "customer", "attachment"}, result
         assert [t.lower() for t in result.get("unresolved_tokens") or []] == ["cabana"], result.get("unresolved_tokens")
 
+    def test_a_lock_entry_meets_the_routes_stopword_trimmed_echo(self, session_factory) -> None:
+        """Reviewer S1: the route trims filler words off a multi-word token before resolving
+        ("basin items" is echoed as "basin"). The lock entry takes the same trim, or the
+        rerun re-types the word behind the lock's back."""
+        _seed_world(session_factory)
+        body = _basin_body(
+            query="any basin items", tokens=["basin items"], allowed_entity_types=["category"],
+            **{LOCK_FIELD: ["basin items"]},
+        )
+        result = _route_call(session_factory(), body)
+        kinds = set()
+        for r in result.get("resolutions") or []:
+            kinds |= {str(m.get("entity_type")) for m in (r.get("matches") or [])}
+        assert not kinds & {"promotion", "customer"}, result
+        assert not result.get("fallback_applied"), result.get("fallback_types_found")
+
+    def test_resource_attachment_keeps_its_own_kind_for_a_locked_brand_word(self, session_factory) -> None:
+        """AC-12 through the route: "cabana catalog" under resource_attachment narrows to the
+        Cabana catalogue by filename coverage, and that attachment row IS the answer, never
+        a re-type of the brand word. Pins the r11 (a-d) shape; the K7 kill guard for the
+        own-kind exception is `test_order_keeps_the_resolvers_customer_reading_for_a_
+        locked_word` below (measured: red with the exception removed, this one stays green
+        because the attachment-coverage path returns before the strip)."""
+        _seed_world(session_factory, cabana=True)
+        db = session_factory()
+        direct_access = AttachmentType(type_name="ZZT Direct Access", code=None, allowed_extensions="pdf", is_direct_access=True)
+        db.add(direct_access)
+        db.flush()
+        catalogue = Attachment(
+            attachment_type_id=direct_access.id, original_filename="@ CABANA CATALOG 2025 (RESEARCHABLE).pdf",
+            stored_filename="zzt-cabana-catalog.pdf", file_path="https://example.test/zzt-cabana-catalog.pdf",
+            company_id=DEFAULT_COMPANY_ID,
+        )
+        db.add(catalogue)
+        db.commit()
+        body = _basin_body(
+            query="cabana catalog", tokens=["cabana", "catalog"], match_mode="and",
+            allowed_entity_types=["brand", "attachment"], domain="resource_attachment",
+            **{LOCK_FIELD: ["cabana"]},
+        )
+        result = _route_call(db, body)
+        rows = list(result.get("intersection") or []) + [
+            m for r in result.get("resolutions") or [] for m in (r.get("matches") or [])
+        ]
+        assert any(m.get("entity_type") == "attachment" and m.get("uuid") == catalogue.id for m in rows), result
+
+    def test_order_keeps_the_resolvers_customer_reading_for_a_locked_word(self, session_factory) -> None:
+        """Crew ruling Q4 (out of scope) and #1504's control: under ORDER the resolver's own
+        expansion reads a brand or category word as the customer it names; customer and
+        transporter are the order domain's own kinds, kept like promotion under promotion."""
+        world = _seed_world(session_factory)
+        db = session_factory()
+        body = _basin_body(
+            query="basin trading orders", tokens=["basin trading"], match_mode="or",
+            allowed_entity_types=["brand"], domain="order", **{LOCK_FIELD: ["basin trading"]},
+        )
+        result = _route_call(db, body)
+        kinds = set()
+        for r in result.get("resolutions") or []:
+            kinds |= {str(m.get("entity_type")) for m in (r.get("matches") or [])}
+        assert "customer" in kinds, (kinds, world["customer"], result)
+
     def test_the_request_domains_own_kind_is_kept(self, session_factory) -> None:
         """"cabana promo" under the PROMOTION domain is answered by the promotions whose
         description carries the brand: that match is the question's answer, never a
