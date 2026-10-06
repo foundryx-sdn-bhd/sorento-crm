@@ -1,7 +1,8 @@
 # PLAN: a brand word never becomes a stored promotion (BRAND-PROMO-EXPAND)
 
-Status: in progress (track: small fix, backend only, no migration, no auth/RBAC change, no new
-ingest surface, no UI). UAC: `brand-promo-expand-acceptance-criteria.md`.
+Status: built, tests green on PR #1504 (track: small fix, backend only, no migration, no
+auth/RBAC change, no new ingest surface, no UI); reviewer pass pending. UAC:
+`brand-promo-expand-acceptance-criteria.md`.
 
 ## Owner trace (6 Oct 2026, prompt v47, turn 120 then 121)
 
@@ -49,12 +50,30 @@ Paths under `sorento_crm_backend/app/services/`.
   ignored. Never a promotion.
 - No typo, word or fuzzy matching in code. No parser prompt change.
 
-## Change (code only)
+## Crew additions (prod trace of the photo turn, 6 Oct 2026)
 
-- `turn/reconcile.py`: a hit under a kind the hinted kind EXPANDS to (brand/category ->
-  promotion) is not "another kind"; the hint stands and no `reconciled` tuple is traced.
-- Where the brand/category -> promotion fan-out would produce a stored `promotion` row with no
-  promotion asked, derive the promotion candidate at fetch time instead of persisting it.
+- (A) The resolver gate under inventory answered SORENTO with 20 `promotion` matches and zero
+  brand matches although the product's `brand_code` is SORENTO. Cause: the shared resolver has
+  no brand probe; the chatbot's brands-table lookup (`turn_runtime._brand_hinted_entities_
+  matching_live`) ran for the order and sales domains only (`turn_runtime.py:2021-2028`).
+- (B) A candidate whose kind the gate rejected for the domain (`gate_debug.incompatible_only`)
+  must never be written into focus state.
+
+## Change (code only, all in `chatbot/turn_runtime.py::resolve_kinds`)
+
+- Brands table first, every domain but promotion: a brand-hinted word that is a live brand is
+  never sent to the shared resolver; it settles on `focus.brands` as the parser hinted it.
+  Promotion keeps sending it, because the fan-out is what lists that brand's promotions.
+- `by_token` (what reconciliation reads): a match under a kind the hint fans out to
+  (`entity_resolver._ENTITY_TYPE_EXPANSIONS`, imported, not copied) is counted under the hint,
+  so brand stays brand and category stays category. The match itself still reaches the fetch
+  through the gate's `compatible_entities` (the promotion fetch is derived there, nothing is
+  persisted). The domain overrides (brand -> customer under order) are not folded: that re-type
+  is the intended reading there.
+- `by_token` drops every kind outside the gate's own `allowed_lookup` for the domain, so an
+  incompatible kind never re-types a hint, never arms a kind pick, never reaches the focus.
+- `turn/reconcile.py` untouched: the pure core keeps its contract and one seam decides what the
+  resolver's answer means.
 
 ## Tests (red first)
 

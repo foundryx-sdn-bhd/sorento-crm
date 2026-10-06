@@ -71,7 +71,7 @@ UNLISTED_BRAND = "CABANA"
 
 
 # --------------------------------------------------------------------------- #
-# 1. Reconciliation: a fan-out hit confirms the hint, never re-types it
+# 1. The resolver seam (`turn_runtime.resolve_kinds`): what the pure core is told
 # --------------------------------------------------------------------------- #
 
 
@@ -82,58 +82,7 @@ def _apply(v: dict[str, Any], resolved: dict[str, dict[str, int]]):
     return apply(state, v, build_policy(), resolved=resolved)
 
 
-def test_a_brand_word_whose_only_hits_are_promotions_stays_a_brand():
-    v = verdict(domain_hint="promotion", intent_hint="check_promotion", entities=[entity("sorento", hint="brand")])
-
-    state2, plan = _apply(v, {"sorento": {"promotion": 2}})
-
-    assert plan.trace.reconciled == [], plan.trace.reconciled
-    assert state2.focus.brands == ["sorento"], state2.focus.brands
-    assert not state2.focus.extra.get("promotion"), state2.focus.extra
-
-
-def test_a_category_word_whose_only_hits_are_promotions_stays_a_category():
-    v = verdict(domain_hint="promotion", intent_hint="check_promotion", entities=[entity("wc", hint="category")])
-
-    state2, plan = _apply(v, {"wc": {"promotion": 3}})
-
-    assert plan.trace.reconciled == [], plan.trace.reconciled
-    assert not state2.focus.extra.get("promotion"), state2.focus.extra
-    assert [e.get("hint") for e in state2.focus.extra.get("category") or []] == ["category"], state2.focus.extra
-
-
-def test_a_brand_word_under_inventory_hitting_promotions_stays_a_brand():
-    """The prod photo shape at the apply seam: brand beside a product under inventory."""
-    v = verdict(
-        domain_hint="inventory",
-        intent_hint="check_stock",
-        entities=[entity(CODE, hint="product"), entity("SORENTO", hint="brand")],
-    )
-
-    state2, plan = _apply(v, {CODE: {"product": 1}, "SORENTO": {"promotion": 4}})
-
-    assert plan.trace.reconciled == [], plan.trace.reconciled
-    assert state2.focus.brands == ["SORENTO"], state2.focus.brands
-    assert not state2.focus.extra.get("promotion"), state2.focus.extra
-    assert [p.get("raw") for p in state2.focus.products] == [CODE]
-
-
-def test_a_genuine_re_type_still_happens():
-    """The rule is narrow: a kind the hint does not fan out to still rewrites (AC-1527)."""
-    v = verdict(domain_hint=None, entities=[entity("7445", hint="order")])
-
-    state2, plan = _apply(v, {"7445": {"order": 0, "product": 1}})
-
-    assert plan.trace.reconciled == [("7445", "order", "product")]
-    assert any(p.get("raw") == "7445" for p in state2.focus.products)
-
-
-# --------------------------------------------------------------------------- #
-# crew B: a kind the gate rejected for the domain is not a kind for reconciliation
-# --------------------------------------------------------------------------- #
-
-
-def _resolve_kinds_with(monkeypatch, *, domain: str, entities: list[dict[str, Any]], resolutions: list[dict[str, Any]], compatible: list[dict[str, Any]]):
+def _resolve_kinds_with(monkeypatch, *, domain: str, entities: list[dict[str, Any]], resolutions: list[dict[str, Any]], compatible: list[dict[str, Any]], intent: str = "check_stock", branch_kind: str = "check_stock"):
     """`resolve_kinds` over a stubbed `resolve_gate.run` whose gate is the production
     shape for `domain`: `compatible_entities` plus the `gate_debug` the real gate writes
     (`allowed_lookup`, and `incompatible_only` per token whose every match is outside it)."""
@@ -157,12 +106,108 @@ def _resolve_kinds_with(monkeypatch, *, domain: str, entities: list[dict[str, An
         }
 
     monkeypatch.setattr(resolve_gate, "run", stub)
-    ctx = {"parse": {"output": {"domain_hint": domain, "intent_hint": "check_stock", "entities": entities}}}
-    return turn_runtime.resolve_kinds(object(), ctx=ctx, branch_kind="check_stock", space_id=None, dry_run=True)
+    ctx = {"parse": {"output": {"domain_hint": domain, "intent_hint": intent, "entities": entities}}}
+    return turn_runtime.resolve_kinds(object(), ctx=ctx, branch_kind=branch_kind, space_id=None, dry_run=True)
 
 
 def _match(kind: str, code: str, uuid_: str) -> dict[str, Any]:
     return {"uuid": uuid_, "entity_type": kind, "canonical_code": code, "match_tier": "prefix"}
+
+
+PROMO_A = "22222222-2222-4222-8222-222222222222"
+PROMO_B = "33333333-3333-4333-8333-333333333333"
+
+
+def _promotion_resolution(token: str, *promo_ids: str) -> dict[str, Any]:
+    return {"token": token, "matches": [_match("promotion", p, p) for p in promo_ids]}
+
+
+def test_a_brand_word_whose_only_hits_are_promotions_stays_a_brand(monkeypatch):
+    """Under PROMOTION: the resolver's brand -> promotion fan-out answered "sorento" with
+    two promotions. That is the brand word resolving, so `resolved_kinds` says `brand`,
+    APPLY re-types nothing, and the brand lands on `focus.brands`, never on
+    `focus.extra["promotion"]`."""
+    outcome = _resolve_kinds_with(
+        monkeypatch,
+        domain="promotion",
+        intent="check_promotion",
+        branch_kind="check_promotion",
+        entities=[entity("sorento", hint="brand", canonical_code=None)],
+        resolutions=[_promotion_resolution("sorento", PROMO_A, PROMO_B)],
+        compatible=[{"uuid": p, "entity_type": "promotion", "code": p} for p in (PROMO_A, PROMO_B)],
+    )
+
+    assert outcome.resolved_kinds.get("sorento") == {"brand": 2}, outcome.resolved_kinds
+    # The fetch still sees the brand's promotions (the fan-out is unchanged where it belongs).
+    assert {e["uuid"] for e in outcome.compatible_entities} == {PROMO_A, PROMO_B}
+
+    v = verdict(domain_hint="promotion", intent_hint="check_promotion", entities=[entity("sorento", hint="brand")])
+    state2, plan = _apply(v, outcome.resolved_kinds)
+    assert plan.trace.reconciled == [], plan.trace.reconciled
+    assert state2.focus.brands == ["sorento"], state2.focus.brands
+    assert not state2.focus.extra.get("promotion"), state2.focus.extra
+
+
+def test_a_category_word_whose_only_hits_are_promotions_stays_a_category(monkeypatch):
+    outcome = _resolve_kinds_with(
+        monkeypatch,
+        domain="promotion",
+        intent="check_promotion",
+        branch_kind="check_promotion",
+        entities=[entity("wc", hint="category", canonical_code=None)],
+        resolutions=[_promotion_resolution("wc", PROMO_A, PROMO_B)],
+        compatible=[{"uuid": p, "entity_type": "promotion", "code": p} for p in (PROMO_A, PROMO_B)],
+    )
+
+    assert outcome.resolved_kinds.get("wc") == {"category": 2}, outcome.resolved_kinds
+
+    v = verdict(domain_hint="promotion", intent_hint="check_promotion", entities=[entity("wc", hint="category")])
+    state2, plan = _apply(v, outcome.resolved_kinds)
+    assert plan.trace.reconciled == [], plan.trace.reconciled
+    assert not state2.focus.extra.get("promotion"), state2.focus.extra
+    assert [e.get("hint") for e in state2.focus.extra.get("category") or []] == ["category"], state2.focus.extra
+
+
+def test_a_brand_word_under_inventory_hitting_promotions_stays_a_brand(monkeypatch):
+    """The prod photo shape at the resolver seam: brand beside a product under inventory,
+    the resolver echoing the product code folded (`resolve_gate._token_of`) and the brand
+    as typed."""
+    product_id = "11111111-1111-4111-8111-111111111111"
+    outcome = _resolve_kinds_with(
+        monkeypatch,
+        domain="inventory",
+        entities=[entity(CODE, hint="product", canonical_code=None), entity("SORENTO", hint="brand", canonical_code=None)],
+        resolutions=[
+            {"token": CODE.replace("-", ""), "matches": [_match("product", CODE, product_id)]},
+            _promotion_resolution("SORENTO", PROMO_A, PROMO_B),
+        ],
+        compatible=[{"uuid": product_id, "entity_type": "product", "code": CODE}],
+    )
+
+    assert outcome.resolved_kinds.get(CODE.replace("-", "")) == {"product": 1}, outcome.resolved_kinds
+    assert outcome.resolved_kinds.get("SORENTO") == {"brand": 2}, outcome.resolved_kinds
+
+    v = verdict(domain_hint="inventory", intent_hint="check_stock", entities=[entity(CODE, hint="product"), entity("SORENTO", hint="brand")])
+    state2, plan = _apply(v, outcome.resolved_kinds)
+    assert plan.trace.reconciled == [], plan.trace.reconciled
+    assert state2.focus.brands == ["SORENTO"], state2.focus.brands
+    assert not state2.focus.extra.get("promotion"), state2.focus.extra
+    assert [p.get("raw") for p in state2.focus.products] == [CODE]
+
+
+def test_a_genuine_re_type_still_happens():
+    """The rule is narrow: a kind the hint does not fan out to still rewrites (AC-1527)."""
+    v = verdict(domain_hint=None, entities=[entity("7445", hint="order")])
+
+    state2, plan = _apply(v, {"7445": {"order": 0, "product": 1}})
+
+    assert plan.trace.reconciled == [("7445", "order", "product")]
+    assert any(p.get("raw") == "7445" for p in state2.focus.products)
+
+
+# --------------------------------------------------------------------------- #
+# crew B: a kind the gate rejected for the domain is not a kind for reconciliation
+# --------------------------------------------------------------------------- #
 
 
 def test_crew_b_an_incompatible_only_kind_never_re_types_the_hint(monkeypatch):
@@ -481,7 +526,8 @@ def test_crew_a_a_live_brand_under_inventory_resolves_against_the_brands_table_f
     assert f"How many units of {CODE}?" in first.split("\n"), first
     sent = _tokens_sent(c.resolver_bodies)
     assert "SORENTO" not in {t.upper() for t in sent}, c.resolver_bodies
-    assert CODE in sent, c.resolver_bodies
+    # The product code reaches the resolver as today, in the fold `resolve_gate._token_of` sends.
+    assert CODE.replace("-", "") in sent, c.resolver_bodies
     assert _focus_of(c).get("brands") == ["SORENTO"], _focus_of(c)
 
 
