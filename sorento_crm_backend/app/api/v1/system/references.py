@@ -29,6 +29,7 @@ from app.models.product import Brand, Product
 from app.models.resources import Attachment, AttachmentType
 from app.services.entity_resolver import (
     _CODE_RE,
+    FREE_TEXT_CANDIDATES,
     EntityPinMismatch,
     _canonical_entity_type,
     _with_resolve_memo,
@@ -2296,7 +2297,8 @@ def _resolve_input(
         filtered = [_strip_entity_stopwords(t) for t in filtered]
         prepared_tokens: list[str] = filtered
         input_for_or: list[str] | str = filtered
-    else:
+    synthesized_from_query = False
+    if not filtered:
         # AND-mode is per-row intersection, undefined without explicit tokens.
         # Silently degrade to empty result so callers that always send
         # `match_mode='and'` regardless of token shape don't hit a 400 - they
@@ -2325,6 +2327,10 @@ def _resolve_input(
                 if alpha_tokens:
                     prepared_tokens = alpha_tokens
                     input_for_or = alpha_tokens
+                    # RESOLVER-TOKEN-CAP: these are words split out of a sentence,
+                    # not codes the caller chose, so they keep the free-text count
+                    # rather than the pre-extracted ceiling.
+                    synthesized_from_query = True
 
     def _run(
         allowed: list[str] | None,
@@ -2354,6 +2360,11 @@ def _resolve_input(
                 cross_type_expand=cross_type_expand,
                 domain_hint=hint,
                 entity_pins=entity_pins,
+                max_candidates=(
+                    FREE_TEXT_CANDIDATES
+                    if synthesized_from_query and tokens_override is None
+                    else None
+                ),
                 # Only the primary (non-overridden) pass carries raw_tokens: a
                 # fallback re-run passes `tokens_override` (a different,
                 # unresolved-only token list) so raw_tokens no longer aligns
