@@ -2121,13 +2121,18 @@ def resolve_kinds(
     #
     # A BRAND hint goes one step further outside order/sales (ROGUE-CONVO-REVIEW, prod 6 Oct
     # 2026 18:50 MYT, "SORENTO S-TRAP 250MM ONE PIECE WC-ZZWC8318-RL-250"): the resolver
-    # answered the confident brand word with FOUR kinds at once, promotion, customer, form
-    # and transporter, none of which inventory even accepts, and reconciliation armed
-    # "Which one do you mean? 1. SORENTO (promotion) 2. SORENTO (customer) 3. SORENTO (form)
-    # 4. SORENTO (transporter)" over a product the parser had read perfectly. The resolver
-    # has no brand probe, so nothing it answers a brand word with can contradict the parser's
-    # brand hint ("Sorento is always a brand"): every hit counts as the brand, the hint
-    # stands, no pick is armed and no row of those kinds reaches the focus. The DOMAIN
+    # answered the brand word with FOUR kinds at once, promotion, customer, form and
+    # transporter, none of which inventory even accepts, and reconciliation armed "Which one
+    # do you mean? 1. SORENTO (promotion) 2. SORENTO (customer) 3. SORENTO (form) 4. SORENTO
+    # (transporter)" over a product the parser had read perfectly. The resolver has no brand
+    # probe, so nothing it answers a brand word with can contradict the parser's brand hint
+    # ("Sorento is always a brand"): every hit counts as the brand, the hint stands, no pick
+    # is armed and no row of those kinds reaches the focus. Like reconciliation itself, this
+    # reads the hint alone, not the parser's `confident` flag (`apply._focus_rules` is what
+    # keeps a non-confident entity off the focus). In the product domains (master_products,
+    # product_attachment) a brand word the resolver placed on products used to be re-typed
+    # `product`; it now stays a brand on the focus, and the fetch is unchanged because the
+    # gate's `compatible_entities` still carries those products. The DOMAIN
     # overrides (`_DOMAIN_HINT_EXPANSIONS`, brand -> customer / transporter under order) are
     # NOT folded: there the re-type is the intended reading ("super ceramic" names a
     # customer), and the live-brand intercept above already keeps a real brand out of that

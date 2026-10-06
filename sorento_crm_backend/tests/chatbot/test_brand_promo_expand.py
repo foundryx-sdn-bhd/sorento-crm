@@ -243,7 +243,7 @@ def test_the_prod_trace_shape_keeps_the_brand_and_writes_no_promotion(monkeypatc
 ROGUE_CODE = "ZZWC8318-RL-250"
 
 
-def test_confident_brand_beside_a_code_never_arms_a_kind_pick(monkeypatch):
+def test_a_brand_word_beside_a_code_never_arms_a_kind_pick(monkeypatch):
     """ROGUE-CONVO-REVIEW shape (prod, 6 Oct 2026 18:50 MYT, prompt v47, General Enquiries
     dealer): "SORENTO S-TRAP 250MM ONE PIECE WC-ZZWC8318-RL-250". The parser was right
     (brand SORENTO confident, product ZZWC8318-RL-250, domain inventory); the resolver
@@ -578,7 +578,7 @@ def _seed_rows_named_sorento(session_factory) -> None:
     db.commit()
 
 
-def test_rogue_shape_through_the_engine_a_confident_brand_beside_a_code_asks_no_kind_pick(console, session_factory):
+def test_rogue_shape_through_the_engine_a_brand_word_beside_a_code_asks_no_kind_pick(console, session_factory):
     """The ROGUE-CONVO-REVIEW prod turn through the real engine and resolver: the brand word
     SORENTO (a live brand, a promotion, a customer, a form and a transporter all carry it)
     beside the product ZZWC8318-RL-250 under inventory. The reply is the product's own

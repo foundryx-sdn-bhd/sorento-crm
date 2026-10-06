@@ -76,7 +76,14 @@ Paths under `sorento_crm_backend/app/services/`.
   hint; no kind pick is armed, no row of those kinds reaches the focus, the product is the
   subject. Under order/sales the resolver's own override (brand -> customer / transporter) is
   the intended reading and is left alone; category hints keep today's reading beyond the
-  promotion fold.
+  promotion fold. The collapse reads the hint alone, not the parser's `confident` flag (same
+  as reconciliation; `apply._focus_rules` keeps a non-confident entity off the focus).
+  One deliberate behaviour change outside the traced shapes (reviewer round 2, question 1):
+  in the product domains (master_products, product_attachment) the resolver sends a brand
+  hint to the product probe (`entity_resolver._DOMAIN_HINT_EXPANSIONS["product"]`), and a
+  brand word placed on products used to be re-typed `product` on the focus; it now stays a
+  brand there. The fetch is unchanged because the gate's `compatible_entities` still carries
+  those products; only the stored focus differs, which is the owner's rule.
 - `turn/reconcile.py` untouched: the pure core keeps its contract and one seam decides what the
   resolver's answer means.
 - Sessions already holding a stale `focus.extra["promotion"]` row are not repaired here; PR
