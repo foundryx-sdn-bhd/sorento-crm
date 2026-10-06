@@ -30,8 +30,9 @@ def db():
 
 
 @pytest.fixture
-def client(db):
+def client(db, monkeypatch):
     from app.dependencies import get_current_user, get_current_user_or_api_key, get_db
+    from app.services.user_service import UserPermissionService
 
     def _override_get_db():
         yield db
@@ -39,6 +40,9 @@ def client(db):
     def _override_current_user():
         return {"id": "773b536d-c675-5a29-b44c-37f956462ba0"}
 
+    # LIST-API-PERMS: the routes carry a permission gate now; this principal has no users
+    # row, so answer the role lookup as admin (the gate has tests/test_list_api_perms.py).
+    monkeypatch.setattr(UserPermissionService, "get_user_role_slugs", lambda self, uid: {"admin"})
     app.dependency_overrides[get_db] = _override_get_db
     app.dependency_overrides[get_current_user] = _override_current_user
     app.dependency_overrides[get_current_user_or_api_key] = _override_current_user

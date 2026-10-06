@@ -9,7 +9,13 @@ from typing import Optional
 import httpx
 from app.database import get_db
 from pydantic import BaseModel, Field
-from app.dependencies import get_current_user_or_api_key, require_permission, get_current_user
+from app.dependencies import (
+    get_current_user,
+    get_current_user_or_api_key,
+    require_any_permission_with_api_key,
+    require_permission,
+    require_permission_with_api_key,
+)
 from app.services.sla_service import (
     ConversationSLATrackingService,
     append_clock_line,
@@ -46,6 +52,62 @@ from app.services.banner_person_service import (
 )
 
 router = APIRouter()
+
+
+# --- LIST-API-PERMS: who may read ONE tracker --------------------------------------------------
+SLA_TRACKING_VIEW = "sla_management.conversation_sla_tracking.view"
+EVENT_LOGS_VIEW = "sla_management.escalation_logs.view"
+# The SLA module's own readers, plus the KPI dashboard, whose rows link to the tracker detail.
+SLA_READERS = [SLA_TRACKING_VIEW, EVENT_LOGS_VIEW, "sla.kpi.view"]
+# A form tracker is also read from the owning record's detail page (its SLA tab and handling
+# lock: `_shared/formSLAService.ts`, `FormSLATrackerDetail.tsx`), so that record's own view
+# slug admits - for trackers of that type only. A conversation ticket has no source row and
+# is read by the SLA module alone.
+SOURCE_TYPE_READERS = {
+    "complaint": ["complaint_management.complaints.view"],
+    "stock_inquiry": ["procurement.stock_inquiries.view"],
+    "purchase_request": ["procurement.purchase_requests.view"],
+    "sponsorship_form": ["procurement.sponsorship_forms.view"],
+    "ticket": ["tickets.tickets.view"],
+    "workflow_submission": ["workflow_forms.submissions.view"],
+    "price_tag_request": ["dealer_kit.price_tag_requests.view"],
+}
+
+
+def tracker_reader_slugs(source_entity_type: Optional[str]) -> list[str]:
+    return SLA_READERS + SOURCE_TYPE_READERS.get(source_entity_type or "", [])
+
+
+def _require_any(db: Session, current_user: dict, slugs: list[str]) -> None:
+    """The shared any-of dependency, called in the handler where the slug set depends on the
+    record. Superadmin/admin bypass, `module_guard_strict` and the 403 wording are all
+    `require_any_permission_with_api_key`'s; nothing is re-implemented here."""
+    require_any_permission_with_api_key(slugs)(current_user=current_user, db=db)
+
+
+def _require_tracker_reader(db: Session, current_user: dict, source_entity_type: Optional[str]) -> None:
+    _require_any(db, current_user, tracker_reader_slugs(source_entity_type))
+
+
+def _require_event_log_reader(db: Session, current_user: dict, tracking) -> None:
+    """Unfiltered, `/event-logs` is the SLA Event Logs page (every tracker's events) and needs
+    `sla_management.escalation_logs.view`. Filtered to one tracker it is that tracker's event
+    table on its own detail page, so that tracker's readers admit."""
+    if tracking is None:
+        _require_any(db, current_user, [EVENT_LOGS_VIEW])
+    else:
+        _require_tracker_reader(db, current_user, getattr(tracking, "source_entity_type", None))
+
+
+def _tracking_or_404(db: Session, tracking_id: str):
+    try:
+        UUID(str(tracking_id))
+    except ValueError:
+        raise HTTPException(status_code=422, detail="tracking_id must be a UUID")
+    row = db.query(ConversationSLATracking).filter(ConversationSLATracking.id == str(tracking_id)).first()
+    if row is None:
+        raise handle_not_found("SLA Tracking", str(tracking_id))
+    return row
 
 
 def _log_integration_best_effort(log_service, payload, **kwargs) -> None:
@@ -362,7 +424,7 @@ def build_conversation_sla_tracking_response(
 
 @router.get("/dashboard")
 async def get_sla_tracking_dashboard(
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key("sla_management.conversation_sla_tracking.view")),
     db: Session = Depends(get_db)
 ):
     """Get dashboard metrics for SLA tracking."""
@@ -818,7 +880,7 @@ async def get_sla_tracking(
         ),
     ),
     scope: str = Query("conversation", description="conversation (contact-keyed) or form (per-entity stage rows)"),
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key("sla_management.conversation_sla_tracking.view")),
     db: Session = Depends(get_db)
 ):
     """Get SLA tracking records with pagination. query searches contact phone and contact name."""
@@ -911,6 +973,10 @@ async def create_sla_tracking(
 
 @router.get("/integration/due-escalations", status_code=status.HTTP_200_OK)
 async def list_due_escalations_integration(
+    # LIST-API-PERMS: the router's module guard only proved a session or key existed, so any
+    # signed-in account could read every breaching conversation with its phone number. The
+    # n8n runner's role holds this slug (Admin-equivalent, migration 297).
+    _user: dict = Depends(require_permission_with_api_key("sla_management.conversation_sla_tracking.view")),
     db: Session = Depends(get_db),
 ):
     """Work-list for the scheduled escalation runner (n8n).
@@ -2097,6 +2163,8 @@ async def list_trackers_by_source(
     db: Session = Depends(get_db),
 ):
     """All SLA trackers attached to a form row, ordered oldest first (multi-stage chain)."""
+    # The slug set follows the type the caller names: this is the SLA tab of that record.
+    _require_tracker_reader(db, current_user, source_entity_type)
     try:
         rows = (
             db.query(ConversationSLATracking)
@@ -2133,6 +2201,7 @@ async def get_event_logs(
     db: Session = Depends(get_db)
 ):
     """Get SLA event logs with pagination and filtering."""
+    _require_event_log_reader(db, current_user, _tracking_or_404(db, tracking_id) if tracking_id else None)
     try:
         service = ConversationSLATrackingService(db)
         result = service.list_event_logs(
@@ -2157,10 +2226,18 @@ async def get_sla_tracking_conversation(
     tracking_id: UUID,
     limit: int = Query(50, ge=1, le=MAX_PAGE_LIMIT),
     cursor: Optional[str] = Query(None),
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """List Respond.io messages for the contact linked to this SLA tracking (respond_io_id on respond_contacts).
+
+    A contact's WhatsApp thread, so for a conversation ticket it is assignee-or-manager scoped
+    like ``GET .../conversation/page`` and ``.../ticket`` (``can_user_act_on_tracking``): an
+    outsider gets a 404, never a 403 that would confirm the id. A form-SLA tracker (complaint,
+    stock inquiry, ...) has no assignee rule for reading; it admits with the tracker's own
+    readers (`tracker_reader_slugs`), as its sibling reads do. Session only, like its
+    siblings; read by the tracking detail's chat records (`SlaTrackingChatRecords.tsx`) and
+    the My Pending ticket drawer (`TicketConversationPanel.tsx`).
 
     The listing is a real Respond.io HTTP call (``RespondClient.list_messages``,
     15s timeout) behind a synchronous service method, so this ``async def``
@@ -2171,7 +2248,15 @@ async def get_sla_tracking_conversation(
     from starlette.concurrency import run_in_threadpool
 
     try:
+        from app.services.form_sla_service import FORM_SLA_TYPES
+
         service = ConversationSLATrackingService(db)
+        tracking = service.get_tracking(str(tracking_id), load_event_logs=False)
+        source_type = getattr(tracking, "source_entity_type", None)
+        if source_type in FORM_SLA_TYPES:
+            _require_tracker_reader(db, current_user, source_type)
+        elif not service.can_user_act_on_tracking(current_user["id"], tracking):
+            raise handle_not_found("Conversation SLA tracking", str(tracking_id))
         return await run_in_threadpool(
             service.fetch_respond_conversation_for_tracking,
             str(tracking_id),
@@ -2392,6 +2477,8 @@ async def get_sla_tracking_record(
         tracking_id_str = str(tracking_id)
         service = ConversationSLATrackingService(db)
         tracking = service.get_tracking(tracking_id_str)
+        # The slug set follows the record's type (SOURCE_TYPE_READERS), read after the 404.
+        _require_tracker_reader(db, current_user, getattr(tracking, "source_entity_type", None))
         return build_conversation_sla_tracking_response(db, tracking)
     except HTTPException:
         raise

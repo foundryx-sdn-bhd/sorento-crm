@@ -103,6 +103,10 @@ a journey asserts it verbatim from the owner's pasted production replies (hand p
 - AC-1705 [journey] F9 incoming miss: "Here's what you want:" + "But no incoming matched these." +
   "But here are the stock details for the requested products:" for THAT product only + the ladder
   sentence + the purchasing team offer. No other product code appears in the reply.
+  STOCK-MISS-RENDER (crew ruling (a), 6 Oct 2026, prod turn #f763): the stock rung applies ONLY
+  when the incoming tool actually ran and came back empty. On a resolver not_found exit (or any
+  fetch-step refusal) no incoming lookup ran, so "No incoming for X" would be an unmeasured claim:
+  the reply is the miss text alone, no rung (`test_rearch_r4_miss_engine.py::TestAC1705...`).
 
 ## Regression and gate
 

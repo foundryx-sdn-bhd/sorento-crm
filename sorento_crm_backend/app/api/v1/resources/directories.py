@@ -5,7 +5,11 @@ from typing import cast
 
 from app.database import get_db
 from app.services.uuid_path_param import validate_uuid_path
-from app.dependencies import get_current_user, get_current_user_or_api_key
+from app.dependencies import (
+    get_current_user,
+    require_permission_with_api_key,
+    require_session_or_api_key_permission,
+)
 from app.services.resources_service import AttachmentDirectoryService, AttachmentService
 from app.schemas.resources import (
     AttachmentDirectoryCreate,
@@ -49,7 +53,7 @@ def _build_tree_node(service: AttachmentDirectoryService, dir_id: str) -> Attach
 @router.get("/", response_model=list[AttachmentDirectoryResponse])
 async def list_directories(
     parent_id: str | None = None,
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key("resource.attachment_directories.view")),
     db=Depends(get_db),
 ):
     """List directories directly under parent_id (omit for root)."""
@@ -64,7 +68,7 @@ async def list_directories(
 @router.get("/tree", response_model=list[AttachmentDirectoryTreeNode])
 async def get_directory_tree(
     deleted: bool = Query(False, description="If true, return tree of deleted directories only (for Trash)"),
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_session_or_api_key_permission("resource.attachment_directories.view")),
     db=Depends(get_db),
 ):
     """Get full directory tree. Use deleted=true for Trash (deleted folders only)."""
@@ -84,7 +88,7 @@ async def get_directory_tree(
 @router.get("/{directory_id}", response_model=AttachmentDirectoryResponse)
 async def get_directory(
     directory_id: str,
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key("resource.attachment_directories.view")),
     db=Depends(get_db),
 ):
     """Get a single directory by ID."""

@@ -533,17 +533,28 @@ def _exact_codes_only(
     * a word or a bare number with no exact code is not a product at all: the describe /
       semantic matches the resolver found for "xx", "10" or a "2" typed over a
       did-you-mean listed a page of the catalogue.
+    STOCK-MISS-RENDER (owner report, 6 Oct 2026, prod turn #f763 "Srt 364-hp x 1 stock
+    available?"): the typed word and the resolver's code are compared the way the
+    resolver itself matched them - case AND separators folded (`turn.state.token_key`,
+    the same fold `resolve_gate._PRODUCT_FOLD` sends the token through and
+    `turn_runtime.unplaced_tokens` keys its own map by). Casefold alone never equalled
+    "srt 364-hp" to "srt364-hp", so the product the resolver HAD placed was dropped here,
+    the fetch was refused for having no subject, and the dealer was told "Couldn't find".
+    This filter still matches nothing of its own: every candidate it reads is one the
+    resolver placed, and `misses` / `ignored` are keyed the way `unplaced` already is.
+
     Returns the four resolver answers, or None when nothing changes."""
     def code_of(row: dict[str, Any]) -> str:
-        return str(row.get("canonical_code") or row.get("code") or row.get("raw") or "").strip().casefold()
+        return turn_state.token_key(row.get("canonical_code") or row.get("code") or row.get("raw") or "")
 
     tokens: list[tuple[str, str]] = []
     for e in parse_output.get("entities") or []:
         if not isinstance(e, dict) or e.get("hint") not in (None, "product"):
             continue
         typed = str(e.get("raw") or e.get("canonical_code") or "").strip()
-        if typed and typed.casefold() not in {t for t, _ in tokens}:
-            tokens.append((typed.casefold(), typed))
+        fold = turn_state.token_key(typed)
+        if fold and fold not in {t for t, _ in tokens}:
+            tokens.append((fold, typed))
     candidates = [c for c in resolved_candidates.get("product") or [] if isinstance(c, dict)]
     if not tokens or not candidates:
         return None
@@ -570,12 +581,16 @@ def _exact_codes_only(
     if len(kept) == len(candidates) and not misses and not ignored:
         return None
     kinds = dict(resolved_kinds)
-    for fold, _typed in tokens:
-        if fold in kinds and isinstance(kinds[fold], dict):
-            row = {k: v for k, v in kinds[fold].items() if k != "product"}
-            if per_token.get(fold):
-                row["product"] = per_token[fold]
-            kinds[fold] = row
+    # `resolved_kinds` is keyed by the resolver's OWN token (`resolve_gate._token_of`:
+    # separators dropped, case kept - "Srt364hp"), so the join folds that side too.
+    for key, hits in list(kinds.items()):
+        fold = turn_state.token_key(key)
+        if fold in per_token or fold in misses or fold in ignored:
+            if isinstance(hits, dict):
+                row = {k: v for k, v in hits.items() if k != "product"}
+                if per_token.get(fold):
+                    row["product"] = per_token[fold]
+                kinds[key] = row
     compatible = [
         e
         for e in compatible_entities
@@ -4788,6 +4803,9 @@ def _run_stages_body(  # noqa: PLR0915
         predicate: dict[str, Any] | None = None
         resolved_candidates: dict[str, list[dict[str, Any]]] = {}
         unplaced_tokens: dict[str, str] = {}
+        # RESOLVER-TOKEN-CAP: the codes the resolver cut at its ceiling and never looked
+        # up, as typed - named by the reply's "Not checked:" line, never silently dropped.
+        not_checked_tokens: dict[str, str] = {}
         spec_tier = False
         # R2 (PLAN-chatbot-answer-half-reattach.md): the raw `resolve_gate.run` payload
         # (`resolved`, `gate`, `aggregate`, `tier_gate`, `_exit_kind`), carried through
@@ -4959,6 +4977,7 @@ def _run_stages_body(  # noqa: PLR0915
             predicate = resolve_outcome.predicate
             resolved_candidates = resolve_outcome.resolved_candidates
             unplaced_tokens = resolve_outcome.unplaced_tokens
+            not_checked_tokens = resolve_outcome.not_checked
             spec_tier = resolve_outcome.spec_tier
             resolver_payload = resolve_outcome.payload
             # Every turn of availability access, not only a stock / ETA one: a code the
@@ -5579,6 +5598,8 @@ def _run_stages_body(  # noqa: PLR0915
                     # MULTI-CODE-DYM: each unplaced token's did-you-mean, the same
                     # candidates a lone miss of that token offers.
                     unplaced_suggestions=_unplaced_suggestions(resolver_payload, unplaced_tokens),
+                    # RESOLVER-TOKEN-CAP: the codes the resolver never looked up, as typed.
+                    not_checked=list(not_checked_tokens.values()),
                     # R6 (fix round 2): so a null `routing.suggested_team` inside the
                     # per-domain fetch context gets the same domain-aware fill this
                     # turn's own `ctx.parse.output` already got above.

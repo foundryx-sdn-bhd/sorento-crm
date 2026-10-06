@@ -1753,6 +1753,28 @@ def unplaced_tokens(entities: list[Any], resolved: Any) -> dict[str, str]:
     return {key: raw for key, raw in named.items() if key in missed}
 
 
+def not_checked_tokens(entities: list[Any], resolved: Any) -> dict[str, str]:
+    """The tokens THIS message named that the resolver never looked up, lower-cased.
+
+    RESOLVER-TOKEN-CAP (owner report, 6 Oct 2026): a catalogue photo read 19 codes, the
+    resolver cut the list to 8, and the cut 11 were in neither `resolutions` nor
+    `unresolved_tokens`, so the stock reply said nothing about them. The resolver now
+    echoes what it cut in `truncated_tokens` (`entity_resolver.PRE_EXTRACTED_TOKEN_
+    CEILING`); joined here exactly as `unplaced_tokens` joins `unresolved_tokens`, so the
+    reply can say "Not checked: X, Y." in the customer's own spelling. A cut token is
+    NOT unplaced - it may well exist - which is why it is a separate map and a separate
+    sentence, never "I could not find".
+    """
+    named: dict[str, str] = {}
+    for entity in jsc.array(entities):
+        raw = jsc.nullish_str(jsc.get(entity, "raw")).strip()
+        key = _token_key(raw)
+        if key and key not in named:
+            named[key] = raw
+    cut = {_token_key(x) for x in jsc.array(jsc.get(resolved, "truncated_tokens"))}
+    return {key: raw for key, raw in named.items() if key in cut}
+
+
 def absorbed_tokens(entities: list[Any], resolved: Any) -> dict[str, str]:
     """Typed tokens the resolver answered ONLY with another typed token's exact match.
 
@@ -1919,6 +1941,10 @@ class ResolveOutcome:
     unplaced_tokens: dict[str, str]
     spec_tier: bool
     payload: dict[str, Any] | None
+    # RESOLVER-TOKEN-CAP: `{folded token: the word the customer typed}` for every token
+    # this message named that the resolver cut at its ceiling and never looked up
+    # (`not_checked_tokens`). Empty on the two early returns, like `unplaced_tokens`.
+    not_checked: dict[str, str] = field(default_factory=dict)
 
 
 def resolve_kinds(
@@ -2225,6 +2251,7 @@ def resolve_kinds(
         unplaced,
         spec_tier_matched(resolved),
         payload,
+        not_checked=not_checked_tokens(entities, resolved),
     )
 
 
@@ -2452,8 +2479,13 @@ def _spec_quantities(
         # AVAIL-MODE-REPLIES (owner Q2 (a), 2 Oct 2026): a code named twice in one message
         # is one line whose quantities add up ("SRT5674 x 2 ... SRT5674 x 3" asks for 5).
         # Each entity counts once, however many of its names carry the code.
+        # STOCK-MISS-RENDER (prod turn #f763, "Srt 364-hp x 1"): joined by `_token_key`
+        # - case AND separators folded, the resolver's own match rule - on both sides,
+        # so a code typed with a space still carries its quantity to the uuid the
+        # resolver placed it on (casefold alone left "srt 364-hp" != "srt364-hp" and
+        # the reply asked "How many units?" over a quantity the message had stated).
         for code in {
-            value.strip().casefold()
+            _token_key(value)
             for value in (e.get("canonical_code"), e.get("raw"))
             if isinstance(value, str) and value.strip()
         }:
@@ -2474,7 +2506,7 @@ def _spec_quantities(
             code = e.get(name)
             if not isinstance(code, str) or not code.strip():
                 continue
-            quantity = by_code.get(code.strip().casefold())
+            quantity = by_code.get(_token_key(code))
             if quantity is not None:
                 quantities[uuid] = quantity
                 break
@@ -2494,13 +2526,13 @@ def _spec_quantities(
         and isinstance(e.get("code") or e.get("canonical_code"), str)
     }
     for token, quantity in by_code.items():
-        if any((code or "").casefold() == token for code in resolved_codes.values()):
+        if any(_token_key(code) == token for code in resolved_codes.values()):
             continue
         prefixed = [
-            uuid for uuid, code in resolved_codes.items() if (code or "").casefold().startswith(token)
+            uuid for uuid, code in resolved_codes.items() if _token_key(code).startswith(token)
         ]
         if not prefixed and code_like(token):
-            prefixed = [uuid for uuid, code in resolved_codes.items() if token in (code or "").casefold()]
+            prefixed = [uuid for uuid, code in resolved_codes.items() if token in _token_key(code)]
         if len(prefixed) == 1 and prefixed[0] not in quantities:
             quantities[prefixed[0]] = quantity
     return {**out, "requested_quantities": quantities} if quantities else out
@@ -2748,8 +2780,13 @@ def make_tool_runner(
     customer_scope: dict[str, Any] | None = None,
     localizer: Any = None,
     unplaced_suggestions: dict[str, list[dict[str, Any]]] | None = None,
+    not_checked: list[str] | None = None,
 ) -> Callable[[str, FetchSpec], dict[str, Any]]:
     """The ONE seam that reaches a tool: `run_fetch` calls it once per `FetchSpec`.
+
+    `not_checked` (RESOLVER-TOKEN-CAP) is the engine's `ResolveOutcome.not_checked`, as
+    typed: the codes this message named that the resolver cut at its ceiling. Stamped on
+    every envelope so the composer's existing "Not checked: X, Y." line names them.
 
     The tool pick, the argument build, the MCP call and the row structuring are all the
     kept lane's (`lanes/business.run_fetch` -> `lanes/business/fetch.output_structurer`),
@@ -3169,6 +3206,7 @@ def make_tool_runner(
             ran_with=lane_out,
             unplaced=envelope_unplaced,
             suggestions=unplaced_suggestions,
+            not_checked=not_checked,
             raw_fragment=fragment,
             brand_names=brand_names,
             attachment_types=(
@@ -4160,8 +4198,13 @@ def envelope_of(
     brand_names: list[str] | None = None,
     attachment_types: list[dict[str, Any]] | None = None,
     suggestions: dict[str, list[dict[str, Any]]] | None = None,
+    not_checked: list[str] | None = None,
 ) -> dict[str, Any]:
     """The kept lane's fetch fragment as the composer's envelope (AC-1530, AC-1531).
+
+    `not_checked` (RESOLVER-TOKEN-CAP): the codes the resolver cut at its ceiling and
+    never looked up, joined onto the task's own `not_checked` filter (the slots a "just
+    proceed" dropped) - one line, one wording, for everything this answer did not check.
 
     `ran_with` is the lane input this fetch actually went out with, read for one fact:
     the date window. Whatever put it there - the verdict's own dates, the focus window
@@ -4261,9 +4304,12 @@ def envelope_of(
         # dropped, named by the reply so the dealer can see what was not checked.
         # Stamped on the spec by the task, carried here because the composer prints
         # it under the section it belongs to.
-        "not_checked": [
-            name for name in (spec.filters.get("not_checked") or []) if isinstance(name, str)
-        ],
+        "not_checked": list(
+            dict.fromkeys(
+                [name for name in (spec.filters.get("not_checked") or []) if isinstance(name, str)]
+                + [name for name in (not_checked or []) if isinstance(name, str) and name]
+            )
+        ),
         # The lane's OWN question, when the fetch asked one instead of (or beside)
         # answering: contract 38's "which document?" and contract 39's detail offer both
         # come back as `outstanding_ask` = `{kind, last_result_set, filters}`. The
