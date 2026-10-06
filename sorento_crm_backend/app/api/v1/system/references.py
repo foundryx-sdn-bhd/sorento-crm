@@ -1971,14 +1971,16 @@ def _only_brand_words_unanswered_beside_a_code(
     unanswered = [str(t) for t in (result.get("unresolved_tokens") or []) if str(t or "").strip()]
     if not unanswered or not _code_matched(result, tokens):
         return False
-    # Active brands only, the same set `turn_runtime.active_brands` reads for the lock
-    # (security review, nit 2): a retired brand's name is a word like any other here.
+    # The ONE brand reader the chatbot's lock already uses (`turn_runtime.active_brands`:
+    # active rows, company scope read off the session), so the two sides of the rule can
+    # never disagree on which words are brands. Imported here, not at module top: the
+    # chatbot runtime imports this route module's siblings.
+    from app.services.chatbot.turn_runtime import active_brands
+
     names = {
         _norm_locked_token(value)
-        for (code, name) in db.query(Brand.brand_code, Brand.brand_name)
-        .filter(Brand.is_active.is_(True))
-        .all()
-        for value in (code, name)
+        for row in active_brands(db)
+        for value in (row.get("brand_code"), row.get("brand_name"))
         if str(value or "").strip()
     }
     return all(_norm_locked_token(t) in names for t in unanswered)
