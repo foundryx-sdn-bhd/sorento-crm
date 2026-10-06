@@ -349,11 +349,16 @@ Change C (and the class B miss-line rule, one seam):
   product entities to the resolver's `unresolved_tokens` through `_type_norm` (separators
   folded on both sides). When it holds: spec_search set members read off the words around
   the token are dropped from `found_lines` (no header, no "(+N more)") AND do not count as
-  having placed the token (`resolved_toks`), AND the four described-set answers
-  (`described_set_answers`) stand down, so the miss falls through to the product-code
-  miss, which quotes the token as typed (`label_token` -> `raw_of_token`): `Couldn't
-  find: "Srt-hp" (product).` A described-set ask with no product token keeps every one of
-  its answers (controls: the gunmetal basins set, "flurbish basin").
+  having placed the token (`resolved_toks`), so a miss with members reaches the
+  product-code miss, which quotes the token as typed (`label_token` -> `raw_of_token`):
+  `Couldn't find: "<line>" (product).` The described-set "named nothing readable" branch
+  (F2, fix round 9/10 on PR #833: "I want that structure to stay") KEEPS its structure;
+  the words it prints are the typed token(s) instead of the content words the reader
+  split off them: `Here's what you want: Srt-hp / Couldn't find: "Srt-hp".` (A first cut
+  stood the described-set answers down instead; it broke three #833 pins in
+  `test_lane_require`, where a product-hinted phrase that binds nothing, "water tap",
+  "zzqx", is its own term in that structure.) A described-set ask with no product token
+  keeps every one of its answers (controls: the gunmetal basins set, "flurbish basin").
 * `engine.py:5981-6018` / `turn_runtime.py:3306`: no `set_page` is carried when this
   message's product token is unplaced (the set described nothing the customer asked).
 * `resolve_gate.py:716` / `gate._CODE_SHAPED`: NOT widened (no word-matching in code,
@@ -413,10 +418,10 @@ Red tests (new file `tests/chatbot/test_miss_says_what_it_could_not_find.py`):
   the token unplaced (listed by the resolver folded, the way it is sent): no "Here's what
   you want" header, no "(+34 more)", no `set_page` on `focus`, "Couldn't find" names the
   token as typed;
-* dealer console, real resolver: "Srt-hp" answers `Couldn't find: "Srt-hp" (product).`
-  plus the salesman line, never `Here's what you want: srt`; the pasted turn-4 line the
-  same, and `focus.set_page` stays None; control: bare "stock?" still gets the scope
-  sentence;
+* dealer console, real resolver: "Srt-hp" answers `Here's what you want: Srt-hp /
+  Couldn't find: "Srt-hp".` plus the salesman line, never `srt`; the pasted turn-4 line
+  the same with the line as typed (its words unread by the blank catalogue), and
+  `focus.set_page` stays None; control: bare "stock?" still gets the scope sentence;
 * composer, a described-set ask that named nothing readable ("flurbish basin", no product
   token) keeps `Here's what you want: flurbish basin / Couldn't find: "flurbish".`;
 * control: a real described-set miss ("which gunmetal basins have stock", zero

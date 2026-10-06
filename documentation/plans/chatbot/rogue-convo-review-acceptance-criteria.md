@@ -50,9 +50,13 @@ are its red tests. Fake fixture ids in every test; product codes are catalogue c
 
 - AC-RC-C1: "Here's what you want:" lists only entities the customer named (typed this
   message or carried on the focus) that the resolver placed. A miss on the customer's own
-  product token prints no header, no "(+N more)", no described-set answer, and names the
-  token in "Couldn't find". The "own token missed" join folds separators on both sides
-  (the resolver lists the token as sent). Red: turns 4, 5 (35 and 145 spec_search members
+  product token lists no set member and no "(+N more)" under the header, and names the
+  token AS TYPED in "Couldn't find": either the product-code miss (`Couldn't find:
+  "<line>" (product).`, when the words around the token read a set) or the described-set
+  miss's own structure (`Here's what you want: Srt-hp / Couldn't find: "Srt-hp".`, fix
+  round 9 on PR #833, when nothing was readable) with the typed token in place of the
+  reader's fragments. The "own token missed" join folds separators on both sides (the
+  resolver lists the token as sent). Red: turns 4, 5 (35 and 145 spec_search members
   under the header), turn 11; the real-engine replay of turns 4 and 11.
 - AC-RC-C2: no `set_page` is carried when the message's own product token is unplaced and
   no class word of the customer's own named the set (the set was read off the words inside
