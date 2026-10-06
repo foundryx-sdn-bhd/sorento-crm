@@ -1,6 +1,6 @@
 # PLAN - Brand scope applies per company (BRAND-SCOPE-PER-COMPANY)
 
-Status: building (track: small fix, size M, no migration, no permission change; security-reviewer
+Status: in review, PR #1512, reviewer PASS + security-reviewer PASS on 55a94ec5 (track: small fix, size M, no migration, no permission change; security-reviewer
 runs because the diff is multi-company data visibility). Card:
 `CARD-brand-scope-per-company-6oct.md`. UAC: `brand-scope-per-company-6oct-acceptance-criteria.md`.
 Branch `claude/brand-scope-per-company-pefgt8` (the sandbox's branch for lane
