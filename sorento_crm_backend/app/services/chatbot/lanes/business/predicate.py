@@ -81,6 +81,19 @@ def _cert_scheme_from_raw(raw: str) -> str | None:
     return " ".join(remainder).strip() or None
 
 
+def _attachment_type_code(parser_output: dict[str, Any], raw: str) -> str:
+    """The parser code of the `attachment_type` entity that said `raw`, `raw` itself when
+    it has none. ATTACH-GROUNDING-TYPO option (c) (owner, 6 Oct 2026): the document leg is
+    the parser's type ("technical drawing"), never the customer's spelling ("techincal
+    drawings"); grounding has already dropped any code that is not a listed type."""
+    for entity in parser_output.get("entities") or []:
+        if not isinstance(entity, dict) or str(entity.get("hint") or "").strip().lower() != "attachment_type":
+            continue
+        if str(entity.get("raw") or "").strip() == raw:
+            return str(entity.get("canonical_code") or "").strip() or raw
+    return raw
+
+
 def _attachment_type_raws(parser_output: dict[str, Any]) -> list[str]:
     """Every `attachment_type` entity's own raw, in order, non-empty, deduped."""
     raws: list[str] = []
@@ -287,7 +300,10 @@ def derive_require(
         goal_or_message = parser_output.get("user_goal") or message_text or ""
         if _CERTIFICATE_RE.search(str(goal_or_message)):
             return {"certificate": {"scheme": raw}}
-        return {"attachment_type": raw}
+        code = _attachment_type_code(parser_output, raw)
+        if code.casefold() == "certificate":
+            return {"certificate": True}
+        return {"attachment_type": code}
 
     if intent == "check_product" and _describes_a_set(parser_output):
         # Fix round 9 on PR #833 (owner hand test 28 Sep: "kitchen sink 1.2mm thickness"

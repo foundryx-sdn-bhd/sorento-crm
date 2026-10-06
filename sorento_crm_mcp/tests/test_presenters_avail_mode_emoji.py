@@ -37,7 +37,7 @@ def test_in_stock_covering_q_is_a_tick():
 
 def test_in_stock_short_of_q_names_the_available_count():
     line = _availability_line(_entry(product_code="SRT5674", requested_qty=50, available_qty=30))
-    assert line == "SRT5674 x 50: ✅ Got stock, 30 available."
+    assert line == "SRT5674 x 50: ✅ Only 30 got stock."
 
 
 def test_incoming_is_a_cross_with_the_eta():
@@ -80,9 +80,11 @@ def test_a_tick_says_got_stock_and_the_incoming_cross_says_no_stock_and_the_eta(
     "Got stock" and never refers; the incoming cross says "No stock" and its date (owner hand
     test, 6 Oct 2026).
     `no_incoming` still says "No stock and no incoming" (REFER-ONLY-FIXES, 3 Oct 2026)."""
+    # AVAIL-ONHAND-BASIS hand test (owner, 6 Oct 2026): the short line is "Only N got stock.",
+    # so the tick line SAYS "got stock" either way, covering the ask or short of it.
     for extra in ({}, {"available_qty": 3}):
         line = _availability_line(_entry(branch="in_stock", **extra))
-        assert line.startswith("SRT-CODE x 50: ✅ Got stock"), line
+        assert line.startswith("SRT-CODE x 50: ✅ ") and "got stock" in line.lower(), line
         assert "we have stock" not in line.lower() and "refer" not in line.lower(), line
     # Owner hand test, 6 Oct 2026: the incoming cross says the stock state too.
     incoming = _availability_line(_entry(branch="incoming", eta="19/10/2026"))
@@ -206,3 +208,12 @@ def test_a_dealer_eta_item_carries_the_discontinued_flag():
         ("SRT5674: \u2705 ETA 02/11/2026", {"dealer_view": True, "discontinued": False}),
         ("SRT5713: No ETA", {"dealer_view": True, "discontinued": False}),
     ]
+
+
+def test_prod_case_short_of_the_ask_is_only_n_got_stock():
+    """AVAIL-ONHAND-BASIS hand test (owner, 6 Oct 2026): the partial line keeps the tick and
+    reads "Only N got stock." (was "Got stock, N available."); the covered line is unchanged."""
+    line = _availability_line(_entry(product_code="MWC7632-SH-P", requested_qty=10, available_qty=6))
+    assert line == "MWC7632-SH-P x 10: ✅ Only 6 got stock."
+    covered = _availability_line(_entry(product_code="MWC7632-SH-P", requested_qty=5))
+    assert covered == "MWC7632-SH-P x 5: ✅ Got stock."
