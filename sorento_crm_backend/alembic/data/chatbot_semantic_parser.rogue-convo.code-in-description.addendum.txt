@@ -1,17 +1,19 @@
-A DESCRIPTION WITH A CODE INSIDE IT is still ONE product entity whose raw is the CODE
-alone, never the whole line. A catalogue line pasted or read off a photo ("SORENTO ONE
-PIECE WASHDOWN TOILET (S-TRAP250MM)-SRTWC8354-SH", "SORENTO S-TRAP 250MM ONE PIECE
-WC-SRTWC8318-RL-250") names a code (the alphanumeric run with digits in it, hyphens and
-all) beside descriptive words. The code is the product entity; the class words are the
-category entity; a property beside them is a specification entity; a word on the Known
-brands line is its own brand entity. The product raw never carries the brand word, the
-class words or the property - a brand glued to a code in one token is TWO entities:
-"SORENTO PSJLSRTSC07" is brand {raw: "SORENTO"} + product {raw: "PSJLSRTSC07"}, never
-product "SORENTO PSJLSRTSC07".
-  - "SORENTO ONE PIECE WASHDOWN TOILET (S-TRAP250MM)-SRTWC8354-SH" -> product {raw:
-    "SRTWC8354-SH"}, brand {raw: "SORENTO"}, category {raw: "one piece washdown toilet"},
-    specification {raw: "S-TRAP250MM"} (its spec_key from the Specification lines)
+A DESCRIPTION WITH A CODE INSIDE IT is still ONE product entity: its raw is the customer's
+typed text for that product and its canonical_code is the CODE alone, copied exactly as
+typed. A catalogue line pasted or read off a photo ("SORENTO ONE PIECE WASHDOWN TOILET
+(S-TRAP250MM)-SRTWC8354-SH", "SORENTO S-TRAP 250MM ONE PIECE WC-SRTWC8318-RL-250") names a
+code (the alphanumeric run with digits in it, hyphens and all) beside descriptive words. The
+code is the product entity's canonical_code; the class words are the category entity; a
+property beside them is a specification entity; a word on the Known brands line is its own
+brand entity. canonical_code never carries the brand word, the class words or the property -
+a brand glued to a code in one token is TWO entities: "SORENTO PSJLSRTSC07" is brand {raw:
+"SORENTO"} + product {raw: "SORENTO PSJLSRTSC07", canonical_code: "PSJLSRTSC07"}, never
+canonical_code "SORENTO PSJLSRTSC07".
+  - "SORENTO ONE PIECE WASHDOWN TOILET (S-TRAP250MM)-SRTWC8354-SH" -> product {raw: "SORENTO
+    ONE PIECE WASHDOWN TOILET (S-TRAP250MM)-SRTWC8354-SH", canonical_code: "SRTWC8354-SH"},
+    brand {raw: "SORENTO"}, category {raw: "one piece washdown toilet"}, specification
+    {raw: "S-TRAP250MM"} (its spec_key from the Specification lines)
   - "price SORENTO ONE PIECE WASHDOWN TOILET (S-TRAP250MM)-SRTWC8354-SH" -> the same
     entities, domain_hint "master_products", requested_attributes ["price"]
-  - photo text "SORENTO PSJLSRTSC07 x50" -> brand {raw: "SORENTO"}, product {raw:
-    "PSJLSRTSC07", quantity: 50}
+  - photo text "SORENTO PSJLSRTSC07 x50" -> brand {raw: "SORENTO"}, product {raw: "SORENTO
+    PSJLSRTSC07", canonical_code: "PSJLSRTSC07", quantity: 50}

@@ -2,7 +2,10 @@
 and a bare count with no code beside it (owner, 6 Oct 2026, dealer conversation).
 
 Two prompt-only rules, graded against the real provider, each shape N times (default 5,
-`ROGUE_CONVO_RUNS`), on two texts:
+`ROGUE_CONVO_RUNS`), on two texts. The F(i) targets grade the product entity's
+`canonical_code` (folded), never its `raw`: the owner ruled on #1511 (card Q1 = a) that
+`raw` stays the customer's typed text and `canonical_code` is the bare code, and the
+chatbot reads `canonical_code` first, so both addenda state that one rule. Texts:
 
   * BASE: the text the addenda are applied to (`_rogue_convo_prompt.base_text`, the
     exported dev text when `ROGUE_CONVO_PROMPT_FILE` names one, else the shipped
@@ -116,7 +119,13 @@ def _parse(label: str, message: str, *, previous: str = "(none)", focus: Any = N
 
 
 def _entities(out: dict[str, Any], hint: str) -> list[dict[str, Any]]:
-    return [e for e in (out.get("entities") or []) if isinstance(e, dict) and e.get("hint") == hint]
+    """The entities THIS message named. A carried echo (`current_message: False`, the
+    standing product said back from the focus) is not a token the message typed."""
+    return [
+        e
+        for e in (out.get("entities") or [])
+        if isinstance(e, dict) and e.get("hint") == hint and e.get("current_message") is not False
+    ]
 
 
 def _fold(value: Any) -> str:
@@ -149,14 +158,21 @@ DESCRIPTION_WITH_CODE = "SORENTO ONE PIECE WASHDOWN TOILET (S-TRAP250MM)-SRTWC83
 
 
 def _check_code_is_the_product(out: dict[str, Any], code: str) -> None:
+    """One product entity whose `canonical_code` is the bare code (owner ruling on #1511
+    Q1 = a: `raw` stays the typed text, `canonical_code` is the code copied as typed; the
+    chatbot reads `canonical_code` first), and the brand as its own entity."""
     products = _entities(out, "product")
     assert products, f"no product entity: {out.get('entities')}"
-    raws = [str(e.get("raw") or "") for e in products]
-    assert any(_fold(r) == _fold(code) for r in raws), f"product raw is not the code alone: {raws}"
-    assert all(" " not in r.strip() for r in raws), f"a product raw still carries words: {raws}"
-    assert all("sorento" not in r.lower() for r in raws), f"a product raw still carries the brand: {raws}"
+    codes = [str(e.get("canonical_code") or "") for e in products]
+    assert any(_fold(c) == _fold(code) for c in codes), f"no product canonical_code is the code: {codes}"
+    assert all(" " not in c.strip() for c in codes), f"a canonical_code still carries words: {codes}"
+    assert all("sorento" not in c.lower() for c in codes), f"a canonical_code still carries the brand: {codes}"
     brands = _entities(out, "brand")
     assert brands and _fold(brands[0].get("raw")) == "sorento", f"brand not its own entity: {out.get('entities')}"
+
+
+def _product_with_code(out: dict[str, Any], code: str) -> dict[str, Any]:
+    return next(e for e in _entities(out, "product") if _fold(e.get("canonical_code")) == _fold(code))
 
 
 @pytest.mark.parametrize("label", [BASE, PATCHED])
@@ -189,7 +205,7 @@ def test_f1_photo_text_brand_glued_to_code_is_two_entities(label: str) -> None:
 
     def check(out: dict[str, Any]) -> None:
         _check_code_is_the_product(out, "PSJLSRTSC07")
-        product = next(e for e in _entities(out, "product") if _fold(e.get("raw")) == "psjlsrtsc07")
+        product = _product_with_code(out, "PSJLSRTSC07")
         assert product.get("quantity") == 50, product
 
     _eval(label, "F1-photo-brand-glued-to-code", lambda l: _parse(l, message), check)
@@ -235,7 +251,16 @@ def test_f2_x46_pcs_is_a_quantity_not_a_product(label: str) -> None:
 # Controls: already good, must stay good on the PATCHED text (graded on both)
 # --------------------------------------------------------------------------- #
 
-@pytest.mark.parametrize("label", ["base", "patched"])
+@pytest.mark.parametrize(
+    "label",
+    [
+        # The base text has no `canonical_code` rule at all (that field is #1511's addendum
+        # and this one), so grading it on the base text measures nothing: the control's
+        # claim is that the PATCHED text keeps the split the model already made.
+        pytest.param("base", marks=pytest.mark.xfail(reason="the base text never fills canonical_code", strict=False)),
+        "patched",
+    ],
+)
 def test_control_turn6_sentence_still_splits_brand_code_and_spec(label: str) -> None:
     message = "SORENTO S-TRAP 250MM ONE PIECE WC-SRTWC8318-RL-250"
     _eval(label, "C-turn6-sentence", lambda l: _parse(l, message),

@@ -152,6 +152,16 @@ class TestExactCodesOnlyReadsANumberLikeACode:
 
 
 DESCRIPTION_LINE = "SORENTO ONE PIECE WASHDOWN TOILET (S-TRAP250MM)-SRTWC8354-SH"
+REFER = "Please refer to your salesman."
+
+
+def _sent(token: str) -> str:
+    """The token the way the resolver was SENT it and lists it back in
+    `unresolved_tokens` / `resolutions[].token`: separators folded
+    (`resolve_gate._token_of`, `_PRODUCT_FOLD`), case untouched."""
+    import re
+
+    return re.sub(r"[-\s]+", "", token)
 
 
 def _match(code: str, uuid: str, tier: str) -> dict:
@@ -164,13 +174,23 @@ def _match(code: str, uuid: str, tier: str) -> dict:
     }
 
 
-def _compose(*, parser_entities: list[dict], resolutions: list[dict], unresolved: list[str], compat: list[dict]) -> dict:
+def _compose(
+    *,
+    parser_entities: list[dict],
+    resolutions: list[dict],
+    unresolved: list[str],
+    compat: list[dict],
+    predicate: dict | None = None,
+) -> dict:
+    """`not_found_error_message` over the shapes the engine hands it. Every token in
+    `resolutions` and `unresolved` is written the way the resolver lists it (`_sent`)."""
     from app.services.chatbot.lanes.business.answer import not_found_error_message
 
+    resolutions = [{**res, "token": _sent(res["token"])} for res in resolutions]
     matches = [m for res in resolutions for m in res["matches"]]
     resolved = {
         "tokens": [res["token"] for res in resolutions],
-        "unresolved_tokens": unresolved,
+        "unresolved_tokens": [_sent(t) for t in unresolved],
         "resolutions": resolutions,
         "intersection": matches,
         "by_entity_type": {"product": matches},
@@ -182,6 +202,8 @@ def _compose(*, parser_entities: list[dict], resolutions: list[dict], unresolved
         "access_levels": [],
     }
     gate = {"gate_passed": True, "compatible_entities": compat}
+    if predicate is not None:
+        gate["predicate"] = predicate
     return not_found_error_message({}, parser=parser, resolved=resolved, gate=gate)
 
 
@@ -192,11 +214,15 @@ def _rendered(out: dict) -> str:
 class TestAMissNeverListsSetMembersAsWhatYouWant:
     def test_spec_search_members_under_an_unplaced_token_print_no_header(self) -> None:
         """Turn 4: the whole description line was one product token, unplaced; 35 water
-        closets the spec tier read off its words sat in `compatible_entities`."""
+        closets the spec tier read off its words (its own whole-query resolution,
+        `references._emit_spec_matches`) sat in `compatible_entities`."""
         members = [_match(f"SRTWC20{i:02d}-X", f"uuid-{i}", "spec_search") for i in range(35)]
         out = _compose(
             parser_entities=[{"hint": "product", "raw": DESCRIPTION_LINE}],
-            resolutions=[{"token": DESCRIPTION_LINE, "matches": members}],
+            resolutions=[
+                {"token": DESCRIPTION_LINE, "matches": []},
+                {"token": "sorento one piece washdown toilet", "matches": members},
+            ],
             unresolved=[DESCRIPTION_LINE],
             compat=[{"uuid": m["uuid"], "entity_type": "product", "code": m["canonical_code"]} for m in members],
         )
@@ -204,7 +230,38 @@ class TestAMissNeverListsSetMembersAsWhatYouWant:
         assert "Here's what you want" not in rendered, rendered
         assert "more)" not in rendered, rendered
         assert "SRTWC2000-X" not in rendered, rendered
-        assert DESCRIPTION_LINE in rendered, rendered
+        assert f'Couldn\'t find: "{DESCRIPTION_LINE}" (product).' in rendered, rendered
+
+    def test_a_miss_quotes_the_token_as_typed_never_the_folded_or_derived_word(self) -> None:
+        """Turn 11: "Srt-hp" has no digit, so the set reader took it as a description and
+        reported its first word; the reply read "Here's what you want: srt / Couldn't
+        find: "srt"". The miss names what the dealer typed, spelling and hyphen kept."""
+        out = _compose(
+            parser_entities=[{"hint": "product", "raw": "Srt-hp"}],
+            resolutions=[{"token": "Srt-hp", "matches": []}],
+            unresolved=["Srt-hp"],
+            compat=[],
+            predicate={"qualifying_total": 0, "unrecognized_terms": ["srt"], "require": {"stock": True}},
+        )
+        rendered = _rendered(out)
+        assert "Here's what you want" not in rendered, rendered
+        assert '"srt"' not in rendered, rendered
+        assert "srthp" not in rendered.lower(), rendered
+        assert 'Couldn\'t find: "Srt-hp" (product).' in rendered, rendered
+
+    def test_a_described_set_that_named_nothing_readable_keeps_its_own_reply(self) -> None:
+        """Control (AC-1320 / fix round 9 on PR #833): a CLASS word the catalogue cannot
+        read, with no product token typed, still gets the described-set structure."""
+        out = _compose(
+            parser_entities=[{"hint": "category", "raw": "flurbish basin"}],
+            resolutions=[{"token": "flurbish basin", "matches": []}],
+            unresolved=[],
+            compat=[],
+            predicate={"qualifying_total": 0, "unrecognized_terms": ["flurbish"], "require": {"stock": True}},
+        )
+        rendered = _rendered(out)
+        assert "Here's what you want: flurbish basin" in rendered, rendered
+        assert 'Couldn\'t find: "flurbish".' in rendered, rendered
 
     def test_a_resolved_code_that_missed_stock_keeps_the_header(self) -> None:
         """Control (`test_crossdomain_ladder.py:169`'s shape): the customer's own code
@@ -244,6 +301,36 @@ class TestAMissNeverListsSetMembersAsWhatYouWant:
             compat=[{"uuid": m["uuid"], "entity_type": "product", "code": m["canonical_code"]} for m in members],
         )
         assert "• product: SRTB100-GM (+2 more)" in (out.get("found_summary") or ""), out
+
+
+class TestAMissIsNamedAsTypedOnTheDealerConsole:
+    """The real engine, resolver and composer over the seeded catalogue (nothing in it
+    contains "srthp", and the pasted line is no code): the reply quotes the dealer's own
+    token and nothing the set reader derived from it."""
+
+    def test_a_word_shaped_product_token_is_named_as_typed(self, console) -> None:
+        """Turn 11 as typed. On main: 'Here's what you want: srt / Couldn't find: "srt".'"""
+        c = console()
+        out = c.say("Srt-hp", stock(product("Srt-hp")))
+        assert out == f'Couldn\'t find: "Srt-hp" (product).\n\n{REFER}', out
+        assert c.stock_calls == [], c.stock_calls
+
+    def test_a_pasted_catalogue_line_is_named_as_typed_and_carries_no_set(self, console) -> None:
+        """Turn 4 as typed. On main the reader's class words were both the header and the
+        miss ('Here's what you want: sorento one piece washdown toilet / Couldn't find:
+        "sorento one piece washdown toilet"')."""
+        c = console()
+        out = c.say(DESCRIPTION_LINE, stock(product(DESCRIPTION_LINE)))
+        assert out == f'Couldn\'t find: "{DESCRIPTION_LINE}" (product).\n\n{REFER}', out
+        assert c.state["focus"]["set_page"] is None, c.state["focus"]
+        assert c.stock_calls == [], c.stock_calls
+
+    def test_control_a_bare_stock_ask_still_gets_the_scope_sentence(self, console) -> None:
+        """`test_rearch_r13` T2's shape on the dealer console: a message that named
+        nothing is the scope sentence's one case."""
+        c = console()
+        out = c.say("stock?", stock())
+        assert out.startswith(SCOPE_SENTENCE), out
 
 
 class TestAMissOnTheTypedProductCarriesNoSetPage:

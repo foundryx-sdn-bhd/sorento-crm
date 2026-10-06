@@ -35,13 +35,18 @@ are its red tests. Fake fixture ids in every test; product codes are catalogue c
   "Couldn't find SRTS07. Did you mean: 1. SRTSC07 ..." with quick replies (turn 13).
 - AC-RC-B5: `test_rearch_r13_stock_no_subject` T4 has an availability-only twin that
   fails on main.
+- AC-RC-B7 (owner, 6 Oct, second round): the miss line names the token the customer
+  TYPED, spelling and separators kept (`Couldn't find: "Srt-hp"`), never a folded token
+  ("srthp") and never a word the set reader derived from it ("srt"). Red: turn 11.
 
 ## Class C: a miss never lists what the customer did not name
 
 - AC-RC-C1: "Here's what you want:" lists only entities the customer named (typed this
   message or carried on the focus) that the resolver placed. A miss on the customer's own
-  product token prints no header, no "(+N more)", and names the token in "Couldn't find".
-  Red: turns 4, 5 (35 and 145 spec_search members under the header), turn 11.
+  product token prints no header, no "(+N more)", no described-set answer, and names the
+  token in "Couldn't find". The "own token missed" join folds separators on both sides
+  (the resolver lists the token as sent). Red: turns 4, 5 (35 and 145 spec_search members
+  under the header), turn 11; the real-engine replay of turns 4 and 11.
 - AC-RC-C2: no `set_page` is carried when the message's own product token is unplaced.
   Red: turn 5 (145 water closets, require price).
 - AC-RC-C3 (control): a described-set miss with zero qualifying products keeps its
@@ -62,8 +67,9 @@ are its red tests. Fake fixture ids in every test; product codes are catalogue c
 ## Class F: parser prompt (eval, not code)
 
 - AC-RC-F1: with the code-in-description addendum, each F1 shape parses the code as the
-  product raw, the brand as its own entity and the words as category/specification,
-  5/5 on the patched dev v60 text.
+  product entity's `canonical_code` (`raw` stays the typed text, #1511 card Q1 = a), the
+  brand as its own entity and the words as category/specification, 5/5 on the patched
+  text.
 - AC-RC-F2: with the bare-count addendum, "X 50 unit" and "x46 pcs" give entities [] and
   the number in `demand_qty` (or the open answer), 5/5.
 - AC-RC-F3: the five controls stay 5/5 on both base and patched.

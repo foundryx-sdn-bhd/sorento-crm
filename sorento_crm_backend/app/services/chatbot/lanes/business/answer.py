@@ -3352,12 +3352,38 @@ def not_found_error_message(
             if jsc.truthy(uuid) and jsc.truthy(name) and uuid not in disp_by_uuid:
                 disp_by_uuid[uuid] = name
 
+        # ROGUE-CONVO-REVIEW (owner ruling Q4, 6 Oct 2026): "Here's what you want" lists
+        # only what the customer named and the resolver placed. When THIS message's own
+        # product token is unplaced, a product every match of which is the SPEC tier (a set
+        # member the resolver read off the words AROUND that token) is not something the
+        # customer named: 35 water closets printed as "product: SRTWC200-S-UF-RL (+34
+        # more)" over an unplaced description line (prod turn 4). Code-tier rows stay: a
+        # code the customer typed or carried beside a second token that missed is still
+        # what they want. A described-set ask names no product token, so its members stay.
+        # Joined through `_type_norm` on both sides: the resolver lists a token the way it
+        # was SENT, separators folded (`resolve_gate._token_of`: "Srt-hp" is "srthp"), so a
+        # raw-to-raw comparison never met a hyphenated or spaced line (prod turns 4 and 11).
+        unresolved_keys = {_type_norm(t) for t in unresolved}
+        product_token_missed = any(
+            jsc.get(e, "hint") in (None, "product") and _type_norm(jsc.get(e, "raw")) in unresolved_keys
+            for e in all_ents
+            if jsc.truthy(e)
+        )
+        set_member_uuids: set = set()
+        if product_token_missed:
+            tiers_by_uuid: dict[Any, set] = {}
+            for m in all_matches:
+                if jsc.truthy(m) and jsc.get(m, "entity_type") == "product" and jsc.truthy(jsc.get(m, "uuid")):
+                    tiers_by_uuid.setdefault(jsc.get(m, "uuid"), set()).add(jsc.get(m, "match_tier"))
+            set_member_uuids = {u for u, tiers in tiers_by_uuid.items() if tiers == {"spec_search"}}
+
         # tokens that ACTUALLY produced a compatible entity must NOT be listed as "not found"
         # even if the resolver kept them in `unresolved_tokens` (a fallback-tier match stays
-        # there yet resolves).
+        # there yet resolves). A set member read off the words around an unplaced product
+        # token (`set_member_uuids`) places nothing: the token stays "not found".
         resolved_toks: set[str] = set()
         for match in all_matches:
-            if jsc.truthy(match) and jsc.get(match, "uuid") in compat_uuids:
+            if jsc.truthy(match) and jsc.get(match, "uuid") in compat_uuids and jsc.get(match, "uuid") not in set_member_uuids:
                 via_token = jsc.get(jsc.get(match, "display"), "via_token")
                 if jsc.truthy(via_token):
                     resolved_toks.add(_nf_norm_raw(via_token))
@@ -3367,7 +3393,7 @@ def not_found_error_message(
         for res in jsc.array(jsc.get(r, "resolutions")):
             matches = jsc.get(res, "matches")
             matches = matches if isinstance(matches, list) else []
-            if any(jsc.get(m, "uuid") in compat_uuids for m in matches):
+            if any(jsc.get(m, "uuid") in compat_uuids and jsc.get(m, "uuid") not in set_member_uuids for m in matches):
                 resolved_toks.add(_nf_norm_raw(jsc.get(res, "token")))
 
         # multi-company: which company each resolved entity belongs to. One typed code can
@@ -3388,28 +3414,6 @@ def not_found_error_message(
             if jsc.truthy(company) and company not in searched_cos:
                 searched_cos.append(company)
         multi_co = len(searched_cos) > 1
-
-        # ROGUE-CONVO-REVIEW (owner ruling Q4, 6 Oct 2026): "Here's what you want" lists
-        # only what the customer named and the resolver placed. When THIS message's own
-        # product token is unplaced, a product every match of which is the SPEC tier (a set
-        # member the resolver read off the words AROUND that token) is not something the
-        # customer named: 35 water closets printed as "product: SRTWC200-S-UF-RL (+34
-        # more)" over an unplaced description line (prod turn 4). Code-tier rows stay: a
-        # code the customer typed or carried beside a second token that missed is still
-        # what they want. A described-set ask names no product token, so its members stay.
-        unresolved_keys = {_nf_norm_raw(t) for t in unresolved}
-        product_token_missed = any(
-            jsc.get(e, "hint") in (None, "product") and _nf_norm_raw(jsc.get(e, "raw")) in unresolved_keys
-            for e in all_ents
-            if jsc.truthy(e)
-        )
-        set_member_uuids: set = set()
-        if product_token_missed:
-            tiers_by_uuid: dict[Any, set] = {}
-            for m in all_matches:
-                if jsc.truthy(m) and jsc.get(m, "entity_type") == "product" and jsc.truthy(jsc.get(m, "uuid")):
-                    tiers_by_uuid.setdefault(jsc.get(m, "uuid"), set()).add(jsc.get(m, "match_tier"))
-            set_member_uuids = {u for u, tiers in tiers_by_uuid.items() if tiers == {"spec_search"}}
 
         by_type: dict[Any, list] = {}
         for c in compat:
@@ -3867,7 +3871,20 @@ def not_found_error_message(
             # production's did-you-mean, and it has to be reachable: `build_suggest_offer`
             # skips its own D1 candidates entirely whenever a clarify fired here, so the
             # set answer does not merely come FIRST, it silences the other one.
-            described_set_answers = isinstance(predicate, dict) and not _unplaced_token_has_neighbours(r, g)
+            # ROGUE-CONVO-REVIEW (owner ruling Q4 and the 6 Oct "miss line prints the
+            # typed text" ruling): the same four answers are false when THIS message's own
+            # product token is unplaced, whatever the set reader made of the words around
+            # or inside it. "Srt-hp" (no digit, so read as a description) came back as
+            # "Here's what you want: srt / Couldn't find: "srt"" - the reader's first
+            # unrecognised word, not the dealer's token - and a pasted catalogue line the
+            # same way over its class words (prod turns 11 and 4). Such a miss falls through
+            # to the product-code miss below, which quotes the token as typed
+            # (`label_token` -> `raw_of_token`).
+            described_set_answers = (
+                isinstance(predicate, dict)
+                and not _unplaced_token_has_neighbours(r, g)
+                and not product_token_missed
+            )
             if jsc.truthy(require_specific):
                 escalate_message = jsc.get(g, "gate_clarification")
             elif described_set_answers and "schemes_on_file" in predicate:

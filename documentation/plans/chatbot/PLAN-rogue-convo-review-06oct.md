@@ -1,17 +1,23 @@
 # PLAN: rogue dealer conversation, 6 Oct (ROGUE-CONVO-REVIEW)
 
-Status: BUILDING PR-2 (classes B, C, G, F) on this branch; PR-1 (class A) waits on the
-owner's Q2 wording. Owner rulings (6 Oct 2026, via crew): Q1 = (a) PLUS the contact's
-brand scope: the chatbot list applies `is_searchable` (product and category), `is_active`
-and the contact's brand bound. Q2: the owner asked for the trigger turns (posted as a
-crew-note on #1506) and decides the wording. Q3: the owner REJECTS "Couldn't find 8066":
+Status: BUILDING. PR-2 (classes B, C, G, F) is PR #1506 on this branch, size M; PR-1
+(class A) builds on its own branch. Owner rulings (6 Oct 2026, via crew): Q1 = (a) PLUS
+the contact's brand scope: the chatbot list applies `is_searchable` (product and category),
+`is_active` and the contact's brand bound. Q2: a domain-level refuse-empty for
+`master_products` with the inventory sentence worded for products ("That would search every
+product we have - I need at least one filter to narrow it down. Give me a product code,
+category, or brand, and I can look it up."). Q3: the owner REJECTS "Couldn't find 8066":
 a bare number typed as a product must match its code family (SRTWC8066-*) and offer the
 same picker compact mode gives (located: the resolver's substring probe already places the
 family; only `engine._exact_codes_only`'s `_code_like` gate discards it on availability
-profiles; crew-note on #1506 has the chain). Q4 = (a): the miss header lists only what the
-customer named and the resolver placed, and a miss carries no set_page. Q5 = (a): two PRs.
-Track per PR: small fix track (backend only, no migration, no auth/RBAC change, no new
-ingest surface, no UI). Cloud sandbox.
+profiles; crew-note on #1506 has the chain); the ladder stays in PR-2 as built (owner
+ruling on #1511's card, Q4 = b). Class B addendum (owner, 6 Oct, second round): the miss
+line prints the customer's TYPED text, never a folded token or a word the set reader
+derived from it. Q4 = (a): the miss header lists only what the customer named and the
+resolver placed, and a miss carries no set_page. Q5 = (a): two PRs. Class F(i) wording
+aligned to #1511 (card Q1 = a): `raw` stays the typed text, `canonical_code` is the bare
+code. Track per PR: small fix track (backend only, no migration, no auth/RBAC change, no
+new ingest surface, no UI). Cloud sandbox.
 UAC: `rogue-convo-review-acceptance-criteria.md`.
 Related lanes: #1502 STOCK-FILL-PREDICATE (class E, handed over), #1504 BRAND-PROMO-EXPAND
 (class D, handed over), #1501 merged (no stock claim without a lookup).
@@ -111,9 +117,23 @@ seeds a non-availability contact (`_seed_contact_and_get`, `variables={}`), so
 `_exact_codes_only` never runs there, and its token "Srtks8060-BL" is code-like. It
 cannot fire for either shape.
 
+"Srt-hp" (turn 11): the token has no digit, so `gate._is_a_described_word` reads it as a
+DESCRIPTION, `resolve_gate.resolve_entity_body:716` keeps the `require` leg (no typed code
+to null it), the set reader splits the query into content words
+(`product_spec_search._content_words`: "srt", "hp"; "hp" is under `_MIN_REPORTABLE_WORD`),
+"srt" binds nothing and lands in `predicate.unrecognized_terms`, and the zero-set branch
+`answer.py` F2 (`what_you_want_reply(asked, [], missing=...)`) prints that first term as
+both the header subject (`asked = ... or terms[0]`) and the miss. The dealer's own token
+never reached the reply. Reproduced on the real engine console in this lane: on main the
+reply is `Here's what you want: srt / Couldn't find: "srt".`; the pasted turn-4 line gives
+the same shape over its class words (`Here's what you want: sorento one piece washdown
+toilet / ...`).
+
 General rule B: **a typed product token the resolver or the dealer filter could not place
 is reported as "Couldn't find X", with did-you-mean when the resolver has candidates,
-never as the scope sentence; the scope sentence is for a message that named nothing.**
+never as the scope sentence; the scope sentence is for a message that named nothing. X is
+the customer's typed text, never a folded token and never a word the set reader derived
+from it.**
 
 ### Class C: a miss renders "Here's what you want: • product: X (+N more)" (turns 4, 5, 11)
 
@@ -138,10 +158,15 @@ Mechanism, confirmed:
    `set_page_carry` (`turn_runtime.py:3306-3307`) only asks whether a description exists,
    not whether the typed token was placed.
 4. "Here's what you want: srt / Couldn't find: "srt"" (turn 11) is the described-set
-   "named nothing readable" branch (`answer.py:3884-3913` into `what_you_want_reply`
-   `:2711-2728`) or the R6 unknown-values arm (`:4206-4232`); either way the parser gave
-   "srt" (no code derivation exists: `resolve_gate._token_of` only folds). The parser side
-   is class F; the composer side is the same rule as below.
+   "named nothing readable" branch (`answer.py` F2 into `what_you_want_reply`); "srt" is
+   the set reader's first unrecognised content word of "Srt-hp", not a parser output (see
+   class B above). The composer side is the same rule as below.
+5. The join that decides "this message's own product token missed" has to fold both
+   sides: the resolver lists an unresolved token the way it was SENT, separators stripped
+   (`resolve_gate._token_of`, `_PRODUCT_FOLD`), so "Srt-hp" comes back as "srthp" and the
+   pasted line as one run. A raw-to-raw comparison (`_nf_norm_raw`) never met a hyphenated
+   or spaced token, which is every token of this conversation; `_type_norm` (the key the
+   composer already uses for `raw_of_token`) is the join.
 
 General rule C: **"Here's what you want" lists only what the customer named and the
 resolver placed. A miss on the customer's own token never lists set members, did-you-mean
@@ -187,8 +212,11 @@ Two addenda, anchored inside the sections they extend (applier
 
 * `alembic/data/chatbot_semantic_parser.rogue-convo.code-in-description.addendum.txt`
   after the BARE FAMILY CODE bullet (prod text line 416): a description with a code inside
-  it is one product entity whose raw is the code; the words become category /
-  specification; a Known brand glued to a code is two entities.
+  it is one product entity whose `raw` is the typed text and whose `canonical_code` is the
+  bare code (owner ruling on #1511, card Q1 = a; the chatbot reads `canonical_code` first
+  once #1511 merges, so the two addenda state one rule); the words become category /
+  specification; a Known brand glued to a code is two entities. The live eval grades
+  `canonical_code` (folded).
 * `alembic/data/chatbot_semantic_parser.rogue-convo.bare-count.addendum.txt` after the
   QUANTITY section (prod text line 1373): "x 50 unit" / "X 50 unit" / "x46 pcs" with no
   code is a quantity for the standing product or the open question, never a product
@@ -277,12 +305,17 @@ Change B (as built, owner ruling Q3: compact parity, not "Couldn't find 8066"):
   srtwc286" asks "2"'s own family first, then SRTWC286's; the parser's QUANTITY rule is
   the defence for that mis-parse, flagged to the owner in the Q3 crew-note).
 
-Change C:
+Change C (and the class B miss-line rule, one seam):
 
-* `answer.py:3553-3600`: `found_lines` is built only from `compatible_entities` the
-  customer NAMED (a typed token, or a carried focus row), never from spec_search set
-  members when the message's own product token is in `unplaced`; with none, the miss is
-  "Couldn't find X" + did-you-mean + the salesman line, no header.
+* `answer.py` `not_found_error_message`: `product_token_missed` joins this message's
+  product entities to the resolver's `unresolved_tokens` through `_type_norm` (separators
+  folded on both sides). When it holds: spec_search set members read off the words around
+  the token are dropped from `found_lines` (no header, no "(+N more)") AND do not count as
+  having placed the token (`resolved_toks`), AND the four described-set answers
+  (`described_set_answers`) stand down, so the miss falls through to the product-code
+  miss, which quotes the token as typed (`label_token` -> `raw_of_token`): `Couldn't
+  find: "Srt-hp" (product).` A described-set ask with no product token keeps every one of
+  its answers (controls: the gunmetal basins set, "flurbish basin").
 * `engine.py:5981-6018` / `turn_runtime.py:3306`: no `set_page` is carried when this
   message's product token is unplaced (the set described nothing the customer asked).
 * `resolve_gate.py:716` / `gate._CODE_SHAPED`: NOT widened (no word-matching in code,
@@ -302,8 +335,15 @@ Red tests (new file `tests/chatbot/test_miss_says_what_it_could_not_find.py`):
 * control: "Srts07" with trigram alternatives still gets "Couldn't find SRTS07. Did you
   mean: ..." + quick replies;
 * whole-description token with 35 spec_search set members in `compatible_entities` and
-  the token unplaced: no "Here's what you want" header, no "(+34 more)", no `set_page`
-  on `focus`, "Couldn't find" names the token, did-you-mean rows are offered;
+  the token unplaced (listed by the resolver folded, the way it is sent): no "Here's what
+  you want" header, no "(+34 more)", no `set_page` on `focus`, "Couldn't find" names the
+  token as typed;
+* dealer console, real resolver: "Srt-hp" answers `Couldn't find: "Srt-hp" (product).`
+  plus the salesman line, never `Here's what you want: srt`; the pasted turn-4 line the
+  same, and `focus.set_page` stays None; control: bare "stock?" still gets the scope
+  sentence;
+* composer, a described-set ask that named nothing readable ("flurbish basin", no product
+  token) keeps `Here's what you want: flurbish basin / Couldn't find: "flurbish".`;
 * control: a real described-set miss ("which gunmetal basins have stock", zero
   qualifying) keeps its described-members reply (`test_lane_require` stays green);
 * control: a resolved product that missed stock keeps "Here's what you want: • product:
