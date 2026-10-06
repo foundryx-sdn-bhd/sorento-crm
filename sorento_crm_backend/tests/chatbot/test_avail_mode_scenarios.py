@@ -775,12 +775,22 @@ def test_S55e_a_substring_family_beside_an_exact_code_answers_one_and_picks_the_
     assert c.say("2", _pick(2)) == f"SRTWC286-SH-150 x 10: {TICK} Got stock."
 
 
-def test_S55f_a_bare_number_the_parser_tagged_as_a_product_never_names_the_family(console):
-    """Reviewer finding 1 on the AVAIL-PICKER fix: "2 srtwc286" parsed as two products.
-    "2" sits inside half the family's codes and is not code-like, so the picker is
-    SRTWC286's, exactly as on main; "2" is ignored, never "2 matches 10 products"."""
+def test_S55f_a_bare_number_the_parser_tagged_as_a_product_reads_as_its_own_family(console):
+    """ROGUE-CONVO-REVIEW (owner ruling Q3, 6 Oct 2026, prod turn "8066 stock ?"): a bare
+    number the parser tagged as a product reads like a code, through the family the
+    resolver's own substring probe placed, the picker compact mode already gives. So "2
+    srtwc286" parsed as TWO products asks two pickers, "2"'s own family first (the three
+    catalogue rows the console seeds for a stray "2"), then SRTWC286's, numbering running
+    on (owner v2 note 3). The defence for this mis-parse is the parser's QUANTITY rule (a
+    count beside a code is that code's quantity), not a code-side heuristic; the previous
+    pin here ("2" is ignored) was the reviewer's finding 1 on the AVAIL-PICKER fix."""
+    from app.services.chatbot.turn import task as turn_task
+
     c = console()
-    assert c.say("2 srtwc286", stock(product("2"), product("srtwc286"))) == FAMILY_ASK
+    out = c.say("2 srtwc286", stock(product("2"), product("srtwc286")))
+    stray = numbered("2 matches 3 products. Which one?", ["2001", "2002", "2120H"])
+    family = "\n".join(["SRTWC286 matches 10 products. Which one?", *turn_task.numbered(OWNER_FAMILY, 4)])
+    assert out == f"{stray}\n\n{family}", out
 
 # ================================================================== AVAIL-RENDER (owner, 5 Oct 2026)
 # Plan: documentation/plans/chatbot/PLAN-avail-render-05oct.md. The tick says got stock and

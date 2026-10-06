@@ -530,9 +530,15 @@ def _exact_codes_only(
       substring order as that probe: this filter keeps what the resolver placed, it
       matches nothing of its own;
     * else a code-like token is not found, and goes to the did-you-mean ("srt5764");
-    * a word or a bare number with no exact code is not a product at all: the describe /
-      semantic matches the resolver found for "xx", "10" or a "2" typed over a
-      did-you-mean listed a page of the catalogue.
+    * a word with no exact code is not a product at all: the describe / semantic matches
+      the resolver found for "xx" listed a page of the catalogue.
+    ROGUE-CONVO-REVIEW (owner ruling, 6 Oct 2026, prod turn "8066 stock ?" answered with
+    the scope sentence): a BARE NUMBER takes the same ladder as a code-like token
+    (`turn.task.code_or_number`): exact, then the prefix family, then the substring family
+    the resolver's own probe placed (SRTWC8066-*, the picker compact mode already gives),
+    else a miss that stays unplaced so the reply names it. It was `ignored` here, which
+    dropped both the family AND the token, and the dealer read "I need at least one
+    filter" for a product they had named.
     STOCK-MISS-RENDER (owner report, 6 Oct 2026, prod turn #f763 "Srt 364-hp x 1 stock
     available?"): the typed word and the resolver's code are compared the way the
     resolver itself matched them - case AND separators folded (`turn.state.token_key`,
@@ -565,7 +571,7 @@ def _exact_codes_only(
     for fold, typed in tokens:
         exact = [c for c in candidates if code_of(c) == fold]
         family: list[dict[str, Any]] = []
-        if _code_like(fold):
+        if turn_task.code_or_number(fold):
             family = [c for c in candidates if code_of(c).startswith(fold)] or [
                 c for c in candidates if fold in code_of(c)
             ]
@@ -573,7 +579,7 @@ def _exact_codes_only(
         if chosen:
             keep.update(str(c.get("uuid")) for c in chosen)
             per_token[fold] = len(chosen)
-        elif _code_like(fold):
+        elif turn_task.code_or_number(fold):
             misses[fold] = typed
         else:
             ignored.add(fold)
@@ -4046,7 +4052,12 @@ def _run_stages_body(  # noqa: PLR0915
             # no ledger row, no job.
             outcome = media_intake.no_url_outcome(modality)
         else:
-            caption = jsc.js_string(jsc.get(attachment, "description")) or None
+            # ROGUE-CONVO-REVIEW class G: `jsc.js_string(None)` is the STRING "null" (and
+            # an absent key "undefined"), both truthy, so `or None` never fired and the
+            # parser read a "null" line above the codes (prod photo turns, 6 Oct 2026).
+            # The same truthiness read `media_intake._build_request` makes for `url`.
+            description = jsc.get(attachment, "description")
+            caption = jsc.js_string(description) if jsc.truthy(description) else None
             outcome = media_intake.run(
                 respond_io_id=contact_respond_id,
                 message_id=_message_id(envelope),
@@ -5997,9 +6008,16 @@ def _run_stages_body(  # noqa: PLR0915
                     and min(asked, business_answer.SET_LIST_MAX) < qualifying
                 )
                 paged = bool(plan.fetch) and isinstance(plan.fetch[0].filters.get("set_page"), dict)
+                # ROGUE-CONVO-REVIEW (owner ruling Q4): a set the spec tier read off the
+                # words around an UNPLACED product token is not what the customer asked
+                # for, so it is never carried (prod turn 5, 6 Oct 2026: 145 water closets
+                # carried off a miss on one description line).
+                miss_on_typed_product = turn_runtime.typed_product_unplaced(verdict, unplaced_tokens)
                 if paged:
                     # A page of a carried set: the runner hands back where it stopped.
                     state_out.focus.set_page = envelopes[0].get("set_carry") if envelopes else None
+                elif miss_on_typed_product:
+                    state_out.focus.set_page = None
                 elif withheld or partly_listed or listed_to_the_limit:
                     state_out.focus.set_page = turn_runtime.set_page_carry(
                         predicate,

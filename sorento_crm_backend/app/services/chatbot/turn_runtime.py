@@ -2489,8 +2489,9 @@ def _spec_quantities(
     # AVAIL-PICKER (owner trace 5 Oct 2026): a code-like token that is a SUBSTRING of
     # exactly one resolved code ("rt5674" placed SRT5674 alone) is read the same way,
     # prefix first, the order `engine._exact_codes_only` and the resolver's product probe
-    # share. A word or bare number with a quantity ("2", "new") never reads as a code.
-    from app.services.chatbot.turn.task import code_like
+    # share. A word with a quantity ("new") never reads as a code; a bare number does
+    # (`code_or_number`, owner ruling 6 Oct 2026: "9031 x 3" is that code's quantity).
+    from app.services.chatbot.turn.task import code_or_number
 
     resolved_codes = {
         str(e["uuid"]): e.get("code") or e.get("canonical_code")
@@ -2504,7 +2505,7 @@ def _spec_quantities(
         prefixed = [
             uuid for uuid, code in resolved_codes.items() if _token_key(code).startswith(token)
         ]
-        if not prefixed and code_like(token):
+        if not prefixed and code_or_number(token):
             prefixed = [uuid for uuid, code in resolved_codes.items() if token in _token_key(code)]
         if len(prefixed) == 1 and prefixed[0] not in quantities:
             quantities[prefixed[0]] = quantity
@@ -3254,6 +3255,29 @@ def spec_tier_matched(resolved: Any) -> bool:
 def _entitled_names(values: Any) -> list[str]:
     """The access-level NAMES in `values`, trimmed, non-empty, in order."""
     return [v for v in jsc.array(values) if isinstance(v, str) and v.strip()]
+
+
+def typed_product_unplaced(verdict: Any, unplaced: Mapping[str, str] | None) -> bool:
+    """Did THIS message name a product token the resolver could not place?
+
+    ROGUE-CONVO-REVIEW (owner ruling Q4, 6 Oct 2026): a miss on the customer's own
+    product token is a miss, whatever the spec tier read off the words around it. A
+    whole description line with a code inside it ("SORENTO ONE PIECE WASHDOWN TOILET
+    (S-TRAP250MM)-SRTWC8354-SH") was one unplaced product token, and the set tier
+    counted 145 water closets off its words: that set is not what the dealer asked for,
+    so it is never carried as a `set_page`. Keyed the way `unplaced_tokens` keys its map
+    (`turn.state.token_key`). A brand or category word nobody could place is not a miss
+    on the product.
+    """
+    if not unplaced:
+        return False
+    for entity in jsc.array(jsc.get(verdict, "entities")):
+        if jsc.get(entity, "hint") not in (None, "product"):
+            continue
+        key = _token_key(jsc.nullish_str(jsc.get(entity, "raw")).strip())
+        if key and key in unplaced:
+            return True
+    return False
 
 
 def set_page_carry(

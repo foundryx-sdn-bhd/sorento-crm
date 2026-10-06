@@ -3389,8 +3389,32 @@ def not_found_error_message(
                 searched_cos.append(company)
         multi_co = len(searched_cos) > 1
 
+        # ROGUE-CONVO-REVIEW (owner ruling Q4, 6 Oct 2026): "Here's what you want" lists
+        # only what the customer named and the resolver placed. When THIS message's own
+        # product token is unplaced, a product every match of which is the SPEC tier (a set
+        # member the resolver read off the words AROUND that token) is not something the
+        # customer named: 35 water closets printed as "product: SRTWC200-S-UF-RL (+34
+        # more)" over an unplaced description line (prod turn 4). Code-tier rows stay: a
+        # code the customer typed or carried beside a second token that missed is still
+        # what they want. A described-set ask names no product token, so its members stay.
+        unresolved_keys = {_nf_norm_raw(t) for t in unresolved}
+        product_token_missed = any(
+            jsc.get(e, "hint") in (None, "product") and _nf_norm_raw(jsc.get(e, "raw")) in unresolved_keys
+            for e in all_ents
+            if jsc.truthy(e)
+        )
+        set_member_uuids: set = set()
+        if product_token_missed:
+            tiers_by_uuid: dict[Any, set] = {}
+            for m in all_matches:
+                if jsc.truthy(m) and jsc.get(m, "entity_type") == "product" and jsc.truthy(jsc.get(m, "uuid")):
+                    tiers_by_uuid.setdefault(jsc.get(m, "uuid"), set()).add(jsc.get(m, "match_tier"))
+            set_member_uuids = {u for u, tiers in tiers_by_uuid.items() if tiers == {"spec_search"}}
+
         by_type: dict[Any, list] = {}
         for c in compat:
+            if jsc.get(c, "uuid") in set_member_uuids:
+                continue
             entity_type = jsc.get(c, "entity_type")
             entity_type = entity_type if jsc.truthy(entity_type) else "item"
             base = disp_by_uuid.get(jsc.get(c, "uuid"))
