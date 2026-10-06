@@ -119,6 +119,49 @@ def _seed_product(session_factory, console: AvailConsole, *, brand_word: str | N
     return product_id
 
 
+def _seed_stock_rows(session_factory, console: AvailConsole) -> None:
+    """A `stock` row (5 on hand) for every product of the console, in one warehouse.
+
+    The live replay of 6 Oct 2026 (shared dev data, real parser) is why: the stray carried
+    word reaches the resolver with `require: {"stock": true}`, and on a catalogue that
+    HOLDS stock that is a population (prod: every product with stock), not the empty set
+    a blank schema gives. Without these rows the plain reuse replays below passed while
+    the same turn, live, asked "How many units for each?" over the catalogue: the
+    resolver's population replaced the carried product when the plan was re-made."""
+    from app.models.inventory import Stock as StockRow
+    from app.models.inventory import Warehouse
+    from app.models.product import Product
+
+    db = session_factory()
+    db.info["company_scope"] = frozenset({SORENTO})
+    company_id = db.query(Product).filter(Product.id == console.uuid_of[CODE]).one().company_id
+    warehouse = Warehouse(
+        id=str(uuid.uuid4()), warehouse_code=f"ZZTWH-{uuid.uuid4().hex[:6]}", warehouse_name="ZZT WH", company_id=company_id
+    )
+    db.add(warehouse)
+    db.flush()
+    for product_id in console.uuid_of.values():
+        db.add(
+            StockRow(
+                id=str(uuid.uuid4()),
+                product_id=product_id,
+                warehouse_id=warehouse.id,
+                quantity_on_hand=5,
+                quantity_reserved=0,
+                quantity_damaged=0,
+                company_id=company_id,
+            )
+        )
+    db.commit()
+
+
+def _focus_product_ids(console: AvailConsole) -> list[str]:
+    """The products the turn LEFT on the focus (the console's carry for the next turn)."""
+    state = console.state or {}
+    variables = state.get("variables") if isinstance(state.get("variables"), dict) else state
+    return [row.get("uuid") for row in ((variables.get("focus") or {}).get("products") or []) if isinstance(row, dict)]
+
+
 def _product_row(product_id: str) -> dict[str, Any]:
     return {
         "raw": CODE,
@@ -168,9 +211,12 @@ def _turn_121_verdict() -> dict[str, Any]:
 
 
 def _assert_product_scoped(console: AvailConsole, product_id: str) -> None:
-    """Rule A at the lane seam: the stock tool was called with the product's id alone, and
-    every gate the lane received carried no set predicate and only that product."""
+    """Rule A at the lane seam: the stock tool was called with the product's id alone,
+    every gate the lane received carried no set predicate and only that product, and the
+    focus the turn leaves is still that product (the stray word's population never
+    becomes the conversation's subject)."""
     assert console.stock_calls[-1]["product_ids"] == [product_id]
+    assert _focus_product_ids(console) == [product_id], _focus_product_ids(console)
     assert console.fetch_gates, "the lane was never asked"
     for gate in console.fetch_gates:
         assert "predicate" not in gate, gate
@@ -180,8 +226,9 @@ def _assert_product_scoped(console: AvailConsole, product_id: str) -> None:
 
 @pytest.fixture
 def fill_console(session_factory, monkeypatch, stub_access):
-    """The dealer console with the product seeded. `fetch_gates` records every gate the
-    lane (`lanes.business.run_fetch`) received on the way; the fetch itself is real."""
+    """The dealer console with the product seeded, on a catalogue that holds stock rows
+    (`_seed_stock_rows`). `fetch_gates` records every gate the lane
+    (`lanes.business.run_fetch`) received on the way; the fetch itself is real."""
     gates: list[dict[str, Any]] = []
     real_run_fetch = business.run_fetch
 
@@ -196,6 +243,7 @@ def fill_console(session_factory, monkeypatch, stub_access):
             session_factory, monkeypatch, stub_access, phone="+60100000912", **stock_facts
         )
         product_id = _seed_product(session_factory, console, brand_word=brand_word)
+        _seed_stock_rows(session_factory, console)
         console.fetch_gates = gates  # type: ignore[attr-defined]
         return console, product_id
 
@@ -313,6 +361,27 @@ def test_a_carried_unresolved_product_code_is_still_a_miss_and_never_an_unfilter
     assert f'Couldn\'t find: "{code}" (product).' in second, second
     assert SET_OPENER not in second, second
     assert not [name for name, _args in c.tool_calls if name.startswith("crm_incoming_stock")], c.tool_calls
+
+
+def test_the_resolver_marks_the_members_of_a_described_set_and_nothing_else():
+    """`turn_runtime.mark_described_set`: the product rows the resolver placed under a
+    predicate that DESCRIBES a set ("which basins have stock": a class, a brand, a spec)
+    are marked `described_set`, so the next turn can tell a carried set (re-described on
+    a follow-up) from a carried product beside a stray word. A bare intent-derived leg
+    (`require` alone, prod turn 121's "every product with stock") describes nothing, and
+    no other kind is marked."""
+    product = {"raw": CODE, "canonical_code": CODE, "uuid": "11111111-1111-4111-8111-111111111111", "hint": "product"}
+    brand = {"raw": "ZZT", "canonical_code": "ZZT", "uuid": "33333333-3333-4333-8333-333333333333", "hint": "brand"}
+    bare_leg = {"require": {"stock": True}, "qualifying_total": 2000}
+    described = {**bare_leg, "description": [{"key": "class", "label": "Product type", "value": "Wash basin"}]}
+
+    marked = turn_runtime.mark_described_set({"product": [dict(product)], "brand": [dict(brand)]}, described)
+    assert [row.get("described_set") for row in marked["product"]] == [True]
+    assert "described_set" not in marked["brand"][0]
+
+    for predicate in (bare_leg, None):
+        untouched = turn_runtime.mark_described_set({"product": [dict(product)]}, predicate)
+        assert "described_set" not in untouched["product"][0], predicate
 
 
 # --------------------------------------------------------------------------- #
