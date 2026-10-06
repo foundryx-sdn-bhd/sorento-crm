@@ -952,6 +952,10 @@ async def create_sla_tracking(
 
 @router.get("/integration/due-escalations", status_code=status.HTTP_200_OK)
 async def list_due_escalations_integration(
+    # LIST-API-PERMS: the router's module guard only proved a session or key existed, so any
+    # signed-in account could read every breaching conversation with its phone number. The
+    # n8n runner's role holds this slug (Admin-equivalent, migration 297).
+    _user: dict = Depends(require_permission_with_api_key("sla_management.conversation_sla_tracking.view")),
     db: Session = Depends(get_db),
 ):
     """Work-list for the scheduled escalation runner (n8n).
@@ -2199,10 +2203,15 @@ async def get_sla_tracking_conversation(
     tracking_id: UUID,
     limit: int = Query(50, ge=1, le=MAX_PAGE_LIMIT),
     cursor: Optional[str] = Query(None),
-    current_user: dict = Depends(require_any_permission_with_api_key(TRACKER_READERS)),
+    current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """List Respond.io messages for the contact linked to this SLA tracking (respond_io_id on respond_contacts).
+
+    Assignee-or-manager scoped like ``GET .../conversation/page`` and ``.../ticket``
+    (``require_ticket_in_scope``): this is a contact's WhatsApp thread, so an outsider gets a
+    404, never a 403 that would confirm the id. Session only, like its siblings; its one reader
+    is the tracking detail's chat records (`SlaTrackingChatRecords.tsx`).
 
     The listing is a real Respond.io HTTP call (``RespondClient.list_messages``,
     15s timeout) behind a synchronous service method, so this ``async def``
@@ -2214,6 +2223,7 @@ async def get_sla_tracking_conversation(
 
     try:
         service = ConversationSLATrackingService(db)
+        service.require_ticket_in_scope(str(tracking_id), current_user["id"])
         return await run_in_threadpool(
             service.fetch_respond_conversation_for_tracking,
             str(tracking_id),

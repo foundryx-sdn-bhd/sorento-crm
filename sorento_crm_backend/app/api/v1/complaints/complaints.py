@@ -539,6 +539,8 @@ router.include_router(
         resolver=_resolve_complaint_chat_contact,
         chat_use_case="complaint_chat",
         context_builder=_build_complaint_chat_context,
+        # The chat panel's window-state and template preview are complaint reads.
+        read_dependencies=[Depends(require_permission("complaint_management.complaints.view"))],
     )
 )
 

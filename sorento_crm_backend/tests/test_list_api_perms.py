@@ -95,6 +95,8 @@ ROUTES = [
     (f"/api/v1/complaints-management/complaints/{RID}", COMPLAINTS, P, "detail"),
     (f"/api/v1/complaints-management/complaints/{RID}/fulfilment-orders", COMPLAINTS, P, "detail"),
     (f"/api/v1/complaints-management/complaints/{RID}/conversation", COMPLAINTS, S, "detail"),
+    (f"/api/v1/complaints-management/complaints/{RID}/conversation/window-state", COMPLAINTS, S, "detail"),
+    (f"/api/v1/complaints-management/complaints/{RID}/conversation/chat-template", COMPLAINTS, S, "detail"),
     # sla
     ("/api/v1/sla-management/sla-policies/", SLA_POLICIES, L, "list"),
     (f"/api/v1/sla-management/sla-policies/{RID}", SLA_POLICIES, P, "detail"),
@@ -105,7 +107,7 @@ ROUTES = [
     (f"{TRACKING}/event-logs", SLA_EVENT_LOGS, P, "list"),
     (f"{TRACKING}/event-logs?tracking_id={RID}", SLA_EVENT_LOGS, P, "list"),
     (f"{TRACKING}/{RID}", SLA_TRACKING, P, "detail"),
-    (f"{TRACKING}/{RID}/conversation", SLA_TRACKING, P, "detail"),
+    (f"{TRACKING}/integration/due-escalations", SLA_TRACKING, P, "list"),
     # forms
     ("/api/v1/forms-management/forms/", FORMS, P, "list"),
     (f"/api/v1/forms-management/forms/{RID}", FORMS, P, "detail"),
@@ -132,7 +134,6 @@ CROSS_MODULE_READERS = [
     (f"{TRACKING}/by-source?source_entity_type=complaint&source_entity_id={RID}", COMPLAINTS, "list"),
     (f"{TRACKING}/event-logs?tracking_id={RID}", COMPLAINTS, "list"),
     (f"{TRACKING}/{RID}", STOCK_INQUIRIES, "detail"),
-    (f"{TRACKING}/{RID}/conversation", TICKETS, "detail"),
     (f"{ATT}/", COMPLAINTS, "list"),
     (f"{ATT}/", PACKING_LISTS, "list"),
     (f"{ATT}/drive", DIRECTORIES, "list"),
@@ -317,6 +318,116 @@ def test_api_key_whose_act_as_user_lacks_the_slug(env, path, slug, shape, kind):
     r = env.key().get(path, headers={"X-API-Key": key})
     assert r.status_code == 403, f"{path}: {r.status_code} {r.text}"
     assert slug in r.text, r.text
+
+
+# --- scoped per-record reads: 404 to an outsider, never a slug gate -------------------------------
+
+SCOPED = [f"{TRACKING}/{RID}/conversation", f"{TRACKING}/{RID}/takeover-state"]
+
+
+@pytest.mark.parametrize("path", SCOPED, ids=[p.removeprefix("/api/v1/") for p in SCOPED])
+def test_a_scoped_tracker_read_answers_an_outsider_with_404(env, path):
+    # `require_ticket_in_scope` / `can_user_act_on_tracking`: a missing row and a viewer
+    # outside the task's scope get the same 404, so the id is never confirmed. A slug on
+    # another module does not change that, and neither does holding no slug at all.
+    outsider = _user(env.db, "outsider", "zz_outsider", [TICKETS, SLA_TRACKING])
+    env.db.commit()
+    r = env.session(outsider).get(path)
+    assert r.status_code == 404, f"{path}: {r.status_code} {r.text}"
+
+
+@pytest.mark.parametrize("path", SCOPED, ids=[p.removeprefix("/api/v1/") for p in SCOPED])
+def test_a_scoped_tracker_read_is_session_only(env, path):
+    key = _api_key(env.db, "scoped", [SLA_TRACKING])
+    env.db.commit()
+    r = env.key().get(path, headers={"X-API-Key": key})
+    assert r.status_code == 401, f"{path}: {r.status_code} {r.text}"
+
+
+# --- the guard against the next bare GET -----------------------------------------------------------
+
+GATED_PREFIXES = (
+    "/api/v1/marketing/",
+    "/api/v1/complaints-management/",
+    "/api/v1/sla-management/",
+    "/api/v1/forms-management/",
+    "/api/v1/resource-management/",
+)
+_PERMISSION_FACTORIES = (
+    "require_permission.",
+    "require_permission_with_api_key.",
+    "require_any_permission.",
+    "require_any_permission_with_api_key.",
+    "require_session_or_api_key_permission.",
+)
+# Every GET under the five routers that carries no permission dependency, with the scoping
+# that stands in for one (the plan's "Left as they are"). A new bare GET fails this test until
+# it is gated or listed here with its reason.
+UNGATED_GET_ALLOWLIST = {
+    # self-scoped in the service: keyed on the caller's own id or visible teams
+    f"{TRACKING}/my-pending": "caller's own tasks",
+    f"{TRACKING}/team-pending": "caller's visible teams",
+    f"{TRACKING}/visible-users": "caller's visible teams",
+    f"{TRACKING}/{{tracking_id}}/takeover-state": "can_user_act_on_tracking, else 404",
+    f"{TRACKING}/{{tracking_id}}/ticket": "require_ticket_in_scope, else 404",
+    f"{TRACKING}/{{tracking_id}}/comments": "TicketCommentService._tracking_in_scope, else 404",
+    f"{TRACKING}/{{tracking_id}}/conversation": "require_ticket_in_scope, else 404",
+    f"{TRACKING}/{{tracking_id}}/conversation/page": "fetch_conversation_thread_page viewer scope",
+    f"{TRACKING}/{{tracking_id}}/conversation/search": "viewer scope, as the page",
+    f"{TRACKING}/{{tracking_id}}/media": "require_ticket_in_scope, else 404",
+    "/api/v1/sla-management/conversation-events/stream": "entitled_contacts only",
+    # gated inline, not by a dependency: unfiltered needs escalation_logs.view, filtered any TRACKER_READERS
+    f"{TRACKING}/event-logs": "_require_event_log_reader (tested above)",
+    # the shared chat panel routes on the SLA mount: the ticket drawer's composer reads them for
+    # the assignee, who may hold no module slug; the ticket scope is a follow-up (complaints
+    # mount is gated through `read_dependencies`)
+    f"{TRACKING}/{{entity_id}}/conversation/window-state": "follow-up: ticket scope (shared chat panel)",
+    f"{TRACKING}/{{entity_id}}/conversation/chat-template": "follow-up: ticket scope (shared chat panel)",
+    "/api/v1/resource-management/upload-activity": "uploaded_by == caller",
+    # per entity, read by that entity's own detail page; the entity-type slug is a follow-up
+    "/api/v1/sla-management/form-sla-tracking": "follow-up: entity-type slug (security review 4)",
+    "/api/v1/sla-management/form-actions/current": "follow-up: entity-type slug (security review 14)",
+    "/api/v1/sla-management/form-actions/eligibility": "follow-up: entity-type slug (security review 14)",
+    # per-attachment reads serve every module's linked files; the linked record's slug is a follow-up
+    f"{ATT}/{{attachment_id}}": "follow-up: linked-record slug (security review 6)",
+    f"{ATT}/{{attachment_id}}/download": "follow-up: linked-record slug (security review 6)",
+    f"{ATT}/{{attachment_id}}/metadata": "follow-up: linked-record slug (security review 6)",
+    f"{ATT}/{{attachment_id}}/preview-url": "follow-up: linked-record slug (security review 6)",
+    # four booleans of configuration, no record data
+    "/api/v1/forms-management/revision-configs/enabled": "config flags only",
+}
+
+
+def _has_permission_dependency(route) -> bool:
+    def walk(dependant) -> bool:
+        for dep in dependant.dependencies:
+            call = getattr(dep, "call", None)
+            qualname = getattr(call, "__qualname__", "") or ""
+            if qualname.startswith(_PERMISSION_FACTORIES):
+                return True
+            if walk(dep):
+                return True
+        return False
+
+    return walk(route.dependant)
+
+
+def test_every_get_under_the_five_routers_is_gated_or_listed():
+    from fastapi.routing import APIRoute
+
+    bare = {}
+    for route in app.routes:
+        if not isinstance(route, APIRoute) or "GET" not in route.methods:
+            continue
+        if not route.path.startswith(GATED_PREFIXES):
+            continue
+        if _has_permission_dependency(route):
+            continue
+        bare[route.path] = route.endpoint.__name__
+    unexpected = {p: n for p, n in bare.items() if p not in UNGATED_GET_ALLOWLIST}
+    stale = sorted(set(UNGATED_GET_ALLOWLIST) - set(bare))
+    assert not unexpected, f"GET routes with no permission dependency and no listed reason: {unexpected}"
+    assert not stale, f"allowlist names routes that are gated or gone now: {stale}"
 
 
 # --- UAC4.1 (REG): a session-only route opens no key door -----------------------------------------

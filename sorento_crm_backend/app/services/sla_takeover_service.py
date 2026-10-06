@@ -169,6 +169,11 @@ class SlaTakeoverService:
         banner. Visible to the assignee or anyone who can act on it."""
         sla = self._sla()
         tracking = sla.get_tracking(str(tracking_id), load_event_logs=False)
+        # One 404 for a missing row and for a viewer outside the task's scope (the assignee,
+        # or anyone whose Team Tasks show it): the reference below is the contact's phone or
+        # name, and a 403 would confirm the id to a stranger. LIST-API-PERMS.
+        if tracking is None or not sla.can_user_act_on_tracking(user_id, tracking):
+            raise handle_not_found("SLA Tracking", str(tracking_id))
         from app.services.form_sla_service import FORM_SLA_TYPES
 
         ref = (sla._resolve_my_pending_references([tracking]) or {}).get(
