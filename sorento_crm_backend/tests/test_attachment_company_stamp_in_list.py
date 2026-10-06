@@ -174,7 +174,18 @@ def test_stamp_company_is_explicit_none_for_a_shared_row(db):
 
 
 @pytest.fixture
-def api():
+def api(monkeypatch):
+    # The list is gated on the catalogue readers' slugs (LIST-API-PERMS); the principal
+    # here is a dict with no users row, so answer the slug lookup directly. The gate has
+    # its own tests (tests/test_list_api_perms.py); this file tests the company stamp.
+    from app.services.user_service import UserPermissionService
+
+    monkeypatch.setattr(UserPermissionService, "get_user_role_slugs", lambda self, uid: set())
+    monkeypatch.setattr(
+        UserPermissionService,
+        "get_user_permission_slugs",
+        lambda self, uid: {"resource.attachments.view"},
+    )
     with blank_session() as db:
         db.add(Company(id=MOCHA_ID, name="Mocha", code=unique_code("MCH")[:20]))
         db.flush()

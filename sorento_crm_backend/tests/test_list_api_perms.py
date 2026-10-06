@@ -135,6 +135,7 @@ CROSS_MODULE_READERS = [
     (f"{TRACKING}/{RID}/conversation", TICKETS, "detail"),
     (f"{ATT}/", COMPLAINTS, "list"),
     (f"{ATT}/", PACKING_LISTS, "list"),
+    (f"{ATT}/drive", DIRECTORIES, "list"),
     (f"{ATT}/collision-check?filename=zz.pdf", UPLOAD, "list"),
     (f"{ATT}/current-stock-list", STOCK, "detail"),
 ]

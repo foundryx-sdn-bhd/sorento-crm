@@ -20,7 +20,6 @@ from app.dependencies import (
     get_current_user_or_api_key,
     require_any_permission_with_api_key,
     require_permission,
-    require_permission_with_api_key,
 )
 
 # Who browses the attachment catalogue (LIST-API-PERMS). The catalogue is the shared Drive AND
@@ -46,6 +45,9 @@ ATTACHMENT_CATALOGUE_READERS = [
 ATTACHMENT_UPLOAD_READERS = ["resource.attachments.view", "resource.attachments.upload"]
 # The latest stock list is read by the Inventory Stock page (`StockBalanceGrid.tsx`) and the MCP.
 STOCK_LIST_READERS = ["resource.attachments.view", "inventory.stock.view"]
+# The Files page (`/resource-management/attachment-directories`) lists folders and files in one
+# call; its menu entry admits either slug (lane MENU-PERM-GATE), so the drive listing does too.
+DRIVE_READERS = ["resource.attachments.view", "resource.attachment_directories.view"]
 from app.services.resources_service import AttachmentService, AttachmentTypeService, AttachmentDirectoryService
 from app.services.attachment_company_service import AttachmentCompanyService
 from app.services.storage_router import (
@@ -463,7 +465,7 @@ async def get_drive_contents(
         None,
         description="'shared' for company_id IS NULL only (folders and files); a company UUID for that company only; omitted keeps the default.",
     ),
-    current_user: dict = Depends(require_permission_with_api_key("resource.attachments.view")),
+    current_user: dict = Depends(require_any_permission_with_api_key(DRIVE_READERS)),
     db: Session = Depends(get_db),
 ):
     """Unified Drive listing - folders + files as ONE server-sorted, server-paginated
