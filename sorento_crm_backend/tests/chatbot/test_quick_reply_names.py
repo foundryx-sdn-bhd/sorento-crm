@@ -381,6 +381,85 @@ class TestEngineSeams:
         reply = engine_mod._reply_of(SimpleNamespace(question=question, text="Which team?"))
         assert reply["quick_replies"] == "Mocha, Sorento"
 
+    def test_reply_of_hands_a_company_clarifys_options_to_the_predicate(self) -> None:
+        """`_quick_replies_of` passes the question's options through, so a `team_pick`
+        that is really the company clarify (`payload.company`) sends no buttons."""
+        from app.services.chatbot import engine as engine_mod
+
+        question = turn_pending.ask(
+            "team_pick",
+            [
+                _option(1, "Mocha", "team", company="Mocha", company_id="m", brand_code="MCH"),
+                _option(2, "Sorento", "team", company="Sorento", company_id="s", brand_code="SRT"),
+            ],
+        )
+        reply = engine_mod._reply_of(SimpleNamespace(question=question, text="Which company?"))
+        assert reply["quick_replies"] is None
+
+    def test_reply_of_hands_a_product_did_you_mean_options_to_the_predicate(self) -> None:
+        from app.services.chatbot import engine as engine_mod
+
+        question = turn_pending.ask(
+            "team_pick",
+            [
+                {"position": 1, "label": "SRT1", "uuid": None, "uuids": [], "entity_type": "product",
+                 "payload": {"product_code": "SRT1", "team": "warehouse"}},
+                {"position": 2, "label": "SRT2", "uuid": None, "uuids": [], "entity_type": "product",
+                 "payload": {"product_code": "SRT2", "team": "warehouse"}},
+            ],
+        )
+        reply = engine_mod._reply_of(SimpleNamespace(question=question, text="Which product?"))
+        assert reply["quick_replies"] is None
+
+    def test_compose_question_hands_a_company_clarifys_options_to_the_predicate(self) -> None:
+        from app.services.chatbot.turn.compose import compose_question
+
+        company = turn_pending.ask(
+            "team_pick",
+            [
+                _option(1, "Mocha", "team", company="Mocha", company_id="m", brand_code="MCH"),
+                _option(2, "Sorento", "team", company="Sorento", company_id="s", brand_code="SRT"),
+            ],
+        )
+        assert compose_question(company).actions[0]["quick_replies"] is None
+        teams = turn_pending.ask(
+            "team_pick", [_option(1, "Mocha", "team", team="mocha"), _option(2, "Sorento", "team", team="sorento")]
+        )
+        assert compose_question(teams).actions[0]["quick_replies"] == "Mocha, Sorento"
+
+    @pytest.mark.parametrize(
+        ("tail_set", "expected"),
+        [
+            ("Alpha one two three four, Beta", None),
+            ("One, Two, Three, Four", "One, Two, Three"),
+        ],
+    )
+    def test_run_tail_guards_a_set_the_tail_composed(
+        self, session_factory, system_settings_row, monkeypatch, tail_set: str, expected: str | None
+    ) -> None:
+        """`run_tail` guards `reply_ladder.compose_reply`'s own `quick_replies`. No
+        producer emits an over-long or over-three set through the ladder today (the
+        producers pass the guard themselves), so the ladder is monkeypatched to return one:
+        this is the net for a future producer. The clarify's own lane fallback is made
+        unusable (team names over 20 characters) so only the tail set can reach the reply."""
+        from app.services.chatbot.tail import reply_ladder
+        from tests.chatbot.test_s5_escalation_seams import _run_nurain_team_clarify
+
+        real = reply_ladder.compose_reply
+
+        def composed_with_a_set(outcome: Any) -> dict[str, Any]:
+            return {**real(outcome), "quick_replies": tail_set}
+
+        monkeypatch.setattr(reply_ladder, "compose_reply", composed_with_a_set)
+        result, row = _run_nurain_team_clarify(
+            session_factory, system_settings_row, monkeypatch,
+            teams=(
+                ("do_customer_service", "DO Customer Service"),
+                ("project_customer_service", "Project Customer Service"),
+            ),
+        )
+        assert row.response["reply"]["quick_replies"] == expected, row.response["reply"]
+
     def test_seal_send_guards_the_lanes_own_fallback(self) -> None:
         """A lane that hand-built its action's buttons (the escalation clarifies) has
         them guarded too when the tail sealed none."""
