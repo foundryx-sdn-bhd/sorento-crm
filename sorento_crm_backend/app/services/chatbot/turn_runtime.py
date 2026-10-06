@@ -2912,7 +2912,17 @@ def make_tool_runner(
         # `resolver_gate` itself carried under those two keys.
         gate: dict[str, Any] = dict(resolver_gate) if isinstance(resolver_gate, dict) else {}
         gate["compatible_entities"] = entities
-        block = page_predicate if page_predicate is not None else predicate
+        # STOCK-FILL-PREDICATE: a task's own fetch is about its settled slots (above),
+        # never a described set, so the turn's set predicate (derived off the INTENT
+        # by `predicate.derive_require` whenever this turn's resolver saw no typed
+        # code) never rides it - with one, `output_structurer` withholds the rows of
+        # a set past `SET_LIST_MAX` and the dealer reads a header over nothing.
+        if page_predicate is not None:
+            block = page_predicate
+        elif spec.filters.get("task"):
+            block = None
+        else:
+            block = predicate
         if block is not None:
             gate["predicate"] = block
         # R3: a tier already settled by a pick keeps today's synthetic recompose; an

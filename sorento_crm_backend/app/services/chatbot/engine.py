@@ -4865,7 +4865,9 @@ def _run_stages_body(  # noqa: PLR0915
                 )
             )
             if task_fetch_turn:
-                turn_trace.add("task_fetch_resolves_no_carry", {"fetch": [s.domain for s in plan.fetch]})
+                turn_trace.add(
+                    "task_fetch_resolves_no_carry", {"fetch": [s.domain for s in plan.fetch]}
+                )
             resolver_parse_output = _without_carried_domain_on_a_roster_pick(
                 resolver_parse_output, plan.trace.rules_fired
             )
