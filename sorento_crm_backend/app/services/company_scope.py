@@ -271,15 +271,23 @@ def register_company_scope_listeners() -> None:
         if not state.is_select or state.is_column_load or state.is_relationship_load:
             return
 
-        # CONTACT-BRAND-SCOPE: a brand-scoped contact sees only products of its brands
-        # (a NULL brand fails the IN, Q1). Concrete clause for the same cache reason as
-        # the company predicate below; absent scope adds nothing (unscoped is unchanged).
+        # CONTACT-BRAND-SCOPE: a brand-scoped contact sees only products of its brands, per
+        # company (BRAND-SCOPE-PER-COMPANY): the list restricts only the companies that own a
+        # scoped brand, products of other companies pass, and a NULL brand inside a restricted
+        # company fails (Q1). `brand_predicate` is the one place the rule is spelled. Concrete
+        # clause for the same cache reason as the company predicate below; absent scope adds
+        # nothing (unscoped is unchanged).
         brand_scope = state.session.info.get("brand_scope")
         if brand_scope:
             from app.models.product import Product
+            from app.services.contact_brand_scope import brand_predicate
 
             state.statement = state.statement.options(
-                with_loader_criteria(Product, Product.brand_id.in_(sorted(brand_scope)), include_aliases=True)
+                with_loader_criteria(
+                    Product,
+                    brand_predicate(brand_scope, Product.brand_id, Product.company_id),
+                    include_aliases=True,
+                )
             )
 
         scope = state.session.info.get("company_scope", UNSET)
