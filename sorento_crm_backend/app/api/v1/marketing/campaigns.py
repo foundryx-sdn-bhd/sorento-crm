@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Query, HTTPException, status
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.services.uuid_path_param import validate_uuid_path
-from app.dependencies import get_current_user, get_current_user_or_api_key
+from app.dependencies import get_current_user, require_permission_with_api_key
 from app.services.marketing_service import MarketingCampaignService
 from app.schemas.marketing import MarketingCampaignCreate, MarketingCampaignUpdate, MarketingCampaignResponse
 from app.schemas.common import ListResponse, MAX_PAGE_LIMIT
@@ -18,7 +18,7 @@ async def get_campaigns(
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=MAX_PAGE_LIMIT),
     status: Optional[str] = Query(None, description="Filter by status (case-insensitive)"),
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key("marketing.campaigns.view")),
     db: Session = Depends(get_db)
 ):
     """Get marketing campaigns with pagination."""
@@ -33,7 +33,7 @@ async def get_campaigns(
 @router.get("/{campaign_id}", response_model=MarketingCampaignResponse)
 async def get_campaign(
     campaign_id: str,
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key("marketing.campaigns.view")),
     db: Session = Depends(get_db)
 ):
     """Get a single campaign by ID."""

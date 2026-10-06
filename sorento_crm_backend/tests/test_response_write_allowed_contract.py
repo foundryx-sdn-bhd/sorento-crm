@@ -74,8 +74,9 @@ def db():
 
 
 @pytest.fixture
-def client(db):
+def client(db, monkeypatch):
     from app.database import get_db
+    from app.services.user_service import UserPermissionService
 
     def _override_get_db():
         yield db
@@ -84,6 +85,9 @@ def client(db):
     from app.dependencies import get_current_user, get_current_user_or_api_key
 
     actor = {"id": str(uuid.uuid4()), "email": "office@example.test", "role": "admin"}
+    # LIST-API-PERMS: GET /complaints/{id} carries a permission gate now; the actor's "role"
+    # key is not what the gate reads, so answer the role lookup as admin.
+    monkeypatch.setattr(UserPermissionService, "get_user_role_slugs", lambda self, uid: {"admin"})
     app.dependency_overrides[get_current_user] = lambda: actor
     app.dependency_overrides[get_current_user_or_api_key] = lambda: actor
     try:

@@ -1,7 +1,6 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { useSession } from 'next-auth/react';
 import {
   RowSelectionState,
   getCoreRowModel,
@@ -17,7 +16,7 @@ import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { DataGrid } from '@/components/ui/data-grid';
 import { DataGridTable } from '@/components/ui/data-grid-table';
 import { DataGridListToolbar } from '@/components/ui/data-grid-list-toolbar';
-import { isSuperadminUser } from '@/lib/is-superadmin';
+import { useEffectiveIsSuperadmin } from '@/hooks/useEffectiveIsSuperadmin';
 import { useCompanies } from '../hooks/useCompanies';
 import { buildCompanyColumns } from './CompanyTable';
 import CompanyFormDialog from './CompanyFormDialog';
@@ -27,10 +26,10 @@ import type { Company } from '../types/company.types';
 
 export default function CompaniesList() {
   // Companies admin is superadmin/admin-only (backend enforces via role slug;
-  // this is the UX guard for direct navigation). TODO(AC-A1/A4): swap for a
-  // `system.companies.manage` permission slug once the backend defines one.
-  const { data: session, status } = useSession();
-  const denied = status === 'authenticated' && !isSuperadminUser(session?.user);
+  // this is the UX guard for direct navigation, judged on the EFFECTIVE user so a
+  // view-as is denied too). TODO(AC-A1/A4): swap for a `system.companies.manage`
+  // permission slug once the backend defines one.
+  const denied = useEffectiveIsSuperadmin() === false;
 
   const {
     value: searchInput,

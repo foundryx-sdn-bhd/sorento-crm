@@ -1851,36 +1851,62 @@ def answer_for(
     # `not_found_error_message` composes the miss reply so it can be folded in. The
     # render itself is folded onto `text` at the very end, from this SAME
     # `crossdomain_result` - never a second `run_crossdomain` call.
-    crossdomain_result = _run_crossdomain_ladder(
-        parser=parser,
-        resolved=_ladder_resolved(resolved, raw_fragment),
-        entities_names=entities_names,
-        crossdomain_ladder=crossdomain_ladder,
-        ctx=ctx,
-        services=services,
-        contact_id=contact_id,
-        space_id=space_id,
-        trace=trace,
-        dry_run=dry_run,
-        # Ported from PR #1118 (not merged), D17, review round 10: the dealer's
-        # availability block turns the whole ladder off (`crossdomain_zeroset`'s own
-        # gate). The MISS arm hands the ladder an empty item, so the block has to
-        # travel here too - measured unreachable on this shape today (an availability
-        # reply carries an entry per named product, so it is a HIT), carried anyway
-        # because "no rung on a dealer reply" is a rule about the REPLY, not about
-        # which arm composed it.
-        item=(
-            {"stock_availability": envelope["stock_availability"]}
-            if isinstance(envelope, Mapping)
-            and isinstance(envelope.get("stock_availability"), list)
-            and envelope.get("stock_availability")
-            # PR #1329 fix round 2: a dealer's incoming miss is the same rule. The
-            # fetch envelope keeps no `result_type`, so the presenter's own marker for a
-            # dealer's incoming reply is named here from the contact's profile.
-            else {"result_type": "incoming_dealer"}
-            if dealer_incoming_ask
-            else None
-        ),
+    #
+    # STOCK-MISS-RENDER (owner report, 6 Oct 2026, prod turn #f763): the ladder's own
+    # text is a claim about the PRIMARY domain ("No stock and no incoming for X"), and
+    # `crossdomain_zeroset` counts every resolver code absent from the primary result as
+    # missing - which is every code when no primary result exists. A turn the runner
+    # refused BEFORE its tool ran (`turn_runtime.make_tool_runner`'s own `scope_gate` /
+    # unfiltered / entitlement refusals, `business._error_fragment(outcome="not_found")`
+    # - none of them carries a `tool`) therefore rendered the stock claim over a
+    # product the resolver had placed but nothing had looked up. Only a real empty tool
+    # result may say so: `via_fetched_empty` IS that result (kind "result", zero rows),
+    # and a fragment naming the tool it called is the same evidence on the other
+    # outcome shapes. The miss text itself ("Couldn't find", refer to salesman) is
+    # composed below exactly as before.
+    primary_tool_ran = via_fetched_empty or (
+        isinstance(fetch_item, Mapping) and bool(fetch_item.get("tool"))
+    )
+    if not primary_tool_ran and trace is not None:
+        # Turn #f763 was diagnosed from the trace screen, so the skipped rung says why.
+        trace.add("crossdomain", {"skipped": "primary_tool_not_run"})
+    crossdomain_result = (
+        _run_crossdomain_ladder(
+            parser=parser,
+            resolved=_ladder_resolved(resolved, raw_fragment),
+            entities_names=entities_names,
+            crossdomain_ladder=crossdomain_ladder,
+            ctx=ctx,
+            services=services,
+            contact_id=contact_id,
+            space_id=space_id,
+            trace=trace,
+            dry_run=dry_run,
+            # Ported from PR #1118 (not merged), D17, review round 10: the dealer's
+            # availability block turns the whole ladder off (`crossdomain_zeroset`'s own
+            # gate). The MISS arm hands the ladder an empty item, so the block has to
+            # travel here too - measured unreachable on this shape today (an availability
+            # reply carries an entry per named product, so it is a HIT), carried anyway
+            # because "no rung on a dealer reply" is a rule about the REPLY, not about
+            # which arm composed it.
+            item=(
+                {"stock_availability": envelope["stock_availability"]}
+                if isinstance(envelope, Mapping)
+                and isinstance(envelope.get("stock_availability"), list)
+                and envelope.get("stock_availability")
+                # PR #1329 fix round 2: a dealer's incoming miss is the same rule. The
+                # fetch envelope keeps no `result_type`, so the presenter's own marker for a
+                # dealer's incoming reply is named here from the contact's profile.
+                else {"result_type": "incoming_dealer"}
+                if dealer_incoming_ask
+                else None
+            ),
+        )
+        if primary_tool_ran
+        # The shape `answer.run_crossdomain` itself returns for an inactive ladder, so
+        # `_apply_crossdomain_render` below folds nothing, exactly as on any other turn
+        # the ladder had no claim to make.
+        else {"zeroset": None, "render": None}
     )
 
     miss_gate = _scope_gate(raw_fragment)

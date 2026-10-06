@@ -699,12 +699,25 @@ class TestAC1705IncomingMissWithStockLadder:
         }
         result_carrier = {"result": {"xd": {"block": xd_block}}}
         merged = tail_compose.crossdomain_compose(sealed, result=result_carrier, answered=False, covers=True)
-        expected_text = merged["reply"]["session_patch"]["user_response"]
-        assert "*Product Code:* SRTWC900\n*Incoming:* none" in expected_text
-        assert expected_text.count("SRTWC900") >= 1, (
+        folded_text = merged["reply"]["session_patch"]["user_response"]
+        assert "*Product Code:* SRTWC900\n*Incoming:* none" in folded_text
+        assert folded_text.count("SRTWC900") >= 1, (
             "no OTHER product code may appear in the reply - the ladder is scoped to "
-            f"the one asked product: {expected_text!r}"
+            f"the one asked product: {folded_text!r}"
         )
+
+        # STOCK-MISS-RENDER (owner report, 6 Oct 2026, prod turn #f763): the chain above
+        # is what the bridge folds in when the primary tool RAN and came back empty. On
+        # a resolver exit no incoming lookup ran at all, so the rung's "No incoming for
+        # SRTWC900" would be a claim nothing measured; the bridge answers with the miss
+        # text alone and climbs no rung. The folded chain is kept above as the measured
+        # shape of what a real empty result folds in (`test_stock_miss_render.py`).
+        probed: list[str] = []
+        real_probe = services.mcp_probe
+
+        def counting_probe(name: str, args: dict[str, Any]) -> dict[str, Any]:
+            probed.append(name)
+            return real_probe(name, args)
 
         bridge = _require_answer_for()
         payload = {"resolved": resolved, "gate": gate, "_exit_kind": "not_found"}
@@ -714,12 +727,14 @@ class TestAC1705IncomingMissWithStockLadder:
             parser=parser,
             ctx=ctx,
             canned=canned,
-            services=services,
+            services=AnswerServices(mcp_probe=counting_probe, family_fetch=lambda q: {"data": []}),
             db=None,
             asked_at_turn=1,
         )
         assert answer is not None
-        assert answer.text == expected_text, (answer.text, expected_text)
+        assert answer.text == base_text, (answer.text, base_text)
+        assert "stock details" not in answer.text, answer.text
+        assert "crm_inventory_stock_balance_list" not in probed, probed
 
 
 # --------------------------------------------------------------------------- #

@@ -6,6 +6,7 @@ import { ArrowUpRight, Search } from 'lucide-react';
 import { MENU_SIDEBAR } from '@/config/menu.config';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useTenantModules } from '@/hooks/useTenantModules';
+import { useEffectiveIsSuperadmin } from '@/hooks/useEffectiveIsSuperadmin';
 import {
   CommandDialog,
   CommandEmpty,
@@ -38,6 +39,8 @@ export function SearchDialog({ trigger }: { trigger: ReactNode }) {
   const router = useRouter();
   const { permissions } = usePermissions();
   const { enabledModuleKeys } = useTenantModules();
+  // Same effective flag as the sidebar, so a view-as hides the same entries here.
+  const isSuperadmin = useEffectiveIsSuperadmin();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [groupedResults, setGroupedResults] = useState<
@@ -77,6 +80,7 @@ export function SearchDialog({ trigger }: { trigger: ReactNode }) {
       const next = await runUniversalSearch(query, providers, {
         permissionSet,
         enabledModuleKeys,
+        isSuperadmin,
       });
       if (!cancelled) setGroupedResults(next);
     };
@@ -84,7 +88,7 @@ export function SearchDialog({ trigger }: { trigger: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [query, providers, permissions, enabledModuleKeys]);
+  }, [query, providers, permissions, enabledModuleKeys, isSuperadmin]);
 
   const hasAnyResults = useMemo(
     () => Object.values(groupedResults).some((items) => items.length > 0),
