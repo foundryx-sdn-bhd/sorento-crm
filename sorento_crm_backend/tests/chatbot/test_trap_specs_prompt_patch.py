@@ -25,7 +25,7 @@ import pytest
 
 from tests.chatbot import _trap_specs_prompt as tp
 
-DASHES = "[–—]"
+DASHES = "[" + chr(0x2013) + chr(0x2014) + "]"
 
 
 def test_the_anchors_occur_once_each_in_the_production_text():
