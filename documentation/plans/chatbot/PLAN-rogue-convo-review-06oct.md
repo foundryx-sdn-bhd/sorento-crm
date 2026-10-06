@@ -1,7 +1,9 @@
 # PLAN: rogue dealer conversation, 6 Oct (ROGUE-CONVO-REVIEW)
 
-Status: BUILDING. PR-2 (classes B, C, G, F) is PR #1506 on this branch, size M; PR-1
-(class A) builds on its own branch. Owner rulings (6 Oct 2026, via crew): Q1 = (a) PLUS
+Status: BUILT, in review. PR-2 (classes B, C, G, F) is PR #1506 on this branch, size M,
+reviewer PASS WITH NITS (nits built or recorded) and security-reviewer PASS; PR-1 (class A)
+is PR #1517 on `crew/rogue-convo-review-pr1`, reviewer round built. Both wait on the
+owner's hand test and merge. Owner rulings (6 Oct 2026, via crew): Q1 = (a) PLUS
 the contact's brand scope: the chatbot list applies `is_searchable` (product and category),
 `is_active` and the contact's brand bound. Q2: a domain-level refuse-empty for
 `master_products` with the inventory sentence worded for products ("That would search every
