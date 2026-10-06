@@ -57,11 +57,15 @@ Truth table for `branch()` (x and y already resolved; unset = 0):
 | 5 | 150 | 200 | 149 | 2026-10-28 | 5 | incoming | 02/11/2026 |
 | 6 | 150 | 200 | 0 | none | 7 | no_incoming | - |
 | 7 | 150 | 200 | 0 | 2026-10-12 | 0 (unset) | incoming | 12/10/2026 |
-| 8 | 1 | 1 | -3 (SO over on hand) | none | 0 | no_incoming | - |
+| 8 | 10 | 100 | 6 (on hand; 13 on open SO, ignored) | none | 0 | in_stock | "Got stock, 6 available." (AVAIL-ONHAND-BASIS, the MWC7632-SH-P prod case) |
+| 9 | 5 | 100 | 6 (on hand; 13 on open SO, ignored) | none | 0 | in_stock | "Got stock." |
+| 10 | 5 | 100 | 0 (on hand; no open SO) | none | 0 | no_incoming | "No stock and no incoming." |
+
+`available` is ON HAND in the contact's allowed locations (AVAIL-ONHAND-BASIS, owner ruling 6 Oct 2026: "our basis should be the on hand, without considering the outstanding"). It is never negative: open sales orders are not subtracted, so the old row 8 ("-3, SO over on hand -> no_incoming") no longer exists. Wording unchanged.
 
 - **AC-SA301 [BE][T]** `branch()` returns every row above.
 - **AC-SA302 [BE]** Available counts only the contact's policy locations: 0 in the policy set and 500 elsewhere, Q = 10, X = 100 -> not `in_stock`.
-- **AC-SA303 [BE]** Open sales order lines in the policy set are subtracted: on hand 100, open SO 60, Q = 50 -> not `in_stock`; Q = 40 -> `in_stock`.
+- **AC-SA303 [BE]** Open sales order lines are IGNORED (re-ruled 6 Oct 2026, AVAIL-ONHAND-BASIS; was "subtracted"): on hand 100, open SO 60, Q = 50 -> `in_stock` with no count; Q = 150 (X = 200) -> `in_stock`, "100 available". On hand 6, open SO 13, Q = 10 -> `in_stock`, "6 available"; Q = 5 -> `in_stock`. The staff stock summary's O/S and sellable are unchanged (`tests/test_avail_onhand_basis.py`).
 - **AC-SA304 [BE]** ETA shipment: of two qualifying shipments (non-draft, line not received, remaining > 0, `attachment_id` set) with `estimated_arrival_date` 2026-11-01 and 2026-10-12, the 2026-10-12 one is used.
 - **AC-SA305 [BE]** An earlier shipment WITHOUT `attachment_id` is ignored; a draft shipment is ignored; a line with `line_status = received` is ignored; a line with `quantity_received = quantity_shipped` is ignored. With no other shipment the branch is `no_incoming`.
 - **AC-SA306 [BE]** `eta_delay_date` is never read: a shipment with `estimated_arrival_date` 2026-10-12 and `eta_delay_date` 2026-10-20, Y = 0 -> told 12/10/2026.

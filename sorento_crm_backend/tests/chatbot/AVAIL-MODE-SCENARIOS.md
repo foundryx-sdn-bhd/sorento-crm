@@ -9,7 +9,8 @@ the reply word for word, and a row on the owner-approved page
 Plan and rulings: `documentation/plans/chatbot/PLAN-avail-mode-replies-02oct.md`.
 
 `R` = "Please refer to your salesman." X = the product's max quantity, else its own
-category's, else 0. Available = on hand in the contact's allowed locations minus open SO.
+category's, else 0. Available = on hand in the contact's allowed locations; open SO is ignored
+(AVAIL-ONHAND-BASIS, owner 6 Oct 2026; was "minus open SO").
 
 ## Rules
 
