@@ -1009,10 +1009,11 @@ class AIExtractService:
         default is only for `_extract_products`'s own sales-order lines.
 
         Security review: `resolve_references` itself TRUNCATES its token list
-        to `max_candidates` (`tokens = tokens[:max_candidates]`) rather than
-        merely capping the cost of its own trigram "did you mean" pass over
-        the misses - so a flat cap silently dropped code 101 onward instead of
-        just bounding that pass. Chunked into batches of
+        to `max_candidates` (its own `PRE_EXTRACTED_TOKEN_CEILING`, 50, when
+        the caller sets none; the cut is echoed in `truncated_tokens` since
+        RESOLVER-TOKEN-CAP) rather than merely capping the cost of its own
+        trigram "did you mean" pass over the misses - so a flat cap silently
+        dropped code 101 onward instead of just bounding that pass. Chunked into batches of
         `_MAX_RESOLVE_CANDIDATES` and resolved one call per chunk instead, so
         every code is still answered and no single call runs the resolver's
         alternatives pass over an unbounded batch (no line ceiling exists in
