@@ -2133,20 +2133,15 @@ def is_product_shaped_entity(entity: dict[str, Any]) -> bool:
 # incoming and PO" ran every domain broad, printing 50 unrelated stock rows (live turn
 # 554cf9c4-9249-4e45-ab2a-7a154b813009).
 #
-# ROGUE-CONVO-REVIEW PR-1 (owner ruling Q2, 6 Oct 2026): this was a one-row copy
-# (`{"inventory"}`) on the premise that `master_products` "narrows on a must_narrow_one
-# policy that already asks". That premise was false: the master_products domain row has
-# `narrowing={}` (`turn/policy_rows.py`), so the product kind's `list_all` default
-# applies and `narrow.decide` passes a zero-entity ask straight through; a dealer's one
-# word "product" reached `crm_master_products_list` unfiltered. The set is now READ off
-# the gate's own `REFUSES_EMPTY_FETCH`, one source for the fan-out seam here and the
-# runner's no-subject probe (`turn_runtime.make_tool_runner`).
-def _refuses_empty_subject(domain: str) -> bool:
-    """Does the gate say this domain's fetch is refused with nothing to scope it?
-    Imported at call time: `lanes/business/gate.py` sits above this module."""
-    from app.services.chatbot.lanes.business.gate import REFUSES_EMPTY_FETCH
-
-    return domain in REFUSES_EMPTY_FETCH
+# ROGUE-CONVO-REVIEW PR-1 (6 Oct 2026): the old comment here claimed `master_products`
+# "narrows on a must_narrow_one policy that already asks". It does not (the domain row has
+# `narrowing={}`, so the product kind's `list_all` default passes a zero-entity ask
+# through); a dealer's one word "product" reached `crm_master_products_list` unfiltered.
+# The refusal for that domain lives at FETCH time in `turn_runtime.make_tool_runner`'s
+# no-subject probe (`gate.REFUSES_EMPTY_FETCH`), which covers the product leg of a
+# multi-domain ask as well (measured: widening this set too changed nothing). This seam
+# keeps its one row.
+_REFUSES_EMPTY_SUBJECT: frozenset[str] = frozenset({"inventory"})
 
 
 # --------------------------------------------------------------------------- #
@@ -2395,14 +2390,14 @@ def _narrow_and_plan(
                 and not entities
                 and not filters
                 and not date_window
-                and _refuses_empty_subject(name)
+                and name in _REFUSES_EMPTY_SUBJECT
             ):
                 # D5(b): no entity, no filter, no date window - nothing to scope this
                 # domain's fetch by at all, on a MULTI-domain ask ("stock and
                 # incoming and PO", D5(b)'s own scenario - main's own `ALLOWS_EMPTY`
                 # is read at exactly this fan-out seam, `gate.py`'s own per-domain
                 # loop over an asks-shaped verdict). Refused outright rather than run
-                # broad (`_refuses_empty_subject`'s own comment); the OTHER domains
+                # broad (`_REFUSES_EMPTY_SUBJECT`'s own comment); the OTHER domains
                 # this turn asked about (D5(b)'s own incoming/PO, allowed broad by
                 # main's design) still fetch normally.
                 #

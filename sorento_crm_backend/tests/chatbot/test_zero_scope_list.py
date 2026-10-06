@@ -192,10 +192,11 @@ class TestControlsAroundTheAsk:
     def test_a_multi_domain_ask_with_no_subject_refuses_the_product_leg_only(
         self, session_factory, monkeypatch
     ) -> None:
-        """The fan-out seam (`turn/apply._refuses_empty_subject`, the second reader): "product
-        and incoming?" with nothing to scope either leg. The product leg is refused outright
-        (never an unfiltered list); the incoming leg (`ALLOWS_EMPTY` True, lists the book)
-        still runs."""
+        """A multi-domain ask, "product and incoming?", with nothing to scope either leg: the
+        product leg is refused outright by the runner's probe (never an unfiltered list), the
+        incoming leg (`ALLOWS_EMPTY` True, lists the book) still runs. Pins that the probe,
+        running per fetch, covers the fan-out shape (`turn/apply._REFUSES_EMPTY_SUBJECT`
+        keeps its one inventory row)."""
         _seed_contact_and_get(session_factory)
         mcp_call, calls = _double()
         result = _run_turn_engine(
