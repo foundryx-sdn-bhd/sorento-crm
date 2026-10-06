@@ -735,15 +735,26 @@ class TestTheRerunLeavesALockedTokenAlone:
         guard is gated on the field, so a caller that sends none keeps today's spec path
         for the same request."""
         world = _seed_world(session_factory, cabana=True)
-        code = _seed_digit_coded_cabana_product(session_factory, world, "ZZCB7319-RL")
+        # A brand with NO promotion or customer named after it, so the word is unresolved
+        # today and today's path is the spec fallback (with "cabana" the promotion rows
+        # resolve the word first and no fallback runs either way).
+        db = session_factory()
+        mocha = Brand(id=str(uuid.uuid4()), brand_code="MOCHA", brand_name="Mocha", is_active=True, company_id=DEFAULT_COMPANY_ID)
+        db.add(mocha)
+        db.commit()
+        code = _seed_digit_coded_cabana_product(session_factory, {**world, "brand_id": mocha.id}, "ZZMC7319-RL")
         body = _basin_body(
-            query=f"CABANA {code}", tokens=["CABANA", code], match_mode="and",
+            query=f"MOCHA {code}", tokens=["MOCHA", code], match_mode="and",
             allowed_entity_types=["brand", "product"], domain="inventory", spec_fallback=True,
         )
         result = _route_call(session_factory(), body)
         matches = [m for r in result.get("resolutions") or [] for m in (r.get("matches") or [])]
         matches += list(result.get("intersection") or [])
         assert "spec_search" in {m.get("match_tier") for m in matches}, result
+        locked = _route_call(session_factory(), {**body, LOCK_FIELD: ["MOCHA", code]})
+        locked_matches = [m for r in locked.get("resolutions") or [] for m in (r.get("matches") or [])]
+        locked_matches += list(locked.get("intersection") or [])
+        assert "spec_search" not in {m.get("match_tier") for m in locked_matches}, locked
 
     def test_a_description_beside_a_matched_code_still_opens_the_spec_path(self, session_factory) -> None:
         """Control (`test_resolve_brand_routing.py` pins the same): the guard is for a BRAND
