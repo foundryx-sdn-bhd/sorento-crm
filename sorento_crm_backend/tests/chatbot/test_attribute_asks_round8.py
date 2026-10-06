@@ -233,8 +233,10 @@ def _v2b() -> dict[str, Any]:
 def _v3() -> dict[str, Any]:
     return _code_ask(
         M3,
-        _entity("water closet", "category"),
-        {**_entity("f trap", "attachment_type"), "canonical_code": "technical drawing"},
+        # ATTACH-GROUNDING-TYPO option (c) (owner, 6 Oct 2026): a parser-filed document type
+        # is trusted, so the misfiled "f trap" document of round 8 is now filed where the
+        # words belong, the category, and grounds the same way.
+        _entity("water closet f trap", "category"),
         intent_hint="check_product_attachment",
         domain_hint="product_attachment",
         match_mode="or",
@@ -244,8 +246,7 @@ def _v3() -> dict[str, Any]:
 def _v4() -> dict[str, Any]:
     return _code_ask(
         M4,
-        _entity("water closet", "category"),
-        {**_entity("pink colour", "attachment_type"), "canonical_code": "photo"},
+        _entity("pink colour water closet", "category"),  # option (c), see _v3
         intent_hint="check_product_attachment",
         domain_hint="product_attachment",
         match_mode="or",
@@ -253,7 +254,7 @@ def _v4() -> dict[str, Any]:
 
 
 def _v5(kind: str = "stock") -> dict[str, Any]:
-    return _ask(kind, "kitchne sink", M5, extra=[{**_entity("thicnkess 1.2 mm", "attachment_type"), "canonical_code": "technical drawing"}])
+    return _ask(kind, "kitchne sink thicnkess 1.2 mm", M5)  # option (c), see _v3
 
 
 # Reply readers ---------------------------------------------------------------- #
@@ -423,7 +424,7 @@ M5_SPELT = "any kitchen sink with thickness 1.2 mm"
 
 
 def _v5_spelt(kind: str = "stock") -> dict[str, Any]:
-    return _ask(kind, "kitchen sink", M5_SPELT, extra=[{**_entity("thickness 1.2 mm", "attachment_type"), "canonical_code": "technical drawing"}])
+    return _ask(kind, "kitchen sink thickness 1.2 mm", M5_SPELT)  # option (c), see _v3
 
 
 def test_item5_misspelt_kitchne_and_thicnkess_are_said_back_never_read_as_the_words_they_resemble(compact, world):
