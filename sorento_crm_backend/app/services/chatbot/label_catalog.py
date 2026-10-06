@@ -73,9 +73,12 @@ LABELS: dict[str, dict[str, str]] = {
     },
     # AVAIL-RENDER (owner, 5 Oct 2026): the tick says got stock and does not refer.
     "Got stock.": {"ms": "Stok ada.", "zh": "有库存。"},
-    "Got stock, {available} available.": {
-        "ms": "Stok ada, {available} tersedia.",
-        "zh": "有库存，可供 {available} 件。",
+    # AVAIL-ONHAND-BASIS hand test (owner, 6 Oct 2026): the partial line is "Only N got
+    # stock." (was "Got stock, N available."). The owner gave the en and zh; the ms is the
+    # lane's rendering of the same sentence, flagged in PR #1510 for the owner to confirm.
+    "Only {available} got stock.": {
+        "ms": "Hanya {available} ada stok.",
+        "zh": "只有 {available} 件有库存。",
     },
     # AVAIL-RENDER fix round (owner hand test, 6 Oct 2026): the incoming line says the stock
     # state too; the bare "ETA {eta}." row it replaces is printed by nothing now.
