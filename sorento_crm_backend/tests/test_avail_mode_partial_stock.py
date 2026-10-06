@@ -51,10 +51,12 @@ def test_some_stock_short_of_q_within_x_is_in_stock_with_the_count(db):
     assert entry["available_qty"] == 30
 
 
-def test_open_so_is_subtracted_before_the_count(db):
+def test_open_so_is_not_subtracted_before_the_count(db):
+    """AVAIL-ONHAND-BASIS (owner, 6 Oct 2026): the figure is on hand, the outstanding is
+    ignored. 100 on hand covers 50 whatever the open SO (was: net 40, "40 available")."""
     entry = _ask(db, on_hand=100, q=50, x=200, open_so=60)
     assert entry["branch"] == "in_stock"
-    assert entry["available_qty"] == 40
+    assert entry["available_qty"] is None
 
 
 def test_q_covered_carries_no_count(db):
@@ -81,10 +83,19 @@ def test_x_unset_is_too_big_even_with_stock(db):
     assert entry["available_qty"] is None
 
 
-@pytest.mark.parametrize("on_hand,open_so", [(0, 0), (10, 10), (10, 25)])
-def test_nothing_available_after_open_so_is_still_no_stock(db, on_hand, open_so):
-    entry = _ask(db, on_hand=on_hand, q=5, x=100, open_so=open_so)
+@pytest.mark.parametrize("open_so", [0, 10, 25])
+def test_nothing_on_hand_is_no_stock_whatever_the_open_so(db, open_so):
+    entry = _ask(db, on_hand=0, q=5, x=100, open_so=open_so)
     assert entry["branch"] == "no_incoming"
+    assert entry["available_qty"] is None
+
+
+@pytest.mark.parametrize("open_so", [10, 25])
+def test_open_so_at_or_over_on_hand_is_still_in_stock(db, open_so):
+    """AVAIL-ONHAND-BASIS: 10 on hand covers 5 even with 10 or 25 outstanding (was
+    `no_incoming`, judged on a net of 0 or -15)."""
+    entry = _ask(db, on_hand=10, q=5, x=100, open_so=open_so)
+    assert entry["branch"] == "in_stock"
     assert entry["available_qty"] is None
 
 

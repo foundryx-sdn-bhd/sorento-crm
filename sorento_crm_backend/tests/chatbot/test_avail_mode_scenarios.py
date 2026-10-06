@@ -63,7 +63,7 @@ def test_S01_exact_code_enough_stock(console):
 
 def test_S02_exact_code_short_within_the_cap_names_the_count(console):
     c = console(SRT5674=Stock(on_hand=30, x=100))
-    assert c.say("SRT5674 x 50", stock(product("SRT5674", 50))) == f"SRT5674 x 50: {TICK} Got stock, 30 available."
+    assert c.say("SRT5674 x 50", stock(product("SRT5674", 50))) == f"SRT5674 x 50: {TICK} Only 30 got stock."
 
 
 def test_S03_no_stock_shipment_due(console):
@@ -158,7 +158,7 @@ def test_S17_all_exact_one_line_each_in_asked_order(console):
         stock(product("SRT5674", 50), product("CWCX604", 40), product("SRTW2000", 10)),
     )
     assert out == (
-        f"SRT5674 x 50: {TICK} Got stock.\n\nCWCX604 x 40: {TICK} Got stock, 30 available.\n\n"
+        f"SRT5674 x 50: {TICK} Got stock.\n\nCWCX604 x 40: {TICK} Only 30 got stock.\n\n"
         f"SRTW2000 x 10: {CROSS} No stock, ETA 19/10/2026."
     )
 
@@ -265,7 +265,7 @@ def test_S28_one_number_applies_to_every_product_asked(console):
 def test_S29_short_stock_beside_an_eta_line(console):
     c = console(SRT5674=Stock(on_hand=30), SRTW2000=Stock(x=200, eta=ETA))
     out = c.say("SRT5674 x 50, SRTW2000 x 150", stock(product("SRT5674", 50), product("SRTW2000", 150)))
-    assert out == f"SRT5674 x 50: {TICK} Got stock, 30 available.\n\nSRTW2000 x 150: {CROSS} No stock, ETA 19/10/2026."
+    assert out == f"SRT5674 x 50: {TICK} Only 30 got stock.\n\nSRTW2000 x 150: {CROSS} No stock, ETA 19/10/2026."
 
 
 # ================================================================== picker replies
@@ -483,7 +483,7 @@ def test_S46_code_x_qty_misread_as_an_eta_ask_is_still_a_stock_ask(console):
 def test_S46b_misread_through_asks_too(console):
     c = console(SRT5674=Stock(on_hand=30))
     misread = _misread_as_eta(product("SRT5674", 50), asks=[{"domain": "incoming"}])
-    assert c.say("SRT5674 x 50", misread) == f"SRT5674 x 50: {TICK} Got stock, 30 available."
+    assert c.say("SRT5674 x 50", misread) == f"SRT5674 x 50: {TICK} Only 30 got stock."
 
 
 @pytest.mark.parametrize("typed", ["SRTW2000 x 10 when arrive?", "ETA SRTW2000 x 10", "SRTW2000 x 10 bila sampai"])
@@ -709,7 +709,7 @@ def test_S54_a_code_with_a_quantity_read_as_a_product_info_ask_is_still_a_stock_
 def test_S54b_an_exact_code_with_a_quantity_read_as_product_info_answers_stock(console):
     c = console(SRT5674=Stock(on_hand=30))
     out = c.say("SRT5674 x 50", _misread_as_product_info(product("SRT5674", 50)))
-    assert out == f"SRT5674 x 50: {TICK} Got stock, 30 available."
+    assert out == f"SRT5674 x 50: {TICK} Only 30 got stock."
 
 
 @pytest.mark.parametrize(
@@ -815,7 +815,7 @@ def test_S63_a_mixed_reply_marks_only_the_discontinued_line(console):
     c = console(SRT5674=Stock(on_hand=30, x=100, discontinued=True), CWCX604=Stock(on_hand=100))
     out = c.say("SRT5674 x 50, CWCX604 x 5", stock(product("SRT5674", 50), product("CWCX604", 5)))
     assert out == (
-        f"SRT5674 x 50: {TICK} Got stock, 30 available.\n{DISCONTINUED}\n\nCWCX604 x 5: {TICK} Got stock."
+        f"SRT5674 x 50: {TICK} Only 30 got stock.\n{DISCONTINUED}\n\nCWCX604 x 5: {TICK} Got stock."
     )
 
 
