@@ -22,6 +22,8 @@ Modelled on `scripts/convert_customer_refs_to_code.py` (DEBTOR-CODE-LINK R9):
 - `--apply` refuses while anything is flagged unless `--force`, which converts the clean refs
   and leaves the flagged ones as they are (reported again). Apply writes a CSV backup of every
   change BEFORE updating, in one transaction; `--revert <csv>` puts the old values back.
+  A planned ref that moved between plan and UPDATE (the feed, running concurrently) aborts
+  the run and rolls every update back, never a silently partial conversion.
 
 A script, not an alembic migration, so a merge or deploy never rewrites prod links.
 
@@ -79,14 +81,23 @@ _HELD_SQL = text(
     """
 )
 
+# Guarded by id AND entity type AND source system AND the current value, so neither a run
+# nor a stale / edited backup CSV can reach any other row, and a re-run matches nothing.
 _UPDATE_SQL = text(
     "UPDATE integration_references SET source_ref = :new, updated_at = now() "
-    "WHERE id = CAST(:id AS uuid) AND entity_type = :entity_type AND source_ref = :old"
+    "WHERE id = CAST(:id AS uuid) AND entity_type = :entity_type "
+    "AND source_system = :source_system AND source_ref = :old"
 )
 
 
 class ConversionBlocked(RuntimeError):
     """`--apply` while a ref is flagged and `--force` was not given. Nothing was written."""
+
+
+class ConversionDrift(RuntimeError):
+    """A planned ref no longer held its planned old value when the UPDATE ran (the feed
+    moved it between plan and apply; planning takes no locks). Raised before commit so the
+    caller rolls the whole run back instead of reporting a partial conversion."""
 
 
 @dataclass(frozen=True)
@@ -139,7 +150,7 @@ def plan_conversion(db: Session) -> ConversionPlan:
     # new value that frees up only after another row's update is left to a second run, so no
     # UPDATE ever meets the unique index mid-way.
     taken = {(cid, ref) for cid, ref in db.execute(_HELD_SQL, params).all()}
-    pending: list[tuple[str, str, str, str, str, str]] = []
+    pending: list[tuple[str, str, str, str, str, str, str]] = []
     for row in rows:
         old = row["old_ref"]
         label = _company_label(row)
@@ -199,10 +210,21 @@ def apply_conversion(db: Session, plan: ConversionPlan, csv_path: str, *, force:
             writer.writerow([c.ref_id, c.company_id, c.entity_id, c.old_source_ref, c.new_source_ref])
     count = 0
     for c in plan.changes:
-        count += db.execute(
+        hit = db.execute(
             _UPDATE_SQL,
-            {"new": c.new_source_ref, "id": c.ref_id, "entity_type": ENTITY_TYPE, "old": c.old_source_ref},
+            {
+                "new": c.new_source_ref,
+                "id": c.ref_id,
+                "entity_type": ENTITY_TYPE,
+                "source_system": SOURCE_SYSTEM,
+                "old": c.old_source_ref,
+            },
         ).rowcount
+        if hit != 1:
+            raise ConversionDrift(
+                f"ref {c.ref_id} no longer holds {c.old_source_ref!r}; re-run the dry run"
+            )
+        count += hit
     return count
 
 
@@ -217,6 +239,7 @@ def revert(db: Session, csv_path: str) -> int:
                     "new": row["old_source_ref"],
                     "id": row["ref_id"],
                     "entity_type": ENTITY_TYPE,
+                    "source_system": SOURCE_SYSTEM,
                     "old": row["new_source_ref"],
                 },
             ).rowcount
@@ -288,6 +311,10 @@ def main(argv: Optional[list[str]] = None) -> int:
             db.rollback()
             print(f"refused: {exc}; nothing changed, no backup written")
             return 2
+        except ConversionDrift as exc:
+            db.rollback()
+            print(f"aborted: {exc}; every update of this run was rolled back (backup: {args.csv})")
+            return 3
         db.commit()
         print(f"converted: {count} (backup: {args.csv})")
         return 0

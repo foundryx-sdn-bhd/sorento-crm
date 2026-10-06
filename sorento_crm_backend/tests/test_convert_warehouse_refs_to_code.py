@@ -209,6 +209,27 @@ class TestPlan:
         assert change_b is not None and change_b.new_source_ref == f"AED_SORENTO:{cb}"
         assert plan.blocked is True
 
+    def test_w4b_two_refs_competing_for_one_new_ref_in_the_same_run_flag_the_newer(self, db):
+        """Reviewer kill test M1: warehouses are unique on the RAW code, the new ref uses the
+        trimmed one, so `KL` and `KL ` in one company both map to `P:KL`. The older warehouse
+        claims it; the newer is a collision, flagged in the dry run rather than failing the
+        unique index mid-apply."""
+        mod = _script()
+        code = _code("W4B")
+        older = _warehouse(db, code, "WH-A", OLD)
+        newer = _warehouse(db, f"{code} ", "WH-B", NEW)
+        r_newer = _ref(db, newer, "AED_SORENTO:2")
+        r_older = _ref(db, older, "AED_SORENTO:1")
+
+        plan = mod.plan_conversion(db)
+
+        change = _change_for(plan, r_older)
+        assert change is not None and change.new_source_ref == f"AED_SORENTO:{code}"
+        assert _change_for(plan, r_newer) is None
+        skip = _skip_for(plan, r_newer)
+        assert skip is not None and skip.reason == "collision"
+        assert plan.blocked is True
+
     def test_w5_ref_whose_warehouse_no_longer_exists_is_flagged_missing(self, db):
         mod = _script()
         gone = str(uuid.uuid4())
@@ -347,9 +368,15 @@ class TestApplyRevert:
         b = _warehouse(db, cb, "WH-B", NEW)
         r_a = _ref(db, a, "AED_SORENTO:1")
         r_b = _ref(db, b, f"AED_SORENTO:{ca}")
+        path = tmp_path / "out.csv"
 
         plan = mod.plan_conversion(db)
-        count = mod.apply_conversion(db, plan, str(tmp_path / "out.csv"), force=True)
+        with pytest.raises(mod.ConversionBlocked):
+            mod.apply_conversion(db, plan, str(path))
+        assert not path.exists()
+        assert _stored(db, r_b) == f"AED_SORENTO:{ca}", "a collision refuses the whole apply"
+
+        count = mod.apply_conversion(db, plan, str(path), force=True)
 
         assert count == 1
         assert _stored(db, r_a) == "AED_SORENTO:1"
@@ -397,6 +424,39 @@ class TestApplyRevert:
         assert path.read_text() == "earlier run\n"
         assert _stored(db, rid) == "AED_SORENTO:18"
 
+    def test_w24_revert_never_touches_a_ref_of_another_source_system(self, db, tmp_path):
+        """Security review should-fix: a stale or edited CSV must not reach a `warehouses`
+        ref from another source system even when its current value equals the CSV's new."""
+        mod = _script()
+        code = _code("W24")
+        wid = _warehouse(db, code)
+        rid = _ref(db, wid, f"OTHER:{code}", source_system="other_erp")
+        path = tmp_path / "crafted.csv"
+        with open(path, "w", newline="") as fh:
+            writer = csv.writer(fh)
+            writer.writerow(HEADER)
+            writer.writerow([rid, DEFAULT_COMPANY_ID, wid, "OTHER:1", f"OTHER:{code}"])
+
+        assert mod.revert(db, str(path)) == 0
+        assert _stored(db, rid) == f"OTHER:{code}"
+
+    def test_w25_a_ref_that_moved_between_plan_and_apply_fails_the_run(self, db, tmp_path):
+        """Security review note: planning takes no locks. A planned ref whose value changed
+        under the script is not silently reported as converted; the run raises so `main`
+        rolls everything back, and the backup still names what the plan intended."""
+        mod = _script()
+        code = _code("W25")
+        wid = _warehouse(db, code)
+        rid = _ref(db, wid, "AED_SORENTO:25")
+        plan = mod.plan_conversion(db)
+        db.execute(
+            text("UPDATE integration_references SET source_ref = 'AED_SORENTO:26' WHERE id = :i"),
+            {"i": rid},
+        )
+
+        with pytest.raises(mod.ConversionDrift):
+            mod.apply_conversion(db, plan, str(tmp_path / "out.csv"))
+
     def test_w19_apply_touches_no_other_entity_type(self, db, tmp_path):
         mod = _script()
         wid = _warehouse(db, _code("W19"))
@@ -429,6 +489,9 @@ class TestCli:
         assert code in out, "the dry run names the warehouse code each ref maps to"
         assert DEFAULT_COMPANY_ID in out, "the dry run groups refs per company"
         assert "missing_warehouse" in out and r_gone in out
+        assert "to convert 1" in out and "flagged 1" in out, "per-company counts"
+        assert "to convert: 1" in out and "missing warehouse: 1" in out, "totals"
+        assert "collisions: 0" in out
         assert "nothing changed" in out
 
     def test_w21_cli_apply_refuses_when_flagged_and_writes_nothing(
@@ -459,6 +522,29 @@ class TestCli:
 
         assert mod.main(["--revert", path]) == 0
         assert _stored(db, rid) == "AED_SORENTO:22"
+
+    def test_w26_cli_reports_a_moved_ref_as_a_failed_run(self, db, patched_session, capsys, tmp_path):
+        mod = patched_session
+        wid = _warehouse(db, _code("W26"))
+        rid = _ref(db, wid, "AED_SORENTO:260")
+        real_plan = mod.plan_conversion
+
+        def plan_then_move(session):
+            plan = real_plan(session)
+            session.execute(
+                text("UPDATE integration_references SET source_ref = 'AED_SORENTO:261' WHERE id = :i"),
+                {"i": rid},
+            )
+            return plan
+
+        mod.plan_conversion = plan_then_move
+        try:
+            rc = mod.main(["--apply", "--csv", str(tmp_path / "cli.csv")])
+        finally:
+            mod.plan_conversion = real_plan
+
+        assert rc != 0
+        assert "rolled back" in capsys.readouterr().out
 
     def test_w23_cli_force_converts_the_clean_refs_and_keeps_the_flagged_ones(
         self, db, patched_session, tmp_path
