@@ -199,6 +199,10 @@ class TestDefect1NoLadderClaimWithoutAToolCall:
             probes.append((name, args))
             return {"has_result": False, "answers": []}
 
+        from app.services.chatbot import trace_detail
+        from app.services.chatbot.trace import TurnTrace
+
+        trace = TurnTrace()
         answer = answer_bridge.answer_for(
             {"resolved": resolved, "gate": gate, "_exit_kind": "continue"},
             envelope={"raw_fragment": raw_fragment, "unresolved": ["Srt 364-hp"]},
@@ -209,8 +213,22 @@ class TestDefect1NoLadderClaimWithoutAToolCall:
             db=None,
             asked_at_turn=1,
             crossdomain_ladder={"inventory": ["incoming"], "incoming": ["inventory"]},
+            trace=trace,
         )
         assert answer is not None
         assert "No stock" not in answer.text, answer.text
         assert "no incoming" not in answer.text.lower(), answer.text
         assert not probes, f"no stock lookup ran, so no rung may be climbed: {probes}"
+        # AC-SMR-7: the skipped rung says why, on the trace and on the trace screen.
+        skipped = [e for e in trace.events if e.get("kind") == "crossdomain"]
+        assert [e.get("skipped") for e in skipped] == ["primary_tool_not_run"], trace.events
+        assert trace_detail._crossdomain(trace.events) == [
+            {
+                "rung": None,
+                "tool": None,
+                "args": None,
+                "rows": None,
+                "rendered": None,
+                "skipped": "primary_tool_not_run",
+            }
+        ]
