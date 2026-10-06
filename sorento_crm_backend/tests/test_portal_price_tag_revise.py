@@ -612,9 +612,13 @@ class TestPortalRevisionSettingsIncludesPriceTagRequest:
     BASE = "/api/v1/forms-management/revision-configs"
 
     @pytest.fixture
-    def settings_client(self):
+    def settings_client(self, monkeypatch):
         from app.database import get_db
+        from app.services.user_service import UserPermissionService
 
+        # LIST-API-PERMS: GET /revision-configs carries `user_management.settings.view` now;
+        # the office actor has no users row, so answer the role lookup as admin.
+        monkeypatch.setattr(UserPermissionService, "get_user_role_slugs", lambda self, uid: {"admin"})
         with blank_session() as db:
 
             def _override_get_db():

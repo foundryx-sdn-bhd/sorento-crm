@@ -265,7 +265,7 @@ async def get_complaints(
     space_id: Optional[str] = Query(
         None, description="Respond.io workspace id, required together with contact_id."
     ),
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key("complaint_management.complaints.view")),
     db: Session = Depends(get_db)
 ):
     """Get complaints with pagination, search, assignee/status/root-cause/resolution filters, and sorting."""
@@ -319,7 +319,7 @@ async def get_complaint_analytics(
     ),
     date_to: Optional[str] = Query(None, description="Window end (inclusive). Same formats as date_from."),
     limit: int = Query(50, ge=1, le=500, description="Max number of ranked group rows to return."),
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key("complaint_management.complaints.view")),
     db: Session = Depends(get_db),
 ):
     """Aggregate complaints (count), optionally bucketed by status / product / month.
@@ -464,7 +464,7 @@ async def get_complaint_conversation(
     complaint_id: str,
     limit: int = Query(50, ge=1, le=MAX_PAGE_LIMIT),
     cursor: Optional[str] = Query(None),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission("complaint_management.complaints.view")),
     db: Session = Depends(get_db),
 ):
     """Get Respond.io conversation messages for this complaint (contact from respond_inbox_url)."""
@@ -539,6 +539,8 @@ router.include_router(
         resolver=_resolve_complaint_chat_contact,
         chat_use_case="complaint_chat",
         context_builder=_build_complaint_chat_context,
+        # The chat panel's window-state and template preview are complaint reads.
+        read_dependencies=[Depends(require_permission("complaint_management.complaints.view"))],
     )
 )
 
@@ -546,7 +548,7 @@ router.include_router(
 @router.get("/{complaint_id}/fulfilment-orders")
 async def get_complaint_fulfilment_orders(
     complaint_id: str,
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key("complaint_management.complaints.view")),
     db: Session = Depends(get_db),
 ):
     """Replacement / fulfilment Delivery Orders linked to this complaint (newest
@@ -566,7 +568,7 @@ async def get_complaint_fulfilment_orders(
 @router.get("/{complaint_id}", response_model=ComplaintResponse)
 async def get_complaint(
     complaint_id: str,
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key("complaint_management.complaints.view")),
     db: Session = Depends(get_db)
 ):
     """Get a single complaint by ID."""

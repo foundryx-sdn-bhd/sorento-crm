@@ -69,6 +69,8 @@ def client(db, monkeypatch):
     monkeypatch.setattr(
         UserPermissionService, "check_user_has_permission", lambda self, uid, slug: True
     )
+    # LIST-API-PERMS: the attachments list is an any-of gate, which reads the role slugs.
+    monkeypatch.setattr(UserPermissionService, "get_user_role_slugs", lambda self, uid: {"admin"})
     try:
         yield TestClient(app)
     finally:
