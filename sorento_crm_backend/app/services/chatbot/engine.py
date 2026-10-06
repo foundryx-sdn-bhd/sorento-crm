@@ -4378,7 +4378,7 @@ def _run_stages_body(  # noqa: PLR0915
     # a size becomes a `specification` entity, and nothing is a document type unless it
     # is on the list.
     # ATTACH-GROUNDING-TYPO: `ctx.parse._parser_raw` is the verdict as it stood before
-    # grounding rewrote the entities (the trace showed the demoted one).
+    # grounding rewrote the entities.
     parser_verdict = copy.deepcopy(verdict)
     with _session(session_factory) as grounding_db:
         verdict, grounding_notes = grounding.ground(

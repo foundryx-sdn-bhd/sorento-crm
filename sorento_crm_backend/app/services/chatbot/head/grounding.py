@@ -15,16 +15,18 @@ that runs after every parse, whatever kind the parser picked:
   * a `category` / `product_type` token keeps only what the thing IS (class and type
     words, "basin"); every other registry word in it becomes a `specification` entity
     ("gunmetal" -> Finish or colour: Gunmetal);
-  * an `attachment_type` token stays one only when its words are on the attachment-type
-    list (a type name, an alias the owner entered, a certificate word or scheme); anything
-    else is grounded like any other descriptor, never read as a document;
+  * an `attachment_type` token is the parser's (ATTACH-GROUNDING-TYPO option (c), owner,
+    6 Oct 2026): kept as filed when the parser was confident and its code, whole, is a
+    listed document type (`DOCUMENT_TYPE_CODES` or an attachment-type name or code), and
+    dropped otherwise. The customer's words are never read for it;
   * a `specification` token the parser emitted is checked against the registry: its key
     must exist and its value must be one of that key's choices (or a number, for a
     numeric key);
   * a word next to a key's own word that is none of its choices ("pink colour", "f trap")
     is an UNKNOWN value of that key, said back with the ones the registry knows.
 
-No word list lives here. The registry's keys, labels, choices, synonyms and units, the
+No descriptor word list lives here (`DOCUMENT_TYPE_CODES` is the parser prompt's own
+taxonomy of document codes, not a list of customer words). The registry's keys, labels, choices, synonyms and units, the
 class vocabulary and the attachment-type table decide; staff editing any of them on
 Product Specifications changes what grounds, with no prompt or code change.
 """
@@ -630,6 +632,7 @@ def ground(
         verdict = {**verdict, "domain_hint": "master_products", "intent_hint": "check_product"}
         entities = verdict.get("entities")
     out: list[Any] = []
+    dropped = False
     notes: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
 
@@ -700,8 +703,14 @@ def ground(
             # any other is dropped. The customer's words are never read here.
             if not _listed_document_type(db, entity):
                 notes.append({"from": hint, "raw": raw, "to": "dropped: not a listed document type"})
+                dropped = True
                 continue
         out.append(entity)
+    if not moved and dropped and _category_word_under_documents(db, {**verdict, "entities": out}, vocab):
+        # Fix round 9 holds after a document type is dropped: with only what the products
+        # ARE left, the ask is about the products, never the file-type menu.
+        verdict = {**verdict, "domain_hint": "master_products", "intent_hint": "check_product"}
+        moved = True
     if moved:
         notes.append({"from": "domain", "raw": "product_attachment", "to": "master_products"})
     if not notes:

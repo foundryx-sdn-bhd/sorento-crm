@@ -158,7 +158,7 @@ def test_a_parser_specification_is_checked_against_the_registry(vdb):
         ("PPS cert", "certificate"),
     ],
 )
-def test_a_word_on_the_attachment_type_list_stays_a_document_type(vdb, raw, code):
+def test_a_listed_document_code_stays_a_document_type(vdb, raw, code):
     entity = _e(raw, "attachment_type", canonical_code=code)
     out = _ground(vdb, _e("basin", "category"), entity)
     assert out == [_e("basin", "category"), entity], out
