@@ -571,7 +571,10 @@ class ResolutionResult:
     # Pre-extracted tokens past the call's ceiling (`PRE_EXTRACTED_TOKEN_CEILING`, or the
     # caller's own `max_candidates`), in order, NEVER looked up: not resolved, not
     # ambiguous, not unresolved - the caller has to say so rather than answer as if they
-    # had never been asked about. Empty for a free-text query.
+    # had never been asked about. Empty for a free-text query string (extraction stops at
+    # its count, nothing is cut). The resolve route's synthesized alpha-word list
+    # (`references._synthesize_alpha_tokens`, sent with `max_candidates=FREE_TEXT_
+    # CANDIDATES`) IS a list, so the words past 8 are reported here: they were not probed.
     truncated_tokens: list[str] = field(default_factory=list)
 
     @property

@@ -1,7 +1,8 @@
 # PLAN: the resolver answers every pre-extracted product code, and names any it cut
 
-Status: small fix track, implemented, PR #1507 (crew lane RESOLVER-TOKEN-CAP)
+Status: small fix track, implemented, reviewer VERDICT: PASS on head 2b54841f (round 2) and on the wording head, PR #1507 (crew lane RESOLVER-TOKEN-CAP)
 UAC: `resolver-token-cap-06oct-acceptance-criteria.md`
+Owner rulings (6 Oct 2026, via crew): accepted as built. No cap on the "Not checked:" line (it names every cut code, up to 50 on one line, no "+N more"). No rate limit on the API-key `/resolve` route (up to 50 pre-extracted lookups per call, so up to 50 embedding calls per request with the fallback on).
 Owner report (6 Oct 2026 18:57 MYT, production, staff contact): a catalogue photo read 19 product codes, the parser carried all 19, and "Stock summary for the requested products." listed only the first 8. Owner: "why only 8?"
 
 ## Journey
@@ -24,12 +25,15 @@ No new typo, word or fuzzy matching; the parser decides what is a code; fake ZZT
 
 ## Tests (written first)
 
-`tests/test_resolver_token_cap.py` (Postgres, 60 seeded ZZT codes): 19 tokens answered in order; 60 give 50 answers plus the 10 cut in `truncated_tokens`, none mislabelled unresolved; explicit cap raised (60) and lowered (3) honoured; 1, 3 and 8 token controls; free text keeps 8 (default and explicit); the alpha-token route path keeps 8. `tests/chatbot/test_resolver_token_cap_reply.py`: the join, `ResolveOutcome.not_checked`, the envelope merge, compose (19 codes each print; the cut named once; once per turn across two sections), and two end-to-end engine turns with the real resolver (60 codes name the 10 not checked; 19 codes all reach the tool, `total_uuids_passed: 19`, which read 8 before the fix).
+`tests/test_resolver_token_cap.py` (Postgres, 60 seeded ZZT codes): 19 tokens answered in order; 60 give 50 answers plus the 10 cut in `truncated_tokens`, none mislabelled unresolved; explicit cap raised (60) and lowered (3) honoured; 1, 3 and 8 token controls; free text keeps 8 (default and explicit); the alpha-token route path keeps 8. `tests/chatbot/test_resolver_token_cap_reply.py`: the join, `ResolveOutcome.not_checked`, the envelope merge, compose (19 codes each print; the cut named once; once per turn across two sections, the task's own dropped slot included), and two end-to-end engine turns with the real resolver (60 codes name the 10 not checked; 19 codes all reach the tool, `total_uuids_passed: 19`, which read 8 before the fix).
 
 ## Known follow-ups
 
 - A pinned token past the ceiling fails the whole call (`_apply_entity_pins` raises `EntityPinMismatch`) rather than being reported as not checked; pre-existing at 8, now needs more than 50 pinned codes.
 - Duplicate tokens are not folded before the cut; a code repeated past position 50 would be listed as not checked although its first copy was answered.
+- Cut codes are named only through compose. A turn that exits before any fetch (a resolver clarify or pick ask, or a turn with no envelopes) does not mention them; at the old cap of 8 those codes were mentioned on no turn at all. The same join limit `unplaced_tokens` has applies: a variant code produced by `narrow_code_tokens` and then cut matches no typed raw word, so `not_checked_tokens` cannot name it.
+- The entities-only arm (`engine.py::_run_entities_only_arm`, bare codes with no domain) keys each typed raw against the resolver's `resolutions` and does not read `truncated_tokens`: above 50 raws the cut ones print under "Couldn't find" (wrong sentence, not silent) instead of "Not checked". Owner evidence 20:06 MYT 6 Oct (15 codes, "Couldn't find" = exactly the raws past position 8) was this arm on the old cap; the ceiling fixes it, the sentence above 50 is the follow-up.
+- The route's synthesized alpha-word path (`_synthesize_alpha_tokens`) sends a list capped at 8 and so reports the words past 8 in `truncated_tokens`; no caller reads it on that path today.
 
 ## Out of scope
 

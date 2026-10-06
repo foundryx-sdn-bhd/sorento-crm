@@ -196,4 +196,7 @@ def test_the_routes_synthesized_alpha_tokens_keep_the_free_text_count(db):
     words = " ".join(f"zztword{i:02d}" for i in range(1, 13))
     result = _resolve_input(db, words, None, match_mode="or", allowed_entity_types=["attachment_type"])
 
-    assert 0 < len(result["resolutions"]) <= 8, [r["token"] for r in result["resolutions"]]
+    # 13 synthesized tokens (the whole phrase plus 12 words): 8 probed, 5 reported as
+    # not probed - a list, so the cut is echoed, unlike a free-text query string.
+    assert len(result["resolutions"]) == 8, [r["token"] for r in result["resolutions"]]
+    assert len(result["truncated_tokens"]) == 5, result["truncated_tokens"]

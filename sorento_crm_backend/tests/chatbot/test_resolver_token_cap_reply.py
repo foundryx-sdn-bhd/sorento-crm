@@ -198,8 +198,10 @@ def test_two_sections_name_the_cut_codes_once():
     assert f"Not checked: {', '.join(CODES[50:])}." in text, text
 
 
-def test_a_tasks_own_dropped_slot_still_prints_per_section():
-    """The line the task stamps for a "just proceed" keeps its own per-section rule."""
+def test_a_tasks_own_dropped_slot_is_named_once_per_turn():
+    """The line the task stamps for a "just proceed" (`turn/task.py`, one `FetchSpec` per
+    task, so one section in practice) shares the once-per-turn rule: a name repeated by
+    a second section is not said twice."""
     first = _envelope({"ZZTCAP01": 1}, ["ZZTCAP09"])
     second = {**_envelope({"ZZTCAP01": 1}, ["ZZTCAP09"]), "domain": "incoming"}
     incoming = {**_domain_row("incoming", narrowing={"product": "list_all"}), "label": "incoming stock"}
