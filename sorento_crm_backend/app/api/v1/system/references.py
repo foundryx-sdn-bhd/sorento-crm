@@ -1517,7 +1517,7 @@ class ResolveReferenceRequest(BaseModel):
             "A token sent with no `raw_tokens` entry is not asked (`fallback.reason` "
             "`no_typed_text`): the folded token is all there is, and the code tiers already "
             "missed on it. A `code` answer resolves the token on the exact tier (the product "
-            "row, else a product set, plus variant siblings, as for a typed code), a "
+            "row, else a product set; the exact row alone, never its variant siblings), a "
             "`family` answer is the usual prefix / substring picker, `none` leaves it in "
             "`unresolved_tokens`. The verdict rides each affected resolution's `fallback` "
             "key (absent everywhere else). `false` opts this request out: no model call, "
@@ -2526,9 +2526,10 @@ def resolve_reference(
             "RESOLVE-SEMANTIC-FALLBACK: the code reader (see the POST body's field of the "
             "same name) reads a code out of the text the caller TYPED for a token, which "
             "is the POST body's `raw_tokens`. This GET variant carries no `raw_tokens`, so "
-            "the reader is never asked here: a product token that matched no code tier "
+            "the reader is never asked here: a `tokens` entry that matched no code tier "
             "gains `fallback: {asked: false, kind: not_asked, reason: no_typed_text}` and "
-            "stays unresolved. Use POST with `raw_tokens` to have the token read. `false` "
+            "stays unresolved (a free-text `query` is never put to the reader at all). Use "
+            "POST with `raw_tokens` to have the token read. `false` "
             "drops the key; the response is then byte-identical to before the feature."
         ),
     ),

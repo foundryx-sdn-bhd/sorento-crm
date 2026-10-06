@@ -118,9 +118,13 @@ def _fold(value: Any) -> str:
 #: SRTWT5608", the owner's example) is a word edge, not part of the code.
 _CODE_CHAR = re.compile(r"[0-9A-Za-z]")
 #: `X-`, `X -`, `X--` right before a run, and `-X`, `- X`, `--X` right after it: the run is
-#: then a cut out of a longer code.
-_HYPHEN_GLUED_BEFORE = re.compile(r"[0-9A-Za-z]\s*-+\s*$")
-_HYPHEN_GLUED_AFTER = re.compile(r"\s*-+\s*[0-9A-Za-z]")
+#: then a cut out of a longer code. The dash class takes the en / em dashes and the minus
+#: sign a phone's smart punctuation makes of a typed `-` or `--` (reviewer, fifth pass),
+#: so "SRTWC8066" out of "WC SRTWC8066–SS" is the same cut; a value itself may carry only
+#: the ASCII hyphen (`_VALUE_CHARS`), so such a dash never reaches a probe.
+_DASHES = "-‐-―−"
+_HYPHEN_GLUED_BEFORE = re.compile(rf"[0-9A-Za-z]\s*[{_DASHES}]+\s*$")
+_HYPHEN_GLUED_AFTER = re.compile(rf"\s*[{_DASHES}]+\s*[0-9A-Za-z]")
 
 
 def _typed_span(value: str, typed: str) -> bool:

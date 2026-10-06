@@ -505,6 +505,26 @@ def test_a_code_reading_reaches_a_product_set_when_the_callers_types_do(db):
     assert read_out.resolutions[0].fallback["matched"] == 1
 
 
+def test_a_token_typed_twice_takes_its_last_lines_hint_like_its_raw_text(db):
+    """One rule for the raw text and the hint of a duplicated token: the LAST line's, as the
+    head-code retry has always read `raw_by_token` (reviewer, fifth pass, nit 2)."""
+    reader = FakeReader({"TAPZZTNOPE1": ("none", None)})
+    last_is_product = _resolve(
+        db, ["TAPZZTNOPE1", "TAPZZTNOPE1"], ["TAP ZZTNOPE1", "TAP ZZTNOPE1"],
+        reader=reader, types=["customer", "product"],
+    )
+    assert reader.calls == [[("TAPZZTNOPE1", "TAP ZZTNOPE1")]], reader.calls
+    assert last_is_product.resolutions[0].fallback["asked"] is True
+
+    reader = FakeReader({"TAPZZTNOPE1": ("none", None)})
+    last_is_customer = _resolve(
+        db, ["TAPZZTNOPE1", "TAPZZTNOPE1"], ["TAP ZZTNOPE1", "TAP ZZTNOPE1"],
+        reader=reader, types=["product", "customer"],
+    )
+    assert reader.calls == [], reader.calls
+    assert last_is_customer.resolutions[0].fallback is None
+
+
 def test_a_token_typed_twice_is_asked_once_and_uses_one_slot(db):
     """The owner's 15-line message carried one line twice; one question, one of the 5
     slots, one re-probe (reviewer nit 4)."""
