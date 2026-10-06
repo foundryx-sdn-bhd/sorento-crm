@@ -47,6 +47,37 @@ cases:
             - "as a document type"
           no_uuid: true
 
+  # Round 2 (owner hand test on the local copy, 7 Oct 2026): a document word after the brand
+  # page reads about the LISTED taps. Turn 3 is the parser's: on v58 it dropped the document
+  # entity ("they got pic/"), so the reply there is whatever the copy's prompt makes of it
+  # (graded only on not running over an unlisted product); turn 4 is the one that must hold.
+  - name: owner turns 1 to 4, a document word after the page reads about the listed taps
+    cold: true
+    turns:
+      - text: "which tap has technical drawing"
+        expect:
+          reply_contains:
+            - "Here's what you want: taps with technical specifications ("
+      - text: "sorento"
+        expect:
+          reply_contains:
+            - "Here's what you want: Sorento taps with technical specifications ("
+            - "*Attachment Type:* Technical Specifications"
+          no_uuid: true
+      - text: "they got pic/"
+        expect:
+          reply_not_contains:
+            - "COLD TAP"
+          no_uuid: true
+      - text: "pic"
+        expect:
+          reply_contains:
+            - "*Attachment Type:* Product Photos"
+          reply_not_contains:
+            - "*Attachment Type:* Technical Specifications"
+            - "COLD TAP"
+          no_uuid: true
+
   - name: owner turn 1 then a count, the count keeps the document type
     cold: true
     turns:

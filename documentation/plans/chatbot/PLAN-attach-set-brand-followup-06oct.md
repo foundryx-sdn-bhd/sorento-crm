@@ -2,7 +2,39 @@
 
 Status: in review, PR #1514 (small fix track: backend only, no migration, no auth/RBAC change,
 no new ingest surface). Based on PR #1490's branch (ATTACH-GROUNDING-TYPO), where the owner
-found it. Fix at 683d35bc; red test, kill tests and reviewer in the PR body.
+found it. Round 1 fix at 683d35bc; round 2 (the listed page is the subject) at 70f6eda5; red
+tests, kill tests and reviewer in the PR body.
+
+## Round 2 (owner hand test on the local copy, 7 Oct 2026)
+
+After "sorento" listed the page, "they got pic/" then "pic" ran over SRTWT5906-COLD TAP (+NL),
+the two taps the resolver's code tiers had matched on turn 1, instead of the 50 listed taps.
+
+Cause: a set-page turn never runs the resolver (`engine.py` `set_page_turn`), and
+`turn/apply._narrow_and_plan` settles `focus.products` only from what the resolver matched, so
+after the page the focus still held turn 1's code-tier rows and the class word "tap". A
+document word after the page then re-resolved the class word (on fake data: every tap; on the
+copy: the COLD TAP pair) or, with the class word gone, sent the resolver a `require` leg with
+no scope term, which counted every product with a photo.
+
+Fix:
+
+1. The runner's page branch hands the LISTED rows back on the envelope (`listed_products`,
+   built by `turn_runtime.listed_product_rows`: code, uuid, `current_message: False`, the
+   shape `_narrow_and_plan` settles).
+2. The engine's paged branch writes them onto `focus.products` and retires the carried class
+   word (`CLASS_HINTS` in `focus.extra`): the page has narrowed and shown the set it described.
+3. `turn_runtime.with_carried_entities` marks the verdict `subject_settled` when a document
+   word's subject is the settled products (not handed to the resolver: nothing to look up).
+4. `resolve_gate.resolve_entity_body` sends no `require` leg on such a turn, the same rule as
+   a typed code one line above it: "photo?" after the page is "photo for the listed codes", a
+   product-scoped fetch, never a set.
+
+Test: `test_a_document_word_after_the_brand_page_runs_over_the_listed_taps` (red on 1ec2e993:
+the third tool call went out over 5 of 5 taps).
+
+The parser half (v58 dropping the document entity on "they got pic/") is a prompt matter,
+replayed and proposed on the PR; no code word rule.
 
 ## Bug (owner hand test, 6 Oct 2026 22:40, #1490 test copy at 117224451, prompt v58)
 

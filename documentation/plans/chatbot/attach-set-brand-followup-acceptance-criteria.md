@@ -15,3 +15,14 @@ Plan: `PLAN-attach-set-brand-followup-06oct.md`.
   to what main produces for the same world.
 - AC-6: A product-scoped attachment fetch (a product code plus a document word) is unchanged
   (#1502 direction preserved).
+
+Round 2 (owner hand test on the local copy, 7 Oct 2026):
+
+- AC-7: After a brand page listed N taps, a document word alone ("pic" / "photo?", the
+  parser's attachment_type entity with `entity_op: reuse`) calls the attachments tool with
+  exactly the N listed product ids and that document type's `attachment_type_ids`; every row
+  is a file of that type. No product the page did not list (the resolver's code-tier match
+  for the class word, the COLD TAP family on the copy) is fetched.
+- AC-8: After the page, `focus.products` holds the listed rows (uuid + code) and the carried
+  class word is gone; the page's own carry (`focus.set_page`) is unchanged, so "another N"
+  still continues the page.
