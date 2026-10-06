@@ -2452,8 +2452,13 @@ def _spec_quantities(
         # AVAIL-MODE-REPLIES (owner Q2 (a), 2 Oct 2026): a code named twice in one message
         # is one line whose quantities add up ("SRT5674 x 2 ... SRT5674 x 3" asks for 5).
         # Each entity counts once, however many of its names carry the code.
+        # STOCK-MISS-RENDER (prod turn #f763, "Srt 364-hp x 1"): joined by `_token_key`
+        # - case AND separators folded, the resolver's own match rule - on both sides,
+        # so a code typed with a space still carries its quantity to the uuid the
+        # resolver placed it on (casefold alone left "srt 364-hp" != "srt364-hp" and
+        # the reply asked "How many units?" over a quantity the message had stated).
         for code in {
-            value.strip().casefold()
+            _token_key(value)
             for value in (e.get("canonical_code"), e.get("raw"))
             if isinstance(value, str) and value.strip()
         }:
@@ -2474,7 +2479,7 @@ def _spec_quantities(
             code = e.get(name)
             if not isinstance(code, str) or not code.strip():
                 continue
-            quantity = by_code.get(code.strip().casefold())
+            quantity = by_code.get(_token_key(code))
             if quantity is not None:
                 quantities[uuid] = quantity
                 break
@@ -2494,13 +2499,13 @@ def _spec_quantities(
         and isinstance(e.get("code") or e.get("canonical_code"), str)
     }
     for token, quantity in by_code.items():
-        if any((code or "").casefold() == token for code in resolved_codes.values()):
+        if any(_token_key(code) == token for code in resolved_codes.values()):
             continue
         prefixed = [
-            uuid for uuid, code in resolved_codes.items() if (code or "").casefold().startswith(token)
+            uuid for uuid, code in resolved_codes.items() if _token_key(code).startswith(token)
         ]
         if not prefixed and code_like(token):
-            prefixed = [uuid for uuid, code in resolved_codes.items() if token in (code or "").casefold()]
+            prefixed = [uuid for uuid, code in resolved_codes.items() if token in _token_key(code)]
         if len(prefixed) == 1 and prefixed[0] not in quantities:
             quantities[prefixed[0]] = quantity
     return {**out, "requested_quantities": quantities} if quantities else out

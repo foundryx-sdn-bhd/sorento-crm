@@ -532,17 +532,28 @@ def _exact_codes_only(
     * a word or a bare number with no exact code is not a product at all: the describe /
       semantic matches the resolver found for "xx", "10" or a "2" typed over a
       did-you-mean listed a page of the catalogue.
+    STOCK-MISS-RENDER (owner report, 6 Oct 2026, prod turn #f763 "Srt 364-hp x 1 stock
+    available?"): the typed word and the resolver's code are compared the way the
+    resolver itself matched them - case AND separators folded (`turn.state.token_key`,
+    the same fold `resolve_gate._PRODUCT_FOLD` sends the token through and
+    `turn_runtime.unplaced_tokens` keys its own map by). Casefold alone never equalled
+    "srt 364-hp" to "srt364-hp", so the product the resolver HAD placed was dropped here,
+    the fetch was refused for having no subject, and the dealer was told "Couldn't find".
+    This filter still matches nothing of its own: every candidate it reads is one the
+    resolver placed, and `misses` / `ignored` are keyed the way `unplaced` already is.
+
     Returns the four resolver answers, or None when nothing changes."""
     def code_of(row: dict[str, Any]) -> str:
-        return str(row.get("canonical_code") or row.get("code") or row.get("raw") or "").strip().casefold()
+        return turn_state.token_key(row.get("canonical_code") or row.get("code") or row.get("raw") or "")
 
     tokens: list[tuple[str, str]] = []
     for e in parse_output.get("entities") or []:
         if not isinstance(e, dict) or e.get("hint") not in (None, "product"):
             continue
         typed = str(e.get("raw") or e.get("canonical_code") or "").strip()
-        if typed and typed.casefold() not in {t for t, _ in tokens}:
-            tokens.append((typed.casefold(), typed))
+        fold = turn_state.token_key(typed)
+        if fold and fold not in {t for t, _ in tokens}:
+            tokens.append((fold, typed))
     candidates = [c for c in resolved_candidates.get("product") or [] if isinstance(c, dict)]
     if not tokens or not candidates:
         return None
@@ -569,12 +580,16 @@ def _exact_codes_only(
     if len(kept) == len(candidates) and not misses and not ignored:
         return None
     kinds = dict(resolved_kinds)
-    for fold, _typed in tokens:
-        if fold in kinds and isinstance(kinds[fold], dict):
-            row = {k: v for k, v in kinds[fold].items() if k != "product"}
-            if per_token.get(fold):
-                row["product"] = per_token[fold]
-            kinds[fold] = row
+    # `resolved_kinds` is keyed by the resolver's OWN token (`resolve_gate._token_of`:
+    # separators dropped, case kept - "Srt364hp"), so the join folds that side too.
+    for key, hits in list(kinds.items()):
+        fold = turn_state.token_key(key)
+        if fold in per_token or fold in misses or fold in ignored:
+            if isinstance(hits, dict):
+                row = {k: v for k, v in hits.items() if k != "product"}
+                if per_token.get(fold):
+                    row["product"] = per_token[fold]
+                kinds[key] = row
     compatible = [
         e
         for e in compatible_entities
