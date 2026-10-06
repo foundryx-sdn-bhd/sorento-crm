@@ -25,8 +25,9 @@ The rule, in order:
      all of them, the ones carrying the most are ("Did you mean" prefers the variants
      that match what was said). When nothing was matched, or every variant carries it,
      the family is left alone.
-  5. A base code whose variants the message also types as their own tokens is never
-     narrowed: each of those is an ask of its own, and the bare code is one too.
+  5. A bare base code whose variants the message also types as their own tokens is never
+     narrowed: each of those is an ask of its own, and the bare code is one too. A code
+     with its own words beside it ("Srtwc8840 seat cover") is still picked by them.
 
 The answer replaces the code token with the variants' own codes, which the resolver then
 matches exactly, so a code ask never becomes a described set.
@@ -169,19 +170,24 @@ def narrow_code_tokens(
     replaced: dict[int, list[str]] = {}
     consumed: set[str] = set()
     for i, token in enumerate(tokens):
+        folded = folded_tokens[i]
         code_word = _code_word_for(str(token or ""), message)
         if not code_word:
             continue
-        own_lines = [words for words in lines if any(_fold(w) == code_word for w in words)]
+        # The code's own line(s): the ones holding the code word and, when the token folds
+        # more than the code (the words typed beside it), the token's words too, so a code
+        # typed on two lines with two descriptors reads each line for its own token.
+        code_lines = [words for words in lines if any(_fold(w) == code_word for w in words)]
+        own_lines = [words for words in code_lines if folded in "".join(_fold(w) for w in words)] or code_lines
         descriptor = [
             w for words in own_lines for raw in words if _fold(raw) != code_word for w in _words(raw) if not _CODE_WORD.match(w)
         ]
         family = _family(db, code_word)
         variants = {_fold(code) for code, _ in family} - {code_word}
-        if any(j != i and folded in variants for j, folded in enumerate(folded_tokens)):
+        if folded == code_word and any(f in variants for f in folded_tokens):
             # "SRTWT5608 x 5" beside "SRTWT5608-FRG x 5" and "SRTWT5608-GM x 10": the
             # variants are asks of their own, so the bare code is one too, never a
-            # family to pick from.
+            # family to pick from. A code with its own words beside it is not bare.
             picked = None
         else:
             picked = _pick(family, descriptor)
