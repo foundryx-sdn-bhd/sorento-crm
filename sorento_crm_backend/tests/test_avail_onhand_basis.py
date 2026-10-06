@@ -66,7 +66,7 @@ def _ask(db, p, contact, q):
 
 
 def test_prod_case_ask_10_with_6_on_hand_and_13_outstanding_is_in_stock_6_available(db):
-    """MWC7632-SH-P x 10 -> "Got stock, 6 available." (the `short_of` path), not "No stock
+    """MWC7632-SH-P x 10 -> "Only 6 got stock." (the `short_of` path), not "No stock
     and no incoming"."""
     _, p, contact = _seed(db, on_hand=ON_HAND, open_so=OPEN_SO)
     entry = _ask(db, p, contact, 10)
@@ -93,7 +93,7 @@ def test_no_stock_no_outstanding_no_shipment_is_still_no_incoming(db):
 @pytest.mark.parametrize("open_so", [0, 6, 13, 500])
 def test_outstanding_never_moves_the_figure(db, open_so):
     """The same on hand answers the same whatever the open SO is: 6 on hand, ask 10 is
-    always `in_stock` with 6 available."""
+    always `in_stock` with "Only 6 got stock."."""
     _, p, contact = _seed(db, on_hand=ON_HAND, open_so=open_so)
     entry = _ask(db, p, contact, 10)
     assert entry["branch"] == "in_stock"

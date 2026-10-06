@@ -413,7 +413,7 @@ def test_a_malay_dealer_eta_ask_names_the_miss_before_the_refer_line(session_fac
 
 def test_the_available_count_token_never_swallows_the_code_prefix():
     """`{available}` matches a number only (`_NUMERIC_TOKENS`), so neither `tail` nor the
-    final pass reads "SRT5674 x 50: ✅ Got stock, 30" as anything but the count."""
+    final pass reads "SRT5674 x 50: ✅ Only 30" as anything but the count."""
     line = "SRT5674 x 50: ✅ Only 30 got stock."
     for lang in ("ms", "zh"):
         assert _loc(lang).tail(line).startswith("SRT5674 x 50: ✅ ")
