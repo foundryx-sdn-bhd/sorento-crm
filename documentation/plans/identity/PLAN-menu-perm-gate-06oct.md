@@ -1,6 +1,6 @@
 # PLAN - Sidebar hides what the effective user cannot open (MENU-PERM-GATE)
 
-> Status: IN PROGRESS 2026-10-06. Small fix track (frontend only, no migration, no new slug,
+> Status: IN REVIEW 2026-10-06 (PR #1499, browser pass on a27a87f3). Small fix track (frontend only, no migration, no new slug,
 > no auth change on the backend). Lane `MENU-PERM-GATE`, cloud sandbox.
 > UAC: `menu-perm-gate-acceptance-criteria.md` alongside.
 
