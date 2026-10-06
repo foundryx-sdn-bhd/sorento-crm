@@ -633,7 +633,6 @@ def ground(
         verdict = {**verdict, "domain_hint": "master_products", "intent_hint": "check_product"}
         entities = verdict.get("entities")
     out: list[Any] = []
-    dropped = False
     notes: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
 
@@ -704,14 +703,8 @@ def ground(
             # any other is dropped. The customer's words are never read here.
             if not _listed_document_type(db, entity):
                 notes.append({"from": hint, "raw": raw, "to": "dropped: not a listed document type"})
-                dropped = True
                 continue
         out.append(entity)
-    if not moved and dropped and _category_word_under_documents(db, {**verdict, "entities": out}, vocab):
-        # Fix round 9 holds after a document type is dropped: with only what the products
-        # ARE left, the ask is about the products, never the file-type menu.
-        verdict = {**verdict, "domain_hint": "master_products", "intent_hint": "check_product"}
-        moved = True
     if moved:
         notes.append({"from": "domain", "raw": "product_attachment", "to": "master_products"})
     if not notes:
