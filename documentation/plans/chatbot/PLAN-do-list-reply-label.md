@@ -1,6 +1,6 @@
 # PLAN - DO-LIST-REPLY-LABEL: a quick-reply label reply answers the pending detail offer, never re-runs the summary
 
-Status: small fix track (diff well under 300 lines, no migration, no auth change, no new ingest surface). Lane started 6 Oct 2026 from origin/main 198db40e. Built 6 Oct 2026 in PR #1515 (red-first, kill paste, reviewer verdict ready, chunk 1 of the chatbot suites green); the live-parser A/B/C console replay is the crew's Mac run of the YAML below. Owner question on the "By product" cap left open at the end of this file.
+Status: small fix track (diff well under 300 lines, no migration, no auth change, no new ingest surface). Lane started 6 Oct 2026 from origin/main 198db40e. Built 6 Oct 2026 in PR #1515 (red-first, kill paste, reviewer verdict, chatbot suites green); the live-parser A/B/C replay ran in the cloud sandbox (`evidence/do-list-reply-label/console-replay-06oct.md`): every reading in which the parser declares the pick now runs the list; the parser declares no pick on about half the label replies, and that half is a crew-ask on the PR (options a/b/c in "Measured on the live parser" below). Owner question on the "By product" cap left open at the end of this file.
 Issue: crew lane DO-LIST-REPLY-LABEL (owner 6 Oct 22:55, prod, "quite frustrating"). Related: STUCK-QTY-LOOP #1471 (stale pending question replay), ROGUE #1506 class A (bare word under a pending question).
 UAC: `do-list-reply-label-acceptance-criteria.md`
 Classification: chatbot engine, `app/services/chatbot/turn/decide.py` (pure). No wording change, no prompt change.
@@ -55,6 +55,40 @@ stored option payload.
 `_answer_outstanding` is untouched: an `ANSWER picked_scope` over `outstanding_detail`
 already runs the list (`detail: "do"`) and keeps the offer open (contract 39).
 
+Second arm, same seam (sandbox live-parser run 3, 6 Oct 2026): the label also arrives
+with the pick declared in `open_question_answer.picked [1]` only (`reference_positions`
+empty), `order_status do_outstanding`, and the open report's own product re-stated as an
+entity with `current_message: true` under `entity_op: "reuse"`. `apply._open_pick_answer`
+turns the declared pick into the positions, then `decide.py`'s outstanding arm read the
+entity as a NEW ASK (D17 point 3, "a stray position riding along with an entity is still a
+new ask") and the summary re-ran. Under a declared pick, an entity the parser itself marks
+`reuse` (its own declaration that the turn carries no new value, `_keeps_subject`'s reading
+of the field) names nothing new, so it is dropped before that arm and the pick is read. An
+entity declared as a new value (`replace_combine`, `replace`) is still the new ask it was.
+
+## Measured on the live parser (sandbox, 6 Oct 2026)
+
+The sandbox proxy carries an OpenAI credential, so the A/B/C replay ran with the real
+parser (details and per-run table in `evidence/do-list-reply-label/console-replay-06oct.md`).
+Over an armed offer, 14 B turns: 7 declared the pick (1 in `reference_positions` + the
+object, 6 in the object only) and the fixed engine answered the DO list on all 7; 7
+declared no pick at all (`open_question_answer` mode null) and the engine, reading the
+parser, re-ran the summary. Prompt v3 and v4 read alike. Restating the rule beside the
+options in the parser's context (`head/parser.py`, one sentence) was measured over 10 runs
+(2 declared) and not kept. Turn A's own parse is not stable either (2 of 4 live runs armed
+no offer), outside this seam.
+
+The no-pick half is a crew-ask on PR #1515, options: (a) ship the engine seam and open a
+parser lane for the miss; (b) an engine rule on parser fields only: under the single-option
+detail offer a message whose every declared field equals the offer's own stored subject and
+declares no pick is answered as the one option on offer; (c) answer a TAPPED button without
+the parser, off the button id respond.io's inbound webhook carries (needs one prod trace of
+a tapped turn to confirm the inbound shape). Recommendation (a) now, (c) as the durable fix.
+
+Found on the way, fixed here: `scripts/chatbot_console_check.py` graded `pending_kind` off
+`variables.pending`, while the tail writes `variables.open_question`, so every
+`pending_kind` line in every console case graded None. It reads `open_question` first now.
+
 ## Reproduction (console check harness)
 
 Cloud has no parser key. The YAML case `tests/chatbot/console_cases/2026-10-06-do-list-
@@ -77,6 +111,10 @@ reading of it.
     summary (`detail: None`) is never re-run.
   - Both-scope offer (two options): "Delivery order list" (positions [2], document ["DO"])
     picks position 2's list.
+  - The restated-subject reading (live run 3): the pick declared in `open_question_answer`
+    only, the report's own product as a `reuse` entity, reads `ANSWER picked_scope` at
+    decide() and runs the list at apply(); the same with the product declared as a new
+    value (`replace_combine`) stays a new ask; a reused entity with no pick is not a pick.
 
 ## Owner question (NOT built here)
 
