@@ -166,6 +166,15 @@ if jsc.truthy(d) else None`.
   kind_pick of promotion/customer/form/transporter). That lane's fix A (brand probe for
   every domain but promotion) and B (drop kinds the gate rejects for the domain) should
   close it; the note names the asserts.
+  Second D example (crew, real parser dry run on the Mac against dev, 6 Oct): "any basin
+  with thickness 1.0mm" parsed perfectly (category `basin`, specification `thickness` =
+  1) and the engine still routed `clarify_menu`: "Which one do you mean? 1. basin
+  (promotion) 2. basin (customer)". Same mechanism one kind over: the resolver's
+  category/brand fan-out answers a CLASS word with promotion and customer rows, the
+  reconciliation cannot confirm the `category` hint, and a kind pick is armed instead of
+  the product spec search the words describe. The general rule for #1504: a confident
+  parser hint of kind `brand` or `category` is confirmed or dropped, never re-typed and
+  never asked as a pick over kinds the domain's gate does not accept. Forwarded to #1504.
 * E posted to PR #1502 as a crew-note: the stale extra here is a `category` word (a
   described set), so a fix keyed on "pop the predicate unless it describes a set" keeps
   this predicate. The owner's rule must win over the described-set exception when the
