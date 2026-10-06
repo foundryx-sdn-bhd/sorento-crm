@@ -1,0 +1,384 @@
+"""RESOLVE-SEMANTIC-FALLBACK, the resolver half (owner report, 6 Oct 2026 20:02 MYT):
+"TAP SRTWT5608 x 5" reached the resolver as the folded token "TAPSRTWT5608", matched no
+code tier (exact / prefix / substring on product_code) and came back "I could not find
+TAP SRTWT5608" while SRTWT5608 exists.
+
+The shared resolver (`entity_resolver.resolve_references`, behind `POST /api/v1/system/
+references/resolve` for the chatbot, n8n and every API-key caller) now asks a code reader
+ONE narrow question about a product-typed token that missed every code tier, and acts on
+a structured answer:
+
+* `code`    - the exact tier is re-run with the value; a hit resolves the token;
+* `family`  - the prefix-then-substring product probe runs with the value; one row is
+              that code, several are the ambiguous picker, none is still a miss;
+* `none`    - the token stays unresolved, the existing not-found wording is untouched.
+
+Rules pinned here: never asked on a clean message; only product-typed tokens; the value
+must sit inside what the dealer typed (the catalogue decides existence, the model may not
+invent or correct); a reader failure is a miss, never a failed call; byte identity for a
+call without a reader (no `fallback` key anywhere); the route asks ONCE per request even
+when `fallback_to_all_types` re-runs the unresolved tokens; `semantic_fallback: false`
+opts a caller out.
+
+The reader itself (the provider call, its budget and its guard) is `tests/
+test_resolver_code_reader.py`. Fake ZZT fixture codes only (public repo).
+"""
+from __future__ import annotations
+
+import uuid
+from typing import Any
+
+import pytest
+from sqlalchemy import text
+
+from app.models.base import set_company_scope
+from app.models.product import Product, ProductCategory, UnitOfMeasure
+from app.services.company_scope import DEFAULT_COMPANY_ID, register_company_scope_listeners
+
+from ._pg_fixture import blank_session, unique_code
+
+TAP = "ZZTWT5608"
+FAMILY = ["ZZTWC8066-RL", "ZZTWC8066-SH", "ZZTWC8066-SH-150"]
+CODES = [TAP, *FAMILY, "ZZTWC286-SH"]
+
+
+@pytest.fixture(autouse=True)
+def _scope_listeners():
+    register_company_scope_listeners()
+
+
+@pytest.fixture
+def db():
+    with blank_session() as session:
+        current = session.execute(text("SHOW search_path")).scalar()
+        session.execute(text(f"SET LOCAL search_path TO {current}, public"))
+        set_company_scope(session, None)
+        cat, uom = str(uuid.uuid4()), str(uuid.uuid4())
+        session.add(ProductCategory(id=cat, category_code=unique_code("C")[:50], category_name="C"))
+        session.add(UnitOfMeasure(id=uom, uom_code=unique_code("U")[:20], uom_name="Each"))
+        session.flush()
+        for code in CODES:
+            session.add(
+                Product(
+                    id=str(uuid.uuid4()), product_code=code, product_name=code, category_id=cat,
+                    base_uom_id=uom, list_price=10, is_active=True, company_id=DEFAULT_COMPANY_ID,
+                )
+            )
+        session.commit()
+        set_company_scope(session, frozenset({DEFAULT_COMPANY_ID}))
+        yield session
+
+
+class FakeReader:
+    """A `CodeReader`: answers from `answers` ({token: (kind, value)}), counts its calls and
+    remembers what it was asked (the `(token, typed text)` pairs)."""
+
+    def __init__(self, answers: dict[str, tuple[str, str | None]] | None = None, *, raises: bool = False):
+        from app.services.resolver_code_reader import CodeReading
+
+        self._reading = CodeReading
+        self.answers = answers or {}
+        self.raises = raises
+        self.calls: list[list[tuple[str, str | None]]] = []
+
+    def __call__(self, missed):
+        self.calls.append(list(missed))
+        if self.raises:
+            raise RuntimeError("provider down")
+        out = {}
+        for token, _typed in missed:
+            kind, value = self.answers.get(token, ("none", None))
+            out[token] = self._reading(kind=kind, value=value)
+        return out
+
+
+def _resolve(db, tokens, raws=None, *, reader=None, types=None):
+    from app.services.entity_resolver import resolve_references
+
+    return resolve_references(
+        db,
+        tokens,
+        allowed_entity_types=types if types is not None else ["product"] * len(tokens),
+        raw_tokens=raws,
+        code_reader=reader,
+    )
+
+
+def _by_token(result) -> dict[str, Any]:
+    return {r["token"]: r for r in result.as_dict()["resolutions"]}
+
+
+def _codes(resolution: dict[str, Any]) -> list[str]:
+    return [m["canonical_code"] for m in resolution["matches"]]
+
+
+# --------------------------------------------------------------------------- #
+# Never on a clean message, never for a non-product token
+# --------------------------------------------------------------------------- #
+
+
+def test_a_clean_message_never_asks_the_reader(db):
+    reader = FakeReader()
+    result = _resolve(db, [TAP, "ZZTWC286SH"], [TAP, "ZZTWC286-SH"], reader=reader)
+
+    assert reader.calls == []
+    assert result.unresolved_tokens == []
+    assert all("fallback" not in r for r in result.as_dict()["resolutions"])
+
+
+def test_a_family_the_substring_tier_already_placed_is_not_a_miss(db):
+    """"8066" sits inside the ZZTWC8066 codes: the existing substring probe places the
+    family and flags it ambiguous (the picker); the reader is never asked."""
+    reader = FakeReader()
+    result = _resolve(db, ["8066"], reader=reader)
+
+    assert reader.calls == []
+    assert result.ambiguous_tokens == ["8066"]
+    assert sorted(_codes(_by_token(result)["8066"])) == FAMILY
+
+
+def test_a_non_product_token_is_never_asked(db):
+    reader = FakeReader({"TAPZZTWT5608": ("code", TAP)})
+    result = _resolve(db, ["TAPZZTWT5608"], ["TAP ZZTWT5608"], reader=reader, types=["customer"])
+
+    assert reader.calls == []
+    assert result.unresolved_tokens == ["TAPZZTWT5608"]
+
+
+def test_an_ambiguous_token_is_not_a_miss_and_is_not_asked(db):
+    reader = FakeReader()
+    _resolve(db, ["ZZTWC8066"], reader=reader)
+    assert reader.calls == []
+
+
+# --------------------------------------------------------------------------- #
+# The owner's turn: a type word beside the code
+# --------------------------------------------------------------------------- #
+
+
+def test_a_code_reading_resolves_the_token_on_the_exact_tier(db):
+    reader = FakeReader({"TAPZZTWT5608": ("code", TAP)})
+    result = _resolve(db, ["TAPZZTWT5608"], ["TAP ZZTWT5608"], reader=reader)
+
+    assert reader.calls == [[("TAPZZTWT5608", "TAP ZZTWT5608")]]
+    row = _by_token(result)["TAPZZTWT5608"]
+    assert row["resolved"] is True
+    assert _codes(row) == [TAP]
+    assert row["matches"][0]["match_tier"] == "exact", "the gate reads the typed code as exact"
+    assert row["fallback"] == {"asked": True, "kind": "code", "value": TAP, "matched": 1}
+    assert result.unresolved_tokens == []
+
+
+def test_the_reader_is_given_the_token_when_no_raw_text_was_sent(db):
+    reader = FakeReader({"TAPZZTWT5608": ("code", TAP)})
+    _resolve(db, ["TAPZZTWT5608"], None, reader=reader)
+    assert reader.calls == [[("TAPZZTWT5608", None)]]
+
+
+def test_a_code_reading_the_catalogue_does_not_hold_stays_a_miss(db):
+    reader = FakeReader({"TAPZZTNOPE1": ("code", "ZZTNOPE1")})
+    result = _resolve(db, ["TAPZZTNOPE1"], ["TAP ZZTNOPE1"], reader=reader)
+
+    row = _by_token(result)["TAPZZTNOPE1"]
+    assert row["matches"] == []
+    assert result.unresolved_tokens == ["TAPZZTNOPE1"]
+    assert row["fallback"] == {"asked": True, "kind": "code", "value": "ZZTNOPE1", "matched": 0}
+
+
+def test_a_value_outside_the_typed_text_is_rejected_never_a_typo_fix(db):
+    """The model may only READ a code out of what the dealer typed. "zztw5608" typed,
+    "ZZTWT5608" answered: the catalogue has it, and it is still refused."""
+    reader = FakeReader({"zztw5608": ("code", TAP)})
+    result = _resolve(db, ["zztw5608"], ["zztw5608"], reader=reader)
+
+    row = _by_token(result)["zztw5608"]
+    assert row["matches"] == []
+    assert result.unresolved_tokens == ["zztw5608"]
+    assert row["fallback"]["kind"] == "none"
+    assert row["fallback"]["asked"] is True
+    assert "typed" in row["fallback"]["reason"]
+
+
+def test_the_guard_reads_the_raw_text_not_only_the_folded_token(db):
+    """Folded token "TAPZZTWT5608", raw "TAP ZZTWT5608": the value "ZZTWT5608" is inside
+    both; a value "ZZT WT5608" (a space the dealer never typed) is inside neither once
+    both sides are folded to letters and digits, so it is accepted too - the fold is
+    what the exact tier matches on as well."""
+    reader = FakeReader({"TAPZZTWT5608": ("code", "ZZT WT5608")})
+    result = _resolve(db, ["TAPZZTWT5608"], ["TAP ZZTWT5608"], reader=reader)
+    assert _codes(_by_token(result)["TAPZZTWT5608"]) == [TAP]
+
+
+# --------------------------------------------------------------------------- #
+# A family answer is the existing picker
+# --------------------------------------------------------------------------- #
+
+
+def test_a_family_reading_with_several_codes_is_the_ambiguous_picker(db):
+    reader = FakeReader({"TOILET8066": ("family", "8066")})
+    result = _resolve(db, ["TOILET8066"], ["TOILET 8066"], reader=reader)
+
+    row = _by_token(result)["TOILET8066"]
+    assert row["ambiguous"] is True
+    assert row["resolved"] is False
+    assert sorted(_codes(row)) == FAMILY
+    assert {m["match_tier"] for m in row["matches"]} == {"substring"}
+    assert row["fallback"] == {"asked": True, "kind": "family", "value": "8066", "matched": 3}
+    assert result.unresolved_tokens == []
+
+
+def test_a_family_reading_with_one_code_is_that_code(db):
+    reader = FakeReader({"TAP5608": ("family", "5608")})
+    result = _resolve(db, ["TAP5608"], ["TAP 5608"], reader=reader)
+
+    row = _by_token(result)["TAP5608"]
+    assert row["resolved"] is True
+    assert _codes(row) == [TAP]
+    assert row["fallback"]["matched"] == 1
+
+
+def test_a_family_reading_inside_no_code_is_a_miss(db):
+    reader = FakeReader({"TAP9999": ("family", "9999")})
+    result = _resolve(db, ["TAP9999"], ["TAP 9999"], reader=reader)
+
+    assert result.unresolved_tokens == ["TAP9999"]
+    assert _by_token(result)["TAP9999"]["fallback"]["matched"] == 0
+
+
+# --------------------------------------------------------------------------- #
+# None, errors, and the mix
+# --------------------------------------------------------------------------- #
+
+
+def test_a_none_reading_keeps_the_miss_and_says_it_was_asked(db):
+    reader = FakeReader({"BIDET": ("none", None)})
+    result = _resolve(db, ["BIDET"], ["bidet"], reader=reader)
+
+    row = _by_token(result)["BIDET"]
+    assert row["matches"] == []
+    assert result.unresolved_tokens == ["BIDET"]
+    assert row["fallback"] == {"asked": True, "kind": "none", "value": None}
+
+
+def test_a_reader_that_raises_is_a_miss_never_a_failed_call(db):
+    reader = FakeReader(raises=True)
+    result = _resolve(db, ["TAPZZTWT5608"], ["TAP ZZTWT5608"], reader=reader)
+
+    assert result.unresolved_tokens == ["TAPZZTWT5608"]
+    row = _by_token(result)["TAPZZTWT5608"]
+    assert row["fallback"]["asked"] is True
+    assert row["fallback"]["kind"] == "error"
+
+
+def test_a_token_the_reader_did_not_answer_is_reported_not_asked(db):
+    class Silent(FakeReader):
+        def __call__(self, missed):
+            self.calls.append(list(missed))
+            return {}
+
+    result = _resolve(db, ["TAPZZTWT5608"], ["TAP ZZTWT5608"], reader=Silent())
+    assert _by_token(result)["TAPZZTWT5608"]["fallback"] == {"asked": False, "kind": "not_asked"}
+
+
+def test_only_the_missed_tokens_are_asked_and_each_is_answered_alone(db):
+    reader = FakeReader({"TAPZZTWT5608": ("code", TAP), "WCZZTWC8066SS": ("code", "ZZTWC8066-SS")})
+    result = _resolve(
+        db,
+        ["ZZTWC286SH", "TAPZZTWT5608", "WCZZTWC8066SS", "ZZTNOPE2"],
+        ["ZZTWC286-SH", "TAP ZZTWT5608", "WC ZZTWC8066-SS", "ZZTNOPE2"],
+        reader=reader,
+    )
+
+    assert reader.calls == [[("TAPZZTWT5608", "TAP ZZTWT5608"), ("WCZZTWC8066SS", "WC ZZTWC8066-SS"), ("ZZTNOPE2", "ZZTNOPE2")]]
+    rows = _by_token(result)
+    assert _codes(rows["ZZTWC286SH"]) == ["ZZTWC286-SH"] and "fallback" not in rows["ZZTWC286SH"]
+    assert _codes(rows["TAPZZTWT5608"]) == [TAP]
+    # ZZTWC8066-SS is not in the catalogue: the model's answer does not make it exist.
+    assert rows["WCZZTWC8066SS"]["matches"] == []
+    assert result.unresolved_tokens == ["WCZZTWC8066SS", "ZZTNOPE2"]
+
+
+# --------------------------------------------------------------------------- #
+# Byte identity without a reader
+# --------------------------------------------------------------------------- #
+
+
+def test_no_reader_means_no_fallback_key_anywhere(db):
+    result = _resolve(db, ["TAPZZTWT5608", TAP], ["TAP ZZTWT5608", TAP]).as_dict()
+    assert all("fallback" not in r for r in result["resolutions"])
+    assert result["unresolved_tokens"] == ["TAPZZTWT5608"]
+
+
+# --------------------------------------------------------------------------- #
+# The route: asked once per request, opt-out
+# --------------------------------------------------------------------------- #
+
+
+def _route(db, tokens, raws, *, code_reader, fallback_to_all_types=True):
+    from app.api.v1.system.references import _resolve_input
+
+    return _resolve_input(
+        db,
+        " ".join(raws),
+        tokens,
+        match_mode="or",
+        allowed_entity_types=["product"] * len(tokens),
+        fallback_to_all_types=fallback_to_all_types,
+        limit=50,
+        raw_tokens=raws,
+        code_reader=code_reader,
+    )
+
+
+def test_the_route_asks_once_even_when_it_reruns_the_unresolved_tokens(db):
+    """`fallback_to_all_types` re-runs the tokens still unresolved against every type;
+    the reader is a per-request seam, so the second pass must not spend a second call."""
+    reader = FakeReader({"TAPZZTNOPE1": ("none", None)})
+    result = _route(db, ["TAPZZTNOPE1"], ["TAP ZZTNOPE1"], code_reader=reader)
+
+    assert len(reader.calls) == 1, reader.calls
+    assert result["unresolved_tokens"] == ["TAPZZTNOPE1"]
+    assert result["resolutions"][0]["fallback"]["kind"] == "none"
+
+
+def test_the_route_resolves_the_owners_line(db):
+    reader = FakeReader({"TAPZZTWT5608": ("code", TAP)})
+    result = _route(db, ["TAPZZTWT5608"], ["TAP ZZTWT5608"], code_reader=reader)
+
+    assert result["unresolved_tokens"] == []
+    assert result["resolutions"][0]["matches"][0]["canonical_code"] == TAP
+
+
+def test_the_post_route_builds_the_reader_unless_the_caller_opts_out(db, monkeypatch):
+    from app.api.v1.system import references
+    from app.services import resolver_code_reader
+
+    built: list[dict[str, Any]] = []
+
+    def fake_reader_for(session, *, message_text, user_id, dry_run):
+        built.append({"message_text": message_text, "user_id": user_id, "dry_run": dry_run})
+        return FakeReader({"TAPZZTWT5608": ("code", TAP)})
+
+    monkeypatch.setattr(resolver_code_reader, "reader_for", fake_reader_for)
+    principal = {"id": None}
+
+    payload = references.ResolveReferenceRequest(
+        query="TAP ZZTWT5608 x 5", tokens=["TAPZZTWT5608"], raw_tokens=["TAP ZZTWT5608"],
+        allowed_entity_types=["product"], dry_run=True,
+    )
+    result = references.resolve_reference_post(payload, current_user=principal, db=db)
+    assert built == [{"message_text": "TAP ZZTWT5608 x 5", "user_id": None, "dry_run": True}]
+    assert result["unresolved_tokens"] == []
+
+    built.clear()
+    off = payload.model_copy(update={"semantic_fallback": False})
+    result = references.resolve_reference_post(off, current_user=principal, db=db)
+    assert built == [], "opted out: no reader is built, no model is asked"
+    assert result["unresolved_tokens"] == ["TAPZZTWT5608"]
+    assert all("fallback" not in r for r in result["resolutions"])
+
+
+def test_semantic_fallback_defaults_on(db):
+    from app.api.v1.system.references import ResolveReferenceRequest
+
+    assert ResolveReferenceRequest(query="x").semantic_fallback is True
