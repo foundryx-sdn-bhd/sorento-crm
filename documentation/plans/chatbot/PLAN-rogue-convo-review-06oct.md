@@ -267,14 +267,14 @@ section's closing sentence.
 Change (as built):
 
 * `gate.REFUSES_EMPTY_FETCH = {inventory, master_products}`, one constant beside
-  `ALLOWS_EMPTY`, three readers. `turn_runtime.make_tool_runner`: the no-subject probe
+  `ALLOWS_EMPTY`, two readers. `turn_runtime.make_tool_runner`: the no-subject probe
   runs for every domain in it, still excluding `would_be_unfiltered` and still exempt for
-  `INTENTS_ALLOWING_EMPTY`. The `would_be_unfiltered` guard (R6, "named a token and none
-  placed") reads the SAME set plus `incoming` (which R6 always had): widening the probe
-  alone would have handed a typed-but-missed product code the scope sentence in
-  `master_products`, the class B shape one domain over. With both widened, turn 7's
-  "srtwc-8318" is refused with its own "Couldn't find" wording and no fetch; turn 2's
-  "product" gets the scope sentence.
+  `INTENTS_ALLOWING_EMPTY`. The R6 `would_be_unfiltered` guard stays inventory/incoming:
+  a first cut widened it too, and the reviewer's kill showed no shape where that changed
+  a reply (turn 7's "srtwc-8318" lands in the probe, the fragment carries `scope_gate`,
+  and `not_found_error_message`'s own `needs_scope ... and not has_unresolved` keeps the
+  ordinary "Couldn't find" wording), so it was dropped. Turn 7 is refused with its own
+  miss wording and no fetch; turn 2's "product" gets the scope sentence.
 * Why not every `ALLOWS_EMPTY` False row (the first cut, and AC-RC-A2's first wording):
   the full chatbot suite measured eight `sales`, `order` and `promotion` pins broken by
   the dict-wide read (the sales report for an unlinked or staff contact, top selling, the
@@ -308,9 +308,18 @@ Change (as built):
   `space_id` on every chatbot tool call. PR-1 proves it with a route test (a SORENTO-scoped
   contact with `chat_visible=true` sees the searchable SORENTO product alone) instead of
   adding a second mechanism.
-* Consequence to know: every `ALLOWS_EMPTY` False domain (`promotion`, `product_attachment`,
-  `order`, `sales`) now takes the probe too. The full chatbot suite on the branch is the
-  measurement; any pin that moved is listed on the PR.
+* `is_active` bounds the UNSCOPED list only (reviewer finding 4 on #1517): a code the
+  customer named resolves whether or not the product is active (the resolver returns it
+  with `display.is_active`) and the answer says so; hiding the row would turn
+  "<discontinued code> price" into a miss. Owner to confirm that reading of Q1.
+* Follow-up recorded, not built (reviewer finding 1 on #1517): a follow-up about a
+  SETTLED focus product in `master_products` with a verdict of `entities: []` under
+  `entity_op: reuse` carries nothing into the fetch (`with_carried_entities(unsettled_only
+  =True)` skips rows that already have a uuid), so it now gets the scope sentence where
+  main listed 50 unrelated products. The real parser echoes the standing product in
+  `entities` with `current_message: False` (measured on live verdicts in this lane), which
+  is the shape that answers; measure how often a live `master_products` + `reuse` verdict
+  comes with `entities: []` over a settled product before carrying it in code.
 
 Red tests (`tests/chatbot/test_zero_scope_list.py`, 9; 8 red on main, the bare-PO control
 green on both): bare "product" never calls the tool and gets the product scope sentence;

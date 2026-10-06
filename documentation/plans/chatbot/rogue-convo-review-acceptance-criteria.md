@@ -5,11 +5,12 @@ are its red tests. Fake fixture ids in every test; product codes are catalogue c
 
 ## Class A: zero-scope list asks for a filter
 
-- AC-RC-A1: a fetch in any domain whose `ALLOWS_EMPTY` row is False, with zero resolved
-  scoping entities, no filter, no date window and no explicit broaden, calls no tool and
-  replies with the scope sentence for that domain ("That would search every product we
-  have - I need at least one filter ..."). Red: bare "product" (turn 2); "srtwc-8318"
-  typed while a kind_pick is open falls to master_products with no uuid (turn 7).
+- AC-RC-A1: a fetch in a domain of `gate.REFUSES_EMPTY_FETCH` (`inventory`,
+  `master_products`), with zero resolved scoping entities, no filter, no date window and
+  no explicit broaden, calls no tool and replies with the scope sentence for that domain
+  ("That would search every product we have - I need at least one filter ..."). Red: bare
+  "product" (turn 2); "srtwc-8318" typed while a kind_pick is open falls to
+  master_products with no uuid (turn 7).
 - AC-RC-A2: the refusal is one mechanism (one constant, `gate.REFUSES_EMPTY_FETCH`, beside
   `ALLOWS_EMPTY`) read by the runner's probe, the runner's "named but none placed" guard
   and the fan-out seam, not a per-domain literal in the engine. Its members are
@@ -19,10 +20,12 @@ are its red tests. Fake fixture ids in every test; product codes are catalogue c
 - AC-RC-A3 (control): a scoped product ask ("SRTWC286 price") fetches with that id; bare
   "PO" still lists the open book; `low_stock_report` with no entities still runs.
 - AC-RC-A4 (Q1 = a + brand): the chatbot's product list never returns a product whose
-  `is_searchable` is false, whose category's `is_searchable` is false, or whose
-  `is_active` is false, and a brand-scoped contact sees only its brands' products (the
-  existing session criterion, stamped from `contact_id` + `space_id`); the admin products
-  list is unchanged.
+  `is_searchable` is false or whose category's `is_searchable` is false; an UNSCOPED list
+  (no product ids) also never returns an inactive product, while a code the customer
+  named is answered whether or not it is active (the resolver places it and the answer
+  says so; owner to confirm, reviewer finding 4 on #1517); a brand-scoped contact sees
+  only its brands' products (the existing session criterion, stamped from `contact_id` +
+  `space_id`); the admin products list is unchanged.
 - AC-RC-A5: a product token typed in `master_products` that the resolver cannot place is
   answered with its own miss wording (the token named) and no fetch, never the scope
   sentence and never the catalogue. Red: turn 7's "srtwc-8318".
