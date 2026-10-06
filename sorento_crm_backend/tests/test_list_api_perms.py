@@ -460,6 +460,16 @@ def test_source_type_readers_cover_every_form_sla_type():
     from app.services.form_sla_service import FORM_SLA_TYPES
 
     assert set(SOURCE_TYPE_READERS) == set(FORM_SLA_TYPES)
+    # The whole map is the contract: a dropped or widened row is a broken SLA tab somewhere.
+    assert SOURCE_TYPE_READERS == {
+        "complaint": [COMPLAINTS],
+        "stock_inquiry": [STOCK_INQUIRIES],
+        "purchase_request": ["procurement.purchase_requests.view"],
+        "sponsorship_form": ["procurement.sponsorship_forms.view"],
+        "ticket": [TICKETS],
+        "workflow_submission": ["workflow_forms.submissions.view"],
+        "price_tag_request": ["dealer_kit.price_tag_requests.view"],
+    }
 
 
 _EACH_ENTRY = [(path, slug) for path, (actual, _) in _reader_lists().items() for slug in actual]
