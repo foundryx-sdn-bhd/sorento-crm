@@ -391,6 +391,12 @@ Change G: `engine.py:4049` as above.
 * **A class word mis-tagged `product`** ("basin" with hint product) now reads `Couldn't
   find: "basin" (product).` instead of a set answer: the parser decides, and the prompt
   says class words are category entities. Said in the PR body.
+* **Turn 5 once F(i) is live** (reviewer nit on 8348009e): the addendum splits the pasted
+  line into a product entity plus a category entity ("one piece washdown toilet"), so
+  `class_terms` is non-empty and the water-closet set is carried again beside "Couldn't
+  find" for the code. That follows "the parser decides" (the class word is then the
+  customer's own); AC-RC-C2's turn-5 red test holds while the parser emits the line as one
+  product entity, which is the shape prod produced.
 
 Red tests (new file `tests/chatbot/test_miss_says_what_it_could_not_find.py`):
 
