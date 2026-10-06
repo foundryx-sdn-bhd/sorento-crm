@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { MENU_SIDEBAR, MENU_SIDEBAR_COMPACT } from './menu.config';
-import { filterOrphanHeadings } from '@/app/components/layouts/demo1/components/sidebar-menu';
+import { filterOrphanHeadings } from '@/lib/menu-access-filter';
 import type { MenuConfig, MenuItem } from './types';
 
 /** Recursively collect all `path` values from a menu tree. */
