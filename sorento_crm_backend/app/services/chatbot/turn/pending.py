@@ -245,8 +245,9 @@ def quick_replies_suppressed(kind: str | None, options: list[dict[str, Any]] | N
     `chatbot_entity_kinds` table (`brand_pick`, `attachment_type_ask`, ...) is a roster
     by construction and is suppressed without being named in that allowlist.
 
-    `options` lets the two `team_pick`s whose options are NOT teams be told apart from
-    a real team pick: the company clarify `answer_bridge.py` mints when a search spanned
+    `options` is read only for a `team_pick`, to tell the two whose options are NOT teams
+    apart from a real team pick (the other fixed kinds stamp their own `entity_type` on
+    every option, so inspecting them would suppress every one): the company clarify `answer_bridge.py` mints when a search spanned
     several companies (each option's payload naming its `company`), and the escalation
     lane's own product did-you-mean (`engine._question_offered`, `clarify_product`:
     options with `entity_type: "product"`). Company names and product codes are roster
@@ -258,6 +259,8 @@ def quick_replies_suppressed(kind: str | None, options: list[dict[str, Any]] | N
     """
     if kind not in FIXED_OPTION_KINDS:
         return True
+    if kind != "team_pick":
+        return False
     for option in options or []:
         if not isinstance(option, dict):
             continue
