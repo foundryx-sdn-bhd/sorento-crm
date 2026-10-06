@@ -134,19 +134,20 @@ def test_complaint_in_scope_clauses_keep_a_complaint_with_an_mch_line(dual_sessi
 # --------------------------------------------------------------------- AC-4 output guard helpers
 
 
-def test_out_of_scope_codes_leave_mch_codes_alone(db, world) -> None:
+def test_out_of_scope_codes_leave_mch_codes_alone(dual_session, world) -> None:
+    """On the dual contact's session (both companies visible) the MCH codes are in scope."""
     mch = world.mch
     scope = frozenset({world.sorento.id})
-    out = _svc().out_of_scope_product_codes(db, scope, [*_all_codes(world), "ZZT-NO-SUCH-CODE"])
+    out = _svc().out_of_scope_product_codes(dual_session, scope, [*_all_codes(world), "ZZT-NO-SUCH-CODE"])
     assert out == {world.codes["mocha"], world.codes["null"]}
     assert not out & set(mch.codes.values())
 
 
-def test_out_of_scope_ids_leave_mch_ids_alone(db, world) -> None:
+def test_out_of_scope_ids_leave_mch_ids_alone(dual_session, world) -> None:
     mch = world.mch
     scope = frozenset({world.sorento.id})
     ids = [p.id for p in (*world.products, *mch.products)]
-    assert _svc().out_of_scope_product_ids(db, scope, ids) == {world.p_mocha.id, world.p_null.id}
+    assert _svc().out_of_scope_product_ids(dual_session, scope, ids) == {world.p_mocha.id, world.p_null.id}
 
 
 def test_guard_helpers_read_the_brands_companies_with_company_scope_off(db, world) -> None:
