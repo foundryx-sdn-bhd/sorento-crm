@@ -1,9 +1,10 @@
 # UAC: SO line change history shows the Was and the Now (SO-LINE-CHANGE-HISTORY)
 
-Status: F1 (AC-1 to AC-6, SO detail dialog) RULED and building, red-first (card a67320022,
-7 Oct 2026: Q1 = a, Q4 = a). F2 (AC-7 to AC-13, History Before row) HELD until the owner
-answers Q2 and Q3; a different ruling rewrites the AC it touches before any test is written.
-Q5 (backfill) is not in this lane either way.
+Status: F1 (AC-1 to AC-6, SO detail dialog) built and review-clean (50f275538). F2 (AC-7 to
+AC-13, History Before row + Delivery date column) RULED and building, red-first (card a67320022,
+7 Oct 2026: Q1 = a, Q2 = a, Q3 = a, Q4 = a). Q5 (backfill of the cancelled sheet lines' delivery
+date) is an owner-gated crew step outside this PR: the lane reports the existing repair path and
+its dry-run count only.
 Plan: `PLAN-so-line-change-history.md` alongside.
 
 ## Journey

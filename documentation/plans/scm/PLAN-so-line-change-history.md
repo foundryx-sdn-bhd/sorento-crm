@@ -1,8 +1,9 @@
 # PLAN: SO line "What changed" and History show the Was and the Now (SO-LINE-CHANGE-HISTORY)
 
-Status: F1 building, red-first (feature track M, lead pattern: tester red tests, coder green,
-reviewer + kill test, agent-browser 1280/375; no mock, owner exception for wording and rows
-inside existing dialogs). F2 HELD pending owner answers to Q2/Q3 of card a67320022.
+Status: F1 built, review READY (50f275538); F2 building, red-first (feature track M, lead
+pattern: tester red tests, coder green, reviewer + kill test, agent-browser 1280/375; no mock,
+owner exception for wording and rows inside existing dialogs). Card a67320022 rulings: Q1 a,
+Q2 a, Q3 a, Q4 a; Q5 = owner-gated backfill via the existing repair path, outside this PR.
 Plan created: 2026-10-07T18:30:00+08:00
 Lane: SO-LINE-CHANGE-HISTORY, branch `crew/so-line-change-history`, base origin/main 292a366ee
 Domain: scm (SO detail Lines tab) + project-sales (order inquiry History dialog)
@@ -48,8 +49,12 @@ Case: SO314593 / SRTWCX8605-S-RL-PJ, prod snapshot sorento_ai_automation_2026100
 
 - Q1 = (a): backend adds from/to, FE maps them, board Was | Now table reused.
 - Q4 = (a): importer change not applicable.
-- Q2, Q3 (History Before row, cancelled sibling): with the owner. F2 held.
-- Q5 (backfill): not in this lane either way.
+- Q2 = (a): one synthetic Before row per Now row with previous_*, plus a Delivery date column.
+- Q3 = (a): no cancelled-sibling lookup.
+- Q5: the owner wants the cancelled sheet lines' delivery date backfilled ("a way to backfill
+  from manually side maybe? or you can process the sheet to backfill? i think we had a script").
+  Handled as an owner-gated crew step with the import service's delivery-date repair path
+  (`_resolve_delivery_date_repairs`), dry run on the snapshot first; not part of this PR.
 
 ## Design (simplest thing that works)
 
@@ -89,9 +94,9 @@ Testing seams:
   (pattern at :1842-1877: `planned({planning_change: {...}})`, click
   `board-change-icon-<id>`, read `board-change-dialog`) for AC-3, AC-4, AC-5.
 
-### F2 History Rows: Before row + Delivery date column (AC-7 to AC-13) - HELD
+### F2 History Rows: Before row + Delivery date column (AC-7 to AC-13)
 
-Frontend only, if Q2 = (a): `lineHistoryEntries` (`orderInquiryLineFold.ts:279-291`) appends,
+Frontend only (Q2 = a, Q3 = a): `lineHistoryEntries` (`orderInquiryLineFold.ts:279-291`) appends,
 after the Now entries, one `Before` entry per Now row with previous_qty or previous_delivery_date:
 `{what: 'Before', qty: previous_qty, date: previous_delivery_date, documents: none, why: "Was
 <qty> on <dd/mm/yyyy>, before <inquiry_no> changed it", when: changed_at ?? raised_at, id:
@@ -99,7 +104,7 @@ after the Now entries, one `Before` entry per Now row with previous_qty or previ
 `entry.row.*` for qty/date/document; `LineHistoryWhat` gains `'Before'`; `WHAT_VARIANT` maps it
 to `outline`. The dialog grid gains a `Delivery date` column (size 110, `formatDateInMalaysia`)
 between Qty and What. Existing AC-ND-15/16 tests adjust row counts where the fixture carries
-previous_qty. If Q3 = (b) a second ticket adds a BE sibling-line lookup; not planned here.
+previous_qty. No sibling-line lookup (Q3 = a).
 
 ## Out of scope (recorded)
 
