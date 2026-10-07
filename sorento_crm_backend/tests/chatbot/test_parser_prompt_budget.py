@@ -138,7 +138,10 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # assertions hold. Nothing else grew.
 # Merge of main (#1513 STOCK-QTY-PARTIAL-FILL, TRAP_SPECS_FALLBACK_BLOCK +2,025) with PR #1447 (report engine):
 # 48,536 est. tokens without MEMORY_ADDENDUM and 49,052 with it, so CEILING is 49,052 - 512. Nothing else grew.
-CEILING = 48_540
+# REPORT-ENGINE AC-HT8 (PR #1447): the dealer / customer / salesman ranked-noun examples, the
+# sales_ranking domain_in_message rule and the ranking words in DOMAIN IN MESSAGE:
+# 48,758 est. tokens without MEMORY_ADDENDUM (+222), so CEILING is 48,762 (the same +4 margin as before).
+CEILING = 48_762
 # The memory addendum on its own, bounded separately so this PR's growth stays bounded.
 # 26 Sep baseline (lane d89110c0): 339 est. tokens. Round 4 (baf4c813, 28 Sep: the history
 # question in any wording, the number re-run, commercial_request) took it to 512, which is

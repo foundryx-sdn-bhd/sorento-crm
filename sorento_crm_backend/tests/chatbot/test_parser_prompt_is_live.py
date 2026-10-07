@@ -210,7 +210,9 @@ LIVE_CHARS = 46942  # the fetched file, leading `=` included
 # section's `"SPO", "shipment", "container" -> ["SPO"]` becomes `"SPO", "SPO allocation" ->
 # ["SPO"]` with "shipment"/"container" naming no paper (they are incoming's own words, and
 # the SPO document now routes to spo_allocation), an in-body edit (+74).
-CONSTANT_CHARS = 63051
+# 63051 -> 63081 (8 Oct 2026, REPORT-ENGINE AC-HT8): the DOMAIN IN MESSAGE word list gains
+# "sold the most, top, 卖得最多, 排名", an in-body edit (+30).
+CONSTANT_CHARS = 63081
 
 #: The line the round 8 cut rewrote, as the live file carries it and as the constant does.
 COMPANIES_OFFERED_LIVE = (
