@@ -146,6 +146,13 @@ describe('committed Cancel SO line (AC-F16)', () => {
     expect(dialog.notPosted).toHaveLength(0);
   });
 
+  it('does not make its order a confirmable order in the summary', () => {
+    const summary = board.confirmSummaryFor([committed], {});
+    expect(summary.orderCount).toBe(0);
+    expect(summary.toConfirm).toBe(0);
+    expect(board.confirmSummaryFor([bookCancelled], {}).orderCount).toBe(1);
+  });
+
   it('control: a book-cancelled line is still retired by the press', () => {
     expect(plannedLineCount([bookCancelled], 'so-1', {})).toBe(1);
     expect(confirmDialogRowsFor([bookCancelled], {}, ctx).cancelled).toHaveLength(1);
