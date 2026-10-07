@@ -529,10 +529,17 @@ def _exact_codes_only(
       product_code, `entity_resolver._prefix_probe_product`). The same prefix-then-
       substring order as that probe: this filter keeps what the resolver placed, it
       matches nothing of its own;
-    * else a code-like token is not found, and goes to the did-you-mean ("srt5764");
-    * a word or a bare number with no exact code is not a product at all: the describe /
-      semantic matches the resolver found for "xx", "10" or a "2" typed over a
-      did-you-mean listed a page of the catalogue.
+    * else a code-like token or a bare number is not found, and goes to the did-you-mean
+      ("srt5764");
+    * a word with no exact code is not a product at all: the describe / semantic matches
+      the resolver found for "xx" listed a page of the catalogue.
+    ROGUE-CONVO-REVIEW (owner ruling, 6 Oct 2026, prod turn "8066 stock ?" answered with
+    the scope sentence): a BARE NUMBER takes the same ladder as a code-like token
+    (`turn.task.code_or_number`): exact, then the prefix family, then the substring family
+    the resolver's own probe placed (SRTWC8066-*, the picker compact mode already gives),
+    else a miss that stays unplaced so the reply names it. It was `ignored` here, which
+    dropped both the family AND the token, and the dealer read "I need at least one
+    filter" for a product they had named.
     STOCK-MISS-RENDER (owner report, 6 Oct 2026, prod turn #f763 "Srt 364-hp x 1 stock
     available?"): the typed word and the resolver's code are compared the way the
     resolver itself matched them - case AND separators folded (`turn.state.token_key`,
@@ -565,7 +572,7 @@ def _exact_codes_only(
     for fold, typed in tokens:
         exact = [c for c in candidates if code_of(c) == fold]
         family: list[dict[str, Any]] = []
-        if _code_like(fold):
+        if turn_task.code_or_number(fold):
             family = [c for c in candidates if code_of(c).startswith(fold)] or [
                 c for c in candidates if fold in code_of(c)
             ]
@@ -573,7 +580,7 @@ def _exact_codes_only(
         if chosen:
             keep.update(str(c.get("uuid")) for c in chosen)
             per_token[fold] = len(chosen)
-        elif _code_like(fold):
+        elif turn_task.code_or_number(fold):
             misses[fold] = typed
         else:
             ignored.add(fold)
@@ -4156,7 +4163,12 @@ def _run_stages_body(  # noqa: PLR0915
             # no ledger row, no job.
             outcome = media_intake.no_url_outcome(modality)
         else:
-            caption = jsc.js_string(jsc.get(attachment, "description")) or None
+            # ROGUE-CONVO-REVIEW class G: `jsc.js_string(None)` is the STRING "null" (and
+            # an absent key "undefined"), both truthy, so `or None` never fired and the
+            # parser read a "null" line above the codes (prod photo turns, 6 Oct 2026).
+            # The same truthiness read `media_intake._build_request` makes for `url`.
+            description = jsc.get(attachment, "description")
+            caption = jsc.js_string(description) if jsc.truthy(description) else None
             outcome = media_intake.run(
                 respond_io_id=contact_respond_id,
                 message_id=_message_id(envelope),
@@ -4913,6 +4925,11 @@ def _run_stages_body(  # noqa: PLR0915
         predicate: dict[str, Any] | None = None
         resolved_candidates: dict[str, list[dict[str, Any]]] = {}
         unplaced_tokens: dict[str, str] = {}
+        # ROGUE-CONVO-REVIEW-R2 (reviewer round 2): a turn that skips the resolver (a page
+        # of a carried set, a refused sales-report grant) names no product token, so the
+        # answer to "did this message's own product token miss?" is False there; the
+        # bridge and the set_page carry both read it, with or without a resolve outcome.
+        miss_on_typed_product = False
         # RESOLVER-TOKEN-CAP: the codes the resolver cut at its ceiling and never looked
         # up, as typed - named by the reply's "Not checked:" line, never silently dropped.
         not_checked_tokens: dict[str, str] = {}
@@ -5096,6 +5113,19 @@ def _run_stages_body(  # noqa: PLR0915
             not_checked_tokens = resolve_outcome.not_checked
             spec_tier = resolve_outcome.spec_tier
             resolver_payload = resolve_outcome.payload
+            # ROGUE-CONVO-REVIEW-R2 (crew review on PR #1506): "did THIS message name a
+            # product token the resolver could not place?" is asked ONCE, here, over the
+            # resolver's OWN listing (`turn_runtime.named_unplaced`, before
+            # `_exact_codes_only` below rewrites the engine's copy of the map for the
+            # fetch), and read by both the composer's header (`answer_bridge.answer_for`
+            # -> `not_found_error_message`, rule C) and the `set_page` carry. The
+            # composer used to fold the question a second way (`[-\s]+`, no unicode
+            # dashes), so an en dash in the typed code let the two sides disagree in
+            # silence. Reviewer should-fix 2: the filter's `ignored` (a word with no
+            # digit beside spec-tier rows) is "not a product" for the FETCH, but the
+            # dealer typed it as one and the resolver listed it unplaced, so it stays a
+            # miss on the token here (pinned on the availability profile).
+            miss_on_typed_product = turn_runtime.typed_product_unplaced(verdict, unplaced_tokens)
             # Every turn of availability access, not only a stock / ETA one: a code the
             # dealer names on an order or outstanding turn is carried into the next one, and
             # a bare "eta" after "srtw2000" asked its whole prefix family (tester re-run on
@@ -5984,6 +6014,7 @@ def _run_stages_body(  # noqa: PLR0915
                         profile=state_out.profile,
                         dealer_stock_ask=_dealer_stock_ask(state_out, plan),
                         dealer_incoming_ask=_dealer_incoming_ask(state_out, plan),
+                        product_token_missed=miss_on_typed_product,
                     )
                     if answer is not None:
                         bridge_answered = True
@@ -6199,9 +6230,20 @@ def _run_stages_body(  # noqa: PLR0915
                     and min(asked, business_answer.SET_LIST_MAX) < qualifying
                 )
                 paged = bool(plan.fetch) and isinstance(plan.fetch[0].filters.get("set_page"), dict)
+                # ROGUE-CONVO-REVIEW (owner ruling Q4): a set the spec tier read off the
+                # words INSIDE an unplaced product token is not what the customer asked
+                # for, so it is never carried (prod turn 5, 6 Oct 2026: 145 water closets
+                # carried off a miss on one description line; `set_page_carry` alone keeps
+                # it, because the words gave the set a description). Reviewer finding 2:
+                # a set the customer described with a CLASS word of their own ("which tap
+                # has cert ZZQ9917") is listed by the reply and stays carried, so the
+                # follow-up count continues it; only the missed code is named beside it.
+                # `miss_on_typed_product` is the one computation beside the resolve outcome.
                 if paged:
                     # A page of a carried set: the runner hands back where it stopped.
                     state_out.focus.set_page = envelopes[0].get("set_carry") if envelopes else None
+                elif miss_on_typed_product and not class_terms:
+                    state_out.focus.set_page = None
                 elif withheld or partly_listed or listed_to_the_limit:
                     state_out.focus.set_page = turn_runtime.set_page_carry(
                         predicate,

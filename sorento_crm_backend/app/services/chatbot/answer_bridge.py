@@ -1659,6 +1659,7 @@ def answer_for(
     profile: Any = None,
     dealer_stock_ask: bool = False,
     dealer_incoming_ask: bool = False,
+    product_token_missed: bool = False,
 ) -> turn_compose.Answer | None:
     """The MISS seam (R4): `None` outside its own two triggers (see module docstring),
     so a hit, an `access_denied` refusal, an infrastructure error and a multi-domain plan
@@ -1827,6 +1828,9 @@ def answer_for(
         resolved=resolved,
         gate=miss_gate,
         profile=profile,
+        # ROGUE-CONVO-REVIEW-R2: the engine's one answer to "did this message's own
+        # product token miss?", never re-derived here.
+        product_token_missed=product_token_missed,
         granted_keys=((ctx.get("access") or {}).get("attributes") if isinstance(ctx, Mapping) else None),
     )
     offer = miss_mod.run_miss_lane(
