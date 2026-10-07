@@ -1,0 +1,117 @@
+# Console replay for QUOTED-REPLY (PR #1523; owner report 7 Oct 2026, production): a WhatsApp
+# quote-reply answers the QUOTED bot message, not the newest question. Graded LIVE: the real
+# parser, resolver, presenter and compose; every turn a dry run. The pytest twin, parser
+# stubbed, is `tests/chatbot/test_quoted_reply_engine.py`.
+#
+# NOT collected by pytest. `live_only: true` on every case: the run needs `--live`.
+#
+#   cd sorento_crm_backend
+#   venv/bin/python scripts/chatbot_console_check.py \
+#       tests/chatbot/console_cases/2026-10-07-quoted-reply.yaml \
+#       --base-url http://localhost:<backend port> --contact <dealer contact> --live
+#
+# `quote: <text>` on a turn puts a bot-sourced `replyTo` with that text on the envelope. The
+# engine resolves it against the dry-run turn of the SAME run that said those words (same
+# contact, same test world, created earlier), through the stored-reply text route, exactly as
+# an unstamped production row resolves. The id route (chat_histories.chatbot_turn_id) is
+# covered by `tests/test_chat_history_quoted_link.py`; a dry run writes no chat row.
+#
+# What the database must hold (the shared dev copy does):
+# - `--contact`: a Respond contact on the "Availability only" stock policy with at least one
+#   stored chatbot turn; the quantity question ("How many units of ...?") is asked only on
+#   that view. The `contact:` below is a placeholder, not a real contact.
+# - Products WDI-K5130, WDI-K301-D, SRTBF11841, SRTWC201, SRTKS2433-BL (all present on the
+#   shared dev copy, measured 7 Oct 2026).
+
+contact: "900000039"
+
+_shapes:
+  never: &never
+    - "*stock* for"
+    - "Here's what you want"
+    - "Data last updated"
+
+cases:
+  - name: "1. owner case: two questions asked, each answered by quoting it"
+    live_only: true
+    cold: true
+    turns:
+      - text: "check stock WDI-K5130"
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "How many units of WDI-K5130?"
+      - text: "check stock WDI-K301-D"
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "How many units of WDI-K301-D?"
+      - text: "1 unit"
+        quote: "How many units of WDI-K5130?"
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "WDI-K5130 x 1:"
+          reply_not_contains:
+            - "WDI-K301-D x 1"
+            - "How many units of WDI-K301-D?"
+            - "SRTBF11840"
+      - text: "1 unit"
+        quote: "How many units of WDI-K301-D?"
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "WDI-K301-D x 1:"
+          reply_not_contains:
+            - "WDI-K5130 x 1"
+            - "How many units of WDI-K5130?"
+
+  - name: "2. E2 (6 Oct, live turn 6207c208): quoting an older non-question message makes it the subject"
+    live_only: true
+    cold: true
+    turns:
+      - text: "SRTBF11841"
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "I have SRTBF11841."
+      - text: "Do you have stock of SRTWC201"
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "How many units of SRTWC201?"
+      - text: "have stock? or eta date?"
+        quote: "I have SRTBF11841. What would you like me to know?"
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "SRTBF11841"
+          reply_not_contains:
+            - "How many units of SRTWC201?"
+            - "SRTWC201"
+
+  - name: "3. control: quoting the newest question changes nothing"
+    live_only: true
+    cold: true
+    turns:
+      - text: "check stock SRTKS2433-BL"
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "How many units of SRTKS2433-BL?"
+      - text: "1"
+        quote: "How many units of SRTKS2433-BL?"
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "SRTKS2433-BL x 1:"
+          reply_not_contains: *never
