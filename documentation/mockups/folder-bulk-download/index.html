@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Download selected (ZIP): progress dialog (mockup v1)</title>
+<title>Download selected (ZIP): progress dialog + My downloads (mockup v2)</title>
 <style>
 /* Tokens copied from sorento_crm_frontend/css/config.reui.css (light theme) */
 :root{--background:#fff;--foreground:#09090b;--card:#fff;--muted:#f4f4f5;--muted-fg:#71717a;--border:#ececee;--primary:#3b82f6;--primary-fg:#fff;--primary-soft:#eff6ff;--secondary:#f4f4f5;--destructive:#dc2626;--destructive-soft:#fef2f2;--success:#15803d;--success-soft:#f0fdf4;--warning:#a16207;--warning-soft:#fefce8;--radius:8px;--page:#f7f7f8}
@@ -66,12 +66,31 @@ tr.sel td{background:var(--primary-soft)}
 .map{font-size:13px;border-collapse:collapse;width:100%;max-width:1100px}
 .map td,.map th{white-space:normal;vertical-align:top}
 code{font-size:12px;background:var(--muted);padding:1px 5px;border-radius:4px}
+
+.sheet{position:absolute;right:20px;top:20px;bottom:20px;width:460px;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:0 20px 50px rgba(0,0,0,.14);overflow:hidden}
+.phone .sheet{left:0;right:0;top:0;bottom:0;width:auto;border-radius:0}
+.sh{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--border);font-size:15px;font-weight:600}
+.sh .x{font-weight:400;color:var(--muted-fg)}
+.drow{display:flex;gap:12px;align-items:flex-start;padding:12px 16px;border-bottom:1px solid var(--border)}
+.drow .ft{width:18px;height:20px;border:1.5px solid var(--muted-fg);border-radius:3px;flex:none;margin-top:2px}
+.drow .nm{font-size:13.5px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.drow .kd{font-size:12px;color:var(--muted-fg)}
+.drow .st{margin-top:5px;display:flex;gap:10px;align-items:center;font-size:11.5px}
+.badge{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:1px 8px;border:1px solid var(--border);background:var(--muted);line-height:18px}
+.badge.ready{background:var(--success-soft);color:var(--success);border-color:#bbf7d0}
+.badge.fail{background:var(--destructive-soft);color:var(--destructive);border-color:#fecaca}
+.badge .dot{width:9px;height:9px;border:2px solid var(--primary-soft);border-top-color:var(--primary);border-radius:50%}
+.drow .act{margin-left:auto;display:flex;gap:2px;flex:none}
+.drow .act span{display:inline-flex;width:28px;height:28px;align-items:center;justify-content:center;border-radius:6px;color:var(--muted-fg);font-size:14px}
+.topbar{height:52px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:flex-end;gap:14px;padding:0 20px;font-size:13px;color:var(--muted-fg)}
+.topbar .dl{position:relative;width:28px;height:28px;border-radius:6px;background:var(--muted);display:inline-flex;align-items:center;justify-content:center}
+.topbar .dl b{position:absolute;top:-5px;right:-5px;background:var(--primary);color:#fff;font-size:10px;line-height:16px;min-width:16px;text-align:center;border-radius:8px}
 </style>
 </head>
 <body>
 <div class="doc">
 <h1>Download selected (ZIP): progress dialog</h1>
-<p class="intro">Mockup v1, 7 Oct 2026, lane FOLDER-BULK-DOWNLOAD. Real case: Dashboards > Resources > Files > <b>Marketing</b> (prod copy 6 Oct), three folders selected: Sorento Product Photo (123 subfolders, 1374 files, 1559 MB), Price Tag (4 subfolders, 4 files, 37 MB), Cabana Technical Drawing (empty). 1378 files, 130 folders, 1.6 GB. Every element below reuses an existing component; the list at the end maps each one.</p>
+<p class="intro">Mockup v2 (v1 + My downloads entry, owner feedback "put this under My Downloads also to make this decoupled"), 7 Oct 2026, lane FOLDER-BULK-DOWNLOAD. Real case: Dashboards > Resources > Files > <b>Marketing</b> (prod copy 6 Oct), three folders selected: Sorento Product Photo (123 subfolders, 1374 files, 1559 MB), Price Tag (4 subfolders, 4 files, 37 MB), Cabana Technical Drawing (empty). 1378 files, 130 folders, 1.6 GB. Every element below reuses an existing component; the list at the end maps each one.</p>
 
 <section id="menu">
 <h2><span class="nb">1</span>Action menu with the new item (desktop 1280)</h2>
@@ -159,7 +178,7 @@ code{font-size:12px;background:var(--muted);padding:1px 5px;border-radius:4px}
 <span>1,376 files in 130 folders, 1.6 GB</span>
 <span class="warn">2 files could not be read and were skipped</span>
 <span class="warn">7 files not included (outside your companies)</span>
-<span>Link valid for 1 hour. The archive is removed after 24 hours.</span>
+<span>Also listed in My downloads (top bar). Link valid for 1 hour; the archive is removed after 24 hours.</span>
 </div>
 <div class="foot"><button class="btn">Close</button><button class="btn pri">&#8595; Download ZIP</button></div>
 </div>
@@ -171,7 +190,7 @@ code{font-size:12px;background:var(--muted);padding:1px 5px;border-radius:4px}
 <p class="dh">Download selected</p>
 <p class="dd">Marketing-20261007-1412.zip</p>
 <div class="line ok"><span class="ico">&#10003;</span>Archive ready</div>
-<div class="sum"><span>1,376 files in 130 folders, 1.6 GB</span><span class="warn">2 files could not be read and were skipped</span><span class="warn">7 files not included (outside your companies)</span><span>Link valid for 1 hour.</span></div>
+<div class="sum"><span>1,376 files in 130 folders, 1.6 GB</span><span class="warn">2 files could not be read and were skipped</span><span class="warn">7 files not included (outside your companies)</span><span>Also in My downloads. Link valid for 1 hour.</span></div>
 <div class="foot" style="flex-direction:column"><button class="btn pri">&#8595; Download ZIP</button><button class="btn">Close</button></div>
 </div>
 </div><div class="cap">375: primary first when stacked.</div></div>
@@ -201,8 +220,41 @@ code{font-size:12px;background:var(--muted);padding:1px 5px;border-radius:4px}
 </div>
 </section>
 
+
+<section id="mydownloads">
+<h2><span class="nb">5</span>My downloads entry (decoupled from the dialog)</h2>
+<p class="why">Owner feedback on v1. The same archive is a row in the existing My downloads drawer (top-bar download icon, right-side sheet). Close the dialog, come back later, download from here. The row is created the moment the job starts and follows it: Queued, Preparing, Ready (Download), Failed (reason). Nothing new is drawn: the existing <code>DownloadRow</code> with one new kind label, "Files archive (ZIP)".</p>
+<div class="row">
+<div class="desk"><div class="screen">
+<div class="topbar">Search&hellip; <span class="dl">&#8595;<b>1</b></span> <span>&#9711; TJ</span></div>
+<div class="main" style="opacity:.75"><div class="crumb">Files &rsaquo; Marketing</div><div class="pagehead"><div class="t">Marketing</div></div>
+<table><thead><tr><th style="width:28px"></th><th>Name</th><th>Type</th><th>Company</th></tr></thead><tbody>
+<tr><td><span class="cb"></span></td><td><span class="fold"></span>Sorento Product Photo</td><td>Folder</td><td>Shared</td></tr>
+<tr><td><span class="cb"></span></td><td><span class="fold"></span>Price Tag</td><td>Folder</td><td>Shared</td></tr>
+<tr><td><span class="cb"></span></td><td><span class="fold"></span>Cabana Technical Drawing</td><td>Folder</td><td>Shared</td></tr>
+</tbody></table></div>
+<div class="sheet">
+<div class="sh">My downloads <span class="x">&#10005;</span></div>
+<div class="drow"><span class="ft"></span><div style="min-width:0;flex:1"><div class="nm">Marketing-20261007-1412.zip</div><div class="kd">Files archive (ZIP) &middot; 7 Oct 2026, 14:12</div><div class="st"><span class="badge"><span class="dot"></span>Preparing</span></div></div></div>
+<div class="drow"><span class="ft"></span><div style="min-width:0;flex:1"><div class="nm">Marketing-20261007-1131.zip</div><div class="kd">Files archive (ZIP) &middot; 7 Oct 2026, 11:31</div><div class="st"><span class="badge ready">&#10003; Ready</span><span style="color:var(--muted-fg)">1.6 GB &middot; removed 8 Oct 11:31</span></div></div><div class="act"><span title="Download">&#8595;</span></div></div>
+<div class="drow"><span class="ft"></span><div style="min-width:0;flex:1"><div class="nm">CATALOG SORENTO-20261006-1702.zip</div><div class="kd">Files archive (ZIP) &middot; 6 Oct 2026, 17:02</div><div class="st"><span class="badge fail">&#10005; Failed</span><span style="color:var(--destructive);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">No file could be read</span></div></div></div>
+<div class="drow"><span class="ft"></span><div style="min-width:0;flex:1"><div class="nm">stock_debt_2026-10-06.xlsx</div><div class="kd">Stock debt Excel &middot; 6 Oct 2026, 09:40</div><div class="st"><span class="badge ready">&#10003; Ready</span></div></div><div class="act"><span title="Preview">&#9673;</span><span title="Download">&#8595;</span></div></div>
+</div>
+</div><div class="cap">1280: existing drawer, three archive rows in the three states, one existing xlsx row for comparison. A ZIP row shows Download only (no Preview: nothing to render).</div></div>
+<div class="phone"><div class="screen">
+<div class="sheet">
+<div class="sh">My downloads <span class="x">&#10005;</span></div>
+<div class="drow"><span class="ft"></span><div style="min-width:0;flex:1"><div class="nm">Marketing-20261007-1412.zip</div><div class="kd">Files archive (ZIP) &middot; 7 Oct, 14:12</div><div class="st"><span class="badge"><span class="dot"></span>Preparing</span></div></div></div>
+<div class="drow"><span class="ft"></span><div style="min-width:0;flex:1"><div class="nm">Marketing-20261007-1131.zip</div><div class="kd">Files archive (ZIP) &middot; 7 Oct, 11:31</div><div class="st"><span class="badge ready">&#10003; Ready</span><span style="color:var(--muted-fg)">1.6 GB</span></div></div><div class="act"><span title="Download">&#8595;</span></div></div>
+<div class="drow"><span class="ft"></span><div style="min-width:0;flex:1"><div class="nm">CATALOG SORENTO-20261006-1702.zip</div><div class="kd">Files archive (ZIP) &middot; 6 Oct, 17:02</div><div class="st"><span class="badge fail">&#10005; Failed</span></div></div></div>
+</div>
+</div><div class="cap">375: the sheet fills the screen as it does today.</div></div>
+</div>
+<p class="note">Lifecycle: row created <b>pending</b> when Download selected is clicked (same request that starts the job); <b>processing</b> when the worker starts; <b>ready</b> with the storage key when the archive is uploaded; <b>failed</b> with the one-line reason otherwise. The dialog and the drawer read the same row, so the dialog's Download ZIP and the drawer's Download open the same 1-hour link. Removal after 24 h is the existing daily purge with a 24 h window for this kind (every other kind keeps its 30 days).</p>
+</section>
+
 <section id="map">
-<h2><span class="nb">5</span>Element to component map</h2>
+<h2><span class="nb">6</span>Element to component map</h2>
 <table class="map"><thead><tr><th>Element</th><th>Reuses</th></tr></thead><tbody>
 <tr><td>Action menu item "Download selected"</td><td><code>driveBulkActions.ts</code> item list (same <code>ToolbarAction</code> shape as Move / Export), rendered by the panel's Action dropdown at <code>AttachmentsInFolderPanel.tsx:749-790</code>; icon from the panel's <code>BULK_ACTION_ICONS</code> map (lucide <code>Download</code>; Export switches to <code>FileSpreadsheet</code>)</td></tr>
 <tr><td>Dialog frame, title, description, footer</td><td><code>components/ui/dialog</code> (<code>Dialog</code>, <code>DialogContent className="max-w-lg"</code>, <code>DialogHeader</code>, <code>DialogTitle</code>, <code>DialogDescription</code>, <code>DialogFooter</code>) exactly as <code>AttachmentBulkImportDialog.tsx:166-172</code></td></tr>
@@ -213,7 +265,9 @@ code{font-size:12px;background:var(--muted);padding:1px 5px;border-radius:4px}
 <tr><td>Summary lines</td><td><code>text-sm text-muted-foreground space-y-1</code> block, import dialog <code>:298-301</code>; warning lines use <code>text-amber-600</code> like its errors summary</td></tr>
 <tr><td>Buttons</td><td><code>components/ui/button</code> <code>Button</code> (default = primary, <code>variant="outline"</code> for Cancel / Close)</td></tr>
 <tr><td>Cancel download</td><td>existing <code>POST /system/jobs/{id}/cancel</code> (<code>jobs.py:465</code>); row flips to <code>cancelled</code> at once</td></tr>
-<tr><td>Download ZIP</td><td>existing <code>GET /system/jobs/{id}/source</code> (<code>jobs.py:358</code>), returns the 1-hour signed URL, opened in the browser</td></tr>
+<tr><td>Download ZIP (dialog) and Download (drawer row)</td><td>existing <code>GET /api/v1/downloads/{download_id}/url</code> (<code>app/api/v1/downloads/downloads.py:47-64</code>, owner-only, 1-hour signed URL), the same call the drawer already makes (<code>DownloadRow.tsx:87-93</code>)</td></tr>
+<tr><td>My downloads drawer, rows, badge, top-bar icon</td><td>existing <code>components/my-downloads/MyDownloadsDrawer.tsx</code>, <code>DownloadRow.tsx</code> (<code>StatusBadge</code> :57-78, row :120-204), <code>MyDownloadsIcon.tsx</code>; ONE new entry in <code>KIND_LABEL</code> (<code>DownloadRow.tsx:35-55</code>): <code>attachment_bulk_zip: 'Files archive (ZIP)'</code>; Preview control hidden for this kind</td></tr>
+<tr><td>My downloads row lifecycle</td><td>existing <code>DownloadService.create / mark_processing / mark_ready / mark_failed</code> (<code>app/services/download_service.py:23-44</code>, <code>:195-248</code>), as every other async export; purge = existing <code>purge_expired_downloads</code> (<code>:250</code>) with a per-kind 24 h window</td></tr>
 <tr><td>Toasts</td><td><code>sonner</code> <code>toast.error</code> only for a failed start call (as every mutation hook)</td></tr>
 </tbody></table>
 </section>
