@@ -188,3 +188,16 @@ describe('Transfer to Cancel SO names the rows it skips (AC-F18)', () => {
     expect(dialog.textContent).not.toMatch(/will be skipped/);
   });
 });
+
+describe('Borrow dialog before a pick (AC-F21)', () => {
+  it.each(['Borrow from another order', 'Borrow other location'])(
+    '%s: no "will be skipped" sentence until a donor or location is picked',
+    async (item) => {
+      renderControl([row(), row({ key: 'so-1:line-20', line_no: 20 })]);
+      openMenu();
+      fireEvent.click(screen.getByRole('menuitem', { name: item }));
+      const dialog = await screen.findByRole('dialog');
+      expect(dialog.textContent).not.toMatch(/will be skipped/);
+    },
+  );
+});

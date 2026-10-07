@@ -5218,3 +5218,52 @@ describe('FulfilmentBoardPanel: SO-CANCEL-LINE round 4 cancel held back by a pen
     expect(block).not.toHaveTextContent(/commits after the pending change/);
   });
 });
+
+// SO-CANCEL-LINE round 7 (AC-F20): a cancel-only press reads as a transfer, not a revision.
+describe('FulfilmentBoardPanel: SO-CANCEL-LINE round 7 cancel-only results sentence', () => {
+  beforeEach(() => {
+    getPlanningChangeBatch.mockReset();
+  });
+
+  const cancelled = [
+    { line_no: 1, item_code: 'CB110' },
+    { line_no: 2, item_code: 'CB110-R' },
+    { line_no: 3, item_code: 'CB110LP' },
+  ];
+
+  async function pressWith(result: Record<string, unknown>) {
+    getPlanningBoard.mockResolvedValue(
+      allSaved(boardOf([demand({ line_no: 1, item_code: 'WESERP10B' })])),
+    );
+    confirmMany.mockResolvedValue({ results: [{ pso_id: 'pso-so-a', ok: true, ...result }] });
+    renderPanel(['SO403340']);
+    await pressPreviewThenConfirm();
+    return screen.findByTestId('board-confirm-results');
+  }
+
+  it('AC-F20: cancel-only reads "3 lines transferred to Cancel SO", no revision or purchase row', async () => {
+    const block = await pressWith({
+      decision_revision: null,
+      revision_no: null,
+      inquiry_rows_created: 0,
+      lines_confirmed: [],
+      lines_carried: 0,
+      lines_cancelled: cancelled,
+    });
+    expect(block).toHaveTextContent(/SO403340: 3 lines transferred to Cancel SO/);
+    expect(block.textContent).not.toMatch(/revision/);
+    expect(block.textContent).not.toMatch(/purchase row/);
+  });
+
+  it('control: a mixed result keeps "confirmed as revision 1"', async () => {
+    const block = await pressWith({
+      decision_revision: 1,
+      revision_no: 1,
+      inquiry_rows_created: 0,
+      lines_confirmed: [{ project_line_id: 'pl-so-a-1', line_no: 1, item_code: 'WESERP10B' }],
+      lines_carried: 0,
+      lines_cancelled: cancelled.slice(0, 2),
+    });
+    expect(block).toHaveTextContent('confirmed as revision 1');
+  });
+});
