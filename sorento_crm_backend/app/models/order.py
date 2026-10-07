@@ -669,6 +669,11 @@ class SalesOrder(Base, CompanyScopedMixin):
     # source never said - every order that predates the field or came from Excel - and
     # counts like T. Migration sotr_0001.
     is_transferable = Column(Boolean, nullable=True)
+    # The customer's own PO number for this order (SO-PO-REF), as AutoCount printed it, and
+    # its folded key (`app.services.scm.po_ref.po_ref_key`) the chatbot matches on. Written
+    # only by the ESB ingest, never touches `project_label`. Migration sopr_0001.
+    po_ref = Column(String(255), nullable=True)
+    po_ref_key = Column(String(255), nullable=True)
     created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=False), server_default=func.now(), onupdate=func.now(), nullable=False)
 

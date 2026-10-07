@@ -38,6 +38,7 @@ from app.services.chatbot_parser_prompt import (
     TRAP_SPECS_FALLBACK_BLOCK,
     LOW_STOCK_FILTERS_ADDENDUM,
     PROMOTION_KIND_ADDENDUM,
+    PO_REFS_ADDENDUM,
     PO_SPO_WAREHOUSE_ADDENDUM,
     QUANTITY_ADDENDUM,
     SALES_ANALYSIS_ADDENDUM,
@@ -261,6 +262,8 @@ def _without_growth_r1_addendum(text: str) -> str:
         text = text[: -len(PROMOTION_KIND_ADDENDUM)]
     if text.endswith(CANONICAL_CODE_ADDENDUM):
         text = text[: -len(CANONICAL_CODE_ADDENDUM)]
+    if text.endswith(PO_REFS_ADDENDUM):
+        text = text[: -len(PO_REFS_ADDENDUM)]
     if text.endswith(LOW_STOCK_FILTERS_ADDENDUM):
         text = text[: -len(LOW_STOCK_FILTERS_ADDENDUM)]
     if text.endswith(ACCOUNT_LEDGER_ADDENDUM):

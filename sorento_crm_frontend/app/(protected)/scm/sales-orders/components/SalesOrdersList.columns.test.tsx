@@ -13,7 +13,7 @@
  */
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 if (!window.matchMedia) {
@@ -227,6 +227,36 @@ describe('SalesOrdersList - Project column (AC-F1)', () => {
     renderList();
 
     await screen.findByText('SO900001');
+    expect(screen.getAllByText('-').length).toBeGreaterThan(0);
+  });
+});
+
+describe('SalesOrdersList - PO ref column (SO-PO-REF U10)', () => {
+  it('is headed "PO ref" and is sortable', async () => {
+    stub([order({ po_ref: 'PO-4500 123' } as Partial<SalesOrder>)]);
+    renderList();
+
+    const headers = await screen.findAllByRole('columnheader');
+    const header = headers.find((h) => h.textContent?.includes('PO ref'));
+    expect(header).toBeDefined();
+    expect(within(header as HTMLElement).getByRole('button', { name: 'PO ref' })).toBeInTheDocument();
+  });
+
+  it('renders the raw value, truncated with a title', async () => {
+    stub([order({ po_ref: 'PO-4500 123' } as Partial<SalesOrder>)]);
+    renderList();
+
+    const cell = await screen.findByText('PO-4500 123');
+    expect(cell).toHaveAttribute('title', 'PO-4500 123');
+    expect(cell.className).toContain('truncate');
+  });
+
+  it('reads "-" when the order has no PO ref', async () => {
+    stub([order({ po_ref: null } as Partial<SalesOrder>)]);
+    renderList();
+
+    await screen.findByText('SO900001');
+    expect(screen.queryByText('PO-4500 123')).toBeNull();
     expect(screen.getAllByText('-').length).toBeGreaterThan(0);
   });
 });

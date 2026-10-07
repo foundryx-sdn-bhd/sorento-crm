@@ -727,6 +727,29 @@ kind's code. A bare word that names no listed kind ("flyer", "brochure"), or no 
 "promotion_kind": null. Never invent a code.
 """
 
+# SO-PO-REF (owner, 7 Oct 2026): a customer's own PO number, read HERE and nowhere else. The
+# code never pattern-matches a PO number out of the message; `po_refs` is the only way one
+# reaches the business lane, and the lane (not the parser) decides the audience: a dealer or
+# customer's "PO" is their own PO number on a sales order, staff's stays the supplier PO
+# path. ADDITIVE ONLY, beneath LOW_STOCK_FILTERS_ADDENDUM (MEMORY_ADDENDUM stays the tail),
+# published as a new UNLABELLED version by migration `sopr_0002_parser_po_refs`.
+PO_REFS_ADDENDUM = """
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PO REFS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+One more OUTPUT key, on every object:
+  "po_refs": ["..."] or null
+Fill it whenever the CURRENT message gives a PO number, in any language or mix: "status of
+PO 4500123", "PO no 4500123", "our PO 4500123", "my PO is 4500123", "PO#4500123", "PO
+4500-123". Put the number as typed WITHOUT the word PO or "no" or "#" ("4500123",
+"4500-123"); one string per number. Do NOT decide who the PO belongs to or what it means
+(you do not know the asker's audience): fill po_refs the same way whoever asks, and keep
+every other key as you would without it. A message with no PO number: null. Never invent
+a number, never take one from an earlier turn.
+"""
+
 # Main's literal now carries ESCALATION_CONFIRMATION_ADDENDUM as its tail (#1323), so it
 # is peeled off, TOP_SELLING_ADDENDUM goes on beneath it, and it is put back as the tail.
 SEMANTIC_PARSER_PROMPT = SEMANTIC_PARSER_PROMPT.removesuffix(ESCALATION_CONFIRMATION_ADDENDUM)
@@ -736,6 +759,7 @@ SEMANTIC_PARSER_PROMPT += ESCALATION_CONFIRMATION_ADDENDUM
 SEMANTIC_PARSER_PROMPT += PO_SPO_WAREHOUSE_ADDENDUM
 SEMANTIC_PARSER_PROMPT += ACCOUNT_LEDGER_ADDENDUM
 SEMANTIC_PARSER_PROMPT += LOW_STOCK_FILTERS_ADDENDUM
+SEMANTIC_PARSER_PROMPT += PO_REFS_ADDENDUM
 # RESOLVE-SEMANTIC-FALLBACK (owner report, 6 Oct 2026 20:02 MYT, prod: the stock-check
 # line "TAP SRTWT5608 x 5" came back "I could not find TAP SRTWT5608" while SRTWT5608
 # exists). The parser emitted ONE product entity, raw "TAP SRTWT5608", canonical_code

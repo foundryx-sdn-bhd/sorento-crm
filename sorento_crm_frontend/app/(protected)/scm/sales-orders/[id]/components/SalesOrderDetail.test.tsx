@@ -367,6 +367,31 @@ describe('SalesOrderDetail - states', () => {
     expect(within(field()).getByText('-')).toBeInTheDocument();
   });
 
+  it('the Order card shows a read-only PO ref next to Project, or a dash (SO-PO-REF U11)', () => {
+    useSalesOrder.mockReturnValue({
+      data: so({ po_ref: 'PO-4500 123' } as Partial<SalesOrder>),
+      isLoading: false,
+      isError: false,
+    });
+    const { unmount } = renderDetail();
+    const field = () =>
+      screen.getByText('PO ref', { selector: 'span.text-xs.text-muted-foreground' }).closest(
+        'div',
+      ) as HTMLElement;
+    expect(within(field()).getByText('PO-4500 123')).toBeInTheDocument();
+    // Not editable: AutoCount owns it, so no input appears in the field even in edit.
+    expect(within(field()).queryByRole('textbox')).toBeNull();
+    unmount();
+
+    useSalesOrder.mockReturnValue({
+      data: so({ po_ref: null } as Partial<SalesOrder>),
+      isLoading: false,
+      isError: false,
+    });
+    renderDetail();
+    expect(within(field()).getByText('-')).toBeInTheDocument();
+  });
+
   it('states what the order is worth, in ringgit, and a dash when nobody priced it', () => {
     useSalesOrder.mockReturnValue({ data: so(), isLoading: false, isError: false });
     const { unmount } = renderDetail();
@@ -2314,5 +2339,94 @@ describe('SalesOrderDetail - R4: Add line on the edit screen', () => {
     const after = screen.getAllByRole('spinbutton').length;
 
     expect(after).toBeGreaterThan(before);
+  });
+});
+
+/**
+ * SO-LINE-CHANGE-HISTORY F1 (red-first): the What-changed dialog prints the batch row's Was
+ * and Now sides, read off `planning_change.from` / `planning_change.to`.
+ */
+describe('SalesOrderDetail - What changed dialog Was / Now sides', () => {
+  const SENTENCE =
+    'The book moved this line without changing its quantity, its date or its decision.';
+  const side = (qty: string, required_date: string) => ({
+    qty,
+    required_date,
+    status: null,
+    item_code: 'SKU-PLANNED',
+  });
+
+  function openChange(planning_change: Record<string, unknown>) {
+    useSalesOrder.mockReturnValue({
+      data: so({
+        lines: [
+          {
+            id: 'l-planned',
+            sku: 'SKU-PLANNED',
+            product_name: 'Planned line',
+            qty_ordered: 280,
+            qty_delivered: 0,
+            uom: 'PCS',
+            warehouse_code: 'BRW-BB',
+            line_status: 'open',
+            required_date: '2027-03-01',
+            order_inquiry: { inquiry_no: 'OI-000123', state: 'placed' },
+            decision_revision: 2,
+            planning_change: {
+              id: 'pcr-sides',
+              applied_state: 'applied',
+              result: null,
+              ...planning_change,
+            },
+          } as unknown as SalesOrderLine,
+        ],
+        line_count: 1,
+      }),
+      isLoading: false,
+      isError: false,
+    });
+    renderDetail();
+    openTab('Lines');
+    const row = screen.getByText('SKU-PLANNED').closest('tr') as HTMLElement;
+    fireEvent.click(within(row).getByTestId('board-change-icon-pcr-sides'));
+    return screen.getByTestId('board-change-dialog');
+  }
+
+  it('AC-3: shows Qty 182 | 280 and Date 01/06/2026 | 01/03/2027, not the moved-nothing sentence', () => {
+    const dialog = openChange({
+      kind: 'qty_up',
+      from: side('182', '2026-06-01'),
+      to: side('280', '2027-03-01'),
+    });
+    expect(dialog).toHaveTextContent('182');
+    expect(dialog).toHaveTextContent('280');
+    expect(dialog).toHaveTextContent('01/06/2026');
+    expect(dialog).toHaveTextContent('01/03/2027');
+    expect(dialog).not.toHaveTextContent(SENTENCE);
+  });
+
+  it('AC-4: a date-only change prints the Date row and no Qty row', () => {
+    const dialog = openChange({
+      kind: 'date_changed',
+      from: side('96', '2026-11-19'),
+      to: side('96', '2026-12-15'),
+    });
+    expect(dialog).toHaveTextContent('19/11/2026');
+    expect(dialog).toHaveTextContent('15/12/2026');
+    expect(within(dialog).queryByRole('rowheader', { name: 'Qty' })).not.toBeInTheDocument();
+  });
+
+  it('AC-5: null sides keep the moved-nothing sentence', () => {
+    const dialog = openChange({ kind: 'qty_up', from: null, to: null });
+    expect(dialog).toHaveTextContent(SENTENCE);
+  });
+
+  it('AC-6: a cancelled change with a from side still reads Cancelled', () => {
+    const dialog = openChange({
+      kind: 'cancelled',
+      from: side('3', '2026-08-30'),
+      to: null,
+    });
+    expect(dialog).toHaveTextContent('Cancelled');
   });
 });

@@ -5960,6 +5960,7 @@ def _run_stages_body(  # noqa: PLR0915
                         if state_in.pending is not None and state_in.pending.kind == "tier_pick"
                         else None
                     ),
+                    profile=state_out.profile,
                     resolver_gate=(
                         resolver_payload.get("gate")
                         if isinstance(resolver_payload, dict)

@@ -1463,6 +1463,44 @@ def run_fetch(
             # (`answer_bridge._miss_triggers`).
             fragment["fetch"]["so_status"] = True
             return fragment
+    # SO-PO-REF: the parser's `po_refs` is a dealer/customer's own PO number, answered from
+    # `sales_orders.po_ref_key` inside their links (`so_status.lookup_po_refs`). Staff turns
+    # arrive with it cleared (`turn_runtime.make_tool_runner`), so their "PO" stays the
+    # supplier PO path. The number is never read off the message text here.
+    po_refs = [w for w in jsc.array(parse_output.get("po_refs")) if isinstance(w, str) and w.strip()]
+    if po_refs:
+        access_ctx = ctx.get("access") if isinstance(ctx.get("access"), dict) else {}
+        granted_raw = access_ctx.get("attributes")
+        granted = set(granted_raw) if isinstance(granted_raw, (list, tuple, set, frozenset)) else set()
+        if _OUTSTANDING_SO_GRANT not in granted:
+            if trace is not None:
+                trace.add("so_status", {"refused": "not_granted", "needs": _OUTSTANDING_SO_GRANT})
+            refusal = _fixed_reply(fetch_mod.SO_NOT_ENABLED_MESSAGE)
+            # The refusal is the whole answer: the miss ladder (escalation offer) stands down.
+            refusal["fetch"]["so_status"] = True
+            return refusal
+        if db is not None:
+            from app.services.chatbot import so_status
+
+            linked = list(customer_scope.get("linked") or [])
+            looked = so_status.lookup_po_refs(db, po_refs, linked=linked)
+            if trace is not None:
+                trace.add(
+                    "so_status",
+                    {"asked_po_refs": po_refs, "cards": len(looked.cards), "missing": looked.missing},
+                )
+            texts: list[str] = []
+            seen_refs: set[str] = set()
+            for ref in po_refs:
+                folded = so_status.po_ref_key(ref)
+                if not folded or folded in seen_refs:
+                    continue
+                seen_refs.add(folded)
+                texts.append(so_status.po_ref_reply_text(looked, ref))
+            if texts:
+                fragment = _fixed_reply("\n\n".join(texts))
+                fragment["fetch"]["so_status"] = True
+                return fragment
     # SO-NUMBER-ASK, the SO list ("all my sales orders"): the customers in scope (the
     # links on a scoped or "my" turn, a resolved customer otherwise), behind the same SO
     # reveal key (Q4), over a period of at most 31 days asked like the DO list's (Q1).
