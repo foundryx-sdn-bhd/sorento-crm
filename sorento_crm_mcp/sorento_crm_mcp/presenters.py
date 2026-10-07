@@ -2107,8 +2107,8 @@ def _outstanding_capped_group(
 
     R3 (owner ruling, 7 Oct 2026, ask a69045557): the trailer counts, nothing more. The
     first cut ended the line with a bracketed `reply 1` pointer at "the full list" and the
-    second with one at "the delivery order list"; each read, above `Reply 1 for the delivery
-    order list.`, as a second offer sharing one number. The closing offer line is the one pointer, unchanged from
+    second with one at "the delivery order list"; each read, above `Reply 1 for the
+    delivery order list.`, as a second offer sharing one number. The closing offer line is the one pointer, unchanged from
     before the cap, and `1` is the detail list exactly as on main. The chatbot lane reads
     the pending offer off the rendered text with anchored patterns (`^\\d+\\. ... list$` /
     `^Reply \\d+ for the ...\\.$`); this line starts with `...` and matches none of them.

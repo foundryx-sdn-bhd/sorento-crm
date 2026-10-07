@@ -1,5 +1,9 @@
 # DO-SUMMARY-CAP round 2 console pass (lane test copy, 7 Oct 2026)
 
+> R3 (7 Oct 2026, owner ruling on ask a69045557): the replies below carry the round 2 bracket
+> `(reply 1 for the delivery order list)`. The trailer now counts only, `... and 20 more
+> products`, and the offer line alone points. The R3 run is `console-pass-r3-07oct.md`.
+
 Head 8ae0621e1 (red b3e04d966, fix ccc4983db, docs 7487be97a, origin/main 292a366ee merged),
 served by the crew test copy on :3103 / :8103 / MCP :8203 (`lanes.json` sha 8ae0621e1e1b),
 shared dev copy `sorento_cagent_stack`, the REAL parser (`production` label), every turn a dry
