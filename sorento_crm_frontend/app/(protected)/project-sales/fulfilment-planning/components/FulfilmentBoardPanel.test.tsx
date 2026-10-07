@@ -5179,6 +5179,26 @@ describe('FulfilmentBoardPanel: SO-CANCEL-LINE round 4 cancel held back by a pen
     );
   }
 
+  /** The pending batch b-1 names these planning lines (round 8: only a NAMED line is held). */
+  function batchNaming(...lineIds: string[]) {
+    getPlanningChangeBatch.mockResolvedValue({
+      id: 'b-1',
+      created_at: '2026-09-01T00:00:00Z',
+      applied_at: null,
+      applied_by_name: null,
+      orders: [
+        {
+          so_number: 'SO403340',
+          rows: lineIds.map((id, i) => ({
+            id: `pcr-${i}`,
+            project_line_id: id,
+            applied_state: 'pending',
+          })),
+        },
+      ],
+    });
+  }
+
   async function press() {
     confirmMany.mockResolvedValue({
       results: [
@@ -5197,6 +5217,7 @@ describe('FulfilmentBoardPanel: SO-CANCEL-LINE round 4 cancel held back by a pen
   }
 
   it('AC-F13: lists the saved cancel per line under the pending change', async () => {
+    batchNaming('pl-so-a-2');
     getPlanningBoard.mockResolvedValue(batchedBoard());
     const block = await press();
     expect(block).toHaveTextContent(
@@ -5205,6 +5226,7 @@ describe('FulfilmentBoardPanel: SO-CANCEL-LINE round 4 cancel held back by a pen
   });
 
   it('AC-F14: an order sentence for cancels only names Cancel SO, never a rejection', async () => {
+    batchNaming('pl-so-a-2');
     getPlanningBoard.mockResolvedValue(batchedBoard());
     const block = await press();
     const sentence = within(block).getByText(/^SO403340: (has|was confirmed, but)/);
@@ -5213,8 +5235,24 @@ describe('FulfilmentBoardPanel: SO-CANCEL-LINE round 4 cancel held back by a pen
   });
 
   it('AC-F15: an unplannable cancel is not listed as held back by the batch', async () => {
+    batchNaming('pl-so-a-2');
     getPlanningBoard.mockResolvedValue(batchedBoard({ cancelLine: { unplannable: true } }));
     const block = await press();
+    expect(block).not.toHaveTextContent(/commits after the pending change/);
+  });
+
+  it('AC-F23: a saved cancel on a line the batch does NOT name is posted beside batch_id, not held', async () => {
+    batchNaming('pl-so-a-1');
+    getPlanningBoard.mockResolvedValue(batchedBoard());
+    const block = await press();
+    await waitFor(() => expect(confirmMany).toHaveBeenCalledTimes(1));
+    const [body] = confirmMany.mock.calls[0] as [
+      { orders: { batch_id: string | null; cancelled_lines: { project_line_id: string; reason: string }[] }[] },
+    ];
+    expect(body.orders[0].batch_id).toBe('b-1');
+    expect(body.orders[0].cancelled_lines).toEqual([
+      { project_line_id: 'pl-so-a-2', reason: 'CANCEL ORDER' },
+    ]);
     expect(block).not.toHaveTextContent(/commits after the pending change/);
   });
 });

@@ -350,16 +350,113 @@ def test_c9_one_press_confirms_b_and_cancels_a_then_a_later_press_skips_a(api):
     assert not again.json().get("failing_lines")
 
 
-def test_c12_cancelled_lines_beside_a_batch_id_is_422(api):
+def _open_batch_naming(world, w, line_key):
+    """An OPEN planning-change batch with one pending `qty_up` row on `w[line_key]`'s line."""
+    from .test_fulfilment_line_draft_route import _planning_change_row
+    from app.services.planning_change_service import PLANNING_CHANGE_STATE_PENDING
+
+    if line_key == "open":
+        core, line = w["open"]
+        product = world.product
+    else:
+        core, line, product = w[line_key]
+    _row, batch = _planning_change_row(
+        world.db, order=w["order"], line=line, core_line=core, product=product,
+        applied_state=PLANNING_CHANGE_STATE_PENDING, batch_applied_at=None,
+    )
+    world.db.commit()
+    return batch
+
+
+def test_c12_a_cancel_of_a_line_the_batch_names_beside_its_batch_id_is_422(api):
+    """AC-C12 (round 8, option b): the 422 now needs the batch to NAME the cancelled line.
+    Was: any `cancelled_lines` beside a `batch_id` (a bare fake batch id) was refused."""
     client, world = api
     w = _cb_world(world)
     core_a, mirror_a, _p = w["a"]
+    batch = _open_batch_naming(world, w, "a")
     response = client.post(
         f"{BASE}/sales-orders/{w['order'].id}/confirm",
-        json=dict(_cancel_body(mirror_a), batch_id="00000000-0000-4000-8000-000000000001"),
+        json=dict(_cancel_body(mirror_a), batch_id=str(batch.id)),
     )
     assert response.status_code == 422, response.text
     assert _status(world.db, core_a.id) == "closed"
+    assert _raw(world.db, core_a.id).cancelled_at is None
+
+
+def test_c23_a_cancel_of_a_line_the_batch_does_not_name_rides_along_with_the_batch(api):
+    """AC-C23 (round 8, option b): batch names the open line; A is not in it."""
+    from app.models.planning_change import PlanningChangeBatch, PlanningChangeRow
+
+    client, world = api
+    w = _cb_world(world)
+    core_a, mirror_a, product_a = w["a"]
+    _open_core, open_line = w["open"]
+    db = world.db
+    inquiry = _inquiry(db, world.company_id, w["order"].id)
+    ack_a = _oi_row(db, world.company_id, inquiry.id, mirror_a.id, product_a.product_code, "36")
+    batch = _open_batch_naming(world, w, "open")
+    batch_id = str(batch.id)
+
+    response = client.post(
+        f"{BASE}/fulfilment-planning/confirm-all",
+        json={"orders": [dict(
+            _cancel_body(mirror_a, lines=[_line_payload(open_line.id, buy_qty="5")]),
+            pso_id=w["order"].id, batch_id=batch_id,
+        )]},
+    )
+
+    assert response.status_code == 200, response.text
+    result = response.json()["results"][0]
+    assert result["ok"] is True, result
+    assert [r["line_no"] for r in result["lines_cancelled"]] == [10]
+    raw = _raw(db, core_a.id)
+    assert raw.line_status == "cancelled"
+    assert raw.cancelled_at is not None
+    assert raw.cancel_reason == REASON
+    db.expire_all()
+    db.refresh(ack_a)
+    assert ack_a.ack_state == ACK_CHANGED
+    # The batch applied exactly as it would without the cancel.
+    rows = db.query(PlanningChangeRow).filter(PlanningChangeRow.batch_id == batch_id).all()
+    assert rows and all(r.applied_state == "applied" for r in rows)
+    assert db.get(PlanningChangeBatch, batch_id).applied_at is not None
+
+
+def test_c24_a_refused_cancel_beside_a_batch_press_writes_neither(api):
+    """AC-C24 (GUARD: the cancel validates before the batch, so this passes once C23's
+    ride-along exists and must keep passing): A is already cancelled (409), the batch names
+    the open line only; the batch stays pending and nothing is rewritten."""
+    from app.models.planning_change import PlanningChangeBatch, PlanningChangeRow
+
+    client, world = api
+    w = _cb_world(world)
+    core_a, mirror_a, _p = w["a"]
+    _open_core, open_line = w["open"]
+    db = world.db
+    core_a.line_status = "cancelled"
+    core_a.cancelled_at = datetime(2026, 10, 1, 9, 0, 0)
+    core_a.cancel_reason = "first reason"
+    batch = _open_batch_naming(world, w, "open")
+    batch_id = str(batch.id)
+    before = _raw(db, core_a.id)
+
+    response = client.post(
+        f"{BASE}/fulfilment-planning/confirm-all",
+        json={"orders": [dict(
+            _cancel_body(mirror_a, lines=[_line_payload(open_line.id, buy_qty="5")]),
+            pso_id=w["order"].id, batch_id=batch_id,
+        )]},
+    )
+
+    result = response.json()["results"][0] if response.status_code == 200 else {}
+    assert response.status_code != 200 or result.get("ok") is False, response.text
+    after = _raw(db, core_a.id)
+    assert after.cancelled_at == before.cancelled_at
+    assert after.cancel_reason == "first reason"
+    rows = db.query(PlanningChangeRow).filter(PlanningChangeRow.batch_id == batch_id).all()
+    assert rows and all(r.applied_state != "applied" for r in rows)
+    assert db.get(PlanningChangeBatch, batch_id).applied_at is None
 
 
 # ---------------------------------------------------------------- AC-C8 board read

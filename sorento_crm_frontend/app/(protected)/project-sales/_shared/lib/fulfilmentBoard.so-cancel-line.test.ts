@@ -100,13 +100,27 @@ describe('a cancel draft on a covered line is no press at all (AC-F10)', () => {
   });
 });
 
-describe('a cancel draft under a pending planning change is held, not counted (AC-F11)', () => {
+// Round 8 (crew ruling 7 Oct, option b): a cancel is held back by a pending planning change
+// ONLY when the batch NAMES that line. The batch's own lines reach the lib as
+// `batchNamedKeys: ReadonlySet<string>` (contribution keys; the panel feeds it
+// `preMarkedKeys` of the loaded batches, boardChangeAnnotations.ts:686), beside the
+// order-level `batchBlocked` / `batchBlockedSalesOrderIds` that already exist. Accepted by
+// `pressPostsContribution` options, `plannedLineCount` / `cancelledLinesFor` options
+// (`ConfirmScopeOptions`) and `confirmDialogRowsFor` context.
+describe('a cancel draft the pending planning change NAMES is held, not counted (AC-F11)', () => {
   const contribution = row();
   const draft: BoardDraft = { [contribution.key]: CANCEL };
+  const named = new Set([contribution.key]);
 
   it('is not a press and is not counted', () => {
-    expect(pressPostsContribution(contribution, CANCEL, { batchBlocked: true })).toBe(false);
-    expect(plannedLineCount([contribution], 'so-1', draft, new Set(['so-1']))).toBe(0);
+    expect(
+      pressPostsContribution(contribution, CANCEL, { batchBlocked: true, batchNamedKeys: named } as never),
+    ).toBe(false);
+    expect(
+      plannedLineCount([contribution], 'so-1', draft, new Set(['so-1']), {
+        batchNamedKeys: named,
+      } as never),
+    ).toBe(0);
     expect(plannedLineCount([contribution], 'so-1', draft, new Set())).toBe(1);
   });
 
@@ -115,9 +129,45 @@ describe('a cancel draft under a pending planning change is held, not counted (A
       currentUserName: 'Cyndi',
       openedAt: new Date('2026-10-01T00:00:00Z'),
       batchBlockedSalesOrderIds: new Set(['so-1']),
-    });
+      batchNamedKeys: named,
+    } as never);
     expect(dialog.rows).toHaveLength(0);
     expect(dialog.notPosted).toHaveLength(1);
+  });
+});
+
+describe('a cancel draft on a batch-blocked order whose line the batch does NOT name rides along (AC-F23)', () => {
+  const cancelLine = row();
+  const batchLine = row({ key: 'so-1|20|CB110-R|2026-10-01', project_line_id: 'pl-20', line_no: 20 });
+  const contributions = [cancelLine, batchLine];
+  const draft: BoardDraft = { [cancelLine.key]: CANCEL };
+  const named = new Set([batchLine.key]);
+  const blocked = new Set(['so-1']);
+
+  it('is a press, is counted, and is sent in cancelled_lines beside the batch', () => {
+    expect(
+      pressPostsContribution(cancelLine, CANCEL, { batchBlocked: true, batchNamedKeys: named } as never),
+    ).toBe(true);
+    expect(
+      plannedLineCount(contributions, 'so-1', draft, blocked, { batchNamedKeys: named } as never),
+    ).toBe(1);
+    expect(
+      board.cancelledLinesFor(contributions, 'so-1', draft, {
+        batchBlocked: true,
+        batchNamedKeys: named,
+      } as never),
+    ).toEqual([{ project_line_id: 'pl-10', reason: 'Customer cancelled on the phone' }]);
+  });
+
+  it('the dialog lists it as Cancel SO, not under not posted', () => {
+    const dialog = confirmDialogRowsFor(contributions, draft, {
+      currentUserName: 'Cyndi',
+      openedAt: new Date('2026-10-01T00:00:00Z'),
+      batchBlockedSalesOrderIds: blocked,
+      batchNamedKeys: named,
+    } as never);
+    expect(dialog.rows.map((r) => r.composition)).toEqual(['Cancel SO']);
+    expect(dialog.notPosted).toHaveLength(0);
   });
 });
 
