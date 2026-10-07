@@ -562,7 +562,7 @@ export function BoardDecideControl({
                 />
               </div>
             )}
-            {preview.skipped.map(([why, count]) => (
+            {(isBorrow && !pick ? [] : preview.skipped).map(([why, count]) => (
               <p key={why} className="text-sm text-muted-foreground">
                 {`${count} line${count === 1 ? '' : 's'} will be skipped: ${why}`}
               </p>

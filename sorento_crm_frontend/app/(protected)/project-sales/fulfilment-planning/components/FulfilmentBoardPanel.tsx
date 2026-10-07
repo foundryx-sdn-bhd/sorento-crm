@@ -2370,7 +2370,11 @@ export function FulfilmentBoardPanel({
                           : 'text-destructive'
                     }`}
                   >
-                    {result.ok
+                    {result.ok && (result.lines_cancelled?.length ?? 0) > 0 &&
+                    (result.lines_confirmed?.length ?? 0) === 0 &&
+                    (result.inquiry_rows_created ?? 0) === 0
+                      ? `${label}: ${result.lines_cancelled?.length} line${result.lines_cancelled?.length === 1 ? '' : 's'} transferred to Cancel SO`
+                      : result.ok
                       ? `${label}: confirmed as revision ${result.decision_revision} (${result.inquiry_rows_created ?? 0} purchase row${(result.inquiry_rows_created ?? 0) === 1 ? '' : 's'} handed over)`
                       : `${label}: ${result.error ?? 'refused'}`}
                   </span>
