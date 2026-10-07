@@ -342,6 +342,8 @@ function pressRoleFor(
       return { kind: 'cancel_so', reason: (decision.reason ?? '').trim() };
     }
   }
+  // A line CS already transferred to Cancel SO is committed: the press has nothing left to do.
+  if (contribution.cancelled && contribution.cancelled_at) return { kind: 'skip' };
   // A CANCELLED line is retired by the press (R3); it needs no composition. One that also
   // carries a saved decision still posts it, as the body always did.
   if (contribution.cancelled) {
@@ -857,6 +859,7 @@ export function confirmSummaryFor(
     // it, and Confirm retires it. Nobody saves a decision for it, so the untouched-line skip
     // below would drop it from the count and the press would silently do one thing more than
     // it said - which is the one thing the counter exists to stop.
+    if (contribution.cancelled && contribution.cancelled_at) continue;
     if (contribution.cancelled) {
       orderIds.add(contribution.sales_order_id);
       continue;
