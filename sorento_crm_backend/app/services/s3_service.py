@@ -99,6 +99,27 @@ class S3Service:
             dist_domain=cloudfront_domain.strip(),
         )
 
+    def upload_fileobj(
+        self,
+        fileobj,
+        key: str,
+        content_type: Optional[str] = None,
+    ) -> str:
+        """Stream a file object to S3 (multipart), never holding it in memory."""
+        key = (key or "").lstrip("/")
+        if not key:
+            raise ValueError("key is required")
+        extra: dict = {}
+        if content_type:
+            extra["ContentType"] = content_type
+        try:
+            self.s3_client.upload_fileobj(
+                fileobj, self.bucket_name, key, ExtraArgs=extra or None
+            )
+        except (ClientError, BotoCoreError) as e:
+            raise Exception(f"Failed to upload file to S3: {e}")
+        return key
+
     def upload_file(
         self,
         file_content: bytes,
