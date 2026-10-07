@@ -153,6 +153,8 @@ def _envelope_for(
     previous_state: Any = None,
     prompt_version: str | None = None,
     quote: str | None = None,
+    quote_source: str = "n8n",
+    quote_id: str | None = None,
 ) -> dict[str, Any]:
     """The borrowed envelope with this turn's words in it. Never mutates `base`.
 
@@ -172,8 +174,8 @@ def _envelope_for(
     inner["message"] = {"type": "text", "text": message}
     if quote is not None:
         inner["replyTo"] = {
-            "id": f"console-quote-{uuid.uuid4().hex[:12]}",
-            "sender": {"source": "n8n"},
+            "id": quote_id or f"console-quote-{uuid.uuid4().hex[:12]}",
+            "sender": {"source": quote_source},
             "message": {"text": quote},
         }
     else:
@@ -889,7 +891,22 @@ def _run_cases(cases, session, url, args, default_contact, run_id) -> int:
         case_failures: list[str] = []
         last_line = ""
         last_branch = None
+        # What this run has sent and heard, by the customer's text: `quote_own` quotes one of
+        # the customer's own earlier messages (by the messageId this script generated for it),
+        # `quote_slice` quotes a slice of an earlier bot reply (a stand-in for one chunk of a
+        # reply n8n split, which a dry run never produces).
+        sent_ids: dict[str, str] = {}
+        heard: dict[str, str] = {}
         for index, turn in enumerate(_turns_of(case)):
+            quote = turn["quote"] if "quote" in turn else case.get("quote")
+            quote_source, quote_id = "n8n", None
+            if turn.get("quote_own") is not None:
+                quote = str(turn["quote_own"])
+                quote_source, quote_id = "contact", sent_ids.get(quote)
+            elif isinstance(turn.get("quote_slice"), dict):
+                spec = turn["quote_slice"]
+                start = int(spec.get("start") or 0)
+                quote = heard.get(str(spec.get("of")), "")[start : start + int(spec.get("length") or 0)]
             envelope = _envelope_for(
                 base,
                 contact=contact,
@@ -898,8 +915,11 @@ def _run_cases(cases, session, url, args, default_contact, run_id) -> int:
                 parser=(turn.get("parser") or case.get("parser")) if args.mock_parser else None,
                 previous_state=previous_state,
                 prompt_version=args.prompt_version,
-                quote=turn["quote"] if "quote" in turn else case.get("quote"),
+                quote=quote,
+                quote_source=quote_source,
+                quote_id=quote_id,
             )
+            sent_ids[str(turn.get("text") or "")] = envelope["message"]["message"]["messageId"]
             body = _post_with_pacing(
                 session,
                 url,
@@ -911,6 +931,7 @@ def _run_cases(cases, session, url, args, default_contact, run_id) -> int:
             )
             pending = _pending_kind(body, body.get("turn_id"))
             reply = _customer_words(body)
+            heard[str(turn.get("text") or "")] = ((body.get("reply") or {}).get("text")) or reply
             last_branch = body.get("branch_kind")
             last_line = reply.replace("\n", " ")[:120]
             prefix = f"turn {index + 1}: " if len(_turns_of(case)) > 1 else ""

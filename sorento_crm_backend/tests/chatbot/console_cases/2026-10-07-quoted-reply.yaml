@@ -223,3 +223,43 @@ cases:
             - "WDI-K5130"
           reply_not_contains:
             - "SRT112"
+
+  - name: "8. Own-message quote: quoting the dealer's own earlier message runs on that message's state"
+    live_only: true
+    cold: true
+    turns:
+      - text: "SRTBF11841 have stock?"
+        expect:
+          no_uuid: true
+          reply_contains:
+            - "SRTBF11841"
+      - text: "check stock WDI-K301-D"
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "How many units of WDI-K301-D?"
+      - text: "and eta?"
+        quote_own: "SRTBF11841 have stock?"
+        expect:
+          no_uuid: true
+          reply_contains:
+            - "SRTBF11841"
+          reply_not_contains:
+            - "WDI-K301-D"
+
+  - name: "9. Chunk quote: quoting a middle slice of a long reply (a stand-in for n8n's 2nd chunk) resolves to that turn"
+    live_only: true
+    cold: true
+    turns:
+      - text: "which basins have stock"
+        expect:
+          no_uuid: true
+      - text: "1"
+        quote_slice:
+          of: "which basins have stock"
+          start: 300
+          length: 300
+        expect:
+          branch_kind: business_query
+          no_uuid: true
