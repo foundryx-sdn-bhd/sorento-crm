@@ -7,7 +7,7 @@ Reuses the pickers' OWN mechanism, no second one:
 
 * `turn/pending.py::ROSTER_KINDS` - `top_selling_pick` sits beside `product_pick` and
   `customer_pick`, so it survives its own pick (`with_answered_positions`) and has no
-  turn clock (`tick` only expires the escalation offers).
+  turn clock (no held question has one, INTENT-FRAMES).
 * `turn/decide.py::picked_positions` - a bare "2" arrives as `reference_positions`, a
   typed code or category name matches the option's label exactly.
 * `turn/apply.py` - the same close rules: a list whose every row was picked closes on
@@ -88,14 +88,11 @@ def test_how_many_and_miss_arm_nothing(result_set):
 
 
 def test_no_turn_clock_same_as_the_customer_picker():
-    from app.services.chatbot.turn.pending import ask, tick
+    """INTENT-FRAMES (owner ruling Q1): no held question has a turn clock at all."""
+    from app.services.chatbot.turn import pending as pending_mod
 
-    top = _armed()
-    customer = ask("customer_pick", options=[{"position": 1, "label": "HANLIM", "payload": {}}])
-    for _ in range(10):
-        top, customer = tick(top), tick(customer)
-    assert top is not None and top.kind == "top_selling_pick"
-    assert customer is not None
+    assert not hasattr(pending_mod, "tick")
+    assert _armed().kind == "top_selling_pick"
 
 
 def test_survives_the_session_store_round_trip():

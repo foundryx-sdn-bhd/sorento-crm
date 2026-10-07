@@ -25,6 +25,8 @@ from dataclasses import replace
 from typing import Any
 
 from app.services.chatbot import contracts
+from app.services.chatbot.turn import frame as frame_mod
+from app.services.chatbot.turn import held as held_mod
 from app.services.chatbot.turn import refer
 from app.services.chatbot.turn import task as task_mod
 from app.services.chatbot.turn.decide import (
@@ -65,7 +67,10 @@ from app.services.chatbot.turn.state import (
     token_key,
 )
 
-RESET_KEEPS = {"tier", "brands"}
+# STUCK-QTY-LOOP: `intent` too - the reset turn's own intent is what the next message is
+# compared against (`turn/held.py::consume`).
+RESET_KEEPS = {"tier", "brands", "intent"}
+
 
 # D6, "domain follows the document": a turn that names a document kind and no domain is
 # about the domain that OWNS that document (SPO belongs to spo_allocation, not incoming,
@@ -3250,6 +3255,28 @@ def apply(
     candidates: dict[str, list[dict[str, Any]]] | None = None,
     unplaced: frozenset[str] | set[str] | None = None,
 ):
+    """`_gated_apply`, then the escalation offer the message did not answer is closed
+    (INTENT-FRAMES security review B1, `held.without_unanswered_offer`): after the arms
+    have read it, so a question's settled subject still lands on the focus."""
+    new_state, plan = _gated_apply(state, verdict, policy, resolved, candidates, unplaced)
+    if verdict.get(held_mod.CLOSE_OFFER) is True and plan.trace.lane != "offer_hold":
+        # `offer_hold` re-asks the company question this turn: a question asked anew,
+        # which lives for the next message like any other.
+        closed = held_mod.without_unanswered_offer(state.pending, new_state.pending)
+        if closed is not new_state.pending:
+            new_state = replace(new_state, pending=closed)
+            plan.trace.rules_fired.append("offer_unanswered_closed")
+    return new_state, plan
+
+
+def _gated_apply(
+    state: State,
+    verdict: dict[str, Any],
+    policy: Policy,
+    resolved: dict[str, dict[str, int]] | None = None,
+    candidates: dict[str, list[dict[str, Any]]] | None = None,
+    unplaced: frozenset[str] | set[str] | None = None,
+):
     """`_apply`, and for a contact whose escalation is barred (ESCALATION-CONTROL, owner
     30 Sep 2026) no offer survives it: an escalation offer still open from an earlier
     turn is closed on the way in (a stale "yes" has nothing to accept), and no offer is
@@ -3334,6 +3361,10 @@ def _apply(
 
     # PLAN-chatbot-top-x-hot-selling-24sep.md S4: a picked row's detail is one answer.
     state = replace(state, focus=_without_top_selling_pick(state.focus))
+
+    # INTENT-FRAMES (owner, 4 Oct 2026): a message of a new intent starts a clean frame,
+    # before any reader below sees the old one (`turn/frame.py`).
+    state = frame_mod.on_new_intent(state, verdict, trace)
 
     # F3 (contract 65): a `domain_hint` outside the declared enum must never reach a
     # reader - evidence turn b5b19cec-dccc-4eda-b766-1aeb1362957b emitted "purchasing"

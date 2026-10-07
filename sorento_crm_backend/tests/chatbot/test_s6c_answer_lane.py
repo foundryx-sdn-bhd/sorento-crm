@@ -1315,7 +1315,8 @@ class TestMissLaneProbesAndFamilyFetch:
         assert fetch_calls, "family-fetch never ran - the sibling family lookup is skipped"
         assert "SRTWC286" in fetch_calls[0]
         assert out.get("dym_offer") is not None
-        assert out["dym_offer"].get("ttl") == 3
+        # INTENT-FRAMES (owner ruling Q1): no turn clock on any offer.
+        assert "ttl" not in out["dym_offer"]
         assert out["dym_offer"].get("picked") == []
 
     def test_a_failed_dym_probe_still_offers_the_did_you_mean(self) -> None:

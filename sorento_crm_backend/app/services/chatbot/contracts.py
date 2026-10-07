@@ -529,9 +529,8 @@ class Pending(BaseModel):
     kind: PendingKind
     team: str | None = None
     domain: str | None = None
-    # `member_offer` only: how many more turns the roster stays on the customer's screen
-    # (AC-816 rule 1, `tail/pending.MEMBER_OFFER_TTL`). Absent on every other kind, and on
-    # a marker written by n8n, which has no clock - the reader treats absence as "open".
+    # Legacy: the retired AC-816 turn clock's count. Still accepted on a stored marker;
+    # nothing reads it (INTENT-FRAMES, owner ruling Q1: no turn clock).
     ttl: int | None = None
     # `team_clarify` only (AC-821 / AC-822): the teams the ask actually OFFERED, as
     # `{team, label}` - the slug the router acts on beside the exact string the customer
@@ -683,6 +682,14 @@ class Focus(BaseModel):
     # every turn - a shape the session validator did not know would fail the write
     # itself.
     tasks: list[dict[str, Any]] = Field(default_factory=list)
+    # STUCK-QTY-LOOP / INTENT-FRAMES (`turn/state.py::Focus.intent` / `frame_access`): the
+    # frame's owner and the access it was written under, written only when set.
+    intent: str | None = None
+    frame_access: str | None = None
+    # Written by #1471's release only (its held-question stamps, retired with every TTL by
+    # INTENT-FRAMES, owner ruling Q1): still accepted so a row stored in between reads.
+    held_turn: int | None = None
+    held_access: str | None = None
     # Any entity kind without a named axis above, keyed by kind. A kind this turn's
     # policy narrows on but the Focus never declared still has somewhere safe to sit
     # rather than being dropped on the way to the session.

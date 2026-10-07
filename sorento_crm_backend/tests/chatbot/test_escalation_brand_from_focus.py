@@ -341,6 +341,10 @@ class TestSiblingEtaAfterAProductTurn:
                 intent_hint="check_incoming",
                 entities=[],
                 routing={"suggested_team": "purchasing", "suggested_agent": "incoming_stock_enquiries"},
+                # INTENT-FRAMES: the live parser's reading of a bare "eta" after a product
+                # answer (gpt-5.4-mini, 4 Oct 2026): the same subject.
+                continuation=True,
+                entity_op="reuse",
             )
         )
         eta = engine_mod.run_turn(_envelope_for("ZZT-msg-865-eta", "eta"), session_factory=session_factory)

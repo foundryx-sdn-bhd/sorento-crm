@@ -46,7 +46,6 @@ from app.services.chatbot.turn.pending import (
     Pending,
     from_wire,
     offered_companies,
-    tick as tick_pending,
 )
 from app.services.chatbot.turn.plan import FetchSpec
 from app.services.chatbot.turn import policy_rows
@@ -701,14 +700,15 @@ def _stock_availability_only(db: Session, contact_respond_id: str, space_id: str
 def load_state(session_block: Any, *, profile: Profile, turn_no: int) -> State:
     """Stage A's `State`: focus and pending off the five session keys, profile beside.
 
-    The open question is TICKED on the way in (AC-816 rule 1): an escalation offer the
-    customer has ignored for three turns is not loaded at all, so nothing downstream can
-    accept it and this turn runs as the fresh message it is.
+    The open question loads as stored: nothing expires by turn count (INTENT-FRAMES,
+    owner ruling Q1, retiring AC-816's three-turn offer clock). It ends by context: the
+    parser's reading of the message (`turn/held.py`), an access change or a reset
+    (`turn/frame.py`).
     """
     five = session_state.five_keys(session_block)
     return State(
         focus=focus_from_wire(five.get("focus")),
-        pending=tick_pending(from_wire(five.get("open_question"))),
+        pending=from_wire(five.get("open_question")),
         profile=profile,
         turn_no=turn_no,
         # Issue #1178: the open idea draft rides in as state, read by `apply()`'s
@@ -723,7 +723,13 @@ def focus_diff(before: Focus, after: Focus) -> dict[str, Any]:
     from app.services.chatbot.turn.state import focus_to_wire
 
     left, right = focus_to_wire(before), focus_to_wire(after)
-    return {key: {"before": left[key], "after": right[key]} for key in left if left[key] != right[key]}
+    # `intent` / `frame_access` are on the wire only when set (STUCK-QTY-LOOP, INTENT-FRAMES).
+    keys = [*left, *(key for key in right if key not in left)]
+    return {
+        key: {"before": left.get(key), "after": right.get(key)}
+        for key in keys
+        if left.get(key) != right.get(key)
+    }
 
 
 # --------------------------------------------------------------------------- #

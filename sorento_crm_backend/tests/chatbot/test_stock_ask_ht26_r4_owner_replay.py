@@ -145,7 +145,7 @@ class Console:
 
     def say(self, message: str, v: dict[str, Any]) -> str:
         turn_no = self.state.turn_no + 1
-        loaded = replace(self.state, pending=turn_pending.tick(self.state.pending), turn_no=turn_no)
+        loaded = replace(self.state, turn_no=turn_no)
         applied, plan = apply(loaded, v, build_policy())
         text, question = self._reply(applied, plan, v, turn_no)
         self.state = replace(

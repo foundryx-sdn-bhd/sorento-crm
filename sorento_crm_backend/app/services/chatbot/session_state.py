@@ -167,8 +167,6 @@ def _legacy_open_question(legacy: dict[str, Any]) -> dict[str, Any] | None:
         payload["filters"] = dict(filters)
     if marker.get("reprinted") is True:
         payload["reprinted"] = True
-    if isinstance(marker.get("ttl"), int):
-        payload["ttl"] = marker["ttl"]
     return {
         "kind": kind,
         "expects": "pick",

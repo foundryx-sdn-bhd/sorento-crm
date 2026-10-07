@@ -126,6 +126,8 @@ def _v2() -> dict[str, Any]:
         user_goal="cert?",
         requested_attributes=["cert"],
         entity_op="reuse",
+        # INTENT-FRAMES: the live parser's same-subject signal (measured 4 Oct 2026).
+        continuation=True,
         entities=[_entity("cert", "attachment_type")],
     )
 

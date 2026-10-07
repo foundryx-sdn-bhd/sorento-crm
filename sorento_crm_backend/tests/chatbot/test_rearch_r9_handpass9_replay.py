@@ -641,8 +641,12 @@ class TestAllPickCarriesTheRostersSubjectToASubjectlessDomainSwitch:
                 f"tool={name!r} args={args!r}"
             )
 
+        # INTENT-FRAMES: under the published SAME SUBJECT rule the parser marks this
+        # domain-only follow-up `continuation: true`, the signal that carries the roster's
+        # products into the new intent's frame.
         qf3 = _parser_output(
-            domain_hint="inventory", intent_hint="check_stock", entities=[], entity_op="clear",
+            domain_hint="inventory", intent_hint="check_stock", entities=[], entity_op="reuse",
+            continuation=True,
             asks=[
                 {"domain": "inventory", "intent": "check_stock"},
                 {"domain": "incoming", "intent": "check_incoming"},

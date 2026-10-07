@@ -167,6 +167,13 @@ class Focus:
     # roster and must only PARK a task.
     tasks: tuple[Task, ...] = ()
     extra: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    # STUCK-QTY-LOOP (owner, 4 Oct 2026): the last intent the parser named, so a message of
+    # another intent is a new question (`turn/held.py`). INTENT-FRAMES: it owns the frame
+    # (`turn/frame.py`), and `frame_access` is the access the frame was last written
+    # under, so an access change drops it. Both optional on the wire: an older row reads
+    # as unstamped.
+    intent: str | None = None
+    frame_access: str | None = None
 
 
 @dataclass
@@ -201,6 +208,11 @@ class Profile:
     # switch (`turn_runtime._escalation_allowed`). Default ON: an unresolved contact keeps
     # today's behaviour.
     escalation_allowed: bool = True
+    # STUCK-QTY-LOOP: one string naming everything above that decides what this contact
+    # is told, plus their stock mode and field-reveal grants (`engine._access_fingerprint`). A held
+    # question stamped under another fingerprint was built for access the contact no
+    # longer has, so `turn/frame.py::expire` drops it. None = not computed (tests, n8n).
+    access_fp: str | None = None
 
 
 def offers_escalation(profile: "Profile | None") -> bool:
@@ -269,6 +281,10 @@ def focus_to_wire(focus: Focus) -> dict[str, Any]:
     # could disagree with it.
     wire["tasks"] = [task_to_wire(task) for task in (focus.tasks or ())]
     wire["extra"] = {k: list(v) for k, v in (focus.extra or {}).items()}
+    # STUCK-QTY-LOOP: written only when set, so a focus with nothing held reads as before.
+    for name in ("intent", "frame_access"):
+        if getattr(focus, name) is not None:
+            wire[name] = getattr(focus, name)
     return wire
 
 
@@ -342,6 +358,12 @@ def focus_from_wire(raw: Any) -> Focus:
             for k, value in extra.items()
             if isinstance(value, list)
         }
+    intent = raw.get("intent")
+    focus.intent = intent if isinstance(intent, str) and intent else None
+    # A row the STUCK-QTY-LOOP release wrote carries its access stamp as `held_access`
+    # (security review S2): read it as the frame's, so an access change still drops it.
+    frame_access = raw.get("frame_access") or raw.get("held_access")
+    focus.frame_access = frame_access if isinstance(frame_access, str) and frame_access else None
     return focus
 
 

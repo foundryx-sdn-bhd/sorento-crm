@@ -182,16 +182,19 @@ class TestTheCasualTailWritesThePendingBackUnchanged:
                 {"cid": str(CONTACT_ID), "phone": "+60000000009"},
             )
             db.commit()
+        # INTENT-FRAMES (security review B1): an escalation offer is closed by the first
+        # message that does not answer it, so the tail-write contract is pinned on a
+        # roster, which a casual reply leaves open (`test_intent_frames.py` holds the
+        # offer side).
         seeded_pending = {
-            "kind": "team_pick",
-            "team": "customer_service",
-            "expects": "yes_no",
+            "kind": "customer_pick",
+            "expects": "pick",
             "options": [
                 {
                     "position": 1,
-                    "label": "orders",
-                    "entity_type": "team",
-                    "payload": {"team": "customer_service"},
+                    "label": "HANLIM TRADING SDN BHD",
+                    "entity_type": "customer",
+                    "payload": {},
                 }
             ],
         }
@@ -227,6 +230,5 @@ class TestTheCasualTailWritesThePendingBackUnchanged:
         assert result.session_patch is not None, "a dry run must hand back what it would have written"
         after = (result.session_patch or {}).get("open_question")
         assert after is not None, "the open question must still be there after a casual reply"
-        assert after.get("kind") == "team_pick", after
-        assert after.get("team") == "customer_service", after
+        assert after.get("kind") == "customer_pick", after
         assert after.get("options") == seeded_pending["options"], after
