@@ -6,7 +6,9 @@ order inquiry import (`source_system = 'scm_order_inquiry'`) can carry a NULL
 `required_date` once they are cancelled: the import service's `_resolve_delivery_date_repairs`
 never writes `sales_order_lines.required_date` and it excludes cancelled lines
 (project_order_inquiry_import_service.py), so nothing ever fills them in. The 6 Oct 2026
-snapshot held 46 such lines: 20 with a single date in the sheet, 4 with several, 22 with none.
+snapshot held 46 such lines; this script's own dry run on it gives 21 with a single date in
+the sheet, 4 with several, 21 with none, 0 unmatched. SO325704 SRTWT7443 counts as single
+because its only dated row carries 10/03/2026 and its ORDER BACK row carries no date.
 
 The owner wants those dates filled from the monthly order sheet. A line is matched to the
 sheet by (SO number, item code), both upper-cased and stripped. It is written only when the
@@ -34,6 +36,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sqlalchemy import select  # noqa: E402
 
 from app.database import SessionLocal  # noqa: E402
+from app.models.base import set_company_scope  # noqa: E402
 from app.models.order import SalesOrder, SalesOrderLine  # noqa: E402
 from app.models.product import Product  # noqa: E402
 from app.services.project_order_inquiry_reader import (  # noqa: E402
@@ -90,7 +93,7 @@ def _load_lines(db, so_number: str | None) -> list:
         .order_by(SalesOrder.so_number, Product.product_code, SalesOrderLine.id)
     )
     if so_number:
-        stmt = stmt.where(SalesOrder.so_number == so_number.strip())
+        stmt = stmt.where(SalesOrder.so_number == so_number.strip().upper())
     lines = []
     for line, so, code in db.execute(stmt).all():
         # Plain attributes read by plan_backfill; not mapped, never persisted.
@@ -141,6 +144,7 @@ def main() -> int:
         print(f"sheet problem: {problem}")
 
     db = SessionLocal()
+    set_company_scope(db, None)
     try:
         plan = run(db, result.rows, apply=args.apply, so_number=args.so_number)
         _print_plan(plan)
