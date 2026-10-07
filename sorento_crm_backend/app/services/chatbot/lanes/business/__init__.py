@@ -2365,13 +2365,14 @@ def complete_answer(
     gate = payload.get("gate") if isinstance(payload.get("gate"), dict) else {}
     fetch = payload.get("fetch") if isinstance(payload.get("fetch"), dict) else {}
     # ROGUE-CONVO-REVIEW-R2: "did THIS message's own product token miss?" is computed
-    # ONCE per turn by the engine's own helper over the resolver's own list and handed
-    # down to the composer (the live path does the same in `engine.py`, above its
-    # `answer_bridge.answer_for` call); `not_found_error_message` never re-derives it.
+    # ONCE per turn over the resolver's own listing (`turn_runtime.named_unplaced`, the
+    # same builder `resolve_kinds` keys `ResolveOutcome.unplaced_tokens` by, which is
+    # what the live path in `engine.py` reads beside its resolve outcome) and handed down
+    # to the composer; `not_found_error_message` never re-derives it.
     from app.services.chatbot import turn_runtime
 
     product_token_missed = turn_runtime.typed_product_unplaced(
-        parser, turn_runtime.unplaced_tokens(jsc.array(parser.get("entities")), resolved)
+        parser, turn_runtime.named_unplaced(jsc.array(parser.get("entities")), resolved)
     )
     exit_kind = payload.get("_exit_kind")
     # The entitlement union the resolver's aggregate returned, when it ran. Two readers:

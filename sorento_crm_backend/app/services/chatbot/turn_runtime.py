@@ -1768,6 +1768,23 @@ def unplaced_tokens(entities: list[Any], resolved: Any) -> dict[str, str]:
     return {key: raw for key, raw in named.items() if key in missed}
 
 
+def named_unplaced(entities: list[Any], resolved: Any) -> dict[str, str]:
+    """The resolver's own verdict on what THIS message named: `unplaced_tokens` plus the
+    absorbed ones (`absorbed_tokens`), keyed by `token_key`, valued with the typed text.
+
+    ONE builder (ROGUE-CONVO-REVIEW-R2, reviewer finding 3): `resolve_kinds` keys its
+    `ResolveOutcome.unplaced_tokens` by it, and `lanes/business.complete_answer` asks
+    "did this message's own product token miss?" over the same map, so the two paths
+    cannot answer differently. The availability filter (`engine._exact_codes_only`)
+    rewrites the ENGINE's copy of this map for the fetch; that rewrite is the fetch's
+    business, never this question's.
+    """
+    unplaced = unplaced_tokens(entities, resolved)
+    for key, raw in absorbed_tokens(entities, resolved).items():
+        unplaced.setdefault(key, raw)
+    return unplaced
+
+
 def not_checked_tokens(entities: list[Any], resolved: Any) -> dict[str, str]:
     """The tokens THIS message named that the resolver never looked up, lower-cased.
 
@@ -2144,9 +2161,7 @@ def resolve_kinds(
 
     gate = payload.get("gate") if isinstance(payload.get("gate"), dict) else {}
     compatible = [e for e in jsc.array(gate.get("compatible_entities")) if isinstance(e, dict)]
-    unplaced = unplaced_tokens(entities, resolved)
-    for key, raw in absorbed_tokens(entities, resolved).items():
-        unplaced.setdefault(key, raw)
+    unplaced = named_unplaced(entities, resolved)
     compatible = _without_guesses(compatible, resolved, unplaced)
     if is_order_domain and live_brands_read:
         # #1262 fix lane round 3, S5: a brand word that is NOT on the live list, typed
@@ -3348,6 +3363,12 @@ def typed_product_unplaced(verdict: Any, unplaced: Mapping[str, str] | None) -> 
     so it is never carried as a `set_page`. Keyed the way `unplaced_tokens` keys its map
     (`turn.state.token_key`). A brand or category word nobody could place is not a miss
     on the product.
+
+    ROGUE-CONVO-REVIEW-R2: asked ONCE per turn, over the resolver's own listing
+    (`named_unplaced`, the map `ResolveOutcome.unplaced_tokens` carries BEFORE the
+    availability filter rewrites the engine's copy), and handed to both readers: the
+    composer's "what you want" header (`not_found_error_message(product_token_missed=)`)
+    and the `set_page` carry. The composer used to fold the question a second way.
     """
     if not unplaced:
         return False

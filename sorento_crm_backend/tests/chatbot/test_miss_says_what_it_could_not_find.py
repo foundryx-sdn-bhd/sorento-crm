@@ -410,6 +410,29 @@ class TestASetReadOffAMissedTokenIsNotCarried:
         assert "Here's what you want" not in reply, reply
         assert self.LINE in reply, reply
 
+    def test_an_availability_dealer_s_word_shaped_line_is_still_a_miss_on_the_token(
+        self, session_factory, stub_parser, stub_access, seven_taps, monkeypatch
+    ) -> None:
+        """R2 (reviewer should-fix 2): the same turn-5 shape on an AVAILABILITY-ONLY dealer
+        (the profile of the prod conversation). `engine._exact_codes_only` reads a product
+        token with no digit as "not a product at all" for the FETCH and drops it from its
+        own unplaced map, but the dealer typed it as one and the resolver listed it
+        unplaced: "did this message's own product token miss?" reads the resolver's own
+        verdict, so no set is listed under the header and none is carried."""
+        from app.services.chatbot import turn_runtime as tr
+        from tests.chatbot.test_counted_set_no_paging import _tap_cert_verdict
+
+        monkeypatch.setattr(tr, "_stock_availability_only", lambda *a, **k: True)
+        verdict = _tap_cert_verdict(
+            entities=[{"raw": self.LINE, "hint": "product", "canonical_code": None, "current_message": True, "confident": True}],
+            user_goal=self.LINE,
+        )
+        reply, set_page = self._run(session_factory, stub_parser, stub_access, seven_taps, monkeypatch, verdict, self.LINE)
+        assert set_page is None, set_page
+        assert "Here's what you want: taps" not in reply, reply
+        assert "more)" not in reply, reply
+        assert self.LINE in reply, reply
+
     def test_a_set_the_customer_described_beside_a_missed_code_stays_carried(
         self, session_factory, stub_parser, stub_access, seven_taps, monkeypatch
     ) -> None:
@@ -500,8 +523,12 @@ class TestAMissingCaptionIsNone:
 # the same on all three sides, or rule C silently never fires and the old "(+34 more)"
 # header comes back. Input -> reply pins through the real engine, never a payload shape.
 
-#: What Word and Excel put where the dealer typed a hyphen.
-DASHES = {"hyphen": "-", "en-dash": "\u2013", "minus-sign": "\u2212"}
+#: The hyphen, then every dash the resolver folds to one ahead of its regex
+#: (`resolve_gate._UNICODE_DASH_FOLD`: what Word and Excel put where the dealer typed a
+#: hyphen). Read off the resolver's own table, so a dash added there is pinned here too.
+from app.services.chatbot.lanes.business.resolve_gate import _UNICODE_DASH_FOLD  # noqa: E402
+
+DASHES = {"hyphen": "-", **{f"U+{ord(d):04X}": d for d in _UNICODE_DASH_FOLD}}
 
 
 class TestATypedTokenFoldsTheSameOnEverySide:
@@ -529,20 +556,23 @@ class TestATypedTokenFoldsTheSameOnEverySide:
 
     @pytest.mark.parametrize(
         "typed",
-        ["SRT345-HP", "Srt 345 hp", "SRT345\u2013HP", "SRT345\u2212HP", " srt - 345 -- hp ", "SRT345HP"],
-        ids=["hyphen", "spaces", "en-dash", "minus-sign", "run-of-separators", "bare"],
+        ["SRT345-HP", "Srt 345 hp", " srt - 345 -- hp ", "SRT345HP", *(f"SRT345{d}HP" for d in _UNICODE_DASH_FOLD)],
+        ids=["hyphen", "spaces", "run-of-separators", "bare", *(f"U+{ord(d):04X}" for d in _UNICODE_DASH_FOLD)],
     )
     def test_the_resolver_lists_a_product_token_by_the_engines_own_key(self, typed) -> None:
         """The explicit dependency: the token the resolver SENDS and lists back
-        (`resolve_gate._token_of`) keys the engine's unplaced map (`token_key`) and the
-        composer's join (`answer._type_norm`). A resolver fold change fails here, loudly,
-        instead of degrading rule C in silence."""
+        (`resolve_gate._token_of`) keys the engine's unplaced map (`token_key`), the
+        composer's join (`answer._type_norm`) and the scope block's raw-of-token reader
+        (`tail/scope_block._fold`). A resolver fold change fails here, loudly, instead of
+        degrading rule C in silence."""
         from app.services.chatbot.lanes.business.answer import _type_norm
         from app.services.chatbot.lanes.business.resolve_gate import _token_of
+        from app.services.chatbot.tail.scope_block import _fold
 
         sent = _token_of({"raw": typed, "hint": "product"})
         assert token_key(sent) == token_key(typed) == "srt345hp", (sent, typed)
         assert _type_norm(typed) == token_key(typed), typed
+        assert _fold(typed) == token_key(typed), typed
         verdict = {"entities": [{"hint": "product", "raw": typed}]}
         unplaced = turn_runtime.unplaced_tokens(verdict["entities"], {"unresolved_tokens": [sent]})
         assert unplaced == {"srt345hp": typed.strip()}, unplaced
@@ -565,20 +595,24 @@ class TestRuleCReadsTheResolversOwnTierName:
         assert tiers == {turn_runtime.SPEC_TIER}, tiers
         assert turn_runtime.spec_tier_matched(result) is True
 
-    def test_the_tier_name_is_declared_once(self) -> None:
-        """Every code read of the tier name imports `SPEC_TIER`; no second literal in the
-        chatbot package or the resolver route (docstrings and comments are not code)."""
+    def test_the_tier_name_is_declared_once_in_the_chatbot_package(self) -> None:
+        """Every chatbot read of the tier name imports `SPEC_TIER`; no second literal in
+        the package (docstrings and comments are not code; f-strings and prefixed
+        literals are). The resolver route keeps its own COPY of the literal (it is outside
+        the AC-002 boundary and may not import the package) - pinned to this name by
+        `test_the_rows_the_resolver_emits_carry_the_one_named_tier`, not by this scan."""
         import tokenize
         from pathlib import Path
 
-        import app.api.v1.system.references as references
         import app.services.chatbot as chatbot_pkg
 
-        files = [Path(references.__file__), *Path(chatbot_pkg.__file__).parent.rglob("*.py")]
+        string_kinds = {tokenize.STRING, getattr(tokenize, "FSTRING_MIDDLE", tokenize.STRING)}
         holders: list[str] = []
-        for path in files:
+        for path in Path(chatbot_pkg.__file__).parent.rglob("*.py"):
             with tokenize.open(path) as fh:
                 for tok in tokenize.generate_tokens(fh.readline):
-                    if tok.type == tokenize.STRING and tok.string.strip("\"'") == "spec_search":
+                    if tok.type not in string_kinds:
+                        continue
+                    if tok.string.lstrip("rbfuRBFU").strip("\"'") == "spec_search":
                         holders.append(f"{path.name}:{tok.start[0]}")
         assert [h.rsplit(":", 1)[0] for h in holders] == ["turn_runtime.py"], holders
