@@ -112,7 +112,7 @@ export default function AttachmentBulkDownloadDialog({
     setIsOpeningUrl(true);
     try {
       const { url } = await fetchDownloadUrl(downloadId);
-      window.open(url, '_blank', 'noopener');
+      window.open(url, '_blank', 'noopener,noreferrer');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to open the archive');
     } finally {

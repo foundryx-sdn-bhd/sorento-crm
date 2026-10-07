@@ -194,14 +194,17 @@ def plan_archive(
         if not kids and not files:
             plan.entries.append(ArchiveEntry(f"{prefix}/", None))
             return
+        # Folders and files share one name set per parent; folders claim their names first.
         seen: Set[str] = set()
+        for k in kids:
+            walk(k, f"{prefix}/{_unique_name(_safe_name(by_id[k].name), seen)}")
         for a in files:
             plan.entries.append(ArchiveEntry(f"{prefix}/{_unique_name(_entry_name(a), seen)}", a))
-        for k in kids:
-            walk(k, f"{prefix}/{_safe_name(by_id[k].name)}")
 
+    # Root folders keep their own set: test_b6b pins a root file "_" beside a root folder "_".
+    seen_root_folders: Set[str] = set()
     for rid in sorted(roots, key=lambda r: (selected[r].name or "", r)):
-        walk(rid, _safe_name(selected[rid].name))
+        walk(rid, _unique_name(_safe_name(selected[rid].name), seen_root_folders))
 
     # Not-visible count: numbers only. Same subtree, whole-company view minus the caller's view.
     visible = sum(_count_files(db, subtrees[rid]) for rid in roots)
@@ -253,6 +256,8 @@ def write_archive(
                 logger.warning("bulk download: could not read %s: %s", entry.path, exc)
             processed += 1
         # a partially written entry is impossible here: writestr is all-or-nothing per entry
+    if not stats.cancelled and should_stop and should_stop():
+        stats.cancelled = True
     if not stats.cancelled and on_progress:
         on_progress(processed)
     try:

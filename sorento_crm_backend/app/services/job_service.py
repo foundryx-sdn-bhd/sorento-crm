@@ -179,7 +179,7 @@ class JobService:
     def start_job(self, job_id: str) -> Optional[ImportJob]:
         """Mark job as started."""
         job = self.db.query(ImportJob).filter(ImportJob.job_id == job_id).first()
-        if job:
+        if job and job.status != JobStatus.CANCELLED.value:
             job.status = JobStatus.STARTED.value
             job.started_at = datetime.utcnow()
             job.updated_at = datetime.utcnow()
@@ -360,6 +360,11 @@ class JobService:
             if job.job_type == "attachment_bulk_download"
             else f"Your {job.job_type} import was cancelled. View job for details." + _IMPORT_NOTIFICATION_DISCLAIMER,
         )
+
+        # The archive task stops cooperatively (it re-reads the DB status). An RQ stop would
+        # SIGKILL the work-horse, so its temp file and My downloads row would never be cleaned.
+        if job.job_type == "attachment_bulk_download":
+            return True
 
         # Tell RQ to stop the worker in background so we never block the API response
         rq_job_id = job.job_id

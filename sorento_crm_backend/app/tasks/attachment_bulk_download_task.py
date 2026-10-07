@@ -45,9 +45,16 @@ def process_attachment_bulk_download(db_job_id: str):
         else:
             set_company_scope(db, frozenset())
 
-        if job.status == JobStatus.CANCELLED.value:
+        def cancelled() -> bool:
+            db.refresh(job)
+            return job.status == JobStatus.CANCELLED.value
+
+        def cancel_exit() -> None:
             if download_id:
                 download_service.mark_failed(download_id, "Download cancelled")
+
+        if cancelled():
+            cancel_exit()
             return
 
         job_service.start_job(job_id_str)
@@ -66,9 +73,7 @@ def process_attachment_bulk_download(db_job_id: str):
         def read_bytes(att):
             return get_backend(att.storage_provider or "s3").download_file(extract_key(att.file_path))
 
-        def should_stop() -> bool:
-            db.refresh(job)
-            return job.status == JobStatus.CANCELLED.value
+        should_stop = cancelled
 
         def on_progress(n: int) -> None:
             job_service.update_job_progress(job_id_str, processed_rows=n)
@@ -77,9 +82,8 @@ def process_attachment_bulk_download(db_job_id: str):
             tmp_path = tmp.name
             stats = write_archive(plan, read_bytes, tmp, on_progress=on_progress, should_stop=should_stop)
 
-        if stats.cancelled:
-            if download_id:
-                download_service.mark_failed(download_id, "Download cancelled")
+        if stats.cancelled or cancelled():
+            cancel_exit()
             return
         if stats.files_included == 0:
             job_service.fail_job(job_id_str, "No file could be read")
@@ -87,10 +91,22 @@ def process_attachment_bulk_download(db_job_id: str):
                 download_service.mark_failed(download_id, "No file could be read")
             return
 
+        if cancelled():
+            cancel_exit()
+            return
+
         provider = default_provider()
         key = f"bulk-exports/{job.id}.zip"
         with open(tmp_path, "rb") as fh:
             get_backend(provider).upload_fileobj(fh, key, content_type="application/zip")
+
+        if cancelled():
+            try:
+                get_backend(provider).delete_file(key)
+            except Exception:  # noqa: BLE001
+                logger.warning("Could not remove cancelled archive object %s", key)
+            cancel_exit()
+            return
 
         name = job.filename or archive_filename(None, datetime.utcnow())
         if download_id:
