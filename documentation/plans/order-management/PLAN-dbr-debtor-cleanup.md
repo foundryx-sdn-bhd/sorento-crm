@@ -1,6 +1,6 @@
 # PLAN: DBR debtor cleanup
 
-Status: BUILDING (Q2-Q5 answered 7 Oct, Q1 chat links pending owner). Track: L (prod data delete), LEAD pattern.
+Status: BUILDING (Q1-Q5 answered 7 Oct; card closed). Track: L (prod data delete), LEAD pattern.
 Lane: crew/dbr-debtor-cleanup. UAC: `dbr-debtor-cleanup-acceptance-criteria.md`.
 
 ## Journey

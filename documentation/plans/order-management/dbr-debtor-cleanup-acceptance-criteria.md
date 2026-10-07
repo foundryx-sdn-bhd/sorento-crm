@@ -1,7 +1,7 @@
 # UAC: DBR debtor cleanup
 
-Owner answers 7 Oct 2026 (crew relay a85186219): Q2 (a), Q3 yes, Q4 (a), Q5 (a). Q1 (chat links, DELUXE HOME CENTRE (KTN)
-contact) still with the owner; the data script's chat-link handling waits on it.
+Owner answers 7 Oct 2026 (crew relay a85186219): Q1 (a) drop all chat links ("i think can drop the link la all these DO
+also don't have lines one"), Q2 (a), Q3 yes, Q4 (a), Q5 (a). Snapshot 6 Oct: 229 of 229 DBR DOs have zero order lines.
 
 ## Stop creating DBR customers
 
@@ -35,7 +35,8 @@ contact) still with the owner; the data script's chat-link handling waits on it.
   stock asks on DBR customers get customer_id NULL and survive (Q2); DBR customers are deleted.
 - AC-12 DBR = customer_code matching `^DBR-[0-9a-f]{10}$` with no integration_references row. A real customer and a
   DBR-looking code that has an integration reference are left alone.
-- AC-13 Chat links (respond_contact_customers) on DBR customers: behaviour set by owner Q1 (pending). Until then the
-  script refuses `--apply` while any chat link exists unless an explicit `--drop-chat-links` flag is passed.
+- AC-13 Chat links (respond_contact_customers) on DBR customers are deleted with them (Q1 (a)). The output lists every
+  contact left with NO customer link after the delete (snapshot: the DELUXE HOME CENTRE (KTN) contact), by contact id and
+  the DBR debtor name it was linked to, so crew can tell the owner.
 
 No UI change, no migration.
