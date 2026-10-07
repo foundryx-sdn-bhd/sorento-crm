@@ -3815,7 +3815,10 @@ def with_carried_entities(
 def _holds_a_resolved_product_outside_a_set(focus: Focus) -> bool:
     """Does the focus carry a product with a uuid that is NOT a described set's member?
     That product is the fetch's subject; a set's members (every row marked
-    `described_set`) are re-described by the words beside them instead."""
+    `described_set`) are re-described by the words beside them instead. A focus that
+    mixes set members with one unmarked row (a set question, then a pick of ONE member,
+    which arrives as a fresh unmarked row) is product-scoped on purpose: the picked
+    product is the subject, and #1502's rule A says its fetch takes no set predicate."""
     return any(
         isinstance(row, dict) and jsc.truthy(row.get("uuid")) and row.get("described_set") is not True
         for row in getattr(focus, "products", []) or []
