@@ -2137,6 +2137,144 @@ describe('BoardLineDecisionPanel: the Save button says it saved (S4, AC-4.1)', (
 });
 
 /**
+ * BOARD-DECIDE-RESEED (owner, 7 Oct 2026, SO424856 lines 16 / 32): the draft and the Reason
+ * box used to seed ONCE at mount (`useState(() => draftFor(contribution, decision))`), so a
+ * panel left open while the planner picked a way from the Decide dropdown (`BoardDecideControl`,
+ * e.g. "Use BRW") kept the OLD Reserve rows under a pill already reading the new decision, and
+ * Save then posted the stale rows - which the server refused with "The components add up to X
+ * and the line is open for Y".
+ */
+describe('BoardLineDecisionPanel: re-seeds from the decision when it changes under an untouched panel', () => {
+  const useBrw: BoardDecision = {
+    verdict: 'amended',
+    reserve: [{ warehouse_id: 'wh-BRW', location: 'BRW', qty: '24' }],
+    borrow: [],
+    buy_qty: '0',
+    timely_spo_qty: '0',
+    reason: 'Use BRW',
+  };
+
+  it('follows a Decide-dropdown amendment: the Reserve inputs, the reason, and what Save posts', async () => {
+    const onDecide = vi.fn().mockResolvedValue(true);
+    const { rerender } = render(
+      <BoardLineDecisionPanel
+        contribution={contributionOf()}
+        decision={null}
+        locations={LOCATIONS}
+        onDecide={onDecide}
+      />,
+    );
+    expect(screen.getByLabelText('Reserve at BRW-AM')).toHaveValue(9);
+    expect(screen.getByLabelText('Reserve at BRW')).toHaveValue(15);
+
+    // The Decide dropdown wrote "Use BRW" for this line; the board's draft map moves first.
+    rerender(
+      <BoardLineDecisionPanel
+        contribution={contributionOf()}
+        decision={useBrw}
+        locations={LOCATIONS}
+        onDecide={onDecide}
+      />,
+    );
+    expect(screen.getByLabelText('Reserve at BRW-AM')).toHaveValue(0);
+    expect(screen.getByLabelText('Reserve at BRW')).toHaveValue(24);
+    expect(screen.getByLabelText(/^Reason/)).toHaveValue('Use BRW');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save decision' }));
+    });
+    expect(onDecide).toHaveBeenCalledTimes(1);
+    const posted = onDecide.mock.calls[0][0] as BoardDecision;
+    expect(posted.verdict).toBe('amended');
+    // A zero row is not posted (`decisionFromAmendDraft` drops it); what matters is that the
+    // old 9 at BRW-AM never reaches the server.
+    expect(posted.reserve).toEqual([
+      expect.objectContaining({ warehouse_id: 'wh-BRW', qty: '24' }),
+    ]);
+  });
+
+  it('follows a Decide-dropdown approval back to the engine suggestion', () => {
+    const { rerender } = render(
+      <BoardLineDecisionPanel
+        contribution={contributionOf()}
+        decision={{
+          verdict: 'amended',
+          reserve: [
+            { warehouse_id: 'wh-BRW-AM', location: 'BRW-AM', qty: '5' },
+            { warehouse_id: 'wh-BRW', location: 'BRW', qty: '19' },
+          ],
+          borrow: [],
+          buy_qty: '0',
+          timely_spo_qty: '0',
+          reason: 'Less from BRW-AM.',
+        }}
+        locations={LOCATIONS}
+        onDecide={vi.fn()}
+      />,
+    );
+    expect(screen.getByLabelText('Reserve at BRW-AM')).toHaveValue(5);
+    expect(screen.getByLabelText('Reserve at BRW')).toHaveValue(19);
+
+    // "As suggested" from the Decide dropdown: an approval (it carries the suggested rows,
+    // D11, but `draftFor` reads an approval as the CURRENT suggestion, the same reading
+    // `confirmLinesFor` commits).
+    rerender(
+      <BoardLineDecisionPanel
+        contribution={contributionOf()}
+        decision={{
+          verdict: 'approved',
+          reserve: [
+            { warehouse_id: 'wh-BRW-AM', location: 'BRW-AM', qty: '9' },
+            { warehouse_id: 'wh-BRW', location: 'BRW', qty: '15' },
+          ],
+          borrow: [],
+          buy_qty: '0',
+          timely_spo_qty: '0',
+        }}
+        locations={LOCATIONS}
+        onDecide={vi.fn()}
+      />,
+    );
+    expect(screen.getByLabelText('Reserve at BRW-AM')).toHaveValue(9);
+    expect(screen.getByLabelText('Reserve at BRW')).toHaveValue(15);
+    expect(screen.getByLabelText(/^Reason/)).toHaveValue('');
+  });
+
+  it('does not clobber a panel the planner has already typed into', () => {
+    const onDirtyChange = vi.fn();
+    const { rerender } = render(
+      <BoardLineDecisionPanel
+        contribution={contributionOf()}
+        decision={null}
+        locations={LOCATIONS}
+        onDecide={vi.fn()}
+        onDirtyChange={onDirtyChange}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText('Reserve at BRW-AM'), {
+      target: { value: '5' },
+    });
+    fireEvent.change(screen.getByLabelText(/^Reason/), {
+      target: { value: 'The site asked for less.' },
+    });
+
+    rerender(
+      <BoardLineDecisionPanel
+        contribution={contributionOf()}
+        decision={useBrw}
+        locations={LOCATIONS}
+        onDecide={vi.fn()}
+        onDirtyChange={onDirtyChange}
+      />,
+    );
+    expect(screen.getByLabelText('Reserve at BRW-AM')).toHaveValue(5);
+    expect(screen.getByLabelText('Reserve at BRW')).toHaveValue(15);
+    expect(screen.getByLabelText(/^Reason/)).toHaveValue('The site asked for less.');
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+  });
+});
+
+/**
  * Save answers its own click (S4, AC-4.1); Reject used to answer nothing at all - no pill, no
  * toast, no change to the button itself. It mirrors Save now: the button becomes a landed
  * "Rejected" state once the write actually resolves, and only edits since it landed put the

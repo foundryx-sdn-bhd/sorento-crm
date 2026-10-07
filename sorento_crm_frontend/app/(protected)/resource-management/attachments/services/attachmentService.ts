@@ -1,5 +1,5 @@
 import { apiFetch } from '@/lib/api';
-import { buildDataGridParams } from '@/lib/api-client';
+import { buildDataGridParams, extractApiError } from '@/lib/api-client';
 import type { Attachment } from '../types/attachment.types';
 import type { DataGridApiFetchParams, DataGridApiResponse } from '@/components/ui/data-grid';
 
@@ -284,6 +284,13 @@ export interface JobStatusResponse {
     attachments_created?: number;
     attachments?: Array<{ id: string; path: string }>;
     errors?: string[];
+    archive_filename?: string;
+    files_included?: number;
+    files_failed?: number;
+    files_not_visible?: number;
+    folders?: number;
+    bytes?: number;
+    download_id?: string;
   };
   error?: string;
 }
@@ -324,6 +331,36 @@ export async function bulkImportAttachments(
     throw new Error(message);
   }
   return response.json();
+}
+
+export interface BulkDownloadJobStarted {
+  message: string;
+  job_id: string;
+  id: string;
+  download_id: string;
+}
+
+export async function startBulkDownload(params: {
+  directoryId: string | null;
+  folderIds: string[];
+  attachmentIds: string[];
+}): Promise<BulkDownloadJobStarted> {
+  const response = await apiFetch('/api/v1/resource-management/attachments/bulk-download', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      directory_id: params.directoryId,
+      folder_ids: params.folderIds,
+      attachment_ids: params.attachmentIds,
+    }),
+  });
+  if (!response.ok) throw new Error(await extractApiError(response, 'Failed to start download'));
+  return response.json();
+}
+
+export async function cancelJob(jobId: string): Promise<void> {
+  const response = await apiFetch(`/api/v1/system/jobs/${jobId}/cancel`, { method: 'POST' });
+  if (!response.ok) throw new Error(await extractApiError(response, 'Failed to cancel download'));
 }
 
 export async function getJobStatus(jobId: string): Promise<JobStatusResponse> {

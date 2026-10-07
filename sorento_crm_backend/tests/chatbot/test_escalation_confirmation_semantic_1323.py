@@ -327,7 +327,17 @@ class TestPrompt:
         assert SEMANTIC_PARSER_PROMPT.count(addendum) == 1
         _, tail = SEMANTIC_PARSER_PROMPT.split(addendum)
         # PLAN-po-spo-warehouse-29sep S3: PO_SPO_WAREHOUSE_ADDENDUM now sits between the two.
-        assert tail == PO_SPO_WAREHOUSE_ADDENDUM + ACCOUNT_LEDGER_ADDENDUM + LOW_STOCK_FILTERS_ADDENDUM + MEMORY_ADDENDUM
+        # STOCK-QTY-PARTIAL-FILL (#1513): TRAP_SPECS_FALLBACK_BLOCK sits between
+        # LOW_STOCK_FILTERS_ADDENDUM and MEMORY_ADDENDUM; MEMORY stays the tail.
+        from app.services.chatbot_parser_prompt import TRAP_SPECS_FALLBACK_BLOCK
+
+        assert tail == (
+            PO_SPO_WAREHOUSE_ADDENDUM
+            + ACCOUNT_LEDGER_ADDENDUM
+            + LOW_STOCK_FILTERS_ADDENDUM
+            + TRAP_SPECS_FALLBACK_BLOCK
+            + MEMORY_ADDENDUM
+        )
         assert "CURRENT DATE: {{current_date}}" in MEMORY_ADDENDUM.rsplit("CURRENT DATE\n", 1)[1]
 
     def test_it_defines_the_one_verdict_for_every_offer_shape(self) -> None:

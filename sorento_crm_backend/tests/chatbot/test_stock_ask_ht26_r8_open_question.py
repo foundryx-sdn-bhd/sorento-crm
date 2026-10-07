@@ -287,10 +287,12 @@ class TestRecentExchanges:
 # =============================================================================== #
 
 
-def test_open_question_answer_fill_fills_lines_and_reasks_owed():
-    """Row 3: "10 / 20 / 30 / 40 / 5" fills lines 1 to 5 and re-asks the point-form
-    question with 6 to 10 still blank - even though the verdict also carries
-    demand_qty 10 and message_type "casual" (the object outranks every other field)."""
+def test_open_question_answer_fill_fills_lines_and_answers_them_keeping_the_rest_open():
+    """Row 3: "10 / 20 / 30 / 40 / 5" fills lines 1 to 5 - even though the verdict also
+    carries demand_qty 10 and message_type "casual" (the object outranks every other
+    field). STOCK-QTY-PARTIAL-FILL (owner ruling R1, 6 Oct 2026): the five filled lines
+    are fetched now and lines 6 to 10 stay open on the task; the point-form question is
+    not asked again (before this ruling it was re-asked with 6 to 10 blank)."""
     task = _task([None] * 10)
     state = _state_with_task(task)
     v = verdict(
@@ -308,10 +310,16 @@ def test_open_question_answer_fill_fills_lines_and_reasks_owed():
     )
     new_state, plan = apply(state, v, build_policy())
     assert "open_question_answer_fill" in plan.trace.rules_fired
-    assert plan.fetch == []
-    expected_task = _task([10, 20, 30, 40, 5, None, None, None, None, None])
-    assert plan.trace.task_question == task_mod.StockQtyTask().question(expected_task)
+    assert "task_partial_answered_stock_qty" in plan.trace.rules_fired
+    assert plan.trace.task_question is None
+    (spec,) = ht.inventory_specs(plan)
+    assert [row["canonical_code"] for row in spec.entities] == OWNER_FAMILY[:5]
+    assert spec.filters.get("requested_quantities") == {
+        ht.uuid_of(code): qty for code, qty in zip(OWNER_FAMILY[:5], [10, 20, 30, 40, 5])
+    }
+    assert not spec.filters.get("not_checked")
     (stock_task,) = [t for t in new_state.focus.tasks if t.kind == "stock_qty"]
+    assert stock_task.status == task_mod.OPEN
     assert [slot.value for slot in stock_task.slots] == [10, 20, 30, 40, 5, None, None, None, None, None]
 
 
@@ -612,9 +620,10 @@ def test_the_owner_round7_session_replayed():
     text2 = console.say("semua of them", ALL_READINGS["every_position"])
     assert text2 == POINT_FORM
 
-    # Row 3: "10 / 20 / 30 / 40 / 5", one number per line -> lines 1 to 5 filled,
-    # 6 to 10 re-asked blank. The verdict also carries demand_qty 10 and
-    # message_type "casual" - noise the object must outrank.
+    # Row 3: "10 / 20 / 30 / 40 / 5", one number per line -> lines 1 to 5 filled and
+    # answered now, 6 to 10 kept open and NOT re-asked (STOCK-QTY-PARTIAL-FILL, owner
+    # ruling R1, 6 Oct 2026; before: re-asked blank). The verdict also carries
+    # demand_qty 10 and message_type "casual" - noise the object must outrank.
     v3 = verdict(
         message_type="casual",
         demand_qty=10,
@@ -629,10 +638,13 @@ def test_the_owner_round7_session_replayed():
         },
     )
     text3 = console.say("10 / 20 / 30 / 40 / 5", v3)
-    expected3 = task_mod.StockQtyTask().question(
-        _task([10, 20, 30, 40, 5, None, None, None, None, None])
+    expected3 = "\n".join(
+        f"{code} x {qty}: {TOO_BIG}" for code, qty in zip(OWNER_FAMILY[:5], [10, 20, 30, 40, 5])
     )
     assert text3 == expected3
+    (task3,) = [t for t in console.state.focus.tasks if t.kind == "stock_qty"]
+    assert task3.status == task_mod.OPEN
+    assert [s.value for s in task3.slots] == [10, 20, 30, 40, 5] + [None] * 5
 
     # Row 4: "check stock" + the list pasted back, line 1 = 10, line 2 = 5, rest
     # blank, chained straight on row 3 (review B1: no reset). The paste is the whole
