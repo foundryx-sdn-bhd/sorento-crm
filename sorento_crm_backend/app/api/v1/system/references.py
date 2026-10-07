@@ -2885,8 +2885,21 @@ def resolve_reference_post(
         # multi-line turn `not_asked / no_typed_text`. A token narrowing replaced (the
         # variant codes its words picked) has no typed text of its own and is not asked;
         # a token typed twice keeps its last line's text, the resolver's own rule.
+        # Narrowing that changes the token COUNT also turns off the resolver's per-token
+        # hint pairing (`allowed_entity_types` keeps its old length), so the only hint
+        # gate left is this carry: a token the caller typed as a customer or a brand keeps
+        # no typed text and is never put to the reader as a product question
+        # (security-reviewer on 5839705b).
+        hinted = (
+            list(payload.allowed_entity_types)
+            if payload.allowed_entity_types and len(payload.allowed_entity_types) == len(payload.tokens)
+            else None
+        )
         typed_by_token = (
-            {tok: raw for tok, raw in zip(payload.tokens, payload.raw_tokens)}
+            {
+                tok: (raw if hinted is None or _canonical_entity_type(hinted[idx] or "") in ("", "product") else "")
+                for idx, (tok, raw) in enumerate(zip(payload.tokens, payload.raw_tokens))
+            }
             if payload.tokens and payload.raw_tokens and len(payload.raw_tokens) == len(payload.tokens)
             else {}
         )
