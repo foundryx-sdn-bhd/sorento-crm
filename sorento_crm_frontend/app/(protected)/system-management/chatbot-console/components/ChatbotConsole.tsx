@@ -221,9 +221,10 @@ export default function ChatbotConsole() {
         ? 'Parser live (production)'
         : null;
 
-  // The bot bubbles a message can quote: real turns only (never the greeting lines), newest first.
+  // The bubbles a message can quote: bot replies of a real turn and the customer's own sent messages
+  // (never the greeting lines), newest first.
   const quotableBubbles = useMemo(
-    () => messages.filter((m) => m.role === 'bot' && m.turnId).reverse(),
+    () => messages.filter((m) => (m.role === 'bot' ? Boolean(m.turnId) : Boolean(m.messageId))).reverse(),
     [messages],
   );
   const replyToOptions = useMemo<SearchableSelectOption[]>(
@@ -241,7 +242,14 @@ export default function ChatbotConsole() {
     const quoted = quotableBubbles.find((m) => m.id === replyToId);
     setDraft('');
     setReplyToId('');
-    void sendText(text, quoted ? { id: quoted.id, text: quoted.text } : null);
+    void sendText(
+      text,
+      quoted
+        ? quoted.role === 'user'
+          ? { id: quoted.messageId as string, text: quoted.text, source: 'contact' }
+          : { id: quoted.id, text: quoted.text, source: 'n8n' }
+        : null,
+    );
   };
 
   const handleFilePicked = (file: File | null) => {

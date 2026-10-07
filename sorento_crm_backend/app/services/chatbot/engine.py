@@ -1024,8 +1024,7 @@ def _quoted_context(
     if reply_to_id is None:
         return state_in, facts
     reply_to = jsc.get(jsc.get(_tf_message(envelope), "message"), "replyTo")
-    if jsc.get(jsc.get(reply_to, "sender"), "source") == "contact":
-        return state_in, facts
+    sender_source = jsc.get(jsc.get(reply_to, "sender"), "source")
     quoted_text = jsc.get(jsc.get(reply_to, "message"), "text")
     try:
         found = quoted_mod.resolve_quoted_turn(
@@ -1035,6 +1034,7 @@ def _quoted_context(
             quoted_text=quoted_text if isinstance(quoted_text, str) else None,
             is_test=bool(dry_run),
             before=datetime.now(tz=timezone.utc),
+            sender_source=sender_source if isinstance(sender_source, str) else None,
         )
     except Exception as exc:  # noqa: BLE001 - a quote must never fail the turn
         logger.warning("quoted turn resolve failed: %s", exc, exc_info=True)

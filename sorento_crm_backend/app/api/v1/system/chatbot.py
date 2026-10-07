@@ -671,6 +671,7 @@ def console_turn(
         media_error=result.media_error,
         prompt_version=result.prompt_version,
         actions=result.actions,
+        message_id=result.message_id,
     )
 
 

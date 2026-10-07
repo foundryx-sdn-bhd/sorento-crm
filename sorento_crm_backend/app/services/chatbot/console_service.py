@@ -106,6 +106,9 @@ class ConsoleTurnResult:
         # The turn's own raw `actions`, carried through unfiltered - see
         # `ConsoleTurnResponse.actions`'s own docstring.
         "actions",
+        # AC-QR-23: the respond message id of the customer message this turn ran on, so the
+        # console can quote it later as the dealer's own message.
+        "message_id",
     )
 
     def __init__(self, **kwargs: Any) -> None:
@@ -198,7 +201,7 @@ def _build_envelope(
     if reply_to is not None:
         inner["replyTo"] = {
             "id": str(reply_to["id"]),
-            "sender": {"source": "n8n"},
+            "sender": {"source": reply_to.get("source") or "n8n"},
             "message": {"text": reply_to["text"]},
         }
     else:
@@ -506,6 +509,7 @@ def run_console_turn(
         trace_summary=_trace_summary(db, body.get("turn_id")),
         prompt_version=_turn_prompt_version(db, body.get("turn_id")),
         actions=body.get("actions"),
+        message_id=envelope_dict["message"]["message"]["messageId"],
     )
 
 
@@ -730,6 +734,7 @@ def _run_console_media_turn(
         media_id=media_id,
         media_text=media_text,
         media_error=media_error,
+        message_id=envelope_dict["message"]["message"]["messageId"],
     )
 
 

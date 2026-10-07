@@ -14,7 +14,7 @@ door.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -128,6 +128,8 @@ class ConsoleReplyTo(BaseModel):
 
     id: str = Field(max_length=128)
     text: str = Field(max_length=4096)
+    # Whose message is quoted: a bot bubble (default) or the customer's own earlier message.
+    source: Literal["n8n", "contact"] = "n8n"
 
 
 class ConsoleTurnRequest(BaseModel):
@@ -178,6 +180,8 @@ class ConsoleTurnResponse(BaseModel):
     # `understood` stage's own fact, the same value the trace screen shows), so each bot
     # bubble can wear it. None when the turn never reached the parser.
     prompt_version: int | None = None
+    # AC-QR-23: the respond message id of the customer message this turn ran on.
+    message_id: str | None = None
     # The turn's own raw `TurnResult.actions` (loosely typed on purpose, like
     # `ChatbotTurnResponse.response` above - it is the engine's shape, not this
     # endpoint's own). Carried through so the console can render a `send_attachments`

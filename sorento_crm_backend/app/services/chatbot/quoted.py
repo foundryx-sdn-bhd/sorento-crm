@@ -31,7 +31,7 @@ _WS = re.compile(r"\s+")
 @dataclass(frozen=True)
 class QuotedTurn:
     turn_id: str
-    via: str  # "id" | "text"
+    via: str  # "id" | "text" | "own"
     focus: dict[str, Any] | None
     open_question: dict[str, Any] | None
     turn_no: int | None
@@ -39,6 +39,19 @@ class QuotedTurn:
 
 def _squash(text: Any) -> str:
     return _WS.sub("", text) if isinstance(text, str) else ""
+
+
+# AC-QR-24: n8n splits one long bot reply into several messages, so a quoted or linked
+# message may be a CHUNK of the stored reply. The floor keeps a short fragment from matching
+# every reply that happens to contain it.
+_CHUNK_FLOOR = 40
+
+
+def _reply_matches(stored: str, candidate: str) -> bool:
+    """Squashed `candidate` is the squashed stored reply, or (long enough) a slice of it."""
+    if not stored or not candidate:
+        return False
+    return candidate == stored or (len(candidate) >= _CHUNK_FLOOR and candidate in stored)
 
 
 def _reply_text(turn: ChatbotTurn) -> str:
@@ -105,7 +118,7 @@ def link_outgoing_row(
         .all()
     )
     for turn in candidates:
-        if _reply_text(turn) == wanted:
+        if _reply_matches(_reply_text(turn), wanted):
             return str(turn.id)
     return None
 
@@ -140,8 +153,26 @@ def resolve_quoted_turn(
     quoted_text: str | None,
     is_test: bool,
     before: datetime,
+    sender_source: str | None = None,
 ) -> QuotedTurn | None:
-    """The engine turn a quoted bot message came from, with the state it wrote (R2)."""
+    """The engine turn a quoted bot message came from, with the state it wrote (R2).
+
+    `sender_source == "contact"` (AC-QR-21): the dealer quoted their OWN message, resolved
+    by id only to the turn that processed it; never the chat_histories hop or the text route."""
+    if sender_source == "contact":
+        if not reply_to_id:
+            return None
+        turn = (
+            db.query(ChatbotTurn)
+            .filter(
+                ChatbotTurn.contact_respond_id == contact_respond_id,
+                ChatbotTurn.message_id == str(reply_to_id),
+                ChatbotTurn.is_test.is_(is_test),
+            )
+            .order_by(ChatbotTurn.created_at.desc())
+            .first()
+        )
+        return _build(turn, "own") if turn is not None else None
     if reply_to_id:
         row = (
             db.query(ChatHistory.chatbot_turn_id)
@@ -185,6 +216,6 @@ def resolve_quoted_turn(
         .all()
     )
     for turn in candidates:
-        if _reply_text(turn) == wanted:
+        if _reply_matches(_reply_text(turn), wanted):
             return _build(db.get(ChatbotTurn, turn.id), "text")
     return None
