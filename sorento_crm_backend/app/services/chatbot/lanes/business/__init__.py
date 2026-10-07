@@ -576,6 +576,20 @@ def _top_selling_ask_category(codes: list[str]) -> str:
     return f"Which category do you mean? Reply with one code: {', '.join(codes)}"
 
 
+def _live_rows_only(result: Any) -> Any:
+    """A probe answer without its expired rows (`is_expired`), `has_result` re-derived."""
+    if not isinstance(result, dict):
+        return result
+    out = dict(result)
+    for key in ("data", "items", "answers"):
+        rows = out.get(key)
+        if isinstance(rows, list):
+            out[key] = [r for r in rows if not (isinstance(r, dict) and r.get("is_expired"))]
+    if all(not out.get(k) for k in ("data", "items", "answers")):
+        out["has_result"] = False
+    return out
+
+
 def _fixed_reply(
     text: str, *, top_selling_asked: str | None = None, required_ask: dict[str, Any] | None = None
 ) -> dict[str, Any]:
@@ -1568,9 +1582,29 @@ def run_fetch(
             except Exception:  # noqa: BLE001 - an unprobed tier is "unknown", never "none"
                 logger.warning("chatbot: tier probe did not run", exc_info=True)
                 probe_results.append(None)
+        kind_ask = bool(semantic_input.get("promotion_types"))
+        if kind_ask:
+            # A kind ask counts only what is live right now (active, inside its window):
+            # a row the serving policy keeps after its end date (`is_expired`) is not.
+            probe_results = [_live_rows_only(r) for r in probe_results]
         collected = fetch_mod.tier_probe_collect(
             tier_gate or payload, plan_items=plan_items, probe_results=probe_results
         )
+        if kind_ask and semantic_input.get("brand_ids") and db is not None:
+            # AC-21, the ONE decision for both exits (this arm runs for the bridge and the
+            # continue exit): nothing live of this kind for this brand at any held level.
+            seen = collected.get("tier_availability")
+            if isinstance(seen, dict) and seen and not any(seen.values()) and not collected.get("tier_probe_failed"):
+                from app.services.chatbot.answer_bridge import no_live_kind_reply
+
+                text = no_live_kind_reply(
+                    db,
+                    {"promotion_types": semantic_input["promotion_types"], "brand_ids": semantic_input["brand_ids"]},
+                    collected,
+                    services.mcp_call,
+                )
+                if text:
+                    return {**_fixed_reply(text), "tier_probe": collected, "kind_none": True}
         item = fetch_mod.fetch_result({**payload, **collected})
         return {
             "kind": "tier_ask",

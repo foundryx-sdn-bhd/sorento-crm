@@ -5741,19 +5741,9 @@ def _run_stages_body(  # noqa: PLR0915
                     bridge_payload = {**resolver_payload, **probed["tier_probe"]}
                 else:
                     bridge_payload = {**resolver_payload, "tier_gate": probed["tier_probe"]}
-            # AC-21: a kind + brand ask with nothing live at any held level says so and
-            # names what other brands have, instead of a menu.
-            collected = probed.get("tier_probe") if isinstance(probed.get("tier_probe"), dict) else {}
-            stamped = collected.get("tier_availability")
-            if isinstance(stamped, dict) and stamped and not any(stamped.values()) and not collected.get("tier_probe_failed"):
-                no_live = answer_bridge.no_live_kind_reply(
-                    db,
-                    turn_runtime.promo_filter(answer_parse_output, db),
-                    collected,
-                    business_services.fetch_services(db).mcp_call,
-                )
-                if no_live:
-                    answer = turn_compose.Answer(text=no_live)
+            # AC-21: the probe's own decision (run_fetch), a kind + brand ask with nothing live.
+            if probed.get("kind_none"):
+                answer = turn_compose.Answer(text=probed["fetch"]["response"])
             if answer is None:
                 answer = answer_bridge.question_for(
                     bridge_payload,
