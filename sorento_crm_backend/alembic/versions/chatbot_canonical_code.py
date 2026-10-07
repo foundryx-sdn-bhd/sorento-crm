@@ -32,7 +32,7 @@ alembic (e.g. to publish against the shared dev database without an ``alembic up
 which is how the console check gets a version id to pass to ``--prompt-version``).
 
 Revision ID: chatbot_canonical_code
-Revises: aig_0001_chatbot_allowed
+Revises: qr_0001_chat_histories_turn_link
 """
 import logging
 
@@ -43,7 +43,7 @@ from app.models.ai_prompt import AIPromptLabel, AIPromptVersion
 from app.services.ai_prompt_registry import PROMPT_KEYS
 
 revision = "chatbot_canonical_code"
-down_revision = "aig_0001_chatbot_allowed"
+down_revision = "qr_0001_chat_histories_turn_link"
 branch_labels = None
 depends_on = None
 
