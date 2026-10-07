@@ -5142,3 +5142,73 @@ describe('FulfilmentBoardPanel: results block lists Transfer to Cancel SO lines 
     expect(block).toHaveTextContent('line 385 CB110-R');
   });
 });
+
+// SO-CANCEL-LINE round 4: a saved cancel on an order with a pending planning change.
+describe('FulfilmentBoardPanel: SO-CANCEL-LINE round 4 cancel held back by a pending change', () => {
+  const cancelDraft = {
+    decision: { verdict: 'cancelled' as const, reason: 'CANCEL ORDER' },
+    saved_by: 'Test Planner',
+    saved_at: '2026-09-08T00:00:00Z',
+  };
+
+  /** Line 1 approved (posts), line 2 carries a saved cancel; the order sits on a pending batch. */
+  function batchedBoard(opts: { cancelLine?: Partial<BoardContribution>; onlyCancel?: boolean } = {}) {
+    const lines = opts.onlyCancel
+      ? [demand({ line_no: 2, item_code: 'CB110' })]
+      : [demand({ line_no: 1 }), demand({ line_no: 2, item_code: 'CB110' })];
+    const built = allSaved(boardOf(lines));
+    const withBatch = {
+      ...built,
+      orders: built.orders.map((order) => ({ ...order, pending_change_batch_id: 'b-1' })),
+    };
+    return withContribution(
+      withBatch,
+      (entry) => entry.line_no === 2,
+      (entry) => ({
+        ...entry,
+        covered: false,
+        draft: cancelDraft,
+        ...opts.cancelLine,
+      }),
+    );
+  }
+
+  async function press() {
+    confirmMany.mockResolvedValue({
+      results: [
+        {
+          pso_id: 'pso-so-a',
+          ok: true,
+          decision_revision: 1,
+          lines_confirmed: [{ project_line_id: 'pl-so-a-1', line_no: 1, item_code: 'WESERP10B' }],
+          lines_carried: 0,
+        },
+      ],
+    });
+    renderPanel(['SO403340']);
+    await pressPreviewThenConfirm();
+    return screen.findByTestId('board-confirm-results');
+  }
+
+  it('AC-F13: lists the saved cancel per line under the pending change', async () => {
+    getPlanningBoard.mockResolvedValue(batchedBoard());
+    const block = await press();
+    expect(block).toHaveTextContent(
+      'Cancel SO is saved; it commits after the pending change is applied.',
+    );
+  });
+
+  it('AC-F14: an order sentence for cancels only names Cancel SO, never a rejection', async () => {
+    getPlanningBoard.mockResolvedValue(batchedBoard());
+    const block = await press();
+    const sentence = within(block).getByText(/^SO403340: (has|was confirmed, but)/);
+    expect(sentence).toHaveTextContent(/Cancel SO/);
+    expect(sentence).not.toHaveTextContent(/rejection/);
+  });
+
+  it('AC-F15: an unplannable cancel is not listed as held back by the batch', async () => {
+    getPlanningBoard.mockResolvedValue(batchedBoard({ cancelLine: { unplannable: true } }));
+    const block = await press();
+    expect(block).not.toHaveTextContent(/commits after the pending change/);
+  });
+});
