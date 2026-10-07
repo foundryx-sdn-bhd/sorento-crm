@@ -16,6 +16,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+import pytest
 from sqlalchemy import text
 
 from tests.chatbot.test_customer_scope_lane import _link_customers, _other_customer
@@ -314,3 +315,136 @@ class TestStaffTurn:
         assert "PO ref:" not in reply, reply
         assert "SO430201" not in reply, reply
         assert "I could not find PO ref" not in reply, reply
+
+
+# --------------------------------------------------------------------------- #
+# Round 2: the parser also emits the PO number as an entity (live console, head 55a643751)
+# --------------------------------------------------------------------------- #
+
+
+def _po_turn_with_entity(session_factory, monkeypatch, hint: str, *, raw: str = REF):
+    qf = _parser_output(
+        domain_hint="order", intent_hint="check_order", order_status=None, po_refs=[REF],
+        entities=[{"raw": raw, "hint": hint, "canonical_code": None, "current_message": True, "confident": True}],
+    )
+    result, captured = _run_turn(
+        session_factory, monkeypatch, qf=qf, text_body=f"status of PO {REF}",
+        msg_id=f"ZZT-po-ref-ent-{uuid.uuid4().hex[:10]}", attributes=[OUTSTANDING_KEY],
+        matches={}, mcp_response=DO_DUMP,
+    )
+    return ((result.reply or {}).get("text") or ""), captured
+
+
+def _carried_raws(session_factory) -> list[str]:
+    """Every `raw` the session's focus carries to the next turn, wherever it sits."""
+    from tests.chatbot.test_outstanding_lane import _session_of
+
+    found: list[str] = []
+
+    def walk(node: Any) -> None:
+        if isinstance(node, dict):
+            if isinstance(node.get("raw"), str):
+                found.append(node["raw"])
+            for v in node.values():
+                walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                walk(v)
+
+    walk(_session_of(session_factory).get("focus") or {})
+    return found
+
+
+@pytest.mark.parametrize("hint", ["product", "order"])
+class TestPoNumberAlsoEmittedAsAnEntity:
+    def test_a_one_match_is_exactly_the_po_answer(self, session_factory, monkeypatch, hint) -> None:
+        _seed_contact(session_factory, variables={})
+        own, = _link_customers(session_factory, "ZZT OWN A")
+        _seed_po_so(session_factory, "SO430301", customer_id=own, po_ref=REF, po_ref_key=REF, debtor_name="ZZT OWN A")
+
+        reply, _ = _po_turn_with_entity(session_factory, monkeypatch, hint)
+
+        assert reply.strip() == f"PO ref: {REF}\n\n" + _card("SO430301", "Open", "not delivered yet", name="ZZT OWN A"), reply
+        assert "could not find" not in reply and "Did you mean" not in reply, reply
+
+    def test_b_no_match_is_exactly_the_one_miss_line(self, session_factory, monkeypatch, hint) -> None:
+        _seed_contact(session_factory, variables={})
+        _link_customers(session_factory, "ZZT OWN A")
+
+        reply, _ = _po_turn_with_entity(session_factory, monkeypatch, hint)
+
+        assert reply.strip() == NOT_FOUND, reply
+
+    def test_c_the_word_is_not_carried_to_the_next_turn(self, session_factory, monkeypatch, hint) -> None:
+        _seed_contact(session_factory, variables={})
+        own, = _link_customers(session_factory, "ZZT OWN A")
+        _seed_po_so(session_factory, "SO430311", customer_id=own, po_ref=REF, po_ref_key=REF, debtor_name="ZZT OWN A")
+
+        _po_turn_with_entity(session_factory, monkeypatch, hint)
+
+        assert REF not in _carried_raws(session_factory), _carried_raws(session_factory)
+
+
+# --------------------------------------------------------------------------- #
+# Round 2: scope pins (security review gaps)
+# --------------------------------------------------------------------------- #
+
+
+class TestScopePins:
+    def test_d_out_of_scope_so_is_neither_counted_nor_shown(self, session_factory, monkeypatch) -> None:
+        _seed_contact(session_factory, variables={})
+        own, = _link_customers(session_factory, "ZZT OWN A")
+        foreign = _other_customer(session_factory, "ZZT FOREIGN SDN BHD")
+        _seed_po_so(session_factory, "SO430321", customer_id=own, po_ref=REF, po_ref_key=REF, debtor_name="ZZT OWN A")
+        _seed_po_so(session_factory, "SO430322", customer_id=foreign, po_ref=REF, po_ref_key=REF, debtor_name="ZZT FOREIGN SDN BHD")
+
+        reply, _ = _po_turn(session_factory, monkeypatch, [REF])
+
+        assert "Sales orders:" not in reply, reply
+        assert "SO430321" in reply and "SO430322" not in reply and "FOREIGN" not in reply, reply
+
+    def test_d_two_in_scope_one_out_of_scope_counts_two(self, session_factory, monkeypatch) -> None:
+        _seed_contact(session_factory, variables={})
+        own, = _link_customers(session_factory, "ZZT OWN A")
+        foreign = _other_customer(session_factory, "ZZT FOREIGN SDN BHD")
+        for number in ("SO430331", "SO430332"):
+            _seed_po_so(session_factory, number, customer_id=own, po_ref=REF, po_ref_key=REF, debtor_name="ZZT OWN A")
+        _seed_po_so(session_factory, "SO430333", customer_id=foreign, po_ref=REF, po_ref_key=REF, debtor_name="ZZT FOREIGN SDN BHD")
+
+        reply, _ = _po_turn(session_factory, monkeypatch, [REF])
+
+        assert reply.strip().startswith(f"PO ref: {REF}\nSales orders: 2\n\n"), reply
+        assert "SO430333" not in reply and "FOREIGN" not in reply, reply
+
+    def test_e_linked_contact_with_scope_not_enforced_still_sees_only_links(self, session_factory, monkeypatch) -> None:
+        """`enforced` is false for a linked contact holding an office access type; the PO
+        answer reads the links, never the enforced flag."""
+        import dataclasses
+
+        from app.services import contact_customer_scope as scope_mod
+
+        real = scope_mod.contact_customer_scope
+        monkeypatch.setattr(
+            scope_mod, "contact_customer_scope",
+            lambda db, contact_id: dataclasses.replace(real(db, contact_id), staff=True),
+        )
+        _seed_contact(session_factory, variables={})
+        own, = _link_customers(session_factory, "ZZT OWN A")
+        foreign = _other_customer(session_factory, "ZZT FOREIGN SDN BHD")
+        _seed_po_so(session_factory, "SO430341", customer_id=own, po_ref=REF, po_ref_key=REF, debtor_name="ZZT OWN A")
+        _seed_po_so(session_factory, "SO430342", customer_id=foreign, po_ref=REF, po_ref_key=REF, debtor_name="ZZT FOREIGN SDN BHD")
+
+        reply, _ = _po_turn(session_factory, monkeypatch, [REF])
+
+        assert "SO430341" in reply and "SO430342" not in reply and "FOREIGN" not in reply, reply
+        assert "Sales orders:" not in reply, reply
+
+    def test_f_no_customer_scope_at_all_finds_nothing(self, session_factory, monkeypatch) -> None:
+        _seed_contact(session_factory, variables={})
+        anyone = _other_customer(session_factory, "ZZT ANY SDN BHD")
+        _seed_po_so(session_factory, "SO430351", customer_id=anyone, po_ref=REF, po_ref_key=REF)
+        _seed_po_so(session_factory, "SO430352", customer_id=None, po_ref=REF, po_ref_key=REF)
+
+        reply, _ = _po_turn(session_factory, monkeypatch, [REF])
+
+        assert reply.strip() == NOT_FOUND, reply
