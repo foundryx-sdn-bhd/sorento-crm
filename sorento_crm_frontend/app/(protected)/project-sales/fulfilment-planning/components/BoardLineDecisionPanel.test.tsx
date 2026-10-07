@@ -2186,8 +2186,9 @@ describe('BoardLineDecisionPanel: re-seeds from the decision when it changes und
     expect(onDecide).toHaveBeenCalledTimes(1);
     const posted = onDecide.mock.calls[0][0] as BoardDecision;
     expect(posted.verdict).toBe('amended');
+    // A zero row is not posted (`decisionFromAmendDraft` drops it); what matters is that the
+    // old 9 at BRW-AM never reaches the server.
     expect(posted.reserve).toEqual([
-      expect.objectContaining({ warehouse_id: 'wh-BRW-AM', qty: '0' }),
       expect.objectContaining({ warehouse_id: 'wh-BRW', qty: '24' }),
     ]);
   });
