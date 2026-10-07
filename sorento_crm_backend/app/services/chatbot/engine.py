@@ -4506,6 +4506,10 @@ def _run_stages_body(  # noqa: PLR0915
     verdict = turn_runtime.with_brand_from_offer(
         verdict, latest_user_message, carried=state_in.focus.set_page
     )
+    # ATTACH-SET-BRAND-FOLLOWUP round 2 (live console pass, 7 Oct 2026): an echo of a row
+    # the focus already holds settled is the carry restated, not an axis to rewrite with
+    # an unsettled copy.
+    verdict = turn_runtime.without_restated_rows(verdict, state_in.focus)
     # Round 3 W3 on PR #833: a class word of this message's own starts a new set.
     verdict = turn_runtime.with_new_set_words(verdict)
     # Fix round 8 on PR #833 (owner retest of round 7): every descriptor the parser
@@ -6242,6 +6246,21 @@ def _run_stages_body(  # noqa: PLR0915
                 if paged:
                     # A page of a carried set: the runner hands back where it stopped.
                     state_out.focus.set_page = envelopes[0].get("set_carry") if envelopes else None
+                    # ATTACH-SET-BRAND-FOLLOWUP round 2 (owner hand test on the local
+                    # copy, 7 Oct 2026): the rows the page LISTED are the subject now.
+                    # The page turn never ran the resolver, so nothing settled the focus
+                    # (`turn/apply._narrow_and_plan` writes it off the resolver's own
+                    # candidates only) and it still held turn 1's code-tier rows and
+                    # class word: "pic" after "sorento" listed 50 taps ran over the two
+                    # COLD TAP rows, and on a copy without that match re-counted every
+                    # tap. The listed rows replace both - the class word described the
+                    # set the page has now narrowed and shown, so a document word after
+                    # it reads about these products and nothing wider.
+                    listed = envelopes[0].get("listed_products") if envelopes else None
+                    if isinstance(listed, list) and listed:
+                        state_out.focus.products = [dict(row) for row in listed if isinstance(row, dict)]
+                        for kind in turn_runtime.CLASS_HINTS:
+                            state_out.focus.extra.pop(kind, None)
                 elif miss_on_typed_product and not class_terms:
                     state_out.focus.set_page = None
                 elif withheld or partly_listed or listed_to_the_limit:
@@ -6259,6 +6278,11 @@ def _run_stages_body(  # noqa: PLR0915
                             if listed_to_the_limit
                             else min(asked, business_answer.SET_LIST_MAX)
                         ),
+                        # ATTACH-SET-BRAND-FOLLOWUP: the document type this answer
+                        # fetched under is part of the set's description.
+                        attachment_type_ids=(
+                            envelopes[0].get("attachment_type_ids") if envelopes else None
+                        ),
                     )
                 elif predicate is not None and plan.fetch and spec_tier and (
                     predicate.get("other_brands") or predicate.get("set_brands")
@@ -6274,6 +6298,9 @@ def _run_stages_body(  # noqa: PLR0915
                         ),
                         shown=qualifying,
                         offer_only=True,
+                        attachment_type_ids=(
+                            envelopes[0].get("attachment_type_ids") if envelopes else None
+                        ),
                     )
                 else:
                     state_out.focus.set_page = None
