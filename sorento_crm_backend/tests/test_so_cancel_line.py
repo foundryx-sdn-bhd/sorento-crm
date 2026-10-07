@@ -350,14 +350,44 @@ def test_c9_one_press_confirms_b_and_cancels_a_then_a_later_press_skips_a(api):
     assert not again.json().get("failing_lines")
 
 
-def _open_batch_naming(world, w, line_key):
+def _built_batch_on_open_line(client, world, w):
+    """A real batch built by `build_batch` (pattern: test_planning_change_apply_on_board.py
+    `_two_order_batch`, :1309-1352): the open line is confirmed at 5, the book then moves it
+    to 7, and the batch carries that QTY_CHANGED row. The board press composes buy 7."""
+    from app.services import planning_change_service
+    from app.services.scm.outstanding_diff import QTY_CHANGED, Change, Diff, Line
+
+    core, line = w["open"]
+    core_so, order, db = w["core_so"], w["order"], world.db
+    assert _confirm_all(
+        client, order, lines=[_line_payload(line.id, buy_qty="5")]
+    )["ok"]
+    core.qty_ordered = Decimal("7")
+    line.qty = Decimal("7")
+    db.commit()
+    before = Line(doc_number=core_so.so_number, item_code="ZZT-ITEM", location="ZZT",
+                  qty=5.0, required_date=None, row_ref=str(core.id))
+    after = Line(doc_number=core_so.so_number, item_code="ZZT-ITEM", location="ZZT",
+                 qty=7.0, required_date=None, row_ref="1")
+    change = Change(QTY_CHANGED, core_so.so_number, "ZZT-ITEM", "ZZT", before=before, after=after)
+    batch = planning_change_service.build_batch(
+        db, Diff(scope_documents=(core_so.so_number,), changes=[change]),
+        applied_line_ids={id(change): str(core.id)},
+        order_ids={core_so.so_number: str(order.id)}, actor=world.eling,
+        import_job_id=None, file_name="Outstanding SO.xlsx",
+    )
+    db.commit()
+    assert batch is not None
+    return batch
+
+
+def _open_batch_naming(world, w, line_key, client=None):
     """An OPEN planning-change batch with one pending `qty_up` row on `w[line_key]`'s line."""
     from .test_fulfilment_line_draft_route import _planning_change_row
     from app.services.planning_change_service import PLANNING_CHANGE_STATE_PENDING
 
     if line_key == "open":
-        core, line = w["open"]
-        product = world.product
+        return _built_batch_on_open_line(client, world, w)
     else:
         core, line, product = w[line_key]
     _row, batch = _planning_change_row(
@@ -395,13 +425,13 @@ def test_c23_a_cancel_of_a_line_the_batch_does_not_name_rides_along_with_the_bat
     db = world.db
     inquiry = _inquiry(db, world.company_id, w["order"].id)
     ack_a = _oi_row(db, world.company_id, inquiry.id, mirror_a.id, product_a.product_code, "36")
-    batch = _open_batch_naming(world, w, "open")
+    batch = _open_batch_naming(world, w, "open", client)
     batch_id = str(batch.id)
 
     response = client.post(
         f"{BASE}/fulfilment-planning/confirm-all",
         json={"orders": [dict(
-            _cancel_body(mirror_a, lines=[_line_payload(open_line.id, buy_qty="5")]),
+            _cancel_body(mirror_a, lines=[_line_payload(open_line.id, buy_qty="7")]),
             pso_id=w["order"].id, batch_id=batch_id,
         )]},
     )
@@ -437,14 +467,14 @@ def test_c24_a_refused_cancel_beside_a_batch_press_writes_neither(api):
     core_a.line_status = "cancelled"
     core_a.cancelled_at = datetime(2026, 10, 1, 9, 0, 0)
     core_a.cancel_reason = "first reason"
-    batch = _open_batch_naming(world, w, "open")
+    batch = _open_batch_naming(world, w, "open", client)
     batch_id = str(batch.id)
     before = _raw(db, core_a.id)
 
     response = client.post(
         f"{BASE}/fulfilment-planning/confirm-all",
         json={"orders": [dict(
-            _cancel_body(mirror_a, lines=[_line_payload(open_line.id, buy_qty="5")]),
+            _cancel_body(mirror_a, lines=[_line_payload(open_line.id, buy_qty="7")]),
             pso_id=w["order"].id, batch_id=batch_id,
         )]},
     )
