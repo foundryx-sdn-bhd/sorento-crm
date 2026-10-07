@@ -22,6 +22,26 @@ import type {
   TurnDetailOrderNeighbor,
 } from '../types/chatbotTurn.types';
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** A nested fact value: a UUID (and any `turn_id`) reads shortened, never in full. */
+function nestedText(key: string, value: unknown): string {
+  if (value !== null && typeof value === 'object') return JSON.stringify(value);
+  const text = String(value);
+  return key === 'turn_id' || UUID_RE.test(text) ? shortTurnId(text) : text;
+}
+
+/** A stage fact as readable text: a plain object reads as "key: value" pairs (never
+ * "[object Object]"); everything else keeps its `String` form. */
+function factText(value: unknown): string {
+  if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+    return Object.entries(value as Record<string, unknown>)
+      .map(([k, v]) => `${k}: ${nestedText(k, v)}`)
+      .join(', ');
+  }
+  return String(value);
+}
+
 /**
  * Turn detail trace view (chatbot growth r1, Slice D2, AC-972, AC-973).
  *
@@ -33,17 +53,6 @@ import type {
  * whatever the backend composed and collapses to nothing wasted when a kind
  * has not shipped yet - never an error, never a placeholder explaining why.
  */
-
-/** A stage fact as readable text: a plain object reads as "key: value" pairs (never
- * "[object Object]"); everything else keeps its `String` form. */
-function factText(value: unknown): string {
-  if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
-    return Object.entries(value as Record<string, unknown>)
-      .map(([k, v]) => `${k}: ${v !== null && typeof v === 'object' ? JSON.stringify(v) : String(v)}`)
-      .join(', ');
-  }
-  return String(value);
-}
 
 export function TurnDetailDrawer({
   turnId,

@@ -88,6 +88,11 @@ describe('TurnDetailDrawer stage facts', () => {
     expect(dd).toBeTruthy();
     expect(dd!.getAttribute('title')).toContain('found: true');
     expect(dd!.getAttribute('title')).toContain('via: own');
+    // No UUIDs in the UI: the nested turn_id reads shortened, in the text and the title.
+    const full = '0b4c0000-0000-4000-8000-000000000000';
+    expect(text).not.toContain(full);
+    expect(dd!.getAttribute('title')).not.toContain(full);
+    expect(dd!.getAttribute('title')).toContain('turn_id: 0b4c');
     expect(container).toBeTruthy();
   });
 
