@@ -66,8 +66,6 @@ class TimedOut(RateLimited):
     purpose: the dealer's reply is the same "busy, send that again" (see module doc)."""
 
 
-
-
 def is_rate_limited(exc: BaseException) -> bool:
     """A 429, however the provider's SDK spells it."""
     status = getattr(exc, "status_code", None)
