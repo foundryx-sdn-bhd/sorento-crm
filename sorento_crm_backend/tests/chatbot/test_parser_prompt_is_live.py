@@ -33,6 +33,7 @@ from app.services.chatbot_parser_prompt import (
     LIVE_SYSTEM_MESSAGE_SHA256,
     LOW_STOCK_ADDENDUM,
     ACCOUNT_LEDGER_ADDENDUM,
+    CANONICAL_CODE_ADDENDUM,
     MEMORY_ADDENDUM,
     TRAP_SPECS_FALLBACK_BLOCK,
     LOW_STOCK_FILTERS_ADDENDUM,
@@ -252,11 +253,14 @@ def _without_growth_r1_addendum(text: str) -> str:
     if text.endswith(MEMORY_ADDENDUM):
         text = text[: -len(MEMORY_ADDENDUM)]
     # STOCK-QTY-PARTIAL-FILL (#1513, 6 Oct 2026): the trap-specs fallback block sits
-    # between LOW_STOCK_FILTERS_ADDENDUM and MEMORY_ADDENDUM (MEMORY stays the tail).
+    # between CANONICAL_CODE_ADDENDUM and MEMORY_ADDENDUM (MEMORY stays the tail);
+    # RESOLVE-SEMANTIC-FALLBACK: CANONICAL_CODE_ADDENDUM sits beneath it, after LOW_STOCK.
     if text.endswith(TRAP_SPECS_FALLBACK_BLOCK):
         text = text[: -len(TRAP_SPECS_FALLBACK_BLOCK)]
     if text.endswith(PROMOTION_KIND_ADDENDUM):
         text = text[: -len(PROMOTION_KIND_ADDENDUM)]
+    if text.endswith(CANONICAL_CODE_ADDENDUM):
+        text = text[: -len(CANONICAL_CODE_ADDENDUM)]
     if text.endswith(LOW_STOCK_FILTERS_ADDENDUM):
         text = text[: -len(LOW_STOCK_FILTERS_ADDENDUM)]
     if text.endswith(ACCOUNT_LEDGER_ADDENDUM):

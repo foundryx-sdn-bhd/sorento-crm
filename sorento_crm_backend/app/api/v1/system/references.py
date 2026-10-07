@@ -38,6 +38,7 @@ from app.services.entity_resolver import (
     resolve_references_intersection,
     token_word_coverage_for_rows,
 )
+from app.services import resolver_code_reader as _resolver_code_reader
 from app.services.error_handler import AppException
 
 
@@ -1263,11 +1264,13 @@ class ResolveReferenceRequest(BaseModel):
             "raw text (with spaces) that produced `tokens[i]` - e.g. "
             "tokens=['SRTWB8004BASINTAP'], raw_tokens=['SRTWB8004 BASIN TAP']. "
             "Ignored unless `tokens` is also given and both lists have equal "
-            "length. Used only by the server-side product head-code retry - "
-            "when a folded token exact-misses, the resolver re-probes the "
-            "leading code-shaped word of its raw text (e.g. n8n folds a "
-            "spoken/typed 'code + description' into one token before calling "
-            "resolve). Absent or null = response byte-identical to today."
+            "length. Read by two server-side steps for a product token that "
+            "exact-misses: the head-code retry (the leading code-shaped word of "
+            "the raw text is re-probed, e.g. n8n folds a typed 'code + "
+            "description' into one token) and, since RESOLVE-SEMANTIC-FALLBACK, "
+            "the code reader, which is shown the raw text and may only read a "
+            "code out of it. Absent or null: the folded token is all the "
+            "resolver has, so neither step has anything beyond it."
         ),
     )
     match_mode: str = Field(
@@ -1296,7 +1299,13 @@ class ResolveReferenceRequest(BaseModel):
             "class label (e.g. 'catalogue', 'brochure', 'spec sheet') to the "
             "AttachmentType UUID for downstream `attachment_type_ids` filters; "
             "pure-alpha labels bypass the code-token regex so callers may pass "
-            "them via `query` (auto-split on whitespace) or `tokens` explicitly."
+            "them via `query` (auto-split on whitespace) or `tokens` explicitly.\n\n"
+            "One reader of this list IS positional: when it has exactly one entry per "
+            "`tokens` entry, the code reader (`semantic_fallback`) treats entry i as "
+            "token i's own hint and asks only about tokens hinted `product` (or left "
+            "unhinted). A set that happens to equal the token count therefore only ever "
+            "skips a reader call on a token whose entry is another type; resolution "
+            "itself still treats the list as a set."
         ),
     )
     access_levels: list[str] | None = Field(
@@ -1521,6 +1530,25 @@ class ResolveReferenceRequest(BaseModel):
             "one, or the shadow comparison it exists for compares two behaviours."
         ),
     )
+    semantic_fallback: bool = Field(
+        default=True,
+        description=(
+            "RESOLVE-SEMANTIC-FALLBACK (owner ruling, 6 Oct 2026: the same behaviour in "
+            "every place that resolves). On by default: a pre-extracted product token that "
+            "matched no code tier is put to the code reader ONCE (`app/services/"
+            "resolver_code_reader.py`, one model call per request, at most 5 tokens, 3 s), "
+            "which may only read a code or a code-family fragment out of the text the "
+            "caller typed for it, i.e. its `raw_tokens` entry; the catalogue then decides. "
+            "A token sent with no `raw_tokens` entry is not asked (`fallback.reason` "
+            "`no_typed_text`): the folded token is all there is, and the code tiers already "
+            "missed on it. A `code` answer resolves the token on the exact tier (the product "
+            "row, else a product set; the exact row alone, never its variant siblings), a "
+            "`family` answer is the usual prefix / substring picker, `none` leaves it in "
+            "`unresolved_tokens`. The verdict rides each affected resolution's `fallback` "
+            "key (absent everywhere else). `false` opts this request out: no model call, "
+            "response byte-identical to before the feature."
+        ),
+    )
     domain_hint: str | None = Field(
         default=None,
         validation_alias=AliasChoices("domain_hint", "domain"),
@@ -1615,7 +1643,16 @@ def _code_matched(result: dict[str, Any], tokens: list[str] | None = None) -> bo
 
     for resolution in result.get("resolutions") or []:
         token = (resolution or {}).get("token")
-        if any(_hit(token, m) for m in (resolution or {}).get("matches") or []):
+        # RESOLVE-SEMANTIC-FALLBACK: a token the code reader read a code (or a family
+        # fragment) out of IS that code here: the resolver's own verdict, confirmed by the
+        # catalogue on its exact / prefix probe. The folded token ("TAPSRTWT5608") never
+        # contains the code read out of it ("SRTWT5608"), so without this the HAS /
+        # counted-set branch ran over a token the resolver had already placed by code and
+        # a dealer read "Couldn't find a TAP SRTWT5608 with stock (checked SRTWT5608)"
+        # (console pass on a1eae3bb) instead of the code's availability line.
+        read = ((resolution or {}).get("fallback") or {}).get("value")
+        matches = (resolution or {}).get("matches") or []
+        if any(_hit(token, m) or (read and _hit(read, m)) for m in matches):
             return True
     return any(
         _hit(token, match)
@@ -2305,9 +2342,19 @@ def _resolve_input(
     limit: int | None = None,
     raw_tokens: list[str] | None = None,
     regions: frozenset[str] | None = None,
+    code_reader: Any = None,
     hint_locked_tokens: list[str] | None = None,
     brand_tokens: dict[str, str] | None = None,
 ):
+    # RESOLVE-SEMANTIC-FALLBACK: the one code reader for this REQUEST, wrapped here so the
+    # per-token memo and the per-request cap hold whatever reader a caller hands in (a
+    # test double, a future caller) and across the two passes that share it (AND, then the
+    # OR retry on a zero intersection). The `fallback_to_all_types` cross-type re-run below
+    # carries no reader at all. A `resolver_code_reader.CodeReader`, or None.
+    if code_reader is not None:
+        from app.services.resolver_code_reader import per_request
+
+        code_reader = per_request(code_reader)
     mode = (match_mode or "or").strip().lower()
     # A brand token is locked as well: its kind is final and it is never rerun.
     if brand_tokens:
@@ -2484,6 +2531,10 @@ def _resolve_input(
                 # positionally with it - see PLAN-resolver-head-code-retry.
                 raw_tokens=raw_tokens if tokens_override is None else None,
                 regions=regions,
+                # The reader answers a token a PARSER chose: words this route split out of
+                # a sentence for an alpha-only type (`_synthesize_alpha_tokens`) are not
+                # that, so they are never put to it (security review, final head item 5).
+                code_reader=None if synthesized_from_query else code_reader,
             ).as_dict()
         # CLASS-HINT-KIND-PICK: a locked token's name-matched kinds go before anything
         # downstream can read them as an answer - the AND exit, the OR degrade and the
@@ -2619,7 +2670,9 @@ def _resolve_input(
         has_matches = bool(r.get("matches") or [])
         fb_entry = fb_by_token.get(tok) if tok else None
         if not has_matches and fb_entry and (fb_entry.get("matches") or []):
-            merged.append(fb_entry)
+            # The primary pass's code-reader verdict stays on the trace (it is the pass
+            # that asked); the cross-type entry carries none of its own.
+            merged.append({**fb_entry, "fallback": r["fallback"]} if r.get("fallback") is not None else fb_entry)
             found_any_fallback = True
         elif (
             not has_matches
@@ -2721,6 +2774,19 @@ def resolve_reference(
         ),
     ),
     domain: str | None = Query(None, description="Alias for `domain_hint`."),
+    semantic_fallback: bool = Query(
+        True,
+        description=(
+            "RESOLVE-SEMANTIC-FALLBACK: the code reader (see the POST body's field of the "
+            "same name) reads a code out of the text the caller TYPED for a token, which "
+            "is the POST body's `raw_tokens`. This GET variant carries no `raw_tokens`, so "
+            "the reader is never asked here: a product-typed `tokens` entry that matched no code tier "
+            "gains `fallback: {asked: false, kind: not_asked, reason: no_typed_text}` and "
+            "stays unresolved (a free-text `query` is never put to the reader at all). Use "
+            "POST with `raw_tokens` to have the token read. `false` "
+            "drops the key; the response is then byte-identical to before the feature."
+        ),
+    ),
     limit: int | None = Query(
         None,
         ge=1,
@@ -2742,6 +2808,16 @@ def resolve_reference(
     Entity pinning (`entity_pins`) is POST-only - see `ResolveReferenceRequest`; this GET variant
     has no equivalent parameter.
     """
+    code_reader = (
+        _resolver_code_reader.reader_for(
+            db,
+            message_text=query,
+            user_id=current_user.get("id") if isinstance(current_user, dict) else None,
+            dry_run=False,
+        )
+        if semantic_fallback
+        else None
+    )
     return _stamp_brand_on_products(
         db,
         _resolve_input(
@@ -2754,6 +2830,7 @@ def resolve_reference(
             fallback_to_all_types=fallback_to_all_types,
             domain_hint=domain_hint or domain,
             limit=limit,
+            code_reader=code_reader,
         ),
     )
 
@@ -3038,6 +3115,38 @@ def _emit_spec_matches(
     ]
 
 
+def _typed_text_after_narrowing(
+    payload: "ResolveReferenceRequest", narrowed: list[str]
+) -> list[str] | None:
+    """The `raw_tokens` list for a token list a narrowing step produced.
+
+    RESOLVE-SEMANTIC-FALLBACK (reviewer on 9b6a09f2): a token narrowing left as it was
+    keeps its typed text, so the code reader can still read a code out of it; dropping
+    the whole `raw_tokens` list made every other token of a mixed multi-line turn
+    `not_asked / no_typed_text`. A token narrowing replaced (the variant codes its words
+    or specs picked) has no typed text of its own and is not asked; a token typed twice
+    keeps its last line's text, the resolver's own rule.
+
+    Narrowing that changes the token COUNT also turns off the resolver's per-token hint
+    pairing (`allowed_entity_types` keeps its old length), so the only hint gate left is
+    this carry: a token the caller typed as a customer or a brand keeps no typed text and
+    is never put to the reader as a product question (security-reviewer on 5839705b).
+    Shared by `narrow_code_tokens` and `narrow_code_tokens_by_specs` (#1513).
+    """
+    if not (payload.tokens and payload.raw_tokens and len(payload.raw_tokens) == len(payload.tokens)):
+        return None
+    hinted = (
+        list(payload.allowed_entity_types)
+        if payload.allowed_entity_types and len(payload.allowed_entity_types) == len(payload.tokens)
+        else None
+    )
+    typed_by_token = {
+        tok: (raw if hinted is None or _canonical_entity_type(hinted[idx] or "") in ("", "product") else "")
+        for idx, (tok, raw) in enumerate(zip(payload.tokens, payload.raw_tokens))
+    }
+    return [typed_by_token.get(tok, "") for tok in narrowed]
+
+
 @router.post("/resolve")
 def resolve_reference_post(
     payload: ResolveReferenceRequest,
@@ -3055,7 +3164,9 @@ def resolve_reference_post(
         db, query=payload.query or "", tokens=payload.tokens, allowed_types=payload.allowed_entity_types
     )
     if narrowed is not None:
-        payload = payload.model_copy(update={"tokens": narrowed, "raw_tokens": None})
+        payload = payload.model_copy(
+            update={"tokens": narrowed, "raw_tokens": _typed_text_after_narrowing(payload, narrowed)}
+        )
     # STOCK-QTY-PARTIAL-FILL, owner ruling Q4 (a) (6 Oct 2026): a spec said right after a
     # product answer ("How about p trap" after SRTWC286-SH) is that product's variant. The
     # parser carries the product (`entity_op "reuse"`) and the grounded spec arrives as
@@ -3082,7 +3193,11 @@ def resolve_reference_post(
                 k: v for k, v in (payload.entity_pins or {}).items() if _pin_key_norm(k) not in replaced
             } or None
             payload = payload.model_copy(
-                update={"tokens": by_specs, "raw_tokens": None, "entity_pins": pins}
+                update={
+                    "tokens": by_specs,
+                    "raw_tokens": _typed_text_after_narrowing(payload, by_specs),
+                    "entity_pins": pins,
+                }
             )
     # A contact's packing list regions (unresolved = West) bound the shipments it can be
     # shown; no contact_id = no filter.
@@ -3093,6 +3208,18 @@ def resolve_reference_post(
         regions = rules_for_contact(
             db, resolve_request_contact(db, payload.contact_id, payload.space_id)
         ).regions
+    # RESOLVE-SEMANTIC-FALLBACK: the code reader for this request (see the field's own
+    # description); `dry_run` keeps its usage row out, exactly as the spec reader's.
+    code_reader = (
+        _resolver_code_reader.reader_for(
+            db,
+            message_text=payload.query,
+            user_id=current_user.get("id") if isinstance(current_user, dict) else None,
+            dry_run=payload.dry_run,
+        )
+        if payload.semantic_fallback
+        else None
+    )
     try:
         result = _resolve_input(
             db,
@@ -3107,6 +3234,7 @@ def resolve_reference_post(
             limit=payload.limit,
             raw_tokens=payload.raw_tokens,
             regions=regions,
+            code_reader=code_reader,
             hint_locked_tokens=payload.hint_locked_tokens,
             brand_tokens=payload.brand_tokens,
         )

@@ -655,6 +655,10 @@ def resolve_entity_body(
         "query": _query_text(ctx),
         "match_mode": match_mode,
         "tokens": [_token_of(x) for x in entities],
+        # RESOLVE-SEMANTIC-FALLBACK: the pre-fold text behind each token, positionally
+        # parallel (the route's own `raw_tokens` contract), so the shared resolver's code
+        # reader is asked about "TAP SRTWT5608" and not only the folded "TAPSRTWT5608".
+        "raw_tokens": [jsc.nullish_str(jsc.get(x, "raw")) for x in entities],
         "allowed_entity_types": [jsc.get(x, "hint") for x in entities],
         "access_levels": (
             recomposed_access_levels
