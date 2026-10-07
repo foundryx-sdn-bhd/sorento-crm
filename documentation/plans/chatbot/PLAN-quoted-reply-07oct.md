@@ -1,6 +1,6 @@
 # PLAN: a quoted reply answers the quoted question (QUOTED-REPLY)
 
-Status: draft, awaiting the owner's answers to the behaviour card (crew ask a43821571, 7 Oct 2026); track: feature M, backend only (no migration, no auth/RBAC change, no new ingest surface, no UI); LEAD pattern (tester -> coder -> reviewer)
+Status: building (owner answered the card 7 Oct 2026: Q1 id route with the photo link fixed on our side, Q2 (a) parser-interpreted, Q3 (a), Q4 (b) any quoted bot message is the context, Q5 (a) all kinds); track: feature L (one migration: `chat_histories.chatbot_turn_id`; backend only, no auth/RBAC change, no new ingest surface, no UI); LEAD pattern (tester -> coder -> reviewer + security-reviewer)
 
 UAC: `quoted-reply-acceptance-criteria.md` (alongside). Lane: `crew/quoted-reply`, base origin/main e4158ab52.
 
@@ -40,54 +40,95 @@ Measured facts, each cited in the behaviour card (`crew/state/files/QUOTED-REPLY
    without an engine turn (`engine.py:1573-1596`), so the focus kept an older stock task; the second
    "1 unit" is then the answered task's revision (`turn/task.py:667-708`).
 
-## Rules (card recommendations; revised on the owner's answers)
+## Rules (owner rulings, 7 Oct 2026)
 
-R1 Target. A message that quotes a bot message resolves the QUOTED TURN: id chain first, else exact
-   text equality on the bot's own stored reply (same contact, same `is_test` world as the envelope,
-   H57), latest before this message. The quoted question is that turn's stored open question
-   (`open_question.after`), else its open stock task (`focus.after.tasks`). Nothing is read from the
-   dealer's words.
-R2 Answer. When a quoted question exists and differs from the live open question, the parser's
-   `Open question:` object (`engine.py:4185-4209`) is built from the QUOTED question and APPLY answers
-   it through the seams it uses today (`turn/apply.py:3298-3310` pick / yes-no, `:3396` task fill).
-   The live open question is left untouched and not re-asked in the reply (card Q3 (a)).
-R3 Fallback = today's behaviour: no quote; quote of the dealer's own message
-   (`replyTo.sender.source == "contact"`); quoted turn not found; quoted turn stored no question;
-   quoted message is not a question (card Q4 (a), issue filed separately). The `received` trace
-   record gains `quoted_question: {found, kind, via: chain|text|none}`.
-R4 An expired escalation offer (`turn/pending.py:301-339`, TTL 3) is not revived by a quote.
-R5 A quoted question that was already answered: the quoted turn's task names the product; a bare
-   number revises it (`turn/task.py:667-708`), card Q2 (a).
+R1 Link (Q1). Every bot reply the engine answered is linked to its engine turn BY ID on our side:
+   `chat_histories.chatbot_turn_id` (new nullable column, uuid of `chatbot.turns.id`), stamped at the
+   OUTGOING ingest (`app/api/v1/external/chat_history.py`):
+   (i) `payload.chatbot_turn_id` when n8n passes the engine turn id (new optional payload key; the
+       sub-sendmsg save already passes `turn_id` through the same input map, so the owner can add it
+       later; not part of this lane);
+   (ii) else the incoming row of the same contact with the same n8n `turn_id` -> its `message_id` ->
+       `chatbot.turns` (contact, message_id, is_test false): measured 37/43 question quotes;
+   (iii) else the latest `chatbot.turns` row of the contact finished within 120 s before `sent_at` whose
+       `response.reply.text` equals the message whitespace-insensitively (the photo path, where the
+       incoming row carries no `turn_id`): the remaining 6 of 43. Time alone is not safe (39/43 agree,
+       3 disagree, measured), so the text equality is the gate and the window only bounds the scan.
+   Stamping is fill-if-null on the duplicate-mirror conflict like the other columns. A reply n8n
+   composed alone has no engine turn and stays NULL (1/43).
+R2 Resolve (Q1). An inbound message with `replyTo` whose `sender.source != "contact"` resolves the
+   quoted turn: `replyTo.id` + contact -> `chat_histories` row -> `chatbot_turn_id` -> `chatbot.turns`.
+   Fallback, for rows stamped NULL or written before this ships: the text equality of (iii) on
+   `replyTo.message.text` (the bot's own stored reply, never the dealer's words), same contact, same
+   `is_test` world, latest before this message. Nothing else.
+R3 Context (Q4 (b), Q5 (a)). The quoted turn's stored state is this message's context: the turn loads
+   `focus` and the open question from the quoted turn's trace (`state` event, see Design) instead of
+   the live ones. The parser then reads the quoted question as `Open question:` and the quoted subject
+   as `Current subject:` with no new rule, and APPLY answers through the seams it uses today
+   (`turn/apply.py:3298-3310`, `:3396`). Every kind: stock quantity ask, numbered pick, yes/no, offer,
+   and a bot message that asked nothing (its products / customers / document / list become the
+   subject).
+R4 Live question untouched (Q3 (a)). After the turn, the open question and the open stock task written
+   back are the LIVE ones whenever this turn did not open a question or task of its own; the quoted
+   branch's answered task is not carried over an open live one. The reply never re-asks the live
+   question. The rest of the focus is what this turn left (the conversation continued from the quoted
+   message).
+R5 Already answered (Q2 (a)). The quoted turn's state carries the answered task; a bare number is its
+   revision (`turn/task.py:667-708`); the parser decides quantity vs pick from the quoted question
+   object (no code text rule).
+R6 Fallback = today's behaviour: no `replyTo`; quote of the dealer's own message; nothing resolves; the
+   quoted turn has no stored state (capped or pre-change trace). An escalation offer in the quoted
+   state is not revived when `live turn_no - quoted turn_no >= 3` (`turn/pending.py:301-339`).
+R7 Never loaded from the quoted turn: `access_levels`, profile, reply language, grants.
+
+## Real examples (6 Oct prod copy, times MYT)
+
+E1 266b6326: quoted "How many units of SRTWC201?" + "10 unit" -> "SRTWC201 x 10". Quoted == live. Unchanged.
+E2 6207c208: quoted "I have SRTBF11841. What would you like me to know?" + "have stock? or eta date?"
+   -> today "How many units of SRTWC201?" (live task). After R3: context = turn a9201085's focus
+   (products [SRTBF11841], no task) -> stock and incoming for SRTBF11841; live SRTWC201 task stays (R4).
+E3 534e55aa: quoted tier pick + "dealer" -> promo flyer. Unchanged.
+E4 775bfd28: quoted an answered six-product verdict + "whick item discontinued?". Quoted == live
+   state; behaviour governed by issue #1521, unchanged here.
+E5 e772884d (the reporting dealer, 5 Oct): quoted a human relay "SRT112 still in production" + "Can
+   check estimated loading date?" -> answered about the live product SRTWT6232-GM. That message has no
+   engine turn (n8n sent it alone): R6, unchanged. Only n8n stamping a turn id could cover it.
+E6 Owner case shape: live task C; quote "How many units of A?" + "1 unit" -> A x 1, C stays open;
+   quote "How many units of B?" + "1 unit" -> B x 1.
 
 ## Design (the narrowest seams)
 
-- `app/services/chatbot/quoted.py` (new, pure + one DB read): `resolve_quoted_question(db, *,
-  contact_respond_id, reply_to_id, quoted_text, is_test, before_message_id) -> QuotedQuestion | None`
-  with `pending: Pending | None`, `task: Task | None`, `via`, `turn_id`. Reads `chatbot.turns`
-  (`ChatbotTurn`) and `chat_histories` only; decodes with `pending.from_wire` / `task_from_wire`.
-- Storage: the tail writes one small `question` trace event per turn (`turn_trace.add("question",
-  {"open_question": <pending wire>, "task": <stock task wire>})`, a few hundred bytes) so the resolver
-  never depends on the 32 KB memory event; the memory event stays the fallback for turns recorded
-  before this ships.
-- `engine.py` at `state_in` (after `turn_runtime.load_state`, `engine.py:3961`): when
-  `_reply_to_message_id(envelope)` is set and the quoted sender is not the contact, resolve; when the
-  quoted question is not the live one, substitute `state_in.pending` / `state_in.focus.tasks` for
-  this turn's parser context and APPLY, keep the live question aside, and restore it on the way out
-  unless this turn opened a new question of its own (R2). Trace facts on `received`.
-- Console: `scripts/chatbot_console_check.py` gains a case key `quote: <text>` that puts
-  `message.message.replyTo = {id: <previous dry-run reply id or synthetic>, sender: {source: n8n},
-  message: {text}}` on the envelope so a YAML case can quote an earlier turn of the same run.
+- Migration `qr_0001_chat_histories_chatbot_turn_id`: `ALTER TABLE chat_histories ADD COLUMN
+  chatbot_turn_id VARCHAR(36) NULL`. No index: the lookup goes through the existing
+  (contact_id, message_id) index first. Model `app/models/chat_history.py`.
+- `app/services/chatbot/quoted.py` (new): `link_outgoing_row(db, *, contact_id, turn_id, message, sent_at,
+  explicit) -> str | None` (R1) and `resolve_quoted_turn(db, *, contact_respond_id, reply_to_id,
+  quoted_text, is_test, before) -> QuotedTurn | None` (R2) with `turn_id`, `via` (`id` | `text`),
+  `focus` (wire), `open_question` (wire), `turn_no`. Reads `ChatHistory` and `ChatbotTurn` only.
+- Ingest: `ingest_chat_message` calls `link_outgoing_row` for `type == "outgoing"` and writes the
+  column (INSERT value + `COALESCE` on conflict). Schema gains optional `chatbot_turn_id`.
+- Trace: the tail writes one `state` event per turn, `{focus: <focus wire>, open_question: <pending
+  wire>, turn_no}` (max ~29 KB measured on focus.after since 1 Oct, under the 32 KB `_cap`; the
+  `memory` event peaked at 31,953 B and is the fallback for turns recorded before this ships).
+- Engine, after `turn_runtime.load_state` (`engine.py:3961`): when `_reply_to_message_id(envelope)` is
+  set and the quoted sender is not the contact, resolve; when found, `state_in = State(focus=<quoted
+  focus>, pending=<quoted open question, R6 TTL>, profile=live, turn_no=live, ideation=live)` and keep
+  the live `pending` / open stock task aside for R4, applied where the tail builds the written state.
+  `received` facts: `quoted_turn: {found, via, turn_id, same_as_live}`.
+- Console: `scripts/chatbot_console_check.py` case key `quote: <text>` puts a bot-sourced `replyTo`
+  with that text on the envelope (id synthetic); the text fallback resolves the dry-run turn of the
+  same run (same `is_test` world).
 - No parser prompt change. No new wording.
 
 ## Tickets (one lane, slices land as commits)
 
-1. `test(red)`: tester writes the red tests from the UAC (resolver + engine substitution + fallback
-   + console key), commits them alone, posts `crew-note: red-proof`.
-2. Coder: `quoted.py`, the `question` trace event, the engine seam, the console key, until green.
-3. Kill test, reviewer verdict, security-reviewer verdict (reads a stored turn by contact id and
-   `is_test` world: cross-contact and cross-world leakage are the two checks), live console pass.
-4. Hand test script `laneboard/scripts/<PR>.md`, `crew report --handtest`.
+1. `test(red)`: tester writes the red tests from the UAC, commits them alone, red-proof posted.
+2. Coder: migration + model + schema + `quoted.py` + ingest stamping + `state` event + engine seam +
+   console key, until green. Worker-free; `alembic upgrade head` on the crew copy before hand test.
+3. Kill test, reviewer, security-reviewer (contact and `is_test` scoping of both reads; nothing from a
+   quoted turn may re-grant access), live console pass, hand test script.
 
-## Open (owner)
+## Open
 
-Card Q1 to Q5. Step-1 verification needs the 7 Oct trace of the reporting contact.
+None blocking. n8n passthrough of the engine turn id on the outgoing save (owner, later) retires the
+text step (iii) for photo replies.
