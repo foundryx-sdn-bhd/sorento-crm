@@ -43,3 +43,12 @@ also don't have lines one"), Q2 (a), Q3 yes, Q4 (a), Q5 (a). Snapshot 6 Oct: 229
   (`run(db, apply=True, allow_unlink=True)`). Crew links such a contact to the AutoCount account the owner names first.
 
 No UI change, no migration.
+
+## Relink before delete (owner, 8 Oct, a86589960)
+
+Owner: "i think the deluxe home centre (ktn) can just link to other deluxe home centre customer".
+- AC-15 The script holds an explicit map (no name matching in code): contact e84b7e3c-9a3d-432e-b81b-ab5c5c2cb586 ->
+  300-D093 (1aff9ef4-...), 300-D061 DELUXE HOME CENTRE SDN BHD - [A/C I] Mocha (d69fc206-...), 300-D094 (229130f3-...),
+  300-D095 (1fd2f9a9-...). Apply inserts those links (company_id = the customer's, as all 903 existing links) before the
+  deletes, so the contact is never unlinked; an existing link is not duplicated; an unknown id is reported "missing".
+  Dry run prints the four links.
