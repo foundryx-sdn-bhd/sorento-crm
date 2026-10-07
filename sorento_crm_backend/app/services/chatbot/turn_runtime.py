@@ -1768,6 +1768,23 @@ def unplaced_tokens(entities: list[Any], resolved: Any) -> dict[str, str]:
     return {key: raw for key, raw in named.items() if key in missed}
 
 
+def named_unplaced(entities: list[Any], resolved: Any) -> dict[str, str]:
+    """The resolver's own verdict on what THIS message named: `unplaced_tokens` plus the
+    absorbed ones (`absorbed_tokens`), keyed by `token_key`, valued with the typed text.
+
+    ONE builder (ROGUE-CONVO-REVIEW-R2, reviewer finding 3): `resolve_kinds` keys its
+    `ResolveOutcome.unplaced_tokens` by it, and `lanes/business.complete_answer` asks
+    "did this message's own product token miss?" over the same map, so the two paths
+    cannot answer differently. The availability filter (`engine._exact_codes_only`)
+    rewrites the ENGINE's copy of this map for the fetch; that rewrite is the fetch's
+    business, never this question's.
+    """
+    unplaced = unplaced_tokens(entities, resolved)
+    for key, raw in absorbed_tokens(entities, resolved).items():
+        unplaced.setdefault(key, raw)
+    return unplaced
+
+
 def not_checked_tokens(entities: list[Any], resolved: Any) -> dict[str, str]:
     """The tokens THIS message named that the resolver never looked up, lower-cased.
 
@@ -2144,9 +2161,7 @@ def resolve_kinds(
 
     gate = payload.get("gate") if isinstance(payload.get("gate"), dict) else {}
     compatible = [e for e in jsc.array(gate.get("compatible_entities")) if isinstance(e, dict)]
-    unplaced = unplaced_tokens(entities, resolved)
-    for key, raw in absorbed_tokens(entities, resolved).items():
-        unplaced.setdefault(key, raw)
+    unplaced = named_unplaced(entities, resolved)
     compatible = _without_guesses(compatible, resolved, unplaced)
     if is_order_domain and live_brands_read:
         # #1262 fix lane round 3, S5: a brand word that is NOT on the live list, typed
@@ -2534,8 +2549,9 @@ def _spec_quantities(
     # AVAIL-PICKER (owner trace 5 Oct 2026): a code-like token that is a SUBSTRING of
     # exactly one resolved code ("rt5674" placed SRT5674 alone) is read the same way,
     # prefix first, the order `engine._exact_codes_only` and the resolver's product probe
-    # share. A word or bare number with a quantity ("2", "new") never reads as a code.
-    from app.services.chatbot.turn.task import code_like
+    # share. A word with a quantity ("new") never reads as a code; a bare number does
+    # (`code_or_number`, owner ruling 6 Oct 2026: "9031 x 3" is that code's quantity).
+    from app.services.chatbot.turn.task import code_or_number
 
     resolved_codes = {
         str(e["uuid"]): e.get("code") or e.get("canonical_code")
@@ -2549,7 +2565,7 @@ def _spec_quantities(
         prefixed = [
             uuid for uuid, code in resolved_codes.items() if _token_key(code).startswith(token)
         ]
-        if not prefixed and code_like(token):
+        if not prefixed and code_or_number(token):
             prefixed = [uuid for uuid, code in resolved_codes.items() if token in _token_key(code)]
         if len(prefixed) == 1 and prefixed[0] not in quantities:
             quantities[prefixed[0]] = quantity
@@ -3334,6 +3350,35 @@ def spec_tier_matched(resolved: Any) -> bool:
 def _entitled_names(values: Any) -> list[str]:
     """The access-level NAMES in `values`, trimmed, non-empty, in order."""
     return [v for v in jsc.array(values) if isinstance(v, str) and v.strip()]
+
+
+def typed_product_unplaced(verdict: Any, unplaced: Mapping[str, str] | None) -> bool:
+    """Did THIS message name a product token the resolver could not place?
+
+    ROGUE-CONVO-REVIEW (owner ruling Q4, 6 Oct 2026): a miss on the customer's own
+    product token is a miss, whatever the spec tier read off the words around it. A
+    whole description line with a code inside it ("SORENTO ONE PIECE WASHDOWN TOILET
+    (S-TRAP250MM)-SRTWC8354-SH") was one unplaced product token, and the set tier
+    counted 145 water closets off its words: that set is not what the dealer asked for,
+    so it is never carried as a `set_page`. Keyed the way `unplaced_tokens` keys its map
+    (`turn.state.token_key`). A brand or category word nobody could place is not a miss
+    on the product.
+
+    ROGUE-CONVO-REVIEW-R2: asked ONCE per turn, over the resolver's own listing
+    (`named_unplaced`, the map `ResolveOutcome.unplaced_tokens` carries BEFORE the
+    availability filter rewrites the engine's copy), and handed to both readers: the
+    composer's "what you want" header (`not_found_error_message(product_token_missed=)`)
+    and the `set_page` carry. The composer used to fold the question a second way.
+    """
+    if not unplaced:
+        return False
+    for entity in jsc.array(jsc.get(verdict, "entities")):
+        if jsc.get(entity, "hint") not in (None, "product"):
+            continue
+        key = _token_key(jsc.nullish_str(jsc.get(entity, "raw")).strip())
+        if key and key in unplaced:
+            return True
+    return False
 
 
 def set_page_carry(

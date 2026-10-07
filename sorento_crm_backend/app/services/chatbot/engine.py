@@ -77,7 +77,7 @@ from app.services.chatbot.turn import memory as memory_mod
 from app.services.chatbot.turn import profile_facts as profile_facts_mod
 from app.services.chatbot.turn import tail as turn_tail
 from app.services.chatbot.turn import task as turn_task
-from app.services.chatbot.turn.apply import apply as turn_apply
+from app.services.chatbot.turn.apply import apply as _apply_state
 from app.services.chatbot.turn.apply import is_product_shaped_entity
 from app.services.chatbot.turn.apply import record_top_selling_asked
 from app.services.chatbot.turn.decide import EVERYTHING, broaden_kind, broaden_level
@@ -529,10 +529,17 @@ def _exact_codes_only(
       product_code, `entity_resolver._prefix_probe_product`). The same prefix-then-
       substring order as that probe: this filter keeps what the resolver placed, it
       matches nothing of its own;
-    * else a code-like token is not found, and goes to the did-you-mean ("srt5764");
-    * a word or a bare number with no exact code is not a product at all: the describe /
-      semantic matches the resolver found for "xx", "10" or a "2" typed over a
-      did-you-mean listed a page of the catalogue.
+    * else a code-like token or a bare number is not found, and goes to the did-you-mean
+      ("srt5764");
+    * a word with no exact code is not a product at all: the describe / semantic matches
+      the resolver found for "xx" listed a page of the catalogue.
+    ROGUE-CONVO-REVIEW (owner ruling, 6 Oct 2026, prod turn "8066 stock ?" answered with
+    the scope sentence): a BARE NUMBER takes the same ladder as a code-like token
+    (`turn.task.code_or_number`): exact, then the prefix family, then the substring family
+    the resolver's own probe placed (SRTWC8066-*, the picker compact mode already gives),
+    else a miss that stays unplaced so the reply names it. It was `ignored` here, which
+    dropped both the family AND the token, and the dealer read "I need at least one
+    filter" for a product they had named.
     STOCK-MISS-RENDER (owner report, 6 Oct 2026, prod turn #f763 "Srt 364-hp x 1 stock
     available?"): the typed word and the resolver's code are compared the way the
     resolver itself matched them - case AND separators folded (`turn.state.token_key`,
@@ -565,7 +572,7 @@ def _exact_codes_only(
     for fold, typed in tokens:
         exact = [c for c in candidates if code_of(c) == fold]
         family: list[dict[str, Any]] = []
-        if _code_like(fold):
+        if turn_task.code_or_number(fold):
             family = [c for c in candidates if code_of(c).startswith(fold)] or [
                 c for c in candidates if fold in code_of(c)
             ]
@@ -573,7 +580,7 @@ def _exact_codes_only(
         if chosen:
             keep.update(str(c.get("uuid")) for c in chosen)
             per_token[fold] = len(chosen)
-        elif _code_like(fold):
+        elif turn_task.code_or_number(fold):
             misses[fold] = typed
         else:
             ignored.add(fold)
@@ -988,6 +995,96 @@ def _reply_to_message_id(envelope: Envelope) -> str | None:
     """`tf-message.message.replyTo.id` - the quoted message, when the customer quoted."""
     value = jsc.get(jsc.get(jsc.get(_tf_message(envelope), "message"), "replyTo"), "id")
     return str(value) if value not in (None, "") else None
+
+
+def turn_apply(state_in: Any, *args: Any, **kwargs: Any) -> Any:
+    """APPLY, keeping the QUOTED-REPLY live-question aside (R4) on the state it returns:
+    APPLY builds a fresh `State`, which would otherwise drop it."""
+    out, plan = _apply_state(state_in, *args, **kwargs)
+    live = getattr(state_in, "quoted_live", None)
+    if live and getattr(out, "quoted_live", None) is None:
+        out = dataclasses_replace(out, quoted_live=live)
+    return out, plan
+
+
+def _quoted_context(
+    db: Session,
+    envelope: Envelope,
+    *,
+    contact_respond_id: str,
+    dry_run: bool,
+    state_in: Any,
+    remembered_before: dict[str, Any],
+) -> tuple[Any, dict[str, Any]]:
+    """QUOTED-REPLY (owner rulings, 7 Oct 2026): a quoted bot message is this turn's context.
+
+    Returns `(state_in, quoted_turn facts)`. When the quote resolves to an earlier engine turn
+    whose stored state differs from the live one, that turn's focus and open question replace
+    the live ones for THIS turn; the live ones ride aside on `remembered_before` so the tail
+    writes them back (R4). Profile, turn number and ideation stay live (R7). Anything else
+    (no quote, the dealer's own message, nothing found, no stored state) is main's behaviour.
+    """
+    from app.services.chatbot import quoted as quoted_mod
+
+    facts: dict[str, Any] = {"found": False, "via": None, "turn_id": None, "same_as_live": False}
+    reply_to_id = _reply_to_message_id(envelope)
+    if reply_to_id is None:
+        return state_in, facts
+    reply_to = jsc.get(jsc.get(_tf_message(envelope), "message"), "replyTo")
+    sender_source = jsc.get(jsc.get(reply_to, "sender"), "source")
+    quoted_text = jsc.get(jsc.get(reply_to, "message"), "text")
+    try:
+        found = quoted_mod.resolve_quoted_turn(
+            db,
+            contact_respond_id=contact_respond_id,
+            reply_to_id=reply_to_id,
+            quoted_text=quoted_text if isinstance(quoted_text, str) else None,
+            is_test=bool(dry_run),
+            before=datetime.now(tz=timezone.utc),
+            sender_source=sender_source if isinstance(sender_source, str) else None,
+        )
+    except Exception as exc:  # noqa: BLE001 - a quote must never fail the turn
+        logger.warning("quoted turn resolve failed: %s", exc, exc_info=True)
+        try:
+            db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        return state_in, facts
+    if found is None:
+        return state_in, facts
+    same = found.focus == remembered_before.get("focus") and found.open_question == remembered_before.get(
+        "open_question"
+    )
+    facts.update(found=True, via=found.via, turn_id=found.turn_id, same_as_live=same)
+    if same:
+        return state_in, facts
+    pending = turn_runtime.tick_pending(turn_pending.from_wire(found.open_question))
+    if (
+        pending is not None
+        and pending.kind in turn_pending.ESCALATION_OFFER_KINDS
+        and not (isinstance(found.turn_no, int) and state_in.turn_no - found.turn_no < 3)
+    ):
+        pending = None  # R6: an old (or undated) escalation offer is not revived
+    return (
+        dataclasses_replace(
+            state_in,
+            focus=turn_state.focus_from_wire(found.focus),
+            pending=pending,
+            quoted_live={
+                "pending": state_in.pending,
+                "focus": state_in.focus,
+                "quoted_open": next(
+                    (
+                        t
+                        for t in turn_state.focus_from_wire(found.focus).tasks or ()
+                        if t.kind == "stock_qty" and t.status == turn_task.OPEN
+                    ),
+                    None,
+                ),
+            },
+        ),
+        facts,
+    )
 
 
 def build_latest_user_message(envelope: Envelope, session_block: Any = None) -> str:
@@ -3960,6 +4057,14 @@ def _run_stages_body(  # noqa: PLR0915
         turn_no = turn_runtime.turn_number(db, contact_respond_id)
         state_in = turn_runtime.load_state(session_block, profile=profile, turn_no=turn_no)
         remembered_before = session_state.five_keys(session_block)
+        state_in, quoted_turn_facts = _quoted_context(
+            db,
+            envelope,
+            contact_respond_id=contact_respond_id,
+            dry_run=bool(dry_run),
+            state_in=state_in,
+            remembered_before=remembered_before,
+        )
         # The parser's `Previous response:` line. Read here, at `received`, with the
         # other contact facts and off the SAME session: it is what the bot last said to
         # this contact, and the parser is the one component allowed to read prose.
@@ -4008,6 +4113,7 @@ def _run_stages_body(  # noqa: PLR0915
             "ingress": envelope.ingress,
             "remembered_keys": len([k for k, v in remembered_before.items() if v]),
             "quoted_a_message": _reply_to_message_id(envelope) is not None,
+            "quoted_turn": quoted_turn_facts,
             "dry_run": dry_run,
             "turn_no": turn_no,
             # ALWAYS present, empty list included: a reader must never have to tell
@@ -4057,7 +4163,12 @@ def _run_stages_body(  # noqa: PLR0915
             # no ledger row, no job.
             outcome = media_intake.no_url_outcome(modality)
         else:
-            caption = jsc.js_string(jsc.get(attachment, "description")) or None
+            # ROGUE-CONVO-REVIEW class G: `jsc.js_string(None)` is the STRING "null" (and
+            # an absent key "undefined"), both truthy, so `or None` never fired and the
+            # parser read a "null" line above the codes (prod photo turns, 6 Oct 2026).
+            # The same truthiness read `media_intake._build_request` makes for `url`.
+            description = jsc.get(attachment, "description")
+            caption = jsc.js_string(description) if jsc.truthy(description) else None
             outcome = media_intake.run(
                 respond_io_id=contact_respond_id,
                 message_id=_message_id(envelope),
@@ -4814,6 +4925,11 @@ def _run_stages_body(  # noqa: PLR0915
         predicate: dict[str, Any] | None = None
         resolved_candidates: dict[str, list[dict[str, Any]]] = {}
         unplaced_tokens: dict[str, str] = {}
+        # ROGUE-CONVO-REVIEW-R2 (reviewer round 2): a turn that skips the resolver (a page
+        # of a carried set, a refused sales-report grant) names no product token, so the
+        # answer to "did this message's own product token miss?" is False there; the
+        # bridge and the set_page carry both read it, with or without a resolve outcome.
+        miss_on_typed_product = False
         # RESOLVER-TOKEN-CAP: the codes the resolver cut at its ceiling and never looked
         # up, as typed - named by the reply's "Not checked:" line, never silently dropped.
         not_checked_tokens: dict[str, str] = {}
@@ -4997,6 +5113,19 @@ def _run_stages_body(  # noqa: PLR0915
             not_checked_tokens = resolve_outcome.not_checked
             spec_tier = resolve_outcome.spec_tier
             resolver_payload = resolve_outcome.payload
+            # ROGUE-CONVO-REVIEW-R2 (crew review on PR #1506): "did THIS message name a
+            # product token the resolver could not place?" is asked ONCE, here, over the
+            # resolver's OWN listing (`turn_runtime.named_unplaced`, before
+            # `_exact_codes_only` below rewrites the engine's copy of the map for the
+            # fetch), and read by both the composer's header (`answer_bridge.answer_for`
+            # -> `not_found_error_message`, rule C) and the `set_page` carry. The
+            # composer used to fold the question a second way (`[-\s]+`, no unicode
+            # dashes), so an en dash in the typed code let the two sides disagree in
+            # silence. Reviewer should-fix 2: the filter's `ignored` (a word with no
+            # digit beside spec-tier rows) is "not a product" for the FETCH, but the
+            # dealer typed it as one and the resolver listed it unplaced, so it stays a
+            # miss on the token here (pinned on the availability profile).
+            miss_on_typed_product = turn_runtime.typed_product_unplaced(verdict, unplaced_tokens)
             # Every turn of availability access, not only a stock / ETA one: a code the
             # dealer names on an order or outstanding turn is carried into the next one, and
             # a bare "eta" after "srtw2000" asked its whole prefix family (tester re-run on
@@ -5885,6 +6014,7 @@ def _run_stages_body(  # noqa: PLR0915
                         profile=state_out.profile,
                         dealer_stock_ask=_dealer_stock_ask(state_out, plan),
                         dealer_incoming_ask=_dealer_incoming_ask(state_out, plan),
+                        product_token_missed=miss_on_typed_product,
                     )
                     if answer is not None:
                         bridge_answered = True
@@ -6100,9 +6230,20 @@ def _run_stages_body(  # noqa: PLR0915
                     and min(asked, business_answer.SET_LIST_MAX) < qualifying
                 )
                 paged = bool(plan.fetch) and isinstance(plan.fetch[0].filters.get("set_page"), dict)
+                # ROGUE-CONVO-REVIEW (owner ruling Q4): a set the spec tier read off the
+                # words INSIDE an unplaced product token is not what the customer asked
+                # for, so it is never carried (prod turn 5, 6 Oct 2026: 145 water closets
+                # carried off a miss on one description line; `set_page_carry` alone keeps
+                # it, because the words gave the set a description). Reviewer finding 2:
+                # a set the customer described with a CLASS word of their own ("which tap
+                # has cert ZZQ9917") is listed by the reply and stays carried, so the
+                # follow-up count continues it; only the missed code is named beside it.
+                # `miss_on_typed_product` is the one computation beside the resolve outcome.
                 if paged:
                     # A page of a carried set: the runner hands back where it stopped.
                     state_out.focus.set_page = envelopes[0].get("set_carry") if envelopes else None
+                elif miss_on_typed_product and not class_terms:
+                    state_out.focus.set_page = None
                 elif withheld or partly_listed or listed_to_the_limit:
                     state_out.focus.set_page = turn_runtime.set_page_carry(
                         predicate,
@@ -6878,6 +7019,14 @@ def _run_answer(
         # for the older lanes, so every asking lane carries its question to the next
         # console or replay turn the same way (finding 2a).
         session_payload = turn_tail.session_payload(state, answer, tail_ctx)
+        turn_trace.add(
+            "state",
+            {
+                "focus": session_payload["focus"],
+                "open_question": session_payload["open_question"],
+                "turn_no": state.turn_no,
+            },
+        )
         if not dry_run:
             turn_tail.persist(
                 state, answer, tail_ctx, base=remembered_before, turn_id=turn_id
@@ -9017,6 +9166,10 @@ def run_tail(
             turn_no=0,
         )
     before = dict(remembered_before or session_state.five_keys(jsc.get(ctx, "session")))
+    if applied is not None and getattr(applied, "quoted_live", None):
+        applied = state = turn_tail.carry_live_state(
+            applied, question is not None, applied.quoted_live, non_answer=True
+        )
     payload = {
         "focus": turn_state.focus_to_wire(state.focus),
         # The lane's OWN question, else the one APPLY carried - the same rule the
@@ -9043,6 +9196,14 @@ def run_tail(
     }
     SessionVars(**payload)
     reply_ladder.sanitize_em_dash(payload)
+    turn_trace.add(
+        "state",
+        {
+            "focus": payload["focus"],
+            "open_question": payload["open_question"],
+            "turn_no": getattr(state, "turn_no", 0),
+        },
+    )
 
     written = (not dry_run) and write_session
     if written:
