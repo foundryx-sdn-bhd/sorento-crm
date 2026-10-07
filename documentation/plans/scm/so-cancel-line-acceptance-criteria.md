@@ -13,10 +13,10 @@ purchasing finds the inquiry rows in To confirm, greyed and tagged.
 
 ## Backend
 
-- AC-C1 `POST /fulfilment-planning/lines/{key}/cancel` with `{reason}` by a user holding `projects.projects.edit`
+- AC-C1 Committing the parked record action `sales_order_line.cancel` with `{entity_id, reason}` as a user holding `projects.projects.edit`
   sets the core line `line_status = cancelled`, `cancelled_at` (now), `cancelled_by_id` (actor), `cancel_reason`
   (the text), and returns 200 with those four fields.
-- AC-C2 Without `projects.projects.edit` the call is 403 and nothing changes.
+- AC-C2 Without `projects.projects.edit` parking the action is 403 and nothing changes.
 - AC-C3 A blank or whitespace reason is 422 and nothing changes.
 - AC-C4 A line covered by an active supply decision is 409 with a message that says to reject it first.
 - AC-C5 A line already `cancelled` is 409; `cancelled_at` and `cancel_reason` are not rewritten.
@@ -40,7 +40,7 @@ purchasing finds the inquiry rows in To confirm, greyed and tagged.
 - AC-F3 Pressing it opens a reason box prefilled with the saved amend reason when one exists, empty otherwise; the
   submit is disabled while the reason is blank.
 - AC-F4 Submitting starts a 5 s countdown with Cancel; pressing Cancel within the window posts nothing; Escape does
-  not cancel it; when the window lapses the mutation posts `{reason}` to the cancel route once.
+  not cancel it; when the window lapses the server commits the parked action once.
 - AC-F5 After success the board and order-inquiry queries are invalidated, a non-sticky toast confirms, and the row
   renders in the existing cancelled style with "Transferred to Cancel SO" + who + reason; no tick box, not counted
   in "Confirm (N)".

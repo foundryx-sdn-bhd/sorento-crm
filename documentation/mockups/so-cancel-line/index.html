@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Transfer to Cancel SO (mockup v1)</title>
+<style>
+/* Tokens copied from sorento_crm_frontend/css/config.reui.css (light theme) */
+:root{--background:#fff;--foreground:#09090b;--card:#fff;--muted:#f4f4f5;--muted-fg:#71717a;--border:#ececee;--primary:#3b82f6;--primary-fg:#fff;--primary-soft:#eff6ff;--secondary:#f4f4f5;--destructive:#dc2626;--destructive-soft:#fef2f2;--success:#15803d;--success-soft:#f0fdf4;--warning:#a16207;--warning-soft:#fefce8;--warning-line:#fde68a;--radius:8px;--page:#f7f7f8}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--foreground);font:14px/1.45 Inter,ui-sans-serif,system-ui,sans-serif}
+h1{font-size:22px;margin:0 0 4px}
+.doc{max-width:1400px;margin:0 auto;padding:16px}
+.intro{color:var(--muted-fg);font-size:13px;margin:0 0 12px;max-width:900px}
+.nav{position:sticky;top:0;z-index:5;background:var(--page);padding:8px 0 10px;border-bottom:1px solid var(--border);margin-bottom:16px;display:flex;flex-wrap:wrap;gap:6px}
+.nav a{font-size:12px;text-decoration:none;border:1px solid var(--border);background:#fff;border-radius:999px;padding:3px 10px;color:var(--muted-fg)}
+section{margin:0 0 34px}
+section>h2{font-size:15px;margin:0 0 4px}
+section>.why{font-size:12.5px;color:var(--muted-fg);margin:0 0 12px;max-width:860px}
+.row{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start}
+.nb{display:inline-block;min-width:18px;height:18px;border-radius:9px;background:var(--foreground);color:#fff;font-size:11px;line-height:18px;text-align:center;margin-right:6px}
+.desk{width:1280px;flex:none;background:#fff;border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.desk .screen{overflow:auto;background:#fff;position:relative}
+.phone{width:375px;flex:none;background:#fff;border:1px solid var(--border);border-radius:16px;overflow:hidden}
+.phone .screen{height:740px;overflow:auto;background:#fff;position:relative}
+.cap{font-size:11px;color:var(--muted-fg);text-align:center;padding:6px;border-top:1px solid var(--border);background:#fff}
+.main{padding:22px 26px}
+.phone .main{padding:14px 16px}
+.pagehead{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+.pagehead .t{font-size:22px;font-weight:600}
+.phone .pagehead .t{font-size:18px}
+.sub{font-size:13px;color:var(--muted-fg)}
+.btn{display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 10px;border-radius:6px;border:1px solid var(--border);background:#fff;font-size:12px;font-weight:500;white-space:nowrap;color:var(--foreground)}
+.btn.pri{background:var(--primary);color:#fff;border-color:var(--primary)}
+.btn.ghost{border-color:transparent}
+.btn[disabled]{opacity:.5}
+.btn.lg{height:32px;font-size:13px;padding:0 12px}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{border-bottom:1px solid var(--border);padding:7px 8px;text-align:left;white-space:nowrap}
+th{font-size:12px;color:var(--muted-fg);font-weight:500;background:#fff}
+tr.off td{color:var(--muted-fg)}
+.pill{display:inline-flex;align-items:center;border-radius:999px;padding:0 8px;font-size:11px;line-height:20px;font-weight:600}
+.pill.saved{background:var(--primary-soft);color:#1d4ed8}
+.pill.sug{background:var(--muted);color:var(--muted-fg)}
+.pill.cancelled{background:#e2e8f0;color:#334155}
+.pill.ok{background:var(--success-soft);color:var(--success)}
+.pill.stale{background:#fef3c7;color:#92400e}
+.cb{display:inline-block;width:14px;height:14px;border:1px solid #a1a1aa;border-radius:3px;vertical-align:-2px;background:#fff}
+.cb.off{border-color:#d4d4d8;background:var(--muted)}
+.panel{border-top:1px solid var(--border);background:rgba(244,244,245,.3);padding:12px 20px}
+.cols{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px}
+.phone .cols{grid-template-columns:1fr}
+.lbl{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted-fg);margin:0 0 4px}
+.val{font-size:13px;font-variant-numeric:tabular-nums}
+.short{font-size:13px;color:var(--destructive);font-variant-numeric:tabular-nums}
+.ta{border:1px solid var(--border);border-radius:6px;background:#fff;padding:6px 8px;font-size:13px;min-height:44px;color:var(--foreground)}
+.ta.ph{color:var(--muted-fg)}
+.chk{display:flex;align-items:flex-start;gap:8px;font-size:13px;margin-top:8px}
+.foot{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:12px}
+.pop{position:absolute;width:288px;background:#fff;border:1px solid var(--border);border-radius:8px;padding:12px;box-shadow:0 8px 24px rgba(0,0,0,.12);display:flex;flex-direction:column;gap:10px;z-index:3}
+.pop .lbl .req{color:var(--destructive)}
+.cd{display:flex;min-width:13rem;flex-direction:column;gap:6px;border-radius:6px;border:1px solid var(--border);background:#fff;padding:8px 12px}
+.cd .r{display:flex;align-items:center;gap:12px}
+.cd .r .t{font-size:13px;font-weight:500;font-variant-numeric:tabular-nums;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cd .r .btn{margin-left:auto;height:28px;padding:0 8px}
+.cd .s{font-size:11px;color:var(--muted-fg)}
+.cd .track{height:4px;overflow:hidden;border-radius:999px;background:var(--muted)}
+.cd .fill{height:100%;width:62%;border-radius:999px;background:var(--destructive)}
+.tip{position:absolute;background:var(--foreground);color:#fff;font-size:12px;border-radius:6px;padding:5px 8px;white-space:nowrap}
+.toast{position:absolute;right:16px;bottom:16px;background:#fff;border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:13px;box-shadow:0 4px 14px rgba(0,0,0,.1)}
+.greyrow{opacity:.6}
+.note{font-size:12px;color:var(--muted-fg);border-left:2px solid var(--border);padding:2px 0 2px 10px;margin:8px 0 0;max-width:860px}
+.map{font-size:12.5px;max-width:980px}
+.map th,.map td{white-space:normal;vertical-align:top;padding:5px 8px}
+.map code{font-size:11.5px;background:var(--muted);padding:0 4px;border-radius:4px}
+.cards{display:flex;gap:10px;margin:0 0 12px}
+.card{flex:1;border:1px solid var(--border);border-radius:8px;padding:8px 12px}
+.card .l{font-size:11px;color:var(--muted-fg)}
+.card .v{font-size:18px;font-weight:600}
+</style>
+</head>
+<body>
+<div class="doc">
+<h1>Fulfilment planning: "Transfer to Cancel SO" on a line AutoCount already closed</h1>
+<p class="intro">Mock v1 (7 Oct 2026), built on the recommended answers of the behaviour card. Real case: SO373923 line 384 CB110, planned at 36, delivered 36 in AutoCount because the quantity moved to a Cancel SO document. Planner name is a placeholder. Every element reuses an existing component; the mapping table is at the bottom. Fake planner name throughout.</p>
+<div class="nav"><a href="#s1">1 Line panel: new button</a><a href="#s2">2 Reason + countdown</a><a href="#s3">3 After: line retired, Confirm flows</a><a href="#s4">4 Purchasing sees it</a><a href="#s5">5 375 px</a><a href="#s6">6 Component mapping</a></div>
+
+<section id="s1">
+<h2><span class="nb">1</span>Line decision panel: "Transfer to Cancel SO" sits beside Reject</h2>
+<p class="why">Today's panel for SO373923 line 384. Nothing else moves. The button is outline, same size as Reject, enabled because the line is not covered by a confirmed decision. On a covered line it is disabled with the tooltip "Reject first: this line is in a confirmed revision."</p>
+<div class="row"><div class="desk"><div class="screen"><div class="main">
+ <div class="pagehead"><div><div class="t">Fulfilment planning</div><div class="sub">SO373923 · Revision 3, confirmed by Aina 06/10/2026 3:18 pm, 3 lines · 12 to confirm</div></div>
+ <div style="display:flex;gap:8px;align-items:center"><span class="btn lg">Save all suggested (12)</span><span class="btn lg">Undo all</span><span class="btn lg pri">Preview (3)</span></div></div>
+ <table><tr><th><span class="cb"></span></th><th>Line</th><th>Sales order</th><th>Product</th><th>OI</th><th>Required date</th><th>Planned qty</th><th>Suggested</th><th>Decided</th><th>Verdict</th><th></th></tr>
+ <tr><td><span class="cb"></span></td><td>384</td><td>SO373923</td><td>CB110</td><td>OI-2609-0724 · ORDER 36</td><td>22/02/2027</td><td>36</td><td>Buy 36</td><td>Amended to nothing</td><td><span class="pill saved">Saved</span></td><td>▴</td></tr>
+ <tr><td colspan="11" style="padding:0;white-space:normal"><div class="panel">
+  <div class="cols">
+   <div><p class="lbl">Reserve</p><div class="val">0 at BRW-BB <span class="sub">(0 available)</span></div><p class="lbl" style="margin-top:10px">Borrow</p><div class="val sub">Nothing</div><p class="lbl" style="margin-top:10px">Buy</p><div class="val sub">Off</div></div>
+   <div><p class="lbl">Why this differs</p><div class="ta">CANCEL ORDER</div><label class="chk"><span class="cb" style="background:var(--primary);border-color:var(--primary)"></span><span>This might be a system problem, flag it for investigation</span></label></div>
+   <div><p class="lbl">Decision</p><div class="val">Amended to nothing</div><div class="short">36 short</div></div>
+  </div>
+  <div class="foot"><span class="btn" disabled>✓ Saved</span><span class="btn">✕ Reject</span><span class="btn" style="border-color:#cbd5e1">⇥ Transfer to Cancel SO</span></div>
+ </div></td></tr>
+ <tr><td><span class="cb"></span></td><td>400</td><td>SO373923</td><td>CB110-R</td><td>OI-2609-0724 · ORDER 36</td><td>22/02/2027</td><td>36</td><td>Buy 36</td><td>Amended to nothing</td><td><span class="pill saved">Saved</span></td><td>▾</td></tr>
+ <tr><td><span class="cb"></span></td><td>416</td><td>SO373923</td><td>CB110LP</td><td>OI-2609-0724 · ORDER 36</td><td>22/02/2027</td><td>36</td><td>Buy 36</td><td>Amended to nothing</td><td><span class="pill saved">Saved</span></td><td>▾</td></tr>
+ <tr><td><span class="cb"></span></td><td>448</td><td>SO373923</td><td>CKSW015</td><td>OI-2609-0724 · ORDER 8</td><td>22/02/2027</td><td>8</td><td>Buy 8</td><td></td><td><span class="pill sug">Suggested</span></td><td>▾</td></tr>
+ </table>
+</div></div><div class="cap">1280 · line 384 expanded; the third footer button is the only new element</div></div></div>
+</section>
+
+<section id="s2">
+<h2><span class="nb">2</span>Press: reason popover, then the button becomes a 5 s countdown with Cancel</h2>
+<p class="why">Same popover shape as Reject (reason required, prefilled from the saved amend reason). Submitting parks a server pending action; the footer button turns into the standard countdown. Cancel within the window writes nothing; Escape does not cancel; the server commits when the window lapses even if the tab closes.</p>
+<div class="row"><div class="desk"><div class="screen" style="height:330px"><div class="main" style="position:relative">
+ <table><tr><th><span class="cb"></span></th><th>Line</th><th>Sales order</th><th>Product</th><th>OI</th><th>Required date</th><th>Planned qty</th><th>Suggested</th><th>Decided</th><th>Verdict</th><th></th></tr>
+ <tr><td><span class="cb"></span></td><td>384</td><td>SO373923</td><td>CB110</td><td>OI-2609-0724 · ORDER 36</td><td>22/02/2027</td><td>36</td><td>Buy 36</td><td>Amended to nothing</td><td><span class="pill saved">Saved</span></td><td>▴</td></tr>
+ <tr><td colspan="11" style="padding:0;white-space:normal"><div class="panel" style="min-height:190px">
+  <div class="foot" style="margin-top:0"><span class="btn" disabled>✓ Saved</span><span class="btn">✕ Reject</span>
+   <span class="btn" style="border-color:#cbd5e1">⇥ Transfer to Cancel SO</span>
+   <span style="margin-left:40px" class="cd"><span class="r"><span class="t">Transfer to Cancel SO in 3s</span><span class="btn ghost">Cancel</span></span><span class="s">SO373923 line 384 · CB110</span><span class="track"><span class="fill" style="display:block"></span></span></span>
+  </div>
+  <div class="pop" style="left:170px;top:48px">
+   <p class="lbl" style="margin:0">Why this line goes to Cancel SO <span class="req">*</span></p>
+   <div class="ta">CANCEL ORDER</div>
+   <div style="display:flex;justify-content:flex-end"><span class="btn" style="border-color:#cbd5e1">⇥ Transfer to Cancel SO</span></div>
+  </div>
+ </div></td></tr></table>
+</div></div><div class="cap">1280 · left: popover on press (reason prefilled "CANCEL ORDER"); right: the button after submit, counting down</div></div></div>
+<p class="note">Shown side by side for the mock; in the app the popover closes on submit and the countdown replaces the button in place.</p>
+</section>
+
+<section id="s3">
+<h2><span class="nb">3</span>After the window lapses: the line is retired, Confirm counts the rest</h2>
+<p class="why">The row takes the existing Cancelled pill (slate), its tick box is disabled, the expanded panel shows who and why. Preview (3) drops to the lines that can still post. Pressing Confirm on the other lines no longer hits "3 lines cannot be confirmed".</p>
+<div class="row"><div class="desk"><div class="screen"><div class="main" style="position:relative">
+ <div class="pagehead"><div><div class="t">Fulfilment planning</div><div class="sub">SO373923 · Revision 3, confirmed by Aina 06/10/2026 3:18 pm, 3 lines · 9 to confirm</div></div>
+ <div style="display:flex;gap:8px;align-items:center"><span class="btn lg">Save all suggested (9)</span><span class="btn lg">Undo all</span><span class="btn lg pri">Preview (1)</span></div></div>
+ <table><tr><th><span class="cb"></span></th><th>Line</th><th>Sales order</th><th>Product</th><th>OI</th><th>Required date</th><th>Planned qty</th><th>Suggested</th><th>Decided</th><th>Verdict</th><th></th></tr>
+ <tr class="off"><td><span class="cb off"></span></td><td>384</td><td>SO373923</td><td>CB110</td><td>OI-2609-0724 · ORDER 36</td><td>22/02/2027</td><td>0</td><td></td><td>Transferred to Cancel SO</td><td><span class="pill cancelled">Cancelled</span></td><td>▴</td></tr>
+ <tr><td colspan="11" style="padding:0;white-space:normal"><div class="panel"><p style="margin:0;font-size:13px;color:var(--muted-fg)">Transferred to Cancel SO by Aina, 07/10/2026 11:40 am · CANCEL ORDER. Confirm retires it; there is nothing left to decide for it.</p></div></td></tr>
+ <tr class="off"><td><span class="cb off"></span></td><td>400</td><td>SO373923</td><td>CB110-R</td><td>OI-2609-0724 · ORDER 36</td><td>22/02/2027</td><td>0</td><td></td><td>Transferred to Cancel SO</td><td><span class="pill cancelled">Cancelled</span></td><td>▾</td></tr>
+ <tr class="off"><td><span class="cb off"></span></td><td>416</td><td>SO373923</td><td>CB110LP</td><td>OI-2609-0724 · ORDER 36</td><td>22/02/2027</td><td>0</td><td></td><td>Transferred to Cancel SO</td><td><span class="pill cancelled">Cancelled</span></td><td>▾</td></tr>
+ <tr><td><span class="cb"></span></td><td>448</td><td>SO373923</td><td>CKSW015</td><td>OI-2609-0724 · ORDER 8</td><td>22/02/2027</td><td>8</td><td>Buy 8</td><td>Buy 8</td><td><span class="pill saved">Saved</span></td><td>▾</td></tr>
+ </table>
+ <div class="toast">Line 384 CB110 transferred to Cancel SO</div>
+</div></div><div class="cap">1280 · three lines retired (slate pill, 0 planned, no tick); Preview (1) is CKSW015 only</div></div></div>
+</section>
+
+<section id="s4">
+<h2><span class="nb">4</span>Purchasing: the three inquiry rows reach To confirm, greyed and tagged</h2>
+<p class="why">No new screen. The order inquiry worklist already greys a cancelled line's rows, tags them, moves them to To confirm and drops them from Buy (rulings C1 to C4). Purchasing presses Confirm once ("seen"); the rows stay listed, qty 36 kept for the record, outstanding 0.</p>
+<div class="row"><div class="desk"><div class="screen" style="height:300px"><div class="main">
+ <div class="cards"><div class="card"><div class="l">To confirm</div><div class="v">7</div></div><div class="card"><div class="l">Buy</div><div class="v">112</div></div><div class="card"><div class="l">Purchased</div><div class="v">48</div></div><div class="card"><div class="l">Incoming</div><div class="v">19</div></div></div>
+ <table><tr><th><span class="cb"></span></th><th>OI</th><th>Sales order</th><th>Line</th><th>Product</th><th>Verb</th><th>Qty</th><th>Delivery</th><th>Location</th><th>State</th><th>Note</th></tr>
+ <tr class="greyrow"><td><span class="cb"></span></td><td>OI-2609-0724</td><td>SO373923</td><td>384</td><td>CB110</td><td>ORDER</td><td>36</td><td>22/02/2027</td><td>BRW-BB</td><td><span class="pill cancelled">Line cancelled</span></td><td>Transferred to Cancel SO · CANCEL ORDER</td></tr>
+ <tr class="greyrow"><td><span class="cb"></span></td><td>OI-2609-0724</td><td>SO373923</td><td>400</td><td>CB110-R</td><td>ORDER</td><td>36</td><td>22/02/2027</td><td>BRW-BB</td><td><span class="pill cancelled">Line cancelled</span></td><td>Transferred to Cancel SO · CANCEL ORDER</td></tr>
+ <tr class="greyrow"><td><span class="cb"></span></td><td>OI-2609-0724</td><td>SO373923</td><td>416</td><td>CB110LP</td><td>ORDER</td><td>36</td><td>22/02/2027</td><td>BRW-BB</td><td><span class="pill cancelled">Line cancelled</span></td><td>Transferred to Cancel SO · CANCEL ORDER</td></tr>
+ <tr><td><span class="cb"></span></td><td>OI-2609-0724</td><td>SO373923</td><td>448</td><td>CKSW015</td><td>ORDER</td><td>8</td><td>22/02/2027</td><td>BRW-BB</td><td><span class="pill stale">Changed</span></td><td></td></tr>
+ </table>
+</div></div><div class="cap">1280 · existing worklist, existing treatment; only the note text is new</div></div></div>
+</section>
+
+<section id="s5">
+<h2><span class="nb">5</span>375 px: panel stacks, buttons wrap, countdown takes the full row</h2>
+<div class="row">
+<div class="phone"><div class="screen"><div class="main">
+ <div class="pagehead"><div><div class="t">Fulfilment planning</div><div class="sub">SO373923 · 12 to confirm</div></div></div>
+ <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden">
+  <div style="padding:10px 12px;display:flex;justify-content:space-between;align-items:center"><div><div style="font-weight:600">Line 384 · CB110</div><div class="sub">OI-2609-0724 · ORDER 36 · 22/02/2027</div></div><span class="pill saved">Saved</span></div>
+  <div class="panel" style="padding:12px">
+   <div class="cols">
+    <div><p class="lbl">Reserve</p><div class="val">0 at BRW-BB <span class="sub">(0 available)</span></div></div>
+    <div><p class="lbl">Why this differs</p><div class="ta">CANCEL ORDER</div></div>
+    <div><p class="lbl">Decision</p><div class="val">Amended to nothing</div><div class="short">36 short</div></div>
+   </div>
+   <div class="foot"><span class="btn" disabled>✓ Saved</span><span class="btn">✕ Reject</span><span class="btn" style="border-color:#cbd5e1">⇥ Transfer to Cancel SO</span></div>
+  </div>
+ </div>
+ <div style="height:14px"></div>
+ <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden">
+  <div style="padding:10px 12px;display:flex;justify-content:space-between;align-items:center"><div><div style="font-weight:600">Line 400 · CB110-R</div><div class="sub">OI-2609-0724 · ORDER 36</div></div><span class="pill saved">Saved</span></div>
+  <div class="panel" style="padding:12px">
+   <div class="cd" style="min-width:0"><span class="r"><span class="t">Transfer to Cancel SO in 4s</span><span class="btn ghost">Cancel</span></span><span class="s">SO373923 line 400 · CB110-R</span><span class="track"><span class="fill" style="display:block;width:80%"></span></span></div>
+  </div>
+ </div>
+ <div style="height:14px"></div>
+ <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;opacity:.7">
+  <div style="padding:10px 12px;display:flex;justify-content:space-between;align-items:center"><div><div style="font-weight:600">Line 416 · CB110LP</div><div class="sub">Transferred to Cancel SO by Aina · CANCEL ORDER</div></div><span class="pill cancelled">Cancelled</span></div>
+ </div>
+</div></div><div class="cap">375 · idle, counting down, retired</div></div>
+</div>
+</section>
+
+<section id="s6">
+<h2><span class="nb">6</span>Component mapping (every element reuses something that exists)</h2>
+<table class="map">
+<tr><th>Mock element</th><th>Existing component / format</th><th>Repo path</th></tr>
+<tr><td>"Transfer to Cancel SO" footer button</td><td><code>Button size="sm" variant="outline"</code>, same as Reject, placed after <code>rejectButton</code> in the footer row</td><td>sorento_crm_frontend/app/(protected)/project-sales/fulfilment-planning/components/BoardLineDecisionPanel.tsx:619-632, :1086</td></tr>
+<tr><td>Disabled on a covered line + tooltip</td><td><code>Tooltip / TooltipTrigger asChild / span.inline-flex</code> wrapper Reject already uses</td><td>BoardLineDecisionPanel.tsx:1128-1170</td></tr>
+<tr><td>Reason popover (label, textarea, submit)</td><td>Reject popover: <code>PopoverContent align="end" className="w-72 space-y-3"</code>, <code>Textarea rows={2}</code>, label <code>text-2xs uppercase</code></td><td>BoardVerdictActions.tsx:174-240</td></tr>
+<tr><td>Countdown with Cancel and draining bar</td><td><code>DeferredActionButton</code> / <code>DeferredCountdown</code> (verb, subject, onCancel); window served by the server per verb</td><td>sorento_crm_frontend/components/common/DeferredActionButton.tsx; hooks/useDeferredAction.tsx; services/pendingActionService.ts</td></tr>
+<tr><td>Server-side parked action, 5 s reversible window</td><td><code>register(FormAction(key="sales_order_line.cancel", window=WINDOW_REVERSIBLE, permission="projects.projects.edit"))</code>, same registry as <code>order.set_status</code></td><td>sorento_crm_backend/app/services/record_actions.py:280-288; app/api/v1/system/pending_actions.py</td></tr>
+<tr><td>Cancelled pill (slate)</td><td><code>BoardDecisionPill</code> verdict <code>cancelled</code>: <code>bg-slate-200 text-slate-700</code>, label "Cancelled"</td><td>fulfilment-planning/components/BoardDecisionPill.tsx:59,70,145-148</td></tr>
+<tr><td>Disabled row tick box</td><td>existing cancelled-row rule in the list view</td><td>fulfilment-planning/components/FulfilmentBoardListView.tsx:433-438</td></tr>
+<tr><td>Expanded panel sentence for a cancelled line</td><td>existing <code>p.px-4 py-3 text-sm text-muted-foreground</code>; text gains who/when/reason</td><td>FulfilmentBoardListView.tsx:545-549</td></tr>
+<tr><td>Line retired by the press, Preview count drops</td><td><code>pressRoleFor</code> returns <code>{kind:'cancelled'}</code>; server skips plan-qty-0 lines</td><td>_shared/lib/fulfilmentBoard.ts:334-340; sorento_crm_backend/app/services/project_supply_service.py:5169-5171, :500-515</td></tr>
+<tr><td>Toast</td><td>non-sticky success toast from the mutation hook pattern</td><td>_shared/hooks/useFulfilmentPlanning.ts (sibling of useLineDraftMutation :521-540)</td></tr>
+<tr><td>Purchasing rows greyed, tagged, To confirm, out of Buy</td><td>rulings C1-C4, <code>flag_rows_for_cancelled_lines</code> + worklist <code>line_cancelled</code></td><td>sorento_crm_backend/app/services/project_order_inquiry_service.py:517-565; schemas/project_order_inquiry.py:515</td></tr>
+<tr><td>Who / when / why on the line</td><td>three additive columns <code>cancelled_at</code>, <code>cancelled_by_id</code>, <code>cancel_reason</code> (precedent stock_transfers)</td><td>sorento_crm_backend/app/models/order.py:757 (line_status); models/stock_transfer.py:124-125</td></tr>
+</table>
+</section>
+</div>
+</body>
+</html>

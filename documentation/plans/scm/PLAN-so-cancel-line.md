@@ -46,11 +46,15 @@ Clarification: "this one is not considered cancelled, it is considered transfer 
 
 One action, one write path, reusing the existing cancelled state.
 
-S1. **Backend endpoint** `POST /fulfilment-planning/lines/{key}/cancel` body `{reason: str}` (same `key` as the draft
-    route, permission `projects.projects.edit`, `_assert_can_act_on` as confirm). Refused 409 when the line is
-    covered by an active decision ("Reject first", Q2a), 409 when already cancelled, 422 blank reason. Writes, in one
-    transaction: core `line_status = 'cancelled'`, `cancelled_at = now()`, `cancelled_by_id = actor`,
-    `cancel_reason = reason`; deletes the line's draft; `flag_rows_for_cancelled_lines(db, [core_id])`.
+S1. **Backend: a registered record action, no new endpoint.** `register(FormAction(key="sales_order_line.cancel",
+    entity_types=("sales_order_line",), execute=..., window=WINDOW_REVERSIBLE, permission="projects.projects.edit",
+    label="Transfer to Cancel SO"))` in `app/services/record_actions.py` (precedent `order.set_status` :280-288);
+    the generic pending-action routes park it, count the server window down and commit it even if the tab closes
+    (`app/api/v1/system/pending_actions.py`). The execute function (new, in `project_supply_service` or a sibling)
+    refuses 409 when the line is covered by an active decision ("Reject first", Q2a), 409 when already cancelled,
+    422 blank reason, and writes in one transaction: core `line_status = 'cancelled'`, `cancelled_at = now()`,
+    `cancelled_by_id = actor`, `cancel_reason = reason`; deletes the line's draft;
+    `flag_rows_for_cancelled_lines(db, [core_id])`. Required payload: `{entity_id: core line id, reason}`.
 S2. **Migration** (additive, one head): `sales_order_lines.cancelled_at timestamptz null`, `cancelled_by_id uuid null
     FK users`, `cancel_reason text null`. Model + the manual dict builders that serialise the line to the board
     (assert in a test; `response_model` drops undeclared fields).
@@ -59,9 +63,9 @@ S3. **Ingest guard**: `document_ingest_service` keeps `line_status = 'cancelled'
 S4. **Board read** exposes `cancelled_at`, `cancelled_by` (name), `cancel_reason` on the contribution so the grey
     row can say who and why (no UUIDs in the UI).
 S5. **Frontend**: "Transfer to Cancel SO" button beside Reject in `BoardLineDecisionPanel` and the verdict popover,
-    reason box prefilled from the saved amend reason when present, served through the existing deferred-action
-    countdown (5 s reversible window, Q5b), hook `useLineCancelMutation` -> `fulfilmentPlanningService.cancelLine`
-    -> invalidate board + OI queries + toast. Disabled with tooltip on a covered line.
+    reason box prefilled from the saved amend reason when present, served through `DeferredActionButton` +
+    `useDeferredAction` against the pending-action service (5 s reversible window, Q5b); on commit invalidate board
+    + OI queries + toast. Disabled with tooltip on a covered line.
 S6. **Order inquiry worklist**: nothing new; the rows follow C1-C4 (greyed, tagged, To confirm, out of Buy).
 
 Out of scope: partial cancel (Q3a), un-cancel after the window (Q5), pulling the Cancel SO document, changing the
