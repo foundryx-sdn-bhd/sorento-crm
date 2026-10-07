@@ -1528,6 +1528,7 @@ lookup, and it is never an escalation.
     category is water closet", "for water tap", "toilet only", "kitchen sinks" -> entity
     {raw: "water closet", hint: "category", hint_confident: true} (the product words
     only, without "only", "for", "which is" or "category is").
+    A category entity's raw is in English; translate any other language to the class word: 马桶 -> "water closet", 坐厕 -> "water closet", 面盆 -> "wash basin", 洗手盆 -> "wash basin", 水龙头 -> "tap", 浴室柜 -> "bathroom cabinet", 厨房水槽 -> "kitchen sink", 水槽 -> "kitchen sink", 淋浴 -> "shower", 花洒 -> "shower", 浴缸 -> "bathtub", 小便斗 -> "urinal".
   - BRAND, a name from "Known brands" or "Sorento", "Mocha", "Cabana": "for sorento
     brand", "sorento only", "cabana" -> entity {raw: "sorento", hint: "brand",
     hint_confident: true}. A brand name is NEVER a customer, even though customers
@@ -1837,6 +1838,7 @@ object: "ranking_refine": true|false|null, "measure": "qty|amount|null".
   - "sales by month for agent SA01 2026" -> group_by "month", SA01 as sales_agent
   - "bottom 5 sales agents" -> group_by "sales_agent", top_n 5, rank_direction "bottom"
   - "how much did we sell of Cabana in August" -> group_by null (a total), Cabana as brand
+Business model: Sorento -> salesman (业务员, SA) -> dealer (经销商, 代理商, 客户, customer) -> end user. A dealer IS our customer: ranking dealers is group_by "customer", never "sales_agent".
   - "which dealer sold the most CWC7606-SH", "which customer bought the most", "哪一位经销商卖得最多",
     "哪个经销商卖得最多", "多少个经销商卖这个产品" -> group_by "customer", sales_channel null (a dealer or
     customer named as the RANKED noun is the customer axis, never the channel; the channel is only
@@ -1847,7 +1849,7 @@ group_by also takes "sales_agent", "brand", "category", "channel" (dealer / proj
 location -> "warehouse". A named brand, sales agent or category is an entity
 {hint: "brand" | "sales_agent" | "category"}, never a customer. The ranked noun
 (salesman, sales agent, SA, rep, customer(s), account(s)) is never an entity of ANY hint, whatever
-was asked before. basis "delivered" or
+was asked before. In any language or mix, the ranked noun (customer, 客户, 经销商, dealer, 业务员) is never an entity: "哪一位customer sell最多 X" -> group_by "customer", entities [X as product] only. basis "delivered" or
 "ordered" only when said, else null; "by outstanding", "outstanding" or "not yet delivered"
 -> basis "outstanding". sales_channel as for sales_report.
 measure "qty" only when the message names quantity, qty, units or pcs; "amount" when it
@@ -1863,6 +1865,7 @@ That is NOT a top selling list ("Top N selling items"): a number never picks a r
   - the basis: "ordered" -> ranking_refine true, basis "ordered"; "by outstanding" ->
     ranking_refine true, basis "outstanding"
   - the measure: "by quantity" -> ranking_refine true, measure "qty"
+  - the channel: "dealer only" -> ranking_refine true, sales_channel "dealer"; a brand or category word only: ranking_refine true, that entity
 each with order_status "sales_ranking", group_by null, entities [], every other key null.
 A message naming its own axis or subject is a NEW ask: ranking_refine false; top_n and dates
 come ONLY from the current message, NEVER from "Previous response" or "Current subject"; the
@@ -1983,9 +1986,9 @@ CURRENT DATE
 CURRENT DATE: {{current_date}}
 
 If relative dates such as "today" or "yesterday" appear in the current turn input, convert them to absolute dates before calling the MCP tool.$tpl_a7065de1dd$, '@@EMDASH@@', chr(8212)), '["current_date"]'::jsonb,
-       'report_engine_0001_prompt (REPORT-ENGINE PR #1447): sales_ranking vocabulary, AC-HT8 ranking axes', now()
+       'report_engine_0001_prompt (REPORT-ENGINE PR #1447): sales_ranking vocabulary, AC-HT8 ranking axes, dealer is the customer, channel refine', now()
  WHERE NOT EXISTS (SELECT 1 FROM ai_prompt_versions
-                    WHERE name = 'chatbot_semantic_parser' AND md5(template) = '112bae474f70d7caabadae4fdc56a65e');
+                    WHERE name = 'chatbot_semantic_parser' AND md5(template) = '2c277bf4f308e3fdae51ce5a3555a819');
 COMMIT;
 -- check: SELECT version, length(template) FROM ai_prompt_versions WHERE name='chatbot_semantic_parser'
---         AND md5(template) = '112bae474f70d7caabadae4fdc56a65e';   -- expect one row, length 140551
+--         AND md5(template) = '2c277bf4f308e3fdae51ce5a3555a819';   -- expect one row, length 141374

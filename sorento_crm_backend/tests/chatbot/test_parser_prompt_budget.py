@@ -143,7 +143,9 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # 48,758 est. tokens without MEMORY_ADDENDUM (+222), so CEILING is 48,762 (the same +4 margin as before).
 # AC-HT8 r2 (bare `top` dropped from the list, the repaired salesman line and P2 line): 49,275
 # with MEMORY_ADDENDUM, so CEILING is 49,275 - 512.
-CEILING = 48_763
+# AC-HT8 r3 (business model, any-language ranked noun, channel refine, Chinese category words):
+# 49,069 est. tokens without MEMORY_ADDENDUM, so CEILING is 49,073 (the same +4 margin).
+CEILING = 49_073
 # The memory addendum on its own, bounded separately so this PR's growth stays bounded.
 # 26 Sep baseline (lane d89110c0): 339 est. tokens. Round 4 (baf4c813, 28 Sep: the history
 # question in any wording, the number re-run, commercial_request) took it to 512, which is

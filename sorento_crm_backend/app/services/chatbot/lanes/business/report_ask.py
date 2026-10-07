@@ -355,32 +355,17 @@ def _dealer_outside(parse_output: dict[str, Any], group_by: str | None) -> bool:
     )
 
 
-def _fresh_args(
-    db: Any, parse_output: dict[str, Any], entities: Any, *, dealer: bool = False
+_WORD_PARAMS = (("brand", "brand_ids"), ("sales_agent", "sales_agent_ids"), ("category", "category_ids"))
+
+
+def _word_filters(
+    db: Any, parse_output: dict[str, Any], pairs: tuple[tuple[str, str], ...] = _WORD_PARAMS
 ) -> tuple[dict[str, Any] | None, str | None]:
-    """The route params a fresh ask names (every one but the period and top_n), or the one
-    line to say instead of running. `dealer`: the turn's contact is customer-scoped."""
-    raw_group = jsc.js_string(parse_output.get("group_by") or "").strip().lower()
-    group_by = GROUP_BY.get(raw_group) if raw_group else None
-    if raw_group and group_by is None:
-        return None, CATALOGUE_LINE
-    if dealer and _dealer_outside(parse_output, group_by):
-        return None, DEALER_REFUSAL
-
-    # Neither the basis nor the metric is defaulted: one the message did not name is asked.
-    args: dict[str, Any] = {"sort": "asc" if parse_output.get("rank_direction") == "bottom" else "desc"}
-    if basis_from(parse_output):
-        args["basis"] = basis_from(parse_output)
-    if metric_from(parse_output):
-        args["measure"] = metric_from(parse_output)
-    if group_by:
-        args["group_by"] = group_by
-    channel = parse_output.get("sales_channel")
-    if channel in ("dealer", "project"):
-        args["channel"] = channel
-
+    """The brand / sales agent / category ids the verdict's `report_ask_words` resolve to, or
+    the one line to say instead. Shared by a fresh ask and a ranking refine."""
+    out: dict[str, Any] = {}
     words = _dict(parse_output.get("report_ask_words"))
-    for hint, param in (("brand", "brand_ids"), ("sales_agent", "sales_agent_ids"), ("category", "category_ids")):
+    for hint, param in pairs:
         ids: list[str] = []
         for word in jsc.array(words.get(hint)):
             word = " ".join(jsc.js_string(word).split())
@@ -414,7 +399,38 @@ def _fresh_args(
                 return None, f"'{word}' matches several {SEVERAL_NOUNS[hint]}: {listed}. Ask again naming one."
             ids.extend(i for i in found if i not in ids)
         if ids:
-            args[param] = ids
+            out[param] = ids
+    return out, None
+
+
+def _fresh_args(
+    db: Any, parse_output: dict[str, Any], entities: Any, *, dealer: bool = False
+) -> tuple[dict[str, Any] | None, str | None]:
+    """The route params a fresh ask names (every one but the period and top_n), or the one
+    line to say instead of running. `dealer`: the turn's contact is customer-scoped."""
+    raw_group = jsc.js_string(parse_output.get("group_by") or "").strip().lower()
+    group_by = GROUP_BY.get(raw_group) if raw_group else None
+    if raw_group and group_by is None:
+        return None, CATALOGUE_LINE
+    if dealer and _dealer_outside(parse_output, group_by):
+        return None, DEALER_REFUSAL
+
+    # Neither the basis nor the metric is defaulted: one the message did not name is asked.
+    args: dict[str, Any] = {"sort": "asc" if parse_output.get("rank_direction") == "bottom" else "desc"}
+    if basis_from(parse_output):
+        args["basis"] = basis_from(parse_output)
+    if metric_from(parse_output):
+        args["measure"] = metric_from(parse_output)
+    if group_by:
+        args["group_by"] = group_by
+    channel = parse_output.get("sales_channel")
+    if channel in ("dealer", "project"):
+        args["channel"] = channel
+
+    filters, line = _word_filters(db, parse_output)
+    if filters is None:
+        return None, line
+    args.update(filters)
 
     # The gate's resolved rows, of the kinds THIS message named (a carried subject from an
     # earlier question is not this ask's filter).
@@ -565,6 +581,16 @@ def _refine(
         ):
             return None, DEALER_REFUSAL
     args = {k: v for k, v in frame.items() if k not in ("date_from", "date_to", "top_n")}
+    channel = parse_output.get("sales_channel")
+    if channel in ("dealer", "project"):
+        if dealer:
+            return None, DEALER_REFUSAL
+        args["channel"] = channel
+    # A brand or category word the refine names replaces that dimension; the rest stays held.
+    filters, line = _word_filters(db, parse_output, (("brand", "brand_ids"), ("category", "category_ids")))
+    if filters is None:
+        return None, line
+    args.update(filters)
     if parse_output.get("basis") in ("ordered", "delivered", "outstanding"):
         args["basis"] = parse_output["basis"]
     if parse_output.get("measure") in ("qty", "amount"):
