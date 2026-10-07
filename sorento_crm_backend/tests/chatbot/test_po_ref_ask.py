@@ -76,6 +76,17 @@ def _po_turn(session_factory, monkeypatch, po_refs, *, body: str = f"status of P
     return ((result.reply or {}).get("text") or ""), captured
 
 
+def _scoped(session_factory):
+    """A session stamped with the company scope before its first query (the conftest
+    after_begin listener has not run for a fresh session, so it would see no rows)."""
+    from app.models.base import set_company_scope
+    from app.services.company_scope import DEFAULT_COMPANY_ID
+
+    db = session_factory()
+    set_company_scope(db, frozenset({DEFAULT_COMPANY_ID}))
+    return db
+
+
 def _make_staff(session_factory) -> None:
     db = session_factory()
     db.execute(
@@ -138,7 +149,7 @@ class TestLookupPoRefs:
 
         own, linked = self._linked(session_factory)
         _seed_po_so(session_factory, "SO430001", customer_id=own, po_ref=REF, po_ref_key=REF)
-        result = so_status.lookup_po_refs(session_factory(), [REF], linked=linked)
+        result = so_status.lookup_po_refs(_scoped(session_factory), [REF], linked=linked)
 
         assert len(result.cards) == 1 and result.missing == []
         reply = so_status.po_ref_reply_text(result, REF)
@@ -151,7 +162,7 @@ class TestLookupPoRefs:
         _seed_po_so(session_factory, "SO430010", customer_id=own, po_ref=REF, po_ref_key=REF, order_date="2026-08-01")
         _seed_po_so(session_factory, "SO430011", customer_id=own, po_ref="PO-4500 123", po_ref_key=REF, order_date="2026-09-20")
         _seed_po_so(session_factory, "SO430012", customer_id=own, po_ref="po 4500123", po_ref_key=REF, order_date="2026-09-01")
-        result = so_status.lookup_po_refs(session_factory(), [REF], linked=linked)
+        result = so_status.lookup_po_refs(_scoped(session_factory), [REF], linked=linked)
 
         reply = so_status.po_ref_reply_text(result, REF)
         assert reply == "\n\n".join(
@@ -169,7 +180,7 @@ class TestLookupPoRefs:
         _own, linked = self._linked(session_factory)
         foreign = _other_customer(session_factory, "ZZT FOREIGN SDN BHD")
         _seed_po_so(session_factory, "SO430020", customer_id=foreign, po_ref=REF, po_ref_key=REF, debtor_name="ZZT FOREIGN SDN BHD")
-        result = so_status.lookup_po_refs(session_factory(), [REF], linked=linked)
+        result = so_status.lookup_po_refs(_scoped(session_factory), [REF], linked=linked)
 
         assert result.cards == [] and result.refused is False
         reply = so_status.po_ref_reply_text(result, REF)
@@ -183,8 +194,8 @@ class TestLookupPoRefs:
         _seed_po_so(session_factory, "SO430030", customer_id=own, po_ref="4500123", po_ref_key="4500123")
         _seed_po_so(session_factory, "SO430031", customer_id=own, po_ref="PO-4500 123", po_ref_key="4500123")
         _seed_po_so(session_factory, "SO430032", customer_id=own, po_ref="45001234", po_ref_key="45001234")
-        hit = so_status.lookup_po_refs(session_factory(), ["PO 4500-123"], linked=linked)
-        near = so_status.lookup_po_refs(session_factory(), ["4500"], linked=linked)
+        hit = so_status.lookup_po_refs(_scoped(session_factory), ["PO 4500-123"], linked=linked)
+        near = so_status.lookup_po_refs(_scoped(session_factory), ["4500"], linked=linked)
 
         assert len(hit.cards) == 2, hit
         assert near.cards == [], near
@@ -194,7 +205,7 @@ class TestLookupPoRefs:
 
         own = _other_customer(session_factory, "ZZT ANY SDN BHD")
         _seed_po_so(session_factory, "SO430040", customer_id=own, po_ref=REF, po_ref_key=REF)
-        result = so_status.lookup_po_refs(session_factory(), [REF], linked=[])
+        result = so_status.lookup_po_refs(_scoped(session_factory), [REF], linked=[])
 
         assert result.cards == []
         assert so_status.po_ref_reply_text(result, REF) == NOT_FOUND

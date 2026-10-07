@@ -239,7 +239,7 @@ describe('SalesOrdersList - PO ref column (SO-PO-REF U10)', () => {
     const headers = await screen.findAllByRole('columnheader');
     const header = headers.find((h) => h.textContent?.includes('PO ref'));
     expect(header).toBeDefined();
-    expect(within(header as HTMLElement).getByRole('button')).toBeInTheDocument();
+    expect(within(header as HTMLElement).getByRole('button', { name: 'PO ref' })).toBeInTheDocument();
   });
 
   it('renders the raw value, truncated with a title', async () => {
