@@ -48,6 +48,18 @@ rows in To confirm, greyed and tagged.
   cancelled lines beside the confirmed ones.
 - AC-F7 Errors surface through `extractApiError` in a non-sticky toast.
 - AC-F8 Usable and non-clipped at 1280 and 375 px (browser pass table).
+- AC-F9 Undo on a saved cancel decision removes it; the row reads Suggested again.
+- AC-F10 A line covered by an ACTIVE decision with a cancel draft yields no `cancelled_lines` entry and no `lines` entry.
+- AC-F11 On a batch-blocked order a saved cancel is not counted, not posted, and is named under held back by batch.
+- AC-F12 The expanded panel of a saved cancel reads "Transfer to Cancel SO" with the reason, no short hint.
+- AC-F13 to F15 Held-back-by-batch note per line; the order sentence names Cancel SO; an unplannable line is not listed.
+- AC-F16 A committed Cancel SO line (cancelled_at set) is skipped by the press and not counted in Confirm (N).
+- AC-F17 Cancel SO skips only an already cancelled line and a line covered by an ACTIVE decision (`decision` non-null,
+  "confirmed, reject it first"); a line that is `covered` only because a live inquiry row names it (`inquiry_decided`,
+  `decision` null) is cancellable, and its inquiry rows then follow AC-O1 (owner's SO373923 case, 7 Oct).
+- AC-F18 The Decide dialog states skipped rows before Save: "N lines will be skipped: <reason>" (every Decide way); the
+  button reads "Save M lines" for the rows that will save, disabled at 0; no sentence when nothing is skipped.
+- AC-F19 An inquiry-decided line carrying a saved cancel draft is posted in `cancelled_lines`, never in `lines`.
 
 ## Order inquiry worklist (existing C1-C4, verified not regressed)
 
