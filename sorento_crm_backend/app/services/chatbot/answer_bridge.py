@@ -1664,7 +1664,12 @@ def _miss_triggers(
     # report ran and said its own line; a word the resolver missed on the same turn
     # never turns that reply into "Could not find inventory".
     low_stock_answered = isinstance(fetch_item, Mapping) and fetch_item.get("low_stock_report") is True
-    via_resolver_exit = payload.get("_exit_kind") == "not_found" and not (so_status_answered or low_stock_answered)
+    # PROMO-SUBJECT-FILTER: a subject word the fetch applied as a filter and answered rows for
+    # is satisfied; the resolver having no entity for it is no miss.
+    subject_filtered = isinstance(fetch_item, Mapping) and fetch_item.get("subject_filtered") is True
+    via_resolver_exit = payload.get("_exit_kind") == "not_found" and not (
+        so_status_answered or low_stock_answered or subject_filtered
+    )
     via_error_fragment = fragment_outcome == "not_found"
     # R5 (AC-1699, AC-1702): a THIRD trigger - the resolver settled a real subject,
     # the fetch genuinely ran for it, and the tool came back with zero rows. This

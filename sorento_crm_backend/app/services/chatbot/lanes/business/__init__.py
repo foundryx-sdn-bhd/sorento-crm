@@ -2227,6 +2227,15 @@ def run_fetch(
         return _error_fragment(envelope["error"])
 
     structured = fetch_mod.output_structurer(envelope, trigger)
+    if (
+        tool_name == fetch_mod.TIER_PROBE_TOOL
+        and args.get("scope_terms")
+        and isinstance(structured, dict)
+        and structured.get("has_result")
+    ):
+        # The subject word was satisfied by the filter (promotions linked to products of that
+        # class): the resolver not placing it as an entity is no miss (`answer_bridge._miss_triggers`).
+        structured["subject_filtered"] = True
     # LOWSTOCK-FILTER-ASK (owner hand test, 3 Oct 2026): EVERY low stock reply - ready,
     # pending, busy, empty, error - opens with the filters it was built with, "Low stock
     # report (water closet, supplier X, by supplier)", so a narrowed file never reads as
