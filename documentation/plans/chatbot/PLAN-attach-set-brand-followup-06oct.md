@@ -36,6 +36,29 @@ the third tool call went out over 5 of 5 taps).
 The parser half (v58 dropping the document entity on "they got pic/") is a prompt matter,
 replayed and proposed on the PR; no code word rule.
 
+## Live console pass (sandbox backend + MCP + worker, real parser gpt-5.4-mini, 7 Oct 2026)
+
+`scripts/chatbot_console_check.py --live` over the lane's YAML against this checkout's own
+app, dev-shape seed (55 Sorento + 5 Mocha taps with both file types, the COLD TAP pair,
+the alias rows). Three more facts the live parser surfaced, each fixed in this lane:
+
+5. The fifty listed codes on the parser's `Current subject` line made the model echo them
+   all back as entities, past `PARSER_MAX_TOKENS` (the turn failed on truncated JSON), or
+   echo a few, which `apply._focus_rules` wrote over the product axis as unsettled copies
+   (the owner's two-id shape, one mechanism of it). `turn_runtime.without_restated_rows`
+   drops an echo of a row the focus holds settled before `apply` reads the verdict;
+   `head/parser.current_subject_line` prints at most `SUBJECT_NAMES_CAP` (5) names per axis.
+6. "they got pic/" read as brand Sorento + photo (`replace_combine`) opened a new ask: the
+   listed rows were dropped, the brand word qualified nothing, "pic" after it had no
+   subject. `turn_runtime.with_brand_of_the_page`: a brand word (typed or echoed) naming
+   the brand the carried page is already narrowed to restates the subject; beside a
+   document word, or alone, the turn is a reuse.
+7. "pic" parsed WITHOUT its document entity on 2 of 3 runs on this checkout's production
+   prompt (v3): the code then re-lists the carried type over the listed rows (never an
+   unlisted product). With the proposed example lines published as an unlabelled version
+   (v5 here) and pinned, 3 of 3 runs listed the photos. That is the owner's manual prompt
+   step (the text is in the PR's crew-done).
+
 ## Bug (owner hand test, 6 Oct 2026 22:40, #1490 test copy at 117224451, prompt v58)
 
 Dealer contact, General Enquiries:

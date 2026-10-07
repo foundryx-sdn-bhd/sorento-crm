@@ -26,3 +26,9 @@ Round 2 (owner hand test on the local copy, 7 Oct 2026):
 - AC-8: After the page, `focus.products` holds the listed rows (uuid + code) and the carried
   class word is gone; the page's own carry (`focus.set_page`) is unchanged, so "another N"
   still continues the page.
+- AC-9: A parser echo of listed codes (`current_message: false`) beside the document word
+  changes nothing: the fetch still covers every listed row, not the echoed handful.
+- AC-10: The page's own brand named again beside the document word, or alone, is a reuse:
+  the listed rows stay on the focus and the document word that follows reads about them.
+- AC-11: The parser's `Current subject` line names at most five products per axis and says
+  how many more there are.
