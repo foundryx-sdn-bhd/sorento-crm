@@ -64,13 +64,19 @@ const MENU_ORDER: { way: DecideWay; separatorAfter?: boolean }[] = [
   { way: 'borrow_other' },
   { way: 'shared' },
   { way: 'buy' },
+  { way: 'cancel_so' },
 ];
 
 /** "As suggested" is not one of `supplyVocabulary`'s seven words - it names no supply kind. */
 const AS_SUGGESTED_LABEL = 'As suggested';
 
+/** Not a supply kind either: the whole line goes to the Cancel SO document (SO-CANCEL-LINE). */
+const CANCEL_SO_LABEL = 'Transfer to Cancel SO';
+
 function labelOf(way: DecideWay): string {
-  return way === 'suggested' ? AS_SUGGESTED_LABEL : LABELS[way];
+  if (way === 'suggested') return AS_SUGGESTED_LABEL;
+  if (way === 'cancel_so') return CANCEL_SO_LABEL;
+  return LABELS[way];
 }
 
 /**
@@ -232,14 +238,16 @@ export function BoardDecideControl({
   // Preview only, for the Save button's own count and disabled state - a fresh tally each
   // render, never the tally the actual save below commits to.
   const preview = React.useMemo(() => {
-    if (!way) return { coverable: 0 };
+    if (!way) return { coverable: 0, skipped: [] as [string, number][] };
     const claimed = new Map<string, number>();
     let coverable = 0;
+    const skippedBy = new Map<string, number>();
     for (const row of tickedRows) {
       const result = decideComposition(row, way, pick || undefined, claimed);
       if (!result.skip) coverable += 1;
+      else skippedBy.set(result.skip, (skippedBy.get(result.skip) ?? 0) + 1);
     }
-    return { coverable };
+    return { coverable, skipped: [...skippedBy.entries()] };
   }, [way, pick, tickedRows]);
 
   // Should fix 5 (review round 1): only `dialogOpen` closes the dialog now - `way`, `pick`,
@@ -310,6 +318,21 @@ export function BoardDecideControl({
             continue;
           }
           const trimmedReason = chosenReason.trim();
+          if (chosenWay === 'cancel_so') {
+            saves.push({
+              key: row.key,
+              decision: {
+                verdict: 'cancelled',
+                reserve: [],
+                borrow: [],
+                timely_spo_qty: '0',
+                buy_qty: '0',
+                order_back: false,
+                reason: trimmedReason,
+              },
+            });
+            continue;
+          }
           const borrow = (result.borrow ?? []).map((entry) => ({
             ...entry,
             reason: trimmedReason,
@@ -396,7 +419,7 @@ export function BoardDecideControl({
     setReason('');
     setAuthorisation('');
     const borrow = chosen === 'borrow_order' || chosen === 'borrow_other';
-    if (!borrow) {
+    if (!borrow && chosen !== 'cancel_so') {
       // AC-12: every ticked (uncovered) row's suggestion already IS this pick -> no dialog.
       const claimed = new Map<string, number>();
       const allMatch = tickedRows.every((row) => {
@@ -426,7 +449,10 @@ export function BoardDecideControl({
   };
 
   const needsAuthorisation = Boolean(sameAgent);
-  const valid = isBorrow
+  const nothingToSave = preview.coverable === 0;
+  const valid = nothingToSave
+    ? false
+    : isBorrow
     ? Boolean(pick) &&
       reason.trim().length > 0 &&
       (!needsAuthorisation || authorisation.trim())
@@ -536,6 +562,11 @@ export function BoardDecideControl({
                 />
               </div>
             )}
+            {(isBorrow && !pick ? [] : preview.skipped).map(([why, count]) => (
+              <p key={why} className="text-sm text-muted-foreground">
+                {`${count} line${count === 1 ? '' : 's'} will be skipped: ${why}`}
+              </p>
+            ))}
           </DialogBody>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={reset}>

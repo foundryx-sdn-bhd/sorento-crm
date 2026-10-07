@@ -234,6 +234,11 @@ def _build_json_schema() -> dict[str, Any]:
                     # PLAN-retail-sales-reports-26sep S1: the sales analysis's axes.
                     "month",
                     "year",
+                    # REPORT-ENGINE slice 1b: the `sales_ranking` ask's other dimensions.
+                    "sales_agent",
+                    "brand",
+                    "category",
+                    "channel",
                     None,
                 ],
             },
@@ -258,7 +263,7 @@ def _build_json_schema() -> dict[str, Any]:
             # (owner rulings 26 Sep 2026: never assume the basis or the grain). A null
             # `rank_by` is asked too (no default metric).
             "rank_by": {"type": ["string", "null"], "enum": ["quantity", "amount", None]},
-            "basis": {"type": ["string", "null"], "enum": ["delivered", "ordered", "unclear", None]},
+            "basis": {"type": ["string", "null"], "enum": ["delivered", "ordered", "outstanding", "unclear", None]},
             "rank_group": {"type": ["string", "null"], "enum": ["item", "category", "unclear", None]},
             # Fix lane round 4 (owner retest, 27 Sep 2026): "cold selling", "least sold"
             # rank ascending. Same shape and same exemption as the three above.
@@ -280,6 +285,11 @@ def _build_json_schema() -> dict[str, Any]:
                 ],
             },
             "sort_dir": {"type": ["string", "null"], "enum": ["asc", "desc", None]},
+            # REPORT-ENGINE (owner rule 4 Oct 2026, semantic only): the parser's own reading
+            # that this message only refines the sales ranking on screen, and the ranking's
+            # measure. Same shape and exemption as `rank_direction`.
+            "ranking_refine": {"type": ["boolean", "null"]},
+            "measure": {"type": ["string", "null"], "enum": ["qty", "amount", None]},
             # PLAN-retail-sales-reports-26sep S1: the sales analysis's basis and the
             # company named. Required for strict mode and tolerated absent, exactly as
             # `sales_channel` above (no recorded emission carries them).
@@ -537,6 +547,8 @@ def _build_json_schema() -> dict[str, Any]:
             "rank_direction",
             "sort_by",
             "sort_dir",
+            "ranking_refine",
+            "measure",
             "sales_basis",
             "sales_company",
             "promotion_kind",
@@ -599,6 +611,8 @@ TOLERATED_ABSENT: frozenset[str] = frozenset(
         "rank_direction",
         "sort_by",
         "sort_dir",
+        "ranking_refine",
+        "measure",
         "sales_basis",
         "sales_company",
         "promotion_kind",

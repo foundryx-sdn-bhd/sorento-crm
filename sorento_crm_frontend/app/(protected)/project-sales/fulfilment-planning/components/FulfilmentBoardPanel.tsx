@@ -74,6 +74,7 @@ import {
   rowMatchesSearch,
   confirmLinesFor,
   rejectedCoveredLineIdsFor,
+  cancelledLinesFor,
   confirmNoticeLines,
   failingLineText,
   shiftedDayWindow,
@@ -676,6 +677,15 @@ export function FulfilmentBoardPanel({
    * things depending on when it was pressed.
    */
   const preMarkedKeySet = React.useRef<Set<string>>(new Set());
+  // The lines a pending planning change NAMES: only those cannot also be transferred to
+  // Cancel SO (a cancel of any other line rides along with the batch press).
+  const batchNamedKeys = React.useMemo(() => {
+    const out = new Set<string>();
+    for (const orders of survivingOrdersByBatchId.values()) {
+      for (const key of preMarkedKeys({ orders }, allContributions)) out.add(key);
+    }
+    return out;
+  }, [survivingOrdersByBatchId, allContributions]);
   React.useEffect(() => {
     if (allContributions.length === 0) return;
     if (loadedBatches.length < boardBatchIds.length) return;
@@ -891,7 +901,7 @@ export function FulfilmentBoardPanel({
           allContributions,
           draftWithoutPreMarks(appliedNext),
           pendingBatchSalesOrderIds,
-          { unadoptedSalesOrderIds },
+          { unadoptedSalesOrderIds, batchNamedKeys },
         );
         toast.success(
           decision.verdict === 'rejected'
@@ -901,7 +911,14 @@ export function FulfilmentBoardPanel({
       }
       return true;
     },
-    [allContributions, saveLineDraft, removeDraftKey, pendingBatchSalesOrderIds, unadoptedSalesOrderIds],
+    [
+      allContributions,
+      saveLineDraft,
+      removeDraftKey,
+      pendingBatchSalesOrderIds,
+      unadoptedSalesOrderIds,
+      batchNamedKeys,
+    ],
   );
 
   /**
@@ -954,7 +971,7 @@ export function FulfilmentBoardPanel({
           allContributions,
           draftWithoutPreMarks(appliedNext),
           pendingBatchSalesOrderIds,
-          { unadoptedSalesOrderIds },
+          { unadoptedSalesOrderIds, batchNamedKeys },
         );
         toast.success(
           `${saved} line${saved === 1 ? '' : 's'} saved · ${toConfirm} to confirm`,
@@ -962,7 +979,7 @@ export function FulfilmentBoardPanel({
       }
       return { saved, failed };
     },
-    [allContributions, decide, draft, pendingBatchSalesOrderIds, unadoptedSalesOrderIds],
+    [allContributions, decide, draft, pendingBatchSalesOrderIds, unadoptedSalesOrderIds, batchNamedKeys],
   );
 
   /**
@@ -1083,8 +1100,15 @@ export function FulfilmentBoardPanel({
     () =>
       confirmSummaryFor(allContributions, draftWithoutPreMark, pendingBatchSalesOrderIds, {
         unadoptedSalesOrderIds,
+        batchNamedKeys,
       }),
-    [allContributions, draftWithoutPreMark, pendingBatchSalesOrderIds, unadoptedSalesOrderIds],
+    [
+      allContributions,
+      draftWithoutPreMark,
+      pendingBatchSalesOrderIds,
+      unadoptedSalesOrderIds,
+      batchNamedKeys,
+    ],
   );
 
   /**
@@ -1256,7 +1280,15 @@ export function FulfilmentBoardPanel({
               decision?.verdict !== 'amended' &&
               decision?.verdict !== 'approved'
             ) {
-              return false;
+              // A saved Cancel SO on an inquiry-decided line is posted in `cancelled_lines`:
+              // the same call `confirmSummaryFor` admits the order by, so count and press agree.
+              return (
+                decision?.verdict === 'cancelled' &&
+                pressPostsContribution(contribution, decision, {
+                  batchBlocked: pendingBatchSalesOrderIds.has(contribution.sales_order_id),
+                  batchNamedKeys,
+                })
+              );
             }
             return true;
           })
@@ -1311,6 +1343,7 @@ export function FulfilmentBoardPanel({
         lines: ReturnType<typeof confirmLinesFor>;
         batch_id: string | null;
         rejected_line_ids: string[];
+        cancelled_lines: ReturnType<typeof cancelledLinesFor>;
       }[] = [];
       // An order whose planning change is already applied is NOT sent again (AC-P3-4). It is
       // reported instead, in the same place a server refusal is reported, so a press that
@@ -1365,6 +1398,13 @@ export function FulfilmentBoardPanel({
           : rejectedCoveredLineIdsFor(contributions, salesOrderId, draftWithoutPreMark, {
               excludeKeys: excludeKeys,
             });
+        // SO-CANCEL-LINE: a cancel rides along with a pending change unless the batch names
+        // that line (the server refuses only that case).
+        const cancelledLines = cancelledLinesFor(contributions, salesOrderId, draftWithoutPreMark, {
+          excludeKeys: excludeKeys,
+          batchBlocked: Boolean(orderBatchId),
+          batchNamedKeys,
+        });
         // S4 (fix round, review): the covered-rejected lines THIS order's own batch just
         // zeroed out of `rejectedLineIds` above, so the planner is told what did not ride
         // along rather than the counter simply promising it and the press posting nothing
@@ -1376,9 +1416,15 @@ export function FulfilmentBoardPanel({
           ? contributions.filter(
               (contribution) =>
                 contribution.sales_order_id === salesOrderId &&
-                contribution.covered &&
                 !excludeKeys.has(contribution.key) &&
-                draftWithoutPreMark[contribution.key]?.verdict === 'rejected',
+                !contribution.unplannable &&
+                Boolean(contribution.project_line_id) &&
+                ((contribution.covered &&
+                  draftWithoutPreMark[contribution.key]?.verdict === 'rejected') ||
+                  (!contribution.covered &&
+                    !contribution.cancelled &&
+                    batchNamedKeys.has(contribution.key) &&
+                    draftWithoutPreMark[contribution.key]?.verdict === 'cancelled')),
             )
           : [];
         // S4: said OUT LOUD, named per line THROUGH `failing_lines` (the same shape a
@@ -1396,17 +1442,32 @@ export function FulfilmentBoardPanel({
         // `rejectedLineIds`, both already computed above).
         if (heldBackByBatch.length > 0) {
           const postingSomethingElse = lines.length > 0 || rejectedLineIds.length > 0;
+          const heldCancels = heldBackByBatch.some(
+            (contribution) => draftWithoutPreMark[contribution.key]?.verdict === 'cancelled',
+          );
+          const heldRejects = heldBackByBatch.some(
+            (contribution) => draftWithoutPreMark[contribution.key]?.verdict !== 'cancelled',
+          );
+          const heldWhat =
+            heldCancels && heldRejects
+              ? 'staged rejection and saved Cancel SO'
+              : heldCancels
+                ? 'saved Cancel SO'
+                : 'staged rejection';
           skipped.push({
             pso_id: psoId,
             so_number: soNumber,
             ok: false,
             heldBack: true,
             error: postingSomethingElse
-              ? 'was confirmed, but its staged rejection could not ride along with the pending change; it commits after the change is applied.'
-              : 'has a staged rejection that commits after the pending change is applied.',
+              ? `was confirmed, but its ${heldWhat} could not ride along with the pending change; it commits after the change is applied.`
+              : `has a ${heldWhat} that commits after the pending change is applied.`,
             failing_lines: heldBackByBatch.map((contribution) => ({
               line_no: contribution.line_no,
-              reason: 'rejection is staged; it commits after the pending change is applied.',
+              reason:
+                draftWithoutPreMark[contribution.key]?.verdict === 'cancelled'
+                  ? 'Cancel SO is saved; it commits after the pending change is applied.'
+                  : 'rejection is staged; it commits after the pending change is applied.',
             })),
           } as BoardBatchResult);
         }
@@ -1417,7 +1478,7 @@ export function FulfilmentBoardPanel({
         // because a press whose `orders` came out empty with an empty `skipped` never set
         // `batchResults` at all. It is reported beside every other order's outcome instead,
         // in the wording the notice above the block already uses for the lines themselves.
-        if (lines.length === 0 && rejectedLineIds.length === 0) {
+        if (lines.length === 0 && rejectedLineIds.length === 0 && cancelledLines.length === 0) {
           // The held-back note above already said why, when that is the whole reason -
           // the generic "had no line..." sentence would only repeat it more vaguely.
           if (heldBackByBatch.length > 0) continue;
@@ -1434,7 +1495,13 @@ export function FulfilmentBoardPanel({
           } as BoardBatchResult);
           continue;
         }
-        orders.push({ pso_id: psoId, lines, batch_id: orderBatchId, rejected_line_ids: rejectedLineIds });
+        orders.push({
+          pso_id: psoId,
+          lines,
+          batch_id: orderBatchId,
+          rejected_line_ids: rejectedLineIds,
+          cancelled_lines: cancelledLines,
+        });
       }
       // Per-order `batch_id` above answers AC-P3-4/AC-B5 on its own. The body-level
       // `batch_id` is kept ONLY when EVERY order in THIS press carries that SAME id
@@ -1464,6 +1531,8 @@ export function FulfilmentBoardPanel({
       adopt,
       appliedSoNumbers,
       batchIdBySoNumber,
+      batchNamedKeys,
+      pendingBatchSalesOrderIds,
     ],
   );
 
@@ -1495,7 +1564,10 @@ export function FulfilmentBoardPanel({
     const leftOutAtConfirm = unpostable.length;
     try {
       const built = await buildConfirmOrders(new Set());
-      if (!built) return;
+      if (!built) {
+        if (confirmSummary.toConfirm > 0) toast.error('Nothing could be sent for this press');
+        return;
+      }
       const { skipped, contributions } = built;
       if (built.orders.length === 0) {
         if (skipped.length > 0) setBatchResults(skipped);
@@ -1524,7 +1596,13 @@ export function FulfilmentBoardPanel({
           const ids = [...(dryRun?.lines_confirmed ?? []), ...(dryRun?.lines_withdrawn ?? [])];
           // An order whose named lines are all already fulfilled confirms nothing new, but the REAL
           // press clears their stale decisions (the dry run rolled that back), so it is still posted.
-          if (ids.length > 0 || (dryRun?.lines_fulfilled_skipped ?? 0) > 0 || Boolean(order.batch_id)) {
+          if (
+            ids.length > 0 ||
+            (dryRun?.lines_cancelled?.length ?? 0) > 0 ||
+            order.cancelled_lines.length > 0 ||
+            (dryRun?.lines_fulfilled_skipped ?? 0) > 0 ||
+            Boolean(order.batch_id)
+          ) {
             return true;
           }
           refusals.push({
@@ -1540,9 +1618,12 @@ export function FulfilmentBoardPanel({
         })
         .map((order) => {
           const dryRun = answer.get(order.pso_id);
-          const only = [...(dryRun?.lines_confirmed ?? []), ...(dryRun?.lines_withdrawn ?? [])].map(
-            (entry) => entry.project_line_id,
-          );
+          const only = [
+            ...[...(dryRun?.lines_confirmed ?? []), ...(dryRun?.lines_withdrawn ?? [])].map(
+              (entry) => entry.project_line_id,
+            ),
+            ...order.cancelled_lines.map((entry) => entry.project_line_id),
+          ];
           if (only.length === 0 || order.batch_id) return order;
           const keep = new Set(only);
           return {
@@ -1676,11 +1757,12 @@ export function FulfilmentBoardPanel({
       const committedLineIds = new Set(
         orders
           .filter((order) => committedPsoIds.has(order.pso_id))
-          .flatMap((order) =>
-            order.lines
+          .flatMap((order) => [
+            ...order.lines
               .map((line) => line.project_line_id)
               .filter((id) => echoedByPso.get(order.pso_id)?.has(id) ?? true),
-          ),
+            ...order.cancelled_lines.map((line) => line.project_line_id),
+          ]),
       );
       setDraft((current) => {
         const next = { ...current };
@@ -1707,6 +1789,7 @@ export function FulfilmentBoardPanel({
     confirmMany,
     unpostable,
     previewConfirmMany,
+    confirmSummary,
   ]);
 
   /**
@@ -1826,8 +1909,9 @@ export function FulfilmentBoardPanel({
       pressPostsContribution(line, draftWithoutPreMark[line.key], {
         batchBlocked: pendingBatchSalesOrderIds.has(line.sales_order_id),
         unadopted: unadoptedSalesOrderIds.has(line.sales_order_id),
+        batchNamedKeys,
       }),
-    [draftWithoutPreMark, pendingBatchSalesOrderIds, unadoptedSalesOrderIds],
+    [draftWithoutPreMark, pendingBatchSalesOrderIds, unadoptedSalesOrderIds, batchNamedKeys],
   );
   // The Saved | All counts: the board's lines under the product search (and the day window,
   // through the list's whole-selection population), never under the Status filter.
@@ -2326,10 +2410,26 @@ export function FulfilmentBoardPanel({
                           : 'text-destructive'
                     }`}
                   >
-                    {result.ok
+                    {result.ok && (result.lines_cancelled?.length ?? 0) > 0 &&
+                    (result.lines_confirmed?.length ?? 0) === 0 &&
+                    (result.inquiry_rows_created ?? 0) === 0
+                      ? `${label}: ${result.lines_cancelled?.length} line${result.lines_cancelled?.length === 1 ? '' : 's'} transferred to Cancel SO`
+                      : result.ok
                       ? `${label}: confirmed as revision ${result.decision_revision} (${result.inquiry_rows_created ?? 0} purchase row${(result.inquiry_rows_created ?? 0) === 1 ? '' : 's'} handed over)`
                       : `${label}: ${result.error ?? 'refused'}`}
                   </span>
+                  {result.ok && result.lines_cancelled && result.lines_cancelled.length > 0 && (
+                    <ul
+                      data-testid={`board-cancelled-lines-${result.pso_id}`}
+                      className="space-y-0.5"
+                    >
+                      <li className="text-sm break-words">
+                        {`Transferred to Cancel SO: ${result.lines_cancelled
+                          .map((line) => `line ${line.line_no ?? '?'} ${line.item_code ?? ''}`.trim())
+                          .join(' · ')}`}
+                      </li>
+                    </ul>
+                  )}
                   {result.ok && result.lines_confirmed && result.lines_confirmed.length > 0 && (
                     <ul
                       data-testid={`board-confirm-lines-${result.pso_id}`}

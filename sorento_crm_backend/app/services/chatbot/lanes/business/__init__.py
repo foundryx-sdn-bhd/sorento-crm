@@ -31,6 +31,8 @@ from app.services.chatbot.lanes.business import brand_guard
 from app.services.chatbot import do_ask
 from app.services.chatbot.lanes.business import fetch as fetch_mod
 from app.services.chatbot.lanes.business import low_stock_ask
+from app.services.chatbot.lanes.business import report_ask
+from app.services.chatbot.lanes.business import ranking_ask
 from app.services.chatbot.lanes.business import resolve_gate
 from app.services.chatbot.lanes.business import services as business_services
 from app.services.chatbot.turn import policy_rows
@@ -83,11 +85,13 @@ _SALES_ANALYSIS_TOOL = "crm_sales_analysis"
 #: its own copy because its container does not ship `sorento_crm_mcp`, and
 #: `tests/chatbot/test_top_selling_lane.py` pins the two equal.
 TOP_SELLING_TOOL = "crm_top_selling_report"
-TOP_SELLING_ASK_METRIC = "By quantity or by amount?"
+TOP_SELLING_ASK_METRIC = ranking_ask.METRIC_LINE
 TOP_SELLING_ASK_GROUP = (
     "Do you want the top items inside one category, or the categories ranked against each other?"
 )
-TOP_SELLING_ASK_BASIS = "Delivered (transferred to DO) or ordered?"
+TOP_SELLING_ASK_BASIS = ranking_ask.TOP_SELLING_BASIS_LINE
+#: The sales ranking's own basis question (`report_ask`), three bases.
+SALES_RANKING_ASK_BASIS = ranking_ask.RANKING_BASIS_LINE
 TOP_SELLING_REFUSED_OTHER_CUSTOMER = "Sorry, I can only share sales figures for your own account."
 #: Owner retest of round 4 (27 Sep 2026, R8): one short question in words when a message
 #: inside a ranking cannot be placed.
@@ -503,7 +507,8 @@ def top_selling_ceiling_note(slot: dict[str, Any]) -> str | None:
 def _top_selling_question(slot: dict[str, Any]) -> tuple[str, str] | None:
     """S4 point 8a: the one question an unsettled top selling ask gets, in this order:
     the grain when the parser could not tell a category filter from a category ranking,
-    the metric when none was named, the basis when a word could mean either. None once
+    the metric when none was named, the basis when none was named or it is not delivered or
+    ordered (`ranking_ask.next_question`, shared with the sales ranking). None once
     the ask is settled. A picked row (`detail_code`) is never asked about: the ranking
     it came from already ran. Returns `(axis, line)`: the axis is what the reply records
     as asked (`top_selling_asked`), so the next message is read as its answer only if it
@@ -512,11 +517,11 @@ def _top_selling_question(slot: dict[str, Any]) -> tuple[str, str] | None:
         return None
     if slot.get("rank_group") == "unclear":
         return "group", TOP_SELLING_ASK_GROUP
-    if slot.get("rank_by") not in ("quantity", "amount"):
-        return "metric", TOP_SELLING_ASK_METRIC
-    if slot.get("basis") == "unclear":
-        return "basis", TOP_SELLING_ASK_BASIS
-    return None
+    return ranking_ask.next_question(
+        metric_settled=slot.get("rank_by") in ("quantity", "amount"),
+        basis_settled=slot.get("basis") in ("delivered", "ordered"),
+        basis_line=TOP_SELLING_ASK_BASIS,
+    )
 
 
 def _top_selling_category_ids(
@@ -2102,6 +2107,35 @@ def run_fetch(
             semantic_input["top_selling_drop"] = ["category_words", "category_code"]
         semantic_input["top_selling_notes"] = notes
         semantic_input["top_selling_category_ids"] = category_ids
+    elif domain in contracts.ORDER_OR_SALES_DOMAINS and order_status_raw == report_ask.ASK_NAME:
+        # REPORT-ENGINE slice 1b (PLAN-report-engine.md section 11): sales ranked or
+        # totalled by one dimension, `crm_report_ask`. The grant was checked above for
+        # every sales figure status; every other gate (audience, company, location) is
+        # the route's, from `contact_id`. Nothing runs until the period, and how many for
+        # a ranking, are settled (`required_fields`, asked one per reply).
+        tool_name = report_ask.TOOL
+        tool_item = {"name": tool_name, "_tool_pick": {"source": "sales_ranking_override"}}
+        # 1b fix round F1: a customer-scoped (dealer) turn is refused a staff breakdown
+        # before any agent or location word is resolved.
+        settled, line = report_ask.settle(
+            db, parse_output, entities, dealer=bool(customer_scope.get("enforced"))
+        )
+        if trace is not None:
+            trace.add(
+                "required_ask",
+                {"ask": report_ask.ASK_NAME, "done": bool(settled and settled.done),
+                 "values": settled.values if settled else None, "line": line},
+            )
+        if settled is None:
+            return _fixed_reply(line or "")
+        if not settled.done:
+            return _fixed_reply(settled.reply or "", required_ask=settled.slot)
+        semantic_input["report_ask_args"] = report_ask.route_args(settled)
+        if settled.extras.get("note"):
+            semantic_input["report_ask_note"] = settled.extras["note"]
+        # The args carry every id the ask settled (an answering turn's came off the slot);
+        # nothing the session carried rides beside them.
+        entities = []
     elif tool_name in fetch_mod.ORDER_TOOLS and order_status_raw == "so_outstanding":
         # S2 (security review, 13 Sep 2026), narrowed by R13: the LEGACY bucket now only
         # catches an `so_outstanding` ask with NO subject at all (no product and no
@@ -2274,6 +2308,13 @@ def run_fetch(
     # The ERROR check comes BEFORE the render: an error envelope has no rows, and rendering
     # it first would build a "No matching results found." message for a turn that failed.
     if isinstance(envelope, dict) and isinstance(envelope.get("error"), str):
+        # REPORT-ENGINE slice 1b: the route's own refusal (the audience check is the
+        # route's) is said as its message, a 404 as one line.
+        refusal = report_ask.error_line(envelope) if tool_name == report_ask.TOOL else None
+        if refusal:
+            if trace is not None:
+                trace.add("report_ask", {"refused": envelope.get("status_code")})
+            return _fixed_reply(refusal)
         return _error_fragment(envelope["error"])
 
     structured = fetch_mod.output_structurer(envelope, trigger)

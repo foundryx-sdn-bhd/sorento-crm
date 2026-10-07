@@ -168,6 +168,12 @@ class Focus:
     # read and consumed by `required_fields.reply_verdict` on the NEXT message only. One
     # turn long: a lane that asks again hands back a fresh one.
     required_ask: dict[str, Any] | None = None
+    # REPORT-ENGINE (owner rule 4 Oct 2026): the route args of the last sales ranking that RAN,
+    # held so a parser verdict `ranking_refine: true` ("5", "this year") re-runs it with only
+    # the changed keys. Written by `engine.py` from the lane's envelope, read through
+    # `turn_runtime` into `semantic_input["sales_ranking_frame"]`, applied by
+    # `lanes/business/report_ask.settle` and only when the verdict says it refines.
+    sales_ranking_frame: dict[str, Any] | None = None
     # LOWSTOCK-SEMANTIC: the filters the last low stock report was built with
     # (`low_stock_ask.route_filters` "frame"), so a refinement narrows it.
     low_stock: dict[str, Any] | None = None
@@ -290,6 +296,7 @@ def focus_to_wire(focus: Focus) -> dict[str, Any]:
     wire["set_clarify"] = focus.set_clarify
     wire["top_selling"] = dict(focus.top_selling) if focus.top_selling else None
     wire["required_ask"] = dict(focus.required_ask) if focus.required_ask else None
+    wire["sales_ranking_frame"] = dict(focus.sales_ranking_frame) if focus.sales_ranking_frame else None
     wire["low_stock"] = dict(focus.low_stock) if focus.low_stock else None
     # Ported from PR #1118 (not merged): the open tasks travel INSIDE the focus, not
     # on a session key of their own - the focus is the context, and a second key
@@ -352,6 +359,8 @@ def focus_from_wire(raw: Any) -> Focus:
     focus.top_selling = dict(top_selling) if isinstance(top_selling, dict) else None
     required_ask = raw.get("required_ask")
     focus.required_ask = dict(required_ask) if isinstance(required_ask, dict) else None
+    frame = raw.get("sales_ranking_frame")
+    focus.sales_ranking_frame = dict(frame) if isinstance(frame, dict) else None
     low_stock = raw.get("low_stock")
     focus.low_stock = dict(low_stock) if isinstance(low_stock, dict) else None
     tasks = raw.get("tasks")

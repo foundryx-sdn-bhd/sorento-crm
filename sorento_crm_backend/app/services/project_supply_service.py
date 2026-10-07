@@ -1210,6 +1210,98 @@ class ProjectSupplyService:
             .all()
         )
 
+    def cancel_lines(
+        self,
+        order: ProjectSalesOrder,
+        cancelled_lines: Sequence[Any],
+        *,
+        actor_user_id: str,
+    ) -> List[Dict[str, Any]]:
+        """SO-CANCEL-LINE: CS transferred whole lines to Cancel SO. Each named mirror line's
+        core line becomes `cancelled` with who, when and why, its saved draft is dropped and
+        purchasing's acknowledged rows go back to To confirm. In the CALLER's transaction.
+
+        Refused before anything is written: a blank reason (422), a line that is not on this
+        order (422), an already cancelled line (409, audit columns never rewritten) and a line
+        an active decision still covers (409, reject it first).
+        """
+        from app.services import project_line_draft_service
+        from app.services.project_order_inquiry_service import flag_rows_for_cancelled_lines
+
+        if not cancelled_lines:
+            return []
+        by_id = {str(line.id): line for line in self.lines_of(str(order.id))}
+        picked: List[Tuple[ProjectSalesOrderLine, SalesOrderLine, str]] = []
+        seen: Set[str] = set()
+        for entry in cancelled_lines:
+            reason = (entry.reason or "").strip()
+            if not reason:
+                raise AppException(
+                    status_code=422,
+                    message="Give a reason for transferring the line to Cancel SO.",
+                    code="supply_cancel_reason_required",
+                )
+            mirror = by_id.get(str(entry.project_line_id))
+            core = (
+                self.db.query(SalesOrderLine)
+                .filter(SalesOrderLine.id == str(mirror.core_sales_order_line_id))
+                .with_for_update()
+                .populate_existing()
+                .one_or_none()
+                if mirror is not None and mirror.core_sales_order_line_id
+                else None
+            )
+            if mirror is None or core is None:
+                raise AppException(
+                    status_code=422,
+                    message="That line is not on this sales order any more.",
+                    code="supply_cancel_line_missing",
+                )
+            if str(mirror.id) in seen:
+                continue
+            seen.add(str(mirror.id))
+            picked.append((mirror, core, reason))
+        # The ACTIVE decision's own snapshots, read directly: `_active_coverage` exempts a
+        # line inside an unapplied planning change, and such a line is still confirmed.
+        active = self.active_decision(str(order.id))
+        covered_ids = {
+            str((snap or {}).get("core_line_id"))
+            for snap in (active.line_snapshots or [] if active is not None else [])
+        }
+        for mirror, core, _reason in picked:
+            if core.line_status == "cancelled":
+                raise AppException(
+                    status_code=409,
+                    message=f"Line {mirror.line_no} is already cancelled.",
+                    code="supply_cancel_already_cancelled",
+                )
+            if str(core.id) in covered_ids:
+                raise AppException(
+                    status_code=409,
+                    message=f"Line {mirror.line_no} is confirmed. Reject it first.",
+                    code="supply_cancel_line_covered",
+                )
+        now = datetime.utcnow()
+        echo: List[Dict[str, Any]] = []
+        for mirror, core, reason in picked:
+            core.line_status = "cancelled"
+            core.cancelled_at = now
+            core.cancelled_by_id = str(actor_user_id)
+            core.cancel_reason = reason
+            code = None
+            product_id = core.product_id or mirror.product_id
+            if product_id:
+                code = self.db.query(Product.product_code).filter(Product.id == product_id).scalar()
+            echo.append({"line_no": mirror.line_no, "item_code": code})
+        self.db.flush()
+        project_line_draft_service.delete_drafts_for_lines(
+            self.db,
+            [core.id for _m, core, _r in picked],
+            company_id=str(order.company_id) if order.company_id else None,
+        )
+        flag_rows_for_cancelled_lines(self.db, [str(core.id) for _m, core, _r in picked])
+        return echo
+
     def active_decision(self, pso_id: str) -> Optional[SOSupplyDecision]:
         return (
             self.db.query(SOSupplyDecision)
@@ -10720,7 +10812,7 @@ class ProjectSupplyService:
                     not hold_back
                     or not failing
                     or "" in ids
-                    or not keep
+                    or (not keep and not getattr(entry, "cancelled_lines", None))
                     or len(keep) == len(lines)
                 ):
                     raise
@@ -10810,6 +10902,11 @@ class ProjectSupplyService:
                             "rejected_line_ids": [
                                 x for x in (entry.rejected_line_ids or []) if str(x) in keep
                             ],
+                            "cancelled_lines": [
+                                x
+                                for x in (entry.cancelled_lines or [])
+                                if str(x.project_line_id) in keep
+                            ],
                         }
                     )
                 before_decision_id = None
@@ -10846,6 +10943,7 @@ class ProjectSupplyService:
                         "lines_confirmed": body.get("lines_confirmed"),
                         "lines_carried": body.get("lines_carried"),
                         "lines_withdrawn": body.get("lines_withdrawn") or [],
+                        "lines_cancelled": body.get("lines_cancelled") or [],
                         # The board confirms every order in one press and reports one toast,
                         # so the movements and the flags have to come back PER ORDER or the
                         # toast has nothing to add up. `.get`, because the planning-change

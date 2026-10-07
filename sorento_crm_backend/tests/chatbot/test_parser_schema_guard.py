@@ -133,6 +133,11 @@ MEASURED_VERDICT_READS: dict[str, str] = {
     # `turn/apply.py::_focus_rules` onto `Focus.sort`. 45 declared keys -> 47.
     "sort_by": "app/services/chatbot/turn/apply.py",
     "sort_dir": "app/services/chatbot/turn/apply.py",
+    # REPORT-ENGINE (owner rule 4 Oct 2026, semantic only): the parser's own reading of "this
+    # message only refines the sales ranking on screen", and the ranking's measure
+    # ("qty" | "amount" | null). 47 declared keys -> 49.
+    "ranking_refine": "app/services/chatbot/engine.py",
+    "measure": "app/services/chatbot/lanes/business/report_ask.py",
     # 4 Oct 2026 (LOWSTOCK-SEMANTIC): the low stock filters, read by
     # `lanes/business/low_stock_ask.reading`. 48 declared keys -> 49.
     "low_stock": "app/services/chatbot/lanes/business/low_stock_ask.py",

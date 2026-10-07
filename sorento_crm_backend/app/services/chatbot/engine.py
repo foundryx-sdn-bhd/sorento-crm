@@ -2695,12 +2695,14 @@ def _classify_word_group(db: Session, group: str) -> str | None:
 
     if group.lower() in TOP_SELLING_WHO_WORDS:
         return None
-    if business_services.resolve_sales_agent_token(db, group):
-        return "sales_agent"
+    # A category or an exact brand beats a sales agent alias ("water closet", "sorento" are
+    # aliases of an agent on dev): customers stay last.
     if business_services.resolve_category_token(db, group) or resolve_classes_for_term(db, group.lower()):
         return "category"
     if business_services.resolve_brand_token(db, group, exact_only=True):
         return "brand"
+    if business_services.resolve_sales_agent_token(db, group):
+        return "sales_agent"
     if business_services.customers_named(db, group):
         return "customer"
     return None
@@ -2759,6 +2761,10 @@ def _top_selling_verdict(
     the ranking whatever the parser's status; an echoed word from an earlier turn is
     dropped; basis words switch the basis; a period alone re-runs the ranking for it.
     """
+    if jsc.js_string(verdict.get("order_status") or "").strip() == "sales_ranking":
+        # A new ask the parser named (owner held-state rule: a new intent always wins): never
+        # captured by an open top selling question.
+        return verdict, state, None
     focus = state.focus
     slot = focus.top_selling if isinstance(focus.top_selling, dict) else None
     ranking = focus.status == "top_selling" or bool(slot and slot.get("hop"))
@@ -4595,10 +4601,18 @@ def _run_stages_body(  # noqa: PLR0915
     # ATTACH-GROUNDING-TYPO: `ctx.parse._parser_raw` is the verdict as it stood before
     # grounding rewrote the entities.
     parser_verdict = copy.deepcopy(verdict)
+    # REPORT-ENGINE 1b code review S3: a sales ranking's brand / sales agent / category
+    # words are the lane's own (matched against their tables, an exact name winning alone),
+    # so grounding never splits one ("ZZT SINK" into the class SINK plus a spec word).
+    from app.services.chatbot.lanes.business import report_ask as _report_ask
+
+    verdict, _ranking_words = _report_ask.hold_words(verdict)
     with _session(session_factory) as grounding_db:
         verdict, grounding_notes = grounding.ground(
             grounding_db, verdict, message=latest_user_message.split("\n", 1)[0] if isinstance(latest_user_message, str) else None
         )
+    if _ranking_words:
+        verdict = {**verdict, "entities": [*(verdict.get("entities") or []), *_ranking_words]}
     if grounding_notes:
         turn_trace.add("grounding", {"changes": grounding_notes})
     # Fix round 12 on PR #833 (owner ruling 28 Sep 2026): once grounding has read the ask
@@ -4662,7 +4676,7 @@ def _run_stages_body(  # noqa: PLR0915
         # when the parser declared one; a fresh low stock ask keeps only the entities that
         # scope the run. Read before every other seam below.
         from app.services.chatbot import required_fields
-        from app.services.chatbot.lanes.business import low_stock_ask
+        from app.services.chatbot.lanes.business import low_stock_ask, report_ask
 
         _message_text = jsc.js_string(jsc.get(_inner_message(envelope), "text") or "")
         # Security S1: these keys are the ENGINE's own; one the parser emitted (the
@@ -4670,11 +4684,16 @@ def _run_stages_body(  # noqa: PLR0915
         verdict = {k: v for k, v in verdict.items() if k not in required_fields.ENGINE_KEYS}
         open_ask = state_in.focus.required_ask
         state_in.focus.required_ask = None
+        if (open_ask or {}).get("ask") == report_ask.ASK_NAME and report_ask.names_its_own_ask(verdict, open_ask):
+            open_ask = None  # a new sales ranking ask, not the answer to the open question
         verdict, required_rule = required_fields.reply_verdict(verdict, open_ask, _message_text)
         if required_rule:
             turn_trace.add("required_ask", {"verdict_rule": required_rule, "ask": (open_ask or {}).get("ask")})
         if required_rule == "required_ask_answer":
             state_in = dataclasses_replace(state_in, pending=None)
+        # REPORT-ENGINE slice 1b: a fresh sales ranking's brand / sales agent / category
+        # words, kept away from the generic resolver for the lane (`report_ask_words`).
+        verdict = report_ask.take_words(verdict, _message_text)
         # LOWSTOCK-SEMANTIC: the low stock ask's own words ride the parser's `low_stock`
         # key; only the entities that scope the RUN stay, and the last settled report's
         # frame rides along for a refinement.
@@ -5105,6 +5124,11 @@ def _run_stages_body(  # noqa: PLR0915
                 )
             elif isinstance(state_out.focus.top_selling, dict) and state_out.focus.top_selling.get("hop"):
                 resolver_parse_output = _without_carried_words(resolver_parse_output)
+            # REPORT-ENGINE 1b fix round F1: a dealer's sales ranking never has a location
+            # word looked up (the resolver's miss line would probe warehouse codes); the
+            # lane refuses the ask off the word itself (`report_ask._dealer_outside`).
+            if (customer_scope or {}).get("enforced"):
+                resolver_parse_output = report_ask.dealer_location_words(resolver_parse_output)
             gate_refusal: str | None = None
             staff_level_refused = False
             unnamed_account = _unnamed_account(verdict, resolver_parse_output)
@@ -6497,6 +6521,14 @@ def _run_stages_body(  # noqa: PLR0915
                 state_out.focus.required_ask = next(
                     (e["required_ask"] for e in envelopes or [] if isinstance(e, dict) and isinstance(e.get("required_ask"), dict)),
                     None,
+                )
+                # The frame lives only through sales ranking turns (one that ran replaces it,
+                # one that asked a required field keeps it); any other ask clears it.
+                state_out.focus.sales_ranking_frame = next(
+                    (e["sales_ranking_frame"] for e in envelopes or [] if isinstance(e, dict) and isinstance(e.get("sales_ranking_frame"), dict)),
+                    state_out.focus.sales_ranking_frame
+                    if jsc.js_string(parsed_output.get("order_status") or "").strip() == "sales_ranking"
+                    else None,
                 )
                 # LOWSTOCK-SEMANTIC (crew root cause, 4 Oct 2026): the filters a low stock
                 # report was built with outlive the turn, so "taiyang only" narrows it.

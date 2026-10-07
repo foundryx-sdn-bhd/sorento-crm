@@ -740,6 +740,7 @@ def seed_chatbot_policy() -> None:
     pdyn4 = _load("_pdyn_0004_prompt_lists", "pdyn_0004_prompt_lists.py")
     pdyn5 = _load("_pdyn_0005_access_level_order", "pdyn_0005_access_level_order.py")
     pdyn6 = _load("_pdyn_0006_agents_in_prompt", "pdyn_0006_agents_in_prompt.py")
+    report_engine = _load("_report_engine_0001_prompt", "report_engine_0001_prompt.py")
 
     with engine.begin() as conn:
         domains_inserted, kinds_inserted = s0.seed_domains_and_kinds(conn)
@@ -760,6 +761,7 @@ def seed_chatbot_policy() -> None:
     with engine.begin() as conn:
         top_selling.apply_tools(conn)
         sales_s1.apply_tools(conn)
+        report_engine.apply_tools(conn)
     with engine.begin() as conn:
         s11.apply_narrowing(conn)
     with engine.begin() as conn:

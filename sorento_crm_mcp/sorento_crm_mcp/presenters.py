@@ -59,6 +59,7 @@ PRESENTER_TOOLS: frozenset[str] = frozenset(
         "crm_sales_report",
         "crm_top_selling_report",
         "crm_sales_analysis",
+        "crm_report_ask",
     }
 )
 
@@ -1833,6 +1834,10 @@ def present_response(tool_name: str, raw: str) -> str:
     if tool_name == "crm_sales_analysis":
         return json.dumps(_sales_analysis_envelope(data))
 
+    # The report engine's ask: a ranking or one number, rendered whole from the route's body.
+    if tool_name == "crm_report_ask":
+        return json.dumps(_report_ask_envelope(data))
+
     rows = data.get("data")
     if not isinstance(rows, list):
         rows = [] if rows is None else ([rows] if isinstance(rows, dict) else [])
@@ -3159,6 +3164,85 @@ def _sales_analysis_text(payload: dict) -> str:
             )
         lines.append("Total: " + " | ".join(_sales_figure(v) for v in totals))
     return "\n".join(lines)
+
+
+_REPORT_ASK_PLURALS = {
+    "customer": "customers",
+    "product": "products",
+    "brand": "brands",
+    "category": "categories",
+    "sales_agent": "sales agents",
+    "location": "locations",
+    "channel": "channels",
+    "month": "months",
+}
+
+
+def _ask_rm(value: Any) -> str:
+    try:
+        return f"RM {float(value):,.2f}"
+    except (TypeError, ValueError):
+        return "RM 0.00"
+
+
+def _ask_pcs(value: Any) -> str:
+    try:
+        return f"{int(value):,} pcs"
+    except (TypeError, ValueError):
+        return "0 pcs"
+
+
+def _report_ask(body: dict) -> str:
+    """The whole reply for `crm_report_ask`: a header echoing the interpreted ask, the ranked
+    rows, `and N more`, the whole set's total; or one line for the number shape."""
+    if body.get("status") in ("refused", "busy"):
+        return str(body.get("message") or "")
+    filters = "; ".join(
+        f"{f.get('label')} {', '.join(str(v) for v in f.get('values') or [])}"
+        for f in body.get("filters") or []
+    )
+    scope = ", ".join(
+        part
+        for part in (
+            body.get("basis_label"),
+            filters,
+            f"{body.get('date_from')} to {body.get('date_to')}",
+        )
+        if part
+    )
+    total = body.get("total") or {}
+    figures = f"{_ask_rm(total.get('amount'))}, {_ask_pcs(total.get('qty'))}"
+    group_by = body.get("group_by")
+    if not group_by:
+        return f"Sales by {scope}: {figures}"
+    rows = body.get("rows") or []
+    if not rows:
+        return f"No sales found for {scope}."
+    plural = _REPORT_ASK_PLURALS.get(group_by, str(body.get("group_label") or group_by).lower())
+    if len(rows) == 1:
+        # One row printed reads singular: "Top 1 product", never "Top 1 products".
+        plural = str(body.get("group_label") or group_by).lower()
+    lead = "Bottom" if body.get("sort") == "asc" else "Top"
+    # "by" sits between the plural and the basis; `scope` starts with the basis label.
+    lines = [f"{lead} {len(rows)} {plural} by {scope}"]
+    for row in rows:
+        lines.append(
+            f"{row.get('rank')}. {row.get('name')} {_ask_rm(row.get('amount'))}, {_ask_pcs(row.get('qty'))}"
+        )
+    more = int(body.get("more") or 0)
+    if more > 0:
+        lines.append(f"and {more} more")
+    lines.append(f"Total {figures}")
+    return "\n".join(lines)
+
+
+def _report_ask_envelope(body: dict) -> dict:
+    """Minimal envelope (`response` + `has_result`), like the other report tools: the rendered
+    header is never empty, so the text alone cannot tell a miss from a hit."""
+    answered = body.get("status") in ("ok", "refused", "busy") and (
+        body.get("status") != "ok" or bool(body.get("rows")) or not body.get("group_by")
+    )
+    return {"result_type": "report_ask", "response": _report_ask(body), "has_result": answered}
 
 
 def _sales_analysis_envelope(payload: dict) -> dict:

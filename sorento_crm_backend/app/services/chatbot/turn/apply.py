@@ -1228,7 +1228,10 @@ def _focus_rules(
     # nothing else (S12 - no word table in deterministic code). Only when the message
     # named one: a sales report ask with no channel word counts every channel, and a
     # turn that narrows an open one ("for project only") names it and wins here.
-    if verdict.get("sales_channel"):
+    # AC-HT8-16: an answer to an open top selling question ("ordered") fills that slot only;
+    # a channel the parser put on it is not a new filter (a turn that answers nothing keeps it).
+    answering_top_selling = answers_open_top_selling(focus, verdict)
+    if verdict.get("sales_channel") and not answering_top_selling:
         focus.sales_channel = str(verdict["sales_channel"])
     if verdict.get("date_mode") or verdict.get("date_filter_start") or verdict.get("date_filter_end"):
         focus.date_window = {
@@ -1307,6 +1310,17 @@ def _narrows_the_ranking(verdict: dict[str, Any]) -> bool:
     return broaden_level(verdict) == EVERYTHING
 
 
+def answers_open_top_selling(focus: Focus, verdict: dict[str, Any]) -> bool:
+    """Does this verdict answer the top selling question the last reply asked? The top
+    selling rules' own notion (`_top_selling_waiting`), read off the focus's `asked` and the
+    verdict's own axis keys, never text."""
+    slot = focus.top_selling
+    if not isinstance(slot, dict):
+        return False
+    own = {k: verdict.get(k) for k in TOP_SELLING_KEYS if verdict.get(k) is not None}
+    return _top_selling_waiting(slot.get("asked"), own)
+
+
 def _top_selling_waiting(asked: Any, own: dict[str, Any]) -> bool:
     """Is this message the answer to the question the LAST reply asked? `asked` is what
     that reply recorded (`record_top_selling_asked`), never inferred from which axes
@@ -1377,9 +1391,12 @@ def _top_selling_rules(
     """
     order_status = verdict.get("order_status")
     asked = isinstance(order_status, str) and order_status.strip() == TOP_SELLING_STATUS
-    names_its_ask = decision.starts_fresh or domain_in_message(verdict) is True
+    # A verdict the parser itself named a sales ranking is a new ask (owner held-state rule:
+    # a new intent always wins), never an answer inside an open top selling question.
+    new_sales_ranking = isinstance(order_status, str) and order_status.strip() == "sales_ranking"
+    names_its_ask = decision.starts_fresh or domain_in_message(verdict) is True or new_sales_ranking
     hopped = isinstance(focus.top_selling, dict) and bool(focus.top_selling.get("hop"))
-    if was_ranking and not asked:
+    if was_ranking and not asked and not new_sales_ranking:
         # `_focus_rules` overwrote the status before this ran: the v3 `status` key
         # ("outstanding"), and #1262's rule that a message with a domain word of its own
         # states its own status or none ("can show me the DO" cleared it to None). The
@@ -1391,7 +1408,9 @@ def _top_selling_rules(
     elif (focus.status == TOP_SELLING_STATUS or hopped) and _is_report_hop(verdict):
         _hop_to_report(focus, verdict, trace)
         return
-    elif focus.status == TOP_SELLING_STATUS and names_its_ask and not _narrows_the_ranking(verdict):
+    elif focus.status == TOP_SELLING_STATUS and names_its_ask and (
+        new_sales_ranking or not _narrows_the_ranking(verdict)
+    ):
         focus.status = verdict.get("status") or None
         focus.top_selling = None
         trace.rules_fired.append("new_ask_leaves_top_selling")
@@ -1405,11 +1424,15 @@ def _top_selling_rules(
         return
     carried = dict(focus.top_selling or {})
     carried.pop("hop", None)
+    carried.pop("answered", None)
     # What the last reply asked lives one turn: this turn's reply records its own.
     asked_last = carried.pop("asked", None)
     # A word the last reply said it does not know is said once (owner retest, 27 Sep).
     carried.pop("unknown", None)
     own = {k: verdict.get(k) for k in TOP_SELLING_KEYS if verdict.get(k) is not None}
+    if _top_selling_waiting(asked_last, own):
+        # One turn: the lane input of THIS answer sends no channel (`lane_parse_output`).
+        carried["answered"] = True
     positions = [p for p in (verdict.get("reference_positions") or []) if isinstance(p, (int, float))]
     if (
         "top_n" not in own
@@ -1479,8 +1502,10 @@ def _top_selling_rules(
     # fanny", "water closet only") narrows the ranking on screen even when the parser
     # says it names the ask (owner retest, 27 Sep 2026): it never restarts it.
     only_narrows = not own and _narrows_the_ranking(verdict)
+    # The English class word the parser put in `canonical_code` (AC-HT8-12) comes before the
+    # verbatim `raw`, so a Chinese category word resolves.
     categories = [
-        e.get("raw")
+        (str(e.get("canonical_code") or "").strip() or e.get("raw"))
         for e in (verdict.get("entities") or [])
         if isinstance(e, dict) and e.get("hint") == "category" and e.get("raw")
     ]
