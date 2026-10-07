@@ -230,6 +230,16 @@ def _norm(value: Any) -> str:
     return jsc.lower_or_empty(value).strip()
 
 
+def _code_key(value: Any) -> str:
+    """A typed token or a candidate code folded the way the resolver matched them: casefold,
+    dashes and whitespace removed (`turn.state.token_key`, the ONE fold every join against
+    the resolver's own tokens uses). `_norm` keeps dashes, and a folded token ("wc200s")
+    never sits inside a dashed code ("srtwc200-s-uf-rl") under it."""
+    from app.services.chatbot.turn.state import token_key
+
+    return token_key(jsc.lower_or_empty(value))
+
+
 def _lower_trim_nullish(value: Any) -> str:
     """`s => String(s ?? '').trim().toLowerCase()`."""
     return jsc.nullish_str(value).strip().lower()
@@ -559,7 +569,15 @@ def run_gate(  # noqa: PLR0912, PLR0915 - one JS node, one function; splitting i
     if domain in REQUIRE_SPECIFIC_DOMAINS:
         allowed_types = ALLOWED.get(domain)
         tokens = jsc.array(resolver.get("tokens"))
-        typed_tokens = {_norm(t) for t in tokens}
+        # RESOLVE-SEMANTIC-FALLBACK (prod 6 Oct 2026 21:14, "hi WC200-S got stock ?"):
+        # the resolver's token is FOLDED (`resolve_gate._PRODUCT_FOLD` strips dashes and
+        # spaces: "wc200s") while a candidate's code keeps its dashes ("SRTWC200-S-UF-RL"),
+        # so a lower-only compare never found the one inside the other and the family the
+        # resolver had placed was dropped from the picker; the AND-mode exactness test
+        # below missed a dashed exact code for the same reason. Both sides fold the way the
+        # resolver matched them (`turn.state.token_key`, the fold `engine._exact_codes_only`
+        # and `turn_runtime` already use). This filter still matches nothing of its own.
+        typed_tokens = {_code_key(t) for t in tokens if _code_key(t)}
 
         def is_compatible(m: Any) -> bool:
             return allowed_types is None or jsc.get(m, "entity_type") in allowed_types
@@ -757,7 +775,7 @@ def run_gate(  # noqa: PLR0912, PLR0915 - one JS node, one function; splitting i
                 )
             products = [m for m in compat_matches if is_prod(m)]
             prod_exacts = [
-                m for m in products if _norm(jsc.get(m, "canonical_code")) in typed_tokens
+                m for m in products if _code_key(jsc.get(m, "canonical_code")) in typed_tokens
             ]
             same_code_exacts = (
                 len(prod_exacts) >= 1
@@ -829,8 +847,18 @@ def run_gate(  # noqa: PLR0912, PLR0915 - one JS node, one function; splitting i
 
         # ── shared: if we built options, require the user to pick ──
         if len(specific_options) > 0:
-            typed = [t for t in (_norm(t) for t in jsc.array(resolver.get("tokens"))) if t]
-            # keep only candidates whose CODE relates to a typed token
+            typed = [t for t in (_code_key(t) for t in jsc.array(resolver.get("tokens"))) if t]
+            # RESOLVE-SEMANTIC-FALLBACK: a code or family fragment the resolver's code
+            # reader read out of a token is a typed token here: the resolver's own verdict,
+            # confirmed by the catalogue's probe. The folded token ("toiletwc200s") sits
+            # inside no code, so without this every candidate the reader's family answer
+            # had placed was dropped and the picker came out empty.
+            for res in (resolver.get("resolutions") if isinstance(resolver.get("resolutions"), list) else []):
+                fb = jsc.get(res, "fallback")
+                if isinstance(fb, dict) and fb.get("kind") in ("code", "family") and _code_key(fb.get("value")):
+                    typed.append(_code_key(fb.get("value")))
+            # keep only candidates whose CODE relates to a typed token - both sides folded
+            # the way the resolver matched them (see `typed_tokens` above)
             if len(typed) > 0:
                 filtered: list[dict[str, Any]] = []
                 for o in specific_options:
@@ -838,8 +866,8 @@ def run_gate(  # noqa: PLR0912, PLR0915 - one JS node, one function; splitting i
                         c
                         for c in o["candidates"]
                         if any(
-                            t in _norm(c.get("code") or c.get("canonical_code") or c.get("label"))
-                            or _norm(c.get("code") or c.get("canonical_code") or c.get("label"))
+                            t in _code_key(c.get("code") or c.get("canonical_code") or c.get("label"))
+                            or _code_key(c.get("code") or c.get("canonical_code") or c.get("label"))
                             in t
                             for t in typed
                         )

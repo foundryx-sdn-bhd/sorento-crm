@@ -29,6 +29,8 @@ import re
 import time
 from typing import Any
 
+from app.services.llm_provider import is_timeout  # noqa: F401 - re-exported, callers import it from here
+
 logger = logging.getLogger(__name__)
 
 RATE_LIMITED_REPLY = "Sorry, I am busy right now, please send that again in a minute."
@@ -62,22 +64,6 @@ class RateLimited(RuntimeError):
 class TimedOut(RateLimited):
     """The provider did not answer inside the call's time budget. A `RateLimited` on
     purpose: the dealer's reply is the same "busy, send that again" (see module doc)."""
-
-
-def is_timeout(exc: BaseException) -> bool:
-    """A request timeout, however the SDK spells it (`openai.APITimeoutError`,
-    `anthropic.APITimeoutError`, `httpx.TimeoutException`, or Gemini's RuntimeError
-    wrapping one). Walks the `from` chain because Gemini re-raises."""
-    seen = 0
-    current: BaseException | None = exc
-    while current is not None and seen < 5:
-        if isinstance(current, TimeoutError) or "Timeout" in type(current).__name__:
-            return True
-        # `__cause__` only (an explicit `raise ... from`): an unrelated error raised while
-        # a timeout was being handled is not a timeout.
-        current = current.__cause__
-        seen += 1
-    return False
 
 
 def is_rate_limited(exc: BaseException) -> bool:

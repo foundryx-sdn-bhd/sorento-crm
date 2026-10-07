@@ -1821,31 +1821,60 @@ def unplaced_tokens(entities: list[Any], resolved: Any) -> dict[str, str]:
     the CLASS word it read out of the whole message ("Sorento water closet."), none of
     which is the thing the customer typed.
     """
-    named: dict[str, str] = {}
-    for entity in jsc.array(entities):
-        # STOCK-FILL-PREDICATE (owner ruling, 6 Oct 2026): a CARRIED non-product row
-        # the engine handed over (`with_carried_entities`, `current_message: False`; a
-        # brand / promotion / category word) may resolve on its own, but it is not a
-        # token THIS message named - the dealer typed "1" - so its miss is never said
-        # back ("Couldn't find: SORENTO." under the product's own line), and
-        # production's not-found composer never takes the reply over for it. A carried
-        # PRODUCT code that never resolved is the conversation's subject, and its miss
-        # stays one (reviewer round 6): it is what `would_be_unfiltered` reads to stop
-        # the zero-uuid tool call (R6), so it is still counted here.
-        if (
-            isinstance(entity, dict)
-            and entity.get("current_message") is False
-            and jsc.nullish_str(entity.get("hint")).strip().lower() != "product"
-        ):
-            continue
-        raw = jsc.nullish_str(jsc.get(entity, "raw")).strip()
-        key = _token_key(raw)
-        if key and key not in named:
-            named[key] = raw
+    # STOCK-FILL-PREDICATE (owner ruling, 6 Oct 2026): a CARRIED non-product row the
+    # engine handed over (`with_carried_entities`, `current_message: False`; a brand /
+    # promotion / category word) may resolve on its own, but it is not a token THIS
+    # message named - the dealer typed "1" - so its miss is never said back ("Couldn't
+    # find: SORENTO." under the product's own line), and production's not-found composer
+    # never takes the reply over for it. A carried PRODUCT code that never resolved is the
+    # conversation's subject, and its miss stays one (reviewer round 6): it is what
+    # `would_be_unfiltered` reads to stop the zero-uuid tool call (R6), so it is still
+    # counted here. The rows that count are joined by `_typed_by_token` (RESOLVE-SEMANTIC-
+    # FALLBACK: keyed on the resolver's own token, canonical_code first, raw second).
+    named = _typed_by_token(
+        [
+            entity
+            for entity in jsc.array(entities)
+            if not (
+                isinstance(entity, dict)
+                and entity.get("current_message") is False
+                and jsc.nullish_str(entity.get("hint")).strip().lower() != "product"
+            )
+        ]
+    )
     missed = {_token_key(x) for x in jsc.array(jsc.get(resolved, "unresolved_tokens"))}
     # Keyed on the folded token, valued with the word the CUSTOMER typed, so the answer
     # can quote it back rather than a normalised copy of it.
     return {key: raw for key, raw in named.items() if key in missed}
+
+
+def _typed_by_token(entities: list[Any]) -> dict[str, str]:
+    """`{folded resolver token: the word the customer typed}` for the message's entities.
+
+    RESOLVE-SEMANTIC-FALLBACK: the token the resolver was sent is `canonical_code` first,
+    raw second (`resolve_gate._token_of`), so the join key folds THAT value - a product
+    typed "TAP SRTWT5608" with canonical_code SRTWT5608 is filed under `srtwt5608`, the key
+    the resolver echoes in `unresolved_tokens` / `truncated_tokens` - while the value stays
+    the raw, the phrase the reply quotes. Keyed by raw alone, a canonical miss never joined
+    and the "I could not find" line went silent (the #1501 / #1502 class).
+
+    PRODUCT entities only (hint `product`, or none): for every other hint the key stays
+    the raw, as it always was. An `attachment_type` word "cert" carries the parser's
+    canonical "certificate", which no attachment-type row answers in a world where
+    certificates are certificate rows (`test_attribute_asks_round8.py`, the by-code cert
+    ask): the ask is answered by the certificate predicate, and naming "cert" as not found
+    under that answer is wrong. Main keys such a miss by raw and stays silent; this lane
+    changes the product-code join and nothing else.
+    """
+    named: dict[str, str] = {}
+    for entity in jsc.array(entities):
+        raw = jsc.nullish_str(jsc.get(entity, "raw")).strip()
+        canonical = jsc.nullish_str(jsc.get(entity, "canonical_code")).strip()
+        hint = jsc.nullish_str(jsc.get(entity, "hint")).strip().lower()
+        key = _token_key((canonical or raw) if hint in ("", "product") else raw)
+        if key and key not in named:
+            named[key] = raw or canonical
+    return named
 
 
 def named_unplaced(entities: list[Any], resolved: Any) -> dict[str, str]:
@@ -1877,12 +1906,7 @@ def not_checked_tokens(entities: list[Any], resolved: Any) -> dict[str, str]:
     NOT unplaced - it may well exist - which is why it is a separate map and a separate
     sentence, never "I could not find".
     """
-    named: dict[str, str] = {}
-    for entity in jsc.array(entities):
-        raw = jsc.nullish_str(jsc.get(entity, "raw")).strip()
-        key = _token_key(raw)
-        if key and key not in named:
-            named[key] = raw
+    named = _typed_by_token(entities)
     cut = {_token_key(x) for x in jsc.array(jsc.get(resolved, "truncated_tokens"))}
     return {key: raw for key, raw in named.items() if key in cut}
 
@@ -1898,12 +1922,7 @@ def absorbed_tokens(entities: list[Any], resolved: Any) -> dict[str, str]:
     whose matches is the token itself, has not been answered - it is reported unplaced,
     so the reply says "I could not find SRTSWT3001." rather than nothing.
     """
-    typed: dict[str, str] = {}
-    for entity in jsc.array(entities):
-        raw = jsc.nullish_str(jsc.get(entity, "raw")).strip()
-        key = _token_key(raw)
-        if key and key not in typed:
-            typed[key] = raw
+    typed = _typed_by_token(entities)
     if len(typed) < 2:
         return {}
     codes_by_token: dict[str, set[str]] = {}
@@ -3516,8 +3535,9 @@ def typed_product_unplaced(verdict: Any, unplaced: Mapping[str, str] | None) -> 
     (S-TRAP250MM)-SRTWC8354-SH") was one unplaced product token, and the set tier
     counted 145 water closets off its words: that set is not what the dealer asked for,
     so it is never carried as a `set_page`. Keyed the way `unplaced_tokens` keys its map
-    (`turn.state.token_key`). A brand or category word nobody could place is not a miss
-    on the product.
+    (`_typed_by_token`: canonical_code first, raw second, folded by
+    `turn.state.token_key`, RESOLVE-SEMANTIC-FALLBACK). A brand or category word nobody
+    could place is not a miss on the product.
 
     ROGUE-CONVO-REVIEW-R2: asked ONCE per turn, over the resolver's own listing
     (`named_unplaced`, the map `ResolveOutcome.unplaced_tokens` carries BEFORE the
@@ -3527,13 +3547,8 @@ def typed_product_unplaced(verdict: Any, unplaced: Mapping[str, str] | None) -> 
     """
     if not unplaced:
         return False
-    for entity in jsc.array(jsc.get(verdict, "entities")):
-        if jsc.get(entity, "hint") not in (None, "product"):
-            continue
-        key = _token_key(jsc.nullish_str(jsc.get(entity, "raw")).strip())
-        if key and key in unplaced:
-            return True
-    return False
+    products = [e for e in jsc.array(jsc.get(verdict, "entities")) if jsc.get(e, "hint") in (None, "product")]
+    return any(key in unplaced for key in _typed_by_token(products))
 
 
 def set_page_carry(
