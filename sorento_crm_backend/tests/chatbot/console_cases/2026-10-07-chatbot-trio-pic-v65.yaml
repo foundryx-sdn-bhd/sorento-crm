@@ -1,0 +1,41 @@
+# CHATBOT-TRIO (PR #1525), the #1514 "pic" step. Needs the UNLABELLED parser prompt v65
+# (`ai_prompt_versions` id d97d9bd9-1fcc-4d0e-91a9-67eca35e865d on the shared dev DB): on
+# the production prompt (v58) "pic" drops the document entity and the rows re-list the
+# carried Technical Specifications. Run pinned:
+#
+#   venv/bin/python scripts/chatbot_console_check.py \
+#       tests/chatbot/console_cases/2026-10-07-chatbot-trio-pic-v65.yaml --live \
+#       --prompt-version d97d9bd9-1fcc-4d0e-91a9-67eca35e865d \
+#       --base-url http://127.0.0.1:8140 --sleep-seconds 8
+#
+# Same case as the second one in `2026-10-06-attach-set-brand-followup.yaml`.
+
+contact: "900000072"
+
+cases:
+  - name: "#1514 owner turns 1 to 4 on prompt v65, a document word after the page reads about the listed taps"
+    cold: true
+    turns:
+      - text: "which tap has technical drawing"
+        expect:
+          reply_contains:
+            - "Here's what you want: taps with technical specifications ("
+      - text: "sorento"
+        expect:
+          reply_contains:
+            - "Here's what you want: Sorento taps with technical specifications ("
+            - "*Attachment Type:* Technical Specifications"
+          no_uuid: true
+      - text: "they got pic/"
+        expect:
+          reply_not_contains:
+            - "COLD TAP"
+          no_uuid: true
+      - text: "pic"
+        expect:
+          reply_contains:
+            - "*Attachment Type:* Product Photos"
+          reply_not_contains:
+            - "*Attachment Type:* Technical Specifications"
+            - "COLD TAP"
+          no_uuid: true

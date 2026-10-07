@@ -1330,6 +1330,31 @@ class ResolveReferenceRequest(BaseModel):
             "from picking 'order' when the user actually meant 'customer'."
         ),
     )
+    hint_locked_tokens: list[str] | None = Field(
+        default=None,
+        description=(
+            "Tokens whose entity kind the caller has already decided (CLASS-HINT-KIND-PICK, "
+            "owner ruling 6 Oct 2026): a confident class, product or brand hint from the "
+            "parser, or a word the catalogue knows as a brand. Such a token is never "
+            "answered with a promotion, customer, attachment, transporter or form by a "
+            "name match (prefix, substring or neighbour) in any pass, and it is left out "
+            "of the `fallback_to_all_types` rerun, so it stays in `unresolved_tokens` "
+            "and the spec/class fallback reads it. The request domain's own kind is "
+            "never stripped (a promotion question is answered by promotions). Omit / "
+            "null / [] = today's behaviour, byte-identical."
+        ),
+    )
+    brand_tokens: dict[str, str] | None = Field(
+        default=None,
+        description=(
+            "Tokens the caller already knows to be BRANDS, `{token: brand name}` (CLASS-"
+            "HINT-KIND-PICK, owner ruling 6 Oct 2026: the parser's canonical_code names "
+            "the brand and the catalogue knows it). Each is resolved as one `brand` match "
+            "(exact tier, the name as its code) with no probe, so it is never an "
+            "unanswered search term and never opens the spec fallback; it is also locked "
+            "like `hint_locked_tokens`. Omit / null / {} = today's behaviour."
+        ),
+    )
     limit: int | None = Field(
         default=None,
         ge=1,
@@ -1903,6 +1928,181 @@ def _has_turn_free_terms(
     return [" ".join(words)] if words else []
 
 
+#: CLASS-HINT-KIND-PICK (owner, 6 Oct 2026): the kinds a WORD can only ever reach through
+#: a match on a name - a promotion's description, a customer's name, an attachment's
+#: filename, a transporter's or a form's name. A token whose kind the caller has locked
+#: (`hint_locked_tokens`) is never given one of these; the resolver's product rows (code
+#: tiers and the spec tier) and every other kind are untouched.
+_NAME_MATCHED_KINDS: frozenset[str] = frozenset(
+    {"promotion", "customer", "attachment", "transporter", "form"}
+)
+
+
+def _norm_locked_token(value: Any) -> str:
+    """The resolver echoes a token stopword-stripped (`_strip_entity_stopwords`: "basin
+    items" comes back as "basin") and the chatbot sends a product token folded, so a lock
+    entry takes the route's own trim first and the two sides then meet on letters and
+    digits alone. The route's own transform, not a word rule of this lane's (reviewer S1)."""
+    return re.sub(r"[^0-9a-z]", "", _strip_entity_stopwords(str(value or "")).lower())
+
+
+def _name_kinds_dropped_for(domain_hint: str | None) -> frozenset[str]:
+    """The name-matched kinds a locked token may not be given under this request's domain:
+    all of them but the domain's own. "cabana promo" under the promotion domain is still
+    answered by the promotions whose description carries the brand, and "cabana catalog"
+    under resource_attachment is still narrowed to the Cabana catalogue by filename
+    coverage - that match IS the question's answer, not a re-type of the word."""
+    domain = (domain_hint or "").strip().lower()
+    canonical = _canonical_entity_type(domain) if domain else ""
+    own: set[str] = {canonical} if canonical else set()
+    if domain in {"resource_attachment", "attachment"}:
+        own.add("attachment")
+    if canonical == "customer_order":
+        # Order / sales (crew ruling Q4 on the lane card, 6 Oct 2026: out of scope): the
+        # resolver's own domain expansion reads a brand or category word there as the
+        # customer or transporter it names ("super ceramic" is a debtor,
+        # `_DOMAIN_HINT_EXPANSIONS["order"]`), and #1504 pins that reading. Those two kinds
+        # are the order domain's own answer, kept like promotion under promotion.
+        own.update({"customer", "transporter"})
+    return _NAME_MATCHED_KINDS - own
+
+
+def _strip_name_kinds_for_locked(
+    result: dict[str, Any], locked_tokens: list[str] | None, domain_hint: str | None
+) -> dict[str, Any]:
+    """Drop every name-matched kind from a locked token's matches, in place.
+
+    OR shape: per token, the locked tokens only; `resolved` and `unresolved_tokens` are
+    recomputed from what is left. AND shape: a row in the intersection covered EVERY
+    token, the locked one included, so the rows of those kinds go whatever the other
+    tokens were; an emptied intersection reads as the zero-intersection AND the caller
+    already degrades to OR-mode. `alternatives` (did-you-mean neighbours) are offers, not
+    assignments, and stay (AC-1703). Runs on the primary result and, since R2 (7 Oct 2026),
+    on the per-token fallback result too, so a locked token's rerun keeps no name kind
+    while an exact record key it names still resolves there."""
+    if not locked_tokens:
+        return result
+    locked = {_norm_locked_token(t) for t in locked_tokens} - {""}
+    if not locked:
+        return result
+    dropped = _name_kinds_dropped_for(domain_hint)
+    if "intersection" in result:
+        rows = result.get("intersection") or []
+        kept = [m for m in rows if (m or {}).get("entity_type") not in dropped]
+        if len(kept) != len(rows):
+            result["intersection"] = kept
+            by_type = result.get("by_entity_type")
+            if isinstance(by_type, dict):
+                result["by_entity_type"] = {k: v for k, v in by_type.items() if k not in dropped}
+            result["empty"] = not kept
+            if not kept:
+                result["unresolved_tokens"] = list(result.get("tokens") or [])
+        return result
+    resolutions = result.get("resolutions")
+    if not isinstance(resolutions, list):
+        return result
+    changed = False
+    ambiguous = list(result.get("ambiguous_tokens") or [])
+    for tr in resolutions:
+        if not isinstance(tr, dict) or _norm_locked_token(tr.get("token")) not in locked:
+            continue
+        matches = tr.get("matches") or []
+        kept_matches = [m for m in matches if (m or {}).get("entity_type") not in dropped]
+        if len(kept_matches) == len(matches):
+            continue
+        # The resolver's own meaning of the two flags (`_suppress_brand_prefix_junk`):
+        # resolved = exactly one match, ambiguous = more than one.
+        tr["matches"] = kept_matches
+        tr["resolved"] = len(kept_matches) == 1
+        tr["ambiguous"] = len(kept_matches) > 1
+        if not tr["ambiguous"]:
+            ambiguous = [t for t in ambiguous if t != tr.get("token")]
+        changed = True
+    if changed:
+        result["unresolved_tokens"] = [
+            tr["token"] for tr in resolutions if isinstance(tr, dict) and not (tr.get("matches") or [])
+        ]
+        if "ambiguous_tokens" in result:
+            result["ambiguous_tokens"] = ambiguous
+    return result
+
+
+def _resolve_brand_tokens(result: dict[str, Any], brand_tokens: dict[str, str] | None) -> dict[str, Any]:
+    """A token the caller already knows to be a brand (`brand_tokens`, owner ruling 6 Oct
+    2026: "the brand word is a brand because the parser said so and the catalogue knows
+    it, so it must not count as an unanswered search term") is RESOLVED as that brand, no
+    probe needed: one `brand` match, exact tier, the brand's name as its code. The resolver
+    has no brand probe, so without this the word stayed in `unresolved_tokens` and opened
+    the spec fallback beside a code it was only scoping ("SORENTO ZZWC8318" listed every
+    Sorento product). OR shape only, in place: an AND intersection has no row for a brand to
+    join, and an empty one degrades to OR where this runs. Absent = untouched."""
+    if not brand_tokens:
+        return result
+    resolutions = result.get("resolutions")
+    if not isinstance(resolutions, list):
+        return result
+    by_norm = {_norm_locked_token(t): str(name or "").strip() for t, name in brand_tokens.items()}
+    by_norm.pop("", None)
+    changed = False
+    ambiguous = list(result.get("ambiguous_tokens") or [])
+    for tr in resolutions:
+        if not isinstance(tr, dict):
+            continue
+        name = by_norm.get(_norm_locked_token(tr.get("token")))
+        if not name:
+            continue
+        tr["matches"] = [
+            {
+                "entity_type": "brand",
+                "canonical_code": name,
+                "uuid": None,
+                "match_field": "brand",
+                "match_tier": "exact",
+                "similarity": None,
+                "company_id": None,
+                "company_name": None,
+                "company_code": None,
+                "display": {"brand_name": name},
+            }
+        ]
+        tr["resolved"] = True
+        tr["ambiguous"] = False
+        ambiguous = [t for t in ambiguous if t != tr.get("token")]
+        changed = True
+    if changed:
+        result["unresolved_tokens"] = [
+            tr["token"] for tr in resolutions if isinstance(tr, dict) and not (tr.get("matches") or [])
+        ]
+        if "ambiguous_tokens" in result:
+            result["ambiguous_tokens"] = ambiguous
+    return result
+
+
+
+def _with_parser_brand(specs: list[dict], brand_tokens: dict[str, str] | None) -> list[dict]:
+    """The brand the caller's parser already named (`brand_tokens`, one brand) scopes the
+    described set when the sentence reader bound none: brand identity is semantic (owner,
+    6 Oct 2026, "what if typo, what if SRT people type"), so "Sorrento basin" and "srt basin"
+    are Sorento basins because the parser's canonical_code says so, never because the typed
+    word happens to spell a brand name. The same `{"key": "brand", "value": name}` shape the
+    reader itself emits; two different brands in one message bind nothing here (the reader's
+    own call). Absent field = untouched."""
+    if not brand_tokens:
+        return specs
+    if any(str((e or {}).get("key")) == "brand" for e in specs):
+        return specs
+    # Only entries keyed by a real token count (security review, nit): an empty key names
+    # no token, exactly as `_resolve_brand_tokens` drops it.
+    names = {
+        str(n).strip()
+        for t, n in brand_tokens.items()
+        if _norm_locked_token(t) and str(n or "").strip()
+    }
+    if len(names) != 1:
+        return specs
+    name = next(iter(names))
+    return [*specs, {"key": "brand", "value": name, "evidence": name, "grounded": True}]
+
 def _result_has_zero_matches(result: dict[str, Any]) -> bool:
     """True when neither OR-mode nor AND-mode produced any match."""
     if "intersection" in result:
@@ -1912,6 +2112,27 @@ def _result_has_zero_matches(result: dict[str, Any]) -> bool:
             return False
     return True
 
+
+
+def _brand_scoping(tr: Any) -> bool:
+    """A resolution whose every match is the `brand` kind: the caller's own brand token
+    (`_resolve_brand_tokens`). A brand SCOPES a question, it does not answer it, so the
+    spec gates below neither count it as a token that was answered nor as a product
+    question left open (reviewer B1 on the owner's mechanism: "cabana products" must still
+    open the brand-scoped set, "SORENTO SRTWC8318" must still not). Never true for a caller
+    without `brand_tokens`: the resolver has no brand probe of its own."""
+    matches = (tr.get("matches") or []) if isinstance(tr, dict) else []
+    return bool(matches) and all((m or {}).get("entity_type") == "brand" for m in matches)
+
+
+def _only_brand_scoping(result: dict[str, Any]) -> bool:
+    """Every token the caller sent is a brand token and nothing else was asked of the
+    resolver: the described set is "that brand's products", which only the spec path can
+    list."""
+    resolutions = result.get("resolutions")
+    if "intersection" in result or not isinstance(resolutions, list) or not resolutions:
+        return False
+    return all(_brand_scoping(tr) for tr in resolutions)
 
 def _every_caller_token_resolved(result: dict[str, Any]) -> bool:
     """D13 (owner turn, 8 Sep 2026, "CB6622-PP?"): every token the caller supplied
@@ -1936,7 +2157,12 @@ def _every_caller_token_resolved(result: dict[str, Any]) -> bool:
     resolutions = result.get("resolutions")
     if not isinstance(resolutions, list) or not resolutions:
         return False
-    return all(bool(tr.get("matches")) for tr in resolutions if isinstance(tr, dict))
+    # A brand token scopes, it does not answer (`_brand_scoping`): left out here, so a
+    # brand beside a resolved code still closes the fallback and a brand alone never does.
+    considered = [tr for tr in resolutions if isinstance(tr, dict) and not _brand_scoping(tr)]
+    if not considered:
+        return False
+    return all(bool(tr.get("matches")) for tr in considered)
 
 
 def _product_words_unanswered(result: dict[str, Any]) -> bool:
@@ -2014,7 +2240,8 @@ def _no_product_row_answered(result: dict[str, Any], domain_hint: str | None) ->
         resolutions = result.get("resolutions")
         if not isinstance(resolutions, list):
             return False
-        shown = [tr.get("matches") or [] for tr in resolutions]
+        # A brand token is not an open product question either (`_brand_scoping`).
+        shown = [tr.get("matches") or [] for tr in resolutions if not _brand_scoping(tr)]
     return any(
         not any(m.get("entity_type") in _PRODUCT_ROW_TYPES for m in matches)
         for matches in shown
@@ -2116,6 +2343,8 @@ def _resolve_input(
     raw_tokens: list[str] | None = None,
     regions: frozenset[str] | None = None,
     code_reader: Any = None,
+    hint_locked_tokens: list[str] | None = None,
+    brand_tokens: dict[str, str] | None = None,
 ):
     # RESOLVE-SEMANTIC-FALLBACK: the one code reader for this REQUEST, wrapped here so the
     # per-token memo and the per-request cap hold whatever reader a caller hands in (a
@@ -2127,6 +2356,9 @@ def _resolve_input(
 
         code_reader = per_request(code_reader)
     mode = (match_mode or "or").strip().lower()
+    # A brand token is locked as well: its kind is final and it is never rerun.
+    if brand_tokens:
+        hint_locked_tokens = list(hint_locked_tokens or []) + [t for t in brand_tokens if t]
     if mode not in _ALLOWED_MATCH_MODES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -2304,6 +2536,11 @@ def _resolve_input(
                 # that, so they are never put to it (security review, final head item 5).
                 code_reader=None if synthesized_from_query else code_reader,
             ).as_dict()
+        # CLASS-HINT-KIND-PICK: a locked token's name-matched kinds go before anything
+        # downstream can read them as an answer - the AND exit, the OR degrade and the
+        # spec fallback all judge "resolved" off what is left here.
+        raw = _strip_name_kinds_for_locked(raw, hint_locked_tokens, hint)
+        raw = _resolve_brand_tokens(raw, brand_tokens)
         raw = _apply_promotion_access_levels_filter(db, raw, access_levels)
         # Promotion-domain hint: run the expander. It owns the dispatch:
         # - promo matches found → return promotion entries only
@@ -2359,6 +2596,13 @@ def _resolve_input(
             "the whitelist so per-token fallback can apply only to unresolved tokens."
         )
 
+    # CLASS-HINT-KIND-PICK R2 (7 Oct 2026): a locked token IS rerun like any other. What
+    # the rerun may not do is hand it a promotion / customer / attachment / transporter /
+    # form row by name (`_strip_name_kinds_for_locked` on the fallback result below); an
+    # EXACT record key it names under a wrong hint still finds itself there - a container
+    # number the parser hinted `product` is the inbound shipment it is (owner ruling 5,
+    # hand pass 12, `test_rearch_r12_handpass12_d.py`). A class word nothing else names
+    # is left in `unresolved_tokens` and reaches the spec/class fallback as before.
     unresolved = [
         r["token"]
         for r in result.get("resolutions", []) or []
@@ -2404,6 +2648,7 @@ def _resolve_input(
         regions=regions,
     ).as_dict()
     fb = _apply_promotion_access_levels_filter(db, fb_raw, access_levels)
+    fb = _strip_name_kinds_for_locked(fb, hint_locked_tokens, domain_hint)
     # Per-token fallback bypasses `_run`, so the promotion-domain product
     # expansion / brand-access rescue must be applied here too.
     if domain_hint and _canonical_entity_type(domain_hint.strip()) == "promotion":
@@ -2990,6 +3235,8 @@ def resolve_reference_post(
             raw_tokens=payload.raw_tokens,
             regions=regions,
             code_reader=code_reader,
+            hint_locked_tokens=payload.hint_locked_tokens,
+            brand_tokens=payload.brand_tokens,
         )
     except EntityPinMismatch as exc:
         raise AppException(
@@ -3090,6 +3337,7 @@ def resolve_reference_post(
             user_id=current_user.get("id"),
             log_usage=not payload.dry_run,
         )
+        specs = _with_parser_brand(specs, payload.brand_tokens)
         # D3: a brand scopes the WHOLE set - kept OUT of `specs`' union-membership
         # role (a brand binding there would union in every OTHER certified product
         # of that brand, not just the described ones) and applied only as the
@@ -3270,6 +3518,7 @@ def resolve_reference_post(
             or _product_words_unanswered(result)
             or _has_unresolved_tokens(result)
             or _no_product_row_answered(result, payload.domain_hint)
+            or _only_brand_scoping(result)
         )
     ):
         import time
@@ -3331,6 +3580,7 @@ def resolve_reference_post(
                 log_usage=not payload.dry_run,
             )
         )
+        specs = _with_parser_brand(specs, payload.brand_tokens)
         semantic_used = bool(understanding and understanding.source == "semantic")
         semantic_ms = (
             int((time.monotonic() - started) * 1000) if understanding is not None else None

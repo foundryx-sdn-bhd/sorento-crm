@@ -555,6 +555,31 @@ def _osa_distance(a: str, b: str) -> int:
     return rows[-1][-1]
 
 
+def _brand_row_keys(row: dict[str, Any]) -> set[str]:
+    out = {
+        " ".join(jsc.nullish_str(row.get(k)).casefold().split())
+        for k in ("brand_name", "brand_code")
+    }
+    out.discard("")
+    return out
+
+
+def exact_brand_rows(brands: list[dict[str, Any]], word: Any) -> list[dict[str, Any]]:
+    """The live brand rows whose name or code IS the typed word, case and surrounding
+    whitespace aside - `brand_rows_for_word`'s first tier on its own.
+
+    CLASS-HINT-KIND-PICK (owner, 6 Oct 2026: "cabana is a brand"): a word the catalogue
+    knows as a brand is a brand whatever the parser hinted it as, in every domain. This
+    read, and ONLY this read, decides that: never the whole-word tier and never the
+    spelling-distance tier below, which #1504 measured turning "Sorrento" into Sorento
+    under master_products when the wider read reached the other nine domains. Those two
+    tiers stay where they are today, the order/sales intercept."""
+    folded = " ".join(jsc.nullish_str(word).casefold().split())
+    if not folded:
+        return []
+    return [row for row in brands if folded in _brand_row_keys(row)]
+
+
 def brand_rows_for_word(brands: list[dict[str, Any]], word: Any) -> list[dict[str, Any]]:
     """#1262 fix lane round 7, R1: the live brand rows a typed word names, decided by
     the word alone so the same word gives the same brand every time.
@@ -568,15 +593,9 @@ def brand_rows_for_word(brands: list[dict[str, Any]], word: Any) -> list[dict[st
     if not folded:
         return []
 
-    def keys(row: dict[str, Any]) -> set[str]:
-        out = {
-            " ".join(jsc.nullish_str(row.get(k)).casefold().split())
-            for k in ("brand_name", "brand_code")
-        }
-        out.discard("")
-        return out
+    keys = _brand_row_keys
 
-    exact = [row for row in brands if folded in keys(row)]
+    exact = exact_brand_rows(brands, folded)
     if exact:
         return exact
     words = _BRAND_WORD_RE.findall(folded)
@@ -635,6 +654,48 @@ def _brand_hinted_entities_matching_live(
     # (`brand_rows_for_word`), so a word kept off the resolver always has a brand and a
     # word with none always reaches it and is said back.
     return [e for e in candidates if brand_rows_for_word(live, brand_entity_word(e))]
+
+
+def brand_identity_word(entity: dict[str, Any]) -> str:
+    """The word a brand is identified BY (owner clarification, 6 Oct 2026: "what if typo,
+    what if SRT people type"): brand identity is semantic, so the parser's `canonical_code`
+    (the brand name exactly as the Known brands line lists it, the prompt's own KNOWN
+    BRANDS rule) decides, and the typed `raw` only when the parser gave no canonical code.
+    The opposite order from `brand_entity_word` (the order/sales intercept's, where a
+    misspelt word must reach the resolver and be said back: the owner's own 27 Sep
+    transcript, "sorneto" parsed as Mocha, lists Sorento). R2 (7 Oct 2026): a
+    brand-HINTED word under order/sales is the intercept's alone, so this read never
+    turns a word the intercept could not place into the parser's guess there
+    (`test_samantha_27sep_r7_owner_replay.py::test_an_unknown_brand_word_is_one_line_and_no_filter`)."""
+    canonical = jsc.nullish_str(entity.get("canonical_code")).strip()
+    return canonical or jsc.nullish_str(entity.get("raw")).strip()
+
+
+def entities_naming_a_live_brand(db: Session, entities: list[dict[str, Any]]) -> dict[int, str]:
+    """CLASS-HINT-KIND-PICK (owner, 6 Oct 2026): `{id(entity): brand name}` for the entities
+    among `entities`, WHATEVER their hint, whose identity word (`brand_identity_word`:
+    canonical_code, else raw) is a live brand's name or code exactly (`exact_brand_rows`;
+    the spelling tier never runs here, a misspelling the parser did not canonicalise is
+    not a brand). An entity the parser is not confident about is not a brand (owner).
+    "cabana" hinted `product` under a stock ask is Cabana the brand, and the resolver is
+    told so (`brand_tokens`, resolved as the brand with no probe, and locked) rather than
+    left to re-type it to whatever row carries the word in its name. Unlike
+    `_brand_hinted_entities_matching_live`, nothing here is removed from the resolver's
+    token list: the entity still reaches the resolver, so the HAS / spec branch still binds
+    the brand off the sentence and answers the brand-scoped set, and the entity-less early
+    return below can never fire for it (#1504's measured scope-sentence regression)."""
+    candidates = [e for e in entities if isinstance(e, dict) and e.get("confident") is not False]
+    if not candidates:
+        return {}
+    live = active_brands(db)
+    out: dict[int, str] = {}
+    for e in candidates:
+        rows = exact_brand_rows(live, brand_identity_word(e))
+        if rows:
+            out[id(e)] = jsc.nullish_str(rows[0].get("brand_name")).strip() or jsc.nullish_str(
+                rows[0].get("brand_code")
+            ).strip()
+    return out
 
 
 def order_brand_filter(
@@ -981,8 +1042,27 @@ def with_set_count_from_text(
     """
     if not isinstance(carried, dict) or not isinstance(message, str):
         return verdict
-    if any(isinstance(e, dict) and e.get("current_message") is True for e in (verdict.get("entities") or [])):
+    echoed = any(isinstance(e, dict) and e.get("current_message") is True for e in (verdict.get("entities") or []))
+    # CLASS-HINT-KIND-PICK R2 (CHATBOT-TRIO console case 12, 7 Oct 2026): the parser read
+    # "another 10" with the carried brand re-stated as an entity under `entity_op: "reuse"`,
+    # the op its prompt defines for a message that names NO new value (the reading
+    # `turn/decide.py` takes for a quick-reply pick and `with_brand_from_offer` takes for
+    # the brand it drops). A reused entity on a paging turn is the carried set's own echo,
+    # not a subject: the count is answered and the echo goes, so neither
+    # `turn/apply._names_a_subject` nor the resolver sees it. A message that names a NEW
+    # value (`replace_combine`) is left to the parser, as before.
+    if echoed and verdict.get("entity_op") != "reuse":
         return verdict
+    base = (
+        {
+            **verdict,
+            "entities": [
+                e for e in verdict.get("entities") or [] if not (isinstance(e, dict) and e.get("current_message") is True)
+            ],
+        }
+        if echoed
+        else verdict
+    )
     # W4: after a LISTED page (`shown` > 0), "another N" continues the set, read whatever
     # the parser made of it. Round 3 W2 (owner hand test, "why when i say 10, it gives
     # some other answer"): so does a bare count - "10" after a page of 30 is rows 31 to
@@ -991,9 +1071,9 @@ def with_set_count_from_text(
     shown = int((carried.get("set_key") or {}).get("shown") or 0)
     more = set_continue_count(message)
     if more is not None:
-        return {**verdict, "top_n": more, "reference_positions": [], SET_CONTINUE_KEY: True}
+        return {**base, "top_n": more, "reference_positions": [], SET_CONTINUE_KEY: True}
     if shown == 0 and named_count(verdict.get("top_n")) is not None:
-        return verdict
+        return base
     # Line 1 is the customer's own text; a quoted "reply to: ..." rides on line 2
     # (`engine.build_latest_user_message`).
     lines = message.strip().splitlines()
@@ -1004,8 +1084,8 @@ def with_set_count_from_text(
     if count <= 0:
         return verdict
     if shown > 0:
-        return {**verdict, "top_n": count, "reference_positions": [], SET_CONTINUE_KEY: True}
-    return {**verdict, "top_n": count, "reference_positions": []}
+        return {**base, "top_n": count, "reference_positions": [], SET_CONTINUE_KEY: True}
+    return {**base, "top_n": count, "reference_positions": []}
 
 
 #: The verdict keys that say WHAT was asked, kept with an open clarify so its answer
@@ -2114,6 +2194,34 @@ def resolve_kinds(
     resolver_excluded_entity_ids = (
         frozenset(id(e) for e in matched_brands) if matched_brands else None
     )
+    # CLASS-HINT-KIND-PICK: every confident entity whose canonical_code (else raw) names a
+    # live brand exactly, whatever its hint and whatever the domain, IS that brand. The
+    # `{id: brand name}` map reaches `resolve_entity_body` (which sends the tokens as
+    # `brand_tokens`, resolved as the brand with no probe and locked, beside the confident
+    # class / product / brand hints it locks on its own) and `by_token` below. The
+    # order/sales intercept above still removes a brand-HINTED live brand from the token
+    # list; one that is also here is simply never sent, exactly as today.
+    # R2 (7 Oct 2026): under order/sales a brand-HINTED word is the intercept's (27 Sep
+    # R1: the typed word decides there, the owner's own transcript). One the intercept
+    # placed is already off the token list; one it could not place must reach the
+    # resolver and be said back as unknown, never re-read here off the parser's guessed
+    # canonical_code into a brand the order filter then cannot find ("DO brand zorbix"
+    # parsed as Mocha was neither filtered nor said back). Every other entity, and every
+    # entity in the other domains, is read as before.
+    brand_read_candidates = (
+        [e for e in entities if not (isinstance(e, dict) and jsc.nullish_str(e.get("hint")).strip().lower() == "brand")]
+        if is_order_domain
+        else entities
+    )
+    try:
+        brand_named = entities_naming_a_live_brand(db, brand_read_candidates)
+    except Exception:  # noqa: BLE001 - same reason as `matched_brands` above: a test
+        # double with no live `Brand` table has no opinion, and the token walks today's path.
+        # Logged (reviewer N2), so a live failure of the brand read is visible rather than
+        # silently turning every brand word back into a re-typable token.
+        logger.warning("chatbot: the live brand read failed; no token is brand-locked this turn", exc_info=True)
+        brand_named = {}
+    brand_entities = brand_named or None
     # The entities THIS call would resolve against, brand-excluded ids aside - used
     # ONLY for the entity-less early return just below, never handed to the resolver
     # itself as a replacement list (that stays `ctx`'s own, unmutated).
@@ -2158,6 +2266,7 @@ def resolve_kinds(
             dry_run=dry_run,
             roster_caps=roster_caps,
             resolver_excluded_entity_ids=resolver_excluded_entity_ids,
+            brand_entities=brand_entities,
             account_levels=business_services.account_levels_reader(db),
             # ACCOUNT-LEDGER: an enforced contact's own ledger is never an exact-name sibling.
             account_exact_names=not enforced_scope,
@@ -2289,6 +2398,30 @@ def resolve_kinds(
                 if stamp_promotion
                 else (codes, "has PO", "no PO")
             )
+
+    # CLASS-HINT-KIND-PICK (owner, 6 Oct 2026: "cabana is a brand"): a word that names a
+    # live brand exactly IS that brand for reconciliation, whatever the resolver placed
+    # it on and whatever the parser hinted. `{brand: 1}` is the one-kind answer
+    # `turn/reconcile.py` already reads: a `product` hint is rewritten to `brand` and
+    # traced, a `brand` hint stands, no kind pick is ever armed over it. A brand-hinted
+    # live brand the order/sales intercept kept off the resolver is not here (it was never
+    # resolved, so there is nothing to override) and lands on the focus as today. The
+    # resolver's own answer for the word is unchanged on `payload` and the gate.
+    for e in entities:
+        if not isinstance(e, dict) or id(e) not in brand_named:
+            continue
+        if resolver_excluded_entity_ids and id(e) in resolver_excluded_entity_ids:
+            continue
+        # Keyed the way the resolver echoes the token (`resolve_gate._token_of`: canonical
+        # code first, else raw), the same key `reconcile.hits_for_token` folds.
+        word = jsc.nullish_str(e.get("canonical_code")).strip() or jsc.nullish_str(e.get("raw")).strip()
+        key = _token_key(word)
+        if not key:
+            continue
+        echoed = next((t for t in by_token if _token_key(t) == key), None)
+        by_token[echoed if echoed is not None else word] = {"brand": 1}
+        unplaced.pop(key, None)
+        unplaced.pop(_token_key(jsc.nullish_str(e.get("raw")).strip()), None)
 
     return ResolveOutcome(
         by_token,
@@ -2880,6 +3013,7 @@ def make_tool_runner(
     def runner(domain: str, spec: FetchSpec) -> dict[str, Any]:
         page_predicate: dict[str, Any] | None = None
         page_ids: list[str] = []
+        listed_products: list[dict[str, Any]] = []
         carry = spec.filters.get("set_page")
         if isinstance(carry, dict):
             # Security B2: the entitlement comes off the CARRY (what the first answer
@@ -2955,6 +3089,25 @@ def make_tool_runner(
                 {"uuid": pid, "entity_type": "product", "canonical_code": None}
                 for pid in page_ids
             ]
+            # ATTACH-SET-BRAND-FOLLOWUP (owner hand test, 6 Oct 2026): the document type the
+            # first answer fetched under is part of the carried set's description
+            # (`set_page_carry`), and it rides the page's fetch the same way it rode the
+            # first one - as an `attachment_type` entity `fetch.entity_ids_transformer`
+            # turns into `attachment_type_ids`. Without it "sorento" after "which tap has
+            # technical drawing" listed every file of the Sorento taps, photos first,
+            # under a header that still said technical drawings.
+            entities += [
+                {"uuid": type_id, "entity_type": "attachment_type", "canonical_code": None}
+                for type_id in set_page_attachment_type_ids(carry)
+            ]
+            # ATTACH-SET-BRAND-FOLLOWUP round 2 (owner hand test on the local copy, 7 Oct
+            # 2026): the rows this page LISTS are the conversation's subject from here on,
+            # handed back on the envelope (`listed_products`) for the engine to settle
+            # onto `focus.products`. A page turn never runs the resolver, and
+            # `turn/apply._narrow_and_plan` settles the focus only from what the resolver
+            # matched, so after "sorento" listed 50 taps the focus still held turn 1's
+            # code-tier rows (the COLD TAP family) and "pic" ran over those two.
+            listed_products = listed_product_rows(db, page_ids)
         elif spec.filters.get("task"):
             # Ported from PR #1118 (not merged): an OPEN TASK's own fetch is about the
             # TASK's subjects, all of them (`turn/task.py::StockQtyTask.to_fetch`): a
@@ -3300,6 +3453,8 @@ def make_tool_runner(
             # it stays, so a further count says "That is all" (round 3 W2). The engine
             # keeps it on `focus.set_page`.
             envelope["set_carry"] = page_predicate.get("next_carry") if (page_ids or exhausted) else None
+            # The focus rows for the products this page listed (`listed_product_rows`).
+            envelope["listed_products"] = listed_products
         return envelope
 
     return runner
@@ -3404,8 +3559,17 @@ def set_page_carry(
     access_levels: Any = None,
     shown: int = 0,
     offer_only: bool = False,
+    attachment_type_ids: Any = None,
 ) -> dict[str, Any] | None:
     """The set a too-long counted answer asked about, for `focus.set_page`.
+
+    `attachment_type_ids` (ATTACH-SET-BRAND-FOLLOWUP, owner hand test 6 Oct 2026) is the
+    same rule as `access_levels` one leg over: the `attachment_types` rows the first
+    answer's fetch was narrowed by (the envelope's own `attachment_type_ids`, off the
+    resolved `attachment_type` entities) belong INSIDE `set_key`. The `require` leg
+    ("technical drawing") recounts the set, but only the ids say which files to list,
+    and a page that carried none fetched every file of the paged products. Written only
+    when the fetch had one; a carry without the key pages exactly as before.
 
     `offer_only` (owner hand test of rounds 4 to 6 on PR #833, item 6): a set listed in
     full whose reply closed with "Other brands with stock: Cabana 3, Mocha 2. Name one to
@@ -3477,7 +3641,42 @@ def set_page_carry(
         key["other_brands"] = offered
     if offer_only:
         key["offer_only"] = True
+    type_ids = [jsc.js_string(i) for i in jsc.array(attachment_type_ids) if _UUID_TEXT.match(jsc.js_string(i))]
+    if type_ids:
+        key["attachment_type_ids"] = type_ids
     return {"set_key": key}
+
+
+def listed_product_rows(db: Session, product_ids: list[str]) -> list[dict[str, Any]]:
+    """The focus rows (`Focus.products`) for the products a set page listed, in page
+    order: the same shape `turn/apply._narrow_and_plan` settles off the resolver's own
+    candidates (`candidates_by_kind`): the code as `raw` and `canonical_code`, the uuid,
+    `current_message: False`. An id that is no product any more is left out."""
+    ids = [jsc.js_string(i) for i in product_ids if _UUID_TEXT.match(jsc.js_string(i))]
+    if not ids:
+        return []
+    from app.models.product import Product
+
+    code_by_id = {
+        str(pid): code
+        for pid, code in db.query(Product.id, Product.product_code).filter(Product.id.in_(ids)).all()
+        if code
+    }
+    return [
+        {"raw": code_by_id[pid], "hint": "product", "canonical_code": code_by_id[pid], "uuid": pid, "current_message": False}
+        for pid in ids
+        if pid in code_by_id
+    ]
+
+
+def set_page_attachment_type_ids(carry: Any) -> list[str]:
+    """The `attachment_types` uuids a carried set was fetched under (`set_page_carry`),
+    or `[]` for a carry written without any - real uuids only, the same bar
+    `fetch.entity_ids_transformer` applies before it builds `attachment_type_ids`."""
+    if not isinstance(carry, dict):
+        return []
+    key = carry.get("set_key") if isinstance(carry.get("set_key"), dict) else {}
+    return [jsc.js_string(i) for i in jsc.array(key.get("attachment_type_ids")) if _UUID_TEXT.match(jsc.js_string(i))]
 
 
 #: The verdict key `with_brand_from_offer` sets: the offered brand the message chose.
@@ -3775,6 +3974,63 @@ def _with_carried_document_types(parse_output: dict[str, Any], focus: Focus) -> 
     return {**parse_output, "entities": [*own, *carried]}
 
 
+#: The verdict key `with_carried_entities` sets when a document word's subject is the
+#: settled products the plan already carries (uuids on `focus.products`), none of them
+#: handed to the resolver. `resolve_gate.resolve_entity_body` reads it: a turn about
+#: settled products describes no set, so it sends no `require` leg.
+SUBJECT_SETTLED_KEY = "subject_settled"
+
+
+def without_restated_rows(verdict: dict[str, Any], focus: Focus) -> dict[str, Any]:
+    """The verdict without the parser's ECHOES of rows the focus already holds settled.
+
+    ATTACH-SET-BRAND-FOLLOWUP round 2 (live console pass, 7 Oct 2026): the parser echoes
+    the carried subject back as its own entities (`current_message: false`, the prompt's
+    own CONTINUE rule). After a page settled fifty rows it echoed a few of their codes;
+    `apply._focus_rules` then REPLACED the product axis with those unsettled copies
+    (replace_same_axis), and the answer ran over that handful of the fifty: the owner's
+    two-id run, one mechanism of it. A row the focus already holds settled (same code, a
+    uuid) is the carry restated, not a word to look up or an axis to rewrite, so it is
+    dropped from the verdict before `apply` reads it. A single settled product echoed back
+    is the same case with nothing lost: the settled row stays, one lookup fewer.
+
+    Only on a turn that TYPES nothing but a document word (reviewer should-fix): a new
+    ask that names another axis ("outstanding DO for hanlim" after a stock answer) still
+    carries the echoed product through `apply._focus_rules` exactly as today, where the
+    echo is what keeps the product on a new ask that starts fresh."""
+    entities = [e for e in verdict.get("entities") or [] if isinstance(e, dict)]
+    typed = [e for e in entities if e.get("current_message") is not False]
+    if any(str(e.get("hint") or "").strip().lower() != "attachment_type" for e in typed):
+        return verdict
+    restated = [e for e in entities if _restates_a_settled_row(e, focus)]
+    if not restated:
+        return verdict
+    return {**verdict, "entities": [e for e in verdict.get("entities") or [] if not (isinstance(e, dict) and e in restated)]}
+
+
+def _restates_a_settled_row(entity: dict[str, Any], focus: Focus) -> bool:
+    """Is this parser entity an ECHO of a row the focus already holds settled: carried
+    (`current_message: false`), of a kind the focus has a field for, with a focus row of
+    that kind carrying a uuid and the same code? (`without_restated_rows`)"""
+    from app.services.chatbot.turn.state import token_key
+
+    if entity.get("current_message") is not False:
+        return False
+    kind = str(entity.get("hint") or "").strip().lower()
+    attr = KIND_FIELD_MAP.get(kind)
+    if not attr:
+        return False
+    code = token_key(entity.get("canonical_code") or entity.get("raw"))
+    if not code:
+        return False
+    for row in getattr(focus, attr, None) or []:
+        if not isinstance(row, dict) or not row.get("uuid"):
+            continue
+        if code in {token_key(row.get("canonical_code")), token_key(row.get("raw"))}:
+            return True
+    return False
+
+
 def with_carried_entities(
     parse_output: dict[str, Any], focus: Focus, *, unsettled_only: bool = False
 ) -> dict[str, Any]:
@@ -3802,6 +4058,17 @@ def with_carried_entities(
     for srtwc286" then "1" fetched every dealer promotion, scoped to no product at all)
     or sends the token where a uuid belongs. Those rows, and only those, are handed over
     on a turn that fetches.
+
+    STALE-EXTRA-CARRY (prod, 6-7 Oct 2026): and not a bare CLASS WORD beside a resolved
+    product. A uuid-less `category` / `product_type` row, or a `specification` row with
+    no uuid and no registry key, can only ever become a `scope_terms` entry
+    (`resolve_gate.resolve_entity_body`), never a `*_ids` param; on a fetch already
+    scoped to a product the resolver settled, it describes a set that is not the
+    question ("seat cover", read off a photo, rode into "Got ETA ?" after a correct
+    SRT320-CR answer and printed its own miss). A described set's members are the other
+    case (`mark_described_set`, #1502): the class word beside them is what re-describes
+    the set on "cert?", so it is still handed over. A grounded specification (`spec_key`
+    set) is untouched, and so is every other kind.
     """
     own = [e for e in parse_output.get("entities") or [] if isinstance(e, dict)]
     domain_word_only = bool(own) and all(
@@ -3825,6 +4092,8 @@ def with_carried_entities(
         for kind, rows in (getattr(focus, "extra", {}) or {}).items()
         if isinstance(rows, list)
     ]
+    product_scoped = unsettled_only and _holds_a_resolved_product_outside_a_set(focus)
+    settled_products = False
     for kind, rows in by_kind:
         if domain_word_only and kind == "attachment_type":
             # This turn's own document word replaces the carried one.
@@ -3833,6 +4102,9 @@ def with_carried_entities(
             if not isinstance(row, dict):
                 continue
             if unsettled_only and row.get("uuid"):
+                settled_products = settled_products or kind == "product"
+                continue
+            if product_scoped and _is_a_bare_class_word(kind, row):
                 continue
             code = row.get("canonical_code") or row.get("raw")
             if not jsc.truthy(code):
@@ -3853,9 +4125,42 @@ def with_carried_entities(
                 if name in row:
                     entity[name] = row[name]
             carried.append(entity)
+    if domain_word_only and settled_products:
+        # ATTACH-SET-BRAND-FOLLOWUP round 2 (owner hand test on the local copy, 7 Oct
+        # 2026): the document word's subject is the SETTLED products the plan already
+        # holds (the page "sorento" listed), and they are not handed over - nothing to
+        # look up. Said on the verdict instead, so `resolve_gate.resolve_entity_body`
+        # knows the ask is about those products and sends no `require` leg: with the
+        # class word retired by the page, a leg with no scope term counted every product
+        # with a photo ("photo?" after the page ran over 5 of 5 taps on fake data, and
+        # over the whole catalogue on a copy).
+        parse_output = {**parse_output, SUBJECT_SETTLED_KEY: True}
     if not carried:
         return parse_output
     return {**parse_output, "entities": [*carried, *own]}
+
+
+def _holds_a_resolved_product_outside_a_set(focus: Focus) -> bool:
+    """Does the focus carry a product with a uuid that is NOT a described set's member?
+    That product is the fetch's subject; a set's members (every row marked
+    `described_set`) are re-described by the words beside them instead. A focus that
+    mixes set members with one unmarked row (a set question, then a pick of ONE member,
+    which arrives as a fresh unmarked row) is product-scoped on purpose: the picked
+    product is the subject, and #1502's rule A says its fetch takes no set predicate."""
+    return any(
+        isinstance(row, dict) and jsc.truthy(row.get("uuid")) and row.get("described_set") is not True
+        for row in getattr(focus, "products", []) or []
+    )
+
+
+def _is_a_bare_class_word(kind: str, row: dict[str, Any]) -> bool:
+    """A carried row that can only ever become a `scope_terms` entry: a uuid-less
+    `category` / `product_type`, or a `specification` with no uuid and no `spec_key`."""
+    if row.get("uuid"):
+        return False
+    if kind in ("category", "product_type"):
+        return True
+    return kind == "specification" and not jsc.truthy(row.get("spec_key"))
 
 
 def attachment_type_labels(db: Session, entities: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -4471,6 +4776,16 @@ def envelope_of(
         # ATTACHMENT-MULTI R3: the document types this fetch asked for, `{name, keys}`
         # (`attachment_type_labels`), so the composer can name a product lacking one.
         "attachment_types": list(attachment_types or []),
+        # ATTACH-SET-BRAND-FOLLOWUP: the same types by uuid, exactly what the fetch sent as
+        # `attachment_type_ids`, so a counted set's carry (`engine.py` -> `set_page_carry`)
+        # records the document type its page must fetch under.
+        "attachment_type_ids": [
+            jsc.js_string(e.get("uuid"))
+            for e in entities
+            if isinstance(e, dict)
+            and jsc.nullish_str(e.get("entity_type")).strip().lower() == "attachment_type"
+            and _UUID_TEXT.match(jsc.js_string(e.get("uuid")))
+        ],
         "figures": figures,
         "files": [f for f in files if isinstance(f, dict)] if isinstance(files, list) else [],
         "miss": [] if has_result else codes,
