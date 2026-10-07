@@ -37,7 +37,19 @@ from tests.chatbot.test_quoted_reply_engine import (
 pytestmark = pytest.mark.usefixtures("stub_access")
 
 
-@pytest.mark.parametrize("message_type", ["clarification", "casual", "out_of_scope", "other", "unknown"])
+# Routes measured: clarification -> clarify_menu, casual and unknown -> low_signal. The
+# parser saying out_of_scope or other still ANSWERS on business_query here (the open quoted
+# task is re-asked), so those two exercise the answer-lane re-ask, not a non-answer lane.
+@pytest.mark.parametrize(
+    "message_type",
+    [
+        pytest.param("clarification", id="clarify_menu"),
+        pytest.param("casual", id="low_signal_casual"),
+        pytest.param("unknown", id="low_signal_unknown"),
+        pytest.param("out_of_scope", id="parser_out_of_scope_answered_on_business_query"),
+        pytest.param("other", id="parser_other_answered_on_business_query"),
+    ],
+)
 def test_ac_qr_8a_a_non_answer_lane_reply_to_a_quote_leaves_the_whole_live_focus(
     session_factory, monkeypatch, stub_access, message_type
 ):
@@ -49,6 +61,21 @@ def test_ac_qr_8a_a_non_answer_lane_reply_to_a_quote_leaves_the_whole_live_focus
     say_quoted(c, "ok thanks", verdict(message_type=message_type), quote=ask_text(A))
     assert _open_task_labels(c) == [C], "the live task is still C"
     assert [p.get("canonical_code") for p in c.state["focus"]["products"]] == [C], "never the quoted product"
+
+
+@pytest.mark.parametrize("message_type", ["clarification", "casual"])
+def test_ac_qr_8a_quoting_a_non_question_with_no_task_leaves_the_whole_live_focus(
+    session_factory, monkeypatch, stub_access, message_type
+):
+    """The quoted turn has NO open task, so only the non_answer arm of `carry_live_state`
+    can put the live focus back (the quoted-task arm has nothing to match)."""
+    c = _console(session_factory, monkeypatch, stub_access, "+60900000504")
+    quoted_text = f"I have {A}. What would you like me to know?"
+    _store_turn(c, reply_text=quoted_text, focus=_focus_wire(c, A), turn_no=1, age_s=900)
+    _live_c(c)
+    say_quoted(c, "ok thanks", verdict(message_type=message_type), quote=quoted_text)
+    assert [p.get("canonical_code") for p in c.state["focus"]["products"]] == [C]
+    assert _open_task_labels(c) == [C]
 
 
 def test_ac_qr_14_a_resolver_failure_never_fails_the_turn(session_factory, monkeypatch, stub_access):
