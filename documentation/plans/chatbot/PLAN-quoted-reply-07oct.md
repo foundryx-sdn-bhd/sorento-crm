@@ -200,3 +200,15 @@ WDI-K301-D?", source: n8n}. D: the trace drawer rendered the nested `quoted_turn
 "[object Object]" (defect, fixed in round 6: readable key: value rendering of nested facts,
 TurnDetailDrawer.tsx). Screenshot `evidence/quoted-reply-console-own-1280.png`.
 Re-read on e7784245e: the fact reads "via: own, found: true, turn_id: 9380, same_as_live: false".
+
+## Browser evidence run 3 (crew copy :3114 on 813027033 = code head 0ae63003e + main 292a366ee, 7 Oct 2026)
+
+Full script `laneboard/scripts/1523.md` at 1280, steps 19 to 23 again at 375. Contact 487555417. All PASS:
+steps 3-6 (quote the older question: "WDI-K5130 x 1: ..." with no K301-D, picker cleared), 8-10 (quote the
+"SRTBF11841: No ETA" bubble with "have stock?": incoming stock for SRTBF11841, not SRTWC201), 12-13
+(control), 14 (trace drawer: quoted turn "via: text, found: true, turn_id: d500, same_as_live: false"),
+16-18 (own-message quote: "SRTBF11841: No ETA", not K301-D), 20-23 (AC-QR-26: quote the older SRTWC286
+list + "4" -> "How many units of SRTWC286-SH-NEW?", the CKS105 list no longer waiting; "10" ->
+"SRTWC286-SH-NEW x 10: Got stock.", never "CKS105 x 10: which one?"). 375: same texts, no clipping,
+scrollWidth == innerWidth after steps 22 and 23. Screenshots `evidence/quoted-reply-console-r7-1280.png`
+(after step 23) and `evidence/quoted-reply-console-r7-375.png` (step 22 at 375).
