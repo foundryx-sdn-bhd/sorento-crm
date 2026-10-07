@@ -79,3 +79,22 @@ The owner's ask: the salesman angle gives the salesman ranking, and the dealer a
   order list and must not start a new ask (review round 2, apply.py:1382/1494 and :1211/:1165).
 - AC-HT8-1 also covers the anaphora row: a ranking verdict with a backward reference under the open offer is still a new ask.
 - AC-HT8-5. The prompt change ships as a new unlabelled version, picked in the console. The `production` label does not move.
+
+### Owner retest on v66 (8 Oct), "on the right track, needs to feel more human"
+
+Diagnosis: owner console turns 9c6055fe, 86f4d940, 6887b65b, af58830a, 5afe41b4, d559cf7f (`chatbot.turns`, shared dev).
+
+- AC-HT8-6. Business model (owner, verbatim): "sorento business model is sorento -> salesman -> dealer -> end user". 经销商, 代理商, 客户, dealer and customer
+  are all the CUSTOMER. Ranking them is group_by "customer", never "sales_agent". The prompt states the model above the ranked-noun rule.
+- AC-HT8-7. Mixed language: the ranked noun (customer, 客户, 经销商, dealer, 业务员, salesman) is never an entity, in any language or mix.
+  "哪一位customer sell最多srtwc286-SH, this year, by quantity, top 10" ranks the top 10 customers, exactly as the English does.
+- AC-HT8-8. Narrowing follow-up: a short follow-up on a held ranking that adds a channel ("dealer only", "project sales"), a brand,
+  a category, a period or a top N re-runs the SAME ranking with that filter added. It never silently repeats. The parser marks it
+  `ranking_refine` with the key (`sales_channel`, `report_ask_words`), and the lane's refine applies it (the code reads parser keys only).
+- AC-HT8-9. Chinese category words are understood on the FIRST turn. A category entity's raw is the English class word, translated by
+  the parser: 马桶/坐厕 water closet, 面盆/洗手盆 wash basin, 水龙头 tap, 浴室柜 bathroom cabinet, 厨房水槽/水槽 kitchen sink,
+  淋浴/花洒 shower, 浴缸 bathtub, 小便斗 urinal. The existing correction turn stays as it is: after an unknown-category list, "water closet"
+  re-runs the same top 10 with the category applied (owner confirmed on :3109).
+- AC-HT8-10. A fresh ranking takes no channel from an earlier turn. "which dealer/customer sold the most X" ranks ALL customers, with no
+  `Channel Dealer` filter. The channel applies only when the current message names it ("dealer sales", "dealer only"), or on a refine
+  of a held ranking that already carries it.
