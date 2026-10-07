@@ -50,9 +50,11 @@ the alias rows). Three more facts the live parser surfaced, each fixed in this l
    `head/parser.current_subject_line` prints at most `SUBJECT_NAMES_CAP` (5) names per axis.
 6. "they got pic/" read as brand Sorento + photo (`replace_combine`) opened a new ask: the
    listed rows were dropped, the brand word qualified nothing, "pic" after it had no
-   subject. `turn_runtime.with_brand_of_the_page`: a brand word (typed or echoed) naming
-   the brand the carried page is already narrowed to restates the subject; beside a
-   document word, or alone, the turn is a reuse.
+   subject. A rule for it (`with_brand_of_the_page`: the page's own brand restates the
+   subject) shipped at b61a4689 and was DELETED after main's #1502 (fill predicate / stray
+   carried-word guard) merged: on the merged head the kill table could not kill it, the
+   brand + photo turn is answered as a product-scoped fetch over the listed rows by #1502
+   alone. Its two tests stay as regression guards of that behaviour.
 7. "pic" parsed WITHOUT its document entity on 2 of 3 runs on this checkout's production
    prompt (v3): the code then re-lists the carried type over the listed rows (never an
    unlisted product). With the proposed example lines published as an unlabelled version

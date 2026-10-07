@@ -3531,47 +3531,6 @@ def with_brand_from_offer(verdict: dict[str, Any], message: Any, *, carried: Any
     }
 
 
-def with_brand_of_the_page(verdict: dict[str, Any], *, carried: Any) -> dict[str, Any]:
-    """The verdict with a brand entity dropped when it names the brand the carried page is
-    ALREADY narrowed to (`set_key.brand`, written by `apply.set_brand_chosen`) and the
-    message's only other word is a document word.
-
-    ATTACH-SET-BRAND-FOLLOWUP round 2, live console pass on the sandbox (7 Oct 2026, real
-    parser): "they got pic/" after the Sorento page came back as brand Sorento + photo,
-    `entity_op: replace_combine`. The brand word restates the subject the page already
-    has, it opens no new one; read as a new ask it dropped the listed rows from the focus
-    (`apply._focus_rules`, a new ask starts fresh), ran a described set the unplaced brand
-    word qualified nothing for, and left the next "pic" with no subject. With the brand
-    word gone the turn is a document word alone, which `with_carried_entities` reads about
-    the settled rows; `entity_op` is "reuse" for the same reason (the prompt's own rule
-    for a domain word alone). A brand that is NOT the page's, or a message naming any
-    other kind, is left alone: that is a new question."""
-    if not isinstance(carried, dict):
-        return verdict
-    page_brand = str((carried.get("set_key") or {}).get("brand") or "").strip().lower()
-    if not page_brand:
-        return verdict
-    # The brand word typed again (`current_message: true`) and the brand the parser echoes
-    # as the carried subject (`current_message: false`, the prompt's CONTINUE rule) are one
-    # restatement; beside a document word the echo turned `match_mode: and` into an
-    # intersection of "Sorento" and "photo" that placed neither (live pass, 7 Oct 2026).
-    entities = [e for e in verdict.get("entities") or [] if isinstance(e, dict)]
-    brands = [e for e in entities if str(e.get("hint") or "").strip().lower() == "brand"]
-    rest = [e for e in entities if e not in brands and e.get("current_message") is True]
-    if not brands:
-        return verdict
-    if any(str(e.get("hint") or "").strip().lower() != "attachment_type" for e in rest):
-        return verdict
-    names = {str(e.get("canonical_code") or e.get("raw") or "").strip().lower() for e in brands}
-    if names != {page_brand}:
-        return verdict
-    return {
-        **verdict,
-        "entities": [e for e in verdict.get("entities") or [] if not (isinstance(e, dict) and e in brands)],
-        "entity_op": "reuse",
-    }
-
-
 def _contact_stock_policy(db: Session, ctx: dict[str, Any], space_id: str | None):
     """The asking contact's stock visibility policy (None for no contact), resolved the
     way the resolver resolves it for the first answer (`references._stock_policy_for`)."""
