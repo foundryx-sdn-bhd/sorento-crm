@@ -83,6 +83,26 @@ cases:
           reply_contains:
             - "KITCHEN SINK"
           reply_not_contains:
+            - "Couldn't pin down"
+            - "closest matches"
             - "WALL HUNG"
             - "BATHROOM FURNITURE"
             - "SELF-CLOSING TAP"
+
+  - name: "5. plain promo ask still works, menu stamped (AC-12, AC-9)"
+    live_only: true
+    cold: true
+    turns:
+      - text: "any promo"
+        expect:
+          no_uuid: true
+          reply_contains:
+            - "Which access level"
+            - "has promotion"
+      - text: "1"
+        expect:
+          no_uuid: true
+          reply_contains:
+            - "Promotion"
+          reply_not_contains:
+            - "Couldn't pin down"
