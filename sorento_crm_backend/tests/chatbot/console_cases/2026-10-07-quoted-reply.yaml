@@ -121,3 +121,105 @@ cases:
           reply_contains:
             - "SRTKS2433-BL x 1:"
           reply_not_contains: *never
+
+  - name: "4. E1 (6 Oct, 266b6326): quoting the newest quantity ask with '10 unit'"
+    live_only: true
+    cold: true
+    turns:
+      - text: "check stock SRTWC201"
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "How many units of SRTWC201?"
+      - text: "10 unit"
+        quote: "How many units of SRTWC201?"
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "SRTWC201 x 10:"
+          reply_not_contains: *never
+
+  - name: "5. E3 (7 Oct, 534e55aa): quoting an OLDER access-level pick with 'dealer' while a quantity ask is live"
+    live_only: true
+    cold: true
+    turns:
+      - text: "promo for SRTWT9612-GM"
+        expect:
+          branch_kind: check_promotion
+          no_uuid: true
+          reply_contains:
+            - "Which access level do you need for SRTWT9612-GM?"
+      - text: "check stock WDI-K5130"
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "How many units of WDI-K5130?"
+      - text: "dealer"
+        quote: |
+          Which access level do you need for SRTWT9612-GM?
+          1. Office - no promotion
+          2. Dealer - no promotion
+          3. End user - no promotion
+          Reply with the number(s), e.g. "1", "1 and 2", or "all".
+        expect:
+          branch_kind: check_promotion
+          no_uuid: true
+          reply_contains:
+            - "I have attached the file(s) below."
+            - "DEALER"
+          reply_not_contains:
+            - "How many units of WDI-K5130?"
+            - "WDI-K5130"
+
+  - name: "6. E4 (6 Oct, 409e9ee0): quoting an OLDER did-you-mean list with the code while a quantity ask is live"
+    live_only: true
+    cold: true
+    turns:
+      - text: "check stock SRTS07"
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "Couldn't find SRTS07. Did you mean:"
+            - "1. SRTSC07"
+      - text: "check stock WDI-K301-D"
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "How many units of WDI-K301-D?"
+      - text: "SRTSC07"
+        quote: |
+          Couldn't find SRTS07. Did you mean:
+          1. SRTSC07
+          2. SRTSA
+          3. SRTSB
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "How many units of SRTSC07?"
+          reply_not_contains:
+            - "WDI-K301-D"
+
+  - name: "7. E5 (5 Oct, e772884d): quoting a message no engine turn produced (a human relay) falls back to today's behaviour"
+    live_only: true
+    cold: true
+    turns:
+      - text: "check stock WDI-K5130"
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "How many units of WDI-K5130?"
+      - text: "Can check estimated loading date?"
+        quote: "SRT112 still in production"
+        expect:
+          no_uuid: true
+          reply_contains:
+            - "WDI-K5130"
+          reply_not_contains:
+            - "SRT112"
