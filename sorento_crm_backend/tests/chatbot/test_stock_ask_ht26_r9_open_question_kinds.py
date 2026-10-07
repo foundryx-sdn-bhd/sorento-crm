@@ -658,11 +658,13 @@ def test_g_1011_round_7_session(session_factory, monkeypatch, stub_access):
         "semua of them",
         reply(reference_positions=list(range(1, 11)), open_question_answer=answer("pick", picked=list(range(1, 11)))),
     ) == _point_form(OWNER_FAMILY)
-    # Row 3: one number per line, positions in order.
+    # Row 3: one number per line, positions in order. STOCK-QTY-PARTIAL-FILL (owner
+    # ruling R1, 6 Oct 2026): the five filled lines are answered now and the other five
+    # stay open, never re-listed (round 8 re-asked the point form with 6 to 10 blank).
     assert c.say(
         "10\n20\n30\n40\n5",
         reply(open_question_answer=answer("fill", items=[(1, None, 10), (2, None, 20), (3, None, 30), (4, None, 40), (5, None, 5)])),
-    ) == _point_form(OWNER_FAMILY, {1: 10, 2: 20, 3: 30, 4: 40, 5: 5})
+    ) == _answered(*zip(OWNER_FAMILY[:5], [10, 20, 30, 40, 5]))
     # Row 4: the list pasted back, 1 = 10, 2 = 5, the rest blank: the whole answer.
     row4 = c.say(
         "check stock\n" + _point_form(OWNER_FAMILY, {1: 10, 2: 5}),

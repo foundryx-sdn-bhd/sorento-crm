@@ -15,6 +15,7 @@ import {
 } from '@tanstack/react-table';
 import {
   Download,
+  FileSpreadsheet,
   Trash2,
   Plus,
   RefreshCw,
@@ -101,6 +102,7 @@ import { isSearchInFlight, useDebouncedSearch } from '@/hooks/useDebouncedSearch
 import { ListSearchInput } from '@/components/common/ListSearchInput';
 import AttachmentUploadDialog from '../../attachments/components/AttachmentUploadDialog';
 import AttachmentBulkImportDialog from '../../attachments/components/AttachmentBulkImportDialog';
+import AttachmentBulkDownloadDialog from '../../attachments/components/AttachmentBulkDownloadDialog';
 import AttachmentDeleteDialog from '../../attachments/components/attachment-delete-dialog';
 import AttachmentBulkDeleteDialog from '../../attachments/components/AttachmentBulkDeleteDialog';
 import AttachmentDetailModal from '../../attachments/components/AttachmentDetailModal';
@@ -210,6 +212,7 @@ export default function AttachmentsInFolderPanel({
 
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [bulkImportDialogOpen, setBulkImportDialogOpen] = useState(false);
+  const [bulkDownloadOpen, setBulkDownloadOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
   const [bulkEditTypeOpen, setBulkEditTypeOpen] = useState(false);
@@ -690,7 +693,8 @@ export default function AttachmentsInFolderPanel({
     'bulk-restore': RotateCcw,
     'bulk-permanent-delete': Trash2,
     'bulk-move': FolderInput,
-    'bulk-export': Download,
+    'bulk-download': Download,
+    'bulk-export': FileSpreadsheet,
     'bulk-access-levels': Shield,
     'bulk-attachment-type': Tag,
     'bulk-company': Building2,
@@ -711,6 +715,7 @@ export default function AttachmentsInFolderPanel({
       },
       {
         onMove: () => setMoveDialogOpen(true),
+        onDownload: () => setBulkDownloadOpen(true),
         onExport: openExport,
         onSetAccessLevels: () => onBulkAdjustAccessLevels?.(selectedDeletableFileIds),
         onSetAttachmentType: () => setBulkEditTypeOpen(true),
@@ -1379,6 +1384,13 @@ export default function AttachmentsInFolderPanel({
         onOpenChange={setUploadDialogOpen}
         defaultDirectoryId={effectiveDirectoryId ?? null}
         onSuccess={() => {}}
+      />
+      <AttachmentBulkDownloadDialog
+        open={bulkDownloadOpen}
+        onOpenChange={setBulkDownloadOpen}
+        directoryId={effectiveDirectoryId ?? null}
+        folderIds={selectedFolderIds}
+        attachmentIds={selectedFileIds}
       />
       <AttachmentBulkImportDialog
         open={bulkImportDialogOpen}
