@@ -193,6 +193,7 @@ SALES_RANKING_ASK = rf.register(rf.AskType(
     },
     cancelled=CANCELLED,
     give_up=GIVE_UP,
+    answer_drops=("sales_channel", "report_ask_words"),
 ))
 
 

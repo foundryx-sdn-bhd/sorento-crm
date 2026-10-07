@@ -1228,7 +1228,14 @@ def _focus_rules(
     # nothing else (S12 - no word table in deterministic code). Only when the message
     # named one: a sales report ask with no channel word counts every channel, and a
     # turn that narrows an open one ("for project only") names it and wins here.
-    if verdict.get("sales_channel"):
+    # AC-HT8-16: an answer to an open top selling question ("ordered") fills that slot only;
+    # a channel the parser put on it is not a new filter (a turn naming the ask itself is).
+    answering_top_selling = (
+        isinstance(focus.top_selling, dict)
+        and focus.top_selling.get("asked") in TOP_SELLING_CLARIFY_AXES
+        and domain_in_message(verdict) is not True
+    )
+    if verdict.get("sales_channel") and not answering_top_selling:
         focus.sales_channel = str(verdict["sales_channel"])
     if verdict.get("date_mode") or verdict.get("date_filter_start") or verdict.get("date_filter_end"):
         focus.date_window = {

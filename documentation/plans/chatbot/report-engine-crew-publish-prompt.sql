@@ -1477,6 +1477,7 @@ list of orders.
     "item"; a category name -> rank_group "item" plus that category entity
   - after "Delivered (transferred to DO) or ordered?": "ordered" -> basis "ordered";
     "delivered" -> basis "delivered"
+  - 已送货 -> basis "delivered" (送货, 已转DO), 已订购 -> basis "ordered" (下单, 订单), 未交 -> basis "outstanding" (未送); an answer to an open basis question is never order_status "delivered"
   - after "How many items do you want to see?": "20" or "top 20" -> top_n 20 (a count,
     NEVER reference_positions)
 A follow-up to a ranking already shown that only changes the metric, the basis or the
@@ -1866,6 +1867,7 @@ That is NOT a top selling list ("Top N selling items"): a number never picks a r
   - the basis: "ordered" -> ranking_refine true, basis "ordered"; "by outstanding" ->
     ranking_refine true, basis "outstanding"
   - the measure: "by quantity" -> ranking_refine true, measure "qty"
+  - 已送货 -> basis "delivered" (送货, 已转DO), 已订购 -> basis "ordered" (下单, 订单), 未交 -> basis "outstanding" (未送); an answer to an open basis question is never order_status "delivered"
   - the channel: "dealer only" -> ranking_refine true, sales_channel "dealer"; a brand or category word only: ranking_refine true, that entity
 each with order_status "sales_ranking", group_by null, entities [] (except the brand or category refine), every other key null.
 A message naming its own axis or subject is a NEW ask: ranking_refine false; top_n and dates
@@ -2031,7 +2033,7 @@ CURRENT DATE: {{current_date}}
 If relative dates such as "today" or "yesterday" appear in the current turn input, convert them to absolute dates before calling the MCP tool.$tpl_a7065de1dd$, '@@EMDASH@@', chr(8212)), '["current_date"]'::jsonb,
        'report_engine_0001_prompt (REPORT-ENGINE PR #1447): sales_ranking vocabulary, AC-HT8 ranking axes, dealer is the customer, channel refine', now()
  WHERE NOT EXISTS (SELECT 1 FROM ai_prompt_versions
-                    WHERE name = 'chatbot_semantic_parser' AND md5(template) = '8720a4cfcd03c6e7acc6fcfb44d682c9');
+                    WHERE name = 'chatbot_semantic_parser' AND md5(template) = '60c393a9588caf93b2f7a01ac947d776');
 COMMIT;
 -- check: SELECT version, length(template) FROM ai_prompt_versions WHERE name='chatbot_semantic_parser'
---         AND md5(template) = '8720a4cfcd03c6e7acc6fcfb44d682c9';   -- expect one row, length 144164
+--         AND md5(template) = '60c393a9588caf93b2f7a01ac947d776';   -- expect one row, length 144516

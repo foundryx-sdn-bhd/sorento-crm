@@ -130,6 +130,9 @@ class AskType:
     #: the original capture (a short reply is the answer, a longer other ask or a "?" drops
     #: it), which IDEATION-CAPTURE (#1444) is written and tested against.
     answered_by_parser: bool = False
+    #: Verdict keys an ANSWER to this ask never carries on: the answer fills the asked slot
+    #: only, so a filter the parser put on it is not a new filter (AC-HT8-16).
+    answer_drops: tuple[str, ...] = ()
 
 
 #: Every registered ask type, by name (`register`). The engine seam reads the open slot's
@@ -338,7 +341,8 @@ def reply_verdict(
     if not (text or "").strip() or not answers:
         return verdict, "required_ask_dropped"
     rerouted = {
-        **verdict, **ask.reroute, "entities": [], "open_question_answer": None,
+        **{k: v for k, v in verdict.items() if k not in ask.answer_drops},
+        **ask.reroute, "entities": [], "open_question_answer": None,
         "is_affirmative": None, "topic_reset": False,
         "required_ask": slot, "required_ask_reply": text,
         "required_ask_answer": dict(answer) if answers else None,
@@ -362,7 +366,8 @@ def _reply_verdict_by_shape(
     if other_ask and len(words) > SHORT_REPLY_WORDS:
         return verdict, "required_ask_dropped"
     rerouted = {
-        **verdict, **ask.reroute, "entities": [], "open_question_answer": None,
+        **{k: v for k, v in verdict.items() if k not in ask.answer_drops},
+        **ask.reroute, "entities": [], "open_question_answer": None,
         "is_affirmative": None, "topic_reset": False,
         "required_ask": slot, "required_ask_reply": text,
     }
