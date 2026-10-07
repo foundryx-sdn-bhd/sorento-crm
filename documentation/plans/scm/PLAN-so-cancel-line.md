@@ -42,40 +42,48 @@ Clarification: "this one is not considered cancelled, it is considered transfer 
   `PLAN-oi-cancelled-line-used-confirm.md`).
 - Same-shape lines in the snapshot: 188 across 64 SOs.
 
-## Design (assumes the card's recommendations; revise on the owner's answers)
+## Design (owner direction 7 Oct: "cancel is also a decision", no new button; assumes the card's recommendations Q1a Q2a Q3a Q4a Q5a; revise on the owner's answers)
 
-One action, one write path, reusing the existing cancelled state.
+One Decide item, one new confirm channel, the existing cancelled state.
 
-S1. **Backend: a registered record action, no new endpoint.** `register(FormAction(key="sales_order_line.cancel",
-    entity_types=("sales_order_line",), execute=..., window=WINDOW_REVERSIBLE, permission="projects.projects.edit",
-    label="Transfer to Cancel SO"))` in `app/services/record_actions.py` (precedent `order.set_status` :280-288);
-    the generic pending-action routes park it, count the server window down and commit it even if the tab closes
-    (`app/api/v1/system/pending_actions.py`). The execute function (new, in `project_supply_service` or a sibling)
-    refuses 409 when the line is covered by an active decision ("Reject first", Q2a), 409 when already cancelled,
-    422 blank reason, and writes in one transaction: core `line_status = 'cancelled'`, `cancelled_at = now()`,
-    `cancelled_by_id = actor`, `cancel_reason = reason`; deletes the line's draft;
-    `flag_rows_for_cancelled_lines(db, [core_id])`. Required payload: `{entity_id: core line id, reason}`.
-S2. **Migration** (additive, one head): `sales_order_lines.cancelled_at timestamptz null`, `cancelled_by_id uuid null
-    FK users`, `cancel_reason text null`. Model + the manual dict builders that serialise the line to the board
+S1. **Decide item.** `DecideWay` gains `'cancel_so'` (`_shared/lib/boardAmend.ts:724-730`), `MENU_ORDER` lists it after
+    `buy` with label "Transfer to Cancel SO" (`BoardDecideControl.tsx:60-74`, special-cased in `labelOf` like "As
+    suggested"). `chooseWay` opens the existing dialog (no picker, Reason required `:429-433`); `runSave` writes a draft
+    `{verdict: 'cancelled', reason, reserve: [], borrow: [], timely_spo_qty: '0', buy_qty: '0'}` per ticked row through
+    the unchanged `decideBatch` path. Skips: already cancelled ("already cancelled"), covered by an active decision
+    ("confirmed, reject it first", Q2a). `BoardVerdict` gains `'cancelled'` (`fulfilmentPlanning.types.ts:1987`);
+    the Decided column / summary word is "Cancel SO"; the row keeps the Saved pill and its Undo.
+S2. **Press routing.** `pressRoleFor`/`confirmLinesFor` (`fulfilmentBoard.ts:327-390`) send a `cancelled`-verdict draft
+    to a new `cancelled_lines: [{project_line_id, reason}]` channel on the confirm body, never into `lines`, so
+    `_check_line` never sees it. Preview groups them under "Cancel SO".
+S3. **Backend.** `ConfirmSupplyBody` (`schemas/project_supply.py:417-450`) gains `cancelled_lines`, refused beside a
+    `batch_id` like `rejected_line_ids`. `confirm` handles them before the line recheck: per line, refuse 409 if the
+    line is covered by an active decision or already cancelled (the FE skips these, the server still guards), then in
+    the same transaction write core `line_status = 'cancelled'`, `cancelled_at = now()`, `cancelled_by_id = actor`,
+    `cancel_reason`, delete the draft, `flag_rows_for_cancelled_lines(db, [core_id])`. Echo them in the result as
+    `lines_cancelled: [{line_no, item_code}]`. A press with only cancelled lines and nothing else is valid.
+S4. **Migration** (additive, one head): `sales_order_lines.cancelled_at timestamptz null`, `cancelled_by_id uuid null`
+    FK users, `cancel_reason text null`. Model + every manual dict builder that serialises the line to the board
     (assert in a test; `response_model` drops undeclared fields).
-S3. **Ingest guard**: `document_ingest_service` keeps `line_status = 'cancelled'` for a present line whose
+S5. **Ingest guard**: `document_ingest_service` keeps `line_status = 'cancelled'` for a present line whose
     `cancelled_at` is set (the push may still update quantities/prices). A header-cancelled push is unchanged.
-S4. **Board read** exposes `cancelled_at`, `cancelled_by` (name), `cancel_reason` on the contribution so the grey
-    row can say who and why (no UUIDs in the UI).
-S5. **Frontend**: "Transfer to Cancel SO" button beside Reject in `BoardLineDecisionPanel` and the verdict popover,
-    reason box prefilled from the saved amend reason when present, served through `DeferredActionButton` +
-    `useDeferredAction` against the pending-action service (5 s reversible window, Q5b); on commit invalidate board
-    + OI queries + toast. Disabled with tooltip on a covered line.
-S6. **Order inquiry worklist**: nothing new; the rows follow C1-C4 (greyed, tagged, To confirm, out of Buy).
+S6. **Board read** exposes `cancelled_at`, `cancelled_by` (name), `cancel_reason` on the contribution; the list view's
+    cancelled-row sentence (`FulfilmentBoardListView.tsx:545-549`) reads "Transferred to Cancel SO by <name>, <time> ·
+    <reason>" when they are set, the existing sentence otherwise. Results block lists "Transferred to Cancel SO: ..."
+    from the echo.
+S7. **Order inquiry worklist**: nothing new; the rows follow C1-C4 (greyed, tagged, To confirm, out of Buy).
 
-Out of scope: partial cancel (Q3a), un-cancel after the window (Q5), pulling the Cancel SO document, changing the
-14 Sep plan-qty ruling.
+Out of scope: partial cancel (Q3a), un-cancel after Confirm (Q5a), pulling the Cancel SO document, changing the 14 Sep
+plan-qty ruling, the Use BRW stale-panel defect (`BoardLineDecisionPanel.tsx:145-147`, separate S lane).
 
 ## Test list (red first, tester writes from the UAC)
 
-pytest: cancel endpoint happy path on a closed 36/36 line (status, audit columns, draft deleted, OI rows flipped to
-`changed`); 403 without edit; 409 covered line; 409 already cancelled; 422 blank reason; ingest re-push keeps
-`cancelled` + `cancelled_at`; header-cancelled push unchanged; board contribution carries the three fields; confirm
-of the order after cancel confirms the other lines and skips the cancelled one.
-vitest: panel renders the button (enabled uncovered, disabled covered with tooltip); click -> countdown -> mutation
-body; Cancel within window posts nothing; cancelled row renders grey with reason and no Confirm tick.
+pytest: confirm body with `cancelled_lines` on a closed 36/36 line writes status + audit columns, deletes the draft,
+flips the OI rows to `changed`, echoes `lines_cancelled`; the other decided line in the same press confirms; 403
+without edit; 409 covered line; 409 already cancelled; 422 blank reason; 422 beside `batch_id`; re-push keeps
+`cancelled` + `cancelled_at`; header-cancelled push unchanged; board contribution carries the three fields; the
+cancelled line is skipped by the next press.
+vitest: Decide menu lists the item last; choosing it opens the dialog with Reason only; Save disabled on blank reason;
+`runSave` posts verdict `cancelled` with the reason per ticked row; covered/cancelled rows skipped with the toast
+wording; `pressRoleFor` routes a cancelled draft to `cancelled_lines`, not `lines`; `confirmLinesFor` body shape;
+Decided column reads "Cancel SO"; list-view sentence shows who/when/reason; results block lists cancelled lines.
