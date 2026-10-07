@@ -677,6 +677,15 @@ export function FulfilmentBoardPanel({
    * things depending on when it was pressed.
    */
   const preMarkedKeySet = React.useRef<Set<string>>(new Set());
+  // The lines a pending planning change NAMES: only those cannot also be transferred to
+  // Cancel SO (a cancel of any other line rides along with the batch press).
+  const batchNamedKeys = React.useMemo(() => {
+    const out = new Set<string>();
+    for (const orders of survivingOrdersByBatchId.values()) {
+      for (const key of preMarkedKeys({ orders }, allContributions)) out.add(key);
+    }
+    return out;
+  }, [survivingOrdersByBatchId, allContributions]);
   React.useEffect(() => {
     if (allContributions.length === 0) return;
     if (loadedBatches.length < boardBatchIds.length) return;
@@ -892,7 +901,7 @@ export function FulfilmentBoardPanel({
           allContributions,
           draftWithoutPreMarks(appliedNext),
           pendingBatchSalesOrderIds,
-          { unadoptedSalesOrderIds },
+          { unadoptedSalesOrderIds, batchNamedKeys },
         );
         toast.success(
           decision.verdict === 'rejected'
@@ -902,7 +911,14 @@ export function FulfilmentBoardPanel({
       }
       return true;
     },
-    [allContributions, saveLineDraft, removeDraftKey, pendingBatchSalesOrderIds, unadoptedSalesOrderIds],
+    [
+      allContributions,
+      saveLineDraft,
+      removeDraftKey,
+      pendingBatchSalesOrderIds,
+      unadoptedSalesOrderIds,
+      batchNamedKeys,
+    ],
   );
 
   /**
@@ -955,7 +971,7 @@ export function FulfilmentBoardPanel({
           allContributions,
           draftWithoutPreMarks(appliedNext),
           pendingBatchSalesOrderIds,
-          { unadoptedSalesOrderIds },
+          { unadoptedSalesOrderIds, batchNamedKeys },
         );
         toast.success(
           `${saved} line${saved === 1 ? '' : 's'} saved · ${toConfirm} to confirm`,
@@ -963,7 +979,7 @@ export function FulfilmentBoardPanel({
       }
       return { saved, failed };
     },
-    [allContributions, decide, draft, pendingBatchSalesOrderIds, unadoptedSalesOrderIds],
+    [allContributions, decide, draft, pendingBatchSalesOrderIds, unadoptedSalesOrderIds, batchNamedKeys],
   );
 
   /**
@@ -1084,8 +1100,15 @@ export function FulfilmentBoardPanel({
     () =>
       confirmSummaryFor(allContributions, draftWithoutPreMark, pendingBatchSalesOrderIds, {
         unadoptedSalesOrderIds,
+        batchNamedKeys,
       }),
-    [allContributions, draftWithoutPreMark, pendingBatchSalesOrderIds, unadoptedSalesOrderIds],
+    [
+      allContributions,
+      draftWithoutPreMark,
+      pendingBatchSalesOrderIds,
+      unadoptedSalesOrderIds,
+      batchNamedKeys,
+    ],
   );
 
   /**
@@ -1367,13 +1390,13 @@ export function FulfilmentBoardPanel({
           : rejectedCoveredLineIdsFor(contributions, salesOrderId, draftWithoutPreMark, {
               excludeKeys: excludeKeys,
             });
-        // SO-CANCEL-LINE: the same refusal beside a batch, so an order on one never carries
-        // `cancelled_lines` from here.
-        const cancelledLines = orderBatchId
-          ? []
-          : cancelledLinesFor(contributions, salesOrderId, draftWithoutPreMark, {
-              excludeKeys: excludeKeys,
-            });
+        // SO-CANCEL-LINE: a cancel rides along with a pending change unless the batch names
+        // that line (the server refuses only that case).
+        const cancelledLines = cancelledLinesFor(contributions, salesOrderId, draftWithoutPreMark, {
+          excludeKeys: excludeKeys,
+          batchBlocked: Boolean(orderBatchId),
+          batchNamedKeys,
+        });
         // S4 (fix round, review): the covered-rejected lines THIS order's own batch just
         // zeroed out of `rejectedLineIds` above, so the planner is told what did not ride
         // along rather than the counter simply promising it and the press posting nothing
@@ -1392,6 +1415,7 @@ export function FulfilmentBoardPanel({
                   draftWithoutPreMark[contribution.key]?.verdict === 'rejected') ||
                   (!contribution.covered &&
                     !contribution.cancelled &&
+                    batchNamedKeys.has(contribution.key) &&
                     draftWithoutPreMark[contribution.key]?.verdict === 'cancelled')),
             )
           : [];
@@ -1499,6 +1523,7 @@ export function FulfilmentBoardPanel({
       adopt,
       appliedSoNumbers,
       batchIdBySoNumber,
+      batchNamedKeys,
     ],
   );
 
@@ -1870,8 +1895,9 @@ export function FulfilmentBoardPanel({
       pressPostsContribution(line, draftWithoutPreMark[line.key], {
         batchBlocked: pendingBatchSalesOrderIds.has(line.sales_order_id),
         unadopted: unadoptedSalesOrderIds.has(line.sales_order_id),
+        batchNamedKeys,
       }),
-    [draftWithoutPreMark, pendingBatchSalesOrderIds, unadoptedSalesOrderIds],
+    [draftWithoutPreMark, pendingBatchSalesOrderIds, unadoptedSalesOrderIds, batchNamedKeys],
   );
   // The Saved | All counts: the board's lines under the product search (and the day window,
   // through the list's whole-selection population), never under the Status filter.

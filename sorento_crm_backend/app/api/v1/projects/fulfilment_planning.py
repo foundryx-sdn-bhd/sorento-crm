@@ -938,15 +938,29 @@ def _confirm_with_possible_rejects(
     # anything is looked up, for the same reason as the withdrawal above.
     cancelled_lines = list(getattr(payload, "cancelled_lines", None) or [])
     if batch_id and cancelled_lines:
-        raise AppException(
-            status_code=422,
-            message=(
-                "A pending planning change cannot also transfer a line to Cancel SO in the "
-                "same press. Apply the change first, then transfer the line and confirm "
-                "again."
-            ),
-            code="board_cancel_not_supported_in_batch",
+        # A cancel rides along with a pending change unless the batch NAMES that line.
+        from app.models.planning_change import PlanningChangeRow
+
+        named_by_batch = (
+            db.query(PlanningChangeRow.project_line_id)
+            .filter(
+                PlanningChangeRow.batch_id == batch_id,
+                PlanningChangeRow.project_line_id.in_(
+                    [str(x.project_line_id) for x in cancelled_lines]
+                ),
+            )
+            .first()
         )
+        if named_by_batch is not None:
+            raise AppException(
+                status_code=422,
+                message=(
+                    "A pending planning change names this line, so it cannot also be "
+                    "transferred to Cancel SO. Apply the change first, then transfer the "
+                    "line and confirm again."
+                ),
+                code="board_cancel_not_supported_in_batch",
+            )
     both = named & {str(x.project_line_id) for x in cancelled_lines}
     if both:
         raise AppException(

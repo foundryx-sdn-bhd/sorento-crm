@@ -301,6 +301,10 @@ export function commitPreviewFor(
  */
 export interface ConfirmScopeOptions {
   excludeKeys?: ReadonlySet<string>;
+  /** The order's sales order is on a pending planning change (`cancelledLinesFor`). */
+  batchBlocked?: boolean;
+  /** Keys of the lines a pending planning change names: only those cannot also be cancelled. */
+  batchNamedKeys?: ReadonlySet<string>;
   /**
    * Orders with no planning record yet. Given, a `no_mirror` line counts (and is listed) only
    * on one of these: the press adopts them first and mints the mirror ids, whereas on an
@@ -330,6 +334,7 @@ function pressRoleFor(
   contribution: BoardContribution,
   decision: BoardDecision | undefined,
   batchBlocked: boolean,
+  batchNamedKeys?: ReadonlySet<string>,
 ): PressRole {
   if (contribution.unplannable) return { kind: 'skip' };
   // SO-CANCEL-LINE: a saved Transfer to Cancel SO rides its own body channel
@@ -340,7 +345,9 @@ function pressRoleFor(
         return { kind: 'skip' };
       }
       // `cancelled_lines` is refused beside a batch, like a staged rejection.
-      if (batchBlocked) return { kind: 'blocked_cancel' };
+      if (batchBlocked && (batchNamedKeys ? batchNamedKeys.has(contribution.key) : true)) {
+        return { kind: 'blocked_cancel' };
+      }
       return { kind: 'cancel_so', reason: (decision.reason ?? '').trim() };
     }
   }
@@ -379,9 +386,14 @@ function pressRoleFor(
 export function pressPostsContribution(
   contribution: BoardContribution,
   decision: BoardDecision | undefined,
-  options?: { batchBlocked?: boolean; unadopted?: boolean },
+  options?: { batchBlocked?: boolean; unadopted?: boolean; batchNamedKeys?: ReadonlySet<string> },
 ): boolean {
-  const role = pressRoleFor(contribution, decision, options?.batchBlocked ?? false);
+  const role = pressRoleFor(
+    contribution,
+    decision,
+    options?.batchBlocked ?? false,
+    options?.batchNamedKeys,
+  );
   if (role.kind === 'post' || role.kind === 'withdraw' || role.kind === 'cancel_so') return true;
   return role.kind === 'unpostable' && role.reason === 'no_mirror' && Boolean(options?.unadopted);
 }
@@ -448,7 +460,12 @@ export function cancelledLinesFor(
   for (const contribution of contributions) {
     if (contribution.sales_order_id !== salesOrderId) continue;
     if (options?.excludeKeys?.has(contribution.key)) continue;
-    const role = pressRoleFor(contribution, draft[contribution.key], false);
+    const role = pressRoleFor(
+      contribution,
+      draft[contribution.key],
+      options?.batchBlocked ?? false,
+      options?.batchNamedKeys,
+    );
     if (role.kind === 'cancel_so' && contribution.project_line_id) {
       lines.push({ project_line_id: contribution.project_line_id, reason: role.reason });
     }
@@ -799,7 +816,12 @@ export function plannedLineCount(
   return contributions.filter((contribution) => {
     if (contribution.sales_order_id !== salesOrderId) return false;
     if (options?.excludeKeys?.has(contribution.key)) return false;
-    const role = pressRoleFor(contribution, draft[contribution.key], batchBlocked);
+    const role = pressRoleFor(
+      contribution,
+      draft[contribution.key],
+      batchBlocked,
+      options?.batchNamedKeys,
+    );
     if (
       role.kind === 'cancelled' ||
       role.kind === 'withdraw' ||
@@ -1011,6 +1033,8 @@ export function confirmDialogRowsFor(
     unadoptedSalesOrderIds?: ReadonlySet<string>;
     /** Orders a pending planning change covers: a staged rejection there is held, not posted. */
     batchBlockedSalesOrderIds?: ReadonlySet<string>;
+    /** Keys of the lines a pending planning change names. */
+    batchNamedKeys?: ReadonlySet<string>;
   },
 ): {
   rows: ConfirmDialogRow[];
@@ -1050,6 +1074,7 @@ export function confirmDialogRowsFor(
       adoptedLater ? { ...contribution, project_line_id: 'pending-adoption' } : contribution,
       decision,
       context.batchBlockedSalesOrderIds?.has(contribution.sales_order_id) ?? false,
+      context.batchNamedKeys,
     );
     switch (role.kind) {
       case 'cancelled':
