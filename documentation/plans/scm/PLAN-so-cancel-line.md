@@ -62,8 +62,9 @@ S3. **Backend.** `ConfirmSupplyBody` (`schemas/project_supply.py:417-450`) gains
     the same transaction write core `line_status = 'cancelled'`, `cancelled_at = now()`, `cancelled_by_id = actor`,
     `cancel_reason`, delete the draft, `flag_rows_for_cancelled_lines(db, [core_id])`. Echo them in the result as
     `lines_cancelled: [{line_no, item_code}]`. A press with only cancelled lines and nothing else is valid.
-S4. **Migration** (additive, one head): `sales_order_lines.cancelled_at timestamptz null`, `cancelled_by_id uuid null`
-    FK users, `cancel_reason text null`. Model + every manual dict builder that serialises the line to the board
+S4. **Migration** (additive, one head, `scl_0001_so_line_cancel_audit`): `sales_order_lines.cancelled_at` naive
+    `DateTime` null, `cancelled_by_id String(100)` FK `users.id` ON DELETE SET NULL (users.id is varchar), `cancel_reason Text`
+    null; the codebase convention (models/stock_transfer.py:124-126), corrected from the first draft's timestamptz / uuid. Model + every manual dict builder that serialises the line to the board
     (assert in a test; `response_model` drops undeclared fields).
 S5. **Ingest guard**: `document_ingest_service` keeps `line_status = 'cancelled'` for a present line whose
     `cancelled_at` is set (the push may still update quantities/prices). A header-cancelled push is unchanged.
