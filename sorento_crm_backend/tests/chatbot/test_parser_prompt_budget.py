@@ -115,7 +115,11 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # lines as a fill on line 1; Q3 (a) is one number for every line still owed): 46,996 without
 # MEMORY_ADDENDUM (+401) and 47,511 with it; CEILING is 47,511 - 512 = 46,999 so both
 # assertions hold. Nothing else grew.
-CEILING = 46_999
+# Tenth re-pin, 7 Oct 2026 (SO-PO-REF): PO_REFS_ADDENDUM (the `po_refs` key, a customer's own
+# PO number) sits between LOW_STOCK_FILTERS_ADDENDUM and TRAP_SPECS_FALLBACK_BLOCK: 47,283
+# without MEMORY_ADDENDUM (+287) and 47,799 with it; CEILING is 47,799 - 512 = 47,287 so both
+# assertions hold. Nothing else grew.
+CEILING = 47_287
 # The memory addendum on its own, bounded separately so this PR's growth stays bounded.
 # 26 Sep baseline (lane d89110c0): 339 est. tokens. Round 4 (baf4c813, 28 Sep: the history
 # question in any wording, the number re-run, commercial_request) took it to 512, which is

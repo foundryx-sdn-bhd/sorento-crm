@@ -58,6 +58,7 @@ from app.services.chatbot.turn.state import (
     Profile,
     State,
     focus_from_wire,
+    is_staff_profile,
     token_key,
 )
 from app.services.chatbot import session_state
@@ -2799,6 +2800,7 @@ def make_tool_runner(
     localizer: Any = None,
     unplaced_suggestions: dict[str, list[dict[str, Any]]] | None = None,
     not_checked: list[str] | None = None,
+    profile: Any = None,
 ) -> Callable[[str, FetchSpec], dict[str, Any]]:
     """The ONE seam that reaches a tool: `run_fetch` calls it once per `FetchSpec`.
 
@@ -2943,6 +2945,10 @@ def make_tool_runner(
         # and so are not "could not find" words for compose to name a second time.
         so_numbers = _so_numbers_asked(domain, verdict, unplaced)
         envelope_unplaced = unplaced
+        if is_staff_profile(profile) and lane_out.get("po_refs"):
+            # SO-PO-REF: the audience decides what "PO" means. A staff turn never reads the
+            # parser's `po_refs` (their PO is the supplier PO path, untouched).
+            lane_out = {**lane_out, "po_refs": None}
         if so_numbers:
             lane_out = {**lane_out, "so_numbers": so_numbers}
             envelope_unplaced = {k: v for k, v in unplaced.items() if v not in so_numbers}

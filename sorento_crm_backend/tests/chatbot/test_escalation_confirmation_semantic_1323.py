@@ -318,6 +318,7 @@ class TestPrompt:
         from app.services.chatbot_parser_prompt import (
             ACCOUNT_LEDGER_ADDENDUM,
             LOW_STOCK_FILTERS_ADDENDUM,
+            PO_REFS_ADDENDUM,
             MEMORY_ADDENDUM,
             PO_SPO_WAREHOUSE_ADDENDUM,
             SEMANTIC_PARSER_PROMPT,
@@ -335,6 +336,7 @@ class TestPrompt:
             PO_SPO_WAREHOUSE_ADDENDUM
             + ACCOUNT_LEDGER_ADDENDUM
             + LOW_STOCK_FILTERS_ADDENDUM
+            + PO_REFS_ADDENDUM
             + TRAP_SPECS_FALLBACK_BLOCK
             + MEMORY_ADDENDUM
         )

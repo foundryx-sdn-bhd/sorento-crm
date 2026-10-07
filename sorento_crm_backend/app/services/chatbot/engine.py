@@ -5675,6 +5675,7 @@ def _run_stages_body(  # noqa: PLR0915
                     dry_run=dry_run,
                     turn_trace=turn_trace,
                     counted_set=spec_tier and bool(turn_runtime.class_scope_terms(verdict)),
+                    profile=state_out.profile,
                     resolver_gate=(
                         resolver_payload.get("gate")
                         if isinstance(resolver_payload, dict)
