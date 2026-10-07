@@ -9,16 +9,14 @@ N = 20 unless the behaviour card's answer changes it.
   at most N rows, in the order the route gave them, with no re-sorting. The first N rows are
   byte-identical to today's rendering of the same rows.
 - **AC-1602 [T]** When the group holds more than N rows, exactly one trailer line follows the Nth
-  row: `... and K more products (reply P for the <list>)` under By product,
-  `... and K more customers (reply P for the <list>)` under By customer, K = rows beyond N.
-  K = 1 prints the singular noun (`1 more product`, `1 more customer`). `<list>` is the
-  offer line's own label, lower-cased: `delivery order list` under the DO block, `sales order
-  list` under the SO block (R2, 7 Oct 2026; the first cut's `the full list` is never printed).
-- **AC-1603 [T]** P is the position that block's list holds in the reply's own detail offer:
-  SO block 1; DO block 1 when only the delivery order list is offered, 2 when both lists are
-  offered. R2: the trailer's `<list>` and its P are the same words and number as the offer
-  entry below it (`Reply 1 for the delivery order list.` / `2. Delivery order list`), so one
-  target has one name.
+  row: `... and K more products` under By product, `... and K more customers` under By
+  customer, K = rows beyond N. K = 1 prints the singular noun (`1 more product`, `1 more
+  customer`). A count only (R3, owner ruling 7 Oct 2026): no bracket, no `reply`, no `full
+  list`; the closing offer line is the one pointer.
+- **AC-1603 [T]** The closing offer is unchanged by the cap: `Reply 1 for the delivery order
+  list.` (one list) or `1. Sales order list / 2. Delivery order list / 3. Both lists`; `1` is
+  the detail list exactly as on main (R3 replaced the trailer's own position P with no
+  pointer at all).
 - **AC-1604 [T]** A group of N rows or fewer prints exactly as before, no trailer. The existing
   goldens (`outstanding-report-both.txt`, `-so.txt`, `-do.txt`, `-customer.txt`, `-miss.txt`) do
   not change by one byte.

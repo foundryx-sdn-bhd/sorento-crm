@@ -1,6 +1,6 @@
 # PLAN - DO-SUMMARY-CAP: the outstanding summary's By product / By customer block stops at the top N rows
 
-Status: small fix track (one presenter function and its goldens, no migration, no auth change, no new ingest surface, no screen change). Lane started 7 Oct 2026 from origin/main e9aa88b2. Behaviour card answered: owner ruled N = 20, trailer wording (a), singular for K = 1, real offer position, same cap on SO and DO blocks. Red-first, reviewer PASS and security-reviewer PASS on the final head 742f8d9e (origin/main e4158ab5 merged, #1515 + #1502 in), console pass PASS with the real parser on that head. R2 (7 Oct 2026, owner hand test on the test copy): the trailer now names the list the offer line names (see "R2: one target, one name" below); red-first again (test b3e04d96 before fix ccc4983d) in the same PR #1518.
+Status: small fix track (one presenter function and its goldens, no migration, no auth change, no new ingest surface, no screen change). Lane started 7 Oct 2026 from origin/main e9aa88b2. Behaviour card answered: owner ruled N = 20, trailer wording (a), singular for K = 1, real offer position, same cap on SO and DO blocks. Red-first, reviewer PASS and security-reviewer PASS on the final head 742f8d9e (origin/main e4158ab5 merged, #1515 + #1502 in), console pass PASS with the real parser on that head. R2 (7 Oct 2026, owner hand test on the test copy): the trailer named the list the offer line names (test b3e04d96, fix ccc4983d). R3 (7 Oct 2026, owner ruling on ask a69045557): the trailer counts only and the offer line alone points, reply 1 = the detail list as on main (see "R3: the trailer counts only"; red test 8cd3f35c4 before the fix). Same PR #1518.
 Issue: crew lane DO-SUMMARY-CAP (owner ruling 7 Oct 2026 07:10 MYT, Option 1 from the #1515 plan's "Owner question"). Related: DO-LIST-REPLY-LABEL #1515 (the quick-reply label answers the pending detail offer).
 UAC: `do-summary-cap-acceptance-criteria.md`
 Classification: MCP presenter, `sorento_crm_mcp/sorento_crm_mcp/presenters.py` (pure string rendering). No prompt change, no engine change, no route change.
@@ -45,7 +45,7 @@ C08af3e 77 / 106. Largest SO: C94d80e 85 / 190, Cce0c1b 30 / 224, C895c6f 23 / 1
 
 So N = 20 caps about one customer-subject ask in six and leaves the median (4 to 5 rows)
 untouched. C1e1dbd's DO summary goes from 365 product lines to 20 plus
-`... and 345 more products (reply 1 for the delivery order list)`.
+`... and 345 more products`.
 
 ```sql
 -- products per customer on outstanding DOs, the route's population
@@ -70,11 +70,10 @@ ORDER BY products_in_by_product DESC;
 - The counts (Delivery orders / DO qty / Delivered / Outstanding / date range, and the SO
   equivalents) and the `*_By location_*` group print whole, as today.
 - Trailer wording (exact bytes, the owner's):
-  - By product: `... and K more products (reply P for the delivery order list)` (under an SO
-    block: `... for the sales order list`)
-  - By customer: `... and K more customers (reply P for the delivery order list)` (SO block:
-    `... for the sales order list`)
-  - R2 (7 Oct 2026): the first cut said `for the full list`; see "R2: one target, one name".
+  - By product: `... and K more products`
+  - By customer: `... and K more customers`
+  - R3 (7 Oct 2026): a count only. The first cut said `(reply P for the full list)`, R2
+    `(reply P for the delivery order list)`; see "R3: the trailer counts only".
   - K = rows beyond N. P = the position that block's list holds in the detail offer printed at
     the end of the same reply: SO block = 1; DO block = 1 when only the DO list is offered, 2 when
     both lists are offered (the offer is `1. Sales order list / 2. Delivery order list / 3. Both
@@ -124,6 +123,39 @@ Options not taken: (b) dropping the bracket (loses the card's "real offer positi
 lane's roster and the engine seam, against this plan's "the trailer is a pointer at that
 offer, not a second one").
 
+## R3: the trailer counts only (owner ruling, 7 Oct 2026, ask a69045557)
+
+The R2 copy printed a product-subject DO summary ending `... and 50 more customers (reply 1
+for the delivery order list)` then `Reply 1 for the delivery order list.`. The owner read the
+bracket as a second offer ("reply 1 to see more and reply 2 for DO list?"). The closed card
+had no "see more" option, so one ask went up with a "Next 20" paging proposal (plan section
+and red tests written, parked, never merged). The owner ruled against paging, verbatim:
+"okay i agree with your DO summary, just ends with ...and 50 more customers, for #1518 Q1,
+the reply 1 will see the detailed list just like in main".
+
+So: the trailer is `... and K more products` / `... and K more customers` (singular for
+K = 1), no bracket, no pointer. The closing offer line is unchanged from before the cap and
+is the one pointer; `1` is the detail list exactly as on main. The block renderers no longer
+carry an offer position. The catalog carries the four count-only forms. Rendered, the
+owner's two cases:
+
+```
+SRTWT2634-BL: 8 (O/S: 8)
+... and 20 more products
+
+Reply 1 for the delivery order list.
+```
+
+```
+<20 customer rows>
+... and 50 more customers
+
+Reply 1 for the delivery order list.
+```
+
+Both blocks: each capped group ends with its count line; the numbered offer
+(`1. Sales order list / 2. Delivery order list / 3. Both lists`) is unchanged.
+
 ## Co-ordination with #1515 (DO-LIST-REPLY-LABEL)
 
 #1515 is open (head 796158ae) and changes `decide.py` only. The two diffs do not overlap. If
@@ -136,7 +168,7 @@ label fix applies to it unchanged when it lands. Noted in the PR body.
 | Case | Behaviour |
 |---|---|
 | exactly N rows | N rows, no trailer |
-| N + 1 rows | N rows, `... and 1 more product (reply P for the delivery order list)` (singular, pending the card's answer) |
+| N + 1 rows | N rows, `... and 1 more product` (singular, pending the card's answer) |
 | 0 rows in the second group | heading with no rows, as today (the route never sends this for a non-miss block) |
 | a customer with one product | one row, no trailer |
 | By location with more than N rows | whole, never capped |
