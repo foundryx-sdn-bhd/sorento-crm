@@ -41,7 +41,7 @@ Q4 (b) any quoted bot message is the context, Q5 (a) all kinds.
   turn's own ask is the one stock task written (one task per kind, as on main when a fresh ask
   replaces an open one); the live task is replaced, never merged into it (reviewer finding, 7 Oct
   2026: a merged task made the next bare number fill BOTH products with a quantity the dealer never
-  gave). Owner ruling pending (crew ask): keep this, or park the live task for a later re-ask.
+  gave). Crew ruling 7 Oct 2026: (a), the own ask replaces the live one, as a fresh ask does on main.
 - AC-QR-10 (already answered, parser-interpreted): quoting "How many units of X?" after X was
   answered at 10 and typing a bare number N answers X x N; "1" vs "1 unit" over a quoted numbered
   pick is whatever the parser declares in `open_question_answer` for the quoted question object; no
