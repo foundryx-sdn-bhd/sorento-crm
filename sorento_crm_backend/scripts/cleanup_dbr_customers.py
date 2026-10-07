@@ -11,6 +11,9 @@ If any OTHER table still points at a DBR customer the run aborts and changes not
 A contact left with no customer link at all is UNRESTRICTED in chat, so `--apply` also aborts
 while any contact would be left unlinked, unless it is linked to a real account first or
 `--allow-unlink` is passed. A dry run never aborts: it reports the blockers and those contacts.
+`RELINKS` is an explicit contact -> real customer map: `--apply` inserts those chat links (skipping
+any that exist, reporting an unknown customer id as "missing") before the deletes, and a contact
+they cover does not count as left unlinked.
 
 Run from sorento_crm_backend/:
     python -m scripts.cleanup_dbr_customers            # dry run, writes nothing
@@ -21,6 +24,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import uuid
 
 # Allow `from app.*` imports when invoked from the backend directory.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -28,6 +32,17 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sqlalchemy import text
 
 from app.models.order import Customer
+
+# Owner, 8 Oct: the DELUXE HOME CENTRE (KTN) contact moves to 300-D093, 300-D061 (Mocha DELUXE [A/C I]),
+# 300-D094 and 300-D095. Explicit ids, no name matching.
+RELINKS: dict[str, list[str]] = {
+    "e84b7e3c-9a3d-432e-b81b-ab5c5c2cb586": [
+        "1aff9ef4-7685-4b0f-9caf-194dd39e1cac",
+        "d69fc206-98ae-4fee-b550-bf1938ebe867",
+        "229130f3-0a78-46f2-bc98-880a0b362cb5",
+        "1fd2f9a9-977e-4c85-b9fb-2abcb2da4f16",
+    ]
+}
 
 _DBR_CUSTOMERS = """
     SELECT c.id::text AS id, c.customer_code, c.customer_name, c.company_id::text AS company_id
@@ -63,7 +78,7 @@ def _blockers(db, ids: list[str]) -> list[str]:
     return found
 
 
-def run(db, apply: bool = False, allow_unlink: bool = False) -> dict:
+def run(db, apply: bool = False, allow_unlink: bool = False, relinks: dict | None = None) -> dict:
     """Count (and with `apply`, perform) the cleanup. Returns the counts and the unlinked contacts."""
     customers = [dict(r._mapping) for r in db.execute(text(_DBR_CUSTOMERS))]
     ids = [c["id"] for c in customers]
@@ -78,8 +93,32 @@ def run(db, apply: bool = False, allow_unlink: bool = False) -> dict:
         text("SELECT contact_id, customer_id::text FROM respond_contact_customers WHERE customer_id::text = ANY(:ids)"),
         {"ids": ids},
     ).all()
-    # A contact is left unlinked when every one of its links is to a DBR customer.
-    kept_contacts = {
+    relink_rows = []
+    for contact_id, customer_ids in (RELINKS if relinks is None else relinks).items():
+        for customer_id in customer_ids:
+            cust = db.execute(
+                text("SELECT id::text, customer_code, customer_name, company_id::text FROM customers WHERE id::text = :id"),
+                {"id": customer_id},
+            ).first()
+            if cust is None:
+                status = "missing"
+            else:
+                has = db.execute(
+                    text("SELECT 1 FROM respond_contact_customers WHERE contact_id = :c AND customer_id::text = :k"),
+                    {"c": contact_id, "k": customer_id},
+                ).first()
+                status = "exists" if has else "add"
+            relink_rows.append({
+                "contact_id": contact_id,
+                "customer_id": customer_id,
+                "customer_code": cust[1] if cust else None,
+                "customer_name": cust[2] if cust else None,
+                "company_id": cust[3] if cust else None,
+                "status": status,
+            })
+    relinked_contacts = {r["contact_id"] for r in relink_rows if r["status"] != "missing"}
+    # A contact is left unlinked when every one of its links is to a DBR customer (relinks count).
+    kept_contacts = relinked_contacts | {
         r[0]
         for r in db.execute(
             text("SELECT DISTINCT contact_id FROM respond_contact_customers WHERE NOT (customer_id::text = ANY(:ids))"),
@@ -96,6 +135,7 @@ def run(db, apply: bool = False, allow_unlink: bool = False) -> dict:
         "stock_asks_nulled": asks,
         "chat_links": len(links),
         "contacts_left_unlinked": unlinked,
+        "relinks": relink_rows,
         "blockers": _blockers(db, ids) if ids else [],
         "customers": customers,
         "order_numbers": [o[0] for o in orders],
@@ -111,6 +151,16 @@ def run(db, apply: bool = False, allow_unlink: bool = False) -> dict:
             "is unrestricted in chat. Link them to a real account first, or pass --allow-unlink: "
             + ", ".join(u["contact_id"] for u in unlinked)
         )
+    for r in relink_rows:
+        if r["status"] == "add":
+            db.execute(
+                text(
+                    "INSERT INTO respond_contact_customers "
+                    "(id, contact_id, customer_id, company_id, is_primary, source, linked_by) "
+                    "VALUES (:id, :c, :k, :co, false, 'dbr_cleanup', 'dbr_cleanup')"
+                ),
+                {"id": str(uuid.uuid4()), "c": r["contact_id"], "k": r["customer_id"], "co": r["company_id"]},
+            )
     # orders.customer_id is NO ACTION in prod, so null it before the delete.
     db.execute(text("UPDATE orders SET customer_id = NULL WHERE customer_id::text = ANY(:ids)"), {"ids": ids})
     db.execute(text("UPDATE stock_asks SET customer_id = NULL WHERE customer_id::text = ANY(:ids)"), {"ids": ids})
@@ -153,6 +203,9 @@ def main() -> int:
         for c in res["customers"]:
             print(f"  {c['customer_code']} | {c['customer_name']} | {c['company_id']}")
         print("DO numbers:", ", ".join(res["order_numbers"]) or "(none)")
+        print("Relinks:")
+        for r in res["relinks"]:
+            print(f"  {r['contact_id']} -> {r['customer_code']} | {r['customer_name']} | {r['status']}")
         print("Blockers:", "; ".join(res["blockers"]) or "(none)")
         print("Contacts left unlinked:")
         for u in res["contacts_left_unlinked"]:
