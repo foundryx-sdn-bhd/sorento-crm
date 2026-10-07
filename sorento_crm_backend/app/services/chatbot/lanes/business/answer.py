@@ -314,26 +314,18 @@ def access_level_choice_message(
         # token can resolve to two products, and naming one would claim we searched
         # something they did not ask for. Past 60 chars the echo is DROPPED rather than
         # truncated, because half a promotion name reads like a different promotion.
-        # AC-16: a brand word that resolves to a live brand row is named by that row's real
-        # brand_name, bound to ITS word (not to a position); any other word stays as typed.
-        from app.services.chatbot.turn_runtime import brand_entity_word, brand_rows_for_word
+        # AC-16: a brand entity that names a live brand row (equality, never spelling) is
+        # echoed by that row's real brand_name; any other word stays as typed.
+        from app.services.chatbot.turn_runtime import brand_entity_rows
 
+        named = {id(e): row["brand_name"] for e, row in brand_entity_rows(q.get("entities"), live_brands or [])}
         raws: list[str] = []
         for e in jsc.array(q.get("entities")):
-            v = jsc.js_string(jsc.get(e, "raw") or "").strip()
-            if v and jsc.js_string(jsc.get(e, "hint") or "").lower() == "brand":
-                rows = brand_rows_for_word(live_brands, brand_entity_word(e)) if live_brands else []
-                if not rows and live_brands:
-                    # the typed word names no brand by spelling: the parser's canonical brand name
-                    rows = brand_rows_for_word(live_brands, jsc.get(e, "canonical_code"))
-                if rows:
-                    v = rows[0]["brand_name"]
-                else:
-                    # no live row: the gate's own brand reading of the parser's canonical name
-                    said = jsc.js_string(jsc.get(e, "canonical_code") or "").lower()
-                    gate_brand = next((b for b in jsc.array(out.get("query_brands")) if isinstance(b, str) and b and b in said), None)
-                    if gate_brand:
-                        v = gate_brand.title()
+            v = named.get(id(e))
+            if not v and jsc.js_string(jsc.get(e, "hint") or "").lower() == "brand":
+                # the parser's own canonical brand name (its resolution of the word)
+                v = jsc.js_string(jsc.get(e, "canonical_code") or "").strip()
+            v = v or jsc.js_string(jsc.get(e, "raw") or "").strip()
             if v and not any(x.lower() == v.lower() for x in raws):
                 raws.append(v)
         scope_label = ", ".join(raws[:3])

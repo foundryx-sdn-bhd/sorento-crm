@@ -537,6 +537,24 @@ def active_brands(db: Session) -> list[dict[str, Any]]:
     ]
 
 
+def brand_entity_rows(entities: Any, live: list[dict[str, Any]]) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    """The parser's brand entities that name a live brand row: the entity's typed word or the
+    canonical name it resolved to EQUALS the row's brand_name or brand_code (case-folded).
+    Equality only: a misspelt word or one that merely contains a brand names nothing."""
+    out: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    for e in entities or []:
+        if not isinstance(e, dict) or jsc.nullish_str(e.get("hint")).strip().lower() != "brand":
+            continue
+        said = {
+            " ".join(jsc.nullish_str(e.get(k)).casefold().split()) for k in ("raw", "canonical_code")
+        } - {""}
+        for row in live:
+            if said & {" ".join(jsc.nullish_str(row.get(k)).casefold().split()) for k in ("brand_name", "brand_code")}:
+                out.append((e, row))
+                break
+    return out
+
+
 def promo_filter(parse_output: dict[str, Any], db: Any) -> dict[str, list[str]]:
     """PROMO-SUBJECT-FILTER: what narrows a promotions read besides the access level, off the
     parser's own answer. `scope_terms`: the class words it named. `promotion_types`: its
@@ -554,15 +572,9 @@ def promo_filter(parse_output: dict[str, Any], db: Any) -> dict[str, list[str]]:
         # A code the table does not list is the parser guessing: it behaves as no kind.
         out["promotion_types"] = [kind.strip()]
         if db is not None:
-            live = active_brands(db)
-            ids: list[str] = []
-            for e in parse_output.get("entities") or []:
-                if isinstance(e, dict) and jsc.nullish_str(e.get("hint")).strip().lower() == "brand":
-                    for row in brand_rows_for_word(live, brand_entity_word(e)):
-                        if row["id"] not in ids:
-                            ids.append(row["id"])
+            ids = [row["id"] for _e, row in brand_entity_rows(parse_output.get("entities"), active_brands(db))]
             if ids:
-                out["brand_ids"] = ids
+                out["brand_ids"] = list(dict.fromkeys(ids))
     return out
 
 
