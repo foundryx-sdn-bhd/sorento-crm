@@ -12,7 +12,7 @@ shape), so the Chatbot Domains screen agrees with the frozen seed in `turn/polic
 the allow-list itself is derived from that seed, not from this row.
 
 Revision ID: report_engine_0001_prompt
-Revises: aig_0001_chatbot_allowed
+Revises: qr_0001_chat_histories_turn_link
 """
 import logging
 
@@ -24,7 +24,7 @@ from app.models.ai_prompt import AIPromptLabel, AIPromptVersion
 from app.services.ai_prompt_registry import PROMPT_KEYS
 
 revision = "report_engine_0001_prompt"
-down_revision = "aig_0001_chatbot_allowed"
+down_revision = "qr_0001_chat_histories_turn_link"
 branch_labels = None
 depends_on = None
 
