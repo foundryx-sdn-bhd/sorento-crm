@@ -120,5 +120,5 @@ def test_p6_dealer_only_is_a_channel_refine():
 def test_p7_chinese_category_words_translate_to_english_raw(zh, en):
     from app.services.chatbot_parser_prompt import SEMANTIC_PARSER_PROMPT as P
 
-    assert "A category entity's raw is in English" in P
-    assert f"{zh} -> \"{en}\"" in P
+    assert "category entity's canonical_code is the English class word" in P
+    assert f"{zh} -> canonical_code \"{en}\"" in P or f"{zh} -> \"{en}\"" in P

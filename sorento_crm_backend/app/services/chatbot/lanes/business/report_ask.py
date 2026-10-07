@@ -234,6 +234,9 @@ def take_words(verdict: dict[str, Any], text: str) -> dict[str, Any]:
             continue
         hint = jsc.js_string(e.get("hint") or "").strip().lower()
         raw = " ".join(jsc.js_string(e.get("raw") or "").split())
+        if hint == "category":
+            # AC-HT8-12: the parser's English class word, before the verbatim raw.
+            raw = " ".join(jsc.js_string(e.get("canonical_code") or "").split()) or raw
         if hint not in WORD_HINTS:
             kept.append(e)
             continue

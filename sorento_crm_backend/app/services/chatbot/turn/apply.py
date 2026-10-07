@@ -1484,8 +1484,10 @@ def _top_selling_rules(
     # fanny", "water closet only") narrows the ranking on screen even when the parser
     # says it names the ask (owner retest, 27 Sep 2026): it never restarts it.
     only_narrows = not own and _narrows_the_ranking(verdict)
+    # The English class word the parser put in `canonical_code` (AC-HT8-12) comes before the
+    # verbatim `raw`, so a Chinese category word resolves.
     categories = [
-        e.get("raw")
+        (str(e.get("canonical_code") or "").strip() or e.get("raw"))
         for e in (verdict.get("entities") or [])
         if isinstance(e, dict) and e.get("hint") == "category" and e.get("raw")
     ]

@@ -1650,12 +1650,10 @@ def lane_parse_output(
     # dropped it would count every channel under a header still saying "Dealer". One
     # carry, one seam - the same place the document/status projection is made - rather
     # than a second session key the two could disagree about.
-    # A FRESH sales ranking takes no carried channel (AC-HT8-10); a refine keeps its held one.
-    fresh_ranking = (
-        jsc.js_string(out.get("order_status") or "").strip() == "sales_ranking"
-        and out.get("ranking_refine") is not True
-    )
-    if not out.get("sales_channel") and focus is not None and focus.sales_channel and not fresh_ranking:
+    # A sales ranking never takes a carried channel (AC-HT8-10, AC-HT8-11): a fresh one names
+    # its own, a refine keeps the channel through the held frame.
+    is_ranking = jsc.js_string(out.get("order_status") or "").strip() == "sales_ranking"
+    if not out.get("sales_channel") and focus is not None and focus.sales_channel and not is_ranking:
         out["sales_channel"] = focus.sales_channel
     # PLAN-po-spo-warehouse-29sep S5: the PO/SPO sort axis, a default, never an override.
     if not out.get("sort_by") and focus is not None and focus.sort:

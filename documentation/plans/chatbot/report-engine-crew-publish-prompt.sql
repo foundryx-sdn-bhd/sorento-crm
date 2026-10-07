@@ -1072,6 +1072,8 @@ it null, always - never infer it from context.
     sales_channel "dealer"
   - "project sales report", "project sales" -> sales_channel "project"
   - a sales report naming neither word -> sales_channel null (every channel counts)
+  - "which dealer sold the most X" -> sales_channel null (the ranked noun is not the channel)
+a bare answer ("qty", "数量", "delivered", "已送货") never sets sales_channel
 THE WORD "dealer" INSIDE AN OUTSTANDING ASK IS NEVER A CHANNEL - it is not this
 field at all there. "outstanding dealer quantity for hanlim" keeps order_status
 "outstanding" (or whichever outstanding bucket the rest of the message names) and
@@ -1528,7 +1530,6 @@ lookup, and it is never an escalation.
     category is water closet", "for water tap", "toilet only", "kitchen sinks" -> entity
     {raw: "water closet", hint: "category", hint_confident: true} (the product words
     only, without "only", "for", "which is" or "category is").
-    A category entity's raw is in English; translate any other language to the class word: 马桶 -> "water closet", 坐厕 -> "water closet", 面盆 -> "wash basin", 洗手盆 -> "wash basin", 水龙头 -> "tap", 浴室柜 -> "bathroom cabinet", 厨房水槽 -> "kitchen sink", 水槽 -> "kitchen sink", 淋浴 -> "shower", 花洒 -> "shower", 浴缸 -> "bathtub", 小便斗 -> "urinal".
   - BRAND, a name from "Known brands" or "Sorento", "Mocha", "Cabana": "for sorento
     brand", "sorento only", "cabana" -> entity {raw: "sorento", hint: "brand",
     hint_confident: true}. A brand name is NEVER a customer, even though customers
@@ -1866,7 +1867,7 @@ That is NOT a top selling list ("Top N selling items"): a number never picks a r
     ranking_refine true, basis "outstanding"
   - the measure: "by quantity" -> ranking_refine true, measure "qty"
   - the channel: "dealer only" -> ranking_refine true, sales_channel "dealer"; a brand or category word only: ranking_refine true, that entity
-each with order_status "sales_ranking", group_by null, entities [], every other key null.
+each with order_status "sales_ranking", group_by null, entities [] (except the brand or category refine), every other key null.
 A message naming its own axis or subject is a NEW ask: ranking_refine false; top_n and dates
 come ONLY from the current message, NEVER from "Previous response" or "Current subject"; the
 period of the previous ranking is never this ask's period.
@@ -1925,6 +1926,11 @@ Each product line in a list is its own entity, with its own canonical_code and q
     canonical_code "SRTWT5608" (quantity 5) and canonical_code "SRTWC8066-SS" (quantity 2)
 The attachment_type, attachment and brand rules for canonical_code are unchanged; this
 section is about hint "product" only.
+A category entity's canonical_code is the English class word, whatever language the customer
+wrote; "raw" stays verbatim: 马桶 -> canonical_code "water closet", 面盆 -> canonical_code "wash basin",
+水龙头 -> canonical_code "tap", 浴室柜 -> canonical_code "bathroom cabinet", 厨房水槽 -> canonical_code "kitchen sink",
+淋浴 -> canonical_code "shower", 浴缸 -> canonical_code "bathtub", 小便斗 -> canonical_code "urinal".
+"这个产品" / "this product" is never an entity: the standing subject carries.
 
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2023,7 +2029,7 @@ CURRENT DATE: {{current_date}}
 If relative dates such as "today" or "yesterday" appear in the current turn input, convert them to absolute dates before calling the MCP tool.$tpl_a7065de1dd$, '@@EMDASH@@', chr(8212)), '["current_date"]'::jsonb,
        'report_engine_0001_prompt (REPORT-ENGINE PR #1447): sales_ranking vocabulary, AC-HT8 ranking axes, dealer is the customer, channel refine', now()
  WHERE NOT EXISTS (SELECT 1 FROM ai_prompt_versions
-                    WHERE name = 'chatbot_semantic_parser' AND md5(template) = '26e068a239ec5f58b7c3cfa0ace798c7');
+                    WHERE name = 'chatbot_semantic_parser' AND md5(template) = 'e48d50c68558f17fe2c0c419bc71855c');
 COMMIT;
 -- check: SELECT version, length(template) FROM ai_prompt_versions WHERE name='chatbot_semantic_parser'
---         AND md5(template) = '26e068a239ec5f58b7c3cfa0ace798c7';   -- expect one row, length 143588
+--         AND md5(template) = 'e48d50c68558f17fe2c0c419bc71855c';   -- expect one row, length 143937
