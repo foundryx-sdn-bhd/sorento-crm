@@ -751,3 +751,7 @@ runs (confirmed: `pytest -k` on each reports `SKIPPED`, not a divergence) - this
 specific fixture move does not apply to them today, and hand-correcting only their
 `pending` field would not make them green regardless (they each fail on 3+ other
 fields per the composite-chain note they are already filed under).
+
+## chat_visible on the chatbot's product list, 7 Oct 2026 (ROGUE-CONVO-REVIEW PR-1, #1517)
+
+- console/case-022-d12-product-details-names-no-property-base-fields-still-show.json: tools: the recording's `crm_master_products_list` call carries no `chat_visible` key; the current engine sends `chat_visible: true` on EVERY call of that tool (`lanes/business/fetch.py`, set in code after the parser's args are built), so the products route applies `Product.chat_searchable_products()` and, on an unscoped list, `is_active`. Only the argument KEY SET changed: the scoped fetch, its one `product_ids` entry and the reply are unchanged, measured directly against the current engine (signed crew ROGUE-CONVO-REVIEW-PR1 2026-10-07, owner ruling Q1 = searchable + active + brand bounded, 6 Oct 2026, PR #1517)
