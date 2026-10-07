@@ -417,22 +417,14 @@ class TestRealResolver:
         assert all(code in text for code in family), text
         assert TAP not in text
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "pre-existing on origin/main, outside this lane (PR #833's `product_code_family."
-            "narrow_code_tokens` on the resolve route): in a multi-line message the variant "
-            "suffix words of OTHER lines (FRG, GM) are read as descriptors for the bare base "
-            "code, so SRTWT5608 is narrowed to SRTWT5608-FRG and the base code's own line is "
-            "lost; 13 uuids reach the tool, not 14. Reported on PR #1511; this test flips "
-            "green the day that narrowing reads only the code's own line."
-        ),
-    )
     def test_the_owners_fifteen_line_stock_check_reaches_the_tool_with_fourteen_codes(self, session_factory, monkeypatch):
         """The prod message of 6 Oct 20:02 MYT, codes ZZT-prefixed: 15 product lines, one
         duplicate (SRTWT8258-GM twice) and the TAP line with canonical_code filled as the
         addendum now has it. Every unique code reaches the tool (14 uuids), nothing is
-        reported not found, and the reader is never asked (a clean turn)."""
+        reported not found, and the reader is never asked (a clean turn). A strict xfail
+        until NARROW-CODE-OWN-LINE (#1516) merged: `narrow_code_tokens` read the other
+        lines' variant suffixes (FRG, GM) as descriptors for the bare SRTWT5608 and the base
+        code's line was lost (13 uuids); it reads the code's own line only now."""
         from app.services import resolver_code_reader
 
         lines = [
