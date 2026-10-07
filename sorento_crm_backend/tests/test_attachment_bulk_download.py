@@ -631,3 +631,28 @@ def test_d1_happy_path_creates_job_download_row_and_enqueues(api, monkeypatch):
     assert func.__name__ == "process_attachment_bulk_download"
     assert kwargs.get("queue_name") == "imports"
     assert str(job.id) in [str(x) for x in args]
+
+
+def test_c6_second_request_while_in_flight_is_409(api, monkeypatch):
+    from app.services.download_service import DownloadService
+
+    monkeypatch.setattr(
+        "app.services.queue_service.enqueue_job",
+        lambda func, *a, **k: SimpleNamespace(id=str(k.get("job_id") or "rq-1")),
+    )
+    folder = _folder(api.db, "Marketing", company_id=api.a)
+    _file(api.db, "a.pdf", directory_id=folder, company_id=api.a)
+    payload = {"directory_id": None, "folder_ids": [folder], "attachment_ids": []}
+
+    first = api.client.post(_URL, json=payload)
+    assert first.status_code == 200, first.text
+
+    second = api.client.post(_URL, json=payload)
+    assert second.status_code == 409, second.text
+    assert "already being prepared" in second.text
+
+    DownloadService(api.db).mark_ready(
+        first.json()["download_id"], storage_provider="r2", storage_key="bulk-exports/x.zip"
+    )
+    third = api.client.post(_URL, json=payload)
+    assert third.status_code == 200, third.text
