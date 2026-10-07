@@ -94,9 +94,17 @@ def process_attachment_bulk_download(db_job_id: str):
 
         name = job.filename or archive_filename(None, datetime.utcnow())
         if download_id:
-            download_service.mark_ready(
-                download_id, storage_provider=provider, storage_key=key, filename=name
-            )
+            try:
+                download_service.mark_ready(
+                    download_id, storage_provider=provider, storage_key=key, filename=name
+                )
+            except Exception:
+                # The object is uploaded but no row will ever point at it: remove it now.
+                try:
+                    get_backend(provider).delete_file(key)
+                except Exception:  # noqa: BLE001
+                    logger.warning("Could not remove orphan archive object %s", key)
+                raise
         job_service.complete_job(
             job_id_str,
             result={

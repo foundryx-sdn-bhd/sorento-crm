@@ -1380,6 +1380,14 @@ async def bulk_download_attachments(
             message="Select at least one folder or file.",
             code="EMPTY_SELECTION",
         )
+    if DownloadService(db).has_in_flight(
+        user_id=current_user["id"], kind="attachment_bulk_zip", any_source=True
+    ):
+        raise AppException(
+            status_code=status.HTTP_409_CONFLICT,
+            message="A files archive is already being prepared. Wait for it to finish or cancel it.",
+            code="ARCHIVE_IN_FLIGHT",
+        )
 
     # Visible, non-deleted rows only: the session's company scope filters these queries.
     visible_folders = (

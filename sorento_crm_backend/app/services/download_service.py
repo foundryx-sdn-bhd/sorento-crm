@@ -66,6 +66,7 @@ class DownloadService:
         kind: str,
         source_entity_type: Optional[str] = None,
         source_entity_id: Optional[str] = None,
+        any_source: bool = False,
     ) -> bool:
         """One in-flight export per user, per EXACT kind, per source entity (security S5,
         AC-16b, amended - reviewer R1). The kind is matched exactly, never a prefix: two
@@ -90,16 +91,17 @@ class DownloadService:
                 [DownloadStatus.PENDING.value, DownloadStatus.PROCESSING.value]
             ),
         )
-        query = query.filter(
-            UserDownload.source_entity_type.is_(None)
-            if source_entity_type is None
-            else UserDownload.source_entity_type == source_entity_type
-        )
-        query = query.filter(
-            UserDownload.source_entity_id.is_(None)
-            if source_entity_id is None
-            else UserDownload.source_entity_id == str(source_entity_id)
-        )
+        if not any_source:
+            query = query.filter(
+                UserDownload.source_entity_type.is_(None)
+                if source_entity_type is None
+                else UserDownload.source_entity_type == source_entity_type
+            )
+            query = query.filter(
+                UserDownload.source_entity_id.is_(None)
+                if source_entity_id is None
+                else UserDownload.source_entity_id == str(source_entity_id)
+            )
         return query.first() is not None
 
     def fail_stale(self, user_id: str) -> int:

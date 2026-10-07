@@ -56,7 +56,11 @@ def suffix_copy_name(filename: str) -> str:
 
 
 def _safe_name(name: Optional[str]) -> str:
-    return (name or "").replace("/", "-").replace("\\", "-")
+    cleaned = "".join(c for c in (name or "") if c.isprintable()).strip()
+    # Nothing but separators, "." or "..": it would write an empty, current or parent segment.
+    if cleaned.replace("/", "").replace("\\", "").strip() in ("", ".", ".."):
+        return "_"
+    return cleaned.replace("/", "-").replace("\\", "-")
 
 
 def archive_filename(folder_name: Optional[str], now: datetime) -> str:
