@@ -3742,6 +3742,17 @@ def with_carried_entities(
     for srtwc286" then "1" fetched every dealer promotion, scoped to no product at all)
     or sends the token where a uuid belongs. Those rows, and only those, are handed over
     on a turn that fetches.
+
+    STALE-EXTRA-CARRY (prod, 6-7 Oct 2026): and not a bare CLASS WORD beside a resolved
+    product. A uuid-less `category` / `product_type` row, or a `specification` row with
+    no uuid and no registry key, can only ever become a `scope_terms` entry
+    (`resolve_gate.resolve_entity_body`), never a `*_ids` param; on a fetch already
+    scoped to a product the resolver settled, it describes a set that is not the
+    question ("seat cover", read off a photo, rode into "Got ETA ?" after a correct
+    SRT320-CR answer and printed its own miss). A described set's members are the other
+    case (`mark_described_set`, #1502): the class word beside them is what re-describes
+    the set on "cert?", so it is still handed over. A grounded specification (`spec_key`
+    set) is untouched, and so is every other kind.
     """
     own = [e for e in parse_output.get("entities") or [] if isinstance(e, dict)]
     domain_word_only = bool(own) and all(
@@ -3765,6 +3776,7 @@ def with_carried_entities(
         for kind, rows in (getattr(focus, "extra", {}) or {}).items()
         if isinstance(rows, list)
     ]
+    product_scoped = unsettled_only and _holds_a_resolved_product_outside_a_set(focus)
     for kind, rows in by_kind:
         if domain_word_only and kind == "attachment_type":
             # This turn's own document word replaces the carried one.
@@ -3773,6 +3785,8 @@ def with_carried_entities(
             if not isinstance(row, dict):
                 continue
             if unsettled_only and row.get("uuid"):
+                continue
+            if product_scoped and _is_a_bare_class_word(kind, row):
                 continue
             code = row.get("canonical_code") or row.get("raw")
             if not jsc.truthy(code):
@@ -3796,6 +3810,26 @@ def with_carried_entities(
     if not carried:
         return parse_output
     return {**parse_output, "entities": [*carried, *own]}
+
+
+def _holds_a_resolved_product_outside_a_set(focus: Focus) -> bool:
+    """Does the focus carry a product with a uuid that is NOT a described set's member?
+    That product is the fetch's subject; a set's members (every row marked
+    `described_set`) are re-described by the words beside them instead."""
+    return any(
+        isinstance(row, dict) and jsc.truthy(row.get("uuid")) and row.get("described_set") is not True
+        for row in getattr(focus, "products", []) or []
+    )
+
+
+def _is_a_bare_class_word(kind: str, row: dict[str, Any]) -> bool:
+    """A carried row that can only ever become a `scope_terms` entry: a uuid-less
+    `category` / `product_type`, or a `specification` with no uuid and no `spec_key`."""
+    if row.get("uuid"):
+        return False
+    if kind in ("category", "product_type"):
+        return True
+    return kind == "specification" and not jsc.truthy(row.get("spec_key"))
 
 
 def attachment_type_labels(db: Session, entities: list[dict[str, Any]]) -> list[dict[str, Any]]:
