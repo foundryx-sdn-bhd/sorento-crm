@@ -1,8 +1,7 @@
 # UAC: promotion asks filter by subject; unresolved subject asks back; tier menu always stamped (PROMO-SUBJECT-FILTER)
 
 Plan: `PLAN-promo-subject-filter-07oct.md`. Card: `promo-subject-filter-behaviour-card.md`
-(rulings: Q1 (a), Q2 (a), Q3 (a); Q4 and Q5 held, so R5 format words and R6 brand echo are
-NOT in this round). Tests in `sorento_crm_backend/tests/` (chatbot ones under `tests/chatbot/`).
+(rulings: Q1 (a), Q2 (a), Q3 (a), Q5 (a); Q4 re-asked as promotion KINDS, R5 held). Tests in `sorento_crm_backend/tests/` (chatbot ones under `tests/chatbot/`).
 Seeded data only (CI DB is empty): seed brands, categories, products with a
 `product_specifications.values.class` value, promotions with `access_levels`, dates and
 `promotion_products` links. Never real rows.
@@ -47,6 +46,14 @@ AC-10 Levels: a level with zero matching promotions stamps "- no promotion". If 
 AC-11 Probe fails (tool error / timeout): no menu, no files; reply
       `I could not check promotions right now.` plus a retry hint line.
 
+## R6: the menu names the real brand (Q5 (a), owner 7 Oct)
+
+AC-16 When the parser resolved a brand (canonical brand entity, or the tier gate's brand narrowing,
+      tier_gate.py:76-118, 208-223), the access-level question names the brand's real name, e.g.
+      "sroento" -> `Which access level do you need for Sorento?`. The typed word is echoed only
+      for an entity that did not resolve to a brand (D16 stays for products: never name a guessed
+      product code, answer.py:303-312).
+
 ## Must not regress
 
 AC-12 Ask with no subject ("any promo") behaves as today (menu stamped per AC-9, all promos at
@@ -59,4 +66,4 @@ AC-13 `test_water_tap_basin_is_one_unknown_product_type`, round4 `test_r5_*`,
 
 AC-14 Turn 1 "any basin cabinet promo" -> AC-7 reply (no menu, no kitchen sink file).
 AC-15 Turn 2 "sroento a3 flyer" -> menu stamped (AC-9); pick Dealer -> Sorento dealer promos only
-      (format word and typo echo unchanged this round, held for Q4/Q5).
+      and the question names Sorento (AC-16); the A3 flyer kind is held for Q4.

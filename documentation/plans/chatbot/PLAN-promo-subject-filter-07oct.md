@@ -3,7 +3,7 @@
 Status: BUILDING (7 Oct 2026). Track: full M (chatbot behaviour + backend/MCP param; no
 migration, no auth change, no UI). LEAD pattern: tester red first, coder green, reviewer.
 Card: `promo-subject-filter-behaviour-card.md`. UAC: `promo-subject-filter-acceptance-criteria.md`.
-Held: R5 (format words, Q4) and R6 (brand echo, Q5) await the owner.
+Q5 (a) by the owner 7 Oct: R6 brand echo IN. Q4 re-asked (A3 flyer is a promotion KIND, promotion_types); R5 held.
 
 ## Journey
 
@@ -35,7 +35,8 @@ linked to products of that class.
    the tier bridge (engine.py:5520-5557) with the ask-back reply (AC-7, AC-8); the bridge path
    runs the probe before any menu, all-zero -> no-promotion line, probe failure -> could-not-check
    (AC-9..11, answer.py:256-330, answer_bridge.py:636-676).
-5. Prompt: no parser prompt change expected for R1-R4 (subject comes from existing grounding). If
+5. Brand echo (AC-16): access_level_choice_message (answer.py:303-312) names the resolved brand.
+6. Prompt: no parser prompt change expected for R1-R4 (subject comes from existing grounding). If
    live eval shows the parser not emitting the subject entity, publish a new UNLABELLED dev
    version via `chatbot_prompt_vars.publish_wording_edit` (chatbot_prompt_vars.py:700-734).
 
