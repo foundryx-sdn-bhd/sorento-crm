@@ -213,16 +213,19 @@ class JobService:
             elif job.total_rows == 0 and processed_rows > 0:
                 job.total_rows = processed_rows
             self.db.commit()
+            is_archive = job.job_type == "attachment_bulk_download"
             try:
                 _notify_import_job_event(
                     self.db,
                     job,
                     "finished",
-                    "Import completed",
+                    "Import completed" if not is_archive else f"Archive ready: {(result or {}).get('archive_filename') or job.filename}",
                     (
                         f"Your {job.job_type} import has completed. Processed: {processed_rows}/{job.total_rows} rows "
                         f"({successful_rows} successful, {failed_rows} failed, {skipped_rows} skipped). View job for details."
                         + _IMPORT_NOTIFICATION_DISCLAIMER
+                        if not is_archive
+                        else f"{(result or {}).get('files_included', 0)} files are ready to download from My downloads."
                     ),
                 )
             except Exception:
@@ -350,8 +353,10 @@ class JobService:
             self.db,
             job,
             "cancelled",
-            "Import cancelled",
-            f"Your {job.job_type} import was cancelled. View job for details." + _IMPORT_NOTIFICATION_DISCLAIMER,
+            "Download cancelled" if job.job_type == "attachment_bulk_download" else "Import cancelled",
+            "Nothing was saved. Select the folders again to start a new download."
+            if job.job_type == "attachment_bulk_download"
+            else f"Your {job.job_type} import was cancelled. View job for details." + _IMPORT_NOTIFICATION_DISCLAIMER,
         )
 
         # Tell RQ to stop the worker in background so we never block the API response

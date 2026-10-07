@@ -2,7 +2,7 @@
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Sequence
 
-from sqlalchemy import func
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from app.models.download import DownloadStatus, UserDownload
@@ -10,6 +10,13 @@ from app.models.download import DownloadStatus, UserDownload
 # How long a row may sit pending/processing before the drawer calls it failed.
 # Export enqueues use job_timeout=600s, so this leaves ample headroom.
 _STALE_AFTER = timedelta(minutes=20)
+
+# Per-kind windows. A folder archive of several GB is built by one worker job that runs up to
+# 7200 s (job_timeout), so the 20-minute stale sweep would flag a live build as failed; its
+# window is just past the job timeout. The archive is also large and one-shot, so it is purged
+# after 1 day instead of the 30-day default. Kinds not listed keep the defaults.
+RETENTION_BY_KIND = {"attachment_bulk_zip": timedelta(days=1)}
+STALE_AFTER_BY_KIND = {"attachment_bulk_zip": timedelta(hours=2, minutes=10)}
 
 
 def _utc_naive_now() -> datetime:
@@ -105,11 +112,15 @@ class DownloadService:
         stranding every row it touched.
 
         The cutoff is comfortably past the 600s ``job_timeout`` used by the export
-        enqueues, so a slow-but-alive job is never killed by this. Best-effort:
+        enqueues, so a slow-but-alive job is never killed by this. Kinds in
+        ``STALE_AFTER_BY_KIND`` (the folder archive, job_timeout 7200s) use a window just
+        past their own timeout. Best-effort:
         a failure here must not break listing the downloads.
         """
-        cutoff = _utc_naive_now() - _STALE_AFTER
+        now = _utc_naive_now()
+        cutoff = now - _STALE_AFTER
         try:
+            listed = list(STALE_AFTER_BY_KIND)
             stale = (
                 self.db.query(UserDownload)
                 .filter(
@@ -117,7 +128,16 @@ class DownloadService:
                     UserDownload.status.in_(
                         [DownloadStatus.PENDING.value, DownloadStatus.PROCESSING.value]
                     ),
-                    UserDownload.created_at < cutoff,
+                    or_(
+                        and_(
+                            UserDownload.kind.notin_(listed),
+                            UserDownload.created_at < cutoff,
+                        ),
+                        *[
+                            and_(UserDownload.kind == k, UserDownload.created_at < now - w)
+                            for k, w in STALE_AFTER_BY_KIND.items()
+                        ],
+                    ),
                 )
                 .all()
             )
@@ -253,6 +273,8 @@ def purge_expired_downloads(db, retention_days: int = 30, now=None) -> dict:
     Nothing has ever purged `user_downloads`. With `complaint_pdf` as the only producer
     that went unnoticed; adding a chat-history CSV export - the largest artifact the
     system produces - makes it a real cost. Applies to every `kind`, not just the new one.
+    Kinds in `RETENTION_BY_KIND` (the folder ZIP archive, a large one-shot file) use their own
+    shorter window instead of `retention_days`.
 
     Storage deletion is best-effort per row: an object that is already gone, or a
     provider hiccup, must not block reclaiming the rest.
@@ -267,7 +289,20 @@ def purge_expired_downloads(db, retention_days: int = 30, now=None) -> dict:
     now = now or datetime.utcnow()
     cutoff = now - timedelta(days=max(1, int(retention_days)))
 
-    rows = db.query(UserDownload).filter(UserDownload.created_at < cutoff).all()
+    listed = list(RETENTION_BY_KIND)
+    rows = (
+        db.query(UserDownload)
+        .filter(
+            or_(
+                and_(UserDownload.kind.notin_(listed), UserDownload.created_at < cutoff),
+                *[
+                    and_(UserDownload.kind == k, UserDownload.created_at < now - w)
+                    for k, w in RETENTION_BY_KIND.items()
+                ],
+            )
+        )
+        .all()
+    )
     deleted = objects_removed = errors = 0
 
     for row in rows:
