@@ -1939,8 +1939,10 @@ def _strip_name_kinds_for_locked(
     recomputed from what is left. AND shape: a row in the intersection covered EVERY
     token, the locked one included, so the rows of those kinds go whatever the other
     tokens were; an emptied intersection reads as the zero-intersection AND the caller
-    already degrades to OR-mode. `alternatives` (did-you-mean neighbours) are offers, not
-    assignments, and stay (AC-1703)."""
+    already degrades to OR-mode. `alternatives` (did-you-mean neighbours) stay for every
+    other kind (AC-1703: the product neighbours of a mishinted code); a neighbour of one
+    of the five name kinds is dropped with the kind, since a locked token is never offered
+    a promotion or a customer as what it might have meant either."""
     if not locked_tokens:
         return result
     locked = {_norm_locked_token(t) for t in locked_tokens} - {""}
@@ -1969,6 +1971,10 @@ def _strip_name_kinds_for_locked(
             continue
         matches = tr.get("matches") or []
         kept_matches = [m for m in matches if (m or {}).get("entity_type") not in dropped]
+        alternatives_in = tr.get("alternatives") or []
+        kept_alternatives = [a for a in alternatives_in if (a or {}).get("entity_type") not in dropped]
+        if len(kept_alternatives) != len(alternatives_in):
+            tr["alternatives"] = kept_alternatives
         if len(kept_matches) == len(matches):
             continue
         # The resolver's own meaning of the two flags (`_suppress_brand_prefix_junk`):
@@ -2543,14 +2549,17 @@ def _resolve_input(
             "the whitelist so per-token fallback can apply only to unresolved tokens."
         )
 
-    # CLASS-HINT-KIND-PICK: a locked token is not rerun. Its kind is the caller's, so no
-    # other kind may be found for it here; left in `unresolved_tokens`, it reaches the
-    # spec/class fallback below exactly as a word no name matched always has.
-    locked_norm = {_norm_locked_token(t) for t in (hint_locked_tokens or [])} - {""}
+    # CLASS-HINT-KIND-PICK R2 (7 Oct 2026): a locked token IS rerun like any other. What
+    # the rerun may not do is hand it a promotion / customer / attachment / transporter /
+    # form row by name (`_strip_name_kinds_for_locked` on the fallback result below); an
+    # EXACT record key it names under a wrong hint still finds itself there - a container
+    # number the parser hinted `product` is the inbound shipment it is (owner ruling 5,
+    # hand pass 12, `test_rearch_r12_handpass12_d.py`). A class word nothing else names
+    # is left in `unresolved_tokens` and reaches the spec/class fallback as before.
     unresolved = [
         r["token"]
         for r in result.get("resolutions", []) or []
-        if not (r.get("matches") or []) and _norm_locked_token(r.get("token")) not in locked_norm
+        if not (r.get("matches") or [])
     ]
     if not unresolved:
         # Tag and return - at least we've already noted the AND→OR switch.
@@ -2592,6 +2601,7 @@ def _resolve_input(
         regions=regions,
     ).as_dict()
     fb = _apply_promotion_access_levels_filter(db, fb_raw, access_levels)
+    fb = _strip_name_kinds_for_locked(fb, hint_locked_tokens, domain_hint)
     # Per-token fallback bypasses `_run`, so the promotion-domain product
     # expansion / brand-access rescue must be applied here too.
     if domain_hint and _canonical_entity_type(domain_hint.strip()) == "promotion":

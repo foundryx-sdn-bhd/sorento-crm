@@ -1,6 +1,6 @@
 # PLAN - a confident class hint is never re-typed by name match (CLASS-HINT-KIND-PICK)
 
-Status: BUILT, reviewed, waiting on the owner's hand test and merge (6 Oct 2026). Owner Q1
+Status: BUILT, R2 fix round applied 7 Oct 2026 (three red suites + trio case 12), waiting on the CHATBOT-TRIO combined hand test and merge. Owner Q1
 ruled "cabana is a brand": reach is category / product_type / product / brand, plus any
 word the catalogue knows as a brand exactly; D2 superseded. Final head carries origin/main
 e9aa88b2 (#1512) merged in: lane file 52 + r11 6 + brand-routing pin green (74 passed),
@@ -141,6 +141,49 @@ engine fetches `crm_master_products_list` with no ids and the miss composer prin
 "Here's what you want: / • product: X (+2 more) / But no master products matched these."
 ROGUE-CONVO-REVIEW #1506 classes A (zero-scope fetch) and C (set members under a miss
 header) own it.
+
+## R2 fix round (7 Oct 2026, small fix track, same PR)
+
+Three backend tests were red on the lane alone (found by the CHATBOT-TRIO integration
+run, PR #1525 comment 6032784666; the lane's `ci` runs had skipped every job), plus the
+trio's console case 12. Each was ruled against the card and the owner's 6 Oct rulings:
+
+1. `test_rearch_r12_handpass12_d.py` (two tests: a container number hinted `product`,
+   undashed and dashed). Old rule kept: owner ruling 5 of hand pass 12 says the RESOLVED
+   record kind wins over the parser's mishint. The card forbids a re-type by NAME
+   substring to promotion / customer / attachment / transporter / form; an exact
+   `shipping_container_number` match is not one. The lane had over-reached by leaving a
+   locked token out of the rerun entirely. Fix: `references.py` reruns the locked token
+   and applies `_strip_name_kinds_for_locked` to the fallback result (matches and
+   did-you-mean neighbours of the five kinds dropped). "basin" still reaches the spec
+   tier unresolved (nothing is left for it); the container resolves as the shipment.
+2. `test_samantha_27sep_r7_owner_replay.py::test_an_unknown_brand_word_is_one_line_and_no_filter`
+   ("DO brand zorbix" with canonical_code Mocha under order). Two owner rulings meet
+   here: 27 Sep R1 (the owner's own transcript, `OWNER_TURNS[0]`: "sorneto" parsed by
+   v40 as Mocha must list SORENTO, the typed word decides) and 6 Oct (canonical_code
+   decides, "Sorrento basin" is Sorento). Applying 6 Oct in the order lane flips the
+   owner's transcript to Mocha (measured: 4 r7 tests red), so crew ruled (a), 7 Oct:
+   order/sales keeps R1 (typed word first, spelling tier as today, `brand_entity_word`
+   and `_resolve_outstanding_brand_ids` untouched); canonical_code decides everywhere
+   else. The lane's defect was that its canonical read ALSO ran on the order lane's
+   brand-hinted word: "zorbix" became Mocha for the engine (so it was no longer said
+   back) while the order filter still read the raw word (so nothing was filtered). The
+   one gate changed: `turn_runtime.resolve_kinds` leaves brand-hinted entities out of
+   `entities_naming_a_live_brand` under order/sales. Old test kept as written.
+3. Trio console case 12, "another 10" after the Sorento page, flaky 2 of 3: on the red
+   run the parser echoed the carried brand as a current-message entity under
+   `entity_op: reuse`. `turn_runtime.with_set_count_from_text` returned the verdict
+   untouched on any current-message entity, so the page never continued: main minted a
+   product kind pick over the word, this lane resolved it as the brand and the lane
+   asked for an attachment type. Fix: under `reuse` (the prompt's op for a message that
+   names no new value, the reading `turn/decide.py` and `with_brand_from_offer` already
+   take) the echo is dropped and the count is answered. `replace_combine` beside a count
+   is still left to the parser. Pinned by unit tests on the exact recorded parse and an
+   engine replay on the seven-taps world.
+
+Red-first: the test files committed alone (`test(red):` b6f400897 and the follow-up that
+restores the original samantha test after decision (a)), 7 red / 78 green on the private
+bootstrapped DB; the kill proof and the reviewer verdict are on the PR.
 
 ## Next trigger (Q4, out of scope)
 

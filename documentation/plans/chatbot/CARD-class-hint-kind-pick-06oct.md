@@ -259,3 +259,14 @@ Q4. ORDER/sales primary-pass expansion of `category` to customer/transporter
 Q5. Reply when the spec search knows no such class (registry has no "basin" synonym): (a)
     existing "I don't know 'basin' as a product type" wording, no change (recommended: it
     exists and is tested); (b) new wording.
+
+## R2 addendum (7 Oct 2026)
+
+Three older rules met the rule above on the lane and were ruled one way each (detail in
+the plan's "R2 fix round"): an EXACT record key typed under a wrong hint still resolves
+by that key in the rerun (owner ruling 5, hand pass 12, kept; the card's rule is about
+the five name-matched kinds, not record keys); under ORDER/SALES the 27 Sep R1 "typed
+word decides the brand" rule stands (the owner's own transcript) and the lane's
+canonical_code read no longer runs on a brand-hinted word there (crew decision (a),
+7 Oct), canonical_code deciding everywhere else; and a brand the parser echoes under `entity_op: reuse` on a paging turn
+is the carried set's own echo, not a subject (trio console case 12).
