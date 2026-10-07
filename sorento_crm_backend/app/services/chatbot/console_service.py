@@ -173,8 +173,12 @@ def _build_envelope(
     run_id: str,
     session_vars: dict[str, Any] | None,
     prompt_version_id: str | None,
+    reply_to: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """The borrowed envelope with this turn's words in it. Never mutates `base`.
+
+    `reply_to` (QUOTED-REPLY AC-QR-18) is the WhatsApp quote block: `{id, text}` becomes
+    the webhook's own `replyTo`; without it any `replyTo` on the borrowed envelope is dropped.
 
     Mirrors `chatbot_console_check.py::_envelope_for` field for field: same `is_test` /
     `test_run_id` markers (D14), the same `previous_conversation_state` MEMBERSHIP rule
@@ -191,6 +195,14 @@ def _build_envelope(
     inner["contactId"] = str(contact_respond_id)
     inner["messageId"] = f"console-{uuid.uuid4().hex[:12]}"
     inner["message"] = {"type": "text", "text": message_text}
+    if reply_to is not None:
+        inner["replyTo"] = {
+            "id": str(reply_to["id"]),
+            "sender": {"source": "n8n"},
+            "message": {"text": reply_to["text"]},
+        }
+    else:
+        inner.pop("replyTo", None)
     envelope["message"]["event_type"] = "message.received"
     envelope["is_test"] = True
     envelope["test_run_id"] = run_id
@@ -435,6 +447,7 @@ def run_console_turn(
     prompt_version_id: str | None = None,
     run_id: str,
     media: dict[str, Any] | None = None,
+    reply_to: dict[str, Any] | None = None,
 ) -> ConsoleTurnResult:
     """Run one dry-run turn for the in-app console page, in process.
 
@@ -474,6 +487,7 @@ def run_console_turn(
         run_id=run_id,
         session_vars=session_vars,
         prompt_version_id=prompt_version_id,
+        reply_to=reply_to,
     )
     envelope = TurnRequest(envelope=envelope_dict).envelope
 

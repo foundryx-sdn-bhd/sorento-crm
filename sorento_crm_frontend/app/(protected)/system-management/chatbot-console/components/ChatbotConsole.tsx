@@ -16,6 +16,8 @@ import { getRespondContactsOutbound } from '../../respond-contacts/services/resp
 import { useChatbotConsole } from '../hooks/useChatbotConsole';
 import type { ChatbotConsoleMessage, ConsoleMediaInput } from '../types/chatbotConsole.types';
 
+const REPLY_TO_LABEL_MAX = 60;
+
 export const CHATBOT_CONSOLE_VIEW_PERMISSION = 'system.chat_history.view';
 
 async function fetchContactOptions(query: string): Promise<SearchableSelectOption[]> {
@@ -71,6 +73,11 @@ function MessageBubble({
           isUser ? 'bg-primary/15 text-foreground' : 'bg-muted text-foreground',
         )}
       >
+        {isUser && message.quotedText ? (
+          <p className="mb-1 line-clamp-3 break-words border-l-2 border-border pl-2 text-xs text-muted-foreground">
+            {message.quotedText}
+          </p>
+        ) : null}
         <MediaPreview message={message} />
         <p
           className={cn(
@@ -184,6 +191,7 @@ export default function ChatbotConsole() {
   } = useChatbotConsole();
 
   const [draft, setDraft] = useState('');
+  const [replyToId, setReplyToId] = useState('');
   const threadEndRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -213,11 +221,27 @@ export default function ChatbotConsole() {
         ? 'Parser live (production)'
         : null;
 
+  // The bot bubbles a message can quote: real turns only (never the greeting lines), newest first.
+  const quotableBubbles = useMemo(
+    () => messages.filter((m) => m.role === 'bot' && m.turnId).reverse(),
+    [messages],
+  );
+  const replyToOptions = useMemo<SearchableSelectOption[]>(
+    () =>
+      quotableBubbles.map((m) => ({
+        value: m.id,
+        label: m.text.length > REPLY_TO_LABEL_MAX ? `${m.text.slice(0, REPLY_TO_LABEL_MAX)}...` : m.text,
+      })),
+    [quotableBubbles],
+  );
+
   const handleSend = () => {
     if (!draft.trim() || sending) return;
     const text = draft;
+    const quoted = quotableBubbles.find((m) => m.id === replyToId);
     setDraft('');
-    void sendText(text);
+    setReplyToId('');
+    void sendText(text, quoted ? { id: quoted.id, text: quoted.text } : null);
   };
 
   const handleFilePicked = (file: File | null) => {
@@ -294,6 +318,19 @@ export default function ChatbotConsole() {
             data-testid="chatbot-console-active-prompt"
           >
             {activePromptLabel}
+          </div>
+        ) : null}
+        {quotableBubbles.length > 0 ? (
+          <div className="mb-2">
+            <SearchableSelect
+              value={replyToId}
+              onChange={setReplyToId}
+              options={replyToOptions}
+              clearable
+              placeholder="Reply to"
+              aria-label="Reply to"
+              size="sm"
+            />
           </div>
         ) : null}
         <input

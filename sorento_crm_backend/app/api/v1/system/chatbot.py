@@ -655,6 +655,7 @@ def console_turn(
         prompt_version_id=payload.prompt_version_id,
         run_id=payload.run_id,
         media=payload.media.model_dump() if payload.media is not None else None,
+        reply_to=payload.reply_to.model_dump() if payload.reply_to is not None else None,
     )
     return ConsoleTurnResponse(
         turn_id=result.turn_id,

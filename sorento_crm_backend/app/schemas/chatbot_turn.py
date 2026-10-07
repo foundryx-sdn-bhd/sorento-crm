@@ -121,6 +121,15 @@ class ConsoleMediaInput(BaseModel):
     content_base64: str
 
 
+class ConsoleReplyTo(BaseModel):
+    """The bot bubble the console message quotes (QUOTED-REPLY AC-QR-18)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    text: str
+
+
 class ConsoleTurnRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -134,6 +143,7 @@ class ConsoleTurnRequest(BaseModel):
     prompt_version_id: str | None = None
     run_id: str
     media: ConsoleMediaInput | None = None
+    reply_to: ConsoleReplyTo | None = None
 
 
 class ConsoleTraceSummary(BaseModel):

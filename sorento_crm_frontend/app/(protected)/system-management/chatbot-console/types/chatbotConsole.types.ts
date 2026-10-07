@@ -20,6 +20,8 @@ export interface ConsoleTurnRequest {
   prompt_version_id: string | null;
   run_id: string;
   media?: ConsoleMediaInput | null;
+  /** The bot bubble this message quotes (WhatsApp reply-to). Omitted when nothing is quoted. */
+  reply_to?: { id: string; text: string };
 }
 
 export interface ConsoleTraceSummary {
@@ -80,6 +82,8 @@ export interface ChatbotConsoleMessage {
   id: string;
   role: 'user' | 'bot';
   text: string;
+  /** User bubble only: the text of the bot bubble it quoted. */
+  quotedText?: string;
   /** The turn this bubble came from - null for the two opening greeting lines and for
    * the customer's own typed messages. */
   turnId?: string | null;
