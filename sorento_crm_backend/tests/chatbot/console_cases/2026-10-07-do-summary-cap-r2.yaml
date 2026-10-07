@@ -1,8 +1,8 @@
 # Console case for DO-SUMMARY-CAP round 2 (owner hand test, 7 Oct 2026, turn e4895b28): the
-# trailer under a capped By product group names the list the offer line names, with the same
-# number. DO-only: `(reply 1 for the delivery order list)` above `Reply 1 for the delivery order
-# list.`; both blocks: `(reply 1 for the sales order list)` / `(reply 2 for the delivery order
-# list)` above the numbered offer, and `1` / `2` land on the sales order / delivery order list.
+# trailer under a capped By product group is a count only (owner ruling, ask a69045557), and the
+# closing offer line is the one pointer. DO-only: `... and 20 more products` above `Reply 1 for
+# the delivery order list.`; both blocks: two count-only trailers above the numbered offer, and
+# `1` / `2` land on the sales order / delivery order list.
 #
 # `documentation/plans/chatbot/PLAN-do-summary-cap.md` ("R2: one target, one name"), UAC
 # AC-1602 / AC-1603.
@@ -36,9 +36,9 @@ cases:
           reply_contains:
             - "*Delivery order outstanding*"
             - "*_By product_*"
-            - "... and 20 more products (reply 1 for the delivery order list)"
+            - "... and 20 more products"
             - "Reply 1 for the delivery order list."
-          reply_not_contains: ["full list", "reply 2", "Sales order outstanding"]
+          reply_not_contains: ["full list", "(reply", "Sales order outstanding"]
           no_uuid: true
       - text: "1"
         expect:
@@ -58,14 +58,13 @@ cases:
           branch_kind: business_query
           reply_contains:
             - "*Sales order outstanding*"
-            - "(reply 1 for the sales order list)"
+            - "more products"
             - "*Delivery order outstanding*"
-            - "(reply 2 for the delivery order list)"
             - "Reply with a number for detail:"
             - "1. Sales order list"
             - "2. Delivery order list"
             - "3. Both lists"
-          reply_not_contains: ["full list", "(reply 2 for the sales order list)", "(reply 1 for the delivery order list)"]
+          reply_not_contains: ["full list", "(reply"]
           no_uuid: true
       - text: "1"
         expect:
@@ -83,7 +82,7 @@ cases:
       - text: "1"
         expect:
           branch_kind: business_query
-          reply_contains: ["(reply 1 for the sales order list)", "(reply 2 for the delivery order list)", "3. Both lists"]
+          reply_contains: ["more products", "3. Both lists"]
           reply_not_contains: ["full list"]
       - text: "2"
         expect:

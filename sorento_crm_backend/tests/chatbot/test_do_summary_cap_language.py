@@ -21,40 +21,12 @@ from app.services.chatbot.label_catalog import Localizer
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 TRAILERS: dict[str, tuple[str, str]] = {
-    # R2 (7 Oct 2026, owner hand test): the trailer names the list the offer line names, so
-    # eight forms: the noun (products / customers), singular for K = 1, and which list.
-    "... and {k} more products (reply {p} for the delivery order list)": (
-        "... dan {k} lagi produk (balas {p} untuk senarai pesanan penghantaran)",
-        "... 还有 {k} 个产品（回复 {p} 查看送货单列表）",
-    ),
-    "... and {k} more product (reply {p} for the delivery order list)": (
-        "... dan {k} lagi produk (balas {p} untuk senarai pesanan penghantaran)",
-        "... 还有 {k} 个产品（回复 {p} 查看送货单列表）",
-    ),
-    "... and {k} more customers (reply {p} for the delivery order list)": (
-        "... dan {k} lagi pelanggan (balas {p} untuk senarai pesanan penghantaran)",
-        "... 还有 {k} 个客户（回复 {p} 查看送货单列表）",
-    ),
-    "... and {k} more customer (reply {p} for the delivery order list)": (
-        "... dan {k} lagi pelanggan (balas {p} untuk senarai pesanan penghantaran)",
-        "... 还有 {k} 个客户（回复 {p} 查看送货单列表）",
-    ),
-    "... and {k} more products (reply {p} for the sales order list)": (
-        "... dan {k} lagi produk (balas {p} untuk senarai pesanan jualan)",
-        "... 还有 {k} 个产品（回复 {p} 查看销售订单列表）",
-    ),
-    "... and {k} more product (reply {p} for the sales order list)": (
-        "... dan {k} lagi produk (balas {p} untuk senarai pesanan jualan)",
-        "... 还有 {k} 个产品（回复 {p} 查看销售订单列表）",
-    ),
-    "... and {k} more customers (reply {p} for the sales order list)": (
-        "... dan {k} lagi pelanggan (balas {p} untuk senarai pesanan jualan)",
-        "... 还有 {k} 个客户（回复 {p} 查看销售订单列表）",
-    ),
-    "... and {k} more customer (reply {p} for the sales order list)": (
-        "... dan {k} lagi pelanggan (balas {p} untuk senarai pesanan jualan)",
-        "... 还有 {k} 个客户（回复 {p} 查看销售订单列表）",
-    ),
+    # R3 (owner ruling, 7 Oct 2026): the trailer counts only, four forms: the noun, singular
+    # for K = 1. No bracket, no pointer; the closing offer line is the pointer.
+    "... and {k} more products": ("... dan {k} lagi produk", "... 还有 {k} 个产品"),
+    "... and {k} more product": ("... dan {k} lagi produk", "... 还有 {k} 个产品"),
+    "... and {k} more customers": ("... dan {k} lagi pelanggan", "... 还有 {k} 个客户"),
+    "... and {k} more customer": ("... dan {k} lagi pelanggan", "... 还有 {k} 个客户"),
 }
 
 
@@ -75,39 +47,13 @@ def test_every_trailer_form_is_catalogued_with_ms_and_zh():
 @pytest.mark.parametrize(
     "line, ms, zh",
     [
-        (
-            "... and 292 more products (reply 1 for the delivery order list)",
-            "... dan 292 lagi produk (balas 1 untuk senarai pesanan penghantaran)",
-            "... 还有 292 个产品（回复 1 查看送货单列表）",
-        ),
-        (
-            "... and 1 more product (reply 1 for the delivery order list)",
-            "... dan 1 lagi produk (balas 1 untuk senarai pesanan penghantaran)",
-            "... 还有 1 个产品（回复 1 查看送货单列表）",
-        ),
-        (
-            "... and 3 more customers (reply 2 for the delivery order list)",
-            "... dan 3 lagi pelanggan (balas 2 untuk senarai pesanan penghantaran)",
-            "... 还有 3 个客户（回复 2 查看送货单列表）",
-        ),
-        (
-            "... and 1 more customer (reply 1 for the delivery order list)",
-            "... dan 1 lagi pelanggan (balas 1 untuk senarai pesanan penghantaran)",
-            "... 还有 1 个客户（回复 1 查看送货单列表）",
-        ),
-        (
-            "... and 7 more customers (reply 1 for the sales order list)",
-            "... dan 7 lagi pelanggan (balas 1 untuk senarai pesanan jualan)",
-            "... 还有 7 个客户（回复 1 查看销售订单列表）",
-        ),
-        (
-            "... and 1 more product (reply 1 for the sales order list)",
-            "... dan 1 lagi produk (balas 1 untuk senarai pesanan jualan)",
-            "... 还有 1 个产品（回复 1 查看销售订单列表）",
-        ),
+        ("... and 292 more products", "... dan 292 lagi produk", "... 还有 292 个产品"),
+        ("... and 1 more product", "... dan 1 lagi produk", "... 还有 1 个产品"),
+        ("... and 3 more customers", "... dan 3 lagi pelanggan", "... 还有 3 个客户"),
+        ("... and 1 more customer", "... dan 1 lagi pelanggan", "... 还有 1 个客户"),
     ],
 )
-def test_lines_translates_the_trailer_and_keeps_k_and_p(line: str, ms: str, zh: str):
+def test_lines_translates_the_trailer_and_keeps_k(line: str, ms: str, zh: str):
     assert _loc("ms").lines(line) == ms
     assert _loc("zh").lines(line) == zh
     # English stays English, byte for byte.
@@ -121,8 +67,8 @@ def test_the_capped_summary_translates_whole_with_no_english_line_left():
     text = golden.read_text().rstrip("\n")
     out = _loc("ms").lines(text)
     assert "more products" not in out, out
-    assert "... dan 292 lagi produk (balas 1 untuk senarai pesanan penghantaran)" in out, out
-    assert "senarai penuh" not in out, out
+    assert "... dan 292 lagi produk\n" in out, out
+    assert "balas" not in out.split("Balas 1 untuk")[0], out
     assert "Balas 1 untuk senarai pesanan penghantaran." in out, out
     assert "SRTWT7020: 4 (O/S: 4)" in out and "SRTWT7001: 96 (O/S: 96)" in out, out
     assert out.count("\n") == text.count("\n")
@@ -136,7 +82,8 @@ def test_the_presenter_writes_the_sentence_the_catalog_keys():
     if not source_path.exists():  # pragma: no cover - only where the package is not on disk
         pytest.skip("sorento_crm_mcp is not on disk in this environment")
     source = source_path.read_text()
-    assert '"... and {extra} more {noun}{plural} (reply {position} for the {offer})"' in source
+    assert '"... and {extra} more {noun}{plural}"' in source
+    assert "for the full list" not in source and "(reply {position}" not in source
     assert '"customer_name": "customer", "product_code": "product"' in source
     if str(mcp_root) not in sys.path:
         sys.path.append(str(mcp_root))
@@ -144,14 +91,8 @@ def test_the_presenter_writes_the_sentence_the_catalog_keys():
 
     rows = [{"product_code": f"P{i:03d}", "do_qty": 1, "pending_qty": 1} for i in range(23)]
     lines = presenters._outstanding_capped_group(
-        rows, name_key="product_code", total_key="do_qty", outstanding_key="pending_qty", position=2,
-        offer="delivery order list",
+        rows, name_key="product_code", total_key="do_qty", outstanding_key="pending_qty"
     )
-    assert lines[-1] == "... and 3 more products (reply 2 for the delivery order list)"
-    assert _loc("zh").lines(lines[-1]) == "... 还有 3 个产品（回复 2 查看送货单列表）"
-    so_lines = presenters._outstanding_capped_group(
-        rows, name_key="product_code", total_key="do_qty", outstanding_key="pending_qty", position=1,
-        offer="sales order list",
-    )
-    assert so_lines[-1] == "... and 3 more products (reply 1 for the sales order list)"
-    assert _loc("ms").lines(so_lines[-1]) == "... dan 3 lagi produk (balas 1 untuk senarai pesanan jualan)"
+    assert lines[-1] == "... and 3 more products"
+    assert _loc("zh").lines(lines[-1]) == "... 还有 3 个产品"
+    assert _loc("ms").lines(lines[-1]) == "... dan 3 lagi produk"

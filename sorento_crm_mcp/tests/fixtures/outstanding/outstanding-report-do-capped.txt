@@ -33,6 +33,6 @@ SRTWT7017: 8 (O/S: 8)
 SRTWT7018: 8 (O/S: 8)
 SRTWT7019: 6 (O/S: 6)
 SRTWT7020: 4 (O/S: 4)
-... and 292 more products (reply 1 for the delivery order list)
+... and 292 more products
 
 Reply 1 for the delivery order list.
