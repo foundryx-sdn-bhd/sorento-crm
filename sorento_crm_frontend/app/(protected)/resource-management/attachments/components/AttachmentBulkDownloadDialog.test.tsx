@@ -173,4 +173,17 @@ describe('AttachmentBulkDownloadDialog', () => {
     expect(status.mock.calls.length).toBeGreaterThan(callsAfterFirst);
     expect(screen.getByText(/Files: 412 \/ 1,378/)).toBeInTheDocument();
   });
+
+  it('D8/D9: finished without a result renders the failed state', async () => {
+    await open({
+      status: 'finished',
+      progress: { processed: 0, total: 0, percentage: 100 },
+      result: null,
+      error: null,
+    });
+    expect(screen.getByText(/Archive failed/)).toBeInTheDocument();
+    expect(screen.getByText(/The archive could not be built/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Download ZIP/ })).toBeNull();
+    expect(document.querySelector('[class*="animate-spin"]')).toBeNull();
+  });
 });
