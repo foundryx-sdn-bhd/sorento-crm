@@ -746,7 +746,11 @@ class FulfilmentBoardService:
         # SO-CANCEL-LINE: lines CS transferred to Cancel SO stay on the board read-only at
         # zero (no ladder, no bucketing), whether or not a change row is pending.
         shown = {row.line_id for row in rows} | {row.line_id for row in cancelled_rows}
-        cancelled_rows = cancelled_rows + self._crm_cancelled_rows(numbers, shown=shown)
+        # A CRM-cancelled line always has a project mirror line, so only an adopted order can
+        # have one; a never-adopted board build costs no extra statement
+        # (`test_a_board_of_76_lines_does_not_scale_its_query_count_with_the_line_count`).
+        if adopted_by_so:
+            cancelled_rows = cancelled_rows + self._crm_cancelled_rows(numbers, shown=shown)
         # S3 (`PLAN-local-supplier-oi-routing.md`): ONE call for the whole board, never per
         # line - `test_buy_origin_computed_once_per_board_build` pins this.
         self._buy_origin = buy_origin_by_product(
