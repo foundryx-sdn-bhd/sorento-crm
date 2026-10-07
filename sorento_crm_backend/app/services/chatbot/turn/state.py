@@ -238,6 +238,10 @@ class State:
     # and not to the domain menu or the casual lane. Never written here: the intake tool
     # owns the pointer and the tail persists whatever it answered.
     ideation: Any = None
+    # QUOTED-REPLY R4 (7 Oct 2026): when this turn ran on a quoted turn's state, the LIVE
+    # `{pending, focus}` set aside. Rides on the state so every lane's tail (answer, canned,
+    # clarify, out_of_scope) writes the live question back; never serialised.
+    quoted_live: Any = None
 
 
 # --------------------------------------------------------------------------- #

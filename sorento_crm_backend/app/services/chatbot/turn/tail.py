@@ -16,6 +16,54 @@ from app.services.chatbot.turn.pending import to_wire
 from app.services.chatbot.turn.state import State, focus_to_wire
 
 
+def carry_live_state(
+    state: State, asked: bool, live: Mapping[str, Any], *, non_answer: bool = False
+) -> State:
+    """QUOTED-REPLY R4 and AC-QR-26 (owner rulings, 7 Oct 2026): what a turn that ran on a quoted
+    turn's state writes back. A follow-up question of this turn's own (a pending, or a NEW open
+    stock task) replaces the live picker and the live task, as a fresh ask does. Only when the
+    turn opened nothing are the live open question and live open task restored (an answered or
+    inherited own task never replaces an open live one). A non-answer lane (`non_answer`) that
+    asked nothing keeps the WHOLE live focus."""
+    from dataclasses import replace
+
+    from app.services.chatbot.turn.task import OPEN
+
+    def _open_stock(focus: Any) -> Any:
+        return next((t for t in focus.tasks or () if t.kind == "stock_qty" and t.status == OPEN), None)
+
+    quoted_open = live.get("quoted_open")
+
+    def _inherited(task: Any) -> bool:
+        # An open task on the quoted product's own slots, however often it was re-touched,
+        # is the quote's, not one this turn opened.
+        return task is None or (
+            quoted_open is not None and {s.key for s in task.slots} == {s.key for s in quoted_open.slots}
+        )
+
+    focus = state.focus
+    own = _open_stock(focus)
+    if not asked and _inherited(own) and (non_answer or own is not None):
+        # A canned / low-signal / clarify / out-of-scope lane answered nothing (or a lane only
+        # re-asked the quote's own task): the quoted state is never written as the live state,
+        # so the WHOLE live focus stays.
+        return replace(state, focus=live["focus"], pending=live["pending"], quoted_live=None)
+    live_open = _open_stock(live["focus"])
+    mine = _open_stock(focus)
+    # AC-QR-26 (owner ruling, 7 Oct 2026): a quoted answer that opened a follow-up question of
+    # its own (a pending, or a NEW open stock task) replaces the live picker, as a fresh ask
+    # does; the live pending and live open task are then not restored.
+    known = [t for t in (live_open, quoted_open) if t is not None]
+    new_task = mine is not None and all({s.key for s in mine.slots} != {s.key for s in t.slots} for t in known)
+    if asked or new_task:
+        return replace(state, pending=state.pending if asked else None, quoted_live=None)
+    # An open task still on the quote's own slots was not opened by this turn.
+    if live_open is not None and _inherited(mine):
+        kept = tuple(t for t in focus.tasks or () if t.kind != "stock_qty")
+        focus = replace(focus, tasks=(*kept, live_open))
+    return replace(state, focus=focus, pending=state.pending if asked else live["pending"], quoted_live=None)
+
+
 def session_payload(state: State, answer: Any, ctx: Any) -> dict[str, Any]:
     """The five-key state this turn leaves behind - what `persist` writes.
 
@@ -25,6 +73,8 @@ def session_payload(state: State, answer: Any, ctx: Any) -> dict[str, Any]:
     that field, and an asking turn whose patch came back None lost its open question on
     the very next turn.
     """
+    if getattr(state, "quoted_live", None):
+        state = carry_live_state(state, getattr(answer, "question", None) is not None, state.quoted_live)
     return {
         "focus": focus_to_wire(state.focus),
         # `pending' = composer.question` exactly (AC-1532) - and when the composer asked
