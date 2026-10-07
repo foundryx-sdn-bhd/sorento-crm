@@ -448,3 +448,32 @@ class TestScopePins:
         reply, _ = _po_turn(session_factory, monkeypatch, [REF])
 
         assert reply.strip() == NOT_FOUND, reply
+
+
+# --------------------------------------------------------------------------- #
+# Round 3: a dealer without the SO reveal grant, PO number also emitted as an entity
+# (live console, head 325696bce: the miss ladder replaced the fixed reply)
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize("domain_hint", ["purchase_order", "order"])
+@pytest.mark.parametrize("hint", ["order", "product"])
+def test_no_grant_dealer_gets_the_not_enabled_line_and_no_miss_ladder(
+    session_factory, monkeypatch, hint, domain_hint
+) -> None:
+    _seed_contact(session_factory, variables={})
+    own, = _link_customers(session_factory, "ZZT OWN A")
+    _seed_po_so(session_factory, "SO430401", customer_id=own, po_ref="HT 4501", po_ref_key="HT4501", debtor_name="ZZT OWN A")
+    qf = _parser_output(
+        domain_hint=domain_hint, intent_hint="check_po", order_status=None, po_refs=["HT 4501"],
+        entities=[{"raw": "HT 4501", "hint": hint, "canonical_code": None, "current_message": True, "confident": True}],
+    )
+    result, _captured = _run_turn(
+        session_factory, monkeypatch, qf=qf, text_body="status of PO HT 4501",
+        msg_id=f"ZZT-po-ref-nogrant-{uuid.uuid4().hex[:10]}", attributes=[],
+        matches={}, mcp_response=DO_DUMP,
+    )
+
+    reply = result.reply or {}
+    assert (reply.get("text") or "").strip() == "Sales order figures are not enabled for your account.", reply
+    assert not reply.get("quick_replies"), reply
