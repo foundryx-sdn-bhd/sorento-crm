@@ -142,6 +142,26 @@ bubbles. UAC AC-QR-18 to 20. Red-first (vitest + pytest), browser pass at 1280 o
 None blocking. n8n passthrough of the engine turn id on the outgoing save (owner, later) retires the
 text step (iii) for photo replies.
 
+## Chunked bot replies (owner question on the hand test, 7 Oct 2026)
+
+n8n `sub-sendmsg` (export, code node "Code in JavaScript", unit-tested in its own repo as
+`sendmsg-quickreply-chunk.test.js`) splits one bot reply into parts of at most 3900 characters (1024 and a
+1000-byte cap when quick replies ride on the message; the buttons ride the LAST part; a numbered list is cut
+at item boundaries and each part keeps the result-set subset of its own items). Each part is sent as its
+own respond.io message and saved as its own `chat_histories` outgoing row, all with the same n8n
+`turn_id` and each with its own `message_id`; the engine stores the whole reply once
+(`chatbot.turns.response.reply.text`). 6 Oct prod copy since 1 Oct: 2948 turns sent one row, 146 two, 29
+three, 8 four, 12 five, a few more up to 93 rows; example rows 87401/87400/87399 (905, 919, 176 chars of a
+2004-char stock summary). Of 535 rows on multi-row sends, 438 are a whitespace-squashed SUBSTRING of the
+stored reply and 0 equal it whole (97 match nothing: n8n-composed or localized text).
+
+Consequences, built in round 5 (AC-QR-24, AC-QR-25): the n8n turn_id route already stamps every chunk
+row of a send with the same engine turn (each ingest resolves on its own); the stored-reply route, at
+ingest and at quote time, accepts equality OR a substring when the squashed text has at least 40
+characters (the shortest chunk seen is 176 raw characters; the floor stops a one-word message from
+matching every reply), newest matching turn first. Quoting the 2nd chunk therefore resolves to the turn
+that produced the whole list, and its state is the same whichever chunk was quoted.
+
 ## Browser evidence run (agent-browser, crew copy :3114 on 4e2c2c16e, 7 Oct 2026, 1280 wide)
 
 Login, sidebar System > Messaging > Chatbot Console, contact 487555417, Reset. Then:
