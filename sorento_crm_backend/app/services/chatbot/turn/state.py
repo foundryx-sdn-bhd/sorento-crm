@@ -45,24 +45,37 @@ def focus_row_label(row: Mapping[str, Any]) -> Any:
     return label
 
 
+#: The separators the resolver drops from a product token before it looks it up: the
+#: ASCII hyphen (`resolve_gate._PRODUCT_FOLD`, `[-\\s]+`) and the two unicode dashes it
+#: folds to a hyphen one step ahead of that regex (`resolve_gate._UNICODE_DASH_FOLD`:
+#: U+2212 MINUS SIGN from an Excel paste, U+2013 EN DASH from Word autocorrect).
+_DROPPED_DASHES = "-\u2212\u2013"
+
+
 def fold_token(value: str) -> str:
-    """Strip the resolver's own separator fold (hyphens and whitespace) from `value` -
-    case is untouched, the caller casefolds around this the way it already does. ONE
-    copy, in the lowest module both `narrow.py` and `turn_runtime.py` already import
-    from, so the two sides of any join against the resolver's own `unresolved_tokens`
-    keys can never fold differently again (R1, PLAN-chatbot-answer-half-reattach.md:
-    `narrow._token_of` folding one way and `turn_runtime._token_key` folding another
-    let a hyphenated or spaced code the resolver could not place come back as a
-    one-option roster echoing the customer's own typed token).
+    """Strip the resolver's own separator fold (hyphens, unicode dashes and whitespace)
+    from `value` - case is untouched, the caller casefolds around this the way it
+    already does. ONE copy, in the lowest module `narrow.py`, `turn_runtime.py`,
+    `tail/scope_block.py` and `lanes/business/answer.py` all import from, so the two
+    sides of any join against the resolver's own `unresolved_tokens` keys can never
+    fold differently again (R1, PLAN-chatbot-answer-half-reattach.md: `narrow._token_of`
+    folding one way and `turn_runtime._token_key` folding another let a hyphenated or
+    spaced code the resolver could not place come back as a one-option roster echoing
+    the customer's own typed token; ROGUE-CONVO-REVIEW-R2, crew review on PR #1506:
+    `answer._type_norm` folded a third way, `[-\\s]+` with no unicode dashes, so a code
+    pasted with an en dash was listed by the resolver as "srthp" while the composer
+    kept the dash, and rule C silently never fired).
 
     Plain string iteration, not the `re` module (`resolve_gate._PRODUCT_FOLD`'s own
     `[-\\s]+`, reproduced without a regex call - this package may not use one,
     `narrow.py::_without_brackets`'s own rule, AC-1520's no-regex-in-the-pure-core
     guard, pinned by a source scan in the S2 apply-is-pure suite). Character
     deletion, not substitution, so a RUN of separators folds identically to one
-    deleted individually.
+    deleted individually. The equivalence with the resolver's own fold is pinned by
+    `tests/chatbot/test_miss_says_what_it_could_not_find.py::
+    TestATypedTokenFoldsTheSameOnEverySide`.
     """
-    return "".join(ch for ch in value if ch != "-" and not ch.isspace())
+    return "".join(ch for ch in value if ch not in _DROPPED_DASHES and not ch.isspace())
 
 
 def token_key(value: Any) -> str:
@@ -238,6 +251,10 @@ class State:
     # and not to the domain menu or the casual lane. Never written here: the intake tool
     # owns the pointer and the tail persists whatever it answered.
     ideation: Any = None
+    # QUOTED-REPLY R4 (7 Oct 2026): when this turn ran on a quoted turn's state, the LIVE
+    # `{pending, focus}` set aside. Rides on the state so every lane's tail (answer, canned,
+    # clarify, out_of_scope) writes the live question back; never serialised.
+    quoted_live: Any = None
 
 
 # --------------------------------------------------------------------------- #

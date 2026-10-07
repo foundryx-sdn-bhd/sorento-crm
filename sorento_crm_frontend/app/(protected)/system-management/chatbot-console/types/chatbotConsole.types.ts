@@ -20,6 +20,8 @@ export interface ConsoleTurnRequest {
   prompt_version_id: string | null;
   run_id: string;
   media?: ConsoleMediaInput | null;
+  /** The bot bubble this message quotes (WhatsApp reply-to). Omitted when nothing is quoted. */
+  reply_to?: { id: string; text: string; source: 'n8n' | 'contact' };
 }
 
 export interface ConsoleTraceSummary {
@@ -49,6 +51,8 @@ export interface ConsoleTurnResponse {
   /** Item 6: the parser prompt version this turn actually ran (the trace's own
    * `understood` fact); null when the turn never reached the parser. */
   prompt_version: number | null;
+  /** The respond message id of the customer message this turn ran on. */
+  message_id?: string | null;
   /** The turn's own raw `TurnResult.actions`, loosely typed like `send_messages`'
    * source (it is the engine's shape, not this endpoint's own) - carried through so
    * `extractTurnAttachments` can read a `send_attachments` action's own file list,
@@ -80,6 +84,11 @@ export interface ChatbotConsoleMessage {
   id: string;
   role: 'user' | 'bot';
   text: string;
+  /** User bubble only: the respond message id the backend ran this message as, so a later
+   * message can quote it as the customer's own. */
+  messageId?: string | null;
+  /** User bubble only: the text of the bot bubble it quoted. */
+  quotedText?: string;
   /** The turn this bubble came from - null for the two opening greeting lines and for
    * the customer's own typed messages. */
   turnId?: string | null;
