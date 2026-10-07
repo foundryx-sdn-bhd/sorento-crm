@@ -205,7 +205,14 @@ def _compose(
     gate = {"gate_passed": True, "compatible_entities": compat}
     if predicate is not None:
         gate["predicate"] = predicate
-    return not_found_error_message({}, parser=parser, resolved=resolved, gate=gate)
+    # The one computation the engine makes and hands down (`engine.py`, above its
+    # `answer_bridge.answer_for` call): the composer no longer derives it.
+    product_token_missed = turn_runtime.typed_product_unplaced(
+        parser, turn_runtime.unplaced_tokens(parser_entities, resolved)
+    )
+    return not_found_error_message(
+        {}, parser=parser, resolved=resolved, gate=gate, product_token_missed=product_token_missed
+    )
 
 
 def _rendered(out: dict) -> str:

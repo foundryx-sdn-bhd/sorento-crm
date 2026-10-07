@@ -37,6 +37,7 @@ from functools import cmp_to_key
 from typing import Any
 
 from app.services.chatbot import jsc
+from app.services.chatbot.turn_runtime import SPEC_TIER
 from app.services.ledger_family import apart_from_group, customer_group_of, group_key, ledger_family_key
 
 # PLAN-chatbot-answer-half-reattach.md "Roster cap" (owner ruling 20 Sep 2026):
@@ -677,7 +678,7 @@ def run_gate(  # noqa: PLR0912, PLR0915 - one JS node, one function; splitting i
                             }
                         )
                     elif predicate_bypass and all(
-                        jsc.get(m, "match_tier") == "spec_search" for m in products
+                        jsc.get(m, "match_tier") == SPEC_TIER for m in products
                     ):
                         # C4 (AC-1326): a `spec_search`-tier group is the described set
                         # HAS already qualified, not a customer's ambiguous typing - the

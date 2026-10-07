@@ -5808,6 +5808,14 @@ def _run_stages_body(  # noqa: PLR0915
             # degrades to an empty payload rather than skipping the bridge outright -
             # `answer_for`'s own `via_fetched_empty` trigger reads the FETCH envelope's
             # `raw_fragment`, not `resolver_payload`, so it still fires correctly.
+            # ROGUE-CONVO-REVIEW-R2 (crew review on PR #1506): "did THIS message name a
+            # product token the resolver could not place?" is computed ONCE here, over
+            # the engine's own `unplaced_tokens` map, and read by both the composer's
+            # header (`answer_bridge.answer_for` -> `not_found_error_message`, rule C)
+            # and the `set_page` carry below. The composer used to fold the question a
+            # second way (`[-\s]+`, no unicode dashes), so an en dash in the typed code
+            # let the two sides disagree in silence.
+            miss_on_typed_product = turn_runtime.typed_product_unplaced(verdict, unplaced_tokens)
             bridge_answers_a_miss = (
                 len(fetch_plan.fetch) == 1
                 and plan.ask is None
@@ -5897,6 +5905,7 @@ def _run_stages_body(  # noqa: PLR0915
                         profile=state_out.profile,
                         dealer_stock_ask=_dealer_stock_ask(state_out, plan),
                         dealer_incoming_ask=_dealer_incoming_ask(state_out, plan),
+                        product_token_missed=miss_on_typed_product,
                     )
                     if answer is not None:
                         bridge_answered = True
@@ -6120,7 +6129,7 @@ def _run_stages_body(  # noqa: PLR0915
                 # a set the customer described with a CLASS word of their own ("which tap
                 # has cert ZZQ9917") is listed by the reply and stays carried, so the
                 # follow-up count continues it; only the missed code is named beside it.
-                miss_on_typed_product = turn_runtime.typed_product_unplaced(verdict, unplaced_tokens)
+                # `miss_on_typed_product` is the one computation above the bridge call.
                 if paged:
                     # A page of a carried set: the runner hands back where it stopped.
                     state_out.focus.set_page = envelopes[0].get("set_carry") if envelopes else None

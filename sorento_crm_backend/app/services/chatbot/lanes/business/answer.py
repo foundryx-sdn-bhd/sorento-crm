@@ -37,6 +37,8 @@ from app.services.ledger_family import customer_group_of, customer_header_words
 from app.services.product_spec_registry import SPEC_ACRONYMS
 from app.services.chatbot.tail.scope_block import live_brand_words
 from app.services.chatbot.turn import refer
+from app.services.chatbot.turn.state import token_key
+from app.services.chatbot.turn_runtime import SPEC_TIER
 
 # The did-you-mean helpers the JS carries in BOTH bodies with a "keep in lockstep" note.
 # `miss_suggest` owns them because that is where their node lives; this file imports them
@@ -2257,7 +2259,6 @@ def promo_picker(
 # not-found-error-message (667 lines, the LIVE SPINE's copy)
 # --------------------------------------------------------------------------- #
 
-_TYPE_NORM_RE = re.compile(r"[-\s]+")
 _SNAKE_OR_KEBAB_RE = re.compile(r"[_-]")
 _SNAKE_OR_KEBAB_RUN_RE = re.compile(r"[_-]+")
 _TRAILING_PAREN_RE = re.compile(r"\s+\([^)]*\)\Z")
@@ -2418,13 +2419,17 @@ def _nf_norm_raw(value: Any) -> str:
 
 
 def _type_norm(value: Any) -> str:
-    """`String(s ?? '').replace(/[-\\s]+/g, '').toLowerCase()`.
+    """`String(s ?? '')`, then the ONE token fold (`turn.state.token_key`).
 
     The resolver strips dashes and spaces off product-hint tokens before it resolves them,
     so the customer's "SRT 2405-CR" reaches us as "srt2405cr" while the code reads
-    "SRT2405-CR". This is the key both sides are compared through.
+    "SRT2405-CR". This is the key both sides are compared through. ROGUE-CONVO-REVIEW-R2
+    (crew review on PR #1506): this used to be its own `[-\\s]+` regex, which kept the
+    unicode dashes the resolver folds (`resolve_gate._UNICODE_DASH_FOLD`), so an en-dash
+    code was listed by the resolver as "srthp" and joined here as "srt\u2013hp" - rule C
+    never fired on it. One fold now, the same one the engine keys `unplaced_tokens` by.
     """
-    return _TYPE_NORM_RE.sub("", jsc.nullish_str(value)).lower()
+    return token_key(jsc.nullish_str(value))
 
 
 # A token shorter than this never PREFIX-matches (D4/AC-7): "SRT" would otherwise request
@@ -3027,8 +3032,19 @@ def not_found_error_message(
     entitlement_levels: Any = None,
     profile: Any = None,
     granted_keys: Any = None,
+    product_token_missed: bool = False,
 ) -> dict[str, Any]:
     """`not-found-error-message`: the miss reply, its search-scope header and its bullets.
+
+    `product_token_missed` (ROGUE-CONVO-REVIEW-R2): did THIS message name a product
+    token the resolver could not place? Computed ONCE per turn by the engine
+    (`turn_runtime.typed_product_unplaced` over its own `unplaced_tokens` map, the
+    same read that decides the `set_page` carry) and handed down through
+    `answer_bridge.answer_for` / `complete_answer`; this function no longer folds the
+    question a second way. It drives rule C below (a spec-tier set member read off the
+    words around the missed token is not "what you want", and the miss line quotes the
+    token as typed). `False` (the default every caller that predates it gets) is the
+    rule standing down, never a guess.
 
     `granted_keys` (DO-ASK-SIMPLIFY security B1): the contact's `contact_field_reveals`
     grants (`ctx["access"]["attributes"]`). The "hasn't been delivered yet" line names the
@@ -3360,22 +3376,19 @@ def not_found_error_message(
         # more)" over an unplaced description line (prod turn 4). Code-tier rows stay: a
         # code the customer typed or carried beside a second token that missed is still
         # what they want. A described-set ask names no product token, so its members stay.
-        # Joined through `_type_norm` on both sides: the resolver lists a token the way it
-        # was SENT, separators folded (`resolve_gate._token_of`: "Srt-hp" is "srthp"), so a
-        # raw-to-raw comparison never met a hyphenated or spaced line (prod turns 4 and 11).
+        # Whether the token missed is the caller's `product_token_missed` (one computation
+        # per turn, the engine's). `unresolved_keys` is the resolver's own listing through
+        # the ONE fold: it lists a token the way it was SENT, separators and unicode dashes
+        # folded (`resolve_gate._token_of`: "Srt-hp" is "srthp"), so a raw-to-raw
+        # comparison never met a hyphenated or spaced line (prod turns 4 and 11).
         unresolved_keys = {_type_norm(t) for t in unresolved}
-        product_token_missed = any(
-            jsc.get(e, "hint") in (None, "product") and _type_norm(jsc.get(e, "raw")) in unresolved_keys
-            for e in all_ents
-            if jsc.truthy(e)
-        )
         set_member_uuids: set = set()
         if product_token_missed:
             tiers_by_uuid: dict[Any, set] = {}
             for m in all_matches:
                 if jsc.truthy(m) and jsc.get(m, "entity_type") == "product" and jsc.truthy(jsc.get(m, "uuid")):
                     tiers_by_uuid.setdefault(jsc.get(m, "uuid"), set()).add(jsc.get(m, "match_tier"))
-            set_member_uuids = {u for u, tiers in tiers_by_uuid.items() if tiers == {"spec_search"}}
+            set_member_uuids = {u for u, tiers in tiers_by_uuid.items() if tiers == {SPEC_TIER}}
 
         # tokens that ACTUALLY produced a compatible entity must NOT be listed as "not found"
         # even if the resolver kept them in `unresolved_tokens` (a fallback-tier match stays

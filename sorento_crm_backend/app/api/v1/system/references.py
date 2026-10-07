@@ -25,6 +25,7 @@ from app.models.access import ContactAccessType
 from app.models.company import Company
 from app.models.marketing import Promotion, PromotionProduct
 from app.services import promotion_serving, promotion_window
+from app.services.chatbot.turn_runtime import SPEC_TIER
 from app.models.product import Brand, Product
 from app.models.resources import Attachment, AttachmentType
 from app.services.entity_resolver import (
@@ -2607,7 +2608,7 @@ def _strip_word_token_product_matches(result: dict[str, Any]) -> None:
             return True
         if match.get("entity_type") != "product":
             return True
-        return match.get("match_tier") == "spec_search"
+        return match.get("match_tier") == SPEC_TIER
 
     for resolution in result.get("resolutions") or []:
         if isinstance(resolution, dict) and isinstance(resolution.get("matches"), list):
@@ -2649,7 +2650,7 @@ def _emit_spec_matches(
             "canonical_code": candidate["product_code"],
             "uuid": candidate["product_id"],
             "match_field": "specifications",
-            "match_tier": "spec_search",
+            "match_tier": SPEC_TIER,
             # The ranker's score, so a caller can see how well each one answered
             # rather than treating an ordered list as equally good.
             "similarity": candidate["score"],

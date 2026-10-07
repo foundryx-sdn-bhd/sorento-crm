@@ -1,7 +1,11 @@
 # PLAN: rogue dealer conversation, 6 Oct (ROGUE-CONVO-REVIEW)
 
 Status: BUILT, in review. PR-2 (classes B, C, G, F) is PR #1506 on this branch, size M,
-reviewer PASS WITH NITS (nits built or recorded) and security-reviewer PASS; PR-1 (class A)
+reviewer PASS WITH NITS (nits built or recorded) and security-reviewer PASS; R2 (7 Oct 2026,
+size S, no behaviour change): the "this message's own product token missed" question is
+computed once by the engine and handed to the composer, every side folds through
+`turn.state.token_key` (unicode dashes included), and rule C reads `turn_runtime.SPEC_TIER`
+where it keyed on a literal; PR-1 (class A)
 is PR #1517 on `crew/rogue-convo-review-pr1`, reviewer round built. Both wait on the
 owner's hand test and merge. Owner rulings (6 Oct 2026, via crew): Q1 = (a) PLUS
 the contact's brand scope: the chatbot list applies `is_searchable` (product and category),
@@ -168,7 +172,11 @@ Mechanism, confirmed:
    (`resolve_gate._token_of`, `_PRODUCT_FOLD`), so "Srt-hp" comes back as "srthp" and the
    pasted line as one run. A raw-to-raw comparison (`_nf_norm_raw`) never met a hyphenated
    or spaced token, which is every token of this conversation; `_type_norm` (the key the
-   composer already uses for `raw_of_token`) is the join.
+   composer already uses for `raw_of_token`) is the join. R2: `_type_norm` is now
+   `turn.state.token_key` itself (the resolver also folds U+2013 / U+2212 ahead of its
+   regex, `_UNICODE_DASH_FOLD`; the one fold does too), and the question is asked once,
+   by the engine (`turn_runtime.typed_product_unplaced` over `unplaced_tokens`), for
+   both the header and the `set_page` carry.
 
 General rule C: **"Here's what you want" lists only what the customer named and the
 resolver placed. A miss on the customer's own token never lists set members, did-you-mean
@@ -370,9 +378,10 @@ Change B (as built, owner ruling Q3: compact parity, not "Couldn't find 8066"):
 
 Change C (and the class B miss-line rule, one seam):
 
-* `answer.py` `not_found_error_message`: `product_token_missed` joins this message's
-  product entities to the resolver's `unresolved_tokens` through `_type_norm` (separators
-  folded on both sides). When it holds: spec_search set members read off the words around
+* `answer.py` `not_found_error_message`: `product_token_missed` is the engine's one
+  answer to "did this message's own product token miss?" (R2: a keyword argument,
+  `turn_runtime.typed_product_unplaced` over the engine's `unplaced_tokens` map, passed
+  through `answer_bridge.answer_for`; the composer no longer re-derives it). When it holds: spec_search set members read off the words around
   the token are dropped from `found_lines` (no header, no "(+N more)") AND do not count as
   having placed the token (`resolved_toks`), so a miss with members reaches the
   product-code miss, which quotes the token as typed (`label_token` -> `raw_of_token`):
