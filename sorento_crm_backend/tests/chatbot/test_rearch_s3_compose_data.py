@@ -152,7 +152,15 @@ class TestSectionHeaderGrammar930:
         row = _domain_row("inventory", narrowing={"product": "list_all"})
         row["label"] = "Stock"
         policy = _policy(row)
-        envelopes = [_envelope("inventory", entities=["MSK11C", "MSK11C-BL-DIY"])]
+        # STOCK-FILL-PREDICATE (never-stuck): a header prints over a body, never over
+        # nothing - so the grammar is read off a section that has a row.
+        envelopes = [
+            _envelope(
+                "inventory",
+                entities=["MSK11C", "MSK11C-BL-DIY"],
+                figures=[{"fields": [{"label": "Product Code", "value": "MSK11C"}]}],
+            )
+        ]
 
         answer = _compose(envelopes, policy=policy)
 
