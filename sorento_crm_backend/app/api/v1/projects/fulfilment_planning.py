@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, Literal, Optional, Tuple
 
 from fastapi import APIRouter, Depends, Query
@@ -494,7 +494,11 @@ def confirm_all(
                 confirm_batch=lambda: _confirm_a_planning_change(
                     db,
                     order,
-                    _BatchedEntry(list(entry.lines), resolved_batch_id),
+                    _BatchedEntry(
+                        list(entry.lines),
+                        resolved_batch_id,
+                        list(getattr(entry, "cancelled_lines", None) or []),
+                    ),
                     actor_id,
                     preview=payload.preview,
                 ),
@@ -982,7 +986,10 @@ def _confirm_with_possible_rejects(
     if batch_id:
         with UndoJournal(db) as journal:
             body = confirm_batch()
-        _attach_undo_journal(db, order, journal, before_id)
+        if body is None:
+            body = _withdrawal_only_result(db, service, order, [])
+        else:
+            _attach_undo_journal(db, order, journal, before_id)
     elif getattr(payload, "lines", None):
         with UndoJournal(db) as journal:
             body = service.confirm(
@@ -1103,6 +1110,7 @@ class _BatchedEntry:
 
     lines: list
     batch_id: str
+    cancelled_lines: list = field(default_factory=list)
 
 
 def _confirm_a_planning_change(
@@ -1187,6 +1195,10 @@ def _confirm_a_planning_change(
     ]
     outcome = (result.get("outcomes") or {}).get(str(order.id))
     confirmed = (outcome or {}).get("confirm_result")
+    if confirmed is None and not failed and getattr(payload, "cancelled_lines", None):
+        # The batch press simply had nothing to confirm and the press carried Cancel SO
+        # lines: the caller answers with the cancel-only result (no revision).
+        return None
     if confirmed is None:
         message = (
             failed[0]["reason"]
