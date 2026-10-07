@@ -464,6 +464,10 @@ def _build_json_schema() -> dict[str, Any]:
                 },
                 "required": ["group_by", "categories", "all_categories", "brands", "suppliers"],
             },
+            # SO-PO-REF (owner, 7 Oct 2026): the PO number(s) the message gives, as typed
+            # without the word PO. Read by the business lane for a non-staff profile only
+            # (`so_status.lookup_po_refs`); no code detects a PO number in the text.
+            "po_refs": {"type": ["array", "null"], "items": {"type": "string"}},
             "anaphora": {
                 "type": "object",
                 "additionalProperties": False,
@@ -555,6 +559,7 @@ def _build_json_schema() -> dict[str, Any]:
             "anaphora",
             "profile_statements",
             "low_stock",
+            "po_refs",
         ],
     }
 
@@ -611,6 +616,9 @@ TOLERATED_ABSENT: frozenset[str] = frozenset(
         # LOWSTOCK-SEMANTIC: no recorded emission and no prompt version before
         # `lss_0001_parser_vocab` carries it; absent reads as "nothing placed".
         "low_stock",
+        # SO-PO-REF: no prompt version before `sopr_0002_parser_po_refs` carries it;
+        # absent reads as "no PO number given".
+        "po_refs",
     }
 )
 

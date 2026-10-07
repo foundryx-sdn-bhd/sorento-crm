@@ -367,6 +367,31 @@ describe('SalesOrderDetail - states', () => {
     expect(within(field()).getByText('-')).toBeInTheDocument();
   });
 
+  it('the Order card shows a read-only PO ref next to Project, or a dash (SO-PO-REF U11)', () => {
+    useSalesOrder.mockReturnValue({
+      data: so({ po_ref: 'PO-4500 123' } as Partial<SalesOrder>),
+      isLoading: false,
+      isError: false,
+    });
+    const { unmount } = renderDetail();
+    const field = () =>
+      screen.getByText('PO ref', { selector: 'span.text-xs.text-muted-foreground' }).closest(
+        'div',
+      ) as HTMLElement;
+    expect(within(field()).getByText('PO-4500 123')).toBeInTheDocument();
+    // Not editable: AutoCount owns it, so no input appears in the field even in edit.
+    expect(within(field()).queryByRole('textbox')).toBeNull();
+    unmount();
+
+    useSalesOrder.mockReturnValue({
+      data: so({ po_ref: null } as Partial<SalesOrder>),
+      isLoading: false,
+      isError: false,
+    });
+    renderDetail();
+    expect(within(field()).getByText('-')).toBeInTheDocument();
+  });
+
   it('states what the order is worth, in ringgit, and a dash when nobody priced it', () => {
     useSalesOrder.mockReturnValue({ data: so(), isLoading: false, isError: false });
     const { unmount } = renderDetail();

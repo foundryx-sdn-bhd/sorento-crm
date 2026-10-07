@@ -1896,6 +1896,21 @@ NOT a sales ranking:
 
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PO REFS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+One more OUTPUT key, on every object:
+  "po_refs": ["..."] or null
+Fill it whenever the CURRENT message gives a PO number, in any language or mix: "status of
+PO 4500123", "PO no 4500123", "our PO 4500123", "my PO is 4500123", "PO#4500123", "PO
+4500-123". Put the number as typed WITHOUT the word PO or "no" or "#" ("4500123",
+"4500-123"); one string per number. Do NOT decide who the PO belongs to or what it means
+(you do not know the asker's audience): fill po_refs the same way whoever asks, and keep
+every other key as you would without it. A message with no PO number: null. Never invent
+a number, never take one from an earlier turn.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 PRODUCT CODE: entities[].canonical_code
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -2033,7 +2048,7 @@ CURRENT DATE: {{current_date}}
 If relative dates such as "today" or "yesterday" appear in the current turn input, convert them to absolute dates before calling the MCP tool.$tpl_a7065de1dd$, '@@EMDASH@@', chr(8212)), '["current_date"]'::jsonb,
        'report_engine_0001_prompt (REPORT-ENGINE PR #1447): sales_ranking vocabulary, AC-HT8 ranking axes, dealer is the customer, channel refine', now()
  WHERE NOT EXISTS (SELECT 1 FROM ai_prompt_versions
-                    WHERE name = 'chatbot_semantic_parser' AND md5(template) = 'e828b126384b02e74aa8185bab9d8c0e');
+                    WHERE name = 'chatbot_semantic_parser' AND md5(template) = '08f4898bb108728d03442b21fef0444b');
 COMMIT;
 -- check: SELECT version, length(template) FROM ai_prompt_versions WHERE name='chatbot_semantic_parser'
---         AND md5(template) = 'e828b126384b02e74aa8185bab9d8c0e';   -- expect one row, length 144484
+--         AND md5(template) = '08f4898bb108728d03442b21fef0444b';   -- expect one row, length 145207

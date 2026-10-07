@@ -145,8 +145,12 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # Eleventh re-pin, 7 Oct 2026 (RESOLVE-SEMANTIC-FALLBACK merged over STOCK-QTY-PARTIAL-FILL R2):
 # both addenda in the constant (CANONICAL_CODE_ADDENDUM after LOW_STOCK_FILTERS, then
 # TRAP_SPECS_FALLBACK_BLOCK, MEMORY the tail) measure 47,782 without MEMORY_ADDENDUM (+786,
-# the canonical-code addendum alone) and 48,297 with it; CEILING is 48,297 - 512 = 47,785 so both
-# assertions hold. Nothing else grew.
+# the canonical-code addendum alone) and 48,297 with it; CEILING is 48,297 - 512 = 47,785 so
+# both assertions hold. Nothing else grew.
+# Twelfth re-pin, 8 Oct 2026 (SO-PO-REF merged over RESOLVE-SEMANTIC-FALLBACK): PO_REFS_ADDENDUM
+# (the `po_refs` key, a customer's own PO number) now sits between LOW_STOCK_FILTERS_ADDENDUM
+# and CANONICAL_CODE_ADDENDUM: 48,069 without MEMORY_ADDENDUM (+287 over the eleventh pin) and
+# 48,585 with it; CEILING is 48,585 - 512 = 48,073 so both assertions hold. Nothing else grew.
 # Merge of main (#1513 STOCK-QTY-PARTIAL-FILL, TRAP_SPECS_FALLBACK_BLOCK +2,025) with PR #1447 (report engine):
 # 48,536 est. tokens without MEMORY_ADDENDUM and 49,052 with it, so CEILING is 49,052 - 512. Nothing else grew.
 # REPORT-ENGINE AC-HT8 (PR #1447): the dealer / customer / salesman ranked-noun examples, the
@@ -166,7 +170,9 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # without MEMORY_ADDENDUM, so CEILING is 50,199 (+4).
 # AC-HT8 r6b (the outstanding basis clause leaves the top selling addendum): 50,181 est. tokens
 # without MEMORY_ADDENDUM, so CEILING is 50,185 (+4).
-CEILING = 50_185
+# Merge of main (#1528 SO-PO-REF, PO_REFS_ADDENDUM) with PR #1447 (report engine): 50,469 est. tokens
+# without MEMORY_ADDENDUM, so CEILING is 50,473 (+4).
+CEILING = 50_473
 # The memory addendum on its own, bounded separately so this PR's growth stays bounded.
 # 26 Sep baseline (lane d89110c0): 339 est. tokens. Round 4 (baf4c813, 28 Sep: the history
 # question in any wording, the number re-run, commercial_request) took it to 512, which is
