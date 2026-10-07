@@ -48,6 +48,13 @@ def carry_live_state(
         return replace(state, focus=live["focus"], pending=live["pending"], quoted_live=None)
     live_open = _open_stock(live["focus"])
     mine = _open_stock(focus)
+    # AC-QR-26 (owner ruling, 7 Oct 2026): a quoted answer that opened a follow-up question of
+    # its own (a pending, or a NEW open stock task) replaces the live picker, as a fresh ask
+    # does; the live pending and live open task are then not restored.
+    known = [t for t in (live_open, quoted_open) if t is not None]
+    new_task = mine is not None and all({s.key for s in mine.slots} != {s.key for s in t.slots} for t in known)
+    if asked or new_task:
+        return replace(state, pending=state.pending if asked else None, quoted_live=None)
     # An open task still on the quote's own slots was not opened by this turn.
     if live_open is not None and _inherited(mine):
         kept = tuple(t for t in focus.tasks or () if t.kind != "stock_qty")
