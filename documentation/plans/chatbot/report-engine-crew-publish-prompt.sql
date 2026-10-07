@@ -85,7 +85,7 @@ domain_hint = ONE of: master_products | product_attachment | promotion | forms |
 == DOMAIN IN MESSAGE ==
 domain_in_message is true when THIS message itself carries a DOMAIN or STATUS word -
 stock, incoming, ETA, delivery, order, outstanding, DO, SO, PO, purchase cost, promo,
-price, spec, photo, catalogue, certificate, forms, shipment, GRN, sold the most, top, 卖得最多, 排名 - in any language.
+price, spec, photo, catalogue, certificate, forms, shipment, GRN, sold the most, 卖得最多, 排名 - in any language.
 It is false when the message only names entities, a date window or a place, and leans
 on the previous turn for what is being asked. It is about the WORDS of this message,
 never about domain_hint (which is carried forward when the message names no domain).
@@ -1841,8 +1841,8 @@ object: "ranking_refine": true|false|null, "measure": "qty|amount|null".
     "哪个经销商卖得最多", "多少个经销商卖这个产品" -> group_by "customer", sales_channel null (a dealer or
     customer named as the RANKED noun is the customer axis, never the channel; the channel is only
     "dealer sales" / "project sales"). "这个产品" is no entity: the standing product carries.
-  - "哪一位业务员卖得最多", "which salesman sold the most CWC7606-SH" -> group_by "sales_agent", the code a product
-a sales_ranking verdict always sets domain_in_message true.
+  - "哪一位业务员卖得最多", "which salesman sold the most CWC7606-SH" -> group_by "sales_agent", the code a product entity.
+A sales_ranking verdict always sets domain_in_message true.
 group_by also takes "sales_agent", "brand", "category", "channel" (dealer / project);
 location -> "warehouse". A named brand, sales agent or category is an entity
 {hint: "brand" | "sales_agent" | "category"}, never a customer. The ranked noun
@@ -1983,9 +1983,9 @@ CURRENT DATE
 CURRENT DATE: {{current_date}}
 
 If relative dates such as "today" or "yesterday" appear in the current turn input, convert them to absolute dates before calling the MCP tool.$tpl_a7065de1dd$, '@@EMDASH@@', chr(8212)), '["current_date"]'::jsonb,
-       'report_engine_0001_prompt (REPORT-ENGINE PR #1447): sales_ranking vocabulary', now()
+       'report_engine_0001_prompt (REPORT-ENGINE PR #1447): sales_ranking vocabulary, AC-HT8 ranking axes', now()
  WHERE NOT EXISTS (SELECT 1 FROM ai_prompt_versions
-                    WHERE name = 'chatbot_semantic_parser' AND md5(template) = '00aadad98c0255e1dbe313bc04673a8a');
+                    WHERE name = 'chatbot_semantic_parser' AND md5(template) = '112bae474f70d7caabadae4fdc56a65e');
 COMMIT;
 -- check: SELECT version, length(template) FROM ai_prompt_versions WHERE name='chatbot_semantic_parser'
---         AND md5(template) = '00aadad98c0255e1dbe313bc04673a8a';   -- expect one row, length 140548
+--         AND md5(template) = '112bae474f70d7caabadae4fdc56a65e';   -- expect one row, length 140551

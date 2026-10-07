@@ -141,7 +141,9 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # REPORT-ENGINE AC-HT8 (PR #1447): the dealer / customer / salesman ranked-noun examples, the
 # sales_ranking domain_in_message rule and the ranking words in DOMAIN IN MESSAGE:
 # 48,758 est. tokens without MEMORY_ADDENDUM (+222), so CEILING is 48,762 (the same +4 margin as before).
-CEILING = 48_762
+# AC-HT8 r2 (bare `top` dropped from the list, the repaired salesman line and P2 line): 49,275
+# with MEMORY_ADDENDUM, so CEILING is 49,275 - 512.
+CEILING = 48_763
 # The memory addendum on its own, bounded separately so this PR's growth stays bounded.
 # 26 Sep baseline (lane d89110c0): 339 est. tokens. Round 4 (baf4c813, 28 Sep: the history
 # question in any wording, the number re-run, commercial_request) took it to 512, which is

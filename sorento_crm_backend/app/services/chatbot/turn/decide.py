@@ -527,6 +527,17 @@ def _subject_reading(
     # `None` is a verdict recorded before the key existed - those fall through to the
     # rules below, unchanged, so the replay corpus still measures what it measured.
     in_message = domain_in_message(verdict)
+    order_status = verdict.get("order_status")
+    if (
+        in_message is not None
+        and entities
+        and isinstance(order_status, str)
+        and order_status.strip() == "sales_ranking"
+    ):
+        # AC-HT8-1: a verdict that names its own sales ranking is a new ask under an open
+        # report offer, ahead of both entity rows (the anaphora row included), never a
+        # refine of the standing subject (parser key only).
+        return Decision(NEW_ASK, "names_its_own_ranking", entities=named, window=window, **facts)
     if in_message is True and entities:
         if backward_reference(verdict):
             # R-b (owner hand pass 6, 17 Sep 2026): a pronoun this message carries
@@ -558,13 +569,6 @@ def _subject_reading(
             # it is an incoming ask.
             return Decision(
                 NEW_ASK, "names_its_own_entity", entities=named, window=window, **facts
-            )
-        order_status = verdict.get("order_status")
-        if isinstance(order_status, str) and order_status.strip() == "sales_ranking":
-            # AC-HT8-1: a verdict that names its own sales ranking is a new ask under an
-            # open report offer, never a refine of the standing subject (parser key only).
-            return Decision(
-                NEW_ASK, "names_its_own_ranking", entities=named, window=window, **facts
             )
         return Decision(
             REFINE,

@@ -212,7 +212,8 @@ LIVE_CHARS = 46942  # the fetched file, leading `=` included
 # the SPO document now routes to spo_allocation), an in-body edit (+74).
 # 63051 -> 63081 (8 Oct 2026, REPORT-ENGINE AC-HT8): the DOMAIN IN MESSAGE word list gains
 # "sold the most, top, 卖得最多, 排名", an in-body edit (+30).
-CONSTANT_CHARS = 63081
+# 63081 -> 63076 (AC-HT8 r2): bare `top` leaves that list again, an in-body edit (-5).
+CONSTANT_CHARS = 63076
 
 #: The line the round 8 cut rewrote, as the live file carries it and as the constant does.
 COMPANIES_OFFERED_LIVE = (
