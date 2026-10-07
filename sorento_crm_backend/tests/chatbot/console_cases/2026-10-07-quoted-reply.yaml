@@ -249,17 +249,35 @@ cases:
             - "WDI-K301-D"
 
   - name: "9. Chunk quote: quoting a middle slice of a long reply (a stand-in for n8n's 2nd chunk) resolves to that turn"
+    # "which basins have stock" on the availability view answers "How many units for each?" over the
+    # set's members (443 chars measured on the shared dev copy, 7 Oct 2026). The quote is a 200-char
+    # slice from its middle, never the whole text: the matcher must find the turn by substring and
+    # the bare "1" is the quantity for every listed line (task.py fill rule), so the reply carries
+    # "x 1:" lines for those basins, not the live WDI-K5130 question.
     live_only: true
     cold: true
     turns:
       - text: "which basins have stock"
         expect:
+          branch_kind: business_query
           no_uuid: true
-      - text: "1"
-        quote_slice:
-          of: "which basins have stock"
-          start: 300
-          length: 300
+          reply_contains:
+            - "How many units for each?"
+      - text: "check stock WDI-K5130"
         expect:
           branch_kind: business_query
           no_uuid: true
+          reply_contains:
+            - "How many units of WDI-K5130?"
+      - text: "1"
+        quote_slice:
+          of: "which basins have stock"
+          start: 100
+          length: 200
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "x 1:"
+          reply_not_contains:
+            - "WDI-K5130 x 1"

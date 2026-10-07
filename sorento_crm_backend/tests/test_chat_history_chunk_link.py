@@ -37,7 +37,7 @@ def test_ac_qr_24_photo_path_a_middle_chunk_is_stamped_by_substring(client, db):
     reply = _long_reply()
     assert len(reply) >= 2000
     turn = _turn(db, reply=reply)
-    chunk = reply[900:1250]
+    chunk = reply[900:1300]
     assert _squashed_len(chunk) >= 300
     out = _post(client, message=chunk)
     assert _stamp(db, out["message_id"]) == turn.id

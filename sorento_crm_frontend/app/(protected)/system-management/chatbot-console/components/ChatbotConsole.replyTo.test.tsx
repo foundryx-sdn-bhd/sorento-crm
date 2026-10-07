@@ -135,7 +135,7 @@ describe('ChatbotConsole - Reply to control (AC-QR-19)', () => {
     await waitFor(() => expect(postConsoleTurn).toHaveBeenCalledTimes(2));
     const payload = postConsoleTurn.mock.calls[1][0];
     expect(payload.text).toBe('1 unit');
-    expect(payload.reply_to).toEqual({ id: 'bot-t1-0', text: 'Which product do you mean?' });
+    expect(payload.reply_to).toEqual({ id: 'bot-t1-0', text: 'Which product do you mean?', source: 'n8n' });
   });
 
   it('the user bubble shows the quoted text and the typed text', async () => {
