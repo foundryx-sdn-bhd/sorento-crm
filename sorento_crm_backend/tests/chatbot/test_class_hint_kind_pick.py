@@ -53,6 +53,7 @@ from app.services.product_class_signal import backfill_category_signals
 from app.services.product_spec_derivation import derive_for_code
 from app.services.product_spec_registry import seed_spec_registry
 from tests._pg_fixture import unique_code
+from tests.chatbot.test_counted_set_no_paging import seven_taps  # noqa: F401 - fixture used by name
 from tests.chatbot.test_engine import _envelope, _parser_output, stub_access, stub_parser  # noqa: F401
 from tests.chatbot.test_outstanding_lane import _seed_contact as _seed_business_contact
 from tests.chatbot.test_r3_pending_end_to_end import _session_of
@@ -716,13 +717,59 @@ class TestTheRerunLeavesALockedTokenAlone:
         assert {"promotion", "customer"} <= kinds, (kinds, result.get("unresolved_tokens"))
         assert result.get("fallback_applied") is True, result.keys()
 
-    def test_a_locked_token_is_left_out_of_the_rerun(self, session_factory) -> None:
+    def test_a_locked_tokens_rerun_keeps_no_name_kind(self, session_factory) -> None:
+        """R2 (7 Oct 2026): the locked token IS rerun (an exact record key typed under a
+        wrong hint must still find itself, owner ruling 5 of hand pass 12, see the test
+        below); what the rerun may not do is hand it a promotion / customer / attachment /
+        transporter / form row by name. Nothing is left for "basin", so the route reports
+        no fallback and the word stays unresolved for the spec tier."""
         _seed_world(session_factory)
         result = _route_call(session_factory(), _basin_body(**{LOCK_FIELD: ["basin"]}))
         kinds = _kinds_under(result, "basin")
         assert not kinds & {"promotion", "customer"}, kinds
         assert [t.lower() for t in result.get("unresolved_tokens") or []] == ["basin"], result.get("unresolved_tokens")
         assert not result.get("fallback_applied"), result.get("fallback_types_found")
+        alternatives = [
+            m.get("entity_type")
+            for r in result.get("resolutions") or []
+            if str(r.get("token") or "").lower() == "basin"
+            for m in (r.get("alternatives") or [])
+        ]
+        assert not set(alternatives) & {"promotion", "customer", "attachment", "transporter", "form"}, alternatives
+
+    def test_a_locked_record_key_still_resolves_by_its_exact_key_in_the_rerun(self, session_factory) -> None:
+        """R2 (7 Oct 2026, `test_rearch_r12_handpass12_d.py` red on the lane): a container
+        number the parser hinted `product` (turn 50082c60's own mishint) is a confident
+        product hint, so it is locked - and it is STILL an inbound shipment by its exact
+        `shipping_container_number` (owner ruling 5, hand pass 12: the resolved record
+        kind wins over the parser's mishint). The card forbids a re-type by NAME substring
+        to the five name kinds; an exact record key is not one, so the rerun keeps it."""
+        from tests.chatbot.test_rearch_r12_handpass12_d import _no_dash_code, _seed_shipment
+
+        _seed_world(session_factory)
+        container = _no_dash_code("CONT")
+        shipment_id = _seed_shipment(session_factory, container=container)
+        body = _basin_body(
+            query=container,
+            tokens=[container],
+            match_mode="or",
+            allowed_entity_types=["product"],
+            domain="incoming",
+            **{LOCK_FIELD: [container]},
+        )
+        result = _route_call(session_factory(), body)
+        kinds = _kinds_under(result, container.lower())
+        assert "inbound_shipment" in kinds, (kinds, result.get("unresolved_tokens"), result.get("fallback_types_found"))
+        assert not kinds & {"promotion", "customer", "attachment", "transporter", "form"}, kinds
+        rows = [
+            m
+            for r in result.get("resolutions") or []
+            if str(r.get("token") or "").lower() == container.lower()
+            for m in (r.get("matches") or [])
+        ]
+        assert any(m.get("entity_type") == "inbound_shipment" and m.get("uuid") == shipment_id for m in rows), rows
+        assert result.get("fallback_applied") is True, result.keys()
+        assert container.lower() not in {str(t).lower() for t in result.get("unresolved_tokens") or []}, result
 
     def test_a_locked_token_beside_a_code_keeps_the_codes_own_rerun(self, session_factory) -> None:
         """Per token, not per request (why S1 was not taken): a customer code the parser
@@ -922,3 +969,118 @@ class TestTheRerunLeavesALockedTokenAlone:
         assert {k: v for k, v in without.items() if k != "elapsed_ms"} == {
             k: v for k, v in empty.items() if k != "elapsed_ms"
         }
+
+
+# --------------------------------------------------------------------------- #
+# R2 (7 Oct 2026, CHATBOT-TRIO console case 12, PR #1525 comment 6032784666): a brand
+# echo on a paging turn. After "which tap has technical drawing" / "sorento" listed the
+# first 50 Sorento rows, the real parser read "another 10" on 1 run of 3 as top_n 10 AND
+# the carried brand re-stated as an entity (`Sorento`, hint brand, current_message true,
+# `entity_op: "reuse"`). The echo tripped the current-message guard in
+# `turn_runtime.with_set_count_from_text` and `turn/apply._names_a_subject`, so the page
+# never continued: main minted a product kind pick over the word, this lane resolved it
+# as the brand and the answer lane asked for an attachment type. The prompt defines
+# `reuse` as the op for a message that names NO new value (`chatbot_parser_prompt.py`;
+# the same reading `turn/decide.py` takes for a quick-reply pick, DO-LIST-REPLY-LABEL,
+# and `with_brand_from_offer` takes when it drops the echoed brand), so on a paging
+# turn a reused current-message entity is the carried set's own echo, not a subject.
+# --------------------------------------------------------------------------- #
+
+
+def _trio_paging_echo(**overrides: Any) -> dict[str, Any]:
+    """Turn 3 of the trio's case 12, the red run's parse as recorded (`mock-another10.yaml`):
+    `top_n: 10`, `entity_op: reuse`, `continuation: true`, one brand entity echoed with
+    `current_message: true` and the Known brands canonical_code."""
+    base: dict[str, Any] = dict(
+        message_type="business_query",
+        intent_hint="check_product_attachment",
+        domain_hint="product_attachment",
+        domain_in_message=False,
+        continuation=True,
+        entity_op="reuse",
+        top_n=10,
+        user_goal="trying to show another 10 Sorento technical drawing attachments",
+        entities=[
+            {
+                "raw": "Sorento",
+                "hint": "brand",
+                "canonical_code": "SORENTO",
+                "confident": True,
+                "hint_confident": True,
+                "current_message": True,
+            }
+        ],
+    )
+    base.update(overrides)
+    return _parser_output(**base)
+
+
+class TestABrandEchoOnAPagingTurnIsNotASubject:
+    def test_another_n_with_a_reused_brand_echo_continues_the_set(self) -> None:
+        from app.services.chatbot.turn_runtime import SET_CONTINUE_KEY, with_set_count_from_text
+
+        carried = {"set_key": {"domain": "product_attachment", "brand": "Sorento", "shown": 50, "total": 215}}
+        out = with_set_count_from_text(_trio_paging_echo(), "another 10", carried=carried)
+        assert out.get(SET_CONTINUE_KEY) is True, out
+        assert out.get("top_n") == 10 and out.get("reference_positions") == [], out
+        # The echo is not a subject: nothing is left for `_names_a_subject` or the resolver.
+        assert not [e for e in out.get("entities") or [] if e.get("current_message") is True], out.get("entities")
+
+    def test_a_bare_count_with_a_reused_echo_answers_the_count_question_too(self) -> None:
+        from app.services.chatbot.turn_runtime import with_set_count_from_text
+
+        carried = {"set_key": {"domain": "product_attachment", "brand": "Sorento", "shown": 0, "total": 215}}
+        out = with_set_count_from_text(_trio_paging_echo(top_n=None), "10", carried=carried)
+        assert out.get("top_n") == 10 and out.get("reference_positions") == [], out
+        assert not [e for e in out.get("entities") or [] if e.get("current_message") is True], out.get("entities")
+
+    def test_a_new_value_on_a_paging_turn_is_still_a_new_ask(self) -> None:
+        """Control: the parser declaring a NEW value (`replace_combine`) beside the count is
+        today's reading - the message is left to the parser, nothing is dropped."""
+        from app.services.chatbot.turn_runtime import with_set_count_from_text
+
+        carried = {"set_key": {"domain": "product_attachment", "brand": "Sorento", "shown": 50, "total": 215}}
+        verdict = _trio_paging_echo(entity_op="replace_combine")
+        assert with_set_count_from_text(verdict, "another 10 cabana", carried=carried) == verdict
+
+    def test_without_a_carried_set_the_echo_is_left_alone(self) -> None:
+        from app.services.chatbot.turn_runtime import with_set_count_from_text
+
+        verdict = _trio_paging_echo()
+        assert with_set_count_from_text(verdict, "another 10", carried=None) == verdict
+
+    def test_the_engine_pages_the_carried_set_past_the_brand_echo(
+        self, session_factory, stub_parser, stub_access, seven_taps, monkeypatch
+    ) -> None:
+        """Engine replay of the trio's case 12 on the seven-taps world (the no-paging
+        harness): the first answer lists 5 of the 7 certified taps; "another 2" with the
+        brand echoed under `reuse` lists the last 2 of the SAME set, never an attachment
+        type ask and never a kind pick over the brand word."""
+        from app.services.chatbot.lanes.business import answer
+        from tests.chatbot.set_reply import one_line_header
+        from tests.chatbot.test_counted_set_no_paging import _tap_cert_verdict, _turn
+        from tests.chatbot.test_lane_require import _s4_codes_in
+
+        monkeypatch.setattr(answer, "SET_LIST_MAX", 5)
+        engine_mod, codes, calls, contact_id = seven_taps
+        db = session_factory()
+        db.add(Brand(id=str(uuid.uuid4()), brand_code="SRT", brand_name="Sorento", is_active=True, company_id=DEFAULT_COMPANY_ID))
+        db.commit()
+        stub_parser(_tap_cert_verdict())
+        stub_access()
+        first = _turn(engine_mod, session_factory, contact_id=contact_id, n=1, text="which tap has cert")
+        assert one_line_header(first).startswith("Here's what you want: taps with certificates (7"), first
+        listed_first = _s4_codes_in(first)
+        assert len(listed_first) == 5, first
+        before = len(calls)
+
+        stub_parser(_trio_paging_echo(top_n=2, user_goal="another 2"))
+        text = _turn(engine_mod, session_factory, contact_id=contact_id, n=2, text="another 2")
+
+        assert "attachment type" not in text.lower() and "Which kind of file do you need?" not in text, text
+        assert "Which one do you mean?" not in text, text
+        assert one_line_header(text).startswith("Here's what you want: taps with certificates (7"), text
+        assert "showing 6 to 7" in one_line_header(text), text
+        listed_next = _s4_codes_in(text)
+        assert len(listed_next) == 2 and listed_next == set(codes) - listed_first, (text, codes)
+        assert len(calls) == before + 1 and len(calls[-1]["args"]["product_ids"]) == 2, calls[before:]
