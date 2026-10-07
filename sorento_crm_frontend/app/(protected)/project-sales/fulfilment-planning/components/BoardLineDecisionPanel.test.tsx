@@ -2193,7 +2193,7 @@ describe('BoardLineDecisionPanel: re-seeds from the decision when it changes und
     ]);
   });
 
-  it('overlays an approved decision s composition too, not only an amended one', () => {
+  it('follows a Decide-dropdown approval back to the engine suggestion', () => {
     const { rerender } = render(
       <BoardLineDecisionPanel
         contribution={contributionOf()}
@@ -2215,7 +2215,9 @@ describe('BoardLineDecisionPanel: re-seeds from the decision when it changes und
     expect(screen.getByLabelText('Reserve at BRW-AM')).toHaveValue(5);
     expect(screen.getByLabelText('Reserve at BRW')).toHaveValue(19);
 
-    // "As suggested" from the Decide dropdown: an approval that carries the suggested rows.
+    // "As suggested" from the Decide dropdown: an approval (it carries the suggested rows,
+    // D11, but `draftFor` reads an approval as the CURRENT suggestion, the same reading
+    // `confirmLinesFor` commits).
     rerender(
       <BoardLineDecisionPanel
         contribution={contributionOf()}
@@ -2269,44 +2271,6 @@ describe('BoardLineDecisionPanel: re-seeds from the decision when it changes und
     expect(screen.getByLabelText('Reserve at BRW')).toHaveValue(15);
     expect(screen.getByLabelText(/^Reason/)).toHaveValue('The site asked for less.');
     expect(onDirtyChange).toHaveBeenLastCalledWith(true);
-  });
-
-  it('a decision the panel wrote itself is not re-read back over its own rows', async () => {
-    const onDecide = vi.fn().mockResolvedValue(true);
-    const { rerender } = render(
-      <BoardLineDecisionPanel
-        contribution={contributionOf()}
-        decision={null}
-        locations={LOCATIONS}
-        onDecide={onDecide}
-      />,
-    );
-    fireEvent.change(screen.getByLabelText('Reserve at BRW-AM'), {
-      target: { value: '5' },
-    });
-    fireEvent.change(screen.getByLabelText('Reserve at BRW'), {
-      target: { value: '19' },
-    });
-    fireEvent.change(screen.getByLabelText(/^Reason/), {
-      target: { value: 'Less from BRW-AM.' },
-    });
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Save decision' }));
-    });
-    const written = onDecide.mock.calls[0][0] as BoardDecision;
-
-    // The board stores the SAME object the panel handed it (`FulfilmentBoardPanel.decide`).
-    rerender(
-      <BoardLineDecisionPanel
-        contribution={contributionOf()}
-        decision={written}
-        locations={LOCATIONS}
-        onDecide={onDecide}
-      />,
-    );
-    expect(screen.getByLabelText('Reserve at BRW-AM')).toHaveValue(5);
-    expect(screen.getByLabelText('Reserve at BRW')).toHaveValue(19);
-    expect(screen.getByRole('button', { name: 'Saved' })).toBeDisabled();
   });
 });
 

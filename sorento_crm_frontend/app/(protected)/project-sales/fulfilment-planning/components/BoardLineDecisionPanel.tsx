@@ -353,12 +353,11 @@ export function BoardLineDecisionPanel({
    * turning it back OFF afterwards took the "nothing was captured" branch below and wrote
    * zeroes over rows nobody asked to zero.
    *
-   * Seeded ONCE from the opening draft - a line that opens already wholly bought (its stock
-   * rows already at zero) starts on the switch, the same line `setBuying`'s OFF transition
-   * documents - and changed only by `setBuying` itself. No reactive re-seed: the panel already
-   * remounts fresh (via `draftFor`, the initializer `draft` itself uses) whenever it is closed
-   * and reopened on a different contribution or a different saved draft, which is the only
-   * point this needs to move.
+   * Seeded from the opening draft - a line that opens already wholly bought (its stock rows
+   * already at zero) starts on the switch, the same line `setBuying`'s OFF transition
+   * documents - and changed by `setBuying` itself, or by the BOARD-DECIDE-RESEED effect below
+   * when the decision changes under an untouched panel (the same seed, off the re-seeded
+   * draft). Never derived from the numbers mid-edit.
    */
   const [buying, setBuyingState] = React.useState(
     () => toMinor(draft.buy_qty) > 0 && fromStockMinor === 0,
@@ -462,25 +461,25 @@ export function BoardLineDecisionPanel({
    * open for Y" from the server.
    *
    * So it re-seeds exactly as a fresh mount would, when the decision changes under it, UNLESS
-   * - the planner has typed into this panel (`dirty`): their work is not overwritten; the
-   *   pill beside the row already shows the new decision, and closing and reopening the row
-   *   loads it. Read through a ref so the effect keys on the decision alone - keying on
-   *   `dirty` too would fire this again the moment a save cleared it.
-   * - the decision is the one THIS panel just wrote (`ownWrite`): the board stores the very
-   *   object `save()` / `reject()` handed it, and reading it back would drop what the draft
-   *   holds and the decision does not (a borrow row's live `donor_impact`, the row keys).
+   * the planner has typed into this panel (`dirty`): their work is not overwritten; the pill
+   * beside the row already shows the new decision, and closing and reopening the row loads
+   * it. Read through a ref so the effect keys on the decision alone - keying on `dirty` too
+   * would fire this again the moment a save cleared it.
+   *
+   * This panel's OWN `save()` / `reject()` never trips it: `FulfilmentBoardPanel.decide`
+   * writes `draft[key]` synchronously, before its await, so the render that carries the new
+   * decision still has `dirty` true and is skipped; and an untouched approving Save re-seeds
+   * to the suggestion either way (review round 1: an own-write guard here was unreachable).
    *
    * The N3 effect above is the same idea for `savedOnce` / `rejectedOnce`; this one is for
    * what the inputs hold.
    */
   const dirtyRef = React.useRef(dirty);
   dirtyRef.current = dirty;
-  const ownWrite = React.useRef<BoardDecision | null>(null);
   const seededFrom = React.useRef<BoardDecision | null>(decision);
   React.useEffect(() => {
     if (decision === seededFrom.current) return;
     seededFrom.current = decision;
-    if (decision && decision === ownWrite.current) return;
     if (dirtyRef.current) return;
     const next = draftFor(contribution, decision);
     const stock = lineBalance({ ...next, buy_qty: '0' });
@@ -535,9 +534,10 @@ export function BoardLineDecisionPanel({
     inFlight.current = true;
     setPending(true);
     try {
+      let ok: boolean | void;
       const approvingNow = approving && !covered;
       if (approvingNow) {
-        ownWrite.current = {
+        ok = await onDecide({
           ...suggestionWithReasons(contribution, {
             // D3 (S2): the ONE box, not a per-field input any more - `foldedDraft` is the same
             // fan-out Save's amending branch below uses. AC-28: `reason` travels on the
@@ -553,17 +553,15 @@ export function BoardLineDecisionPanel({
             cited_document: draft.cited_document,
           }),
           suspected_system_issue: suspected,
-        };
+        });
       } else {
-        ownWrite.current = {
+        ok = await onDecide({
           ...decisionFromAmendDraft(foldedDraft, reason),
           // THE BOOLEAN, never `|| undefined`: `false` is the planner's answer that the numbers
           // are fine, and dropping the key let the frozen `true` behind it read as current.
           suspected_system_issue: suspected,
-        };
+        });
       }
-      // The ONE object handed over, so the re-seed effect can recognise it coming back.
-      const ok = await onDecide(ownWrite.current);
       // S2 (code review round 3): the check state answers the click, but only for a click that
       // actually landed - `onDecide` returning `false` (a rejected write) must not show a
       // check the server never earned. `undefined` (a caller with nothing to report) reads as
@@ -615,12 +613,11 @@ export function BoardLineDecisionPanel({
     inFlight.current = true;
     setPending(true);
     try {
-      ownWrite.current = {
+      const ok = await onDecide({
         verdict: 'rejected',
         reason: reason.trim(),
         suspected_system_issue: suspected,
-      };
-      const ok = await onDecide(ownWrite.current);
+      });
       if (ok === false) return;
       setDirty(false);
       setRejectedOnce(true);
@@ -1298,12 +1295,12 @@ function draftFor(
   decision: BoardDecision | null,
 ): DraftLine {
   const base = amendDraftFrom(contribution);
-  // BOARD-DECIDE-RESEED: an `approved` decision carries the suggested composition too (D11,
-  // `suggestionWithReasons`), and the Decide dropdown writes one whenever its way happens to
-  // match the engine - so it overlays the same way an amendment does. A rejection carries no
-  // rows and keeps the base; so does the board's own `preMarked` approval and a bare
-  // `{verdict: 'approved'}` from before D11.
-  if (!decision || decision.verdict === 'rejected' || !decision.reserve)
+  // An `approved` decision is NOT overlaid even though it carries rows (D11): an approval
+  // means "the engine's composition", and `confirmLinesFor` (`fulfilmentBoard.ts`) commits
+  // the CURRENT proposal for it, not the rows stored at the time - so the panel opens on the
+  // same current proposal, or the two would disagree on a line whose suggestion moved after
+  // it was approved (BOARD-DECIDE-RESEED review round 1).
+  if (!decision || decision.verdict !== 'amended' || !decision.reserve)
     return base;
 
   const byWarehouse = new Map(
