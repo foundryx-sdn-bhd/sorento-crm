@@ -45,7 +45,7 @@ def _load_s4():
     """`chatbot_rearch_s4`, for its body formula (the same load `mem_0002_parser_memory`
     does). Importing a revision file runs no DDL."""
     spec = importlib.util.spec_from_file_location(
-        "_lss_0001_s4", Path(__file__).resolve().parent / "chatbot_rearch_s4.py"
+        "_sopr_0002_s4", Path(__file__).resolve().parent / "chatbot_rearch_s4.py"
     )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -53,7 +53,7 @@ def _load_s4():
 
 
 def publish(session: Session) -> int | None:
-    """Publish the low-stock-filters prompt as the next `chatbot_semantic_parser`
+    """Publish the PO refs prompt as the next `chatbot_semantic_parser`
     version, unless a version already carries this exact template. Returns the new
     version number, or `None` when already published."""
     template, blocks_hash = _load_s4()._body(session)

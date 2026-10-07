@@ -1,6 +1,6 @@
 # PLAN: SO PO ref (SO-PO-REF)
 
-Status: building (lane SO-PO-REF, size L: migration + ingest + chatbot + SO screens). UAC: `so-po-ref-acceptance-criteria.md`.
+Status: built, in review (lane SO-PO-REF, PR #1528, size L). UAC: `so-po-ref-acceptance-criteria.md`.
 
 ## Owner rulings (7 Oct 2026)
 
