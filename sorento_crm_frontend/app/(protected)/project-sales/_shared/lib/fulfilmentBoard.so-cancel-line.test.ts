@@ -9,7 +9,7 @@
 import { describe, expect, it } from 'vitest';
 import type { BoardContribution, BoardDraft } from '../types/fulfilmentPlanning.types';
 import * as board from './fulfilmentBoard';
-import { amendSummary } from './boardAmend';
+import { amendSummary, decideComposition } from './boardAmend';
 
 const { confirmLinesFor, pressPostsContribution, plannedLineCount, confirmDialogRowsFor } = board;
 
@@ -156,5 +156,48 @@ describe('committed Cancel SO line (AC-F16)', () => {
   it('control: a book-cancelled line is still retired by the press', () => {
     expect(plannedLineCount([bookCancelled], 'so-1', {})).toBe(1);
     expect(confirmDialogRowsFor([bookCancelled], {}, ctx).cancelled).toHaveLength(1);
+  });
+});
+
+describe('inquiry-decided line vs actively decided line on the Cancel SO press (AC-F17, AC-F19)', () => {
+  // `covered` is true for TWO reasons: an ACTIVE decision (`decision` non-null) or a live
+  // order-inquiry row with no decision (`decision` null). Only the first must be rejected first.
+  const inquiryDecided = row({ covered: true, decision: null });
+  const active = row({
+    key: 'so-1|20|CB110-R|2026-10-01',
+    project_line_id: 'pl-20',
+    line_no: 20,
+    covered: true,
+    decision: { id: 'd-1' } as never,
+  });
+
+  it('AC-F17: decideComposition cancel_so composes an inquiry-decided line, skips the others', () => {
+    expect(decideComposition(inquiryDecided, 'cancel_so')).toEqual({
+      reserve: [],
+      borrow: [],
+      timely_spo_qty: '0',
+      buy_qty: '0',
+      order_back: false,
+    });
+    expect(decideComposition(active, 'cancel_so')).toEqual({ skip: 'confirmed, reject it first' });
+    expect(decideComposition(row({ cancelled: true }), 'cancel_so')).toEqual({
+      skip: 'already cancelled',
+    });
+  });
+
+  it('AC-F19: an inquiry-decided line with a cancel draft is posted in cancelled_lines, not lines', () => {
+    const draft: BoardDraft = { [inquiryDecided.key]: CANCEL };
+    expect(board.cancelledLinesFor([inquiryDecided], 'so-1', draft)).toEqual([
+      { project_line_id: 'pl-10', reason: 'Customer cancelled on the phone' },
+    ]);
+    expect(confirmLinesFor([inquiryDecided], 'so-1', draft)).toEqual([]);
+    expect(pressPostsContribution(inquiryDecided, CANCEL)).toBe(true);
+  });
+
+  it('AC-F19 control: an actively decided line with a cancel draft still posts nothing', () => {
+    const draft: BoardDraft = { [active.key]: CANCEL };
+    expect(board.cancelledLinesFor([active], 'so-1', draft)).toEqual([]);
+    expect(confirmLinesFor([active], 'so-1', draft)).toEqual([]);
+    expect(pressPostsContribution(active, CANCEL)).toBe(false);
   });
 });

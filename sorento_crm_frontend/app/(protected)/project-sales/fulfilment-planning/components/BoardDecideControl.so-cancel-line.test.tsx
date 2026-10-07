@@ -143,3 +143,48 @@ describe('Transfer to Cancel SO in the Decide menu', () => {
     );
   });
 });
+
+describe('Transfer to Cancel SO names the rows it skips (AC-F18)', () => {
+  const decision = {
+    revision_no: 1,
+    timely_spo_qty: '0',
+    reserve: [],
+    borrow: [],
+    buy_qty: '36',
+  };
+  const confirmed = (n: number) =>
+    row({ key: `so-1:line-${n}`, line_no: n, covered: true, decision });
+
+  async function openCancel(contributions: BoardContribution[]) {
+    renderControl(contributions);
+    openMenu();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Transfer to Cancel SO' }));
+    return screen.findByRole('dialog');
+  }
+
+  it('all three confirmed: says so and Save 0 lines is disabled', async () => {
+    const dialog = await openCancel([confirmed(10), confirmed(20), confirmed(30)]);
+    expect(dialog).toHaveTextContent('3 lines will be skipped: confirmed, reject it first');
+    fireEvent.change(within(dialog).getByLabelText(/^Reason/), { target: { value: 'Customer cancelled' } });
+    const save = within(dialog).getByRole('button', { name: 'Save 0 lines' });
+    expect(save).toBeDisabled();
+  });
+
+  it('mixed: 1 skipped sentence, Save 2 lines enabled once a reason is typed', async () => {
+    const dialog = await openCancel([
+      row({ key: 'so-1:line-10', line_no: 10 }),
+      row({ key: 'so-1:line-20', line_no: 20 }),
+      confirmed(30),
+    ]);
+    expect(dialog).toHaveTextContent('1 line will be skipped: confirmed, reject it first');
+    const save = within(dialog).getByRole('button', { name: 'Save 2 lines' });
+    expect(save).toBeDisabled();
+    fireEvent.change(within(dialog).getByLabelText(/^Reason/), { target: { value: 'Customer cancelled' } });
+    expect(save).toBeEnabled();
+  });
+
+  it('nothing skipped: no skip sentence', async () => {
+    const dialog = await openCancel([row()]);
+    expect(dialog.textContent).not.toMatch(/will be skipped/);
+  });
+});
