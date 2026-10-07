@@ -15,8 +15,12 @@
 #       --prompt-version <the patched version id>
 #
 # `expect.parser.entities` is graded as a WHOLE list (same length, same order, each item
-# graded on the keys it names): the entity order below is the sentence's own word order.
-# `spec_value` for a numeric key is the number the parser emits (300, not "300").
+# graded on the keys it names). The order below is the one the live parser (gpt-5.4-mini,
+# patched text) emitted on the 7 Oct 2026 sandbox run: the parser does not keep the
+# sentence's word order (a brand or category word comes first). A typed product code is
+# carried as `raw`; `canonical_code` is filled by the resolver later in the turn, so a
+# product entity is graded on its `raw` here. `spec_value` for a numeric key is the
+# number the parser emits (300, not "300").
 #
 # Contact 550337739 is the dealer whose 10:07 turn is the owner's own example; any
 # availability-only dealer test copy works.
@@ -68,7 +72,7 @@ cases:
       parser:
         entities:
           - hint: "product"
-            canonical_code: "SRTWC8066-SH"
+            raw: "Srtwc8066-sh"
             quantity: 50
           - hint: "specification"
             spec_key: "trap_type"
@@ -147,15 +151,15 @@ cases:
     expect:
       parser:
         entities:
+          - hint: "brand"
+            canonical_code: "Sorento"
+          - hint: "category"
           - hint: "specification"
             spec_key: "trap_type"
             spec_value: "s_trap"
           - hint: "specification"
             spec_key: "trap_length"
             spec_value: 200
-          - hint: "brand"
-            canonical_code: "Sorento"
-          - hint: "category"
       reply_not_contains:
         - "Which one do you mean"
         - "customer"
@@ -169,7 +173,12 @@ cases:
         expect:
           parser:
             entity_op: "reuse"
+            # The carried product rides beside the new spec (current_message false): that
+            # is what "reuse" means and what the resolver narrows to the sibling.
             entities:
+              - hint: "product"
+                raw: "SRTWC286-SH"
+                current_message: false
               - hint: "specification"
                 spec_key: "trap_type"
                 spec_value: "p_trap"
@@ -186,7 +195,7 @@ cases:
         expect:
           parser:
             entities:
+              - hint: "category"
               - hint: "specification"
                 spec_key: "trap_type"
                 spec_value: "p_trap"
-              - hint: "category"

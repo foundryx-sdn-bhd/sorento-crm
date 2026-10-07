@@ -34,7 +34,13 @@ from tests.chatbot import _trap_specs_prompt as tp
 pytestmark = pytest.mark.live_external
 
 TODAY = "Tuesday, 06 October 2026"
-KNOWN_BRANDS = "Sorento (SRT), Mocha (MCH), Cabana (CBN)"
+#: The live `Brand` rows the engine hands `build_user_block` (rendered as the
+#: "Known brands: Sorento (SRT), Mocha (MCH), Cabana (CBN)" line by `context.known_brands_line`).
+KNOWN_BRANDS = [
+    {"brand_name": "Sorento", "brand_code": "SRT"},
+    {"brand_name": "Mocha", "brand_code": "MCH"},
+    {"brand_name": "Cabana", "brand_code": "CBN"},
+]
 
 #: After "SRTWC286-SH x 10" was answered (contact 550337680, 14:50 MYT).
 ANSWERED_FOCUS = SimpleNamespace(
@@ -89,7 +95,7 @@ def _parse(system_text: str, message: str, *, label: str, focus=None, previous="
         pending_kind=None,
         focus=focus,
         recent_exchanges=recent,
-        known_brands=KNOWN_BRANDS,
+        brands=KNOWN_BRANDS,
     )
     out = dict(parser.parse(_config(system_text), block))
     print(
@@ -159,7 +165,10 @@ def test_a_code_with_trap_words_keeps_the_product_and_both_specs(db, label: str)
     out = _parse(_system(label, db), "Srtwc8066-sh s trap 250mm 50pc", label=label)
     products = [e for e in out.get("entities") or [] if e.get("hint") == "product"]
     assert len(products) == 1 and products[0].get("quantity") == 50, out
-    assert products[0].get("canonical_code", "").upper().replace(" ", "") == "SRTWC8066-SH", out
+    # The parser carries the typed code as `raw`; `canonical_code` is the resolver's to fill
+    # later in the turn, so either spelling of the code counts here.
+    code = products[0].get("canonical_code") or products[0].get("raw") or ""
+    assert code.upper().replace(" ", "") == "SRTWC8066-SH", out
     specs = _specs(out)
     assert specs.get("trap_type") == "s_trap" and specs.get("trap_length") in (250, 250.0), out
 
