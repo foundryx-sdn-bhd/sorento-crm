@@ -1,7 +1,7 @@
 # UAC: promotion asks filter by subject; unresolved subject asks back; tier menu always stamped (PROMO-SUBJECT-FILTER)
 
 Plan: `PLAN-promo-subject-filter-07oct.md`. Card: `promo-subject-filter-behaviour-card.md`
-(rulings: Q1 (a), Q2 (a), Q3 (a), Q5 (a); Q4 re-asked as promotion KINDS, R5 held). Tests in `sorento_crm_backend/tests/` (chatbot ones under `tests/chatbot/`).
+(rulings: Q1 (a), Q2 (a), Q3 (a), Q5 (a); Q4a (a) and Q4b (a) by the owner 7 Oct: an A3 flyer is a promotion KIND, promotion_types). Tests in `sorento_crm_backend/tests/` (chatbot ones under `tests/chatbot/`).
 Seeded data only (CI DB is empty): seed brands, categories, products with a
 `product_specifications.values.class` value, promotions with `access_levels`, dates and
 `promotion_products` links. Never real rows.
@@ -54,6 +54,25 @@ AC-16 When the parser resolved a brand (canonical brand entity, or the tier gate
       for an entity that did not resolve to a brand (D16 stays for products: never name a guessed
       product code, answer.py:303-312).
 
+## R5: promotion kinds (Q4a (a), Q4b (a), owner 7 Oct)
+
+AC-19 The parser reads a named promotion kind against the promotion_types list (type names from the
+      DB: Standard Promo, Special Promo, A3 Flyer, Focus Item, PP Promo) into a structured field
+      (new dev prompt version, never labelled production). A bare "flyer" / "promo" / "brochure"
+      names NO kind (Q4b (a)): every kind is in play.
+AC-20 `GET /api/v1/marketing/promotions` accepts `promotion_types` (type codes) and `brand_ids`;
+      brand means a brand of a LINKED product (promotion_products -> products.brand_id). Both AND
+      with scope_terms, access_levels and the window. MCP promotions tool exposes both.
+AC-21 Kind + brand with no LIVE promotion (is_active and inside its window) at the customer's levels:
+      no tier menu, no files. Reply, one fact per line:
+      `There is no Sorento A3 flyer right now.`
+      then the live promotions of the same kind from other brands the customer may see, by name:
+      `Other A3 flyers:` / `MOCHA A3 FLYER 02102026` / `MOCHA A3 Flyer 03082026`
+      (one line per distinct promotion name; two rows with one name are one line). No other brand
+      has a live one: the first line only. Brand name is the canonical name (Q5).
+AC-22 Kind + brand WITH live promotions: normal stamped tier menu narrowed to that kind and brand;
+      the pick sends only that kind and brand.
+
 ## Must not regress
 
 AC-12 Ask with no subject ("any promo") behaves as today (menu stamped per AC-9, all promos at
@@ -65,8 +84,8 @@ AC-13 `test_water_tap_basin_is_one_unknown_product_type`, round4 `test_r5_*`,
 ## Live console eval (after green)
 
 AC-14 Turn 1 "any basin cabinet promo" -> AC-7 reply (no menu, no kitchen sink file).
-AC-15 Turn 2 "sroento a3 flyer" -> menu stamped (AC-9); pick Dealer -> Sorento dealer promos only
-      and the question names Sorento (AC-16); the A3 flyer kind is held for Q4.
+AC-15 Turn 2 "sroento a3 flyer" -> AC-21 reply: `There is no Sorento A3 flyer right now.` then the
+      two live Mocha A3 flyers by name; no menu, no Sorento standard promo.
 AC-17 (owner acceptance check) A promo ask for a product code (a kitchen sink code linked to a live
       promotion) still returns that product's promotion for the picked level (product_ids path).
 AC-18 (owner acceptance check) "kitchen sink promo" returns only promotions linked to kitchen sink

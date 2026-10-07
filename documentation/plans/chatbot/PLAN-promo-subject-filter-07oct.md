@@ -3,7 +3,7 @@
 Status: BUILDING (7 Oct 2026). Track: full M (chatbot behaviour + backend/MCP param; no
 migration, no auth change, no UI). LEAD pattern: tester red first, coder green, reviewer.
 Card: `promo-subject-filter-behaviour-card.md`. UAC: `promo-subject-filter-acceptance-criteria.md`.
-Q5 (a) by the owner 7 Oct: R6 brand echo IN. Q4 re-asked (A3 flyer is a promotion KIND, promotion_types); R5 held.
+Q5 (a) by the owner 7 Oct: R6 brand echo IN. Q4a (a) + Q4b (a) by the owner 7 Oct: R5 promotion kinds IN (AC-19..22), built red-first after R1-R4.
 
 ## Journey
 
