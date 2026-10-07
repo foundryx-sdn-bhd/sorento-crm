@@ -481,3 +481,97 @@ class TestAMissingCaptionIsNone:
     ) -> None:
         caption = _run_image_turn(session_factory, monkeypatch, stub_parser, stub_access, media_pipeline, "X5")
         assert caption == "X5"
+
+
+# =========================================================================== R2: one fold
+# ROGUE-CONVO-REVIEW-R2 (crew review on PR #1506): "did this message's own product token
+# miss?" is one question with one fold. The resolver lists a product token with its
+# separators dropped and its unicode dashes folded first (`resolve_gate._token_of`,
+# `_UNICODE_DASH_FOLD` then `_PRODUCT_FOLD`); the engine keys its unplaced map and the
+# composer joins its "what you want" header through the same key (`turn.state.token_key`).
+# A code pasted with an EN DASH (Word autocorrect) or a MINUS SIGN (Excel paste) must fold
+# the same on all three sides, or rule C silently never fires and the old "(+34 more)"
+# header comes back. Input -> reply pins through the real engine, never a payload shape.
+
+#: What Word and Excel put where the dealer typed a hyphen.
+DASHES = {"hyphen": "-", "en-dash": "\u2013", "minus-sign": "\u2212"}
+
+
+class TestATypedTokenFoldsTheSameOnEverySide:
+    @pytest.mark.parametrize("dash", list(DASHES.values()), ids=list(DASHES))
+    def test_a_word_shaped_token_with_any_dash_is_named_as_typed(self, console, dash) -> None:
+        """Turn 11 pasted from Word: the same reply as the hyphen (the control), the
+        dealer's own character kept, nothing the set reader derived."""
+        typed = f"Srt{dash}hp"
+        c = console()
+        out = c.say(typed, stock(product(typed)))
+        assert out == f"Here's what you want: {typed}\n\nCouldn't find: \"{typed}\".\n\n{REFER}", out
+        assert "srthp" not in out.lower(), out
+        assert c.state["focus"]["set_page"] is None, c.state["focus"]
+        assert c.stock_calls == [], c.stock_calls
+
+    @pytest.mark.parametrize("dash", list(DASHES.values()), ids=list(DASHES))
+    def test_a_pasted_line_with_any_dash_before_the_code_carries_no_set(self, console, dash) -> None:
+        """Turn 4 pasted from Excel: the dash before the code is the one the sheet emits."""
+        line = DESCRIPTION_LINE.replace(")-SRTWC", f"){dash}SRTWC")
+        c = console()
+        out = c.say(line, stock(product(line)))
+        assert out == f"Here's what you want: {line}\n\nCouldn't find: \"{line}\".\n\n{REFER}", out
+        assert c.state["focus"]["set_page"] is None, c.state["focus"]
+        assert c.stock_calls == [], c.stock_calls
+
+    @pytest.mark.parametrize(
+        "typed",
+        ["SRT345-HP", "Srt 345 hp", "SRT345\u2013HP", "SRT345\u2212HP", " srt - 345 -- hp ", "SRT345HP"],
+        ids=["hyphen", "spaces", "en-dash", "minus-sign", "run-of-separators", "bare"],
+    )
+    def test_the_resolver_lists_a_product_token_by_the_engines_own_key(self, typed) -> None:
+        """The explicit dependency: the token the resolver SENDS and lists back
+        (`resolve_gate._token_of`) keys the engine's unplaced map (`token_key`) and the
+        composer's join (`answer._type_norm`). A resolver fold change fails here, loudly,
+        instead of degrading rule C in silence."""
+        from app.services.chatbot.lanes.business.answer import _type_norm
+        from app.services.chatbot.lanes.business.resolve_gate import _token_of
+
+        sent = _token_of({"raw": typed, "hint": "product"})
+        assert token_key(sent) == token_key(typed) == "srt345hp", (sent, typed)
+        assert _type_norm(typed) == token_key(typed), typed
+        verdict = {"entities": [{"hint": "product", "raw": typed}]}
+        unplaced = turn_runtime.unplaced_tokens(verdict["entities"], {"unresolved_tokens": [sent]})
+        assert unplaced == {"srt345hp": typed.strip()}, unplaced
+        assert turn_runtime.typed_product_unplaced(verdict, unplaced) is True
+
+
+class TestRuleCReadsTheResolversOwnTierName:
+    """Rule C drops a product every match of which is the SPEC tier. The tier is the
+    resolver's name for its last rung (`references._emit_spec_matches`), declared ONCE
+    (`turn_runtime.SPEC_TIER`); a rename on the resolver side fails here."""
+
+    def test_the_rows_the_resolver_emits_carry_the_one_named_tier(self) -> None:
+        from app.api.v1.system import references
+
+        result: dict = {"resolutions": [], "unresolved_tokens": []}
+        references._emit_spec_matches(
+            result, [{"product_code": "ZZQTAP1", "product_id": "uuid-zq1", "score": 0.9, "summary": "ZZQ tap"}], "tap"
+        )
+        tiers = {m["match_tier"] for res in result["resolutions"] for m in res["matches"]}
+        assert tiers == {turn_runtime.SPEC_TIER}, tiers
+        assert turn_runtime.spec_tier_matched(result) is True
+
+    def test_the_tier_name_is_declared_once(self) -> None:
+        """Every code read of the tier name imports `SPEC_TIER`; no second literal in the
+        chatbot package or the resolver route (docstrings and comments are not code)."""
+        import tokenize
+        from pathlib import Path
+
+        import app.api.v1.system.references as references
+        import app.services.chatbot as chatbot_pkg
+
+        files = [Path(references.__file__), *Path(chatbot_pkg.__file__).parent.rglob("*.py")]
+        holders: list[str] = []
+        for path in files:
+            with tokenize.open(path) as fh:
+                for tok in tokenize.generate_tokens(fh.readline):
+                    if tok.type == tokenize.STRING and tok.string.strip("\"'") == "spec_search":
+                        holders.append(f"{path.name}:{tok.start[0]}")
+        assert [h.rsplit(":", 1)[0] for h in holders] == ["turn_runtime.py"], holders
