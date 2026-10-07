@@ -1,0 +1,90 @@
+/**
+ * SO-CANCEL-LINE (AC-F3 amend wording, AC-F4, AC-F5): a `cancelled` draft verdict is carried by
+ * the press on its OWN body channel (`cancelled_lines`), never in `lines`.
+ *
+ * `cancelledLinesFor(contributions, salesOrderId, draft, options)` is the contract name the
+ * coder implements (twin of `rejectedCoveredLineIdsFor`); it returns the body entries
+ * `[{ project_line_id, reason }]`.
+ */
+import { describe, expect, it } from 'vitest';
+import type { BoardContribution, BoardDraft } from '../types/fulfilmentPlanning.types';
+import * as board from './fulfilmentBoard';
+import { amendSummary } from './boardAmend';
+
+const { confirmLinesFor, pressPostsContribution } = board;
+
+function row(overrides: Partial<BoardContribution> = {}): BoardContribution {
+  return {
+    key: 'so-1|10|CB110|2026-10-01',
+    sales_order_id: 'so-1',
+    project_line_id: 'pl-10',
+    so_number: 'SO900001',
+    line_no: 10,
+    item_code: 'CB110',
+    qty: '36',
+    unplannable: false,
+    cancelled: false,
+    rank_score: 0,
+    rank_factors: [],
+    sources: [],
+    contested: false,
+    covered: false,
+    decision: null,
+    locations: [],
+    ...overrides,
+  } as BoardContribution;
+}
+
+const CANCEL = {
+  verdict: 'cancelled',
+  reason: 'Customer cancelled on the phone',
+  reserve: [],
+  borrow: [],
+  timely_spo_qty: '0',
+  buy_qty: '0',
+} as unknown as BoardDraft[string];
+
+describe('cancelled verdict on the press (AC-F5)', () => {
+  const contributions = [
+    row(),
+    row({ key: 'so-1|20|CB110-R|2026-10-01', project_line_id: 'pl-20', line_no: 20 }),
+  ];
+  const draft: BoardDraft = { [contributions[0].key]: CANCEL };
+
+  it('keeps a cancelled draft out of `lines`', () => {
+    expect(confirmLinesFor(contributions, 'so-1', draft)).toEqual([]);
+  });
+
+  it('exposes it as cancelled_lines [{project_line_id, reason}]', () => {
+    const fn = (board as Record<string, unknown>).cancelledLinesFor as
+      | ((c: BoardContribution[], so: string, d: BoardDraft, o?: unknown) => unknown)
+      | undefined;
+    expect(typeof fn).toBe('function');
+    expect(fn!(contributions, 'so-1', draft)).toEqual([
+      { project_line_id: 'pl-10', reason: 'Customer cancelled on the phone' },
+    ]);
+  });
+
+  it('the press counts the saved cancel as something it sends', () => {
+    expect(pressPostsContribution(contributions[0], CANCEL)).toBe(true);
+  });
+
+  it('leaves out a row the planner unticked in the pre-confirm dialog', () => {
+    const fn = (board as Record<string, unknown>).cancelledLinesFor as (
+      c: BoardContribution[],
+      so: string,
+      d: BoardDraft,
+      o?: unknown,
+    ) => unknown;
+    expect(typeof fn).toBe('function');
+    expect(fn(contributions, 'so-1', draft, { excludeKeys: new Set([contributions[0].key]) })).toEqual(
+      [],
+    );
+  });
+});
+
+describe('amendSummary reads Cancel SO (AC-F4)', () => {
+  it('names a cancelled verdict "Cancel SO", not "Amended to nothing"', () => {
+    expect(amendSummary(CANCEL)).toBe('Cancel SO');
+  });
+});

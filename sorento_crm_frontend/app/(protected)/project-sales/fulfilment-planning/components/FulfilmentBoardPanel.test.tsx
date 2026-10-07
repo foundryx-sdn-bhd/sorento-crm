@@ -5109,3 +5109,36 @@ describe('FulfilmentBoardPanel: Saved | All toggle (owner hand test, 1 Oct)', ()
     expect(screen.queryByText('No other lines')).not.toBeInTheDocument();
   });
 });
+
+// SO-CANCEL-LINE (AC-F6): the results block lists the cancelled lines beside the confirmed.
+describe('FulfilmentBoardPanel: results block lists Transfer to Cancel SO lines (SO-CANCEL-LINE)', () => {
+  it('names each line in lines_cancelled under "Transferred to Cancel SO"', async () => {
+    getPlanningBoard.mockResolvedValue(
+      allSaved(boardOf([demand({ line_no: 1, item_code: 'WESERP10B' })])),
+    );
+    confirmMany.mockResolvedValue({
+      results: [
+        {
+          pso_id: 'pso-so-a',
+          ok: true,
+          decision_revision: 1,
+          inquiry_rows_created: 0,
+          lines_confirmed: [{ project_line_id: 'pl-so-a-1', line_no: 1, item_code: 'WESERP10B' }],
+          lines_carried: 0,
+          lines_cancelled: [
+            { line_no: 384, item_code: 'CB110' },
+            { line_no: 385, item_code: 'CB110-R' },
+          ],
+        },
+      ],
+    });
+
+    renderPanel(['SO403340']);
+    await pressPreviewThenConfirm();
+    await waitFor(() => expect(confirmMany).toHaveBeenCalledTimes(1));
+
+    const block = await screen.findByTestId('board-confirm-results');
+    expect(block).toHaveTextContent('Transferred to Cancel SO: line 384 CB110');
+    expect(block).toHaveTextContent('line 385 CB110-R');
+  });
+});
