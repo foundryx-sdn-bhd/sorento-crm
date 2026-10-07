@@ -15,6 +15,7 @@ from app.services.chatbot.head.parser import PARSE_OUTPUT_JSON_SCHEMA
 from app.services.chatbot_parser_prompt import (
     MEMORY_ADDENDUM,
     CANONICAL_CODE_ADDENDUM,
+    PROMOTION_KIND_ADDENDUM,
     TRAP_SPECS_FALLBACK_BLOCK,
     LOW_STOCK_FILTERS_ADDENDUM,
     PO_SPO_WAREHOUSE_ADDENDUM,
@@ -58,7 +59,7 @@ def test_prompt_carries_the_addendum_between_po_spo_warehouse_and_memory() -> No
     assert addendum in SEMANTIC_PARSER_PROMPT
     assert SEMANTIC_PARSER_PROMPT.endswith(MEMORY_ADDENDUM), "MEMORY must stay the tail"
     # LOWSTOCK-SEMANTIC: LOW_STOCK_FILTERS_ADDENDUM sits between this one and MEMORY.
-    before_memory = SEMANTIC_PARSER_PROMPT.removesuffix(MEMORY_ADDENDUM).removesuffix(TRAP_SPECS_FALLBACK_BLOCK).removesuffix(CANONICAL_CODE_ADDENDUM).removesuffix(LOW_STOCK_FILTERS_ADDENDUM)
+    before_memory = SEMANTIC_PARSER_PROMPT.removesuffix(MEMORY_ADDENDUM).removesuffix(TRAP_SPECS_FALLBACK_BLOCK).removesuffix(PROMOTION_KIND_ADDENDUM).removesuffix(CANONICAL_CODE_ADDENDUM).removesuffix(LOW_STOCK_FILTERS_ADDENDUM)
     assert before_memory.endswith(PO_SPO_WAREHOUSE_ADDENDUM + addendum), (
         "ACCOUNT_LEDGER_ADDENDUM must sit directly after PO_SPO_WAREHOUSE_ADDENDUM and before MEMORY_ADDENDUM"
     )
