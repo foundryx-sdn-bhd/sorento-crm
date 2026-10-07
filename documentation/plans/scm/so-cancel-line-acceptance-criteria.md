@@ -1,6 +1,6 @@
 # UAC: Fulfilment board "Transfer to Cancel SO" on a sales order line
 
-Plan: `PLAN-so-cancel-line.md`. Status: draft, pending owner answers to the behaviour card (7 Oct 2026).
+Plan: `PLAN-so-cancel-line.md`. Status: accepted 7 Oct 2026 (owner go on mock v3, card v2 recommendations).
 Fixture shape: a project SO with one core line ordered 36 / delivered 36 / `closed`, a raised ORDER inquiry row of 36
 on it with no links, and at least one other open line with a saved decision. Fake ids and names only.
 

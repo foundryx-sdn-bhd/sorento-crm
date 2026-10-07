@@ -1,6 +1,6 @@
 # PLAN: Fulfilment board "Transfer to Cancel SO" on a sales order line
 
-Status: draft, behaviour card filed 7 Oct 2026 (crew lane SO-CANCEL-LINE), awaiting owner answers Q1-Q5. Track: feature lane, size M, LEAD pattern (tester -> coder -> reviewer + security-reviewer), additive migration.
+Status: building (owner go 7 Oct 2026 11:52 on mock v3; card v2 accepted on recommendations Q1a Q2a Q3a Q4a Q5a). Track: feature lane, size L (additive migration), LEAD pattern (tester -> coder -> reviewer + security-reviewer).
 Domain: scm (fulfilment planning board, order inquiries, AutoCount ingest)
 UAC: `so-cancel-line-acceptance-criteria.md`
 Lane: `crew/so-cancel-line`, base `origin/main` e4158ab52.
