@@ -494,6 +494,8 @@ export interface SalesOrder {
   /** Which of the four rules wrote `project_label` - decides the muted word shown next to
    *  it (`Inquiry sheet` / `Note` / `AutoCount ref` / `Delivery address`). */
   project_label_source?: 'inquiry' | 'note' | 'ref' | 'delivery' | null;
+  /** The customer's own PO number as AutoCount printed it; read-only, null when blank. */
+  po_ref?: string | null;
   /** Every distinct location its lines ship from. Plural: one order can land in two. */
   stock_locations?: string[];
   /** The planning class this order was classified into, or `null` when nobody has ever
