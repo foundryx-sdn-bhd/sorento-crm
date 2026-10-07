@@ -1280,7 +1280,15 @@ export function FulfilmentBoardPanel({
               decision?.verdict !== 'amended' &&
               decision?.verdict !== 'approved'
             ) {
-              return false;
+              // A saved Cancel SO on an inquiry-decided line is posted in `cancelled_lines`:
+              // the same call `confirmSummaryFor` admits the order by, so count and press agree.
+              return (
+                decision?.verdict === 'cancelled' &&
+                pressPostsContribution(contribution, decision, {
+                  batchBlocked: pendingBatchSalesOrderIds.has(contribution.sales_order_id),
+                  batchNamedKeys,
+                })
+              );
             }
             return true;
           })
@@ -1524,6 +1532,7 @@ export function FulfilmentBoardPanel({
       appliedSoNumbers,
       batchIdBySoNumber,
       batchNamedKeys,
+      pendingBatchSalesOrderIds,
     ],
   );
 
@@ -1555,7 +1564,10 @@ export function FulfilmentBoardPanel({
     const leftOutAtConfirm = unpostable.length;
     try {
       const built = await buildConfirmOrders(new Set());
-      if (!built) return;
+      if (!built) {
+        if (confirmSummary.toConfirm > 0) toast.error('Nothing could be sent for this press');
+        return;
+      }
       const { skipped, contributions } = built;
       if (built.orders.length === 0) {
         if (skipped.length > 0) setBatchResults(skipped);
@@ -1587,6 +1599,7 @@ export function FulfilmentBoardPanel({
           if (
             ids.length > 0 ||
             (dryRun?.lines_cancelled?.length ?? 0) > 0 ||
+            order.cancelled_lines.length > 0 ||
             (dryRun?.lines_fulfilled_skipped ?? 0) > 0 ||
             Boolean(order.batch_id)
           ) {
@@ -1776,6 +1789,7 @@ export function FulfilmentBoardPanel({
     confirmMany,
     unpostable,
     previewConfirmMany,
+    confirmSummary,
   ]);
 
   /**
