@@ -1,0 +1,125 @@
+# Console replay for STOCK-FILL-PREDICATE (PR #1502; owner report 6 Oct 2026 13:20 MYT,
+# prod turn 121, prompt v47). The dealer steps of the lane's console replay (1, 2, 4a and
+# 4b; step 3, the set control, needs a contact on the full stock view and lives in
+# `2026-10-06-stock-fill-predicate-set-control.yaml`), graded LIVE:
+# the real parser, the real resolver, the real MCP presenter and compose. Every turn is a
+# dry run. The pytest twin, with the parser stubbed, is
+# `tests/chatbot/test_stock_fill_predicate.py`.
+#
+# NOT collected by pytest. `live_only: true` on every case: no `parser:` blocks, so
+# `--mock-parser` has nothing to feed and the run needs `--live` (real OpenAI tokens).
+#
+#   cd sorento_crm_backend
+#   venv/bin/python scripts/chatbot_console_check.py \
+#       tests/chatbot/console_cases/2026-10-06-stock-fill-predicate.yaml \
+#       --base-url http://localhost:<backend port> --contact <dealer contact> --live
+#
+# What the database must hold (the shared dev copy does; change the three values below for
+# any other database):
+#
+# - `--contact`: a Respond contact on the "Availability only" stock policy with at least
+#   one stored chatbot turn (the script borrows its envelope). The quantity question
+#   ("How many units of ...?") is asked only on that view. The `contact:` below is the
+#   hand-test placeholder of `laneboard/scripts/1502.md`, not a real contact.
+# - Product SRTWC8383-RL-GY: discontinued, 1 on hand, so its line is "Got stock". The
+#   uuid on the `product` anchor is that product's `products.id` on the shared dev copy:
+#   `SELECT id FROM products WHERE product_code = 'SRTWC8383-RL-GY'`.
+# - Step 2's control code: an active product with nothing on hand and no open shipment.
+#
+# Steps 1 and 4 INJECT the state prod turn 120 left, as `previous_conversation_state`
+# (the photo turn itself is not a text turn): the product settled on `focus.products` with
+# its uuid, the brand word SORENTO mis-tagged `promotion` on `focus.extra` with no uuid,
+# and for step 1 one open `stock_qty` task with one empty slot. That is the shape
+# `test_stock_fill_predicate._turn_120_state` / `_carried_product_state` build.
+
+contact: "900000039"
+
+_shapes:
+  product: &product
+    raw: SRTWC8383-RL-GY
+    hint: product
+    canonical_code: SRTWC8383-RL-GY
+    uuid: &product_uuid c258b677-0bcd-4762-877c-001944575a78
+    current_message: false
+    confident: true
+  stale_extra: &stale_extra
+    promotion:
+      - raw: SORENTO
+        hint: promotion
+        canonical_code: SORENTO
+        confident: true
+  never: &never
+    - "*stock* for"
+    - "Couldn't find"
+    - "Here's what you want"
+    - "SORENTO"
+    - "No stock found for"
+    - "Data last updated"
+
+cases:
+  - name: "1. prod turn 121: the photo state, then 1 (product in stock, discontinued)"
+    live_only: true
+    previous_conversation_state:
+      focus:
+        products: [*product]
+        domains: [inventory]
+        tasks:
+          - kind: stock_qty
+            domain: inventory
+            status: open
+            opened_at_turn: 120
+            touched_at_turn: 120
+            slots:
+              - key: *product_uuid
+                label: SRTWC8383-RL-GY
+                value: null
+            not_checked: []
+        extra: *stale_extra
+      open_question: null
+    text: "1"
+    expect:
+      branch_kind: business_query
+      no_uuid: true
+      reply_contains:
+        - "SRTWC8383-RL-GY x 1: ✅ Got stock."
+        - "*(PRODUCT DISCONTINUED)*"
+      reply_not_contains: *never
+
+  - name: "2. control (#1501): a code with nothing on hand and no shipment is still a real miss line"
+    live_only: true
+    cold: true
+    text: "SRT0354 x 5"
+    expect:
+      branch_kind: business_query
+      no_uuid: true
+      reply_contains:
+        - "SRT0354 x 5: ❌ No stock and no incoming. Please refer to your salesman."
+      reply_not_contains:
+        - "*stock* for"
+        - "Here's what you want"
+
+  - name: "4. reuse over the carried product and the stale word, no task: check stock, then 1"
+    live_only: true
+    previous_conversation_state:
+      focus:
+        products: [*product]
+        domains: [inventory]
+        tasks: []
+        extra: *stale_extra
+      open_question: null
+    turns:
+      - text: "check stock"
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "How many units of SRTWC8383-RL-GY?"
+          reply_not_contains: *never
+      - text: "1"
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "SRTWC8383-RL-GY x 1: ✅ Got stock."
+            - "*(PRODUCT DISCONTINUED)*"
+          reply_not_contains: *never

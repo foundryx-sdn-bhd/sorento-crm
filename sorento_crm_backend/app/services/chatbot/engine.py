@@ -2035,12 +2035,23 @@ def _scoped_compatible(
 
 
 def _pass_scope_gate(
-    payload: dict[str, Any] | None, compatible: list[dict[str, Any]], *, force: bool
+    payload: dict[str, Any] | None,
+    compatible: list[dict[str, Any]],
+    *,
+    force: bool,
+    reason: str = "customer scope",
 ) -> dict[str, Any] | None:
-    """The resolver's exit for a turn the scope gate answered. The linked customers are
-    the subject the gate's "no entities and 'order' requires a scoping entity" arm asked
-    for, so that arm (or, when `force`, any arm: the lane refuses before a fetch) is
-    passed instead of ending in the miss text and its escalate offer."""
+    """The resolver's exit for a turn whose subject is settled elsewhere. The linked
+    customers are the subject the gate's "no entities and 'order' requires a scoping
+    entity" arm asked for, so that arm (or, when `force`, any arm: the lane refuses
+    before a fetch) is passed instead of ending in the miss text and its escalate offer.
+
+    STOCK-FILL-PREDICATE (owner ruling, 6 Oct 2026): the same arm, `reason="product
+    subject"`, for a plan whose fetch is already scoped to a resolved product (a task
+    slot, a carried subject). The resolver was asked about the stray carried word alone,
+    placed nothing and said "no entities", while the lane's fetch answers the product in
+    full; that exit is not the turn's miss.
+    """
     if not isinstance(payload, dict):
         return payload
     gate = dict(payload.get("gate") if isinstance(payload.get("gate"), dict) else {})
@@ -2049,7 +2060,7 @@ def _pass_scope_gate(
         gate.get("gate_passed") is False and str(gate.get("gate_reason") or "").startswith("no entities and")
     ):
         gate["gate_passed"] = True
-        gate["gate_reason"] = "customer scope"
+        gate["gate_reason"] = reason
         gate["gate_clarification"] = ""
         exit_kind = "continue" if force or payload.get("_exit_kind") == "not_found" else payload.get("_exit_kind")
         return {**payload, "gate": gate, "_exit_kind": exit_kind}
@@ -4860,6 +4871,12 @@ def _run_stages_body(  # noqa: PLR0915
             # and no hint at all when none does - message order alone decided it before,
             # so "incoming and orders for hanlim" handed the gate a row with no
             # `customer` and lost the ambiguous customer entirely.
+            # STOCK-FILL-PREDICATE (owner ruling, 6 Oct 2026): a carried uuid-less word
+            # (a brand read off a photo and mis-tagged `promotion`) IS handed over here
+            # and may resolve on its own; what it must never do is gate or widen the
+            # product lookup. That rule lives where the predicate is attached to a fetch
+            # (`turn_runtime.make_tool_runner`: a fetch already scoped to a resolved
+            # product takes no set predicate), not here.
             resolver_parse_output = turn_runtime.with_carried_entities(
                 (ctx.get("parse") or {}).get("output") or {},
                 state_out.focus,
@@ -5042,6 +5059,83 @@ def _run_stages_body(  # noqa: PLR0915
                         "ids": list(scope_ids),
                         "self_reference": verdict.get("self_reference") is True,
                         **({"dropped": screened_dropped} if screened_dropped else {}),
+                    },
+                )
+            # STOCK-FILL-PREDICATE (owner ruling, 6 Oct 2026, the `_pass_scope_gate`
+            # precedent): this plan's fetch is already scoped to a resolved product (a
+            # task slot, a carried subject with its uuid), so the resolver's "no
+            # entities" exit - it was asked about the stray carried word alone - is
+            # passed, not answered as the turn's miss over a fetch that answers the
+            # product in full (prod turn 121's "1"). ONLY when every token the resolver
+            # was asked about was CARRIED (`current_message: False`): a word the dealer
+            # typed this turn that resolves to nothing ("water tap basin" over carried
+            # products) is still a miss the reply must name (hand pass 2 item 6), so
+            # that exit stands.
+            resolver_entities = [
+                e for e in (resolver_parse_output.get("entities") or []) if isinstance(e, dict)
+            ]
+            product_subject = bool(
+                not customer_scope_refused
+                and scope_ids is None
+                and plan.fetch
+                and resolver_entities
+                and all(e.get("current_message") is False for e in resolver_entities)
+                and all(turn_runtime.scoped_to_a_resolved_product(spec) for spec in plan.fetch)
+            )
+            if product_subject:
+                before_gate = ((resolver_payload or {}).get("gate") or {}).get("gate_passed")
+                before_exit = (resolver_payload or {}).get("_exit_kind")
+                resolver_payload = _pass_scope_gate(
+                    resolver_payload, compatible_entities, force=False, reason="product subject"
+                )
+                # Reviewer round 6, S1: on a domain whose gate permits a broad query
+                # (`incoming`: "no entities; 'incoming' permits broad query") the gate
+                # PASSED and only the stray word's zero set made the exit `not_found`;
+                # the same exit, the same rule, the same subject. Applied whatever the
+                # gate's reason (reviewer round 7, N1): under the ruling a stray carried
+                # word never gates the product lookup, so any `not_found` exit it earned
+                # is passed here, the "no entities and" arm having been passed above.
+                if isinstance(resolver_payload, dict) and resolver_payload.get("_exit_kind") == "not_found":
+                    resolver_payload = {**resolver_payload, "_exit_kind": "continue"}
+                after_gate = ((resolver_payload or {}).get("gate") or {}).get("gate_passed")
+                after_exit = (resolver_payload or {}).get("_exit_kind")
+                if before_gate != after_gate or before_exit != after_exit:
+                    turn_trace.add(
+                        "product_subject_passes_resolver_gate",
+                        {"fetch": [s.domain for s in plan.fetch], "gate_was": before_gate, "exit_was": before_exit},
+                    )
+            # The same subject, the resolver's OTHER exit (live console replay, 6 Oct
+            # 2026). On a catalogue that holds stock the stray word plus the intent's
+            # `require` is a population (prod: every product with stock; a word that
+            # binds as a brand: that brand's products), the exit is `continue`, and the
+            # re-entry below re-made the plan from it: the population replaced the
+            # carried product in the fetch and on the focus. "check stock" asked "How
+            # many units for each?" over the catalogue; turn 121's fill answered right
+            # (the task drives its own fetch) and left 50 products as the next turn's
+            # subject. The population is dropped here, before the re-entry and before
+            # the gate is read, so the product stays the plan. A carried product CODE
+            # that resolves is the dealer's own product and is not dropped; nor is the
+            # re-description of a carried SET (`spec_is_a_described_set`: "stock?" after
+            # "any gunmetal basin has incoming?"), whose members the carried words placed.
+            if (
+                product_subject
+                and resolved_candidates.get("product")
+                and all(str(e.get("hint") or "").strip().lower() != "product" for e in resolver_entities)
+                and not any(turn_runtime.spec_is_a_described_set(spec) for spec in plan.fetch)
+            ):
+                resolved_kinds, resolved_candidates, compatible_entities, resolver_payload, stray_codes = (
+                    turn_runtime.drop_stray_population(
+                        resolved_kinds, resolved_candidates, compatible_entities, resolver_payload
+                    )
+                )
+                predicate = None
+                turn_trace.add(
+                    "stray_carried_word_population_dropped",
+                    {
+                        "words": [str(e.get("raw") or e.get("canonical_code") or "") for e in resolver_entities],
+                        "dropped": len(stray_codes),
+                        "sample": stray_codes[:5],
+                        "fetch": [s.domain for s in plan.fetch],
                     },
                 )
             answer_parse_output = turn_runtime.answer_parse_output(
