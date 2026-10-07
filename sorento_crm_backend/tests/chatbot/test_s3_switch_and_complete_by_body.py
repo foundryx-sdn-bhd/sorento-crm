@@ -950,8 +950,11 @@ class TestSendActionShape:
         # you mean? dealer / office / end user" picker) and the picked tier recomposes to
         # no entitlement (Security B1, fail closed), so no promotion fetch is reachable
         # here and the raise cannot be staged for it. What the walk CAN measure for this
-        # lane is the CRM-completed message it does send: the tier ask, whose
-        # `quick_replies` shape is the contract under test.
+        # lane is the CRM-completed message it does send, the tier ask: its branch kind,
+        # and its `quick_replies` on the NULL branch of the shape assertion (the picker
+        # sends none; reviewer nit, whether it should is outside this PR). The raise
+        # path itself is covered by the business_query arm above, which shares the
+        # fetch block and `_failed_result` with this kind.
         monkeypatch.setattr(engine_mod, "turn_route", lambda plan: "check_promotion")
         stub_parser(
             _parser_output(

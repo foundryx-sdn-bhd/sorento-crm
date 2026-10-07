@@ -110,6 +110,8 @@ def test_b1_a_deck_mounted_bath_mixer_ask_is_searched(chat, world):
     db.commit()
     text = chat.say("any deck mounted bath mixer", _product_ask("deck mounted bath mixer", "any deck mounted bath mixer"))
     assert "I don't know" not in text, text
+    # Without an embedding key (this VM, CI) only the miss half can hold; with one the
+    # Tier-3 hit places the mixer and the listed half does. Either is "searched".
     assert mixer.product_code in text or '"deck mounted bath mixer"' in text, text
     assert "That would search every product" not in text, text
 
