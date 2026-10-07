@@ -122,6 +122,52 @@ Browser pass, same navigation (sidebar from `/`, System > Messaging > Chatbot Co
 | 3 | type `1` | the full DO list, no cap, no trailer | PASS: nine `DO Number` rows, no `By product`, no `more products`, no offer line repeated |
 | 4 | 375 x 812 viewport | nothing clipped, no horizontal scroll | PASS: `scrollWidth` 360 at `innerWidth` 375, trailer box left 28 / right 260 inside the bubble, wraps to two lines |
 
+## Both blocks capped, live (crew audit item 3), head de16c309
+
+`harness/seed_so_both.py` adds 22 open sales orders for the same dealer (SRTWC9001..9022, 5
+units each), so the SO block's By product group has 22 rows and the DO block keeps its 26.
+Three live `--say` turns with the real parser (contact 900000009, `seed_so_both.py` after
+`seed_do_summary_cap.py`; the first attempt's parse of the ask went to the scope question,
+the second parsed it directly, `order_status: outstanding_both`):
+
+Turn 1, `CAP HARDWARE outstanding both`, the summary's decisive lines:
+
+```
+*Sales order outstanding*
+Sales orders: 22
+...
+*_By product_*
+SRTWC9001: 5 (O/S: 5)
+... (20 rows)
+SRTWC9020: 5 (O/S: 5)
+... and 2 more products (reply 1 for the full list)
+
+*Delivery order outstanding*
+Delivery orders: 9
+...
+*_By product_*
+SRTWC9001: 12 (O/S: 12)
+... (20 rows)
+SRTWC9020: 1 (O/S: 1)
+... and 6 more products (reply 2 for the full list)
+
+Reply with a number for detail:
+1. Sales order list
+2. Delivery order list
+3. Both lists
+```
+
+Turn 3, `2` (parser `reference_positions [2]`, `open_question_answer {pick, [2]}`): the nine-row
+DO list (`1. *DO Number:* DO-26-0606` ... `9. *DO Number:* DO-26-0310`), no summary, no trailer.
+So `reply 2` under the DO block lands on the DO list.
+
+Turn 2, `3` (Both lists), is NOT this lane's: the parser returned `reference_positions [3]`,
+`open_question_answer {pick, [3]}` AND `order_status: outstanding_both` (a status carried from
+context, which the prompt says it must not), and the merged engine re-ran the two-block summary
+instead of printing both lists. The offer roster is the same three rows with or without the
+trailer (the `2` pick on the same roster worked, and `test_do_summary_cap_offer.py` pins it), so
+the cap neither causes nor hides it. Reported on the PR as a finding for the engine.
+
 ## Sandbox notes
 
 - The parser's own 20 s timeout hit the first browser send (one of 5 live calls in this
