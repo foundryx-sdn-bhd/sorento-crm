@@ -1662,7 +1662,6 @@ def lane_parse_output(
         and jsc.js_string(out.get("order_status") or "").strip() == "top_selling"
     ):
         out["sales_channel"] = None
-        is_ranking = True
     if not out.get("sales_channel") and focus is not None and focus.sales_channel and not is_ranking:
         out["sales_channel"] = focus.sales_channel
     # PLAN-po-spo-warehouse-29sep S5: the PO/SPO sort axis, a default, never an override.
