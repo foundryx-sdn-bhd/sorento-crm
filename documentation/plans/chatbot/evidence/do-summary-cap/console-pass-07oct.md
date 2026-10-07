@@ -88,6 +88,21 @@ parser v4). The console sends a tapped chip as its label TEXT, as respond.io doe
 | 3 | type `1` | the delivery order LIST, every DO, no cap, no trailer | PASS: nine rows `1. DO Number: DO-26-0606` to `9. DO Number: DO-26-0310`, no `By product`, no `more products`, no offer line repeated |
 | 4 | 375 x 812 viewport | nothing clipped, no horizontal scroll | PASS: `document.documentElement.scrollWidth` 360 at `innerWidth` 375; the trailer wraps to two lines inside the bubble (`... and 6 more products (reply 1 for` / `the full list)`), the `Delivery order list` chip sits under it, nothing cut |
 
+## After the merge of origin/main (#1515 and #1516 in, head 3f589ced)
+
+The merge touches no presenter file (MCP suite 730 green, `test_do_list_reply_label.py` and
+the two lane tests green on the merged head). Four more live graded runs were attempted on the
+merged stack to re-grade the case with `pending_kind` (the runner now reads
+`variables.open_question`, #1515's fix): none reached the capped summary, every miss on a turn
+outside this lane's seam. Run 1791333032: turn A parsed as a plain order lookup (one DO listed).
+Runs 1791333086 and 1791333125: turn A parsed as a bare outstanding ask (`document: []`), the
+scope question armed (`pending_kind` graded `outstanding_scope`, so the runner fix is live), and
+"1" then picked Sales orders. Run 1791333187 (a three-turn variant: bare ask, "2", "1"): the "2"
+turn's stored row carries no parse output and no reply text (the backend log shows no error
+for it), and "1" re-asked the scope question. Same class of instability #1515 measured (2 of 4 turn-A parses there). The
+graded green run (1791331134) and the browser pass above are the lane's evidence; the YAML
+keeps the direct two-turn path and says what to do on a detour.
+
 ## Sandbox notes
 
 - The parser's own 20 s timeout hit the first browser send (one of 5 live calls in this
