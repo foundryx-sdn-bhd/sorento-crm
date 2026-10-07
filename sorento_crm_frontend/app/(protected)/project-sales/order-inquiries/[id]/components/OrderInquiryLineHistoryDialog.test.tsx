@@ -145,7 +145,7 @@ describe('AC-ND-15 (G1, G6): the Rows tab', () => {
   it("S2 (AC-ND-20): lists the line's cancelled rows from the one Lines fetch, labelled", async () => {
     renderDialog([
       USED,
-      FRESH,
+      FRESH_NO_PREV,
       row({ id: 'sup', state: 'cancelled', note: 'Superseded by revision 2', raised_at: '2026-09-18T08:00:00Z' }),
     ]);
     const dialog = await screen.findByRole('dialog');

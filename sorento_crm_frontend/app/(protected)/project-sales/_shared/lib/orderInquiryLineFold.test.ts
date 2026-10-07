@@ -132,7 +132,9 @@ describe('AC-ND-7 (G1): the #1248 case folds to the current need; the used row g
   it('History lists Now first (with its Was), then the used row', () => {
     const [line] = foldInquiryLines([used, fresh]);
     const entries = lineHistoryEntries(line);
-    expect(entries.map((entry) => [entry.row.id, entry.what])).toEqual([
+    // F2: fresh carries previous_qty (its Why needs it), so a Before entry follows Now.
+    expect(entries.map((entry) => String(entry.what))).toEqual(['Now', 'Before', 'Used']);
+    expect(entries.filter((entry) => String(entry.what) !== 'Before').map((entry) => [entry.row.id, entry.what])).toEqual([
       ['fresh', 'Now'],
       ['used', 'Used'],
     ]);
