@@ -52,6 +52,7 @@ export const KIND_LABEL: Record<string, string> = {
   // row with no filename yet falls back to the raw key.
   packing_list_xlsx: 'Packing list Excel',
   stock_debt_xlsx: 'Stock debt Excel',
+  attachment_bulk_zip: 'Files archive (ZIP)',
 };
 
 export function StatusBadge({ status }: { status: MyDownload['status'] }) {
@@ -170,6 +171,7 @@ export function DownloadRow({ row }: { row: MyDownload }) {
 
         {ready && (
           <div className="mt-0.5 flex shrink-0 items-center gap-0.5">
+            {row.kind !== 'attachment_bulk_zip' && (
             <button
               type="button"
               onClick={onPreview}
@@ -180,6 +182,7 @@ export function DownloadRow({ row }: { row: MyDownload }) {
             >
               <Eye className="size-4" />
             </button>
+            )}
             <button
               type="button"
               onClick={onDownload}

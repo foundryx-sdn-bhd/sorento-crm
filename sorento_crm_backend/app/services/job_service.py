@@ -179,7 +179,7 @@ class JobService:
     def start_job(self, job_id: str) -> Optional[ImportJob]:
         """Mark job as started."""
         job = self.db.query(ImportJob).filter(ImportJob.job_id == job_id).first()
-        if job:
+        if job and job.status != JobStatus.CANCELLED.value:
             job.status = JobStatus.STARTED.value
             job.started_at = datetime.utcnow()
             job.updated_at = datetime.utcnow()
@@ -213,16 +213,19 @@ class JobService:
             elif job.total_rows == 0 and processed_rows > 0:
                 job.total_rows = processed_rows
             self.db.commit()
+            is_archive = job.job_type == "attachment_bulk_download"
             try:
                 _notify_import_job_event(
                     self.db,
                     job,
                     "finished",
-                    "Import completed",
+                    "Import completed" if not is_archive else f"Archive ready: {(result or {}).get('archive_filename') or job.filename}",
                     (
                         f"Your {job.job_type} import has completed. Processed: {processed_rows}/{job.total_rows} rows "
                         f"({successful_rows} successful, {failed_rows} failed, {skipped_rows} skipped). View job for details."
                         + _IMPORT_NOTIFICATION_DISCLAIMER
+                        if not is_archive
+                        else f"{(result or {}).get('files_included', 0)} files are ready to download from My downloads."
                     ),
                 )
             except Exception:
@@ -255,9 +258,11 @@ class JobService:
                 self.db,
                 job,
                 "failed",
-                "Import failed",
+                "Archive failed" if job.job_type == "attachment_bulk_download" else "Import failed",
                 (
-                    f"Your {job.job_type} import has failed. {error[:500]} View job for details."
+                    f"Your files archive {job.filename} could not be built: {error[:200]}."
+                    if job.job_type == "attachment_bulk_download"
+                    else f"Your {job.job_type} import has failed. {error[:500]} View job for details."
                     + _IMPORT_NOTIFICATION_DISCLAIMER
                 ),
             )
@@ -350,9 +355,16 @@ class JobService:
             self.db,
             job,
             "cancelled",
-            "Import cancelled",
-            f"Your {job.job_type} import was cancelled. View job for details." + _IMPORT_NOTIFICATION_DISCLAIMER,
+            "Download cancelled" if job.job_type == "attachment_bulk_download" else "Import cancelled",
+            "Nothing was saved. Select the folders again to start a new download."
+            if job.job_type == "attachment_bulk_download"
+            else f"Your {job.job_type} import was cancelled. View job for details." + _IMPORT_NOTIFICATION_DISCLAIMER,
         )
+
+        # The archive task stops cooperatively (it re-reads the DB status). An RQ stop would
+        # SIGKILL the work-horse, so its temp file and My downloads row would never be cleaned.
+        if job.job_type == "attachment_bulk_download":
+            return True
 
         # Tell RQ to stop the worker in background so we never block the API response
         rq_job_id = job.job_id
@@ -374,7 +386,7 @@ class JobService:
             return None
 
         # Once we've marked as cancelled, do not overwrite with RQ (RQ may still report 'started' briefly)
-        if job.status == JobStatus.CANCELLED.value:
+        if job.status in (JobStatus.CANCELLED.value, JobStatus.FAILED.value):
             return job
 
         rq_status = get_job_status(job_id)
