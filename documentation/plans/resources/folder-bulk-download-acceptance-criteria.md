@@ -23,6 +23,7 @@ On Dashboards > Resources > Files, a user selects any mix of folders and files a
 - **AC-B3** An empty folder (no non-deleted files, no non-deleted subfolders) is written as a directory entry `Path/To/Name/`, so a re-import recreates it.
 - **AC-B4** Entry name = `stored_filename`, falling back to `original_filename` (the name shown in the row and used by the single download).
 - **AC-B5** (Q4) Two or more files in the same folder with the same entry name (case-insensitive): the first keeps its name, the second becomes `<base> - copy<ext>`, the third `<base> - copy (2)<ext>`, exactly the import's suffix rules (`archive.tar.gz` -> `archive.tar - copy.gz`).
+- **AC-B5b** (reviewer) Folder names go through the same per-parent, case-insensitive uniqueness set as file names (folders and files share one set per parent, and collisions created by AC-B6 sanitising count): the second sibling "Promo" becomes "Promo - copy/", so no two archive entries share a path and a Bulk import round-trip keeps every file.
 - **AC-B6** (Q4) `/` and `\` inside a folder or file name become `-` in the archive path. No other character is changed.
 - **AC-B6b** (security review) A folder or file whose name is `.`, `..`, or empty after sanitising is written as `_`; no archive path has an empty, `.` or `..` segment and none starts with `/`.
 - **AC-B7** Deleted (trashed) folders and archived files are never included, even when they sit inside a selected folder.
@@ -49,6 +50,8 @@ On Dashboards > Resources > Files, a user selects any mix of folders and files a
 - **AC-D4** A file whose bytes cannot be read from storage is skipped, counted in `files_failed`, and the job still finishes.
 - **AC-D5** `files_included = 0` (every planned file failed) ends as `failed` with "No file could be read", not as an empty archive.
 - **AC-D6** Cancel while running (existing `POST /system/jobs/{id}/cancel`) stops the job within one batch; the archive is not uploaded and the temp file is removed.
+- **AC-D6b** (reviewer) Cancelling a bulk-download job never sends the RQ stop command (which SIGKILLs the work-horse and skips cleanup); the job row flips to cancelled at once and the running task stops cooperatively. Every other job type keeps today's cancel behaviour.
+- **AC-D6c** (reviewer) The task re-reads the job status after the write loop and again before the upload and before completing the job; a cancel that lands in that window produces no upload, no finished status and a failed My downloads row "Download cancelled".
 - **AC-D7** (Q5) No size cap. The archive byte size is reported in `result.bytes`; the Integer `source_file_size` column stays NULL for this job type (a 3 GB value would overflow it).
 - **AC-D7b** The archive is uploaded as a file object (multipart), never loaded into memory as one bytes value.
 - **AC-D7c** (Q5 c) Retention is AC-F5 (the My downloads purge, per-kind 24 h window); the archive object is owned by the My downloads row, so the job row carries no storage key.
