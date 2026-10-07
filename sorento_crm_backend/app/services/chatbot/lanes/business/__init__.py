@@ -2373,6 +2373,16 @@ def complete_answer(
     resolved = payload.get("resolved") if isinstance(payload.get("resolved"), dict) else {}
     gate = payload.get("gate") if isinstance(payload.get("gate"), dict) else {}
     fetch = payload.get("fetch") if isinstance(payload.get("fetch"), dict) else {}
+    # ROGUE-CONVO-REVIEW-R2: "did THIS message's own product token miss?" is computed
+    # ONCE per turn over the resolver's own listing (`turn_runtime.named_unplaced`, the
+    # same builder `resolve_kinds` keys `ResolveOutcome.unplaced_tokens` by, which is
+    # what the live path in `engine.py` reads beside its resolve outcome) and handed down
+    # to the composer; `not_found_error_message` never re-derives it.
+    from app.services.chatbot import turn_runtime
+
+    product_token_missed = turn_runtime.typed_product_unplaced(
+        parser, turn_runtime.named_unplaced(jsc.array(parser.get("entities")), resolved)
+    )
     exit_kind = payload.get("_exit_kind")
     # The entitlement union the resolver's aggregate returned, when it ran. Two readers:
     # `crossdomain-probe`'s access-level intersection and the promotion entitlement-miss
@@ -2472,6 +2482,7 @@ def complete_answer(
         lane_item = _run_miss_half(
             payload,
             granted_keys=(ctx.get("access") or {}).get("attributes"),
+            product_token_missed=product_token_missed,
             parser=parser,
             resolved=resolved,
             gate=gate,
@@ -2572,6 +2583,7 @@ def complete_answer(
             lane_item = _run_miss_half(
                 miss_payload,
                 granted_keys=(ctx.get("access") or {}).get("attributes"),
+                product_token_missed=product_token_missed,
                 parser=parser,
                 resolved=resolved,
                 gate=gate,
@@ -2704,6 +2716,7 @@ def _run_miss_half(
     dry_run: bool,
     build_result: Any = None,
     granted_keys: Any = None,
+    product_token_missed: bool = False,
 ) -> dict[str, Any]:
     """`not-found-error-message` -> `sub-miss-suggest` -> `build-suggest-offer` ->
     `tag-not-found`.
@@ -2714,7 +2727,12 @@ def _run_miss_half(
     the composer's own output untagged, so what the tail grades is unchanged.
     """
     not_found = answer_mod.not_found_error_message(
-        payload, parser=parser, resolved=resolved, gate=gate, granted_keys=granted_keys
+        payload,
+        parser=parser,
+        resolved=resolved,
+        gate=gate,
+        granted_keys=granted_keys,
+        product_token_missed=product_token_missed,
     )
     fragments["not_found"] = not_found
 
