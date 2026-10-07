@@ -2074,8 +2074,7 @@ OUTSTANDING_GROUP_CAP = 20
 #: The trailer's noun, by the key the second group's rows are named under.
 _OUTSTANDING_GROUP_NOUN = {"customer_name": "customer", "product_code": "product"}
 
-#: The two detail offers, as the closing line prints them (`_outstanding_report`). A capped
-#: group's trailer names its block's offer with the SAME words, lower-cased (R2 below).
+#: The two detail offers, as the closing line prints them (`_outstanding_report`).
 _SO_LIST_OFFER = "Sales order list"
 _DO_LIST_OFFER = "Delivery order list"
 
@@ -2098,25 +2097,21 @@ def _outstanding_group(rows: list, *, name_key: str, total_key: str, outstanding
 
 
 def _outstanding_capped_group(
-    rows: list, *, name_key: str, total_key: str, outstanding_key: str, position: int, offer: str
+    rows: list, *, name_key: str, total_key: str, outstanding_key: str
 ) -> list[str]:
     """The second group of a block: the first `OUTSTANDING_GROUP_CAP` rows exactly as
     `_outstanding_group` prints them (R10's order, so the top of the ranking is what
-    survives), then, only when rows were left off, ONE trailer line:
+    survives), then, only when rows were left off, ONE count-only trailer line:
 
-        ... and 292 more products (reply 1 for the delivery order list)
+        ... and 292 more products
 
-    `position` is the place THIS block's list holds in the detail offer the same reply
-    ends with (SO list 1; DO list 1 alone, 2 beside the SO list), so "reply P" and the
-    offer line below it can never disagree. `offer` is that list's label as the closing
-    line prints it, lower-cased (`sales order list` / `delivery order list`). R2 (owner
-    hand test, 7 Oct 2026, turn e4895b28): the first cut said `the full list` here, and
-    `(reply 1 for the full list)` above `Reply 1 for the delivery order list.` read as two
-    offers sharing one number; one target now has one name. The trailer is a pointer at
-    that offer, not a second one: the chatbot lane reads the pending offer off the rendered
-    text with two anchored patterns (`^\\d+\\. Delivery order list$` /
-    `^Reply \\d+ for the ...\\.$`), and this line, lower-case `reply` inside brackets after
-    `...`, matches neither.
+    R3 (owner ruling, 7 Oct 2026, ask a69045557): the trailer counts, nothing more. The
+    first cut ended the line with a bracketed `reply 1` pointer at "the full list" and the
+    second with one at "the delivery order list"; each read, above `Reply 1 for the delivery
+    order list.`, as a second offer sharing one number. The closing offer line is the one pointer, unchanged from
+    before the cap, and `1` is the detail list exactly as on main. The chatbot lane reads
+    the pending offer off the rendered text with anchored patterns (`^\\d+\\. ... list$` /
+    `^Reply \\d+ for the ...\\.$`); this line starts with `...` and matches none of them.
     """
     shown = rows[:OUTSTANDING_GROUP_CAP]
     lines = _outstanding_group(
@@ -2126,7 +2121,7 @@ def _outstanding_capped_group(
     if extra > 0:
         noun = _OUTSTANDING_GROUP_NOUN.get(name_key, "row")
         plural = "" if extra == 1 else "s"
-        lines.append(f"... and {extra} more {noun}{plural} (reply {position} for the {offer})")
+        lines.append(f"... and {extra} more {noun}{plural}")
     return lines
 
 
@@ -2144,11 +2139,7 @@ def _outstanding_second_group(report: dict, prefix: str) -> tuple[str, list]:
     return "", []
 
 
-def _outstanding_so_block(
-    so: dict, by_location: list, second_rows: list, second_key: str, position: int
-) -> str:
-    """`position` is the SO list's place in the detail offer below (always 1 when the SO
-    block prints: the SO list is offered first), named by the second group's trailer."""
+def _outstanding_so_block(so: dict, by_location: list, second_rows: list, second_key: str) -> str:
     lines = [
         "*Sales order outstanding*",
         # R7 (owner testing round 3, 13 Sep 2026): the COUNT opens both blocks, then the
@@ -2171,15 +2162,13 @@ def _outstanding_so_block(
         lines.extend(
             _outstanding_capped_group(
                 second_rows, name_key=second_key, total_key="ordered_qty",
-                outstanding_key="outstanding_qty", position=position, offer=_SO_LIST_OFFER.lower(),
+                outstanding_key="outstanding_qty",
             )
         )
     return "\n".join(lines)
 
 
-def _outstanding_do_block(
-    do: dict, by_location: list, second_rows: list, second_key: str, position: int
-) -> str:
+def _outstanding_do_block(do: dict, by_location: list, second_rows: list, second_key: str) -> str:
     """R6/R7 (owner testing round 3, 13 Sep 2026): the DO block says OUTSTANDING, never
     "pending", and states the delivered figure beside it - "need to show the delivered
     also, so the by location and by customer needs to be the DO qty (O/S: {pending}) so
@@ -2209,7 +2198,7 @@ def _outstanding_do_block(
         lines.extend(
             _outstanding_capped_group(
                 second_rows, name_key=second_key, total_key="do_qty",
-                outstanding_key="pending_qty", position=position, offer=_DO_LIST_OFFER.lower(),
+                outstanding_key="pending_qty",
             )
         )
     return "\n".join(lines)
@@ -2258,12 +2247,9 @@ def _outstanding_report(report: dict) -> str:
             blocks.append("*Sales order outstanding*\nNo open sales order.")
         else:
             so_second_key, so_second_rows = _outstanding_second_group(report, "so")
-            # DO-SUMMARY-CAP: a block learns its list's offer position BEFORE it renders,
-            # so its trailer's "reply P" is the position the offer below will print.
             blocks.append(
                 _outstanding_so_block(
-                    so, report.get("so_by_location") or [], so_second_rows or [], so_second_key,
-                    position=len(offer) + 1,
+                    so, report.get("so_by_location") or [], so_second_rows or [], so_second_key
                 )
             )
             offer.append(_SO_LIST_OFFER)
@@ -2276,8 +2262,7 @@ def _outstanding_report(report: dict) -> str:
             do_second_key, do_second_rows = _outstanding_second_group(report, "do")
             blocks.append(
                 _outstanding_do_block(
-                    do, report.get("do_by_location") or [], do_second_rows or [], do_second_key,
-                    position=len(offer) + 1,
+                    do, report.get("do_by_location") or [], do_second_rows or [], do_second_key
                 )
             )
             offer.append(_DO_LIST_OFFER)
