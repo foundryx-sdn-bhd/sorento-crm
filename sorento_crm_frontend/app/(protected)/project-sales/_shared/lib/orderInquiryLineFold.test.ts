@@ -585,6 +585,9 @@ describe('SO-LINE-CHANGE-HISTORY F2 (AC-7, AC-9 to AC-13): the Before entry', ()
     const b = nowRow({ id: 'b', previous_qty: '20', inquiry_no: 'OI-2609-0002' });
     const entries = lineHistoryEntries(foldInquiryLines([a, b])[0]);
     expect(entries.map((entry) => String(entry.what))).toEqual(['Now', 'Now', 'Before', 'Before']);
+    const gridIds = entries.map((entry) => (entry as { id?: string }).id ?? entry.row.id);
+    expect(gridIds).toEqual(['a', 'b', 'a:before', 'b:before']);
+    expect(new Set(gridIds).size).toBe(4);
     expect(entries[2].why).toBe('Was 10 on 01/06/2026, before OI-2609-0001 changed it');
     expect(entries[3].why).toBe('Was 20 on 01/06/2026, before OI-2609-0002 changed it');
   });
