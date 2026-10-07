@@ -1653,6 +1653,16 @@ def lane_parse_output(
     # A sales ranking never takes a carried channel (AC-HT8-10, AC-HT8-11): a fresh one names
     # its own, a refine keeps the channel through the held frame.
     is_ranking = jsc.js_string(out.get("order_status") or "").strip() == "sales_ranking"
+    # AC-HT8-16: a top selling answer fills only the asked slot, so the channel the parser put
+    # on it is not sent (`turn/apply._top_selling_rules` marks the turn `answered`).
+    if (
+        focus is not None
+        and isinstance(focus.top_selling, dict)
+        and focus.top_selling.get("answered")
+        and jsc.js_string(out.get("order_status") or "").strip() == "top_selling"
+    ):
+        out["sales_channel"] = None
+        is_ranking = True
     if not out.get("sales_channel") and focus is not None and focus.sales_channel and not is_ranking:
         out["sales_channel"] = focus.sales_channel
     # PLAN-po-spo-warehouse-29sep S5: the PO/SPO sort axis, a default, never an override.

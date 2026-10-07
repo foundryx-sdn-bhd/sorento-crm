@@ -164,7 +164,9 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # without MEMORY_ADDENDUM, so CEILING is 50,057 (+4).
 # AC-HT8 r6 (Chinese basis words in the ranking and top selling addenda): 50,195 est. tokens
 # without MEMORY_ADDENDUM, so CEILING is 50,199 (+4).
-CEILING = 50_199
+# AC-HT8 r6b (the outstanding basis clause leaves the top selling addendum): 50,181 est. tokens
+# without MEMORY_ADDENDUM, so CEILING is 50,185 (+4).
+CEILING = 50_185
 # The memory addendum on its own, bounded separately so this PR's growth stays bounded.
 # 26 Sep baseline (lane d89110c0): 339 est. tokens. Round 4 (baf4c813, 28 Sep: the history
 # question in any wording, the number re-run, commercial_request) took it to 512, which is

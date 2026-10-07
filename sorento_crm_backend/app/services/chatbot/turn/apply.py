@@ -1229,12 +1229,8 @@ def _focus_rules(
     # named one: a sales report ask with no channel word counts every channel, and a
     # turn that narrows an open one ("for project only") names it and wins here.
     # AC-HT8-16: an answer to an open top selling question ("ordered") fills that slot only;
-    # a channel the parser put on it is not a new filter (a turn naming the ask itself is).
-    answering_top_selling = (
-        isinstance(focus.top_selling, dict)
-        and focus.top_selling.get("asked") in TOP_SELLING_CLARIFY_AXES
-        and domain_in_message(verdict) is not True
-    )
+    # a channel the parser put on it is not a new filter (a turn that answers nothing keeps it).
+    answering_top_selling = answers_open_top_selling(focus, verdict)
     if verdict.get("sales_channel") and not answering_top_selling:
         focus.sales_channel = str(verdict["sales_channel"])
     if verdict.get("date_mode") or verdict.get("date_filter_start") or verdict.get("date_filter_end"):
@@ -1312,6 +1308,17 @@ def _narrows_the_ranking(verdict: dict[str, Any]) -> bool:
     if hints:
         return all(h in TOP_SELLING_NARROWING_HINTS for h in hints)
     return broaden_level(verdict) == EVERYTHING
+
+
+def answers_open_top_selling(focus: Focus, verdict: dict[str, Any]) -> bool:
+    """Does this verdict answer the top selling question the last reply asked? The top
+    selling rules' own notion (`_top_selling_waiting`), read off the focus's `asked` and the
+    verdict's own axis keys, never text."""
+    slot = focus.top_selling
+    if not isinstance(slot, dict):
+        return False
+    own = {k: verdict.get(k) for k in TOP_SELLING_KEYS if verdict.get(k) is not None}
+    return _top_selling_waiting(slot.get("asked"), own)
 
 
 def _top_selling_waiting(asked: Any, own: dict[str, Any]) -> bool:
@@ -1417,11 +1424,15 @@ def _top_selling_rules(
         return
     carried = dict(focus.top_selling or {})
     carried.pop("hop", None)
+    carried.pop("answered", None)
     # What the last reply asked lives one turn: this turn's reply records its own.
     asked_last = carried.pop("asked", None)
     # A word the last reply said it does not know is said once (owner retest, 27 Sep).
     carried.pop("unknown", None)
     own = {k: verdict.get(k) for k in TOP_SELLING_KEYS if verdict.get(k) is not None}
+    if _top_selling_waiting(asked_last, own):
+        # One turn: the lane input of THIS answer sends no channel (`lane_parse_output`).
+        carried["answered"] = True
     positions = [p for p in (verdict.get("reference_positions") or []) if isinstance(p, (int, float))]
     if (
         "top_n" not in own
