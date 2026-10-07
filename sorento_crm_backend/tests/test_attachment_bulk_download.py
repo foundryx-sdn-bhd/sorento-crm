@@ -177,6 +177,7 @@ def test_b6_slashes_in_folder_name_become_dash(db):
 
 
 def test_b6b_dot_names_cannot_escape(db):
+    """Root folders and root files share ONE case-insensitive name set (folders claim first)."""
     svc = _svc()
     dotdot = _folder(db, "..")
     dot = _folder(db, ".", parent_id=dotdot)
@@ -189,7 +190,7 @@ def test_b6b_dot_names_cannot_escape(db):
         assert not e.path.startswith("/"), e.path
         for seg in e.path.rstrip("/").split("/"):
             assert seg not in ("", ".", ".."), f"unsafe segment in {e.path!r}"
-    assert _paths(plan) == ["_", "_/_/x.pdf"]
+    assert _paths(plan) == ["_ - copy", "_/_/x.pdf"]
     assert svc._safe_name("..") == "_"
     assert svc._safe_name(".") == "_"
     assert svc._safe_name("/") == "_"
