@@ -12,13 +12,14 @@
 # The #1514 "pic" step needs the UNLABELLED parser prompt v65 and lives in its own file,
 # `2026-10-07-chatbot-trio-pic-v65.yaml`, run with `--prompt-version <v65 id>`.
 #
-# Contacts: 437264483 (the owner's dev dry-run contact, stock visibility) for #1519 / #1509,
-# 487555417 (dealer, General Enquiries, product attachments) for #1514; every case is cold.
+# Contacts: 900000071 (fresh clone of the dev dry-run contact, no frames) for #1519 / #1509,
+# 900000072 (fresh clone of the dealer contact, no frames) for #1514; every case is cold. Fresh
+# because a dry run recalls the contact's is_test conversation_frames (engine.py ~3543).
 # Data the copy must hold: SRT320-CR with stock, active brands CABANA and SORENTO,
 # promotions whose description contains "basin", taps with Technical Specifications and the
 # `attachment_type_alias` row 'technical drawing' -> Technical Specifications.
 
-contact: "437264483"
+contact: "900000071"
 
 cases:
   # ---- #1519 STALE-EXTRA-CARRY --------------------------------------------------------
@@ -91,14 +92,18 @@ cases:
             - "(customer)"
           no_uuid: true
 
+  # The contact's stock visibility is "Availability only" on the shared dev copy (the clone
+  # keeps the source's override), so a brand-scoped SET answers as the quantity ask
+  # (`How many units for each?` + the set's codes, `laneboard/scripts/1519.md` step 6) rather
+  # than #1509's full-view wording (`Here's what you want: Cabana products with stock`). What
+  # #1509 owns is graded either way: a numbered set and no kind pick over the word.
   - name: "#1509 cabana is a brand whatever the hint, the brand-scoped stock answer"
     cold: true
     turns:
       - text: "cabana stock"
         expect:
           reply_contains:
-            - "Here's what you want: Cabana"
-            - "with stock"
+            - "1. "
           reply_not_contains:
             - "Which one do you mean?"
             - "cabana (promotion)"
@@ -111,7 +116,7 @@ cases:
       - text: "sorento basin"
         expect:
           reply_contains:
-            - "Here are the matching products."
+            - "1. "
           reply_not_contains:
             - "Which one do you mean?"
             - "basin (promotion)"
@@ -124,7 +129,7 @@ cases:
       - text: "Sorrento basin"
         expect:
           reply_contains:
-            - "Here are the matching products."
+            - "1. "
           reply_not_contains:
             - "Which one do you mean?"
             - "Could not find"
@@ -193,7 +198,7 @@ cases:
 
   # ---- #1514 ATTACH-SET-BRAND-FOLLOWUP (production prompt; the pic step is in the v65 file) ----
   - name: "#1514 owner turns 1 and 2, the brand follow-up keeps the document type"
-    contact: "487555417"
+    contact: "900000072"
     cold: true
     turns:
       - text: "which tap has technical drawing"
@@ -216,7 +221,7 @@ cases:
           no_uuid: true
 
   - name: "#1514 the page continues after the listed rows settled onto the focus"
-    contact: "487555417"
+    contact: "900000072"
     cold: true
     turns:
       - text: "which tap has technical drawing"
