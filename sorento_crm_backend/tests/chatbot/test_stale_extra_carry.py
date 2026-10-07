@@ -362,3 +362,90 @@ def test_got_eta_after_the_product_answer_is_the_products_eta_line(eta_console):
     assert STALE_WORD not in text.lower(), text
     assert _incoming_calls(c) == [[product_id]], c.tool_calls
     assert [b for b in c.resolver_bodies if b.get("scope_terms")] == [], c.resolver_bodies
+
+
+# --------------------------------------------------------------------------- #
+# 4. A class word typed as a NEW subject beside a carried product (crew generality
+#    review, 7 Oct 2026): who decides the subject switched?
+# --------------------------------------------------------------------------- #
+#
+# The engine does not read the word. The PARSER's `entity_op` says whether the turn
+# replaced the subject or refined it (`turn/decide.py`, the owner's 17 Sep 2026 table):
+#
+# - `replace`: the class word IS the new subject. `_focus_rules` evicts the carried
+#   product (`new_ask_drops_product`), the word sits alone on `focus.extra`, and the next
+#   "incoming?" hands it to the resolver (AC-SEC-4: no resolved product on focus).
+# - `replace_combine` on another axis, no domain word (`names_its_own_entity`, not
+#   `starts_fresh`): the product stays the subject and the class word narrows it; the next "incoming?" is the product's own
+#   question, fetched on its id alone with no `scope_terms` (#1502 rule A: a fetch
+#   scoped to a resolved product never takes a set predicate). Before this lane the
+#   stale word became a scope term and could print its own miss beside the product.
+
+
+def _category_turn(entity_op: str) -> dict[str, Any]:
+    return verdict(entity_op=entity_op, domain_hint=None, entities=[entity("basin", hint="category")])
+
+
+def test_a_class_word_typed_with_entity_op_replace_becomes_the_subject_and_is_handed_over():
+    """`replace`: the parser said the subject switched, so the product is evicted and the
+    class word reaches the resolver on the next reuse turn."""
+    state = State(focus=Focus(products=[_product_row()], domains=["inventory"]), pending=None, profile=Profile(), turn_no=3)
+
+    state_out, plan = apply(state, _category_turn("replace"), build_policy())
+
+    assert "new_ask_drops_product" in plan.trace.rules_fired, plan.trace.rules_fired
+    assert state_out.focus.products == [], state_out.focus.products
+    carried = state_out.focus.extra.get("category") or []
+    assert [row.get("raw") for row in carried] == ["basin"] and not carried[0].get("uuid"), carried
+
+    out = turn_runtime.with_carried_entities(_reuse_turn(), state_out.focus, unsettled_only=True)
+
+    assert _hints(out) == ["category"], out.get("entities")
+
+
+def test_a_class_word_typed_as_a_refinement_keeps_the_product_as_the_subject():
+    """`replace_combine` on another axis: a refinement keeps the product; the class word
+    is carried beside it and, on the next reuse fetch, stays off the resolver."""
+    state = State(focus=Focus(products=[_product_row()], domains=["inventory"]), pending=None, profile=Profile(), turn_no=3)
+
+    state_out, plan = apply(state, _category_turn("replace_combine"), build_policy())
+
+    # `decide` reads a bare entity with no domain word as `names_its_own_entity`, which
+    # replaces within the category axis only (`replace_same_axis`) and is not
+    # `starts_fresh`: the product survives.
+    assert "replace_same_axis" in plan.trace.rules_fired, plan.trace.rules_fired
+    assert "new_ask_drops_product" not in plan.trace.rules_fired, plan.trace.rules_fired
+    assert [row.get("uuid") for row in state_out.focus.products] == [PRODUCT_UUID], state_out.focus.products
+    carried = state_out.focus.extra.get("category") or []
+    assert [row.get("raw") for row in carried] == ["basin"] and not carried[0].get("uuid"), carried
+
+    out = turn_runtime.with_carried_entities(_reuse_turn(), state_out.focus, unsettled_only=True)
+
+    assert _hints(out) == [], out.get("entities")
+
+
+def test_incoming_after_a_refining_class_word_answers_the_carried_product(eta_console):
+    """The same refinement through the real engine: "basin" typed over the carried
+    SRT320-CR (the parser grounds the word as a `category` with no uuid, `replace_combine`),
+    then "incoming?". The reply is the product's own ETA line, the incoming tool is called
+    with its id alone, and no resolver body of the "incoming?" turn carries `scope_terms`.
+    Red before this lane on the last assertion: the carried word rode in as a scope term."""
+    c, product_id = eta_console("+60100000915")
+    c.state = _carried_state(product_id, extra={})
+    expected = c.say("incoming?", _reuse_turn())
+    assert CODE in expected and "20/10/2026" in expected, expected
+
+    c.state = _carried_state(product_id, extra={})
+    c.say("basin", _category_turn("replace_combine"))
+    variables = (c.state or {}).get("variables") if isinstance((c.state or {}).get("variables"), dict) else (c.state or {})
+    focus_after = (variables.get("focus") or {})
+    assert [row.get("uuid") for row in focus_after.get("products") or []] == [product_id], focus_after.get("products")
+    assert [row.get("raw") for row in (focus_after.get("extra") or {}).get("category") or []] == ["basin"], focus_after.get("extra")
+    c.resolver_bodies.clear()
+    c.tool_calls.clear()
+
+    text = c.say("incoming?", _reuse_turn())
+
+    assert text == expected, text
+    assert _incoming_calls(c) == [[product_id]], c.tool_calls
+    assert [b for b in c.resolver_bodies if b.get("scope_terms")] == [], c.resolver_bodies
