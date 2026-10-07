@@ -1,6 +1,6 @@
 # PLAN: a quoted reply answers the quoted question (QUOTED-REPLY)
 
-Status: review clean on e7784245e (reviewer READY, security CLEAR; rounds 1-6 incl. own-message quotes, chunked replies, trace drawer nested facts), owner final retest on the crew copy pending, then merge; (owner answered the card 7 Oct 2026: Q1 id route with the photo link fixed on our side, Q2 (a) parser-interpreted, Q3 (a), Q4 (b) any quoted bot message is the context, Q5 (a) all kinds); track: feature L (one migration: `chat_histories.chatbot_turn_id`; backend only, no auth/RBAC change, no new ingest surface, no UI); LEAD pattern (tester -> coder -> reviewer + security-reviewer)
+Status: round 7 (AC-QR-26, follow-up replaces the live picker; owner ruling 7 Oct 16:00) building; before that review clean on e7784245e (reviewer READY, security CLEAR; rounds 1-6 incl. own-message quotes, chunked replies, trace drawer nested facts), owner final retest on the crew copy pending, then merge; (owner answered the card 7 Oct 2026: Q1 id route with the photo link fixed on our side, Q2 (a) parser-interpreted, Q3 (a), Q4 (b) any quoted bot message is the context, Q5 (a) all kinds); track: feature L (one migration: `chat_histories.chatbot_turn_id`; backend only, no auth/RBAC change, no new ingest surface, no UI); LEAD pattern (tester -> coder -> reviewer + security-reviewer)
 
 UAC: `quoted-reply-acceptance-criteria.md` (alongside). Lane: `crew/quoted-reply`, base origin/main e4158ab52.
 
@@ -68,8 +68,10 @@ R3 Context (Q4 (b), Q5 (a)). The quoted turn's stored state is this message's co
    (`turn/apply.py:3298-3310`, `:3396`). Every kind: stock quantity ask, numbered pick, yes/no, offer,
    and a bot message that asked nothing (its products / customers / document / list become the
    subject).
-R4 Live question untouched (Q3 (a)). After the turn, the open question and the open stock task written
-   back are the LIVE ones whenever this turn did not open a question or task of its own; the quoted
+R4 Live question untouched (Q3 (a), narrowed by the owner on the hand test, AC-QR-26). After the turn, the
+   open question and the open stock task written back are the LIVE ones only when this turn opened NO
+   question or task of its own; a follow-up question the quoted answer opens (a pending, or a new open stock
+   task) replaces the live open question or picker, as a fresh ask does; the quoted
    branch's answered task is not carried over an open live one. The reply never re-asks the live
    question. The rest of the focus is what this turn left (the conversation continued from the quoted
    message).

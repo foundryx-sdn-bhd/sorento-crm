@@ -281,3 +281,46 @@ cases:
             - "BRBC22102W"
           reply_not_contains:
             - "WDI-K5130"
+
+  - name: "10. AC-QR-26: picker A live, quote the older picker B, pick, then a bare number fills B's product"
+    # Owner on the hand test (7 Oct, turns cc159fb4 / c24bba32): with the CKS105 picker live, quoting the
+    # older SRTWC286 picker and picking 4 asked "How many units of SRTWC286-SH-NEW?", but "10" then hit
+    # the retained CKS105 picker ("CKS105 x 10: which one?"). The follow-up question must replace it.
+    live_only: true
+    cold: true
+    turns:
+      - text: "check stock srtwc286"
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "SRTWC286 matches"
+            - "Which one?"
+      - text: "check stock cks105"
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "CKS105 matches"
+            - "Which one?"
+      - text: "4"
+        quote_slice:
+          of: "check stock srtwc286"
+          start: 0
+          length: 120
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "How many units of SRTWC286-SH-NEW?"
+          reply_not_contains:
+            - "CKS105"
+      - text: "10"
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "SRTWC286-SH-NEW x 10:"
+          reply_not_contains:
+            - "CKS105"
+            - "which one?"

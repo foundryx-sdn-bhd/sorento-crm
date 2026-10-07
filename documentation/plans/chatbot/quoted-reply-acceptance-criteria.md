@@ -115,3 +115,21 @@ BYTE_CAP 1000; each part is its own respond.io message; 6 Oct prod copy since 1 
 - AC-QR-25 (quoting a chunk): at quote time the text fallback applies the same rule, so quoting the 2nd chunk
   of a long numbered list resolves to the turn that produced the list, `via: "text"`; a quoted chunk shorter
   than the floor matches only by equality. Console case: a long list reply, the quote is its 2nd chunk.
+
+## A quoted answer's follow-up question replaces the live one (owner ruling on the :3114 hand test, 7 Oct 2026)
+
+Trace (copy, contact 487555417, 15:52-15:53 MYT): live question = the CKS105 picker (turn 9c938744); the owner
+quoted the OLDER SRTWC286 picker and typed "4" (turn cc159fb4): the bot asked "How many units of
+SRTWC286-SH-NEW?" but the state written kept the CKS105 picker as the open question beside the new task (R4
+restored `live.pending` because the quantity ask is a task question, not a pending); "10" (turn c24bba32)
+then fired `stock_pick_takes_quantity` on the CKS105 picker ("CKS105 x 10: which one? 1-6"). Owner: "if we
+reply to, then the picker should be replaced with the reply to, so it feels more natural".
+
+- AC-QR-26 (follow-up replaces the live question): when the turn that answered a quoted question opens a
+  follow-up question of its own (a new open question of any kind, or an open stock task that is not the live
+  open task), the previously live open question or picker is DROPPED, exactly as a fresh ask drops it today
+  (same mechanism as AC-QR-9 (a)); the written open question is this turn's own (none, for a quantity ask
+  carried by the task). A later bare number then fills the quoted thread's product. Q3 "newer stays live"
+  holds only when the quoted answer opens nothing (AC-QR-8: a plain fill keeps the live task).
+  Example: live CKS105 picker; quote the SRTWC286 picker + "4" -> "How many units of SRTWC286-SH-NEW?" and
+  no CKS105 picker remains; "10" -> "SRTWC286-SH-NEW x 10: ..." (never "CKS105 x 10: which one?").
