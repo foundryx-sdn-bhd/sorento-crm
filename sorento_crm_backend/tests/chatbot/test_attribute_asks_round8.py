@@ -404,6 +404,25 @@ def test_a_one_word_follow_up_switches_the_domain_and_keeps_the_described_set(co
     assert _codes(text, world) == {p.product_code for p in world["gunmetal"]}, text
 
 
+def test_a_one_word_stock_follow_up_answers_as_the_described_set(compact, world):
+    """STOCK-FILL-PREDICATE (live replay, 6 Oct 2026): a carried product beside a stray
+    carried word keeps its own line and the word's population is dropped. A carried SET
+    is the other case and must not be caught by that rule: its members were placed by the
+    words carried beside them, so "stock?" re-describes the set and answers in the set's
+    own shape, header and count, never as product lines without one."""
+    compact.say(M2, _v2())
+    from tests.chatbot.test_engine import _parser_output
+
+    text = compact.say(
+        "stock?",
+        _parser_output(
+            intent_hint="check_stock", domain_hint="inventory", match_mode="or", requested_attributes=["stock"], entity_op="reuse", entities=[]
+        ),
+    )
+    assert "gunmetal wash basins with stock (3)" in _intro(text), text
+    assert _codes(text, world) == {p.product_code for p in world["gunmetal"]}, text
+
+
 def test_item3_f_trap_is_an_unknown_trap(compact, world):
     text = compact.say(M3, _v3())
     # Amended to fix round 9 on PR #833 (owner, 28 Sep 2026): the one reply structure, broken down by the key.

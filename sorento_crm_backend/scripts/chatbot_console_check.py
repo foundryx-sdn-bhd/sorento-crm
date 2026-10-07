@@ -301,15 +301,16 @@ def _row_trace(turn_id: str | None) -> list[Any]:
 
 
 def _pending_kind(body: dict[str, Any], turn_id: str | None) -> str | None:
-    """What this turn LEFT the customer looking at: `variables.pending.kind`.
+    """What this turn LEFT the customer looking at: `variables.open_question.kind`
+    (`variables.pending.kind` on a trace recorded before the rename; see `_pending_of`).
 
     Fixed 13 Sep 2026 (console run 4): this read `response.pending` off the
     `chatbot.turns` row, a key nothing has ever written - so every `pending_kind`
     assertion in every run of every case graded `None`, including turns the trace proves
     were correctly armed. The marker is written by the tail into the session patch, and
     the row keeps it in the trace's `remembered` stage
-    (`raw.session_patch.variables.pending`); the persisted `response.reply` is the SEALED
-    customer reply and carries no session state at all.
+    (`raw.session_patch.variables.open_question`); the persisted `response.reply` is the
+    SEALED customer reply and carries no session state at all.
 
     The 200 body is tried first - a DRY-RUN turn returns its would-be patch there and
     writes nothing - then the row's trace.
@@ -345,8 +346,19 @@ def _pending_kind(body: dict[str, Any], turn_id: str | None) -> str | None:
 
 
 def _pending_of(variables: Any) -> str | None:
-    """`variables.pending.kind` as a string, or None - the one shape both sources use."""
-    pending = variables.get("pending") if isinstance(variables, dict) else None
+    """`variables.open_question.kind` as a string, or None - the one shape both sources use.
+
+    `open_question` is the key the tail writes (`turn/tail.py`, the re-architected turn);
+    `pending` was its name before that and is still read so an older recorded trace grades.
+    Measured 6 Oct 2026 (DO-LIST-REPLY-LABEL sandbox replay): with only `pending` read here,
+    every `pending_kind` expectation graded None on turns whose next turn answered the
+    question, so the check could never see an armed question.
+    """
+    if not isinstance(variables, dict):
+        return None
+    pending = variables.get("open_question")
+    if not isinstance(pending, dict):
+        pending = variables.get("pending")
     kind = pending.get("kind") if isinstance(pending, dict) else None
     return str(kind) if kind else None
 
