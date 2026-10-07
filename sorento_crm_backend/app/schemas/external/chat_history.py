@@ -68,6 +68,12 @@ class ChatHistoryMessageIngestRequest(BaseModel):
         "sends (campaigns, SLA notices) - those are excluded from the latency SLA "
         "rather than paired by proximity.",
     )
+    chatbot_turn_id: Optional[str] = Field(
+        None,
+        max_length=36,
+        description="Outgoing rows only: the engine turn uuid (chatbot.turns.id) this reply "
+        "came from, when n8n passes it. Absent today; the ingest then links the row itself.",
+    )
     state_trace: Optional[dict[str, Any]] = Field(
         None,
         description="Per-turn conversation state transition (v1). Incoming rows only; "

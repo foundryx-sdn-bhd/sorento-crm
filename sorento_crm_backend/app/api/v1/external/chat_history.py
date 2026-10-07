@@ -94,11 +94,11 @@ def ingest_chat_message(
         INSERT INTO chat_histories (
             channel, contact_id, phone_number, message, sent_at, first_name, last_name, type,
             message_id, result, reply_to_message_id, reply_to_message, turn_id, ingest_at,
-            respond_ts, state_trace
+            respond_ts, state_trace, chatbot_turn_id
         ) VALUES (
             :channel, :contact_id, :phone_number, :message, :sent_at, :first_name, :last_name, :type,
             :message_id, :result, :reply_to_message_id, :reply_to_message, :turn_id, :ingest_at,
-            :respond_ts, :state_trace
+            :respond_ts, :state_trace, :chatbot_turn_id
         )
         ON CONFLICT (contact_id, message_id) WHERE {CHAT_HISTORY_DEDUPE_PREDICATE}
         DO UPDATE SET
@@ -113,10 +113,30 @@ def ingest_chat_message(
             ),
             turn_id = COALESCE(chat_histories.turn_id, EXCLUDED.turn_id),
             respond_ts = COALESCE(chat_histories.respond_ts, EXCLUDED.respond_ts),
-            state_trace = COALESCE(chat_histories.state_trace, EXCLUDED.state_trace)
+            state_trace = COALESCE(chat_histories.state_trace, EXCLUDED.state_trace),
+            chatbot_turn_id = COALESCE(chat_histories.chatbot_turn_id, EXCLUDED.chatbot_turn_id)
         RETURNING id, (xmax <> 0) AS already_existed
         """
     )
+
+    # QUOTED-REPLY R1: an outgoing row names the engine turn it carries. Never fails the ingest.
+    chatbot_turn_id: str | None = None
+    if str(payload.type or "").lower() == "outgoing":
+        try:
+            from app.services.chatbot.quoted import link_outgoing_row
+
+            chatbot_turn_id = link_outgoing_row(
+                db,
+                contact_id=payload.contact_id,
+                turn_id=payload.turn_id,
+                message=payload.message,
+                sent_at=sent_at,
+                explicit=payload.chatbot_turn_id,
+            )
+        except Exception as link_error:  # noqa: BLE001
+            db.rollback()
+            logger.warning("chatbot_turn_id link failed: %s", link_error, exc_info=True)
+            chatbot_turn_id = None
 
     message_id: int | None = None
     already_existed = False
@@ -157,6 +177,7 @@ def ingest_chat_message(
                 "state_trace": json.dumps(payload.state_trace)
                 if payload.state_trace is not None
                 else None,
+                "chatbot_turn_id": chatbot_turn_id,
             },
         )
         row = result.one()

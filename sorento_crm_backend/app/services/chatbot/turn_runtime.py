@@ -119,6 +119,9 @@ class TurnContext:
     # products x brands read runs only when compose actually mints a `team_pick`; read
     # through `turn/compose.py::_routing_brand`, never directly.
     focus_brand: Callable[[], str | None] | None = None
+    # QUOTED-REPLY R4 (7 Oct 2026): the live `{pending, focus}` set aside while this turn ran
+    # on a quoted turn's state; `tail.session_payload` writes the live question back.
+    quoted_live: dict[str, Any] | None = None
 
 
 # --------------------------------------------------------------------------- #

@@ -990,6 +990,64 @@ def _reply_to_message_id(envelope: Envelope) -> str | None:
     return str(value) if value not in (None, "") else None
 
 
+def _quoted_context(
+    db: Session,
+    envelope: Envelope,
+    *,
+    contact_respond_id: str,
+    dry_run: bool,
+    state_in: Any,
+    remembered_before: dict[str, Any],
+) -> tuple[Any, dict[str, Any]]:
+    """QUOTED-REPLY (owner rulings, 7 Oct 2026): a quoted bot message is this turn's context.
+
+    Returns `(state_in, quoted_turn facts)`. When the quote resolves to an earlier engine turn
+    whose stored state differs from the live one, that turn's focus and open question replace
+    the live ones for THIS turn; the live ones ride aside on `remembered_before` so the tail
+    writes them back (R4). Profile, turn number and ideation stay live (R7). Anything else
+    (no quote, the dealer's own message, nothing found, no stored state) is main's behaviour.
+    """
+    from app.services.chatbot import quoted as quoted_mod
+
+    facts: dict[str, Any] = {"found": False, "via": None, "turn_id": None, "same_as_live": False}
+    reply_to_id = _reply_to_message_id(envelope)
+    if reply_to_id is None:
+        return state_in, facts
+    reply_to = jsc.get(jsc.get(_tf_message(envelope), "message"), "replyTo")
+    if jsc.get(jsc.get(reply_to, "sender"), "source") == "contact":
+        return state_in, facts
+    quoted_text = jsc.get(jsc.get(reply_to, "message"), "text")
+    found = quoted_mod.resolve_quoted_turn(
+        db,
+        contact_respond_id=contact_respond_id,
+        reply_to_id=reply_to_id,
+        quoted_text=quoted_text if isinstance(quoted_text, str) else None,
+        is_test=bool(dry_run),
+        before=datetime.now(tz=timezone.utc),
+    )
+    if found is None:
+        return state_in, facts
+    same = found.focus == remembered_before.get("focus") and found.open_question == remembered_before.get(
+        "open_question"
+    )
+    facts.update(found=True, via=found.via, turn_id=found.turn_id, same_as_live=same)
+    if same:
+        return state_in, facts
+    pending = turn_pending.from_wire(found.open_question)
+    if (
+        pending is not None
+        and pending.kind in turn_pending.ESCALATION_OFFER_KINDS
+        and isinstance(found.turn_no, int)
+        and state_in.turn_no - found.turn_no >= 3
+    ):
+        pending = None  # R6: an old escalation offer is not revived
+    remembered_before["_quoted_live"] = {"pending": state_in.pending, "focus": state_in.focus}
+    return (
+        dataclasses_replace(state_in, focus=turn_state.focus_from_wire(found.focus), pending=pending),
+        facts,
+    )
+
+
 def build_latest_user_message(envelope: Envelope, session_block: Any = None) -> str:
     """The two-line string `Call 'sub-query-reformulator'` builds today, verbatim.
 
@@ -3960,6 +4018,14 @@ def _run_stages_body(  # noqa: PLR0915
         turn_no = turn_runtime.turn_number(db, contact_respond_id)
         state_in = turn_runtime.load_state(session_block, profile=profile, turn_no=turn_no)
         remembered_before = session_state.five_keys(session_block)
+        state_in, quoted_turn_facts = _quoted_context(
+            db,
+            envelope,
+            contact_respond_id=contact_respond_id,
+            dry_run=bool(dry_run),
+            state_in=state_in,
+            remembered_before=remembered_before,
+        )
         # The parser's `Previous response:` line. Read here, at `received`, with the
         # other contact facts and off the SAME session: it is what the bot last said to
         # this contact, and the parser is the one component allowed to read prose.
@@ -4008,6 +4074,7 @@ def _run_stages_body(  # noqa: PLR0915
             "ingress": envelope.ingress,
             "remembered_keys": len([k for k, v in remembered_before.items() if v]),
             "quoted_a_message": _reply_to_message_id(envelope) is not None,
+            "quoted_turn": quoted_turn_facts,
             "dry_run": dry_run,
             "turn_no": turn_no,
             # ALWAYS present, empty list included: a reader must never have to tell
@@ -6872,12 +6939,21 @@ def _run_answer(
             contains_flyer=bool(verdict.get("contains_flyer")),
             ideation=remembered_before.get("ideation"),
             reply_language=item.get("reply_language") or remembered_before.get("reply_language"),
+            quoted_live=remembered_before.get("_quoted_live"),
         )
         # ONE payload for both kinds of turn: a live turn writes it, a dry run hands it
         # back as `session_patch` and writes nothing (D14). Same rule `run_tail` applies
         # for the older lanes, so every asking lane carries its question to the next
         # console or replay turn the same way (finding 2a).
         session_payload = turn_tail.session_payload(state, answer, tail_ctx)
+        turn_trace.add(
+            "state",
+            {
+                "focus": session_payload["focus"],
+                "open_question": session_payload["open_question"],
+                "turn_no": state.turn_no,
+            },
+        )
         if not dry_run:
             turn_tail.persist(
                 state, answer, tail_ctx, base=remembered_before, turn_id=turn_id
@@ -9017,6 +9093,10 @@ def run_tail(
             turn_no=0,
         )
     before = dict(remembered_before or session_state.five_keys(jsc.get(ctx, "session")))
+    if applied is not None and before.get("_quoted_live"):
+        applied = state = turn_tail.carry_live_state(
+            applied, question is not None, before["_quoted_live"]
+        )
     payload = {
         "focus": turn_state.focus_to_wire(state.focus),
         # The lane's OWN question, else the one APPLY carried - the same rule the
@@ -9043,6 +9123,14 @@ def run_tail(
     }
     SessionVars(**payload)
     reply_ladder.sanitize_em_dash(payload)
+    turn_trace.add(
+        "state",
+        {
+            "focus": payload["focus"],
+            "open_question": payload["open_question"],
+            "turn_no": getattr(state, "turn_no", 0),
+        },
+    )
 
     written = (not dry_run) and write_session
     if written:

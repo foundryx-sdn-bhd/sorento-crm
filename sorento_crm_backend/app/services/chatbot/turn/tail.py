@@ -16,6 +16,35 @@ from app.services.chatbot.turn.pending import to_wire
 from app.services.chatbot.turn.state import State, focus_to_wire
 
 
+def carry_live_state(state: State, asked: bool, live: Mapping[str, Any]) -> State:
+    """QUOTED-REPLY R4 (owner ruling, 7 Oct 2026): a turn that ran on a quoted turn's state
+    leaves the LIVE question open. The open question written is the live one unless this
+    turn asked its own; an answered quoted stock task never replaces an open live one, and an
+    open one of this turn's own keeps the live product's slot beside its own."""
+    from dataclasses import replace
+
+    from app.services.chatbot.turn.task import OPEN
+
+    def _open_stock(focus: Any) -> Any:
+        return next((t for t in focus.tasks or () if t.kind == "stock_qty" and t.status == OPEN), None)
+
+    focus = state.focus
+    live_open = _open_stock(live["focus"])
+    mine = _open_stock(focus)
+    if live_open is not None and mine is None:
+        kept = tuple(t for t in focus.tasks or () if t.kind != "stock_qty")
+        focus = replace(focus, tasks=(*kept, live_open))
+    elif live_open is not None and mine is not None:
+        # One task per kind: this turn's own open stock ask carries the live slots too, so
+        # the live product is still waiting on its quantity.
+        have = {slot.key for slot in mine.slots}
+        extra = tuple(slot for slot in live_open.slots if slot.key not in have)
+        if extra:
+            merged = replace(mine, slots=(*mine.slots, *extra))
+            focus = replace(focus, tasks=tuple(merged if t is mine else t for t in focus.tasks))
+    return replace(state, focus=focus, pending=state.pending if asked else live["pending"])
+
+
 def session_payload(state: State, answer: Any, ctx: Any) -> dict[str, Any]:
     """The five-key state this turn leaves behind - what `persist` writes.
 
@@ -25,6 +54,9 @@ def session_payload(state: State, answer: Any, ctx: Any) -> dict[str, Any]:
     that field, and an asking turn whose patch came back None lost its open question on
     the very next turn.
     """
+    live = getattr(ctx, "quoted_live", None)
+    if live:
+        state = carry_live_state(state, getattr(answer, "question", None) is not None, live)
     return {
         "focus": focus_to_wire(state.focus),
         # `pending' = composer.question` exactly (AC-1532) - and when the composer asked

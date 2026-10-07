@@ -152,8 +152,12 @@ def _envelope_for(
     parser: Any = None,
     previous_state: Any = None,
     prompt_version: str | None = None,
+    quote: str | None = None,
 ) -> dict[str, Any]:
-    """The borrowed envelope with this turn's words in it. Never mutates `base`."""
+    """The borrowed envelope with this turn's words in it. Never mutates `base`.
+
+    `quote` (QUOTED-REPLY, 7 Oct 2026) makes the message a WhatsApp reply to a bot message
+    carrying that text; the id is synthetic, so the engine resolves it by the text."""
     envelope = json.loads(json.dumps(base))
     # The WIRE shape: respond.io puts a numeric contact id in the webhook body, and this
     # check exists to catch what production would hit. Sending it as a string is what let
@@ -166,6 +170,14 @@ def _envelope_for(
     inner["contactId"] = wire_contact
     inner["messageId"] = f"console-check-{uuid.uuid4().hex[:12]}"
     inner["message"] = {"type": "text", "text": message}
+    if quote is not None:
+        inner["replyTo"] = {
+            "id": f"console-quote-{uuid.uuid4().hex[:12]}",
+            "sender": {"source": "n8n"},
+            "message": {"text": quote},
+        }
+    else:
+        inner.pop("replyTo", None)
     envelope["message"]["event_type"] = "message.received"
     # D14, always both markers: a console check that could answer a real customer is not a
     # check, it is an incident.
@@ -886,6 +898,7 @@ def _run_cases(cases, session, url, args, default_contact, run_id) -> int:
                 parser=(turn.get("parser") or case.get("parser")) if args.mock_parser else None,
                 previous_state=previous_state,
                 prompt_version=args.prompt_version,
+                quote=turn.get("quote") or case.get("quote"),
             )
             body = _post_with_pacing(
                 session,
