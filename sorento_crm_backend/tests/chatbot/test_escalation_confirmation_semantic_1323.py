@@ -319,6 +319,7 @@ class TestPrompt:
             ACCOUNT_LEDGER_ADDENDUM,
             CANONICAL_CODE_ADDENDUM,
             LOW_STOCK_FILTERS_ADDENDUM,
+            PO_REFS_ADDENDUM,
             MEMORY_ADDENDUM,
             PO_SPO_WAREHOUSE_ADDENDUM,
             SEMANTIC_PARSER_PROMPT,
@@ -337,6 +338,7 @@ class TestPrompt:
             PO_SPO_WAREHOUSE_ADDENDUM
             + ACCOUNT_LEDGER_ADDENDUM
             + LOW_STOCK_FILTERS_ADDENDUM
+            + PO_REFS_ADDENDUM
             + CANONICAL_CODE_ADDENDUM
             + TRAP_SPECS_FALLBACK_BLOCK
             + MEMORY_ADDENDUM
