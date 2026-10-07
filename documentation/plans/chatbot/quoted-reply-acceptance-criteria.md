@@ -27,13 +27,21 @@ Q4 (b) any quoted bot message is the context, Q5 (a) all kinds.
 - AC-QR-7 (context = quoted state): when a quoted turn resolves, the turn runs with the quoted turn's
   stored `focus` and open question as its state: the parser block's `Open question:` and
   `Current subject:` lines are built from them, and the verdict is applied to them.
+- AC-QR-8a (non-answer lanes): a quoted message answered on a canned, low-signal, clarify or
+  out-of-scope lane ("ok thanks" quoting an older question) leaves the live open question and task
+  exactly as they were; the quoted state is never written as the live state by those lanes.
 - AC-QR-8 (owner case): live open stock task for product C; two earlier turns asked "How many units
   of A?" and "How many units of B?"; a message quoting the A question with "1 unit" answers A x 1 and
   mentions neither B nor C; a following message quoting the B question with "1 unit" answers B x 1;
   after each, the open stock task the next turn loads is still C, unanswered, and no reply re-asks C.
 - AC-QR-9 (non-question quote): quoting a bot message that asked nothing (E2: "I have SRTBF11841.
   What would you like me to know?") with "have stock? or eta date?" answers about SRTBF11841 (the
-  quoted turn's focus product), while the live open task (SRTWC201) stays open and is not re-asked.
+  quoted turn's focus product): the stock tool is called for it, never for the live task's product,
+  and the reply asks only about SRTBF11841. When that answer opens a stock ask of its own, this
+  turn's own ask is the one stock task written (one task per kind, as on main when a fresh ask
+  replaces an open one); the live task is replaced, never merged into it (reviewer finding, 7 Oct
+  2026: a merged task made the next bare number fill BOTH products with a quantity the dealer never
+  gave). Owner ruling pending (crew ask): keep this, or park the live task for a later re-ask.
 - AC-QR-10 (already answered, parser-interpreted): quoting "How many units of X?" after X was
   answered at 10 and typing a bare number N answers X x N; "1" vs "1 unit" over a quoted numbered
   pick is whatever the parser declares in `open_question_answer` for the quoted question object; no
