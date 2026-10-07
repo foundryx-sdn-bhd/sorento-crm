@@ -1939,10 +1939,10 @@ def _strip_name_kinds_for_locked(
     recomputed from what is left. AND shape: a row in the intersection covered EVERY
     token, the locked one included, so the rows of those kinds go whatever the other
     tokens were; an emptied intersection reads as the zero-intersection AND the caller
-    already degrades to OR-mode. `alternatives` (did-you-mean neighbours) stay for every
-    other kind (AC-1703: the product neighbours of a mishinted code); a neighbour of one
-    of the five name kinds is dropped with the kind, since a locked token is never offered
-    a promotion or a customer as what it might have meant either."""
+    already degrades to OR-mode. `alternatives` (did-you-mean neighbours) are offers, not
+    assignments, and stay (AC-1703). Runs on the primary result and, since R2 (7 Oct 2026),
+    on the per-token fallback result too, so a locked token's rerun keeps no name kind
+    while an exact record key it names still resolves there."""
     if not locked_tokens:
         return result
     locked = {_norm_locked_token(t) for t in locked_tokens} - {""}
@@ -1971,10 +1971,6 @@ def _strip_name_kinds_for_locked(
             continue
         matches = tr.get("matches") or []
         kept_matches = [m for m in matches if (m or {}).get("entity_type") not in dropped]
-        alternatives_in = tr.get("alternatives") or []
-        kept_alternatives = [a for a in alternatives_in if (a or {}).get("entity_type") not in dropped]
-        if len(kept_alternatives) != len(alternatives_in):
-            tr["alternatives"] = kept_alternatives
         if len(kept_matches) == len(matches):
             continue
         # The resolver's own meaning of the two flags (`_suppress_brand_prefix_junk`):

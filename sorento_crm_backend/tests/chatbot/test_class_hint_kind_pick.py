@@ -722,20 +722,15 @@ class TestTheRerunLeavesALockedTokenAlone:
         wrong hint must still find itself, owner ruling 5 of hand pass 12, see the test
         below); what the rerun may not do is hand it a promotion / customer / attachment /
         transporter / form row by name. Nothing is left for "basin", so the route reports
-        no fallback and the word stays unresolved for the spec tier."""
+        no fallback and the word stays unresolved for the spec tier. (Did-you-mean
+        neighbours are not asserted: measured on this seed, the resolver offers none for
+        a class word with or without the lock, reviewer S1 of the R2 round.)"""
         _seed_world(session_factory)
         result = _route_call(session_factory(), _basin_body(**{LOCK_FIELD: ["basin"]}))
         kinds = _kinds_under(result, "basin")
         assert not kinds & {"promotion", "customer"}, kinds
         assert [t.lower() for t in result.get("unresolved_tokens") or []] == ["basin"], result.get("unresolved_tokens")
         assert not result.get("fallback_applied"), result.get("fallback_types_found")
-        alternatives = [
-            m.get("entity_type")
-            for r in result.get("resolutions") or []
-            if str(r.get("token") or "").lower() == "basin"
-            for m in (r.get("alternatives") or [])
-        ]
-        assert not set(alternatives) & {"promotion", "customer", "attachment", "transporter", "form"}, alternatives
 
     def test_a_locked_record_key_still_resolves_by_its_exact_key_in_the_rerun(self, session_factory) -> None:
         """R2 (7 Oct 2026, `test_rearch_r12_handpass12_d.py` red on the lane): a container
