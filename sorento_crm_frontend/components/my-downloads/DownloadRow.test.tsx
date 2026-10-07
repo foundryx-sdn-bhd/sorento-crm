@@ -222,4 +222,28 @@ describe('DownloadRow timestamp', () => {
     render(<DownloadRow row={row({ created_at: undefined })} />);
     expect(screen.queryByText(/2026/)).toBeNull();
   });
+
+  describe('attachment_bulk_zip (FOLDER-BULK-DOWNLOAD AC-F2)', () => {
+    it('is labelled "Files archive (ZIP)"', async () => {
+      const mod = await import('./DownloadRow');
+      expect(mod.KIND_LABEL['attachment_bulk_zip']).toBe('Files archive (ZIP)');
+      render(<DownloadRow row={row({ kind: 'attachment_bulk_zip', filename: null })} />);
+      expect(screen.getAllByText('Files archive (ZIP)').length).toBeGreaterThan(0);
+    });
+
+    it('a ready archive row has Download and NO Preview', () => {
+      render(
+        <DownloadRow row={row({ kind: 'attachment_bulk_zip', filename: 'Files-20261007-1412.zip' })} />,
+      );
+      expect(screen.getByRole('button', { name: /^Download/ })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /^Preview/ })).toBeNull();
+      expect(document.querySelector('[aria-label^="Preview"]')).toBeNull();
+    });
+
+    it('a ready complaint_pdf row still has both controls', () => {
+      render(<DownloadRow row={row()} />);
+      expect(screen.getByRole('button', { name: /^Download/ })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /^Preview/ })).toBeInTheDocument();
+    });
+  });
 });

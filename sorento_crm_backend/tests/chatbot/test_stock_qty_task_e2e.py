@@ -65,8 +65,10 @@ def test_two_products_no_quantity_then_answered_one_at_a_time_drives_a_fetch_wit
     }
 
     # 2. The dealer answers ONE of the two ("50 for SRT5674"). The turn fills that
-    # slot; the OTHER is still missing, so nothing is fetched yet and the reply is the
-    # re-ask naming only what is still owed.
+    # slot and, under owner ruling R1 (STOCK-QTY-PARTIAL-FILL, 6 Oct 2026: "we answer
+    # that one immediately; the remaining stay OPEN"), fetches THAT line alone now; the
+    # other line stays owed on the open task and no question is asked (the list is
+    # never re-printed). Before R1 this turn fetched nothing and re-asked CWCX604.
     focus = Focus(tasks=(task,))
     from app.services.chatbot.turn.state import Profile, State
 
@@ -79,14 +81,16 @@ def test_two_products_no_quantity_then_answered_one_at_a_time_drives_a_fetch_wit
         "uuid-srt5674": 50,
         "uuid-cwcx604": None,
     }
-    assert not plan.fetch, "one slot still owed: nothing fetched yet"
-    assert plan.trace.task_question is not None
-    assert "CWCX604" in plan.trace.task_question, plan.trace.task_question
+    assert len(plan.fetch) == 1, plan.fetch
+    assert plan.fetch[0].filters.get("requested_quantities") == {"uuid-srt5674": 50}
+    assert [e["uuid"] for e in plan.fetch[0].entities] == ["uuid-srt5674"]
+    assert "task_partial_answered_stock_qty" in plan.trace.rules_fired
+    assert plan.trace.task_question is None, "the owed line is not re-asked (R1)"
+    assert stock.status == task_mod.OPEN
 
-    # 3. The dealer answers the SECOND product ("300 for CWCX604"). Nothing is owed
-    # any more, so the task drives its OWN fetch - carrying BOTH quantities, in the
-    # order the dealer named the products (SRT5674 first, per the task's own slot
-    # order from step 1).
+    # 3. The dealer answers the SECOND product ("300 for CWCX604"). The task drives
+    # its OWN fetch for THAT line alone: the line answered on the earlier turn is not
+    # fetched again (R1, plan D2). Both quantities stay noted on the task.
     v2 = verdict(entities=[entity("CWCX604", hint="product", quantity=300, uuid="uuid-cwcx604")])
     state2, plan2 = apply(state, v2, policy)
 
@@ -98,12 +102,9 @@ def test_two_products_no_quantity_then_answered_one_at_a_time_drives_a_fetch_wit
     assert len(plan2.fetch) == 1, plan2.fetch
     spec = plan2.fetch[0]
     assert spec.domain == "inventory"
-    assert spec.filters.get("requested_quantities") == {
-        "uuid-srt5674": 50,
-        "uuid-cwcx604": 300,
-    }
-    assert [e["uuid"] for e in spec.entities] == ["uuid-srt5674", "uuid-cwcx604"], (
-        "asked order preserved: SRT5674 named first, CWCX604 second"
+    assert spec.filters.get("requested_quantities") == {"uuid-cwcx604": 300}
+    assert [e["uuid"] for e in spec.entities] == ["uuid-cwcx604"], (
+        "only the line this message answered; SRT5674 was answered on the earlier turn"
     )
 
     # 4. The tool answers both (neither entry needs a quantity any more): nothing is
