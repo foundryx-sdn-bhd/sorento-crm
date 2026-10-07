@@ -1,6 +1,6 @@
 # UAC: report engine, slice 1 (top sales agent by product / brand)
 
-Status: FINAL for slice 1 (owner answers, `report-engine-behaviour-card.md` revision 2).
+Status: FINAL for slice 1 (owner answers, `report-engine-behaviour-card.md` revision 2); hand-test round 8 Oct adds AC-HT8-1 to 5.
 Plan: `PLAN-report-engine.md` (section 0 records the answers).
 Part 1a = route + catalogue + presenter (AC-RE-1..17, 20); part 1b = lane wiring with the shared
 required-field helper of #1445 (AC-RE-18, 19), built once crew relays the helper's API.
@@ -60,3 +60,20 @@ angle ("top customers for a brand") needs no new tool.
 - **AC-RE-19** The parser maps "salesman / sales agent / SA / rep", "brand", "category" onto
   `group_by`, "ordered" / "delivered" onto the basis, and a word outside the catalogue ("by
   colour") gets the list of what sales can be ranked by.
+
+## Hand-test round, 8 Oct 2026 (crew ruling (b) on the owner's Chinese and dealer turns)
+
+The owner's ask: the salesman angle gives the salesman ranking, and the dealer angle gives the dealer ranking, in English AND Chinese.
+
+- AC-HT8-1. A ranking asked while an earlier sales summary's drill-down offer is still open is a NEW ask. The parser names
+  `order_status: "sales_ranking"`, and `decide._subject_reading` reads that key and returns NEW_ASK. It never refines
+  the summary's subject or product. Any other order_status under the same offer keeps today's reading.
+  Example: "cwc7606今年卖了多少个？" then "我们哪一位业务员卖得最多srtwc286-SH" ranks sales agents for SRTWC286-SH.
+- AC-HT8-2. A dealer or customer named as the ranked noun ranks by customer, with no channel filter:
+  - "which dealer sold the most X";
+  - "哪一位经销商卖得最多X";
+  - "多少个经销商卖这个产品" (on the standing product).
+- AC-HT8-3. A salesman named as the ranked noun ranks by sales agent: "哪一位业务员卖得最多X", "which salesman sold the most X".
+- AC-HT8-4. A sales_ranking verdict sets `domain_in_message: true`. The DOMAIN IN MESSAGE words include "sold the most", "top",
+  "卖得最多" and "排名".
+- AC-HT8-5. The prompt change ships as a new unlabelled version, picked in the console. The `production` label does not move.
