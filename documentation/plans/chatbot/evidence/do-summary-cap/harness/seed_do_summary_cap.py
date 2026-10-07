@@ -203,6 +203,7 @@ _do("DO-26-0105-DLV", order_date=date(2026, 1, 5), status="DELIVERED",
 db.commit()
 print(f"ADMIN {ADMIN_EMAIL}")
 print(f"CONTACT {CONTACT} (respond_contacts.id {cid})")
-print("MCP_KEY issued (pass it to the MCP server as EXTERNAL_API_KEY and write it into "
-      ".env.browse's EXTERNAL_API_KEY; not printed in logs kept)")
+print("MCP_KEY issued, printed ONCE on the next line: pass it to the MCP server as "
+      "EXTERNAL_API_KEY and write it into .env.browse's EXTERNAL_API_KEY; never paste it "
+      "into evidence or a commit (sandbox-only key, but the habit matters)")
 print(key)
