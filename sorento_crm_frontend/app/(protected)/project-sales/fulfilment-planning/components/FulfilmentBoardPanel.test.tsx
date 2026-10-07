@@ -5145,6 +5145,12 @@ describe('FulfilmentBoardPanel: results block lists Transfer to Cancel SO lines 
 
 // SO-CANCEL-LINE round 4: a saved cancel on an order with a pending planning change.
 describe('FulfilmentBoardPanel: SO-CANCEL-LINE round 4 cancel held back by a pending change', () => {
+  // `vi.clearAllMocks` keeps implementations, so an earlier describe's applied-batch answer
+  // would otherwise leak into this one.
+  beforeEach(() => {
+    getPlanningChangeBatch.mockReset();
+  });
+
   const cancelDraft = {
     decision: { verdict: 'cancelled' as const, reason: 'CANCEL ORDER' },
     saved_by: 'Test Planner',
