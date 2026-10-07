@@ -609,7 +609,9 @@ def _roster_option(row: dict[str, Any], *, kind: str, position: int) -> dict[str
     return option
 
 
-def _tier_options(rows: list[dict[str, Any]], *, asked_at_turn: int | None) -> pending.Pending | None:
+def _tier_options(
+    rows: list[dict[str, Any]], *, asked_at_turn: int | None, scope_terms: list[str] | None = None
+) -> pending.Pending | None:
     """`tier_last_result_set` rows -> a `tier_pick` `Pending`, or `None` when fewer than
     two tiers are on offer (AC-1691) - the caller then has a text-only `Answer`, settling
     the single tier outright rather than asking about it."""
@@ -630,7 +632,12 @@ def _tier_options(rows: list[dict[str, Any]], *, asked_at_turn: int | None) -> p
     # own "promotion" against, so a pick whose verdict kept `domain_hint: promotion`
     # read as a pick in ANOTHER domain. The tier ask is the promotion lane's alone
     # (`tier_gate.needs_tier_ask`).
-    return pending.ask("tier_pick", options, asked_at_turn=asked_at_turn, payload={"domain": "promotion"})
+    # PROMO-SUBJECT-FILTER AC-6: the subject the menu was probed with rides the open pick,
+    # so the answering turn (which names none) fetches with the same filter.
+    payload: dict[str, Any] = {"domain": "promotion"}
+    if scope_terms:
+        payload["scope_terms"] = list(scope_terms)
+    return pending.ask("tier_pick", options, asked_at_turn=asked_at_turn, payload=payload)
 
 
 def _access_ask_answer(
@@ -671,7 +678,10 @@ def _access_ask_answer(
     text = _compose_text(lane_item, ctx=ctx, canned=canned, db=db, access_choice=lane_item)
     rows = lane_item.get("tier_last_result_set")
     rows = rows if isinstance(rows, list) else []
-    question = _tier_options(rows, asked_at_turn=asked_at_turn)
+    from app.services.chatbot import turn_runtime
+
+    terms = [t.lower() for t in turn_runtime.class_scope_terms(parser or {})]
+    question = _tier_options(rows, asked_at_turn=asked_at_turn, scope_terms=terms)
     return turn_compose.Answer(text=text, question=question)
 
 

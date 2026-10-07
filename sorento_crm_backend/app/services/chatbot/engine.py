@@ -5516,6 +5516,37 @@ def _run_stages_body(  # noqa: PLR0915
             stage[0] = "replied"
             answer = turn_compose.Answer(text=plan.trace.task_question)
 
+        # PROMO-SUBJECT-FILTER AC-7/AC-8: a promotion ask whose subject grounded to an
+        # UNKNOWN product type (the parser named a type, the registry has none that fits)
+        # asks back before any menu or tool call. The parser's grounding decides; nothing
+        # here reads the words.
+        if (
+            answer is None
+            and branch_kind in ("business_query", "check_promotion")
+            and completes_here
+            and not sales_report_grant_refused
+            and not customer_scope_refused
+            and isinstance(resolver_payload, dict)
+            and (answer_parse_output or {}).get("domain_hint") == "promotion"
+        ):
+            unknown_types = [
+                str(e.get("raw") or "").strip()
+                for e in (answer_parse_output or {}).get("entities") or []
+                if isinstance(e, dict)
+                and e.get("spec_key") == "product_type"
+                and e.get("spec_value") is None
+                and str(e.get("raw") or "").strip()
+            ]
+            if unknown_types:
+                stage[0] = "replied"
+                answer = turn_compose.Answer(
+                    text=(
+                        f'I could not match "{", ".join(unknown_types)}" to a product type.\n'
+                        "Which product or brand do you mean?"
+                    )
+                )
+                bridge_answered = True
+
         if (
             answer is None
             and branch_kind in ("business_query", "check_promotion")
@@ -5549,8 +5580,38 @@ def _run_stages_body(  # noqa: PLR0915
             from app.services.chatbot import answer_bridge
             from app.services.chatbot import copy as copy_mod
 
+            # PROMO-SUBJECT-FILTER AC-9: this menu is probed like every other, with the
+            # same subject, so each level line is stamped and an all-empty or failed
+            # probe never shows one.
+            probed = business.run_fetch(
+                {
+                    "gate": resolver_payload.get("gate") or {},
+                    "tier_gate": (
+                        resolver_payload
+                        if resolver_payload.get("_exit_kind") == "access_ask"
+                        else resolver_payload.get("tier_gate")
+                    ),
+                    "ctx": {
+                        **ctx,
+                        "parse": {**(ctx.get("parse") or {}), "output": answer_parse_output},
+                        "customer_scope": customer_scope,
+                    },
+                    "tier_ask": True,
+                },
+                services=business_services.fetch_services(db),
+                dry_run=dry_run,
+                space_id=space_id_for_turn,
+                trace=turn_trace,
+                db=db,
+            )
+            bridge_payload = resolver_payload
+            if isinstance(probed.get("tier_probe"), dict):
+                if resolver_payload.get("_exit_kind") == "access_ask":
+                    bridge_payload = {**resolver_payload, **probed["tier_probe"]}
+                else:
+                    bridge_payload = {**resolver_payload, "tier_gate": probed["tier_probe"]}
             answer = answer_bridge.question_for(
-                resolver_payload,
+                bridge_payload,
                 parser=answer_parse_output,
                 ctx=ctx,
                 canned=copy_mod.resolve(db),
@@ -5675,6 +5736,11 @@ def _run_stages_body(  # noqa: PLR0915
                     dry_run=dry_run,
                     turn_trace=turn_trace,
                     counted_set=spec_tier and bool(turn_runtime.class_scope_terms(verdict)),
+                    asked_scope_terms=(
+                        list((state_in.pending.payload or {}).get("scope_terms") or [])
+                        if state_in.pending is not None and state_in.pending.kind == "tier_pick"
+                        else None
+                    ),
                     resolver_gate=(
                         resolver_payload.get("gate")
                         if isinstance(resolver_payload, dict)

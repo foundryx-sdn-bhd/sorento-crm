@@ -1353,6 +1353,15 @@ def run_fetch(
     semantic_input = _fetch_semantic_input(
         parse_output, tier_gate=tier_gate, contact_id=contact_id, space_id=space_id
     )
+    # PROMO-SUBJECT-FILTER: the class words the parser named narrow a promotions fetch
+    # (probe and main call alike); carried across a tier pick by the parse output.
+    from app.services.chatbot import turn_runtime as _turn_runtime
+
+    subject_terms = [t.lower() for t in _turn_runtime.class_scope_terms(parse_output)] or [
+        str(t).lower() for t in jsc.array(parse_output.get("promo_scope_terms")) if t
+    ]
+    if subject_terms:
+        semantic_input["scope_terms"] = subject_terms
     # PLAN-chatbot-customer-scope-29sep.md D3/D4: a customer-scoped contact's turn
     # (`engine._customer_scope_gate`). The engine refuses a customer word outside its links (one fixed line, before any
     # fetch); here the links ride to `entity_ids_transformer`, which forces them on every customer-scoped tool.

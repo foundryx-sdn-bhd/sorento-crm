@@ -391,6 +391,7 @@ class PromotionService:
         product_ids: Optional[list[str]] = None,
         attachment_state: Optional[str] = None,
         expiry_notify_batch_id: Optional[str] = None,
+        subject_clause: Optional[Any] = None,
     ):
         """Build the filtered + sorted promotions query shared by ``list_promotions``
         and ``neighbours`` so the two can never drift.
@@ -530,6 +531,8 @@ class PromotionService:
                 q = q.filter(product_ids_clause)
             if advanced_filter_clause is not None:
                 q = q.filter(advanced_filter_clause)
+            if subject_clause is not None:
+                q = q.filter(subject_clause)
             if attachment_state:
                 from sqlalchemy import exists as _sa_exists, and_ as _sa_and, or_ as _sa_or2
                 has_any_link = _sa_exists().where(
@@ -614,6 +617,7 @@ class PromotionService:
         attachment_state: Optional[str] = None,
         expiry_notify_batch_id: Optional[str] = None,
         serving_policy: bool = False,
+        scope_terms: Optional[list[str]] = None,
     ):
         """List promotions with active-first fallback semantics.
 
@@ -664,6 +668,26 @@ class PromotionService:
         if entity_buckets is not None and entity_buckets.promotion_ids:
             entity_promotion_ids = list(entity_buckets.promotion_ids)
 
+        # Subject filter (PROMO-SUBJECT-FILTER): promotions with at least one explicitly
+        # linked product in the class the terms name, read as the resolver reads them.
+        # Terms that name nothing the catalogue knows match nothing; there is never
+        # an inactive fallback under a subject.
+        subject_clause = None
+        scope_terms = [t for t in (scope_terms or []) if t and t.strip()]
+        if scope_terms:
+            from app.models.product_spec import ProductSpecifications
+            from app.services.product_spec_search import filter_specs
+
+            member = filter_specs(self.db, scope_terms=scope_terms)["clause"]
+            if member is None:
+                subject_clause = text("false")
+            else:
+                subject_clause = exists().where(
+                    PromotionProduct.promotion_id == Promotion.id
+                ).where(
+                    PromotionProduct.product_id == ProductSpecifications.product_id
+                ).where(member)
+
         (
             _ordered_query,
             primary_active_mode,
@@ -686,7 +710,10 @@ class PromotionService:
             product_ids=product_ids,
             attachment_state=attachment_state,
             expiry_notify_batch_id=expiry_notify_batch_id,
+            subject_clause=subject_clause,
         )
+        if subject_clause is not None:
+            fallback_allowed = False
 
         today = datetime.utcnow().date()
         fallback_used = False

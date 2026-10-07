@@ -2799,6 +2799,7 @@ def make_tool_runner(
     localizer: Any = None,
     unplaced_suggestions: dict[str, list[dict[str, Any]]] | None = None,
     not_checked: list[str] | None = None,
+    asked_scope_terms: list[str] | None = None,
 ) -> Callable[[str, FetchSpec], dict[str, Any]]:
     """The ONE seam that reaches a tool: `run_fetch` calls it once per `FetchSpec`.
 
@@ -2872,6 +2873,10 @@ def make_tool_runner(
         # instead. Flagged here so the next reader does not assume parity.
         lane_out = lane_parse_output(verdict, focus=focus, domain=domain, policy=policy)
         lane_out = _spec_window(lane_out, spec)
+        if asked_scope_terms and domain == "promotion":
+            # PROMO-SUBJECT-FILTER AC-6: the tier pick's own turn names no subject; the
+            # one the menu was asked for rides the open pick's payload.
+            lane_out = {**lane_out, "promo_scope_terms": list(asked_scope_terms)}
         answered = spec.filters.get("outstanding")
         if isinstance(answered, dict):
             lane_out = outstanding_carry(lane_out, focus, answered)
