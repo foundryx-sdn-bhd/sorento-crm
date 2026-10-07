@@ -73,6 +73,7 @@ def test_the_prompt_teaches_the_kind_and_never_files_a_property_as_a_document():
         CANONICAL_CODE_ADDENDUM,
         LOW_STOCK_FILTERS_ADDENDUM,
         PO_SPO_WAREHOUSE_ADDENDUM,
+        PROMOTION_KIND_ADDENDUM,
         QUANTITY_ADDENDUM,
         SEMANTIC_PARSER_PROMPT,
         SPECIFICATION_ADDENDUM,
@@ -81,11 +82,12 @@ def test_the_prompt_teaches_the_kind_and_never_files_a_property_as_a_document():
     )
 
     # STOCK-QTY-PARTIAL-FILL (6 Oct 2026): the trap-specs block sits just under MEMORY.
+    # PROMO-SUBJECT-FILTER (8 Oct 2026): the promotion-kind addendum sits under the trap-specs block.
     # Merge of origin/main 2e894c4c5 (#1323): the escalation addendum is newer, outermost.
     # Integration round 11 (#1301): the #1262 pair (QUANTITY, KNOWN_BRANDS) sits between.
     # Fix round 13 merge of origin/main b9552578 (#1273): TOP_SELLING sits under the tail.
     assert (
-        SEMANTIC_PARSER_PROMPT.removesuffix(MEMORY_ADDENDUM).removesuffix(TRAP_SPECS_FALLBACK_BLOCK).removesuffix(CANONICAL_CODE_ADDENDUM).removesuffix(LOW_STOCK_FILTERS_ADDENDUM).removesuffix(ACCOUNT_LEDGER_ADDENDUM).removesuffix(PO_SPO_WAREHOUSE_ADDENDUM)
+        SEMANTIC_PARSER_PROMPT.removesuffix(MEMORY_ADDENDUM).removesuffix(TRAP_SPECS_FALLBACK_BLOCK).removesuffix(PROMOTION_KIND_ADDENDUM).removesuffix(CANONICAL_CODE_ADDENDUM).removesuffix(LOW_STOCK_FILTERS_ADDENDUM).removesuffix(ACCOUNT_LEDGER_ADDENDUM).removesuffix(PO_SPO_WAREHOUSE_ADDENDUM)
         .removesuffix(ESCALATION_CONFIRMATION_ADDENDUM).removesuffix(SELF_REFERENCE_ADDENDUM)
         .removesuffix(TOP_SELLING_ADDENDUM)
         .removesuffix(KNOWN_BRANDS_ADDENDUM)

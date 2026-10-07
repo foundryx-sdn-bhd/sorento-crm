@@ -126,7 +126,11 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # TRAP_SPECS_FALLBACK_BLOCK, MEMORY the tail) measure 47,782 without MEMORY_ADDENDUM (+786,
 # the canonical-code addendum alone) and 48,297 with it; CEILING is 48,297 - 512 = 47,785 so
 # both assertions hold. Nothing else grew.
-CEILING = 47_785
+# Twelfth re-pin, 8 Oct 2026 (PROMO-SUBJECT-FILTER merged over RESOLVE-SEMANTIC-FALLBACK):
+# PROMOTION_KIND_ADDENDUM stacks after CANONICAL_CODE_ADDENDUM (MEMORY the tail): 47,955
+# without MEMORY_ADDENDUM (+173, the promotion-kind addendum alone) and 48,471 with it;
+# CEILING is 48,471 - 512 = 47,959 so both assertions hold. Nothing else grew.
+CEILING = 47_959
 # The memory addendum on its own, bounded separately so this PR's growth stays bounded.
 # 26 Sep baseline (lane d89110c0): 339 est. tokens. Round 4 (baf4c813, 28 Sep: the history
 # question in any wording, the number re-run, commercial_request) took it to 512, which is
