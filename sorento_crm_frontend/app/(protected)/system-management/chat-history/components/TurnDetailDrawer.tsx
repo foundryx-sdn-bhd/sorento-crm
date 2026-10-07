@@ -33,6 +33,18 @@ import type {
  * whatever the backend composed and collapses to nothing wasted when a kind
  * has not shipped yet - never an error, never a placeholder explaining why.
  */
+
+/** A stage fact as readable text: a plain object reads as "key: value" pairs (never
+ * "[object Object]"); everything else keeps its `String` form. */
+function factText(value: unknown): string {
+  if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+    return Object.entries(value as Record<string, unknown>)
+      .map(([k, v]) => `${k}: ${v !== null && typeof v === 'object' ? JSON.stringify(v) : String(v)}`)
+      .join(', ');
+  }
+  return String(value);
+}
+
 export function TurnDetailDrawer({
   turnId,
   onOpenChange,
@@ -234,8 +246,8 @@ function StagesSection({ stages }: { stages: TurnDetail['stages'] }) {
               {Object.entries(stage.facts ?? {}).map(([key, value]) => (
                 <div key={key} className="contents">
                   <dt className="text-muted-foreground">{key.replace(/_/g, ' ')}</dt>
-                  <dd className="min-w-0 truncate" title={String(value)}>
-                    {String(value)}
+                  <dd className="min-w-0 truncate" title={factText(value)}>
+                    {factText(value)}
                   </dd>
                 </div>
               ))}
