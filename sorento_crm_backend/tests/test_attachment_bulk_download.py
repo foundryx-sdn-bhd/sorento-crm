@@ -176,6 +176,26 @@ def test_b6_slashes_in_folder_name_become_dash(db):
     assert _paths(plan) == ["SRT LITE - DIY/x.pdf"]
 
 
+def test_b6b_dot_names_cannot_escape(db):
+    svc = _svc()
+    dotdot = _folder(db, "..")
+    dot = _folder(db, ".", parent_id=dotdot)
+    _file(db, "x.pdf", directory_id=dot)
+    slash_file = _file(db, "/")
+
+    plan = _plan(db, folder_ids=[dotdot], attachment_ids=[slash_file])
+
+    for e in plan.entries:
+        assert not e.path.startswith("/"), e.path
+        for seg in e.path.rstrip("/").split("/"):
+            assert seg not in ("", ".", ".."), f"unsafe segment in {e.path!r}"
+    assert _paths(plan) == ["_", "_/_/x.pdf"]
+    assert svc._safe_name("..") == "_"
+    assert svc._safe_name(".") == "_"
+    assert svc._safe_name("/") == "_"
+    assert svc._safe_name("a/b") == "a-b"
+
+
 def test_b7_archived_files_and_trashed_folders_excluded(db):
     top = _folder(db, "Top")
     trashed = _folder(db, "Trashed", parent_id=top, is_deleted=True)
