@@ -1,6 +1,6 @@
 # PLAN - DO-SUMMARY-CAP: the outstanding summary's By product / By customer block stops at the top N rows
 
-Status: small fix track (one presenter function and its goldens, no migration, no auth change, no new ingest surface, no screen change). Lane started 7 Oct 2026 from origin/main e9aa88b2. Behaviour card posted as a crew-ask on the lane PR; nothing in code until the owner answers it.
+Status: small fix track (one presenter function and its goldens, no migration, no auth change, no new ingest surface, no screen change). Lane started 7 Oct 2026 from origin/main e9aa88b2. Behaviour card answered by the crew on Q2/Q3/Q5 (all (a)); Q1 (N = 20) and Q4 (trailer wording) are with the owner. Code is in (red-first, reviewer PASS with should-fix, security-reviewer PASS, sandbox console pass PASS) at N = 20 with the recommended wording; a different answer is a constant and a string change. Not to merge before the owner answers.
 Issue: crew lane DO-SUMMARY-CAP (owner ruling 7 Oct 2026 07:10 MYT, Option 1 from the #1515 plan's "Owner question"). Related: DO-LIST-REPLY-LABEL #1515 (the quick-reply label answers the pending detail offer).
 UAC: `do-summary-cap-acceptance-criteria.md`
 Classification: MCP presenter, `sorento_crm_mcp/sorento_crm_mcp/presenters.py` (pure string rendering). No prompt change, no engine change, no route change.
@@ -113,11 +113,15 @@ label fix applies to it unchanged when it lands. Noted in the PR body.
 
 ## Tests (red first)
 
-`sorento_crm_mcp/tests/test_presenters_outstanding.py` gains a cap section; new goldens
-`outstanding-report-do-capped.txt` (customer subject, 300 one-unit products, the prod shape) and
-`outstanding-report-both-capped.txt` (both scopes, DO block says `reply 2`) under
-`tests/fixtures/outstanding/` with their `documentation/plans/chatbot/samples/` mirrors.
-`test_fourteen_customers_render_without_elision` stays as is (14 < N).
+`sorento_crm_mcp/tests/test_presenters_outstanding_cap.py` (new file, red-first); goldens
+`outstanding-report-do-capped.txt` (customer subject, 312 products: 20 volume rows then 292 small
+ones, the prod shape) and `outstanding-report-both-capped.txt` (both scopes, SO trailer `reply 1`,
+DO trailer `reply 2`) under `tests/fixtures/outstanding/` with their
+`documentation/plans/chatbot/samples/` mirrors. `test_fourteen_customers_render_without_elision`
+stays as is (14 < N). Backend side: `tests/chatbot/test_do_summary_cap_offer.py` locks the offer
+roster read off a capped reply, and the chat-language catalog test pins the trailer's ms / zh
+forms (reviewer should-fix: a fixed sentence the report prints must be in `label_catalog.py` or a
+Malay or Chinese dealer reads one English line inside a translated summary).
 
 ## Not built here
 

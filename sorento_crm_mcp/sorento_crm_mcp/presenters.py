@@ -2135,7 +2135,7 @@ def _outstanding_second_group(report: dict, prefix: str) -> tuple[str, list]:
 
 
 def _outstanding_so_block(
-    so: dict, by_location: list, second_rows: list, second_key: str, position: int = 1
+    so: dict, by_location: list, second_rows: list, second_key: str, position: int
 ) -> str:
     """`position` is the SO list's place in the detail offer below (always 1 when the SO
     block prints: the SO list is offered first), named by the second group's trailer."""
@@ -2168,7 +2168,7 @@ def _outstanding_so_block(
 
 
 def _outstanding_do_block(
-    do: dict, by_location: list, second_rows: list, second_key: str, position: int = 1
+    do: dict, by_location: list, second_rows: list, second_key: str, position: int
 ) -> str:
     """R6/R7 (owner testing round 3, 13 Sep 2026): the DO block says OUTSTANDING, never
     "pending", and states the delivered figure beside it - "need to show the delivered

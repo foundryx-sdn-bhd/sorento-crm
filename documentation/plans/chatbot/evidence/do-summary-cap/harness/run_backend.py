@@ -1,10 +1,12 @@
-"""Cloud console replay launcher (DO-SUMMARY-CAP): the REAL backend, the REAL parser.
+"""Cloud console pass launcher (DO-SUMMARY-CAP): the REAL backend, the REAL parser.
 
-Unlike the AVAIL-RENDER / AVAIL-ONHAND-BASIS launchers this one stubs nothing but storage:
-the 6 Oct 2026 sandbox routes `api.openai.com` through a proxy that carries the credential,
-so the semantic parser's own LLM call runs live. The whole point of the lane's A/B/C replay
-is what the LIVE parser returns for the quick-reply label "Delivery order list"
-(`reference_positions`, `open_question_answer`, `document`), which no stub can measure.
+Copied from the DO-LIST-REPLY-LABEL launcher (#1515). Stubs nothing but storage: the sandbox
+routes `api.openai.com` through a proxy that carries the credential, so the semantic parser's
+own LLM call runs live. This lane's pass needs the whole turn (parser, lane, MCP hop, outstanding
+report route, the capped presenter) to answer the seeded dealer's ask, which no stub can show.
+
+Sandbox only: like the seed, it refuses a database not named `*_browse` / `*_ci`, so an unset
+SORENTO_ENV_FILE cannot point console turns at the shared dev copy.
 
 LLM-TEST-COST (`documentation/agents/cloud-lanes.md`): starts in `replay` (cassettes under
 `~/.cache/sorento-llm-cassettes`, never in the repo); `--record` calls live once and writes
@@ -31,6 +33,15 @@ args = parser.parse_args()
 os.environ.setdefault("LLM_CASSETTE_MODE", "record" if args.record else "off" if args.live else "replay")
 os.environ.setdefault("LLM_CASSETTE_DATE", "Wednesday, 07 October 2026")
 os.environ.setdefault("ENABLE_SCHEDULER", "false")
+
+from app.database import engine  # noqa: E402
+
+_db_name = (engine.url.database or "").lower()
+if not os.environ.get("SORENTO_ENV_FILE") or not (_db_name.endswith("_browse") or _db_name.endswith("_ci")):
+    sys.exit(
+        f"refusing to serve {_db_name!r}: run with SORENTO_ENV_FILE=.env.browse against a "
+        "database named *_browse or *_ci (sandbox only, never the shared dev copy)"
+    )
 
 import local_storage  # noqa: F401,E402
 
