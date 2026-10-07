@@ -323,10 +323,7 @@ def access_level_choice_message(
         }
         raws: list[str] = []
         for e in jsc.array(q.get("entities")):
-            v = named.get(id(e))
-            if not v and jsc.js_string(jsc.get(e, "hint") or "").lower() == "brand":
-                v = jsc.js_string(jsc.get(e, "canonical_code") or "").strip()
-            v = v or jsc.js_string(jsc.get(e, "raw") or "").strip()
+            v = named.get(id(e)) or jsc.js_string(jsc.get(e, "raw") or "").strip()
             if v and not any(x.lower() == v.lower() for x in raws):
                 raws.append(v)
         scope_label = ", ".join(raws[:3])

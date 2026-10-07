@@ -2213,8 +2213,10 @@ def run_fetch(
             isinstance(envelope, dict)
             and envelope.get("has_result") is False
             and not (tier_gate or {}).get("tier_pick")
+            and len(jsc.array((tier_gate or {}).get("entitled_tiers"))) == 1
         ):
-            # a contact with no tier to pick (one level): the same decision the menu path makes
+            # a contact holding exactly ONE access level: the same decision the menu path makes.
+            # A multi-level contact who named one level gets the ordinary empty-at-that-level reply.
             none_live = _nothing_live_of_kind(semantic_input, db, services, tier_gate)
             if none_live is not None:
                 return none_live
