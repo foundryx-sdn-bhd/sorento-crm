@@ -1,7 +1,7 @@
 # UAC - Files page: download selected folders and files as one ZIP
 
 **Slug:** `folder-bulk-download`
-**Status:** Approved behaviour (card a38602650 closed 7 Oct 2026). Rulings: Q1 a, Q2 a, Q3 a (shared files included), Q4 yes, Q5 c (daily 24 h cleanup), no size cap.
+**Status:** Approved (card a38602650 closed, mock v2 approved 7 Oct 2026); building. Rulings: Q1 a, Q2 a, Q3 a (shared files included), Q4 yes, Q5 c (daily 24 h cleanup), no size cap.
 **Plan:** `documentation/plans/resources/PLAN-folder-bulk-download.md`
 **Behaviour card:** `documentation/plans/resources/behaviour-card-folder-bulk-download.md`
 

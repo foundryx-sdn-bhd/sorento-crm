@@ -1,6 +1,6 @@
 # PLAN - Files page: download selected folders and files as one ZIP
 
-Status: **Approved behaviour (card a38602650 closed 7 Oct 2026: Q1 a, Q2 a, Q3 a with shared files INCLUDED, Q4 yes, Q5 c, no size cap). Mock v2 filed (47871eeed: dialog + My downloads entry, owner feedback on v1), build waits for the mock go. Lane stays M: the My downloads surface already exists, no new screen. Track: M, LEAD pattern (tester -> coder -> reviewer + security-reviewer).**
+Status: **Approved behaviour (card a38602650 closed 7 Oct 2026: Q1 a, Q2 a, Q3 a with shared files INCLUDED, Q4 yes, Q5 c, no size cap). Mock v2 APPROVED by the owner 7 Oct 10:18 (47871eeed: dialog + My downloads entry). Building: tester red tests, then coder, then reviewer + security-reviewer (company-scope predicate for the archive) + cloud browser pass. Lane stays M: the My downloads surface already exists, no new screen. Track: M, LEAD pattern (tester -> coder -> reviewer + security-reviewer).**
 UAC: `documentation/plans/resources/folder-bulk-download-acceptance-criteria.md`
 Behaviour card: `documentation/plans/resources/behaviour-card-folder-bulk-download.md`
 Lane: `crew/folder-bulk-download` (worktree `sorento_crm-folder-bulk-download`), base `origin/main` e4158ab52.
