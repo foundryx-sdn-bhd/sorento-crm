@@ -14,7 +14,7 @@ from datetime import date
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Optional
 
-from sqlalchemy import exists, func, or_, select, text
+from sqlalchemy import exists, false, func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
@@ -39,6 +39,7 @@ from app.models.project_so import (
 from app.models.sales_agent import SalesAgent
 from app.models.scm import OrderLinkClaim
 from app.services.document_ingest_service import CANCELLED
+from app.services.scm.po_ref import po_ref_key
 from app.services.error_handler import AppException
 from app.services.numbering_service import NumberingService
 from app.services.scm import sales_agent_service
@@ -623,6 +624,7 @@ class SalesOrderService:
             "demand_class": so.demand_class,
             # AutoCount's Transferable flag; None when the source never stated it.
             "is_transferable": so.is_transferable,
+            "po_ref": so.po_ref or None,
             "created_at": so.created_at.isoformat() if so.created_at else "",
         }
 
@@ -1320,6 +1322,7 @@ class SalesOrderService:
             )
         if query:
             like = f"%{query.strip()}%"
+            typed_key = po_ref_key(query)
             # The four things a person holds when they come looking for an order: the
             # document number, who it is for, WHAT IS ON IT, and WHO SOLD IT. The last two
             # were not matched, so "which orders have that sink on them" and "show me
@@ -1365,6 +1368,10 @@ class SalesOrderService:
                 # ranked highest - so "BAMBOO" finds an order the Order Inquiry sheet
                 # named, whether or not the customer half of that cell ever matched.
                 | (SalesOrder.project_label.ilike(like))
+                # The customer's PO number: the raw value like the other fields, and the
+                # folded key of what was typed ("po 4500-123" finds "PO-4500 123").
+                | (SalesOrder.po_ref.ilike(like))
+                | (SalesOrder.po_ref_key.like(f"%{typed_key}%") if typed_key else false())
             )
         sort_cols = {
             "so_number": SalesOrder.so_number,
@@ -1373,6 +1380,7 @@ class SalesOrderService:
             "priority": SalesOrder.priority,
             "created_at": SalesOrder.created_at,
             "project_label": SalesOrder.project_label,
+            "po_ref": SalesOrder.po_ref,
             # The START of the delivery span the list prints - "what is due first", which is
             # the question that column is scanned with. In SQL over the SAME
             # `min(required_date)` the serializer prints, so the header's order and the cell

@@ -296,6 +296,8 @@ class SalesOrder(BaseModel):
     #: count; `None` means the source never said (counted). Read-only - AutoCount owns it and
     #: `SalesOrderUpdate` has no such input.
     is_transferable: Optional[bool] = None
+    #: The customer's own PO number as AutoCount printed it (SO-PO-REF). Read-only.
+    po_ref: Optional[str] = None
     #: The purchase orders its lines wait on, each with whether the pairing is resolved.
     #: Present on the LIST (attached in one query per page); absent on a single read.
     linked_purchase_orders: List[LinkedPurchaseOrder] = Field(default_factory=list)
