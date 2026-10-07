@@ -1,0 +1,43 @@
+# Hand test: Transfer to Cancel SO on the fulfilment board (PR #1524)
+
+## URL
+crew test copy (so-cancel-line.localhost:3101 on 7 Oct, API :8101; prod snapshot database, head 30ce7ee58)/sorento_crm-so-cancel-line build ec7a6384f, started 16:05
+
+## Setup
+- The crew test copy runs on the 6 Oct prod snapshot, so SO373923 is exactly as you saw it: lines 384 CB110, 400 CB110-R and 416 CB110LP show Planned qty 36 (AutoCount has them delivered 36 of 36 because the quantity went to a Cancel SO document), each with its ORDER 36 row on OI-2609-0724. No data change is needed.
+- Log in as a user who can plan fulfilment (the usual owner login works).
+- If someone has already saved decisions on the three lines, press Undo on each first so they read Suggested.
+- Crew's browser pass before you saved a Transfer to Cancel SO on line 448 SRT384-6 of the same order and confirmed line 336 WESERP10B (revision 4). This order also carries a pending planning change (proposed stock transfer TR-000063 on line 8): leave it as it is; your cancels ride along with it, that is step 11's point. The three CB110 lines were not touched.
+- Have a second tab open on Order Inquiries, filtered to OI-2609-0724.
+
+## Steps
+1. From the sidebar open Supply Chain, then Project Demand, then Fulfilment Planning.
+2. Tick SO373923 in the list and press Plan SO.
+3. Tick lines 384 CB110, 400 CB110-R and 416 CB110LP.
+4. Press Decide and read the list.
+5. Choose Transfer to Cancel SO.
+6. Leave the reason empty and look at the Save button.
+7. Type CANCEL ORDER as the reason and press Save.
+8. Expand line 384.
+9. Press the Undo icon on line 416, then tick 416 again, Decide, Transfer to Cancel SO, reason CANCEL ORDER, Save.
+10. Tick one ordinary Suggested line on the same order (any open line with a Buy suggestion), press Decide, choose As suggested.
+11. Press Confirm.
+12. Expand line 384 again.
+13. Switch to the Order Inquiries tab and refresh it; open the To confirm card.
+14. Back on the board, tick a line that is already Confirmed in a revision (any green Confirmed row that is not one of the three), Decide, Transfer to Cancel SO, any reason, Save.
+
+## Expected
+1. The Fulfilment Planning page opens from the sidebar.
+2. The board for SO373923 opens and shows the three lines at Planned qty 36.
+3. The chip reads 3 selected.
+4. The menu lists As suggested, Use own location, Borrow from another order, Borrow other location, Use BRW, Buy, then Transfer to Cancel SO as the last item. No other new button anywhere on the row or the panel.
+5. A dialog titled Decide 3 lines: Transfer to Cancel SO opens with one Reason box and nothing else to pick.
+6. Save is disabled while the reason is empty.
+7. Toast reads 3 saved as Transfer to Cancel SO. The three rows show the Saved pill, Cancel SO in the Decided column, and the usual Undo icon. Verdict shows no new word.
+8. The expanded line reads Transfer to Cancel SO with the reason CANCEL ORDER.
+9. Undo puts line 416 back to Suggested; redoing it brings back Saved and Cancel SO.
+10. That line shows Saved with its Buy quantity; the toast reads 1 saved as As suggested.
+11. Confirm succeeds in ONE press with the cancel lines beside the normal line, even though the order has a pending planning change (TR-000063 is not touched by the cancel, so the cancel rides along; a cancel on the very line a pending change names is the only case that waits): the result block reads 1 of 1 orders confirmed, SO373923 confirmed as revision N (1 purchase row handed over), Confirmed: that line, and Transferred to Cancel SO: line 384 CB110 · line 400 CB110-R · line 416 CB110LP. No message about lines that cannot be confirmed (this is the case that used to say 3 lines cannot be confirmed. Nothing was written).
+12. The three rows read Confirmed (same pill as the other confirmed lines), greyed, Planned qty 0, tick box disabled; the expanded line reads Transferred to Cancel SO by your name, today's time, CANCEL ORDER.
+13. OI-2609-0724 shows the three ORDER 36 rows under To confirm, greyed, tagged Line cancelled; they are no longer counted under Buy; the ORDER row raised for the line you confirmed is a normal row sent by this press. Pressing Confirm on the three keeps them listed grey.
+14. The toast reads 0 saved · 1 skipped with the words reject it first. Nothing changes on that line.
