@@ -2852,13 +2852,21 @@ def _strip_word_token_product_matches(result: dict[str, Any]) -> None:
             return True
         if match.get("entity_type") != "product":
             return True
-        return match.get("match_tier") == "spec_search"
+        return match.get("match_tier") == SPEC_TIER_NAME
 
     for resolution in result.get("resolutions") or []:
         if isinstance(resolution, dict) and isinstance(resolution.get("matches"), list):
             resolution["matches"] = [m for m in resolution["matches"] if _keep(m)]
     if isinstance(result.get("intersection"), list):
         result["intersection"] = [m for m in result["intersection"] if _keep(m)]
+
+
+#: The tier name this route stamps on a spec-search match. A COPY of the chatbot's
+#: `turn_runtime.SPEC_TIER`, never an import of it: this module is core, outside the
+#: AC-002 module boundary (`tests/chatbot/test_import_boundary.py`), the same reason
+#: `_CERT_WORD_RE` and `_SET_ID_CAP` below are copies. The two names are pinned equal by
+#: `tests/chatbot/test_miss_says_what_it_could_not_find.py::TestRuleCReadsTheResolversOwnTierName`.
+SPEC_TIER_NAME = "spec_search"
 
 
 def _emit_spec_matches(
@@ -2894,7 +2902,7 @@ def _emit_spec_matches(
             "canonical_code": candidate["product_code"],
             "uuid": candidate["product_id"],
             "match_field": "specifications",
-            "match_tier": "spec_search",
+            "match_tier": SPEC_TIER_NAME,
             # The ranker's score, so a caller can see how well each one answered
             # rather than treating an ordered list as equally good.
             "similarity": candidate["score"],

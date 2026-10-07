@@ -827,18 +827,29 @@ def code_like(token: str) -> bool:
     return any(ch.isdigit() for ch in token) and any(ch.isalpha() for ch in token)
 
 
+def code_or_number(token: str) -> bool:
+    """A typed token that reads against product codes: a code-like token OR a bare number
+    ("8066"). ROGUE-CONVO-REVIEW (owner ruling, 6 Oct 2026, "why couldn't we match? when I
+    type in compact mode it works, it gives a picker"): a bare number the parser tagged as
+    a product matches its code family through the resolver's own substring probe, the
+    way compact mode already does, and is offered the same picker. A WORD ("xx", "new",
+    "basin") is still never a code: product resolution is code-only by design. ONE copy,
+    read by the same three seams as `code_like`."""
+    return code_like(token) or (bool(token) and token.isdigit())
+
+
 def _group(rows: list[dict[str, Any]], token: str) -> list[dict[str, Any]]:
     """The rows one typed token placed: its own code, or the family it is a prefix of
     (the same link `apply._in_family_of` reads, D29), else (AVAIL-PICKER, owner trace
     5 Oct 2026, "wc286") the family it is a substring of, the rows the resolver's own
     substring probe on product_code placed and `engine._exact_codes_only` kept.
 
-    The substring reading is for a code-like token only (reviewer finding 1): the parser
-    does tag a word or a bare number as a product ("2 srtwc286", "new srtwc286"), and
-    "2" or "new" sits inside half the family's codes without naming any of them."""
+    The substring reading is for a code-like token or a bare number (`code_or_number`,
+    owner ruling 6 Oct 2026): the parser does tag a word as a product ("new srtwc286"),
+    and "new" sits inside half the family's codes without naming any of them."""
     labelled = [(row, (_row_label(row) or "").casefold()) for row in rows]
     prefixed = [row for row, label in labelled if label.startswith(token)]
-    if prefixed or not code_like(token):
+    if prefixed or not code_or_number(token):
         return prefixed
     return [row for row, label in labelled if token in label]
 
