@@ -43,6 +43,7 @@ import { ReserveHistoryEntries } from './ReserveLineHistoryDialog';
 
 const WHAT_VARIANT: Record<LineHistoryEntry['what'], 'primary' | 'secondary' | 'outline'> = {
   Now: 'primary',
+  Before: 'outline',
   Used: 'secondary',
   Superseded: 'outline',
   'Re-raised': 'outline',
@@ -52,6 +53,7 @@ const WHAT_VARIANT: Record<LineHistoryEntry['what'], 'primary' | 'secondary' | '
 };
 
 function documentsText(entry: LineHistoryEntry): string {
+  if (entry.noDocuments) return '';
   return [...documentsOf(entry.row, 'po'), ...documentsOf(entry.row, 'spo')]
     .map((doc) => doc.document)
     .join(', ');
@@ -73,12 +75,14 @@ const COLUMNS: ColumnDef<LineHistoryEntry>[] = [
     size: 120,
     enableSorting: false,
     meta: { headerTitle: 'When' },
-    cell: ({ row }) =>
-      row.original.row.raised_at ? (
-        <span className="whitespace-nowrap">{formatDateInMalaysia(row.original.row.raised_at)}</span>
+    cell: ({ row }) => {
+      const when = row.original.when !== undefined ? row.original.when : row.original.row.raised_at;
+      return when ? (
+        <span className="whitespace-nowrap">{formatDateInMalaysia(when)}</span>
       ) : (
         <span className="text-muted-foreground">-</span>
-      ),
+      );
+    },
   },
   {
     id: 'qty',
@@ -87,8 +91,28 @@ const COLUMNS: ColumnDef<LineHistoryEntry>[] = [
     enableSorting: false,
     meta: { headerTitle: 'Qty' },
     cell: ({ row }) => (
-      <span className="tabular-nums">{formatInquiryQty(row.original.row.qty)}</span>
+      <span className="tabular-nums">
+        {formatInquiryQty(row.original.qty !== undefined ? row.original.qty : row.original.row.qty)}
+      </span>
     ),
+  },
+  {
+    id: 'delivery_date',
+    header: 'Delivery date',
+    size: 110,
+    enableSorting: false,
+    meta: { headerTitle: 'Delivery date' },
+    cell: ({ row }) => {
+      const date =
+        row.original.deliveryDate !== undefined
+          ? row.original.deliveryDate
+          : row.original.row.delivery_date;
+      return date ? (
+        <span className="whitespace-nowrap">{formatDateInMalaysia(date)}</span>
+      ) : (
+        <span className="text-muted-foreground">-</span>
+      );
+    },
   },
   {
     id: 'what',
@@ -124,7 +148,7 @@ function LineRowsGrid({ entries }: { entries: LineHistoryEntry[] }) {
   const table = useReactTable({
     columns: COLUMNS,
     data: entries,
-    getRowId: (entry) => entry.row.id,
+    getRowId: (entry) => entry.id ?? entry.row.id,
     getCoreRowModel: getCoreRowModel(),
     columnResizeMode: 'onChange',
     enableColumnResizing: true,
@@ -133,14 +157,14 @@ function LineRowsGrid({ entries }: { entries: LineHistoryEntry[] }) {
   return (
     <div className="space-y-2">
       {/* The DataGrid's own internal scroller is the one horizontal-scroll surface
-          (AC-ND-18): at 375 the five columns scroll sideways inside it, never the page. */}
+          (AC-ND-18): at 375 the six columns scroll sideways inside it, never the page. */}
       <DataGrid
         table={table}
         recordCount={entries.length}
         tableLayout={{
           width: 'fixed',
           columnsResizable: true,
-          // A fixed five-column read of one line's rows, always in time order: there is
+          // A fixed six-column read of one line's rows, always in time order: there is
           // no saved column preference here for a drag to persist into.
           columnsDraggable: false,
           // The DialogBody owns the vertical scroll viewport.
