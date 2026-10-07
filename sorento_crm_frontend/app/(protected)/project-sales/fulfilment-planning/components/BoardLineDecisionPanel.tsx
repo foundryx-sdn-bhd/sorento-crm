@@ -629,10 +629,14 @@ export function BoardLineDecisionPanel({
     }
   };
 
-  const summary = amendSummary(
-    decisionFromAmendDraft(draft, reason),
-    contribution.fulfilment_location,
-  );
+  // A saved cancel, until the composition is edited: then it is an ordinary amend.
+  const cancelSaved = decision?.verdict === 'cancelled' && !dirty;
+  const summary = cancelSaved
+    ? 'Transfer to Cancel SO'
+    : amendSummary(
+        decisionFromAmendDraft(draft, reason),
+        contribution.fulfilment_location,
+      );
 
   // Shared between the bare Save button and its tooltip-wrapped, disabled twin below, so the
   // two never drift apart on what the button says.
@@ -1006,7 +1010,7 @@ export function BoardLineDecisionPanel({
               {summary}
             </p>
             {/* Two words, and only while the composition does not add up (R9). */}
-            {balance.balanced ? null : (
+            {balance.balanced || cancelSaved ? null : (
               <p
                 data-testid={`line-decision-hint-${contribution.key}`}
                 className="text-sm text-destructive tabular-nums"
@@ -1295,6 +1299,16 @@ function draftFor(
   decision: BoardDecision | null,
 ): DraftLine {
   const base = amendDraftFrom(contribution);
+  // A saved Transfer to Cancel SO carries no composition: open on zeros, not the suggestion.
+  if (decision?.verdict === 'cancelled') {
+    return {
+      ...base,
+      reserve: base.reserve.map((row) => ({ ...row, qty: '0' })),
+      borrow: [],
+      timely_spo_qty: '0',
+      buy_qty: '0',
+    };
+  }
   // An `approved` decision is NOT overlaid even though it carries rows (D11): an approval
   // means "the engine's composition", and `confirmLinesFor` (`fulfilmentBoard.ts`) commits
   // the CURRENT proposal for it, not the rows stored at the time - so the panel opens on the

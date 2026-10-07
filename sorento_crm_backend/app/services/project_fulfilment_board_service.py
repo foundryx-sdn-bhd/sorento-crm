@@ -415,6 +415,9 @@ class _Row:
         #: it back onto the board instead, read-only and at zero (`_cancelled_pending_
         #: change_rows`). `False`/`None` for every ordinary row.
         "cancelled", "pending_change_batch_id",
+        #: SO-CANCEL-LINE: CS transferred the line to Cancel SO. `cancelled_by_name` is a
+        #: display name, never the user id.
+        "cancelled_at", "cancelled_by_name", "cancel_reason",
         #: R7 (query-count): the core line's own `source_ref` / `company_id`, off the SAME
         #: `SalesOrderLine` this row's own demand read already fetched - threaded onto
         #: `_LineFacts` (`ProjectSupplyService.demand_facts`) so the own-arrival credit's
@@ -740,6 +743,14 @@ class FulfilmentBoardService:
             if pending_by_so
             else []
         )
+        # SO-CANCEL-LINE: lines CS transferred to Cancel SO stay on the board read-only at
+        # zero (no ladder, no bucketing), whether or not a change row is pending.
+        shown = {row.line_id for row in rows} | {row.line_id for row in cancelled_rows}
+        # A CRM-cancelled line always has a project mirror line, so only an adopted order can
+        # have one; a never-adopted board build costs no extra statement
+        # (`test_a_board_of_76_lines_does_not_scale_its_query_count_with_the_line_count`).
+        if adopted_by_so:
+            cancelled_rows = cancelled_rows + self._crm_cancelled_rows(numbers, shown=shown)
         # S3 (`PLAN-local-supplier-oi-routing.md`): ONE call for the whole board, never per
         # line - `test_buy_origin_computed_once_per_board_build` pins this.
         self._buy_origin = buy_origin_by_product(
@@ -1782,6 +1793,74 @@ class FulfilmentBoardService:
                     company_id=(
                         str(core_line.company_id) if core_line.company_id else None
                     ),
+                )
+            )
+        return rows
+
+    def _crm_cancelled_rows(
+        self, so_numbers: Sequence[str], *, shown: AbstractSet[str]
+    ) -> List[_Row]:
+        """SO-CANCEL-LINE: the lines CS transferred to Cancel SO (`cancelled_at` set). The
+        board's own predicate drops a `cancelled` line, so without this the line CS just
+        cancelled would vanish from the board it was cancelled on. Read-only at zero."""
+        if not so_numbers:
+            return []
+        records = (
+            self.db.query(SalesOrderLine, SalesOrder, ProjectSalesOrderLine, Product, User)
+            .join(SalesOrder, SalesOrder.id == SalesOrderLine.sales_order_id)
+            .join(
+                ProjectSalesOrderLine,
+                ProjectSalesOrderLine.core_sales_order_line_id == SalesOrderLine.id,
+            )
+            .join(Product, Product.id == SalesOrderLine.product_id)
+            .outerjoin(User, User.id == SalesOrderLine.cancelled_by_id)
+            .filter(
+                SalesOrder.so_number.in_(list(so_numbers)),
+                SalesOrder.status.in_(["open", "closed"]),
+                SalesOrder.demand_class == "project",
+                SalesOrderLine.line_status == "cancelled",
+                SalesOrderLine.cancelled_at.isnot(None),
+            )
+            .all()
+        )
+        records = [r for r in records if str(r[0].id) not in shown]
+        if not records:
+            return []
+        customers = self._customers(
+            {str(order.customer_id) for _cl, order, *_r in records if order.customer_id}
+        )
+        rows: List[_Row] = []
+        for core_line, order, project_line, product, user in records:
+            customer_id = str(order.customer_id) if order.customer_id else None
+            rows.append(
+                _Row(
+                    line_id=str(core_line.id),
+                    sales_order_id=str(order.id),
+                    so_number=order.so_number,
+                    customer_id=customer_id,
+                    customer_name=customers.get(customer_id or ""),
+                    line_no=project_line.line_no,
+                    so_line_no=core_line.line_no,
+                    item_code=product.product_code,
+                    product_id=str(core_line.product_id) if core_line.product_id else None,
+                    project_sales_order_id=str(project_line.project_sales_order_id),
+                    project_line_id=str(project_line.id),
+                    qty=_ZERO,
+                    qty_ordered=core_line.qty_ordered,
+                    qty_delivered=core_line.qty_delivered,
+                    required_date=core_line.required_date,
+                    warehouse_id=str(core_line.warehouse_id) if core_line.warehouse_id else None,
+                    bucket_key=NO_DATE_BUCKET,
+                    cancelled=True,
+                    cancelled_at=core_line.cancelled_at,
+                    cancelled_by_name=(
+                        (getattr(user, "name", None) or "Unknown user")
+                        if user is not None
+                        else None
+                    ),
+                    cancel_reason=core_line.cancel_reason,
+                    source_ref=core_line.source_ref,
+                    company_id=str(core_line.company_id) if core_line.company_id else None,
                 )
             )
         return rows
@@ -5216,6 +5295,9 @@ class FulfilmentBoardService:
             # the only writer of a truthy pair, and it never runs the ladder for one).
             "cancelled": bool(row.cancelled),
             "pending_change_batch_id": row.pending_change_batch_id,
+            "cancelled_at": row.cancelled_at,
+            "cancelled_by": row.cancelled_by_name,
+            "cancel_reason": row.cancel_reason,
         }
 
     def _buckets(
