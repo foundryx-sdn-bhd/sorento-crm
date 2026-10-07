@@ -222,3 +222,55 @@ cases:
             - "Which one do you mean?"
             - "That would search every stock we have"
           no_uuid: true
+
+  # R2 (7 Oct 2026): CHATBOT-TRIO console case 12 (PR #1525 comment 6032784666). The real
+  # parser read "another 10" on 1 run of 3 as top_n 10 plus the carried brand echoed as an
+  # entity under `entity_op: reuse`; the page must still continue. The `parser:` block is
+  # that recorded red-run verdict, replayed deterministically with `--mock-parser`
+  # (`scripts/chatbot_console_check.py`); without the flag the real parser runs and the
+  # case passes on either reading. Needs a brand with more than 50 taps carrying technical
+  # drawings on the copy (Sorento on dev).
+  - name: R2, a brand echo on a paging turn pages the carried set (trio case 12)
+    cold: true
+    turns:
+      - text: "which tap has technical drawing"
+        expect:
+          reply_contains:
+            - "Here's what you want: taps with technical"
+      - text: "sorento"
+        expect:
+          reply_contains:
+            - "Here's what you want: Sorento taps with technical"
+      - text: "another 10"
+        parser:
+          message_type: business_query
+          intent_hint: check_product_attachment
+          domain_hint: product_attachment
+          domain_in_message: false
+          continuation: true
+          entity_op: reuse
+          top_n: 10
+          demand_qty: 10
+          match_mode: and
+          user_goal: trying to show another 10 Sorento technical drawing attachments
+          entities:
+            - raw: Sorento
+              hint: brand
+              canonical_code: SORENTO
+              confident: true
+              hint_confident: true
+              current_message: true
+          reference_positions: []
+          requested_attributes: []
+          routing:
+            suggested_team: marketing_product
+            suggested_agent: general_enquiries
+        expect:
+          reply_contains:
+            - "Here's what you want: Sorento taps with technical"
+            - ", showing 51 to "
+          reply_not_contains:
+            - "Please provide the attachment type"
+            - "Which kind of file do you need?"
+            - "Which one do you mean?"
+          no_uuid: true

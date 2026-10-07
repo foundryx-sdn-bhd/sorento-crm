@@ -1940,7 +1940,9 @@ def _strip_name_kinds_for_locked(
     token, the locked one included, so the rows of those kinds go whatever the other
     tokens were; an emptied intersection reads as the zero-intersection AND the caller
     already degrades to OR-mode. `alternatives` (did-you-mean neighbours) are offers, not
-    assignments, and stay (AC-1703)."""
+    assignments, and stay (AC-1703). Runs on the primary result and, since R2 (7 Oct 2026),
+    on the per-token fallback result too, so a locked token's rerun keeps no name kind
+    while an exact record key it names still resolves there."""
     if not locked_tokens:
         return result
     locked = {_norm_locked_token(t) for t in locked_tokens} - {""}
@@ -2543,14 +2545,17 @@ def _resolve_input(
             "the whitelist so per-token fallback can apply only to unresolved tokens."
         )
 
-    # CLASS-HINT-KIND-PICK: a locked token is not rerun. Its kind is the caller's, so no
-    # other kind may be found for it here; left in `unresolved_tokens`, it reaches the
-    # spec/class fallback below exactly as a word no name matched always has.
-    locked_norm = {_norm_locked_token(t) for t in (hint_locked_tokens or [])} - {""}
+    # CLASS-HINT-KIND-PICK R2 (7 Oct 2026): a locked token IS rerun like any other. What
+    # the rerun may not do is hand it a promotion / customer / attachment / transporter /
+    # form row by name (`_strip_name_kinds_for_locked` on the fallback result below); an
+    # EXACT record key it names under a wrong hint still finds itself there - a container
+    # number the parser hinted `product` is the inbound shipment it is (owner ruling 5,
+    # hand pass 12, `test_rearch_r12_handpass12_d.py`). A class word nothing else names
+    # is left in `unresolved_tokens` and reaches the spec/class fallback as before.
     unresolved = [
         r["token"]
         for r in result.get("resolutions", []) or []
-        if not (r.get("matches") or []) and _norm_locked_token(r.get("token")) not in locked_norm
+        if not (r.get("matches") or [])
     ]
     if not unresolved:
         # Tag and return - at least we've already noted the AND→OR switch.
@@ -2592,6 +2597,7 @@ def _resolve_input(
         regions=regions,
     ).as_dict()
     fb = _apply_promotion_access_levels_filter(db, fb_raw, access_levels)
+    fb = _strip_name_kinds_for_locked(fb, hint_locked_tokens, domain_hint)
     # Per-token fallback bypasses `_run`, so the promotion-domain product
     # expansion / brand-access rescue must be applied here too.
     if domain_hint and _canonical_entity_type(domain_hint.strip()) == "promotion":

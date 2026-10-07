@@ -662,7 +662,11 @@ def brand_identity_word(entity: dict[str, Any]) -> str:
     (the brand name exactly as the Known brands line lists it, the prompt's own KNOWN
     BRANDS rule) decides, and the typed `raw` only when the parser gave no canonical code.
     The opposite order from `brand_entity_word` (the order/sales intercept's, where a
-    misspelt word must reach the resolver and be said back)."""
+    misspelt word must reach the resolver and be said back: the owner's own 27 Sep
+    transcript, "sorneto" parsed as Mocha, lists Sorento). R2 (7 Oct 2026): a
+    brand-HINTED word under order/sales is the intercept's alone, so this read never
+    turns a word the intercept could not place into the parser's guess there
+    (`test_samantha_27sep_r7_owner_replay.py::test_an_unknown_brand_word_is_one_line_and_no_filter`)."""
     canonical = jsc.nullish_str(entity.get("canonical_code")).strip()
     return canonical or jsc.nullish_str(entity.get("raw")).strip()
 
@@ -1038,8 +1042,27 @@ def with_set_count_from_text(
     """
     if not isinstance(carried, dict) or not isinstance(message, str):
         return verdict
-    if any(isinstance(e, dict) and e.get("current_message") is True for e in (verdict.get("entities") or [])):
+    echoed = any(isinstance(e, dict) and e.get("current_message") is True for e in (verdict.get("entities") or []))
+    # CLASS-HINT-KIND-PICK R2 (CHATBOT-TRIO console case 12, 7 Oct 2026): the parser read
+    # "another 10" with the carried brand re-stated as an entity under `entity_op: "reuse"`,
+    # the op its prompt defines for a message that names NO new value (the reading
+    # `turn/decide.py` takes for a quick-reply pick and `with_brand_from_offer` takes for
+    # the brand it drops). A reused entity on a paging turn is the carried set's own echo,
+    # not a subject: the count is answered and the echo goes, so neither
+    # `turn/apply._names_a_subject` nor the resolver sees it. A message that names a NEW
+    # value (`replace_combine`) is left to the parser, as before.
+    if echoed and verdict.get("entity_op") != "reuse":
         return verdict
+    base = (
+        {
+            **verdict,
+            "entities": [
+                e for e in verdict.get("entities") or [] if not (isinstance(e, dict) and e.get("current_message") is True)
+            ],
+        }
+        if echoed
+        else verdict
+    )
     # W4: after a LISTED page (`shown` > 0), "another N" continues the set, read whatever
     # the parser made of it. Round 3 W2 (owner hand test, "why when i say 10, it gives
     # some other answer"): so does a bare count - "10" after a page of 30 is rows 31 to
@@ -1048,9 +1071,9 @@ def with_set_count_from_text(
     shown = int((carried.get("set_key") or {}).get("shown") or 0)
     more = set_continue_count(message)
     if more is not None:
-        return {**verdict, "top_n": more, "reference_positions": [], SET_CONTINUE_KEY: True}
+        return {**base, "top_n": more, "reference_positions": [], SET_CONTINUE_KEY: True}
     if shown == 0 and named_count(verdict.get("top_n")) is not None:
-        return verdict
+        return base
     # Line 1 is the customer's own text; a quoted "reply to: ..." rides on line 2
     # (`engine.build_latest_user_message`).
     lines = message.strip().splitlines()
@@ -1061,8 +1084,8 @@ def with_set_count_from_text(
     if count <= 0:
         return verdict
     if shown > 0:
-        return {**verdict, "top_n": count, "reference_positions": [], SET_CONTINUE_KEY: True}
-    return {**verdict, "top_n": count, "reference_positions": []}
+        return {**base, "top_n": count, "reference_positions": [], SET_CONTINUE_KEY: True}
+    return {**base, "top_n": count, "reference_positions": []}
 
 
 #: The verdict keys that say WHAT was asked, kept with an open clarify so its answer
@@ -2142,8 +2165,20 @@ def resolve_kinds(
     # class / product / brand hints it locks on its own) and `by_token` below. The
     # order/sales intercept above still removes a brand-HINTED live brand from the token
     # list; one that is also here is simply never sent, exactly as today.
+    # R2 (7 Oct 2026): under order/sales a brand-HINTED word is the intercept's (27 Sep
+    # R1: the typed word decides there, the owner's own transcript). One the intercept
+    # placed is already off the token list; one it could not place must reach the
+    # resolver and be said back as unknown, never re-read here off the parser's guessed
+    # canonical_code into a brand the order filter then cannot find ("DO brand zorbix"
+    # parsed as Mocha was neither filtered nor said back). Every other entity, and every
+    # entity in the other domains, is read as before.
+    brand_read_candidates = (
+        [e for e in entities if not (isinstance(e, dict) and jsc.nullish_str(e.get("hint")).strip().lower() == "brand")]
+        if is_order_domain
+        else entities
+    )
     try:
-        brand_named = entities_naming_a_live_brand(db, entities)
+        brand_named = entities_naming_a_live_brand(db, brand_read_candidates)
     except Exception:  # noqa: BLE001 - same reason as `matched_brands` above: a test
         # double with no live `Brand` table has no opinion, and the token walks today's path.
         # Logged (reviewer N2), so a live failure of the brand read is visible rather than
