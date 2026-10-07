@@ -77,4 +77,38 @@ describe('FulfilmentBoardListView: a CRM-cancelled line (SO-CANCEL-LINE)', () =>
     expect(text).toMatch(/Transferred to Cancel SO by Siti Test, .+ · ZZT customer cancelled by phone/);
     expect(text).not.toContain('This line was removed from the sales order');
   });
+
+  it('AC-F9: Undo on a saved cancel decision calls onDecide(key, null) once; removing the draft reads Suggested', async () => {
+    const base = { ...cancelledRow(), cancelled: false, cancelled_at: null, cancelled_by: null, cancel_reason: null, qty: '36', qty_outstanding: '36' } as unknown as BoardContribution;
+    const draft = {
+      'so-1:line-10': {
+        verdict: 'cancelled',
+        reserve: [],
+        borrow: [],
+        timely_spo_qty: '0',
+        buy_qty: '0',
+        order_back: false,
+        reason: 'CANCEL ORDER',
+      },
+    } as unknown as Record<string, never>;
+    const onDecide = vi.fn();
+    const props = {
+      contributions: [base],
+      onDecide,
+      onDecideMany: vi.fn(async () => ({ saved: 0, failed: 0 })),
+      onDecideBatch: vi.fn(async () => ({ savedKeys: [], failed: [] })),
+    };
+    const { rerender } = render(<FulfilmentBoardListView {...props} draft={draft} />);
+    const row = (await screen.findByText('SO900001')).closest('tr') as HTMLElement;
+    expect(within(row).getByTestId('decision-pill-so-1:line-10')).toHaveTextContent('Saved');
+    expect(row).toHaveTextContent('Cancel SO');
+    fireEvent.click(within(row).getByRole('button', { name: /^Undo/ }));
+    expect(onDecide).toHaveBeenCalledTimes(1);
+    expect(onDecide).toHaveBeenCalledWith('so-1:line-10', null);
+
+    rerender(<FulfilmentBoardListView {...props} draft={{}} />);
+    const row2 = (await screen.findByText('SO900001')).closest('tr') as HTMLElement;
+    expect(within(row2).getByTestId('decision-pill-so-1:line-10')).toHaveTextContent('Suggested');
+    expect(row2).not.toHaveTextContent('Cancel SO');
+  });
 });

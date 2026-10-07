@@ -452,3 +452,61 @@ def test_c13_the_migration_graph_has_a_single_head():
 
     heads = _script_directory().get_heads()
     assert len(heads) == 1, f"expected a single alembic head, found {heads}"
+
+
+# ---------------------------------------------------------------- round 2: C14, C15, C16
+
+
+def test_c14_a_reason_over_500_characters_is_422_and_nothing_changes(api):
+    client, world = api
+    w = _cb_world(world)
+    core_a, mirror_a, _p = w["a"]
+    response = client.post(
+        f"{BASE}/sales-orders/{w['order'].id}/confirm",
+        json=_cancel_body(mirror_a, reason="x" * 501),
+    )
+    assert response.status_code == 422, response.text
+    assert _status(world.db, core_a.id) == "closed"
+    assert _raw(world.db, core_a.id).cancelled_at is None
+
+
+def test_c15_the_same_line_in_cancelled_lines_and_lines_is_422_and_writes_nothing(api):
+    client, world = api
+    w = _cb_world(world)
+    core_a, mirror_a, _p = w["a"]
+    before = world.db.query(SOSupplyDecision).filter(
+        SOSupplyDecision.project_sales_order_id == w["order"].id
+    ).count()
+    response = client.post(
+        f"{BASE}/sales-orders/{w['order'].id}/confirm",
+        json=_cancel_body(mirror_a, lines=[_line_payload(mirror_a.id, buy_qty="5")]),
+    )
+    assert response.status_code == 422, response.text
+    assert _status(world.db, core_a.id) == "closed"
+    assert _raw(world.db, core_a.id).cancelled_at is None
+    world.db.expire_all()
+    after = world.db.query(SOSupplyDecision).filter(
+        SOSupplyDecision.project_sales_order_id == w["order"].id
+    ).count()
+    assert after == before
+
+
+def test_c16_a_nameless_user_never_surfaces_as_an_email_on_the_board(api):
+    client, world = api
+    w = _cb_world(world)
+    core_a, mirror_a, product_a = w["a"]
+    from app.models.user import User
+
+    actor = world.db.get(User, str(world.eling))
+    actor.name = None
+    world.db.commit()
+    _confirm_all(client, w["order"], **_cancel_body(mirror_a))
+
+    board = _board(client, w["core_so"])
+
+    row = next(
+        c for c in board["contributions"] if c["item_code"] == product_a.product_code
+    )
+    assert row["cancelled"] is True
+    assert row["cancelled_by"] != ""
+    assert "@" not in str(row["cancelled_by"])
