@@ -195,9 +195,6 @@ async def get_promotions(
         has_narrowing_filter = bool(
             parsed_promotion_ids
             or parsed_product_ids
-            or scope_terms
-            or promotion_types
-            or brand_ids
             or (query and query.strip())
             or norm_entities
             or attachment_state

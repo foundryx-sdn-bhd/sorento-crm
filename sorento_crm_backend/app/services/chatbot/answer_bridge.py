@@ -92,6 +92,7 @@ import logging
 import re
 from typing import Any, Mapping
 
+from app.services.chatbot import turn_runtime as _turn_runtime
 from app.services.chatbot.lanes.business import answer as answer_mod
 from app.services.chatbot.lanes.business import miss_suggest as miss_mod
 from app.services.chatbot.lanes.business import services as business_services
@@ -716,7 +717,11 @@ def _access_ask_answer(
         # this composer.
         tier_source = payload.get("tier_gate") if isinstance(payload, dict) else None
     lane_item = {
-        **answer_mod.access_level_choice_message(tier_source, parser=parser),
+        **answer_mod.access_level_choice_message(
+            tier_source,
+            parser=parser,
+            live_brands=_turn_runtime.active_brands(db) if db is not None else None,
+        ),
         "branch_kind": "access_choice",
     }
     text = _compose_text(lane_item, ctx=ctx, canned=canned, db=db, access_choice=lane_item)

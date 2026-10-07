@@ -548,7 +548,10 @@ def promo_filter(parse_output: dict[str, Any], db: Any) -> dict[str, list[str]]:
     if terms:
         out["scope_terms"] = terms
     kind = parse_output.get("promotion_kind")
-    if isinstance(kind, str) and kind.strip():
+    if isinstance(kind, str) and kind.strip() and (
+        db is None or kind.strip() in {r["type_code"] for r in promotion_kind_rows(db)}
+    ):
+        # A code the table does not list is the parser guessing: it behaves as no kind.
         out["promotion_types"] = [kind.strip()]
         if db is not None:
             live = active_brands(db)

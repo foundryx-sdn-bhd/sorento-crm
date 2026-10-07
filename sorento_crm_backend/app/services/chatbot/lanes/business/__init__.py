@@ -2184,6 +2184,9 @@ def run_fetch(
     envelope = brand_guard.guard_result(
         tool_name, fetch_mod.parse_mcp_content(raw), semantic_input.get("scope_brand_ids"), db
     )
+    if tool_name == fetch_mod.TIER_PROBE_TOOL and semantic_input.get("promotion_types"):
+        # A kind ask serves only what is live right now, the same rule the tier probe stamped by.
+        envelope = _live_rows_only(envelope)
     if trace is not None:
         # A9: ONE call, ONE tool, ONE envelope this turn - the same "the read" this
         # whole function is named for. `envelope` rides through `trace.add`'s own
