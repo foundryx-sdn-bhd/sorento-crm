@@ -1,0 +1,224 @@
+# Console case for CLASS-HINT-KIND-PICK (PR #1509): a confident class, product or brand word
+# is never re-typed to a promotion / customer / attachment by name match, and a brand word is
+# the brand whatever the parser hinted.
+#
+# `documentation/plans/chatbot/CARD-class-hint-kind-pick-06oct.md`. NOT collected by pytest.
+# Run with `scripts/chatbot_console_check.py` (`documentation/agents/chatbot-verification.md`)
+# against a test copy of the lane branch, REAL parser (merge gate item 2, crew live dry run):
+#
+#   venv/bin/python scripts/chatbot_console_check.py \
+#       tests/chatbot/console_cases/2026-10-06-class-hint-kind-pick.yaml \
+#       --base-url http://127.0.0.1:8000 --sleep-seconds 8
+#
+# Contact 437264483 is the owner's dev dry-run contact (turn 4d18caff). The copy's `brands`
+# must hold active rows named Cabana and Sorento, and promotions whose description contains
+# "basin" must exist (31 on dev), or the cases prove nothing. Row ORDER and product codes
+# are graded by eye; the lines below grade the shape. Case 6 ("water tap") is the
+# pre-existing #1506 class A/C shape, unchanged by this lane, kept so the table has it.
+
+contact: "437264483"
+
+cases:
+  - name: the owner's turn, a confident category word is never a promotion or customer pick
+    cold: true
+    turns:
+      - text: "any basin with thickness 1.0mm"
+        expect:
+          reply_contains:
+            - "Here's what you want: wash basins with thickness 1 mm"
+          reply_not_contains:
+            - "Which one do you mean?"
+            - "basin (promotion)"
+            - "basin (customer)"
+          no_uuid: true
+
+  - name: a bare class word lists the class, no kind pick
+    cold: true
+    turns:
+      - text: "basin"
+        expect:
+          reply_contains:
+            - "Here are the matching products."
+          reply_not_contains:
+            - "Which one do you mean?"
+            - "(promotion)"
+            - "(customer)"
+          no_uuid: true
+
+  - name: cabana is a brand whatever the hint, the brand-scoped stock answer
+    cold: true
+    turns:
+      - text: "cabana stock"
+        expect:
+          reply_contains:
+            - "Here's what you want: Cabana"
+            - "with stock"
+          reply_not_contains:
+            - "Which one do you mean?"
+            - "cabana (promotion)"
+            - "cabana (attachment)"
+          no_uuid: true
+
+  - name: brand plus class word lists that brand's class
+    cold: true
+    turns:
+      - text: "cabana basin tap"
+        expect:
+          reply_contains:
+            - "Here are the matching products."
+          reply_not_contains:
+            - "Which one do you mean?"
+            - "Could not find master products"
+          no_uuid: true
+
+  - name: a brand word beside a code answers the code alone (ROGUE class D shape)
+    cold: true
+    turns:
+      - text: "SORENTO SRTWC8318"
+        expect:
+          reply_contains:
+            - "SRTWC8318"
+          reply_not_contains:
+            - "Which one do you mean?"
+            - "SORENTO (promotion)"
+            - "SORENTO (customer)"
+          no_uuid: true
+
+  - name: water tap, unchanged by this lane (#1506 classes A and C), still no kind pick
+    cold: true
+    expected_red_until: ROGUE-CONVO-REVIEW
+    turns:
+      - text: "water tap"
+        expect:
+          reply_contains:
+            - "Here are the matching products."
+          reply_not_contains:
+            - "Which one do you mean?"
+            - "(promotion)"
+            - "(customer)"
+          no_uuid: true
+
+  - name: brand plus class word, no pick over the class word
+    cold: true
+    turns:
+      - text: "sorento basin"
+        expect:
+          reply_contains:
+            - "Here are the matching products."
+          reply_not_contains:
+            - "Which one do you mean?"
+            - "basin (promotion)"
+            - "basin (customer)"
+          no_uuid: true
+
+  # Owner clarification: brand identity is the parser's canonical_code (the Known brands
+  # name), never the raw word and never a spelling tier in code. Trace, parse stage: the
+  # brand entity must carry canonical_code "Sorento"; if it does not, that is a prompt
+  # finding (KNOWN BRANDS addendum), not this lane's.
+  - name: a misspelt brand word the parser canonicalised is the brand
+    cold: true
+    turns:
+      - text: "Sorrento basin"
+        expect:
+          reply_contains:
+            - "Here are the matching products."
+          reply_not_contains:
+            - "Which one do you mean?"
+            - "Could not find"
+            - "Sorrento"
+          no_uuid: true
+
+  - name: staff shorthand the parser canonicalised is the brand
+    cold: true
+    turns:
+      - text: "srt basin"
+        expect:
+          reply_contains:
+            - "Here are the matching products."
+          reply_not_contains:
+            - "Which one do you mean?"
+            - "Could not find"
+          no_uuid: true
+
+  - name: shorthand brand beside a code answers the code alone
+    cold: true
+    turns:
+      - text: "SRT SRTWC8318"
+        expect:
+          reply_contains:
+            - "SRTWC8318"
+          reply_not_contains:
+            - "Which one do you mean?"
+            - "SRT (promotion)"
+            - "SRT (customer)"
+            - "could not find SRT"
+          no_uuid: true
+
+  # Owner evidence (console on the #1514 copy, prompt v58, contact Mr Loo): after "which tap
+  # has technical drawing" (298 set) the owner typed "sorentooooo?"; the parser mapped it to
+  # brand Sorento, then the kind pick fired (customer / promotion / form / transporter) and
+  # ~200 codes were dumped above the question. The dump is ROGUE class C (#1506); this lane
+  # owns the kind pick and the brand.
+  - name: owner evidence, a misspelt brand word narrowing a carried set is the brand, no kind pick
+    cold: true
+    turns:
+      - text: "which tap has technical drawing"
+        expect:
+          reply_not_contains:
+            - "Which one do you mean?"
+      - text: "sorentooooo?"
+        expect:
+          reply_not_contains:
+            - "Which one do you mean?"
+            - "(customer)"
+            - "(promotion)"
+            - "(form)"
+            - "(transporter)"
+            - "could not find sorentooooo"
+          no_uuid: true
+
+  - name: control, the Cabana catalogue by filename coverage (r11 a-d)
+    cold: true
+    turns:
+      - text: "cabana catalog"
+        expect:
+          reply_contains:
+            - "I have attached the file(s) below."
+          reply_not_contains:
+            - "Which one do you mean?"
+          no_uuid: true
+
+  # Owner evidence (console dry run, chatbot.turns 0a405823, 6 Oct 23:58 MYT): a product-page
+  # SCREENSHOT of SORENTO GOLD WATER CLOSET SRTWC8383-RL-GY under `product_attachment`; the
+  # parser (v58) read {raw Sorento, hint brand, confident, canonical_code Sorento} and main
+  # minted "Which one do you mean? Sorento (customer / promotion / form / transporter)". This
+  # runner sends text only, so the image itself is hand-test step 15 (`laneboard/scripts/
+  # 1509.md`); the text below is the stand-in the sandbox pass used. On the sandbox (real
+  # parser, image turn) the reply was "I read ... from that photo. / Product: ... / Which kind
+  # of file do you need?", brand Sorento on focus, no pick.
+  - name: owner evidence, a brand word read off a product-page screenshot is the brand, no kind pick
+    cold: true
+    turns:
+      - text: "product image of SORENTO GOLD WATER CLOSET SRTWC8383-RL-GY"
+        expect:
+          reply_contains:
+            - "SRTWC8383"
+          reply_not_contains:
+            - "Which one do you mean?"
+            - "(customer)"
+            - "(promotion)"
+            - "(form)"
+            - "(transporter)"
+          no_uuid: true
+
+  - name: control, a code still resolves by code whatever the hint (AC-1527)
+    cold: true
+    turns:
+      - text: "7445 stock"
+        expect:
+          reply_contains:
+            - "7445"
+          reply_not_contains:
+            - "Which one do you mean?"
+            - "That would search every stock we have"
+          no_uuid: true

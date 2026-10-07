@@ -30,8 +30,15 @@ therefore unrealistic (no such row exists) - the real production path is
 resolving DIRECTLY to the one attachment whose filename covers both the brand word and the
 class word - no attachment_type lookup involved at all. `TestBrandWordUnderResourceAttachment
 IsAScopeNotAKindPick` (a-d) now runs the REAL resolver against this real-shaped seeded
-library (`_wire_real`); `TestGenuinelyAmbiguousWordStillAsks` (the control) is UNCHANGED,
-still on the old hand-rolled resolver stub (`_wire`) - it is not about catalogue rows.
+library (`_wire_real`).
+
+**(e) D2 superseded (owner, 6 Oct 2026, CLASS-HINT-KIND-PICK PR #1509).** The control
+`TestGenuinelyAmbiguousWordStillAsks` ("cabana stock" hinted product, a promotion and an
+attachment name hit, no product -> "Which one do you mean?") ran on a hand-rolled resolver
+stub. The owner ruled "cabana is a brand": the same shape, through the real resolver over a
+live Brand row, is now `TestABrandWordUnderAStockAskIsTheBrand`, and the stub helpers it
+alone used (`_wire`, `_bundle`, `_name_hits`, `_catalogue_envelope`, the fake uuids) are
+gone with it.
 """
 from __future__ import annotations
 
@@ -47,7 +54,7 @@ from app.models.resources import Attachment, AttachmentType
 from app.services.chatbot import engine as engine_mod
 from app.services.chatbot.lanes.business.services import FetchServices, ResolveGateServices
 from app.services.company_scope import DEFAULT_COMPANY_ID
-from tests.chatbot.conftest import set_chatbot_switches, validating_resolve_entity
+from tests.chatbot.conftest import set_chatbot_switches
 from tests.chatbot.test_engine import CONTACT_ID
 from tests.chatbot.test_engine import (  # noqa: F401 - fixtures re-exported by name
     _envelope,
@@ -68,15 +75,6 @@ CATALOGUE_TOOL = "crm_resource_attachments_catalogue"
 ATTACHMENT_TOOLS = {LIST_TOOL, CATALOGUE_TOOL}
 
 CABANA_FILE = "@ CABANA CATALOG 2025 (RESEARCHABLE).pdf"
-# Valid-hex fake uuids (0-9a-f only) - the OLD control test's own stubbed resolver still
-# uses these (see `_wire`/`_bundle`/`_name_hits` below, kept for
-# `TestGenuinelyAmbiguousWordStillAsks` only, per the coordinator's "control unchanged").
-CABANA_FILE_ID = "00000000-0000-0000-0000-0000000000c1"
-SORENTO_FILE = "@ SORENTO CATALOG 2025 (RESEARCHABLE).pdf"
-SORENTO_FILE_ID = "00000000-0000-0000-0000-0000000000c2"
-CATALOGUE_TYPE_UUID = "00000000-0000-0000-0000-0000000000c3"
-PROMO_UUID = "00000000-0000-0000-0000-0000000000c4"
-PROMO_FILE_UUID = "00000000-0000-0000-0000-0000000000c5"
 
 # The REAL clone shape (a-d): no catalogue attachment_type, two real doc-type rows.
 # `CABANA_FILE` above is already the real filename, reused here.
@@ -90,108 +88,7 @@ ATTACHED_INTRO = "I have attached the file(s) below."
 KIND_PICK_QUESTION = "Which one do you mean?"
 
 
-def _name_hits(brand: str) -> list[dict[str, Any]]:
-    """The clone's real resolver shape for a brand word that is NOT a brand row: a name
-    hit in `promotion` and a name hit in `attachment` (promo PDFs), no `brand` match."""
-    return [
-        {
-            "uuid": PROMO_UUID, "entity_type": "promotion", "match_tier": "substring",
-            "canonical_code": f"{brand.upper()} WASH BASIN PROMO 09092026 END USER",
-            "display": {"name": f"{brand.upper()} WASH BASIN PROMO 09092026 END USER"},
-        },
-        {
-            "uuid": PROMO_FILE_UUID, "entity_type": "attachment", "match_tier": "substring",
-            "canonical_code": f"{brand.upper()} WASH BASIN PROMO 09092026 END USER.pdf",
-            "display": {"original_filename": f"{brand.upper()} WASH BASIN PROMO 09092026 END USER.pdf"},
-        },
-    ]
-
-
-def _bundle(brand: str, *, class_token: str = "catalog") -> ResolveGateServices:
-    def _resolve_entity(body: dict[str, Any]) -> dict[str, Any]:
-        return {
-            "tokens": [brand, class_token],
-            "resolutions": [
-                {"raw": brand, "token": brand, "matches": _name_hits(brand)},
-                {
-                    "raw": class_token, "token": class_token,
-                    "matches": [
-                        {
-                            "uuid": CATALOGUE_TYPE_UUID, "entity_type": "attachment_type",
-                            "canonical_code": "catalogue", "match_field": "code",
-                            "match_tier": "exact", "display": {"type_name": "Catalogue"},
-                        }
-                    ],
-                },
-            ],
-            "unresolved_tokens": [],
-        }
-
-    return ResolveGateServices(
-        access_types=lambda **_: [{"name": "Sorento Dealer"}],
-        resolve_entity=validating_resolve_entity(_resolve_entity),
-        probe=lambda **_: None,
-    )
-
-
-def _catalogue_envelope(filename: str, file_id: str, company: str) -> dict[str, Any]:
-    return {
-        "result_type": "resource_attachments",
-        "intro": ATTACHED_INTRO,
-        "items": [
-            {
-                "fields": [
-                    {"key": "original_filename", "label": "File Name", "value": filename},
-                    {"key": "company_name", "label": "Company", "value": company},
-                    {"key": "uploaded_at", "label": "Uploaded", "value": "2025-03-01"},
-                ]
-            }
-        ],
-        "attachments": [
-            {
-                "id": file_id, "original_filename": filename, "company_name": company,
-                "url": f"https://cdn.example.test/{file_id}.pdf", "content_type": "application/pdf",
-            }
-        ],
-        "has_result": True,
-    }
-
-
 EMPTY = {"result_type": "resource_attachments", "intro": "No matching results found.", "items": [], "has_result": False}
-
-
-def _wire(session_factory, monkeypatch, brand: str):
-    """The clone's rows: a Cabana catalogue for a Cabana-scoped ask, a Sorento one for a
-    Sorento-scoped ask - so a brand scope that is honoured returns a DIFFERENT file."""
-    from app.models.user import SystemSetting
-
-    set_chatbot_switches(session_factory, business_lane=True)
-    db = session_factory()
-    for row in db.query(SystemSetting).all():
-        row.chatbot_completed_lanes = ["business_query"]
-    db.commit()
-
-    calls: list[tuple[str, dict[str, Any]]] = []
-
-    def _mcp_call(name: str, args: dict[str, Any]) -> str:
-        calls.append((name, dict(args)))
-        if name not in ATTACHMENT_TOOLS:
-            return json.dumps({"result_type": "unknown", "items": [], "has_result": False})
-        blob = json.dumps(args).lower()
-        if "sorento" in blob:
-            return json.dumps(_catalogue_envelope(SORENTO_FILE, SORENTO_FILE_ID, "Sorento"))
-        if "cabana" in blob:
-            return json.dumps(_catalogue_envelope(CABANA_FILE, CABANA_FILE_ID, "Cabana"))
-        return json.dumps(EMPTY)
-
-    bundle = _bundle(brand)
-    monkeypatch.setattr(
-        engine_mod.business_services, "production_services", lambda db, *, space_id=None: bundle
-    )
-    monkeypatch.setattr(
-        engine_mod.business_services, "fetch_services", lambda db: FetchServices(mcp_call=_mcp_call)
-    )
-    return calls
 
 
 # --------------------------------------------------------------------------- #
@@ -483,13 +380,34 @@ class TestBrandWordUnderResourceAttachmentIsAScopeNotAKindPick:
         assert set(cabana_files).isdisjoint(sorento_files), (cabana_files, sorento_files)
 
 
-class TestGenuinelyAmbiguousWordStillAsks:
-    def test_control_two_real_kinds_under_a_non_scope_hint_mint_the_kind_pick(
-        self, session_factory, seeded, stub_parser, stub_access, system_settings_row, monkeypatch
+class TestABrandWordUnderAStockAskIsTheBrand:
+    def test_cabana_stock_hinted_product_is_the_brand_scoped_stock_answer_never_a_kind_pick(
+        self, session_factory, stub_parser, stub_access, system_settings_row, monkeypatch
     ) -> None:
-        """(e) CONTROL, green today: D2 kept - "cabana" typed as a PRODUCT under a stock ask,
-        with a promotion hit and an attachment hit and no product, still asks."""
-        _wire(session_factory, monkeypatch, "cabana")
+        """(e) D2 SUPERSEDED (owner, 6 Oct 2026, CLASS-HINT-KIND-PICK PR #1509: "why is
+        cabana asked either a promotion or attachment? that is absolutely wrong, cabana is
+        a brand"). The control that stood here ("cabana" typed as a PRODUCT under a stock
+        ask, a promotion hit and an attachment hit, no product -> "Which one do you mean?")
+        ran on a hand-rolled resolver stub that encoded the old resolver behaviour. The
+        same shape now runs through the REAL resolver over seeded rows (a live Brand row
+        Cabana, a promotion PDF and an attachment PDF whose names carry "cabana", two
+        Cabana wash basins in stock): the word is the brand whatever the parser hinted,
+        the reply is the existing brand-scoped counted set, and the word lands on
+        `focus.brands`. Harness and seed are `test_class_hint_kind_pick.py`'s, the lane
+        that owns the rule, so the two files cannot drift."""
+        from tests.chatbot.test_class_hint_kind_pick import (
+            STOCK_TOOL,
+            _capturing_call_tool,
+            _focus_brand_words,
+            _seed_world,
+        )
+        from tests.chatbot.test_outstanding_lane import _seed_contact as _seed_business_contact
+
+        _seed_business_contact(session_factory, variables={})
+        world = _seed_world(session_factory, cabana=True)
+        calls = _capturing_call_tool(
+            monkeypatch, stock_by_id={pid: code for code, pid in world["cabana_basins"].items()}
+        )
         stub_access()
         result = _turn(
             session_factory, stub_parser,
@@ -500,5 +418,11 @@ class TestGenuinelyAmbiguousWordStillAsks:
             text="cabana stock", msg_id="ZZT-r11-cat-control",
         )
         assert result.status == "done", result.error
-        assert KIND_PICK_QUESTION in _said(result), _said(result)
-        assert (_session_of(session_factory).get("open_question") or {}).get("kind") == "kind_pick"
+        said = _said(result)
+        assert KIND_PICK_QUESTION not in said, said
+        assert "cabana (promotion)" not in said and "cabana (attachment)" not in said, said
+        assert (_session_of(session_factory).get("open_question") or {}).get("kind") != "kind_pick"
+        assert said.startswith("Here's what you want: Cabana wash basins with stock (2)"), said
+        stock_calls = [args for name, args in calls if name == STOCK_TOOL]
+        assert stock_calls and set(stock_calls[0].get("product_ids") or []) == set(world["cabana_basins"].values()), calls
+        assert "cabana" in _focus_brand_words(session_factory), _session_of(session_factory).get("focus")

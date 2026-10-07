@@ -555,6 +555,31 @@ def _osa_distance(a: str, b: str) -> int:
     return rows[-1][-1]
 
 
+def _brand_row_keys(row: dict[str, Any]) -> set[str]:
+    out = {
+        " ".join(jsc.nullish_str(row.get(k)).casefold().split())
+        for k in ("brand_name", "brand_code")
+    }
+    out.discard("")
+    return out
+
+
+def exact_brand_rows(brands: list[dict[str, Any]], word: Any) -> list[dict[str, Any]]:
+    """The live brand rows whose name or code IS the typed word, case and surrounding
+    whitespace aside - `brand_rows_for_word`'s first tier on its own.
+
+    CLASS-HINT-KIND-PICK (owner, 6 Oct 2026: "cabana is a brand"): a word the catalogue
+    knows as a brand is a brand whatever the parser hinted it as, in every domain. This
+    read, and ONLY this read, decides that: never the whole-word tier and never the
+    spelling-distance tier below, which #1504 measured turning "Sorrento" into Sorento
+    under master_products when the wider read reached the other nine domains. Those two
+    tiers stay where they are today, the order/sales intercept."""
+    folded = " ".join(jsc.nullish_str(word).casefold().split())
+    if not folded:
+        return []
+    return [row for row in brands if folded in _brand_row_keys(row)]
+
+
 def brand_rows_for_word(brands: list[dict[str, Any]], word: Any) -> list[dict[str, Any]]:
     """#1262 fix lane round 7, R1: the live brand rows a typed word names, decided by
     the word alone so the same word gives the same brand every time.
@@ -568,15 +593,9 @@ def brand_rows_for_word(brands: list[dict[str, Any]], word: Any) -> list[dict[st
     if not folded:
         return []
 
-    def keys(row: dict[str, Any]) -> set[str]:
-        out = {
-            " ".join(jsc.nullish_str(row.get(k)).casefold().split())
-            for k in ("brand_name", "brand_code")
-        }
-        out.discard("")
-        return out
+    keys = _brand_row_keys
 
-    exact = [row for row in brands if folded in keys(row)]
+    exact = exact_brand_rows(brands, folded)
     if exact:
         return exact
     words = _BRAND_WORD_RE.findall(folded)
@@ -635,6 +654,44 @@ def _brand_hinted_entities_matching_live(
     # (`brand_rows_for_word`), so a word kept off the resolver always has a brand and a
     # word with none always reaches it and is said back.
     return [e for e in candidates if brand_rows_for_word(live, brand_entity_word(e))]
+
+
+def brand_identity_word(entity: dict[str, Any]) -> str:
+    """The word a brand is identified BY (owner clarification, 6 Oct 2026: "what if typo,
+    what if SRT people type"): brand identity is semantic, so the parser's `canonical_code`
+    (the brand name exactly as the Known brands line lists it, the prompt's own KNOWN
+    BRANDS rule) decides, and the typed `raw` only when the parser gave no canonical code.
+    The opposite order from `brand_entity_word` (the order/sales intercept's, where a
+    misspelt word must reach the resolver and be said back)."""
+    canonical = jsc.nullish_str(entity.get("canonical_code")).strip()
+    return canonical or jsc.nullish_str(entity.get("raw")).strip()
+
+
+def entities_naming_a_live_brand(db: Session, entities: list[dict[str, Any]]) -> dict[int, str]:
+    """CLASS-HINT-KIND-PICK (owner, 6 Oct 2026): `{id(entity): brand name}` for the entities
+    among `entities`, WHATEVER their hint, whose identity word (`brand_identity_word`:
+    canonical_code, else raw) is a live brand's name or code exactly (`exact_brand_rows`;
+    the spelling tier never runs here, a misspelling the parser did not canonicalise is
+    not a brand). An entity the parser is not confident about is not a brand (owner).
+    "cabana" hinted `product` under a stock ask is Cabana the brand, and the resolver is
+    told so (`brand_tokens`, resolved as the brand with no probe, and locked) rather than
+    left to re-type it to whatever row carries the word in its name. Unlike
+    `_brand_hinted_entities_matching_live`, nothing here is removed from the resolver's
+    token list: the entity still reaches the resolver, so the HAS / spec branch still binds
+    the brand off the sentence and answers the brand-scoped set, and the entity-less early
+    return below can never fire for it (#1504's measured scope-sentence regression)."""
+    candidates = [e for e in entities if isinstance(e, dict) and e.get("confident") is not False]
+    if not candidates:
+        return {}
+    live = active_brands(db)
+    out: dict[int, str] = {}
+    for e in candidates:
+        rows = exact_brand_rows(live, brand_identity_word(e))
+        if rows:
+            out[id(e)] = jsc.nullish_str(rows[0].get("brand_name")).strip() or jsc.nullish_str(
+                rows[0].get("brand_code")
+            ).strip()
+    return out
 
 
 def order_brand_filter(
@@ -2078,6 +2135,22 @@ def resolve_kinds(
     resolver_excluded_entity_ids = (
         frozenset(id(e) for e in matched_brands) if matched_brands else None
     )
+    # CLASS-HINT-KIND-PICK: every confident entity whose canonical_code (else raw) names a
+    # live brand exactly, whatever its hint and whatever the domain, IS that brand. The
+    # `{id: brand name}` map reaches `resolve_entity_body` (which sends the tokens as
+    # `brand_tokens`, resolved as the brand with no probe and locked, beside the confident
+    # class / product / brand hints it locks on its own) and `by_token` below. The
+    # order/sales intercept above still removes a brand-HINTED live brand from the token
+    # list; one that is also here is simply never sent, exactly as today.
+    try:
+        brand_named = entities_naming_a_live_brand(db, entities)
+    except Exception:  # noqa: BLE001 - same reason as `matched_brands` above: a test
+        # double with no live `Brand` table has no opinion, and the token walks today's path.
+        # Logged (reviewer N2), so a live failure of the brand read is visible rather than
+        # silently turning every brand word back into a re-typable token.
+        logger.warning("chatbot: the live brand read failed; no token is brand-locked this turn", exc_info=True)
+        brand_named = {}
+    brand_entities = brand_named or None
     # The entities THIS call would resolve against, brand-excluded ids aside - used
     # ONLY for the entity-less early return just below, never handed to the resolver
     # itself as a replacement list (that stays `ctx`'s own, unmutated).
@@ -2122,6 +2195,7 @@ def resolve_kinds(
             dry_run=dry_run,
             roster_caps=roster_caps,
             resolver_excluded_entity_ids=resolver_excluded_entity_ids,
+            brand_entities=brand_entities,
             account_levels=business_services.account_levels_reader(db),
             # ACCOUNT-LEDGER: an enforced contact's own ledger is never an exact-name sibling.
             account_exact_names=not enforced_scope,
@@ -2255,6 +2329,30 @@ def resolve_kinds(
                 if stamp_promotion
                 else (codes, "has PO", "no PO")
             )
+
+    # CLASS-HINT-KIND-PICK (owner, 6 Oct 2026: "cabana is a brand"): a word that names a
+    # live brand exactly IS that brand for reconciliation, whatever the resolver placed
+    # it on and whatever the parser hinted. `{brand: 1}` is the one-kind answer
+    # `turn/reconcile.py` already reads: a `product` hint is rewritten to `brand` and
+    # traced, a `brand` hint stands, no kind pick is ever armed over it. A brand-hinted
+    # live brand the order/sales intercept kept off the resolver is not here (it was never
+    # resolved, so there is nothing to override) and lands on the focus as today. The
+    # resolver's own answer for the word is unchanged on `payload` and the gate.
+    for e in entities:
+        if not isinstance(e, dict) or id(e) not in brand_named:
+            continue
+        if resolver_excluded_entity_ids and id(e) in resolver_excluded_entity_ids:
+            continue
+        # Keyed the way the resolver echoes the token (`resolve_gate._token_of`: canonical
+        # code first, else raw), the same key `reconcile.hits_for_token` folds.
+        word = jsc.nullish_str(e.get("canonical_code")).strip() or jsc.nullish_str(e.get("raw")).strip()
+        key = _token_key(word)
+        if not key:
+            continue
+        echoed = next((t for t in by_token if _token_key(t) == key), None)
+        by_token[echoed if echoed is not None else word] = {"brand": 1}
+        unplaced.pop(key, None)
+        unplaced.pop(_token_key(jsc.nullish_str(e.get("raw")).strip()), None)
 
     return ResolveOutcome(
         by_token,
