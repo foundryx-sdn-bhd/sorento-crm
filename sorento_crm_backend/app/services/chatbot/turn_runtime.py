@@ -58,7 +58,7 @@ from app.services.chatbot.turn.state import (
     Profile,
     State,
     focus_from_wire,
-    is_staff_profile,
+    reads_customer_po_refs,
     token_key,
 )
 from app.services.chatbot import session_state
@@ -3133,7 +3133,7 @@ def make_tool_runner(
         # and so are not "could not find" words for compose to name a second time.
         so_numbers = _so_numbers_asked(domain, verdict, unplaced)
         envelope_unplaced = unplaced
-        if is_staff_profile(profile) and lane_out.get("po_refs"):
+        if not reads_customer_po_refs(profile) and lane_out.get("po_refs"):
             # SO-PO-REF: the audience decides what "PO" means. A staff turn never reads the
             # parser's `po_refs` (their PO is the supplier PO path, untouched).
             lane_out = {**lane_out, "po_refs": None}

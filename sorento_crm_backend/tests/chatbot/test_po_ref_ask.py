@@ -477,3 +477,14 @@ def test_no_grant_dealer_gets_the_not_enabled_line_and_no_miss_ladder(
     reply = result.reply or {}
     assert (reply.get("text") or "").strip() == "Sales order figures are not enabled for your account.", reply
     assert not reply.get("quick_replies"), reply
+
+
+def test_reads_customer_po_refs_by_tier_alone() -> None:
+    from types import SimpleNamespace
+
+    from app.services.chatbot.turn.state import reads_customer_po_refs
+
+    assert reads_customer_po_refs(SimpleNamespace(tier="office")) is False
+    assert reads_customer_po_refs(SimpleNamespace(tier="dealer")) is True
+    assert reads_customer_po_refs(SimpleNamespace(tier=None)) is True
+    assert reads_customer_po_refs(None) is True
