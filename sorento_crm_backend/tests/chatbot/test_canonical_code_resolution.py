@@ -195,6 +195,25 @@ def test_typed_product_unplaced_joins_the_canonical_miss_the_way_the_map_is_keye
     assert turn_runtime.typed_product_unplaced(verdict, unplaced) is True
 
 
+def test_a_described_set_miss_on_a_canonical_token_quotes_the_typed_phrase_not_a_fragment():
+    """#1506's rule C quotes the dealer's own product token when it missed, never the set
+    reader's fragment words. Its join read the raw against the resolver's tokens, which
+    this lane sends canonical-first: "TAP ZZTX9999" (canonical ZZTX9999, missed) never
+    joined, and the miss line fell back to the reader's fragment ("Couldn't find: "tap"")."""
+    from tests.chatbot.test_miss_says_what_it_could_not_find import _compose, _rendered
+
+    out = _compose(
+        parser_entities=[_entity(MISS_TYPED, MISS)],
+        resolutions=[{"token": MISS, "matches": []}],
+        unresolved=[MISS],
+        compat=[],
+        predicate={"qualifying_total": 0, "unrecognized_terms": ["tap"], "require": {"stock": True}},
+    )
+    rendered = _rendered(out)
+    assert f'Couldn\'t find: "{MISS_TYPED}".' in rendered, rendered
+    assert '"tap"' not in rendered, rendered
+
+
 def test_typed_product_unplaced_still_joins_by_raw_when_canonical_is_null():
     verdict = {"entities": [_entity("ZZTX-9999", None)]}
     unplaced = turn_runtime.named_unplaced(verdict["entities"], {"resolutions": [], "unresolved_tokens": ["ZZTX9999"]})
