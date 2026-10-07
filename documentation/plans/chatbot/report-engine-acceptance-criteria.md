@@ -112,3 +112,16 @@ Diagnosis: owner console turns 9c6055fe, 86f4d940, 6887b65b, af58830a, 5afe41b4,
 - AC-HT8-14. The ranking's clarify lines (period, how many, the unknown-word line) answer in the conversation's language, as the
   metric and basis questions already do.
 - AC-HT8-15. The ranking refine list's closing line allows the brand/category entity on a brand or category refine.
+
+### Round 6 (8 Oct): crew ruling (a) on the v70 tables (model stays gpt-5.4-mini; a model switch is the owner's call)
+
+- AC-HT8-16. A message answering an OPEN question fills ONLY the asked slot. The open question is a sales ranking `required_ask`
+  (period, top N, metric, basis) or a top selling question (metric, basis). `sales_channel` and every other filter key the parser
+  puts on that answer turn are ignored. The code reads the open-ask state and the parser keys, never the message text.
+  Examples: script step 10 "this year" and step 14 "ordered" carry no channel, even when the parser emits `sales_channel: dealer`.
+  A held ranking's own channel (e.g. after "dealer only") stays. A follow-up with no open question (a refine such as "dealer only")
+  is unchanged.
+- AC-HT8-17. Chinese basis words: 已送货 / 送货 / 已转DO mean "delivered", 已订购 / 下单 / 订单 mean "ordered", 未交 / 未送 mean
+  "outstanding". When a basis question is open, the parser emits that basis and never `order_status: "delivered"`.
+- AC-HT8-18. The ranking's basis question ("Delivered, ordered or outstanding?") is catalogued in Chinese (and Malay), like the
+  metric question.
