@@ -74,6 +74,7 @@ import {
   rowMatchesSearch,
   confirmLinesFor,
   rejectedCoveredLineIdsFor,
+  cancelledLinesFor,
   confirmNoticeLines,
   failingLineText,
   shiftedDayWindow,
@@ -1311,6 +1312,7 @@ export function FulfilmentBoardPanel({
         lines: ReturnType<typeof confirmLinesFor>;
         batch_id: string | null;
         rejected_line_ids: string[];
+        cancelled_lines: ReturnType<typeof cancelledLinesFor>;
       }[] = [];
       // An order whose planning change is already applied is NOT sent again (AC-P3-4). It is
       // reported instead, in the same place a server refusal is reported, so a press that
@@ -1365,6 +1367,13 @@ export function FulfilmentBoardPanel({
           : rejectedCoveredLineIdsFor(contributions, salesOrderId, draftWithoutPreMark, {
               excludeKeys: excludeKeys,
             });
+        // SO-CANCEL-LINE: the same refusal beside a batch, so an order on one never carries
+        // `cancelled_lines` from here.
+        const cancelledLines = orderBatchId
+          ? []
+          : cancelledLinesFor(contributions, salesOrderId, draftWithoutPreMark, {
+              excludeKeys: excludeKeys,
+            });
         // S4 (fix round, review): the covered-rejected lines THIS order's own batch just
         // zeroed out of `rejectedLineIds` above, so the planner is told what did not ride
         // along rather than the counter simply promising it and the press posting nothing
@@ -1417,7 +1426,7 @@ export function FulfilmentBoardPanel({
         // because a press whose `orders` came out empty with an empty `skipped` never set
         // `batchResults` at all. It is reported beside every other order's outcome instead,
         // in the wording the notice above the block already uses for the lines themselves.
-        if (lines.length === 0 && rejectedLineIds.length === 0) {
+        if (lines.length === 0 && rejectedLineIds.length === 0 && cancelledLines.length === 0) {
           // The held-back note above already said why, when that is the whole reason -
           // the generic "had no line..." sentence would only repeat it more vaguely.
           if (heldBackByBatch.length > 0) continue;
@@ -1434,7 +1443,13 @@ export function FulfilmentBoardPanel({
           } as BoardBatchResult);
           continue;
         }
-        orders.push({ pso_id: psoId, lines, batch_id: orderBatchId, rejected_line_ids: rejectedLineIds });
+        orders.push({
+          pso_id: psoId,
+          lines,
+          batch_id: orderBatchId,
+          rejected_line_ids: rejectedLineIds,
+          cancelled_lines: cancelledLines,
+        });
       }
       // Per-order `batch_id` above answers AC-P3-4/AC-B5 on its own. The body-level
       // `batch_id` is kept ONLY when EVERY order in THIS press carries that SAME id
@@ -1524,7 +1539,12 @@ export function FulfilmentBoardPanel({
           const ids = [...(dryRun?.lines_confirmed ?? []), ...(dryRun?.lines_withdrawn ?? [])];
           // An order whose named lines are all already fulfilled confirms nothing new, but the REAL
           // press clears their stale decisions (the dry run rolled that back), so it is still posted.
-          if (ids.length > 0 || (dryRun?.lines_fulfilled_skipped ?? 0) > 0 || Boolean(order.batch_id)) {
+          if (
+            ids.length > 0 ||
+            (dryRun?.lines_cancelled?.length ?? 0) > 0 ||
+            (dryRun?.lines_fulfilled_skipped ?? 0) > 0 ||
+            Boolean(order.batch_id)
+          ) {
             return true;
           }
           refusals.push({
@@ -1540,9 +1560,12 @@ export function FulfilmentBoardPanel({
         })
         .map((order) => {
           const dryRun = answer.get(order.pso_id);
-          const only = [...(dryRun?.lines_confirmed ?? []), ...(dryRun?.lines_withdrawn ?? [])].map(
-            (entry) => entry.project_line_id,
-          );
+          const only = [
+            ...[...(dryRun?.lines_confirmed ?? []), ...(dryRun?.lines_withdrawn ?? [])].map(
+              (entry) => entry.project_line_id,
+            ),
+            ...order.cancelled_lines.map((entry) => entry.project_line_id),
+          ];
           if (only.length === 0 || order.batch_id) return order;
           const keep = new Set(only);
           return {
@@ -1676,11 +1699,12 @@ export function FulfilmentBoardPanel({
       const committedLineIds = new Set(
         orders
           .filter((order) => committedPsoIds.has(order.pso_id))
-          .flatMap((order) =>
-            order.lines
+          .flatMap((order) => [
+            ...order.lines
               .map((line) => line.project_line_id)
               .filter((id) => echoedByPso.get(order.pso_id)?.has(id) ?? true),
-          ),
+            ...order.cancelled_lines.map((line) => line.project_line_id),
+          ]),
       );
       setDraft((current) => {
         const next = { ...current };
@@ -2330,6 +2354,18 @@ export function FulfilmentBoardPanel({
                       ? `${label}: confirmed as revision ${result.decision_revision} (${result.inquiry_rows_created ?? 0} purchase row${(result.inquiry_rows_created ?? 0) === 1 ? '' : 's'} handed over)`
                       : `${label}: ${result.error ?? 'refused'}`}
                   </span>
+                  {result.ok && result.lines_cancelled && result.lines_cancelled.length > 0 && (
+                    <ul
+                      data-testid={`board-cancelled-lines-${result.pso_id}`}
+                      className="space-y-0.5"
+                    >
+                      <li className="text-sm break-words">
+                        {`Transferred to Cancel SO: ${result.lines_cancelled
+                          .map((line) => `line ${line.line_no ?? '?'} ${line.item_code ?? ''}`.trim())
+                          .join(' · ')}`}
+                      </li>
+                    </ul>
+                  )}
                   {result.ok && result.lines_confirmed && result.lines_confirmed.length > 0 && (
                     <ul
                       data-testid={`board-confirm-lines-${result.pso_id}`}

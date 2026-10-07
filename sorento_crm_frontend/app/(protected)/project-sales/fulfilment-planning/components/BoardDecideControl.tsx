@@ -64,13 +64,19 @@ const MENU_ORDER: { way: DecideWay; separatorAfter?: boolean }[] = [
   { way: 'borrow_other' },
   { way: 'shared' },
   { way: 'buy' },
+  { way: 'cancel_so' },
 ];
 
 /** "As suggested" is not one of `supplyVocabulary`'s seven words - it names no supply kind. */
 const AS_SUGGESTED_LABEL = 'As suggested';
 
+/** Not a supply kind either: the whole line goes to the Cancel SO document (SO-CANCEL-LINE). */
+const CANCEL_SO_LABEL = 'Transfer to Cancel SO';
+
 function labelOf(way: DecideWay): string {
-  return way === 'suggested' ? AS_SUGGESTED_LABEL : LABELS[way];
+  if (way === 'suggested') return AS_SUGGESTED_LABEL;
+  if (way === 'cancel_so') return CANCEL_SO_LABEL;
+  return LABELS[way];
 }
 
 /**
@@ -310,6 +316,21 @@ export function BoardDecideControl({
             continue;
           }
           const trimmedReason = chosenReason.trim();
+          if (chosenWay === 'cancel_so') {
+            saves.push({
+              key: row.key,
+              decision: {
+                verdict: 'cancelled',
+                reserve: [],
+                borrow: [],
+                timely_spo_qty: '0',
+                buy_qty: '0',
+                order_back: false,
+                reason: trimmedReason,
+              },
+            });
+            continue;
+          }
           const borrow = (result.borrow ?? []).map((entry) => ({
             ...entry,
             reason: trimmedReason,
@@ -396,7 +417,7 @@ export function BoardDecideControl({
     setReason('');
     setAuthorisation('');
     const borrow = chosen === 'borrow_order' || chosen === 'borrow_other';
-    if (!borrow) {
+    if (!borrow && chosen !== 'cancel_so') {
       // AC-12: every ticked (uncovered) row's suggestion already IS this pick -> no dialog.
       const claimed = new Map<string, number>();
       const allMatch = tickedRows.every((row) => {

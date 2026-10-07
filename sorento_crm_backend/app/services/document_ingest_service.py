@@ -1531,6 +1531,14 @@ class DocumentIngestService(MasterRefResolver):
                                 "new_ref": new_ref,
                             }
                         )
+                if (
+                    spec.entity_type == "sales_orders"
+                    and getattr(row, "cancelled_at", None) is not None
+                ):
+                    # SO-CANCEL-LINE: CS transferred this line to Cancel SO on the board;
+                    # AutoCount does not know that document, so its push (which would
+                    # recompute the status from quantities) must not reopen the line.
+                    values["line_status"] = CANCELLED
                 for column, value in values.items():
                     setattr(row, column, value)
                 counts["updated"] += 1

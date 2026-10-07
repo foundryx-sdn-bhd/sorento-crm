@@ -123,7 +123,7 @@ export type VerdictKey =
 export function verdictOf(
   contribution: Pick<
     BoardContribution,
-    'cancelled' | 'unplannable' | 'covered' | 'draft' | 'decision'
+    'cancelled' | 'cancelled_at' | 'unplannable' | 'covered' | 'draft' | 'decision'
   >,
   decision: BoardDecision | null,
 ): VerdictKey {
@@ -145,6 +145,9 @@ export function verdictOf(
   // CANCELLED WINS OVER EVERYTHING (R3). Whatever was decided for this line, and whoever
   // decided it, the book has since removed the line: reading "Confirmed" or "Saved" over a
   // quantity nobody is owed would be the board agreeing to supply it.
+  // SO-CANCEL-LINE: CS transferred it to Cancel SO and pressed Confirm. No label of its own:
+  // the line wears Confirmed, and the cancel reads in Decided.
+  if (contribution.cancelled_at) return 'confirmed';
   if (contribution.cancelled) return 'cancelled';
   if (covered) return 'confirmed';
   if (draftSource?.verdict === 'rejected') return 'rejected';

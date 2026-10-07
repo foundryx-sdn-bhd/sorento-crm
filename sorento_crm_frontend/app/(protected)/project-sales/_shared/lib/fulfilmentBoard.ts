@@ -319,6 +319,7 @@ type PressRole =
   | { kind: 'skip' }
   | { kind: 'cancelled' }
   | { kind: 'withdraw' }
+  | { kind: 'cancel_so'; reason: string }
   | { kind: 'blocked_reject' }
   | { kind: 'stale' }
   | { kind: 'post'; line: ConfirmLine }
@@ -330,6 +331,14 @@ function pressRoleFor(
   batchBlocked: boolean,
 ): PressRole {
   if (contribution.unplannable) return { kind: 'skip' };
+  // SO-CANCEL-LINE: a saved Transfer to Cancel SO rides its own body channel
+  // (`cancelled_lines`), never `lines`, so the composition recheck never sees it.
+  if (decision?.verdict === 'cancelled') {
+    if (!contribution.cancelled) {
+      if (contribution.covered || !contribution.project_line_id) return { kind: 'skip' };
+      return { kind: 'cancel_so', reason: (decision.reason ?? '').trim() };
+    }
+  }
   // A CANCELLED line is retired by the press (R3); it needs no composition. One that also
   // carries a saved decision still posts it, as the body always did.
   if (contribution.cancelled) {
@@ -366,7 +375,7 @@ export function pressPostsContribution(
   options?: { batchBlocked?: boolean; unadopted?: boolean },
 ): boolean {
   const role = pressRoleFor(contribution, decision, options?.batchBlocked ?? false);
-  if (role.kind === 'post' || role.kind === 'withdraw') return true;
+  if (role.kind === 'post' || role.kind === 'withdraw' || role.kind === 'cancel_so') return true;
   return role.kind === 'unpostable' && role.reason === 'no_mirror' && Boolean(options?.unadopted);
 }
 
@@ -416,6 +425,28 @@ export function rejectedCoveredLineIdsFor(
     if (contribution.project_line_id) ids.push(contribution.project_line_id);
   }
   return ids;
+}
+
+/**
+ * `ConfirmSupplyBody.cancelled_lines` for one order (SO-CANCEL-LINE): the mirror ids and
+ * reasons of the lines a `cancelled` draft is staged on. Twin of `rejectedCoveredLineIdsFor`.
+ */
+export function cancelledLinesFor(
+  contributions: BoardContribution[],
+  salesOrderId: string,
+  draft: BoardDraft,
+  options?: ConfirmScopeOptions,
+): { project_line_id: string; reason: string }[] {
+  const lines: { project_line_id: string; reason: string }[] = [];
+  for (const contribution of contributions) {
+    if (contribution.sales_order_id !== salesOrderId) continue;
+    if (options?.excludeKeys?.has(contribution.key)) continue;
+    const role = pressRoleFor(contribution, draft[contribution.key], false);
+    if (role.kind === 'cancel_so' && contribution.project_line_id) {
+      lines.push({ project_line_id: contribution.project_line_id, reason: role.reason });
+    }
+  }
+  return lines;
 }
 
 /**
@@ -476,7 +507,7 @@ function lineFor(
   if (contribution.covered && !isAmendment(decision) && decision?.verdict !== 'approved') {
     return null;
   }
-  if (decision?.verdict === 'rejected') return null;
+  if (decision?.verdict === 'rejected' || decision?.verdict === 'cancelled') return null;
 
   const buyReason = decision?.buy_reason?.trim() || undefined;
 
@@ -762,7 +793,14 @@ export function plannedLineCount(
     if (contribution.sales_order_id !== salesOrderId) return false;
     if (options?.excludeKeys?.has(contribution.key)) return false;
     const role = pressRoleFor(contribution, draft[contribution.key], batchBlocked);
-    if (role.kind === 'cancelled' || role.kind === 'withdraw' || role.kind === 'post') return true;
+    if (
+      role.kind === 'cancelled' ||
+      role.kind === 'withdraw' ||
+      role.kind === 'post' ||
+      role.kind === 'cancel_so'
+    ) {
+      return true;
+    }
     // Only an order that is about to be adopted can mint the missing mirror.
     if (role.kind === 'unpostable' && role.reason === 'no_mirror') {
       return unadopted === undefined || unadopted.has(salesOrderId);
@@ -877,7 +915,7 @@ export interface ConfirmDialogRow {
   so_number: string;
   line_no: number;
   item_code: string;
-  verdict: 'approved' | 'amended' | 'rejected';
+  verdict: 'approved' | 'amended' | 'rejected' | 'cancelled';
   composition: string;
   saved_by: string | null;
   saved_at: string | null;
@@ -1010,6 +1048,9 @@ export function confirmDialogRowsFor(
         break;
       case 'withdraw':
         rows.push(rowFor('rejected', WITHDRAWN_COMPOSITION));
+        break;
+      case 'cancel_so':
+        rows.push(rowFor('cancelled', 'Cancel SO'));
         break;
       case 'blocked_reject':
         notPosted.push({ ...identity, reason: BLOCKED_REJECT_REASON });

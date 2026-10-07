@@ -654,6 +654,8 @@ export function confirmLineFrom(
  * allows, never as the agent's own.
  */
 export function amendSummary(decision: BoardDecision, ownLocation?: string | null): string {
+  // SO-CANCEL-LINE: the whole line goes to Cancel SO; there is no composition to describe.
+  if (decision.verdict === 'cancelled') return 'Cancel SO';
   if (!decision.reserve && !decision.borrow && decision.buy_qty === undefined) {
     return `Amended to reserve ${decision.reserve_qty ?? '0'}`;
   }
@@ -727,7 +729,8 @@ export type DecideWay =
   | 'shared'
   | 'borrow_order'
   | 'borrow_other'
-  | 'buy';
+  | 'buy'
+  | 'cancel_so';
 
 /**
  * One ticked row's composition for a Decide pick, or why it is skipped (D1, R2, R6 to R10).
@@ -770,6 +773,20 @@ export function decideComposition(
   // function. `BoardDecideControl` short-circuits it through `suggestedDecisionFor` (behind
   // `canQuickSave`) before `decideComposition` is ever called, the identical path Save as
   // suggested always took.
+
+  if (way === 'cancel_so') {
+    // SO-CANCEL-LINE: a whole-line cancel carries no composition. A confirmed line must be
+    // rejected first, and an already cancelled one has nothing left to cancel.
+    if (contribution.cancelled) return { skip: 'already cancelled' };
+    if (contribution.covered) return { skip: 'confirmed, reject it first' };
+    return {
+      reserve: [],
+      borrow: [],
+      timely_spo_qty: '0',
+      buy_qty: '0',
+      order_back: false,
+    };
+  }
 
   if (way === 'buy') {
     // #1362 (owner, 29 Sep 2026): a Buy over stock that already landed for this line is the

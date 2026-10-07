@@ -758,6 +758,10 @@ class BoardContribution(BaseModel):
     #: The pending change row's own batch, so the cell can deep-link to it (`Changed` pill).
     #: Null on every ordinary row, same rule as `cancelled`.
     pending_change_batch_id: Optional[str] = None
+    #: SO-CANCEL-LINE: CS transferred this line to Cancel SO. `cancelled_by` is a name.
+    cancelled_at: Optional[datetime] = None
+    cancelled_by: Optional[str] = None
+    cancel_reason: Optional[str] = None
 
 
 class BorrowDonorImpact(BaseModel):

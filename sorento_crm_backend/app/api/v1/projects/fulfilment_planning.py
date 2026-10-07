@@ -934,10 +934,28 @@ def _confirm_with_possible_rejects(
             ),
             code="board_reject_not_supported_in_batch",
         )
+    # SO-CANCEL-LINE: whole lines transferred to Cancel SO. Refused beside a batch BEFORE
+    # anything is looked up, for the same reason as the withdrawal above.
+    cancelled_lines = list(getattr(payload, "cancelled_lines", None) or [])
+    if batch_id and cancelled_lines:
+        raise AppException(
+            status_code=422,
+            message=(
+                "A pending planning change cannot also transfer a line to Cancel SO in the "
+                "same press. Apply the change first, then transfer the line and confirm "
+                "again."
+            ),
+            code="board_cancel_not_supported_in_batch",
+        )
     reasons, joined_reason = _reasons_for_rejected_lines(
         db, order, rejected_line_ids, named_lines=named
     )
     before_id = _active_decision_id(db, order)
+    lines_cancelled = (
+        service.cancel_lines(order, cancelled_lines, actor_user_id=actor_user_id)
+        if cancelled_lines
+        else []
+    )
     if batch_id:
         with UndoJournal(db) as journal:
             body = confirm_batch()
@@ -991,10 +1009,15 @@ def _confirm_with_possible_rejects(
             )
         body = _withdrawal_only_result(db, service, order, rejected_line_ids)
         body["lines_withdrawn"] = _withdrawn_entries(db, service, order, rejected_line_ids)
+    elif cancelled_lines:
+        # Only Cancel SO lines: nothing to confirm, so no revision is written.
+        body = _withdrawal_only_result(db, service, order, [])
     else:
         with UndoJournal(db) as journal:
             body = service.confirm(order, payload, actor_user_id=actor_user_id)
         _attach_undo_journal(db, order, journal, before_id)
+    if lines_cancelled:
+        body["lines_cancelled"] = lines_cancelled
     return body
 
 
