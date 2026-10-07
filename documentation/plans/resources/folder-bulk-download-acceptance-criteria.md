@@ -24,6 +24,7 @@ On Dashboards > Resources > Files, a user selects any mix of folders and files a
 - **AC-B4** Entry name = `stored_filename`, falling back to `original_filename` (the name shown in the row and used by the single download).
 - **AC-B5** (Q4) Two or more files in the same folder with the same entry name (case-insensitive): the first keeps its name, the second becomes `<base> - copy<ext>`, the third `<base> - copy (2)<ext>`, exactly the import's suffix rules (`archive.tar.gz` -> `archive.tar - copy.gz`).
 - **AC-B6** (Q4) `/` and `\` inside a folder or file name become `-` in the archive path. No other character is changed.
+- **AC-B6b** (security review) A folder or file whose name is `.`, `..`, or empty after sanitising is written as `_`; no archive path has an empty, `.` or `..` segment and none starts with `/`.
 - **AC-B7** Deleted (trashed) folders and archived files are never included, even when they sit inside a selected folder.
 - **AC-B8** The archive is a valid zip readable by Python `zipfile` and by Bulk import: re-importing the archive into an empty folder recreates the same folder tree and the same file names (modulo AC-B5/B6 renames).
 - **AC-B9** Archive file name is `<folder name>-YYYYMMDD-HHMM.zip` for a folder view and `Files-YYYYMMDD-HHMM.zip` at the root, with AC-B6 applied to the folder name. Zip64 is allowed so archives above 4 GB are valid.
@@ -36,6 +37,7 @@ On Dashboards > Resources > Files, a user selects any mix of folders and files a
 - **AC-C4** When every selected id is invisible or unknown the request fails with 404 and no job is created. An empty selection fails with 400.
 - **AC-C5** (must-fix, security-reviewer) The worker re-applies the requester's FULL company scope snapshot (several companies for a multi-company user, all-companies for an unscoped superadmin) before planning; a two-company snapshot yields both companies' files and excludes a third's; it never widens to all companies because the snapshot is a set.
 - **AC-C6** Job status, cancel and the download link are owner-only (the job's `user_id` must equal the caller), as the existing job endpoints already enforce.
+- **AC-C6b** (security review) One in-flight archive per user: a second start while the user's `attachment_bulk_zip` row is pending or processing is refused with 409 "A files archive is already being prepared. Wait for it to finish or cancel it."; once that row is ready, failed or cancelled a new start is accepted.
 - **AC-C7** The download link is a signed storage URL with a 1 h expiry; no session token or API key ever appears in a URL.
 
 ## D. Job, progress, never stuck
@@ -43,6 +45,7 @@ On Dashboards > Resources > Files, a user selects any mix of folders and files a
 - **AC-D1** (Q2a) Starting a download creates an `import_jobs` row (`job_type = attachment_bulk_download`) and enqueues a worker job on the `imports` queue; the response returns `job_id` within the request, before any file is read.
 - **AC-D2** Progress: `total` = planned file count, `processed` advances as files are written, `percentage` derived; status polls at 2 s show it moving.
 - **AC-D3** The job ends in exactly one terminal state: `finished` with `result = {archive_filename, files_included, files_failed, files_not_visible, folders, bytes}` and the archive stored under `bulk-exports/<job id>.zip`, or `failed` with a one-line `error`. No third state; the temp file on the worker is removed in both cases.
+- **AC-D3b** (security review) If the archive object was uploaded but the My downloads row cannot be marked ready, the object is deleted best-effort so no orphan outlives the 24 h purge.
 - **AC-D4** A file whose bytes cannot be read from storage is skipped, counted in `files_failed`, and the job still finishes.
 - **AC-D5** `files_included = 0` (every planned file failed) ends as `failed` with "No file could be read", not as an empty archive.
 - **AC-D6** Cancel while running (existing `POST /system/jobs/{id}/cancel`) stops the job within one batch; the archive is not uploaded and the temp file is removed.

@@ -86,6 +86,11 @@ One job type, one task, one pure planner, one dialog, one menu item. No new tabl
 
 `documentation/mockups/folder-bulk-download/index.html`: the dialog's three states on the real case (Marketing, 3 folders + 1 file, 1374 files / 1.5 GB), 1280 + 375, built from the import dialog's blocks. Filed as a crew ask before the dialog is built.
 
+### Security review round (7 Oct, on 7ebf8125a)
+
+- Fixed: `_safe_name` also maps `.`, `..` and empty names to `_` (AC-B6b); the route refuses a second start while the user's archive is in flight via the EXISTING `DownloadService.has_in_flight(user_id, kind="attachment_bulk_zip")` (`download_service.py:55-97`), 409 (AC-C6b); the task deletes the uploaded object best-effort when `mark_ready` fails (AC-D3b).
+- Accepted as is, documented: a shared or own-company file inside an OTHER-company subfolder is not reachable because the subtree walk cannot see that folder; including it would print an invisible folder's name in the archive path, so the stricter behaviour is right and the file counts as not visible. A staff session never resolves to the all-companies scope (`company_scope_resolver.py:175-245`); `None` is reachable only through an API key without contact scoping, the same exposure the single-file download has today. The 1-hour signature cannot limit a public R2 CDN domain; every attachment shares that exposure, unchanged here. A SIGKILL of the worker can leave a temp file in the worker tmp dir, same as the import's staged files.
+
 ## 2. Tests (tester writes first, red; coder makes green)
 
 pytest `tests/test_attachment_bulk_download.py` (Postgres `blank_session`, auth-bypass pattern of `tests/test_drive_endpoint.py:1-50`):
