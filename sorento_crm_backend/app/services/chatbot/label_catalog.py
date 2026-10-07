@@ -394,6 +394,8 @@ LABELS: dict[str, dict[str, str]] = {
     "I don't know '{word}' as a brand.": {"ms": "Saya tidak mengenali '{word}' sebagai jenama.", "zh": "我不认识 '{word}' 这个品牌。"},
     "I don't know '{word}' as a sales agent.": {"ms": "Saya tidak mengenali '{word}' sebagai ejen jualan.", "zh": "我不认识 '{word}' 这个业务员。"},
     "I don't know '{word}' as a location.": {"ms": "Saya tidak mengenali '{word}' sebagai lokasi.", "zh": "我不认识 '{word}' 这个地点。"},
+    "I don't know '{word}' as a period.": {"ms": "Saya tidak mengenali '{word}' sebagai tempoh.", "zh": "我看不懂 '{word}' 这个时间段。"},
+    "I don't know '{word}' as a basis.": {"ms": "Saya tidak mengenali '{word}' sebagai asas.", "zh": "我不认识 '{word}' 这个统计基准。"},
     "I don't know '{word}' as a number.": {"ms": "Saya tidak mengenali '{word}' sebagai nombor.", "zh": "我看不懂 '{word}' 这个数字。"},
     "I don't know '{word}' as a measure.": {"ms": "Saya tidak mengenali '{word}' sebagai ukuran.", "zh": "我不认识 '{word}' 这个衡量方式。"},
     "I couldn't read how many, so here is the top 10.": {"ms": "Saya tidak dapat memahami berapa banyak, jadi ini 10 teratas.", "zh": "我没能看懂要多少个，所以这里显示前 10 名。"},

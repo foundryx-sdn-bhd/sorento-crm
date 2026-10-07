@@ -840,11 +840,13 @@ CANONICAL_CODE_ADDENDUM = (
     '  - "stock check\\nTAP SRTWT5608 x 5\\nWC SRTWC8066-SS x 2" -> two product entities,\n'
     '    canonical_code "SRTWT5608" (quantity 5) and canonical_code "SRTWC8066-SS" (quantity 2)\n'
     "The attachment_type, attachment and brand rules for canonical_code are unchanged; this\n"
-    'section is about hint "product" only.\n'
-    "A category entity's canonical_code is the English class word, whatever language the customer\n"
-    'wrote; "raw" stays verbatim: 马桶 -> canonical_code "water closet", 面盆 -> canonical_code "wash basin",\n'
-    '水龙头 -> canonical_code "tap", 浴室柜 -> canonical_code "bathroom cabinet", 厨房水槽 -> canonical_code "kitchen sink",\n'
-    '淋浴 -> canonical_code "shower", 浴缸 -> canonical_code "bathtub", 小便斗 -> canonical_code "urinal".\n'
+    'section is about hint "product" only, except:\n'
+    "on a sales_ranking or top_selling ask, a category entity's canonical_code is the English class word\n"
+    '(any other ask leaves a category entity\'s canonical_code null, raw verbatim); "raw" stays verbatim:\n'
+    '马桶 -> canonical_code "water closet", 坐厕 -> canonical_code "water closet", 面盆 -> canonical_code "wash basin",\n'
+    '洗手盆 -> canonical_code "wash basin", 水龙头 -> canonical_code "tap", 浴室柜 -> canonical_code "bathroom cabinet",\n'
+    '厨房水槽 -> canonical_code "kitchen sink", 水槽 -> canonical_code "kitchen sink", 淋浴 -> canonical_code "shower",\n'
+    '花洒 -> canonical_code "shower", 浴缸 -> canonical_code "bathtub", 小便斗 -> canonical_code "urinal".\n'
     '"这个产品" / "this product" is never an entity: the standing subject carries.\n'
 )
 SEMANTIC_PARSER_PROMPT += CANONICAL_CODE_ADDENDUM

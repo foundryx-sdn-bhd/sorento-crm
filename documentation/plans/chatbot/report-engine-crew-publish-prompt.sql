@@ -1925,11 +1925,13 @@ Each product line in a list is its own entity, with its own canonical_code and q
   - "stock check\nTAP SRTWT5608 x 5\nWC SRTWC8066-SS x 2" -> two product entities,
     canonical_code "SRTWT5608" (quantity 5) and canonical_code "SRTWC8066-SS" (quantity 2)
 The attachment_type, attachment and brand rules for canonical_code are unchanged; this
-section is about hint "product" only.
-A category entity's canonical_code is the English class word, whatever language the customer
-wrote; "raw" stays verbatim: 马桶 -> canonical_code "water closet", 面盆 -> canonical_code "wash basin",
-水龙头 -> canonical_code "tap", 浴室柜 -> canonical_code "bathroom cabinet", 厨房水槽 -> canonical_code "kitchen sink",
-淋浴 -> canonical_code "shower", 浴缸 -> canonical_code "bathtub", 小便斗 -> canonical_code "urinal".
+section is about hint "product" only, except:
+on a sales_ranking or top_selling ask, a category entity's canonical_code is the English class word
+(any other ask leaves a category entity's canonical_code null, raw verbatim); "raw" stays verbatim:
+马桶 -> canonical_code "water closet", 坐厕 -> canonical_code "water closet", 面盆 -> canonical_code "wash basin",
+洗手盆 -> canonical_code "wash basin", 水龙头 -> canonical_code "tap", 浴室柜 -> canonical_code "bathroom cabinet",
+厨房水槽 -> canonical_code "kitchen sink", 水槽 -> canonical_code "kitchen sink", 淋浴 -> canonical_code "shower",
+花洒 -> canonical_code "shower", 浴缸 -> canonical_code "bathtub", 小便斗 -> canonical_code "urinal".
 "这个产品" / "this product" is never an entity: the standing subject carries.
 
 
@@ -2029,7 +2031,7 @@ CURRENT DATE: {{current_date}}
 If relative dates such as "today" or "yesterday" appear in the current turn input, convert them to absolute dates before calling the MCP tool.$tpl_a7065de1dd$, '@@EMDASH@@', chr(8212)), '["current_date"]'::jsonb,
        'report_engine_0001_prompt (REPORT-ENGINE PR #1447): sales_ranking vocabulary, AC-HT8 ranking axes, dealer is the customer, channel refine', now()
  WHERE NOT EXISTS (SELECT 1 FROM ai_prompt_versions
-                    WHERE name = 'chatbot_semantic_parser' AND md5(template) = 'e48d50c68558f17fe2c0c419bc71855c');
+                    WHERE name = 'chatbot_semantic_parser' AND md5(template) = '8720a4cfcd03c6e7acc6fcfb44d682c9');
 COMMIT;
 -- check: SELECT version, length(template) FROM ai_prompt_versions WHERE name='chatbot_semantic_parser'
---         AND md5(template) = 'e48d50c68558f17fe2c0c419bc71855c';   -- expect one row, length 143937
+--         AND md5(template) = '8720a4cfcd03c6e7acc6fcfb44d682c9';   -- expect one row, length 144164
