@@ -189,19 +189,19 @@ class TestFilterByCustomerOnly:
         assert sum(g["order_count"] for g in res["groups"]) == 1
 
     def test_ac6_dealer_scope_does_not_see_customerless_do(self, db, sample_world):
-        """The scope helper hands back the linked customer ids; they feed the same filter."""
+        """A contact linked to the SAMPLE customer: the scope's ids feed the same filter."""
+        from app.api.v1.order_management._contact_scope import enforce_customer_scope
+
         w = sample_world
         contact_id = seed_contact(db, "Ah Seng")
         db.add(RespondContactCustomer(id=str(uuid.uuid4()), contact_id=contact_id,
                                       customer_id=str(w["sample"].id), company_id=SORENTO))
         db.flush()
-        from app.api.v1.order_management._contact_scope import enforce_customer_scope
-        # A contact with no workspace id cannot be resolved by the helper in a blank schema, so the
-        # scope's customer ids are what the route passes on; assert the filter on them directly.
-        ids = [str(w["sample"].id)]
+        ids = enforce_customer_scope(db, contact_id=contact_id, space_id="zzt-space",
+                                     customer_ids=None, customer_query=None)
+        assert ids == [str(w["sample"].id)]
         got = _ids(OrderService(db).list_orders(customer_ids=ids))
-        assert str(w["loose"].id) not in got
-        assert enforce_customer_scope is not None
+        assert got == {str(w["linked"].id)}
 
 
 # ===================================================== AC-7 outstanding report, DO side
@@ -305,10 +305,10 @@ def cleanup_world(db):
                 c_only=c_only, c_both=c_both, ask=ask)
 
 
-def _run(db, apply):
+def _run(db, apply, **kw):
     from scripts.cleanup_dbr_customers import run
 
-    return run(db, apply=apply)
+    return run(db, apply=apply, **kw)
 
 
 class TestCleanupScript:
@@ -325,10 +325,11 @@ class TestCleanupScript:
         assert res["orders_nulled"] == 1
         assert res["stock_asks_nulled"] == 1
         assert res["chat_links"] == 2
+        assert res["blockers"] == []
 
     def test_ac11_apply_nulls_orders_and_asks_and_deletes_dbr_customers(self, db, cleanup_world):
         w = cleanup_world
-        _run(db, True)
+        _run(db, True, allow_unlink=True)
         db.expire_all()
         o1 = db.get(Order, w["o1"].id)
         assert o1.customer_id is None and o1.debtor_name == "SAMPLE"
@@ -339,7 +340,7 @@ class TestCleanupScript:
 
     def test_ac12_real_and_integration_referenced_customers_are_left_alone(self, db, cleanup_world):
         w = cleanup_world
-        _run(db, True)
+        _run(db, True, allow_unlink=True)
         db.expire_all()
         assert db.get(Customer, w["real"].id) is not None
         assert db.get(Customer, w["kept"].id) is not None
@@ -348,7 +349,7 @@ class TestCleanupScript:
 
     def test_ac13_apply_drops_chat_links_and_lists_contacts_left_unlinked(self, db, cleanup_world):
         w = cleanup_world
-        res = _run(db, True)
+        res = _run(db, True, allow_unlink=True)
         db.expire_all()
         remaining = db.query(RespondContactCustomer).all()
         assert [str(r.customer_id) for r in remaining] == [str(w["real"].id)]
@@ -363,3 +364,52 @@ class TestCleanupScript:
         assert res["contacts_left_unlinked"] == [
             {"contact_id": w["c_only"], "dbr_customer_name": "DELUXE HOME CENTRE (KTN)"}
         ]
+
+    def _snapshot(self, db, w):
+        db.expire_all()
+        return (
+            db.query(Customer).count(),
+            db.query(RespondContactCustomer).count(),
+            str(db.get(Order, w["o1"].id).customer_id),
+            str(db.get(StockAsk, w["ask"].id).customer_id),
+        )
+
+    def test_ac14_apply_refuses_when_a_contact_would_be_left_unlinked(self, db, cleanup_world):
+        w = cleanup_world
+        before = self._snapshot(db, w)
+        with pytest.raises(Exception) as exc:
+            _run(db, True)
+        assert w["c_only"] in str(exc.value)
+        assert self._snapshot(db, w) == before
+
+    def test_ac14_allow_unlink_succeeds_and_lists_the_contact(self, db, cleanup_world):
+        w = cleanup_world
+        res = _run(db, True, allow_unlink=True)
+        assert [u["contact_id"] for u in res["contacts_left_unlinked"]] == [w["c_only"]]
+
+    def test_ac14_dry_run_still_succeeds_and_lists_it(self, db, cleanup_world):
+        w = cleanup_world
+        res = _run(db, False)
+        assert [u["contact_id"] for u in res["contacts_left_unlinked"]] == [w["c_only"]]
+
+    def test_abort_when_another_table_references_a_dbr_customer(self, db, cleanup_world):
+        from app.models.order import CustomerContact
+
+        w = cleanup_world
+        db.add(CustomerContact(id=str(uuid.uuid4()), customer_id=str(w["d1"].id), full_name="Ah Person",
+                               company_id=SORENTO))
+        db.flush()
+        before = self._snapshot(db, w)
+        with pytest.raises(Exception):
+            _run(db, True, allow_unlink=True)
+        assert self._snapshot(db, w) == before
+
+    def test_dry_run_reports_blockers_instead_of_raising(self, db, cleanup_world):
+        from app.models.order import CustomerContact
+
+        w = cleanup_world
+        db.add(CustomerContact(id=str(uuid.uuid4()), customer_id=str(w["d1"].id), full_name="Ah Person",
+                               company_id=SORENTO))
+        db.flush()
+        res = _run(db, False)
+        assert res["blockers"] and "customer_contacts" in " ".join(res["blockers"])
