@@ -1,6 +1,6 @@
 # PLAN: DBR debtor cleanup
 
-Status: BUILDING (Q1-Q5 answered 7 Oct; card closed). Track: L (prod data delete), LEAD pattern.
+Status: PR #1529 ready (code done 7 Oct); data script run on prod owed after release with owner go, after the DELUXE (KTN) contact is linked. Track: L (prod data delete), LEAD pattern.
 Lane: crew/dbr-debtor-cleanup. UAC: `dbr-debtor-cleanup-acceptance-criteria.md`.
 
 ## Journey
