@@ -776,7 +776,23 @@ def resolve_entity_body(
     # READ at all rather than only refusing to page it. A described ask ("which taps have
     # a cert") names a `product_type` / `category` word and is untouched; a turn naming
     # both a code and a class word keeps its scope term and is untouched too.
-    if require is not None and not scope_terms and not grounded_specs and _names_a_typed_code(parse_output):
+    #
+    # ATTACH-SET-BRAND-FOLLOWUP round 2 (owner hand test on the local copy, 7 Oct 2026):
+    # a document word alone whose subject is the SETTLED products the plan carries
+    # (`turn_runtime.with_carried_entities` says so on the verdict, `subject_settled`;
+    # the rows themselves stay out of the token list, there is nothing to look up) is the
+    # same case one turn later: "photo?" after "sorento" listed a page is "photo for
+    # <the listed codes>", a product-scoped fetch, never a set. With the page having
+    # retired the class word, the leg had no scope term left and counted every product
+    # with a photo.
+    from app.services.chatbot.turn_runtime import SUBJECT_SETTLED_KEY
+
+    if (
+        require is not None
+        and not scope_terms
+        and not grounded_specs
+        and (_names_a_typed_code(parse_output) or parse_output.get(SUBJECT_SETTLED_KEY) is True)
+    ):
         require = None
     if require is not None:
         body["require"] = require
