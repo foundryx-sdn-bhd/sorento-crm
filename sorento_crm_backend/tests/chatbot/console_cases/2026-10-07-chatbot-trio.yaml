@@ -1,0 +1,238 @@
+# Console cases for CHATBOT-TRIO (PR #1525): the integration of #1519 STALE-EXTRA-CARRY,
+# #1509 CLASS-HINT-KIND-PICK and #1514 ATTACH-SET-BRAND-FOLLOWUP on one branch. The key
+# steps of `laneboard/scripts/1519.md`, `1509.md` and `1514.md`, each case named with the
+# PR it proves, plus the owner's "seat cover" -> "1" sequence after a product is in focus.
+# NOT collected by pytest. Run with `scripts/chatbot_console_check.py --live` against a copy
+# of the integration branch on the shared dev DB (`documentation/agents/chatbot-verification.md`):
+#
+#   venv/bin/python scripts/chatbot_console_check.py \
+#       tests/chatbot/console_cases/2026-10-07-chatbot-trio.yaml --live \
+#       --base-url http://127.0.0.1:8140 --sleep-seconds 8
+#
+# The #1514 "pic" step needs the UNLABELLED parser prompt v65 and lives in its own file,
+# `2026-10-07-chatbot-trio-pic-v65.yaml`, run with `--prompt-version <v65 id>`.
+#
+# Contacts: 437264483 (the owner's dev dry-run contact, stock visibility) for #1519 / #1509,
+# 487555417 (dealer, General Enquiries, product attachments) for #1514; every case is cold.
+# Data the copy must hold: SRT320-CR with stock, active brands CABANA and SORENTO,
+# promotions whose description contains "basin", taps with Technical Specifications and the
+# `attachment_type_alias` row 'technical drawing' -> Technical Specifications.
+
+contact: "437264483"
+
+cases:
+  # ---- #1519 STALE-EXTRA-CARRY --------------------------------------------------------
+  - name: "#1519 the prod turn: a stale class word stays off the product-scoped stock and ETA answers"
+    cold: true
+    turns:
+      - text: "seat cover"
+        expect:
+          no_uuid: true
+      - text: "srt320-cr x30"
+        expect:
+          reply_contains:
+            - "SRT320-CR x 30"
+            - "Got stock"
+          reply_not_contains:
+            - "seat cover"
+            - "Couldn't find"
+            - "Which one do you mean?"
+          no_uuid: true
+      - text: "got ETA ?"
+        expect:
+          reply_contains:
+            - "SRT320-CR"
+          reply_not_contains:
+            - "seat cover"
+            - "Couldn't find"
+            - "But none matched"
+            - "Which one do you mean?"
+          no_uuid: true
+
+  - name: "#1519 control: a described set's class word still re-describes the set"
+    cold: true
+    turns:
+      - text: "which basins have incoming"
+        expect:
+          reply_contains:
+            - "Here's what you want: wash basins with incoming stock"
+          no_uuid: true
+      - text: "stock?"
+        expect:
+          reply_not_contains:
+            - "SRT320-CR"
+            - "Couldn't find"
+          no_uuid: true
+
+  # ---- #1509 CLASS-HINT-KIND-PICK ------------------------------------------------------
+  - name: "#1509 the owner's turn, a confident category word is never a promotion or customer pick"
+    cold: true
+    turns:
+      - text: "any basin with thickness 1.0mm"
+        expect:
+          reply_contains:
+            - "Here's what you want: wash basins with thickness 1 mm"
+          reply_not_contains:
+            - "Which one do you mean?"
+            - "basin (promotion)"
+            - "basin (customer)"
+          no_uuid: true
+
+  - name: "#1509 a bare class word lists the class, no kind pick"
+    cold: true
+    turns:
+      - text: "basin"
+        expect:
+          reply_contains:
+            - "Here are the matching products."
+          reply_not_contains:
+            - "Which one do you mean?"
+            - "(promotion)"
+            - "(customer)"
+          no_uuid: true
+
+  - name: "#1509 cabana is a brand whatever the hint, the brand-scoped stock answer"
+    cold: true
+    turns:
+      - text: "cabana stock"
+        expect:
+          reply_contains:
+            - "Here's what you want: Cabana"
+            - "with stock"
+          reply_not_contains:
+            - "Which one do you mean?"
+            - "cabana (promotion)"
+            - "cabana (attachment)"
+          no_uuid: true
+
+  - name: "#1509 brand plus class word, no pick over the class word"
+    cold: true
+    turns:
+      - text: "sorento basin"
+        expect:
+          reply_contains:
+            - "Here are the matching products."
+          reply_not_contains:
+            - "Which one do you mean?"
+            - "basin (promotion)"
+            - "basin (customer)"
+          no_uuid: true
+
+  - name: "#1509 a misspelt brand word the parser canonicalised is the brand"
+    cold: true
+    turns:
+      - text: "Sorrento basin"
+        expect:
+          reply_contains:
+            - "Here are the matching products."
+          reply_not_contains:
+            - "Which one do you mean?"
+            - "Could not find"
+            - "Sorrento"
+          no_uuid: true
+
+  - name: "#1509 shorthand brand beside a code answers the code alone"
+    cold: true
+    turns:
+      - text: "SRT SRTWC8318"
+        expect:
+          reply_contains:
+            - "SRTWC8318"
+          reply_not_contains:
+            - "Which one do you mean?"
+            - "SRT (promotion)"
+            - "SRT (customer)"
+            - "could not find SRT"
+          no_uuid: true
+
+  - name: "#1509 owner evidence, a misspelt brand word narrowing a carried set is the brand, no kind pick"
+    cold: true
+    turns:
+      - text: "which tap has technical drawing"
+        expect:
+          reply_not_contains:
+            - "Which one do you mean?"
+      - text: "sorentooooo?"
+        expect:
+          reply_not_contains:
+            - "Which one do you mean?"
+            - "(customer)"
+            - "(promotion)"
+            - "(form)"
+            - "(transporter)"
+            - "could not find sorentooooo"
+          no_uuid: true
+
+  # ---- owner sequence: "seat cover" -> "1" with a product in focus (#1509 behaviour) ----
+  - name: "owner sequence: seat cover then 1 after a product is in focus, no promotion or attachment or form menu"
+    cold: true
+    turns:
+      - text: "srt320-cr stock"
+        expect:
+          reply_contains:
+            - "SRT320-CR"
+          no_uuid: true
+      - text: "seat cover"
+        expect:
+          reply_not_contains:
+            - "Which one do you mean?"
+            - "(promotion)"
+            - "(attachment)"
+            - "(form)"
+            - "(customer)"
+          no_uuid: true
+      - text: "1"
+        expect:
+          reply_not_contains:
+            - "Which one do you mean?"
+            - "(promotion)"
+            - "(attachment)"
+            - "(form)"
+            - "(customer)"
+          no_uuid: true
+
+  # ---- #1514 ATTACH-SET-BRAND-FOLLOWUP (production prompt; the pic step is in the v65 file) ----
+  - name: "#1514 owner turns 1 and 2, the brand follow-up keeps the document type"
+    contact: "487555417"
+    cold: true
+    turns:
+      - text: "which tap has technical drawing"
+        expect:
+          reply_contains:
+            - "Here's what you want: taps with technical specifications ("
+          reply_not_contains:
+            - "as a document type"
+            - "Attachment Type:* Product Photos"
+          no_uuid: true
+      - text: "sorento"
+        expect:
+          reply_contains:
+            - "Here's what you want: Sorento taps with technical specifications ("
+            - "*Attachment Type:* Technical Specifications"
+          reply_not_contains:
+            - "*Attachment Type:* Product Photos"
+            - "*Attachment Type:* Certification"
+            - "as a document type"
+          no_uuid: true
+
+  - name: "#1514 the page continues after the listed rows settled onto the focus"
+    contact: "487555417"
+    cold: true
+    turns:
+      - text: "which tap has technical drawing"
+        expect:
+          reply_contains:
+            - "Here's what you want: taps with technical specifications ("
+      - text: "sorento"
+        expect:
+          reply_contains:
+            - "Here's what you want: Sorento taps with technical specifications ("
+      - text: "another 10"
+        expect:
+          reply_contains:
+            - "Here's what you want: Sorento taps with technical specifications ("
+            - ", showing 51 to "
+            - "*Attachment Type:* Technical Specifications"
+          reply_not_contains:
+            - "*Attachment Type:* Product Photos"
+          no_uuid: true
