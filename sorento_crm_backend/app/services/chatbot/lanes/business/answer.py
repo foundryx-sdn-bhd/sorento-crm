@@ -313,19 +313,16 @@ def access_level_choice_message(
         # token can resolve to two products, and naming one would claim we searched
         # something they did not ask for. Past 60 chars the echo is DROPPED rather than
         # truncated, because half a promotion name reads like a different promotion.
-        # AC-16: a brand the RESOLVER placed (a live brand row, by id) is named by its real
-        # brand_name. Parser brand words and resolved rows pair in order when their counts agree;
-        # otherwise (or for an unresolved word) the parser's own canonical name, then the typed word.
-        entities_in = jsc.array(q.get("entities"))
-        brand_entities = [e for e in entities_in if jsc.js_string(jsc.get(e, "hint") or "").lower() == "brand"]
-        rows = [r for r in jsc.array(out.get("resolved_brands")) if isinstance(r, dict) and r.get("brand_name")]
-        named = (
-            {id(e): row["brand_name"] for e, row in zip(brand_entities, rows)}
-            if rows and len(rows) == len(brand_entities)
-            else {}
-        )
+        # AC-16: a brand entity that names a live brand (the parser's canonical name, exact) is
+        # echoed by that row's real brand_name, bound to ITS entity; any other word stays as typed.
+        from app.services.chatbot.turn_runtime import brand_entity_rows
+
+        named = {
+            id(e): row["brand_name"]
+            for e, row in brand_entity_rows(q.get("entities"), jsc.array(out.get("live_brands")))
+        }
         raws: list[str] = []
-        for e in entities_in:
+        for e in jsc.array(q.get("entities")):
             v = named.get(id(e))
             if not v and jsc.js_string(jsc.get(e, "hint") or "").lower() == "brand":
                 v = jsc.js_string(jsc.get(e, "canonical_code") or "").strip()
