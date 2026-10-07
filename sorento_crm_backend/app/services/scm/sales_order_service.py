@@ -733,6 +733,8 @@ class SalesOrderService:
                 "kind": row.kind,
                 "applied_state": row.applied_state,
                 "result": row.result_json or None,
+                "from": row.from_json or None,
+                "to": row.to_json or None,
             }
         return out
 

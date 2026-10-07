@@ -322,8 +322,8 @@ async def get_orders(
     customer_ids: Optional[list[str]] = Query(
         None,
         description=(
-            "Filter by customer UUIDs. Matches Order.customer_id IN (...) and, "
-            "for legacy rows without FK, Order.debtor_name = customers.customer_name."
+            "Filter by customer UUIDs. Matches Order.customer_id IN (...) only; "
+            "debtor_name is never a link."
         ),
     ),
     product_ids: Optional[list[str]] = Query(
@@ -810,7 +810,7 @@ async def get_orders_by_product(
     ),
     customer_ids: Optional[list[str]] = Query(
         None,
-        description="Optional customer UUIDs. OR-fallback to debtor_name for legacy rows without FK.",
+        description="Optional customer UUIDs. Matches Order.customer_id only.",
     ),
     transporter_ids: Optional[list[str]] = Query(
         None,
@@ -1031,7 +1031,7 @@ async def get_order_analytics(
         None,
         description=(
             "Filter by customer UUIDs (csv/JSON/repeated). Matches Order.customer_id "
-            "IN (...) with a legacy debtor_name fallback. Pass the resolved customer "
+            "IN (...) only. Pass the resolved customer "
             "UUID - free-text names are coerced to UUIDs upstream."
         ),
     ),
