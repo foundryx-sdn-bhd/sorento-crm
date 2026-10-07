@@ -3793,8 +3793,16 @@ def without_restated_rows(verdict: dict[str, Any], focus: Focus) -> dict[str, An
     two-id run, one mechanism of it. A row the focus already holds settled (same code, a
     uuid) is the carry restated, not a word to look up or an axis to rewrite, so it is
     dropped from the verdict before `apply` reads it. A single settled product echoed back
-    is the same case with nothing lost: the settled row stays, one lookup fewer."""
+    is the same case with nothing lost: the settled row stays, one lookup fewer.
+
+    Only on a turn that TYPES nothing but a document word (reviewer should-fix): a new
+    ask that names another axis ("outstanding DO for hanlim" after a stock answer) still
+    carries the echoed product through `apply._focus_rules` exactly as today, where the
+    echo is what keeps the product on a new ask that starts fresh."""
     entities = [e for e in verdict.get("entities") or [] if isinstance(e, dict)]
+    typed = [e for e in entities if e.get("current_message") is not False]
+    if any(str(e.get("hint") or "").strip().lower() != "attachment_type" for e in typed):
+        return verdict
     restated = [e for e in entities if _restates_a_settled_row(e, focus)]
     if not restated:
         return verdict

@@ -486,6 +486,28 @@ def test_the_pages_brand_alone_keeps_the_listed_taps_for_the_document_word_that_
     assert _row_types(fourth) == [PHOTO] * 3, fourth
 
 
+def test_an_echo_is_kept_when_the_turn_types_another_axis():
+    """Reviewer should-fix: "outstanding DO for hanlim" after a stock answer echoes the
+    settled product beside the typed customer; the echo is what keeps the product on a
+    new ask that starts fresh, so it is left alone. Only a turn typing nothing but a
+    document word drops its echoes."""
+    from app.services.chatbot import turn_runtime
+    from app.services.chatbot.turn.state import Focus
+
+    settled = {"raw": "ZZT-1", "hint": "product", "canonical_code": "ZZT-1", "uuid": str(uuid.uuid4()), "current_message": False}
+    focus = Focus(products=[settled])
+    echo = {"raw": "ZZT-1", "hint": "product", "canonical_code": "ZZT-1", "current_message": False}
+    customer = {"raw": "hanlim", "hint": "customer", "canonical_code": None, "current_message": True}
+    photo = {"raw": "pic", "hint": "attachment_type", "canonical_code": "photo", "current_message": True}
+
+    kept = turn_runtime.without_restated_rows({"entities": [echo, customer]}, focus)
+    assert kept["entities"] == [echo, customer], kept
+    dropped = turn_runtime.without_restated_rows({"entities": [echo, photo]}, focus)
+    assert dropped["entities"] == [photo], dropped
+    alone = turn_runtime.without_restated_rows({"entities": [echo]}, focus)
+    assert alone["entities"] == [], alone
+
+
 def test_the_subject_line_names_a_few_of_many_settled_products():
     """Live console pass (7 Oct 2026): fifty listed codes on the subject line made the
     parser echo fifty entities and overflow its token cap."""
