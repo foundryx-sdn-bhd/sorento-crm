@@ -35,7 +35,7 @@ cases:
             - "Delivery order outstanding"
             - "*_By product_*"
             - "SRTWC9020: 1 (O/S: 1)"
-            - "... and 6 more products (reply 1 for the full list)"
+            - "... and 6 more products (reply 1 for the delivery order list)"
             - "Reply 1 for the delivery order list."
           reply_not_contains:
             # the 21st product by rank (the one-unit codes rank by name; SRTWC9021 is the

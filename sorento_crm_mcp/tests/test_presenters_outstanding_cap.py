@@ -134,7 +134,7 @@ def test_prod_shape_by_product_prints_twenty_rows_then_the_trailer():
     assert len(product_lines) == 21, product_lines
     assert product_lines[0] == "SRTWT7001: 96 (O/S: 96)"
     assert product_lines[19] == "SRTWT7020: 4 (O/S: 4)"
-    assert product_lines[20] == "... and 292 more products (reply 1 for the full list)"
+    assert product_lines[20] == "... and 292 more products (reply 1 for the delivery order list)"
     # the 21st product is the first one left off
     assert "SRTWT7021" not in rendered
     # counts and the closing offer line are whole and unchanged
@@ -148,7 +148,7 @@ def test_the_trailer_is_the_last_line_of_its_group_and_prints_once():
     rendered = _outstanding_report(prod_shape_report())
     assert rendered.count("more products") == 1
     lines = rendered.splitlines()
-    trailer_at = lines.index("... and 292 more products (reply 1 for the full list)")
+    trailer_at = lines.index("... and 292 more products (reply 1 for the delivery order list)")
     assert lines[trailer_at + 1] == "", lines[trailer_at : trailer_at + 2]
 
 
@@ -160,8 +160,8 @@ def test_the_trailer_is_the_last_line_of_its_group_and_prints_once():
 def test_both_scopes_so_trailer_says_reply_1_and_do_trailer_says_reply_2():
     rendered = _outstanding_report(both_capped_report())
     assert rendered == _golden("outstanding-report-both-capped.txt")
-    assert "... and 7 more customers (reply 1 for the full list)" in rendered, rendered
-    assert "... and 3 more customers (reply 2 for the full list)" in rendered, rendered
+    assert "... and 7 more customers (reply 1 for the sales order list)" in rendered, rendered
+    assert "... and 3 more customers (reply 2 for the delivery order list)" in rendered, rendered
     so_trailer_at = rendered.index("... and 7 more customers")
     do_trailer_at = rendered.index("... and 3 more customers")
     do_block_at = rendered.index("*Delivery order outstanding*")
@@ -169,11 +169,30 @@ def test_both_scopes_so_trailer_says_reply_1_and_do_trailer_says_reply_2():
     assert rendered.splitlines()[-3:] == ["1. Sales order list", "2. Delivery order list", "3. Both lists"]
 
 
+def test_the_trailer_names_the_list_the_offer_line_names():
+    """R2 (owner hand test, 7 Oct 2026, turn e4895b28): `reply 1 for the full list` above
+    `Reply 1 for the delivery order list.` read as two offers sharing one number. The
+    trailer now names the SAME list the offer line names, word for word, so one target
+    has one name: the DO block says `delivery order list`, the SO block `sales order
+    list`, and `the full list` is never printed."""
+    do_only = both_capped_report()
+    do_only["so"] = None
+    rendered = _outstanding_report(do_only)
+    assert "full list" not in rendered, rendered
+    assert "... and 3 more customers (reply 1 for the delivery order list)" in rendered, rendered
+    assert rendered.rstrip().endswith("Reply 1 for the delivery order list.")
+    both = _outstanding_report(both_capped_report())
+    assert "full list" not in both, both
+    assert "... and 7 more customers (reply 1 for the sales order list)" in both, both
+    assert "... and 3 more customers (reply 2 for the delivery order list)" in both, both
+    assert "(reply 1 for the delivery order list)" not in both and "(reply 2 for the sales order list)" not in both
+
+
 def test_do_only_offer_do_trailer_says_reply_1():
     report = both_capped_report()
     report["so"] = None
     rendered = _outstanding_report(report)
-    assert "... and 3 more customers (reply 1 for the full list)" in rendered, rendered
+    assert "... and 3 more customers (reply 1 for the delivery order list)" in rendered, rendered
     assert "reply 2" not in rendered
     assert rendered.rstrip().endswith("Reply 1 for the delivery order list.")
 
@@ -185,7 +204,7 @@ def test_so_miss_beside_a_capped_do_block_still_says_reply_1():
     report["so"]["so_count"] = 0
     rendered = _outstanding_report(report)
     assert "No open sales order." in rendered
-    assert "... and 3 more customers (reply 1 for the full list)" in rendered, rendered
+    assert "... and 3 more customers (reply 1 for the delivery order list)" in rendered, rendered
     assert "reply 2" not in rendered
     assert "more customers (reply 1" in rendered and rendered.count("more customers") == 1
 
@@ -211,7 +230,7 @@ def test_twenty_one_rows_print_twenty_and_a_singular_trailer():
     rendered = _outstanding_report(report)
     product_lines = _group_lines(rendered, "*_By product_*")
     assert len(product_lines) == 21, product_lines
-    assert product_lines[-1] == "... and 1 more product (reply 1 for the full list)"
+    assert product_lines[-1] == "... and 1 more product (reply 1 for the delivery order list)"
     assert "1 more products" not in rendered
 
 
@@ -220,7 +239,7 @@ def test_twenty_one_customers_print_a_singular_customer_trailer():
     report["so"] = None
     report["do_by_customer"] = report["do_by_customer"][:21]
     rendered = _outstanding_report(report)
-    assert "... and 1 more customer (reply 1 for the full list)" in rendered, rendered
+    assert "... and 1 more customer (reply 1 for the delivery order list)" in rendered, rendered
     assert "1 more customers" not in rendered
 
 
@@ -258,7 +277,7 @@ def test_by_location_longer_than_the_cap_prints_whole():
     assert location_lines[-1] == "WH-24: 16 (O/S: 16)"
     assert "more locations" not in rendered
     # and the product group beside it is still capped
-    assert "... and 292 more products (reply 1 for the full list)" in rendered
+    assert "... and 292 more products (reply 1 for the delivery order list)" in rendered
 
 
 # --------------------------------------------------------------------------
