@@ -120,3 +120,34 @@ describe('a cancel draft under a pending planning change is held, not counted (A
     expect(dialog.notPosted).toHaveLength(1);
   });
 });
+
+describe('committed Cancel SO line (AC-F16)', () => {
+  const committed = row({ cancelled: true, cancelled_at: '2026-10-01T09:00:00' } as never);
+  const bookCancelled = row({ cancelled: true });
+  const ctx = { currentUserName: 'Cyndi', openedAt: new Date('2026-10-01T00:00:00Z') };
+
+  it('is not counted as planned (a)', () => {
+    expect(plannedLineCount([committed], 'so-1', {})).toBe(0);
+  });
+
+  it('is not a press (b)', () => {
+    expect(pressPostsContribution(committed, undefined)).toBe(false);
+  });
+
+  it('is in neither lines nor cancelled_lines (c)', () => {
+    expect(confirmLinesFor([committed], 'so-1', {})).toEqual([]);
+    expect(board.cancelledLinesFor([committed], 'so-1', {})).toEqual([]);
+  });
+
+  it('is in no bucket of the confirm dialog (d)', () => {
+    const dialog = confirmDialogRowsFor([committed], {}, ctx);
+    expect(dialog.rows).toHaveLength(0);
+    expect(dialog.cancelled).toHaveLength(0);
+    expect(dialog.notPosted).toHaveLength(0);
+  });
+
+  it('control: a book-cancelled line is still retired by the press', () => {
+    expect(plannedLineCount([bookCancelled], 'so-1', {})).toBe(1);
+    expect(confirmDialogRowsFor([bookCancelled], {}, ctx).cancelled).toHaveLength(1);
+  });
+});
