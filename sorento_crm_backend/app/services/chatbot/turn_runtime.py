@@ -2965,6 +2965,17 @@ def make_tool_runner(
             # SO-PO-REF: the audience decides what "PO" means. A staff turn never reads the
             # parser's `po_refs` (their PO is the supplier PO path, untouched).
             lane_out = {**lane_out, "po_refs": None}
+        po_words = _po_ref_words(lane_out.get("po_refs"), unplaced)
+        if po_words:
+            # SO-PO-REF: the PO number the parser also emitted as an entity is answered by
+            # the `po_refs` arm, so it is no miss for compose to name a second time (nor to
+            # replace a not-enabled reply) and is not carried. Exact key equality with a
+            # parser-given `po_refs` string; a word the resolver PLACED is never here.
+            envelope_unplaced = {k: v for k, v in envelope_unplaced.items() if v not in po_words}
+            _drop_focus_entities(
+                focus,
+                [{"entity_type": kind, "raw": w} for w in po_words for kind in ("product", "order")],
+            )
         if so_numbers:
             lane_out = {**lane_out, "so_numbers": so_numbers}
             envelope_unplaced = {k: v for k, v in unplaced.items() if v not in so_numbers}
@@ -4018,6 +4029,17 @@ def _code_of(entity: dict[str, Any]) -> str:
     spec that named an entity (every compatible row answered `"null"`).
     """
     return jsc.js_string(entity.get("code") or entity.get("canonical_code") or entity.get("raw")).strip().lower()
+
+
+def _po_ref_words(po_refs: Any, unplaced: dict[str, str]) -> list[str]:
+    """The unplaced words whose PO key equals the key of a parser-given `po_refs` string."""
+    from app.services.scm.po_ref import po_ref_key
+
+    keys = {po_ref_key(r) for r in (po_refs if isinstance(po_refs, list) else []) if isinstance(r, str)}
+    keys.discard(None)
+    if not keys:
+        return []
+    return [w for w in unplaced.values() if po_ref_key(w) in keys]
 
 
 def _so_numbers_asked(domain: str, verdict: dict[str, Any], unplaced: dict[str, str]) -> list[str]:
