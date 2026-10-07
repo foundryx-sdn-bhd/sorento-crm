@@ -1,0 +1,72 @@
+Product: SRTWT7445
+Customer: all
+Location: IB (BRW-IB, MWH-IB)
+Order date: 01/01/2026 to 31/12/2026
+
+*Sales order outstanding*
+Sales orders: 12
+Ordered: 2,411
+Transferred to DO: 0
+Outstanding: 2,411
+Order date range: 05/01/2026 to 28/08/2026
+*_By location_*
+MWH-IB: 1,211 (O/S: 1,211)
+BRW-IB: 1,200 (O/S: 1,200)
+*_By customer_*
+Dealer 01 Sdn Bhd: 100 (O/S: 100)
+Dealer 02 Sdn Bhd: 100 (O/S: 100)
+Dealer 03 Sdn Bhd: 100 (O/S: 100)
+Dealer 04 Sdn Bhd: 100 (O/S: 100)
+Dealer 05 Sdn Bhd: 100 (O/S: 100)
+Dealer 06 Sdn Bhd: 100 (O/S: 100)
+Dealer 07 Sdn Bhd: 100 (O/S: 100)
+Dealer 08 Sdn Bhd: 100 (O/S: 100)
+Dealer 09 Sdn Bhd: 100 (O/S: 100)
+Dealer 10 Sdn Bhd: 100 (O/S: 100)
+Dealer 11 Sdn Bhd: 100 (O/S: 100)
+Dealer 12 Sdn Bhd: 100 (O/S: 100)
+Dealer 13 Sdn Bhd: 100 (O/S: 100)
+Dealer 14 Sdn Bhd: 100 (O/S: 100)
+Dealer 15 Sdn Bhd: 100 (O/S: 100)
+Dealer 16 Sdn Bhd: 100 (O/S: 100)
+Dealer 17 Sdn Bhd: 100 (O/S: 100)
+Dealer 18 Sdn Bhd: 100 (O/S: 100)
+Dealer 19 Sdn Bhd: 100 (O/S: 100)
+Dealer 20 Sdn Bhd: 100 (O/S: 100)
+... and 7 more customers
+
+*Delivery order outstanding*
+Delivery orders: 3
+DO qty: 640
+Delivered: 0
+Outstanding: 640
+DO date range: 03/02/2026 to 30/08/2026
+*_By location_*
+BRW-IB: 640 (O/S: 640)
+*_By customer_*
+Dealer 01 Sdn Bhd: 30 (O/S: 30)
+Dealer 02 Sdn Bhd: 30 (O/S: 30)
+Dealer 03 Sdn Bhd: 30 (O/S: 30)
+Dealer 04 Sdn Bhd: 30 (O/S: 30)
+Dealer 05 Sdn Bhd: 30 (O/S: 30)
+Dealer 06 Sdn Bhd: 30 (O/S: 30)
+Dealer 07 Sdn Bhd: 30 (O/S: 30)
+Dealer 08 Sdn Bhd: 30 (O/S: 30)
+Dealer 09 Sdn Bhd: 30 (O/S: 30)
+Dealer 10 Sdn Bhd: 30 (O/S: 30)
+Dealer 11 Sdn Bhd: 30 (O/S: 30)
+Dealer 12 Sdn Bhd: 30 (O/S: 30)
+Dealer 13 Sdn Bhd: 30 (O/S: 30)
+Dealer 14 Sdn Bhd: 30 (O/S: 30)
+Dealer 15 Sdn Bhd: 30 (O/S: 30)
+Dealer 16 Sdn Bhd: 30 (O/S: 30)
+Dealer 17 Sdn Bhd: 30 (O/S: 30)
+Dealer 18 Sdn Bhd: 30 (O/S: 30)
+Dealer 19 Sdn Bhd: 30 (O/S: 30)
+Dealer 20 Sdn Bhd: 30 (O/S: 30)
+... and 3 more customers
+
+Reply with a number for detail:
+1. Sales order list
+2. Delivery order list
+3. Both lists
