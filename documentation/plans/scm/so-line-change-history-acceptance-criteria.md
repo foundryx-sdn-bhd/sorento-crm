@@ -2,8 +2,8 @@
 
 Status: built, on hand test (PR #1526). F1 AC-1 to AC-6 and F2 AC-7 to AC-13 covered by red-first
 tests and browser-verified at 1280 and 375 (card a67320022, 7 Oct 2026: Q1 = a, Q2 = a, Q3 = a,
-Q4 = a). Q5 (backfill of the cancelled sheet lines' delivery date) is an owner-gated crew step
-outside this PR.
+Q4 = a). Q5: the backfill script ships on this PR (red-first, `tests/test_backfill_sheet_line_required_date.py`);
+its prod `--apply` run is an owner-gated crew step after merge.
 Plan: `PLAN-so-line-change-history.md` alongside.
 
 ## Journey
@@ -80,8 +80,9 @@ Nothing else changes: no new screen, no new log, no import change, no data updat
 
 - AC-14 [T] No change to `project_order_inquiry_import_service.py` (Q4 a: the importer creates
   no sales_order_lines; nothing to set).
-- AC-15 [T] No UPDATE of `sales_order_lines.required_date` (Q5 b). The read-only SELECT for the 11
-  candidate rows is in the plan.
+- AC-15 [T] No UPDATE of `sales_order_lines.required_date` by this PR's code paths at run time;
+  the only writer is `scripts/backfill_sheet_line_required_date.py --apply`, owner-gated, dry run
+  by default, covered by its own tests (plan grouping, dry run writes nothing, apply idempotent).
 - AC-16 [T] No new table, column, migration, permission or endpoint. `security-reviewer` not run:
   diff outside its surface (no auth, RBAC, ingest, upload, company scoping).
 

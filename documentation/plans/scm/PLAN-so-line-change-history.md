@@ -3,8 +3,10 @@
 Status: built, on hand test (PR #1526, feature track M, lead pattern: tester red tests, coder
 green, reviewer + kill test, agent-browser 1280/375 PASS on both slices; no mock, owner exception
 for wording and rows inside existing dialogs). Card a67320022 rulings: Q1 a, Q2 a, Q3 a, Q4 a;
-Q5 = owner-gated one-off backfill script outside this PR (no existing repair path covers the
-cancelled sheet lines; 20 of 46 have one sheet date). Hand test: `laneboard/scripts/1526.md`.
+Q5 = owner-gated backfill script `scripts/backfill_sheet_line_required_date.py` on this PR
+(dry run default; snapshot dry run 21 single, 4 ambiguous, 21 undated, 0 unmatched of 46);
+the prod `--apply` run is a separate owner-gated crew step after merge. Hand test:
+`laneboard/scripts/1526.md`.
 Plan created: 2026-10-07T18:30:00+08:00
 Lane: SO-LINE-CHANGE-HISTORY, branch `crew/so-line-change-history`, base origin/main 292a366ee
 Domain: scm (SO detail Lines tab) + project-sales (order inquiry History dialog)
@@ -54,8 +56,12 @@ Case: SO314593 / SRTWCX8605-S-RL-PJ, prod snapshot sorento_ai_automation_2026100
 - Q3 = (a): no cancelled-sibling lookup.
 - Q5: the owner wants the cancelled sheet lines' delivery date backfilled ("a way to backfill
   from manually side maybe? or you can process the sheet to backfill? i think we had a script").
-  Handled as an owner-gated crew step with the import service's delivery-date repair path
-  (`_resolve_delivery_date_repairs`), dry run on the snapshot first; not part of this PR.
+  The import service's `_resolve_delivery_date_repairs` never writes
+  `sales_order_lines.required_date` and excludes cancelled lines (:754), and no script did, so
+  this PR adds `scripts/backfill_sheet_line_required_date.py`: it reads the sheet with
+  `read_order_inquiry`, keys lines by SO + item code, writes only lines whose sheet rows give
+  exactly one date, lists ambiguous / undated / unmatched, dry run by default, `--apply` only
+  writer, company scope cleared. The prod run stays owner-gated.
 
 ## Design (simplest thing that works)
 
@@ -112,7 +118,7 @@ previous_qty. No sibling-line lookup (Q3 = a).
 - Per-line change log (`SalesOrderLine.__audit_skip__`, `app/models/order.py:710`); AutoCount
   re-pull overwrite in place (`document_ingest_service.py:1486-1534`).
 - Older batches on the SO detail (only the newest batch's row per line, :722).
-- Q5 backfill UPDATE (owner-gated, separate step, SELECT above).
+- The prod `--apply` run of the Q5 script (owner-gated, after merge).
 
 ## Slices and tickets
 
