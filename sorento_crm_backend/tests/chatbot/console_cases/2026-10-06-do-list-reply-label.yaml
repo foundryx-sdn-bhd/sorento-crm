@@ -1,0 +1,69 @@
+# Console case for DO-LIST-REPLY-LABEL (owner, 6 Oct 2026, prod): the quick reply labelled
+# "Delivery order list" under the outstanding summary must answer the detail offer exactly
+# as "1" does, never re-run the summary.
+#
+# `documentation/plans/chatbot/PLAN-do-list-reply-label.md`, UAC AC-DLRL-6.
+#
+# NOT collected by pytest. Run with the REAL parser against a lane stack on the Mac (the
+# cloud sandbox has no parser key):
+#
+#   venv/bin/python scripts/chatbot_console_check.py \
+#       tests/chatbot/console_cases/2026-10-06-do-list-reply-label.yaml --base-url http://127.0.0.1:8000
+#
+# Three turns, one conversation. A is the DO summary with its single-scope offer ("Reply 1
+# for the delivery order list."). B is the TEXT respond.io sends when the quick reply is
+# tapped - the label itself. C is the control, the bare number. B and C must print the same
+# delivery order list; the `parser:` blocks on B and C record what the live parser returns
+# for each (`reference_positions`, `open_question_answer`, `document`), which is the
+# evidence the plan's cause section rests on: B carries BOTH a pick of position 1 and
+# `document: ["DO"]`.
+#
+# Product and contact are the 13 Sep outstanding-report case's own (`SRTWT7445` carries DO
+# rows spanning 2026 on the prod copy; contact 900000008 holds `sales_orders.outstanding`).
+# If the copy has moved on, swap in any product with pending DO lines - the case grades the
+# shape of the reply, not its rows.
+contact: "900000008"
+
+cases:
+  - name: DO-LIST-REPLY-LABEL - quick-reply label answers the detail offer like "1"
+    cold: true
+    turns:
+      # A. The DO-scoped summary and its one-list offer.
+      - text: "SRTWT7445 delivery order outstanding"
+        expect:
+          branch_kind: business_query
+          reply_contains:
+            - "Delivery order outstanding"
+            - "Reply 1 for the delivery order list."
+          no_uuid: true
+          pending_kind: outstanding_detail
+
+      # B. The tapped quick reply, as the text respond.io sends. The LIST, not the summary.
+      - text: "Delivery order list"
+        expect:
+          branch_kind: business_query
+          reply_contains: ["DO Number:"]
+          reply_not_contains: ["By product", "By location", "Reply 1 for the delivery order list."]
+          no_uuid: true
+          pending_kind: outstanding_detail
+          parser:
+            # The declared pick. The live parser (sandbox, 6 Oct 2026, 3 runs) states it
+            # here every time and in `reference_positions` only sometimes (run 1 [1], run
+            # 3 []); `apply._open_pick_answer` reads this object into the positions, so
+            # this is the field that decides and the one graded.
+            open_question_answer: {mode: pick, picked: [1]}
+            # The other half of the cause: the words "delivery order" fill the document
+            # even as the whole message, and that is the field the old code read as a
+            # new scope. Graded so the live run proves it.
+            document: ["DO"]
+
+      # C. The control. Same list as B.
+      - text: "1"
+        expect:
+          branch_kind: business_query
+          reply_contains: ["DO Number:"]
+          reply_not_contains: ["By product", "By location", "Reply 1 for the delivery order list."]
+          no_uuid: true
+          pending_kind: outstanding_detail
+          parser:
+            open_question_answer: {mode: pick, picked: [1]}

@@ -1071,6 +1071,8 @@ class TestParser:
         assert prompt_mod.SEMANTIC_PARSER_PROMPT.removesuffix(
             prompt_mod.MEMORY_ADDENDUM
         ).removesuffix(
+            prompt_mod.TRAP_SPECS_FALLBACK_BLOCK
+        ).removesuffix(
             prompt_mod.REPORT_ASK_ADDENDUM
         ).removesuffix(
             prompt_mod.LOW_STOCK_FILTERS_ADDENDUM

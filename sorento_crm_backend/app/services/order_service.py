@@ -245,14 +245,16 @@ def scope_product_filter(db: Session, value):
 
     Unscoped session -> `value` untouched (byte-identical). Scoped -> a `Product.id`
     subquery of the in-scope products, intersected with `value` when one is given. The brand
-    predicate is explicit (a NULL brand fails the IN, Q1), not left to the ORM criterion.
+    predicate is explicit (`contact_brand_scope.brand_predicate`: per company, a NULL brand
+    fails inside a restricted company, Q1), not left to the ORM criterion.
     """
     from app.models.base import get_brand_scope
+    from app.services.contact_brand_scope import brand_predicate
 
     scope = get_brand_scope(db)
     if not scope:
         return value
-    stmt = select(Product.id).where(Product.brand_id.in_(sorted(scope)))
+    stmt = select(Product.id).where(brand_predicate(scope, Product.brand_id, Product.company_id))
     if has_product_filter(value):
         stmt = stmt.where(Product.id.in_(value))
     return stmt

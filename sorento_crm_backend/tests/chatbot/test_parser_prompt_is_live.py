@@ -35,6 +35,7 @@ from app.services.chatbot_parser_prompt import (
     ACCOUNT_LEDGER_ADDENDUM,
     MEMORY_ADDENDUM,
     REPORT_ASK_ADDENDUM,
+    TRAP_SPECS_FALLBACK_BLOCK,
     LOW_STOCK_FILTERS_ADDENDUM,
     PO_SPO_WAREHOUSE_ADDENDUM,
     QUANTITY_ADDENDUM,
@@ -250,6 +251,10 @@ def _without_growth_r1_addendum(text: str) -> str:
     # chatbot-stock-ask-v2 S3).
     if text.endswith(MEMORY_ADDENDUM):
         text = text[: -len(MEMORY_ADDENDUM)]
+    # STOCK-QTY-PARTIAL-FILL (#1513, 6 Oct 2026): the trap-specs fallback block sits
+    # between LOW_STOCK_FILTERS_ADDENDUM and MEMORY_ADDENDUM (MEMORY stays the tail).
+    if text.endswith(TRAP_SPECS_FALLBACK_BLOCK):
+        text = text[: -len(TRAP_SPECS_FALLBACK_BLOCK)]
     # REPORT-ENGINE slice 1b: REPORT_ASK_ADDENDUM sits between ACCOUNT_LEDGER_ADDENDUM and MEMORY_ADDENDUM.
     if text.endswith(REPORT_ASK_ADDENDUM):
         text = text[: -len(REPORT_ASK_ADDENDUM)]
