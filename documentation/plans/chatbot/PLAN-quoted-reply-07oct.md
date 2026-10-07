@@ -1,6 +1,6 @@
 # PLAN: a quoted reply answers the quoted question (QUOTED-REPLY)
 
-Status: in review, round 5 own-message quotes (owner hand test ruling 7 Oct) building; (owner answered the card 7 Oct 2026: Q1 id route with the photo link fixed on our side, Q2 (a) parser-interpreted, Q3 (a), Q4 (b) any quoted bot message is the context, Q5 (a) all kinds); track: feature L (one migration: `chat_histories.chatbot_turn_id`; backend only, no auth/RBAC change, no new ingest surface, no UI); LEAD pattern (tester -> coder -> reviewer + security-reviewer)
+Status: review clean on 8eb81b25c (reviewer READY, security CLEAR, rounds 1-5), owner hand test on the crew copy pending; (owner answered the card 7 Oct 2026: Q1 id route with the photo link fixed on our side, Q2 (a) parser-interpreted, Q3 (a), Q4 (b) any quoted bot message is the context, Q5 (a) all kinds); track: feature L (one migration: `chat_histories.chatbot_turn_id`; backend only, no auth/RBAC change, no new ingest surface, no UI); LEAD pattern (tester -> coder -> reviewer + security-reviewer)
 
 UAC: `quoted-reply-acceptance-criteria.md` (alongside). Lane: `crew/quoted-reply`, base origin/main e4158ab52.
 
@@ -138,6 +138,10 @@ bubbles. UAC AC-QR-18 to 20. Red-first (vitest + pytest), browser pass at 1280 o
    quoted turn may re-grant access), live console pass, hand test script.
 
 ## Open
+
+Follow-up (reviewer nit, round 5, not blocking): in `_reply_matches` callers, an exact-match pass over
+the candidates before the substring pass, so a whole quoted message of 40+ characters that also appears
+inside a NEWER longer reply resolves to its own turn rather than the newer one.
 
 None blocking. n8n passthrough of the engine turn id on the outgoing save (owner, later) retires the
 text step (iii) for photo replies.
