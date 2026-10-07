@@ -98,3 +98,17 @@ Diagnosis: owner console turns 9c6055fe, 86f4d940, 6887b65b, af58830a, 5afe41b4,
 - AC-HT8-10. A fresh ranking takes no channel from an earlier turn. "which dealer/customer sold the most X" ranks ALL customers, with no
   `Channel Dealer` filter. The channel applies only when the current message names it ("dealer sales", "dealer only"), or on a refine
   of a held ranking that already carries it.
+
+### Round 4 (8 Oct): owner table on v69 / 10e5c9d94 and review findings
+
+- AC-HT8-11. A ranking refine never takes a stale `focus.sales_channel`. Every `sales_ranking` verdict skips the focus channel carry;
+  a refine keeps the channel through the held frame only. Example: after "dealer sales ...", an unfiltered ranking followed by
+  "top 10" stays unfiltered (reviewer blocker, turn_runtime.py:1652-1659).
+- AC-HT8-12. Category words in any language: the parser keeps raw verbatim and puts the English class word in the category
+  entity's `canonical_code` (马桶 -> "water closet", 面盆 -> "wash basin", 水龙头 -> "tap", and the rest of the AC-HT8-9 list).
+  Top selling (turn/apply.py:1487) and the ranking (report_ask.take_words) read a category entity's `canonical_code` before its raw.
+- AC-HT8-13. `sales_channel` is null for "which dealer sold the most X" (dealer is the ranked noun) and for a bare answer
+  ("qty", "数量", "delivered", "已送货"). "这个产品" / "this product" is never an entity: the subject carries.
+- AC-HT8-14. The ranking's clarify lines (period, how many, the unknown-word line) answer in the conversation's language, as the
+  metric and basis questions already do.
+- AC-HT8-15. The ranking refine list's closing line allows the brand/category entity on a brand or category refine.
