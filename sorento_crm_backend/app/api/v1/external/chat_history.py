@@ -123,7 +123,7 @@ def ingest_chat_message(
     chatbot_turn_id: str | None = None
     if str(payload.type or "").lower() == "outgoing":
         try:
-            from app.services.chatbot.quoted import link_outgoing_row
+            from app.services.chat_history_turn_link import link_outgoing_row
 
             chatbot_turn_id = link_outgoing_row(
                 db,
