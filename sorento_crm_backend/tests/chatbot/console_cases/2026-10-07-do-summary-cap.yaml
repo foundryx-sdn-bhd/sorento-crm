@@ -14,7 +14,9 @@
 #
 # Two turns, one conversation. A is the capped summary; B is the bare "1", the full list.
 # `pending_kind` grades since #1515 taught the runner to read `variables.open_question`.
-# Graded green on the sandbox (run console-check-1791331134). The live parser does not read
+# Graded green on the sandbox with the real parser, pending_kind included, on the merged head
+# 742f8d9e (run console-check-1791333810; run 1791331134 graded the reply lines before the
+# merge). The live parser does not read
 # turn A the same way every time (it dropped the document word in 3 of 4 later sandbox runs
 # and asked "Outstanding for which document?" instead; turn A's parse, outside this lane, the
 # same instability #1515 recorded): on such a run answer the scope question with "2" and the

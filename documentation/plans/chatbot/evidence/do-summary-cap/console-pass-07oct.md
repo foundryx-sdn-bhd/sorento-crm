@@ -103,6 +103,25 @@ for it), and "1" re-asked the scope question. Same class of instability #1515 me
 graded green run (1791331134) and the browser pass above are the lane's evidence; the YAML
 keeps the direct two-turn path and says what to do on a detour.
 
+## Final head 742f8d9e (origin/main e4158ab5 merged: #1515, #1516, #1502)
+
+Backend, MCP server and `next dev` restarted on the merged checkout; same seed, same contact.
+
+Graded run `console-check-1791333810`, real parser, every expectation green INCLUDING the two
+`pending_kind: outstanding_detail` lines (the runner reads `variables.open_question` since
+#1515): turn A the capped summary (20 rows, `... and 6 more products (reply 1 for the full
+list)`, `Reply 1 for the delivery order list.`), turn B the nine-row DO list.
+
+Browser pass, same navigation (sidebar from `/`, System > Messaging > Chatbot Console, contact
+"Cap Dealer", Reset):
+
+| Step | Action | Expected | Result |
+|---|---|---|---|
+| 1 | type `CAP HARDWARE delivery order outstanding` | the DO summary + offer | PASS via the detour: the live parser read a bare outstanding ask and the bot asked "Outstanding for which document?" with chips Sales orders / Delivery orders / Both |
+| 2 | tap the chip `Delivery orders` | the capped DO summary + offer + chip | PASS: `Delivery orders: 9`, By product `SRTWC9001: 12 (O/S: 12)` ... `SRTWC9020: 1 (O/S: 1)`, `... and 6 more products (reply 1 for the full list)`, `Reply 1 for the delivery order list.`, chip `Delivery order list`; SRTWC9021 absent |
+| 3 | type `1` | the full DO list, no cap, no trailer | PASS: nine `DO Number` rows, no `By product`, no `more products`, no offer line repeated |
+| 4 | 375 x 812 viewport | nothing clipped, no horizontal scroll | PASS: `scrollWidth` 360 at `innerWidth` 375, trailer box left 28 / right 260 inside the bubble, wraps to two lines |
+
 ## Sandbox notes
 
 - The parser's own 20 s timeout hit the first browser send (one of 5 live calls in this
