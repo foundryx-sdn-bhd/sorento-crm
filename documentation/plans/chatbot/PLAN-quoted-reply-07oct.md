@@ -1,6 +1,6 @@
 # PLAN: a quoted reply answers the quoted question (QUOTED-REPLY)
 
-Status: review clean on 8eb81b25c (reviewer READY, security CLEAR, rounds 1-5), owner hand test on the crew copy pending; (owner answered the card 7 Oct 2026: Q1 id route with the photo link fixed on our side, Q2 (a) parser-interpreted, Q3 (a), Q4 (b) any quoted bot message is the context, Q5 (a) all kinds); track: feature L (one migration: `chat_histories.chatbot_turn_id`; backend only, no auth/RBAC change, no new ingest surface, no UI); LEAD pattern (tester -> coder -> reviewer + security-reviewer)
+Status: review clean on e7784245e (reviewer READY, security CLEAR; rounds 1-6 incl. own-message quotes, chunked replies, trace drawer nested facts), owner final retest on the crew copy pending, then merge; (owner answered the card 7 Oct 2026: Q1 id route with the photo link fixed on our side, Q2 (a) parser-interpreted, Q3 (a), Q4 (b) any quoted bot message is the context, Q5 (a) all kinds); track: feature L (one migration: `chat_histories.chatbot_turn_id`; backend only, no auth/RBAC change, no new ingest surface, no UI); LEAD pattern (tester -> coder -> reviewer + security-reviewer)
 
 UAC: `quoted-reply-acceptance-criteria.md` (alongside). Lane: `crew/quoted-reply`, base origin/main e4158ab52.
 
@@ -197,3 +197,4 @@ stock?", source: contact}; bot bubble reply_to {id: bot-492b76c2-...-0, text: "H
 WDI-K301-D?", source: n8n}. D: the trace drawer rendered the nested `quoted_turn` fact as
 "[object Object]" (defect, fixed in round 6: readable key: value rendering of nested facts,
 TurnDetailDrawer.tsx). Screenshot `evidence/quoted-reply-console-own-1280.png`.
+Re-read on e7784245e: the fact reads "via: own, found: true, turn_id: 9380, same_as_live: false".
