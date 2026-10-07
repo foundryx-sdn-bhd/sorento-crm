@@ -91,6 +91,27 @@ def test_the_list_fragment_addendum_states_the_rule():
     assert addendum.endswith("\n") and not addendum.endswith("\n\n")
 
 
+def test_the_list_fragment_addendum_states_the_bare_number_rule():
+    """Hand test #1513 step 5 on the real parser (crew, 7 Oct 2026, v60 and v63): a bare
+    "10" over seven owed lines came back `fill` on position 1, so only line 1 was answered.
+    Q3 (a) (26 Sep F2) is one number for EVERY line still owed: mode null, demand_qty the
+    number, the engine fills the owed slots (`task.py` `_number(verdict["demand_qty"])`)."""
+    addendum = tp.list_addendum_text()
+    for needle in (
+        "A BARE NUMBER on its own",
+        "lines are still owed",
+        "demand_qty that",
+        'NEVER "fill" on line 1',
+        "-> mode null, items [], demand_qty 10",
+        "Only ONE line still owed",
+        '"10 for all" -> "all", qty_for_all 10',
+    ):
+        assert needle in addendum, needle
+    patched = tp.patched_text()
+    assert patched.count("A BARE NUMBER on its own") == 1
+    assert patched.index("A BARE NUMBER on its own") < patched.index(tp.LIST_ANCHOR)
+
+
 def test_the_patched_text_keeps_the_block_structure():
     text = tp.patched_text()
     prod = tp.prod_text()

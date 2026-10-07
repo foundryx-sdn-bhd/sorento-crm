@@ -26,7 +26,7 @@ def _turns(case: dict) -> list[dict]:
 def test_the_file_parses_and_every_case_is_live_only() -> None:
     doc = _load()
     assert doc["contact"] == "550337739"
-    assert len(doc["cases"]) == 10, [c.get("name") for c in doc["cases"]]
+    assert len(doc["cases"]) == 11, [c.get("name") for c in doc["cases"]]
     for case in doc["cases"]:
         assert case.get("live_only") is True, case.get("name")
         assert case.get("cold") is True, case.get("name")
@@ -40,7 +40,14 @@ def test_every_graded_turn_names_its_spec_entities() -> None:
             assert turn.get("text"), case.get("name")
             parser = (turn.get("expect") or {}).get("parser") or {}
             entities = parser.get("entities")
-            assert isinstance(entities, list) and entities, case.get("name")
+            assert isinstance(entities, list), case.get("name")
+            # A bare quantity over the owed lines (step 5) pins `demand_qty` and an EMPTY
+            # entity list: the number is a quantity for every line still owed, never an
+            # entity. Every other graded turn names at least one entity.
+            if not entities:
+                assert parser.get("demand_qty"), case.get("name")
+                assert parser.get("open_question_answer") == {"mode": None}, case.get("name")
+                continue
             for entity in entities:
                 assert entity.get("hint"), (case.get("name"), entity)
                 if entity["hint"] == "specification":

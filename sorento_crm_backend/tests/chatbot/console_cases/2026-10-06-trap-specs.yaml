@@ -199,3 +199,22 @@ cases:
               - hint: "specification"
                 spec_key: "trap_type"
                 spec_value: "p_trap"
+
+  - name: a bare number over several owed lines is the quantity for every line still owed (Q3 (a), hand test step 5)
+    cold: true
+    live_only: true
+    turns:
+      - text: "Any WC with s trap 300mm available?"
+      - text: "8357 x 10"
+      - text: "10"
+        expect:
+          parser:
+            # One number, no line, no code, no "all", several lines still owed: the
+            # quantity for every owed line (mode null, demand_qty), never "fill" on line
+            # 1 alone (crew's v60 and v63 runs of 7 Oct 2026 answered CWC7603-SH-300 only).
+            entities: []
+            demand_qty: 10
+            open_question_answer:
+              mode: null
+          reply_not_contains:
+            - "How many units"
