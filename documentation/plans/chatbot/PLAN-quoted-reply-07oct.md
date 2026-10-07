@@ -141,3 +141,21 @@ bubbles. UAC AC-QR-18 to 20. Red-first (vitest + pytest), browser pass at 1280 o
 
 None blocking. n8n passthrough of the engine turn id on the outgoing save (owner, later) retires the
 text step (iii) for photo replies.
+
+## Browser evidence run (agent-browser, crew copy :3114 on 4e2c2c16e, 7 Oct 2026, 1280 wide)
+
+Login, sidebar System > Messaging > Chatbot Console, contact 487555417, Reset. Then:
+1. "check stock WDI-K5130" -> "How many units of WDI-K5130?"
+2. "check stock WDI-K301-D" -> "How many units of WDI-K301-D?"
+3. "Reply to" combobox above the message box: clearable, bot replies newest first, no UUIDs, no greeting lines.
+4. Reply to = the K5130 question, "1 unit" -> "WDI-K5130 x 1: the quantity is more than what I can confirm here..."
+   (no K301-D); the quoted question shows above "1 unit"; picker empty after the send.
+   POST /api/v1/system/chatbot/console/turn body carried reply_to {id: bot-96b4574d-...-0, text: "How many
+   units of WDI-K5130?"}.
+5. Reply to = the K301-D question, "1 unit" -> "WDI-K301-D x 1: ...".
+6. Reset; "SRTBF11841 eta" -> "SRTBF11841: No ETA ..."; "Do you have stock of SRTWC201" -> "How many units of
+   SRTWC201?"; Reply to = the "SRTBF11841: No ETA" bubble, "have stock?" -> "Carrying on from Wed 7 Oct:
+   incoming stock for SRTBF11841. How many units of SRTBF11841?" (not SRTWC201).
+7. Unquoted sends carried no reply_to key. Console and error listings empty.
+Screenshots: `evidence/quoted-reply-console-1280.png` (after step 4), `evidence/quoted-reply-console-375.png`
+(composer with the picker, nothing clips).
