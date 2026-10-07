@@ -1,5 +1,10 @@
 # DO-SUMMARY-CAP console pass (cloud sandbox, 7 Oct 2026)
 
+> R2 (7 Oct 2026): the replies below carry the first cut's trailer, `(reply 1 for the full
+> list)`. The owner's hand test read that line above `Reply 1 for the delivery order list.` as
+> two offers; the trailer now says `(reply 1 for the delivery order list)` (and `... for the
+> sales order list` under an SO block). The R2 run is `console-pass-r2-07oct.md`.
+
 The prod journey replayed against the REAL backend (engine, lane, MCP hop, outstanding report
 route, the changed presenter) and the REAL parser (the sandbox proxy carries the OpenAI
 credential; `harness/run_backend.py` stubs storage only). Blank bootstrapped database
