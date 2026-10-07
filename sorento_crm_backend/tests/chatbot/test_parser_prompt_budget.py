@@ -42,6 +42,7 @@ from app.services.chatbot_parser_prompt import (
     LAST_COST_ADDENDUM,
     LOW_STOCK_ADDENDUM,
     MEMORY_ADDENDUM,
+    TRAP_SPECS_FALLBACK_BLOCK,
     SALES_REPORT_ADDENDUM,
     SEMANTIC_PARSER_PROMPT,
 )
@@ -107,7 +108,25 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # LOW_STOCK_FILTERS and MEMORY and takes the prompt without MEMORY_ADDENDUM to 45,757 est.
 # tokens and the whole prompt to 46,273; CEILING is 46,273 - 512 = 45,761 so both
 # assertions hold. A genuine new addendum the owner ruled must land, per the rule above.
-CEILING = 45_761
+# Ninth re-pin, 6 Oct 2026 (STOCK-QTY-PARTIAL-FILL, PR #1513, owner: "this is 80% of our
+# problem"): TRAP_SPECS_FALLBACK_BLOCK (the trap-specs and list-fragment addenda, the same
+# text as the committed `chatbot_semantic_parser.trap-specs.patch` crew sequences onto the
+# live version; the code fallback carries it so a fresh install's v1 teaches the rules) sits
+# between LOW_STOCK_FILTERS_ADDENDUM and MEMORY_ADDENDUM: 46,595 without MEMORY_ADDENDUM
+# (+1,624) and 47,110 with it; CEILING is 47,110 - 512 = 46,598 so both assertions hold.
+# Since PROMPT-DYNAMIC (#1405) the live parser runs the owner's published text, not this
+# constant, so production grows by the two addenda alone. Nothing else grew.
+# Tenth re-pin, 7 Oct 2026 (STOCK-QTY-PARTIAL-FILL R2, same PR): the list-fragment addendum
+# gains the bare-number rule (crew's real-parser runs on v60 and v63 read "10" over seven owed
+# lines as a fill on line 1; Q3 (a) is one number for every line still owed): 46,996 without
+# MEMORY_ADDENDUM (+401) and 47,511 with it; CEILING is 47,511 - 512 = 46,999 so both
+# assertions hold. Nothing else grew.
+# Eleventh re-pin, 7 Oct 2026 (RESOLVE-SEMANTIC-FALLBACK merged over STOCK-QTY-PARTIAL-FILL R2):
+# both addenda in the constant (CANONICAL_CODE_ADDENDUM after LOW_STOCK_FILTERS, then
+# TRAP_SPECS_FALLBACK_BLOCK, MEMORY the tail) measure 47,782 without MEMORY_ADDENDUM (+786,
+# the canonical-code addendum alone) and 48,297 with it; CEILING is 48,297 - 512 = 47,785 so
+# both assertions hold. Nothing else grew.
+CEILING = 47_785
 # The memory addendum on its own, bounded separately so this PR's growth stays bounded.
 # 26 Sep baseline (lane d89110c0): 339 est. tokens. Round 4 (baf4c813, 28 Sep: the history
 # question in any wording, the number re-run, commercial_request) took it to 512, which is

@@ -493,6 +493,48 @@ def test_a_customer_hinted_token_is_not_asked_when_narrowing_changes_the_token_c
     assert rows["ZZAHHOCKTRADING"]["matches"] == []
 
 
+def test_a_token_left_alone_by_the_spec_narrowing_keeps_its_typed_text_for_the_reader(db, monkeypatch):
+    """`narrow_code_tokens_by_specs` (#1513, merged over this lane) is a second narrowing
+    step on the route and used to drop the whole `raw_tokens` list exactly as the first one
+    did before the reviewer's 9b6a09f2 finding. Both steps now share one carry: the token the
+    specs left alone keeps its typed text and is read; the code the specs replaced by its
+    variants has none and is not asked; a customer-hinted token keeps none either."""
+    from app.api.v1.system.references import ResolveReferenceRequest, resolve_reference_post
+    from app.services import product_code_family, resolver_code_reader
+    from app.services.resolver_code_reader import CodeReading
+
+    monkeypatch.setattr(product_code_family, "narrow_code_tokens", lambda db_, **kw: None)
+    monkeypatch.setattr(
+        product_code_family, "narrow_code_tokens_by_specs",
+        lambda db_, **kw: ["ZZAHHOCKTRADING", "ZZTWC8066-RL", "ZZTWC8066-SH", "TAPZZTWT5608"],
+    )
+    asked: list[Any] = []
+
+    def fake_read_codes(db_, missed, **kw):
+        asked.append(list(missed))
+        return {tok: CodeReading("code", TAP) for tok, _ in missed}
+
+    monkeypatch.setattr(resolver_code_reader, "read_codes", fake_read_codes)
+    payload = ResolveReferenceRequest(
+        query="ZZ Ah Hock Trading\nZZTWC8066\nTAP ZZTWT5608 x 5",
+        tokens=["ZZAHHOCKTRADING", "ZZTWC8066", "TAPZZTWT5608"],
+        raw_tokens=["ZZ Ah Hock Trading", "ZZTWC8066", "TAP ZZTWT5608"],
+        allowed_entity_types=["customer", "product", "product"],
+        extracted_specs=[{"key": "trap_type", "value": "P"}],
+        match_mode="or", fallback_to_all_types=False, limit=15, dry_run=True,
+    )
+    out = resolve_reference_post(payload, current_user={"id": None}, db=db)
+
+    rows = {r["token"]: r for r in out["resolutions"]}
+    assert len(rows) == 4, sorted(rows)
+    assert asked == [[("TAPZZTWT5608", "TAP ZZTWT5608")]], asked
+    assert rows["TAPZZTWT5608"]["fallback"] == {"asked": True, "kind": "code", "value": TAP, "matched": 1}
+    assert rows["ZZAHHOCKTRADING"]["fallback"] == {
+        "asked": False, "kind": "not_asked", "reason": "no_typed_text",
+    }
+    assert "fallback" not in rows["ZZTWC8066-RL"]
+
+
 def test_the_route_asks_once_even_when_it_reruns_the_unresolved_tokens(db):
     """`fallback_to_all_types` re-runs the tokens still unresolved against every type
     (`references._resolve_input`'s cross-type pass, which calls `resolve_references`

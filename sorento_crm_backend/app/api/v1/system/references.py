@@ -2862,6 +2862,38 @@ def _emit_spec_matches(
     ]
 
 
+def _typed_text_after_narrowing(
+    payload: "ResolveReferenceRequest", narrowed: list[str]
+) -> list[str] | None:
+    """The `raw_tokens` list for a token list a narrowing step produced.
+
+    RESOLVE-SEMANTIC-FALLBACK (reviewer on 9b6a09f2): a token narrowing left as it was
+    keeps its typed text, so the code reader can still read a code out of it; dropping
+    the whole `raw_tokens` list made every other token of a mixed multi-line turn
+    `not_asked / no_typed_text`. A token narrowing replaced (the variant codes its words
+    or specs picked) has no typed text of its own and is not asked; a token typed twice
+    keeps its last line's text, the resolver's own rule.
+
+    Narrowing that changes the token COUNT also turns off the resolver's per-token hint
+    pairing (`allowed_entity_types` keeps its old length), so the only hint gate left is
+    this carry: a token the caller typed as a customer or a brand keeps no typed text and
+    is never put to the reader as a product question (security-reviewer on 5839705b).
+    Shared by `narrow_code_tokens` and `narrow_code_tokens_by_specs` (#1513).
+    """
+    if not (payload.tokens and payload.raw_tokens and len(payload.raw_tokens) == len(payload.tokens)):
+        return None
+    hinted = (
+        list(payload.allowed_entity_types)
+        if payload.allowed_entity_types and len(payload.allowed_entity_types) == len(payload.tokens)
+        else None
+    )
+    typed_by_token = {
+        tok: (raw if hinted is None or _canonical_entity_type(hinted[idx] or "") in ("", "product") else "")
+        for idx, (tok, raw) in enumerate(zip(payload.tokens, payload.raw_tokens))
+    }
+    return [typed_by_token.get(tok, "") for tok in narrowed]
+
+
 @router.post("/resolve")
 def resolve_reference_post(
     payload: ResolveReferenceRequest,
@@ -2879,32 +2911,41 @@ def resolve_reference_post(
         db, query=payload.query or "", tokens=payload.tokens, allowed_types=payload.allowed_entity_types
     )
     if narrowed is not None:
-        # RESOLVE-SEMANTIC-FALLBACK (reviewer on 9b6a09f2): a token narrowing left as it
-        # was keeps its typed text, so the code reader can still read a code out of it;
-        # dropping the whole `raw_tokens` list here made every other token of a mixed
-        # multi-line turn `not_asked / no_typed_text`. A token narrowing replaced (the
-        # variant codes its words picked) has no typed text of its own and is not asked;
-        # a token typed twice keeps its last line's text, the resolver's own rule.
-        # Narrowing that changes the token COUNT also turns off the resolver's per-token
-        # hint pairing (`allowed_entity_types` keeps its old length), so the only hint
-        # gate left is this carry: a token the caller typed as a customer or a brand keeps
-        # no typed text and is never put to the reader as a product question
-        # (security-reviewer on 5839705b).
-        hinted = (
-            list(payload.allowed_entity_types)
-            if payload.allowed_entity_types and len(payload.allowed_entity_types) == len(payload.tokens)
-            else None
+        payload = payload.model_copy(
+            update={"tokens": narrowed, "raw_tokens": _typed_text_after_narrowing(payload, narrowed)}
         )
-        typed_by_token = (
-            {
-                tok: (raw if hinted is None or _canonical_entity_type(hinted[idx] or "") in ("", "product") else "")
-                for idx, (tok, raw) in enumerate(zip(payload.tokens, payload.raw_tokens))
-            }
-            if payload.tokens and payload.raw_tokens and len(payload.raw_tokens) == len(payload.tokens)
-            else {}
+    # STOCK-QTY-PARTIAL-FILL, owner ruling Q4 (a) (6 Oct 2026): a spec said right after a
+    # product answer ("How about p trap" after SRTWC286-SH) is that product's variant. The
+    # parser carries the product (`entity_op "reuse"`) and the grounded spec arrives as
+    # `extracted_specs`; the code's family is narrowed by those VALUES, since the words are
+    # not beside the code in the message for `narrow_code_tokens` to read. A token the
+    # narrowing replaced loses its pin (the pin named the typed token, not its variant);
+    # every other pin is kept. Pin keys are matched the way the resolver matches them
+    # (`_pin_key_norm`: stripped, case-blind), so a pin on an untouched token whose key
+    # differs from the token only in case survives (security review note 1, 6 Oct 2026).
+    if payload.extracted_specs and payload.tokens:
+        from app.services.entity_resolver import _pin_key_norm
+        from app.services.product_code_family import narrow_code_tokens_by_specs
+
+        by_specs = narrow_code_tokens_by_specs(
+            db,
+            tokens=payload.tokens,
+            allowed_types=payload.allowed_entity_types,
+            specs=payload.extracted_specs,
         )
-        carried = [typed_by_token.get(tok, "") for tok in narrowed] if typed_by_token else None
-        payload = payload.model_copy(update={"tokens": narrowed, "raw_tokens": carried})
+        if by_specs is not None:
+            kept = {_pin_key_norm(t) for t in by_specs}
+            replaced = {_pin_key_norm(t) for t in payload.tokens} - kept
+            pins = {
+                k: v for k, v in (payload.entity_pins or {}).items() if _pin_key_norm(k) not in replaced
+            } or None
+            payload = payload.model_copy(
+                update={
+                    "tokens": by_specs,
+                    "raw_tokens": _typed_text_after_narrowing(payload, by_specs),
+                    "entity_pins": pins,
+                }
+            )
     # A contact's packing list regions (unresolved = West) bound the shipments it can be
     # shown; no contact_id = no filter.
     regions = None
