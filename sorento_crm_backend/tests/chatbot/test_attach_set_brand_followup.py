@@ -417,6 +417,89 @@ def test_the_pages_own_brand_beside_a_document_word_still_reads_about_the_listed
     assert "Couldn't find" not in third and "•" not in third, third
 
 
+def _turn_3_echo_and_document_word(codes: list[str]) -> dict[str, Any]:
+    """"pic" as the live parser also read it: a few of the listed codes echoed back as the
+    carried subject (`current_message: false`, the prompt's CONTINUE rule) beside the
+    document word."""
+    from tests.chatbot.test_engine import _parser_output
+
+    return _parser_output(
+        intent_hint="check_product_attachment",
+        domain_hint="product_attachment",
+        match_mode="and",
+        user_goal="pic",
+        entities=[*({**_entity(c, "product", c), "current_message": False} for c in codes), _entity("pic", "attachment_type", "photo")],
+        entity_op="reuse",
+    )
+
+
+def _turn_3_brand_only(brand: str) -> dict[str, Any]:
+    """"they got pic/" as the live parser read it on another run: the page's brand and
+    nothing else, `replace_combine`."""
+    from tests.chatbot.test_engine import _parser_output
+
+    return _parser_output(
+        intent_hint="check_product_attachment",
+        domain_hint="product_attachment",
+        match_mode="and",
+        user_goal="they got pic",
+        entities=[_entity(brand, "brand", brand)],
+        entity_op="replace_combine",
+    )
+
+
+def test_echoed_listed_codes_beside_a_document_word_do_not_narrow_the_listed_taps(chat, world, small_list):
+    """Live console pass (7 Oct 2026): the parser echoed some of the listed codes as its
+    own entities; re-resolving them re-settled the focus to that handful, so the photos
+    came back for two taps of the fifty. An echo of a settled row is the carry restated."""
+    chat.say("which tap has technical drawing", _turn_1())
+    chat.say(world["sorento"].brand_name.lower(), _turn_2_brand(world["sorento"].brand_name.lower()))
+    listed = list(chat.attachment_calls()[1].get("product_ids") or [])
+    by_id = {p.id: p.product_code for p in world["srt_taps"]}
+    echoed = [by_id[i] for i in listed[:2]]
+
+    third = chat.say("pic", _turn_3_echo_and_document_word(echoed))
+
+    calls = chat.attachment_calls()
+    assert len(calls) == 3, chat.calls
+    assert set(calls[2].get("product_ids") or []) == set(listed), (calls[2], listed)
+    assert calls[2].get("attachment_type_ids") == [world["photo"].id], calls[2]
+    assert _row_types(third) == [PHOTO] * 3, third
+
+
+def test_the_pages_brand_alone_keeps_the_listed_taps_for_the_document_word_that_follows(chat, world, small_list):
+    """Live console pass (7 Oct 2026): "they got pic/" read as the brand alone dropped the
+    listed rows (a new ask starts fresh), so "pic" after it had no subject and rendered a
+    blank header. The page's own brand alone restates the subject."""
+    chat.say("which tap has technical drawing", _turn_1())
+    chat.say(world["sorento"].brand_name.lower(), _turn_2_brand(world["sorento"].brand_name.lower()))
+    listed = set(chat.attachment_calls()[1].get("product_ids") or [])
+
+    chat.say("they got pic/", _turn_3_brand_only(world["sorento"].brand_name))
+    for call in chat.attachment_calls()[2:]:
+        assert set(call.get("product_ids") or []) <= listed, call
+    fourth = chat.say("pic", _turn_3_document_word("pic", "photo"))
+
+    last = chat.attachment_calls()[-1]
+    assert set(last.get("product_ids") or []) == listed, (last, listed)
+    assert last.get("attachment_type_ids") == [world["photo"].id], last
+    assert _row_types(fourth) == [PHOTO] * 3, fourth
+
+
+def test_the_subject_line_names_a_few_of_many_settled_products():
+    """Live console pass (7 Oct 2026): fifty listed codes on the subject line made the
+    parser echo fifty entities and overflow its token cap."""
+    from app.services.chatbot.head.parser import SUBJECT_NAMES_CAP, current_subject_line
+    from app.services.chatbot.turn.state import Focus
+
+    rows = [{"raw": f"ZZT-{i:02d}", "hint": "product", "canonical_code": f"ZZT-{i:02d}", "uuid": str(uuid.uuid4())} for i in range(50)]
+    line = current_subject_line(Focus(products=rows, domains=["product_attachment"]))
+    assert line is not None and f"ZZT-{SUBJECT_NAMES_CAP - 1:02d}" in line and f"(and {50 - SUBJECT_NAMES_CAP} more)" in line, line
+    assert f"ZZT-{SUBJECT_NAMES_CAP:02d}" not in line, line
+    short = current_subject_line(Focus(products=rows[:3]))
+    assert short == "Current subject: product ZZT-00, ZZT-01, ZZT-02.", short
+
+
 # --------------------------------------------------------------------------- #
 # AC-3: the count answer                                                        #
 # --------------------------------------------------------------------------- #

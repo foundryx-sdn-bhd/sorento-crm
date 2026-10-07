@@ -661,6 +661,10 @@ def _subject_names(rows: Any) -> list[str]:
     return names
 
 
+#: How many names one axis of the "Current subject" line prints before "(and N more)".
+SUBJECT_NAMES_CAP = 5
+
+
 def current_subject_line(focus: Any) -> str | None:
     """"Current subject: ..." - what the conversation is about, on one line, or None.
 
@@ -682,6 +686,12 @@ def current_subject_line(focus: Any) -> str | None:
         ("document", getattr(focus, "document", None)),
     ):
         names = _subject_names(rows)
+        if len(names) > SUBJECT_NAMES_CAP:
+            # ATTACH-SET-BRAND-FOLLOWUP round 2 (live console pass, 7 Oct 2026): a set page
+            # settles every listed row on the focus, fifty of them, and the model echoed all
+            # fifty back as entities, past `PARSER_MAX_TOKENS` (the turn then failed on
+            # truncated JSON). The subject line names the subject, never every row.
+            names = names[:SUBJECT_NAMES_CAP] + [f"(and {len(names) - SUBJECT_NAMES_CAP} more)"]
         if names:
             parts.append(f"{label} {', '.join(names)}")
     status = getattr(focus, "status", None)

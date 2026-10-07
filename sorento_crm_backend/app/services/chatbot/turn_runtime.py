@@ -3504,10 +3504,14 @@ def with_brand_of_the_page(verdict: dict[str, Any], *, carried: Any) -> dict[str
     page_brand = str((carried.get("set_key") or {}).get("brand") or "").strip().lower()
     if not page_brand:
         return verdict
-    own = [e for e in verdict.get("entities") or [] if isinstance(e, dict) and e.get("current_message") is True]
-    brands = [e for e in own if str(e.get("hint") or "").strip().lower() == "brand"]
-    rest = [e for e in own if e not in brands]
-    if not brands or not rest:
+    # The brand word typed again (`current_message: true`) and the brand the parser echoes
+    # as the carried subject (`current_message: false`, the prompt's CONTINUE rule) are one
+    # restatement; beside a document word the echo turned `match_mode: and` into an
+    # intersection of "Sorento" and "photo" that placed neither (live pass, 7 Oct 2026).
+    entities = [e for e in verdict.get("entities") or [] if isinstance(e, dict)]
+    brands = [e for e in entities if str(e.get("hint") or "").strip().lower() == "brand"]
+    rest = [e for e in entities if e not in brands and e.get("current_message") is True]
+    if not brands:
         return verdict
     if any(str(e.get("hint") or "").strip().lower() != "attachment_type" for e in rest):
         return verdict
@@ -3776,6 +3780,48 @@ def _with_carried_document_types(parse_output: dict[str, Any], focus: Focus) -> 
 #: handed to the resolver. `resolve_gate.resolve_entity_body` reads it: a turn about
 #: settled products describes no set, so it sends no `require` leg.
 SUBJECT_SETTLED_KEY = "subject_settled"
+
+
+def without_restated_rows(verdict: dict[str, Any], focus: Focus) -> dict[str, Any]:
+    """The verdict without the parser's ECHOES of rows the focus already holds settled.
+
+    ATTACH-SET-BRAND-FOLLOWUP round 2 (live console pass, 7 Oct 2026): the parser echoes
+    the carried subject back as its own entities (`current_message: false`, the prompt's
+    own CONTINUE rule). After a page settled fifty rows it echoed a few of their codes;
+    `apply._focus_rules` then REPLACED the product axis with those unsettled copies
+    (replace_same_axis), and the answer ran over that handful of the fifty: the owner's
+    two-id run, one mechanism of it. A row the focus already holds settled (same code, a
+    uuid) is the carry restated, not a word to look up or an axis to rewrite, so it is
+    dropped from the verdict before `apply` reads it. A single settled product echoed back
+    is the same case with nothing lost: the settled row stays, one lookup fewer."""
+    entities = [e for e in verdict.get("entities") or [] if isinstance(e, dict)]
+    restated = [e for e in entities if _restates_a_settled_row(e, focus)]
+    if not restated:
+        return verdict
+    return {**verdict, "entities": [e for e in verdict.get("entities") or [] if not (isinstance(e, dict) and e in restated)]}
+
+
+def _restates_a_settled_row(entity: dict[str, Any], focus: Focus) -> bool:
+    """Is this parser entity an ECHO of a row the focus already holds settled: carried
+    (`current_message: false`), of a kind the focus has a field for, with a focus row of
+    that kind carrying a uuid and the same code? (`without_restated_rows`)"""
+    from app.services.chatbot.turn.state import token_key
+
+    if entity.get("current_message") is not False:
+        return False
+    kind = str(entity.get("hint") or "").strip().lower()
+    attr = KIND_FIELD_MAP.get(kind)
+    if not attr:
+        return False
+    code = token_key(entity.get("canonical_code") or entity.get("raw"))
+    if not code:
+        return False
+    for row in getattr(focus, attr, None) or []:
+        if not isinstance(row, dict) or not row.get("uuid"):
+            continue
+        if code in {token_key(row.get("canonical_code")), token_key(row.get("raw"))}:
+            return True
+    return False
 
 
 def with_carried_entities(
