@@ -183,3 +183,17 @@ Login, sidebar System > Messaging > Chatbot Console, contact 487555417, Reset. T
 7. Unquoted sends carried no reply_to key. Console and error listings empty.
 Screenshots: `evidence/quoted-reply-console-1280.png` (after step 4), `evidence/quoted-reply-console-375.png`
 (composer with the picker, nothing clips).
+
+## Browser evidence run 2 (crew copy :3114 on 591512eaf, 7 Oct 2026, 1280 wide, own-message quote)
+
+Same login and route. A: two quantity asks, the picker now lists the customer's own messages interleaved with
+the bot's (newest first: "How many units of WDI-K301-D?", "check stock WDI-K301-D", "How many units of
+WDI-K5130?", "check stock WDI-K5130"); quoting the older bot question with "1 unit" answers WDI-K5130 x 1,
+picker cleared. B: Reset; "SRTBF11841 have stock?" -> "How many units of SRTBF11841?"; "check stock
+WDI-K301-D" -> its question; Reply to = the OWN message "SRTBF11841 have stock?" + "and eta?" ->
+"SRTBF11841: No ETA. Please refer to your salesman." (no WDI-K301-D); the own quoted text shows above
+"and eta?". C: request bodies: own message reply_to {id: console-4c2585f766b4, text: "SRTBF11841 have
+stock?", source: contact}; bot bubble reply_to {id: bot-492b76c2-...-0, text: "How many units of
+WDI-K301-D?", source: n8n}. D: the trace drawer rendered the nested `quoted_turn` fact as
+"[object Object]" (defect, fixed in round 6: readable key: value rendering of nested facts,
+TurnDetailDrawer.tsx). Screenshot `evidence/quoted-reply-console-own-1280.png`.
