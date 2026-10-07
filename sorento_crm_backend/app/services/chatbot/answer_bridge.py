@@ -1630,7 +1630,20 @@ def _miss_triggers(
         and isinstance(fetch_item, Mapping)
         and not fetch_item.get("has_result")
     )
+    if _lane_asked(envelope):
+        # STUCK-QTY-LOOP (crew report 2, 4 Oct 2026, "taiyang only" -> "Could not find
+        # inventory for William"): a lane that asked its OWN required question (the low
+        # stock category ask, `required_fields`) answered the turn with that question. A word the resolver missed on the same turn never
+        # turns it into a miss: the lane's question always outranks the not_found exit.
+        return raw_fragment, fetch_item, (False, False, False)
     return raw_fragment, fetch_item, (via_resolver_exit, via_error_fragment, via_fetched_empty)
+
+
+def _lane_asked(envelope: dict[str, Any] | None) -> bool:
+    """Did the lane end this turn with a required question of its own
+    (`turn_runtime.envelope_of`'s `required_ask`)? `lane_ask` is not read: its
+    `alternatives_ask` is the miss's own did-you-mean roster."""
+    return isinstance(envelope, dict) and isinstance(envelope.get("required_ask"), dict)
 
 
 def answers_a_miss(payload: dict[str, Any], envelope: dict[str, Any] | None) -> bool:

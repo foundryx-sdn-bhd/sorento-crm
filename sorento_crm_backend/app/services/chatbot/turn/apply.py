@@ -32,6 +32,7 @@ from app.services.chatbot.turn.decide import (
     CARRY,
     DOCUMENT_BY_SCOPE,
     NEW_ASK,
+    NEW_INTENT,
     OUTSTANDING_KINDS,
     EVERYTHING,
     FAMILY,
@@ -65,7 +66,13 @@ from app.services.chatbot.turn.state import (
     token_key,
 )
 
-RESET_KEEPS = {"tier", "brands"}
+# STUCK-QTY-LOOP: `frame` too - what the reset turn asks is what the next message is
+# compared against (`turn/held.py::consume`).
+RESET_KEEPS = {"tier", "brands", "frame"}
+
+#: STUCK-QTY-LOOP: the `focus.extra` kinds that belong to the ask they were named in, not
+#: to the subject, so a message of another intent drops them (`_focus_rules`).
+INTENT_OWNED_EXTRA = frozenset({"sales_agent"})
 
 # D6, "domain follows the document": a turn that names a document kind and no domain is
 # about the domain that OWNS that document (SPO belongs to spo_allocation, not incoming,
@@ -409,6 +416,30 @@ def _holds_the_offer(pending: Pending, decision: Decision, verdict: dict[str, An
         or verdict.get("message_type") in ("business_query", "clarification", "request_for_help")
         or verdict.get("entities")
     )
+
+
+def let_question_go(focus: Focus, pending: Pending, verdict: dict[str, Any]) -> None:
+    """What happens to the subject of a question that dies on a new ask (STUCK-QTY-LOOP, the
+    central held rule, `turn/held.py`), the same two readings this module's own outstanding
+    arm makes: a new ask that names its own entity drops the subject the question was asked
+    about (R17, `_drop_question_subject`); one that names none ("got eta", #1262 slice 4 B2)
+    is answered over it, so the question's subject is settled onto the focus and only its own
+    document, status, window and channel go."""
+    if not isinstance((pending.payload or {}).get("filters"), dict):
+        return
+    if any(isinstance(e, dict) and e.get("current_message") is not False for e in verdict.get("entities") or []):
+        _drop_question_subject(focus, pending)
+        return
+    from_offer = replace(focus, products=[], customers=[], warehouse=[], outstanding_brand_ids=[])
+    _settle_question_subject(from_offer, pending, None)
+    focus.products = focus.products or from_offer.products
+    focus.customers = focus.customers or from_offer.customers
+    focus.warehouse = focus.warehouse or from_offer.warehouse
+    focus.outstanding_brand_ids = focus.outstanding_brand_ids or from_offer.outstanding_brand_ids
+    focus.document = []
+    focus.status = None
+    focus.date_window = None
+    focus.sales_channel = None
 
 
 def _drop_question_subject(focus: Focus, pending: Pending) -> None:
@@ -1100,6 +1131,17 @@ def _focus_rules(
         trace.rules_fired.append("replace_same_axis")
     else:
         trace.rules_fired.append("reuse_alive")
+
+    if verdict.get(NEW_INTENT) is True:
+        # STUCK-QTY-LOOP (crew report 2, "taiyang only" -> "Could not find inventory for
+        # William"): a message of another intent does not carry the old ask's own person
+        # axis. Only the kinds in `INTENT_OWNED_EXTRA`: a grounded specification ("cert?"
+        # after "any gunmetal basin has incoming?", #833) is the subject and still carries.
+        # Which other axes an intent owns is the owner's "intent-owned frames" decision.
+        for extra_kind in sorted(INTENT_OWNED_EXTRA & set(focus.extra)):
+            if extra_kind not in by_kind and focus.extra.get(extra_kind):
+                focus.extra[extra_kind] = []
+                trace.rules_fired.append(f"new_intent_drops_{extra_kind}")
 
     asks = verdict.get("asks") or []
     if by_kind:

@@ -1,0 +1,360 @@
+# Held: the ONE rule for every question the bot is holding open (STUCK-QTY-LOOP, owner
+# 4 Oct 2026).
+#
+# Live 4 Oct 02:56-03:00: an availability contact's open stock task replayed "How many
+# units for each? 1. SRTWB1086 - ..." on every message - a low stock report, the switch
+# to compact and "clear" included - because each kind of held question had its own
+# lifecycle and none of them knew about the others' (task.run's RESUME arm took any
+# entity-less inventory message as "back to the stock check"). The owner's rule, for
+# every question or picker the bot can hold:
+#
+#   * a held question captures a reply only when the reply ANSWERS it, read off the
+#     parser's own fields (no keyword rules);
+#   * a message with a different intent that answers nothing is a new question: every
+#     held question goes;
+#   * a reset (`topic_reset`, the parser's "clear" / "never mind") clears them all;
+#   * they expire: `HELD_TTL_TURNS` turns after they last changed;
+#   * a question held under other access (stock mode, escalation, reveals) is dropped.
+#
+# What counts as held is the registry below. `test_held_state.py` fails when a field is
+# added to `Focus` or `State` without being classified here, and when a pending kind is
+# minted that the rule does not know.
+#
+# Pure, like the rest of this package: no I/O. Three seams in `engine.py` call it:
+# `expire` at load (before the parser sees an open question), `consume` once the verdict
+# is read, and `stamp` where the five keys are written.
+from __future__ import annotations
+
+from dataclasses import replace
+from typing import Any, Callable, Mapping
+
+from app.services.chatbot.turn import task as task_mod
+from app.services.chatbot.turn.decide import NEW_INTENT, decide
+from app.services.chatbot.turn.policy_rows import DEFAULT_DOMAIN_ROWS
+from app.services.chatbot.turn.pending import ESCALATION_OFFER_KINDS, OFFER_KINDS, from_wire, is_roster, to_wire
+from app.services.chatbot.turn.state import Focus, State, focus_from_wire
+
+__all__ = [
+    "NEW_INTENT", "HELD_TTL_TURNS", "LOOP_REPLY", "SLOTS", "consume", "expire", "frame_of",
+    "held_slots", "is_a_loop", "let_go", "stamp",
+]
+
+#: Turns a held question survives after it last changed. Escalation offers keep their
+#: own shorter clock (`pending.OFFER_TTL`, 3). Six: a roster picked row by row changes on
+#: every pick, so only a question nobody has touched for six turns lapses.
+HELD_TTL_TURNS = 6
+
+#: The intents the routing table knows (`policy_rows.DEFAULT_DOMAIN_ROWS`, every row's
+#: `intents`). An intent outside it never counts as a change of question.
+KNOWN_INTENTS: frozenset[str] = frozenset(
+    intent for row in DEFAULT_DOMAIN_ROWS for intent in (row.get("intents") or [])
+)
+
+#: The `Focus` fields that hold a question the next message can answer.
+FOCUS_HELD: tuple[str, ...] = ("tasks", "required_ask", "set_page", "set_clarify", "top_selling")
+#: The `Focus` fields that hold no question: the subject and the stamps themselves.
+FOCUS_NOT_HELD: tuple[str, ...] = (
+    "products", "customers", "warehouse", "brands", "outstanding_brand_ids", "tier",
+    "domains", "document", "status", "sales_channel", "date_window", "sort", "extra",
+    "frame", "held_turn", "held_access",
+    # LOWSTOCK-SEMANTIC (#1470): the last settled low stock report's frame, a refinement's
+    # carry for one report; it asks nothing (`engine` clears it each turn).
+    "low_stock",
+)
+#: The `State` fields. `ideation` is the ideate lane's draft pointer: the MCP intake tool
+#: owns it and closes it on the draft's own terminal status (`lanes/ideate.py`), and the
+#: tail writes it from that tool's reply, not from this state - so it is not held here.
+STATE_HELD: tuple[str, ...] = ("pending",)
+STATE_NOT_HELD: tuple[str, ...] = ("focus", "profile", "turn_no", "ideation")
+
+
+def _focus_slot(name: str, empty: Any) -> tuple[Callable[[State], bool], Callable[[Focus], None]]:
+    def is_held(state: State) -> bool:
+        return bool(getattr(state.focus, name))
+
+    def clear(focus: Focus) -> None:
+        setattr(focus, name, empty)
+
+    return is_held, clear
+
+
+#: The keys of `focus.top_selling` that are a QUESTION the ranking asked ("which metric?",
+#: "customer or sales agent?", one short unclear question). The rest of the slot is the
+#: ranking's own axes and its hand-over to the next report (`hop`, the ranked codes), which
+#: a later "outstanding" reads on purpose (top selling rounds 5, 7, 8): not held.
+TOP_SELLING_QUESTION_KEYS = ("asked", "who", "unclear")
+
+
+def _top_selling_question(state: State) -> bool:
+    slot = state.focus.top_selling or {}
+    return any(slot.get(key) for key in TOP_SELLING_QUESTION_KEYS)
+
+
+def _clear_top_selling_question(focus: Focus) -> None:
+    if focus.top_selling:
+        focus.top_selling = {k: v for k, v in focus.top_selling.items() if k not in TOP_SELLING_QUESTION_KEYS} or None
+
+
+#: slot -> (is it held?, clear it on a focus copy). `state.pending` is every kind of open
+#: question at once (`pending.PENDING_KINDS` and every narrower-minted roster): the rule
+#: never reads the kind, so a new kind needs no arm here.
+SLOTS: dict[str, tuple[Callable[[State], bool], Callable[[Focus], None] | None]] = {
+    "state.pending": (lambda state: state.pending is not None, None),
+    "focus.tasks": _focus_slot("tasks", ()),
+    "focus.required_ask": _focus_slot("required_ask", None),
+    "focus.set_page": _focus_slot("set_page", None),
+    "focus.set_clarify": _focus_slot("set_clarify", None),
+    "focus.top_selling": (_top_selling_question, _clear_top_selling_question),
+}
+
+
+def held_slots(state: State) -> list[str]:
+    """The slots holding a question right now."""
+    return [name for name, (is_held, _clear) in SLOTS.items() if is_held(state)]
+
+
+def _cleared(state: State, *, keep_pending: bool = False, verdict: dict[str, Any] | None = None) -> State:
+    focus = replace(state.focus)
+    for _name, (_is_held, clear) in SLOTS.items():
+        if clear is not None:
+            clear(focus)
+    pending = state.pending if keep_pending else None
+    if state.pending is not None and pending is None and verdict is not None:
+        # A question that dies on a new ask leaves its subject as APPLY's own arm would:
+        # dropped when the new ask names its own entity (R17), carried when it names none
+        # ("got eta" over the outstanding scope question, #1262 slice 4 B2).
+        from app.services.chatbot.turn.apply import let_question_go
+
+        let_question_go(focus, state.pending, verdict)
+    if pending is None:
+        focus.held_turn = None
+        focus.held_access = None
+    return replace(state, focus=focus, pending=pending)
+
+
+def expire(state: State) -> tuple[State, str | None]:
+    """At load: drop every held question built under other access, or past its TTL.
+
+    An unstamped held state (written before this rule shipped, or by n8n) is kept and gets
+    stamped on this turn's write: it is judged from then on, never dropped wholesale."""
+    if not held_slots(state):
+        return state, None
+    focus = state.focus
+    current = getattr(state.profile, "access_fp", None)
+    if focus.held_access and current and focus.held_access != current:
+        return _cleared(state), "access_changed"
+    if focus.held_turn is not None and state.turn_no - focus.held_turn > HELD_TTL_TURNS:
+        return _cleared(state), "ttl"
+    return state, None
+
+
+def _answers(state: State, verdict: dict[str, Any]) -> bool:
+    """Does this message answer a held question, by the parser's own fields?
+
+    The parser's declared answer (`open_question_answer`, `answers_open_question`), an
+    escalation offer accepted, declined or picked from, a position or an offered label
+    picked off the open question (`decide`'s ANSWER), or a quantity the stock task claims."""
+    answer = verdict.get("open_question_answer")
+    if isinstance(answer, dict) and answer.get("mode"):
+        return True
+    declared = verdict.get("answers_open_question")
+    if isinstance(declared, dict) and (declared.get("resolved") is True or declared.get("picks")):
+        return True
+    escalation = verdict.get("escalation") if isinstance(verdict.get("escalation"), dict) else {}
+    if state.pending is not None and state.pending.kind in ESCALATION_OFFER_KINDS and (
+        escalation.get("is_escalation_confirmation") is True
+        or escalation.get("escalation_declined") is True
+        or escalation.get("company_pick")
+    ):
+        return True
+    if state.pending is not None and state.pending.kind in OFFER_KINDS and (
+        verdict.get("is_affirmative") is not None or verdict.get("outstanding_offer_declined") is True
+    ):
+        # A yes or a no to an offer (the parser's `is_affirmative`, or its declared decline
+        # of a detail offer) answers that offer, whatever intent rides along with it.
+        return True
+    if state.pending is not None and decide(verdict, state.focus, state.pending).answers:
+        return True
+    for task in state.focus.tasks or ():
+        impl = task_mod.TASK_KINDS.get(task.kind)
+        if (
+            impl is not None
+            and task.status != task_mod.ANSWERED
+            and impl.claims(verdict)
+            and task_mod._only_task_slots(task, verdict, allow_quantities=True)
+        ):
+            return True
+    return False
+
+
+def _answers_only_by_pick(pending: Any) -> bool:
+    """Does this open question accept nothing but a pick off its own options?"""
+    return pending is not None and (pending.kind in ESCALATION_OFFER_KINDS or is_roster(pending.kind))
+
+
+def frame_of(verdict: dict[str, Any]) -> dict[str, str]:
+    """What this message ASKS, by the parser's own fields: its intent (one the routing table
+    knows; `intent_hint` is a free phrase and a synonym is not a new ask), its domain and its
+    order status ("outstanding", "top_selling", "sales_report" all share `check_order`, so
+    the status is what tells them apart). Only what the parser stated."""
+    frame: dict[str, str] = {}
+    intent = verdict.get("intent_hint")
+    if isinstance(intent, str) and intent in KNOWN_INTENTS:
+        frame["intent"] = intent
+    domain = verdict.get("domain_hint")
+    if isinstance(domain, str) and domain:
+        frame["domain"] = domain
+    status = verdict.get("status") or verdict.get("order_status")
+    if isinstance(status, str) and status:
+        frame["status"] = status
+    return frame
+
+
+def consume(
+    state: State, verdict: dict[str, Any], *, answered: list[str] | tuple[str, ...] = ()
+) -> tuple[State, str | None]:
+    """Once the verdict is read: a reset clears every held question, and so does a NEW ASK
+    that answers none of them.
+
+    A new ask is read off the parser's fields alone (`frame_of`): the message states an
+    intent, domain or order status that differs from the frame the conversation is in, or
+    it states one at all while held questions carry no frame yet (a contact's first turn
+    under this rule). `answered` names the held slots the parser's own declared answer
+    settled before APPLY (the required ask's `reply_verdict`, a top selling answer); the
+    parser's other answer fields are read here (`_answers`). Never the message's words.
+
+    Records the frame on the focus (a field the message does not state is kept), and marks
+    the verdict `NEW_INTENT` when it changed, so `apply._focus_rules` drops the old ask's own
+    extra kinds (crew report 2, "taiyang only")."""
+    frame = frame_of(verdict)
+    prior = dict(state.focus.frame or {})
+    changed = any(key in prior and prior[key] != value for key, value in frame.items())
+    first = bool(frame) and not prior
+    if changed:
+        verdict[NEW_INTENT] = True
+    merged = frame if changed else {**prior, **frame}
+    if merged != prior:
+        state = replace(state, focus=replace(state.focus, frame=merged or None))
+    if not held_slots(state):
+        return state, None
+    if verdict.get("topic_reset") is True:
+        return _cleared(state), "topic_reset"
+    if (changed or first) and not answered and not _answers(state, verdict):
+        # A question that accepts ONLY a position or one of its own offered labels is kept
+        # (the new question is still answered as itself; it cannot be captured, and it
+        # never speaks unless the reply IS a pick): an escalation offer (`decide`, #1323,
+        # with its own `pending.OFFER_TTL` clock; the subject a miss offered it over is what
+        # "cert?" next is about, #833) and a roster (`pending.is_roster`; "incoming
+        # srtwc286" -> "4" -> "check stock" -> "7" still picks, #1352). Reset, TTL and
+        # access change still drop both.
+        return _cleared(state, keep_pending=_answers_only_by_pick(state.pending), verdict=verdict), "new_ask"
+    return state, None
+
+
+#: STUCK-QTY-LOOP loop guard (crew design review, 4 Oct 2026): what the bot says instead
+#: of saying the same held question a second time in a row when nothing changed. A person
+#: does not repeat themselves word for word; they let the question go and ask what is
+#: wanted. Wording for the owner to tune.
+LOOP_REPLY = "Let's leave that question. What would you like me to check?"
+
+
+def is_a_loop(
+    state: State,
+    stored: Mapping[str, Any] | None,
+    *,
+    question: Any,
+    reply_text: Any,
+    previous_reply: Any,
+    verdict: Mapping[str, Any] | None = None,
+    fetched: bool = False,
+) -> bool:
+    """Would this reply say exactly what the last one said, while every held question is
+    exactly as it was, nothing was read and the message named nothing of its own? Then the
+    held question is talking to itself (STUCK-QTY-LOOP). A message that names something (the parser's
+    current-message entities) changed the turn: asking the open question again over a
+    restated ask is the owner's own reading (top selling round 9, "top 10 hot sale item
+    by william" re-asks who William is)."""
+    if fetched or not isinstance(reply_text, str) or not isinstance(previous_reply, str):
+        # A reply a tool read this turn is an answer, even one that reads the same as the
+        # last ("50" then "10" over a three-product set, attribute asks round 7): only a
+        # question said again with nothing read is the held question talking to itself.
+        return False
+    if any(
+        isinstance(e, dict) and e.get("current_message") is not False
+        for e in (verdict or {}).get("entities") or []
+    ):
+        return False
+    if not reply_text.strip() or reply_text.strip() != previous_reply.strip():
+        return False
+    written = question if question is not None else state.pending
+    if not _asks_a_held_question(state, question):
+        # The same ANSWER twice ("SRTWC286-SH x 2" asked again) is not a loop: only a reply
+        # that is itself a held question can talk to itself.
+        return False
+    stored = stored or {}
+    was = _view(focus_from_wire(stored.get("focus")), from_wire(stored.get("open_question")))
+    return was == _view(state.focus, written)
+
+
+def _asks_a_held_question(state: State, question: Any) -> bool:
+    """Is this reply a question the bot is holding: one the composer asked this turn, or an
+    open stock task, the required ask, a set count / clarify question or a ranking question
+    still waiting? An answered check (kept for a revision) is not one."""
+    focus = state.focus
+    return bool(
+        question is not None
+        or any(task.status == task_mod.OPEN for task in focus.tasks or ())
+        or focus.required_ask
+        or focus.set_page
+        or focus.set_clarify
+        or _top_selling_question(state)
+    )
+
+
+def let_go(state: State) -> State:
+    """The loop guard's state: every held question dropped, the frame kept."""
+    return _cleared(state)
+
+
+def _view(focus: Focus, pending: Any) -> tuple[Any, ...]:
+    """The held questions as comparable values. The escalation offers' own clock (`ttl`)
+    ticks every turn and is not a change to the question."""
+    question = to_wire(pending)
+    if question is not None:
+        question["payload"] = {k: v for k, v in (question.get("payload") or {}).items() if k != "ttl"}
+    return (
+        question,
+        # A re-ask stamps `touched_at_turn`; that is not a change to the question.
+        [
+            {k: v for k, v in task_mod.task_to_wire(task).items() if k not in ("touched_at_turn", "opened_at_turn")}
+            for task in focus.tasks or ()
+        ],
+        focus.required_ask,
+        focus.set_page,
+        focus.set_clarify,
+        # The whole ranking slot: a basis or period change re-asks the same question over a
+        # changed ask (top selling round 7), which is a change, not a loop.
+        focus.top_selling,
+    )
+
+
+def stamp(state: State, stored: Mapping[str, Any] | None, *, question: Any = None) -> State:
+    """Where the five keys are written: stamp the turn and the access the held questions
+    were (re)asked under. `question` is the open question being written when it is not
+    `state.pending` (the composer's own). Nothing held clears the stamp; an unchanged held
+    state keeps its old one, so the TTL counts from the last change."""
+    written = question if question is not None else state.pending
+    after = replace(state, pending=written)
+    focus = replace(state.focus)
+    if not held_slots(after):
+        focus.held_turn = None
+        focus.held_access = None
+        return replace(state, focus=focus)
+    stored = stored or {}
+    was = _view(focus_from_wire(stored.get("focus")), from_wire(stored.get("open_question")))
+    if was != _view(state.focus, written) or focus.held_turn is None:
+        focus.held_turn = state.turn_no
+        # An unknown access (a failed read) keeps the stamp it had rather than writing one
+        # the next turn would read as a change.
+        focus.held_access = getattr(state.profile, "access_fp", None) or focus.held_access
+    return replace(state, focus=focus)

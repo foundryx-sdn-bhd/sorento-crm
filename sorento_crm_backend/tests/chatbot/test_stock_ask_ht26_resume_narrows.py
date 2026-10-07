@@ -74,10 +74,13 @@ def test_naming_two_of_the_task_keeps_both_in_task_order():
 
 
 def test_a_resume_that_names_nothing_still_asks_the_whole_task():
+    # STUCK-QTY-LOOP (owner, 4 Oct 2026): "back to the stock check" carries the stock
+    # intent; an inventory message with no intent and nothing named no longer resumes
+    # (it replayed the stored question on a low stock report and an unflagged "clear").
     task = ht.stock_task([("ELP3754", None), ("SRTKT1631SS", None)])
     state2, plan = apply(
         ht.state(Focus(tasks=(task,), domains=["inventory"])),
-        verdict(domain_hint="inventory", entities=[]),
+        verdict(domain_hint="inventory", intent_hint="check_stock", entities=[]),
         build_policy(),
     )
     (kept,) = state2.focus.tasks
