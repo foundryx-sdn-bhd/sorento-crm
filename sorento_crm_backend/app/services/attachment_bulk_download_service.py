@@ -183,10 +183,6 @@ def plan_archive(
 
     plan = ArchivePlan()
 
-    seen_root: Set[str] = set()
-    for a in sorted(root_files, key=lambda x: (x.uploaded_at or datetime.min, str(x.id))):
-        plan.entries.append(ArchiveEntry(_unique_name(_entry_name(a), seen_root), a))
-
     def walk(fid: str, prefix: str) -> None:
         plan.folders += 1
         kids = sorted(children.get(fid, []), key=lambda k: (by_id[k].name or "", k))
@@ -201,10 +197,12 @@ def plan_archive(
         for a in files:
             plan.entries.append(ArchiveEntry(f"{prefix}/{_unique_name(_entry_name(a), seen)}", a))
 
-    # Root folders keep their own set: test_b6b pins a root file "_" beside a root folder "_".
-    seen_root_folders: Set[str] = set()
+    # Folders and files share one name set at the root too; folders claim their names first.
+    seen_root: Set[str] = set()
     for rid in sorted(roots, key=lambda r: (selected[r].name or "", r)):
-        walk(rid, _unique_name(_safe_name(selected[rid].name), seen_root_folders))
+        walk(rid, _unique_name(_safe_name(selected[rid].name), seen_root))
+    for a in sorted(root_files, key=lambda x: (x.uploaded_at or datetime.min, str(x.id))):
+        plan.entries.append(ArchiveEntry(_unique_name(_entry_name(a), seen_root), a))
 
     # Not-visible count: numbers only. Same subtree, whole-company view minus the caller's view.
     visible = sum(_count_files(db, subtrees[rid]) for rid in roots)
