@@ -1,9 +1,10 @@
 # PLAN: SO line "What changed" and History show the Was and the Now (SO-LINE-CHANGE-HISTORY)
 
-Status: F1 built, review READY (50f275538); F2 building, red-first (feature track M, lead
-pattern: tester red tests, coder green, reviewer + kill test, agent-browser 1280/375; no mock,
-owner exception for wording and rows inside existing dialogs). Card a67320022 rulings: Q1 a,
-Q2 a, Q3 a, Q4 a; Q5 = owner-gated backfill via the existing repair path, outside this PR.
+Status: built, on hand test (PR #1526, feature track M, lead pattern: tester red tests, coder
+green, reviewer + kill test, agent-browser 1280/375 PASS on both slices; no mock, owner exception
+for wording and rows inside existing dialogs). Card a67320022 rulings: Q1 a, Q2 a, Q3 a, Q4 a;
+Q5 = owner-gated one-off backfill script outside this PR (no existing repair path covers the
+cancelled sheet lines; 20 of 46 have one sheet date). Hand test: `laneboard/scripts/1526.md`.
 Plan created: 2026-10-07T18:30:00+08:00
 Lane: SO-LINE-CHANGE-HISTORY, branch `crew/so-line-change-history`, base origin/main 292a366ee
 Domain: scm (SO detail Lines tab) + project-sales (order inquiry History dialog)
