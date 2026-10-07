@@ -156,20 +156,31 @@ def test_unlinked_promotion_never_matches_a_subject_but_stays_for_no_subject_ask
 
 
 def test_subject_matching_nothing_returns_empty_not_inactive_fallback(seeded):
-    """AC-2: zero-match subject does not fall back to inactive/expired promotions."""
+    """AC-2: the subject matches ONLY an expired, inactive, LINKED promotion at the asked level
+    (what the old zero-match fallback would return); the route must return nothing."""
     client, db, s = seeded
+    basin = _class_product(db, "Wall Hung Basin")
     _promo(
         db,
-        "Old sink promo",
-        products=[s["sink"]],
+        "Old basin promo",
+        products=[basin],
+        levels=("office",),
         start=TODAY - timedelta(days=90),
         end=TODAY - timedelta(days=30),
+        active=False,
     )
-    # A class that products carry but no promotion links to: nothing matches, and the
-    # route must not widen to inactive rows.
-    _class_product(db, "Wall Hung Basin")
-    body = _get(client, db, scope_terms=["Wall Hung Basin"])
+    body = _get(client, db, scope_terms=["Wall Hung Basin"], access_levels=["Office"])
     assert body["data"] == []
+    assert not body.get("fallback_used")
+
+
+def test_api_key_subject_ask_keeps_the_ten_row_cap(seeded):
+    """SF-c: an API-key call with scope_terms keeps the old cap of 10 rows (default limit 50)."""
+    client, db, s = seeded
+    for i in range(12):
+        _promo(db, f"Sink promo {i}", products=[s["sink"]], levels=("office",))
+    body = _get(client, db, scope_terms=["Kitchen Sink"], access_levels=["Office"])
+    assert len(body["data"]) == 10, len(body["data"])
 
 
 def test_subject_ands_with_access_levels(seeded):

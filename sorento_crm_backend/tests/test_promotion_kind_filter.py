@@ -137,10 +137,26 @@ def test_kind_and_brand_and_level_and_window_all_and(world):
 
 
 def test_kind_with_no_live_brand_row_is_empty_not_the_inactive_fallback(world):
-    """AC-20: Mocha A3 flyer at Office is only the office one; Sorento at Office has no flyer, and
-    the expired Sorento flyer must not come back through the inactive fallback."""
+    """AC-20/AC-2: Sorento has only an expired, inactive, linked A3 flyer at Office (what the
+    old zero-match fallback would return); kind + brand + Office must be empty."""
     client, db, b, p = world
-    assert _get(client, db, promotion_types=["a3_flyer"], brand_ids=[b["srt"].id], access_levels=["Office"]) == set()
+    flyer = db.query(PromotionType).filter_by(type_code="a3_flyer").one()
+    old = _prod(db, b["srt"], "Kitchen Sink")
+    _promo(db, "ZZT SORENTO A3 FLYER OFFICE OLD", ptype=flyer, products=[old], levels=("office",),
+           start=TODAY - timedelta(days=90), end=TODAY - timedelta(days=30), active=False)
+    body = _get(client, db, promotion_types=["a3_flyer"], brand_ids=[b["srt"].id], access_levels=["Office"])
+    assert body == set(), body
+
+
+def test_api_key_kind_ask_keeps_the_ten_row_cap(world):
+    """SF-c: promotion_types / brand_ids on an API-key call keep the cap of 10."""
+    client, db, b, p = world
+    flyer = db.query(PromotionType).filter_by(type_code="a3_flyer").one()
+    prod = _prod(db, b["srt"], "Kitchen Sink")
+    for i in range(12):
+        _promo(db, f"ZZT SORENTO A3 FLYER CAP {i}", ptype=flyer, products=[prod])
+    assert len(_get(client, db, promotion_types=["a3_flyer"], access_levels=["Dealer"])) == 10
+    assert len(_get(client, db, brand_ids=[b["srt"].id], access_levels=["Dealer"])) == 10
 
 
 def test_kind_ands_with_scope_terms(world):
