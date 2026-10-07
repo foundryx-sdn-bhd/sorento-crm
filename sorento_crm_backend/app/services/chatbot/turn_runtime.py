@@ -537,6 +537,41 @@ def active_brands(db: Session) -> list[dict[str, Any]]:
     ]
 
 
+def promo_filter(parse_output: dict[str, Any], db: Any) -> dict[str, list[str]]:
+    """PROMO-SUBJECT-FILTER: what narrows a promotions read besides the access level, off the
+    parser's own answer. `scope_terms`: the class words it named. `promotion_types`: its
+    `promotion_kind` code. `brand_ids`: the brand it named, only on a kind ask (a plain brand
+    ask is narrowed by the tier gate), resolved by the one brand-word rule the order lane uses.
+    Empty keys are left out."""
+    out: dict[str, list[str]] = {}
+    terms = [t.lower() for t in class_scope_terms(parse_output)]
+    if terms:
+        out["scope_terms"] = terms
+    kind = parse_output.get("promotion_kind")
+    if isinstance(kind, str) and kind.strip():
+        out["promotion_types"] = [kind.strip()]
+        if db is not None:
+            live = active_brands(db)
+            ids: list[str] = []
+            for e in parse_output.get("entities") or []:
+                if isinstance(e, dict) and jsc.nullish_str(e.get("hint")).strip().lower() == "brand":
+                    for row in brand_rows_for_word(live, brand_entity_word(e)):
+                        if row["id"] not in ids:
+                            ids.append(row["id"])
+            if ids:
+                out["brand_ids"] = ids
+    return out
+
+
+def promotion_kind_rows(db: Session) -> list[dict[str, Any]]:
+    """PROMO-SUBJECT-FILTER R5: `{type_code, type_name}` for every promotion type, read fresh
+    each turn; the parser is shown these and answers `promotion_kind` with one code."""
+    from app.models.marketing import PromotionType
+
+    rows = db.query(PromotionType).order_by(PromotionType.match_priority, PromotionType.type_code).all()
+    return [{"type_code": r.type_code, "type_name": r.type_name} for r in rows]
+
+
 _BRAND_WORD_RE = re.compile(r"[0-9a-z]+")
 
 
@@ -2799,7 +2834,7 @@ def make_tool_runner(
     localizer: Any = None,
     unplaced_suggestions: dict[str, list[dict[str, Any]]] | None = None,
     not_checked: list[str] | None = None,
-    asked_scope_terms: list[str] | None = None,
+    asked_promo_filter: dict[str, list[str]] | None = None,
 ) -> Callable[[str, FetchSpec], dict[str, Any]]:
     """The ONE seam that reaches a tool: `run_fetch` calls it once per `FetchSpec`.
 
@@ -2873,10 +2908,10 @@ def make_tool_runner(
         # instead. Flagged here so the next reader does not assume parity.
         lane_out = lane_parse_output(verdict, focus=focus, domain=domain, policy=policy)
         lane_out = _spec_window(lane_out, spec)
-        if asked_scope_terms and domain == "promotion":
+        if asked_promo_filter and domain == "promotion":
             # PROMO-SUBJECT-FILTER AC-6: the tier pick's own turn names no subject; the
             # one the menu was asked for rides the open pick's payload.
-            lane_out = {**lane_out, "promo_scope_terms": list(asked_scope_terms)}
+            lane_out = {**lane_out, "promo_filter": dict(asked_promo_filter)}
         answered = spec.filters.get("outstanding")
         if isinstance(answered, dict):
             lane_out = outstanding_carry(lane_out, focus, answered)

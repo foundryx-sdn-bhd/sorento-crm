@@ -87,6 +87,7 @@ live caller on this branch before R4).
 """
 from __future__ import annotations
 
+import json
 import logging
 import re
 from typing import Any, Mapping
@@ -610,7 +611,7 @@ def _roster_option(row: dict[str, Any], *, kind: str, position: int) -> dict[str
 
 
 def _tier_options(
-    rows: list[dict[str, Any]], *, asked_at_turn: int | None, scope_terms: list[str] | None = None
+    rows: list[dict[str, Any]], *, asked_at_turn: int | None, promo_filter: dict[str, Any] | None = None
 ) -> pending.Pending | None:
     """`tier_last_result_set` rows -> a `tier_pick` `Pending`, or `None` when fewer than
     two tiers are on offer (AC-1691) - the caller then has a text-only `Answer`, settling
@@ -635,9 +636,52 @@ def _tier_options(
     # PROMO-SUBJECT-FILTER AC-6: the subject the menu was probed with rides the open pick,
     # so the answering turn (which names none) fetches with the same filter.
     payload: dict[str, Any] = {"domain": "promotion"}
-    if scope_terms:
-        payload["scope_terms"] = list(scope_terms)
+    if promo_filter:
+        payload["promo_filter"] = dict(promo_filter)
     return pending.ask("tier_pick", options, asked_at_turn=asked_at_turn, payload=payload)
+
+
+def no_live_kind_reply(
+    db: Any, narrow: dict[str, Any], tier_source: dict[str, Any] | None, mcp_call: Any
+) -> str | None:
+    """PROMO-SUBJECT-FILTER AC-21: the asked kind + brand has no live promotion at any held
+    level. "Live" is the promotion's own `is_expired` flag (active and inside its window),
+    never the served-after-expiry rule. The first line says so; when other brands do have
+    that kind live at the contact's levels, `Other <kind>s:` and their distinct names follow.
+    None when this is not a kind + brand ask."""
+    kinds, brand_ids = narrow.get("promotion_types"), narrow.get("brand_ids")
+    if not kinds or not brand_ids:
+        return None
+    from app.models.marketing import PromotionType
+    from app.services.chatbot import turn_runtime
+
+    row = db.query(PromotionType).filter(PromotionType.type_code == kinds[0]).first()
+    brand = next((b for b in turn_runtime.active_brands(db) if b["id"] in brand_ids), None)
+    if row is None or brand is None:
+        return None
+    first, *rest = str(row.type_name).split()
+    kind = " ".join([first, *[w.lower() for w in rest]])
+    lines = [f"There is no {brand['brand_name']} {kind} right now."]
+    names: list[str] = []
+    try:
+        raw = mcp_call(
+            "crm_marketing_promotions_list",
+            {
+                "promotion_types": list(kinds),
+                "access_levels": list((tier_source or {}).get("name") or []),
+            },
+        )
+        body = json.loads(raw) if isinstance(raw, str) else raw
+        for item in (body.get("data") or body.get("items") or []) if isinstance(body, dict) else []:
+            name = str((item or {}).get("description") or "").strip()
+            if name and not item.get("is_expired") and name not in names:
+                names.append(name)
+    except Exception:  # noqa: BLE001 - the other-brand list is a courtesy; the first line stands
+        logger.warning("chatbot: other-brand kind list did not run", exc_info=True)
+    if names:
+        lines.append(f"Other {kind}s:")
+        lines.extend(names)
+    return "\n".join(lines)
 
 
 def _access_ask_answer(
@@ -680,8 +724,9 @@ def _access_ask_answer(
     rows = rows if isinstance(rows, list) else []
     from app.services.chatbot import turn_runtime
 
-    terms = [t.lower() for t in turn_runtime.class_scope_terms(parser or {})]
-    question = _tier_options(rows, asked_at_turn=asked_at_turn, scope_terms=terms)
+    question = _tier_options(
+        rows, asked_at_turn=asked_at_turn, promo_filter=turn_runtime.promo_filter(parser or {}, db)
+    )
     return turn_compose.Answer(text=text, question=question)
 
 

@@ -618,6 +618,8 @@ class PromotionService:
         expiry_notify_batch_id: Optional[str] = None,
         serving_policy: bool = False,
         scope_terms: Optional[list[str]] = None,
+        promotion_types: Optional[list[str]] = None,
+        brand_ids: Optional[list[str]] = None,
     ):
         """List promotions with active-first fallback semantics.
 
@@ -687,6 +689,25 @@ class PromotionService:
                 ).where(
                     PromotionProduct.product_id == ProductSpecifications.product_id
                 ).where(member)
+
+        # Kind (`promotion_types.type_code`) and brand of a LINKED product, both ANDed with
+        # everything else and, like the subject, never widened by the inactive fallback.
+        kind_codes = [c for c in (promotion_types or []) if c and c.strip()]
+        if kind_codes:
+            from app.models.marketing import PromotionType
+
+            type_clause = Promotion.promotion_type_id.in_(
+                select(PromotionType.id).where(PromotionType.type_code.in_(kind_codes))
+            )
+            subject_clause = type_clause if subject_clause is None else and_(subject_clause, type_clause)
+        brand_list = [b for b in (brand_ids or []) if b and b.strip()]
+        if brand_list:
+            brand_clause = exists().where(
+                PromotionProduct.promotion_id == Promotion.id
+            ).where(
+                PromotionProduct.product_id == Product.id
+            ).where(Product.brand_id.in_(brand_list))
+            subject_clause = brand_clause if subject_clause is None else and_(subject_clause, brand_clause)
 
         (
             _ordered_query,

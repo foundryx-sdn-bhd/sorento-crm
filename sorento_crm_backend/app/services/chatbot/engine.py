@@ -4170,6 +4170,7 @@ def _run_stages_body(  # noqa: PLR0915
         # contact's companies, `_scoped_factory` at the top of this function) -
         # no cache, so an operator's table edit reaches the very next turn.
         brands = turn_runtime.active_brands(db)
+        promotion_kinds = turn_runtime.promotion_kind_rows(db)
 
     # -- B PARSER (NO DB SESSION IS OPEN HERE) ------------------------------ #
     # One call, one schema. What comes back IS the verdict - a plain dict, validated once
@@ -4207,6 +4208,7 @@ def _run_stages_body(  # noqa: PLR0915
         task_lines=parser.open_task_lines(state_in.focus, open_question),
         open_question_line=parser.open_question_line(open_question),
         brands=brands,
+        promotion_kinds=promotion_kinds,
         recent_exchanges=recent,
     )
     user_block, context_report = context_mod.assemble(context_layers)
@@ -5610,14 +5612,28 @@ def _run_stages_body(  # noqa: PLR0915
                     bridge_payload = {**resolver_payload, **probed["tier_probe"]}
                 else:
                     bridge_payload = {**resolver_payload, "tier_gate": probed["tier_probe"]}
-            answer = answer_bridge.question_for(
-                bridge_payload,
-                parser=answer_parse_output,
-                ctx=ctx,
-                canned=copy_mod.resolve(db),
-                db=db,
-                asked_at_turn=turn_no,
-            )
+            # AC-21: a kind + brand ask with nothing live at any held level says so and
+            # names what other brands have, instead of a menu.
+            collected = probed.get("tier_probe") if isinstance(probed.get("tier_probe"), dict) else {}
+            stamped = collected.get("tier_availability")
+            if isinstance(stamped, dict) and stamped and not any(stamped.values()) and not collected.get("tier_probe_failed"):
+                no_live = answer_bridge.no_live_kind_reply(
+                    db,
+                    turn_runtime.promo_filter(answer_parse_output, db),
+                    collected,
+                    business_services.fetch_services(db).mcp_call,
+                )
+                if no_live:
+                    answer = turn_compose.Answer(text=no_live)
+            if answer is None:
+                answer = answer_bridge.question_for(
+                    bridge_payload,
+                    parser=answer_parse_output,
+                    ctx=ctx,
+                    canned=copy_mod.resolve(db),
+                    db=db,
+                    asked_at_turn=turn_no,
+                )
             bridge_answered = True
 
         # A resolver `not_found` exit is answered by the SAME `answer_bridge.answer_for`
@@ -5736,8 +5752,8 @@ def _run_stages_body(  # noqa: PLR0915
                     dry_run=dry_run,
                     turn_trace=turn_trace,
                     counted_set=spec_tier and bool(turn_runtime.class_scope_terms(verdict)),
-                    asked_scope_terms=(
-                        list((state_in.pending.payload or {}).get("scope_terms") or [])
+                    asked_promo_filter=(
+                        dict((state_in.pending.payload or {}).get("promo_filter") or {})
                         if state_in.pending is not None and state_in.pending.kind == "tier_pick"
                         else None
                     ),

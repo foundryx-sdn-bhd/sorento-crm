@@ -710,6 +710,23 @@ entities [], only sort_by / sort_dir set.
     "sort_dir": "desc"}
 """
 
+# PROMO-SUBJECT-FILTER R5. ADDITIVE ONLY: the `promotion_kind` output key. The kinds are not
+# listed here; the user block carries a `Promotion kinds:` line read from `promotion_types`
+# every turn. Published as a new unlabelled version by migration `pk_0001_parser_promo_kind`.
+PROMOTION_KIND_ADDENDUM = """
+
+Everything below is IN ADDITION to the OUTPUT object above. Emit this key on every object,
+exactly as if it were listed there:
+
+  "promotion_kind": string|null
+
+== PROMOTION KIND ==
+The "Promotion kinds:" line lists the kinds of promotion as `code (name)`. When the current message
+asks for one of those kinds ("A3 flyer", "special", "focus item"), set "promotion_kind" to that
+kind's code. A bare word that names no listed kind ("flyer", "brochure"), or no kind at all, is
+"promotion_kind": null. Never invent a code.
+"""
+
 # Main's literal now carries ESCALATION_CONFIRMATION_ADDENDUM as its tail (#1323), so it
 # is peeled off, TOP_SELLING_ADDENDUM goes on beneath it, and it is put back as the tail.
 SEMANTIC_PARSER_PROMPT = SEMANTIC_PARSER_PROMPT.removesuffix(ESCALATION_CONFIRMATION_ADDENDUM)
@@ -719,6 +736,7 @@ SEMANTIC_PARSER_PROMPT += ESCALATION_CONFIRMATION_ADDENDUM
 SEMANTIC_PARSER_PROMPT += PO_SPO_WAREHOUSE_ADDENDUM
 SEMANTIC_PARSER_PROMPT += ACCOUNT_LEDGER_ADDENDUM
 SEMANTIC_PARSER_PROMPT += LOW_STOCK_FILTERS_ADDENDUM
+SEMANTIC_PARSER_PROMPT += PROMOTION_KIND_ADDENDUM
 SEMANTIC_PARSER_PROMPT += MEMORY_ADDENDUM
 
 

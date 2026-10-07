@@ -297,6 +297,8 @@ def tier_probe_collect(
     any_available = any(availability.values()) if availability is not None else True
     return {
         **base,
+        # present only when a probe raised, so a recorded n8n capture stays byte-equal
+        **({"tier_probe_failed": True} if probe_failed else {}),
         "tier_availability": availability,
         "tier_available_list": (
             [t for t in default_policy().tier_order if availability.get(t)]
@@ -304,7 +306,6 @@ def tier_probe_collect(
             else None
         ),
         "tier_any_available": any_available,
-        "tier_probe_failed": probe_failed,
         "_tier_probe_count": len(results),
         "_tier_probe_planned": len(plan),
     }
@@ -735,9 +736,10 @@ def entity_ids_transformer(
     # promotions LINKED to products of that class. A resolved product id is the narrower
     # ask and keeps the product_ids path alone.
     if tool_name == TIER_PROBE_TOOL and not out.get("product_ids"):
-        subject = jsc.get(semantic_input, "scope_terms")
-        if isinstance(subject, list) and subject:
-            out["scope_terms"] = list(subject)
+        for key in ("scope_terms", "promotion_types", "brand_ids"):
+            narrowed = jsc.get(semantic_input, key)
+            if isinstance(narrowed, list) and narrowed:
+                out[key] = list(narrowed)
 
     # S4 points 2/7/9 (PLAN-chatbot-outstanding-report.md): crm_outstanding_report's
     # OWN contract (`product_code` a string, `scope`, `customer_ids`, `warehouse_codes`

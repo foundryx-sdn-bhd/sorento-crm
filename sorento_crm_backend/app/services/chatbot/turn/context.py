@@ -116,6 +116,25 @@ def known_brands_line(brands: list[dict[str, Any]] | None) -> str | None:
     return f"Known brands: {', '.join(pairs)}"
 
 
+def promotion_kinds_line(kinds: list[dict[str, Any]] | None) -> str | None:
+    """PROMO-SUBJECT-FILTER R5: the `Promotion kinds:` line, `type_code (name)` pairs read from
+    `promotion_types` every turn, so a kind added as a row is heard on the next message."""
+    pairs = [
+        f"{code} ({name})" if name else code
+        for code, name in (
+            (str((k or {}).get("type_code") or "").strip(), str((k or {}).get("type_name") or "").strip())
+            for k in kinds or []
+        )
+        if code
+    ]
+    return f"Promotion kinds: {'; '.join(pairs)}" if pairs else None
+
+
+def _brands_and_kinds(layers: "ContextLayers") -> str | None:
+    parts = [p for p in (known_brands_line(layers.brands), promotion_kinds_line(layers.promotion_kinds)) if p]
+    return "\n".join(parts) if parts else None
+
+
 def _collapse_whitespace(value: str) -> str:
     """Newlines and repeated whitespace folded to single spaces (security review
     26 Sep 2026, S2) - a multi-line entity or fact value must never break this
@@ -182,6 +201,9 @@ class ContextLayers:
     #: brands:` line at every level. Kept whole, like the task lines: it is what a
     #: misspelt brand word is resolved against.
     brands: list[dict[str, Any]] | None = None
+    #: PROMO-SUBJECT-FILTER R5: the live `promotion_types` rows (`{type_code, type_name}`),
+    #: one `Promotion kinds:` line, so the parser fills `promotion_kind` from the table.
+    promotion_kinds: list[dict[str, Any]] | None = None
 
 
 def _l5_segment(fact: dict[str, Any]) -> str:
@@ -425,7 +447,7 @@ def _assemble_off(layers: ContextLayers) -> tuple[str, dict[str, Any]]:
         lines.append("Open question options: " + "; ".join(layers.pending_options))
     if layers.settings_profile_line:
         lines.append(layers.settings_profile_line)
-    brands_line = known_brands_line(layers.brands)
+    brands_line = _brands_and_kinds(layers)
     if brands_line:
         lines.append(brands_line)
     exchanges = recent_exchange_lines(layers.recent_exchanges, previous)
@@ -473,7 +495,7 @@ def assemble(layers: ContextLayers) -> tuple[str, dict[str, Any]]:
         layers.pending_options,
         layers.task_lines,
         layers.open_question_line,
-        known_brands_line(layers.brands),
+        _brands_and_kinds(layers),
     )
     l1_text, l1_dropped = _render_l1(layers.current_message, layers.reply_to, layers.media_line)
 
