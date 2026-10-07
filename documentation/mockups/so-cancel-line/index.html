@@ -101,7 +101,7 @@ tr.off td{color:var(--muted-fg)}
 <p class="why">The Decide dropdown as it is today, plus "Transfer to Cancel SO" after Buy. Nothing changes in the row or the expanded panel.</p>
 <div class="row"><div class="desk"><div class="screen" style="height:420px"><div class="main" style="position:relative">
  <div class="pagehead"><div><div class="t">Fulfilment planning</div><div class="sub">SO373923 · Revision 3, confirmed by Aina 06/10/2026 3:18 pm, 3 lines · 12 to confirm</div></div>
- <div style="display:flex;gap:8px;align-items:center"><span class="btn lg">Save all suggested (12)</span><span class="btn lg">Undo all</span><span class="btn lg pri">Preview (0)</span></div></div>
+ <div style="display:flex;gap:8px;align-items:center"><span class="btn lg">Save all suggested (12)</span><span class="btn lg">Undo all</span><span class="btn lg pri">Confirm (0)</span></div></div>
  <div style="display:flex;gap:8px;align-items:center;margin:0 0 10px"><span class="btn">Expand all</span><span class="btn">Collapse all</span><span class="pill sug" style="height:28px;padding:0 10px;font-size:13px">3 selected</span><span class="btn pri">Decide ▾</span><span class="btn ghost">Clear</span></div>
  <div class="menu" style="left:372px;top:92px"><div>As suggested</div><hr><div>Use own location</div><div>Borrow from another order</div><div>Borrow other location</div><div>Use BRW</div><div>Buy</div><div class="hl">Transfer to Cancel SO</div></div>
  <table><tr><th><span class="cb"></span></th><th>Line</th><th>Sales order</th><th>Product</th><th>OI</th><th>Required date</th><th>Planned qty</th><th>Suggested</th><th>Decided</th><th>Verdict</th><th></th></tr>
@@ -134,10 +134,10 @@ tr.off td{color:var(--muted-fg)}
 
 <section id="s3">
 <h2><span class="nb">3</span>Saved: a decision like any other, undoable until Confirm</h2>
-<p class="why">Verdict column shows Saved; Decided column reads "Cancel SO". The row's Undo icon removes it (existing). Preview counts the three; the expanded panel is read-only with the reason. Toast: "3 saved as Transfer to Cancel SO".</p>
+<p class="why">Verdict column shows Saved; Decided column reads "Cancel SO". The row's Undo icon removes it (existing). Confirm (N) counts the three; the expanded panel reads Transfer to Cancel SO with the reason. Toast: "3 saved as Transfer to Cancel SO".</p>
 <div class="row"><div class="desk"><div class="screen" style="height:360px"><div class="main" style="position:relative">
  <div class="pagehead"><div><div class="t">Fulfilment planning</div><div class="sub">SO373923 · Revision 3, confirmed by Aina 06/10/2026 3:18 pm, 3 lines · 12 to confirm</div></div>
- <div style="display:flex;gap:8px;align-items:center"><span class="btn lg">Save all suggested (9)</span><span class="btn lg">Undo all</span><span class="btn lg pri">Preview (3)</span></div></div>
+ <div style="display:flex;gap:8px;align-items:center"><span class="btn lg">Save all suggested (9)</span><span class="btn lg">Undo all</span><span class="btn lg pri">Confirm (3)</span></div></div>
  <table><tr><th><span class="cb"></span></th><th>Line</th><th>Sales order</th><th>Product</th><th>OI</th><th>Required date</th><th>Planned qty</th><th>Suggested</th><th>Decided</th><th>Verdict</th><th></th></tr>
  <tr><td><span class="cb"></span></td><td>384</td><td>SO373923</td><td>CB110</td><td>OI-2609-0724 · ORDER 36</td><td>22/02/2027</td><td>36</td><td>Buy 36</td><td>Cancel SO</td><td><span class="pill saved">Saved</span> <span class="btn ghost" style="height:22px;padding:0 4px">↶</span></td><td>▴</td></tr>
  <tr><td colspan="11" style="padding:0;white-space:normal"><div class="panel"><div class="cols"><div><p class="lbl">Decision</p><div class="val">Transfer to Cancel SO</div></div><div><p class="lbl">Reason</p><div class="val">CANCEL ORDER</div></div><div><p class="lbl">Saved by</p><div class="val">Aina · just now</div></div></div></div></td></tr>
@@ -154,7 +154,7 @@ tr.off td{color:var(--muted-fg)}
 <p class="why">Confirm writes the three cancels (line status, who, when, reason) and confirms the other decided lines in the same press. Verdict reads Confirmed on all four rows, the same pill. The cancel shows as "Cancel SO" in Decided, the row greyed with Planned qty 0 and its tick disabled, and the sentence in the expanded panel. No more "3 lines cannot be confirmed".</p>
 <div class="row"><div class="desk"><div class="screen" style="height:380px"><div class="main" style="position:relative">
  <div class="pagehead"><div><div class="t">Fulfilment planning</div><div class="sub">SO373923 · Revision 4, confirmed by Aina 07/10/2026 11:52 am, 4 lines · 8 to confirm</div></div>
- <div style="display:flex;gap:8px;align-items:center"><span class="btn lg">Save all suggested (8)</span><span class="btn lg">Undo all</span><span class="btn lg pri">Preview (0)</span></div></div>
+ <div style="display:flex;gap:8px;align-items:center"><span class="btn lg">Save all suggested (8)</span><span class="btn lg">Undo all</span><span class="btn lg pri">Confirm (0)</span></div></div>
  <table><tr><th><span class="cb"></span></th><th>Line</th><th>Sales order</th><th>Product</th><th>OI</th><th>Required date</th><th>Planned qty</th><th>Suggested</th><th>Decided</th><th>Verdict</th><th></th></tr>
  <tr class="off"><td><span class="cb off"></span></td><td>384</td><td>SO373923</td><td>CB110</td><td>OI-2609-0724 · ORDER 36</td><td>22/02/2027</td><td>0</td><td></td><td>Cancel SO</td><td><span class="pill ok">Confirmed</span></td><td>▴</td></tr>
  <tr><td colspan="11" style="padding:0;white-space:normal"><div class="panel"><p style="margin:0;font-size:13px;color:var(--muted-fg)">Transferred to Cancel SO by Aina, 07/10/2026 11:52 am · CANCEL ORDER. There is nothing left to decide for it.</p></div></td></tr>
