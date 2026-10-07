@@ -760,6 +760,12 @@ class SalesOrderLine(Base, CompanyScopedMixin):
         String(24), default="not_reviewed", server_default="not_reviewed", nullable=False
     )
     line_status = Column(String(50), default="open", nullable=False)
+    # SO-CANCEL-LINE: set when CS transfers the line to Cancel SO on the fulfilment board.
+    # `cancelled_at` is what tells that cancel apart from a header-driven one (the ingest
+    # keeps such a line cancelled on a re-push).
+    cancelled_at = Column(DateTime(timezone=False), nullable=True)
+    cancelled_by_id = Column(String(100), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    cancel_reason = Column(Text, nullable=True)
     source_system = Column(String, nullable=True)
     source_ref = Column(String, nullable=True)
     # AutoCount's own `Seq` (PLAN-so-lines-autocount-order.md), kept as it arrives. NULL
