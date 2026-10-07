@@ -1246,6 +1246,7 @@ class ProjectSupplyService:
                 self.db.query(SalesOrderLine)
                 .filter(SalesOrderLine.id == str(mirror.core_sales_order_line_id))
                 .with_for_update()
+                .populate_existing()
                 .one_or_none()
                 if mirror is not None and mirror.core_sales_order_line_id
                 else None

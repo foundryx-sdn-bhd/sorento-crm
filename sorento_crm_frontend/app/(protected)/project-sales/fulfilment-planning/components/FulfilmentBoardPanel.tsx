@@ -1386,6 +1386,8 @@ export function FulfilmentBoardPanel({
               (contribution) =>
                 contribution.sales_order_id === salesOrderId &&
                 !excludeKeys.has(contribution.key) &&
+                !contribution.unplannable &&
+                Boolean(contribution.project_line_id) &&
                 ((contribution.covered &&
                   draftWithoutPreMark[contribution.key]?.verdict === 'rejected') ||
                   (!contribution.covered &&
@@ -1408,14 +1410,26 @@ export function FulfilmentBoardPanel({
         // `rejectedLineIds`, both already computed above).
         if (heldBackByBatch.length > 0) {
           const postingSomethingElse = lines.length > 0 || rejectedLineIds.length > 0;
+          const heldCancels = heldBackByBatch.some(
+            (contribution) => draftWithoutPreMark[contribution.key]?.verdict === 'cancelled',
+          );
+          const heldRejects = heldBackByBatch.some(
+            (contribution) => draftWithoutPreMark[contribution.key]?.verdict !== 'cancelled',
+          );
+          const heldWhat =
+            heldCancels && heldRejects
+              ? 'staged rejection and saved Cancel SO'
+              : heldCancels
+                ? 'saved Cancel SO'
+                : 'staged rejection';
           skipped.push({
             pso_id: psoId,
             so_number: soNumber,
             ok: false,
             heldBack: true,
             error: postingSomethingElse
-              ? 'was confirmed, but its staged rejection could not ride along with the pending change; it commits after the change is applied.'
-              : 'has a staged rejection that commits after the pending change is applied.',
+              ? `was confirmed, but its ${heldWhat} could not ride along with the pending change; it commits after the change is applied.`
+              : `has a ${heldWhat} that commits after the pending change is applied.`,
             failing_lines: heldBackByBatch.map((contribution) => ({
               line_no: contribution.line_no,
               reason:
