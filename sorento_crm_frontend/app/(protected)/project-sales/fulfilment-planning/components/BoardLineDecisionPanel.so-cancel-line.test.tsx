@@ -101,3 +101,49 @@ describe('AC-F12: a Transfer to Cancel SO decision on an uncovered line', () => 
     expect(summary).not.toHaveTextContent('Transfer to Cancel SO');
   });
 });
+
+describe('AC-F22: the re-seed effect follows a cancel decision', () => {
+  it('AC-F22: re-seeds onto a saved cancel and back', () => {
+    const props = { locations: [], onDecide: vi.fn(), onDirtyChange: vi.fn() };
+    const { rerender } = render(
+      <BoardLineDecisionPanel
+        contribution={contribution()}
+        decision={null}
+        {...props}
+      />,
+    );
+    const summaryId = `line-decision-summary-${KEY}`;
+    expect(screen.getByTestId(summaryId)).toHaveTextContent('Buy 36');
+
+    rerender(
+      <BoardLineDecisionPanel
+        contribution={contribution()}
+        decision={CANCEL}
+        {...props}
+      />,
+    );
+    expect(screen.getByTestId(summaryId)).toHaveTextContent(
+      'Transfer to Cancel SO',
+    );
+    expect(screen.getByTestId(summaryId)).not.toHaveTextContent('Buy 36');
+    expect(screen.queryByTestId(`line-decision-hint-${KEY}`)).toBeNull();
+    expect(screen.getByLabelText(/Reason/)).toHaveValue('CANCEL ORDER');
+    // The draft itself re-seeded to zeros (draftFor's cancelled branch), not just the summary.
+    expect(screen.getByTestId(`line-buy-derived-${KEY}`)).toHaveTextContent(
+      'Buy 0',
+    );
+
+    rerender(
+      <BoardLineDecisionPanel
+        contribution={contribution()}
+        decision={null}
+        {...props}
+      />,
+    );
+    expect(screen.getByTestId(summaryId)).toHaveTextContent('Buy 36');
+    expect(screen.getByTestId(summaryId)).not.toHaveTextContent(
+      'Transfer to Cancel SO',
+    );
+    expect(screen.queryByTestId(`line-buy-derived-${KEY}`)).toBeNull();
+  });
+});
