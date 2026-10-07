@@ -29,6 +29,7 @@ from tests._mc_lookup_seed import product
 from tests.chatbot import test_outstanding_lane as lane_harness
 from tests.chatbot.test_engine import _parser_output
 from tests.chatbot.test_outstanding_lane import _run_turn, _seed_contact, _session_of
+from app.services.chatbot.lanes.business.services import ResolveGateServices
 from tests.chatbot.test_promo_subject_filter import _services
 
 TODAY = date.today()
@@ -149,10 +150,30 @@ def _qf(*, kind: str | None, brand: str | None = "Sorento", typed: str = "sroent
     )
 
 
+def _brand_resolving_services(session_factory) -> ResolveGateServices:
+    """As the real flow: a brand word the parser named resolves to the seeded Sorento row."""
+
+    def _resolve(body: dict[str, Any]) -> dict[str, Any]:
+        asked = list(body.get("tokens") or [])
+        row = session_factory().query(Brand).filter(Brand.brand_name == "Sorento").first()
+        if row is None:
+            return {"tokens": asked, "resolutions": [], "unresolved_tokens": asked}
+        match = {"uuid": str(row.id), "entity_type": "brand", "canonical_code": "Sorento", "match_tier": "exact"}
+        return {
+            "tokens": asked,
+            "resolutions": [{"raw": r, "token": r, "matches": [match]} for r in asked],
+            "unresolved_tokens": [],
+        }
+
+    return ResolveGateServices(
+        access_types=lambda **_: [{"name": n} for n in NAMES], resolve_entity=_resolve, probe=lambda **_: None
+    )
+
+
 def _say(session_factory, monkeypatch, qf, text, msg_id, **kw):
     result, captured = _run_turn(
         session_factory, monkeypatch, qf=qf, text_body=text, msg_id=msg_id,
-        resolve_services=_services(NAMES), **kw,
+        resolve_services=_brand_resolving_services(session_factory), **kw,
     )
     return (result.reply or {}).get("text") or "", captured
 
