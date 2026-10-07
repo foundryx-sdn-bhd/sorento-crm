@@ -55,3 +55,19 @@ Q4 (b) any quoted bot message is the context, Q5 (a) all kinds.
   bot-sourced `replyTo` with that text on the envelope; a YAML file replays AC-QR-8 and AC-QR-9 against
   the live parser.
 - AC-QR-17 (no new wording): every sentence printed exists on main today.
+
+## Console "Reply to" control (crew audit, 7 Oct 2026: the hand test must exercise a quote)
+
+- AC-QR-18 (console backend): `POST /api/v1/system/chatbot/console/turn` accepts an optional
+  `reply_to: {id: str, text: str}`; the dry-run envelope then carries
+  `message.message.replyTo = {id, sender: {source: "n8n"}, message: {text}}`, exactly the WhatsApp
+  webhook shape; with `reply_to` absent or null the envelope carries no `replyTo`. The field is
+  declared on the request schema (it is `extra="forbid"`).
+- AC-QR-19 (console UI): the composer has a clearable "Reply to" picker (`SearchableSelect`) listing
+  the thread's earlier BOT bubbles (newest first, label = the bubble text truncated, greeting lines
+  excluded). With a bubble chosen, Send posts `reply_to: {id: <bubble id>, text: <bubble text>}`
+  with the typed text; the customer bubble shows the quoted text above the typed text; the picker
+  clears after the send; with nothing chosen the request carries no `reply_to`.
+- AC-QR-20 (browser pass): on the crew test copy at 1280 px, with two quantity questions open,
+  choosing the OLDER question in "Reply to" and sending "1 unit" answers that product and the newer
+  question stays open; a non-question bubble chosen as "Reply to" makes its product the subject.

@@ -120,6 +120,15 @@ E6 Owner case shape: live task C; quote "How many units of A?" + "1 unit" -> A x
   same run (same `is_test` world).
 - No parser prompt change. No new wording.
 
+## Console "Reply to" control (crew audit, 7 Oct 2026)
+
+The Chatbot Console had no way to quote, so the owner could not hand test the feature. Added in
+this lane as a dev tool with existing components only: `reply_to: {id, text}` on the console turn
+request (`app/schemas/chatbot_turn.py` ConsoleTurnRequest, `console_service._build_envelope`), and a
+clearable `SearchableSelect` "Reply to" picker on the composer
+(`sorento_crm_frontend/app/(protected)/system-management/chatbot-console/`) listing earlier bot
+bubbles. UAC AC-QR-18 to 20. Red-first (vitest + pytest), browser pass at 1280 on the copy.
+
 ## Tickets (one lane, slices land as commits)
 
 1. `test(red)`: tester writes the red tests from the UAC, commits them alone, red-proof posted.
