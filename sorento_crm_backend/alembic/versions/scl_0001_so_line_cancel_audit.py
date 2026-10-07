@@ -4,14 +4,14 @@ Additive: three nullable columns on `sales_order_lines`. `cancelled_at` is also 
 AutoCount ingest reads to keep such a line cancelled on a re-push.
 
 Revision ID: scl_0001_so_line_cancel_audit
-Revises: aig_0001_chatbot_allowed
+Revises: qr_0001_chat_histories_turn_link
 Create Date: 2026-10-07
 """
 from alembic import op
 import sqlalchemy as sa
 
 revision = "scl_0001_so_line_cancel_audit"
-down_revision = "aig_0001_chatbot_allowed"
+down_revision = "qr_0001_chat_histories_turn_link"
 branch_labels = None
 depends_on = None
 
