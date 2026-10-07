@@ -99,3 +99,19 @@ Q4 (b) any quoted bot message is the context, Q5 (a) all kinds.
   customer bubble sends `reply_to: {id: <that message_id>, text, source: "contact"}` and the envelope carries
   `replyTo = {id, sender: {source: "contact"}, message: {text}}`; a bot bubble sends `source: "n8n"` (the
   default when `source` is absent). `source` accepts only `n8n` and `contact` (422 otherwise).
+
+## Chunked bot replies (owner question on the hand test, 7 Oct 2026)
+
+Measured (n8n export `sub-sendmsg`, code node "Code in JavaScript": LIMIT 3900 chars, 1024 with quick replies,
+BYTE_CAP 1000; each part is its own respond.io message; 6 Oct prod copy since 1 Oct: 146 turns sent 2 rows,
+29 sent 3, 8 sent 4, up to 93; 535 rows of multi-row sends match the engine's stored reply as a SUBSTRING,
+0 as whole-text equality, 97 not at all).
+
+- AC-QR-24 (every chunk is linked): at the outgoing ingest the n8n `turn_id` route stamps EVERY chunk row of
+  one send with the same `chatbot_turn_id`; when that route has nothing (the photo path), the stored-reply
+  route accepts a chunk: the row's text, whitespace-squashed, EQUAL to the stored reply or a SUBSTRING of it
+  when the squashed text has at least 40 characters (a chunk is never shorter in practice; the floor keeps a
+  one-word message from matching every reply), newest matching turn wins.
+- AC-QR-25 (quoting a chunk): at quote time the text fallback applies the same rule, so quoting the 2nd chunk
+  of a long numbered list resolves to the turn that produced the list, `via: "text"`; a quoted chunk shorter
+  than the floor matches only by equality. Console case: a long list reply, the quote is its 2nd chunk.
