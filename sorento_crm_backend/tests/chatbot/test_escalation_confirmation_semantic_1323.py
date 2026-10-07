@@ -322,6 +322,7 @@ class TestPrompt:
             PO_REFS_ADDENDUM,
             MEMORY_ADDENDUM,
             PO_SPO_WAREHOUSE_ADDENDUM,
+            PROMOTION_KIND_ADDENDUM,
             SEMANTIC_PARSER_PROMPT,
         )
 
@@ -331,7 +332,7 @@ class TestPrompt:
         # PLAN-po-spo-warehouse-29sep S3: PO_SPO_WAREHOUSE_ADDENDUM now sits between the two.
         # RESOLVE-SEMANTIC-FALLBACK: CANONICAL_CODE_ADDENDUM sits after LOW_STOCK_FILTERS;
         # STOCK-QTY-PARTIAL-FILL (#1513): TRAP_SPECS_FALLBACK_BLOCK after that; MEMORY stays
-        # the tail.
+        # the tail. PROMO-SUBJECT-FILTER: PROMOTION_KIND_ADDENDUM after CANONICAL_CODE.
         from app.services.chatbot_parser_prompt import TRAP_SPECS_FALLBACK_BLOCK
 
         assert tail == (
@@ -340,6 +341,7 @@ class TestPrompt:
             + LOW_STOCK_FILTERS_ADDENDUM
             + PO_REFS_ADDENDUM
             + CANONICAL_CODE_ADDENDUM
+            + PROMOTION_KIND_ADDENDUM
             + TRAP_SPECS_FALLBACK_BLOCK
             + MEMORY_ADDENDUM
         )

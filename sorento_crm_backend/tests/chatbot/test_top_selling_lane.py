@@ -1071,6 +1071,8 @@ class TestParser:
         ).removesuffix(
             prompt_mod.TRAP_SPECS_FALLBACK_BLOCK
         ).removesuffix(
+            prompt_mod.PROMOTION_KIND_ADDENDUM
+        ).removesuffix(
             prompt_mod.CANONICAL_CODE_ADDENDUM
         ).removesuffix(
             prompt_mod.PO_REFS_ADDENDUM
