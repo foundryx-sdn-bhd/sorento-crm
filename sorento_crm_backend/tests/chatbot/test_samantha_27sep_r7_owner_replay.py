@@ -346,29 +346,15 @@ def test_brand_rows_for_word_is_deterministic_and_nearest() -> None:
         assert [ids(word) for _ in range(3)] == [want] * 3, word
 
 
-def test_a_brand_word_the_parser_canonicalised_is_that_brand_whatever_was_typed(owner_chat) -> None:
-    """CLASS-HINT-KIND-PICK R2 (owner ruling 6 Oct 2026, replacing this file's own R1 of
-    27 Sep: "what if typo, what if SRT people type"): brand identity keys on the parser's
-    `canonical_code`, the Known brands name, and the typed word only when the parser gave
-    none. "zorbix" read as Mocha by the parser IS Mocha here: the list is filtered to
-    Mocha, the Brand line prints Mocha, and the typed word is not said back as unknown.
-    (Until R2 the typed word alone decided and this turn listed every brand with one
-    "zorbix" line; that reading is retired with the ruling.)"""
+def test_an_unknown_brand_word_is_one_line_and_no_filter(owner_chat) -> None:
+    """R1 (27 Sep): the typed word decides the brand under order/sales. "zorbix" names no
+    live brand, so the parser's guessed canonical_code (Mocha) is not a brand: no filter, no
+    Brand line, said back once. CLASS-HINT-KIND-PICK R2 (7 Oct 2026) keeps this: the
+    engine's canonical_code brand read does not run on a brand-hinted word in this lane
+    (`turn_runtime.resolve_kinds`), so the word is never swallowed (neither filtered nor
+    said back)."""
     chat = owner_chat
     reply, calls, _ = chat.turn("DO brand zorbix for cheng huat sentul", _do_ask(_brand("zorbix", "Mocha")))
-    args = [a for n, a in calls if n == ORDERS_LIST][-1]
-    assert args.get("brand_ids") == [chat.mocha_brand_id], calls
-    assert _header(reply, "Brand") == "Brand: Mocha", reply
-    assert not [line for line in reply.splitlines() if "zorbix" in line.lower()], reply
-    assert _numbers(reply) == MOCHA_DOCS, reply
-
-
-def test_an_unknown_brand_word_with_no_canonical_code_is_one_line_and_no_filter(owner_chat) -> None:
-    """The unknown-brand rule under the 6 Oct identity: a word the parser could not
-    canonicalise and that names no live brand is not a brand - no filter, no Brand line,
-    said back once, every brand listed."""
-    chat = owner_chat
-    reply, calls, _ = chat.turn("DO brand zorbix for cheng huat sentul", _do_ask(_brand("zorbix", None)))
     args = [a for n, a in calls if n == ORDERS_LIST][-1]
     assert not args.get("brand_ids"), calls
     assert _header(reply, "Brand") is None, reply

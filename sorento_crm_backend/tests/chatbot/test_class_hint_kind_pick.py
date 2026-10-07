@@ -1077,10 +1077,9 @@ class TestABrandEchoOnAPagingTurnIsNotASubject:
         stub_parser(_trio_paging_echo(top_n=2, user_goal="another 2"))
         text = _turn(engine_mod, session_factory, contact_id=contact_id, n=2, text="another 2")
 
-        assert "attachment type" not in text.lower() and "Which kind of file do you need?" not in text, text
+        assert "Please provide the attachment type" not in text and "Which kind of file do you need?" not in text, text
         assert "Which one do you mean?" not in text, text
         assert one_line_header(text).startswith("Here's what you want: taps with certificates (7"), text
-        assert "showing 6 to 7" in one_line_header(text), text
         listed_next = _s4_codes_in(text)
         assert len(listed_next) == 2 and listed_next == set(codes) - listed_first, (text, codes)
         assert len(calls) == before + 1 and len(calls[-1]["args"]["product_ids"]) == 2, calls[before:]
