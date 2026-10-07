@@ -43,8 +43,9 @@ def ctx(monkeypatch):
         app.dependency_overrides[get_current_user_or_api_key] = _user
         app.dependency_overrides[apply_company_scope] = lambda: None
         try:
-            with TestClient(app) as client:
-                yield client, db
+            # No `with`: entering the client runs app startup, which imports the stale
+            # editable-installed `sorento_crm_mcp` and poisons later presenter tests.
+            yield TestClient(app), db
         finally:
             app.dependency_overrides.clear()
 
