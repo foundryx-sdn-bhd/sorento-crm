@@ -31,7 +31,11 @@ rows in To confirm, greyed and tagged.
   leaves `line_status = cancelled`, `cancelled_at` and `cancel_reason` as they were, while quantities/prices follow
   the push.
 - AC-C11 A push whose header status is cancelled still cancels every line (existing behaviour unchanged).
-- AC-C12 `cancelled_lines` beside a `batch_id` is 422 (same rule as `rejected_line_ids`).
+- AC-C12 `cancelled_lines` beside a `batch_id` is 422 only when the batch NAMES the cancelled line; nothing changes.
+- AC-C23 A cancel for a line the pending batch does not name rides along: 200, the line is cancelled, its rows flip
+  to `changed`, the batch applies as it would alone, `lines_cancelled` echoed (crew ruling (b), 7 Oct: the owner's SO373923
+  carries a pending planning change TR-000063 and must still be able to cancel the CB110 lines).
+- AC-C24 A refused cancel beside a batch press writes nothing, neither the batch nor the cancel.
 - AC-C13 A migration adds the three nullable columns; `alembic heads` shows one head.
 
 ## Frontend
@@ -50,7 +54,10 @@ rows in To confirm, greyed and tagged.
 - AC-F8 Usable and non-clipped at 1280 and 375 px (browser pass table).
 - AC-F9 Undo on a saved cancel decision removes it; the row reads Suggested again.
 - AC-F10 A line covered by an ACTIVE decision with a cancel draft yields no `cancelled_lines` entry and no `lines` entry.
-- AC-F11 On a batch-blocked order a saved cancel is not counted, not posted, and is named under held back by batch.
+- AC-F11 On a batch-blocked order a saved cancel on a line the batch NAMES is not counted, not posted, and is named under
+  held back by batch.
+- AC-F23 A saved cancel on a batch-blocked order whose line the batch does not name is counted, posted in `cancelled_lines`
+  beside `batch_id`, and shows no held-back sentence.
 - AC-F12 The expanded panel of a saved cancel reads "Transfer to Cancel SO" with the reason, no short hint.
 - AC-F13 to F15 Held-back-by-batch note per line; the order sentence names Cancel SO; an unplannable line is not listed.
 - AC-F16 A committed Cancel SO line (cancelled_at set) is skipped by the press and not counted in Confirm (N).
