@@ -1,6 +1,6 @@
 # PLAN: a quoted reply answers the quoted question (QUOTED-REPLY)
 
-Status: building (owner answered the card 7 Oct 2026: Q1 id route with the photo link fixed on our side, Q2 (a) parser-interpreted, Q3 (a), Q4 (b) any quoted bot message is the context, Q5 (a) all kinds); track: feature L (one migration: `chat_histories.chatbot_turn_id`; backend only, no auth/RBAC change, no new ingest surface, no UI); LEAD pattern (tester -> coder -> reviewer + security-reviewer)
+Status: in review, round 5 own-message quotes (owner hand test ruling 7 Oct) building; (owner answered the card 7 Oct 2026: Q1 id route with the photo link fixed on our side, Q2 (a) parser-interpreted, Q3 (a), Q4 (b) any quoted bot message is the context, Q5 (a) all kinds); track: feature L (one migration: `chat_histories.chatbot_turn_id`; backend only, no auth/RBAC change, no new ingest surface, no UI); LEAD pattern (tester -> coder -> reviewer + security-reviewer)
 
 UAC: `quoted-reply-acceptance-criteria.md` (alongside). Lane: `crew/quoted-reply`, base origin/main e4158ab52.
 

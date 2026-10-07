@@ -79,3 +79,23 @@ Q4 (b) any quoted bot message is the context, Q5 (a) all kinds.
 - AC-QR-20 (browser pass): on the crew test copy at 1280 px, with two quantity questions open,
   choosing the OLDER question in "Reply to" and sending "1 unit" answers that product and the newer
   question stays open; a non-question bubble chosen as "Reply to" makes its product the subject.
+
+## Own-message quotes (owner on the :3114 hand test, 7 Oct 2026: "can i reply to my own text?")
+
+- AC-QR-21 (resolver, own message by id): when `replyTo.sender.source == "contact"`, the quoted message is
+  the dealer's own; `resolve_quoted_turn` resolves it to the engine turn that PROCESSED that message
+  (`chatbot.turns` where `contact_respond_id` and `message_id == replyTo.id`, same `is_test` world; no
+  `chat_histories` hop, no text route) and returns that turn's stored state (`state` event, else `memory`),
+  `via: "own"`. Another contact's turn, the other world, or no such turn -> None.
+- AC-QR-22 (engine, own quote = that turn's context): a message quoting the dealer's own earlier message runs
+  on the state that turn LEFT (its focus and open question), exactly as quoting the bot reply of that turn
+  would; R4 and the non-answer rule apply unchanged. Fallback (today's behaviour, facts found false) only
+  when no such turn exists. Example: own "SRTBF11841 have stock?" (bot asked its quantity), then another
+  product's ask, then quote the own message + "and eta?" -> incoming stock for SRTBF11841, not the live
+  product.
+- AC-QR-23 (console): `ConsoleTurnResponse` carries the turn's `message_id` (the dry-run respond message id
+  of the customer message); the hook stores it on the customer bubble; the "Reply to" picker lists customer
+  bubbles too (newest first, interleaved with bot bubbles by recency, greeting lines excluded); choosing a
+  customer bubble sends `reply_to: {id: <that message_id>, text, source: "contact"}` and the envelope carries
+  `replyTo = {id, sender: {source: "contact"}, message: {text}}`; a bot bubble sends `source: "n8n"` (the
+  default when `source` is absent). `source` accepts only `n8n` and `contact` (422 otherwise).
