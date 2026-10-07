@@ -5749,7 +5749,7 @@ def _run_stages_body(  # noqa: PLR0915
             if probed.get("kind_none") or not isinstance(probed.get("tier_probe"), dict):
                 # AC-21, or the probe was refused (customer scope): its own words, never a
                 # menu that nobody probed.
-                answer = turn_compose.Answer(text=probed["fetch"]["response"])
+                answer = turn_compose.Answer(text=(probed.get("fetch") or {}).get("response") or "")
             if answer is None:
                 answer = answer_bridge.question_for(
                     bridge_payload,

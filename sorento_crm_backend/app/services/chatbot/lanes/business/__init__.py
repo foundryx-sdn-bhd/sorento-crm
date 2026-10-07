@@ -576,6 +576,26 @@ def _top_selling_ask_category(codes: list[str]) -> str:
     return f"Which category do you mean? Reply with one code: {', '.join(codes)}"
 
 
+def _nothing_live_of_kind(
+    semantic_input: dict[str, Any], db: Any, services: Any, tier_source: dict[str, Any] | None
+) -> dict[str, Any] | None:
+    """AC-21, the ONE decision for every exit (the tier-ask probe arm, the bridge, and a
+    single-level contact's straight fetch): a kind + brand ask with nothing live of that kind
+    for that brand. The fixed reply fragment (flagged `kind_none`), else None when this is not a
+    kind + brand ask."""
+    if not (semantic_input.get("promotion_types") and semantic_input.get("brand_ids") and db is not None):
+        return None
+    from app.services.chatbot.answer_bridge import no_live_kind_reply
+
+    text = no_live_kind_reply(
+        db,
+        {"promotion_types": semantic_input["promotion_types"], "brand_ids": semantic_input["brand_ids"]},
+        tier_source,
+        services.mcp_call,
+    )
+    return {**_fixed_reply(text), "kind_none": True} if text else None
+
+
 def _live_rows_only(result: Any) -> Any:
     """A probe answer without its expired rows (`is_expired`), `has_result` re-derived."""
     if not isinstance(result, dict):
@@ -1590,21 +1610,11 @@ def run_fetch(
         collected = fetch_mod.tier_probe_collect(
             tier_gate or payload, plan_items=plan_items, probe_results=probe_results
         )
-        if kind_ask and semantic_input.get("brand_ids") and db is not None:
-            # AC-21, the ONE decision for both exits (this arm runs for the bridge and the
-            # continue exit): nothing live of this kind for this brand at any held level.
-            seen = collected.get("tier_availability")
-            if isinstance(seen, dict) and seen and not any(seen.values()) and not collected.get("tier_probe_failed"):
-                from app.services.chatbot.answer_bridge import no_live_kind_reply
-
-                text = no_live_kind_reply(
-                    db,
-                    {"promotion_types": semantic_input["promotion_types"], "brand_ids": semantic_input["brand_ids"]},
-                    collected,
-                    services.mcp_call,
-                )
-                if text:
-                    return {**_fixed_reply(text), "tier_probe": collected, "kind_none": True}
+        seen = collected.get("tier_availability")
+        if isinstance(seen, dict) and seen and not any(seen.values()) and not collected.get("tier_probe_failed"):
+            none_live = _nothing_live_of_kind(semantic_input, db, services, collected)
+            if none_live is not None:
+                return {**none_live, "tier_probe": collected}
         item = fetch_mod.fetch_result({**payload, **collected})
         return {
             "kind": "tier_ask",
@@ -2187,6 +2197,15 @@ def run_fetch(
     if tool_name == fetch_mod.TIER_PROBE_TOOL and semantic_input.get("promotion_types"):
         # A kind ask serves only what is live right now, the same rule the tier probe stamped by.
         envelope = _live_rows_only(envelope)
+        if (
+            isinstance(envelope, dict)
+            and envelope.get("has_result") is False
+            and not (tier_gate or {}).get("tier_pick")
+        ):
+            # a contact with no tier to pick (one level): the same decision the menu path makes
+            none_live = _nothing_live_of_kind(semantic_input, db, services, tier_gate)
+            if none_live is not None:
+                return none_live
     if trace is not None:
         # A9: ONE call, ONE tool, ONE envelope this turn - the same "the read" this
         # whole function is named for. `envelope` rides through `trace.add`'s own
