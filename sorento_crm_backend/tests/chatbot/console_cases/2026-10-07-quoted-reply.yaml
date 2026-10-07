@@ -158,12 +158,12 @@ cases:
           reply_contains:
             - "How many units of WDI-K5130?"
       - text: "dealer"
-        quote: |
-          Which access level do you need for SRTWT9612-GM?
-          1. Office - no promotion
-          2. Dealer - no promotion
-          3. End user - no promotion
-          Reply with the number(s), e.g. "1", "1 and 2", or "all".
+        # A slice of this run's own pick reply (the "has / no promotion" suffixes follow the
+        # promo data of the day, so a literal went stale on 7 Oct).
+        quote_slice:
+          of: "promo for SRTWT9612-GM"
+          start: 0
+          length: 120
         expect:
           branch_kind: check_promotion
           no_uuid: true
