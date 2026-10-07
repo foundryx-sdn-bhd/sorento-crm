@@ -905,6 +905,21 @@ export function confirmSummaryFor(
       if (contribution.decision) orderIds.add(contribution.sales_order_id);
       continue;
     }
+    // A saved Cancel SO on an inquiry-decided line (covered, no active decision) is posted in
+    // `cancelled_lines`, so it admits its order; `pressRoleFor` decides, batch rule included.
+    if (
+      contribution.covered &&
+      decision?.verdict === 'cancelled' &&
+      pressRoleFor(
+        contribution,
+        decision,
+        batchBlockedSalesOrderIds.has(contribution.sales_order_id),
+        options?.batchNamedKeys,
+      ).kind === 'cancel_so'
+    ) {
+      orderIds.add(contribution.sales_order_id);
+      continue;
+    }
     // An Approved draft on a covered line IS posted (`lineFor`), so it admits its order too.
     if (contribution.covered && decision?.verdict !== 'amended' && decision?.verdict !== 'approved') {
       continue;
