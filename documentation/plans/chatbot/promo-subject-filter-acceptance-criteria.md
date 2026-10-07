@@ -67,3 +67,7 @@ AC-13 `test_water_tap_basin_is_one_unknown_product_type`, round4 `test_r5_*`,
 AC-14 Turn 1 "any basin cabinet promo" -> AC-7 reply (no menu, no kitchen sink file).
 AC-15 Turn 2 "sroento a3 flyer" -> menu stamped (AC-9); pick Dealer -> Sorento dealer promos only
       and the question names Sorento (AC-16); the A3 flyer kind is held for Q4.
+AC-17 (owner acceptance check) A promo ask for a product code (a kitchen sink code linked to a live
+      promotion) still returns that product's promotion for the picked level (product_ids path).
+AC-18 (owner acceptance check) "kitchen sink promo" returns only promotions linked to kitchen sink
+      products for the picked level; no bathroom furniture, WC or tap promotion.
