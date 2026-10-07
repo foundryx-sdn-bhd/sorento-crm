@@ -48,12 +48,21 @@ On Dashboards > Resources > Files, a user selects any mix of folders and files a
 - **AC-D6** Cancel while running (existing `POST /system/jobs/{id}/cancel`) stops the job within one batch; the archive is not uploaded and the temp file is removed.
 - **AC-D7** (Q5) No size cap. The archive byte size is reported in `result.bytes`; the Integer `source_file_size` column stays NULL for this job type (a 3 GB value would overflow it).
 - **AC-D7b** The archive is uploaded as a file object (multipart), never loaded into memory as one bytes value.
-- **AC-D7c** (Q5 c) A daily tick deletes the storage object of every finished bulk-download job older than 24 h and clears its key; the job row stays. A 2 h old archive is untouched; a failed job with no key is untouched.
+- **AC-D7c** (Q5 c) Retention is AC-F5 (the My downloads purge, per-kind 24 h window); the archive object is owned by the My downloads row, so the job row carries no storage key.
 - **AC-D8** Dialog: opening it starts the job at once and shows "Preparing archive" with files done / total and a bar; a terminal state replaces the spinner. `finished` shows the summary (files, folders, size, "N files not included (outside your companies)" only when N > 0, "N files could not be read" only when N > 0) and a primary "Download ZIP" button that opens the signed URL. `failed` shows the error and Close. The dialog can be closed while running; the job continues.
 - **AC-D9** The dialog never shows a spinner forever: a poll error is retried on the next tick, and a job that leaves the queue without a result (RQ lost it) is surfaced by the existing status sync as `failed`.
+
+## F. My downloads entry (owner feedback on mock v1: decoupled from the dialog)
+
+- **AC-F1** Starting a download also creates a My downloads row (kind `attachment_bulk_zip`, filename = the archive name) in the same request, status `pending`; the drawer's top-bar badge counts it.
+- **AC-F2** The row follows the job: `processing` when the worker starts, `ready` with the storage key when the archive is uploaded, `failed` with the one-line reason when the job fails or is cancelled. The drawer shows it with the label "Files archive (ZIP)" and no Preview control.
+- **AC-F3** The drawer's Download and the dialog's "Download ZIP" open the same 1-hour signed link from `GET /api/v1/downloads/{id}/url`; another user gets 404 for that id.
+- **AC-F4** Closing the dialog loses nothing: the row stays in My downloads and becomes ready on its own.
+- **AC-F5** (Q5 c) The daily purge removes `attachment_bulk_zip` rows and their objects after 24 h; every other kind keeps its configured retention (30-day default).
+- **AC-F6** The stale sweep that flips long-pending rows to failed after 20 minutes does not touch an `attachment_bulk_zip` row younger than the job timeout (2 h), so a long build is never shown as failed while it runs.
 
 ## E. Verification
 
 - **AC-E1** pytest: planning rules (B1-B7), scope (C2-C5), endpoint (C1, C4, D1), task end to end against a fake storage backend (D3-D6) with a real zip read back.
-- **AC-E2** vitest: `driveBulkActions` gating (A1-A4); the dialog's processing / finished / failed renders and the Download button (D8).
-- **AC-E3** Browser pass on the crew test copy at 1280 and 375: Files > Marketing, select folders + a file, Download selected, archive opens with the expected tree; Export selected still disabled with a folder in the selection.
+- **AC-E2** vitest: `driveBulkActions` gating (A1-A4); the dialog's processing / finished / failed renders and the Download button (D8); `DownloadRow` label + hidden Preview for the new kind (F2).
+- **AC-E3** Browser pass on the crew test copy at 1280 and 375: Files > Marketing, select folders + a file, Download selected, archive opens with the expected tree; Export selected still disabled with a folder in the selection; the archive row is in My downloads and downloads from there after the dialog is closed.
