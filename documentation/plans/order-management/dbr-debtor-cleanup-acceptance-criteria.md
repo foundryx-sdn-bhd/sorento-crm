@@ -38,5 +38,8 @@ also don't have lines one"), Q2 (a), Q3 yes, Q4 (a), Q5 (a). Snapshot 6 Oct: 229
 - AC-13 Chat links (respond_contact_customers) on DBR customers are deleted with them (Q1 (a)). The output lists every
   contact left with NO customer link after the delete (snapshot: the DELUXE HOME CENTRE (KTN) contact), by contact id and
   the DBR debtor name it was linked to, so crew can tell the owner.
+- AC-14 A contact with no customer link is UNRESTRICTED in chat (`contact_customer_scope.py:53-55`), so `--apply` refuses
+  (changes nothing, says which contacts) while any contact would be left unlinked, unless `--allow-unlink` is passed
+  (`run(db, apply=True, allow_unlink=True)`). Crew links such a contact to the AutoCount account the owner names first.
 
 No UI change, no migration.
