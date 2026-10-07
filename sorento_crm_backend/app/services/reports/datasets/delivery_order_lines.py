@@ -221,7 +221,7 @@ def _text_date(expr: Any) -> Any:
 
 
 COLUMNS = (
-    reg.Column("customer", "Customer", "text", "dimension", lambda c: Customer.customer_name, size=220),
+    reg.Column("customer", "Customer", "text", "dimension", lambda c: sa.func.coalesce(Customer.customer_name, sa.func.nullif(sa.func.btrim(Order.debtor_name), "")), size=220),
     reg.Column("product", "Product", "text", "dimension", lambda c: Product.product_code, size=160),
     reg.Column("brand", "Brand", "text", "dimension", lambda c: Brand.brand_name, size=160),
     reg.Column("category", "Category", "text", "dimension", lambda c: ProductCategory.category_name, size=160),

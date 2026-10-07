@@ -317,6 +317,7 @@ class TestPrompt:
         """AC-MEM071 keeps MEMORY_ADDENDUM (ending in CURRENT DATE) last for the byte-stable prefix, so only it may follow this addendum."""
         from app.services.chatbot_parser_prompt import (
             ACCOUNT_LEDGER_ADDENDUM,
+            CANONICAL_CODE_ADDENDUM,
             LOW_STOCK_FILTERS_ADDENDUM,
             MEMORY_ADDENDUM,
             REPORT_ASK_ADDENDUM,
@@ -330,6 +331,7 @@ class TestPrompt:
         # PLAN-po-spo-warehouse-29sep S3: PO_SPO_WAREHOUSE_ADDENDUM now sits between the two.
         # REPORT_ASK_ADDENDUM (REPORT-ENGINE) then TRAP_SPECS_FALLBACK_BLOCK (STOCK-QTY-PARTIAL-FILL,
         # #1513) sit between LOW_STOCK_FILTERS_ADDENDUM and MEMORY_ADDENDUM; MEMORY stays the tail.
+        # CANONICAL_CODE_ADDENDUM (#1511) follows REPORT_ASK_ADDENDUM.
         from app.services.chatbot_parser_prompt import TRAP_SPECS_FALLBACK_BLOCK
 
         assert tail == (
@@ -337,6 +339,7 @@ class TestPrompt:
             + ACCOUNT_LEDGER_ADDENDUM
             + LOW_STOCK_FILTERS_ADDENDUM
             + REPORT_ASK_ADDENDUM
+            + CANONICAL_CODE_ADDENDUM
             + TRAP_SPECS_FALLBACK_BLOCK
             + MEMORY_ADDENDUM
         )

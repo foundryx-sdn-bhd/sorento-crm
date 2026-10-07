@@ -1893,6 +1893,41 @@ NOT a sales ranking:
 
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PRODUCT CODE: entities[].canonical_code
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+== A WORD BESIDE A CODE IS STILL ONE PRODUCT ENTITY ==
+For every entity with hint "product", "canonical_code" is the product CODE alone, copied
+EXACTLY as the customer typed it - same letters, same case, same hyphens and spaces inside
+the code - with every other word left out: the type or class word ("tap", "WC", "basin",
+"paip", "龙头"), a colour or finish ("chrome", "matt black"), a size, a brand word, and the
+count (which goes in "quantity"). "raw" stays the customer's whole phrase for that product,
+exactly as the rules above already say. The word beside the code DESCRIBES the code it sits
+next to: it is NOT a category entity of its own, so one line is ONE product entity, never a
+product plus a category.
+  - "TAP SRTWT5608 x 5" -> entity {raw: "TAP SRTWT5608", hint: "product", canonical_code:
+    "SRTWT5608", quantity: 5}
+  - "SRTWB8004 BASIN TAP" -> entity {raw: "SRTWB8004 BASIN TAP", hint: "product",
+    canonical_code: "SRTWB8004"}
+  - "paip SRTWT5608 ada stok?" -> entity {raw: "paip SRTWT5608", hint: "product",
+    canonical_code: "SRTWT5608"}
+  - "chrome tap srtwt5608" -> canonical_code "srtwt5608" (the customer's own case, never
+    corrected)
+A bare code typed on its own is both raw and canonical_code: "SRTWC286-SH" -> {raw:
+"SRTWC286-SH", canonical_code: "SRTWC286-SH"}; a bare family code the same: "wc286" ->
+{raw: "wc286", canonical_code: "wc286"}.
+A code typed with a stray space or an odd case stays as typed: "Srt 364-hp" -> canonical_code
+"Srt 364-hp". NEVER invent a code, complete a fragment, join two words into one, or fix a
+typo: canonical_code is a COPY of characters the customer typed, nothing else. Null for a
+product entity only when the phrase has no code at all.
+Each product line in a list is its own entity, with its own canonical_code and quantity:
+  - "stock check\nTAP SRTWT5608 x 5\nWC SRTWC8066-SS x 2" -> two product entities,
+    canonical_code "SRTWT5608" (quantity 5) and canonical_code "SRTWC8066-SS" (quantity 2)
+The attachment_type, attachment and brand rules for canonical_code are unchanged; this
+section is about hint "product" only.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 TRAP SPECS, AND A FRAGMENT OF A LISTED CODE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -1988,7 +2023,7 @@ CURRENT DATE: {{current_date}}
 If relative dates such as "today" or "yesterday" appear in the current turn input, convert them to absolute dates before calling the MCP tool.$tpl_a7065de1dd$, '@@EMDASH@@', chr(8212)), '["current_date"]'::jsonb,
        'report_engine_0001_prompt (REPORT-ENGINE PR #1447): sales_ranking vocabulary, AC-HT8 ranking axes, dealer is the customer, channel refine', now()
  WHERE NOT EXISTS (SELECT 1 FROM ai_prompt_versions
-                    WHERE name = 'chatbot_semantic_parser' AND md5(template) = '2c277bf4f308e3fdae51ce5a3555a819');
+                    WHERE name = 'chatbot_semantic_parser' AND md5(template) = '26e068a239ec5f58b7c3cfa0ace798c7');
 COMMIT;
 -- check: SELECT version, length(template) FROM ai_prompt_versions WHERE name='chatbot_semantic_parser'
---         AND md5(template) = '2c277bf4f308e3fdae51ce5a3555a819';   -- expect one row, length 141374
+--         AND md5(template) = '26e068a239ec5f58b7c3cfa0ace798c7';   -- expect one row, length 143588

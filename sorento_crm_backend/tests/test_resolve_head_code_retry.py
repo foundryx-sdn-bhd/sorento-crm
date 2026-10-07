@@ -192,7 +192,33 @@ def test_ac3_head_with_no_digit_gains_no_match(client):
 
 # AC-4: no code-like head at all - the retry does not fire, response matches
 # the no-raw_tokens response for the same token.
+#
+# Since RESOLVE-SEMANTIC-FALLBACK the raw text has a SECOND reader on the route, the
+# code reader (`semantic_fallback`, on by default): with raw text it is asked about the
+# miss and its verdict rides the `fallback` trace key; with no raw text it is not asked
+# (`not_asked / no_typed_text`). So the retry's own invariant is pinned with that reader
+# opted out (byte-identical), and with it on, the trace key is the ONLY difference.
 def test_ac4_no_code_like_head_unchanged(client):
+    with_raw = client.post(
+        ENDPOINT,
+        json={
+            "tokens": ["BASINTAPCHROME"],
+            "raw_tokens": ["BASIN TAP CHROME"],
+            "semantic_fallback": False,
+        },
+    ).json()
+    without_raw = client.post(
+        ENDPOINT, json={"tokens": ["BASINTAPCHROME"], "semantic_fallback": False}
+    ).json()
+
+    tr_with = next(r for r in with_raw["resolutions"] if r["token"] == "BASINTAPCHROME")
+    tr_without = next(r for r in without_raw["resolutions"] if r["token"] == "BASINTAPCHROME")
+    assert tr_with["matches"] == []
+    assert tr_with == tr_without
+    assert "fallback" not in tr_with
+
+
+def test_ac4_with_the_code_reader_on_only_its_trace_key_differs(client):
     with_raw = client.post(
         ENDPOINT,
         json={"tokens": ["BASINTAPCHROME"], "raw_tokens": ["BASIN TAP CHROME"]},
@@ -202,7 +228,34 @@ def test_ac4_no_code_like_head_unchanged(client):
     tr_with = next(r for r in with_raw["resolutions"] if r["token"] == "BASINTAPCHROME")
     tr_without = next(r for r in without_raw["resolutions"] if r["token"] == "BASINTAPCHROME")
     assert tr_with["matches"] == []
+    assert not any(m.get("match_tier") == "head_code" for m in tr_with["matches"])
+    # The reader was asked only where there was typed text to read; the retry itself
+    # produced nothing either way.
+    assert tr_with.pop("fallback")["asked"] is True
+    assert tr_without.pop("fallback") == {"asked": False, "kind": "not_asked", "reason": "no_typed_text"}
     assert tr_with == tr_without
+
+
+# A token typed twice keeps its LAST line's raw text, the rule this retry has always read
+# `raw_by_token` by (RESOLVE-SEMANTIC-FALLBACK reviewer, fourth pass, blocker 1: a
+# first-wins rule for the code reader silently turned this resolution into a miss).
+def test_a_duplicated_token_retries_on_its_last_lines_raw_text(db, client):
+    _product(db, code="ZZTWB8006")
+    db.flush()
+
+    body = client.post(
+        ENDPOINT,
+        json={
+            "tokens": ["ZZTWB8006BASIN", "ZZTWB8006BASIN"],
+            "raw_tokens": ["ZZTWB8006BASIN", "ZZTWB8006 BASIN"],
+            "semantic_fallback": False,
+        },
+    ).json()
+
+    tr = next(r for r in body["resolutions"] if r["token"] == "ZZTWB8006BASIN")
+    assert [m["canonical_code"] for m in tr["matches"]] == ["ZZTWB8006"]
+    assert tr["matches"][0]["match_tier"] == "head_code"
+    assert body["unresolved_tokens"] == []
 
 
 # AC-5: inert without raw_tokens - byte-identical to today.

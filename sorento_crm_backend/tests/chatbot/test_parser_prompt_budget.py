@@ -102,6 +102,12 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # D9): main 690d41fc measures 44,883 without MEMORY_ADDENDUM; the owner's `sales` domain row adds one
 # domain line to the policy blocks (+88): 44,971 without MEMORY_ADDENDUM and 45,487 with it;
 # CEILING is 45,487 - 512 = 44,975 so both assertions hold. Nothing else grew.
+# Eighth re-pin, 6 Oct 2026 (RESOLVE-SEMANTIC-FALLBACK, PR #1511, owner ruling card Q1 = a):
+# CANONICAL_CODE_ADDENDUM (a type / colour / brand word beside a code is ONE product entity
+# whose canonical_code is the bare code as typed; 786 est. tokens) sits between
+# LOW_STOCK_FILTERS and MEMORY and takes the prompt without MEMORY_ADDENDUM to 45,757 est.
+# tokens and the whole prompt to 46,273; CEILING is 46,273 - 512 = 45,761 so both
+# assertions hold. A genuine new addendum the owner ruled must land, per the rule above.
 # Sixth re-pin, 2 Oct 2026 (REPORT-ENGINE slice 1b, PLAN-report-engine.md section 11):
 # REPORT_ASK_ADDENDUM (the `sales_ranking` vocabulary, 505 est. tokens on its own) sits between
 # ACCOUNT_LEDGER and MEMORY and takes the prompt without MEMORY_ADDENDUM to 44,005 est. tokens
@@ -131,10 +137,15 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # (+1,624) and 47,110 with it; CEILING is 47,110 - 512 = 46,598 so both assertions hold.
 # Since PROMPT-DYNAMIC (#1405) the live parser runs the owner's published text, not this
 # constant, so production grows by the two addenda alone. Nothing else grew.
-# Ninth re-pin, 7 Oct 2026 (STOCK-QTY-PARTIAL-FILL R2, same PR): the list-fragment addendum
+# Tenth re-pin, 7 Oct 2026 (STOCK-QTY-PARTIAL-FILL R2, same PR): the list-fragment addendum
 # gains the bare-number rule (crew's real-parser runs on v60 and v63 read "10" over seven owed
 # lines as a fill on line 1; Q3 (a) is one number for every line still owed): 46,996 without
 # MEMORY_ADDENDUM (+401) and 47,511 with it; CEILING is 47,511 - 512 = 46,999 so both
+# assertions hold. Nothing else grew.
+# Eleventh re-pin, 7 Oct 2026 (RESOLVE-SEMANTIC-FALLBACK merged over STOCK-QTY-PARTIAL-FILL R2):
+# both addenda in the constant (CANONICAL_CODE_ADDENDUM after LOW_STOCK_FILTERS, then
+# TRAP_SPECS_FALLBACK_BLOCK, MEMORY the tail) measure 47,782 without MEMORY_ADDENDUM (+786,
+# the canonical-code addendum alone) and 48,297 with it; CEILING is 48,297 - 512 = 47,785 so both
 # assertions hold. Nothing else grew.
 # Merge of main (#1513 STOCK-QTY-PARTIAL-FILL, TRAP_SPECS_FALLBACK_BLOCK +2,025) with PR #1447 (report engine):
 # 48,536 est. tokens without MEMORY_ADDENDUM and 49,052 with it, so CEILING is 49,052 - 512. Nothing else grew.
@@ -145,7 +156,9 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # with MEMORY_ADDENDUM, so CEILING is 49,275 - 512.
 # AC-HT8 r3 (business model, any-language ranked noun, channel refine, Chinese category words):
 # 49,069 est. tokens without MEMORY_ADDENDUM, so CEILING is 49,073 (the same +4 margin).
-CEILING = 49_073
+# Merge of main (#1511 RESOLVE-SEMANTIC-FALLBACK, CANONICAL_CODE_ADDENDUM) with PR #1447 (report engine):
+# 49,855 est. tokens without MEMORY_ADDENDUM, so CEILING is 49,859 (the same +4 margin).
+CEILING = 49_859
 # The memory addendum on its own, bounded separately so this PR's growth stays bounded.
 # 26 Sep baseline (lane d89110c0): 339 est. tokens. Round 4 (baf4c813, 28 Sep: the history
 # question in any wording, the number re-run, commercial_request) took it to 512, which is

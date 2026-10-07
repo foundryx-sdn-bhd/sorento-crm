@@ -1,0 +1,96 @@
+# Console case for ATTACH-SET-BRAND-FOLLOWUP: a brand named after a counted document set
+# narrows the SAME set and lists the SAME document type.
+#
+# `documentation/plans/chatbot/PLAN-attach-set-brand-followup-06oct.md`. NOT collected by
+# pytest. Run with `scripts/chatbot_console_check.py`
+# (`documentation/agents/chatbot-verification.md`):
+#
+#   venv/bin/python scripts/chatbot_console_check.py \
+#       tests/chatbot/console_cases/2026-10-06-attach-set-brand-followup.yaml \
+#       --base-url http://127.0.0.1:8000
+#
+# The owner's two turns (6 Oct 2026 22:40, #1490 test copy, prompt v58), cold. The contact
+# must be a dealer under General Enquiries who may see product attachments (487555417 on
+# the dev copy; 900000008 has no stored envelope there). The counts follow the test copy's
+# data (298 / 215 on 6 Oct); what must hold is that turn 2's rows are the document type
+# turn 1 asked for. The `attachment_type_alias` row 'technical drawing' -> Technical
+# Specifications must exist on the copy (it does on the shared dev copy) for turn 1 to
+# resolve.
+#
+# A count turn ("10") pages 10 PRODUCTS of the set; the header says how many products the
+# tool actually rendered ("showing 1 to <rendered>", `lanes/business/fetch.py`, reviewer B3
+# on PR #833 / AC-1330: the header states what the rows show, never what was asked for), so
+# the number is the copy's, not the ask's (crew live run, 7 Oct: 10 ids sent, 3 rendered).
+
+contact: "487555417"
+
+cases:
+  - name: owner turns 1 and 2, the brand follow-up keeps the document type
+    cold: true
+    turns:
+      - text: "which tap has technical drawing"
+        expect:
+          reply_contains:
+            - "Here's what you want: taps with technical specifications ("
+          reply_not_contains:
+            - "as a document type"
+            - "Attachment Type:* Product Photos"
+          no_uuid: true
+      - text: "sorento"
+        expect:
+          reply_contains:
+            - "Here's what you want: Sorento taps with technical specifications ("
+            - "*Attachment Type:* Technical Specifications"
+          reply_not_contains:
+            - "*Attachment Type:* Product Photos"
+            - "*Attachment Type:* Certification"
+            - "as a document type"
+          no_uuid: true
+
+  # Round 2 (owner hand test on the local copy, 7 Oct 2026): a document word after the brand
+  # page reads about the LISTED taps. Turn 3 is the parser's: on v58 it dropped the document
+  # entity ("they got pic/"), so the reply there is whatever the copy's prompt makes of it
+  # (graded only on not running over an unlisted product); turn 4 is the one that must hold.
+  - name: owner turns 1 to 4, a document word after the page reads about the listed taps
+    cold: true
+    turns:
+      - text: "which tap has technical drawing"
+        expect:
+          reply_contains:
+            - "Here's what you want: taps with technical specifications ("
+      - text: "sorento"
+        expect:
+          reply_contains:
+            - "Here's what you want: Sorento taps with technical specifications ("
+            - "*Attachment Type:* Technical Specifications"
+          no_uuid: true
+      - text: "they got pic/"
+        expect:
+          reply_not_contains:
+            - "COLD TAP"
+          no_uuid: true
+      - text: "pic"
+        expect:
+          reply_contains:
+            - "*Attachment Type:* Product Photos"
+          reply_not_contains:
+            - "*Attachment Type:* Technical Specifications"
+            - "COLD TAP"
+          no_uuid: true
+
+  - name: owner turn 1 then a count, the count keeps the document type
+    cold: true
+    turns:
+      - text: "which tap has technical drawing"
+        expect:
+          reply_contains:
+            - "Here's what you want: taps with technical specifications ("
+      - text: "10"
+        expect:
+          reply_contains:
+            - "Here's what you want: taps with technical specifications ("
+            - ", showing 1 to "
+            - "*Attachment Type:* Technical Specifications"
+          reply_not_contains:
+            - "*Attachment Type:* Product Photos"
+          no_uuid: true

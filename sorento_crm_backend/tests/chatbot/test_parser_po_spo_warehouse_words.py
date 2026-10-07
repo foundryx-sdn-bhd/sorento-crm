@@ -96,6 +96,7 @@ class TestTheAddendumIsTaught:
             ESCALATION_CONFIRMATION_ADDENDUM,
             MEMORY_ADDENDUM,
             REPORT_ASK_ADDENDUM,
+            CANONICAL_CODE_ADDENDUM,
             TRAP_SPECS_FALLBACK_BLOCK,
             LOW_STOCK_FILTERS_ADDENDUM,
             SEMANTIC_PARSER_PROMPT,
@@ -104,8 +105,8 @@ class TestTheAddendumIsTaught:
         _mod, addendum = _prompt()
         assert SEMANTIC_PARSER_PROMPT.endswith(MEMORY_ADDENDUM)
         # ACCOUNT_LEDGER_ADDENDUM (ACCOUNT-LEDGER) now sits between this one and MEMORY.
-        # REPORT-ENGINE slice 1b: REPORT_ASK_ADDENDUM, then TRAP_SPECS_FALLBACK_BLOCK (#1513), sit between ACCOUNT_LEDGER_ADDENDUM and MEMORY_ADDENDUM.
-        before_memory = SEMANTIC_PARSER_PROMPT.removesuffix(MEMORY_ADDENDUM).removesuffix(TRAP_SPECS_FALLBACK_BLOCK).removesuffix(
+        # REPORT-ENGINE slice 1b: REPORT_ASK_ADDENDUM, CANONICAL_CODE_ADDENDUM (#1511), then TRAP_SPECS_FALLBACK_BLOCK (#1513), sit between ACCOUNT_LEDGER_ADDENDUM and MEMORY_ADDENDUM.
+        before_memory = SEMANTIC_PARSER_PROMPT.removesuffix(MEMORY_ADDENDUM).removesuffix(TRAP_SPECS_FALLBACK_BLOCK).removesuffix(CANONICAL_CODE_ADDENDUM).removesuffix(
             REPORT_ASK_ADDENDUM
         ).removesuffix(
             LOW_STOCK_FILTERS_ADDENDUM
