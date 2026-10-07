@@ -656,3 +656,177 @@ def test_c6_second_request_while_in_flight_is_409(api, monkeypatch):
     )
     third = api.client.post(_URL, json=payload)
     assert third.status_code == 200, third.text
+
+
+# --------------------------------------------------------------------------- #
+# Reviewer round: cancel path, fail-closed scope, 403, sibling folder names
+# --------------------------------------------------------------------------- #
+def test_d6b_cancel_does_not_kill_the_work_horse(db, monkeypatch):
+    import time
+
+    from app.services.job_service import JobService
+
+    uid = _user(db)
+    stops: list[str] = []
+    monkeypatch.setattr("app.services.queue_service.cancel_job", lambda jid, *a, **k: stops.append(jid))
+    monkeypatch.setattr("app.services.job_service.cancel_rq_job", lambda jid, *a, **k: stops.append(jid))
+
+    svc = JobService(db)
+    bulk = svc.create_job(job_type="attachment_bulk_download", user_id=uid, metadata={})
+    other = svc.create_job(job_type="stock_import", user_id=uid, metadata={})
+    bulk.status = JobStatus.STARTED.value
+    other.status = JobStatus.STARTED.value
+    db.commit()
+
+    assert svc.cancel_job(str(bulk.job_id)) is True
+    time.sleep(0.4)  # the RQ stop is sent from a daemon thread
+    db.expire_all()
+    assert _val(db.query(ImportJob).filter(ImportJob.id == bulk.id).one().status) == "cancelled"
+    assert stops == [], "cancelling a bulk download must not stop the RQ work horse"
+
+    # Control: any other job type keeps today's behaviour.
+    assert svc.cancel_job(str(other.job_id)) is True
+    time.sleep(0.4)
+    assert stops == [str(other.job_id)]
+
+
+def test_d6c_cancel_after_the_loop_stops_the_upload(db, monkeypatch, tmp_path):
+    import tempfile
+
+    uid = _user(db)
+    folder = _folder(db, "Docs")
+    for n in ("a.pdf", "b.pdf", "c.pdf"):
+        _file(db, n, directory_id=folder)
+    job, dl = _job(db, user_id=uid, folder_ids=[folder])
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+
+    class CancelOnLast(FakeBackend):
+        calls = 0
+
+        def download_file(self, key):
+            data = super().download_file(key)
+            CancelOnLast.calls += 1
+            if CancelOnLast.calls == 3:
+                db.query(ImportJob).filter(ImportJob.id == job.id).update(
+                    {"status": JobStatus.CANCELLED.value}
+                )
+                db.commit()
+            return data
+
+    backend = CancelOnLast()
+    _run_task(db, monkeypatch, job, backend)
+
+    job, dl = _reload(db, job, dl)
+    assert backend.uploads == []
+    assert _val(job.status) == JobStatus.CANCELLED.value
+    assert _val(dl.status) == DownloadStatus.FAILED.value
+    assert dl.error == "Download cancelled"
+    assert list(tmp_path.iterdir()) == [], "temp file must be removed"
+
+
+def test_c5b_missing_scope_key_fails_closed(db, monkeypatch):
+    uid = _user(db)
+    a = _company(db, "A")
+    folder = _folder(db, "Shared", company_id=None)
+    _file(db, "only-a.pdf", directory_id=folder, company_id=a)
+    job, dl = _job(db, user_id=uid, folder_ids=[folder], scope=frozenset({a}))
+    job.job_metadata = {k: v for k, v in job.job_metadata.items() if k != "company_scope"}
+    db.commit()
+    backend = FakeBackend()
+
+    _run_task(db, monkeypatch, job, backend)
+
+    job, dl = _reload(db, job, dl)
+    assert backend.uploads == []
+    assert _val(job.status) == JobStatus.FAILED.value
+    assert "only-a.pdf" not in str(job.result) + str(job.error) + str(dl.error)
+
+
+def test_c5c_unset_scope_snapshot_is_empty_list(api, monkeypatch):
+    import app.models.base as base
+
+    monkeypatch.setattr(
+        "app.services.queue_service.enqueue_job",
+        lambda func, *a, **k: SimpleNamespace(id=str(k.get("job_id") or "rq-1")),
+    )
+    folder = _folder(api.db, "Marketing", company_id=None)
+    _file(api.db, "a.pdf", directory_id=folder, company_id=None)
+    payload = {"directory_id": None, "folder_ids": [folder], "attachment_ids": []}
+
+    # The visibility check runs under the real scope; only the snapshot read sees UNSET.
+    real = base.get_company_scope
+    seen = {"n": 0}
+
+    def flaky(db):
+        seen["n"] += 1
+        return base.UNSET
+
+    monkeypatch.setattr(base, "get_company_scope", flaky)
+    try:
+        resp = api.client.post(_URL, json=payload)
+    finally:
+        monkeypatch.setattr(base, "get_company_scope", real)
+
+    assert resp.status_code in (200, 404), resp.text
+    if resp.status_code == 404:
+        pytest.fail("UNSET scope hid a shared folder before the snapshot was taken; "
+                    "cannot assert the snapshot (route must snapshot independently)")
+    job = api.db.query(ImportJob).filter(ImportJob.id == resp.json()["id"]).one()
+    assert job.job_metadata["company_scope"] == []
+
+
+def test_c1b_user_without_drive_permission_gets_403(db):
+    from app.dependencies import get_current_user, get_current_user_or_api_key, get_db
+    from app.models.user import User, UserRole, UserRoleAssignment
+    from app.services.company_scope_resolver import apply_company_scope
+
+    uid, role_id = str(uuid.uuid4()), str(uuid.uuid4())
+    db.add(UserRole(id=role_id, slug=f"nobody-{role_id[:8]}", name="Nobody", description="",
+                    is_protected=False, is_default=False))
+    db.flush()
+    db.add(User(id=uid, email=f"{uid[:8]}@test.com", name="Nobody", status="ACTIVE"))
+    db.flush()
+    db.add(UserRoleAssignment(user_id=uid, role_id=role_id))
+    db.commit()
+    folder = _folder(db, "Marketing")
+
+    me = lambda: {"id": uid, "email": f"{uid[:8]}@test.com"}  # noqa: E731
+    def _db_override():
+        yield db
+
+    app.dependency_overrides[get_db] = _db_override
+    app.dependency_overrides[get_current_user] = me
+    app.dependency_overrides[get_current_user_or_api_key] = me
+    app.dependency_overrides[apply_company_scope] = lambda: None
+    try:
+        with TestClient(app) as c:
+            resp = c.post(_URL, json={"directory_id": None, "folder_ids": [folder],
+                                      "attachment_ids": []})
+    finally:
+        app.dependency_overrides.clear()
+    assert resp.status_code == 403, resp.text
+
+
+def test_b5b_sibling_folder_names_are_unique(db):
+    parent = _folder(db, "Parent")
+    p1 = _folder(db, "Promo", parent_id=parent)
+    p2 = _folder(db, "Promo", parent_id=parent)
+    ab_slash = _folder(db, "A/B", parent_id=parent)
+    ab_dash = _folder(db, "A-B", parent_id=parent)
+    _file(db, "a.pdf", directory_id=p1)
+    _file(db, "a.pdf", directory_id=p2)
+    _file(db, "Promo", directory_id=parent)
+    _file(db, "x.pdf", directory_id=ab_slash)
+    _file(db, "y.pdf", directory_id=ab_dash)
+
+    plan = _plan(db, folder_ids=[parent])
+    paths = _paths(plan)
+
+    assert len({p.lower() for p in paths}) == len(paths), paths
+    top = {p.split("/")[1] for p in paths if p.count("/") >= 2}
+    assert "Promo" in top and "Promo - copy" in top
+    assert "A-B" in top and "A-B - copy" in top
+    # the file named "Promo" shares the seen-set with the folders, so it is renamed too
+    assert "Parent/Promo - copy (2)" in paths or any(
+        p.startswith("Parent/Promo - copy") and p.count("/") == 1 for p in paths
+    )
