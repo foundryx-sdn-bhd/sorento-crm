@@ -19,10 +19,12 @@ from app.services.chatbot.turn.state import State, focus_to_wire
 def carry_live_state(
     state: State, asked: bool, live: Mapping[str, Any], *, non_answer: bool = False
 ) -> State:
-    """QUOTED-REPLY R4 (owner ruling, 7 Oct 2026): a turn that ran on a quoted turn's state
-    leaves the LIVE question open. The open question written is the live one unless this
-    turn asked its own; an answered or absent own stock task never replaces an open live one, while an
-    open one this turn opened itself wins, as a fresh ask does on main."""
+    """QUOTED-REPLY R4 and AC-QR-26 (owner rulings, 7 Oct 2026): what a turn that ran on a quoted
+    turn's state writes back. A follow-up question of this turn's own (a pending, or a NEW open
+    stock task) replaces the live picker and the live task, as a fresh ask does. Only when the
+    turn opened nothing are the live open question and live open task restored (an answered or
+    inherited own task never replaces an open live one). A non-answer lane (`non_answer`) that
+    asked nothing keeps the WHOLE live focus."""
     from dataclasses import replace
 
     from app.services.chatbot.turn.task import OPEN
