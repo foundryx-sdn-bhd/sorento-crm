@@ -655,12 +655,21 @@ def test_w6_a_long_subject_list_is_counted_never_dumped_as_one_line_of_codes():
     row = _domain_row("inventory", narrowing={"product": "list_all"})
     row["label"] = "stock"
     codes = [f"BRBC2210{i}W" for i in range(12)]
+    # STOCK-FILL-PREDICATE (never-stuck): a header prints over a body, never over
+    # nothing - so the subject rule is read off a section that has a row.
+    figure = {"fields": [{"label": "Product Code", "value": codes[0]}]}
 
-    answer = _compose([_envelope("inventory", entities=codes)], policy=_policy(row))
+    answer = _compose([_envelope("inventory", entities=codes, figures=[figure])], policy=_policy(row))
 
     first = one_line_header(answer.text)
     assert first == "*stock* for 12 products:", answer.text
     assert codes[5] not in first, answer.text
+
+    # The same subject rule on the section that rendered nothing at all (the tool ran
+    # for the codes and found nothing): the miss line it prints instead of a bare
+    # header counts the subjects too.
+    empty = _compose([_envelope("inventory", entities=codes, tool_ran=True)], policy=_policy(row))
+    assert one_line_header(empty.text) == "No stock found for 12 products.", empty.text
 
 
 def test_w6_a_short_subject_list_still_names_its_codes():
@@ -668,5 +677,8 @@ def test_w6_a_short_subject_list_still_names_its_codes():
 
     row = _domain_row("inventory", narrowing={"product": "list_all"})
     row["label"] = "stock"
-    answer = _compose([_envelope("inventory", entities=["MSK11C", "MSK11C-BL-DIY"])], policy=_policy(row))
+    figure = {"fields": [{"label": "Product Code", "value": "MSK11C"}]}
+    answer = _compose(
+        [_envelope("inventory", entities=["MSK11C", "MSK11C-BL-DIY"], figures=[figure])], policy=_policy(row)
+    )
     assert answer.text.startswith("*stock* for MSK11C, MSK11C-BL-DIY:"), answer.text
