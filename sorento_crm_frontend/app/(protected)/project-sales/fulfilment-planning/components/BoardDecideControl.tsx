@@ -238,14 +238,16 @@ export function BoardDecideControl({
   // Preview only, for the Save button's own count and disabled state - a fresh tally each
   // render, never the tally the actual save below commits to.
   const preview = React.useMemo(() => {
-    if (!way) return { coverable: 0 };
+    if (!way) return { coverable: 0, skipped: [] as [string, number][] };
     const claimed = new Map<string, number>();
     let coverable = 0;
+    const skippedBy = new Map<string, number>();
     for (const row of tickedRows) {
       const result = decideComposition(row, way, pick || undefined, claimed);
       if (!result.skip) coverable += 1;
+      else skippedBy.set(result.skip, (skippedBy.get(result.skip) ?? 0) + 1);
     }
-    return { coverable };
+    return { coverable, skipped: [...skippedBy.entries()] };
   }, [way, pick, tickedRows]);
 
   // Should fix 5 (review round 1): only `dialogOpen` closes the dialog now - `way`, `pick`,
@@ -560,6 +562,11 @@ export function BoardDecideControl({
                 />
               </div>
             )}
+            {preview.skipped.map(([why, count]) => (
+              <p key={why} className="text-sm text-muted-foreground">
+                {`${count} line${count === 1 ? '' : 's'} will be skipped: ${why}`}
+              </p>
+            ))}
           </DialogBody>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={reset}>

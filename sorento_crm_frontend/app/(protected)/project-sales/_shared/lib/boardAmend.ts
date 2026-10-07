@@ -778,7 +778,10 @@ export function decideComposition(
     // SO-CANCEL-LINE: a whole-line cancel carries no composition. A confirmed line must be
     // rejected first, and an already cancelled one has nothing left to cancel.
     if (contribution.cancelled) return { skip: 'already cancelled' };
-    if (contribution.covered) return { skip: 'confirmed, reject it first' };
+    // `covered` with no `decision` is a live inquiry row only: the server allows that cancel.
+    if (contribution.covered && contribution.decision) {
+      return { skip: 'confirmed, reject it first' };
+    }
     return {
       reserve: [],
       borrow: [],

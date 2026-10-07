@@ -336,7 +336,9 @@ function pressRoleFor(
   // (`cancelled_lines`), never `lines`, so the composition recheck never sees it.
   if (decision?.verdict === 'cancelled') {
     if (!contribution.cancelled) {
-      if (contribution.covered || !contribution.project_line_id) return { kind: 'skip' };
+      if ((contribution.covered && contribution.decision) || !contribution.project_line_id) {
+        return { kind: 'skip' };
+      }
       // `cancelled_lines` is refused beside a batch, like a staged rejection.
       if (batchBlocked) return { kind: 'blocked_cancel' };
       return { kind: 'cancel_so', reason: (decision.reason ?? '').trim() };
