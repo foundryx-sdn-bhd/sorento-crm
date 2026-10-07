@@ -720,7 +720,6 @@ def _access_ask_answer(
         **answer_mod.access_level_choice_message(
             tier_source,
             parser=parser,
-            live_brands=_turn_runtime.active_brands(db) if db is not None else None,
         ),
         "branch_kind": "access_choice",
     }
@@ -730,7 +729,11 @@ def _access_ask_answer(
     from app.services.chatbot import turn_runtime
 
     question = _tier_options(
-        rows, asked_at_turn=asked_at_turn, promo_filter=turn_runtime.promo_filter(parser or {}, db)
+        rows, asked_at_turn=asked_at_turn, promo_filter=turn_runtime.promo_filter(
+            parser or {},
+            db,
+            [{"entity_type": "brand", "uuid": r["id"]} for r in (tier_source or {}).get("resolved_brands") or []],
+        )
     )
     return turn_compose.Answer(text=text, question=question)
 

@@ -537,25 +537,29 @@ def active_brands(db: Session) -> list[dict[str, Any]]:
     ]
 
 
-def brand_entity_rows(entities: Any, live: list[dict[str, Any]]) -> list[tuple[dict[str, Any], dict[str, Any]]]:
-    """The parser's brand entities that name a live brand row: the entity's typed word or the
-    canonical name it resolved to EQUALS the row's brand_name or brand_code (case-folded).
-    Equality only: a misspelt word or one that merely contains a brand names nothing."""
-    out: list[tuple[dict[str, Any], dict[str, Any]]] = []
-    for e in entities or []:
-        if not isinstance(e, dict) or jsc.nullish_str(e.get("hint")).strip().lower() != "brand":
-            continue
-        said = {
-            " ".join(jsc.nullish_str(e.get(k)).casefold().split()) for k in ("raw", "canonical_code")
-        } - {""}
-        for row in live:
-            if said & {" ".join(jsc.nullish_str(row.get(k)).casefold().split()) for k in ("brand_name", "brand_code")}:
-                out.append((e, row))
-                break
+def resolver_matches(gate: Any) -> list[dict[str, Any]]:
+    """Every match the resolver returned for this turn's words (`gate["resolutions"]`), usable or
+    not for the lane: a brand it placed by id is read from here."""
+    out: list[dict[str, Any]] = []
+    for resolution in (gate or {}).get("resolutions") or [] if isinstance(gate, dict) else []:
+        out.extend(m for m in (resolution or {}).get("matches") or [] if isinstance(m, dict))
     return out
 
 
-def promo_filter(parse_output: dict[str, Any], db: Any) -> dict[str, list[str]]:
+def resolved_brand_rows(resolved_entities: Any, live: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The live brand rows the RESOLVER already placed this turn: resolved entities of kind
+    brand carrying a uuid that is a live brand row's id, in order. No text is compared."""
+    by_id = {row["id"]: row for row in live}
+    out: list[dict[str, Any]] = []
+    for e in resolved_entities or []:
+        if isinstance(e, dict) and e.get("entity_type") == "brand":
+            row = by_id.get(str(e.get("uuid") or ""))
+            if row is not None and row not in out:
+                out.append(row)
+    return out
+
+
+def promo_filter(parse_output: dict[str, Any], db: Any, resolved_entities: Any = None) -> dict[str, list[str]]:
     """PROMO-SUBJECT-FILTER: what narrows a promotions read besides the access level, off the
     parser's own answer. `scope_terms`: the class words it named. `promotion_types`: its
     `promotion_kind` code. `brand_ids`: the brand it named, only on a kind ask (a plain brand
@@ -572,9 +576,9 @@ def promo_filter(parse_output: dict[str, Any], db: Any) -> dict[str, list[str]]:
         # A code the table does not list is the parser guessing: it behaves as no kind.
         out["promotion_types"] = [kind.strip()]
         if db is not None:
-            ids = [row["id"] for _e, row in brand_entity_rows(parse_output.get("entities"), active_brands(db))]
+            ids = [row["id"] for row in resolved_brand_rows(resolved_entities, active_brands(db))]
             if ids:
-                out["brand_ids"] = list(dict.fromkeys(ids))
+                out["brand_ids"] = ids
     return out
 
 

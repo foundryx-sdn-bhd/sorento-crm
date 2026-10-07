@@ -1391,7 +1391,7 @@ def run_fetch(
     # (probe and main call alike); carried across a tier pick by the parse output.
     from app.services.chatbot import turn_runtime as _turn_runtime
 
-    narrow = _turn_runtime.promo_filter(parse_output, db) or {
+    narrow = _turn_runtime.promo_filter(parse_output, db, [*jsc.array(entities), *_turn_runtime.resolver_matches(gate)]) or {
         k: v for k, v in (parse_output.get("promo_filter") or {}).items() if v
     }
     for key, values in narrow.items():
@@ -1610,6 +1610,13 @@ def run_fetch(
         collected = fetch_mod.tier_probe_collect(
             tier_gate or payload, plan_items=plan_items, probe_results=probe_results
         )
+        if db is not None:
+            # The brands the resolver placed by id, for the menu's brand echo.
+            placed = _turn_runtime.resolved_brand_rows(
+                [*jsc.array(entities), *_turn_runtime.resolver_matches(gate)], _turn_runtime.active_brands(db)
+            )
+            if placed:
+                collected["resolved_brands"] = placed
         seen = collected.get("tier_availability")
         if isinstance(seen, dict) and seen and not any(seen.values()) and not collected.get("tier_probe_failed"):
             none_live = _nothing_live_of_kind(semantic_input, db, services, collected)
