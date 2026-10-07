@@ -1777,12 +1777,21 @@ def _typed_by_token(entities: list[Any]) -> dict[str, str]:
     the resolver echoes in `unresolved_tokens` / `truncated_tokens` - while the value stays
     the raw, the phrase the reply quotes. Keyed by raw alone, a canonical miss never joined
     and the "I could not find" line went silent (the #1501 / #1502 class).
+
+    PRODUCT entities only (hint `product`, or none): for every other hint the key stays
+    the raw, as it always was. An `attachment_type` word "cert" carries the parser's
+    canonical "certificate", which no attachment-type row answers in a world where
+    certificates are certificate rows (`test_attribute_asks_round8.py`, the by-code cert
+    ask): the ask is answered by the certificate predicate, and naming "cert" as not found
+    under that answer is wrong. Main keys such a miss by raw and stays silent; this lane
+    changes the product-code join and nothing else.
     """
     named: dict[str, str] = {}
     for entity in jsc.array(entities):
         raw = jsc.nullish_str(jsc.get(entity, "raw")).strip()
         canonical = jsc.nullish_str(jsc.get(entity, "canonical_code")).strip()
-        key = _token_key(canonical or raw)
+        hint = jsc.nullish_str(jsc.get(entity, "hint")).strip().lower()
+        key = _token_key((canonical or raw) if hint in ("", "product") else raw)
         if key and key not in named:
             named[key] = raw or canonical
     return named

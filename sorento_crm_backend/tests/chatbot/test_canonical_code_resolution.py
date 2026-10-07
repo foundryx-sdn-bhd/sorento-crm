@@ -166,6 +166,22 @@ def test_unplaced_tokens_still_join_by_raw_when_canonical_is_null():
     assert turn_runtime.unplaced_tokens([_entity("ZZTX-9999", None)], resolved) == {"zztx9999": "ZZTX-9999"}
 
 
+def test_a_non_product_entity_keeps_its_raw_key_so_a_canonical_miss_stays_silent_as_on_main():
+    """The canonical-first join is for product codes. An `attachment_type` word "cert" with
+    the parser's canonical "certificate" (no attachment-type row answers it; certificates
+    are certificate rows, and the certificate predicate answers the ask) kept main's raw key
+    and its miss silent; this lane leaves that exactly as it was
+    (`test_attribute_asks_round8.py::test_f2_incoming_and_certificate_sets_read_like_the_product_code_answer[cert]`)."""
+    entities = [
+        _entity(TYPED, TAP),
+        {"raw": "cert", "hint": "attachment_type", "canonical_code": "certificate"},
+    ]
+    assert turn_runtime._typed_by_token(entities) == {"zztwt5608": TYPED, "cert": "cert"}
+    assert turn_runtime.unplaced_tokens(entities, {"unresolved_tokens": ["certificate"]}) == {}
+    assert turn_runtime.unplaced_tokens(entities, {"unresolved_tokens": ["cert"]}) == {"cert": "cert"}
+    assert turn_runtime.unplaced_tokens(entities, {"unresolved_tokens": [TAP]}) == {"zztwt5608": TYPED}
+
+
 def test_not_checked_tokens_join_the_canonical_cut_to_the_typed_phrase():
     resolved = {"resolutions": [], "unresolved_tokens": [], "truncated_tokens": [TAP]}
     assert turn_runtime.not_checked_tokens([_entity(TYPED, TAP)], resolved) == {"zztwt5608": TYPED}

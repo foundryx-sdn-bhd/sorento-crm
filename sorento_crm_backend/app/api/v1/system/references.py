@@ -2879,7 +2879,19 @@ def resolve_reference_post(
         db, query=payload.query or "", tokens=payload.tokens, allowed_types=payload.allowed_entity_types
     )
     if narrowed is not None:
-        payload = payload.model_copy(update={"tokens": narrowed, "raw_tokens": None})
+        # RESOLVE-SEMANTIC-FALLBACK (reviewer on 9b6a09f2): a token narrowing left as it
+        # was keeps its typed text, so the code reader can still read a code out of it;
+        # dropping the whole `raw_tokens` list here made every other token of a mixed
+        # multi-line turn `not_asked / no_typed_text`. A token narrowing replaced (the
+        # variant codes its words picked) has no typed text of its own and is not asked;
+        # a token typed twice keeps its last line's text, the resolver's own rule.
+        typed_by_token = (
+            {tok: raw for tok, raw in zip(payload.tokens, payload.raw_tokens)}
+            if payload.tokens and payload.raw_tokens and len(payload.raw_tokens) == len(payload.tokens)
+            else {}
+        )
+        carried = [typed_by_token.get(tok, "") for tok in narrowed] if typed_by_token else None
+        payload = payload.model_copy(update={"tokens": narrowed, "raw_tokens": carried})
     # A contact's packing list regions (unresolved = West) bound the shipments it can be
     # shown; no contact_id = no filter.
     regions = None

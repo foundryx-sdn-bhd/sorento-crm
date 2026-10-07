@@ -413,6 +413,43 @@ def test_a_stock_ask_on_a_read_out_code_is_a_forward_ask_never_the_counted_set(d
     assert read_out["unresolved_tokens"] == []
 
 
+def test_a_token_narrowing_left_alone_keeps_its_typed_text_for_the_reader(db, monkeypatch):
+    """`narrow_code_tokens` runs on the route before the resolver and, when it changes any
+    token, the route used to drop the whole `raw_tokens` list, so every other token of a
+    mixed multi-line turn became `not_asked / no_typed_text` and the reader silently gave
+    up on it (reviewer on 9b6a09f2). A token narrowing left as it was keeps its typed
+    text; the replaced one has none and is not asked."""
+    from app.api.v1.system.references import ResolveReferenceRequest, resolve_reference_post
+    from app.services import product_code_family, resolver_code_reader
+    from app.services.resolver_code_reader import CodeReading
+
+    monkeypatch.setattr(
+        product_code_family, "narrow_code_tokens",
+        lambda db_, *, query, tokens, allowed_types: ["ZZTWC286-SH", "TAPZZTWT5608"],
+    )
+    asked: list[Any] = []
+
+    def fake_read_codes(db_, missed, **kw):
+        asked.append(list(missed))
+        return {tok: CodeReading("code", TAP) for tok, _ in missed}
+
+    monkeypatch.setattr(resolver_code_reader, "read_codes", fake_read_codes)
+    payload = ResolveReferenceRequest(
+        query="ZZTWC286 sh\nTAP ZZTWT5608 x 5", tokens=["ZZTWC286SH", "TAPZZTWT5608"],
+        raw_tokens=["ZZTWC286 sh", "TAP ZZTWT5608"], allowed_entity_types=["product", "product"],
+        match_mode="or", fallback_to_all_types=False, limit=15, dry_run=True,
+    )
+    out = resolve_reference_post(payload, current_user={"id": None}, db=db)
+
+    rows = {r["token"]: r for r in out["resolutions"]}
+    assert asked == [[("TAPZZTWT5608", "TAP ZZTWT5608")]], asked
+    assert [m["canonical_code"] for m in rows["TAPZZTWT5608"]["matches"]] == [TAP]
+    assert rows["TAPZZTWT5608"]["fallback"] == {"asked": True, "kind": "code", "value": TAP, "matched": 1}
+    # The narrowed token was answered by the catalogue's own variant and never asked.
+    assert [m["canonical_code"] for m in rows["ZZTWC286-SH"]["matches"]] == ["ZZTWC286-SH"]
+    assert "fallback" not in rows["ZZTWC286-SH"]
+
+
 def test_the_route_asks_once_even_when_it_reruns_the_unresolved_tokens(db):
     """`fallback_to_all_types` re-runs the tokens still unresolved against every type
     (`references._resolve_input`'s cross-type pass, which calls `resolve_references`
