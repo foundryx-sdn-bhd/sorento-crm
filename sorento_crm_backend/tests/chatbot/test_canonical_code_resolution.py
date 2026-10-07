@@ -182,6 +182,31 @@ def test_a_non_product_entity_keeps_its_raw_key_so_a_canonical_miss_stays_silent
     assert turn_runtime.unplaced_tokens(entities, {"unresolved_tokens": [TAP]}) == {"zztwt5608": TYPED}
 
 
+def test_typed_product_unplaced_joins_the_canonical_miss_the_way_the_map_is_keyed():
+    """#1506's "did THIS message's own product token miss?" reads the map
+    `named_unplaced` builds, which this lane keys canonical-first for a product. Keyed by
+    the raw alone, "TAP ZZTX9999" (canonical ZZTX9999, missed) looked up "tapzztx9999" in
+    a map holding "zztx9999", answered False, and the composer header and the
+    `set_page` carry stayed silent on a miss the reply itself names."""
+    verdict = {"entities": [_entity(MISS_TYPED, MISS)]}
+    resolved = {"resolutions": [{"token": MISS, "matches": []}], "unresolved_tokens": [MISS]}
+    unplaced = turn_runtime.named_unplaced(verdict["entities"], resolved)
+    assert unplaced == {"zztx9999": MISS_TYPED}
+    assert turn_runtime.typed_product_unplaced(verdict, unplaced) is True
+
+
+def test_typed_product_unplaced_still_joins_by_raw_when_canonical_is_null():
+    verdict = {"entities": [_entity("ZZTX-9999", None)]}
+    unplaced = turn_runtime.named_unplaced(verdict["entities"], {"resolutions": [], "unresolved_tokens": ["ZZTX9999"]})
+    assert turn_runtime.typed_product_unplaced(verdict, unplaced) is True
+
+
+def test_typed_product_unplaced_is_still_not_a_miss_on_a_brand_word():
+    verdict = {"entities": [_entity("zzt brand", "ZZTBRAND", hint="brand")]}
+    assert turn_runtime.typed_product_unplaced(verdict, {"zztbrand": "zzt brand"}) is False
+    assert turn_runtime.typed_product_unplaced(verdict, {"zztbrand2": "zzt brand"}) is False
+
+
 def test_not_checked_tokens_join_the_canonical_cut_to_the_typed_phrase():
     resolved = {"resolutions": [], "unresolved_tokens": [], "truncated_tokens": [TAP]}
     assert turn_runtime.not_checked_tokens([_entity(TYPED, TAP)], resolved) == {"zztwt5608": TYPED}
