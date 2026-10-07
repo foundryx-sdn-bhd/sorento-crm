@@ -22,7 +22,7 @@ On Dashboards > Resources > Files, a user selects any mix of folders and files a
 - **AC-B2** Nested selection: when a selected folder's descendant (folder or file) is also selected, it appears exactly once, at its place inside the parent's subtree, never a second time at the root.
 - **AC-B3** An empty folder (no non-deleted files, no non-deleted subfolders) is written as a directory entry `Path/To/Name/`, so a re-import recreates it.
 - **AC-B4** Entry name = `stored_filename`, falling back to `original_filename` (the name shown in the row and used by the single download).
-- **AC-B5** (Q4) Two or more files in the same folder with the same entry name (case-insensitive): the first keeps its name, the second becomes `<base> - copy (2)<ext>`, the third `<base> - copy (3)<ext>`, using the import's suffix rules (`archive.tar.gz` -> `archive.tar - copy (2).gz`).
+- **AC-B5** (Q4) Two or more files in the same folder with the same entry name (case-insensitive): the first keeps its name, the second becomes `<base> - copy<ext>`, the third `<base> - copy (2)<ext>`, exactly the import's suffix rules (`archive.tar.gz` -> `archive.tar - copy.gz`).
 - **AC-B6** (Q4) `/` and `\` inside a folder or file name become `-` in the archive path. No other character is changed.
 - **AC-B7** Deleted (trashed) folders and archived files are never included, even when they sit inside a selected folder.
 - **AC-B8** The archive is a valid zip readable by Python `zipfile` and by Bulk import: re-importing the archive into an empty folder recreates the same folder tree and the same file names (modulo AC-B5/B6 renames).
