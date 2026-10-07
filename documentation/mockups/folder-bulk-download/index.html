@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Download selected (ZIP): progress dialog (mockup v1)</title>
+<style>
+/* Tokens copied from sorento_crm_frontend/css/config.reui.css (light theme) */
+:root{--background:#fff;--foreground:#09090b;--card:#fff;--muted:#f4f4f5;--muted-fg:#71717a;--border:#ececee;--primary:#3b82f6;--primary-fg:#fff;--primary-soft:#eff6ff;--secondary:#f4f4f5;--destructive:#dc2626;--destructive-soft:#fef2f2;--success:#15803d;--success-soft:#f0fdf4;--warning:#a16207;--warning-soft:#fefce8;--radius:8px;--page:#f7f7f8}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--foreground);font:14px/1.45 Inter,ui-sans-serif,system-ui,sans-serif}
+h1{font-size:22px;margin:0 0 4px}
+.doc{max-width:1400px;margin:0 auto;padding:16px}
+.intro{color:var(--muted-fg);font-size:13px;margin:0 0 12px;max-width:900px}
+section{margin:0 0 34px}
+section>h2{font-size:15px;margin:0 0 4px}
+section>.why{font-size:12.5px;color:var(--muted-fg);margin:0 0 12px;max-width:860px}
+.row{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start}
+.note{font-size:12px;color:var(--muted-fg);border-left:2px solid var(--border);padding:2px 0 2px 10px;margin:8px 0 0;max-width:860px}
+.nb{display:inline-block;min-width:18px;height:18px;border-radius:9px;background:var(--foreground);color:#fff;font-size:11px;line-height:18px;text-align:center;margin-right:6px}
+.desk{width:1280px;flex:none;background:#fff;border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.desk .screen{height:640px;overflow:hidden;background:#fff;position:relative}
+.phone{width:375px;flex:none;background:#fff;border:1px solid var(--border);border-radius:16px;overflow:hidden}
+.phone .screen{height:700px;overflow:hidden;background:var(--page);position:relative}
+.cap{font-size:11px;color:var(--muted-fg);text-align:center;padding:6px;border-top:1px solid var(--border);background:#fff}
+.main{padding:22px 26px}
+.pagehead{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px}
+.pagehead .t{font-size:22px;font-weight:600}
+.crumb{font-size:13px;color:var(--muted-fg);margin-bottom:10px}
+.btn{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:6px;border:1px solid var(--border);background:#fff;font-size:13px;font-weight:500;color:var(--foreground)}
+.btn.pri{background:var(--primary);color:#fff;border-color:var(--primary)}
+.btn.ghost{border-color:transparent;background:transparent}
+.btn.sm{height:28px;font-size:12px}
+.btn[disabled]{opacity:.5}
+.strip{display:flex;gap:8px;align-items:center;margin:0 0 10px;background:var(--primary-soft);border:1px solid #bfdbfe;border-radius:8px;padding:6px 10px;font-size:13px}
+.strip .n{font-weight:600}
+.menu{position:absolute;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.08);padding:4px;width:230px;font-size:13px;z-index:3}
+.menu div{padding:7px 10px;border-radius:6px;display:flex;gap:8px;align-items:center}
+.menu div.dis{color:var(--muted-fg);opacity:.55}
+.menu div.hl{background:var(--muted)}
+.menu div.del{color:var(--destructive)}
+.menu .i{width:14px;height:14px;border:1.5px solid currentColor;border-radius:3px;display:inline-block;flex:none}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{border-bottom:1px solid var(--border);padding:7px 8px;text-align:left;white-space:nowrap}
+th{font-size:12px;color:var(--muted-fg);font-weight:500;background:#fff}
+tr.sel td{background:var(--primary-soft)}
+.cb{display:inline-block;width:14px;height:14px;border:1px solid #a1a1aa;border-radius:3px;vertical-align:-2px;background:#fff}
+.cb.on{background:var(--primary);border-color:var(--primary)}
+.fold{display:inline-block;width:14px;height:11px;background:#fbbf24;border-radius:2px;vertical-align:-1px;margin-right:6px}
+.scrim{position:absolute;inset:0;background:rgba(9,9,11,.35)}
+.dialog{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:512px;max-width:calc(100% - 32px);background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:0 20px 50px rgba(0,0,0,.18);padding:22px}
+.phone .dialog{width:calc(100% - 32px);top:auto;bottom:0;transform:translateX(-50%);border-radius:12px 12px 0 0;max-height:90%;overflow:auto}
+.dh{font-size:16px;font-weight:600;margin:0 0 2px}
+.dd{font-size:13px;color:var(--muted-fg);margin:0 0 14px}
+.line{display:flex;align-items:center;gap:10px;font-size:14px;font-weight:500}
+.spin{width:22px;height:22px;border:3px solid var(--primary-soft);border-top-color:var(--primary);border-radius:50%;flex:none}
+.ok{color:var(--success)} .bad{color:var(--destructive)}
+.ico{width:22px;height:22px;border-radius:50%;border:2px solid currentColor;flex:none;display:inline-flex;align-items:center;justify-content:center;font-size:13px}
+.meta{display:flex;justify-content:space-between;font-size:13px;color:var(--muted-fg);margin:14px 0 6px}
+.bar{height:8px;background:var(--muted);border-radius:999px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--primary);border-radius:999px}
+.hint{font-size:12px;color:var(--muted-fg);margin:12px 0 0}
+.sum{font-size:13px;color:var(--muted-fg);margin:12px 0 0;display:grid;gap:4px}
+.sum .warn{color:var(--warning)}
+.foot{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+.map{font-size:13px;border-collapse:collapse;width:100%;max-width:1100px}
+.map td,.map th{white-space:normal;vertical-align:top}
+code{font-size:12px;background:var(--muted);padding:1px 5px;border-radius:4px}
+</style>
+</head>
+<body>
+<div class="doc">
+<h1>Download selected (ZIP): progress dialog</h1>
+<p class="intro">Mockup v1, 7 Oct 2026, lane FOLDER-BULK-DOWNLOAD. Real case: Dashboards > Resources > Files > <b>Marketing</b> (prod copy 6 Oct), three folders selected: Sorento Product Photo (123 subfolders, 1374 files, 1559 MB), Price Tag (4 subfolders, 4 files, 37 MB), Cabana Technical Drawing (empty). 1378 files, 130 folders, 1.6 GB. Every element below reuses an existing component; the list at the end maps each one.</p>
+
+<section id="menu">
+<h2><span class="nb">1</span>Action menu with the new item (desktop 1280)</h2>
+<p class="why">The only menu change: "Download selected" (new, enabled for any mix). "Export selected" keeps its folder gating and gets a spreadsheet icon so the two no longer share one.</p>
+<div class="row">
+<div class="desk"><div class="screen"><div class="main">
+<div class="crumb">Files &rsaquo; Marketing</div>
+<div class="pagehead"><div class="t">Marketing</div><button class="btn pri">+ Upload</button></div>
+<div class="strip"><span class="cb on"></span><span class="n">3 selected</span><span style="flex:1"></span><button class="btn sm">Action &#9662;</button><button class="btn sm ghost">Clear</button></div>
+<div class="menu" style="right:26px;top:118px">
+<div><span class="i"></span>Move to&hellip;</div>
+<div class="hl"><span class="i"></span><b>Download selected</b></div>
+<div class="dis" title="Not available when a folder is selected."><span class="i"></span>Export selected</div>
+<div class="dis"><span class="i"></span>Set access levels</div>
+<div class="dis"><span class="i"></span>Set attachment type</div>
+<div><span class="i"></span>Set company</div>
+<div class="dis"><span class="i"></span>Resubmit selected</div>
+<div class="del"><span class="i"></span>Delete selected</div>
+</div>
+<table><thead><tr><th style="width:28px"></th><th>Name</th><th>Type</th><th>Size</th><th>Company</th><th>Modified</th></tr></thead><tbody>
+<tr class="sel"><td><span class="cb on"></span></td><td><span class="fold"></span>Sorento Product Photo</td><td>Folder</td><td>&mdash;</td><td>Shared</td><td>3 Oct 2026</td></tr>
+<tr class="sel"><td><span class="cb on"></span></td><td><span class="fold"></span>Price Tag</td><td>Folder</td><td>&mdash;</td><td>Shared</td><td>26 Sep 2026</td></tr>
+<tr class="sel"><td><span class="cb on"></span></td><td><span class="fold"></span>Cabana Technical Drawing</td><td>Folder</td><td>&mdash;</td><td>Shared</td><td>12 Aug 2026</td></tr>
+<tr><td><span class="cb"></span></td><td><span class="fold"></span>Sorento Product Video</td><td>Folder</td><td>&mdash;</td><td>Shared</td><td>1 Oct 2026</td></tr>
+<tr><td><span class="cb"></span></td><td><span class="fold"></span>Sorento Technical Drawing</td><td>Folder</td><td>&mdash;</td><td>Shared</td><td>29 Sep 2026</td></tr>
+<tr><td><span class="cb"></span></td><td><span class="fold"></span>CATALOG SORENTO</td><td>Folder</td><td>&mdash;</td><td>Shared</td><td>18 Sep 2026</td></tr>
+<tr><td><span class="cb"></span></td><td><span class="fold"></span>SRT LITE / DIY PROMOTION (END USER)</td><td>Folder</td><td>&mdash;</td><td>Shared</td><td>2 Sep 2026</td></tr>
+</tbody></table>
+</div></div><div class="cap">Action menu, 3 folders selected. Download selected enabled; Export selected still disabled with its existing reason.</div></div>
+</div>
+</section>
+
+<section id="preparing">
+<h2><span class="nb">2</span>Dialog, state A: preparing (1280 and 375)</h2>
+<p class="why">Opens the moment the menu item is clicked and starts the job at once (no form, no confirm). Live count and bar from the job's progress; Cancel stops the job; Close keeps it running.</p>
+<div class="row">
+<div class="desk"><div class="screen"><div class="main" style="opacity:.6">
+<div class="crumb">Files &rsaquo; Marketing</div>
+<div class="pagehead"><div class="t">Marketing</div><button class="btn pri">+ Upload</button></div>
+<div class="strip"><span class="cb on"></span><span class="n">3 selected</span><span style="flex:1"></span><button class="btn sm">Action &#9662;</button></div>
+<table><thead><tr><th style="width:28px"></th><th>Name</th><th>Type</th><th>Size</th><th>Company</th></tr></thead><tbody>
+<tr class="sel"><td><span class="cb on"></span></td><td><span class="fold"></span>Sorento Product Photo</td><td>Folder</td><td>&mdash;</td><td>Shared</td></tr>
+<tr class="sel"><td><span class="cb on"></span></td><td><span class="fold"></span>Price Tag</td><td>Folder</td><td>&mdash;</td><td>Shared</td></tr>
+<tr class="sel"><td><span class="cb on"></span></td><td><span class="fold"></span>Cabana Technical Drawing</td><td>Folder</td><td>&mdash;</td><td>Shared</td></tr>
+</tbody></table></div>
+<div class="scrim"></div>
+<div class="dialog">
+<p class="dh">Download selected</p>
+<p class="dd">Marketing-20261007-1412.zip</p>
+<div class="line"><span class="spin"></span>Preparing archive in the background&hellip;</div>
+<div class="meta"><span>Files: 412 / 1,378</span><span>29%</span></div>
+<div class="bar"><i style="width:29%"></i></div>
+<p class="hint">You can close this dialog. The archive keeps building and the Download button appears here when it is ready.</p>
+<div class="foot"><button class="btn">Cancel download</button><button class="btn">Close</button></div>
+</div>
+</div><div class="cap">1280: dialog max-w-lg, same frame as Bulk import (ZIP).</div></div>
+
+<div class="phone"><div class="screen">
+<div class="main" style="padding:14px;opacity:.6"><div class="crumb">Files &rsaquo; Marketing</div><div class="pagehead"><div class="t" style="font-size:18px">Marketing</div></div><div class="strip"><span class="cb on"></span><span class="n">3 selected</span></div></div>
+<div class="scrim"></div>
+<div class="dialog">
+<p class="dh">Download selected</p>
+<p class="dd">Marketing-20261007-1412.zip</p>
+<div class="line"><span class="spin"></span>Preparing archive&hellip;</div>
+<div class="meta"><span>Files: 412 / 1,378</span><span>29%</span></div>
+<div class="bar"><i style="width:29%"></i></div>
+<p class="hint">You can close this dialog. The archive keeps building.</p>
+<div class="foot" style="flex-direction:column"><button class="btn">Cancel download</button><button class="btn">Close</button></div>
+</div>
+</div><div class="cap">375: bottom sheet, stacked buttons.</div></div>
+</div>
+</section>
+
+<section id="ready">
+<h2><span class="nb">3</span>Dialog, state B: archive ready</h2>
+<p class="why">Summary lines only when they carry a number above zero. "Download ZIP" opens the 1-hour signed link (browser's own download). Files outside the viewer's companies are a count, never a name (owner ruling Q3a: shared files are included).</p>
+<div class="row">
+<div class="desk"><div class="screen"><div class="main" style="opacity:.6"><div class="crumb">Files &rsaquo; Marketing</div><div class="pagehead"><div class="t">Marketing</div></div></div>
+<div class="scrim"></div>
+<div class="dialog">
+<p class="dh">Download selected</p>
+<p class="dd">Marketing-20261007-1412.zip</p>
+<div class="line ok"><span class="ico">&#10003;</span>Archive ready</div>
+<div class="sum">
+<span>1,376 files in 130 folders, 1.6 GB</span>
+<span class="warn">2 files could not be read and were skipped</span>
+<span class="warn">7 files not included (outside your companies)</span>
+<span>Link valid for 1 hour. The archive is removed after 24 hours.</span>
+</div>
+<div class="foot"><button class="btn">Close</button><button class="btn pri">&#8595; Download ZIP</button></div>
+</div>
+</div><div class="cap">Ready state. Hidden lines when the count is 0: only "1,378 files in 130 folders, 1.6 GB" and the link note remain.</div></div>
+
+<div class="phone"><div class="screen"><div class="main" style="padding:14px;opacity:.6"><div class="crumb">Files &rsaquo; Marketing</div></div>
+<div class="scrim"></div>
+<div class="dialog">
+<p class="dh">Download selected</p>
+<p class="dd">Marketing-20261007-1412.zip</p>
+<div class="line ok"><span class="ico">&#10003;</span>Archive ready</div>
+<div class="sum"><span>1,376 files in 130 folders, 1.6 GB</span><span class="warn">2 files could not be read and were skipped</span><span class="warn">7 files not included (outside your companies)</span><span>Link valid for 1 hour.</span></div>
+<div class="foot" style="flex-direction:column"><button class="btn pri">&#8595; Download ZIP</button><button class="btn">Close</button></div>
+</div>
+</div><div class="cap">375: primary first when stacked.</div></div>
+</div>
+</section>
+
+<section id="failed">
+<h2><span class="nb">4</span>Dialog, states C and D: failed, cancelled</h2>
+<p class="why">Never stuck: a terminal state always replaces the spinner. Failed shows the job's one-line error; cancelled shows a plain line. Both only offer Close (the user re-selects and starts again).</p>
+<div class="row">
+<div class="desk" style="width:620px"><div class="screen" style="height:300px"><div class="scrim"></div>
+<div class="dialog">
+<p class="dh">Download selected</p>
+<p class="dd">Marketing-20261007-1412.zip</p>
+<div class="line bad"><span class="ico">&#10005;</span>Archive failed</div>
+<div class="sum"><span>No file could be read. Storage is not reachable. Try again in a few minutes.</span></div>
+<div class="foot"><button class="btn">Close</button></div>
+</div></div><div class="cap">Failed.</div></div>
+<div class="desk" style="width:620px"><div class="screen" style="height:300px"><div class="scrim"></div>
+<div class="dialog">
+<p class="dh">Download selected</p>
+<p class="dd">Marketing-20261007-1412.zip</p>
+<div class="line"><span class="ico" style="color:var(--muted-fg)">&ndash;</span>Download cancelled</div>
+<div class="sum"><span>Nothing was saved. Select the folders again to start a new download.</span></div>
+<div class="foot"><button class="btn">Close</button></div>
+</div></div><div class="cap">Cancelled.</div></div>
+</div>
+</section>
+
+<section id="map">
+<h2><span class="nb">5</span>Element to component map</h2>
+<table class="map"><thead><tr><th>Element</th><th>Reuses</th></tr></thead><tbody>
+<tr><td>Action menu item "Download selected"</td><td><code>driveBulkActions.ts</code> item list (same <code>ToolbarAction</code> shape as Move / Export), rendered by the panel's Action dropdown at <code>AttachmentsInFolderPanel.tsx:749-790</code>; icon from the panel's <code>BULK_ACTION_ICONS</code> map (lucide <code>Download</code>; Export switches to <code>FileSpreadsheet</code>)</td></tr>
+<tr><td>Dialog frame, title, description, footer</td><td><code>components/ui/dialog</code> (<code>Dialog</code>, <code>DialogContent className="max-w-lg"</code>, <code>DialogHeader</code>, <code>DialogTitle</code>, <code>DialogDescription</code>, <code>DialogFooter</code>) exactly as <code>AttachmentBulkImportDialog.tsx:166-172</code></td></tr>
+<tr><td>Spinner line "Preparing archive"</td><td>lucide <code>Loader2 className="size-6 animate-spin text-primary"</code> + label, copied from the import dialog's processing block <code>:270-275</code></td></tr>
+<tr><td>Files x / y, percentage, bar</td><td><code>components/ui/progress</code> <code>Progress value=... className="h-2"</code> and the two-span meta row, import dialog <code>:276-283</code>; numbers from <code>GET /system/jobs/{id}/status</code> <code>progress.processed / total / percentage</code></td></tr>
+<tr><td>Hint under the bar</td><td>same <code>text-xs text-muted-foreground</code> paragraph as import dialog <code>:285</code></td></tr>
+<tr><td>Ready / failed headline</td><td>lucide <code>CheckCircle</code> (text-green-600) and <code>XCircle</code> (text-destructive) lines, import dialog <code>:293-296</code>, <code>:318-322</code></td></tr>
+<tr><td>Summary lines</td><td><code>text-sm text-muted-foreground space-y-1</code> block, import dialog <code>:298-301</code>; warning lines use <code>text-amber-600</code> like its errors summary</td></tr>
+<tr><td>Buttons</td><td><code>components/ui/button</code> <code>Button</code> (default = primary, <code>variant="outline"</code> for Cancel / Close)</td></tr>
+<tr><td>Cancel download</td><td>existing <code>POST /system/jobs/{id}/cancel</code> (<code>jobs.py:465</code>); row flips to <code>cancelled</code> at once</td></tr>
+<tr><td>Download ZIP</td><td>existing <code>GET /system/jobs/{id}/source</code> (<code>jobs.py:358</code>), returns the 1-hour signed URL, opened in the browser</td></tr>
+<tr><td>Toasts</td><td><code>sonner</code> <code>toast.error</code> only for a failed start call (as every mutation hook)</td></tr>
+</tbody></table>
+</section>
+</div>
+</body>
+</html>
