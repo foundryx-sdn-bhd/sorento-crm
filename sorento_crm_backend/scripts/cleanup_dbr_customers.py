@@ -8,10 +8,13 @@ their Respond.io chat links, then deletes the customers. `orders.debtor_name` is
 
 A customer holding an `integration_references` row is a real AutoCount debtor and is left alone.
 If any OTHER table still points at a DBR customer the run aborts and changes nothing.
+A contact left with no customer link at all is UNRESTRICTED in chat, so `--apply` also aborts
+while any contact would be left unlinked, unless it is linked to a real account first or
+`--allow-unlink` is passed. A dry run never aborts: it reports the blockers and those contacts.
 
 Run from sorento_crm_backend/:
     python -m scripts.cleanup_dbr_customers            # dry run, writes nothing
-    python -m scripts.cleanup_dbr_customers --apply
+    python -m scripts.cleanup_dbr_customers --apply [--allow-unlink]
 """
 from __future__ import annotations
 
@@ -60,7 +63,7 @@ def _blockers(db, ids: list[str]) -> list[str]:
     return found
 
 
-def run(db, apply: bool = False) -> dict:
+def run(db, apply: bool = False, allow_unlink: bool = False) -> dict:
     """Count (and with `apply`, perform) the cleanup. Returns the counts and the unlinked contacts."""
     customers = [dict(r._mapping) for r in db.execute(text(_DBR_CUSTOMERS))]
     ids = [c["id"] for c in customers]
@@ -93,15 +96,21 @@ def run(db, apply: bool = False) -> dict:
         "stock_asks_nulled": asks,
         "chat_links": len(links),
         "contacts_left_unlinked": unlinked,
+        "blockers": _blockers(db, ids) if ids else [],
         "customers": customers,
         "order_numbers": [o[0] for o in orders],
     }
     if not apply or not ids:
         return result
 
-    blockers = _blockers(db, ids)
-    if blockers:
-        raise RuntimeError("DBR customers are still referenced, nothing changed: " + "; ".join(blockers))
+    if result["blockers"]:
+        raise RuntimeError("DBR customers are still referenced, nothing changed: " + "; ".join(result["blockers"]))
+    if unlinked and not allow_unlink:
+        raise RuntimeError(
+            "nothing changed: these contacts would be left with no customer link, and an unlinked contact "
+            "is unrestricted in chat. Link them to a real account first, or pass --allow-unlink: "
+            + ", ".join(u["contact_id"] for u in unlinked)
+        )
     # orders.customer_id is NO ACTION in prod, so null it before the delete.
     db.execute(text("UPDATE orders SET customer_id = NULL WHERE customer_id::text = ANY(:ids)"), {"ids": ids})
     db.execute(text("UPDATE stock_asks SET customer_id = NULL WHERE customer_id::text = ANY(:ids)"), {"ids": ids})
@@ -121,6 +130,7 @@ def run(db, apply: bool = False) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--allow-unlink", action="store_true", help="Apply even if contacts end up unlinked.")
     parser.add_argument("--apply", action="store_true", help="Write the changes (default is a dry run).")
     args = parser.parse_args()
 
@@ -129,7 +139,7 @@ def main() -> int:
     db = SessionLocal()
     try:
         try:
-            res = run(db, apply=args.apply)
+            res = run(db, apply=args.apply, allow_unlink=args.allow_unlink)
         except RuntimeError as exc:
             db.rollback()
             print(f"ABORTED: {exc}")
@@ -143,9 +153,13 @@ def main() -> int:
         for c in res["customers"]:
             print(f"  {c['customer_code']} | {c['customer_name']} | {c['company_id']}")
         print("DO numbers:", ", ".join(res["order_numbers"]) or "(none)")
+        print("Blockers:", "; ".join(res["blockers"]) or "(none)")
         print("Contacts left unlinked:")
         for u in res["contacts_left_unlinked"]:
             print(f"  {u['contact_id']} (was {u['dbr_customer_name']})")
+        if not args.apply and (res["blockers"] or res["contacts_left_unlinked"]):
+            print("--apply will refuse while there are blockers or unlinked contacts "
+                  "(link the contacts first, or pass --allow-unlink for contacts).")
         return 0
     finally:
         db.close()
