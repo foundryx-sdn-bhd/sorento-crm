@@ -11,6 +11,7 @@ const handlers: DriveBulkActionHandlers = {
   onSetAttachmentType: vi.fn(),
   onSetCompany: vi.fn(),
   onResubmit: vi.fn(),
+  onDownload: vi.fn(),
   onDelete: vi.fn(),
   onRestore: vi.fn(),
 };
@@ -43,6 +44,7 @@ describe('buildDriveBulkActions', () => {
       })
     ).toEqual([
       'bulk-move',
+      'bulk-download',
       'bulk-export',
       'bulk-access-levels',
       'bulk-attachment-type',
@@ -137,5 +139,49 @@ describe('buildDriveBulkActions', () => {
         canRestore: true,
       })
     ).toEqual(['bulk-restore', 'bulk-permanent-delete']);
+  });
+
+  describe('AC-A1..A3: Download selected', () => {
+    const base = { isTrashView: false, isResubmitting: false, canRestore: false };
+
+    it('A1: bulk-download is enabled for file-only, folder-only and mixed selections, right after bulk-move', () => {
+      const states = [
+        { selectionCount: 2, selectionHasFolder: false },
+        { selectionCount: 2, selectionHasFolder: true },
+        { selectionCount: 3, selectionHasFolder: true },
+      ];
+      for (const s of states) {
+        const actions = buildDriveBulkActions({ ...base, ...s }, handlers);
+        const idx = actions.findIndex((a) => a.key === 'bulk-download');
+        expect(idx).toBeGreaterThan(-1);
+        expect(actions[idx].label).toBe('Download selected');
+        expect(actions[idx].disabled).toBeFalsy();
+        expect(actions[idx - 1].key).toBe('bulk-move');
+        actions[idx].onClick?.();
+      }
+      expect(handlers.onDownload).toHaveBeenCalledTimes(3);
+    });
+
+    it('A2: Export selected stays present and disabled when a folder is selected', () => {
+      const actions = buildDriveBulkActions(
+        { ...base, selectionCount: 2, selectionHasFolder: true },
+        handlers,
+      );
+      const exp = actions.find((a) => a.key === 'bulk-export');
+      expect(exp?.disabled).toBe(true);
+      expect(exp?.disabledReason).toMatch(/folder/i);
+      expect(actions.find((a) => a.key === 'bulk-download')?.disabled).toBeFalsy();
+    });
+
+    it('A3: the trash view has no Download', () => {
+      const all = keys({
+        selectionCount: 1,
+        selectionHasFolder: false,
+        isTrashView: true,
+        isResubmitting: false,
+        canRestore: true,
+      });
+      expect(all).toEqual(['bulk-restore', 'bulk-permanent-delete']);
+    });
   });
 });

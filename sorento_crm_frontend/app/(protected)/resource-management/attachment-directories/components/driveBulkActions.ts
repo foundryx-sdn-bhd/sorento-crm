@@ -7,7 +7,9 @@ import type { ToolbarAction } from '@/components/ui/data-grid-list-toolbar';
  *
  * Gating:
  * - Mixed folder+file selections are allowed (F1).
- * - Shared actions (Move, Delete) stay enabled on any selection.
+ * - Shared actions (Move, Download, Delete) stay enabled on any selection.
+ * - Download is the file-bundle ZIP (folders + files, background job); Export stays the xlsx
+ *    rows export.
  * - File-only actions (Export selected, Set access levels, Set attachment type,
  *    Resubmit) are DISABLED when the selection contains a folder (F3) - folders
  *    have no such attributes.
@@ -21,6 +23,7 @@ import type { ToolbarAction } from '@/components/ui/data-grid-list-toolbar';
  */
 export interface DriveBulkActionHandlers {
   onMove: () => void;
+  onDownload: () => void;
   onExport: () => void;
   onSetAccessLevels: () => void;
   onSetAttachmentType: () => void;
@@ -66,6 +69,7 @@ export function buildDriveBulkActions(
   const fileOnlyReason = state.selectionHasFolder ? FILE_ONLY_DISABLED_REASON : undefined;
   return [
     { key: 'bulk-move', label: 'Move to…', onClick: handlers.onMove },
+    { key: 'bulk-download', label: 'Download selected', onClick: handlers.onDownload },
     {
       key: 'bulk-export',
       label: 'Export selected',

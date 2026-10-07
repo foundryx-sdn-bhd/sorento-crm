@@ -85,6 +85,27 @@ class R2Service:
 
     # ------------------------------------------------------------------ uploads
 
+    def upload_fileobj(
+        self,
+        fileobj,
+        key: str,
+        content_type: Optional[str] = None,
+    ) -> str:
+        """Stream a file object to R2 (multipart), never holding it in memory."""
+        key = (key or "").lstrip("/")
+        if not key:
+            raise ValueError("key is required")
+        extra: dict = {}
+        if content_type:
+            extra["ContentType"] = content_type
+        try:
+            self.client.upload_fileobj(
+                fileobj, self.bucket_name, key, ExtraArgs=extra or None
+            )
+        except (ClientError, BotoCoreError) as e:
+            raise Exception(f"Failed to upload file to R2: {e}")
+        return key
+
     def upload_file(
         self,
         file_content: bytes,
