@@ -257,6 +257,12 @@ def test_unknown_product_type_asks_back_without_menu_or_tool(session_factory, mo
 def test_menu_names_the_canonical_brand_not_the_typo(session_factory, monkeypatch):
     """AC-16: "sroento" resolved to the Sorento brand: the question says Sorento."""
     _seed(session_factory)
+    from app.models.product import Brand
+    from app.services.company_scope import DEFAULT_COMPANY_ID
+
+    _db = session_factory()
+    _db.add(Brand(id=str(uuid.uuid4()), brand_code=f"ZZT{uuid.uuid4().hex[:6]}", brand_name="Sorento", company_id=DEFAULT_COMPANY_ID))
+    _db.commit()
     reply, _captured, _ = _say(
         session_factory, monkeypatch, _ask_qf("sroento", "brand", canonical_code="Sorento"),
         "sroento promo", "zzt-psf-brand", lambda n, a: HAS,
