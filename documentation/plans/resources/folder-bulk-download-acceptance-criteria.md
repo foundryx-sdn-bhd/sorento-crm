@@ -1,7 +1,7 @@
 # UAC - Files page: download selected folders and files as one ZIP
 
 **Slug:** `folder-bulk-download`
-**Status:** Draft, pending behaviour-card answers Q1-Q5 (crew ask a38602650, 7 Oct 2026). Written under the card's recommendations; a different answer edits the marked ACs.
+**Status:** Approved behaviour (card a38602650 closed 7 Oct 2026). Rulings: Q1 a, Q2 a, Q3 a (shared files included), Q4 yes, Q5 c (daily 24 h cleanup), no size cap.
 **Plan:** `documentation/plans/resources/PLAN-folder-bulk-download.md`
 **Behaviour card:** `documentation/plans/resources/behaviour-card-folder-bulk-download.md`
 
@@ -31,10 +31,10 @@ On Dashboards > Resources > Files, a user selects any mix of folders and files a
 ## C. Access and company scope (security)
 
 - **AC-C1** The start endpoint requires the drive read permission (`resource.attachments.view` or `resource.attachment_directories.view`). Unauthenticated -> 401; a user without it -> 403.
-- **AC-C2** Only folders and files visible to the requester (company_id NULL or in the requester's scope) are planned into the archive. A file of company B inside a shared folder is absent from a company-A viewer's archive and present in an all-companies viewer's archive.
+- **AC-C2** Only folders and files visible to the requester are planned into the archive, by the SAME predicate as the single-file download (`company_id IS NULL OR company_id IN <viewer scope>`), with no new rule. Pinned triple in one shared folder for a company-A viewer: a SHARED file (NULL company) is included, an own-company (A) file is included, a company-B file is excluded; all three are present for an all-companies viewer.
 - **AC-C3** (Q3a) The completion summary carries `files_not_visible` = number of non-deleted files in the selected subtree that the scope filter excluded. No name, path or id of an excluded file appears anywhere in the response or the archive. No manifest file is written into the archive.
 - **AC-C4** When every selected id is invisible or unknown the request fails with 404 and no job is created. An empty selection fails with 400.
-- **AC-C5** The worker re-applies the requester's FULL company scope snapshot (several companies for a multi-company user, all-companies for an unscoped superadmin) before planning; it never widens to all companies because the snapshot is a set.
+- **AC-C5** (must-fix, security-reviewer) The worker re-applies the requester's FULL company scope snapshot (several companies for a multi-company user, all-companies for an unscoped superadmin) before planning; a two-company snapshot yields both companies' files and excludes a third's; it never widens to all companies because the snapshot is a set.
 - **AC-C6** Job status, cancel and the download link are owner-only (the job's `user_id` must equal the caller), as the existing job endpoints already enforce.
 - **AC-C7** The download link is a signed storage URL with a 1 h expiry; no session token or API key ever appears in a URL.
 
@@ -46,7 +46,9 @@ On Dashboards > Resources > Files, a user selects any mix of folders and files a
 - **AC-D4** A file whose bytes cannot be read from storage is skipped, counted in `files_failed`, and the job still finishes.
 - **AC-D5** `files_included = 0` (every planned file failed) ends as `failed` with "No file could be read", not as an empty archive.
 - **AC-D6** Cancel while running (existing `POST /system/jobs/{id}/cancel`) stops the job within one batch; the archive is not uploaded and the temp file is removed.
-- **AC-D7** (Q5a) No size cap. The archive byte size is reported in `result.bytes` (the Integer `source_file_size` column is not used for it).
+- **AC-D7** (Q5) No size cap. The archive byte size is reported in `result.bytes`; the Integer `source_file_size` column stays NULL for this job type (a 3 GB value would overflow it).
+- **AC-D7b** The archive is uploaded as a file object (multipart), never loaded into memory as one bytes value.
+- **AC-D7c** (Q5 c) A daily tick deletes the storage object of every finished bulk-download job older than 24 h and clears its key; the job row stays. A 2 h old archive is untouched; a failed job with no key is untouched.
 - **AC-D8** Dialog: opening it starts the job at once and shows "Preparing archive" with files done / total and a bar; a terminal state replaces the spinner. `finished` shows the summary (files, folders, size, "N files not included (outside your companies)" only when N > 0, "N files could not be read" only when N > 0) and a primary "Download ZIP" button that opens the signed URL. `failed` shows the error and Close. The dialog can be closed while running; the job continues.
 - **AC-D9** The dialog never shows a spinner forever: a poll error is retried on the next tick, and a job that leaves the queue without a result (RQ lost it) is surfaced by the existing status sync as `failed`.
 

@@ -1,6 +1,6 @@
 # PLAN - Files page: download selected folders and files as one ZIP
 
-Status: **Draft, pending behaviour-card answers (crew ask a38602650, 7 Oct 2026). Track: M, LEAD pattern (tester -> coder -> reviewer + security-reviewer).**
+Status: **Approved behaviour (card a38602650 closed 7 Oct 2026: Q1 a, Q2 a, Q3 a with shared files INCLUDED, Q4 yes, Q5 c, no size cap). Mock v1 filed (9b8f5d24e), build waits for the mock go. Track: M, LEAD pattern (tester -> coder -> reviewer + security-reviewer).**
 UAC: `documentation/plans/resources/folder-bulk-download-acceptance-criteria.md`
 Behaviour card: `documentation/plans/resources/behaviour-card-folder-bulk-download.md`
 Lane: `crew/folder-bulk-download` (worktree `sorento_crm-folder-bulk-download`), base `origin/main` e4158ab52.
@@ -25,6 +25,23 @@ Lane: `crew/folder-bulk-download` (worktree `sorento_crm-folder-bulk-download`),
 
 Data (prod copy 6 Oct): Marketing = 495 folders / 3302 files / 3079 MB; largest file 85 MB; 55 same-name pairs; 45 empty folders; one folder name with `/`; 417 files in a folder of another company.
 
+## 0b. Rulings and must-fix items (owner + crew, 7 Oct 2026)
+
+- Q1 (a): NEW menu item "Download selected" for any mix; "Export selected" unchanged.
+- Q2 (a): background job with live progress, Download button, 1-hour signed link.
+- Q3 (a), clarified: files marked SHARED (`company_id IS NULL`) are INCLUDED; only files owned by a company the viewer is not a member of are left out and counted. This is exactly the single-file download's predicate (`company_id IS NULL OR company_id IN <scope>`, `base.py:112-138`), so NO new rule is written; one test pins the triple: shared included, other-company excluded, own-company included.
+- Q4 yes: list name as entry name, ` - copy (n)`, `/` and `\` to `-`.
+- Q5 (c): our own daily cleanup of finished archives older than 24 h; no size cap.
+
+Must-fix (in the plan as hard items):
+1. **Archive size field.** `import_jobs.source_file_size` is a 4-byte Integer (`job.py:75`); the archive byte count goes to `result.bytes` and `source_file_size` stays NULL for this job type. Test: a 3 GB stats value round-trips through `result`.
+2. **Multipart upload.** `upload_file(bytes)` (`r2_service.py:88`, `s3_service.py:102`) cannot take a multi-GB archive; add `upload_fileobj` (boto3 `upload_fileobj`, multipart) on both backends and the `StorageBackend` Protocol; the task streams the temp file through it. Test: the fake backend receives a file object, never bytes.
+3. **Multi-company viewers.** The import job snapshots ONE `company_id` (`job.py:48`, `import_tasks.py:86-112`); this job snapshots the FULL scope (`null` = all companies, else the sorted id list) in `job_metadata.company_scope` and the worker re-applies it with `set_company_scope`. Security-reviewer owns this item. Test: a two-company snapshot includes both companies' files and excludes a third's.
+
+Cleanup tick (Q5 c): `purge_bulk_download_archives(db, hours=24)` in the new service deletes the storage object of every `attachment_bulk_download` job with `source_file_key` set and `completed_at` older than 24 h, then nulls `source_file_key` (the job row stays as history); registered in `app/scheduler/task_scheduler.py` next to the daily `ai_trace_sweep` (`:746-752`) with `IntervalTrigger(hours=24)`, same shape as `_handler_user_downloads_purge` (`:303-313`) and `purge_expired_downloads` (`download_service.py:250`, best-effort per object). Test: a 25 h old finished job loses its object and key, a 2 h old one keeps both, a failed job with no key is untouched.
+
+Alternative checked and rejected: the "My Downloads" drawer (`app/models/download.py`, `components/my-downloads/*`) already does pending / processing / ready / failed with a signed URL and a 30-day purge, but it has no progress counter (the owner asked for live progress), no cancel, and a 20-minute stale sweep (`download_service.py:12`, `:98-135`) that would flag a live 3 GB build as failed. Giving it those three needs a migration and a sweep exception; the import job has all three today. The archive therefore rides on `import_jobs`.
+
 ## 1. Design (simplest thing that works)
 
 One job type, one task, one pure planner, one dialog, one menu item. No new table, no migration (`import_jobs` already has every column needed), no new permission slug, no new queue.
@@ -35,7 +52,7 @@ One job type, one task, one pure planner, one dialog, one menu item. No new tabl
    Body: `{ directory_id: str | null, folder_ids: [uuid], attachment_ids: [uuid] }`.
    Guard: `require_any_permission_with_api_key(DRIVE_READERS)` (`attachments.py:100`).
    Steps: validate uuids; resolve the visible selected rows under the request scope (folders: `AttachmentDirectory` non-deleted; files: `Attachment` non-deleted); 400 when both lists empty, 404 when nothing visible; derive `archive_filename` (AC-B9) from the viewed folder's name; `create_job(job_type="attachment_bulk_download", user_id, filename=archive_filename, metadata={directory_id, folder_ids, attachment_ids, company_scope: null | [ids]})`; `enqueue_job(process_attachment_bulk_download, str(job.id), queue_name="imports", job_timeout=7200, job_id=str(job.job_id))`; return `{job_id, id, message}`.
-   `company_scope` snapshot: `get_company_scope(db)` -> `None` stays `null` (all companies), a frozenset becomes a sorted list. The worker re-applies it exactly with `set_company_scope`.
+   `company_scope` snapshot: `get_company_scope(db)` -> `None` stays `null` (all companies), a frozenset becomes a sorted list. The worker re-applies it exactly with `set_company_scope` (must-fix 3).
 2. `app/services/attachment_bulk_download_service.py` (pure, testable without storage):
    - `plan_archive(db, directory_id, folder_ids, attachment_ids) -> ArchivePlan` with `entries: list[ArchiveEntry(path, attachment | None)]` (a `None` attachment = directory entry), `files_not_visible: int`, `folders: int`.
      Rules B1-B7: dedupe nested selections (drop a selected folder/file whose ancestor folder is also selected); walk each selected folder with `get_descendant_directory_ids_portable(include_deleted=False)`; build relative paths from the viewed folder; entry name = `stored_filename or original_filename`; sanitise `/` and `\` to `-`; per-folder case-insensitive collision suffix via the import's `_suffix_copy_name` logic (move that helper into this service and import it back into `attachments.py`, one copy); empty folders -> `path/` entries.
@@ -43,7 +60,8 @@ One job type, one task, one pure planner, one dialog, one menu item. No new tabl
    - `write_archive(plan, read_bytes, out_fileobj, on_progress, should_stop) -> ArchiveStats(files_included, files_failed, bytes)`: `zipfile.ZipFile(out, "w", ZIP_STORED, allowZip64=True)`; per file `read_bytes(attachment)` in a try; failure -> counted, continue; `on_progress(processed)` every 10 files; `should_stop()` checked at the same cadence (cancel).
 3. `app/tasks/attachment_bulk_download_task.py`: `process_attachment_bulk_download(db_job_id)`: open `SessionLocal()`, load the job, re-apply the scope snapshot, `plan_archive`, `update_job_progress(total_rows=len(files))`, write to a `tempfile.NamedTemporaryFile` on the worker, `should_stop` = job row status is `cancelled`; on finish upload with the NEW `upload_fileobj(fileobj, key="bulk-exports/<job.id>.zip", content_type="application/zip")` on the default provider backend, set `source_file_key/provider/filename`, `complete_job(result={archive_filename, files_included, files_failed, files_not_visible, folders, bytes})`; `files_included == 0` -> `fail_job("No file could be read")`; any exception -> `fail_job(str)`; `finally` removes the temp file.
    Notification copy: `complete_job` / `cancel_job` say "Import completed / cancelled" with `job.job_type` in the sentence (`job_service.py:189-232`, `:349-355`); give this job_type its own two lines ("Archive ready: <archive_filename>, N files" / "Download cancelled") in `_notify_import_job_event` callers, by job_type, nothing more.
-4. `R2Service.upload_fileobj` + `S3Service.upload_fileobj` (boto3 `upload_fileobj`, multipart by default) and the `StorageBackend` Protocol gains the method (`storage_router.py:31`).
+4. `R2Service.upload_fileobj` + `S3Service.upload_fileobj` (boto3 `upload_fileobj`, multipart by default) and the `StorageBackend` Protocol gains the method (`storage_router.py:31`) (must-fix 2).
+4b. Daily cleanup tick as in section 0b (Q5 c).
 
 ### Frontend
 
@@ -65,7 +83,7 @@ pytest `tests/test_attachment_bulk_download.py` (Postgres `blank_session`, auth-
 4. B5 same-name files -> ` - copy (2)`, ` - copy (3)`.
 5. B6 `/` in a folder name -> `-`.
 6. B7 archived file and trashed subfolder excluded.
-7. C2/C3 company-B file in a shared folder: absent for a company-A scope, `files_not_visible == 1`; present under all-companies scope.
+7. C2/C3 the ruling triple in one shared folder under a company-A scope: shared file (NULL company) included, own-company (A) file included, company-B file excluded with `files_not_visible == 1`; all three present under the all-companies scope.
 8. C1/C4/D1 endpoint: 401 unauthenticated; 400 empty; 404 all-invisible; 202-style body with `job_id` and a job row `job_type == attachment_bulk_download` carrying the scope snapshot.
 9. D3/D4/D5 task end to end with a fake backend (monkeypatch `get_backend` and `upload_fileobj`): zip read back with the expected names, `source_file_key` set, result counts; one unreadable file -> `files_failed == 1`, status finished; all unreadable -> failed with "No file could be read".
 10. C5 task re-applies a two-company snapshot (both companies' files present, a third company's absent).
@@ -73,12 +91,14 @@ pytest `tests/test_attachment_bulk_download.py` (Postgres `blank_session`, auth-
 
 vitest:
 12. `driveBulkActions.test.ts`: `bulk-download` present and enabled with folders / files / mix; absent in trash; `bulk-export` still disabled with a folder.
+11b. Must-fix 1: `result.bytes` carries 3_300_000_000 and `source_file_size` stays NULL.
+11c. Cleanup tick: 25 h old finished job loses object + key; 2 h old keeps both; failed job without key untouched.
 13. `AttachmentBulkDownloadDialog.test.tsx`: start called once on open; processing shows `Files: 10 / 1374`; finished shows the summary and a Download ZIP button that requests the source URL; failed shows the error; cancelled shows the message; no spinner in any terminal state.
 
 ## 3. Order of work
 
-1. Behaviour card answers (ask a38602650) -> adjust UAC/plan.
-2. Mock filed as an ask; build only after approval.
+1. Behaviour card closed 7 Oct; UAC/plan updated (this revision).
+2. Mock v1 filed as an ask (9b8f5d24e); build only after approval.
 3. Tester: red tests, `test(red):` commit alone, red-proof note.
 4. Coder: backend 1-4, frontend 5-8, until green; kill-proof note.
 5. Reviewer + security-reviewer on the final head (scope snapshot, `files_not_visible` numbers only, owner-only job endpoints, no token in URLs).
