@@ -130,7 +130,7 @@ def _seed_line(db, company_id, so_number, code, *, source_system="scm_order_inqu
     db.flush()
     product = Product(
         id=_uid(), company_id=company_id, product_code=code, product_name=f"{MARKER} {code}",
-        category_id=category.id, base_uom_id=uom.id,
+        category_id=category.id, base_uom_id=uom.id, list_price=Decimal("1"),
     )
     order = SalesOrder(id=_uid(), company_id=company_id, so_number=so_number, status="open")
     db.add_all([product, order])
