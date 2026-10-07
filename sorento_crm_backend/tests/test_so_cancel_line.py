@@ -453,6 +453,47 @@ def test_c23_a_cancel_of_a_line_the_batch_does_not_name_rides_along_with_the_bat
     assert db.get(PlanningChangeBatch, batch_id).applied_at is not None
 
 
+def test_c25_a_superseded_row_on_the_cancelled_line_does_not_make_the_batch_name_it(api):
+    """AC-C25: the batch's only row on A is `superseded` (replaced by a later row), so the
+    batch no longer names A and the cancel rides along like C23."""
+    from app.models.planning_change import PlanningChangeRow
+    from .test_fulfilment_line_draft_route import _planning_change_row
+
+    client, world = api
+    w = _cb_world(world)
+    core_a, mirror_a, product_a = w["a"]
+    _open_core, open_line = w["open"]
+    db = world.db
+    batch = _open_batch_naming(world, w, "open", client)
+    batch_id = str(batch.id)
+    row, _own = _planning_change_row(
+        db, order=w["order"], line=mirror_a, core_line=core_a, product=product_a,
+        applied_state="superseded", batch_applied_at=None,
+    )
+    row.batch_id = batch_id
+    db.commit()
+
+    response = client.post(
+        f"{BASE}/fulfilment-planning/confirm-all",
+        json={"orders": [dict(
+            _cancel_body(mirror_a, lines=[_line_payload(open_line.id, buy_qty="7")]),
+            pso_id=w["order"].id, batch_id=batch_id,
+        )]},
+    )
+
+    assert response.status_code == 200, response.text
+    result = response.json()["results"][0]
+    assert result["ok"] is True, result
+    assert [r["line_no"] for r in result["lines_cancelled"]] == [10]
+    assert _raw(db, core_a.id).line_status == "cancelled"
+    live = (
+        db.query(PlanningChangeRow)
+        .filter(PlanningChangeRow.batch_id == batch_id, PlanningChangeRow.applied_state != "superseded")
+        .all()
+    )
+    assert live and all(r.applied_state == "applied" for r in live)
+
+
 def test_c24_a_refused_cancel_beside_a_batch_press_writes_neither(api):
     """AC-C24 (GUARD: the cancel validates before the batch, so this passes once C23's
     ride-along exists and must keep passing): A is already cancelled (409), the batch names
