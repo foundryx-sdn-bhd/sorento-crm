@@ -11,7 +11,7 @@ import type { BoardContribution, BoardDraft } from '../types/fulfilmentPlanning.
 import * as board from './fulfilmentBoard';
 import { amendSummary } from './boardAmend';
 
-const { confirmLinesFor, pressPostsContribution } = board;
+const { confirmLinesFor, pressPostsContribution, plannedLineCount, confirmDialogRowsFor } = board;
 
 function row(overrides: Partial<BoardContribution> = {}): BoardContribution {
   return {
@@ -86,5 +86,37 @@ describe('cancelled verdict on the press (AC-F5)', () => {
 describe('amendSummary reads Cancel SO (AC-F4)', () => {
   it('names a cancelled verdict "Cancel SO", not "Amended to nothing"', () => {
     expect(amendSummary(CANCEL)).toBe('Cancel SO');
+  });
+});
+
+describe('a cancel draft on a covered line is no press at all (AC-F10)', () => {
+  const covered = row({ covered: true, decision: { id: 'd-1' } as never });
+  const draft: BoardDraft = { [covered.key]: CANCEL };
+
+  it('cancelledLinesFor sends nothing for it, and `lines` does not carry it either', () => {
+    expect(board.cancelledLinesFor([covered], 'so-1', draft)).toEqual([]);
+    expect(confirmLinesFor([covered], 'so-1', draft)).toEqual([]);
+    expect(pressPostsContribution(covered, CANCEL)).toBe(false);
+  });
+});
+
+describe('a cancel draft under a pending planning change is held, not counted (AC-F11)', () => {
+  const contribution = row();
+  const draft: BoardDraft = { [contribution.key]: CANCEL };
+
+  it('is not a press and is not counted', () => {
+    expect(pressPostsContribution(contribution, CANCEL, { batchBlocked: true })).toBe(false);
+    expect(plannedLineCount([contribution], 'so-1', draft, new Set(['so-1']))).toBe(0);
+    expect(plannedLineCount([contribution], 'so-1', draft, new Set())).toBe(1);
+  });
+
+  it('the dialog names it as not posted rather than listing it', () => {
+    const dialog = confirmDialogRowsFor([contribution], draft, {
+      currentUserName: 'Cyndi',
+      openedAt: new Date('2026-10-01T00:00:00Z'),
+      batchBlockedSalesOrderIds: new Set(['so-1']),
+    });
+    expect(dialog.rows).toHaveLength(0);
+    expect(dialog.notPosted).toHaveLength(1);
   });
 });

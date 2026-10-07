@@ -510,3 +510,130 @@ def test_c16_a_nameless_user_never_surfaces_as_an_email_on_the_board(api):
     assert row["cancelled"] is True
     assert row["cancelled_by"] != ""
     assert "@" not in str(row["cancelled_by"])
+
+
+# ---------------------------------------------------------------- round 3: C17 to C21
+
+
+def _decision_count(db, order):
+    db.expire_all()
+    return (
+        db.query(SOSupplyDecision)
+        .filter(SOSupplyDecision.project_sales_order_id == order.id)
+        .count()
+    )
+
+
+def test_c17_a_preview_confirm_all_echoes_the_cancel_but_writes_nothing(api):
+    client, world = api
+    w = _cb_world(world)
+    core_a, mirror_a, product_a = w["a"]
+    world.db.add(
+        SOSupplyDecisionDraft(
+            sales_order_id=w["core_so"].id,
+            core_line_id=core_a.id,
+            line_no=10,
+            item_code=product_a.product_code,
+            bucket_key="2026-W41",
+            decision={"verdict": "cancelled", "reason": REASON},
+            saved_by=world.eling,
+        )
+    )
+    world.db.commit()
+    response = client.post(
+        f"{BASE}/fulfilment-planning/confirm-all",
+        json={"preview": True, "orders": [dict(_cancel_body(mirror_a), pso_id=w["order"].id)]},
+    )
+    assert response.status_code == 200, response.text
+    result = response.json()["results"][0]
+    assert result["ok"] is True, result
+    assert [r["line_no"] for r in result["lines_cancelled"]] == [10]
+    row = _raw(world.db, core_a.id)
+    assert row.line_status == "closed"
+    assert row.cancelled_at is None
+    assert row.cancel_reason is None
+    world.db.expire_all()
+    assert (
+        world.db.query(SOSupplyDecisionDraft)
+        .filter(SOSupplyDecisionDraft.core_line_id == str(core_a.id))
+        .count()
+        == 1
+    )
+
+
+def test_c18_a_refused_line_beside_a_cancel_on_the_single_route_cancels_nothing(api):
+    client, world = api
+    w = _cb_world(world)
+    core_a, mirror_a, _p = w["a"]
+    _open_core, open_line = w["open"]
+    response = client.post(
+        f"{BASE}/sales-orders/{w['order'].id}/confirm",
+        # open qty is 5: components that add up to 3 are refused by the recheck.
+        json=_cancel_body(mirror_a, lines=[_line_payload(open_line.id, buy_qty="3")]),
+    )
+    assert response.status_code in (409, 422), response.text
+    assert _status(world.db, core_a.id) == "closed"
+    assert _raw(world.db, core_a.id).cancelled_at is None
+
+
+def test_c19_a_re_push_lands_the_new_price_while_the_line_stays_cancelled(env):
+    line = _so_line(env, qty_ordered=36, qty_delivered=36)
+    record = _so_record(env, lines=[line])
+    env.post(INGEST_SO, [record])
+    header = env.header("sales_orders", record["source_ref"])
+    line_id = env.so_lines(header["id"])[0]["id"]
+    _mark_cancelled(env, line_id, REASON)
+
+    env.post(INGEST_SO, [dict(record, lines=[dict(line, unit_price=9)])])
+
+    env.db.expire_all()
+    price = env.db.execute(
+        text("SELECT unit_price FROM sales_order_lines WHERE id = :i"), {"i": str(line_id)}
+    ).scalar()
+    assert Decimal(str(price)) == Decimal("9")
+    assert _raw(env.db, line_id).line_status == "cancelled"
+
+
+def test_c20_a_line_in_an_open_planning_change_is_still_covered_for_cancel(api):
+    from .test_fulfilment_line_draft_route import _planning_change_row
+    from app.services.planning_change_service import PLANNING_CHANGE_STATE_PENDING
+
+    client, world, _core_so, order, core_1, line_1, _c2, _l2 = _covered_two_line_world(api)
+    _planning_change_row(
+        world.db, order=order, line=line_1, core_line=core_1, product=world.product,
+        applied_state=PLANNING_CHANGE_STATE_PENDING, batch_applied_at=None,
+    )
+    world.db.commit()
+
+    response = client.post(
+        f"{BASE}/sales-orders/{order.id}/confirm", json=_cancel_body(line_1)
+    )
+
+    assert response.status_code == 409, response.text
+    assert _raw(world.db, core_1.id).line_status != "cancelled"
+
+
+def test_c21_a_refused_line_is_held_back_and_the_cancel_is_still_written(api):
+    client, world = api
+    w = _cb_world(world)
+    core_a, mirror_a, _p = w["a"]
+    _open_core, open_line = w["open"]
+
+    response = client.post(
+        f"{BASE}/fulfilment-planning/confirm-all",
+        json={
+            "orders": [
+                dict(
+                    _cancel_body(mirror_a, lines=[_line_payload(open_line.id, buy_qty="3")]),
+                    pso_id=w["order"].id,
+                )
+            ]
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    result = response.json()["results"][0]
+    assert result["ok"] is True, result
+    assert [r["line_no"] for r in result["lines_cancelled"]] == [10]
+    assert [r["line_no"] for r in result["lines_held_back"]] == [30]
+    assert _raw(world.db, core_a.id).line_status == "cancelled"
