@@ -3380,8 +3380,9 @@ def typed_product_unplaced(verdict: Any, unplaced: Mapping[str, str] | None) -> 
     (S-TRAP250MM)-SRTWC8354-SH") was one unplaced product token, and the set tier
     counted 145 water closets off its words: that set is not what the dealer asked for,
     so it is never carried as a `set_page`. Keyed the way `unplaced_tokens` keys its map
-    (`turn.state.token_key`). A brand or category word nobody could place is not a miss
-    on the product.
+    (`_typed_by_token`: canonical_code first, raw second, folded by
+    `turn.state.token_key`, RESOLVE-SEMANTIC-FALLBACK). A brand or category word nobody
+    could place is not a miss on the product.
 
     ROGUE-CONVO-REVIEW-R2: asked ONCE per turn, over the resolver's own listing
     (`named_unplaced`, the map `ResolveOutcome.unplaced_tokens` carries BEFORE the
@@ -3391,13 +3392,8 @@ def typed_product_unplaced(verdict: Any, unplaced: Mapping[str, str] | None) -> 
     """
     if not unplaced:
         return False
-    for entity in jsc.array(jsc.get(verdict, "entities")):
-        if jsc.get(entity, "hint") not in (None, "product"):
-            continue
-        key = _token_key(jsc.nullish_str(jsc.get(entity, "raw")).strip())
-        if key and key in unplaced:
-            return True
-    return False
+    products = [e for e in jsc.array(jsc.get(verdict, "entities")) if jsc.get(e, "hint") in (None, "product")]
+    return any(key in unplaced for key in _typed_by_token(products))
 
 
 def set_page_carry(
