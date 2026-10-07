@@ -36,6 +36,10 @@ rows in To confirm, greyed and tagged.
   to `changed`, the batch applies as it would alone, `lines_cancelled` echoed (crew ruling (b), 7 Oct: the owner's SO373923
   carries a pending planning change TR-000063 and must still be able to cancel the CB110 lines).
 - AC-C24 A refused cancel beside a batch press writes nothing, neither the batch nor the cancel.
+- AC-C25 A superseded planning-change row on the cancelled line does not make the batch name it.
+- AC-C26 A press carrying only cancels on an order with a pending planning change that has nothing to confirm writes the
+  cancels and answers the cancel-only result (no revision, batch rows untouched). Owner hand test 7 Oct.
+- AC-C27 A real batch refusal beside a cancel still rolls the cancel back.
 - AC-C13 A migration adds the three nullable columns; `alembic heads` shows one head.
 
 ## Frontend
@@ -58,6 +62,8 @@ rows in To confirm, greyed and tagged.
   held back by batch.
 - AC-F23 A saved cancel on a batch-blocked order whose line the batch does not name is counted, posted in `cancelled_lines`
   beside `batch_id`, and shows no held-back sentence.
+- AC-F24 The Confirm count (`confirmSummaryFor`) admits an order whose only decided line is an inquiry-decided line with a
+  cancel draft (Confirm (N) enabled); an active-decision cover or a committed cancel still admits nothing. Owner hand test 7 Oct.
 - AC-F12 The expanded panel of a saved cancel reads "Transfer to Cancel SO" with the reason, no short hint.
 - AC-F13 to F15 Held-back-by-batch note per line; the order sentence names Cancel SO; an unplannable line is not listed.
 - AC-F16 A committed Cancel SO line (cancelled_at set) is skipped by the press and not counted in Confirm (N).
