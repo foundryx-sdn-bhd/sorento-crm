@@ -945,6 +945,8 @@ def _confirm_with_possible_rejects(
             db.query(PlanningChangeRow.project_line_id)
             .filter(
                 PlanningChangeRow.batch_id == batch_id,
+                # A superseded row is retired (the board's `isRetiredChangeRow`): it names nothing.
+                PlanningChangeRow.applied_state != "superseded",
                 PlanningChangeRow.project_line_id.in_(
                     [str(x.project_line_id) for x in cancelled_lines]
                 ),
