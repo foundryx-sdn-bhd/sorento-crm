@@ -4,7 +4,7 @@ Status: draft, behaviour card filed 7 Oct 2026 (crew lane SO-CANCEL-LINE), await
 Domain: scm (fulfilment planning board, order inquiries, AutoCount ingest)
 UAC: `so-cancel-line-acceptance-criteria.md`
 Lane: `crew/so-cancel-line`, base `origin/main` e4158ab52.
-Mockup: `documentation/mockups/so-cancel-line/index.html` (after the card is answered)
+Mockup: `documentation/mockups/so-cancel-line/index.html` (v3, 7 Oct 2026)
 Behaviour card: crew `state/files/SO-CANCEL-LINE/behaviour-card.md` (facts and the five questions; summarised below).
 
 ## Owner's words (7 Oct 2026, verbatim)
@@ -52,7 +52,7 @@ S1. **Decide item.** `DecideWay` gains `'cancel_so'` (`_shared/lib/boardAmend.ts
     `{verdict: 'cancelled', reason, reserve: [], borrow: [], timely_spo_qty: '0', buy_qty: '0'}` per ticked row through
     the unchanged `decideBatch` path. Skips: already cancelled ("already cancelled"), covered by an active decision
     ("confirmed, reject it first", Q2a). `BoardVerdict` gains `'cancelled'` (`fulfilmentPlanning.types.ts:1987`);
-    the Decided column / summary word is "Cancel SO"; the row keeps the Saved pill and its Undo.
+    the Decided column / summary word is "Cancel SO"; the row keeps the Saved pill and its Undo. Owner (mock v2 note, 7 Oct): NO new verdict label; after Confirm the row wears the existing Confirmed pill (a CRM-cancelled line with `cancelled_at` set bypasses the `cancelled` pill precedence at `BoardDecisionPill.tsx:145-148`), the cancel reads in Decided, the greyed row with Planned qty 0, and the expanded sentence.
 S2. **Press routing.** `pressRoleFor`/`confirmLinesFor` (`fulfilmentBoard.ts:327-390`) send a `cancelled`-verdict draft
     to a new `cancelled_lines: [{project_line_id, reason}]` channel on the confirm body, never into `lines`, so
     `_check_line` never sees it. Preview groups them under "Cancel SO".

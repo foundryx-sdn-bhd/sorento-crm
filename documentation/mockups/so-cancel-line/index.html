@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Transfer to Cancel SO (mockup v2)</title>
+<title>Transfer to Cancel SO (mockup v3)</title>
 <style>
 /* Tokens copied from sorento_crm_frontend/css/config.reui.css (light theme) */
 :root{--background:#fff;--foreground:#09090b;--card:#fff;--muted:#f4f4f5;--muted-fg:#71717a;--border:#ececee;--primary:#3b82f6;--primary-fg:#fff;--primary-soft:#eff6ff;--secondary:#f4f4f5;--destructive:#dc2626;--destructive-soft:#fef2f2;--success:#15803d;--success-soft:#f0fdf4;--warning:#a16207;--warning-soft:#fefce8;--warning-line:#fde68a;--radius:8px;--page:#f7f7f8}
@@ -93,7 +93,7 @@ tr.off td{color:var(--muted-fg)}
 <body>
 <div class="doc">
 <h1>Fulfilment planning: "Transfer to Cancel SO" is a Decide item</h1>
-<p class="intro">Mock v2 (7 Oct 2026, owner direction: "cancel is also a decision", no new button in the row). Real case: SO373923 lines 384 CB110, 400 CB110-R, 416 CB110LP, planned 36 each, delivered 36 in AutoCount because the quantity moved to a Cancel SO document. Planner name is a placeholder. Every element reuses an existing component; mapping table at the bottom.</p>
+<p class="intro">Mock v3 (7 Oct 2026). v2 note from the owner: "verdict should be confirmed right? i do not want so many verdict label". So: NO new verdict label. A cancelled line wears the same Verdict pill as any decided line (Saved before Confirm, Confirmed after); the cancel reads in the Decided column ("Cancel SO"), the greyed row with Planned qty 0, and the expanded sentence. Direction from v2 kept: "cancel is also a decision", no new button in the row. Real case: SO373923 lines 384 CB110, 400 CB110-R, 416 CB110LP, planned 36 each, delivered 36 in AutoCount because the quantity moved to a Cancel SO document. Planner name is a placeholder. Every element reuses an existing component; mapping table at the bottom.</p>
 <div class="nav"><a href="#s1">1 Tick + Decide menu</a><a href="#s2">2 Reason dialog</a><a href="#s3">3 Saved as a decision</a><a href="#s4">4 After Confirm</a><a href="#s5">5 Purchasing</a><a href="#s6">6 375 px</a><a href="#s7">7 Component mapping</a></div>
 
 <section id="s1">
@@ -151,24 +151,24 @@ tr.off td{color:var(--muted-fg)}
 
 <section id="s4">
 <h2><span class="nb">4</span>After Confirm: the lines are retired, the rest of the order flows</h2>
-<p class="why">Confirm writes the three cancels (line status, who, when, reason) and confirms the other decided lines in the same press. The rows take the existing Cancelled pill (slate), tick box disabled, Planned qty 0. No more "3 lines cannot be confirmed".</p>
+<p class="why">Confirm writes the three cancels (line status, who, when, reason) and confirms the other decided lines in the same press. Verdict reads Confirmed on all four rows, the same pill. The cancel shows as "Cancel SO" in Decided, the row greyed with Planned qty 0 and its tick disabled, and the sentence in the expanded panel. No more "3 lines cannot be confirmed".</p>
 <div class="row"><div class="desk"><div class="screen" style="height:380px"><div class="main" style="position:relative">
  <div class="pagehead"><div><div class="t">Fulfilment planning</div><div class="sub">SO373923 · Revision 4, confirmed by Aina 07/10/2026 11:52 am, 4 lines · 8 to confirm</div></div>
  <div style="display:flex;gap:8px;align-items:center"><span class="btn lg">Save all suggested (8)</span><span class="btn lg">Undo all</span><span class="btn lg pri">Preview (0)</span></div></div>
  <table><tr><th><span class="cb"></span></th><th>Line</th><th>Sales order</th><th>Product</th><th>OI</th><th>Required date</th><th>Planned qty</th><th>Suggested</th><th>Decided</th><th>Verdict</th><th></th></tr>
- <tr class="off"><td><span class="cb off"></span></td><td>384</td><td>SO373923</td><td>CB110</td><td>OI-2609-0724 · ORDER 36</td><td>22/02/2027</td><td>0</td><td></td><td>Cancel SO</td><td><span class="pill cancelled">Cancelled</span></td><td>▴</td></tr>
+ <tr class="off"><td><span class="cb off"></span></td><td>384</td><td>SO373923</td><td>CB110</td><td>OI-2609-0724 · ORDER 36</td><td>22/02/2027</td><td>0</td><td></td><td>Cancel SO</td><td><span class="pill ok">Confirmed</span></td><td>▴</td></tr>
  <tr><td colspan="11" style="padding:0;white-space:normal"><div class="panel"><p style="margin:0;font-size:13px;color:var(--muted-fg)">Transferred to Cancel SO by Aina, 07/10/2026 11:52 am · CANCEL ORDER. There is nothing left to decide for it.</p></div></td></tr>
- <tr class="off"><td><span class="cb off"></span></td><td>400</td><td>SO373923</td><td>CB110-R</td><td>OI-2609-0724 · ORDER 36</td><td>22/02/2027</td><td>0</td><td></td><td>Cancel SO</td><td><span class="pill cancelled">Cancelled</span></td><td>▾</td></tr>
- <tr class="off"><td><span class="cb off"></span></td><td>416</td><td>SO373923</td><td>CB110LP</td><td>OI-2609-0724 · ORDER 36</td><td>22/02/2027</td><td>0</td><td></td><td>Cancel SO</td><td><span class="pill cancelled">Cancelled</span></td><td>▾</td></tr>
+ <tr class="off"><td><span class="cb off"></span></td><td>400</td><td>SO373923</td><td>CB110-R</td><td>OI-2609-0724 · ORDER 36</td><td>22/02/2027</td><td>0</td><td></td><td>Cancel SO</td><td><span class="pill ok">Confirmed</span></td><td>▾</td></tr>
+ <tr class="off"><td><span class="cb off"></span></td><td>416</td><td>SO373923</td><td>CB110LP</td><td>OI-2609-0724 · ORDER 36</td><td>22/02/2027</td><td>0</td><td></td><td>Cancel SO</td><td><span class="pill ok">Confirmed</span></td><td>▾</td></tr>
  <tr><td><span class="cb"></span></td><td>448</td><td>SO373923</td><td>CKSW015</td><td>OI-2609-0724 · ORDER 8</td><td>22/02/2027</td><td>8</td><td>Buy 8</td><td>Buy 8</td><td><span class="pill ok">Confirmed</span></td><td>▾</td></tr>
  </table>
  <div class="results" style="border:1px solid var(--border);border-radius:8px;padding:8px 12px;margin-top:10px;font-size:13px"><div style="font-weight:500">1 of 1 orders confirmed</div><div style="color:var(--success)">SO373923: confirmed as revision 4 (1 purchase row handed over)</div><div>Confirmed: line 448 CKSW015 · Transferred to Cancel SO: line 384 CB110 · line 400 CB110-R · line 416 CB110LP</div></div>
-</div></div><div class="cap">1280 · results block names the cancelled lines beside the confirmed one</div></div></div>
+</div></div><div class="cap">1280 · one Verdict word for all four rows; the cancel reads in Decided, the grey row and the panel</div></div></div>
 </section>
 
 <section id="s5">
 <h2><span class="nb">5</span>Purchasing: the three inquiry rows reach To confirm, greyed and tagged</h2>
-<p class="why">No new screen. The order inquiry worklist already greys a cancelled line's rows, tags them, moves them to To confirm and drops them from Buy (rulings C1 to C4). Purchasing presses Confirm once ("seen"); the rows stay listed, qty 36 kept for the record, outstanding 0.</p>
+<p class="why">No new screen and no new label: "Line cancelled" is the worklist's existing tag for a cancelled line (ruling C1, 20 Sep). The order inquiry worklist already greys a cancelled line's rows, tags them, moves them to To confirm and drops them from Buy (rulings C1 to C4). Purchasing presses Confirm once ("seen"); the rows stay listed, qty 36 kept for the record, outstanding 0.</p>
 <div class="row"><div class="desk"><div class="screen" style="height:290px"><div class="main">
  <div class="cards"><div class="card"><div class="l">To confirm</div><div class="v">7</div></div><div class="card"><div class="l">Buy</div><div class="v">112</div></div><div class="card"><div class="l">Purchased</div><div class="v">48</div></div><div class="card"><div class="l">Incoming</div><div class="v">19</div></div></div>
  <table><tr><th><span class="cb"></span></th><th>OI</th><th>Sales order</th><th>Line</th><th>Product</th><th>Verb</th><th>Qty</th><th>Delivery</th><th>Location</th><th>State</th><th>Note</th></tr>
@@ -196,9 +196,9 @@ tr.off td{color:var(--muted-fg)}
  </div>
  <div style="height:10px"></div>
  <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;opacity:.7">
-  <div style="padding:10px 12px;display:flex;justify-content:space-between;align-items:center"><div><div style="font-weight:600">Line 416 · CB110LP</div><div class="sub">Transferred to Cancel SO by Aina · CANCEL ORDER</div></div><span class="pill cancelled">Cancelled</span></div>
+  <div style="padding:10px 12px;display:flex;justify-content:space-between;align-items:center"><div><div style="font-weight:600">Line 416 · CB110LP</div><div class="sub">Cancel SO · by Aina · CANCEL ORDER</div></div><span class="pill ok">Confirmed</span></div>
  </div>
-</div></div><div class="cap">375 · menu open; one card per state: ticked, saved, cancelled</div></div>
+</div></div><div class="cap">375 · menu open; one card per state: ticked, saved, confirmed (grey = cancel)</div></div>
 </div>
 </section>
 
@@ -213,7 +213,7 @@ tr.off td{color:var(--muted-fg)}
 <tr><td>Confirm routes cancel-verdict rows to their own channel</td><td><code>pressRoleFor</code>/<code>confirmLinesFor</code> put them in <code>cancelled_lines</code> beside <code>rejected_line_ids</code>, never in <code>lines</code></td><td>_shared/lib/fulfilmentBoard.ts:327-390, :479; sorento_crm_backend/app/schemas/project_supply.py:417-450</td></tr>
 <tr><td>Server write on Confirm</td><td>core <code>line_status='cancelled'</code> + <code>cancelled_at/by/reason</code> (additive), draft consumed, <code>flag_rows_for_cancelled_lines</code>; press skips the line thereafter</td><td>sorento_crm_backend/app/services/project_supply_service.py:5169-5171, :500-515; project_order_inquiry_service.py:517-565; models/order.py:757; models/stock_transfer.py:124-125 (precedent)</td></tr>
 <tr><td>Ingest keeps it cancelled</td><td>guard before the per-line <code>line_status</code> rewrite</td><td>sorento_crm_backend/app/services/document_ingest_service.py:1319, :1534-1535</td></tr>
-<tr><td>Cancelled pill (slate), disabled tick, Planned qty 0</td><td><code>BoardDecisionPill</code> verdict <code>cancelled</code> <code>bg-slate-200 text-slate-700</code>; list-view cancelled-row rule</td><td>BoardDecisionPill.tsx:59,70,145-148; FulfilmentBoardListView.tsx:433-438</td></tr>
+<tr><td>Verdict pill after Confirm = Confirmed (no new label); greyed row, disabled tick, Planned qty 0</td><td><code>BoardDecisionPill</code> existing <code>confirmed</code> pill; the <code>cancelled</code> precedence at :145-148 is bypassed for a CRM-cancelled line (<code>cancelled_at</code> set) so it reads Confirmed; list-view cancelled-row rule for the tick</td><td>BoardDecisionPill.tsx:70,145-148; FulfilmentBoardListView.tsx:433-438</td></tr>
 <tr><td>Results block line "Transferred to Cancel SO: line 384 ..."</td><td>existing <code>board-confirm-results</code> block, one more <code>li</code> from the server echo</td><td>FulfilmentBoardPanel.tsx:2295-2335</td></tr>
 <tr><td>Purchasing rows greyed, tagged, To confirm, out of Buy</td><td>rulings C1-C4, worklist <code>line_cancelled</code></td><td>sorento_crm_backend/app/schemas/project_order_inquiry.py:515; services/order_inquiry_worklist_service.py</td></tr>
 </table>

@@ -43,8 +43,8 @@ rows in To confirm, greyed and tagged.
   already-cancelled rows are skipped and named in the toast ("N saved as Transfer to Cancel SO · M skipped: ...").
 - AC-F4 A saved cancel row shows the Saved pill, "Cancel SO" in the Decided column, and the row Undo removes it.
 - AC-F5 Confirm sends those rows in `cancelled_lines`, not `lines`; Preview groups them under "Cancel SO".
-- AC-F6 After Confirm the row renders in the existing cancelled style (slate pill, disabled tick, Planned qty 0) and
-  its expanded sentence reads "Transferred to Cancel SO by <name>, <time> · <reason>"; the results block lists the
+- AC-F6 After Confirm the row's Verdict pill reads Confirmed (no new verdict label), the row is greyed with Planned qty 0
+  and a disabled tick, the Decided column reads "Cancel SO", and its expanded sentence reads "Transferred to Cancel SO by <name>, <time> · <reason>"; the results block lists the
   cancelled lines beside the confirmed ones.
 - AC-F7 Errors surface through `extractApiError` in a non-sticky toast.
 - AC-F8 Usable and non-clipped at 1280 and 375 px (browser pass table).
