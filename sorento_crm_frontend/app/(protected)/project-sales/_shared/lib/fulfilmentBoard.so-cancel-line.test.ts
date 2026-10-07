@@ -251,3 +251,29 @@ describe('inquiry-decided line vs actively decided line on the Cancel SO press (
     expect(pressPostsContribution(active, CANCEL)).toBe(false);
   });
 });
+
+describe('saved cancel on an inquiry-decided line (AC-F24)', () => {
+  const inquiryDecided = row({ covered: true, decision: null });
+  const activelyCovered = row({ covered: true, decision: { id: 'd-1' } as never });
+  const committed = row({ cancelled: true, cancelled_at: '2026-10-01T09:00:00' } as never);
+  const draft: BoardDraft = { [inquiryDecided.key]: CANCEL };
+
+  it('(a) admits its order and counts one line', () => {
+    expect(board.plannedLineCount([inquiryDecided], 'so-1', draft)).toBe(1);
+    const summary = board.confirmSummaryFor([inquiryDecided], draft);
+    expect(summary.orderCount).toBe(1);
+    expect(summary.toConfirm).toBe(1);
+  });
+
+  it('(b) a line an ACTIVE decision covers is still not admitted', () => {
+    const summary = board.confirmSummaryFor([activelyCovered], draft);
+    expect(summary.orderCount).toBe(0);
+    expect(summary.toConfirm).toBe(0);
+  });
+
+  it('(c) a committed cancel is still not admitted', () => {
+    const summary = board.confirmSummaryFor([committed], {});
+    expect(summary.orderCount).toBe(0);
+    expect(summary.toConfirm).toBe(0);
+  });
+});
