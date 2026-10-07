@@ -6,14 +6,14 @@ chatbot matches on. Additive only; no backfill (owner ruling 7 Oct 2026, the raw
 never stored, open orders are re-pushed from shared service).
 
 Revision ID: sopr_0001_so_po_ref
-Revises: qr_0001_chat_histories_turn_link
+Revises: chatbot_canonical_code
 Create Date: 2026-10-07
 """
 from alembic import op
 import sqlalchemy as sa
 
 revision = "sopr_0001_so_po_ref"
-down_revision = "qr_0001_chat_histories_turn_link"
+down_revision = "chatbot_canonical_code"
 branch_labels = None
 depends_on = None
 

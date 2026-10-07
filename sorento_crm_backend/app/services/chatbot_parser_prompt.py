@@ -743,6 +743,58 @@ SEMANTIC_PARSER_PROMPT += PO_SPO_WAREHOUSE_ADDENDUM
 SEMANTIC_PARSER_PROMPT += ACCOUNT_LEDGER_ADDENDUM
 SEMANTIC_PARSER_PROMPT += LOW_STOCK_FILTERS_ADDENDUM
 SEMANTIC_PARSER_PROMPT += PO_REFS_ADDENDUM
+# RESOLVE-SEMANTIC-FALLBACK (owner report, 6 Oct 2026 20:02 MYT, prod: the stock-check
+# line "TAP SRTWT5608 x 5" came back "I could not find TAP SRTWT5608" while SRTWT5608
+# exists). The parser emitted ONE product entity, raw "TAP SRTWT5608", canonical_code
+# null, and the resolver matches a product token only as an exact code, a prefix of a
+# code or a substring of one. Owner ruling (card Q1 = a): a type / colour / brand word
+# beside a code is still ONE product entity, `raw` unchanged (the word is the hint),
+# `canonical_code` the bare code exactly as typed. The chatbot reads `canonical_code`
+# first everywhere (`lanes/business/resolve_gate._token_of` and the sites #1511 unified),
+# so the resolver sees the code. No rule in code decides what a code is: this text does.
+#
+# ADDITIVE ONLY, stacked between LOW_STOCK_FILTERS_ADDENDUM and MEMORY_ADDENDUM (the
+# memory addendum carries the CURRENT DATE section and stays the tail, as
+# `test_parser_prompt_budget.py` pins). Published as a new UNLABELLED version of
+# `chatbot_semantic_parser` by `alembic/versions/chatbot_canonical_code.py`; nothing
+# reaches a customer until the owner moves the `production` label. Graded live by
+# `tests/chatbot/test_canonical_code_live_parser.py` over
+# `tests/chatbot/console_cases/2026-10-06-canonical-code-type-word.yaml`.
+CANONICAL_CODE_ADDENDUM = (
+    "\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    "PRODUCT CODE: entities[].canonical_code\n"
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    "== A WORD BESIDE A CODE IS STILL ONE PRODUCT ENTITY ==\n"
+    'For every entity with hint "product", "canonical_code" is the product CODE alone, copied\n'
+    "EXACTLY as the customer typed it - same letters, same case, same hyphens and spaces inside\n"
+    "the code - with every other word left out: the type or class word (\"tap\", \"WC\", \"basin\",\n"
+    '"paip", "龙头"), a colour or finish ("chrome", "matt black"), a size, a brand word, and the\n'
+    'count (which goes in "quantity"). "raw" stays the customer\'s whole phrase for that product,\n'
+    "exactly as the rules above already say. The word beside the code DESCRIBES the code it sits\n"
+    "next to: it is NOT a category entity of its own, so one line is ONE product entity, never a\n"
+    "product plus a category.\n"
+    '  - "TAP SRTWT5608 x 5" -> entity {raw: "TAP SRTWT5608", hint: "product", canonical_code:\n'
+    '    "SRTWT5608", quantity: 5}\n'
+    '  - "SRTWB8004 BASIN TAP" -> entity {raw: "SRTWB8004 BASIN TAP", hint: "product",\n'
+    '    canonical_code: "SRTWB8004"}\n'
+    '  - "paip SRTWT5608 ada stok?" -> entity {raw: "paip SRTWT5608", hint: "product",\n'
+    '    canonical_code: "SRTWT5608"}\n'
+    '  - "chrome tap srtwt5608" -> canonical_code "srtwt5608" (the customer\'s own case, never\n'
+    "    corrected)\n"
+    "A bare code typed on its own is both raw and canonical_code: \"SRTWC286-SH\" -> {raw:\n"
+    '"SRTWC286-SH", canonical_code: "SRTWC286-SH"}; a bare family code the same: "wc286" ->\n'
+    '{raw: "wc286", canonical_code: "wc286"}.\n'
+    "A code typed with a stray space or an odd case stays as typed: \"Srt 364-hp\" -> canonical_code\n"
+    '"Srt 364-hp". NEVER invent a code, complete a fragment, join two words into one, or fix a\n'
+    "typo: canonical_code is a COPY of characters the customer typed, nothing else. Null for a\n"
+    "product entity only when the phrase has no code at all.\n"
+    "Each product line in a list is its own entity, with its own canonical_code and quantity:\n"
+    '  - "stock check\\nTAP SRTWT5608 x 5\\nWC SRTWC8066-SS x 2" -> two product entities,\n'
+    '    canonical_code "SRTWT5608" (quantity 5) and canonical_code "SRTWC8066-SS" (quantity 2)\n'
+    "The attachment_type, attachment and brand rules for canonical_code are unchanged; this\n"
+    'section is about hint "product" only.\n'
+)
+SEMANTIC_PARSER_PROMPT += CANONICAL_CODE_ADDENDUM
 SEMANTIC_PARSER_PROMPT += MEMORY_ADDENDUM
 
 

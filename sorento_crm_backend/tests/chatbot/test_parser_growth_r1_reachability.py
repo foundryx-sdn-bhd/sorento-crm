@@ -43,6 +43,7 @@ from app.services.chatbot_parser_prompt import (
     LOW_STOCK_ADDENDUM,
     ESCALATION_CONFIRMATION_ADDENDUM,
     MEMORY_ADDENDUM,
+    CANONICAL_CODE_ADDENDUM,
     TRAP_SPECS_FALLBACK_BLOCK,
     LOW_STOCK_FILTERS_ADDENDUM,
     PO_REFS_ADDENDUM,
@@ -180,7 +181,7 @@ class TestBothPublishedBodiesCarryTheVocabulary:
         stacked after the live text, so `GROWTH_R1_ADDENDUM` is still exactly the tail
         once the later ones are off."""
         for body in (SEMANTIC_PARSER_PROMPT,):
-            assert body.removesuffix(MEMORY_ADDENDUM).removesuffix(TRAP_SPECS_FALLBACK_BLOCK).removesuffix(PO_REFS_ADDENDUM).removesuffix(LOW_STOCK_FILTERS_ADDENDUM).removesuffix(ACCOUNT_LEDGER_ADDENDUM).removesuffix(PO_SPO_WAREHOUSE_ADDENDUM).removesuffix(
+            assert body.removesuffix(MEMORY_ADDENDUM).removesuffix(TRAP_SPECS_FALLBACK_BLOCK).removesuffix(CANONICAL_CODE_ADDENDUM).removesuffix(PO_REFS_ADDENDUM).removesuffix(LOW_STOCK_FILTERS_ADDENDUM).removesuffix(ACCOUNT_LEDGER_ADDENDUM).removesuffix(PO_SPO_WAREHOUSE_ADDENDUM).removesuffix(
                 ESCALATION_CONFIRMATION_ADDENDUM
             ).removesuffix(SELF_REFERENCE_ADDENDUM).removesuffix(TOP_SELLING_ADDENDUM).removesuffix(
                 KNOWN_BRANDS_ADDENDUM

@@ -179,6 +179,10 @@ def _envelope_for(
             "message": {"text": quote},
         }
     else:
+        # No quote on this case: the borrowed turn's own quote is the source contact's, and
+        # `engine._message_text` would hand it to the parser as a `reply to: ...` line
+        # (CHATBOT-TRIO, 7 Oct 2026: a dev contact's quoted product list came back as
+        # entities on every console turn).
         inner.pop("replyTo", None)
     envelope["message"]["event_type"] = "message.received"
     # D14, always both markers: a console check that could answer a real customer is not a

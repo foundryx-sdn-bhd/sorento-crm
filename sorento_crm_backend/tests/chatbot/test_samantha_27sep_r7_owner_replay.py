@@ -347,6 +347,12 @@ def test_brand_rows_for_word_is_deterministic_and_nearest() -> None:
 
 
 def test_an_unknown_brand_word_is_one_line_and_no_filter(owner_chat) -> None:
+    """R1 (27 Sep): the typed word decides the brand under order/sales. "zorbix" names no
+    live brand, so the parser's guessed canonical_code (Mocha) is not a brand: no filter, no
+    Brand line, said back once. CLASS-HINT-KIND-PICK R2 (7 Oct 2026) keeps this: the
+    engine's canonical_code brand read does not run on a brand-hinted word in this lane
+    (`turn_runtime.resolve_kinds`), so the word is never swallowed (neither filtered nor
+    said back)."""
     chat = owner_chat
     reply, calls, _ = chat.turn("DO brand zorbix for cheng huat sentul", _do_ask(_brand("zorbix", "Mocha")))
     args = [a for n, a in calls if n == ORDERS_LIST][-1]

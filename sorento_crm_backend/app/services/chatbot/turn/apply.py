@@ -904,7 +904,8 @@ def _answer_pending(state: State, decision: Decision, trace: Trace, verdict: dic
                 "kind_pick",
                 next_options,
                 team=pending.team,
-                asked_at_turn=pending.asked_at_turn,
+                # STALE-EXTRA-CARRY: the turn that asks THIS pick, not the first one's.
+                asked_at_turn=state.turn_no,
                 payload={"queued_kind_picks": rest} if rest else {},
             )
             trace.rules_fired.append("kind_pick_queue_advanced")
@@ -1762,6 +1763,8 @@ def _reconcile_step(
     policy: Policy,
     verdict: dict[str, Any],
     trace: Trace,
+    *,
+    turn_no: int,
 ):
     result = apply_reconciliation(entities, resolved)
     trace.reconciled = result.reconciled
@@ -1776,8 +1779,13 @@ def _reconcile_step(
         # asked in turn once this one is answered (`_answer_pending`'s kind_pick
         # arm below reads it) - never overwritten, never silently dropped.
         payload = {"queued_kind_picks": result.queued_kind_picks} if result.queued_kind_picks else {}
+        # STALE-EXTRA-CARRY (prod, 6-7 Oct 2026): stamped with the turn that asks it,
+        # like every other ask `apply` mints. A None stamp is never "older than" a
+        # stock task touched later (`_stock_task_is_the_current_question` needs an
+        # int), so the seat-cover kind menu a photo minted was still the current
+        # question sixteen hours and a correct stock answer later.
         pending = pending_ask(
-            "kind_pick", result.kind_pick_options, team=None, asked_at_turn=None, payload=payload
+            "kind_pick", result.kind_pick_options, team=None, asked_at_turn=turn_no, payload=payload
         )
         return result.entities, None, Plan(domains=[], fetch=[], ask=pending, denied=[], trace=trace)
 
@@ -3405,7 +3413,7 @@ def _apply(
 
     verdict_entities = list(verdict.get("entities") or [])
     entities, domain_override, reconcile_short_circuit = _reconcile_step(
-        verdict_entities, resolved, policy, verdict, trace
+        verdict_entities, resolved, policy, verdict, trace, turn_no=state.turn_no
     )
     if reconcile_short_circuit is not None:
         # #1262 slice 8 (F1b siblings): a kind pick over ONE ambiguous token
