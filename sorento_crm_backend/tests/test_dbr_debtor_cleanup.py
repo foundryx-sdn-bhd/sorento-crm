@@ -413,3 +413,75 @@ class TestCleanupScript:
         db.flush()
         res = _run(db, False)
         assert res["blockers"] and "customer_contacts" in " ".join(res["blockers"])
+
+
+# ===================================================== relinks before the DBR link is deleted
+class TestRelinks:
+    @pytest.fixture()
+    def rw(self, db):
+        dbr = seed_customer(db, company_id=SORENTO, name="DELUXE (KTN)")
+        dbr.customer_code = "DBR-dddddddddd"
+        r1 = seed_customer(db, company_id=SORENTO, name="REAL ONE")
+        r2 = seed_customer(db, company_id=SORENTO, name="REAL TWO")
+        contact = seed_contact(db, "Deluxe contact")
+        db.flush()
+        db.add(RespondContactCustomer(id=str(uuid.uuid4()), contact_id=contact, customer_id=str(dbr.id),
+                                      company_id=SORENTO))
+        db.commit()
+        return dict(dbr=dbr, r1=r1, r2=r2, contact=contact)
+
+    def _links(self, db, contact):
+        db.expire_all()
+        return sorted(
+            (str(r.customer_id), str(r.company_id))
+            for r in db.query(RespondContactCustomer).filter_by(contact_id=contact)
+        )
+
+    def test_relinks_add_then_apply_leaves_exactly_those_links(self, db, rw):
+        c = rw["contact"]
+        rel = {c: [str(rw["r1"].id), str(rw["r2"].id)]}
+        res = _run(db, False, relinks=rel)
+        assert sorted(r["status"] for r in res["relinks"]) == ["add", "add"]
+        assert {r["customer_name"] for r in res["relinks"]} == {"REAL ONE", "REAL TWO"}
+        assert res["contacts_left_unlinked"] == []
+        assert len(self._links(db, c)) == 1  # dry run wrote nothing
+        _run(db, True, relinks=rel)
+        assert self._links(db, c) == sorted(
+            [(str(rw["r1"].id), SORENTO), (str(rw["r2"].id), SORENTO)]
+        )
+        row = db.query(RespondContactCustomer).filter_by(contact_id=c).first()
+        assert row.is_primary is False and row.source == "dbr_cleanup"
+
+    def test_existing_relink_is_not_duplicated(self, db, rw):
+        c = rw["contact"]
+        db.add(RespondContactCustomer(id=str(uuid.uuid4()), contact_id=c, customer_id=str(rw["r1"].id),
+                                      company_id=SORENTO))
+        db.commit()
+        rel = {c: [str(rw["r1"].id)]}
+        res = _run(db, True, relinks=rel)
+        assert [r["status"] for r in res["relinks"]] == ["exists"]
+        assert self._links(db, c) == [(str(rw["r1"].id), SORENTO)]
+
+    def test_missing_relink_is_not_inserted_and_apply_still_refuses(self, db, rw):
+        c = rw["contact"]
+        rel = {c: [str(uuid.uuid4())]}
+        res = _run(db, False, relinks=rel)
+        assert [r["status"] for r in res["relinks"]] == ["missing"]
+        assert [u["contact_id"] for u in res["contacts_left_unlinked"]] == [c]
+        with pytest.raises(Exception) as exc:
+            _run(db, True, relinks=rel)
+        assert c in str(exc.value)
+        assert len(self._links(db, c)) == 1
+
+
+def test_relinks_constant_matches_the_prod_mapping():
+    from scripts.cleanup_dbr_customers import RELINKS
+
+    assert RELINKS == {
+        "e84b7e3c-9a3d-432e-b81b-ab5c5c2cb586": [
+            "1aff9ef4-7685-4b0f-9caf-194dd39e1cac",
+            "d69fc206-98ae-4fee-b550-bf1938ebe867",
+            "229130f3-0a78-46f2-bc98-880a0b362cb5",
+            "1fd2f9a9-977e-4c85-b9fb-2abcb2da4f16",
+        ]
+    }
