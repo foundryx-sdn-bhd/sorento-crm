@@ -447,7 +447,10 @@ export function BoardDecideControl({
   };
 
   const needsAuthorisation = Boolean(sameAgent);
-  const valid = isBorrow
+  const nothingToSave = preview.coverable === 0;
+  const valid = nothingToSave
+    ? false
+    : isBorrow
     ? Boolean(pick) &&
       reason.trim().length > 0 &&
       (!needsAuthorisation || authorisation.trim())

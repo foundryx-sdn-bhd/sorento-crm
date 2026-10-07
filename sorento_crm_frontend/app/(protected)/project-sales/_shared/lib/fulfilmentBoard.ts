@@ -320,6 +320,7 @@ type PressRole =
   | { kind: 'cancelled' }
   | { kind: 'withdraw' }
   | { kind: 'cancel_so'; reason: string }
+  | { kind: 'blocked_cancel' }
   | { kind: 'blocked_reject' }
   | { kind: 'stale' }
   | { kind: 'post'; line: ConfirmLine }
@@ -336,6 +337,8 @@ function pressRoleFor(
   if (decision?.verdict === 'cancelled') {
     if (!contribution.cancelled) {
       if (contribution.covered || !contribution.project_line_id) return { kind: 'skip' };
+      // `cancelled_lines` is refused beside a batch, like a staged rejection.
+      if (batchBlocked) return { kind: 'blocked_cancel' };
       return { kind: 'cancel_so', reason: (decision.reason ?? '').trim() };
     }
   }
@@ -985,6 +988,7 @@ export interface ConfirmDialogCancelled {
   item_code: string;
 }
 
+const BLOCKED_CANCEL_REASON = 'Transfer to Cancel SO is held until the pending change is applied';
 const BLOCKED_REJECT_REASON = 'staged rejection is held until the pending change is applied';
 
 /**
@@ -1051,6 +1055,9 @@ export function confirmDialogRowsFor(
         break;
       case 'cancel_so':
         rows.push(rowFor('cancelled', 'Cancel SO'));
+        break;
+      case 'blocked_cancel':
+        notPosted.push({ ...identity, reason: BLOCKED_CANCEL_REASON });
         break;
       case 'blocked_reject':
         notPosted.push({ ...identity, reason: BLOCKED_REJECT_REASON });

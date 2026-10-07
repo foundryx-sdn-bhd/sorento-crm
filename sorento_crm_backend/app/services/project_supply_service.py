@@ -1243,7 +1243,10 @@ class ProjectSupplyService:
                 )
             mirror = by_id.get(str(entry.project_line_id))
             core = (
-                self.db.get(SalesOrderLine, str(mirror.core_sales_order_line_id))
+                self.db.query(SalesOrderLine)
+                .filter(SalesOrderLine.id == str(mirror.core_sales_order_line_id))
+                .with_for_update()
+                .one_or_none()
                 if mirror is not None and mirror.core_sales_order_line_id
                 else None
             )
@@ -1257,6 +1260,13 @@ class ProjectSupplyService:
                 continue
             seen.add(str(mirror.id))
             picked.append((mirror, core, reason))
+        # The ACTIVE decision's own snapshots, read directly: `_active_coverage` exempts a
+        # line inside an unapplied planning change, and such a line is still confirmed.
+        active = self.active_decision(str(order.id))
+        covered_ids = {
+            str((snap or {}).get("core_line_id"))
+            for snap in (active.line_snapshots or [] if active is not None else [])
+        }
         for mirror, core, _reason in picked:
             if core.line_status == "cancelled":
                 raise AppException(
@@ -1264,7 +1274,7 @@ class ProjectSupplyService:
                     message=f"Line {mirror.line_no} is already cancelled.",
                     code="supply_cancel_already_cancelled",
                 )
-            if project_line_draft_service._active_coverage(self.db, core) is not None:
+            if str(core.id) in covered_ids:
                 raise AppException(
                     status_code=409,
                     message=f"Line {mirror.line_no} is confirmed. Reject it first.",
@@ -10801,7 +10811,7 @@ class ProjectSupplyService:
                     not hold_back
                     or not failing
                     or "" in ids
-                    or not keep
+                    or (not keep and not getattr(entry, "cancelled_lines", None))
                     or len(keep) == len(lines)
                 ):
                     raise

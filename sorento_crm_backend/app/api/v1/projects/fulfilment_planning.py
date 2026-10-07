@@ -947,6 +947,13 @@ def _confirm_with_possible_rejects(
             ),
             code="board_cancel_not_supported_in_batch",
         )
+    both = named & {str(x.project_line_id) for x in cancelled_lines}
+    if both:
+        raise AppException(
+            status_code=422,
+            message="A line cannot be composed and transferred to Cancel SO in the same press.",
+            code="supply_cancel_line_also_composed",
+        )
     reasons, joined_reason = _reasons_for_rejected_lines(
         db, order, rejected_line_ids, named_lines=named
     )

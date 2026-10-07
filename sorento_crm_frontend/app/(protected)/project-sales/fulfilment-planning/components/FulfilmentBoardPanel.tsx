@@ -1385,9 +1385,12 @@ export function FulfilmentBoardPanel({
           ? contributions.filter(
               (contribution) =>
                 contribution.sales_order_id === salesOrderId &&
-                contribution.covered &&
                 !excludeKeys.has(contribution.key) &&
-                draftWithoutPreMark[contribution.key]?.verdict === 'rejected',
+                ((contribution.covered &&
+                  draftWithoutPreMark[contribution.key]?.verdict === 'rejected') ||
+                  (!contribution.covered &&
+                    !contribution.cancelled &&
+                    draftWithoutPreMark[contribution.key]?.verdict === 'cancelled')),
             )
           : [];
         // S4: said OUT LOUD, named per line THROUGH `failing_lines` (the same shape a
@@ -1415,7 +1418,10 @@ export function FulfilmentBoardPanel({
               : 'has a staged rejection that commits after the pending change is applied.',
             failing_lines: heldBackByBatch.map((contribution) => ({
               line_no: contribution.line_no,
-              reason: 'rejection is staged; it commits after the pending change is applied.',
+              reason:
+                draftWithoutPreMark[contribution.key]?.verdict === 'cancelled'
+                  ? 'Cancel SO is saved; it commits after the pending change is applied.'
+                  : 'rejection is staged; it commits after the pending change is applied.',
             })),
           } as BoardBatchResult);
         }

@@ -419,7 +419,7 @@ class CancelledLine(BaseModel):
     reason, which is mandatory (a blank one is refused 422 by the service)."""
 
     project_line_id: str
-    reason: str = ""
+    reason: str = Field(default="", max_length=500)
 
 
 class ConfirmSupplyBody(BaseModel):

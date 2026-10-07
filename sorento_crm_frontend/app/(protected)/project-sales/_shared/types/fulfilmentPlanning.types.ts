@@ -693,6 +693,7 @@ export interface ConfirmResult {
   lines_confirmed?: ConfirmedLine[] | null;
   lines_carried?: number | null;
   lines_withdrawn?: ConfirmedLine[] | null;
+  /** The lines this press transferred to Cancel SO. */
   lines_cancelled?: CancelledLineEcho[] | null;
   /** How many of the confirmed lines were flagged as a suspected system problem (R10). */
   suspected_issues?: number | null;
@@ -2587,8 +2588,9 @@ export interface ConfirmManyOrderResult {
   preview?: boolean | null;
   inquiry_rows?: PreviewInquiryRow[] | null;
   /** The covered lines this press took out of the confirmation. */
-  lines_cancelled?: CancelledLineEcho[] | null;
   lines_withdrawn?: ConfirmedLine[] | null;
+  /** The lines this press transferred to Cancel SO. */
+  lines_cancelled?: CancelledLineEcho[] | null;
   transfers?: PreviewTransfer[] | null;
   pso_id: string;
   ok: boolean;

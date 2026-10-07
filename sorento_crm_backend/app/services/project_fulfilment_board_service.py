@@ -1850,7 +1850,7 @@ class FulfilmentBoardService:
                     cancelled=True,
                     cancelled_at=core_line.cancelled_at,
                     cancelled_by_name=(
-                        (getattr(user, "name", None) or getattr(user, "email", None))
+                        (getattr(user, "name", None) or "Unknown user")
                         if user is not None
                         else None
                     ),
