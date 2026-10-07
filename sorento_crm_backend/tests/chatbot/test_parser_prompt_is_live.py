@@ -33,6 +33,7 @@ from app.services.chatbot_parser_prompt import (
     LIVE_SYSTEM_MESSAGE_SHA256,
     LOW_STOCK_ADDENDUM,
     ACCOUNT_LEDGER_ADDENDUM,
+    CANONICAL_CODE_ADDENDUM,
     MEMORY_ADDENDUM,
     LOW_STOCK_FILTERS_ADDENDUM,
     PO_SPO_WAREHOUSE_ADDENDUM,
@@ -249,6 +250,8 @@ def _without_growth_r1_addendum(text: str) -> str:
     # chatbot-stock-ask-v2 S3).
     if text.endswith(MEMORY_ADDENDUM):
         text = text[: -len(MEMORY_ADDENDUM)]
+    if text.endswith(CANONICAL_CODE_ADDENDUM):
+        text = text[: -len(CANONICAL_CODE_ADDENDUM)]
     if text.endswith(LOW_STOCK_FILTERS_ADDENDUM):
         text = text[: -len(LOW_STOCK_FILTERS_ADDENDUM)]
     if text.endswith(ACCOUNT_LEDGER_ADDENDUM):

@@ -348,7 +348,7 @@ def read_codes(
             timeout=budget_seconds,
         )
     except Exception as exc:  # noqa: BLE001 - a provider failure is a miss, with its reason
-        from app.services.chatbot.llm_call import is_timeout
+        from app.services.llm_provider import is_timeout
 
         logger.warning("resolver code reader: provider call failed: %s", exc)
         return failed(REASON_TIMED_OUT if is_timeout(exc) else REASON_PROVIDER_ERROR)
