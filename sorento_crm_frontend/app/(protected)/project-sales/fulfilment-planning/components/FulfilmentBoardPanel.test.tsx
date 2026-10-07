@@ -5305,3 +5305,115 @@ describe('FulfilmentBoardPanel: SO-CANCEL-LINE round 7 cancel-only results sente
     expect(block).toHaveTextContent('confirmed as revision 1');
   });
 });
+
+// SO-CANCEL-LINE round 12 (AC-F25): inquiry-decided lines with a saved cancel draft must post.
+describe('FulfilmentBoardPanel: SO-CANCEL-LINE round 12 inquiry-decided cancels post', () => {
+  beforeEach(() => {
+    getPlanningChangeBatch.mockReset();
+  });
+
+  const cancelDraft = {
+    decision: {
+      verdict: 'cancelled' as const,
+      reason: 'sadf',
+      reserve: [],
+      borrow: [],
+      timely_spo_qty: '0',
+      buy_qty: '0',
+      order_back: false,
+    },
+    saved_by: 'Test Planner',
+    saved_at: '2026-09-08T00:00:00Z',
+  };
+
+  type Body = {
+    orders: {
+      lines: unknown[];
+      batch_id?: string | null;
+      cancelled_lines?: { project_line_id: string; reason: string }[];
+    }[];
+  };
+
+  function inquiryBoard(opts: { pending?: boolean; active?: boolean } = {}) {
+    const built = boardOf([
+      demand({ line_no: 1 }),
+      demand({ line_no: 2, item_code: 'CB110' }),
+      demand({ line_no: 3, item_code: 'CB110LP' }),
+    ]);
+    const base = opts.pending
+      ? {
+          ...built,
+          orders: built.orders.map((order) => ({ ...order, pending_change_batch_id: 'b-1' })),
+        }
+      : built;
+    return withContribution(
+      base,
+      () => true,
+      (entry) => ({
+        ...entry,
+        covered: true,
+        decision: opts.active
+          ? { revision_no: 1, timely_spo_qty: '0', reserve: [], borrow: [], buy_qty: '100' }
+          : null,
+        unplannable: false,
+        cancelled: false,
+        draft: cancelDraft,
+      }),
+    );
+  }
+
+  function batchNamingNone() {
+    getPlanningChangeBatch.mockResolvedValue({
+      id: 'b-1',
+      created_at: '2026-09-01T00:00:00Z',
+      applied_at: null,
+      applied_by_name: null,
+      orders: [
+        {
+          so_number: 'SO403340',
+          rows: [{ id: 'pcr-0', project_line_id: 'pl-other', applied_state: 'pending' }],
+        },
+      ],
+    });
+  }
+
+  async function pressIt() {
+    confirmMany.mockResolvedValue({ results: [{ pso_id: 'pso-so-a', ok: true }] });
+    renderPanel(['SO403340']);
+    await screen.findByTestId('fulfilment-board-matrix');
+    expect(screen.getByTestId('board-confirm')).toHaveTextContent('Confirm (3)');
+    await pressPreviewThenConfirm();
+  }
+
+  const three = [1, 2, 3].map((n) => ({ project_line_id: `pl-so-a-${n}`, reason: 'sadf' }));
+
+  it('AC-F25: three inquiry-decided cancels under a pending batch naming none are posted with batch_id', async () => {
+    batchNamingNone();
+    getPlanningBoard.mockResolvedValue(inquiryBoard({ pending: true }));
+    await pressIt();
+    await waitFor(() => expect(confirmMany).toHaveBeenCalledTimes(1));
+    const [body] = confirmMany.mock.calls[0] as [Body];
+    expect(body.orders).toHaveLength(1);
+    expect(body.orders[0].cancelled_lines).toEqual(three);
+    expect(body.orders[0].lines).toEqual([]);
+    expect(body.orders[0].batch_id).toBe('b-1');
+  });
+
+  it('AC-F25(b): the same without a pending batch posts the three cancels, no batch_id', async () => {
+    getPlanningBoard.mockResolvedValue(inquiryBoard());
+    await pressIt();
+    await waitFor(() => expect(confirmMany).toHaveBeenCalledTimes(1));
+    const [body] = confirmMany.mock.calls[0] as [Body];
+    expect(body.orders[0].cancelled_lines).toEqual(three);
+    expect(body.orders[0].lines).toEqual([]);
+    expect(body.orders[0].batch_id ?? null).toBeNull();
+  });
+
+  it('AC-F25(c) guard: lines covered by an ACTIVE decision with cancel drafts post nothing, Confirm (0)', async () => {
+    getPlanningBoard.mockResolvedValue(inquiryBoard({ active: true }));
+    renderPanel(['SO403340']);
+    await screen.findByTestId('fulfilment-board-matrix');
+    expect(screen.getByTestId('board-confirm')).toHaveTextContent('Confirm (0)');
+    expect(confirmMany).not.toHaveBeenCalled();
+  });
+});
