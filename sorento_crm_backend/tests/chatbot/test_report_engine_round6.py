@@ -159,3 +159,13 @@ def test_ranking_basis_question_is_catalogued_in_chinese_and_malay():
     row = lc.LABELS.get(ranking_ask.RANKING_BASIS_LINE, {})
     assert ZH.search(row.get("zh", "")), ranking_ask.RANKING_BASIS_LINE
     assert row.get("ms"), ranking_ask.RANKING_BASIS_LINE
+
+
+def test_top_selling_answer_keeps_a_channel_stored_earlier_in_the_lane_input():
+    state = _top_selling_state(asked="basis")
+    state.focus.sales_channel = "dealer"
+    v = verdict(order_status="top_selling", domain_hint="order", basis="ordered", sales_channel=None,
+                ranking_refine=True)
+    state2, out = _engine_lane_input(state, v)
+    assert state2.focus.sales_channel == "dealer"
+    assert out.get("sales_channel") == "dealer"
