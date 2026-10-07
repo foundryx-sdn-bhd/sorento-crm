@@ -114,3 +114,29 @@ def test_refine_list_closing_line_allows_the_brand_or_category_entity():
     from app.services.chatbot_parser_prompt import REPORT_ASK_ADDENDUM as A
 
     assert "entities [] (except the brand or category refine)" in A
+
+
+# Round 5
+def test_category_canonical_code_rule_is_scoped_to_ranking_asks():
+    from app.services.chatbot_parser_prompt import CANONICAL_CODE_ADDENDUM as C
+
+    scope = "on a sales_ranking or top_selling ask, a category entity's canonical_code is the English class word"
+    assert scope in C
+    assert 'about hint "product" only, except:' in C
+    assert C.index('about hint "product" only, except:') < C.index(scope)
+
+
+@pytest.mark.parametrize("zh,en", [("坐厕", "water closet"), ("洗手盆", "wash basin"),
+                                   ("水槽", "kitchen sink"), ("花洒", "shower")])
+def test_category_synonyms_are_in_the_prompt(zh, en):
+    from app.services.chatbot_parser_prompt import SEMANTIC_PARSER_PROMPT as P
+
+    assert f'{zh} -> canonical_code "{en}"' in P.replace("厨房水槽", "")
+
+
+@pytest.mark.parametrize("noun", ["period", "basis"])
+def test_unknown_period_and_basis_lines_are_catalogued_in_chinese(noun):
+    from app.services.chatbot import label_catalog as lc
+
+    english = f"I don't know '{{word}}' as a {noun}."
+    assert ZH.search(lc.LABELS.get(english, {}).get("zh", "")), english

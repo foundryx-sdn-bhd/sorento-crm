@@ -121,4 +121,4 @@ def test_p7_chinese_category_words_translate_to_english_raw(zh, en):
     from app.services.chatbot_parser_prompt import SEMANTIC_PARSER_PROMPT as P
 
     assert "category entity's canonical_code is the English class word" in P
-    assert f"{zh} -> canonical_code \"{en}\"" in P or f"{zh} -> \"{en}\"" in P
+    assert f"{zh} -> canonical_code \"{en}\"" in P
