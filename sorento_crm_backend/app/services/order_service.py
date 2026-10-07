@@ -925,28 +925,8 @@ class OrderService:
             filters.append(Order.id.in_(_order_uuid_filter))
 
         if _customer_uuid_filter:
-            # Match Order.customer_id IN (...) OR legacy debtor_name match.
-            # Backfill 207 should make the OR branch redundant for new data, but
-            # historical rows with NULL customer_id stay reachable.
-            from sqlalchemy import func as _func
-            customer_names_subq = (
-                self.db.query(Customer.customer_name)
-                .filter(Customer.id.in_(_customer_uuid_filter))
-                .subquery()
-            )
-            filters.append(
-                or_(
-                    Order.customer_id.in_(_customer_uuid_filter),
-                    # The name branch is for LEGACY rows only (no customer_id): a same-named ledger
-                    # with its own customer_id is another customer, not this one.
-                    and_(
-                        Order.customer_id.is_(None),
-                        _func.lower(_func.btrim(Order.debtor_name)).in_(
-                            self.db.query(_func.lower(_func.btrim(customer_names_subq.c.customer_name)))
-                        ),
-                    ),
-                )
-            )
+            # Customer filter links by customer_id only; debtor_name is never a link.
+            filters.append(Order.customer_id.in_(_customer_uuid_filter))
 
         if has_product_filter(_product_uuid_filter):
             filters.append(
@@ -1556,28 +1536,8 @@ class OrderService:
         def _apply_order_filters(q):
             q = q.filter(Order.deleted_at.is_(None))
             if customer_ids:
-                # Mirror list_orders: Order.customer_id IN (...) OR legacy
-                # debtor_name match for historical rows with NULL customer_id.
-                names_subq = (
-                    self.db.query(Customer.customer_name)
-                    .filter(Customer.id.in_(customer_ids))
-                    .subquery()
-                )
-                q = q.filter(
-                    or_(
-                        Order.customer_id.in_(customer_ids),
-                        # The name branch is for LEGACY rows only (no customer_id): a same-named ledger
-                        # with its own customer_id is another customer, not this one.
-                        and_(
-                            Order.customer_id.is_(None),
-                            func.lower(func.btrim(Order.debtor_name)).in_(
-                                self.db.query(
-                                    func.lower(func.btrim(names_subq.c.customer_name))
-                                )
-                            ),
-                        ),
-                    )
-                )
+                # Mirror list_orders: customer_id only, debtor_name is never a link.
+                q = q.filter(Order.customer_id.in_(customer_ids))
             if product_ids or product_code or brand_scoped:
                 line_conds = []
                 if product_ids:
@@ -1695,26 +1655,7 @@ class OrderService:
                 .filter(Order.deleted_at.is_(None))
             )
             if customer_ids:
-                names_subq = (
-                    self.db.query(Customer.customer_name)
-                    .filter(Customer.id.in_(customer_ids))
-                    .subquery()
-                )
-                pq = pq.filter(
-                    or_(
-                        Order.customer_id.in_(customer_ids),
-                        # The name branch is for LEGACY rows only (no customer_id): a same-named ledger
-                        # with its own customer_id is another customer, not this one.
-                        and_(
-                            Order.customer_id.is_(None),
-                            func.lower(func.btrim(Order.debtor_name)).in_(
-                                self.db.query(
-                                    func.lower(func.btrim(names_subq.c.customer_name))
-                                )
-                            ),
-                        ),
-                    )
-                )
+                pq = pq.filter(Order.customer_id.in_(customer_ids))
             # Product filter applied to the joined line directly so only matching
             # product lines are grouped (not every product on a matching order).
             if product_ids:
@@ -1865,25 +1806,7 @@ class OrderService:
             q = q.filter(OrderLine.product_id.in_(_product_uuid_filter))
 
         if _customer_uuid_filter:
-            from sqlalchemy import func as _func
-            customer_names_subq = (
-                self.db.query(Customer.customer_name)
-                .filter(Customer.id.in_(_customer_uuid_filter))
-                .subquery()
-            )
-            q = q.filter(
-                or_(
-                    Order.customer_id.in_(_customer_uuid_filter),
-                    # The name branch is for LEGACY rows only (no customer_id): a same-named ledger
-                    # with its own customer_id is another customer, not this one.
-                    and_(
-                        Order.customer_id.is_(None),
-                        _func.lower(_func.btrim(Order.debtor_name)).in_(
-                            self.db.query(_func.lower(_func.btrim(customer_names_subq.c.customer_name)))
-                        ),
-                    ),
-                )
-            )
+            q = q.filter(Order.customer_id.in_(_customer_uuid_filter))
 
         if _transporter_uuid_filter:
             from sqlalchemy import func as _func
@@ -2273,17 +2196,15 @@ class OrderService:
         buyer name under a known code links to the existing customer and never renames it;
         the order keeps its own `debtor_name`. Only a code nobody holds creates a row.
 
-        When debtor_code is missing, fall back to a deterministic `DBR-<hash>`
-        slug derived from the name so the same blank-code debtor doesn't
-        explode into duplicate rows.
+        DBR-DEBTOR-CLEANUP: a blank debtor code makes NO customer. The order keeps its
+        `debtor_name` text and its `customer_id` stays empty (no invented `DBR-<hash>` row).
         """
         name = (debtor_name or "").strip()
         if not name:
             return None
         code = (debtor_code or "").strip()
         if not code:
-            import hashlib
-            code = "DBR-" + hashlib.md5(name.lower().encode("utf-8")).hexdigest()[:10]
+            return None
         existing = customer_identity.customer_by_code(self.db, code)
         if existing is not None:
             return str(existing.id)
@@ -2342,6 +2263,8 @@ class OrderService:
             cid = self._upsert_customer_from_debtor(debtor_name, out.get("debtor_code"))
             if cid:
                 out["customer_id"] = cid  # always re-point; debtor_name edit can change customer
+            elif not out.get("customer_id"):
+                out["customer_id"] = None  # blank code: no customer; clears a stale link on update
 
         transporter_text = out.get("transporter")
         if transporter_text:

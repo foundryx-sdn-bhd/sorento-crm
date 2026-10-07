@@ -211,6 +211,13 @@ LABELS: dict[str, dict[str, str]] = {
     "Reply with a number for detail:": {"ms": "Balas dengan nombor untuk butiran:", "zh": "回复数字查看详情："},
     "Reply 1 for the sales order list.": {"ms": "Balas 1 untuk senarai pesanan jualan.", "zh": "回复 1 查看销售订单列表。"},
     "Reply 1 for the delivery order list.": {"ms": "Balas 1 untuk senarai pesanan penghantaran.", "zh": "回复 1 查看送货单列表。"},
+    # DO-SUMMARY-CAP (7 Oct 2026): the trailer under a capped By product / By customer group
+    # (`presenters._outstanding_capped_group`), four forms: the noun, singular for K = 1. R3
+    # (owner ruling, ask a69045557): a count only, no pointer; the offer line below it points.
+    "... and {k} more products": {"ms": "... dan {k} lagi produk", "zh": "... 还有 {k} 个产品"},
+    "... and {k} more product": {"ms": "... dan {k} lagi produk", "zh": "... 还有 {k} 个产品"},
+    "... and {k} more customers": {"ms": "... dan {k} lagi pelanggan", "zh": "... 还有 {k} 个客户"},
+    "... and {k} more customer": {"ms": "... dan {k} lagi pelanggan", "zh": "... 还有 {k} 个客户"},
     "No sales found.": {"ms": "Tiada jualan ditemui.", "zh": "未找到销售记录。"},
     "By quantity or by amount?": {"ms": "Mengikut kuantiti atau amaun?", "zh": "按数量还是按金额？"},
     "Do you want the top items inside one category, or the categories ranked against each other?": {"ms": "Anda mahu item teratas dalam satu kategori, atau kategori disusun antara satu sama lain?", "zh": "您要看某一类别内的热销项目，还是各类别之间的排名？"},
