@@ -258,9 +258,11 @@ class JobService:
                 self.db,
                 job,
                 "failed",
-                "Import failed",
+                "Archive failed" if job.job_type == "attachment_bulk_download" else "Import failed",
                 (
-                    f"Your {job.job_type} import has failed. {error[:500]} View job for details."
+                    f"Your files archive {job.filename} could not be built: {error[:200]}."
+                    if job.job_type == "attachment_bulk_download"
+                    else f"Your {job.job_type} import has failed. {error[:500]} View job for details."
                     + _IMPORT_NOTIFICATION_DISCLAIMER
                 ),
             )
