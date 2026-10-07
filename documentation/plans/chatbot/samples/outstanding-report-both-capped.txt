@@ -33,7 +33,7 @@ Dealer 17 Sdn Bhd: 100 (O/S: 100)
 Dealer 18 Sdn Bhd: 100 (O/S: 100)
 Dealer 19 Sdn Bhd: 100 (O/S: 100)
 Dealer 20 Sdn Bhd: 100 (O/S: 100)
-... and 7 more customers (reply 1 for the full list)
+... and 7 more customers (reply 1 for the sales order list)
 
 *Delivery order outstanding*
 Delivery orders: 3
@@ -64,7 +64,7 @@ Dealer 17 Sdn Bhd: 30 (O/S: 30)
 Dealer 18 Sdn Bhd: 30 (O/S: 30)
 Dealer 19 Sdn Bhd: 30 (O/S: 30)
 Dealer 20 Sdn Bhd: 30 (O/S: 30)
-... and 3 more customers (reply 2 for the full list)
+... and 3 more customers (reply 2 for the delivery order list)
 
 Reply with a number for detail:
 1. Sales order list
