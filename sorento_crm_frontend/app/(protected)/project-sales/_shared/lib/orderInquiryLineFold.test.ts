@@ -534,3 +534,62 @@ describe('Review S2 (PR #1266): a line whose only waiting row is a used row read
     expect(line.waitingUsedRows.map((r) => r.id)).toEqual(['used']);
   });
 });
+
+describe('SO-LINE-CHANGE-HISTORY F2 (AC-7, AC-9 to AC-13): the Before entry', () => {
+  const nowRow = (overrides: Partial<OrderInquiryWorklistRow> = {}) =>
+    row({
+      id: 'e9fac76d',
+      core_line_id: 'cl-1',
+      qty: '280',
+      delivery_date: '2027-03-01',
+      previous_qty: '182',
+      previous_delivery_date: '2026-06-01',
+      inquiry_no: 'OI-2609-0011',
+      changed_at: '2026-09-17T03:25:36Z',
+      raised_at: '2026-09-20T08:00:00Z',
+      note: 'Customer moved the date',
+      ...overrides,
+    });
+  const whats = (rows: OrderInquiryWorklistRow[]) =>
+    lineHistoryEntries(foldInquiryLines(rows)[0]).map((entry) => String(entry.what));
+
+  it('AC-7: one Before entry directly after Now and before retired rows, with the exact Why', () => {
+    const retired = row({ id: 'old', core_line_id: 'cl-1', state: 'cancelled', raised_at: '2026-09-01T08:00:00Z' });
+    const [line] = foldInquiryLines([retired, nowRow()]);
+    const entries = lineHistoryEntries(line);
+    expect(entries.map((entry) => String(entry.what))).toEqual(['Now', 'Before', 'Cancelled']);
+    expect(entries[1].why).toBe('Was 182 on 01/06/2026, before OI-2609-0011 changed it');
+  });
+
+  it('AC-9: no previous delivery date reads "Was 182, before ... changed it"', () => {
+    const entries = lineHistoryEntries(foldInquiryLines([nowRow({ previous_delivery_date: null })])[0]);
+    expect(entries.map((entry) => String(entry.what))).toEqual(['Now', 'Before']);
+    expect(entries[1].why).toBe('Was 182, before OI-2609-0011 changed it');
+  });
+
+  it('AC-10: no previous_* adds no Before entry', () => {
+    expect(whats([nowRow({ previous_qty: null, previous_delivery_date: null })])).toEqual(['Now']);
+  });
+
+  it('AC-11: previous_qty equal to qty with a different previous date still lists a Before entry', () => {
+    const entries = lineHistoryEntries(
+      foldInquiryLines([nowRow({ qty: '182', previous_qty: '182' })])[0],
+    );
+    expect(entries.filter((entry) => String(entry.what) === 'Before')).toHaveLength(1);
+  });
+
+  it('AC-12: two Now rows with previous_* give two Before entries, in Now-row order, after both Now rows', () => {
+    const a = nowRow({ id: 'a', previous_qty: '10', inquiry_no: 'OI-2609-0001' });
+    const b = nowRow({ id: 'b', previous_qty: '20', inquiry_no: 'OI-2609-0002' });
+    const entries = lineHistoryEntries(foldInquiryLines([a, b])[0]);
+    expect(entries.map((entry) => String(entry.what))).toEqual(['Now', 'Now', 'Before', 'Before']);
+    expect(entries[2].why).toBe('Was 10 on 01/06/2026, before OI-2609-0001 changed it');
+    expect(entries[3].why).toBe('Was 20 on 01/06/2026, before OI-2609-0002 changed it');
+  });
+
+  it('AC-13: the Now entry keeps its own Why wording', () => {
+    const entries = lineHistoryEntries(foldInquiryLines([nowRow()])[0]);
+    expect(entries[0].what).toBe('Now');
+    expect(entries[0].why).toBe('Was 182. Customer moved the date');
+  });
+});

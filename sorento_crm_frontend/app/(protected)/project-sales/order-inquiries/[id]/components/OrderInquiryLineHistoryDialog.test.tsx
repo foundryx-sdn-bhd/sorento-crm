@@ -63,6 +63,25 @@ const FRESH = row({
   raised_at: '2026-09-25T08:00:00Z',
 });
 
+// AC-ND-15/16 predate the Before row (F2): they keep their fixture without previous_*.
+const FRESH_NO_PREV = row({
+  id: 'fresh',
+  qty: '5',
+  note: 'Replaces 2 used; PO-2026/09-0023 received',
+  raised_at: '2026-09-25T08:00:00Z',
+});
+const CHANGED = row({
+  id: 'e9fac76d',
+  qty: '280',
+  delivery_date: '2027-03-01',
+  previous_qty: '182',
+  previous_delivery_date: '2026-06-01',
+  inquiry_no: 'OI-2609-0011',
+  changed_at: '2026-09-17T03:25:36Z',
+  raised_at: '2026-09-20T08:00:00Z',
+});
+const BEFORE_WHY = 'Was 182 on 01/06/2026, before OI-2609-0011 changed it';
+
 function renderDialog(
   rows: OrderInquiryWorklistRow[],
   props: Partial<React.ComponentProps<typeof OrderInquiryLineHistoryDialog>> = {},
@@ -114,11 +133,13 @@ describe('AC-ND-15 (G1, G6): the Rows tab', () => {
     const dialog = await screen.findByRole('dialog');
     await within(dialog).findByText('Now');
     const bodyRows = within(dialog).getAllByRole('row').filter((r) => r.closest('tbody'));
-    expect(bodyRows).toHaveLength(2);
+    // F2 (AC-13): FRESH carries previous_qty, so the Before row sits between Now and Used.
+    expect(bodyRows).toHaveLength(3);
     expect(within(bodyRows[0]).getByText('Now')).toBeInTheDocument();
     expect(within(bodyRows[0]).getByText('Was 2. Replaces 2 used; PO-2026/09-0023 received')).toBeInTheDocument();
-    expect(within(bodyRows[1]).getByText('Used')).toBeInTheDocument();
-    expect(within(bodyRows[1]).getByText('PO-2026/09-0023')).toBeInTheDocument();
+    expect(within(bodyRows[1]).getByText('Before')).toBeInTheDocument();
+    expect(within(bodyRows[2]).getByText('Used')).toBeInTheDocument();
+    expect(within(bodyRows[2]).getByText('PO-2026/09-0023')).toBeInTheDocument();
   });
 
   it("S2 (AC-ND-20): lists the line's cancelled rows from the one Lines fetch, labelled", async () => {
@@ -134,9 +155,41 @@ describe('AC-ND-15 (G1, G6): the Rows tab', () => {
   });
 
   it('AC-ND-16: a line with no earlier rows says so', async () => {
-    renderDialog([FRESH]);
+    renderDialog([FRESH_NO_PREV]);
     const dialog = await screen.findByRole('dialog');
     expect(await within(dialog).findByText('No earlier rows for this line.')).toBeInTheDocument();
+  });
+});
+
+describe('SO-LINE-CHANGE-HISTORY F2 (AC-7, AC-8): Before row and Delivery date column', () => {
+  const bodyRowsOf = (dialog: HTMLElement) =>
+    within(dialog).getAllByRole('row').filter((r) => r.closest('tbody'));
+
+  it('AC-7: lists a Before row after Now with Qty, Delivery date, Document "-" and its Why', async () => {
+    renderDialog([CHANGED]);
+    const dialog = await screen.findByRole('dialog');
+    await within(dialog).findByText('Now');
+    const bodyRows = bodyRowsOf(dialog);
+    expect(bodyRows).toHaveLength(2);
+    const before = bodyRows[1];
+    expect(within(before).getByText('Before')).toBeInTheDocument();
+    expect(within(before).getByText('182')).toBeInTheDocument();
+    expect(within(before).getByText('01/06/2026')).toBeInTheDocument();
+    expect(within(before).getByText('-')).toBeInTheDocument();
+    expect(within(before).getByText(BEFORE_WHY)).toBeInTheDocument();
+    expect(within(dialog).queryByText('No earlier rows for this line.')).not.toBeInTheDocument();
+  });
+
+  it('AC-8: a Delivery date column sits between Qty and What and the Now row prints 01/03/2027', async () => {
+    renderDialog([CHANGED]);
+    const dialog = await screen.findByRole('dialog');
+    await within(dialog).findByText('Now');
+    const headers = within(dialog).getAllByRole('columnheader').map((h) => h.textContent?.trim());
+    const at = headers.indexOf('Delivery date');
+    expect(at).toBeGreaterThan(-1);
+    expect(headers[at - 1]).toBe('Qty');
+    expect(headers[at + 1]).toBe('What');
+    expect(within(bodyRowsOf(dialog)[0]).getByText('01/03/2027')).toBeInTheDocument();
   });
 });
 
