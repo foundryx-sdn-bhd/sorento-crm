@@ -13,6 +13,7 @@ import uuid
 import zipfile
 import io
 import mimetypes
+from zoneinfo import ZoneInfo
 from app.database import get_db
 from app.services.uuid_path_param import validate_uuid_path
 from app.dependencies import (
@@ -1402,7 +1403,7 @@ async def bulk_download_attachments(
     if directory_id:
         viewed = db.query(AttachmentDirectory.name).filter(AttachmentDirectory.id == directory_id).first()
         viewed_name = viewed[0] if viewed else None
-    name = archive_filename(viewed_name, datetime.utcnow())
+    name = archive_filename(viewed_name, datetime.now(ZoneInfo("Asia/Kuala_Lumpur")))
 
     scope = get_company_scope(db)
     if scope is None:
