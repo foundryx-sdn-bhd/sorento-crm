@@ -37,12 +37,18 @@ from tests.chatbot.test_quoted_reply_engine import (
 pytestmark = pytest.mark.usefixtures("stub_access")
 
 
-def test_ac_qr_8a_a_clarify_reply_to_a_quote_leaves_the_live_task(session_factory, monkeypatch, stub_access):
+@pytest.mark.parametrize("message_type", ["clarification", "casual", "out_of_scope", "other", "unknown"])
+def test_ac_qr_8a_a_non_answer_lane_reply_to_a_quote_leaves_the_whole_live_focus(
+    session_factory, monkeypatch, stub_access, message_type
+):
     c = _console(session_factory, monkeypatch, stub_access, "+60900000501")
     _store_asked(c, A, turn_no=1, age_s=900)
     _live_c(c)
-    say_quoted(c, "ok thanks", verdict(message_type="clarification"), quote=ask_text(A))
+    live_products = [p.get("canonical_code") for p in c.state["focus"]["products"]]
+    assert live_products == [C]
+    say_quoted(c, "ok thanks", verdict(message_type=message_type), quote=ask_text(A))
     assert _open_task_labels(c) == [C], "the live task is still C"
+    assert [p.get("canonical_code") for p in c.state["focus"]["products"]] == [C], "never the quoted product"
 
 
 def test_ac_qr_14_a_resolver_failure_never_fails_the_turn(session_factory, monkeypatch, stub_access):

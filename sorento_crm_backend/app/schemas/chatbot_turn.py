@@ -126,8 +126,8 @@ class ConsoleReplyTo(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    id: str
-    text: str
+    id: str = Field(max_length=128)
+    text: str = Field(max_length=4096)
 
 
 class ConsoleTurnRequest(BaseModel):

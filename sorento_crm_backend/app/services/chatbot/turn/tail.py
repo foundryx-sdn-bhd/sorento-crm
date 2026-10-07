@@ -16,7 +16,9 @@ from app.services.chatbot.turn.pending import to_wire
 from app.services.chatbot.turn.state import State, focus_to_wire
 
 
-def carry_live_state(state: State, asked: bool, live: Mapping[str, Any]) -> State:
+def carry_live_state(
+    state: State, asked: bool, live: Mapping[str, Any], *, non_answer: bool = False
+) -> State:
     """QUOTED-REPLY R4 (owner ruling, 7 Oct 2026): a turn that ran on a quoted turn's state
     leaves the LIVE question open. The open question written is the live one unless this
     turn asked its own; an answered or absent own stock task never replaces an open live one, while an
@@ -28,11 +30,26 @@ def carry_live_state(state: State, asked: bool, live: Mapping[str, Any]) -> Stat
     def _open_stock(focus: Any) -> Any:
         return next((t for t in focus.tasks or () if t.kind == "stock_qty" and t.status == OPEN), None)
 
+    quoted_open = live.get("quoted_open")
+
+    def _inherited(task: Any) -> bool:
+        # An open task on the quoted product's own slots, however often it was re-touched,
+        # is the quote's, not one this turn opened.
+        return task is None or (
+            quoted_open is not None and {s.key for s in task.slots} == {s.key for s in quoted_open.slots}
+        )
+
     focus = state.focus
+    own = _open_stock(focus)
+    if not asked and _inherited(own) and (non_answer or own is not None):
+        # A canned / low-signal / clarify / out-of-scope lane answered nothing (or a lane only
+        # re-asked the quote's own task): the quoted state is never written as the live state,
+        # so the WHOLE live focus stays.
+        return replace(state, focus=live["focus"], pending=live["pending"], quoted_live=None)
     live_open = _open_stock(live["focus"])
     mine = _open_stock(focus)
-    # An open task still identical to the one the quote loaded was not opened by this turn.
-    if live_open is not None and (mine is None or mine == live.get("quoted_open")):
+    # An open task still on the quote's own slots was not opened by this turn.
+    if live_open is not None and _inherited(mine):
         kept = tuple(t for t in focus.tasks or () if t.kind != "stock_qty")
         focus = replace(focus, tasks=(*kept, live_open))
     return replace(state, focus=focus, pending=state.pending if asked else live["pending"], quoted_live=None)

@@ -9125,7 +9125,9 @@ def run_tail(
         )
     before = dict(remembered_before or session_state.five_keys(jsc.get(ctx, "session")))
     if applied is not None and getattr(applied, "quoted_live", None):
-        applied = state = turn_tail.carry_live_state(applied, question is not None, applied.quoted_live)
+        applied = state = turn_tail.carry_live_state(
+            applied, question is not None, applied.quoted_live, non_answer=True
+        )
     payload = {
         "focus": turn_state.focus_to_wire(state.focus),
         # The lane's OWN question, else the one APPLY carried - the same rule the
