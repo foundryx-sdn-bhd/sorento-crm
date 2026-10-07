@@ -108,7 +108,28 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # LOW_STOCK_FILTERS and MEMORY and takes the prompt without MEMORY_ADDENDUM to 45,757 est.
 # tokens and the whole prompt to 46,273; CEILING is 46,273 - 512 = 45,761 so both
 # assertions hold. A genuine new addendum the owner ruled must land, per the rule above.
-# Ninth re-pin, 6 Oct 2026 (STOCK-QTY-PARTIAL-FILL, PR #1513, owner: "this is 80% of our
+# Sixth re-pin, 2 Oct 2026 (REPORT-ENGINE slice 1b, PLAN-report-engine.md section 11):
+# REPORT_ASK_ADDENDUM (the `sales_ranking` vocabulary, 505 est. tokens on its own) sits between
+# ACCOUNT_LEDGER and MEMORY and takes the prompt without MEMORY_ADDENDUM to 44,005 est. tokens
+# and the whole prompt to 44,521; CEILING is 44,521 - 512 = 44,009 so both assertions hold.
+# 1b code review S1 (same lane): the addendum's "not a sales ranking" carve-out takes it to 585
+# est. tokens, the prompt without MEMORY_ADDENDUM to 44,086 and the whole prompt to 44,601 (+80);
+# CEILING is 44,601 - 512 = 44,089.
+# Seventh re-pin, 3 Oct 2026: restoring "SA" and "(dealer / project)" in REPORT_ASK_ADDENDUM
+# (review round 2) takes the whole prompt to 44,603 (+2); CEILING is 44,603 - 512 = 44,091.
+# Eighth re-pin, 4 Oct 2026 (owner rule: SEMANTIC ONLY, the parser decides, code reads no text):
+# REPORT_ASK_ADDENDUM now teaches ranking_refine (a follow-up that only changes the count,
+# period, basis or measure of the ranking on screen), the measure key, the new-ask rule and the
+# product-ranking carve-outs, in place of the removed regex rules, and the live refine fix; prompt without
+# MEMORY_ADDENDUM 44,848 est. tokens and the whole prompt 45,364 (+761, with the live refine fix, the
+# how-many answer bullet, the people-ranking-is-a-new-ask rule and the singular no-count rule);
+# CEILING is 45,364 - 512 = 44,852.
+# PR #1447 (report engine): REPORT_ASK_ADDENDUM teaches the outstanding basis, +27 est. tokens.
+# PR #1447 (rankings clarify): the basis answer line, the delivered answer and the outstanding refine, +114 est. tokens (review B1 removed the sales ranking metric bullet, -63).
+# Ranking keys come from the current message only (REPORT_ASK_ADDENDUM), +52 est. tokens.
+# Merge of main (#1470 LOWSTOCK-SEMANTIC) with PR #1447 (report engine): merged prompt measures 46,424 est. tokens without MEMORY_ADDENDUM and 46,939 with it, so CEILING is 46,939 - 512.
+# Merge of main (#1405 PROMPT-DYNAMIC) with PR #1447 (report engine): the owner's `sales` domain line (+88) on top of the #1470 merge: 46,512 est. tokens without MEMORY_ADDENDUM and 47,028 with it, so CEILING is 47,028 - 512.
+# Eighth re-pin, 6 Oct 2026 (STOCK-QTY-PARTIAL-FILL, PR #1513, owner: "this is 80% of our
 # problem"): TRAP_SPECS_FALLBACK_BLOCK (the trap-specs and list-fragment addenda, the same
 # text as the committed `chatbot_semantic_parser.trap-specs.patch` crew sequences onto the
 # live version; the code fallback carries it so a fresh install's v1 teaches the rules) sits
@@ -130,7 +151,28 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # (the `po_refs` key, a customer's own PO number) now sits between LOW_STOCK_FILTERS_ADDENDUM
 # and CANONICAL_CODE_ADDENDUM: 48,069 without MEMORY_ADDENDUM (+287 over the eleventh pin) and
 # 48,585 with it; CEILING is 48,585 - 512 = 48,073 so both assertions hold. Nothing else grew.
-CEILING = 48_073
+# Merge of main (#1513 STOCK-QTY-PARTIAL-FILL, TRAP_SPECS_FALLBACK_BLOCK +2,025) with PR #1447 (report engine):
+# 48,536 est. tokens without MEMORY_ADDENDUM and 49,052 with it, so CEILING is 49,052 - 512. Nothing else grew.
+# REPORT-ENGINE AC-HT8 (PR #1447): the dealer / customer / salesman ranked-noun examples, the
+# sales_ranking domain_in_message rule and the ranking words in DOMAIN IN MESSAGE:
+# 48,758 est. tokens without MEMORY_ADDENDUM (+222), so CEILING is 48,762 (the same +4 margin as before).
+# AC-HT8 r2 (bare `top` dropped from the list, the repaired salesman line and P2 line): 49,275
+# with MEMORY_ADDENDUM, so CEILING is 49,275 - 512.
+# AC-HT8 r3 (business model, any-language ranked noun, channel refine, Chinese category words):
+# 49,069 est. tokens without MEMORY_ADDENDUM, so CEILING is 49,073 (the same +4 margin).
+# Merge of main (#1511 RESOLVE-SEMANTIC-FALLBACK, CANONICAL_CODE_ADDENDUM) with PR #1447 (report engine):
+# 49,855 est. tokens without MEMORY_ADDENDUM, so CEILING is 49,859 (the same +4 margin).
+# AC-HT8 r4 (category canonical_code rule moves to the canonical-code block, channel null rules,
+# refine closing line): 49,972 est. tokens without MEMORY_ADDENDUM, so CEILING is 49,976 (+4).
+# AC-HT8 r5 (category class word scoped to ranking asks, the synonym pairs): 50,053 est. tokens
+# without MEMORY_ADDENDUM, so CEILING is 50,057 (+4).
+# AC-HT8 r6 (Chinese basis words in the ranking and top selling addenda): 50,195 est. tokens
+# without MEMORY_ADDENDUM, so CEILING is 50,199 (+4).
+# AC-HT8 r6b (the outstanding basis clause leaves the top selling addendum): 50,181 est. tokens
+# without MEMORY_ADDENDUM, so CEILING is 50,185 (+4).
+# Merge of main (#1528 SO-PO-REF, PO_REFS_ADDENDUM) with PR #1447 (report engine): 50,469 est. tokens
+# without MEMORY_ADDENDUM, so CEILING is 50,473 (+4).
+CEILING = 50_473
 # The memory addendum on its own, bounded separately so this PR's growth stays bounded.
 # 26 Sep baseline (lane d89110c0): 339 est. tokens. Round 4 (baf4c813, 28 Sep: the history
 # question in any wording, the number re-run, commercial_request) took it to 512, which is

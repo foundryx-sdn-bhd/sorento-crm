@@ -321,6 +321,7 @@ class TestPrompt:
             LOW_STOCK_FILTERS_ADDENDUM,
             PO_REFS_ADDENDUM,
             MEMORY_ADDENDUM,
+            REPORT_ASK_ADDENDUM,
             PO_SPO_WAREHOUSE_ADDENDUM,
             SEMANTIC_PARSER_PROMPT,
         )
@@ -329,15 +330,16 @@ class TestPrompt:
         assert SEMANTIC_PARSER_PROMPT.count(addendum) == 1
         _, tail = SEMANTIC_PARSER_PROMPT.split(addendum)
         # PLAN-po-spo-warehouse-29sep S3: PO_SPO_WAREHOUSE_ADDENDUM now sits between the two.
-        # RESOLVE-SEMANTIC-FALLBACK: CANONICAL_CODE_ADDENDUM sits after LOW_STOCK_FILTERS;
-        # STOCK-QTY-PARTIAL-FILL (#1513): TRAP_SPECS_FALLBACK_BLOCK after that; MEMORY stays
-        # the tail.
+        # REPORT_ASK_ADDENDUM (REPORT-ENGINE) then TRAP_SPECS_FALLBACK_BLOCK (STOCK-QTY-PARTIAL-FILL,
+        # #1513) sit between LOW_STOCK_FILTERS_ADDENDUM and MEMORY_ADDENDUM; MEMORY stays the tail.
+        # CANONICAL_CODE_ADDENDUM (#1511) follows REPORT_ASK_ADDENDUM.
         from app.services.chatbot_parser_prompt import TRAP_SPECS_FALLBACK_BLOCK
 
         assert tail == (
             PO_SPO_WAREHOUSE_ADDENDUM
             + ACCOUNT_LEDGER_ADDENDUM
             + LOW_STOCK_FILTERS_ADDENDUM
+            + REPORT_ASK_ADDENDUM
             + PO_REFS_ADDENDUM
             + CANONICAL_CODE_ADDENDUM
             + TRAP_SPECS_FALLBACK_BLOCK

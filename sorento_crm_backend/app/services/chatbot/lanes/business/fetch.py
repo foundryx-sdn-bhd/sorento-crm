@@ -871,8 +871,13 @@ def entity_ids_transformer(
         slot = jsc.get(semantic_input, "top_selling")
         slot = slot if isinstance(slot, dict) else {}
         out["rank_by"] = jsc.js_string(slot.get("rank_by"))
+        # Always explicit: the lane asks the basis (`_top_selling_question`) and never fetches
+        # without one. Only a picked row's older slot can reach here with none, and the
+        # ranking it came from ran delivered.
         if slot.get("basis") in ("delivered", "ordered"):
             out["basis"] = slot["basis"]
+        elif slot.get("detail_code"):
+            out["basis"] = "delivered"
         category_grain = slot.get("rank_group") == "category"
         if category_grain:
             out["group"] = "category"
@@ -993,7 +998,9 @@ def entity_ids_transformer(
         if channel in ("dealer", "project"):
             out["channel"] = channel
         basis = jsc.get(semantic_input, "sales_basis")
-        out["basis"] = basis if basis in SALES_ANALYSIS_BASES else "delivered"
+        out["basis"] = "delivered"  # the sales analysis route's own default basis
+        if basis in SALES_ANALYSIS_BASES:
+            out["basis"] = basis
         company = jsc.get(semantic_input, "sales_company")
         if jsc.truthy(company):
             out["company"] = jsc.js_string(company).strip()
@@ -1013,6 +1020,20 @@ def entity_ids_transformer(
         out["space_id"] = space_id_or_default(
             space_id if space_id is not None else jsc.get(semantic_input, "space_id")
         )
+
+    # REPORT-ENGINE slice 1b: `crm_report_ask`'s params are settled whole by the lane
+    # (`report_ask.route_args`, put on `semantic_input` by `run_fetch`, which hands no
+    # entities of its own); nothing else the generic steps above built travels with them
+    # but the entity ids. The customer scope tail below and `contact_id` / `space_id`
+    # still apply.
+    if tool_name == "crm_report_ask":
+        args = jsc.get(semantic_input, "report_ask_args")
+        out = {
+            "_diagnostics": out["_diagnostics"],
+            "view": "render",
+            **{k: out[k] for k in ("product_ids", "customer_ids") if out.get(k)},
+            **{k: v for k, v in (args.items() if isinstance(args, dict) else []) if v not in (None, [], "")},
+        }
 
     # S2 (review round, 13 Sep 2026): a warehouse entity on a PLAIN order ask.
     # `TYPE_TO_PARAM` maps it to `warehouse_ids`, which NEITHER order-list tool declares
@@ -1136,7 +1157,14 @@ def entity_ids_transformer(
     # reads `top_n` directly (see `TOP_N_DIRECT_TOOLS`).
     group_by = jsc.get(semantic_input, "group_by")
     if tool_name in GROUP_BY_TOOLS and jsc.truthy(group_by):
-        out["group_by"] = jsc.js_string(group_by)
+        # Only an axis the tool's own route accepts: the parser's `group_by` also carries the
+        # ranking-only axes (sales_agent, brand, ...), which the route answers with a 422.
+        from app.services.order_service import ORDER_GROUP_BY_AXES
+        from app.services.purchase_order_service import PO_GROUP_BY_AXES
+
+        allowed = ORDER_GROUP_BY_AXES if tool_name == "crm_order_management_orders_list" else PO_GROUP_BY_AXES
+        if jsc.js_string(group_by) in allowed:
+            out["group_by"] = jsc.js_string(group_by)
     top_n = jsc.get(semantic_input, "top_n")
     if jsc.truthy(top_n):
         if tool_name in TOP_N_DIRECT_TOOLS:
@@ -1204,7 +1232,11 @@ def entity_ids_transformer(
             raise ScopeViolation(
                 f"{tool_name} asked for a customer outside the contact's scope", dropped=outside
             )
-        out["customer_ids"] = requested or list(scope_ids)
+        # REPORT-ENGINE 1b code review N3: `crm_report_ask`'s route forces the dealer's own
+        # links itself (`enforce_customer_scope`), so the lane sends only what was named
+        # (no 50-id cap hit, no header listing every account); the check above stays.
+        if requested or tool_name != "crm_report_ask":
+            out["customer_ids"] = requested or list(scope_ids)
         out.pop("customer_query", None)
 
     # COERCE, THEN TRIM, and the ORDER is the whole point. `contact_id` arrives as BOTH an
@@ -1289,6 +1321,7 @@ CUSTOMER_SCOPED_TOOLS: frozenset[str] = frozenset(
         "crm_outstanding_report",
         "crm_sales_report",
         "crm_top_selling_report",
+        "crm_report_ask",
         "crm_order_analytics",
         "crm_master_customers_list",
     }
@@ -2615,6 +2648,41 @@ def _top_selling_output(result: Any, ctx: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+#: The line for a `crm_report_ask` body the presenter never rendered.
+_REPORT_ASK_ERROR_TEXT = "Could not run the sales report right now."
+
+
+def _report_ask_output(result: Any, ctx: dict[str, Any] | None = None) -> dict[str, Any]:
+    """REPORT-ENGINE slice 1b: the presenter's text (`presenters._report_ask`) is the reply,
+    verbatim. It names its own scope (basis, filters, period), so the generic search-scope
+    header is skipped (`outstanding_report`), and a ranking with no sales ("No sales found
+    for ...") is an answer, never the miss lane (the top selling ruling, 27 Sep 2026)."""
+    envelope = result if isinstance(result, dict) else {}
+    text = jsc.js_string(envelope.get("response") or "").strip() if "response" in envelope else ""
+    # The args a ranking that ran was asked with, held for a refine (`Focus.sales_ranking_frame`).
+    semantic_input = (ctx or {}).get("semantic_input")
+    args = semantic_input.get("report_ask_args") if isinstance(semantic_input, dict) else None
+    note = semantic_input.get("report_ask_note") if isinstance(semantic_input, dict) else None
+    if note and text:
+        text = f"{note}\n\n{text}"
+    return {
+        "sales_ranking_frame": dict(args) if text and isinstance(args, dict) else None,
+        "response": text or _REPORT_ASK_ERROR_TEXT,
+        "response_intro": None,
+        "answers": [],
+        "attachments": [],
+        "action_links": [],
+        "last_updated_at": None,
+        "has_result": True,
+        "alternatives": [],
+        "relaxed_axis": None,
+        "field_access": None,
+        "requested_attributes": [],
+        "keys_served": False,
+        "outstanding_report": True,
+    }
+
+
 def _dmy(value: Any) -> str:
     text = jsc.js_string(value or "")[:10]
     parts = text.split("-")
@@ -2658,6 +2726,8 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
         return _low_stock_report_output(result)
     if jsc.js_string(ctx.get("tool") or "") == "crm_top_selling_report":
         return _top_selling_output(result, ctx)
+    if jsc.js_string(ctx.get("tool") or "") == "crm_report_ask":
+        return _report_ask_output(result, ctx)
     if jsc.js_string(ctx.get("tool") or "") == "crm_sales_analysis":
         # The same envelope: the presenter's text and, when there is one, the Excel. It
         # states its own scope (company, channel, basis, period), so the order domain's

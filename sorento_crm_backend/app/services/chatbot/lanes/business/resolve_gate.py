@@ -83,9 +83,12 @@ PURCHASE_ORDER_PROBE_TOOL = "crm_procurement_po_placed_list"
 #: it), and `sales_report` for the SAME reason as the outstanding asks: the probe
 #: measures DELIVERED DOs, a population this report does not read at all.
 #: `top_selling` joins for the same reason (PLAN-chatbot-top-x-hot-selling-24sep.md S4
-#: point 10): the ranking reads sales order lines, never delivered DOs.
+#: point 10): the ranking reads sales order lines, never delivered DOs. `sales_ranking`
+#: (REPORT-ENGINE slice 1b) joins too: its basis is DO or SO lines over a period the ask
+#: names, never the probe's 90-day window, and like every status here its ask is only
+#: reachable under domain `order` (`turn_runtime._report_status_means_order_domain`).
 OUTSTANDING_ORDER_STATUS: frozenset[str] = frozenset(
-    {"outstanding", "sales_report", "top_selling", *fetch_mod.ORDER_STATUS_TO_SCOPE}
+    {"outstanding", "sales_report", "top_selling", "sales_ranking", *fetch_mod.ORDER_STATUS_TO_SCOPE}
 )
 
 # The probe's injected default window, from `probe-customer-orders`' semantic_input

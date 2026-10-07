@@ -30,7 +30,7 @@ from app.services.chatbot.turn.pending import ESCALATION_OFFER_KINDS
 _WORD_RE = re.compile(r"[0-9a-z]+")
 
 #: Statuses with a lane of their own, never an order list.
-_NOT_A_LIST = frozenset({"sales_report", "sales_analysis", "top_selling"})
+_NOT_A_LIST = frozenset({"sales_report", "sales_analysis", "top_selling", "sales_ranking"})
 
 #: Words that may sit beside a brand word in "how about mocha", "mocha only?",
 #: "then sorento brand". Matched allowing one slip in a word of four letters or more
