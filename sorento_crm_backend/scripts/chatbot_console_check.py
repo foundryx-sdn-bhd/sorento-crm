@@ -166,6 +166,11 @@ def _envelope_for(
     inner["contactId"] = wire_contact
     inner["messageId"] = f"console-check-{uuid.uuid4().hex[:12]}"
     inner["message"] = {"type": "text", "text": message}
+    # The borrowed turn's QUOTED message is the source contact's, not this case's:
+    # `engine._message_text` appends it as a `reply to: ...` line the parser reads, and a
+    # dev contact whose last real turn quoted a product list had those codes come back as
+    # entities on every console turn (CHATBOT-TRIO, 7 Oct 2026).
+    inner.pop("replyTo", None)
     envelope["message"]["event_type"] = "message.received"
     # D14, always both markers: a console check that could answer a real customer is not a
     # check, it is an incident.
