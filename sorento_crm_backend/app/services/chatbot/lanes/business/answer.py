@@ -3944,14 +3944,17 @@ def not_found_error_message(
                 # catalogue line the same way over its class words). The structure stays
                 # (fix round 9/10 on PR #833: "I want that structure to stay", and a typed
                 # phrase such as "water tap" IS its own term); only the words are the
-                # dealer's own.
+                # dealer's own. RESOLVE-SEMANTIC-FALLBACK: the resolver's token is
+                # canonical_code first, raw second (`resolve_gate._token_of`), so the
+                # join folds that value; the raw is still what the line quotes.
                 if product_token_missed:
                     typed_misses = [
                         jsc.js_string(jsc.get(e, "raw")).strip()
                         for e in entities_list
                         if jsc.get(e, "hint") in (None, "product")
                         and jsc.truthy(jsc.get(e, "raw"))
-                        and _type_norm(jsc.get(e, "raw")) in unresolved_keys
+                        and _type_norm(jsc.nullish_str(jsc.get(e, "canonical_code")).strip() or jsc.get(e, "raw"))
+                        in unresolved_keys
                     ]
                     if typed_misses:
                         terms = list(dict.fromkeys(typed_misses))

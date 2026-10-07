@@ -549,6 +549,12 @@ class TokenResolution:
     # populated, because to the caller that match is as useless as no match at all. Does
     # not affect `resolved`, which still reads `matches` alone.
     alternatives: list[ResolvedEntity] = field(default_factory=list)
+    # RESOLVE-SEMANTIC-FALLBACK: what the code reader said about a product token that
+    # missed every code tier, for the trace - `{"asked": True, "kind": code|family|none|
+    # error, "value": ..., "matched": n}` or `{"asked": False, "kind": "not_asked"}`. None
+    # (and ABSENT from `as_dict`) for every token the reader was never consulted about,
+    # so a call without a reader is byte-identical to before.
+    fallback: Optional[dict[str, Any]] = None
 
     @property
     def resolved(self) -> bool:
@@ -667,6 +673,7 @@ class ResolutionResult:
             "elapsed_ms": round(self.elapsed_ms, 2),
             "resolutions": [
                 {
+                    **({"fallback": tr.fallback} if tr.fallback is not None else {}),
                     "token": tr.token,
                     "resolved": tr.resolved,
                     "ambiguous": tr.ambiguous,
@@ -4930,8 +4937,22 @@ def resolve_references(
     entity_pins: Optional[dict[str, str]] = None,
     raw_tokens: Optional[list[str]] = None,
     regions=None,
+    code_reader: Optional[Callable[[list[tuple[str, Optional[str]]]], dict[str, Any]]] = None,
 ) -> ResolutionResult:
     """Main entry point.
+
+    `code_reader` (RESOLVE-SEMANTIC-FALLBACK, owner ruling 6 Oct 2026): a
+    `resolver_code_reader.CodeReader`. When set, a PRE-EXTRACTED product-typed token that
+    missed every code tier (exact, prefix / substring, head-code retry) is put to it ONCE,
+    beside its pre-fold raw text, before the embedding tier runs: a `code` reading re-runs
+    the exact product probe with the value, a `family` reading runs the prefix-then-
+    substring product probe (several rows are the existing ambiguous picker), `none`
+    leaves the miss. The value is guarded to characters inside the typed text
+    (`resolver_code_reader.guard`), so the model can only read a code out, never invent
+    or correct one; the catalogue decides whether it exists. Never consulted on a free-text
+    query (those tokens are regex-extracted, not a parser's decision), never for a token
+    whose allowed types exclude `product`, never when nothing missed. The verdict rides
+    `TokenResolution.fallback`; a reader that raises is a miss, never a failed call.
 
     `regions` (a contact's packing list regions) hides inbound shipments outside them from the
     exact and prefix probes; None = no filter.
@@ -4982,10 +5003,24 @@ def resolve_references(
     # below, so positional alignment survives it. Empty (never populated) when
     # `query_or_tokens` is a plain string or the two lists' lengths differ.
     raw_by_token: dict[str, str] = {}
+    # {token: the caller's own type hint for it}, built the same positional way as
+    # `raw_by_token` when the caller sent one type per token (the chatbot does: one hint
+    # per parser entity). Read only by the code reader below, so a customer- or brand-
+    # hinted miss in a message that also names a product is never asked as a product.
+    hint_by_token: dict[str, str] = {}
     if isinstance(query_or_tokens, list):
         paired_raw = (
             raw_tokens
             if isinstance(raw_tokens, list) and len(raw_tokens) == len(query_or_tokens)
+            else None
+        )
+        allowed_list = list(allowed_entity_types) if allowed_entity_types is not None else None
+        # One hint per token, including the one-token case (positional and set readings
+        # are the same thing there). A caller sending a type SET that happens to equal
+        # the token count only ever loses the reader on a token its hint rules out.
+        paired_hint = (
+            allowed_list
+            if allowed_list is not None and len(allowed_list) == len(query_or_tokens)
             else None
         )
         tokens = []
@@ -4994,8 +5029,14 @@ def resolve_references(
             if not s:
                 continue
             tokens.append(s)
+            # A token typed twice keeps its LAST line's raw text: the rule the head-code
+            # retry below has always read `raw_by_token` by, so a call with no reader
+            # stays byte-identical to before (reviewer, fourth pass, blocker 1). The hint
+            # follows the same rule, one rule for both.
             if paired_raw is not None:
                 raw_by_token[s] = paired_raw[idx]
+            if paired_hint is not None:
+                hint_by_token[s] = _canonical_entity_type(str(paired_hint[idx] or "").strip())
         ceiling = max_candidates if max_candidates is not None else PRE_EXTRACTED_TOKEN_CEILING
         truncated_tokens = tokens[ceiling:]
         tokens = tokens[:ceiling]
@@ -5187,6 +5228,87 @@ def resolve_references(
             if len(hits) > 1:
                 ambiguous_tokens.add(tok)
 
+    # ----- Code reader (RESOLVE-SEMANTIC-FALLBACK): product tokens still matchless -----
+    # The one model question, after every deterministic tier and before the embedding
+    # tier - see the docstring. Pre-extracted lists only: `raw_query` is set for a
+    # free-text string, whose tokens nobody decided were codes.
+    fallback_by_token: dict[str, dict[str, Any]] = {}
+    if code_reader is not None and raw_query is None:
+        missed: list[tuple[str, Optional[str]]] = []
+        seen_missed: set[str] = set()
+        for tok in tokens:
+            if per_token[tok] or tok in ambiguous_tokens or tok in seen_missed:
+                continue
+            tok_allowed = _types_for(tok)
+            if tok_allowed is not None and "product" not in tok_allowed:
+                continue
+            # The caller's OWN hint for this token, when it sent one per token: only a
+            # product-hinted (or unhinted) token is a product question (reviewer finding 2;
+            # `_types_for` is the request-wide union once pairing is off).
+            if hint_by_token.get(tok, "product") not in ("product", ""):
+                continue
+            seen_missed.add(tok)  # a line typed twice is one question, one of the 5 slots
+            if not raw_by_token.get(tok):
+                # No typed text behind the folded token (a caller without `raw_tokens`): the
+                # guard could accept nothing but the whole token, which the code tiers
+                # already missed on, so the call would buy nothing. Said on the trace.
+                fallback_by_token[tok] = {"asked": False, "kind": "not_asked", "reason": "no_typed_text"}
+                continue
+            missed.append((tok, raw_by_token[tok]))
+        if missed:
+            from app.services import resolver_code_reader as _reader_mod
+
+            try:
+                readings = code_reader(missed)
+            except Exception as exc:  # noqa: BLE001 - a reader failure is a miss, never a failed call
+                logger.warning("resolver code reader raised; the tokens stay unresolved: %s", exc)
+                readings = {
+                    tok: _reader_mod.CodeReading("error", None, reason=_reader_mod.REASON_READER_RAISED)
+                    for tok, _ in missed
+                }
+            if not isinstance(readings, dict):
+                readings = {}
+            for tok, typed in missed:
+                reading = readings.get(tok)
+                if reading is None:
+                    fallback_by_token[tok] = {"asked": False, "kind": "not_asked"}
+                    continue
+                reading = _reader_mod.guard(reading, typed, tok)
+                record: dict[str, Any] = {"asked": reading.kind != "not_asked", "kind": reading.kind}
+                if reading.kind in ("code", "family"):
+                    record["value"] = reading.value
+                    hits: list[ResolvedEntity] = []
+                    try:
+                        if reading.kind == "code":
+                            # The exact tier's probes for a typed code (reviewer, fourth
+                            # pass, should-fix 4): the product row, else the product set (a
+                            # flyer code) when the caller's types reach it. NOT the variant
+                            # siblings Tier 1 adds beside a typed exact hit: the gate's
+                            # AND-mode exactness test and `turn/narrow.typed_exact_settles`
+                            # strip those by comparing the TYPED token with the code, and
+                            # this token ("TAPSRTWT5608") is not the code read out of it, so
+                            # siblings here would turn the owner's found SRTWT5608 (which
+                            # has -FRG and -GM variants) into a "which one?" question.
+                            hits = list(_probe_product(db, [reading.value]).get(reading.value, []))
+                            if not hits and (tok_allowed is None or "product_set" in tok_allowed):
+                                hits = list(_probe_product_set(db, [reading.value]).get(reading.value, []))
+                        else:
+                            hits = list(_prefix_probe_product(db, reading.value))
+                    except Exception:
+                        logger.exception("Code reader re-probe failed for token=%s", tok)
+                        hits = []
+                    record["matched"] = len(hits)
+                    if hits:
+                        per_token[tok] = hits
+                        if len(hits) > 1:
+                            ambiguous_tokens.add(tok)
+                else:
+                    if reading.kind == "none":
+                        record["value"] = None
+                    if reading.reason:
+                        record["reason"] = reading.reason
+                fallback_by_token[tok] = record
+
     # Snapshot which tokens already had matches BEFORE cross-type expansion -
     # used below to flag tokens that grew into multi-type candidate sets so the
     # LLM disambiguates instead of picking the first match.
@@ -5307,7 +5429,12 @@ def resolve_references(
                     freeword_resolutions.append(TokenResolution(token=tok, matches=matches))
 
     resolutions = [
-        TokenResolution(token=t, matches=per_token[t], ambiguous=(t in ambiguous_tokens))
+        TokenResolution(
+            token=t,
+            matches=per_token[t],
+            ambiguous=(t in ambiguous_tokens),
+            fallback=fallback_by_token.get(t),
+        )
         for t in tokens
     ]
     resolutions.extend(freeword_resolutions)
