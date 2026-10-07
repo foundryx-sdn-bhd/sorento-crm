@@ -83,7 +83,11 @@ def test_p1_salesman_as_ranked_noun_is_sales_agent_axis():
 
 
 def test_p2_sales_ranking_always_domain_in_message_true():
-    assert 'a sales_ranking verdict always sets domain_in_message true' in _addendum()
+    assert "\nA sales_ranking verdict always sets domain_in_message true." in _addendum()
+
+
+def test_salesman_example_line_is_complete():
+    assert "the code a product entity." in _addendum()
 
 
 def test_p3_domain_in_message_list_has_ranking_words():
@@ -91,5 +95,34 @@ def test_p3_domain_in_message_list_has_ranking_words():
 
     i = SEMANTIC_PARSER_PROMPT.index("== DOMAIN IN MESSAGE ==")
     block = SEMANTIC_PARSER_PROMPT[i:i + 900]
-    for w in ("sold the most", "top", "卖得最多", "排名"):
+    for w in ("sold the most", "卖得最多", "排名"):
         assert w in block, w
+
+
+def test_p3_bare_top_is_not_a_domain_word():
+    from app.services.chatbot_parser_prompt import SEMANTIC_PARSER_PROMPT
+
+    i = SEMANTIC_PARSER_PROMPT.index("== DOMAIN IN MESSAGE ==")
+    block = SEMANTIC_PARSER_PROMPT[i:i + 900]
+    items = [w.strip() for w in block.split("\n  - ")[0].replace("\n", " ").replace(" - ", ",").split(",")]
+    assert "top" not in items
+    assert ", top," not in block
+
+
+def _anaphora_verdict(status):
+    return verdict(order_status=status, domain_in_message=True, entities=[entity("CWC7606-SH")],
+                   anaphora={"backward_reference": True})
+
+
+def test_ranking_with_anaphora_under_open_offer_is_new_ask():
+    from app.services.chatbot.turn.decide import NEW_ASK
+
+    assert _decide(_anaphora_verdict("sales_ranking")).kind == NEW_ASK
+
+
+def test_non_ranking_anaphora_still_refines():
+    from app.services.chatbot.turn.decide import REFINE
+
+    d = _decide(_anaphora_verdict("sales_report"))
+    assert d.kind == REFINE
+    assert d.why == "domain_in_message_anaphora"
