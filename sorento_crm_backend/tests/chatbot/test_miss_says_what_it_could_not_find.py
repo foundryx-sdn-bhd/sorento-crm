@@ -451,6 +451,38 @@ class TestASetReadOffAMissedTokenIsNotCarried:
         assert "I could not find ZZQ9917." in reply, reply
 
 
+class TestATurnWithoutAResolveOutcomeStillAnswers:
+    def test_a_page_of_a_carried_set_whose_recount_is_empty_still_answers(
+        self, session_factory, stub_parser, stub_access, seven_taps, monkeypatch
+    ) -> None:
+        """R2 (reviewer round 2): a page turn on a carried set skips the resolver, and its
+        page fetch can come back empty, which sends the turn to the miss bridge. "Did this
+        message's own product token miss?" must be answered (False) on that path too, or
+        the turn fails before it composes (`UnboundLocalError` on 5a9e899af, caught as a
+        lane failure). Same shape as `test_counted_set_no_paging.test_a_recount_that_
+        finds_nothing_never_calls_the_tool_unfiltered`, graded on the reply."""
+        from app.services.chatbot import turn_runtime as tr
+        from app.services.chatbot.lanes.business import answer as answer_mod
+        from tests.chatbot.test_counted_set_no_paging import _bare_verdict, _tap_cert_verdict, _turn
+
+        monkeypatch.setattr(answer_mod, "SET_LIST_MAX", 5)
+        engine_mod, _codes, _calls, contact_id = seven_taps
+        stub_parser(_tap_cert_verdict())
+        stub_access()
+        _turn(engine_mod, session_factory, contact_id=contact_id, n=1, text="which tap has cert")
+        real = tr.page_the_set
+
+        def emptied(db, carry, **kwargs):
+            predicate, _ids = real(db, carry, **kwargs)
+            return {**predicate, "qualifying_total": 0}, []
+
+        monkeypatch.setattr(tr, "page_the_set", emptied)
+        stub_parser(_bare_verdict(top_n=3, continuation=True, user_goal="show 3"))
+        reply = _turn(engine_mod, session_factory, contact_id=contact_id, n=2, text="3")
+        assert reply, "a page of an emptied set still answers"
+        assert "UnboundLocalError" not in reply and "error" not in reply.lower(), reply
+
+
 class TestAMissOnTheTypedProductCarriesNoSetPage:
     def test_the_message_product_token_is_unplaced(self) -> None:
         verdict = {"entities": [{"hint": "product", "raw": DESCRIPTION_LINE}, {"hint": "brand", "raw": "SORENTO"}]}

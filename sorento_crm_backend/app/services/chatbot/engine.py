@@ -4826,6 +4826,11 @@ def _run_stages_body(  # noqa: PLR0915
         predicate: dict[str, Any] | None = None
         resolved_candidates: dict[str, list[dict[str, Any]]] = {}
         unplaced_tokens: dict[str, str] = {}
+        # ROGUE-CONVO-REVIEW-R2 (reviewer round 2): a turn that skips the resolver (a page
+        # of a carried set, a refused sales-report grant) names no product token, so the
+        # answer to "did this message's own product token miss?" is False there; the
+        # bridge and the set_page carry both read it, with or without a resolve outcome.
+        miss_on_typed_product = False
         # RESOLVER-TOKEN-CAP: the codes the resolver cut at its ceiling and never looked
         # up, as typed - named by the reply's "Not checked:" line, never silently dropped.
         not_checked_tokens: dict[str, str] = {}
