@@ -74,6 +74,8 @@ The owner's ask: the salesman angle gives the salesman ranking, and the dealer a
   - "哪一位经销商卖得最多X";
   - "多少个经销商卖这个产品" (on the standing product).
 - AC-HT8-3. A salesman named as the ranked noun ranks by sales agent: "哪一位业务员卖得最多X", "which salesman sold the most X".
-- AC-HT8-4. A sales_ranking verdict sets `domain_in_message: true`. The DOMAIN IN MESSAGE words include "sold the most", "top",
-  "卖得最多" and "排名".
+- AC-HT8-4. A sales_ranking verdict sets `domain_in_message: true`. The DOMAIN IN MESSAGE words include "sold the most",
+  "卖得最多" and "排名". The bare word "top" is NOT a domain word: a bare "top 20" or "top 5" refines a held top selling list or
+  order list and must not start a new ask (review round 2, apply.py:1382/1494 and :1211/:1165).
+- AC-HT8-1 also covers the anaphora row: a ranking verdict with a backward reference under the open offer is still a new ask.
 - AC-HT8-5. The prompt change ships as a new unlabelled version, picked in the console. The `production` label does not move.
