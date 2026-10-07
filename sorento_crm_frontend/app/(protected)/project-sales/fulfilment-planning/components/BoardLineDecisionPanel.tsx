@@ -453,6 +453,50 @@ export function BoardLineDecisionPanel({
   };
 
   /**
+   * BOARD-DECIDE-RESEED (owner, 7 Oct 2026, SO424856 lines 16 / 32): the draft, the Reason
+   * box, the tick, the lock and the Buy switch seed from `decision` at MOUNT, and nothing
+   * re-read it. A panel left open while the planner picked a way from the Decide dropdown
+   * (`BoardDecideControl` writes `draft[key]` through `FulfilmentBoardPanel.decide`, never
+   * through this panel) kept the OLD Reserve rows under a pill already reading the new
+   * decision, and Save posted those stale rows - "The components add up to X and the line is
+   * open for Y" from the server.
+   *
+   * So it re-seeds exactly as a fresh mount would, when the decision changes under it, UNLESS
+   * - the planner has typed into this panel (`dirty`): their work is not overwritten; the
+   *   pill beside the row already shows the new decision, and closing and reopening the row
+   *   loads it. Read through a ref so the effect keys on the decision alone - keying on
+   *   `dirty` too would fire this again the moment a save cleared it.
+   * - the decision is the one THIS panel just wrote (`ownWrite`): the board stores the very
+   *   object `save()` / `reject()` handed it, and reading it back would drop what the draft
+   *   holds and the decision does not (a borrow row's live `donor_impact`, the row keys).
+   *
+   * The N3 effect above is the same idea for `savedOnce` / `rejectedOnce`; this one is for
+   * what the inputs hold.
+   */
+  const dirtyRef = React.useRef(dirty);
+  dirtyRef.current = dirty;
+  const ownWrite = React.useRef<BoardDecision | null>(null);
+  const seededFrom = React.useRef<BoardDecision | null>(decision);
+  React.useEffect(() => {
+    if (decision === seededFrom.current) return;
+    seededFrom.current = decision;
+    if (decision && decision === ownWrite.current) return;
+    if (dirtyRef.current) return;
+    const next = draftFor(contribution, decision);
+    const stock = lineBalance({ ...next, buy_qty: '0' });
+    setDraft(next);
+    setReason(seedReason(decision) || seedReason(contribution.decision) || '');
+    setSuspected(
+      decision
+        ? Boolean(decision.suspected_system_issue)
+        : Boolean(contribution.decision?.suspected_system_issue),
+    );
+    setLocked(Boolean(contribution.covered) && !decision);
+    stockBefore.current = null;
+    setBuyingState(toMinor(next.buy_qty) > 0 && stock.totalMinor === 0);
+  }, [decision, contribution]);
+
+  /**
    * ONE PRESS, TWO VERDICTS, decided by what the inputs hold rather than by which button was
    * chosen: the engine's composition is an approval, anything else is an amendment.
    *
@@ -491,10 +535,9 @@ export function BoardLineDecisionPanel({
     inFlight.current = true;
     setPending(true);
     try {
-      let ok: boolean | void;
       const approvingNow = approving && !covered;
       if (approvingNow) {
-        ok = await onDecide({
+        ownWrite.current = {
           ...suggestionWithReasons(contribution, {
             // D3 (S2): the ONE box, not a per-field input any more - `foldedDraft` is the same
             // fan-out Save's amending branch below uses. AC-28: `reason` travels on the
@@ -510,15 +553,17 @@ export function BoardLineDecisionPanel({
             cited_document: draft.cited_document,
           }),
           suspected_system_issue: suspected,
-        });
+        };
       } else {
-        ok = await onDecide({
+        ownWrite.current = {
           ...decisionFromAmendDraft(foldedDraft, reason),
           // THE BOOLEAN, never `|| undefined`: `false` is the planner's answer that the numbers
           // are fine, and dropping the key let the frozen `true` behind it read as current.
           suspected_system_issue: suspected,
-        });
+        };
       }
+      // The ONE object handed over, so the re-seed effect can recognise it coming back.
+      const ok = await onDecide(ownWrite.current);
       // S2 (code review round 3): the check state answers the click, but only for a click that
       // actually landed - `onDecide` returning `false` (a rejected write) must not show a
       // check the server never earned. `undefined` (a caller with nothing to report) reads as
@@ -570,11 +615,12 @@ export function BoardLineDecisionPanel({
     inFlight.current = true;
     setPending(true);
     try {
-      const ok = await onDecide({
+      ownWrite.current = {
         verdict: 'rejected',
         reason: reason.trim(),
         suspected_system_issue: suspected,
-      });
+      };
+      const ok = await onDecide(ownWrite.current);
       if (ok === false) return;
       setDirty(false);
       setRejectedOnce(true);
@@ -1252,7 +1298,12 @@ function draftFor(
   decision: BoardDecision | null,
 ): DraftLine {
   const base = amendDraftFrom(contribution);
-  if (!decision || decision.verdict !== 'amended' || !decision.reserve)
+  // BOARD-DECIDE-RESEED: an `approved` decision carries the suggested composition too (D11,
+  // `suggestionWithReasons`), and the Decide dropdown writes one whenever its way happens to
+  // match the engine - so it overlays the same way an amendment does. A rejection carries no
+  // rows and keeps the base; so does the board's own `preMarked` approval and a bare
+  // `{verdict: 'approved'}` from before D11.
+  if (!decision || decision.verdict === 'rejected' || !decision.reserve)
     return base;
 
   const byWarehouse = new Map(
