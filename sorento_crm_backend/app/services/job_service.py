@@ -386,7 +386,7 @@ class JobService:
             return None
 
         # Once we've marked as cancelled, do not overwrite with RQ (RQ may still report 'started' briefly)
-        if job.status == JobStatus.CANCELLED.value:
+        if job.status in (JobStatus.CANCELLED.value, JobStatus.FAILED.value):
             return job
 
         rq_status = get_job_status(job_id)

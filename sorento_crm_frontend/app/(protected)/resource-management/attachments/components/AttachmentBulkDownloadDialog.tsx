@@ -120,10 +120,16 @@ export default function AttachmentBulkDownloadDialog({
     }
   };
 
-  const status = startError ? 'failed' : (jobStatus?.status ?? 'pending');
   const result = jobStatus?.result;
+  // A task that failed and returned normally is reported by RQ as finished: no download id, no archive.
+  const finishedWithoutArchive = jobStatus?.status === 'finished' && !result?.download_id;
+  const status = startError || finishedWithoutArchive ? 'failed' : (jobStatus?.status ?? 'pending');
   const progress = jobStatus?.progress;
-  const failedLine = startError ?? jobStatus?.error;
+  const failedLine = startError ?? (
+    finishedWithoutArchive
+      ? ['The archive could not be built.', jobStatus?.error].filter(Boolean).join(' ')
+      : jobStatus?.error
+  );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
