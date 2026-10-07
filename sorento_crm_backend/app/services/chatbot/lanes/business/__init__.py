@@ -1422,7 +1422,10 @@ def run_fetch(
         if _OUTSTANDING_SO_GRANT not in granted:
             if trace is not None:
                 trace.add("so_status", {"refused": "not_granted", "needs": _OUTSTANDING_SO_GRANT})
-            return _fixed_reply(fetch_mod.SO_NOT_ENABLED_MESSAGE)
+            refusal = _fixed_reply(fetch_mod.SO_NOT_ENABLED_MESSAGE)
+            # The refusal is the whole answer: the miss ladder (escalation offer) stands down.
+            refusal["fetch"]["so_status"] = True
+            return refusal
         if db is not None:
             from app.services.chatbot import so_status
 
