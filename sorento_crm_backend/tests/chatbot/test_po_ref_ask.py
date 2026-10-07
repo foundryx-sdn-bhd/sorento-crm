@@ -10,6 +10,8 @@ red here is the lane and the lookup, not the fold helper (`tests/scm/test_po_ref
 """
 from __future__ import annotations
 
+import re
+
 import uuid
 from pathlib import Path
 from typing import Any
@@ -126,11 +128,22 @@ class TestParserDeclaresPoRefs:
         assert "our PO" in SEMANTIC_PARSER_PROMPT
 
 
-def test_the_migration_exists_and_chains_onto_the_chatbot_allowed_head() -> None:
-    files = [p for p in (BACKEND / "alembic" / "versions").glob("*.py") if "sopr_0001_so_po_ref" in p.read_text()]
-    assert files, "no migration carries revision sopr_0001_so_po_ref"
-    body = files[0].read_text()
-    assert 'down_revision = "aig_0001_chatbot_allowed"' in body.replace("'", '"').replace(": str | None", "")
+def test_the_migration_exists_and_chains_onto_a_committed_revision() -> None:
+    # The parent is whatever main's head was when the lane last re-parented
+    # (scripts/alembic-reparent.sh), so pin only that it names a real revision; the single
+    # head itself is the CI alembic-heads gate's job.
+    versions = BACKEND / "alembic" / "versions"
+    path = versions / "sopr_0001_so_po_ref.py"
+    assert path.exists(), "no migration sopr_0001_so_po_ref.py"
+    body = path.read_text().replace("'", '"')
+    match = re.search(r'^down_revision[^=]*= "([^"]+)"', body, re.MULTILINE)
+    assert match, "sopr_0001_so_po_ref has no down_revision"
+    parent = match.group(1)
+    assert any(
+        re.search(rf'^revision[^=]*= ["\']{re.escape(parent)}["\']', p.read_text(), re.MULTILINE)
+        for p in versions.glob("*.py")
+        if p != path
+    ), f"down_revision {parent} is not a committed revision"
     assert "po_ref_key" in body and "ix_sales_orders_po_ref_key" in body
 
 
