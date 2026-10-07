@@ -1,9 +1,10 @@
 """External chat history schemas."""
 
+import uuid
 from datetime import datetime
 from typing import Annotated, Any, Literal, Optional
 
-from pydantic import BaseModel, BeforeValidator, Field
+from pydantic import BaseModel, BeforeValidator, Field, field_validator
 
 
 def _id_to_str(value: Any) -> Any:
@@ -82,6 +83,17 @@ class ChatHistoryMessageIngestRequest(BaseModel):
         "voice-not-allowed, LLM fallback) and is a real signal - never coerce it to {}. "
         "Stored as received; the producer owns the inner shape.",
     )
+
+
+    @field_validator("chatbot_turn_id")
+    @classmethod
+    def _chatbot_turn_id_is_uuid(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        try:
+            return str(uuid.UUID(value))
+        except ValueError as exc:
+            raise ValueError("chatbot_turn_id must be a UUID") from exc
 
 
 class ChatHistoryMessageIngestResponse(BaseModel):

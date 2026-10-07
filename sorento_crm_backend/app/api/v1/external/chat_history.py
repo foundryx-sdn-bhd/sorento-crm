@@ -207,7 +207,7 @@ def ingest_chat_message(
                 # Exclude state_trace: it is already persisted as jsonb on the row.
                 # integration_logs has no purge, so logging it here would store the
                 # whole trace a second time, as text, write-only, forever.
-                request_payload=payload.model_dump_json(exclude={"state_trace"}),
+                request_payload=payload.model_dump_json(exclude={"state_trace", "chatbot_turn_id"}),
                 status_code=status_code,
                 status="success" if status_code < 400 else "failed",
                 error_message=error_message,

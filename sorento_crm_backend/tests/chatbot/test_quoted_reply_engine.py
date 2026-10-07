@@ -285,7 +285,7 @@ def test_ac_qr_9_quote_of_a_non_question_answers_about_the_quoted_product(sessio
     _live_c(c)
     c.tool_calls.clear()
 
-    say_quoted(
+    out = say_quoted(
         c,
         "have stock? or eta date?",
         reply(entity_op="reuse", domain_hint="inventory", intent_hint="check_stock"),
@@ -295,7 +295,10 @@ def test_ac_qr_9_quote_of_a_non_question_answers_about_the_quoted_product(sessio
     asked_ids = {pid for args in stock_calls for pid in (args.get("product_ids") or [])}
     assert c.uuid_of[E2_CODE] in asked_ids, "the stock tool was called for the quoted subject"
     assert c.uuid_of[C] not in asked_ids, "never for the live open task's product"
-    assert C in _open_task_labels(c), "the live task stays open"
+    # Lead decision (round 2, owner ruling pending): this turn's own open stock ask wins, as a
+    # fresh ask does on main; the written task is the quoted product's only.
+    assert _open_task_labels(c) == [E2_CODE]
+    assert out == ask_text(E2_CODE)
 
 
 # --------------------------------------------------------------------------- #

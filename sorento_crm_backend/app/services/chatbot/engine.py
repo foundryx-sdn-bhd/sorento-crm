@@ -77,7 +77,7 @@ from app.services.chatbot.turn import memory as memory_mod
 from app.services.chatbot.turn import profile_facts as profile_facts_mod
 from app.services.chatbot.turn import tail as turn_tail
 from app.services.chatbot.turn import task as turn_task
-from app.services.chatbot.turn.apply import apply as turn_apply
+from app.services.chatbot.turn.apply import apply as _apply_state
 from app.services.chatbot.turn.apply import is_product_shaped_entity
 from app.services.chatbot.turn.apply import record_top_selling_asked
 from app.services.chatbot.turn.decide import EVERYTHING, broaden_kind, broaden_level
@@ -990,6 +990,16 @@ def _reply_to_message_id(envelope: Envelope) -> str | None:
     return str(value) if value not in (None, "") else None
 
 
+def turn_apply(state_in: Any, *args: Any, **kwargs: Any) -> Any:
+    """APPLY, keeping the QUOTED-REPLY live-question aside (R4) on the state it returns:
+    APPLY builds a fresh `State`, which would otherwise drop it."""
+    out, plan = _apply_state(state_in, *args, **kwargs)
+    live = getattr(state_in, "quoted_live", None)
+    if live and getattr(out, "quoted_live", None) is None:
+        out = dataclasses_replace(out, quoted_live=live)
+    return out, plan
+
+
 def _quoted_context(
     db: Session,
     envelope: Envelope,
@@ -1017,14 +1027,22 @@ def _quoted_context(
     if jsc.get(jsc.get(reply_to, "sender"), "source") == "contact":
         return state_in, facts
     quoted_text = jsc.get(jsc.get(reply_to, "message"), "text")
-    found = quoted_mod.resolve_quoted_turn(
-        db,
-        contact_respond_id=contact_respond_id,
-        reply_to_id=reply_to_id,
-        quoted_text=quoted_text if isinstance(quoted_text, str) else None,
-        is_test=bool(dry_run),
-        before=datetime.now(tz=timezone.utc),
-    )
+    try:
+        found = quoted_mod.resolve_quoted_turn(
+            db,
+            contact_respond_id=contact_respond_id,
+            reply_to_id=reply_to_id,
+            quoted_text=quoted_text if isinstance(quoted_text, str) else None,
+            is_test=bool(dry_run),
+            before=datetime.now(tz=timezone.utc),
+        )
+    except Exception as exc:  # noqa: BLE001 - a quote must never fail the turn
+        logger.warning("quoted turn resolve failed: %s", exc, exc_info=True)
+        try:
+            db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        return state_in, facts
     if found is None:
         return state_in, facts
     same = found.focus == remembered_before.get("focus") and found.open_question == remembered_before.get(
@@ -1033,17 +1051,31 @@ def _quoted_context(
     facts.update(found=True, via=found.via, turn_id=found.turn_id, same_as_live=same)
     if same:
         return state_in, facts
-    pending = turn_pending.from_wire(found.open_question)
+    pending = turn_runtime.tick_pending(turn_pending.from_wire(found.open_question))
     if (
         pending is not None
         and pending.kind in turn_pending.ESCALATION_OFFER_KINDS
-        and isinstance(found.turn_no, int)
-        and state_in.turn_no - found.turn_no >= 3
+        and not (isinstance(found.turn_no, int) and state_in.turn_no - found.turn_no < 3)
     ):
-        pending = None  # R6: an old escalation offer is not revived
-    remembered_before["_quoted_live"] = {"pending": state_in.pending, "focus": state_in.focus}
+        pending = None  # R6: an old (or undated) escalation offer is not revived
     return (
-        dataclasses_replace(state_in, focus=turn_state.focus_from_wire(found.focus), pending=pending),
+        dataclasses_replace(
+            state_in,
+            focus=turn_state.focus_from_wire(found.focus),
+            pending=pending,
+            quoted_live={
+                "pending": state_in.pending,
+                "focus": state_in.focus,
+                "quoted_open": next(
+                    (
+                        t
+                        for t in turn_state.focus_from_wire(found.focus).tasks or ()
+                        if t.kind == "stock_qty" and t.status == turn_task.OPEN
+                    ),
+                    None,
+                ),
+            },
+        ),
         facts,
     )
 
@@ -6939,7 +6971,6 @@ def _run_answer(
             contains_flyer=bool(verdict.get("contains_flyer")),
             ideation=remembered_before.get("ideation"),
             reply_language=item.get("reply_language") or remembered_before.get("reply_language"),
-            quoted_live=remembered_before.get("_quoted_live"),
         )
         # ONE payload for both kinds of turn: a live turn writes it, a dry run hands it
         # back as `session_patch` and writes nothing (D14). Same rule `run_tail` applies
@@ -9093,10 +9124,8 @@ def run_tail(
             turn_no=0,
         )
     before = dict(remembered_before or session_state.five_keys(jsc.get(ctx, "session")))
-    if applied is not None and before.get("_quoted_live"):
-        applied = state = turn_tail.carry_live_state(
-            applied, question is not None, before["_quoted_live"]
-        )
+    if applied is not None and getattr(applied, "quoted_live", None):
+        applied = state = turn_tail.carry_live_state(applied, question is not None, applied.quoted_live)
     payload = {
         "focus": turn_state.focus_to_wire(state.focus),
         # The lane's OWN question, else the one APPLY carried - the same rule the

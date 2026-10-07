@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
 from app.models.chat_history import ChatHistory
 from app.models.chatbot_turn import ChatbotTurn
@@ -93,6 +93,7 @@ def link_outgoing_row(
     at = _aware(sent_at)
     candidates = (
         db.query(ChatbotTurn)
+        .options(load_only(ChatbotTurn.id, ChatbotTurn.response))
         .filter(
             ChatbotTurn.contact_respond_id == contact_id,
             ChatbotTurn.is_test.is_(False),
@@ -172,6 +173,7 @@ def resolve_quoted_turn(
         return None
     candidates = (
         db.query(ChatbotTurn)
+        .options(load_only(ChatbotTurn.id, ChatbotTurn.response))
         .filter(
             ChatbotTurn.contact_respond_id == contact_respond_id,
             ChatbotTurn.is_test.is_(is_test),
@@ -184,5 +186,5 @@ def resolve_quoted_turn(
     )
     for turn in candidates:
         if _reply_text(turn) == wanted:
-            return _build(turn, "text")
+            return _build(db.get(ChatbotTurn, turn.id), "text")
     return None

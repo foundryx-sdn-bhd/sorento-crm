@@ -898,7 +898,7 @@ def _run_cases(cases, session, url, args, default_contact, run_id) -> int:
                 parser=(turn.get("parser") or case.get("parser")) if args.mock_parser else None,
                 previous_state=previous_state,
                 prompt_version=args.prompt_version,
-                quote=turn.get("quote") or case.get("quote"),
+                quote=turn["quote"] if "quote" in turn else case.get("quote"),
             )
             body = _post_with_pacing(
                 session,
