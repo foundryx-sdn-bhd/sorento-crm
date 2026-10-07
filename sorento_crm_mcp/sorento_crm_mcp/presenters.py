@@ -2069,6 +2069,21 @@ def _outstanding_location_header(token: Any, codes: Any) -> str:
     return f"{token} ({', '.join(str(c) for c in resolved)})"
 
 
+#: DO-SUMMARY-CAP (owner ruling, 7 Oct 2026, Option 1 of the #1515 plan question): the
+#: SECOND group of a block (`*_By customer_*` / `*_By product_*`) prints at most this many
+#: rows, then one trailer line naming what was left off. A customer-subject report over a
+#: dealer's whole range printed 300+ `<code>: 1 (O/S: 1)` lines in one WhatsApp message
+#: (prod, contact 551644114, turn 11). `*_By location_*` and the count lines stay whole.
+OUTSTANDING_GROUP_CAP = 20
+
+#: The trailer's noun, by the key the second group's rows are named under.
+_OUTSTANDING_GROUP_NOUN = {"customer_name": "customer", "product_code": "product"}
+
+#: The two detail offers, as the closing line prints them (`_outstanding_report`).
+_SO_LIST_OFFER = "Sales order list"
+_DO_LIST_OFFER = "Delivery order list"
+
+
 def _outstanding_group(rows: list, *, name_key: str, total_key: str, outstanding_key: str) -> list[str]:
     """One breakdown group's lines, `name: total (O/S: outstanding)`, in the order given.
 
@@ -2086,6 +2101,35 @@ def _outstanding_group(rows: list, *, name_key: str, total_key: str, outstanding
     ]
 
 
+def _outstanding_capped_group(
+    rows: list, *, name_key: str, total_key: str, outstanding_key: str
+) -> list[str]:
+    """The second group of a block: the first `OUTSTANDING_GROUP_CAP` rows exactly as
+    `_outstanding_group` prints them (R10's order, so the top of the ranking is what
+    survives), then, only when rows were left off, ONE count-only trailer line:
+
+        ... and 292 more products
+
+    R3 (owner ruling, 7 Oct 2026, ask a69045557): the trailer counts, nothing more. The
+    first cut ended the line with a bracketed `reply 1` pointer at "the full list" and the
+    second with one at "the delivery order list"; each read, above `Reply 1 for the
+    delivery order list.`, as a second offer sharing one number. The closing offer line is the one pointer, unchanged from
+    before the cap, and `1` is the detail list exactly as on main. The chatbot lane reads
+    the pending offer off the rendered text with anchored patterns (`^\\d+\\. ... list$` /
+    `^Reply \\d+ for the ...\\.$`); this line starts with `...` and matches none of them.
+    """
+    shown = rows[:OUTSTANDING_GROUP_CAP]
+    lines = _outstanding_group(
+        shown, name_key=name_key, total_key=total_key, outstanding_key=outstanding_key
+    )
+    extra = len(rows) - len(shown)
+    if extra > 0:
+        noun = _OUTSTANDING_GROUP_NOUN.get(name_key, "row")
+        plural = "" if extra == 1 else "s"
+        lines.append(f"... and {extra} more {noun}{plural}")
+    return lines
+
+
 def _outstanding_second_group(report: dict, prefix: str) -> tuple[str, list]:
     """Which group follows By location, and its rows (R13): `*_By customer_*` for a
     product subject, `*_By product_*` for a customer subject, neither when the report was
@@ -2100,9 +2144,7 @@ def _outstanding_second_group(report: dict, prefix: str) -> tuple[str, list]:
     return "", []
 
 
-def _outstanding_so_block(
-    so: dict, by_location: list, second_rows: list, second_key: str
-) -> str:
+def _outstanding_so_block(so: dict, by_location: list, second_rows: list, second_key: str) -> str:
     lines = [
         "*Sales order outstanding*",
         # R7 (owner testing round 3, 13 Sep 2026): the COUNT opens both blocks, then the
@@ -2123,7 +2165,7 @@ def _outstanding_so_block(
     if second_key:
         lines.append("*_By customer_*" if second_key == "customer_name" else "*_By product_*")
         lines.extend(
-            _outstanding_group(
+            _outstanding_capped_group(
                 second_rows, name_key=second_key, total_key="ordered_qty",
                 outstanding_key="outstanding_qty",
             )
@@ -2131,9 +2173,7 @@ def _outstanding_so_block(
     return "\n".join(lines)
 
 
-def _outstanding_do_block(
-    do: dict, by_location: list, second_rows: list, second_key: str
-) -> str:
+def _outstanding_do_block(do: dict, by_location: list, second_rows: list, second_key: str) -> str:
     """R6/R7 (owner testing round 3, 13 Sep 2026): the DO block says OUTSTANDING, never
     "pending", and states the delivered figure beside it - "need to show the delivered
     also, so the by location and by customer needs to be the DO qty (O/S: {pending}) so
@@ -2161,8 +2201,9 @@ def _outstanding_do_block(
     if second_key:
         lines.append("*_By customer_*" if second_key == "customer_name" else "*_By product_*")
         lines.extend(
-            _outstanding_group(
-                second_rows, name_key=second_key, total_key="do_qty", outstanding_key="pending_qty"
+            _outstanding_capped_group(
+                second_rows, name_key=second_key, total_key="do_qty",
+                outstanding_key="pending_qty",
             )
         )
     return "\n".join(lines)
@@ -2216,7 +2257,7 @@ def _outstanding_report(report: dict) -> str:
                     so, report.get("so_by_location") or [], so_second_rows or [], so_second_key
                 )
             )
-            offer.append("Sales order list")
+            offer.append(_SO_LIST_OFFER)
 
     do = report.get("do")
     if do is not None:
@@ -2229,7 +2270,7 @@ def _outstanding_report(report: dict) -> str:
                     do, report.get("do_by_location") or [], do_second_rows or [], do_second_key
                 )
             )
-            offer.append("Delivery order list")
+            offer.append(_DO_LIST_OFFER)
 
     text = "\n".join(lines)
     # D13/AC-1141: the withheld half is named HERE, between the header and the block

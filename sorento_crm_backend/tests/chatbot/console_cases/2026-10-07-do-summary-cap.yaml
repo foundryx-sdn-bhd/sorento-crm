@@ -1,0 +1,54 @@
+# Console case for DO-SUMMARY-CAP (owner ruling, 7 Oct 2026): a customer-subject delivery
+# order summary whose By product group holds more than 20 products prints the top 20 and one
+# trailer line; the "1" reply still returns the full DO list.
+#
+# `documentation/plans/chatbot/PLAN-do-summary-cap.md`, UAC AC-1609.
+#
+# NOT collected by pytest. Seeded sandbox run (`documentation/plans/chatbot/evidence/
+# do-summary-cap/harness/seed_do_summary_cap.py`: contact 900000009, customer CAP HARDWARE
+# SDN BHD with 26 products on outstanding DOs) or any stack whose contact holds
+# `sales_orders.outstanding` and whose customer has more than 20 products outstanding:
+#
+#   venv/bin/python scripts/chatbot_console_check.py \
+#       tests/chatbot/console_cases/2026-10-07-do-summary-cap.yaml --base-url http://127.0.0.1:8000
+#
+# Two turns, one conversation. A is the capped summary; B is the bare "1", the full list.
+# `pending_kind` grades since #1515 taught the runner to read `variables.open_question`.
+# Graded green on the sandbox with the real parser, pending_kind included, on the merged head
+# 742f8d9e (run console-check-1791333810; run 1791331134 graded the reply lines before the
+# merge). The live parser does not read
+# turn A the same way every time (it dropped the document word in 3 of 4 later sandbox runs
+# and asked "Outstanding for which document?" instead; turn A's parse, outside this lane, the
+# same instability #1515 recorded): on such a run answer the scope question with "2" and the
+# capped summary follows, then "1" the list, exactly as graded below.
+contact: "900000009"
+
+cases:
+  - name: DO-SUMMARY-CAP - By product stops at 20 rows with the trailer, "1" lists every DO
+    cold: true
+    turns:
+      # A. The customer-subject DO summary: 20 product rows, then the trailer, then the offer.
+      - text: "CAP HARDWARE delivery order outstanding"
+        expect:
+          branch_kind: business_query
+          reply_contains:
+            - "Delivery order outstanding"
+            - "*_By product_*"
+            - "SRTWC9020: 1 (O/S: 1)"
+            - "... and 6 more products (reply 1 for the delivery order list)"
+            - "Reply 1 for the delivery order list."
+          reply_not_contains:
+            # the 21st product by rank (the one-unit codes rank by name; SRTWC9021 is the
+            # 16th one-unit code and the first one left off)
+            - "SRTWC9021"
+          no_uuid: true
+          pending_kind: outstanding_detail
+
+      # B. The offer's own answer. Every DO row, no cap, no trailer.
+      - text: "1"
+        expect:
+          branch_kind: business_query
+          reply_contains: ["DO Number:", "SRTWC9026"]
+          reply_not_contains: ["By product", "more products", "Reply 1 for the delivery order list."]
+          no_uuid: true
+          pending_kind: outstanding_detail
