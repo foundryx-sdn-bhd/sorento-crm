@@ -1,6 +1,6 @@
 --- alembic/data/chatbot_semantic_parser.prod-20261001.txt
 +++ alembic/data/chatbot_semantic_parser.prod-20261001.txt
-@@ -1239,6 +1239,15 @@
+@@ -1239,6 +1239,31 @@
    - One bare number with no line and no "all": over "quantities" -> mode null,
      demand_qty the number; over a "last_answer" of two or more items -> mode null,
      demand_qty the number (the assistant asks which); over one line -> "fill" on it.
@@ -13,10 +13,26 @@
 +    singles one out it is placed on none (mode null, a stock question for that fragment
 +    as usual). The lines a message fills are answered at once; the other lines stay
 +    open, and a later message may fill them the same way, one or several at a time.
++  - A BARE NUMBER on its own ("10", "10 pcs", "10 unit", "sepuluh", "10个") while TWO OR
++    MORE lines are still owed (qty null on the Open question's items), with no line
++    number, no code and no "all" -> mode null, items [], picked [], demand_qty that
++    number, entities []: the number is the quantity for EVERY line still owed, and the
++    assistant fills them all at once. It is NEVER "fill" on line 1 or on any one line
++    (the lines are products already chosen, not choices to pick from), never a position,
++    never a product code; the lines already filled are not touched.
++    Only ONE line still owed -> "fill" on that line, as above.
++    - Open question items: 1 CWC7603-SH-300 qty null, 2 MWC1195-BL-S12 qty null,
++      6 SRTWC8152-SH-300 qty 6, 8 SRTWC8357-300-RL qty 10 (more lines still owed);
++      message "10" -> mode null, items [], demand_qty 10
++    - the same lines, "5 pcs" -> mode null, items [], demand_qty 5
++    - the same lines, "10 for line 1", "line 1 10", "the first one 10" -> "fill", items
++      [{"position": 1, "qty": 10}]
++    - the same lines, "10 for all" -> "all", qty_for_all 10
++    - only line 2 still owed, "10" -> "fill", items [{"position": 2, "qty": 10}]
    - A product NOT on the list -> mode null, a new stock question as usual.
    - "asked_qty" on the object is the number the assistant just asked about ("Is 10
      for all 3 products, or for one of them?"): "all" -> "all", qty_for_all that
-@@ -1344,6 +1353,53 @@
+@@ -1344,6 +1369,53 @@
      - "any kitchen sink with thickness 1.2 mm" -> category "kitchen sink", specification
        thickness 1.2
      - "cert?" after a described answer -> the same entities, the certificate ask

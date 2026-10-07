@@ -110,7 +110,12 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # (+1,624) and 47,110 with it; CEILING is 47,110 - 512 = 46,598 so both assertions hold.
 # Since PROMPT-DYNAMIC (#1405) the live parser runs the owner's published text, not this
 # constant, so production grows by the two addenda alone. Nothing else grew.
-CEILING = 46_598
+# Ninth re-pin, 7 Oct 2026 (STOCK-QTY-PARTIAL-FILL R2, same PR): the list-fragment addendum
+# gains the bare-number rule (crew's real-parser runs on v60 and v63 read "10" over seven owed
+# lines as a fill on line 1; Q3 (a) is one number for every line still owed): 46,996 without
+# MEMORY_ADDENDUM (+401) and 47,511 with it; CEILING is 47,511 - 512 = 46,999 so both
+# assertions hold. Nothing else grew.
+CEILING = 46_999
 # The memory addendum on its own, bounded separately so this PR's growth stays bounded.
 # 26 Sep baseline (lane d89110c0): 339 est. tokens. Round 4 (baf4c813, 28 Sep: the history
 # question in any wording, the number re-run, commercial_request) took it to 512, which is
