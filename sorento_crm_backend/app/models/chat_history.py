@@ -73,6 +73,10 @@ class ChatHistory(Base):
     # conversation_variables_service.get_referenced_state for why the withheld keys
     # are withheld.
     state_trace = Column(JSONB, nullable=True)
+    # OUTGOING rows only: the `chatbot.turns.id` whose reply this message carried (QUOTED-REPLY
+    # R1, owner ruling 7 Oct 2026). Lets a quote-reply resolve the quoted engine turn by id.
+    # NULL = a reply n8n composed alone, a proactive send, or any incoming row.
+    chatbot_turn_id = Column(String(36), nullable=True)
 
     __table_args__ = (
         Index("ix_chat_histories_channel_contact_sent_id", "channel", "contact_id", "sent_at", "id"),
