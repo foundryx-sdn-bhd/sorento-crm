@@ -1,0 +1,396 @@
+"""DO-LIST-REPLY-LABEL (owner, 6 Oct 2026, prod, "quite frustrating"): the quick reply
+labelled "Delivery order list" under the outstanding summary must answer the detail offer
+exactly as "1" does - never re-run the summary.
+
+Prod trace (contact 551644114, turn 11): the open question is `outstanding_detail`,
+expects `pick`, one option `{position 1, label "Delivery order list", payload {value:
+"do"}}`, filters `{scope: "do", ...}`. respond.io sends the tapped quick reply as the
+TEXT "Delivery order list".
+
+Measured cause (`PLAN-do-list-reply-label.md`): the parser is shown the option's label
+(`turn/question.py::_options`) and returns a pick of position 1 for it, but the prompt
+also fills `document: ["DO"]` for the words "delivery order" even when they are the
+whole message. `turn/decide.py`'s outstanding-kinds arm reads the named document BEFORE
+the picked position (`NEW_ASK "named_document"`), and `turn/apply.py::_answer_outstanding`
+then re-runs the REPORT for that scope (`detail: None`) - the summary already on screen.
+`so_status.carried_status_verdict`'s `pick_under_offer` cannot help: it keeps the
+parser's document whenever the text itself names one, which a label reply does.
+
+The rule under test: a declared pick whose named document is the SAME scope as the option
+it picked IS the pick. "Sales order" typed after the DO list (named "so", picked option
+"do") keeps its new-ask reading (hand pass 3 row 5, `test_rearch_handpass3_owner_17sep`).
+Both halves are the parser's own fields (`reference_positions`, `document`) read against
+the pending's own stored option payload - no word of the message is read here.
+"""
+from __future__ import annotations
+
+from typing import Any
+
+import pytest
+
+from tests.chatbot._turn_helpers import build_policy, verdict
+
+PICK_ONE = {"mode": "pick", "picked": [1], "items": [], "qty_for_all": None}
+PICK_TWO = {"mode": "pick", "picked": [2], "items": [], "qty_for_all": None}
+
+
+def _do_offer(asked_at_turn: int = 6, *, product_code: str | None = None):
+    """The prod-shaped single-scope detail offer: the DO summary ran, one list on offer.
+    `product_code` is the sandbox replay's shape (a product-scoped summary, 6 Oct 2026);
+    the prod trace's own offer was customer-scoped and carried none."""
+    from app.services.chatbot.turn.pending import ask
+
+    filters: dict[str, Any] = {
+        "scope": "do",
+        "offer_text": "Reply 1 for the delivery order list.",
+        "customer_ids": ["c8a1d2e4-0000-4000-8000-000000000001"],
+    }
+    if product_code:
+        filters["product_code"] = product_code
+    return ask(
+        "outstanding_detail",
+        [
+            {
+                "uuid": "do",
+                "label": "Delivery order list",
+                "payload": {"value": "do"},
+                "position": 1,
+                "entity_type": "outstanding_detail",
+            }
+        ],
+        expects="pick",
+        asked_at_turn=asked_at_turn,
+        payload={"domain": "order", "filters": filters},
+    )
+
+
+def _both_offer():
+    """The two-scope offer: `1. Sales order list`, `2. Delivery order list`, `3. Both lists`."""
+    from app.services.chatbot.turn.pending import ask
+
+    rows = [("so", "Sales order list"), ("do", "Delivery order list"), ("both", "Both lists")]
+    return ask(
+        "outstanding_detail",
+        [
+            {"uuid": value, "label": label, "payload": {"value": value}, "position": i, "entity_type": "outstanding_detail"}
+            for i, (value, label) in enumerate(rows, start=1)
+        ],
+        expects="pick",
+        asked_at_turn=6,
+        payload={"domain": "order", "filters": {"scope": "both", "offer_text": "Reply with a number for detail:"}},
+    )
+
+
+def _summary_focus():
+    from app.services.chatbot.turn.state import Focus
+
+    return Focus(
+        domains=["order"],
+        document=["DO"],
+        status="outstanding",
+        customers=[
+            {
+                "raw": "hanlim",
+                "hint": "customer",
+                "canonical_code": "300-H030",
+                "uuid": "c8a1d2e4-0000-4000-8000-000000000001",
+                "current_message": False,
+            }
+        ],
+    )
+
+
+def _apply(v: dict[str, Any], *, pending, focus=None):
+    from app.services.chatbot.turn.apply import apply
+    from app.services.chatbot.turn.state import Profile, State
+
+    state = State(focus=focus or _summary_focus(), pending=pending, profile=Profile())
+    return apply(state, v, build_policy())
+
+
+#: Turn C, the control: "1". `so_status.carried_status_verdict`'s `pick_under_offer` has
+#: already blanked the document the parser carried off the conversation.
+BARE_ONE = dict(
+    message_type="casual",
+    reference_positions=[1],
+    open_question_answer=PICK_ONE,
+    domain_in_message=False,
+)
+
+#: Turn B: the tapped quick reply, "Delivery order list". The parser's own worked example
+#: (`chatbot_parser_prompt.py`: options "1. Sales order list, 2. Delivery order list" +
+#: "DO list" -> reference_positions [2]) gives the position; its DOCUMENT rule ("delivery
+#: order" fills `document` even when it is the whole message) gives `["DO"]`; the words
+#: "delivery order" are a domain word (`domain_in_message` true, `domain_hint` order).
+LABEL_REPLY = dict(
+    message_type="business_query",
+    reference_positions=[1],
+    open_question_answer=PICK_ONE,
+    document=["DO"],
+    domain_in_message=True,
+    domain_hint="order",
+    intent_hint="check_order",
+)
+
+
+class TestDecideReadsTheLabelReplyAsThePick:
+    def test_the_label_reply_decides_exactly_as_the_bare_number_does(self) -> None:
+        """AC-DLRL-1 at the decide() seam: B and C are one Decision."""
+        from app.services.chatbot.turn.decide import ANSWER, decide
+
+        pending = _do_offer()
+        control = decide(verdict(**BARE_ONE), _summary_focus(), pending)
+        label = decide(verdict(**LABEL_REPLY), _summary_focus(), pending)
+        assert (control.kind, control.why, control.scope, control.positions) == (ANSWER, "picked_scope", "do", (1,))
+        assert (label.kind, label.why, label.scope, label.positions) == (
+            control.kind,
+            control.why,
+            control.scope,
+            control.positions,
+        ), (
+            "the quick-reply label must read as the SAME pick the bare number is, not as a "
+            f"named document - got {label.as_trace()!r} scope={label.scope!r}"
+        )
+
+    @pytest.mark.parametrize("carried_status", ["do_outstanding", "outstanding"])
+    def test_a_report_status_the_parser_carries_does_not_change_the_pick(self, carried_status: str) -> None:
+        """The live parser carries the summary's status onto the reply (PR #1435 cloud
+        pass); with a document in the text `pick_under_offer` leaves it in place, so the
+        pick must hold with the status beside it."""
+        from app.services.chatbot.turn.decide import ANSWER, decide
+
+        label = decide(verdict(**LABEL_REPLY, order_status=carried_status), _summary_focus(), _do_offer())
+        assert (label.kind, label.why, label.scope) == (ANSWER, "picked_scope", "do"), label.as_trace()
+
+    def test_the_label_over_the_two_scope_offer_picks_the_do_list(self) -> None:
+        """AC-DLRL-2: `1. Sales order list, 2. Delivery order list, 3. Both lists` +
+        "Delivery order list" -> position 2 with `document: ["DO"]` picks the DO list."""
+        from app.services.chatbot.turn.decide import ANSWER, decide
+
+        v = verdict(**{**LABEL_REPLY, "reference_positions": [2], "open_question_answer": PICK_TWO})
+        label = decide(v, _summary_focus(), _both_offer())
+        assert (label.kind, label.why, label.scope, label.positions) == (ANSWER, "picked_scope", "do", (2,)), (
+            label.as_trace()
+        )
+
+    def test_a_document_that_is_not_the_picked_option_stays_a_new_ask(self) -> None:
+        """AC-DLRL-3, the guard: "Sales order" after the DO list arrives as `document:
+        ["SO"]` AND `reference_positions: [1]` (hand pass 3 row 5, turn bb233665); the
+        only option on offer is "Delivery order list", so the named document wins and
+        the report re-runs for the SO scope."""
+        from app.services.chatbot.turn.decide import NEW_ASK, decide
+
+        v = verdict(
+            message_type="business_query",
+            reference_positions=[1],
+            open_question_answer=PICK_ONE,
+            document=["SO"],
+            domain_in_message=True,
+            domain_hint="order",
+        )
+        named = decide(v, _summary_focus(), _do_offer())
+        assert (named.kind, named.why, named.scope) == (NEW_ASK, "named_document", "so"), named.as_trace()
+
+    def test_the_scope_question_answered_by_its_own_document_word_is_the_pick(self) -> None:
+        """The one behaviour change outside `outstanding_detail`: "Delivery orders" typed
+        at the SCOPE question (1. Sales orders, 2. Delivery orders, 3. Both) arrives as
+        positions [2] plus `document: ["DO"]` and now reads as the pick. The effect is the
+        same either way (the scope question clears on its answer, the report runs for DO,
+        `detail: None`), so the apply-level outcome is pinned beside the Decision."""
+        from app.services.chatbot.turn.decide import ANSWER, decide
+        from app.services.chatbot.turn.pending import ask
+        from app.services.chatbot.turn.state import Focus
+
+        rows = [("so", "Sales orders"), ("do", "Delivery orders"), ("both", "Both")]
+        scope_question = ask(
+            "outstanding_scope",
+            [
+                {"uuid": value, "label": label, "payload": {"value": value}, "position": i, "entity_type": "outstanding_scope"}
+                for i, (value, label) in enumerate(rows, start=1)
+            ],
+            expects="pick",
+            payload={"domain": "order", "filters": {"product_codes": ["SRTWT7445"]}},
+        )
+        v = verdict(**{**LABEL_REPLY, "reference_positions": [2], "open_question_answer": PICK_TWO})
+        focus = Focus(domains=["order"], status="outstanding")
+        picked = decide(v, focus, scope_question)
+        assert (picked.kind, picked.why, picked.scope, picked.positions) == (ANSWER, "picked_scope", "do", (2,)), (
+            picked.as_trace()
+        )
+        state, plan = _apply(v, pending=scope_question, focus=focus)
+        assert plan.trace.outstanding == {"kind": "outstanding_scope", "scope": "do", "detail": None}
+        assert state.pending is None, "the scope question clears on its answer"
+        assert state.focus.document == ["DO"]
+
+    def test_both_lists_named_with_both_documents_is_the_both_pick(self) -> None:
+        """`_picked_scope`'s "both" branch: "Both lists" over the three-option detail offer
+        arrives as positions [3] plus `document: ["SO", "DO"]` and runs both lists."""
+        from app.services.chatbot.turn.decide import ANSWER, decide
+
+        v = verdict(
+            **{
+                **LABEL_REPLY,
+                "reference_positions": [3],
+                "open_question_answer": {"mode": "pick", "picked": [3], "items": [], "qty_for_all": None},
+                "document": ["SO", "DO"],
+            }
+        )
+        both = decide(v, _summary_focus(), _both_offer())
+        assert (both.kind, both.why, both.scope, both.positions) == (ANSWER, "picked_scope", "both", (3,)), (
+            both.as_trace()
+        )
+        _state, plan = _apply(v, pending=_both_offer())
+        assert plan.trace.outstanding == {"kind": "outstanding_detail", "scope": "both", "detail": "both"}
+
+    def test_a_position_nobody_offered_is_not_a_scope_pick(self) -> None:
+        """A number past the end of the DO offer (positions [5], no document) is an attempt
+        at the question the generic arm re-prints; it must never read as `picked_scope`
+        (a picked scope of None equalling a named scope of None)."""
+        from app.services.chatbot.turn.decide import decide
+
+        v = verdict(
+            message_type="casual",
+            reference_positions=[5],
+            open_question_answer={"mode": "pick", "picked": [5], "items": [], "qty_for_all": None},
+            domain_in_message=False,
+        )
+        past_the_end = decide(v, _summary_focus(), _do_offer())
+        assert past_the_end.why != "picked_scope", past_the_end.as_trace()
+        assert past_the_end.scope is None, past_the_end.as_trace()
+
+    def test_a_named_document_with_no_pick_stays_a_new_ask(self) -> None:
+        """A document named with NO position (`reference_positions: []`) is still the new
+        scope it always was - the rule only joins a declared pick to its own document."""
+        from app.services.chatbot.turn.decide import NEW_ASK, decide
+
+        v = verdict(message_type="business_query", document=["DO"], domain_in_message=True, domain_hint="order")
+        named = decide(v, _summary_focus(), _do_offer())
+        assert (named.kind, named.why, named.scope) == (NEW_ASK, "named_document", "do"), named.as_trace()
+
+
+#: The product the sandbox summary was about, as the parser re-states it on the label
+#: reply (live run 3, 6 Oct 2026): `current_message: true` although the words "Delivery
+#: order list" carry no code, beside `entity_op: "reuse"` - the parser's own declaration
+#: that the turn carries no new value (`decide._keeps_subject`'s reading of the field).
+RESTATED_PRODUCT = {
+    "raw": "SRTWT7445",
+    "hint": "product",
+    "canonical_code": None,
+    "current_message": True,
+    "confident": True,
+}
+
+#: Turn B as the live parser ALSO returns it (sandbox run 3 of 3): the pick declared in
+#: `open_question_answer` only (`reference_positions` left empty), `document: ["DO"]`,
+#: the summary's own `do_outstanding` status, and the open report's product re-stated as
+#: a reused entity. `apply._open_pick_answer` turns the declared pick into the positions
+#: `decide()` reads; the entity is what the outstanding arm read as a NEW ASK.
+LABEL_REPLY_RESTATED = dict(
+    message_type="business_query",
+    reference_positions=[],
+    open_question_answer=PICK_ONE,
+    document=["DO"],
+    domain_in_message=True,
+    domain_hint="order",
+    intent_hint="check_order",
+    order_status="do_outstanding",
+    entities=[RESTATED_PRODUCT],
+    entity_op="reuse",
+)
+
+
+class TestDecideReadsTheRestatedSubjectAsThePick:
+    """AC-DLRL-7: the live parser re-states the open report's own subject beside the pick."""
+
+    def test_a_reused_entity_under_a_declared_pick_is_still_the_pick(self) -> None:
+        """Sandbox run 3: positions [1] (from the declared pick) + the report's own product
+        as a `reuse` entity read `new_ask / domain_in_message` at `decide.py`'s outstanding
+        arm and the summary re-ran. A reused entity names nothing new: the pick holds."""
+        from app.services.chatbot.turn.decide import ANSWER, decide
+
+        v = verdict(**{**LABEL_REPLY_RESTATED, "reference_positions": [1]})
+        label = decide(v, _summary_focus(), _do_offer(product_code="SRTWT7445"))
+        assert (label.kind, label.why, label.scope, label.positions) == (ANSWER, "picked_scope", "do", (1,)), (
+            label.as_trace()
+        )
+
+    def test_the_customer_scoped_prod_offer_reads_the_same(self) -> None:
+        """The prod offer (contact 551644114 turn 11) stored customer_ids and no product;
+        the rule reads the parser's `entity_op`, never the stored subject, so it holds
+        there too."""
+        from app.services.chatbot.turn.decide import ANSWER, decide
+
+        v = verdict(**{**LABEL_REPLY_RESTATED, "reference_positions": [1]})
+        label = decide(v, _summary_focus(), _do_offer())
+        assert (label.kind, label.why, label.scope) == (ANSWER, "picked_scope", "do"), label.as_trace()
+
+    def test_a_new_value_beside_a_position_is_still_a_new_ask(self) -> None:
+        """The guard D17 point 3 keeps: a product the parser declares as a NEW value
+        (`entity_op: "replace_combine"`) riding with a position is a new ask, whatever
+        the position says."""
+        from app.services.chatbot.turn.decide import NEW_ASK, decide
+
+        other = {**RESTATED_PRODUCT, "raw": "SRTWT7443"}
+        v = verdict(
+            **{**LABEL_REPLY_RESTATED, "reference_positions": [1], "entities": [other], "entity_op": "replace_combine"}
+        )
+        named = decide(v, _summary_focus(), _do_offer(product_code="SRTWT7445"))
+        assert named.kind == NEW_ASK, named.as_trace()
+        assert named.entities == (other,), named.as_trace()
+
+    def test_a_reused_entity_with_no_pick_is_not_a_pick(self) -> None:
+        """Without a declared position the reused entity is read as it always was (the
+        refinement / carry table), never as `picked_scope`."""
+        from app.services.chatbot.turn.decide import decide
+
+        v = verdict(**{**LABEL_REPLY_RESTATED, "open_question_answer": None})
+        reading = decide(v, _summary_focus(), _do_offer(product_code="SRTWT7445"))
+        assert reading.why != "picked_scope", reading.as_trace()
+
+    def test_apply_runs_the_list_for_the_restated_reading(self) -> None:
+        """At the apply() seam, with the pick declared in `open_question_answer` ONLY:
+        the list runs (`detail: "do"`), the offer stays open, the not-an-answer rule
+        never fires - the same trace as the bare "1"."""
+        state_b, plan_b = _apply(verdict(**LABEL_REPLY_RESTATED), pending=_do_offer(product_code="SRTWT7445"))
+        _state_c, plan_c = _apply(verdict(**BARE_ONE), pending=_do_offer(product_code="SRTWT7445"))
+
+        assert plan_c.trace.outstanding == {"kind": "outstanding_detail", "scope": "do", "detail": "do"}
+        assert plan_b.trace.outstanding == plan_c.trace.outstanding, (
+            f"summary re-run instead of the list: {plan_b.trace.outstanding!r}, rules {plan_b.trace.rules_fired!r}"
+        )
+        assert "open_question_answer_pick" in plan_b.trace.rules_fired, plan_b.trace.rules_fired
+        assert "answer_pending_not_an_answer" not in plan_b.trace.rules_fired, plan_b.trace.rules_fired
+        assert state_b.pending is not None and state_b.pending.kind == "outstanding_detail", state_b.pending
+
+
+class TestApplyRunsTheListNotTheSummary:
+    def test_the_label_reply_runs_the_delivery_order_list_and_keeps_the_offer(self) -> None:
+        """AC-DLRL-1 at the apply() seam: `trace.outstanding.detail == "do"` is what makes
+        the fetch the LIST (the same tool call with `detail=`); `detail: None` is the
+        summary. The detail offer survives its own pick (contract 39)."""
+        state_b, plan_b = _apply(verdict(**LABEL_REPLY), pending=_do_offer())
+        state_c, plan_c = _apply(verdict(**BARE_ONE), pending=_do_offer())
+
+        assert plan_c.trace.outstanding == {"kind": "outstanding_detail", "scope": "do", "detail": "do"}
+        assert plan_b.trace.outstanding == plan_c.trace.outstanding, (
+            "the label reply must run the delivery order LIST exactly as '1' does - "
+            f"got {plan_b.trace.outstanding!r}, rules {plan_b.trace.rules_fired!r}"
+        )
+        assert "outstanding_pending_dropped" not in plan_b.trace.rules_fired, plan_b.trace.rules_fired
+        assert "answer_outstanding" in plan_b.trace.rules_fired, plan_b.trace.rules_fired
+        assert state_b.pending is not None and state_b.pending.kind == "outstanding_detail", (
+            f"the detail offer stays open across its own pick - got {state_b.pending!r}"
+        )
+        assert state_b.focus.document == state_c.focus.document == ["DO"]
+        assert state_b.focus.status == state_c.focus.status == "outstanding"
+        assert state_b.focus.domains == state_c.focus.domains == ["order"]
+
+    def test_the_summary_is_never_re_run_by_the_label_reply(self) -> None:
+        """The symptom itself: a re-run of the REPORT is `trace.outstanding` with
+        `detail: None` (or the offer dropped). Neither may happen on the label reply."""
+        state_b, plan_b = _apply(verdict(**LABEL_REPLY), pending=_do_offer())
+        answered = plan_b.trace.outstanding or {}
+        assert answered.get("detail") == "do", (
+            f"summary re-run instead of the list: trace.outstanding={plan_b.trace.outstanding!r}, "
+            f"rules={plan_b.trace.rules_fired!r}, pending={state_b.pending!r}"
+        )
