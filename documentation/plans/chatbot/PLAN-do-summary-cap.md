@@ -23,6 +23,45 @@ tail. AC-1103 of the 13 Sep lane pinned "no line is ever elided" when the larges
 owner had seen was 14 customers; a customer-subject report over a dealer's whole range has
 hundreds of products.
 
+## Measured on the dev copy (crew, read-only, 7 Oct 2026; labels masked, never real names)
+
+The sandbox cannot reach the dev database (cloud-lanes.md), so the crew ran the query below
+on the shared dev copy. Population: the route's own (`_fill_do`, outstanding_report_service.py:
+476-487: `orders` inner-joined to `order_lines` and `products`, `deleted_at IS NULL`, and
+`_outstanding_clause`, order_service.py:95-108, over the statuses `_delivered_status_ids`
+names: `delivered` AND `completed`, order_service.py:68).
+
+| Group | Rows per subject | p50 | p90 | max | subjects over 20 |
+|---|---|---|---|---|---|
+| DO By product (customer subject) | 829 customers | 4 | 30 | 365 | 135 (16%) |
+| SO By product (customer subject) | 538 customers | 5 | 37 | 224 | 107 (20%) |
+| DO By customer (product subject) | 2,758 products | 2 | 9 | 197 | 48 |
+| SO By customer (product subject) | 1,719 products | 2 | 10 | 202 | 75 |
+
+Whole range: 5,446 outstanding DOs over 2,758 products and 829 customers; 2,367 open SOs
+over 1,719 products and 538 customers. Largest customer-subject DO groups (label / DOs /
+distinct products): C41795c 545 / 281, C4ffc6a 411 / 249, C4db13e 88 / 218, C1e1dbd 72 / 365,
+C08af3e 77 / 106. Largest SO: C94d80e 85 / 190, Cce0c1b 30 / 224, C895c6f 23 / 129.
+
+So N = 20 caps about one customer-subject ask in six and leaves the median (4 to 5 rows)
+untouched. C1e1dbd's DO summary goes from 365 product lines to 20 plus
+`... and 345 more products (reply 1 for the full list)`.
+
+```sql
+-- products per customer on outstanding DOs, the route's population
+SELECT c.customer_name, COUNT(DISTINCT l.product_id) AS products_in_by_product
+FROM orders o
+JOIN order_lines l ON l.order_id = o.id
+JOIN products p ON p.id = l.product_id
+LEFT JOIN customers c ON c.id = o.customer_id
+WHERE o.deleted_at IS NULL
+  AND (o.order_status_id IS NULL
+       OR o.order_status_id NOT IN (SELECT id FROM order_statuses WHERE lower(status_code) IN ('delivered', 'completed'))
+       OR o.actual_delivery_date IS NULL)
+GROUP BY c.customer_name
+ORDER BY products_in_by_product DESC;
+```
+
 ## Fix (presenter only, owner ruling Option 1)
 
 - `*_By product_*` and `*_By customer_*` (the SECOND group of each block, SO block and DO block
