@@ -532,29 +532,44 @@ def test_c26_a_cancel_only_press_with_a_batch_id_cancels_and_leaves_the_batch_pe
     assert _decision_count(db, w["order"]) == decisions_before
 
 
-def test_c27_a_real_batch_refusal_beside_a_cancel_still_rolls_the_cancel_back(api):
-    """AC-C27 [GUARD]: the press carries a composition for the batch's line that does not
-    add up, so the apply refuses; the order fails and A is NOT cancelled."""
+def test_c27_a_real_batch_refusal_beside_a_cancel_still_rolls_the_cancel_back(api, monkeypatch):
+    """AC-C27 [GUARD]: the batch order fails INSIDE `planning_change_service.apply` (it lands
+    in `failed_orders` with a reason), with a valid composition beside the cancel. The press
+    must answer the failure, not a cancel-only success: A stays closed, batch not applied."""
+    from app.models.planning_change import PlanningChangeBatch, PlanningChangeRow
+    from app.services import planning_change_service
+
     client, world = api
     w = _cb_world(world)
     core_a, mirror_a, _p = w["a"]
     _open_core, open_line = w["open"]
     db = world.db
     batch = _open_batch_naming(world, w, "open", client)
+    batch_id = str(batch.id)
+
+    def _boom(*_a, **_k):
+        raise RuntimeError("ZZT apply refused the order")
+
+    monkeypatch.setattr(planning_change_service, "_apply_one_order", _boom)
 
     response = client.post(
         f"{BASE}/fulfilment-planning/confirm-all",
         json={"orders": [dict(
-            # book qty is 7: components that add up to 3 are refused.
-            _cancel_body(mirror_a, lines=[_line_payload(open_line.id, buy_qty="3")]),
-            pso_id=w["order"].id, batch_id=str(batch.id),
+            _cancel_body(mirror_a, lines=[_line_payload(open_line.id, buy_qty="7")]),
+            pso_id=w["order"].id, batch_id=batch_id,
         )]},
     )
 
-    result = response.json()["results"][0] if response.status_code == 200 else {}
-    assert response.status_code != 200 or result.get("ok") is False, response.text
+    assert response.status_code == 200, response.text
+    result = response.json()["results"][0]
+    assert result["ok"] is False, result
+    assert "ZZT apply refused the order" in (result.get("error") or ""), result
     assert _status(db, core_a.id) == "closed"
     assert _raw(db, core_a.id).cancelled_at is None
+    db.expire_all()
+    rows = db.query(PlanningChangeRow).filter(PlanningChangeRow.batch_id == batch_id).all()
+    assert rows and all(r.applied_state != "applied" for r in rows)
+    assert db.get(PlanningChangeBatch, batch_id).applied_at is None
 
 
 def test_c24_a_refused_cancel_beside_a_batch_press_writes_neither(api):
