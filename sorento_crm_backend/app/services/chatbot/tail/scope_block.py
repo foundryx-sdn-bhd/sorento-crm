@@ -20,7 +20,7 @@ from __future__ import annotations
 import re
 from typing import Any, Mapping
 
-from app.services.chatbot.turn.state import focus_row_label
+from app.services.chatbot.turn.state import focus_row_label, token_key
 from app.services.ledger_family import customer_group_of, customer_header_words
 
 # NARROWED (main, captain ruling 2026-08-24, ported verbatim): this header describes
@@ -95,10 +95,10 @@ def _format_date(value: Any) -> str:
 
 
 def _fold(value: Any) -> str:
-    """The same `[-\\s]+`-stripped, lower-cased key `turn.state.fold_token` computes -
-    duplicated as a plain string op (not imported) because this module answers to no
-    purity guard, but the fold rule itself is one rule, not two."""
-    return re.sub(r"[-\s]+", "", str(value or "")).strip().lower()
+    """The ONE token fold, `turn.state.token_key` (ROGUE-CONVO-REVIEW-R2: this was a
+    `[-\\s]+` copy of it with no unicode dashes, the same drift `answer._type_norm`
+    carried). Empty for a nullish value, as before."""
+    return token_key(value or "")
 
 
 def _raw_of_token(qf: Mapping[str, Any], token: str) -> str:
