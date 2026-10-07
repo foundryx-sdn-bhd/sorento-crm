@@ -1785,6 +1785,10 @@ export function SalesOrderDetail({ id }: { id: string }) {
                   '-'
                 )}
               </Field>
+              {/* The customer's own PO number. Read-only in both views: AutoCount owns it. */}
+              <Field label="PO ref">
+                {so.po_ref ? <span title={so.po_ref}>{so.po_ref}</span> : '-'}
+              </Field>
               {/* What purchasing has been told to do about this order. Read-only in both
                   views, so nothing moves between them: it is a record of what happened,
                   not a field anybody sets here. Empty states as "-", never hidden. */}

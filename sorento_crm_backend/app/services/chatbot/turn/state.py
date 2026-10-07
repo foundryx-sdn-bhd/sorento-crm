@@ -228,6 +228,9 @@ def escalation_barred(profile: "Profile | None") -> bool:
     return getattr(profile, "escalation_allowed", True) is False
 
 
+STAFF_TIER = "office"
+
+
 def is_staff_profile(profile: "Profile | None") -> bool:
     """#1262 slice 11 (F8), owner ruling 2: staff (a Mocha CS sales rep) is
     `respond_contacts.chatbot_profile.tier == "office"`. The ONE check every
@@ -235,7 +238,14 @@ def is_staff_profile(profile: "Profile | None") -> bool:
     offer, `answer_bridge.py`'s cross-domain ladder offer) - staff get no offer,
     dealer/end_user keep R6 (22 Sep) unchanged.
     """
-    return getattr(profile, "tier", None) == "office"
+    return getattr(profile, "tier", None) == STAFF_TIER
+
+
+def reads_customer_po_refs(profile: "Profile | None") -> bool:
+    """SO-PO-REF owner ruling Q4: the audience decides what "PO" means. A contact whose tier
+    is not `STAFF_TIER` reads the parser's `po_refs` as their own PO number. Not an escalation
+    gate (it deliberately ignores `escalation_barred`)."""
+    return getattr(profile, "tier", None) != STAFF_TIER
 
 
 @dataclass

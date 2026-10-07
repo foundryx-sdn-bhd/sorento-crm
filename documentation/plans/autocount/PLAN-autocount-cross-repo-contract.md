@@ -137,6 +137,7 @@ tables of the same name).
   "status": "open",                    // canonical: open | partial | fulfilled | closed | cancelled
   "internal_note": "...",              // AutoCount pushes this as raw RTF; stripped to plain text at ingest (app/utils/rtf.py)
   "ref": "THE MET KL",                 // optional, AutoCount SO.Ref, mapped by the peer - used only to resolve the project label (PLAN-so-project-label.md) when the note names none
+  "po_ref": "PO-4500 123",             // optional, the customer's own PO number (AutoCount UDFNote via the shared-service mapping), max 255. SENT = written (blank clears), ABSENT = left untouched. Never feeds the project label (PLAN-so-po-ref.md)
   "lines": [
     {
       "source_ref": "SO:1234:1",       // AutoCount DtlKey, per-line key

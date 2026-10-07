@@ -98,13 +98,14 @@ class TestTheAddendumIsTaught:
             CANONICAL_CODE_ADDENDUM,
             TRAP_SPECS_FALLBACK_BLOCK,
             LOW_STOCK_FILTERS_ADDENDUM,
+            PO_REFS_ADDENDUM,
             SEMANTIC_PARSER_PROMPT,
         )
 
         _mod, addendum = _prompt()
         assert SEMANTIC_PARSER_PROMPT.endswith(MEMORY_ADDENDUM)
         # ACCOUNT_LEDGER_ADDENDUM (ACCOUNT-LEDGER) now sits between this one and MEMORY.
-        before_memory = SEMANTIC_PARSER_PROMPT.removesuffix(MEMORY_ADDENDUM).removesuffix(TRAP_SPECS_FALLBACK_BLOCK).removesuffix(CANONICAL_CODE_ADDENDUM).removesuffix(
+        before_memory = SEMANTIC_PARSER_PROMPT.removesuffix(MEMORY_ADDENDUM).removesuffix(TRAP_SPECS_FALLBACK_BLOCK).removesuffix(CANONICAL_CODE_ADDENDUM).removesuffix(PO_REFS_ADDENDUM).removesuffix(
             LOW_STOCK_FILTERS_ADDENDUM
         ).removesuffix(
             ACCOUNT_LEDGER_ADDENDUM
