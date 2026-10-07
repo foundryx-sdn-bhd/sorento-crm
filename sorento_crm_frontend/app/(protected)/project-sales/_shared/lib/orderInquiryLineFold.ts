@@ -1,3 +1,4 @@
+import { formatDateInMalaysia } from '@/lib/helpers';
 import { isInquiryBuyRow } from './orderInquiryWorklist';
 import type { OrderInquiryWorklistRow } from '../types/orderInquiry.types';
 
@@ -234,6 +235,7 @@ export function lineFooterTotals(lines: OrderInquiryLine[]) {
 
 export type LineHistoryWhat =
   | 'Now'
+  | 'Before'
   | 'Used'
   | 'Superseded'
   | 'Re-raised'
@@ -245,6 +247,12 @@ export interface LineHistoryEntry {
   row: OrderInquiryWorklistRow;
   what: LineHistoryWhat;
   why: string;
+  /** A Before entry is a synthetic row: these override what the grid would read off `row`. */
+  id?: string;
+  when?: string | null;
+  qty?: string | null;
+  deliveryDate?: string | null;
+  noDocuments?: boolean;
 }
 
 /**
@@ -276,8 +284,9 @@ function newestFirst(a: OrderInquiryWorklistRow, b: OrderInquiryWorklistRow) {
 /**
  * The History dialog's Rows tab (AC-ND-15): the line's live rows first as Now, then every
  * retired row (used and cancelled, all already on the line since S2), newest first. A Now
- * row with a `previous_qty` reads "Was <n>." before its note - the only place the Was /
- * now story shows (G1).
+ * row with a `previous_qty` reads "Was <n>." before its note (G1). SO-LINE-CHANGE-HISTORY
+ * F2: each Now row carrying a previous quantity or delivery date also gets a Before entry
+ * (its own qty and delivery date), listed after every Now row and before the retired rows.
  */
 export function lineHistoryEntries(line: OrderInquiryLine): LineHistoryEntry[] {
   const toEntry = (row: OrderInquiryWorklistRow): LineHistoryEntry => {
@@ -288,7 +297,25 @@ export function lineHistoryEntries(line: OrderInquiryLine): LineHistoryEntry[] {
   };
   const now = line.liveRows.filter((row) => !row.line_cancelled);
   const retired = line.rows.filter((row) => !now.includes(row)).sort(newestFirst);
-  return [...now.map(toEntry), ...retired.map(toEntry)];
+  const before = now
+    .filter((row) => row.previous_qty != null || row.previous_delivery_date != null)
+    .map((row): LineHistoryEntry => {
+      const qty = row.previous_qty != null ? `${num(row.previous_qty)}` : null;
+      const on = row.previous_delivery_date
+        ? ` on ${formatDateInMalaysia(row.previous_delivery_date)}`
+        : '';
+      return {
+        row,
+        what: 'Before',
+        id: `${row.id}:before`,
+        when: row.changed_at ?? row.raised_at ?? null,
+        qty: row.previous_qty ?? null,
+        deliveryDate: row.previous_delivery_date ?? null,
+        noDocuments: true,
+        why: `Was ${qty ?? '-'}${on}, before ${row.inquiry_no} changed it`,
+      };
+    });
+  return [...now.map(toEntry), ...before, ...retired.map(toEntry)];
 }
 
 /** W1 (owner hand test, 26 Sep 2026): how far purchasing has confirmed the line. */
