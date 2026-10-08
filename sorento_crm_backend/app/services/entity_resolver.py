@@ -1172,6 +1172,53 @@ def _probe_customer(db: Session, tokens: list[str]) -> dict[str, list[ResolvedEn
     return result
 
 
+def _debtor_display(debtor_name: Any, debtor_code: Any, customer_name: Any) -> dict[str, Any]:
+    """The `display` of a hit on an order's debtor name.
+
+    `customer_name` is the linked customer's own master name, written only when the order
+    reaches a customer (`customer_identity.outerjoin_customer_of_order`). Every reader that
+    names or groups a customer hit (`gate._display_name`, `gate._cust_name`) reads it before
+    `debtor_name`, so a buyer name typed on one DO never becomes a customer of its own
+    (DELIVERY-DEBTOR-GROUP, owner 8 Oct 2026). The DO's own name stays on `debtor_name`.
+    """
+    display: dict[str, Any] = {"debtor_name": debtor_name, "debtor_code": debtor_code, "source": "orders"}
+    if customer_name and str(customer_name).strip():
+        display["customer_name"] = str(customer_name).strip()
+    return display
+
+
+def _one_hit_per_customer(rows: list[Any], *, fold: bool = False) -> list[Any]:
+    """`(debtor_name, debtor_code, customer_id, customer_name)` rows, one per (name, customer).
+
+    An order is linked per DOCUMENT (`customer_identity.outerjoin_customer_of_order`), so one
+    debtor name ("CASH SALES") can belong to several customers; keeping one row per name
+    would answer for whichever customer the database returned first and hide the rest. Each
+    customer stays a hit of its own, so the gate sees them all and asks. A name's unlinked
+    row is dropped only when the same name also reached a customer: it is the same buyer
+    name, and a uuid-less hit beside it adds nothing to choose from.
+    """
+    def _key(name: Any) -> str:
+        text_ = str(name or "")
+        return text_.lower() if fold else text_
+
+    linked = {_key(r[0]) for r in rows if r[0] and r[2]}
+    seen: set[tuple[str, str]] = set()
+    out: list[Any] = []
+    for row in rows:
+        name, _code, customer_id, _cname = row
+        key = _key(name)
+        if not key:
+            continue
+        if not customer_id and key in linked:
+            continue
+        pair = (key, str(customer_id or ""))
+        if pair in seen:
+            continue
+        seen.add(pair)
+        out.append(row)
+    return out
+
+
 def _probe_customer_debtor_name(db: Session, tokens: list[str]) -> dict[str, list[ResolvedEntity]]:
     """Resolve a token against the unique `Order.debtor_name` set.
 
@@ -1194,8 +1241,8 @@ def _probe_customer_debtor_name(db: Session, tokens: list[str]) -> dict[str, lis
     if norm_to_token:
         exact_clauses.append(_ws_insensitive_lower(Order.debtor_name).in_(list(norm_to_token)))
     rows = (
-        customer_identity.outerjoin_customer_by_order_name(
-            db.query(Order.debtor_name, Order.debtor_code, Customer.id), Order
+        customer_identity.outerjoin_customer_of_order(
+            db.query(Order.debtor_name, Order.debtor_code, Customer.id, Customer.customer_name), Order
         )
         .filter(
             Order.deleted_at.is_(None),
@@ -1205,13 +1252,11 @@ def _probe_customer_debtor_name(db: Session, tokens: list[str]) -> dict[str, lis
         .distinct()
         .all()
     )
-    for debtor_name, debtor_code, customer_id in rows:
+    for debtor_name, debtor_code, customer_id, customer_name in _one_hit_per_customer(rows):
         token = name_to_token.get(str(debtor_name).lower()) or norm_to_token.get(
             _strip_all_ws(str(debtor_name)).lower()
         )
         if not token:
-            continue
-        if any(m.canonical_code == debtor_name for m in result[token]):
             continue
         result[token].append(
             ResolvedEntity(
@@ -1219,7 +1264,7 @@ def _probe_customer_debtor_name(db: Session, tokens: list[str]) -> dict[str, lis
                 canonical_code=debtor_name,
                 uuid=str(customer_id) if customer_id else None,
                 match_field="debtor_name",
-                display={"debtor_name": debtor_name, "debtor_code": debtor_code, "source": "orders"},
+                display=_debtor_display(debtor_name, debtor_code, customer_name),
             )
         )
 
@@ -1245,8 +1290,8 @@ def _probe_customer_debtor_name(db: Session, tokens: list[str]) -> dict[str, lis
             continue
         _DEBTOR_FUZZY_LIMIT = 25
         rows = (
-            customer_identity.outerjoin_customer_by_order_name(
-                db.query(Order.debtor_name, Order.debtor_code, Customer.id), Order
+            customer_identity.outerjoin_customer_of_order(
+                db.query(Order.debtor_name, Order.debtor_code, Customer.id, Customer.customer_name), Order
             )
             .filter(
                 Order.deleted_at.is_(None),
@@ -1259,10 +1304,8 @@ def _probe_customer_debtor_name(db: Session, tokens: list[str]) -> dict[str, lis
         )
         truncated = len(rows) > _DEBTOR_FUZZY_LIMIT
         rows = rows[:_DEBTOR_FUZZY_LIMIT]
-        for debtor_name, debtor_code, customer_id in rows:
-            if any(m.canonical_code == debtor_name for m in result[token]):
-                continue
-            display = {"debtor_name": debtor_name, "debtor_code": debtor_code, "source": "orders"}
+        for debtor_name, debtor_code, customer_id, customer_name in _one_hit_per_customer(rows):
+            display = _debtor_display(debtor_name, debtor_code, customer_name)
             if truncated:
                 display["truncated_more_available"] = True
             result[token].append(
@@ -2041,8 +2084,8 @@ def _prefix_probe_customer_debtor_name(db: Session, token: str) -> list[Resolved
     if not token or len(token) < 3:
         return []
     rows = (
-        customer_identity.outerjoin_customer_by_order_name(
-            db.query(Order.debtor_name, Order.debtor_code, Customer.id), Order
+        customer_identity.outerjoin_customer_of_order(
+            db.query(Order.debtor_name, Order.debtor_code, Customer.id, Customer.customer_name), Order
         )
         .filter(
             Order.deleted_at.is_(None),
@@ -2056,8 +2099,8 @@ def _prefix_probe_customer_debtor_name(db: Session, token: str) -> list[Resolved
     tier = "prefix"
     if not rows:
         rows = (
-            customer_identity.outerjoin_customer_by_order_name(
-                db.query(Order.debtor_name, Order.debtor_code, Customer.id), Order
+            customer_identity.outerjoin_customer_of_order(
+                db.query(Order.debtor_name, Order.debtor_code, Customer.id, Customer.customer_name), Order
             )
             .filter(
                 Order.deleted_at.is_(None),
@@ -2078,8 +2121,8 @@ def _prefix_probe_customer_debtor_name(db: Session, token: str) -> list[Resolved
         words = [w for w in token.split() if len(w) >= 3]
         if len(words) >= 2:
             q = (
-                customer_identity.outerjoin_customer_by_order_name(
-                    db.query(Order.debtor_name, Order.debtor_code, Customer.id), Order
+                customer_identity.outerjoin_customer_of_order(
+                    db.query(Order.debtor_name, Order.debtor_code, Customer.id, Customer.customer_name), Order
                 )
                 .filter(Order.deleted_at.is_(None), Order.debtor_name.isnot(None))
             )
@@ -2087,13 +2130,8 @@ def _prefix_probe_customer_debtor_name(db: Session, token: str) -> list[Resolved
                 q = q.filter(_norm_contains(Order.debtor_name, w))
             rows = q.distinct().limit(PREFIX_LIMIT).all()
             tier = "word"
-    seen: set[str] = set()
     out: list[ResolvedEntity] = []
-    for debtor_name, debtor_code, customer_id in rows:
-        key = (debtor_name or "").lower()
-        if not key or key in seen:
-            continue
-        seen.add(key)
+    for debtor_name, debtor_code, customer_id, customer_name in _one_hit_per_customer(rows, fold=True):
         out.append(
             ResolvedEntity(
                 entity_type="customer",
@@ -2101,7 +2139,7 @@ def _prefix_probe_customer_debtor_name(db: Session, token: str) -> list[Resolved
                 uuid=str(customer_id) if customer_id else None,
                 match_field="debtor_name",
                 match_tier=tier,
-                display={"debtor_name": debtor_name, "debtor_code": debtor_code, "source": "orders"},
+                display=_debtor_display(debtor_name, debtor_code, customer_name),
             )
         )
     return out
@@ -3765,8 +3803,8 @@ def _and_probe_customer(db: Session, tokens: list[str]) -> list[ResolvedEntity]:
     blob_o = _concat_ws(Order.debtor_name, Order.debtor_code)
     counts_o = _and_token_match_counts(blob_o, tokens)
     base_o = (
-        customer_identity.outerjoin_customer_by_order_name(
-            db.query(Order.debtor_name, Order.debtor_code, Customer.id), Order
+        customer_identity.outerjoin_customer_of_order(
+            db.query(Order.debtor_name, Order.debtor_code, Customer.id, Customer.customer_name), Order
         )
         .filter(Order.deleted_at.is_(None), Order.debtor_name.isnot(None))
     )
@@ -3777,7 +3815,7 @@ def _and_probe_customer(db: Session, tokens: list[str]) -> list[ResolvedEntity]:
             # The dedup below can shrink the merged list under the cap even
             # though this source hit its LIMIT - mark it at the source.
             out.truncated = True
-        for debtor_name, debtor_code, customer_id in rows:
+        for debtor_name, debtor_code, customer_id, customer_name in rows:
             if (debtor_name or "").lower() in seen_names:
                 continue
             out.append(
@@ -3788,7 +3826,7 @@ def _and_probe_customer(db: Session, tokens: list[str]) -> list[ResolvedEntity]:
                     match_field="debtor_name",
                     match_tier="and",
                     match_blob=" ".join(x for x in (debtor_name, debtor_code) if x),
-                    display={"debtor_name": debtor_name, "debtor_code": debtor_code, "source": "orders"},
+                    display=_debtor_display(debtor_name, debtor_code, customer_name),
                 )
             )
     return out
