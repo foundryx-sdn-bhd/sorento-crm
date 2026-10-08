@@ -170,7 +170,7 @@ class TestRelatedDocuments:
 
         supplier = Supplier(
             id=_uid(), company_id=company_id, supplier_code=f"ZZT-{_uid()[:8]}",
-            supplier_name=f"{MARKER} Supplier",
+            supplier_name=f"{MARKER} Supplier {_uid()[:6]}",
         )
         db.add(supplier)
         db.flush()
