@@ -597,7 +597,10 @@ def test_every_company_id_table_is_registered():
     # + 2 (DEBTOR-CODE-UNIQUE): `customer_aliases` (another name of ONE company's customer,
     #   read by the chatbot's name join) and `customer_merge_map` (that company's merge
     #   record, written and reverted per company) = 157.
-    expected_owned = 157
+    # + 1 (PRODUCT-ALTERNATIVES, #1533): `product_alternatives`, one company's own "use this
+    #   instead" link between two of its products; the product page and the chatbot read it
+    #   by product, so the mixin's filter is what hides another company's links = 158.
+    expected_owned = 158
     assert len(owned) == expected_owned, (
         f"expected {expected_owned} owned tables, found {len(owned)}: {sorted(owned)}"
     )

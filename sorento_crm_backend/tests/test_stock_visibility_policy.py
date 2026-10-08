@@ -668,6 +668,8 @@ def test_availability_needs_quantity_no_leak(db):
             "packing_list": None,
             "available_qty": None,
             "is_discontinued": False,
+            # PRODUCT-ALTERNATIVES (#1533): an entry still owed its quantity carries none.
+            "alternatives": [],
         }
     ]
     assert "stock_summary" not in result
@@ -751,6 +753,7 @@ def test_availability_says_no_for_a_product_with_no_stock(db):
             "packing_list": None,
             "available_qty": None,
             "is_discontinued": False,
+            "alternatives": [],
         }
     ]
     _assert_no_quantity_anywhere(result, {500})
@@ -808,6 +811,7 @@ def test_availability_still_asks_for_a_product_with_no_stock(db):
             "packing_list": None,
             "available_qty": None,
             "is_discontinued": False,
+            "alternatives": [],
         }
     ]
     _assert_no_quantity_anywhere(result, {500})

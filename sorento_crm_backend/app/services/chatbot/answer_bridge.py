@@ -101,6 +101,7 @@ from app.services.chatbot.tail import scope_block
 from app.services.chatbot.turn import compose as turn_compose
 from app.services.chatbot.turn import fetch as run_fetch
 from app.services.chatbot.turn import pending
+from app.services.chatbot.turn.task import REFER_TO_SALESMAN
 from app.services.chatbot.turn.state import escalation_barred, is_staff_profile, offers_escalation
 
 # AC-1691's umbrella: no roster is ever asked with fewer than two options, in any
@@ -2047,7 +2048,7 @@ def with_alternative_lines(text: str, lines: Any) -> str:
         for i in (
             lowered.find("would you like me to escalate"),
             lowered.find("to escalate to"),
-            lowered.find("please refer to your salesman"),
+            lowered.find(REFER_TO_SALESMAN.rstrip(".").lower()),
         )
         if i >= 0
     ]

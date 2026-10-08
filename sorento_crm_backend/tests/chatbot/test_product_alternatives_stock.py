@@ -377,7 +377,7 @@ def test_owner_case_srtbf11821_x5_through_the_real_route_presenter_and_render(cl
     assert alt["product_code"] == new.product_code
     assert alt["branch"] == "in_stock"
 
-    mcp_root = Path(__file__).resolve().parents[2] / "sorento_crm_mcp"
+    mcp_root = Path(__file__).resolve().parents[3] / "sorento_crm_mcp"
     if str(mcp_root) not in sys.path:
         sys.path.append(str(mcp_root))
     from sorento_crm_mcp.presenters import present_response
@@ -425,7 +425,7 @@ def test_owner_case_srtwc286_sh_p_partial_stock_mid_code_pair(client, db):
     )
     assert response.status_code == 200, response.text
 
-    mcp_root = Path(__file__).resolve().parents[2] / "sorento_crm_mcp"
+    mcp_root = Path(__file__).resolve().parents[3] / "sorento_crm_mcp"
     if str(mcp_root) not in sys.path:
         sys.path.append(str(mcp_root))
     from sorento_crm_mcp.presenters import present_response
