@@ -266,6 +266,7 @@ def test_product_api_create_links_new_code(db):
     from app.schemas.product import ProductCreate
     from app.services.product_service import ProductService
 
+    set_company_scope(db, frozenset({DEFAULT_COMPANY_ID}))  # the route's one-company scope
     base_code = _code("API")
     base = product(db, company_id=DEFAULT_COMPANY_ID, code=base_code)
     created = ProductService(db).create_product(

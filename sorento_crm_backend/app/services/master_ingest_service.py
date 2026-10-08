@@ -1479,6 +1479,14 @@ class MasterIngestService:
                 self._pending_preload_additions.append(("default_supplier_lead_time", product_id))
         else:
             product_rules.link_default_supplier(self.db, product_id, self._system_settings())
+        # PRODUCT-ALTERNATIVES (card Q1 (a)): the -NEW code rule, create AND update, so a
+        # synced `X-NEW` links to `X` (and a synced `X` adopts an existing `X-NEW`). Its own
+        # savepoint, never raises: a link is never worth a quarantined product row.
+        from app.services.product_alternative_service import (
+            reconcile_new_alternatives_safely,
+        )
+
+        reconcile_new_alternatives_safely(self.db, product_id)
 
     def _insert(self, entity_type: str, spec: EntitySpec, columns: dict[str, Any]) -> str:
         """D18: the ORM insert, so `before_insert` company-stamping, the audit

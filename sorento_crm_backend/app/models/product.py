@@ -254,6 +254,11 @@ class Product(Base, CompanyScopedMixin):
     # link - a hand-set parent (or hand-cleared link) is sticky until "reset to auto"
     # clears the flag. See docs/plans/PLAN-variant-manual-curation.md.
     variant_link_manual = Column(Boolean, nullable=False, server_default="false", default=False)
+    # PRODUCT-ALTERNATIVES (card Q1 (a)): set once a person adds or unlinks one of this
+    # product's alternatives by hand; the -NEW rule
+    # (`product_alternative_service.reconcile_new_alternatives`) then never touches this
+    # product's links again until "Reset to auto" clears it.
+    alternatives_manual = Column(Boolean, nullable=False, server_default="false", default=False)
     base_uom_id = Column(UUID(as_uuid=False), ForeignKey("units_of_measure.id"), nullable=False)
     item_type = Column(String(50), nullable=True)
     # CRM-owned (PLAN D14, price-tag-feedback-r2): manual entry on the product
@@ -368,6 +373,53 @@ class Product(Base, CompanyScopedMixin):
         CheckConstraint(
             "chatbot_eta_offset_days >= 0",
             name="ck_products_chatbot_eta_offset_days_non_negative",
+        ),
+    )
+
+
+class ProductAlternative(Base, CompanyScopedMixin):
+    """A stored "use this instead" link: `product_id` (the old code) ->
+    `alternative_product_id` (its replacement), same company.
+
+    `source` says who made it: `auto_new` by the -NEW code rule
+    (`app/services/product_alternative_service.py`), `manual` by a person on the product
+    page. The chatbot reads these links (`alternatives_for`), never the codes themselves.
+    Card: documentation/plans/chatbot/CARD-product-alternatives-08oct.md.
+    """
+
+    __tablename__ = "product_alternatives"
+    __audit_track__ = True
+    __audit_entity_type__ = "product_alternative"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    # CASCADE both ways: a link is meaningless once either end is gone, and it must never
+    # block a product delete.
+    product_id = Column(
+        UUID(as_uuid=False), ForeignKey("products.id", ondelete="CASCADE"), nullable=False
+    )
+    alternative_product_id = Column(
+        UUID(as_uuid=False), ForeignKey("products.id", ondelete="CASCADE"), nullable=False
+    )
+    source = Column(String(20), nullable=False, default="manual", server_default="manual")
+    created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
+    created_by = Column(UUID(as_uuid=False), nullable=True)
+
+    product = relationship("Product", foreign_keys=[product_id])
+    alternative = relationship("Product", foreign_keys=[alternative_product_id])
+
+    __table_args__ = (
+        Index(
+            "uq_product_alternatives_pair",
+            "product_id",
+            "alternative_product_id",
+            unique=True,
+        ),
+        Index("ix_product_alternatives_alternative", "alternative_product_id"),
+        CheckConstraint(
+            "product_id <> alternative_product_id", name="ck_product_alternatives_not_self"
+        ),
+        CheckConstraint(
+            "source IN ('auto_new', 'manual')", name="ck_product_alternatives_source"
         ),
     )
 
