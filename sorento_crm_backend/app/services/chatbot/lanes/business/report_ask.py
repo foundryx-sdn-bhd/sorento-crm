@@ -98,6 +98,7 @@ NOT_A_SOURCE_LINES = {
 DRILL_MAX_KEYS = 50
 TOO_MANY_LINE = "That is more than {max} {plural} to narrow by. Ask for the top {max} or fewer first."
 NO_KEYS_LINE = "I can't narrow by {name} above. Ask again naming the {plural} you want."
+NOT_IN_ROWS_LINE = "{name} is not one of the {plural} above."
 #: The frame keys that are not route params.
 _FRAME_ONLY = ("date_from", "date_to", "top_n", "shown")
 
@@ -650,6 +651,17 @@ def _refine(
     return rf.collect(db, SALES_RANKING_ASK, given=given, extras={"args": args, "top_n": top_n}), None
 
 
+def _named_words(parse_output: dict[str, Any], axis: str) -> list[str]:
+    """The words this message named on `axis` (as the parser gave them), for a line."""
+    hint = "sales_agent" if axis == "sales_agent" else axis
+    words = [" ".join(jsc.js_string(w).split()) for w in jsc.array(_dict(parse_output.get("report_ask_words")).get(hint))]
+    words += [
+        " ".join(jsc.js_string(e.get("raw") or "").split())
+        for e in _current_entities(parse_output, "warehouse" if axis == "location" else hint)
+    ]
+    return [w for w in words if w]
+
+
 def _unsure_line(group_by: str, top_n: Any, source: str, count: int) -> str:
     """"Top 10 customers of the 3 sales agents above, or across all customers?" (card rule 1)."""
     one, many = AXIS_NOUNS[group_by]
@@ -708,7 +720,20 @@ def _drill(
     if dealer and any(held.get(k) for k in ("sales_agent_ids", "customer_agent_ids", "warehouse_codes", "channel")):
         return None, DEALER_REFUSAL
     message_filters = {k: v for k, v in own.items() if k not in _NON_FILTER_ARGS}
-    args = {**held, **message_filters, "group_by": group_by, "sort": own["sort"], param: keys}
+    named = message_filters.get(param)
+    if isinstance(named, list):
+        # The message names its own value on the link's param ("these agents, ALICE only"):
+        # it narrows within the rows printed; one that is not among them is said, never dropped.
+        inside = [k for k in named if k in keys]
+        if not inside:
+            names = ", ".join(_named_words(parse_output, source)) or "That"
+            return None, NOT_IN_ROWS_LINE.format(name=names, plural=AXIS_NOUNS[source][1])
+        keys = inside
+    same_axis = group_by == source
+    sort = own["sort"]
+    if same_axis and parse_output.get("rank_direction") not in ("top", "bottom"):
+        sort = frame.get("sort") or sort  # "these agents by quantity" keeps the held direction
+    args = {**held, **message_filters, "group_by": group_by, "sort": sort, param: keys}
     for key in ("basis", "measure"):
         if own.get(key):
             args[key] = own[key]
@@ -716,7 +741,7 @@ def _drill(
         frame.get("date_from"), frame.get("date_to")
     )
     top_n = parse_output.get("top_n")
-    if top_n is None and group_by == source:
+    if top_n is None and same_axis:
         top_n = frame.get("top_n")
     # A drill has both choices (the held args ran); only the count is asked when not named.
     given = {**_given_choices(args), **_given_top_n(args, top_n)}
