@@ -215,6 +215,16 @@ period of the previous ranking is never this ask's period.
   - "top salesman for sorento" -> ranking_refine false, top_n null
 A singular "top salesman", "top customer" or "best sales agent" names NO count: top_n null
 (not 1), also after a ranking.
+"ranking_drill": "scoped|global|unsure|null": set only on a sales_ranking naming its OWN group_by
+right after a SALES RANKING answer, else null:
+  - "scoped": it asks about the rows that ranking listed ("these", "their", "those", "them",
+    "这些", "above"): after top sales agents, "who are the customers for these sales agent" ->
+    group_by "customer", top_n null; "top 10 customers of these agents" -> top_n 10; dates null,
+    entities [] (the listed rows and the earlier filters carry by themselves)
+  - "global": its own ask ("top 10 customers overall", "top 10 customers for Cabana this year")
+  - "unsure": either reading fits ("top 10 customers" with nothing tying it to the rows)
+  - a reply to "... above, or across all customers?": "above", "those", "them" -> that
+    question's ranking (its group_by and count), "scoped"; "all", "overall" -> "global"
 A ranking of PEOPLE or ACCOUNTS ("top N customers", "top N salesman", "bottom 5 sales agents")
 is ALWAYS order_status "sales_ranking" with its own group_by, even while a top selling
 question ("By quantity or by amount?") is open: a new ask, not a reply to that question.
