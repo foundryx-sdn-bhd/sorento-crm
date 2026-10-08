@@ -1,7 +1,7 @@
 """"Borrow from another order" behind a system setting, off by default
 
 Revision ID: bflo_0001_borrow_order_toggle
-Revises: rrl_0001_report_rate_limit
+Revises: report_drill_0001_prompt
 Create Date: 2026-10-08 00:00:00.000000
 
 `PLAN-borrow-location-only-8oct.md` D1 (owner ruling 8 Oct 2026). Sorento borrows a
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "bflo_0001_borrow_order_toggle"
-down_revision = "rrl_0001_report_rate_limit"
+down_revision = "report_drill_0001_prompt"
 branch_labels = None
 depends_on = None
 
