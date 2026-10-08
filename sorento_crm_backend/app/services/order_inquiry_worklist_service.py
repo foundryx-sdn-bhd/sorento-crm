@@ -93,7 +93,7 @@ from app.services.project_order_inquiry_service import (
     project_title_with_note,
 )
 from app.services.project_supply_service import ProjectSupplyService
-from app.services.scm import order_link_service, priority
+from app.services.scm import order_link_service, priority, spo_supply
 from app.services.scm.front_planning_engine import DEFAULT_LEAD_TIME_DAYS
 from app.services.scm.raise_event_matching import nearest_raise_event
 
@@ -285,13 +285,19 @@ _PLACED_PO_ID = func.coalesce(
 # linked" under Supplier. Same "first link, ordered by when it was made" rule as
 # `_SPO_LINKED_PO_ID` above, read directly off the allocation rather than through a
 # purchase order line that, for this shape, does not exist.
+#
+# OI-SUPPLIER-FROM-PO (owner, 9 Oct 2026: "the supplier always take from PO, not the
+# SPO"): read through `spo_supply.supplier_id_for`, so a book-fed allocation naming its
+# source PO only by number (`from_po_number`, the "via SPO" PO cell) answers with THAT
+# purchase order's supplier, and the allocation's own `supplier_id` only when the CRM
+# holds no such purchase order.
 _SPO_LINKED_SUPPLIER_ID = (
-    select(SPOAllocation.supplier_id)
+    select(spo_supply.supplier_id_for())
     .select_from(OrderInquiryLink)
     .join(SPOAllocation, SPOAllocation.id == OrderInquiryLink.spo_allocation_id)
     .where(
         OrderInquiryLink.row_id == OrderInquiryRow.id,
-        SPOAllocation.supplier_id.isnot(None),
+        spo_supply.supplier_id_for().isnot(None),
     )
     .order_by(OrderInquiryLink.linked_at.asc(), OrderInquiryLink.id.asc())
     .limit(1)
@@ -2537,10 +2543,14 @@ class OrderInquiryWorklistService:
                 code="order_inquiry_spo_not_found",
             )
         allocations = [allocation for allocation, *_rest in rows]
+        # OI-SUPPLIER-FROM-PO: each line's source PO supplier, the line's own
+        # `supplier_id` only when the CRM holds no such purchase order.
         supplier_ids = {
-            str(allocation.supplier_id)
-            for allocation in allocations
-            if allocation.supplier_id
+            str(supplier_id)
+            for (supplier_id,) in self.db.query(spo_supply.supplier_id_for())
+            .filter(SPOAllocation.id.in_([allocation.id for allocation in allocations]))
+            .all()
+            if supplier_id
         }
         supplier = (
             self.db.query(Supplier)

@@ -270,6 +270,74 @@ class TestRelatedDocuments:
             assert spo_entry.lines_linked == 1
             assert Decimal(spo_entry.qty_linked) == Decimal("6")
 
+    def _spo_naming_a_po(self, db, company_id):
+        """A book-fed SPO line (no `po_line_id`) naming its source PO by number, the two
+        carrying DIFFERENT suppliers - the owner's 9 Oct screenshot."""
+        po_supplier = self._supplier(db, company_id)
+        spo_supplier = self._supplier(db, company_id)
+        po, _po_line = self._po_line(db, company_id, po_supplier)
+        allocation = self._spo(db, company_id, spo_supplier)
+        allocation.from_po_number = po.po_number
+        db.flush()
+        return po_supplier, spo_supplier, allocation
+
+    def test_spo_entry_names_its_source_pos_supplier_OI_SUPPLIER_FROM_PO(self):
+        """OI-SUPPLIER-FROM-PO (owner, 9 Oct 2026): the SPO group's supplier is the
+        supplier of the PO the SPO line names, never the allocation's own."""
+        from app.services.order_inquiry_header_service import (  # noqa: PLC0415
+            OrderInquiryHeaderService,
+        )
+
+        with blank_session() as db:
+            company_id = _sorento(db)
+            po_supplier, _spo_supplier, allocation = self._spo_naming_a_po(db, company_id)
+            seeded = _header(db, company_id, rows=[{"qty": "6"}])
+            self._link(
+                db, seeded["rows"][0], allocation=allocation, qty="6",
+                document=allocation.spo_number,
+            )
+            db.commit()
+
+            result = OrderInquiryHeaderService(db).related_documents(seeded["inquiry"].id)
+            [spo_entry] = result.spos
+            assert spo_entry.supplier_name == po_supplier.supplier_name
+
+    def test_spo_entry_keeps_its_own_supplier_without_a_known_po_OI_SUPPLIER_FROM_PO(self):
+        from app.services.order_inquiry_header_service import (  # noqa: PLC0415
+            OrderInquiryHeaderService,
+        )
+
+        with blank_session() as db:
+            company_id = _sorento(db)
+            spo_supplier = self._supplier(db, company_id)
+            allocation = self._spo(db, company_id, spo_supplier)
+            allocation.from_po_number = f"ZZT-NOPO-{_uid()[:8]}"
+            seeded = _header(db, company_id, rows=[{"qty": "6"}])
+            self._link(
+                db, seeded["rows"][0], allocation=allocation, qty="6",
+                document=allocation.spo_number,
+            )
+            db.commit()
+
+            result = OrderInquiryHeaderService(db).related_documents(seeded["inquiry"].id)
+            [spo_entry] = result.spos
+            assert spo_entry.supplier_name == spo_supplier.supplier_name
+
+    def test_spo_popover_names_its_source_pos_supplier_OI_SUPPLIER_FROM_PO(self):
+        """The SPO document popover an OI's SPO cell opens (`get_spo_detail`) reads the
+        same rule as the Supplier column."""
+        from app.services.order_inquiry_worklist_service import (  # noqa: PLC0415
+            OrderInquiryWorklistService,
+        )
+
+        with blank_session() as db:
+            company_id = _sorento(db)
+            po_supplier, _spo_supplier, allocation = self._spo_naming_a_po(db, company_id)
+            db.commit()
+
+            detail = OrderInquiryWorklistService(db).get_spo_detail(allocation.spo_number)
+            assert detail["supplier_name"] == po_supplier.supplier_name
+
     def test_empty_lists_when_nothing_is_linked_AC_DT_03(self):
         from app.services.order_inquiry_header_service import (  # noqa: PLC0415
             OrderInquiryHeaderService,

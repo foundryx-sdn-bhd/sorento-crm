@@ -957,6 +957,78 @@ def test_supplier_reads_off_an_spo_only_links_own_supplier(api):
     assert listed["supplier"] == supplier.supplier_name, listed
 
 
+def _spo_linked_row_naming_po(db, company_id, seeded, po_number):
+    """A row whose ONLY link is a book-fed SPO allocation (no `po_line_id`) that names
+    its source PO by number alone (`from_po_number`) and states a DIFFERENT supplier of
+    its own - the "via SPO" row on the owner's 9 Oct screenshot."""
+    line = _line_on_authored_order(db, company_id, seeded, qty="7", day=11)
+    spo_supplier = Supplier(
+        id=_uid(), company_id=company_id, supplier_code=f"ZZT-{_uid()[:8]}",
+        supplier_name=f"{MARKER} SPO OWN SUPPLIER",
+    )
+    db.add(spo_supplier)
+    db.flush()
+    allocation = SPOAllocation(
+        id=_uid(), company_id=company_id, spo_number=f"ZZT-SPO-{_uid()[:6]}",
+        spo_line_number=1, product_id=line.product_id, allocated_quantity=7,
+        quantity_received=0, line_status="open", supplier_id=spo_supplier.id,
+        po_line_id=None, from_po_number=po_number,
+    )
+    db.add(allocation)
+    db.flush()
+    inquiry = db.get(OrderInquiry, seeded["authored_row"].order_inquiry_id)
+    row = _row(db, company_id, inquiry, so_line_id=line.id, qty="7", state="placed")
+    db.add(OrderInquiryLink(
+        id=_uid(), company_id=company_id, row_id=row.id,
+        spo_allocation_id=allocation.id, document=allocation.spo_number,
+        qty=Decimal("7"),
+    ))
+    db.commit()
+    return row, spo_supplier
+
+
+def test_supplier_is_the_source_pos_supplier_not_the_spos_on_a_via_spo_row(api):
+    """OI-SUPPLIER-FROM-PO (owner, 9 Oct 2026: "the supplier always take from PO, not
+    the SPO"). An SPO-only row whose allocation names its source PO by number
+    (`from_po_number`, the "via SPO" PO cell) reads that PO's supplier under Supplier,
+    never the allocation's own `supplier_id`, and the Supplier filter agrees."""
+    client, db, company_id, seeded = api
+    po = _purchase_order(db, company_id)
+    row, spo_supplier = _spo_linked_row_naming_po(
+        db, company_id, seeded, po["order"].po_number
+    )
+    po_supplier_id = po["order"].supplier_id
+    po_supplier = db.get(Supplier, po_supplier_id)
+
+    body = client.get(LIST, params={"limit": 200}).json()
+    listed = next(r for r in body["data"] if r["id"] == row.id)
+    assert listed["supplier"] == po_supplier.supplier_name, listed
+    assert listed["supplier_id"] == po_supplier_id, listed
+
+    by_po_supplier = client.get(
+        LIST, params={"limit": 200, "supplier_id": po_supplier_id}
+    ).json()
+    assert row.id in {r["id"] for r in by_po_supplier["data"]}
+    by_spo_supplier = client.get(
+        LIST, params={"limit": 200, "supplier_id": spo_supplier.id}
+    ).json()
+    assert row.id not in {r["id"] for r in by_spo_supplier["data"]}
+
+
+def test_supplier_keeps_the_spos_own_when_its_named_po_is_not_in_the_book(api):
+    """The fallback the rule leaves standing: an SPO naming a PO number the CRM holds no
+    purchase order for has no PO supplier to read, so the allocation's own supplier
+    still answers (AC-FB-52) rather than "Not linked"."""
+    client, db, company_id, seeded = api
+    row, spo_supplier = _spo_linked_row_naming_po(
+        db, company_id, seeded, f"ZZT-NOPO-{_uid()[:8]}"
+    )
+
+    body = client.get(LIST, params={"limit": 200}).json()
+    listed = next(r for r in body["data"] if r["id"] == row.id)
+    assert listed["supplier"] == spo_supplier.supplier_name, listed
+
+
 # ------------------------------------------------------------------- location
 
 

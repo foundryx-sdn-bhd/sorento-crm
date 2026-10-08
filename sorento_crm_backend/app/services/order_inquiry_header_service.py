@@ -50,6 +50,7 @@ from app.schemas.project_order_inquiry import (
     OrderInquiryRelatedSPOOut,
 )
 from app.services.error_handler import AppException
+from app.services.scm import spo_supply
 
 _ZERO = Decimal("0")
 _LIKE_ESCAPE = "\\"
@@ -498,7 +499,9 @@ class OrderInquiryHeaderService:
             .select_from(OrderInquiryLink)
             .join(OrderInquiryRow, OrderInquiryRow.id == OrderInquiryLink.row_id)
             .join(SPOAllocation, SPOAllocation.id == OrderInquiryLink.spo_allocation_id)
-            .outerjoin(Supplier, Supplier.id == SPOAllocation.supplier_id)
+            # OI-SUPPLIER-FROM-PO: the source PO's supplier, the SPO's own only
+            # when the CRM holds no such purchase order.
+            .outerjoin(Supplier, Supplier.id == spo_supply.supplier_id_for())
             .filter(
                 OrderInquiryRow.order_inquiry_id == inquiry_id,
                 OrderInquiryRow.state != INQUIRY_CANCELLED,
