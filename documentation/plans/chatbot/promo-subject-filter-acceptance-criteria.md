@@ -90,3 +90,30 @@ AC-17 (owner acceptance check) A promo ask for a product code (a kitchen sink co
       promotion) still returns that product's promotion for the picked level (product_ids path).
 AC-18 (owner acceptance check) "kitchen sink promo" returns only promotions linked to kitchen sink
       products for the picked level; no bathroom furniture, WC or tap promotion.
+
+## Owner review round 2 (8 Oct 2026, copy, prompt v72)
+
+AC-22 (supersedes the live-only part of AC-21, owner: "even the flyer need to show even though it
+      is inactive, same principle with promotion"). A kind ask (and the "Other <kind>s" list) is
+      decided by the same serving rule as every promotion (promotion_serving.py: live rows win; a
+      type that allows it serves its latest expired rows, e.g. a3_flyer show_expired, 180 days),
+      expired rows marked "(EXPIRED)" as today. "There is no <Brand> <kind> right now." only when
+      the serving rule serves nothing for that brand and kind.
+AC-23 (supersedes AC-10's all-zero line for a subject that grounds to nothing): a promotion subject
+      that does not ground to any class, product type or spec value ("kitchen cabinet", "seat
+      cover" before AC-26) asks back as AC-7, never "No current promotion for <subject>.". "No
+      current promotion for X." stays only for a subject that grounds but has no promotion.
+AC-24 A subject grounds against spec attribute values too (spec registry, e.g. furniture_type
+      basin_cabinet with its synonyms), exactly as the stock path does; "basin cabinet promo"
+      filters to promotions linked to products with furniture_type basin_cabinet. Data-driven, no
+      word rules in code.
+AC-25 A subject that maps to several distinct product types / spec values ("cabinet": basin
+      cabinet, mirror cabinet, side cabinet, ...) asks which, listing the options, never a
+      confident mixed list.
+AC-26 "seat cover promo" grounds to the toilet seat type through the parser prompt (wording, not
+      code) and returns toilet seat promotions (dev data: Office 3, Dealer 2, End user 2).
+AC-27 One consolidated new dev parser version (never labelled production) carries every current
+      addendum including promotion kind and the seat-cover grounding; the migration publishes it.
+AC-28 Live console check covers the owner phrases: "kitchen cabinet promo", "sorento cabinet
+      promo", "seat cover promo", "basin cabinet promo", "any sorento a3 flyer?".
+
