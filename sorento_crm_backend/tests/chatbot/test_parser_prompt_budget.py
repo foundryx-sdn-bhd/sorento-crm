@@ -182,7 +182,9 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # Merge of main (#1531 REPORT-DRILLDOWN) with PROMO-SUBJECT-FILTER (PROMOTION_KIND_ADDENDUM with its
 # PROMOTION SUBJECT section, after CANONICAL_CODE_ADDENDUM): 51,321 est. tokens without MEMORY_ADDENDUM,
 # so CEILING is 51,325 (+4).
-CEILING = 51_325
+# PROMO-SUBJECT-FILTER final nits: PROMOTION KIND says a bare number or a numbered-list reply is
+# never a kind: 51,363 est. tokens without MEMORY_ADDENDUM, so CEILING is 51,367 (+4).
+CEILING = 51_367
 # The memory addendum on its own, bounded separately so this PR's growth stays bounded.
 # 26 Sep baseline (lane d89110c0): 339 est. tokens. Round 4 (baf4c813, 28 Sep: the history
 # question in any wording, the number re-run, commercial_request) took it to 512, which is

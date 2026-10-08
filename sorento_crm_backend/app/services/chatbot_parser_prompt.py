@@ -815,7 +815,8 @@ exactly as if it were listed there:
 The "Promotion kinds:" line lists the kinds of promotion as `code (name)`. When the current message
 asks for one of those kinds ("A3 flyer", "special", "focus item"), set "promotion_kind" to that
 kind's code. A bare word that names no listed kind ("flyer", "brochure"), or no kind at all, is
-"promotion_kind": null. Never invent a code.
+"promotion_kind": null. Never invent a code. Set it only when the message names the kind in
+words: a bare number, or a reply to a numbered list, is never a promotion_kind.
 
 == PROMOTION SUBJECT ==
 The product type a promotion ask is about is a category entity. When the customer uses another

@@ -2278,16 +2278,23 @@ def run_fetch(
             if none_live is not None:
                 return none_live
     if tool_name == fetch_mod.TIER_PROBE_TOOL and isinstance(envelope, dict) and isinstance(envelope.get("items"), list):
-        # One line per promotion: the same promotion file copied under two companies is one
-        # promotion to the customer (owner hand test, 8 Oct 2026).
-        seen_titles: set[str] = set()
+        # One line per promotion: the same promotion (title and dates) copied under two
+        # companies is one promotion to the customer (owner hand test, 8 Oct 2026); the same
+        # title with other dates is another promotion.
+        seen_titles: set[tuple[str, ...]] = set()
         kept: list[Any] = []
         for it in envelope["items"]:
             title = jsc.nullish_str(jsc.get(it, "title")).strip().casefold() if isinstance(it, dict) else ""
-            if title and title in seen_titles:
+            dates = {
+                jsc.nullish_str(f.get("label")): jsc.nullish_str(f.get("value"))
+                for f in jsc.array(jsc.get(it, "fields"))
+                if isinstance(f, dict) and f.get("label") in ("Start Date", "End Date")
+            }
+            key = (title, dates.get("Start Date", ""), dates.get("End Date", ""))
+            if title and key in seen_titles:
                 continue
             if title:
-                seen_titles.add(title)
+                seen_titles.add(key)
             kept.append(it)
         envelope = {**envelope, "items": kept}
     picked_tier = (tier_gate or {}).get("tier_pick")
