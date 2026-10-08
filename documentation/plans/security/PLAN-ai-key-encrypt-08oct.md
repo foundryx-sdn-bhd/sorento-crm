@@ -56,8 +56,8 @@ changes and a future reader cannot forget to decrypt. No schema change, no migra
 
 Legacy rows: a value is treated as ciphertext only when it has the Fernet token format (urlsafe
 base64 that decodes to a version byte `0x80` plus the fixed-size header/HMAC). Anything else is
-legacy plaintext and is returned as is. A Fernet-shaped value that fails to decrypt (wrong
-`JWT_SECRET`) is logged without the value and read as "no key configured".
+legacy plaintext and is returned as is. A Fernet-shaped value that fails to decrypt
+(no configured key opens it) is logged without the value and read as "no key configured".
 
 API: `GET/PUT /api/v1/system/ai-assistant/config` returns only `*_masked` (`****` + last 4);
 the schema (`app/schemas/ai_assistant.py:27-41`) has no raw-key field. Unchanged.
