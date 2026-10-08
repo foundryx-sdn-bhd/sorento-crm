@@ -43,6 +43,20 @@ function row(overrides: Partial<BoardContribution> = {}): BoardContribution {
   };
 }
 
+/** A donor-named candidate (the setting on): only then is "Borrow from another order"
+ *  offered (BORROW-LOCATION-ONLY D3). */
+const DONOR_NAMED = {
+  source: 'other_location' as const,
+  warehouse_code: 'MWH-IB',
+  warehouse_id: 'wh-mwh',
+  free_qty: '100',
+  donor_impact: { free_before: '100', free_after_full_borrow: '60', committed_qty: '0' },
+  rung: 'order_borrow',
+  donor_so_number: 'SO397450',
+  donor_line_no: 446,
+  donor_core_line_id: 'core-1',
+};
+
 function renderControl(contributions: BoardContribution[]) {
   const onSave = vi.fn(async (entries: { key: string }[]) => ({
     savedKeys: entries.map((entry) => entry.key),
@@ -69,7 +83,7 @@ beforeEach(() => vi.clearAllMocks());
 
 describe('Transfer to Cancel SO in the Decide menu', () => {
   it('AC-F1: is the last of seven items, the other six unchanged', () => {
-    renderControl([row()]);
+    renderControl([row({ borrow_candidates: [DONOR_NAMED] })]);
     openMenu();
     expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
       'As suggested',
@@ -193,7 +207,10 @@ describe('Borrow dialog before a pick (AC-F21)', () => {
   it.each(['Borrow from another order', 'Borrow other location'])(
     '%s: no "will be skipped" sentence until a donor or location is picked',
     async (item) => {
-      renderControl([row(), row({ key: 'so-1:line-20', line_no: 20 })]);
+      renderControl([
+        row({ borrow_candidates: [DONOR_NAMED] }),
+        row({ key: 'so-1:line-20', line_no: 20 }),
+      ]);
       openMenu();
       fireEvent.click(screen.getByRole('menuitem', { name: item }));
       const dialog = await screen.findByRole('dialog');

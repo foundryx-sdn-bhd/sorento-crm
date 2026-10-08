@@ -3253,12 +3253,15 @@ describe('BoardCellBreakdownDialog: how the Suggestion card names its sources', 
 
   it('tells the two borrows apart by rung (AC-A3)', () => {
     renderWithSources([
+      // Names its donor SO: a donor-less one reads as a location borrow
+      // (BORROW-LOCATION-ONLY D3).
       {
         kind: 'borrow',
         rung: 'group_borrow',
         qty: '3',
         location: 'BRW-BB',
         reason: 'a',
+        donor_so_number: 'SO415472',
       },
       {
         kind: 'borrow',
