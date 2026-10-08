@@ -28,6 +28,7 @@ from app.models.project_so import (
     ACK_CHANGED,
     DECISION_ACTIVE,
     INQUIRY_CANCELLED,
+    INQUIRY_RAISED,
     SOSupplyDecision,
     SOSupplyDecisionDraft,
 )
@@ -235,6 +236,8 @@ def test_c7_acknowledged_inquiry_rows_are_cancelled_others_untouched(api):
     assert ack_a.state == INQUIRY_CANCELLED
     assert ack_a.ack_state != ACK_CHANGED
     assert ack_a.changed_at is None
+    assert awaiting_a.state == INQUIRY_CANCELLED
+    assert ack_b.state == INQUIRY_RAISED
     assert ack_b.ack_state == ACK_ACKNOWLEDGED
     assert ack_b.changed_at is None
 

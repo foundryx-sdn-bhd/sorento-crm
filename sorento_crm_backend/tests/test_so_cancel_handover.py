@@ -33,6 +33,7 @@ from app.models.project_so import (
     INQUIRY_RAISED,
     IV_CANCEL_BALANCE,
     OrderInquiryLink,
+    OrderInquirySuggestedLink,
 )
 from app.services.project_order_inquiry_service import (
     _HANDOVER_VERB_LABEL,
@@ -412,3 +413,50 @@ def test_h13_the_ingest_flag_still_flips_an_acknowledged_row_to_changed(api):
     assert row.ack_state == ACK_CHANGED
     assert row.changed_at is not None
     assert row.state == INQUIRY_RAISED
+
+
+# ---------------------------------------------------------------- reviewer guards
+
+
+def test_h15_a_pool_redirected_row_is_left_as_it_is(api, monkeypatch):
+    """Guards the `redirected_to_pool` filter [passes with the fix]."""
+    client, world, w, row, calls = _world_with_row(api, monkeypatch, redirected=True)
+
+    response = _cancel_press(client, w, w["a"][1])
+
+    assert response.status_code == 200, response.text
+    _reload(world.db, row)
+    assert row.state == INQUIRY_RAISED
+    assert row.note == "ZZT earlier note"
+    assert not _handover_calls(calls)
+
+
+def test_h16_a_cancelled_rows_suggested_links_are_dropped(api, monkeypatch):
+    """Guards `_drop_suggested_links` [passes with the fix]."""
+    client, world, w, row, calls = _world_with_row(api, monkeypatch)
+    db = world.db
+    allocation = SPOAllocation(
+        id=_uid(), company_id=world.company_id, spo_number=f"ZZT-SPO-{_uid()[:8]}",
+        spo_line_number=1, product_id=world.product.id, warehouse_id=world.own_wh.id,
+        allocated_quantity=Decimal("40"),
+    )
+    db.add(allocation)
+    db.flush()
+    db.add(
+        OrderInquirySuggestedLink(
+            id=_uid(), company_id=world.company_id, row_id=row.id,
+            spo_allocation_id=allocation.id, document=allocation.spo_number,
+            qty=Decimal("20"), trigger="raise",
+        )
+    )
+    db.commit()
+    count = lambda: db.query(OrderInquirySuggestedLink).filter(  # noqa: E731
+        OrderInquirySuggestedLink.row_id == row.id
+    ).count()
+    assert count() == 1
+
+    response = _cancel_press(client, w, w["a"][1])
+
+    assert response.status_code == 200, response.text
+    db.expire_all()
+    assert count() == 0
