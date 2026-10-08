@@ -182,3 +182,35 @@ warehouses (the 3 units sit in BRW-DFCT and SPARE/P); `SRTWC286-SH-200` is not d
 Detailed mode (internal staff) output beyond what compact gets; MCP tool for n8n (the payload
 key rides along; no new tool); the neighbour-suggestion probe (unchanged, still off for
 dealers); any user-text matching.
+
+## Addendum 1: every product domain (owner, 8 Oct 2026, after the answers)
+
+Owner, verbatim: "btw for the alternative, need to apply for all domains ya, incoming,
+promotion, delivery, product attachment all those scenairo also need to ahve this caapbility".
+Crew: ONE shared resolver, not per-domain lookups; wording per domain goes to the owner as one
+ask before those domains are coded. Availability continues as approved.
+
+**Shared resolver.** Data: `product_alternative_service.alternatives_for(db, product_ids)` (the
+same one the stock tool uses). Chat seam: `lanes/business/__init__.py::run_fetch`, the only
+caller of `fetch.output_structurer` (between `brand_guard.guard_result` `:2223-2225` and
+`output_structurer` `:2251`), which holds `db`, the envelope and the asked product entities
+(`trigger["entities"]`, `:2109-2111`). For an asked product that is discontinued and has an
+alternative, the resolver adds the alternative's id to the SAME tool call's `product_ids`
+(`:2137-2201`), so the domain answers for it with its own logic and permissions, then moves the
+alternative's items under the old product's item as `item["alternatives"]` (the key PR #1535's
+discontinued answer already reads). `fetch._item_line` (`fetch.py:3130-3156`) prints them after
+the marker. Non-stock domains show the line only when the asked code is DISCONTINUED (Q2's
+"not a full Got stock" half is a stock verdict and has no meaning there).
+
+| Domain | Tool -> service | Presenter / reply | Discontinued reaches reply today? | Proposed Alternative line |
+| --- | --- | --- | --- | --- |
+| Stock / availability (approved) | `crm_inventory_stock_balance_list` -> `inventory_service._apply_stock_visibility` | `presenters._stock_availability` `:1581`, `_stock_compact` `:1427`; `fetch._item_line` | yes (`:1700-1703`, `:1517`) | dealer: `Alternative: SRTBF11821-NEW x 5: ✅ Got stock.`; staff: `*Alternative:* SRTBF11821-NEW` + its block |
+| Incoming / ETA | `crm_incoming_stock_list` -> `IncomingStockService.incoming_list` (`api/v1/incoming_stock.py:426-537`, `incoming_stock_service.py:702`) | dealer `_incoming_dealer` `presenters.py:963-984` (`<code>: ✅ ETA d1, d2` / `No ETA`); staff `_incoming_list` `:868-902` | dealer yes (`incoming_stock.py:147-180`); staff no (`incoming_stock_service.py:888-901`) | dealer: `Alternative: SRTBF11821-NEW: ✅ ETA 20/10/2026` (or `No ETA`); staff: `*Alternative:* SRTBF11821-NEW` + its incoming rows |
+| Promotion | `crm_marketing_promotions_list` -> `MarketingService.list_promotions(product_ids)` (`marketing_service.py:510-530`, `:596`) | `_promotions` `presenters.py:1027-1043` (one item per promotion, no product on it); miss: `No promotions found for X.` (`turn/compose.py:603-605`) | no | one line per asked discontinued code after the list: `Alternative: SRTBF11821-NEW: <Promotion> (<start> to <end>)`, or `Alternative: SRTBF11821-NEW: No promotion.` |
+| Delivery (order domain) | `crm_order_management_orders_list` -> `OrderService.list_orders` (`orders.py:304`); outstanding goes to `crm_outstanding_report` (`__init__.py:1871-1877`) | `_orders_list` `presenters.py:412-454` (one item per DO) | no (`schemas/order.py:323-327` has it, presenter drops it) | crew recommends NONE: a delivery history of the old code is what was delivered, and the replacement's DOs answer a different question. If wanted: `Alternative: SRTBF11821-NEW: <n> DOs, last delivered dd/mm/yyyy` |
+| Product attachment / files | `crm_master_product_attachments_list` -> `ProductAttachmentService.list_product_attachments` (`product_service.py:2675`) | `_product_attachments` `presenters.py:1114-1157` (one item per file, also sends the file) | yes (`presenters.py:1150`) | `Alternative: SRTBF11821-NEW: <File Name>` and the alternative's file of the same type is sent too |
+| Master product info | `crm_master_products_list` -> `ProductService.list_products` (`product_service.py:498`) | `_products` `presenters.py:1082-1108`, trimmed by `_project_product_specs` (`fetch.py:2851`) | yes (`presenters.py:1106`) | `*Alternative:* SRTBF11821-NEW` under the marker, plus the alternative's own block with the same asked fields |
+| Discontinued ask (PR #1535, not on main) | master products | `_discontinued_status_lines` in #1535's `fetch.py` | yes | already prints `Alternative: <code>` from `item["alternatives"]`; the shared resolver feeds it, no new wording |
+
+Not covered by the seam (stated, not built): `crm_outstanding_report` and the other text-returning
+bypasses at `fetch.py:2721-2738`, and the cross-domain block's own render (`answer.py:991-1007`).
