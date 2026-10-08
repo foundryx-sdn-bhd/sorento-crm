@@ -1,7 +1,7 @@
 # CARD - product alternatives (-NEW) + availability Alternative line (PRODUCT-ALTERNATIVES)
 
-Status: BUILT, review fix round 1 applied (8 Oct 2026); awaiting reviewer re-run and owner
-wording for Addendum 1 domains (not in this lane's diff). Track: L (migration, chatbot reply change,
+Status: Round A accepted by the owner (9 Oct 2026). Round B (Addendum 1 domains) built and
+pushed; in review, then its own hand test. Track: L (migration, chatbot reply change,
 product screen section). Lane PR #1533 carries `crew-lane: PRODUCT-ALTERNATIVES`. Real-data
 counts measured by crew (8 Oct), see "Measured on real data".
 
@@ -231,3 +231,25 @@ bypasses at `fetch.py:2721-2738`, and the cross-domain block's own render (`answ
 - The rule's per-company code probe is an expression index (`ix_products_company_norm_code`).
 - The API update path cannot rename a product (`ProductUpdate` has no `product_code`), so
   the rule runs on create, AutoCount ingest (create and update), Excel import and the backfill.
+
+## Round B built (9 Oct 2026)
+
+Owner approved Addendum 1 ("okay can"); round A accepted on the copy (owner retest, 9 Oct).
+Round A's hand test exposed a route-schema drop (`StockAvailabilityEntry` lacked
+`alternatives`; fixed 813c4fa3, pinned by route-level tests). Round B:
+
+- One shared resolver, `app/services/chatbot/lanes/business/alternatives.py`, called once from
+  `lanes/business/__init__.py::run_fetch`: for each asked DISCONTINUED product with a stored
+  alternative inside the contact's brand scope, the same tool is called once more per
+  alternative (same seam, same brand guard, best-effort, traced) and folded in. Delivery,
+  the outstanding report, counted sets and the cross-domain block are out.
+- Owner, 9 Oct: an alternative whose search found nothing is still named with what was not
+  found: `Alternative: X-NEW: No ETA` (dealer), `Alternative: X-NEW: No incoming stock.`
+  (staff), `Alternative: X-NEW: no Product Photos.` (attachment type asked),
+  `Alternative: X-NEW: No promotion.`. On a miss for the old code the lines ride the fetch
+  (`alternative_lines`) and `answer_bridge.answer_for` prints them before any escalate offer.
+- DISCONTINUED-ASK (#1535): "is X discontinued?" names the alternative from the item's
+  `alternatives`; a status-only ask makes no extra call.
+- Round B endpoints: the resolver reads only fields the incoming, promotion, attachment and
+  product endpoints already return; it adds no key to any route payload, so the round A
+  schema drop cannot recur there (the e2e tests go through the real endpoints).
