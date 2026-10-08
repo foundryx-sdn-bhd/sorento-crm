@@ -206,3 +206,7 @@ Agent 03 RM 207k, 575 pcs (2 customers)
   measure, period and direction replace the held ones; the link to the printed rows always
   applies.
 - The ranking header is one fact per line: head line, `Label: value` per filter, `Period:`.
+- Crew decision (8 Oct 2026, live rerun), card rule 2 refined: a drill ranks ACROSS its target
+  axis, so a held filter on that same dimension does not carry ("top 5 products these customers
+  buy" after a ranking for one product lists every product those customers bought). Every other
+  held filter still carries; a filter the drill message itself names on that dimension stays.

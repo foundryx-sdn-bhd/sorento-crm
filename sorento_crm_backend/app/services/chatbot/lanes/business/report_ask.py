@@ -103,6 +103,18 @@ SCOPE_GIVE_UP = (
     "I still can't tell which you meant. Ask again in one message, "
     "e.g. top 10 customers of these agents, or top 10 customers overall."
 )
+#: The route params that filter each axis's own dimension. A drill ranks ACROSS its target axis,
+#: so a held filter on that same dimension is not carried (crew decision, 8 Oct 2026: "top 5
+#: products these customers buy" after a ranking for one product lists every product).
+_AXIS_FILTERS = {
+    "product": ("product_code", "product_ids"),
+    "customer": ("customer_ids",),
+    "sales_agent": ("sales_agent_ids",),
+    "brand": ("brand_ids",),
+    "category": ("category_ids",),
+    "location": ("warehouse_codes",),
+    "channel": ("channel",),
+}
 #: The frame keys that are not route params.
 _FRAME_ONLY = ("date_from", "date_to", "top_n", "shown")
 
@@ -742,7 +754,7 @@ def _drill(
             return None
         return None, TOO_MANY_LINE.format(max=DRILL_MAX_KEYS, plural=AXIS_NOUNS[source][1])
 
-    held = {k: v for k, v in frame.items() if k not in _FRAME_ONLY}
+    held = {k: v for k, v in frame.items() if k not in _FRAME_ONLY and k not in _AXIS_FILTERS.get(group_by, ())}
     if dealer and any(held.get(k) for k in ("sales_agent_ids", "customer_agent_ids", "warehouse_codes", "channel")):
         return None, DEALER_REFUSAL
     message_filters = {k: v for k, v in own.items() if k not in _NON_FILTER_ARGS}
