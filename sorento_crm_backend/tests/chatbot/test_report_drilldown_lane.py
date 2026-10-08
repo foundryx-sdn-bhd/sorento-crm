@@ -406,3 +406,15 @@ def test_an_unread_scope_reply_asks_again_then_gives_up(console) -> None:
     assert calls == [] and SCOPE_Q in text, text
     text, calls = console.say(_scope_reply(None, group_by=None), "dunno")
     assert calls == [] and SCOPE_Q not in text and text.strip(), text
+
+
+def test_a_refine_flagged_new_axis_with_nothing_to_drill_keeps_its_own_period(console) -> None:
+    """Reviewer round 3: after a month list (not a drill source), "top 10 customers in
+    September" flagged as a refine falls to the fresh ask and keeps the message's dates."""
+    _turn1(console, group_by="month")
+    text, calls = console.say(
+        _drill(ranking_refine=True, ranking_drill=None, basis="delivered", measure="amount", **SEP),
+        "top 10 customers in September",
+    )
+    (args,) = calls
+    assert args["group_by"] == "customer" and args["date_from"] == SEP["date_filter_start"], args
