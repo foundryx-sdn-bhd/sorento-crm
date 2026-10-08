@@ -32,6 +32,21 @@ should appear.
   `orders.debtor_code` (:421). The DO search filters by `Order.customer_id`
   (`app/services/order_service.py:971`), so the FK is already the identity the answer uses.
 
+## Prod shape (crew snapshot, 6 Oct)
+
+HANLIM is four accounts in company 0001 (300-H030 [A/C I], 300-H070 [A/C II], 300-H118 [A/C III],
+300-H119 [A/C IV]); the 5 Oct debtor merge recorded "HANLIM TRADING SDN BHD" as an alias of H030
+and the DO-level name as an alias of H118. Groups are stored as `customers.customer_group_id`
+(`app/models/order.py:184`) onto `customer_groups` (:64), and reach the chatbot only as the
+exact customer-name map above. So the two lines were two ACCOUNTS of one group. H118's
+DO-name hit printed the DO name instead of its master name "... [A/C III]", which the group map
+could not place. With each hit carrying its account's master name, all four accounts fall in
+the group and the roster is one choice: no ask, and the pick covers every account (the DO
+search filters `Order.customer_id` over them, and each DO line keeps its own debtor name).
+Test `test_prod_shape_four_accounts_of_one_group_with_merge_aliases_is_one_line` printed the
+owner's exact two lines on main and is one line with the fix. A different group, or an
+ungrouped account, still asks.
+
 ## Fix
 
 - `customer_identity.outerjoin_customer_of_order` (`app/services/customer_identity.py:147`)

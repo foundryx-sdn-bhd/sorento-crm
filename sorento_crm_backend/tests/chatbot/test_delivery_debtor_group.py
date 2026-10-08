@@ -253,6 +253,28 @@ class TestOneCustomerGroupIsOneChoice:
         assert [o["label"] for o in options] == [MASTER]
         assert sorted(options[0]["uuids"]) == sorted([a.id, b.id])
 
+    def test_prod_shape_four_accounts_of_one_group_with_merge_aliases_is_one_line(self, db):
+        """Crew's prod snapshot (6 Oct): one customer group, four accounts named by ledger
+        marker, the 5 Oct debtor merge recorded the plain trading name as an alias of A/C I
+        and the DO-level name as an alias of A/C III, and the DOs sit on A/C I and A/C III.
+        Each DO-name hit printed its DO name, which the exact-name group map does not hold,
+        so the group split into two picker lines. One group is one choice: no ask, and the
+        pick covers every account the resolver found."""
+        gid = _group(db)
+        accounts = [_customer(db, f"{MASTER} [A/C {m}]", group_id=gid) for m in ("I", "II", "III", "IV")]
+        ac1, _ac2, ac3, ac4 = accounts
+        customer_identity.record_alias(db, ac1.id, MASTER, source="merge")
+        customer_identity.record_alias(db, ac3.id, DO_NAME, source="merge")
+        _do(db, MASTER, code=ac1.customer_code, customer_id=ac1.id)
+        _do(db, DO_NAME, code=ac3.customer_code, customer_id=ac3.id)
+        _do(db, ac4.customer_name, code=ac4.customer_code, customer_id=ac4.id)
+
+        gate, options = _roster(db, TOKEN)
+
+        assert gate.get("require_specific") is not True, gate.get("gate_clarification")
+        assert [o["label"] for o in options] == [MASTER], [o["label"] for o in options]
+        assert sorted(options[0]["uuids"]) == sorted(a.id for a in accounts)
+
     def test_two_ledgers_of_one_group_and_a_do_level_name_is_one_line(self, db):
         gid = _group(db)
         a = _customer(db, f"{MASTER} [A/C I]", group_id=gid)
