@@ -212,3 +212,30 @@ def test_api_and_worker_both_run_the_boot_check():
     root = Path(__file__).resolve().parents[1]
     for entrypoint in ("app/main.py", "worker.py"):
         assert "assert_field_encryption_ready(" in (root / entrypoint).read_text(), entrypoint
+
+
+def test_backfill_never_overwrites_a_secret_saved_while_it_ran(monkeypatch):
+    """Compare-and-set: an admin who saves a new key between the script's read and its
+    write keeps the new key, and the run reports the row as skipped, not moved."""
+    import scripts.reencrypt_field_secrets as script
+
+    newer = encrypt_secret("sk-ZZT-saved-meanwhile-9999")
+    real_classify = script._classify
+
+    with blank_session() as db:
+        cfg_id = AIAssistantConfigService(db).get().id
+        db.execute(text("UPDATE ai_assistant_configs SET api_key_ciphertext = :p WHERE id = :i"),
+                   {"p": OPENAI, "i": cfg_id})
+
+        def classify_then_race(value):
+            state = real_classify(value)
+            if value == OPENAI:
+                db.execute(text("UPDATE ai_assistant_configs SET api_key_ciphertext = :n WHERE id = :i"),
+                           {"n": newer, "i": cfg_id})
+            return state
+
+        monkeypatch.setattr(script, "_classify", classify_then_race)
+        counts = script.backfill(db, apply=True)
+
+        assert _raw(db, "ai_assistant_configs", "api_key_ciphertext", cfg_id) == newer
+        assert counts["ai_assistant_configs.api_key_ciphertext"]["skipped"] == 1
