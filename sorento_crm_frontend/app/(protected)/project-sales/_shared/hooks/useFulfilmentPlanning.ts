@@ -85,6 +85,10 @@ async function refreshAfterConfirm(queryClient: QueryClient): Promise<void> {
     void queryClient.invalidateQueries({ queryKey: [key] });
   }
   void queryClient.invalidateQueries({ queryKey: [ORDER_INQUIRY_HEADERS_KEY] });
+  // Confirmed from the per-order sheet, the board is not on screen: an invalidation would only
+  // mark it stale and the next visit would paint its old OI links while it refetched.
+  queryClient.removeQueries({ queryKey: [PLANNING_BOARD_KEY], type: 'inactive' });
+  queryClient.removeQueries({ queryKey: [FULFILMENT_PLANNING_KEY], type: 'inactive' });
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: [FULFILMENT_PLANNING_KEY] }),
     queryClient.invalidateQueries({ queryKey: [PLANNING_BOARD_KEY] }),
