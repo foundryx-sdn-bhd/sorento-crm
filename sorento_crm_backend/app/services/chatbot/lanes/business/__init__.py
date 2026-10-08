@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import copy as _copy
 import logging
 import time
 
@@ -29,6 +30,7 @@ from app.services.chatbot import copy as reply_copy
 from app.services.chatbot import jsc
 from app.services.chatbot.lanes.business import brand_guard
 from app.services.chatbot import do_ask
+from app.services.chatbot.lanes.business import alternatives as alternatives_mod
 from app.services.chatbot.lanes.business import fetch as fetch_mod
 from app.services.chatbot.lanes.business import low_stock_ask
 from app.services.chatbot.lanes.business import report_ask
@@ -2248,7 +2250,144 @@ def run_fetch(
             return _fixed_reply(refusal)
         return _error_fragment(envelope["error"])
 
+    # PRODUCT-ALTERNATIVES round B (card Addendum 1, owner 8 Oct 2026): an asked product
+    # that is discontinued and has a stored alternative gets the SAME tool's answer for the
+    # alternative folded in (`alternatives.py`), one call per alternative through the same
+    # seam and brand guard. Best-effort end to end: any failure (the lookup included) leaves
+    # the reply exactly as the first call made it.
+    alternative_tail: list[str] = []
+    alternative_found = False
+    alternative_pairs: list[Any] = []
+    main_missed = not jsc.array(envelope.get("items")) if isinstance(envelope, dict) else True
+    if isinstance(envelope, dict) and not jsc.array(envelope.get("groups")) and db is not None:
+        savepoint = None
+        try:
+            # One savepoint around the lookup AND the second calls' brand guard, so a failed
+            # statement in either is rolled back here and never aborts the turn.
+            savepoint = db.begin_nested()
+            alternative_pairs = alternatives_mod.plan(
+                db,
+                tool_name,
+                entities,
+                predicate=trigger.get("predicate"),
+                scope_brand_ids=semantic_input.get("scope_brand_ids"),
+            )
+            requested = jsc.array(semantic_input.get("requested_attributes"))
+            status_only = (
+                alternatives_mod.TOOL_KINDS.get(tool_name) == "product"
+                and bool(requested)
+                and all(fetch_mod._asks_discontinued([a]) for a in requested)
+            )
+            answers: list[tuple[str, Any, Any]] = []
+            for old_code, alternative in alternative_pairs:
+                if status_only:
+                    # The status line names the code alone; nothing to fetch for it.
+                    answers.append((old_code, alternative, None))
+                    continue
+                alternative_args = fetch_mod.entity_ids_transformer(
+                    alternatives_mod.alternative_trigger(trigger, alternative), space_id=space_id
+                )
+                if (
+                    tool_name in policy_rows.ENTITY_FILTER_REQUIRED_TOOLS
+                    and not fetch_mod.has_narrowing_filter(alternative_args, tool_name=tool_name)
+                ):
+                    continue
+                _alt_started = time.perf_counter()
+                alternative_envelope = brand_guard.guard_result(
+                    tool_name,
+                    fetch_mod.parse_mcp_content(
+                        fetch_mod.call_tool(tool_name, alternative_args, mcp=_McpSeam(services.mcp_call))
+                    ),
+                    semantic_input.get("scope_brand_ids"),
+                    db,
+                )
+                if trace is not None:
+                    trace.add(
+                        "tool",
+                        {
+                            "name": tool_name,
+                            "args": alternative_args,
+                            "envelope": alternative_envelope,
+                            "ms": int((time.perf_counter() - _alt_started) * 1000),
+                            "alternative_of": old_code,
+                        },
+                    )
+                if isinstance(alternative_envelope, dict) and not isinstance(
+                    alternative_envelope.get("error"), str
+                ):
+                    answers.append((old_code, alternative, alternative_envelope))
+            savepoint.commit()
+            if answers:
+                folded = _copy.deepcopy(envelope)
+                # An alternative's rows placed in this envelope are filtered by ITS
+                # restricted fields too, not only the asked product's.
+                restricted = dict(folded.get("restricted_fields") or {})
+                for _old, _alt, alt_envelope in answers:
+                    if isinstance(alt_envelope, dict) and isinstance(alt_envelope.get("restricted_fields"), dict):
+                        restricted = {**alt_envelope["restricted_fields"], **restricted}
+                if restricted:
+                    folded["restricted_fields"] = restricted
+
+                def _render(alt_envelope: Any, rows: list, alternative: Any) -> str:
+                    rendered = fetch_mod.output_structurer(
+                        {**alt_envelope, "items": rows, "intro": ""},
+                        alternatives_mod.alternative_trigger(trigger, alternative),
+                    )
+                    return jsc.js_string(rendered.get("response") or "")
+
+                alternative_tail, alternative_found = alternatives_mod.fold(
+                    tool_name,
+                    folded,
+                    answers,
+                    fmt_value=fetch_mod._fmt_value,
+                    render=_render,
+                    status_only=status_only,
+                    loc=trigger.get("localizer") if tool_name in fetch_mod._LOCALIZED_TOOLS else None,
+                    dealer=any(
+                        isinstance(env, dict) and env.get("result_type") == "incoming_dealer"
+                        for env in [envelope] + [a[2] for a in answers]
+                    ),
+                    subject_label=next(
+                        (
+                            jsc.nullish_str(e.get("display_name") or e.get("code")).strip() or None
+                            for e in jsc.array(entities)
+                            if isinstance(e, dict) and e.get("entity_type") == "attachment_type"
+                        ),
+                        None,
+                    ),
+                )
+                envelope = folded
+        except Exception as exc:  # noqa: BLE001 - the alternative never costs the asked answer
+            if savepoint is not None and savepoint.is_active:
+                savepoint.rollback()
+            logger.warning("chatbot: alternative fetch for %s failed", tool_name, exc_info=True)
+            if trace is not None:
+                trace.add("alternatives", {"tool": tool_name, "failed": str(exc)[:200]})
+            alternative_tail, alternative_found = [], False
+
     structured = fetch_mod.output_structurer(envelope, trigger)
+    if alternative_tail and isinstance(structured, dict):
+        response = jsc.js_string(structured.get("response") or "").strip()
+        if main_missed:
+            old_codes = list(dict.fromkeys(old for old, _alt in alternative_pairs))
+            # The same miss sentence compose would print, in the contact's language.
+            miss = alternatives_mod.miss_sentence(tool_name, old_codes)
+            localizer = trigger.get("localizer")
+            structured["response"] = (
+                (localizer.sentence(miss) if localizer is not None else miss)
+                + "\n"
+                + "\n".join(alternative_tail)
+            )
+            if alternative_found:
+                # Only an alternative that actually had rows turns a miss into an answer;
+                # a bare "No promotion." keeps the miss handling (rerun, escalation offer).
+                structured["has_result"] = True
+            else:
+                # Still a miss: the miss reply (`answer_bridge.answer_for`) replaces this
+                # text, and prints these lines before its escalate offer (owner, 9 Oct).
+                structured["alternative_lines"] = list(alternative_tail)
+        else:
+            structured["response"] = response + "\n\n" + "\n".join(alternative_tail)
     # LOWSTOCK-FILTER-ASK (owner hand test, 3 Oct 2026): EVERY low stock reply - ready,
     # pending, busy, empty, error - opens with the filters it was built with, "Low stock
     # report (water closet, supplier X, by supplier)", so a narrowed file never reads as

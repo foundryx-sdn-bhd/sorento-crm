@@ -360,7 +360,10 @@ def test_entry_shape_is_the_v2_shape_not_1118s(db):
         "packing_list",
         "available_qty",
         "is_discontinued",
+        # PRODUCT-ALTERNATIVES (card Q4): the judged stored alternatives, empty here.
+        "alternatives",
     }
+    assert entry["alternatives"] == []
     assert entry["available_qty"] is None
     assert entry["is_discontinued"] is False
     assert entry["needs_quantity"] is False
@@ -430,6 +433,7 @@ def test_per_product_map_wins_scalar_fills(db):
         "packing_list": None,
         "available_qty": None,
         "is_discontinued": False,
+        "alternatives": [],
     }
 
     with_scalar = StockService(db).list_stock(

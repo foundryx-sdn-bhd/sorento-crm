@@ -131,7 +131,13 @@ _ANY_OF_PERMISSIONS: dict = {
 
 #: Actions whose ids become an ss URL path: the record id (and `payload.idea_id`) must be a UUID
 #: at park time, so a crafted id is refused here and not ten seconds later (AC-A-10).
-_UUID_ENTITY_ACTIONS = ("idea.archive", "idea.delete", "idea_comment.delete")
+_UUID_ENTITY_ACTIONS = (
+    "idea.archive",
+    "idea.delete",
+    "idea_comment.delete",
+    "product_alternative.unlink",
+    "product_alternatives.reset_auto",
+)
 
 
 def _assert_required_payload(action_key: str, payload: dict, entity_id: Optional[str] = None) -> None:
@@ -153,7 +159,16 @@ def _assert_entity_visible(db: Session, action_key: str, entity_id: str) -> None
     another company (or one that does not exist) refuses 404 before anything is parked -
     the same answer either way, and no countdown for a record the caller cannot see.
     Deliberately just these keys: no other action asked for it."""
-    if action_key == "contact_customer_link.unlink":
+    if action_key == "product_alternatives.reset_auto":
+        from app.services.product_alternative_service import list_for_product
+
+        list_for_product(db, entity_id)  # 404 for a product outside the caller's scope
+    elif action_key == "product_alternative.unlink":
+        from app.services.product_alternative_service import get_link
+
+        if get_link(db, entity_id) is None:
+            raise handle_not_found("Product alternative", entity_id)
+    elif action_key == "contact_customer_link.unlink":
         from app.services.contact_customer_service import get_link_by_id
 
         if get_link_by_id(db, entity_id) is None:
