@@ -71,13 +71,18 @@ def _envelope(items, *, result_type, attachments=None, intro="Here are the resul
     )
 
 
+full_args: list[dict] = []
+
+
 def _run(db, *, domain, entities, answers, fail_second=False, requested=None):
     """`answers(product_ids) -> raw envelope`; returns (response text, structured, calls)."""
     calls: list[tuple[str, list]] = []
+    full_args.clear()
 
     def mcp_call(name, args):
         ids = list(args.get("product_ids") or [])
         calls.append((name, ids))
+        full_args.append(dict(args))
         if fail_second and len(calls) > 1:
             raise RuntimeError("tool down")
         return answers(name, ids)
@@ -355,7 +360,8 @@ def test_is_it_discontinued_names_the_alternative_once_and_no_extra_status_line(
         answers=_product_envelope(old, new),
         requested=["discontinued"],
     )
-    assert len(calls) == 2
+    # Review round B nit 8: the status line names the code alone, so nothing is fetched for it.
+    assert len(calls) == 1
     assert said == f"{old.product_code}: \u26a0\ufe0f Discontinued.\nAlternative: {new.product_code}", said
 
 
@@ -370,3 +376,167 @@ def test_status_beside_another_property_keeps_the_alternatives_block(db, pair):
     )
     assert said.count(f"Alternative: {new.product_code}") + said.count(f"*Alternative:* {new.product_code}") == 1, said
     assert new.product_code in said.split(f"Alternative: {new.product_code}", 1)[-1], said
+
+
+# --------------------------------------------------------------------------- review round B
+
+
+def test_staff_incoming_old_code_with_no_rows_still_shows_the_alternatives_rows(db, pair):
+    """Reviewer B1: a discontinued code usually has no incoming of its own; staff still get
+    the alternative's rows (its container and ETA), not just its name."""
+    old, new = pair
+
+    def answers(name, ids):
+        if ids == [old.id]:
+            return _envelope([], result_type="incoming")
+        return _envelope(
+            [_field_item(new.product_code, [("Product Code", new.product_code), ("Container", "CONT-NEW")])],
+            result_type="incoming",
+        )
+
+    said, fetch, _c = _run(db, domain="incoming", entities=[_entity(old)], answers=answers)
+    assert said.startswith(
+        f"No incoming stock found for {old.product_code}.\n*Alternative:* {new.product_code}\n"
+    ), said
+    assert "CONT-NEW" in said, said
+    assert fetch.get("has_result") is True
+
+
+def test_a_miss_everywhere_keeps_the_miss_handling(db, pair):
+    """Reviewer 4: "No promotion." for the alternative is not a result; the miss stays a
+    miss (rerun and escalation still apply)."""
+    old, new = pair
+    said, fetch, _c = _run(
+        db,
+        domain="promotion",
+        entities=[_entity(old)],
+        answers=lambda name, ids: _envelope([], result_type="promotions"),
+    )
+    assert said == f"No promotions found for {old.product_code}.\nAlternative: {new.product_code}: No promotion."
+    assert not fetch.get("has_result")
+
+
+def test_the_second_call_asks_the_same_question_about_the_alternative(db, pair):
+    """Security S3: every argument of the second call but the product equals the first's."""
+    import uuid as _uuid
+
+    old, new = pair
+    type_id = str(_uuid.uuid4())
+
+    def answers(name, ids):
+        return _envelope([], result_type="product_attachments")
+
+    _run(
+        db,
+        domain="product_attachment",
+        entities=[_entity(old), {"uuid": type_id, "entity_type": "attachment_type", "code": "Technical Specifications"}],
+        answers=answers,
+    )
+    assert len(full_args) == 2
+    first, second = ({k: v for k, v in a.items() if k not in ("product_ids", "_diagnostics")} for a in full_args)
+    assert first == second
+    assert first.get("attachment_type_ids") == [type_id]
+    assert full_args[1]["product_ids"] == [new.id]
+
+
+def test_the_second_call_goes_through_the_brand_guard(db, pair, monkeypatch):
+    """Reviewer 2: the alternative's answer passes the same output guard, with the same scope."""
+    from app.services.chatbot.lanes.business import brand_guard
+
+    old, new = pair
+    seen: list = []
+    real = brand_guard.guard_result
+
+    def spy(tool_name, result, scope, session):
+        seen.append(scope)
+        return real(tool_name, result, scope, session)
+
+    monkeypatch.setattr(brand_guard, "guard_result", spy)
+    _run(
+        db,
+        domain="incoming",
+        entities=[_entity(old)],
+        answers=lambda name, ids: _envelope(
+            [_dealer_item(new.product_code if ids == [new.id] else old.product_code, "No ETA")],
+            result_type="incoming",
+        ),
+    )
+    assert len(seen) == 2 and seen[0] == seen[1]
+
+
+def test_an_alternative_outside_the_contacts_brands_is_never_named(db, pair, monkeypatch):
+    """Security S2 / reviewer 3: the brand scope is checked in the plan itself, not only by
+    the session's own filter, so an out-of-scope alternative is neither fetched nor named."""
+    import uuid as _uuid
+
+    from app.models.product import Brand
+
+    old, new = pair
+    brand_a = Brand(id=str(_uuid.uuid4()), brand_code=unique_code("BA")[:40], brand_name="A", company_id=DEFAULT_COMPANY_ID)
+    brand_b = Brand(id=str(_uuid.uuid4()), brand_code=unique_code("BB")[:40], brand_name="B", company_id=DEFAULT_COMPANY_ID)
+    db.add_all([brand_a, brand_b])
+    db.flush()
+    old.brand_id = brand_a.id
+    new.brand_id = brand_b.id
+    db.flush()
+    monkeypatch.setattr(business, "_brand_scope_ids", lambda *a, **k: [brand_a.id])
+
+    said, _f, calls = _run(
+        db,
+        domain="incoming",
+        entities=[_entity(old)],
+        answers=lambda name, ids: _envelope(
+            [_dealer_item(old.product_code, "No ETA", discontinued=True)], result_type="incoming"
+        ),
+    )
+    assert len(calls) == 1
+    assert new.product_code not in said
+
+
+def test_a_failed_lookup_leaves_the_reply_as_it_was(db, pair, monkeypatch):
+    """Security S1: the plan's own lookup failing costs nothing."""
+    from app.services import product_alternative_service
+
+    old, new = pair
+
+    def boom(*a, **k):
+        raise RuntimeError("lookup down")
+
+    monkeypatch.setattr(product_alternative_service, "alternatives_for", boom)
+    said, _f, calls = _run(
+        db,
+        domain="incoming",
+        entities=[_entity(old)],
+        answers=lambda name, ids: _envelope(
+            [_dealer_item(old.product_code, "No ETA", discontinued=True)], result_type="incoming"
+        ),
+    )
+    assert len(calls) == 1
+    assert f"{old.product_code}: No ETA" in said and "Alternative" not in said
+
+
+def test_a_counted_set_gets_no_alternatives():
+    from app.services.chatbot.lanes.business import alternatives as alt_mod
+
+    assert alt_mod.plan(object(), "crm_master_products_list", [{"entity_type": "product", "uuid": "x"}], predicate={}) == []
+
+
+def test_two_alternatives_each_get_their_own_promotions(db, pair):
+    """Security nit: with one call per alternative, each is credited with its own promotions."""
+    old, new = pair
+    other = product(db, company_id=DEFAULT_COMPANY_ID, code=f"{old.product_code}-NEW-B")
+    db.add(ProductAlternative(product_id=old.id, alternative_product_id=other.id, source="manual", company_id=DEFAULT_COMPANY_ID))
+    db.flush()
+
+    def answers(name, ids):
+        if ids == [old.id]:
+            return _envelope([], result_type="promotions")
+        if ids == [new.id]:
+            return _envelope([_promo("Promo New", "2026-10-01T00:00:00", "2026-10-31T00:00:00")], result_type="promotions")
+        return _envelope([_promo("Promo B", "2026-11-01T00:00:00", "2026-11-30T00:00:00")], result_type="promotions")
+
+    said, _f, calls = _run(db, domain="promotion", entities=[_entity(old)], answers=answers)
+    assert len(calls) == 3
+    assert f"Alternative: {new.product_code}: Promo New (01/10/2026 to 31/10/2026)" in said
+    assert f"Alternative: {other.product_code}: Promo B (01/11/2026 to 30/11/2026)" in said
+    assert f"Alternative: {new.product_code}: Promo B" not in said
