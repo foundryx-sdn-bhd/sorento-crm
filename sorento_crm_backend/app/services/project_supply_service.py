@@ -6493,10 +6493,15 @@ class ProjectSupplyService:
             return
         if qty > held + free:
             room = held + free - carried
+            room_text = qty_text(room if room > _ZERO else _ZERO)
             refuse(
                 stale,
-                f"{donor.project_code} has {qty_text(room if room > _ZERO else _ZERO)} at "
-                f"{warehouse.warehouse_code}, and {qty_text(ask)} was asked for.",
+                f"{donor.project_code} has {room_text} at {warehouse.warehouse_code}, and "
+                f"{qty_text(ask)} was asked for."
+                if self.borrow_from_order
+                # "Borrow from another order" OFF (fix round 2): the bin, never the project.
+                else f"Stock held at {warehouse.warehouse_code} now has {room_text}, and "
+                f"{qty_text(ask)} was asked for.",
             )
             return
         from_hold = min(qty, held)

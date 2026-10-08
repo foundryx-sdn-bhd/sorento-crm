@@ -44,6 +44,7 @@ from app.models.project_so import (
     OrderInquiryLink,
     OrderInquiryRow,
     SOLineAllocation,
+    SOSupplyDecision,
 )
 
 from ._pg_fixture import blank_session
@@ -132,7 +133,14 @@ def _world_for_script(db) -> World:
         required_date=DONOR_DATE, line_no=446, so_number=f"ZZT-DON{_uid()[:5]}",
     )
     # S3 (a): what a step-2 / group borrow confirm writes on the BORROWING line - the
-    # allocation naming the donor's core line inside `donor_impact_snapshot`.
+    # allocation naming the donor's core line inside `donor_impact_snapshot`, at the bin it
+    # lent from, under the borrower's ACTIVE decision (fix round 2 item 2).
+    w.decision = SOSupplyDecision(
+        id=_uid(), company_id=w.company_id, project_sales_order_id=w.borrower.id,
+        revision_no=1, state="active", line_snapshots=[],
+    )
+    db.add(w.decision)
+    db.flush()
     for borrowing in (w.line1, w.line2):
         _borrow_allocation(w, borrowing, w.donor_cline)
     w.header = OrderInquiry(
@@ -150,7 +158,7 @@ def _borrow_allocation(w, line, donor_cline):
         SOLineAllocation(
             id=_uid(), company_id=w.company_id, so_line_id=line.id,
             source_type="other_location", warehouse_id=w.donor_bin.id, qty=Decimal("6"),
-            reason="Borrowed.",
+            reason="Borrowed.", decision_id=w.decision.id,
             donor_impact_snapshot={"donor_core_line_id": str(donor_cline.id)},
         )
     )
@@ -158,7 +166,7 @@ def _borrow_allocation(w, line, donor_cline):
 
 
 def _row(w, *, line, state=INQUIRY_RAISED, note=None, covered_by=None, qty="6", target_no=1,
-         date_=None, link=False, item_code=None):
+         date_=None, link=False, item_code=None, stock_location=None):
     note = note if note is not None else (
         f"Order-back: ZZT-DON lent {qty} to {w.ref} line {target_no}"
         if line is w.donor_line else f"Order-back: {w.donor_bin.warehouse_code} lent {qty} "
@@ -168,7 +176,8 @@ def _row(w, *, line, state=INQUIRY_RAISED, note=None, covered_by=None, qty="6", 
         id=_uid(), company_id=w.company_id, order_inquiry_id=w.header.id,
         so_line_id=line.id, item_code=item_code or w.product.product_code, qty=Decimal(qty),
         delivery_date=date_ or (DONOR_DATE if line is w.donor_line else BORROWER_LINE_1_DATE),
-        stock_location=w.donor_bin.warehouse_code, verb=IV_ORDER_BACK, state=state,
+        stock_location=stock_location or w.donor_bin.warehouse_code, verb=IV_ORDER_BACK,
+        state=state,
         note=note, covered_by=covered_by,
     )
     w.db.add(row)
@@ -366,11 +375,27 @@ def test_main_defaults_to_a_dry_run_and_apply_writes(monkeypatch):
         db.refresh(row)
         assert _snapshot(row) == before, "no --apply, no write"
 
-        assert script.main(["--apply"]) == 0
+        # Fix round 2 item 3: --apply names who ran it.
+        with pytest.raises(SystemExit):
+            script.main(["--apply"])
+        db.expire_all()
+        db.refresh(row)
+        assert _snapshot(row) == before, "--apply without --operator writes nothing"
+
+        assert script.main(["--apply", "--operator", "zzt-ops"]) == 0
         db.expire_all()
         db.refresh(row)
         assert str(row.so_line_id) == str(w.line1.id)
         assert row.delivery_date == BORROWER_LINE_1_DATE
+
+        from app.models.audit import AuditLog
+
+        audits = [
+            a for a in db.query(AuditLog).filter(AuditLog.entity_id == str(row.id)).all()
+            if (a.old_values or {}).get("so_line_id")
+        ]
+        assert len(audits) == 1
+        assert "zzt-ops" in (audits[0].reason or ""), audits[0].reason
 
 
 # --------------------------------------------------------------------------- fix round 1 (S3)
@@ -451,3 +476,42 @@ def test_apply_writes_one_audit_row_per_moved_row_with_what_it_was_and_is():
         assert audit.old_values["note"] == old_note
         assert audit.new_values["note"].startswith(f"Order-back: {w.donor_bin.warehouse_code}")
         assert str(audit.company_id) == str(w.company_id)
+
+
+# --------------------------------------------------------------------------- fix round 2 (item 2)
+
+
+def test_a_same_donor_row_at_another_bin_than_the_borrow_allocation_is_skipped():
+    """A step-3 remainder row for the SAME donor line, at another bin than the step-2
+    allocation the borrowing line holds, is not that borrow's order-back."""
+    script = _script()
+    with blank_session() as db:
+        w = _world_for_script(db)
+        elsewhere = _row(
+            w, line=w.donor_line, target_no=1, stock_location=w.own.warehouse_code
+        )
+        good = _row(w, line=w.donor_line, target_no=1)
+        before = _snapshot(elsewhere)
+        with company_scope(db, frozenset({w.company_id})):
+            report = script.run(db, apply=True)
+        db.commit()
+        db.expire_all()
+        db.refresh(elsewhere)
+
+        assert [str(_field(f, "row_id")) for f in report["fixes"]] == [str(good.id)]
+        assert [str(s["row_id"]) for s in report["skipped"]] == [str(elsewhere.id)]
+        assert _snapshot(elsewhere) == before
+
+
+def test_a_borrow_allocation_under_a_superseded_decision_does_not_qualify_a_row():
+    script = _script()
+    with blank_session() as db:
+        w = _world_for_script(db)
+        w.decision.state = "superseded"
+        db.commit()
+        row = _row(w, line=w.donor_line, target_no=1)
+        with company_scope(db, frozenset({w.company_id})):
+            report = script.run(db, apply=False)
+
+        assert report["fixes"] == []
+        assert [str(s["row_id"]) for s in report["skipped"]] == [str(row.id)]

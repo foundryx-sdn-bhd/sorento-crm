@@ -738,3 +738,44 @@ def test_br2_off_no_offered_candidate_names_a_donor_project():
     for candidate in candidates:
         assert candidate.get("donor_project_ref") is None, candidate
         assert candidate.get("donor_so_number") is None, candidate
+
+
+# --------------------------------------------------------------------------- fix round 2
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_r2_an_over_asked_project_hold_is_refused_by_location_under_off(enabled):
+    """Fix round 2 item 1: under OFF the refusal of an over-asked `other_project` hold names
+    the bin, never the project code. ON keeps today's sentence."""
+    from app.models.projects import Project
+
+    with blank_session() as db:
+        world = _borrow_world(db, ask="40")
+        _set_borrow_order(db, enabled)
+        donor_project = db.get(Project, world["donor_order"].project_id)
+        code = donor_project.project_code
+        bin_code = world["donor_bin"].warehouse_code
+        db.commit()
+        with pytest.raises(AppException) as refused:
+            ProjectSupplyService(db).confirm(
+                world["asker"],
+                ConfirmSupplyBody(lines=[ConfirmLine(
+                    project_line_id=world["asker_line"].id,
+                    borrow=[{
+                        "source": "other_project",
+                        "warehouse_id": str(world["donor_bin"].id),
+                        "donor_project_id": str(donor_project.id),
+                        "qty": "40",
+                        "reason": "Take the held stock.",
+                    }],
+                )]),
+                actor_user_id=world["eling"],
+            )
+
+    reason = refused.value.detail["failing_lines"][0]["reason"]
+    if enabled:
+        assert reason.startswith(f"{code} has "), reason
+    else:
+        assert code not in reason, reason
+        assert reason.startswith(f"Stock held at {bin_code} now has "), reason
+        assert reason.endswith("and 40 was asked for."), reason

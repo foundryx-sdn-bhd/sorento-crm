@@ -88,6 +88,33 @@ export function SupplyLineCard({
     frozenComponents.filter((component) => component.kind === kind);
 
   const setBorrow = (borrow: DraftBorrow[]) => onChange({ ...draft, borrow });
+  // One or several borrow rows appended in ONE change: a merged bin's split arrives as
+  // several (BORROW-LOCATION-ONLY R2), and appending them one by one off the same `draft`
+  // would keep only the last.
+  const addBorrows = (parts: { candidate: BorrowCandidate; qty: string }[], reason: string) =>
+    setBorrow([
+      ...draft.borrow,
+      ...parts.map(({ candidate, qty }, index) => ({
+        key: `borrow-${line.project_line_id}-${candidate.warehouse_code}-${draft.borrow.length + index}`,
+        source: candidate.source,
+        warehouse_code: candidate.warehouse_code,
+        warehouse_id: candidate.warehouse_id,
+        donor_project_ref: candidate.donor_project_ref,
+        donor_project_id: candidate.donor_project_id,
+        qty,
+        reason,
+        donor_impact: candidate.donor_impact,
+        // Ladder v2 group borrow (section E.4): the donor SO line this
+        // candidate names, so the confirmation checks its live commitment
+        // and raises the order-back under the right donor (mirrors
+        // BoardAmendDialog's own Borrow-add flow, `BoardAmendDialog.tsx`).
+        donor_core_line_id: candidate.donor_core_line_id,
+        donor_so_number: candidate.donor_so_number,
+        donor_line_no: candidate.donor_line_no,
+        donor_agent_code: candidate.donor_agent_code,
+        same_agent: candidate.same_agent,
+      })),
+    ]);
 
   return (
     <article className="rounded-lg border border-border">
@@ -411,30 +438,9 @@ export function SupplyLineCard({
           candidates={line.borrow_candidates}
           onDone={() => setAdding(false)}
           onAdd={(candidate: BorrowCandidate, qty, reason) =>
-            setBorrow([
-              ...draft.borrow,
-              {
-                key: `borrow-${line.project_line_id}-${candidate.warehouse_code}-${draft.borrow.length}`,
-                source: candidate.source,
-                warehouse_code: candidate.warehouse_code,
-                warehouse_id: candidate.warehouse_id,
-                donor_project_ref: candidate.donor_project_ref,
-                donor_project_id: candidate.donor_project_id,
-                qty,
-                reason,
-                donor_impact: candidate.donor_impact,
-                // Ladder v2 group borrow (section E.4): the donor SO line this
-                // candidate names, so the confirmation checks its live commitment
-                // and raises the order-back under the right donor (mirrors
-                // BoardAmendDialog's own Borrow-add flow, `BoardAmendDialog.tsx`).
-                donor_core_line_id: candidate.donor_core_line_id,
-                donor_so_number: candidate.donor_so_number,
-                donor_line_no: candidate.donor_line_no,
-                donor_agent_code: candidate.donor_agent_code,
-                same_agent: candidate.same_agent,
-              },
-            ])
+            addBorrows([{ candidate, qty }], reason)
           }
+          onAddMany={addBorrows}
         />
       )}
     </article>

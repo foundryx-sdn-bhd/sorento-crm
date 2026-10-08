@@ -19,9 +19,10 @@ Selects, structurally and never by a note regex, every ORDER_BACK row that is:
 * hung on a line of a DIFFERENT project sales order than its own OI header's.
 
 The borrowing line is the header's sales order's line whose `line_no` is the note's
-"to <ref> line <m>". A row is moved only when that line holds a borrow allocation naming
-the row's own line as its donor (`donor_impact_snapshot.donor_core_line_id`), which is
-what a step-2 / group borrow confirm writes; a step-3 document borrow writes none, so its
+"to <ref> line <m>". A row is moved only when that line holds a borrow allocation, under
+its active decision and at the row's own bin, naming the row's own line as its donor
+(`donor_impact_snapshot.donor_core_line_id`), which is what a step-2 / group borrow
+confirm writes; a step-3 document borrow writes none, so its
 donor-side remainder row is reported and left. The line must also carry the row's item,
 and row, order and line must share one company.
 
@@ -35,11 +36,12 @@ nothing is deleted.
 SAFETY / IDEMPOTENCY
 ---------------------
 A moved row sits on its own header's sales order, so it no longer matches and a second run
-reports nothing for it. `--dry-run` is the DEFAULT. Nothing is written without `--apply`.
+reports nothing for it. `--dry-run` is the DEFAULT. Nothing is written without `--apply`, and `--apply` needs
+`--operator <name>`, which every audit row records.
 
 Run from sorento_crm_backend/:
     venv/bin/python scripts/fix_borrow_order_back_rows.py
-    venv/bin/python scripts/fix_borrow_order_back_rows.py --apply
+    venv/bin/python scripts/fix_borrow_order_back_rows.py --apply --operator "<your name>"
 """
 from __future__ import annotations
 
@@ -56,9 +58,11 @@ from sqlalchemy.orm import Session  # noqa: E402
 
 from app.database import SessionLocal  # noqa: E402
 from app.models.base import set_company_scope  # noqa: E402
+from app.models.inventory import Warehouse  # noqa: E402
 from app.models.order import SalesOrderLine  # noqa: E402
 from app.models.product import Product  # noqa: E402
 from app.models.project_so import (  # noqa: E402
+    DECISION_ACTIVE,
     INQUIRY_PARTLY_LINKED,
     INQUIRY_RAISED,
     IV_ORDER_BACK,
@@ -68,6 +72,7 @@ from app.models.project_so import (  # noqa: E402
     ProjectSalesOrder,
     ProjectSalesOrderLine,
     SOLineAllocation,
+    SOSupplyDecision,
 )
 from app.services.audit_service import log_audit  # noqa: E402
 from app.services.project_order_inquiry_service import _dec, _qty_str  # noqa: E402
@@ -161,19 +166,26 @@ def _resolve(
         if item is None or (item.product_code or "") != (row.item_code or ""):
             skip("the borrowing line carries a different item")
             continue
+        # The borrow itself: an allocation on the borrowing line, under its ACTIVE
+        # decision, lent from THIS row's bin by THIS donor line. Same donor at another bin
+        # (a step-3 remainder beside a step-2 borrow) is a different debt.
         borrowed = (
             db.query(SOLineAllocation.id)
+            .join(SOSupplyDecision, SOSupplyDecision.id == SOLineAllocation.decision_id)
+            .join(Warehouse, Warehouse.id == SOLineAllocation.warehouse_id)
             .filter(
                 SOLineAllocation.so_line_id == target.id,
                 SOLineAllocation.donor_impact_snapshot["donor_core_line_id"].astext
                 == str(donor_line.core_sales_order_line_id or ""),
+                SOSupplyDecision.state == DECISION_ACTIVE,
+                Warehouse.warehouse_code == (row.stock_location or ""),
             )
             .first()
         )
         if borrowed is None:
             skip(
-                "no borrow on the borrowing line names this donor line (a step-3 "
-                "document borrow's remainder, or not a borrow at all)"
+                "no active borrow on the borrowing line names this donor line at this "
+                "bin (a step-3 document borrow's remainder, or not a borrow at all)"
             )
             continue
         core = (
@@ -211,7 +223,9 @@ def plan(db: Session) -> List[Dict[str, Any]]:
     return _resolve(db)[0]
 
 
-def _apply(db: Session, fixes: Sequence[Dict[str, Any]]) -> int:
+def _apply(
+    db: Session, fixes: Sequence[Dict[str, Any]], operator: Optional[str] = None
+) -> int:
     rows = {
         str(row.id): row
         for row in db.query(OrderInquiryRow)
@@ -244,14 +258,18 @@ def _apply(db: Session, fixes: Sequence[Dict[str, Any]]) -> int:
             },
             company_id=row.company_id,
             description="Borrow order-back moved from the donor's line to the borrowing line",
-            reason="PLAN-borrow-location-only-8oct.md B6",
+            reason=(
+                f"PLAN-borrow-location-only-8oct.md B6, run by {operator}"
+                if operator
+                else "PLAN-borrow-location-only-8oct.md B6"
+            ),
         )
         applied += 1
     db.flush()
     return applied
 
 
-def run(db: Session, apply: bool = False) -> Dict[str, Any]:
+def run(db: Session, apply: bool = False, operator: Optional[str] = None) -> Dict[str, Any]:
     """Report (and with `apply`, perform) every move. The caller commits."""
     fixes, skipped = _resolve(db)
     for fix in fixes:
@@ -267,7 +285,7 @@ def run(db: Session, apply: bool = False) -> Dict[str, Any]:
             f"{skip['stock_location']} on {skip['from_so']} line {skip['from_line_no']}, "
             f"OI of {skip['to_so']} - note: {skip['note']!r} [row {skip['row_id']}]"
         )
-    applied = _apply(db, fixes) if apply and fixes else 0
+    applied = _apply(db, fixes, operator) if apply and fixes else 0
     return {"fixes": fixes, "applied": applied, "skipped": skipped}
 
 
@@ -283,8 +301,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "--dry-run", action="store_true",
         help="Report only (the default; accepted so a run can say so out loud).",
     )
+    parser.add_argument(
+        "--operator",
+        help="Who is running it. Required with --apply; written into every audit row.",
+    )
     args = parser.parse_args(argv)
     apply = args.apply and not args.dry_run
+    if apply and not (args.operator or "").strip():
+        parser.error("--apply needs --operator <name>, so the audit says who ran it")
 
     db = SessionLocal()
     # A script has no request and no principal, so the session scope would be UNSET,
@@ -296,7 +320,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             "Borrow order-backs on a donor's line "
             f"({'APPLYING' if apply else 'DRY-RUN, nothing is written'}):"
         )
-        summary = run(db, apply=apply)
+        summary = run(db, apply=apply, operator=(args.operator or "").strip() or None)
         if apply:
             db.commit()
         print("\n=== summary ===")

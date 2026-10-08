@@ -163,6 +163,8 @@ const CROSS_GROUP: BorrowCandidate = {
 const onAdd = vi.fn();
 const onDone = vi.fn();
 
+const onAddMany = vi.fn();
+
 function renderDialog(candidates: BorrowCandidate[] = [OTHER_LOCATION, OTHER_PROJECT]) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   return render(
@@ -174,6 +176,7 @@ function renderDialog(candidates: BorrowCandidate[] = [OTHER_LOCATION, OTHER_PRO
         candidates={candidates}
         onDone={onDone}
         onAdd={onAdd}
+        onAddMany={onAddMany}
       />
     </QueryClientProvider>,
   );
@@ -354,6 +357,61 @@ describe('BorrowAddDialog', () => {
     const rows = within(table).getAllByRole('row').slice(1);
     expect(rows).toHaveLength(1);
     expect(within(table).queryByText(/Another project|PRJ-/)).not.toBeInTheDocument();
+  });
+
+  // BORROW-LOCATION-ONLY fix round 2, R1: with the switch ON two NAMED step-2 donors at one
+  // bin are two choices, and both stay listed and selectable.
+  it('keeps two donor-named order_borrow rows at one bin apart (switch on)', () => {
+    const named = (core: string, so: string, lineNo: number): BorrowCandidate => ({
+      ...OTHER_PROJECT,
+      source: 'other_location',
+      rung: 'order_borrow',
+      donor_project_ref: null,
+      donor_project_id: null,
+      donor_core_line_id: core,
+      donor_so_number: so,
+      donor_line_no: lineNo,
+    });
+    renderDialog([named('core-1', 'SO371334', 2), named('core-2', 'SO371335', 7)]);
+
+    const rows = within(screen.getByTestId('borrow-donor-table')).getAllByRole('row').slice(1);
+    expect(rows).toHaveLength(2);
+    fireEvent.click(within(rows[1]).getByRole('radio'));
+    expect(within(rows[1]).getByRole('radio')).toBeChecked();
+  });
+
+  // R2: the merged nameless row is the BIN, so it offers the bin's summed free stock and
+  // splits an Add across its lines in the server's order, each within its own free.
+  it('offers the summed free of a merged bin and splits an Add of 6 into 4 + 2', () => {
+    const line = (core: string): BorrowCandidate => ({
+      ...OTHER_PROJECT,
+      source: 'other_location',
+      rung: 'order_borrow',
+      donor_project_ref: null,
+      donor_project_id: null,
+      donor_core_line_id: core,
+      donor_so_number: null,
+      free_qty: '4',
+      need_qty: null,
+    });
+    renderDialog([line('core-a'), line('core-b')]);
+
+    expect(screen.getByLabelText('Quantity')).toHaveValue(8);
+    fireEvent.change(screen.getByLabelText('Quantity'), { target: { value: '6' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add the borrow' }));
+
+    expect(onAdd).not.toHaveBeenCalled();
+    expect(onAddMany).toHaveBeenCalledTimes(1);
+    const [parts] = onAddMany.mock.calls[0];
+    expect(
+      (parts as { candidate: BorrowCandidate; qty: string }[]).map((p) => [
+        p.candidate.donor_core_line_id,
+        p.qty,
+      ]),
+    ).toEqual([
+      ['core-a', '4'],
+      ['core-b', '2'],
+    ]);
   });
 
   // -------------------------------------------------------------- AC-1.7 (fix round)

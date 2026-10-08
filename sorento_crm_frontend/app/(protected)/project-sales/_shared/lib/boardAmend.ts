@@ -752,6 +752,33 @@ export interface DecideComposition {
 }
 
 /**
+ * `needMinor` drawn across `items` in the order given, each within its own `freeOf` less what
+ * this same draw already took under its `keyOf` (BORROW-LOCATION-ONLY S6, R2). Short when the
+ * items hold less than the need; the caller decides what that means.
+ */
+export function drawAcross<T>(
+  items: readonly T[],
+  needMinor: number,
+  keyOf: (item: T) => string,
+  freeOf: (item: T) => number,
+): { item: T; minor: number }[] {
+  const taken = new Map<string, number>();
+  const parts: { item: T; minor: number }[] = [];
+  let remaining = needMinor;
+  for (const item of items) {
+    if (remaining <= 0) break;
+    const key = keyOf(item);
+    const left = Math.max(freeOf(item) - (taken.get(key) ?? 0), 0);
+    const take = Math.min(left, remaining);
+    if (take <= 0) continue;
+    taken.set(key, (taken.get(key) ?? 0) + take);
+    parts.push({ item, minor: take });
+    remaining -= take;
+  }
+  return parts;
+}
+
+/**
  * R9/AC-10: several ticked rows can contest the SAME pile (one location, one donor order, one
  * donor location) - the list's current sort order claims it, top first. `claimed` is that
  * running tally, in minor units, kept by the CALLER (the strip's save loop walks ticked rows in
@@ -875,29 +902,23 @@ export function decideComposition(
     // BORROW-LOCATION-ONLY S6: a location borrow names no donor, so the location's lines
     // are summed in the server's order - one row per line, each within what that line has
     // left. The server still checks each line on its own, so no row over-claims one.
-    const taken = new Map<string, number>();
-    const rows: { candidate: BorrowCandidate; minor: number }[] = [];
-    let remaining = openMinor;
-    for (const candidate of candidates) {
-      if (remaining <= 0) break;
-      const key = claimKeyOf(candidate);
-      const left = Math.max(
-        toMinor(candidate.free_qty) - (claimed?.get(key) ?? 0) - (taken.get(key) ?? 0),
-        0,
-      );
-      const take = Math.min(left, remaining);
-      if (take <= 0) continue;
-      taken.set(key, (taken.get(key) ?? 0) + take);
-      rows.push({ candidate, minor: take });
-      remaining -= take;
+    const rows = drawAcross(
+      candidates,
+      openMinor,
+      claimKeyOf,
+      (candidate) => toMinor(candidate.free_qty) - (claimed?.get(claimKeyOf(candidate)) ?? 0),
+    );
+    const drawn = rows.reduce((sum, row) => sum + row.minor, 0);
+    if (drawn < openMinor) {
+      return { skip: `only ${fromMinor(drawn)} free at ${donorLabel}` };
     }
-    if (remaining > 0) {
-      return { skip: `only ${fromMinor(openMinor - remaining)} free at ${donorLabel}` };
+    for (const { item, minor } of rows) {
+      const key = claimKeyOf(item);
+      claimed?.set(key, (claimed.get(key) ?? 0) + minor);
     }
-    for (const [key, minor] of taken) claimed?.set(key, (claimed.get(key) ?? 0) + minor);
     return {
       reserve: [],
-      borrow: rows.map(({ candidate, minor }) => ({
+      borrow: rows.map(({ item: candidate, minor }) => ({
         source: candidate.source,
         warehouse_id: candidate.warehouse_id,
         warehouse_code: candidate.warehouse_code,
