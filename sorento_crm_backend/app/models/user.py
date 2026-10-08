@@ -612,6 +612,11 @@ class SystemSetting(Base):
     # the backend validator the way the media wait is; 40 sits under the chatbot's own 45 s
     # queue-wait budget.
     low_stock_sync_wait_seconds = Column(Integer, nullable=False, server_default="40", default=40)
+    # The chatbot report engine's cap (`report-ask`, lane REPORT-RATE-LIMIT-CONFIG): at most
+    # this many reports per contact in the window below, read per request so a change on the
+    # Chatbot media settings page applies on the next report. 0 means no limit.
+    report_ask_rate_limit = Column(Integer, nullable=False, server_default="10", default=10)
+    report_ask_rate_window_minutes = Column(Integer, nullable=False, server_default="10", default=10)
     # R1 (H1): the corrected `check_stock` vocabulary makes two lanes reachable that
     # have been dead by typo since they were written (0/150 live fixtures). Turning them
     # on is therefore a DATA change with a test, not a surprise on deploy. Default off.

@@ -161,6 +161,9 @@ class SystemSettingUpdate(BaseModel):
     # The same 5..90 band the media wait carries, and for the same reason: a turn held
     # longer than the chatbot's own queue-wait budget is a turn nobody is waiting on.
     low_stock_sync_wait_seconds: Optional[int] = Field(None, ge=5, le=90)
+    # The chatbot report engine's cap (lane REPORT-RATE-LIMIT-CONFIG). 0 = no limit.
+    report_ask_rate_limit: Optional[int] = Field(None, ge=0, le=1000)
+    report_ask_rate_window_minutes: Optional[int] = Field(None, ge=1, le=1440)
     chatbot_stock_denial_enabled: Optional[bool] = None
     # PLAN-local-buy-routing-toggle.md: local-supplier Buy routing is a switch, off
     # by default. Off means the rule does not run at all (no pill, every Buy raises).
@@ -428,6 +431,8 @@ async def get_settings(
                 # PLAN-low-stock-report S5 (AC-43/AC-48): in BOTH manual builders, or the
                 # System Settings screen never sees the column at all.
                 "low_stock_sync_wait_seconds": getattr(settings, "low_stock_sync_wait_seconds", 40) if settings else None,
+                "report_ask_rate_limit": getattr(settings, "report_ask_rate_limit", 10) if settings else None,
+                "report_ask_rate_window_minutes": getattr(settings, "report_ask_rate_window_minutes", 10) if settings else None,
                 "chatbot_stock_denial_enabled": getattr(settings, "chatbot_stock_denial_enabled", False) if settings else None,
                 # PLAN-local-buy-routing-toggle.md: BOTH manual builders, or the setting
                 # never reaches the General settings screen at all.

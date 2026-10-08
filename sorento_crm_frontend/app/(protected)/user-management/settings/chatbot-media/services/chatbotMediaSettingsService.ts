@@ -101,6 +101,13 @@ export interface ChatbotMediaSettings {
    * column, exactly like every `media_*` key beside it.
    */
   low_stock_sync_wait_seconds: number;
+  /**
+   * The chatbot report engine's cap: at most this many reports per contact in the window
+   * below (lane REPORT-RATE-LIMIT-CONFIG). 0 means no limit. Range 0-1000.
+   */
+  report_ask_rate_limit: number;
+  /** The report cap's window in minutes. Range 1-1440. */
+  report_ask_rate_window_minutes: number;
 }
 
 const MEDIA_KEYS: (keyof ChatbotMediaSettings)[] = [
@@ -122,6 +129,8 @@ const MEDIA_KEYS: (keyof ChatbotMediaSettings)[] = [
   'media_extraction_timeout_seconds',
   'media_max_entities',
   'low_stock_sync_wait_seconds',
+  'report_ask_rate_limit',
+  'report_ask_rate_window_minutes',
 ];
 
 /** The plan's section 2.4 defaults, used when the settings row predates the columns. */
@@ -147,6 +156,8 @@ const FALLBACKS: ChatbotMediaSettings = {
   media_extraction_timeout_seconds: 45,
   media_max_entities: 10,
   low_stock_sync_wait_seconds: 40,
+  report_ask_rate_limit: 10,
+  report_ask_rate_window_minutes: 10,
 };
 
 /**
