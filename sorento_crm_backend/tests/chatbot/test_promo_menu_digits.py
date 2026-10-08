@@ -245,3 +245,77 @@ def test_a_promotion_returned_under_two_companies_is_listed_once(session_factory
     )
     reply = _turn(session_factory, monkeypatch, services, qf, "promo for ZZTFLY1", "zzt-md-d")
     assert reply.count("ZZT MOCHA A3 FLYER") == 1, reply
+
+
+@pytest.mark.parametrize("typed", ["basin cabinet", "3"])
+def test_the_which_answer_read_as_a_position_still_gets_the_stamped_menu(session_factory, monkeypatch, typed):
+    """Live flow 2 turn 2: the parser answers the which-question with reference_positions [3] (no
+    entities), so the resolver does not run. The reply is the stamped menu for basin cabinet by
+    brand Sorento; "2" then picks Dealer."""
+    brand_id = _world(session_factory)
+    captured = _mcp(monkeypatch, session_factory)
+    services = _brand_services(brand_id)
+    _turn(session_factory, monkeypatch, services, _ask_qf("cabinet", brand="Sorento"), "Pls send sorento cabinet promotion", f"zzt-md-pos-ask-{typed[:1]}")
+    menu = _turn(session_factory, monkeypatch, services, _pick_qf(3), typed, f"zzt-md-pos-menu-{typed[:1]}")
+    lines = menu.splitlines()
+    assert lines[0].startswith("Which access level do you need for basin cabinet"), menu
+    assert "1. Office - no promotion" in lines and "2. Dealer - has promotion" in lines and "3. End user - no promotion" in lines, menu
+    probes = [a for name, a in captured if name == PROMO_TOOL]
+    assert probes and all(a.get("brand_ids") == [brand_id] and [t.lower() for t in a.get("scope_terms") or []] == ["basin cabinet"] for a in probes), probes
+    n = len(captured)
+    reply = _turn(session_factory, monkeypatch, services, _pick_qf(2), "2", f"zzt-md-pos-pick-{typed[:1]}")
+    fetch = [a for name, a in captured[n:] if name == PROMO_TOOL]
+    assert fetch and all(a.get("access_levels") == ["Sorento Dealer"] for a in fetch), captured[n:]
+    assert "ZZT PROMO BASIN_CABINET" in reply, reply
+
+
+def test_the_live_which_answer_shape_gets_the_stamped_menu(session_factory, monkeypatch):
+    """Live flow 2 turn 2 exactly: category_pick pending (Side/Tall/Basin cabinet); the parser
+    answers {entities [category "basin cabinet" with canonical_code "basin cabinet"],
+    reference_positions [3], reference_target "result", open_question_answer pick [3]}; the
+    contact is multi-level (Sorento, Mocha and Cabana dealer, office, end user). The resolver is the REAL route."""
+    brand_id = _world(session_factory)
+    captured = _mcp(monkeypatch, session_factory)
+    names = ["Sorento Office", "Sorento Dealer", "End User", "Mocha Dealer", "Cabana Dealer"]
+
+    from app.services.chatbot.lanes.business.services import _resolve_entity
+
+    # The REAL resolver route (`resolve_reference_post`) over the seeded DB, as the engine calls it.
+    services = ResolveGateServices(
+        access_types=lambda **_: [{"name": n} for n in names],
+        resolve_entity=_resolve_entity(session_factory()), probe=lambda **_: None,
+    )
+    which = _turn(session_factory, monkeypatch, services, _ask_qf("cabinet", brand="Sorento"), "Pls send sorento cabinet promotion", "zzt-md-live-ask")
+    assert which.splitlines()[0] == "Which cabinet do you mean?", which
+    answer = _parser_output(
+        message_type="business_query", domain_hint="promotion", intent_hint="check_promotion", access_levels=[],
+        promotion_kind=None, entity_op="replace_combine", reference_positions=[3], reference_target="result",
+        entities=[{"raw": "basin cabinet", "hint": "category", "canonical_code": "basin cabinet", "confident": True, "current_message": True}],
+        open_question_answer={"mode": "pick", "items": [], "picked": [3], "qty_for_all": None},
+    )
+    menu = _turn(session_factory, monkeypatch, services, answer, "basin cabinet", "zzt-md-live-answer")
+    assert menu.startswith("Which access level do you need for basin cabinet"), menu
+    lines = [l for l in menu.splitlines() if l[:2] in ("1.", "2.", "3.", "4.", "5.")]
+    assert lines and all(l.endswith("- has promotion") or l.endswith("- no promotion") for l in lines), menu
+    probes = [a for name, a in captured if name == PROMO_TOOL]
+    assert probes and all(a.get("brand_ids") == [brand_id] and [t.lower() for t in a.get("scope_terms") or []] == ["basin cabinet"] for a in probes), probes
+
+
+def test_the_resolver_route_with_an_empty_query_and_grounded_specs_does_not_raise(session_factory):
+    """On the pick turn the engine sends the resolver query "" with the grounded spec
+    (furniture_type basin_cabinet) in `extracted_specs` (the body captured live, same fields):
+    the in-process route must answer, never raise (a raise leaves the turn without a resolver
+    payload and the old unstamped menu shows)."""
+    from app.services.chatbot.lanes.business.services import _resolve_entity
+
+    _world(session_factory)
+    body = {
+        "query": "", "match_mode": "and", "tokens": [], "raw_tokens": [], "allowed_entity_types": [],
+        "access_levels": ["Sorento Office", "Sorento Dealer", "End User"], "domain": "promotion",
+        "fallback_to_all_types": True, "limit": 50, "spec_fallback": True, "exact_match": True,
+        "understand_phrase": True, "hidden_spec_keys": [], "contact_id": "900000008", "space_id": None,
+        "extracted_specs": [{"key": "furniture_type", "value": "basin_cabinet", "evidence": "basin cabinet", "grounded": True}],
+        "require": {"promotion": True}, "predicate_words": ["promotion"], "set_list_max": 50,
+    }
+    out = _resolve_entity(session_factory())(body)
+    assert isinstance(out, dict), out
