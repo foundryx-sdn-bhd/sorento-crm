@@ -8,8 +8,8 @@ a discontinued product, so a LIVE product's answer said nothing at all.
 Rules pinned here (key on the parsed field only, never on user text):
   R1 a product answer whose `requested_attributes` carries "discontinued" says the status
      of EVERY product, both ways. Owner rulings 8 Oct: the status alone is answered by
-     `CODE: Not discontinued.` / `CODE: Discontinued.` lines only, no card (Q1 a, Q4 a);
-     with another property asked, the card plus `*Discontinued:* Yes / No` (Q1 a); a
+     `CODE: ✅ Not discontinued.` / `CODE: ⚠️ Discontinued.` lines only, no card (Q1 a, Q4 a);
+     with another property asked, the card plus `*Discontinued:* ⚠️ Yes / No` (Q1 a); a
      discontinued code names its stored alternatives (Q5 a, #1533's `alternatives` key);
      translated for ms / zh;
   R3 an availability-only (dealer) contact's discontinued question is never rewritten into
@@ -105,10 +105,10 @@ def _body(reply: str) -> str:
 def test_the_status_alone_is_answered_by_the_status_line_only():
     """Q1 (a) / Q4 (a): no intro, no numbering, no card."""
     assert _body(_answer(_product("SRTWT9613-BL", discontinued=False), attrs=["discontinued"])) == (
-        "SRTWT9613-BL: Not discontinued."
+        "SRTWT9613-BL: ✅ Not discontinued."
     )
     assert _body(_answer(_product("AP8050A", discontinued=True), attrs=["discontinued"])) == (
-        "AP8050A: Discontinued."
+        "AP8050A: ⚠️ Discontinued."
     )
 
 
@@ -120,9 +120,9 @@ def test_a_mixed_family_is_one_line_per_code_in_the_tool_order():
         attrs=["discontinued"],
     )
     assert _body(reply) == (
-        "SRTWC286-SH-200: Not discontinued.\n\n"
-        "SRTWC286-SH-NEW-P: Not discontinued.\n\n"
-        "SRTWC286-SH-P: Discontinued."
+        "SRTWC286-SH-200: ✅ Not discontinued.\n\n"
+        "SRTWC286-SH-NEW-P: ✅ Not discontinued.\n\n"
+        "SRTWC286-SH-P: ⚠️ Discontinued."
     )
 
 
@@ -132,7 +132,7 @@ def test_the_same_code_from_two_companies_is_said_once():
         _product("SRTWT9613-BL", discontinued=False),
         attrs=["discontinued"],
     )
-    assert _body(reply) == "SRTWT9613-BL: Not discontinued."
+    assert _body(reply) == "SRTWT9613-BL: ✅ Not discontinued."
 
 
 def test_a_discontinued_code_names_its_alternative():
@@ -141,7 +141,7 @@ def test_a_discontinued_code_names_its_alternative():
         _product("SRTBF11821", discontinued=True, alternatives=[{"product_code": "SRTBF11821-NEW"}]),
         attrs=["discontinued"],
     )
-    assert _body(reply) == "SRTBF11821: Discontinued.\nAlternative: SRTBF11821-NEW"
+    assert _body(reply) == "SRTBF11821: ⚠️ Discontinued.\nAlternative: SRTBF11821-NEW"
 
 
 def test_a_live_code_never_names_an_alternative():
@@ -149,7 +149,7 @@ def test_a_live_code_never_names_an_alternative():
         _product("SRTWC286-SH-200", discontinued=False, alternatives=["SRTWC286-SH-NEW-200"]),
         attrs=["discontinued"],
     )
-    assert _body(reply) == "SRTWC286-SH-200: Not discontinued."
+    assert _body(reply) == "SRTWC286-SH-200: ✅ Not discontinued."
 
 
 def test_with_another_property_the_card_gains_a_discontinued_field_line():
@@ -163,8 +163,8 @@ def test_with_another_property_the_card_gains_a_discontinued_field_line():
     assert "*List Price:* MYR 710.00" in reply
     assert "1. *Product Code:* SRTWT9613-BL" in reply
     live, gone = reply.split("2. ")
-    assert live.rstrip().endswith("*Dimensions:* Not defined\n*Discontinued:* No")
-    assert "*Dimensions:* Not defined\n*Discontinued:* Yes\nAlternative: SRTBF11821-NEW" in gone
+    assert live.rstrip().endswith("*Dimensions:* Not defined\n*Discontinued:* ✅ No")
+    assert "*Dimensions:* Not defined\n*Discontinued:* ⚠️ Yes\nAlternative: SRTBF11821-NEW" in gone
     assert "PRODUCT DISCONTINUED" not in reply
 
 
@@ -181,11 +181,11 @@ def test_the_status_lines_translate_for_malay_and_chinese():
     ms = Localizer("ms", label_catalog.defaults("ms"))
     zh = Localizer("zh", label_catalog.defaults("zh"))
     assert ms.reply(only).strip() == (
-        "SRTWT9613-BL: Tidak dihentikan.\n\nSRTBF11821: Dihentikan.\nAlternatif: SRTBF11821-NEW"
+        "SRTWT9613-BL: ✅ Tidak dihentikan.\n\nSRTBF11821: ⚠️ Dihentikan.\nAlternatif: SRTBF11821-NEW"
     )
-    assert zh.reply(only).strip() == "SRTWT9613-BL：未停产。\n\nSRTBF11821：已停产。\n替代型号: SRTBF11821-NEW"
-    assert "*Dihentikan:* Ya" in ms.reply(card)
-    assert "*已停产:* 是" in zh.reply(card)
+    assert zh.reply(only).strip() == "SRTWT9613-BL：✅ 未停产。\n\nSRTBF11821：⚠️ 已停产。\n替代型号: SRTBF11821-NEW"
+    assert "*Dihentikan:* ⚠️ Ya" in ms.reply(card)
+    assert "*已停产:* ⚠️ 是" in zh.reply(card)
 
 
 def test_a_code_whose_companies_disagree_names_the_company_on_each_line():
@@ -197,20 +197,20 @@ def test_a_code_whose_companies_disagree_names_the_company_on_each_line():
         _product("X1", discontinued=True, company="Mocha"),
         attrs=["discontinued"],
     )
-    assert _body(reply) == "X1 (Sorento): Not discontinued.\n\nX1 (Mocha): Discontinued."
+    assert _body(reply) == "X1 (Sorento): ✅ Not discontinued.\n\nX1 (Mocha): ⚠️ Discontinued."
 
 
 def test_disagreeing_rows_without_a_company_each_say_it_on_their_own_card():
     """Reviewer round 2: with no Company field to tell the rows apart, each row prints its
-    card with `*Discontinued:* Yes / No`, never two bare contradicting lines."""
+    card with `*Discontinued:* ⚠️ Yes / No`, never two bare contradicting lines."""
     reply = _answer(
         _product("X1", discontinued=False),
         _product("X1", discontinued=True),
         attrs=["discontinued"],
     )
-    assert "X1: Not discontinued." not in reply and "X1: Discontinued." not in reply
+    assert "X1: ✅ Not discontinued." not in reply and "X1: ⚠️ Discontinued." not in reply
     assert reply.count("*Product Code:* X1") == 2
-    assert "*Discontinued:* No" in reply and "*Discontinued:* Yes" in reply
+    assert "*Discontinued:* ✅ No" in reply and "*Discontinued:* ⚠️ Yes" in reply
 
 
 def test_one_disagreeing_row_without_a_company_puts_every_row_of_that_code_on_its_card():
@@ -224,7 +224,7 @@ def test_one_disagreeing_row_without_a_company_puts_every_row_of_that_code_on_it
     )
     assert "X1 (Sorento)" not in reply
     assert reply.count("*Product Code:* X1") == 2
-    assert "X2: Not discontinued." in reply
+    assert "X2: ✅ Not discontinued." in reply
 
 
 def test_companies_that_agree_are_one_line_without_a_company():
@@ -233,7 +233,7 @@ def test_companies_that_agree_are_one_line_without_a_company():
         _product("X1", discontinued=True, company="Mocha"),
         attrs=["discontinued"],
     )
-    assert _body(reply) == "X1: Discontinued."
+    assert _body(reply) == "X1: ⚠️ Discontinued."
 
 
 def test_an_unknown_status_is_never_said_either_way():
@@ -249,7 +249,7 @@ def test_alternatives_are_said_once_and_never_the_code_itself():
         _product("X1", discontinued=True, alternatives=["X1", "X1-NEW", {"product_code": "X1-NEW"}]),
         attrs=["discontinued"],
     )
-    assert _body(reply) == "X1: Discontinued.\nAlternative: X1-NEW"
+    assert _body(reply) == "X1: ⚠️ Discontinued.\nAlternative: X1-NEW"
 
 
 def test_the_data_freshness_footer_stays_under_the_status_lines():
@@ -257,7 +257,7 @@ def test_the_data_freshness_footer_stays_under_the_status_lines():
     envelope = _envelope(_product("SRTWT9613-BL", discontinued=False))
     envelope["last_updated_at"] = "2026-10-03T18:42:40"
     out = fetch.output_structurer(envelope, {"semantic_input": {"requested_attributes": ["discontinued"]}})
-    assert out["response"].startswith("SRTWT9613-BL: Not discontinued.\n\n_Data last updated: ")
+    assert out["response"].startswith("SRTWT9613-BL: ✅ Not discontinued.\n\n_Data last updated: ")
 
 
 def test_a_stock_reply_is_untouched_by_a_discontinued_ask():
