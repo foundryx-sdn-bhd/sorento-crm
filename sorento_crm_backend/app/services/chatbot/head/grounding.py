@@ -709,10 +709,16 @@ def ground(
         hint = str(entity.get("hint") or "").strip().lower()
         raw = str(entity.get("raw") or "").strip()
         canonical = str(entity.get("canonical_code") or "").strip()
-        if hint in _CLASS_HINTS and canonical and _words(canonical) != _words(raw) and _names_a_type(db, canonical, vocab):
+        if (
+            hint in _CLASS_HINTS
+            and canonical
+            and _words(canonical) != _words(raw)
+            and not _names_a_type(db, raw, vocab)
+            and _names_a_type(db, canonical, vocab)
+        ):
             # The parser hinted a class and named the catalogue's own name for what the
-            # customer typed ("seat cover" -> "toilet seat"): that name grounds, read like any
-            # typed one. A canonical that names nothing leaves the raw to ground as before.
+            # customer typed ("seat cover" -> "toilet seat"): when the typed words name no type
+            # themselves, that name grounds, read like any typed one. Otherwise the raw grounds.
             notes.append({"from": hint, "raw": raw, "to": canonical})
             entity = {**entity, "raw": canonical, "canonical_code": None}
             raw = canonical
