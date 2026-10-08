@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest';
 import {
   COLOURS,
   LABELS,
+  SHORT_LABELS,
   boardOrderInquiryWord,
   cellSupply,
   contributionSupply,
@@ -213,7 +214,11 @@ describe('rowOf reads the rung, never the warehouse code', () => {
     expect(LABELS.shared).toBe('Use BRW');
     expect(LABELS.own).toBe('Use own location');
     expect(LABELS.borrow_order).toBe('Borrow from another order');
-    expect(LABELS.borrow_other).toBe('Borrow other location');
+    // Owner hand test, 9 Oct 2026: "just called it borrow cause it is not just other
+    // location, own location also can borrow". The order borrow keeps its own words.
+    expect(LABELS.borrow_other).toBe('Borrow');
+    expect(SHORT_LABELS.borrow_other).toBe('Borrow');
+    expect(SHORT_LABELS.borrow_order).toBe('Borrow (order)');
     // The two words of 30 Aug 2026. "Use", because the group's own incoming document is
     // taken free and owes nobody anything; "Borrow", because a later order's document is
     // taken from somebody and raises an order-back.
@@ -1540,4 +1545,15 @@ describe('rowOf: a borrow that names no donor is a location borrow (BORROW-LOCAT
       ).toBe('borrow_order');
     },
   );
+});
+
+describe('the Decided cell reads a location borrow as plain Borrow (owner, 9 Oct 2026)', () => {
+  it('writes "Borrow 6 (BRW-BB)", not "Borrow (other) 6 (BRW-BB)"', () => {
+    expect(
+      describeSupply(
+        [{ kind: 'borrow', rung: 'order_borrow', qty: '6', location: 'BRW-BB', donor_so_number: null }],
+        'BRW-IR',
+      ),
+    ).toBe('Borrow 6 (BRW-BB)');
+  });
 });
