@@ -23,12 +23,49 @@ from app.services.chatbot.lanes.business.services import ResolveGateServices
 from app.services.company_scope import DEFAULT_COMPANY_ID
 from tests._mc_lookup_seed import product
 from tests.chatbot.test_outstanding_lane import _run_turn, _seed_contact
-from tests.chatbot.test_promo_kind_paths import _mcp
 from tests.chatbot.test_promo_kind_subject import PROMO_TOOL, _promo
 from tests.chatbot.test_promo_subject_filter import _class, _pick_qf
 from tests.chatbot.test_engine import _parser_output
 
 LEVELS = ["Sorento Office", "Sorento Dealer", "End User"]
+
+
+def _mcp(monkeypatch, session_factory):
+    """`test_promo_kind_paths._mcp`, but the route body goes through the REAL MCP presenter
+    (the live `view=render` shape), so items carry their titles."""
+    import json
+
+    from fastapi.testclient import TestClient
+
+    from app.dependencies import get_current_user, get_current_user_or_api_key, get_db
+    from app.services.company_scope_resolver import apply_company_scope
+    from app.services.user_service import UserPermissionService
+    from tests.chatbot import test_outstanding_lane as lane_harness
+
+    monkeypatch.setattr(UserPermissionService, "get_user_role_slugs", lambda self, uid: {"superadmin"})
+    user = {"id": "130c548f-048f-53b2-97a6-3a54676bea77", "email": "u@test.com", "auth_method": "api_key"}
+
+    def _db():
+        yield session_factory()
+
+    app.dependency_overrides[get_db] = _db
+    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_current_user_or_api_key] = lambda: user
+    app.dependency_overrides[apply_company_scope] = lambda: None
+    client = TestClient(app)
+    captured: list[tuple[str, dict[str, Any]]] = []
+    forwarded = ("access_levels", "promotion_types", "brand_ids", "scope_terms", "product_ids")
+
+    def _call(name: str, args: dict[str, Any]) -> Any:
+        captured.append((name, dict(args)))
+        params: dict[str, Any] = {k: args[k] for k in forwarded if args.get(k)}
+        params["serving_policy"] = "true"
+        res = client.get("/api/v1/marketing/promotions/", params=params)
+        assert res.status_code == 200, res.text
+        return lane_harness._present_response()(name, json.dumps(res.json()))
+
+    monkeypatch.setattr(lane_harness, "_capturing_mcp", lambda response=None: (_call, captured))
+    return captured
 
 
 @pytest.fixture(autouse=True)
