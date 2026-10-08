@@ -8,7 +8,7 @@ already edited by hand (owner, 8 Oct 2026). The insert helper is repeated, not i
 migration module must not depend on another migration's module staying importable.
 
 Revision ID: report_drill_0001_prompt
-Revises: report_engine_0001_prompt
+Revises: rrl_0001_report_rate_limit
 """
 import logging
 
@@ -19,7 +19,7 @@ from app.models.ai_prompt import AIPromptLabel, AIPromptVersion
 from app.services.ai_prompt_registry import PROMPT_KEYS
 
 revision = "report_drill_0001_prompt"
-down_revision = "report_engine_0001_prompt"
+down_revision = "rrl_0001_report_rate_limit"
 branch_labels = None
 depends_on = None
 
