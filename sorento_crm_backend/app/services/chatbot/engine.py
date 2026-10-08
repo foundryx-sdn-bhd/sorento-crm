@@ -426,6 +426,12 @@ def _as_a_stock_ask_by_its_own_words(verdict: dict[str, Any], message: str) -> d
     text = str(message or "")
     if not incoming or _ETA_WORDS.search(text):
         return verdict
+    # DISCONTINUED-ASK (8 Oct 2026): "mean discontinued model?" quoting "SRTWT9613-BL x 5:
+    # ..." may carry the quoted 5 onto the entity; the parser's own `requested_attributes`
+    # says it is a status question, so it stays a product question (a parsed field, not
+    # the user's words).
+    if any(str(a).strip().lower() == "discontinued" for a in verdict.get("requested_attributes") or []):
+        return verdict
     codes = {
         str(e.get(k)).strip()
         for e in verdict.get("entities") or []

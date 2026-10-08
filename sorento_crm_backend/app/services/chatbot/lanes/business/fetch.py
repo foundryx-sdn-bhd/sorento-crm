@@ -1821,6 +1821,47 @@ def _names_a_base_property(norm: str) -> bool:
     return False
 
 
+def _asks_discontinued(req_attrs: list[Any]) -> bool:
+    """DISCONTINUED-ASK: the parser's closed `requested_attributes` vocabulary carries
+    "discontinued" for a status question (`chatbot_parser_prompt.py`, REQUESTED ATTRIBUTES).
+    A parsed field, compared as emitted; nothing here reads the user's message."""
+    return any(_normalize_spec_word(a) == "discontinued" for a in req_attrs)
+
+
+def _item_code(it: Any) -> str:
+    """A product item's code: its Product Code field, else its title (the presenter sets
+    both to the code, `presenters._products`)."""
+    for f in jsc.get(it, "fields") or []:
+        if jsc.js_string(jsc.get(f, "key") or "") == "product_code" or jsc.get(f, "label") == "Product Code":
+            code = jsc.nullish_str(jsc.get(f, "value")).strip()
+            if code:
+                return code
+    return jsc.nullish_str(jsc.get(it, "title")).strip()
+
+
+def _discontinued_status_lines(loc: Any, it: Any, *, card: str | None = None) -> str:
+    """The item's status from its own `flags.discontinued` (`products.is_discontinued`,
+    the field the marker always read). With no `card`: `<CODE>: Discontinued.` or
+    `<CODE>: Not discontinued.` (owner Q4 a). With the item's `card` text: that card plus
+    `*Discontinued:* Yes` / `No` (owner Q1 a). A discontinued item then names each stored
+    alternative the presenter put on it (`alternatives`, PRODUCT-ALTERNATIVES #1533's
+    link): one `Alternative: <code>` line each, none when the key is absent."""
+    gone = jsc.truthy(jsc.get(jsc.get(it, "flags"), "discontinued"))
+    if card is None:
+        code = _item_code(it)
+        line = loc.text(f"{code}: Discontinued." if gone else f"{code}: Not discontinued.")
+    else:
+        line = f"{card}\n*{loc.text('Discontinued')}:* {loc.text('Yes' if gone else 'No')}"
+    if gone:
+        for alt in jsc.array(jsc.get(it, "alternatives")):
+            alt_code = (
+                jsc.nullish_str(jsc.get(alt, "product_code")) if isinstance(alt, dict) else jsc.nullish_str(alt)
+            ).strip()
+            if alt_code:
+                line += f"\n{loc.text('Alternative')}: {alt_code}"
+    return line
+
+
 _MISS_CODES_CAP = 5
 
 
@@ -3071,7 +3112,14 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
         and isinstance(e.get("items"), list)
         and len(e["items"])
     )
-    plain_lines = stock_availability_answered or dealer_incoming
+    # DISCONTINUED-ASK (owner, 8 Oct 2026, "9613-bl is discon or?"): the parser reads a
+    # discontinued question as `requested_attributes` "discontinued"; the card alone answered
+    # it only for a discontinued product (the marker), so a live one got silence. Every
+    # product now says its status both ways, and an ask for the status ALONE is answered by
+    # those lines only, with no card. Keyed on the parsed field, never on the user's words.
+    status_ask = jsc.js_string(e.get("result_type") or "") == "products" and _asks_discontinued(req_attrs)
+    status_only = status_ask and all(_asks_discontinued([a]) for a in req_attrs)
+    plain_lines = stock_availability_answered or dealer_incoming or status_only
 
     msg = (
         ""
@@ -3145,6 +3193,10 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
         # numbered (plan sample (g) shows plain lines, not a numbered list).
         line = field_lines if not numbered else f"{position}. {field_lines}"
         flags = jsc.get(it, "flags")
+        if status_ask:
+            # Q1 (a): the status alone is the status line; beside another property it is a
+            # field of the card, in place of the marker it supersedes.
+            return _discontinued_status_lines(loc, it, card=None if status_only else line)
         if jsc.truthy(flags) and jsc.truthy(jsc.get(flags, "discontinued")):
             line += f"\n⚠️  *({loc.text('PRODUCT DISCONTINUED')})*"
         if jsc.truthy(flags) and jsc.truthy(jsc.get(flags, "expired")):
@@ -3210,10 +3262,17 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
         question = jsc.js_string(e.get("intro") or "").strip()
         if question:
             msg += question + "\n\n"
+    printed_status: set[str] = set()
     for i, it in enumerate(
         [] if (qs_render or groups_render or stock_ask_render) else (e.get("items") or [])
     ):
-        msg += _item_line(i + 1 + set_row_offset, it, numbered=not plain_lines) + "\n\n"
+        item_text = _item_line(i + 1 + set_row_offset, it, numbered=not plain_lines)
+        if status_only:
+            # The same code in two companies is one answer, said once.
+            if item_text in printed_status:
+                continue
+            printed_status.add(item_text)
+        msg += item_text + "\n\n"
     if dealer_incoming and jsc.truthy(e.get("closing")):
         # The presenter's dealer closing is the refer line (`presenters.py`, `closing`);
         # printed through `turn/refer.py` so the turn is marked for Customer asks

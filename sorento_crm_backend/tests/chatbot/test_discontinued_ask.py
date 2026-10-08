@@ -179,7 +179,7 @@ def test_the_status_lines_translate_for_malay_and_chinese():
     assert ms.reply(only).strip() == (
         "SRTWT9613-BL: Tidak dihentikan.\n\nSRTBF11821: Dihentikan.\nAlternatif: SRTBF11821-NEW"
     )
-    assert zh.reply(only).strip() == "SRTWT9613-BL：未停产。\n\nSRTBF11821：已停产。\n替代型号：SRTBF11821-NEW"
+    assert zh.reply(only).strip() == "SRTWT9613-BL：未停产。\n\nSRTBF11821：已停产。\n替代型号: SRTBF11821-NEW"
     assert "*Dihentikan:* Ya" in ms.reply(card)
     assert "*已停产:* 是" in zh.reply(card)
 
