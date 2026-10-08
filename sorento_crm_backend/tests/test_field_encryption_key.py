@@ -174,3 +174,41 @@ def test_backfill_apply_refuses_without_field_encryption_key(monkeypatch):
     with blank_session() as db:
         with pytest.raises(RuntimeError, match="FIELD_ENCRYPTION_KEY"):
             backfill(db, apply=True)
+
+
+@pytest.mark.parametrize("environment", ["production", "staging", "", None])
+def test_boot_refuses_a_non_dev_environment_without_field_encryption_key(monkeypatch, environment):
+    """Unset in prod would silently keep encrypting under the leaked JWT-derived key, and
+    the planned JWT_SECRET rotation would then destroy those secrets."""
+    from app.utils.field_encryption import assert_field_encryption_ready
+
+    monkeypatch.setattr(app_settings, "field_encryption_key", "")
+    with pytest.raises(RuntimeError, match="FIELD_ENCRYPTION_KEY"):
+        assert_field_encryption_ready(environment)
+
+
+@pytest.mark.parametrize("environment", ["development", "dev", "local", "test", "ci", " Development "])
+def test_boot_allows_dev_environments_without_field_encryption_key(monkeypatch, environment):
+    from app.utils.field_encryption import assert_field_encryption_ready
+
+    monkeypatch.setattr(app_settings, "field_encryption_key", "")
+    assert_field_encryption_ready(environment)
+
+
+def test_boot_accepts_production_with_a_key_and_rejects_a_malformed_one(monkeypatch):
+    """A typo must crash at boot, not read every stored secret as unset at runtime."""
+    from app.utils.field_encryption import assert_field_encryption_ready
+
+    assert_field_encryption_ready("production")
+    monkeypatch.setattr(app_settings, "field_encryption_key", f"{KEY_A},not-a-fernet-key")
+    with pytest.raises(ValueError, match="entry 2"):
+        assert_field_encryption_ready("development")
+
+
+def test_api_and_worker_both_run_the_boot_check():
+    """The worker never imports app.main, so a guard there alone would not cover it."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    for entrypoint in ("app/main.py", "worker.py"):
+        assert "assert_field_encryption_ready(" in (root / entrypoint).read_text(), entrypoint
