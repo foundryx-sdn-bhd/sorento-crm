@@ -109,3 +109,19 @@ def test_the_reply_to_the_unsure_question_takes_its_count_from_that_question() -
 
     at = REPORT_ASK_ADDENDUM.index("or across all customers?")
     assert "exception" in REPORT_ASK_ADDENDUM[at:at + 400], REPORT_ASK_ADDENDUM[at:at + 400]
+
+
+def test_a_different_ranked_noun_is_never_a_count_refine() -> None:
+    """Crew live pass: "top 10 customers for these sales agents" came back as a count refine of
+    the agent ranking. The addendum says so before the refine list."""
+    from app.services.chatbot_parser_prompt import REPORT_ASK_ADDENDUM
+
+    rule = REPORT_ASK_ADDENDUM.index("never a refine")
+    assert rule < REPORT_ASK_ADDENDUM.index("A message that ONLY changes:"), "the rule precedes the refine list"
+    assert '"top 10 customers for these sales agents"' in REPORT_ASK_ADDENDUM
+
+
+def test_global_only_when_said_and_doubt_is_unsure() -> None:
+    from app.services.chatbot_parser_prompt import REPORT_ASK_ADDENDUM
+
+    assert "In doubt, \"unsure\", never \"global\"" in REPORT_ASK_ADDENDUM

@@ -70,6 +70,12 @@ def _seed(db) -> dict[str, Any]:
     return {"agents": {k: v.id for k, v in agents.items()}}
 
 
+def _open_policy():
+    from app.services.stock_visibility import DEFAULT_MODE, SOURCE_DEFAULT, Policy
+
+    return Policy(mode=DEFAULT_MODE, warehouse_ids=None, source=SOURCE_DEFAULT)
+
+
 def _body(db, args: dict[str, Any]) -> dict[str, Any]:
     """The route's body for the lane's args (`order_management/report_ask.report_ask`, gates aside)."""
     from app.api.v1.order_management import report_ask as route
@@ -99,7 +105,8 @@ def _body(db, args: dict[str, Any]) -> dict[str, Any]:
     data = ask.run_ask(
         db, basis=basis, measure=args.get("measure") or "amount", group_by=group_by,
         date_from=date.fromisoformat(args["date_from"]), date_to=date.fromisoformat(args["date_to"]),
-        filters=filters, warehouse_codes=ids("warehouse_codes"), policy=None, company_grants=grants,
+        # A contact with no location limit (`policy=None` is "nobody resolved": nothing, fail closed).
+        filters=filters, warehouse_codes=ids("warehouse_codes"), policy=_open_policy(), company_grants=grants,
         sort=args.get("sort") or "desc", top_n=int(args["top_n"]) if args.get("top_n") else None,
     )
     echo = route._echo(
@@ -197,6 +204,10 @@ def live(session_factory, monkeypatch):
 
 T1 = f"top 3 salesman for {PRODUCT} september 2026, delivered, by amount"
 
+#: The parser is not deterministic: every case runs RUNS times and must pass every time (crew, 8 Oct).
+RUNS = int(os.environ.get("REPORT_DRILL_LIVE_RUNS", "3"))
+REPEAT = pytest.mark.parametrize("run", range(RUNS))
+
 
 def _turn1(live) -> None:
     text, calls = live.say(T1)
@@ -204,7 +215,8 @@ def _turn1(live) -> None:
     assert "ALICE TAN" in text and "BENNY LIM" in text, text
 
 
-def test_scoped_customers_of_these_agents(live) -> None:
+@REPEAT
+def test_scoped_customers_of_these_agents(live, run) -> None:
     _turn1(live)
     text, calls = live.say("top 10 customers for these sales agents")
     assert calls, text
@@ -217,7 +229,8 @@ def test_scoped_customers_of_these_agents(live) -> None:
     assert "PENANG CERAMIC HOUSE" not in text and "PERAK SANITARY TRADING" in text, text
 
 
-def test_global_top_10_customers_overall(live) -> None:
+@REPEAT
+def test_global_top_10_customers_overall(live, run) -> None:
     _turn1(live)
     text, calls = live.say("top 10 customers overall september 2026, delivered, by amount")
     assert calls, text
@@ -226,7 +239,8 @@ def test_global_top_10_customers_overall(live) -> None:
     assert "PENANG CERAMIC HOUSE" in text, text
 
 
-def test_unsure_top_10_customers_asks(live) -> None:
+@REPEAT
+def test_unsure_top_10_customers_asks(live, run) -> None:
     _turn1(live)
     text, calls = live.say("top 10 customers")
     assert calls == [], text
@@ -235,7 +249,8 @@ def test_unsure_top_10_customers_asks(live) -> None:
     assert calls and calls[-1].get("customer_agent_ids"), text
 
 
-def test_non_agent_drill_customers_to_their_products(live) -> None:
+@REPEAT
+def test_non_agent_drill_customers_to_their_products(live, run) -> None:
     text, calls = live.say(f"top 3 customers for {PRODUCT} september 2026, delivered, by amount")
     assert calls and calls[-1]["group_by"] == "customer", text
     text, calls = live.say("top 5 products these customers buy")

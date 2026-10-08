@@ -344,3 +344,65 @@ def test_a_message_filter_outside_the_rows_is_said(console) -> None:
                               "top 5 brands of these agents, AGENT A only")
     assert calls == [], calls
     assert text.strip() == "AGENT A is not one of the sales agents above.", text
+
+
+# ============================================================================ live pass round (crew, 8 Oct)
+
+SCOPE_Q = "Top 10 customers of the 3 sales agents above, or across all customers?"
+
+
+def _scope_reply(reading: Any, group_by: str | None = "sales_agent") -> dict[str, Any]:
+    """The parser's reading of a short reply to the scope question ("the agents above")."""
+    return _parser_output(domain_hint="order", intent_hint="check_order", order_status="sales_ranking",
+                          entities=[], group_by=group_by, top_n=None, ranking_refine=False, ranking_drill=reading,
+                          date_filter_start=None, date_filter_end=None)
+
+
+def test_a_refine_verdict_on_a_new_axis_is_the_drill(console) -> None:
+    """Live: the parser read "top 10 customers for these sales agents" as a count refine.
+    A refine never changes the axis, so a verdict naming another axis is not a refine."""
+    _turn1(console)
+    _text, calls = console.say(_drill(ranking_refine=True), "top 10 customers for these sales agents")
+    (args,) = calls
+    assert args["group_by"] == "customer" and args["customer_agent_ids"] == [AG1, AG2, "none"], args
+
+
+def test_no_reading_on_a_new_axis_after_a_ranking_asks_the_scope(console) -> None:
+    """Never a silent global: the parser gave no reading, so the bot asks (owner, 8 Oct)."""
+    _turn1(console)
+    text, calls = console.say(_drill(ranking_drill=None), "top 10 customers")
+    assert calls == [] and text.strip() == SCOPE_Q, text
+
+
+def test_the_scope_reply_runs_the_drill_with_the_held_period(console) -> None:
+    """Live: "the agents above" came back as an agent ranking. The question holds the ask;
+    the reply only says which reading."""
+    _turn1(console)
+    console.say(_drill(ranking_drill="unsure"), "top 10 customers")
+    _text, calls = console.say(_scope_reply("scoped"), "the agents above")
+    (args,) = calls
+    assert args["group_by"] == "customer" and args["top_n"] == 10, args
+    assert args["customer_agent_ids"] == [AG1, AG2, "none"] and args["product_code"] == PRODUCT_CODE, args
+    assert args["date_from"] == SEP["date_filter_start"] and args["date_to"] == SEP["date_filter_end"], args
+
+
+def test_the_scope_reply_global_is_the_fresh_ask(console) -> None:
+    _turn1(console)
+    console.say(_drill(ranking_drill="unsure"), "top 10 customers")
+    text, calls = console.say(_scope_reply("global", group_by="customer"), "across all customers")
+    assert calls == [] and text.strip() == PERIOD_Q, text
+    _text, calls = console.say(_reply(**SEP), "september")
+    _text, calls = console.say(_reply(measure="amount"), "by amount") if not calls else (_text, calls)
+    _text, calls = console.say(_reply(basis="delivered"), "delivered") if not calls else (_text, calls)
+    (args,) = calls
+    assert args["group_by"] == "customer" and args["top_n"] == 10, args
+    assert "customer_agent_ids" not in args and "product_code" not in args, args
+
+
+def test_an_unread_scope_reply_asks_again_then_gives_up(console) -> None:
+    _turn1(console)
+    console.say(_drill(ranking_drill="unsure"), "top 10 customers")
+    text, calls = console.say(_scope_reply(None, group_by=None), "hmm")
+    assert calls == [] and SCOPE_Q in text, text
+    text, calls = console.say(_scope_reply(None, group_by=None), "dunno")
+    assert calls == [] and SCOPE_Q not in text and text.strip(), text
