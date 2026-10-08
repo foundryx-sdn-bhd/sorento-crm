@@ -1518,6 +1518,29 @@ def test_the_workbook_is_one_sheet_per_delivery_month_with_their_heading_row(api
     assert sheet.max_row == 3
 
 
+def test_the_workbooks_supplier_is_the_source_pos_on_a_via_spo_row(api):
+    """OI-SUPPLIER-FROM-PO (owner, 9 Oct 2026: "be it system view, printouts"): the
+    SUPPLIER column of the printout names the PO's supplier, never the SPO's own."""
+    client, db, company_id, seeded = api
+    po = _purchase_order(db, company_id)
+    _row_, spo_supplier = _spo_linked_row_naming_po(
+        db, company_id, seeded, po["order"].po_number
+    )
+    po_supplier = db.get(Supplier, po["order"].supplier_id)
+
+    response = client.get(f"{LIST}/export")
+
+    assert response.status_code == 200, response.text
+    book = openpyxl.load_workbook(io.BytesIO(response.content))
+    suppliers = {
+        sheet.cell(row=r, column=8).value
+        for sheet in book.worksheets
+        for r in range(3, sheet.max_row + 1)
+    }
+    assert po_supplier.supplier_name in suppliers
+    assert spo_supplier.supplier_name not in suppliers
+
+
 def test_the_workbook_honours_the_filters_the_screen_is_showing(api):
     client, _db, _company_id, _seeded = api
 
