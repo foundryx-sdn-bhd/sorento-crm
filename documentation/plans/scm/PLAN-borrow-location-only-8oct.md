@@ -53,8 +53,8 @@ Backend paths are under `sorento_crm_backend/`.
 6. **Already location-shaped.** A borrow from another group WITHOUT a donor line already hangs
    its order-back on the BORROWING line, at the donor LOCATION, at the borrowing line's date
    (`project_supply_service.py:7736-7790`). That is the shape the owner describes.
-   - A borrow from the line's own location, or from its own group, raises nothing today
-     (`:7742-7760`). The docstring's reason, "its demand is still inside that location's SO
+   - A borrow from the line's own location (`:7742-7743`) or from any bin of its own ownership
+     GROUP (`:7752-7760`) raises nothing today. The docstring's reason, "its demand is still inside that location's SO
      qty" (`:7604-7608`), no longer holds for project lines: a project line is demand ONLY
      through its OI rows (`app/services/scm/demand.py:479-541`, where the book leg at `:501` excludes
      `demand_class = 'project'`).
@@ -88,15 +88,40 @@ Backend paths are under `sorento_crm_backend/`.
   ones can be made.
 - **B6. Existing data.** A guarded script (`--dry-run` default report, `--apply` second) re-points
   OPEN donor-line ORDER_BACK rows to the borrowing line. Open means `raised` or `partly_linked`
-  with nothing linked. The borrowing line comes from the header's SO plus the note's
-  "to <ref> line <m>". The script also sets the borrowing line's date and rewrites the note to
+  with nothing linked. A donor-line row is an ORDER_BACK whose `so_line_id` belongs to a
+  DIFFERENT sales order than its OI header. That is a structural test, not a note regex: crew
+  found the no-line note "Order-back: SO413742 lent ..." that a regex mis-files as a location row.
+  The borrowing line comes from the header's SO plus the note's "to <ref> line <m>". The script also sets the borrowing line's date and rewrites the note to
   the location form. It leaves `placed` / `actioned` / `cancelled` rows alone. The owner runs
   it; it never runs on prod from here.
 
 ## Open questions (posted as crew-ask on PR #1534)
 
-Q1 remove vs setting; Q2 the donor's decision; Q3 own-location borrow raises an order-back;
-Q4 the OI row's date; Q5 the data fix scope.
+- Q1, remove vs setting: pending with the owner.
+- Q2, the donor's decision: **(a) leave the donor alone** (crew, from the owner's words, 8 Oct).
+- Q3, own-location borrow raises an order-back: pending with the owner.
+- Q4, the OI row's date: **(a) the borrowing line's date** (crew, from the owner's words, 8 Oct).
+- Q5, data fix scope: pending with the owner.
+
+## Data (6 Oct prod snapshot, read-only, via crew; names masked)
+
+- **The case.** SO424707 line 80 (BRW-IR, 6, due 2026-10-06) has one `other_location`
+  allocation of 6 at BRW-BB, confirmed 6 Oct. The donor is named only in
+  `donor_impact_snapshot`. The OI-2610-0022 ORDER_BACK row sits on SO397450 line 446 (276,
+  2027-07-21, BRW-BB), `raised`/awaiting, 6, with no PO and no link. SO397450 has NO decision,
+  so nothing was superseded.
+- **Donor-named allocations.** 14 borrow allocations name a donor (10 name an SO). All are
+  other-location; none are same-location.
+- **ORDER_BACK rows naming a donor SO: 7.**
+  - 5 sit on the donor line: OI-2609-0678 has 3 on one line (42 + 42 + 16), plus OI-2610-0022
+    and OI-2609-0007.
+  - 2 are already on the borrowing line (the no-mirror fallback).
+  - Open, raised and unlinked: **4 rows / 106 units**. This is the script's scope.
+  - Placed and linked: 3 rows / 11 units, which are left alone.
+- **Donor allocations with no order-back: 2.** One is superseded and one is open. That is a gap
+  of today's code, out of this lane's scope unless the owner asks.
+- **No PO/SPO names SO424707 line 80 yet.** After the fix the row will link as soon as
+  purchasing raises a PO for that line. It does not link today because no such PO exists.
 
 ## Test list (red first, Phase 2)
 
