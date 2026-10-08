@@ -218,7 +218,7 @@ bypasses at `fetch.py:2721-2738`, and the cross-domain block's own render (`answ
 
 ## Review round 1 decisions (8 Oct 2026)
 
-- Reset to auto is a server-deferred record action `product_alternative.reset_auto` on the
+- Reset to auto is a server-deferred record action `product_alternatives.reset_auto` on the
   product (entity type `product_alternatives`, destructive window), deleting row by row so
   the audit listeners record each link; the immediate `reset-auto` route is gone.
 - The add route is session-only; an inactive product cannot be added (400); a racing

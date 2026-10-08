@@ -5,7 +5,7 @@
     POST   /api/v1/master-data/products/{id}/alternatives  {"alternative_product_id"} -> 201 row
     Unlink = server-deferred pending action `product_alternative.unlink` on the link row
     (`/api/v1/pending-actions`), reversible window.
-    Reset to auto = server-deferred `product_alternative.reset_auto` on the product
+    Reset to auto = server-deferred `product_alternatives.reset_auto` on the product
     (entity type `product_alternatives`), destructive window (reviewer round 1).
 
 row = {id, alternative_product_id, product_code, product_name, source, is_discontinued}.
@@ -216,7 +216,7 @@ def test_reset_auto_is_a_registered_destructive_record_action():
     from app.services.form_action_grace import WINDOW_DESTRUCTIVE
     from app.services.form_action_registry import get_action
 
-    action = get_action("product_alternative.reset_auto")
+    action = get_action("product_alternatives.reset_auto")
     assert action.permission == EDIT
     assert action.window == WINDOW_DESTRUCTIVE
     assert action.entity_types == ("product_alternatives",)
@@ -230,7 +230,7 @@ def test_reset_auto_parks_and_writes_nothing_until_the_window_lapses(db, pair, m
     parked = client.post(
         "/api/v1/pending-actions",
         json={
-            "action_key": "product_alternative.reset_auto",
+            "action_key": "product_alternatives.reset_auto",
             "entity_type": "product_alternatives",
             "entity_id": old.id,
             "payload": {},
@@ -241,7 +241,7 @@ def test_reset_auto_parks_and_writes_nothing_until_the_window_lapses(db, pair, m
     view_only = _client(db, {VIEW}, monkeypatch).post(
         "/api/v1/pending-actions",
         json={
-            "action_key": "product_alternative.reset_auto",
+            "action_key": "product_alternatives.reset_auto",
             "entity_type": "product_alternatives",
             "entity_id": old.id,
             "payload": {},
@@ -321,7 +321,7 @@ def test_another_companys_product_and_link_are_404_everywhere(db, pair, monkeypa
     reset = client.post(
         "/api/v1/pending-actions",
         json={
-            "action_key": "product_alternative.reset_auto",
+            "action_key": "product_alternatives.reset_auto",
             "entity_type": "product_alternatives",
             "entity_id": foreign_old.id,
             "payload": {},
@@ -360,3 +360,14 @@ def test_write_routes_are_session_only():
 
         default = inspect.signature(endpoint).parameters["current_user"].default
         assert "_with_api_key" not in getattr(default.dependency, "__qualname__", "")
+
+
+def test_unlink_committing_after_a_reset_removed_the_link_ends_quietly(db, pair):
+    """Reviewer round 2 nit: a reset that commits first leaves the parked unlink nothing to
+    do; it must not end as a failed action."""
+    old, _ = pair
+    link = db.query(ProductAlternative).filter(ProductAlternative.product_id == old.id).one()
+    link_id = link.id
+    db.delete(link)
+    db.flush()
+    assert _unlink_product_alternative(db, {"entity_id": link_id}) is None

@@ -331,7 +331,10 @@ def unlink(db: Session, link_id: str) -> None:
     puts it back."""
     link = get_link(db, link_id)
     if link is None:
-        raise handle_not_found("Product alternative", link_id)
+        # Already gone (a Reset to auto on the same product committed first): the
+        # outcome the reader asked for holds, so the deferred action ends quietly. A
+        # link that never existed is refused at park time (`pending_actions`).
+        return
     product = db.get(Product, link.product_id)
     if product is not None:
         product.alternatives_manual = True
