@@ -74,7 +74,7 @@ def _envelope(items, *, result_type, attachments=None, intro="Here are the resul
 full_args: list[dict] = []
 
 
-def _run(db, *, domain, entities, answers, fail_second=False, requested=None):
+def _run(db, *, domain, entities, answers, fail_second=False, requested=None, localizer=None):
     """`answers(product_ids) -> raw envelope`; returns (response text, structured, calls)."""
     calls: list[tuple[str, list]] = []
     full_args.clear()
@@ -99,6 +99,7 @@ def _run(db, *, domain, entities, answers, fail_second=False, requested=None):
                 }
             },
             "contact": {},
+            "localizer": localizer,
         },
     }
     fragment = business.run_fetch(
@@ -540,3 +541,117 @@ def test_two_alternatives_each_get_their_own_promotions(db, pair):
     assert f"Alternative: {new.product_code}: Promo New (01/10/2026 to 31/10/2026)" in said
     assert f"Alternative: {other.product_code}: Promo B (01/11/2026 to 30/11/2026)" in said
     assert f"Alternative: {new.product_code}: Promo B" not in said
+
+
+# --------------------------------------------------------------------------- re-review round B
+
+
+def test_an_alternative_whose_call_returned_nothing_is_never_named(db, pair):
+    """Reviewer re-review 1: the old code has a row, the alternative's call returns no row
+    for its code; the reply must not name the alternative."""
+    old, new = pair
+
+    def answers(name, ids):
+        if ids == [old.id]:
+            return _envelope(
+                [_field_item(old.product_code, [("Product Code", old.product_code), ("Container", "CONT-OLD")])],
+                result_type="incoming",
+            )
+        return _envelope([], result_type="incoming")
+
+    said, _f, calls = _run(db, domain="incoming", entities=[_entity(old)], answers=answers)
+    assert len(calls) == 2
+    assert "CONT-OLD" in said
+    assert new.product_code not in said, said
+
+
+def test_the_miss_sentence_and_tail_read_in_the_contacts_language(db, pair):
+    """Reviewer re-review 2: on a localised tool the miss sentence and the Alternative label
+    are the contact's language, as compose and `_item_line` would print them."""
+    from app.services.chatbot.label_catalog import Localizer, defaults
+
+    old, new = pair
+    ms = Localizer("ms", defaults("ms"))
+
+    def answers(name, ids):
+        if ids == [old.id]:
+            return _envelope([], result_type="incoming")
+        return _envelope(
+            [_field_item(new.product_code, [("Product Code", new.product_code), ("Container", "CONT-NEW")])],
+            result_type="incoming",
+        )
+
+    said, _f, _c = _run(db, domain="incoming", entities=[_entity(old)], answers=answers, localizer=ms)
+    assert said.startswith(ms.sentence(f"No incoming stock found for {old.product_code}.") + "\n"), said
+    assert f"*{ms.text('Alternative')}:* {new.product_code}" in said, said
+    assert ms.text("Alternative") != "Alternative"
+
+
+def test_a_fold_that_fails_halfway_leaves_the_reply_as_it_was(db, pair, monkeypatch):
+    """Re-review nit 3: the fold works on a copy; a failure half way never leaks into the
+    reply the first call made."""
+    from app.services.chatbot.lanes.business import alternatives as alt_mod
+
+    old, new = pair
+
+    def half(tool_name, envelope, answers, **kw):
+        envelope["items"][0]["flags"]["alternative_lines"] = ["LEAKED"]
+        raise RuntimeError("fold broke")
+
+    monkeypatch.setattr(alt_mod, "fold", half)
+    said, _f, _c = _run(
+        db,
+        domain="incoming",
+        entities=[_entity(old)],
+        answers=lambda name, ids: _envelope(
+            [_dealer_item(old.product_code if ids == [old.id] else new.product_code, "No ETA", discontinued=ids == [old.id])],
+            result_type="incoming",
+        ),
+    )
+    assert "LEAKED" not in said and "Alternative" not in said, said
+
+
+def test_the_narrowing_filter_rule_holds_for_the_second_call(db, pair, monkeypatch):
+    """Re-review nit 3: a tool that needs a narrowing filter never gets an unnarrowed second
+    call."""
+    from app.services.chatbot.lanes.business import fetch as fetch_mod
+    from app.services.chatbot.turn import policy_rows
+
+    old, new = pair
+    monkeypatch.setattr(
+        policy_rows,
+        "ENTITY_FILTER_REQUIRED_TOOLS",
+        frozenset(policy_rows.ENTITY_FILTER_REQUIRED_TOOLS) | {"crm_incoming_stock_list"},
+    )
+    real = fetch_mod.has_narrowing_filter
+    monkeypatch.setattr(
+        fetch_mod,
+        "has_narrowing_filter",
+        lambda args, tool_name=None: (args.get("product_ids") or [None])[0] != new.id and real(args, tool_name=tool_name),
+    )
+    said, _f, calls = _run(
+        db,
+        domain="incoming",
+        entities=[_entity(old)],
+        answers=lambda name, ids: _envelope(
+            [_dealer_item(old.product_code, "No ETA", discontinued=True)], result_type="incoming"
+        ),
+    )
+    assert len(calls) == 1
+    assert "Alternative" not in said
+
+
+def test_an_expired_promotion_of_the_alternative_says_so(db, pair):
+    old, new = pair
+
+    def answers(name, ids):
+        if ids == [old.id]:
+            return _envelope([], result_type="promotions")
+        item = _promo("Old Raya", "2026-04-01T00:00:00", "2026-04-30T00:00:00")
+        item["flags"] = {"expired": True}
+        return _envelope([item], result_type="promotions")
+
+    said, _f, _c = _run(db, domain="promotion", entities=[_entity(old)], answers=answers)
+    assert said.endswith(
+        f"Alternative: {new.product_code}: Old Raya (01/04/2026 to 30/04/2026)\n\u26a0\ufe0f  *(EXPIRED)*"
+    ), said
