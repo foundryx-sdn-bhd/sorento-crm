@@ -1226,7 +1226,10 @@ class ProjectSupplyService:
         an active decision still covers (409, reject it first).
         """
         from app.services import project_line_draft_service
-        from app.services.project_order_inquiry_service import flag_rows_for_cancelled_lines
+        from app.services.project_order_inquiry_service import (
+            ProjectOrderInquiryService,
+            flag_rows_for_cancelled_lines,
+        )
 
         if not cancelled_lines:
             return []
@@ -1298,6 +1301,10 @@ class ProjectSupplyService:
             self.db,
             [core.id for _m, core, _r in picked],
             company_id=str(order.company_id) if order.company_id else None,
+        )
+        ProjectOrderInquiryService(self.db).retire_rows_for_cancelled_lines(
+            [(str(core.id), reason) for _m, core, reason in picked],
+            actor_user_id=str(actor_user_id),
         )
         flag_rows_for_cancelled_lines(self.db, [str(core.id) for _m, core, _r in picked])
         return echo
