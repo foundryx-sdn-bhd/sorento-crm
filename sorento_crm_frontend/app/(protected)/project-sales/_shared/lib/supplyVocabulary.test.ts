@@ -185,7 +185,7 @@ describe('rowOf reads the rung, never the warehouse code', () => {
 
   it('reads a FREE step-3 document as a borrow all the same (S4)', () => {
     // A document nobody was waiting on names no donor, and the unrunged fallback would
-    // read that as 'borrow_other' - "Borrow other location", which is a location this
+    // read that as 'borrow_other' - "Borrow", which is a location this
     // line never borrows from. The RUNG decides, as it does everywhere else here.
     expect(
       rowOf({
@@ -546,7 +546,7 @@ describe('suggestionBreakdown', () => {
     );
 
     expect(row(rows, 'Borrow from another order').qty).toBe('3');
-    expect(row(rows, 'Borrow other location').qty).toBe('9');
+    expect(row(rows, 'Borrow').qty).toBe('9');
     expect(has(rows, 'Use own location')).toBe(false);
   });
 
@@ -816,7 +816,7 @@ describe('AC-A2: a covered line whose composition arrives with no rungs', () => 
     expect(decided.map((entry) => entry.label)).toEqual(['Use own location']);
     expect(decided[0].qty).toBe('932');
     expect(suggested.map((entry) => entry.label)).toEqual([
-      'Borrow other location',
+      'Borrow',
     ]);
     expect(suggested[0].qty).toBe('100');
   });
@@ -1509,7 +1509,7 @@ describe('boardOrderInquiryWord: the Product cell chip ladder (AC-A1 to AC-A7)',
  * BORROW-LOCATION-ONLY (D3): a borrow that names no donor SO is a LOCATION borrow, whatever
  * its rung. Under the switch OFF the engine still walks step 2 (`order_borrow`), step 4b
  * (`pool`) and the frozen `group_borrow`, but blanks the donor fields, so those must read
- * "Borrow other location". With a donor SO named (switch ON) they keep reading "Borrow from
+ * "Borrow". With a donor SO named (switch ON) they keep reading "Borrow from
  * another order".
  */
 describe('rowOf: a borrow that names no donor is a location borrow (BORROW-LOCATION-ONLY D3)', () => {

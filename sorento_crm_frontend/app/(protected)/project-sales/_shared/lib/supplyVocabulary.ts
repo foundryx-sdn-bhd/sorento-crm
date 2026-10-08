@@ -16,7 +16,7 @@
  * | `order_borrow`                    | Borrow from another order  | amber   |
  * | `pool` (borrow half)              | Borrow from another order  | amber   |
  * | `supply_borrow`                   | Borrow incoming            | amber   |
- * | `cross_group_borrow`              | Borrow other location      | amber   |
+ * | `cross_group_borrow`              | Borrow                     | amber   |
  * | `group_borrow`                    | Borrow from another order  | amber   |
  * | `pool` (free draw)                | Use BRW                    | sky     |
  * | `buy`                             | Buy                        | rose    |
@@ -89,7 +89,9 @@ export const LABELS: Record<SupplyKind, string> = {
   own: 'Use own location',
   borrow_order: 'Borrow from another order',
   borrow_incoming: 'Borrow incoming',
-  borrow_other: 'Borrow other location',
+  // Owner, 9 Oct 2026: "just called it borrow cause it is not just other location, own
+  // location also can borrow". The order borrow (switch ON) keeps its own longer words.
+  borrow_other: 'Borrow',
   // "Use", because this half of step 1 owes nobody anything: the group's own incoming
   // document, taken free. "Incoming supply" said what it was and not what is being done
   // with it, which is the one thing that tells it from `borrow_incoming`.
@@ -108,7 +110,7 @@ export const SHORT_LABELS: Record<SupplyKind, string> = {
   own: 'Own',
   borrow_order: 'Borrow (order)',
   borrow_incoming: 'Borrow (incoming)',
-  borrow_other: 'Borrow (other)',
+  borrow_other: 'Borrow',
   incoming: 'Incoming',
 };
 

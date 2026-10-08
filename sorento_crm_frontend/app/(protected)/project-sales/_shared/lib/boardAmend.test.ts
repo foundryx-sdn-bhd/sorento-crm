@@ -751,7 +751,7 @@ describe('amendSummary: what the decided row reads', () => {
         },
         'BRW-BB',
       ),
-    ).toBe('Own 20 BRW-BB · Borrow (other) 10 BRW-IB · Buy 13');
+    ).toBe('Own 20 BRW-BB · Borrow 10 BRW-IB · Buy 13');
   });
 
   it('splits a reserve that draws on two different kinds of stock', () => {
@@ -1033,7 +1033,7 @@ describe('decideComposition: the six Decide items (D1, AC-5 to AC-9, AC-51)', ()
     expect(result.borrow).toBeUndefined();
   });
 
-  it('AC-9: Borrow other location takes the whole line off the picked location', () => {
+  it('AC-9: Borrow takes the whole line off the picked location', () => {
     const row = decideRow({
       borrow_candidates: [
         {
@@ -1137,7 +1137,7 @@ describe('decideComposition: the six Decide items (D1, AC-5 to AC-9, AC-51)', ()
 });
 
 /**
- * BORROW-LOCATION-ONLY (D3, K8): "Borrow other location" never resolves to a candidate that
+ * BORROW-LOCATION-ONLY (D3, K8): "Borrow" never resolves to a candidate that
  * NAMES a donor SO, so the location picker cannot leak a donor-named order borrow under the
  * wrong label (the rung leak, `pickerOptions` / `decideComposition` do not filter by rung).
  */
@@ -1208,7 +1208,7 @@ describe('decideComposition: borrow_other never resolves to a donor-named candid
 
 /**
  * BORROW-LOCATION-ONLY S6 (B1, "summed per location"): with "Borrow from another order" off,
- * the candidates at a location name no donor SO, and "Borrow other location" draws across
+ * the candidates at a location name no donor SO, and "Borrow" draws across
  * that location's candidate lines in order - one borrow row per donor line, each within what
  * that line has left - rather than needing ONE line to cover the whole quantity.
  */

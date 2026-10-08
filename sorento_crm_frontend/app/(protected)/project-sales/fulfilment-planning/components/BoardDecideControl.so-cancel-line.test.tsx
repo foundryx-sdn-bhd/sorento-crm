@@ -76,7 +76,7 @@ describe('Transfer to Cancel SO in the Decide menu', () => {
       'As suggested',
       'Use own location',
       'Borrow from another order',
-      'Borrow other location',
+      'Borrow',
       'Use BRW',
       'Buy',
       'Transfer to Cancel SO',
@@ -191,7 +191,7 @@ describe('Transfer to Cancel SO names the rows it skips (AC-F18)', () => {
 });
 
 describe('Borrow dialog before a pick (AC-F21)', () => {
-  it.each(['Borrow from another order', 'Borrow other location'])(
+  it.each(['Borrow from another order', 'Borrow'])(
     '%s: no "will be skipped" sentence until a donor or location is picked',
     async (item) => {
       renderControl([row(), row({ key: 'so-1:line-20', line_no: 20 })]);

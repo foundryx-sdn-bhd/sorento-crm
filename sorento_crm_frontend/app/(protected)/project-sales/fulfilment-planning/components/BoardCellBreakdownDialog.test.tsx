@@ -2894,7 +2894,7 @@ describe('BoardCellBreakdownDialog: a line a decision already covers', () => {
     const testId = 'sources-pills-so-a|1|WESERP10B|2026-08-31';
     const sourcePills = within(screen.getByTestId(testId));
     expect(
-      sourcePills.getByText('Borrow (other) 10 from MWH-IB'),
+      sourcePills.getByText('Borrow 10 from MWH-IB'),
     ).toBeInTheDocument();
     // At this width (jsdom's own zero) only the first pill shows; the rest folds behind
     // "+1", which opens the SAME popover every pill does and states the whole composition.
@@ -3274,7 +3274,7 @@ describe('BoardCellBreakdownDialog: how the Suggestion card names its sources', 
 
     const card = screen.getByTestId('cell-suggestion');
     expect(card).toHaveTextContent('Borrow from another order');
-    expect(card).toHaveTextContent('Borrow other location');
+    expect(card).toHaveTextContent('Borrow');
   });
 });
 

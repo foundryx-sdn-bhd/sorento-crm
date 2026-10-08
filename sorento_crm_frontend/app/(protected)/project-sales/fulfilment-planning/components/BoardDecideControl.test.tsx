@@ -139,7 +139,7 @@ describe('BoardDecideControl: the menu (AC-4)', () => {
       'As suggested',
       'Use own location',
       'Borrow from another order',
-      'Borrow other location',
+      'Borrow',
       'Use BRW',
       'Buy',
       'Transfer to Cancel SO',
@@ -262,7 +262,7 @@ describe('BoardDecideControl: the Borrow dialog (AC-11, AC-38)', () => {
       ],
     });
     openMenu();
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Borrow other location' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Borrow' }));
 
     const dialog = await screen.findByRole('dialog');
     const save = within(dialog).getByRole('button', { name: /^Save/ });
@@ -299,7 +299,7 @@ describe('BoardDecideControl: the Borrow dialog (AC-11, AC-38)', () => {
       ],
     });
     openMenu();
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Borrow other location' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Borrow' }));
 
     const dialog = await screen.findByRole('dialog');
     const save = within(dialog).getByRole('button', { name: /^Save/ });
@@ -459,13 +459,13 @@ describe('BoardDecideControl: Borrow from another order follows the switch (BR1)
     openMenu();
 
     expect(screen.queryByRole('menuitem', { name: 'Borrow from another order' })).not.toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: 'Borrow other location' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Borrow' })).toBeInTheDocument();
   });
 
-  it('keeps a donor-named location out of the Borrow other location picker (K8)', async () => {
+  it('keeps a donor-named location out of the Borrow picker (K8)', async () => {
     renderControl({ contributions: [row({ borrow_candidates: [named, nameless] })] });
     openMenu();
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Borrow other location' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Borrow' }));
 
     const dialog = await screen.findByRole('dialog');
     const select = within(dialog).getByLabelText('donor-or-location');
