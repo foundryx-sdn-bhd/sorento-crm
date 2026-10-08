@@ -999,6 +999,28 @@ describe('a Confirm hands back only once the OI page and the board are fresh', (
     expect(client.getQueryData([ORDER_INQUIRY_HEADER_LINES_KEY, 'oi-1'])).toBeUndefined();
   });
 
+  it('per-order Confirm with the board not on screen: drops the cached board too', async () => {
+    // Reviewer, hand-test round: from the per-order sheet the board query is inactive, so an
+    // invalidation only marks it stale and the next visit paints the cached board, old OI
+    // link and all, while it refetches. Dropped, the board loads instead of lying.
+    seedVisitedOi();
+    client.setQueryData([PLANNING_BOARD_KEY, 'b'], { cells: [] });
+    client.setQueryData([FULFILMENT_PLANNING_KEY, 'list'], { items: [] });
+    confirmSupply.mockResolvedValue({
+      revision_no: 2,
+      confirmed_at: '2026-10-09T01:20:00',
+      review_state: 'confirmed',
+      inquiry_rows_created: 1,
+      exceptions: [],
+    });
+    const api = await harness(useReconciliationMutations, () => null);
+
+    await api().confirm.mutateAsync({ psoId: 'pso-1', body: CONFIRM_BODY });
+
+    expect(client.getQueryData([PLANNING_BOARD_KEY, 'b'])).toBeUndefined();
+    expect(client.getQueryData([FULFILMENT_PLANNING_KEY, 'list'])).toBeUndefined();
+  });
+
   it('board Confirm: drops the visited OI page and waits for the board refetch', async () => {
     seedVisitedOi();
     confirmMany.mockResolvedValue({
