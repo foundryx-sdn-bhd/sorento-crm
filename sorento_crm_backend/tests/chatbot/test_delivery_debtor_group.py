@@ -1,0 +1,280 @@
+"""DELIVERY-DEBTOR-GROUP red tests (owner, 8 Oct 2026).
+
+PLAN ``documentation/plans/chatbot/PLAN-delivery-debtor-group-08oct.md``.
+
+"check today delivery to hanlim" offered two options: the customer, and the free-text debtor
+name one DO carried ("<NAME> (CERAMIC & ELLECI)", typed at DO level). That DO's debtor code is
+the same customer, and the customer sits in one customer group, so there is nothing to choose.
+
+Cause: the resolver's DO debtor-name probes (`entity_resolver._probe_customer_debtor_name`,
+`_prefix_probe_customer_debtor_name`) named each hit by the DO's own `debtor_name` and linked
+it to a customer by NAME only. The gate's display name and family key then read the DO-level
+name, which the customer-group map (exact customer names) does not hold, so it became its own
+family.
+
+Contract under test: a DO debtor-name hit is linked to its customer by the explicit keys first
+(the DO's `customer_id`, then its debtor code in the DO's own company), and carries that
+customer's master name as `display.customer_name`. A DO with no link at all keeps `uuid=None`
+(never guessed by name similarity). Fake names only.
+"""
+from __future__ import annotations
+
+import uuid
+
+import pytest
+from sqlalchemy import text
+
+from app.models.base import set_company_scope
+from app.models.company import Company
+from app.models.order import Customer, Order
+from app.services import customer_identity
+from app.services.company_scope import DEFAULT_COMPANY_ID, register_company_scope_listeners
+
+from tests._pg_fixture import blank_session, unique_code
+
+MARKER = "ZZDDG"
+MASTER = f"{MARKER} TRADING SDN BHD"
+DO_NAME = f"{MARKER} TRADING SDN BHD (CERAMIC & ELLECI)"
+TOKEN = f"{MARKER} TRADING"
+
+
+@pytest.fixture(autouse=True)
+def _listeners():
+    register_company_scope_listeners()
+
+
+@pytest.fixture()
+def db():
+    with blank_session() as session:
+        yield session
+
+
+def _customer(db, name: str = MASTER, *, company_id: str = DEFAULT_COMPANY_ID, group_id: str | None = None):
+    row = Customer(
+        id=str(uuid.uuid4()),
+        customer_code=unique_code(f"300-{MARKER}")[:30],
+        customer_name=name,
+        company_id=company_id,
+    )
+    db.add(row)
+    db.flush()
+    if group_id:
+        db.execute(text("UPDATE customers SET customer_group_id = :g WHERE id = :c"), {"g": group_id, "c": row.id})
+    return row
+
+
+def _group(db, name: str = MASTER) -> str:
+    gid = str(uuid.uuid4())
+    db.execute(
+        text(
+            "INSERT INTO customer_groups (id, company_id, name, created_at, updated_at) "
+            "VALUES (:i, :c, :n, now(), now())"
+        ),
+        {"i": gid, "c": DEFAULT_COMPANY_ID, "n": name},
+    )
+    return gid
+
+
+def _do(db, name: str, *, code: str | None = None, customer_id: str | None = None,
+        company_id: str = DEFAULT_COMPANY_ID) -> None:
+    db.add(
+        Order(
+            order_number=unique_code(f"{MARKER}DO")[:30],
+            debtor_name=name,
+            debtor_code=code,
+            customer_id=customer_id,
+            company_id=company_id,
+        )
+    )
+    db.flush()
+
+
+def _hits_by_name(hits) -> dict[str, tuple[str | None, str | None]]:
+    return {h.canonical_code: (h.uuid, h.display.get("customer_name")) for h in hits}
+
+
+# ============================================================ resolver: explicit link
+
+
+class TestDebtorNameProbeLinksByExplicitKey:
+    def test_the_owners_case_a_do_level_name_links_to_its_customer_by_customer_id(self, db):
+        """The DO carries the customer FK and the customer's code, but its own debtor name."""
+        from app.services.entity_resolver import _probe_customer_debtor_name
+
+        cust = _customer(db)
+        _do(db, MASTER, code=cust.customer_code, customer_id=cust.id)
+        _do(db, DO_NAME, code=cust.customer_code, customer_id=cust.id)
+
+        hits = _probe_customer_debtor_name(db, [TOKEN])[TOKEN]
+
+        assert _hits_by_name(hits) == {
+            MASTER: (cust.id, MASTER),
+            DO_NAME: (cust.id, MASTER),
+        }
+
+    def test_exact_tier_reads_the_customer_name_not_the_do_name(self, db):
+        from app.services.entity_resolver import _probe_customer_debtor_name
+
+        cust = _customer(db)
+        _do(db, DO_NAME, code=cust.customer_code, customer_id=cust.id)
+
+        hits = _probe_customer_debtor_name(db, [DO_NAME])[DO_NAME]
+
+        assert _hits_by_name(hits) == {DO_NAME: (cust.id, MASTER)}
+
+    def test_a_do_with_only_the_debtor_code_links_by_code(self, db):
+        from app.services.entity_resolver import _probe_customer_debtor_name
+
+        cust = _customer(db)
+        _do(db, DO_NAME, code=f"  {cust.customer_code.lower()} ")
+
+        hits = _probe_customer_debtor_name(db, [TOKEN])[TOKEN]
+
+        assert _hits_by_name(hits) == {DO_NAME: (cust.id, MASTER)}
+
+    def test_the_customer_fk_wins_over_a_name_that_matches_another_customer(self, db):
+        from app.services.entity_resolver import _probe_customer_debtor_name
+
+        owner = _customer(db)
+        _customer(db, DO_NAME)  # a different customer that happens to carry the DO's name
+        _do(db, DO_NAME, code=owner.customer_code, customer_id=owner.id)
+
+        hits = _probe_customer_debtor_name(db, [DO_NAME])[DO_NAME]
+
+        assert _hits_by_name(hits) == {DO_NAME: (owner.id, MASTER)}
+
+    def test_a_do_with_no_link_stays_unlinked_never_guessed(self, db):
+        from app.services.entity_resolver import _probe_customer_debtor_name
+
+        _customer(db)
+        _do(db, DO_NAME, code="300-ZZDDG-NOSUCH")
+
+        hits = _probe_customer_debtor_name(db, [TOKEN])[TOKEN]
+
+        assert _hits_by_name(hits) == {DO_NAME: (None, None)}
+
+    def test_a_debtor_code_never_links_to_another_companys_customer(self, db):
+        from app.services.entity_resolver import _probe_customer_debtor_name
+
+        set_company_scope(db, None)
+        other = Company(id=str(uuid.uuid4()), name=f"{MARKER} B", code=unique_code(MARKER)[:10])
+        db.add(other)
+        db.flush()
+        cust = _customer(db, company_id=str(other.id))
+        _do(db, DO_NAME, code=cust.customer_code)  # DO in the default company
+
+        hits = _probe_customer_debtor_name(db, [DO_NAME])[DO_NAME]
+
+        assert _hits_by_name(hits) == {DO_NAME: (None, None)}
+
+    def test_prefix_probe_links_the_same_way(self, db):
+        from app.services.entity_resolver import _prefix_probe_customer_debtor_name
+
+        cust = _customer(db)
+        _do(db, DO_NAME, code=cust.customer_code, customer_id=cust.id)
+
+        hits = _prefix_probe_customer_debtor_name(db, TOKEN)
+
+        assert _hits_by_name(hits) == {DO_NAME: (cust.id, MASTER)}
+
+
+# ============================================================ the roster
+
+
+def _resolver_payload(db, token: str) -> dict:
+    """What the resolver hands the gate for this token: the customer-master probe and the
+    DO debtor-name probe, in that order, as `ResolutionResult.as_dict` shapes a match."""
+    from app.services.entity_resolver import (
+        ResolutionResult,
+        TokenResolution,
+        _probe_customer,
+        _probe_customer_debtor_name,
+    )
+
+    matches = list(_probe_customer(db, [token])[token]) + list(_probe_customer_debtor_name(db, [token])[token])
+    return ResolutionResult(
+        tokens=[token],
+        resolutions=[TokenResolution(token=token, matches=matches)],
+        elapsed_ms=0.0,
+    ).as_dict()
+
+
+def _parser(raw: str) -> dict:
+    return {
+        "domain_hint": "order",
+        "intent_hint": "check_delivery",
+        "entities": [{"hint": "customer", "raw": raw, "canonical_code": raw, "current_message": True}],
+    }
+
+
+def _roster(db, token: str):
+    from app.services import customer_group_service
+    from app.services.chatbot.lanes.business.gate import run_gate
+    from app.services.chatbot.turn.narrow import _options
+    from app.services.chatbot.turn_runtime import candidates_by_kind
+    from app.services.ledger_family import customer_groups
+
+    resolver = _resolver_payload(db, token)
+    with customer_groups(customer_group_service.family_overrides(db)):
+        gate = run_gate(dict(resolver), parser=_parser(token), resolver=resolver)
+        compatible = [e for e in gate.get("compatible_entities") or [] if isinstance(e, dict)]
+        grouped = candidates_by_kind(gate, compatible)
+        options = _options(grouped.get("customer", []), "customer", "ledger_family")
+    return gate, options
+
+
+class TestOneCustomerGroupIsOneChoice:
+    def test_the_owners_case_one_grouped_customer_with_a_do_level_name_is_no_picker(self, db):
+        gid = _group(db)
+        cust = _customer(db, group_id=gid)
+        _do(db, MASTER, code=cust.customer_code, customer_id=cust.id)
+        _do(db, DO_NAME, code=cust.customer_code, customer_id=cust.id)
+
+        gate, options = _roster(db, TOKEN)
+
+        assert gate.get("require_specific") is not True, gate.get("gate_clarification")
+        assert [o["label"] for o in options] == [MASTER]
+        assert options[0]["uuids"] == [cust.id]
+
+    def test_the_owners_case_when_the_merge_recorded_the_do_name_as_an_alias(self, db):
+        """The debtor-code merge records a DO-level name as the customer's alias, so the
+        name join already found the customer; the hit still printed the DO's own name, which
+        the group map does not hold, and the roster read two choices."""
+        gid = _group(db)
+        a = _customer(db, f"{MASTER} [A/C I]", group_id=gid)
+        b = _customer(db, MASTER, group_id=gid)
+        customer_identity.record_alias(db, b.id, DO_NAME, source="merge")
+        _do(db, MASTER, code=a.customer_code, customer_id=a.id)
+        _do(db, DO_NAME, code=b.customer_code, customer_id=b.id)
+
+        gate, options = _roster(db, TOKEN)
+
+        assert gate.get("require_specific") is not True, gate.get("gate_clarification")
+        assert [o["label"] for o in options] == [MASTER]
+        assert sorted(options[0]["uuids"]) == sorted([a.id, b.id])
+
+    def test_two_ledgers_of_one_group_and_a_do_level_name_is_one_line(self, db):
+        gid = _group(db)
+        a = _customer(db, f"{MASTER} [A/C I]", group_id=gid)
+        b = _customer(db, MASTER, group_id=gid)
+        _do(db, MASTER, code=a.customer_code, customer_id=a.id)
+        _do(db, DO_NAME, code=b.customer_code, customer_id=b.id)
+
+        gate, options = _roster(db, TOKEN)
+
+        assert gate.get("require_specific") is not True, gate.get("gate_clarification")
+        assert [o["label"] for o in options] == [MASTER]
+        assert sorted(options[0]["uuids"]) == sorted([a.id, b.id])
+
+    def test_a_real_second_customer_still_gets_its_own_line(self, db):
+        """The fix merges by identity, not by name: a different customer outside the group,
+        with its own code, is still a choice."""
+        gid = _group(db)
+        cust = _customer(db, group_id=gid)
+        other = _customer(db, f"{MARKER} TRADING (JB) SDN BHD")
+        _do(db, DO_NAME, code=cust.customer_code, customer_id=cust.id)
+        _do(db, other.customer_name, code=other.customer_code, customer_id=other.id)
+
+        _gate, options = _roster(db, TOKEN)
+
+        assert len(options) == 2, [o["label"] for o in options]
