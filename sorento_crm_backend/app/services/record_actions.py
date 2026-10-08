@@ -71,6 +71,12 @@ def _delete_product_companion_rule(db: Session, payload: dict):
     return ProductCompanionService(db).delete(_entity_id(payload))
 
 
+def _unlink_product_alternative(db: Session, payload: dict):
+    from app.services.product_alternative_service import unlink
+
+    return unlink(db, _entity_id(payload))
+
+
 def _delete_product_combo(db: Session, payload: dict):
     from app.services.product_combo_service import ProductComboService
 
@@ -296,6 +302,21 @@ register(
         window=WINDOW_DESTRUCTIVE,
         permission="master_data.products.edit",
         label="Delete rule",
+    )
+)
+
+# PRODUCT-ALTERNATIVES (card Q5 (a)): unlink one alternative from the product page's
+# Alternatives section. Parked on the LINK row; reversible, both products survive and the
+# link is one pick away (or Reset to auto). Unlinking marks the product manual, so the -NEW
+# rule never puts the link back.
+register(
+    FormAction(
+        key="product_alternative.unlink",
+        entity_types=("product_alternative",),
+        execute=_unlink_product_alternative,
+        window=WINDOW_REVERSIBLE,
+        permission="master_data.products.edit",
+        label="Unlink alternative",
     )
 )
 

@@ -181,7 +181,7 @@ def test_unlink_handler_removes_the_link_and_marks_manual(db, pair):
 
 def test_unlink_is_a_registered_reversible_record_action(db, pair, monkeypatch):
     from app.services.form_action_grace import WINDOW_REVERSIBLE
-    from app.services.form_action_registry import get as get_action
+    from app.services.form_action_registry import get_action
 
     action = get_action("product_alternative.unlink")
     assert action.permission == EDIT
@@ -209,3 +209,36 @@ def test_reset_auto_clears_manual_and_rederives(db, pair, monkeypatch):
     assert [(r["alternative_product_id"], r["source"]) for r in data["alternatives"]] == [
         (new.id, SOURCE_AUTO_NEW)
     ]
+
+
+def test_unlink_parks_through_pending_actions_and_refuses_unknown_link(db, pair, monkeypatch):
+    old, _ = pair
+    link = db.query(ProductAlternative).filter(ProductAlternative.product_id == old.id).one()
+    client = _client(db, {VIEW, EDIT}, monkeypatch)
+
+    def park(entity_id):
+        return client.post(
+            "/api/v1/pending-actions",
+            json={
+                "action_key": "product_alternative.unlink",
+                "entity_type": "product_alternative",
+                "entity_id": entity_id,
+                "payload": {},
+            },
+        )
+
+    parked = park(link.id)
+    assert parked.status_code == 202, parked.text
+    # Nothing goes until the window lapses.
+    assert db.query(ProductAlternative).filter(ProductAlternative.id == link.id).count() == 1
+    assert park(str(uuid.uuid4())).status_code == 404
+    assert park("not-a-uuid").status_code in (400, 404, 422)
+    assert _client(db, {VIEW}, monkeypatch).post(
+        "/api/v1/pending-actions",
+        json={
+            "action_key": "product_alternative.unlink",
+            "entity_type": "product_alternative",
+            "entity_id": link.id,
+            "payload": {},
+        },
+    ).status_code == 403

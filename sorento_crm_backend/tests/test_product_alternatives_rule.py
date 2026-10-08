@@ -235,6 +235,7 @@ def test_backfill_dry_run_writes_nothing_then_apply_writes(db):
 
     report = backfill_new_alternatives(db, apply=False)
     assert report["would_add"] >= 1
+    assert (base.product_code, new.product_code) in report["pairs"]
     assert _links(db, base.id) == []
 
     report = backfill_new_alternatives(db, apply=True)

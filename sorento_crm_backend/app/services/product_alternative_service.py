@@ -186,13 +186,25 @@ def backfill_new_alternatives(db: Session, *, apply: bool = False) -> dict:
         .order_by(Product.product_code)
         .all()
     )
+    def _pairs() -> set[tuple[str, str]]:
+        return set(
+            db.query(ProductAlternative.product_id, ProductAlternative.alternative_product_id).all()
+        )
+
+    before = _pairs()
     savepoint = db.begin_nested()
     added = sum(reconcile_new_alternatives(db, p) for p in candidates)
+    codes = {p.id: p.product_code for p in candidates}
+    new_pairs = sorted(_pairs() - before)
+    missing = {pid for pair in new_pairs for pid in pair if pid not in codes}
+    if missing:
+        codes.update(dict(db.query(Product.id, Product.product_code).filter(Product.id.in_(missing))))
+    pairs = sorted((codes.get(a) or a, codes.get(b) or b) for a, b in new_pairs)
     if apply:
         savepoint.commit()
-        return {"scanned": len(candidates), "added": added}
+        return {"scanned": len(candidates), "added": added, "pairs": pairs}
     savepoint.rollback()
-    return {"scanned": len(candidates), "would_add": added}
+    return {"scanned": len(candidates), "would_add": added, "pairs": pairs}
 
 
 def alternatives_for(db: Session, product_ids: Iterable[str]) -> dict[str, list[Product]]:
