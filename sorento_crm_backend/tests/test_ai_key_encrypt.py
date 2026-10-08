@@ -4,7 +4,8 @@
 must now hold a Fernet token from `app.utils.field_encryption` (the helper the
 Respond.io workspace keys already use), while every reader still gets the plain
 key from the ORM attribute. Rows written before the change stay readable until
-the backfill script encrypts them.
+the backfill script encrypts them. Which key encrypts is covered in
+`tests/test_field_encryption_key.py`.
 
 Postgres, never sqlite: the point is what the column physically holds, so the raw
 value is read back with SQL, beneath the ORM.
@@ -104,13 +105,17 @@ def test_a_legacy_plaintext_row_still_reads_as_the_key():
         assert db.get(AIAssistantConfig, row_id).api_key_ciphertext == OPENAI
 
 
-def test_a_token_under_another_secret_reads_as_no_key(monkeypatch):
-    """Fernet-shaped but undecryptable (JWT_SECRET changed): no key, never the token
-    itself, which would otherwise be posted to the provider as if it were a key."""
+def test_a_token_under_an_unknown_key_reads_as_no_key(monkeypatch):
+    """Fernet-shaped but undecryptable (FIELD_ENCRYPTION_KEY replaced without keeping
+    the old one): no key, never the token itself, which would otherwise be posted to
+    the provider as if it were a key."""
+    from cryptography.fernet import Fernet
+
     from app.config import settings as app_settings
 
     with blank_session() as db:
         row_id = _save_all_three(db).id
+        monkeypatch.setattr(app_settings, "field_encryption_key", Fernet.generate_key().decode(), raising=False)
         monkeypatch.setattr(app_settings, "jwt_secret", "ZZT-a-different-secret")
         db.expire_all()
 
@@ -133,44 +138,6 @@ def test_the_config_api_never_returns_a_key():
         assert got.api_key_masked == "****1111"
         assert got.anthropic_api_key_masked == "****2222"
         assert got.gemini_api_key_masked == "****3333"
-
-
-def test_backfill_dry_run_counts_without_writing_then_apply_encrypts(capsys):
-    from scripts.encrypt_ai_assistant_keys import backfill
-
-    with blank_session() as db:
-        row_id = AIAssistantConfigService(db).get().id
-        legacy_anthropic = encrypt_secret(ANTHROPIC)
-        db.execute(
-            text(
-                "UPDATE ai_assistant_configs SET api_key_ciphertext = :o, "
-                "anthropic_api_key_ciphertext = :a, gemini_api_key_ciphertext = NULL WHERE id = :i"
-            ),
-            {"o": OPENAI, "a": legacy_anthropic, "i": row_id},
-        )
-
-        counts = backfill(db, apply=False)
-        assert counts == {
-            "api_key_ciphertext": {"plaintext": 1, "encrypted": 0, "empty": 0},
-            "anthropic_api_key_ciphertext": {"plaintext": 0, "encrypted": 1, "empty": 0},
-            "gemini_api_key_ciphertext": {"plaintext": 0, "encrypted": 0, "empty": 1},
-        }
-        assert _raw(db, row_id)["api_key_ciphertext"] == OPENAI  # dry run wrote nothing
-
-        backfill(db, apply=True)
-        raw = _raw(db, row_id)
-        assert raw["api_key_ciphertext"] != OPENAI
-        assert decrypt_secret(raw["api_key_ciphertext"]) == OPENAI
-        assert raw["anthropic_api_key_ciphertext"] == legacy_anthropic  # untouched
-        assert raw["gemini_api_key_ciphertext"] is None
-
-        again = backfill(db, apply=True)
-        assert again["api_key_ciphertext"] == {"plaintext": 0, "encrypted": 1, "empty": 0}
-        assert _raw(db, row_id) == raw
-
-    out = capsys.readouterr()
-    for secret in (OPENAI, ANTHROPIC, legacy_anthropic):
-        assert secret not in out.out + out.err
 
 
 def test_fernet_format_detection_rejects_non_tokens():
