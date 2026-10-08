@@ -239,3 +239,27 @@ def test_backfill_never_overwrites_a_secret_saved_while_it_ran(monkeypatch):
 
         assert _raw(db, "ai_assistant_configs", "api_key_ciphertext", cfg_id) == newer
         assert counts["ai_assistant_configs.api_key_ciphertext"]["skipped"] == 1
+
+
+@pytest.mark.parametrize(
+    ("explicit", "production_entrypoint", "refuses"),
+    [
+        (False, True, True),    # prod container with ENVIRONMENT never set: Settings says "development"
+        (True, True, False),    # ENVIRONMENT=development set on purpose
+        (False, False, False),  # local uvicorn / CI import smoke, nothing set
+    ],
+)
+def test_an_implicit_development_default_does_not_pass_on_a_production_entrypoint(
+    monkeypatch, explicit, production_entrypoint, refuses
+):
+    from app.utils.field_encryption import assert_field_encryption_ready
+
+    monkeypatch.setattr(app_settings, "field_encryption_key", "")
+    call = lambda: assert_field_encryption_ready(  # noqa: E731
+        "development", environment_explicit=explicit, production_entrypoint=production_entrypoint
+    )
+    if refuses:
+        with pytest.raises(RuntimeError, match="ENVIRONMENT is not set"):
+            call()
+    else:
+        call()
