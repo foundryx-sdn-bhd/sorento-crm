@@ -9,7 +9,7 @@ promoting is one label move in the Chatbot Console. Data only, idempotent (a tex
 longer carries the anchor publishes nothing).
 
 Revision ID: pk_0001_parser_promo_kind
-Revises: report_engine_0001_prompt
+Revises: rrl_0001_report_rate_limit
 """
 import logging
 
@@ -18,7 +18,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 revision = "pk_0001_parser_promo_kind"
-down_revision = "report_engine_0001_prompt"
+down_revision = "rrl_0001_report_rate_limit"
 branch_labels = None
 depends_on = None
 
