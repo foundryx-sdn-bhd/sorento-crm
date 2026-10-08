@@ -185,6 +185,9 @@ LABELS: dict[str, dict[str, str]] = {
     "DO Qty": {"ms": "Kuantiti DO", "zh": "DO 数量"},
     "Category": {"ms": "Kategori", "zh": "类别"},
     "Sales agent": {"ms": "Ejen jualan", "zh": "销售代理"},
+    # REPORT-DRILLDOWN: the sales ranking header's own labels (one fact per line).
+    "Period": {"ms": "Tempoh", "zh": "期间"},
+    "Customers assigned to": {"ms": "Pelanggan di bawah", "zh": "所属客户的业务员"},
     "Channel": {"ms": "Saluran", "zh": "渠道"},
     "Delivery date": {"ms": "Tarikh penghantaran", "zh": "送货日期"},
     "Ranked by": {"ms": "Disusun mengikut", "zh": "排名依据"},

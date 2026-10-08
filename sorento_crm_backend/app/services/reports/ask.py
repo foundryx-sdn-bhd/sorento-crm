@@ -100,8 +100,11 @@ def _row_keys(db: Session, group_by: str, names: list[str], company_grants: Any)
     from app.models.sales_agent import SalesAgent
     from app.services.reports.datasets.delivery_order_lines import NO_AGENT
 
+    from app.services.reports.engine import BLANK_VALUE
+
     if group_by == "location":
-        return {n: [n] for n in names}
+        # "(blank)" is lines with no location: no code to narrow by (the lane says so).
+        return {n: ([] if n == BLANK_VALUE else [n]) for n in names}
     lookups = {
         "sales_agent": (SalesAgent, SalesAgent.sales_agent),
         "customer": (Customer, Customer.customer_name),

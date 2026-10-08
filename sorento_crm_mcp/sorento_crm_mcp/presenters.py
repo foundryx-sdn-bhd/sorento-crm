@@ -3211,7 +3211,7 @@ def _report_ask(body: dict) -> str:
         return "\n".join([f"Sales by {basis}", *facts, f"Total {figures}"])
     rows = body.get("rows") or []
     if not rows:
-        return "\n".join([f"No sales found by {basis}", *facts])
+        return "\n".join([f"No {basis} found", *facts])
     plural = _REPORT_ASK_PLURALS.get(group_by, str(body.get("group_label") or group_by).lower())
     if len(rows) == 1:
         # One row printed reads singular: "Top 1 product", never "Top 1 products".

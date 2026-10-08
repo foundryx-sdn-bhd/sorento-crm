@@ -241,7 +241,7 @@ def test_more_than_50_keys_is_said(console, monkeypatch) -> None:
     _turn1(console, top_n=51)
     text, calls = console.say(_drill(), "top 10 customers for these sales agents")
     assert calls == [], calls
-    assert text.strip() == "That ranking listed more than 50 sales agents. Ask for the top 50 or fewer first.", text
+    assert text.strip() == "That is more than 50 sales agents to narrow by. Ask for the top 50 or fewer first.", text
 
 
 def test_a_refine_never_sends_the_shown_rows(console) -> None:

@@ -175,7 +175,9 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # REPORT-DRILLDOWN (PR #1531, card rev 3, owner 8 Oct 2026): the `ranking_drill` reading in
 # REPORT_ASK_ADDENDUM (scoped / global / unsure, the reply to the unsure question): 50,759 est.
 # tokens without MEMORY_ADDENDUM (+290), so CEILING is 50,763 (+4). Nothing else grew.
-CEILING = 50_763
+# Review round 1 (same PR): products and categories reach the drill (the top_selling exception)
+# and the unsure reply's count exception: 50,863 (+100), so CEILING is 50,867 (+4).
+CEILING = 50_867
 # The memory addendum on its own, bounded separately so this PR's growth stays bounded.
 # 26 Sep baseline (lane d89110c0): 339 est. tokens. Round 4 (baf4c813, 28 Sep: the history
 # question in any wording, the number re-run, commercial_request) took it to 512, which is

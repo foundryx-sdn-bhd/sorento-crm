@@ -82,12 +82,14 @@ def category_condition(ctx: Any, values: List[str]) -> Optional[Any]:
 NO_AGENT_KEY = "none"
 
 
-def _agent_in(column: Any, values: List[str]) -> Any:
-    """`column` in the agent ids, or NULL when `NO_AGENT_KEY` is one of the values."""
+def _agent_in(column: Any, values: List[str], *, owner: Any = None) -> Any:
+    """`column` in the agent ids, or NULL when `NO_AGENT_KEY` is one of the values. `owner`:
+    the row the column sits on must exist (an outer-joined customer), so "no agent" never
+    matches a line with no customer at all."""
     ids = [v for v in values if v != NO_AGENT_KEY]
     parts = [column.in_(ids)] if ids else []
     if NO_AGENT_KEY in values:
-        parts.append(column.is_(None))
+        parts.append(column.is_(None) if owner is None else sa.and_(owner.isnot(None), column.is_(None)))
     return sa.or_(*parts)
 
 
@@ -98,7 +100,7 @@ def sales_agent_condition(ctx: Any, values: List[str]) -> Optional[Any]:
 def customer_agent_condition(ctx: Any, values: List[str]) -> Optional[Any]:
     """The customer CARD link (REPORT-DRILLDOWN, owner 8 Oct 2026): lines of customers whose
     assigned agent (`customers.sales_agent_id`) is one of the values, whoever sold the order."""
-    return _agent_in(Customer.sales_agent_id, values)
+    return _agent_in(Customer.sales_agent_id, values, owner=Customer.id)
 
 
 def location_condition(ctx: Any, values: List[str]) -> Optional[Any]:

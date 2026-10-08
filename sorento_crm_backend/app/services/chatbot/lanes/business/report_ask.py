@@ -96,7 +96,8 @@ NOT_A_SOURCE_LINES = {
 }
 #: The route's per-filter cap (`order_management/report_ask._MAX_VALUES`).
 DRILL_MAX_KEYS = 50
-TOO_MANY_LINE = "That ranking listed more than {max} {plural}. Ask for the top {max} or fewer first."
+TOO_MANY_LINE = "That is more than {max} {plural} to narrow by. Ask for the top {max} or fewer first."
+NO_KEYS_LINE = "I can't narrow by {name} above. Ask again naming the {plural} you want."
 #: The frame keys that are not route params.
 _FRAME_ONLY = ("date_from", "date_to", "top_n", "shown")
 
@@ -575,7 +576,10 @@ def settle(
     if parse_output.get("ranking_refine") is True and isinstance(frame, dict) and frame:
         return _refine(db, parse_output, frame, dealer=dealer)
     if parse_output.get("ranking_refine") is not True and parse_output.get("ranking_drill") in ("scoped", "unsure"):
-        return _drill(db, parse_output, frame if isinstance(frame, dict) else {}, dealer=dealer)
+        drilled = _drill(db, parse_output, frame if isinstance(frame, dict) else {}, entities, dealer=dealer)
+        if drilled is not None:
+            return drilled
+        # Unsure with nothing above to narrow by: the global reading is the only one left.
 
     args, line = _fresh_args(db, parse_output, entities, dealer=dealer)
     if args is None:
@@ -610,6 +614,7 @@ def _refine(
         if (
             frame.get("group_by") not in (None, *DEALER_KEYS)
             or frame.get("sales_agent_ids")
+            or frame.get("customer_agent_ids")
             or frame.get("warehouse_codes")
             or frame.get("channel")
         ):
@@ -656,65 +661,63 @@ def _unsure_line(group_by: str, top_n: Any, source: str, count: int) -> str:
 
 
 def _drill(
-    db: Any, parse_output: dict[str, Any], frame: dict[str, Any], *, dealer: bool = False
-) -> tuple[rf.Outcome | None, str | None]:
+    db: Any, parse_output: dict[str, Any], frame: dict[str, Any], entities: Any, *, dealer: bool = False
+) -> tuple[rf.Outcome | None, str | None] | None:
     """The parser read this ranking as about the rows the last ranking printed
     (`ranking_drill` scoped), or maybe so (unsure, asked; nothing runs). Scoped keeps every
-    held filter, the period, the basis and the measure (the message's own replace them, as a
-    refine's do) and adds the declared link (`reports.ask.drill_param`) to exactly the rows
-    printed. No ranking held, or one that printed no rows, is said, never guessed."""
+    held filter, the period, the basis and the measure; the message's own filters, basis,
+    measure, period and direction replace held ones (card rule 2); the declared link
+    (`reports.ask.drill_param`) narrows to exactly the rows printed, the same axis included
+    ("bottom 2 of these agents"). A scoped drill with nothing held is said, never guessed;
+    None means an unsure one with nothing above to narrow by, which is the fresh ask."""
     from app.services.reports.ask import drill_param
 
-    raw_group = jsc.js_string(parse_output.get("group_by") or "").strip().lower()
-    group_by = GROUP_BY.get(raw_group) if raw_group else None
     shown = _dict(frame.get("shown"))
     rows = [r for r in jsc.array(shown.get("rows")) if isinstance(r, dict)]
     source = jsc.js_string(shown.get("group_by") or "")
+    unsure = parse_output.get("ranking_drill") == "unsure"
+    drillable = bool(rows) and source in AXIS_NOUNS and drill_param(source, source) is not None
+    if unsure and not drillable:
+        return None
     if not rows or source not in AXIS_NOUNS:
         return None, NO_RANKING_LINE
+
+    # The message's own reading, exactly as a fresh ask reads it (axis, filters, choices).
+    own, line = _fresh_args(db, parse_output, entities, dealer=dealer)
+    if own is None:
+        return None, line
+    group_by = own.get("group_by")
     if group_by is None:
         return None, CATALOGUE_LINE
-    if group_by == source:
-        # The same axis again ("top 5 of these agents") only changes the count or a filter.
-        return _refine(db, parse_output, frame, dealer=dealer)
     param = drill_param(source, group_by)
     if param is None:
         return None, NOT_A_SOURCE_LINES.get(source, CATALOGUE_LINE)
-    if parse_output.get("ranking_drill") == "unsure":
+    if unsure:
         return None, _unsure_line(group_by, parse_output.get("top_n"), source, len(rows))
     keys: list[str] = []
     for row in rows:
-        keys.extend(k for k in (jsc.js_string(v) for v in jsc.array(row.get("keys"))) if k and k not in keys)
-    if not keys:
-        return None, NO_RANKING_LINE
+        row_keys = [k for k in (jsc.js_string(v) for v in jsc.array(row.get("keys"))) if k]
+        if not row_keys:
+            # A printed row naming nothing to narrow by ("(blank)"): said, never dropped.
+            return None, NO_KEYS_LINE.format(name=jsc.js_string(row.get("name")), plural=AXIS_NOUNS[source][1])
+        keys.extend(k for k in row_keys if k not in keys)
     if len(keys) > DRILL_MAX_KEYS:
         return None, TOO_MANY_LINE.format(max=DRILL_MAX_KEYS, plural=AXIS_NOUNS[source][1])
 
     held = {k: v for k, v in frame.items() if k not in _FRAME_ONLY}
-    if dealer:
-        from app.services.reports.ask import DEALER_KEYS
-
-        if group_by not in DEALER_KEYS or any(held.get(k) for k in ("sales_agent_ids", "customer_agent_ids", "warehouse_codes", "channel")):
-            return None, DEALER_REFUSAL
-    args = {**held, "group_by": group_by, param: keys}
-    args["sort"] = "asc" if parse_output.get("rank_direction") == "bottom" else "desc"
-    channel = parse_output.get("sales_channel")
-    if channel in ("dealer", "project"):
-        if dealer:
-            return None, DEALER_REFUSAL
-        args["channel"] = channel
-    filters, line = _word_filters(db, parse_output, (("brand", "brand_ids"), ("category", "category_ids")))
-    if filters is None:
-        return None, line
-    args.update(filters)
-    if basis_from(parse_output):
-        args["basis"] = basis_from(parse_output)
-    if metric_from(parse_output):
-        args["measure"] = metric_from(parse_output)
+    if dealer and any(held.get(k) for k in ("sales_agent_ids", "customer_agent_ids", "warehouse_codes", "channel")):
+        return None, DEALER_REFUSAL
+    message_filters = {k: v for k, v in own.items() if k not in _NON_FILTER_ARGS}
+    args = {**held, **message_filters, "group_by": group_by, "sort": own["sort"], param: keys}
+    for key in ("basis", "measure"):
+        if own.get(key):
+            args[key] = own[key]
     period = period_from(parse_output.get("date_filter_start"), parse_output.get("date_filter_end")) or period_from(
         frame.get("date_from"), frame.get("date_to")
     )
     top_n = parse_output.get("top_n")
+    if top_n is None and group_by == source:
+        top_n = frame.get("top_n")
     # A drill has both choices (the held args ran); only the count is asked when not named.
     given = {**_given_choices(args), **_given_top_n(args, top_n)}
     for name, key in (("metric", "measure"), ("basis", "basis")):

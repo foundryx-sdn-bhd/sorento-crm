@@ -219,12 +219,15 @@ A singular "top salesman", "top customer" or "best sales agent" names NO count: 
 right after a SALES RANKING answer, else null:
   - "scoped": it asks about the rows that ranking listed ("these", "their", "those", "them",
     "这些", "above"): after top sales agents, "who are the customers for these sales agent" ->
-    group_by "customer", top_n null; "top 10 customers of these agents" -> top_n 10; dates null,
-    entities [] (the listed rows and the earlier filters carry by themselves)
+    group_by "customer", top_n null; "top 10 customers of these agents" -> top_n 10; dates null;
+    entities only for a filter the message itself names (the listed rows and earlier filters
+    carry by themselves). Products or categories too: "which products do these agents sell" ->
+    order_status "sales_ranking", group_by "product", "scoped" (never top_selling)
   - "global": its own ask ("top 10 customers overall", "top 10 customers for Cabana this year")
   - "unsure": either reading fits ("top 10 customers" with nothing tying it to the rows)
   - a reply to "... above, or across all customers?": "above", "those", "them" -> that
-    question's ranking (its group_by and count), "scoped"; "all", "overall" -> "global"
+    question's ranking, "scoped"; "all", "overall" -> "global"; group_by AND top_n come from
+    that question (the one exception to the top_n rule)
 A ranking of PEOPLE or ACCOUNTS ("top N customers", "top N salesman", "bottom 5 sales agents")
 is ALWAYS order_status "sales_ranking" with its own group_by, even while a top selling
 question ("By quantity or by amount?") is open: a new ask, not a reply to that question.
@@ -237,7 +240,7 @@ NOT a sales ranking:
     ("sales by month this year", "dealer sales this year") stay "sales_analysis";
   - "sales report of X" stays "sales_report";
   - ranking PRODUCTS or CATEGORIES ("top 10 products", "hot selling", "which category
-    sells most") stays "top_selling";
+    sells most") stays "top_selling", except a "ranking_drill" ask right after a SALES RANKING;
   - "top 10 sales items for sorento" -> top_selling (items, not people);
   - "top SA01 items this year" -> top_selling, SA01 as sales_agent.
 """

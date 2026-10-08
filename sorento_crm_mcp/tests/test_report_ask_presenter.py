@@ -97,7 +97,7 @@ def test_number_shape():
 def test_no_rows_names_its_scope_one_fact_per_line():
     body = _body(rows=[], more=0, total_count=0)
     assert _report_ask(body) == (
-        "No sales found by delivered sales\nBrand: SORENTO\nPeriod: 2026-09-01 to 2026-09-30"
+        "No delivered sales found\nBrand: SORENTO\nPeriod: 2026-09-01 to 2026-09-30"
     )
 
 
