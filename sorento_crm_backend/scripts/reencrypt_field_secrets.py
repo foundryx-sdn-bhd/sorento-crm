@@ -122,8 +122,8 @@ def main() -> None:
     SessionLocal = sessionmaker(bind=engine)
 
     print(f"Mode: {'APPLY' if args.apply else 'DRY RUN'}")
-    print(f"FIELD_ENCRYPTION_KEY set: {field_encryption_key_configured()}")
     try:
+        print(f"FIELD_ENCRYPTION_KEY set: {field_encryption_key_configured()}")
         with SessionLocal() as db:
             counts = backfill(db, apply=args.apply)
     except (RuntimeError, ValueError) as e:  # ValueError: a malformed FIELD_ENCRYPTION_KEY

@@ -34,9 +34,9 @@ def _field_keys() -> list[Fernet]:
     for position, key in enumerate((k.strip() for k in raw if k.strip()), start=1):
         try:
             keys.append(Fernet(key.encode("ascii")))
-        except (ValueError, binascii.Error, UnicodeEncodeError) as e:
+        except (ValueError, binascii.Error, UnicodeEncodeError):
             # The key itself never goes into the message.
-            raise ValueError(f"FIELD_ENCRYPTION_KEY entry {position} is not a valid Fernet key") from e
+            raise ValueError(f"FIELD_ENCRYPTION_KEY entry {position} is not a valid Fernet key") from None
     return keys
 
 
@@ -56,16 +56,32 @@ def field_encryption_key_configured() -> bool:
 _KEYLESS_ENVIRONMENTS = frozenset({"development", "dev", "local", "test", "ci"})
 
 
-def assert_field_encryption_ready(environment: str | None) -> None:
+def assert_field_encryption_ready(
+    environment: str | None,
+    *,
+    environment_explicit: bool = True,
+    production_entrypoint: bool = False,
+) -> None:
     """Boot check for the API (app/main.py) and the worker (worker.py).
 
     A malformed FIELD_ENCRYPTION_KEY raises here rather than reading every stored secret
     as unset at runtime. Outside a dev environment an unset key refuses to start: new
     secrets would otherwise be encrypted under the JWT_SECRET-derived key, and rotating
     JWT_SECRET would then destroy them.
+
+    ``Settings.environment`` defaults to "development", so on a production entrypoint
+    (the API under gunicorn, the worker in a container) that default only counts when
+    ENVIRONMENT was set on purpose. Local uvicorn and CI's import smokes are neither.
     """
     if _field_keys():
         return
+    if production_entrypoint and not environment_explicit:
+        raise RuntimeError(
+            "FIELD_ENCRYPTION_KEY is not set and ENVIRONMENT is not set, on a production "
+            "entrypoint. Refusing to start: stored secrets would be encrypted under the "
+            "JWT_SECRET-derived key. Set FIELD_ENCRYPTION_KEY (see "
+            "documentation/plans/security/PLAN-ai-key-encrypt-08oct.md)."
+        )
     if (environment or "").strip().lower() not in _KEYLESS_ENVIRONMENTS:
         raise RuntimeError(
             f"FIELD_ENCRYPTION_KEY is not set and ENVIRONMENT={environment!r} is not a dev "

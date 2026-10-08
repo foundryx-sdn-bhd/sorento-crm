@@ -45,7 +45,10 @@ during rollout. Unset `FIELD_ENCRYPTION_KEY` (dev, CI) falls back to the JWT-der
 the old behaviour, but only where `ENVIRONMENT` is a dev one (`development`, `dev`, `local`,
 `test`, `ci`): `assert_field_encryption_ready` runs at boot in the API (`app/main.py`) and the
 worker (`worker.py`, which never imports `app.main`) and refuses to start anywhere else without
-the key. A malformed entry fails that same boot check, naming its position, never its value, so
+the key. `Settings.environment` defaults to `development`, so on a production entrypoint (the API
+under gunicorn, the worker's `__main__` in a container) that default only counts when
+`ENVIRONMENT` is set on purpose; local uvicorn and CI's import smokes are neither. A malformed
+entry fails that same boot check, naming its position, never its value, so
 a typo cannot quietly read every stored secret as unset.
 
 Generate a key:

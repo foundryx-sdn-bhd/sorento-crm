@@ -89,7 +89,11 @@ _assert_dev_login_safe(
 
 from app.utils.field_encryption import assert_field_encryption_ready
 
-assert_field_encryption_ready(settings.environment)
+assert_field_encryption_ready(
+    settings.environment,
+    environment_explicit="environment" in settings.model_fields_set,
+    production_entrypoint=_running_under_gunicorn(),
+)
 
 # Create FastAPI app
 app = FastAPI(
