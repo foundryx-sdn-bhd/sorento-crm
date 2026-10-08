@@ -21,7 +21,7 @@ Per value:
 Dry run by default: counts only, never a value. `--apply` writes in one transaction
 and refuses unless FIELD_ENCRYPTION_KEY is set (re-encrypting onto the JWT-derived key
 would defeat the point). Each UPDATE is a compare-and-set on the value read, so a secret
-saved meanwhile is never overwritten. Re-running is a no-op.
+saved meanwhile is never overwritten (counted as "skipped"). Re-running is a no-op.
 
 Run from sorento_crm_backend/ with the deployment's env (FIELD_ENCRYPTION_KEY, and the
 JWT_SECRET the old tokens were written under):
@@ -82,7 +82,7 @@ def backfill(db: Session, *, apply: bool) -> dict[str, dict[str, int]]:
         raise RuntimeError("FIELD_ENCRYPTION_KEY is not set; refusing to re-encrypt")
     counts: dict[str, dict[str, int]] = {}
     for table, column, encrypt_plaintext in COLUMNS:
-        tally = counts[f"{table}.{column}"] = dict.fromkeys(STATES, 0)
+        tally = counts[f"{table}.{column}"] = dict.fromkeys((*STATES, "skipped"), 0)
         rows = db.execute(text(f"SELECT id, {column} AS v FROM {table}")).all()
         for row in rows:
             state = _classify(row.v)
@@ -95,10 +95,12 @@ def backfill(db: Session, *, apply: bool) -> dict[str, dict[str, int]]:
                 new = encrypt_secret(row.v)
             else:
                 continue
-            db.execute(
+            result = db.execute(
                 text(f"UPDATE {table} SET {column} = :new WHERE id = :i AND {column} = :old"),
                 {"new": new, "i": row.id, "old": row.v},
             )
+            if result.rowcount == 0:
+                tally["skipped"] += 1  # changed since it was read; the newer value stands
     if apply:
         db.commit()
     return counts
@@ -124,11 +126,11 @@ def main() -> None:
     try:
         with SessionLocal() as db:
             counts = backfill(db, apply=args.apply)
-    except RuntimeError as e:
+    except (RuntimeError, ValueError) as e:  # ValueError: a malformed FIELD_ENCRYPTION_KEY
         print(f"ERROR: {e}", file=sys.stderr)
         sys.exit(2)
     for name, tally in counts.items():
-        print(f"{name}: " + " ".join(f"{s}={tally[s]}" for s in STATES))
+        print(f"{name}: " + " ".join(f"{s}={tally[s]}" for s in (*STATES, "skipped")))
     if not args.apply and any(t["old_key"] or t["plaintext"] for t in counts.values()):
         print("Re-run with --apply to move old_key (and AI-key plaintext) values onto the current key.")
     if any(t["unreadable"] for t in counts.values()):
