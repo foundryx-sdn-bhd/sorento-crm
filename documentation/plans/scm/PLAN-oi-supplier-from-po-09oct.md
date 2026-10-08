@@ -30,9 +30,10 @@ draws down (`po_line_id`), else of the PO its `from_po_number` names in the same
 |---|---------|------|---------------|-------|
 | 1-8 | Worklist API `supplier`/`supplier_id`, filter, sort, facet, worklist + OI Lines tab + matrix drilldown (`SupplierCell`), Excel export (both export jobs) | `order_inquiry_worklist_service.py` `_base` Supplier join, `_SPO_LINKED_SUPPLIER_ID` | PO via link / SPO `po_line_id` / `spo_ref`, else SPO supplier | same PO legs, then `supplier_id_for` (adds `from_po_number`) |
 | 9 | PO popover | `get_po_detail` | the PO's own supplier | unchanged (already the PO) |
-| 10 | SPO popover header | `get_spo_detail` | SPO supplier | `supplier_id_for` |
-| 11 | OI Related documents tab, SPO group | `order_inquiry_header_service.related_documents` | SPO supplier | `supplier_id_for` |
+| 10 | SPO popover header | `get_spo_detail` | SPO supplier (lowest id when several) | `supplier_id_for`, every distinct name sorted |
+| 11 | OI Related documents tab, SPO group | `order_inquiry_header_service.related_documents` | SPO supplier | `supplier_id_for`; grouped by SPO number alone, every distinct name sorted (one row per SPO) |
 | 12 | Link dialog candidates + "Linked to X (supplier)" row note | `project_order_inquiry_service.py` SPO candidate queries | SPO supplier | `supplier_id_for` |
+| 12b | OI import "Linked to X (supplier)" note: `_target_facts`, received-link move `_document_facts_for_link` | `project_order_inquiry_import_service.py` | SPO supplier | `supplier_id_for` |
 | 13 | Companion-rule host supplier (never displayed) | `_host_row_supplier_id` | PO via link, else product default | unchanged (not a display site) |
 
 No chatbot, MCP, n8n, OI email or PDF surface shows an OI supplier. FE needs no change (every cell renders

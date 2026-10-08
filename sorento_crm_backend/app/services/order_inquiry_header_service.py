@@ -20,6 +20,7 @@ from decimal import Decimal
 from typing import Any, List, Literal, Optional, get_args
 
 from sqlalchemy import Date, String, and_, case, cast, func, or_
+from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.orm import Session
 
 from app.models.order import Customer, SalesOrder, SalesOrderLine
@@ -492,7 +493,16 @@ class OrderInquiryHeaderService:
         spo_rows = (
             self.db.query(
                 SPOAllocation.spo_number.label("spo_number"),
-                Supplier.supplier_name.label("supplier_name"),
+                # One entry per SPO even when its lines' source POs name different
+                # suppliers (each line resolves its own): every distinct name, sorted.
+                func.array_to_string(
+                    func.array_agg(
+                        aggregate_order_by(
+                            Supplier.supplier_name.distinct(), Supplier.supplier_name
+                        )
+                    ),
+                    ", ",
+                ).label("supplier_name"),
                 func.count(func.distinct(OrderInquiryLink.row_id)).label("lines_linked"),
                 func.sum(OrderInquiryLink.qty).label("qty_linked"),
             )
@@ -507,7 +517,7 @@ class OrderInquiryHeaderService:
                 OrderInquiryRow.state != INQUIRY_CANCELLED,
                 OrderInquiryLink.spo_allocation_id.isnot(None),
             )
-            .group_by(SPOAllocation.spo_number, Supplier.supplier_name)
+            .group_by(SPOAllocation.spo_number)
             .all()
         )
         return OrderInquiryRelatedDocumentsOut(

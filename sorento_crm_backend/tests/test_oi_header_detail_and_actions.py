@@ -323,6 +323,115 @@ class TestRelatedDocuments:
             [spo_entry] = result.spos
             assert spo_entry.supplier_name == spo_supplier.supplier_name
 
+    def test_one_spo_naming_two_pos_stays_one_entry_naming_both_OI_SUPPLIER_FROM_PO(self):
+        """Each SPO line resolves its own source PO, so one SPO can name two suppliers:
+        still ONE entry (the tab keys rows by SPO number), both names, sorted."""
+        from app.services.order_inquiry_header_service import (  # noqa: PLC0415
+            OrderInquiryHeaderService,
+        )
+
+        with blank_session() as db:
+            company_id = _sorento(db)
+            first_supplier, _spo_supplier, first = self._spo_naming_a_po(db, company_id)
+            second_supplier = self._supplier(db, company_id)
+            second_po, _line = self._po_line(db, company_id, second_supplier)
+            second = self._spo(db, company_id, _spo_supplier)
+            second.spo_number = first.spo_number
+            second.spo_line_number = 2
+            second.from_po_number = second_po.po_number
+            seeded = _header(db, company_id, rows=[{"qty": "6"}, {"qty": "4"}])
+            self._link(db, seeded["rows"][0], allocation=first, qty="6", document=first.spo_number)
+            self._link(db, seeded["rows"][1], allocation=second, qty="4", document=first.spo_number)
+            db.commit()
+
+            result = OrderInquiryHeaderService(db).related_documents(seeded["inquiry"].id)
+            [spo_entry] = result.spos
+            assert spo_entry.lines_linked == 2
+            assert Decimal(spo_entry.qty_linked) == Decimal("10")
+            assert spo_entry.supplier_name == ", ".join(
+                sorted([first_supplier.supplier_name, second_supplier.supplier_name])
+            )
+
+    def test_the_lines_own_po_line_beats_the_po_number_it_names_OI_SUPPLIER_FROM_PO(self):
+        """A Sorento-raised SPO line carries `po_line_id`, the PO it actually draws down;
+        that PO's supplier wins over whatever `from_po_number` names."""
+        from app.services.scm import spo_supply  # noqa: PLC0415
+        from app.models.procurement import SPOAllocation  # noqa: PLC0415
+
+        with blank_session() as db:
+            company_id = _sorento(db)
+            drawn_supplier = self._supplier(db, company_id)
+            _drawn_po, drawn_line = self._po_line(db, company_id, drawn_supplier)
+            _named_supplier, _spo_supplier, allocation = self._spo_naming_a_po(db, company_id)
+            allocation.po_line_id = drawn_line.id
+            db.commit()
+
+            resolved = (
+                db.query(spo_supply.supplier_id_for())
+                .filter(SPOAllocation.id == allocation.id)
+                .scalar()
+            )
+            assert resolved == drawn_supplier.id
+
+    def test_a_po_number_from_another_company_never_names_the_supplier_OI_SUPPLIER_FROM_PO(
+        self,
+    ):
+        """PO numbers are unique per company only: another company's PO with the same
+        number is not this SPO's source, so the SPO's own supplier stands."""
+        from app.models.company import Company  # noqa: PLC0415
+        from app.models.procurement import PurchaseOrder, SPOAllocation  # noqa: PLC0415
+        from app.services.scm import spo_supply  # noqa: PLC0415
+
+        with blank_session() as db:
+            company_id = _sorento(db)
+            other = Company(id=_uid(), name=f"{MARKER} other co", code=f"Z{_uid()[:6]}")
+            db.add(other)
+            db.flush()
+            foreign_supplier = self._supplier(db, other.id)
+            spo_supplier = self._supplier(db, company_id)
+            number = f"ZZT-PO-{_uid()[:8]}"
+            db.add(
+                PurchaseOrder(
+                    id=_uid(), company_id=other.id, po_number=number,
+                    supplier_id=foreign_supplier.id, status="active",
+                )
+            )
+            allocation = self._spo(db, company_id, spo_supplier)
+            allocation.from_po_number = number
+            db.commit()
+
+            resolved = (
+                db.query(spo_supply.supplier_id_for())
+                .filter(SPOAllocation.id == allocation.id)
+                .scalar()
+            )
+            assert resolved == spo_supplier.id
+
+    def test_the_import_note_names_the_source_pos_supplier_OI_SUPPLIER_FROM_PO(self):
+        """The OI import's received-link move stamps "Linked to <SPO> (<supplier>)" off
+        `_document_facts_for_link`; that supplier follows the same rule."""
+        from types import SimpleNamespace  # noqa: PLC0415
+
+        from app.services.project_order_inquiry_import_service import (  # noqa: PLC0415
+            _document_facts_for_link,
+            _target_facts,
+        )
+
+        with blank_session() as db:
+            company_id = _sorento(db)
+            po_supplier, _spo_supplier, allocation = self._spo_naming_a_po(db, company_id)
+            db.commit()
+
+            link = SimpleNamespace(
+                document=allocation.spo_number, po_line_id=None,
+                spo_allocation_id=allocation.id,
+            )
+            assert _document_facts_for_link(db, link)["supplier_name"] == (
+                po_supplier.supplier_name
+            )
+            facts = _target_facts(db, {str(allocation.id)})
+            assert facts[str(allocation.id)]["supplier_name"] == po_supplier.supplier_name
+
     def test_spo_popover_names_its_source_pos_supplier_OI_SUPPLIER_FROM_PO(self):
         """The SPO document popover an OI's SPO cell opens (`get_spo_detail`) reads the
         same rule as the Supplier column."""

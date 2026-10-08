@@ -291,13 +291,14 @@ _PLACED_PO_ID = func.coalesce(
 # source PO only by number (`from_po_number`, the "via SPO" PO cell) answers with THAT
 # purchase order's supplier, and the allocation's own `supplier_id` only when the CRM
 # holds no such purchase order.
+_SPO_LINE_SUPPLIER_ID = spo_supply.supplier_id_for()
 _SPO_LINKED_SUPPLIER_ID = (
-    select(spo_supply.supplier_id_for())
+    select(_SPO_LINE_SUPPLIER_ID)
     .select_from(OrderInquiryLink)
     .join(SPOAllocation, SPOAllocation.id == OrderInquiryLink.spo_allocation_id)
     .where(
         OrderInquiryLink.row_id == OrderInquiryRow.id,
-        spo_supply.supplier_id_for().isnot(None),
+        _SPO_LINE_SUPPLIER_ID.isnot(None),
     )
     .order_by(OrderInquiryLink.linked_at.asc(), OrderInquiryLink.id.asc())
     .limit(1)
@@ -2544,21 +2545,21 @@ class OrderInquiryWorklistService:
             )
         allocations = [allocation for allocation, *_rest in rows]
         # OI-SUPPLIER-FROM-PO: each line's source PO supplier, the line's own
-        # `supplier_id` only when the CRM holds no such purchase order.
-        supplier_ids = {
-            str(supplier_id)
-            for (supplier_id,) in self.db.query(spo_supply.supplier_id_for())
-            .filter(SPOAllocation.id.in_([allocation.id for allocation in allocations]))
-            .all()
-            if supplier_id
-        }
-        supplier = (
-            self.db.query(Supplier)
-            .filter(Supplier.id.in_(list(supplier_ids)))
-            .order_by(Supplier.id)
-            .first()
-            if supplier_ids
-            else None
+        # `supplier_id` only when the CRM holds no such purchase order. Lines of one SPO
+        # can name POs of different suppliers, so every distinct name is stated, sorted,
+        # rather than one picked by id.
+        supplier_names = sorted(
+            {
+                name
+                for (name,) in self.db.query(Supplier.supplier_name)
+                .select_from(SPOAllocation)
+                .join(Supplier, Supplier.id == spo_supply.supplier_id_for())
+                .filter(
+                    SPOAllocation.id.in_([allocation.id for allocation in allocations])
+                )
+                .all()
+                if name
+            }
         )
         shipment_ids = {
             str(allocation.inbound_shipment_id)
@@ -2584,7 +2585,7 @@ class OrderInquiryWorklistService:
         ]
         return {
             "spo_number": wanted,
-            "supplier_name": supplier.supplier_name if supplier else None,
+            "supplier_name": ", ".join(supplier_names) or None,
             "eta": min(etas) if etas else None,
             "shipment_ref": shipment.shipment_number if shipment else None,
             # The container the goods travel in, by its own column name
