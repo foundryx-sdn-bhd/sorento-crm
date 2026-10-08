@@ -565,9 +565,9 @@ def promo_filter(parse_output: dict[str, Any], db: Any) -> dict[str, list[str]]:
     brand-word rule the order lane uses. Empty keys are left out."""
     out: dict[str, list[str]] = {}
     entities = parse_output.get("entities")
-    typed_product = any(
-        isinstance(e, dict) and jsc.nullish_str(e.get("hint")).strip().lower() == "product" for e in entities or []
-    )
+    # A product token is an entity hinted None, "" or "product", the set `engine._with_read_codes`
+    # reads codes from.
+    typed_product = any(isinstance(e, dict) and e.get("hint") in (None, "", "product") for e in entities or [])
     terms = [] if typed_product else [t.lower() for t in class_scope_terms(parse_output)]
     if terms:
         out["scope_terms"] = terms
