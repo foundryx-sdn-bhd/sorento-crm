@@ -49,3 +49,21 @@ OI-2610-0001 reached by sidebar (Procurement > Supply Chain > Order Inquiries). 
 202510-S0040 reads the PO's supplier (DEMO PO SUPPLIER SDN BHD), not its SPO's (DEMO CHAOZHOU SPO SUPPLIER), on the
 Lines tab, the Related SPO tab and the SPO popover; a row naming a PO the CRM does not hold keeps its SPO's
 supplier. 375px: the grid scrolls inside its card, no page-level horizontal scroll. Screenshots in `evidence/`.
+
+### Browser pass on 29ef8a5f (reviewer READY at 29ef8a5f)
+
+Seeded demo: via-SPO row naming PO 202510-S0040 (PO supplier DEMO PO SUPPLIER SDN BHD, SPO supplier DEMO CHAOZHOU SPO
+SUPPLIER); via-SPO row naming unknown PO 202511-S9999 (SPO supplier DEMO FALLBACK SPO SUPPLIER); one unlinked row.
+
+| Check | 1280 | 375 |
+|---|---|---|
+| Lines tab Supplier: via-SPO row = PO supplier | PASS | PASS |
+| Lines tab: unknown-PO row keeps SPO supplier; unlinked row "Not linked" | PASS | PASS |
+| SPO popover (SPO cell) Supplier = PO supplier | PASS | PASS |
+| Related SPO tab Supplier = PO supplier | PASS | PASS |
+| OI list Supplier filter offers PO supplier, not SPO's | PASS (API facet) | n/a |
+| Excel export SUPPLIER column = PO supplier | PASS (sync route `/order-inquiries/export?inquiry_id=`, same `export_xlsx` builder as the worker job; the async job built the workbook but cannot upload: no S3 bucket in the sandbox) | n/a |
+| No page-level horizontal scroll | n/a | PASS (scrollWidth 360) |
+
+Seen, not in scope: the export's PO NO column is blank for via-SPO rows (same on main); the screen prints the
+`from_po_number` there with "via SPO".
