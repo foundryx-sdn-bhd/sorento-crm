@@ -183,3 +183,10 @@ Owner, verbatim: "Q1 - (a), Q2 a, Q3, correct a, Q4 a okay". Crew: Q5 (a).
   this discontinued answer included: a discontinued code with an alternative gets
   `Alternative: <code>` from #1533's lookup. This lane reads the item's `alternatives` key; #1533
   fills it (for `crm_master_products_list` items too) when it merges.
+
+## Hand test (8 Oct 2026): PASS with one wording change
+
+Owner, verbatim: "ok I am okay wiht #1535, but just need emoji, discon can use the warning sign, the
+not discon sign can use tick emoji". So the lines are `SRTWT9613-BL: ✅ Not discontinued.` /
+`SRTBF11821: ⚠️ Discontinued.`, the card field `*Discontinued:* ⚠️ Yes` / `*Discontinued:* ✅ No`,
+and the ms / zh lines carry the same marks (`✅ Tidak dihentikan.`, `⚠️ 已停产。`).

@@ -1,6 +1,6 @@
 # PLAN: DISCONTINUED-ASK - chatbot answers "is X discontinued?" directly
 
-Status: Build (card ruled 8 Oct). Track: small fix (see CARD-discontinued-ask-08oct.md).
+Status: Hand test passed (8 Oct, emoji wording applied); awaiting CI and the owner merge. Track: small fix (see CARD-discontinued-ask-08oct.md).
 
 ## Owner's words (8 Oct 2026)
 
