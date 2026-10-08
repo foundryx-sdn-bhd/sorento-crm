@@ -2,15 +2,16 @@
 
 Status: CARD POSTED (8 Oct 2026), awaiting owner answers on Q1-Q5 before code. Track: L
 (migration, chatbot reply change, product screen section). Lane PR #1533 carries
-`crew-lane: PRODUCT-ALTERNATIVES`. Real-data counts requested from crew (PR comment
-`crew-data-request`); they fill the "Measured" table below when they arrive.
+`crew-lane: PRODUCT-ALTERNATIVES`. Real-data counts measured by crew (8 Oct), see
+"Measured on real data".
 
 ## The journey (owner, 8 Oct 2026)
 
 A dealer (availability mode) asks for stock of `SRTBF11821`. That code is discontinued with
-nothing on hand; the live product is `SRTBF11821-NEW` (16 in BRW). Today the dealer reads
-"no stock, discontinued" and never hears about `-NEW`. Same for `SRTWC286-SH-200`, replaced by
-`SRTWC286-SH-NEW-200` (the `NEW` sits mid-code, not as a suffix). The owner wants:
+nothing on hand in the warehouses a dealer sees; the live product is `SRTBF11821-NEW` (16 in BRW). Today the dealer reads
+"no stock, discontinued" and never hears about `-NEW`. Same family for `SRTWC286-SH-200`, whose
+replacement is `SRTWC286-SH-NEW-200` (the `NEW` sits mid-code, not as a suffix; the old code
+itself is not discontinued, see the measured table). The owner wants:
 
 1. a stored "alternative" link old code -> new code that the system always sets for `-NEW`,
    on product sync, product creation and a one-off backfill;
@@ -46,7 +47,8 @@ product's alternatives by hand, the rule never touches that product's links agai
 
 **The -NEW rule (a data rule on product codes, never on user text).** Product Y is the
 alternative of product X, same company, when removing exactly ONE `NEW` segment (split on
-`-`, case-insensitive) from Y's code gives X's code exactly. So `SRTBF11821-NEW` ->
+`-`, case-insensitive, whitespace around each segment trimmed: crew ruling 8 Oct, so
+`SRT1000-CR - NEW` links to `SRT1000-CR`) from Y's code gives X's code exactly. So `SRTBF11821-NEW` ->
 alternative of `SRTBF11821`; `SRTWC286-SH-NEW-200` -> alternative of `SRTWC286-SH-200`;
 `SRTWC286-SH-NEW-P` -> alternative of `SRTWC286-SH-P`; `X-NEW-NEW` -> alternative of `X-NEW`
 (chains are one hop each). `XNEW` / `NEWTON-1` never match (whole segment only). One idempotent
@@ -87,12 +89,20 @@ partial, over cap); (c) always when a link exists. **Recommend (b)**: the owner'
 told "no stock" while the replacement sits in BRW is the exact miss being fixed. Note this
 reverses AC-B14 ("never name other in-stock products to a dealer") for STORED alternatives only;
 the neighbour probe stays off for dealers.
+Measured case for the alternative WITHOUT stock: `BMC6067` (discontinued, 18 on hand) ->
+`BMC6067-NEW` (0 on hand). Under (b) the dealer asking 5 reads `BMC6067 x 5: ✅ Got stock.`
+plus the marker and NO Alternative line (full verdict); asking 30 reads the old line's own
+verdict plus `Alternative: BMC6067-NEW x 30: ❌ No stock and no incoming. Please refer to your
+salesman.` (or its ETA). Under (a) every BMC6067 answer carries that line. An alternative with
+no stock is still shown (it is the true answer about the replacement).
 
 **Q3. The "SRTWC286 matches N products. Which one?" picker.** (a) keep every code, unchanged;
 (b) hide an old code from the picker when it is discontinued AND has an alternative in the same
 list (dealer mode only). **Recommend (b)**: in the screenshot `-SH-200` and `-SH-NEW-200` both
 appear and the dealer cannot tell which is live; a discontinued code with its replacement right
-there is noise. A live (not discontinued) old code stays listed.
+there is noise. A live (not discontinued) old code stays listed. Measured: `SRTWC286-SH-200`
+is NOT discontinued (1 on hand vs 4 on `-SH-NEW-200`), so (b) keeps it; `SRTWC286-SH-P`
+(discontinued, 1 on hand -> 23 on `-SH-NEW-P`) is the one (b) hides.
 
 **Q4. Wording (customer-facing).** Dealer, "SRTBF11821" then "5":
 
@@ -124,9 +134,34 @@ and it reuses `ProductVariantsTab` / `ProductVariantPickerDialog`.
 
 ## Measured on real data
 
-Pending crew's run of the `crew-data-request` SQL on `sorento_cagent_stack` and
-`sorento_ai_automation_20261006`: -NEW codes with a base (suffix / mid-code), orphans (no
-base), chains, bases discontinued / zero on hand / live with stock.
+Crew, 8 Oct 2026, read-only. Figures are prod snapshot `sorento_ai_automation_20261006` /
+dev `sorento_cagent_stack`.
+
+| Measure | prod / dev |
+| --- | --- |
+| Codes with a `NEW` segment | 118 / 118, across 2 companies |
+| Base exists in the same company | 108 / 108 (105 suffix, 3 mid-code: `SRTWC286-SH-NEW-150`, `-200`, `-P`) |
+| Chains (`-NEW-NEW`) | 0 / 0 |
+| Orphans (no base) | 10 / 10, e.g. `SRTWHBWP-GB9032B-NEW`, `SRTWC8066-S-150-NEW`; `MWCX7605-RL-S10` has its base only in the OTHER company, so no link |
+| Base discontinued | 58 / 57 |
+| Base zero on hand | 28 / 30 (both discontinued and zero: 23 / 23) |
+| Base live (not discontinued) with stock | 45 / 44 |
+| -NEW with stock | 76 / 60 |
+| Cross-brand pairs | 0 |
+| Spaced codes the plain split missed | `SRT1000-CR - NEW`, `SRTUB6503-BACK INLET - NEW` (real bases) -> rule trims whitespace per segment; `**NEW` has no base, ignored |
+
+Examples (prod; base discontinued?, base on hand -> -NEW on hand):
+
+| Old | Disc. | Old on hand | -NEW on hand |
+| --- | --- | --- | --- |
+| `SRTBF11821` | yes | 3 (2 BRW-DFCT, 1 SPARE/P; 0 in dealer-visible warehouses) | 77 (16 BRW) |
+| `SRTWC286-SH-200` | NO | 1 | 4 |
+| `SRTWC286-SH-P` | yes | 1 | 23 |
+| `SRTBF11416` | yes | 1 | 98 |
+| `BMC6067` | yes | 18 | 0 (alternative with no stock) |
+
+Correction to the journey above: `SRTBF11821` is 0 on hand only in the dealer-visible
+warehouses (the 3 units sit in BRW-DFCT and SPARE/P); `SRTWC286-SH-200` is not discontinued.
 
 ## Out of scope
 
