@@ -1839,25 +1839,45 @@ def _item_code(it: Any) -> str:
     return jsc.nullish_str(jsc.get(it, "title")).strip()
 
 
-def _discontinued_status_lines(loc: Any, it: Any, *, card: str | None = None) -> str:
+def _item_company(it: Any) -> str:
+    """A product item's Company field (`presenters._products` stamps it), else ""."""
+    for f in jsc.get(it, "fields") or []:
+        if jsc.js_string(jsc.get(f, "key") or "") == "company_name" or jsc.get(f, "label") == "Company":
+            return jsc.nullish_str(jsc.get(f, "value")).strip()
+    return ""
+
+
+def _discontinued_status_lines(
+    loc: Any, it: Any, *, card: str | None = None, label: str | None = None
+) -> str | None:
     """The item's status from its own `flags.discontinued` (`products.is_discontinued`,
-    the field the marker always read). With no `card`: `<CODE>: Discontinued.` or
-    `<CODE>: Not discontinued.` (owner Q4 a). With the item's `card` text: that card plus
-    `*Discontinued:* Yes` / `No` (owner Q1 a). A discontinued item then names each stored
-    alternative the presenter put on it (`alternatives`, PRODUCT-ALTERNATIVES #1533's
-    link): one `Alternative: <code>` line each, none when the key is absent."""
-    gone = jsc.truthy(jsc.get(jsc.get(it, "flags"), "discontinued"))
+    the field the marker always read). With no `card`: `<label>: Discontinued.` or
+    `<label>: Not discontinued.` (owner Q4 a; `label` defaults to the code). With the
+    item's `card` text: that card plus `*Discontinued:* Yes` / `No` (owner Q1 a). A
+    discontinued item then names each stored alternative the presenter put on it
+    (`alternatives`, PRODUCT-ALTERNATIVES #1533's link): one `Alternative: <code>` line
+    each, none when the key is absent.
+
+    None when the flag is not a boolean: the status is unknown, and an unknown status is
+    never said either way (the caller prints the card)."""
+    gone = jsc.get(jsc.get(it, "flags"), "discontinued")
+    if not isinstance(gone, bool):
+        return None
+    code = _item_code(it)
     if card is None:
-        code = _item_code(it)
-        line = loc.text(f"{code}: Discontinued." if gone else f"{code}: Not discontinued.")
+        name = label or code
+        line = loc.text(f"{name}: Discontinued." if gone else f"{name}: Not discontinued.")
     else:
-        line = f"{card}\n*{loc.text('Discontinued')}:* {loc.text('Yes' if gone else 'No')}"
+        # One whole catalogued line, so its translation cannot reach any other Yes / No.
+        line = f"{card}\n{loc.text('*Discontinued:* Yes' if gone else '*Discontinued:* No')}"
     if gone:
+        seen = {code}
         for alt in jsc.array(jsc.get(it, "alternatives")):
             alt_code = (
                 jsc.nullish_str(jsc.get(alt, "product_code")) if isinstance(alt, dict) else jsc.nullish_str(alt)
             ).strip()
-            if alt_code:
+            if alt_code and alt_code not in seen:
+                seen.add(alt_code)
                 line += f"\n{loc.text('Alternative')}: {alt_code}"
     return line
 
@@ -3120,6 +3140,28 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
     status_ask = jsc.js_string(e.get("result_type") or "") == "products" and _asks_discontinued(req_attrs)
     status_only = status_ask and all(_asks_discontinued([a]) for a in req_attrs)
     plain_lines = stock_availability_answered or dealer_incoming or status_only
+    # Products are unique per company, so one code can be live in one company and
+    # discontinued in another: when a code's rows disagree (status or alternatives), each
+    # line names its company rather than print two bare lines that contradict each other.
+    status_labels: dict[int, str] = {}
+    if status_only:
+        by_code: dict[str, list[Any]] = {}
+        for it in jsc.array(e.get("items")):
+            by_code.setdefault(_item_code(it), []).append(it)
+        for code, rows in by_code.items():
+            facts = {
+                json.dumps(
+                    [jsc.get(jsc.get(r, "flags"), "discontinued"), jsc.array(jsc.get(r, "alternatives"))],
+                    sort_keys=True,
+                    default=str,
+                )
+                for r in rows
+            }
+            if len(facts) > 1:
+                for r in rows:
+                    company = _item_company(r)
+                    if company:
+                        status_labels[id(r)] = f"{code} ({company})"
 
     msg = (
         ""
@@ -3196,7 +3238,13 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
         if status_ask:
             # Q1 (a): the status alone is the status line; beside another property it is a
             # field of the card, in place of the marker it supersedes.
-            return _discontinued_status_lines(loc, it, card=None if status_only else line)
+            status = _discontinued_status_lines(
+                loc, it, card=None if status_only else line, label=status_labels.get(id(it))
+            )
+            if status is not None:
+                return status
+            if status_only:
+                return field_lines
         if jsc.truthy(flags) and jsc.truthy(jsc.get(flags, "discontinued")):
             line += f"\n⚠️  *({loc.text('PRODUCT DISCONTINUED')})*"
         if jsc.truthy(flags) and jsc.truthy(jsc.get(flags, "expired")):
@@ -3268,7 +3316,7 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
     ):
         item_text = _item_line(i + 1 + set_row_offset, it, numbered=not plain_lines)
         if status_only:
-            # The same code in two companies is one answer, said once.
+            # The same code in two companies that agree is one answer, said once.
             if item_text in printed_status:
                 continue
             printed_status.add(item_text)

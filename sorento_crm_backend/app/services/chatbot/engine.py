@@ -430,7 +430,9 @@ def _as_a_stock_ask_by_its_own_words(verdict: dict[str, Any], message: str) -> d
     # ..." may carry the quoted 5 onto the entity; the parser's own `requested_attributes`
     # says it is a status question, so it stays a product question (a parsed field, not
     # the user's words).
-    if any(str(a).strip().lower() == "discontinued" for a in verdict.get("requested_attributes") or []):
+    from app.services.chatbot.lanes.business.fetch import _asks_discontinued
+
+    if _asks_discontinued(jsc.array(verdict.get("requested_attributes"))):
         return verdict
     codes = {
         str(e.get(k)).strip()

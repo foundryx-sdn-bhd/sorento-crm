@@ -98,10 +98,10 @@ LABELS: dict[str, dict[str, str]] = {
     # line beside another property (Q1 a), and the stored alternative (Q5 a, #1533).
     "{code}: Discontinued.": {"ms": "{code}: Dihentikan.", "zh": "{code}：已停产。"},
     "{code}: Not discontinued.": {"ms": "{code}: Tidak dihentikan.", "zh": "{code}：未停产。"},
-    "Discontinued": {"ms": "Dihentikan", "zh": "已停产"},
+    # Whole lines, so no other "Yes" / "No" in any reply is touched.
+    "*Discontinued:* Yes": {"ms": "*Dihentikan:* Ya", "zh": "*已停产:* 是"},
+    "*Discontinued:* No": {"ms": "*Dihentikan:* Tidak", "zh": "*已停产:* 否"},
     "Alternative": {"ms": "Alternatif", "zh": "替代型号"},
-    "Yes": {"ms": "Ya", "zh": "是"},
-    "No": {"ms": "Tidak", "zh": "否"},
     # Slice 2: PO / SO / SPO / orders rows. PO, SO, SPO and GR stay as printed (owner Q3).
     "Order Number": {"ms": "No. Pesanan", "zh": "订单号"},
     "Customer": {"ms": "Pelanggan", "zh": "客户"},
@@ -614,7 +614,7 @@ DIRECT_ONLY = frozenset({"I have {names}.", "{code} has no {types}."})
 
 #: Report value words `Localizer.lines` translates after a catalogued label. An explicit set, never
 #: "any catalog key", so data that happens to read like a label (a status named "Status") is safe.
-VALUE_WORDS = frozenset({"all", "Amount", "Quantity", "Ordered", "Delivered (transferred to DO)", "Yes", "No"})
+VALUE_WORDS = frozenset({"all", "Amount", "Quantity", "Ordered", "Delivered (transferred to DO)"})
 RANGE = "{from} to {to}"
 #: A `{token}` matches at most this many characters of one line, and a line longer than
 #: `_INLINE_LINE_MAX` gets `lines()` only (the inline pass is skipped for it).
