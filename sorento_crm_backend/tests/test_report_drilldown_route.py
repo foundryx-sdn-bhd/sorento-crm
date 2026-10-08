@@ -195,3 +195,46 @@ def test_a_dealer_may_not_use_the_card_link(client, db):
     resp = _ask(client, contact, group_by="product", top_n=3, customer_agent_ids=[w.g1.id])
     assert resp.status_code == 403 and _code(resp) == "report_dimension_not_allowed", resp.text
     assert DEALER_MESSAGE in resp.text
+
+
+# ======================================================================== review round 1
+
+
+def test_the_none_key_reads_in_any_case(client, db):
+    _world(db)
+    body = _ok(client, _full(db), group_by="customer", top_n=10, product_code="ZZTDD", sales_agent_ids=["NONE"])
+    assert _rows(body) == [("ZZT DRILL C4", 1, D("5.00"))], body["rows"]
+
+
+def test_customer_agent_ids_has_the_route_cap(client, db):
+    _world(db)
+    ids = [f"{i:08d}-0000-4000-8000-000000000000" for i in range(51)]
+    resp = _ask(client, _full(db), group_by="customer", top_n=10, customer_agent_ids=ids)
+    assert resp.status_code == 422 and _code(resp) == "too_many_values", resp.text
+
+
+def test_card_agent_none_never_matches_a_line_with_no_customer(client, db):
+    """`customers.sales_agent_id IS NULL` is a customer with no card agent, not a line whose
+    customer is missing (the customer join is an outer join)."""
+    from app.models.order import SalesOrder
+
+    w = _world(db)
+    so = seed_so_line(db, cust=w.c3, prod=w.p, qty=1, total="999.00", agent=w.g1, wh=w.wh)
+    db.query(SalesOrder).filter(SalesOrder.id == so.id).update({"customer_id": None})
+    db.commit()
+    body = _ok(client, _full(db), group_by="product", top_n=10, product_code="ZZTDD", customer_agent_ids=["none"])
+    assert money(body["total"]["amount"]) == D("25.00"), body
+
+
+def test_row_keys_stay_inside_the_contact_companies(client, db):
+    """A same-code agent of a company the contact has no link to is never a key."""
+    from app.models.sales_agent import SalesAgent
+    from tests._mc_lookup_seed import MOCHA_ID, seed_mocha
+    import uuid as _uuid
+
+    w = _world(db)
+    seed_mocha(db)
+    db.add(SalesAgent(id=str(_uuid.uuid4()), sales_agent="ZZT-DG-1", company_id=MOCHA_ID))
+    db.commit()
+    body = _ok(client, _full(db), group_by="sales_agent", top_n=10, product_code="ZZTDD")
+    assert _keys(body)["ZZT-DG-1"] == [w.g1.id], body["rows"]

@@ -154,12 +154,15 @@ def test_a_drill_of_a_drill_keeps_the_first_link(console) -> None:
     assert args["customer_agent_ids"] == [AG1, AG2, "none"], args
 
 
-def test_the_same_axis_scoped_is_the_refine(console) -> None:
+def test_the_same_axis_scoped_ranks_within_the_rows_printed(console) -> None:
+    """Review S1: "bottom 2 of these agents" ranks only the agents turn 1 printed (card rule 3)."""
     _turn1(console)
-    _text, calls = console.say(_drill(group_by="sales_agent", top_n=5), "top 5 of these agents")
+    _text, calls = console.say(_drill(group_by="sales_agent", top_n=2, rank_direction="bottom"),
+                               "bottom 2 of these agents")
     (args,) = calls
-    assert args["group_by"] == "sales_agent" and args["top_n"] == 5, args
-    assert "sales_agent_ids" not in args and "customer_agent_ids" not in args, args
+    assert args["group_by"] == "sales_agent" and args["top_n"] == 2 and args["sort"] == "asc", args
+    assert args["sales_agent_ids"] == [AG1, AG2, "none"] and "customer_agent_ids" not in args, args
+    assert args["product_code"] == PRODUCT_CODE, args
 
 
 # ============================================================================ global / unsure
@@ -206,9 +209,16 @@ def test_scoped_with_no_ranking_held_is_said_and_nothing_runs(console) -> None:
     assert calls == [] and text.strip() == NO_RANKING, text
 
 
-def test_unsure_with_no_ranking_held_is_said_too(console) -> None:
+def test_unsure_with_no_ranking_held_is_the_fresh_ask(console) -> None:
+    """Review S3: with nothing to scope to, the global reading is the only one."""
     text, calls = console.say(_drill(ranking_drill="unsure"), "top 10 customers")
-    assert calls == [] and text.strip() == NO_RANKING, text
+    assert calls == [] and text.strip() == PERIOD_Q, text
+
+
+def test_unsure_after_a_month_list_is_the_fresh_ask(console) -> None:
+    _turn1(console, group_by="month")
+    text, calls = console.say(_drill(ranking_drill="unsure"), "top 10 customers")
+    assert calls == [] and text.strip() == PERIOD_Q, text
 
 
 @pytest.mark.parametrize(
@@ -240,3 +250,63 @@ def test_a_refine_never_sends_the_shown_rows(console) -> None:
                                       domain_hint="order", intent_hint="check_order"), "5")
     (args,) = calls
     assert args["top_n"] == 5 and "shown" not in args and "drill_rows" not in args, args
+
+
+# ============================================================================ review round 1
+
+
+def test_a_printed_row_with_no_keys_is_said_and_nothing_runs(console, monkeypatch) -> None:
+    """Review S2: a "(blank)" row (no brand) names nothing to narrow by; never silently dropped."""
+    monkeypatch.setitem(ROWS, "brand", [
+        {"rank": 1, "name": "SORENTO", "qty": 5, "amount": 500.0, "keys": ["b-id"]},
+        {"rank": 2, "name": "(blank)", "qty": 1, "amount": 10.0, "keys": []},
+    ])
+    _turn1(console, group_by="brand")
+    text, calls = console.say(_drill(), "top 10 customers for those brands")
+    assert calls == [], calls
+    assert text.strip() == "I can't narrow by (blank) above. Ask again naming the brands you want.", text
+
+
+def test_a_brand_word_in_the_drill_replaces_the_held_brand(console) -> None:
+    _turn1(console)
+    _text, calls = console.say(_drill(entities=[_e("Sorento", "brand")]), "top 10 customers of these agents for Sorento")
+    (args,) = calls
+    assert args["brand_ids"] == [console.ids["brand"]] and args["customer_agent_ids"] == [AG1, AG2, "none"], args
+
+
+def test_a_channel_in_the_drill_is_applied(console) -> None:
+    _turn1(console)
+    _text, calls = console.say(_drill(sales_channel="dealer"), "top 10 dealer customers of these agents")
+    (args,) = calls
+    assert args["channel"] == "dealer", args
+
+
+def test_a_product_in_the_drill_replaces_the_held_product(console) -> None:
+    """Review S5 / card rule 2: the drill message's own product replaces the held one."""
+    _turn1(console, entities=[_e("Sorento", "brand")])
+    _text, calls = console.say(_drill(entities=[_e(PRODUCT_CODE, "product")]), f"top 10 customers of these agents for {PRODUCT_CODE}")
+    (args,) = calls
+    assert args["product_code"] == PRODUCT_CODE and args["brand_ids"] == [console.ids["brand"]], args
+
+
+def test_a_dealer_drill_to_a_staff_axis_is_refused() -> None:
+    from app.services.chatbot.lanes.business import report_ask
+
+    frame = {"group_by": "product", "basis": "delivered", "measure": "amount", "date_from": "2026-09-01",
+             "date_to": "2026-09-30", "shown": {"group_by": "product", "rows": [{"name": "X", "keys": ["p"]}]}}
+    verdict = {"order_status": "sales_ranking", "group_by": "customer", "ranking_drill": "scoped", "top_n": 5,
+               "sales_ranking_frame": frame}
+    outcome, line = report_ask.settle(None, verdict, [], dealer=True)
+    assert outcome is None and line == report_ask.DEALER_REFUSAL, (outcome, line)
+
+
+def test_the_frame_keeps_shown_rows_only_for_its_own_axis() -> None:
+    from app.services.chatbot.lanes.business.fetch import _report_ask_output
+
+    rows = {"group_by": "customer", "rows": [{"name": "X", "keys": ["c"]}]}
+    args = {"group_by": "sales_agent", "basis": "delivered"}
+    out = _report_ask_output({"response": "Top 1 sales agent", "drill_rows": rows}, {"semantic_input": {"report_ask_args": args}})
+    assert "shown" not in out["sales_ranking_frame"], out["sales_ranking_frame"]
+    same = {**rows, "group_by": "sales_agent"}
+    out = _report_ask_output({"response": "Top 1 sales agent", "drill_rows": same}, {"semantic_input": {"report_ask_args": args}})
+    assert out["sales_ranking_frame"]["shown"] == same, out

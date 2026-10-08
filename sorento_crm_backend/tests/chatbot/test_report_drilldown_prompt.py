@@ -91,3 +91,21 @@ def test_migration_publishes_a_new_version_label_unmoved_and_idempotent() -> Non
         assert '"ranking_drill"' in published.template
         session.expire_all()
         assert _production(session).version_id == before
+
+
+def test_a_products_or_categories_drill_is_a_sales_ranking_not_top_selling() -> None:
+    """Review B1: after a ranking, "which products do these agents sell" must reach the drill
+    (a top selling ask holds no listed rows and would answer for everyone)."""
+    from app.services.chatbot_parser_prompt import REPORT_ASK_ADDENDUM
+
+    assert "which products do these agents sell" in REPORT_ASK_ADDENDUM
+    at = REPORT_ASK_ADDENDUM.index("which products do these agents sell")
+    assert "sales_ranking" in REPORT_ASK_ADDENDUM[at:at + 300], REPORT_ASK_ADDENDUM[at:at + 300]
+
+
+def test_the_reply_to_the_unsure_question_takes_its_count_from_that_question() -> None:
+    """Review S4: the one exception to "top_n only from the current message"."""
+    from app.services.chatbot_parser_prompt import REPORT_ASK_ADDENDUM
+
+    at = REPORT_ASK_ADDENDUM.index("or across all customers?")
+    assert "exception" in REPORT_ASK_ADDENDUM[at:at + 400], REPORT_ASK_ADDENDUM[at:at + 400]
