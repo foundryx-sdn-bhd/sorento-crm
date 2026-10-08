@@ -546,9 +546,10 @@ def test_two_alternatives_each_get_their_own_promotions(db, pair):
 # --------------------------------------------------------------------------- re-review round B
 
 
-def test_an_alternative_whose_call_returned_nothing_is_never_named(db, pair):
-    """Reviewer re-review 1: the old code has a row, the alternative's call returns no row
-    for its code; the reply must not name the alternative."""
+def test_an_alternative_whose_call_returned_nothing_still_shows_the_search(db, pair):
+    """Owner, 9 Oct 2026 (reverses re-review 1): "at least we need to show that we have tried
+    to search for it". The old code has a row, the alternative's call returns none for its
+    code: the reply names the alternative and says it has nothing."""
     old, new = pair
 
     def answers(name, ids):
@@ -562,7 +563,7 @@ def test_an_alternative_whose_call_returned_nothing_is_never_named(db, pair):
     said, _f, calls = _run(db, domain="incoming", entities=[_entity(old)], answers=answers)
     assert len(calls) == 2
     assert "CONT-OLD" in said
-    assert new.product_code not in said, said
+    assert f"Alternative: {new.product_code}: No incoming stock." in said, said
 
 
 def test_the_miss_sentence_and_tail_read_in_the_contacts_language(db, pair):
