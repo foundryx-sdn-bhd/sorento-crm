@@ -1,0 +1,247 @@
+"""Owner hand test round 2: digits answering the promotion menu, the which-question as an open
+question, and one line per promotion. Fake names only; route + real presenter backed stub."""
+from __future__ import annotations
+
+import json
+import uuid
+from typing import Any
+
+import pytest
+
+from app.main import app
+from app.models.access import ContactAccessType
+from app.models.marketing import PromotionType
+from app.models.product import Brand
+from app.models.product_spec import ProductSpecifications, ProductSpecRegistry
+from app.services.chatbot.lanes.business.services import ResolveGateServices
+from app.services.company_scope import DEFAULT_COMPANY_ID
+from tests._mc_lookup_seed import product
+from tests.chatbot import test_outstanding_lane as lane_harness
+from tests.chatbot.test_engine import _parser_output
+from tests.chatbot.test_outstanding_lane import _run_turn, _seed_contact, _session_of
+from tests.chatbot.test_promo_kind_subject import PROMO_TOOL, _promo
+from tests.chatbot.test_promo_owner_round2 import _mcp, _turn, _unresolved
+from tests.chatbot.test_promo_subject_filter import _class, _pick_qf
+
+THREE = ["Sorento Office", "Sorento Dealer", "End User"]
+
+
+@pytest.fixture(autouse=True)
+def _clear_overrides():
+    yield
+    app.dependency_overrides.clear()
+
+
+def _world(session_factory):
+    """basin cabinet promo only at Dealer; side cabinet only at Office; tall cabinet only at End user."""
+    _seed_contact(session_factory, variables={})
+    _class(session_factory, "Bathroom Furniture")
+    _class(session_factory, "Wash Basin")
+    db = session_factory()
+    std = PromotionType(type_code="standard", type_name="Standard Promo", show_expired=True, match_markers=[], match_priority=90, is_default=True)
+    db.add(std)
+    db.add_all(
+        [
+            ContactAccessType(code="sorento_office", name="Sorento Office"),
+            ContactAccessType(code="sorento_dealer", name="Sorento Dealer"),
+            ContactAccessType(code="end_user", name="End User"),
+        ]
+    )
+    brand = Brand(id=str(uuid.uuid4()), brand_code=f"ZZT{uuid.uuid4().hex[:6]}", brand_name="Sorento", company_id=DEFAULT_COMPANY_ID)
+    db.add(brand)
+    db.add(
+        ProductSpecRegistry(
+            id=str(uuid.uuid4()), spec_key="furniture_type", label="Furniture type", data_type="enum",
+            allowed_values=["basin_cabinet", "side_cabinet", "tall_cabinet"],
+            synonyms={"basin_cabinet": ["basin cabinet"], "side_cabinet": ["side cabinet"], "tall_cabinet": ["tall cabinet"]},
+        )
+    )
+    db.flush()
+    for value, level in (("basin_cabinet", "sorento_dealer"), ("side_cabinet", "sorento_office"), ("tall_cabinet", "end_user")):
+        p = product(db, company_id=DEFAULT_COMPANY_ID, code=f"ZZT{value[:4].upper()}9")
+        p.brand_id = brand.id
+        db.add(ProductSpecifications(id=str(uuid.uuid4()), product_id=p.id, values={"class": {"value": "Bathroom Furniture"}, "furniture_type": {"value": value}}))
+        db.flush()
+        _promo(db, f"ZZT PROMO {value.upper()}", std, p, levels=[level])
+    db.commit()
+    return str(brand.id)
+
+
+def _recording_services(queries: list, *, products: list[tuple[str, str]] | None = None) -> ResolveGateServices:
+    """Records every resolver call's `query`; optionally resolves any word to a product set."""
+
+    def _resolve(body: dict[str, Any]) -> dict[str, Any]:
+        queries.append(body.get("query"))
+        asked = list(body.get("tokens") or [])
+        if not products:
+            return {"tokens": asked, "resolutions": [], "unresolved_tokens": asked}
+        matches = [{"uuid": u, "entity_type": "product", "canonical_code": c, "match_tier": "exact"} for u, c in products]
+        return {"tokens": asked, "resolutions": [{"raw": r, "token": r, "matches": matches} for r in asked], "unresolved_tokens": []}
+
+    return ResolveGateServices(
+        access_types=lambda **_: [{"name": n} for n in THREE], resolve_entity=_resolve, probe=lambda **_: None
+    )
+
+
+def _ask_qf(raw: str, brand: str | None = None):
+    ents = [{"raw": raw, "hint": "category", "canonical_code": None, "current_message": True, "confident": True}]
+    if brand:
+        ents.insert(0, {"raw": "sorento", "hint": "brand", "canonical_code": "Sorento", "current_message": True, "confident": True})
+    return _parser_output(domain_hint="promotion", intent_hint="check_promotion", entities=ents)
+
+
+def _brand_services(brand_id: str) -> ResolveGateServices:
+    def _resolve(body: dict[str, Any]) -> dict[str, Any]:
+        asked = list(body.get("tokens") or [])
+        hits = [r for r in asked if r.strip().lower() == "sorento"]
+        match = {"uuid": brand_id, "entity_type": "brand", "canonical_code": "Sorento", "match_tier": "exact"}
+        return {
+            "tokens": asked,
+            "resolutions": [{"raw": r, "token": r, "matches": [match]} for r in hits],
+            "unresolved_tokens": [r for r in asked if r not in hits],
+        }
+
+    return ResolveGateServices(
+        access_types=lambda **_: [{"name": n} for n in THREE], resolve_entity=_resolve, probe=lambda **_: None
+    )
+
+
+# (A) a stamped "no promotion" level answers in one line ---------------------------------------
+
+
+def _assert_one_line_none(reply: str):
+    assert reply.strip() == "No End user promotion for basin cabinet.", reply
+
+
+def test_picking_a_stamped_no_promotion_level_after_a_result_answers_in_one_line(session_factory, monkeypatch):
+    """(A)+(B2): menu (Office no, Dealer has, End user no) -> "2" (results) -> "3": one line, no
+    did-you-mean, no product codes."""
+    _world(session_factory)
+    _mcp(monkeypatch, session_factory)
+    services = _unresolved(THREE)
+    menu = _turn(session_factory, monkeypatch, services, _ask_qf("basin cabinet"), "basin cabinet promo", "zzt-md-a-ask")
+    lines = menu.splitlines()
+    assert "1. Office - no promotion" in lines and "2. Dealer - has promotion" in lines and "3. End user - no promotion" in lines, menu
+    results = _turn(session_factory, monkeypatch, services, _pick_qf(2), "2", "zzt-md-a-2")
+    assert "ZZT PROMO BASIN_CABINET" in results, results
+    _assert_one_line_none(_turn(session_factory, monkeypatch, services, _pick_qf(3), "3", "zzt-md-a-3"))
+
+
+def test_picking_a_stamped_no_promotion_level_straight_from_the_menu_answers_in_one_line(session_factory, monkeypatch):
+    _world(session_factory)
+    _mcp(monkeypatch, session_factory)
+    queries: list = []
+    services = _recording_services(queries)
+    _turn(session_factory, monkeypatch, services, _ask_qf("basin cabinet"), "basin cabinet promo", "zzt-md-a2-ask")
+    n = len(queries)
+    _assert_one_line_none(_turn(session_factory, monkeypatch, services, _pick_qf(3), "3", "zzt-md-a2-3"))
+    assert "3" not in queries[n:], queries  # a numbered pick is never sent to the resolver as a query
+
+
+def test_a_level_read_on_the_first_turn_still_gets_the_stamped_menu_and_the_subject_filter(session_factory, monkeypatch):
+    """(A2) "basin cabinet promo" with the parser also reading a level (access_levels): the menu is
+    the stamped one, and the pick fetch carries scope_terms ["basin cabinet"], never the carried
+    product set (`product_ids`)."""
+    _world(session_factory)
+    captured = _mcp(monkeypatch, session_factory)
+    services = _recording_services([], products=[(str(uuid.uuid4()), "ZZTCARRIED1"), (str(uuid.uuid4()), "ZZTCARRIED2")])
+    qf = _ask_qf("basin cabinet")
+    qf["access_levels"] = ["Mocha Dealer"]
+    menu = _turn(session_factory, monkeypatch, services, qf, "basin cabinet promo", "zzt-md-a3-ask")
+    lines = [l for l in menu.splitlines() if l[:2] in ("1.", "2.", "3.")]
+    assert lines and all(l.endswith("- has promotion") or l.endswith("- no promotion") for l in lines), menu
+    n = len(captured)
+    reply = _turn(session_factory, monkeypatch, services, _pick_qf(2), "2", "zzt-md-a3-pick")
+    fetches = [a for name, a in captured[n:] if name == PROMO_TOOL]
+    assert fetches, captured
+    for a in fetches:
+        assert [t.lower() for t in a.get("scope_terms") or []] == ["basin cabinet"], a
+        assert not a.get("product_ids"), a
+    assert "no promotion matched" not in reply.lower() and "ZZTCARRIED" not in reply, reply
+
+
+def test_after_a_pick_another_digit_picks_again_from_the_same_menu(session_factory, monkeypatch):
+    """(B2): "2" then "1": the second digit re-answers the same menu (Office), not a new search."""
+    _world(session_factory)
+    captured = _mcp(monkeypatch, session_factory)
+    services = _unresolved(THREE)
+    _turn(session_factory, monkeypatch, services, _ask_qf("basin cabinet"), "basin cabinet promo", "zzt-md-b2-ask")
+    _turn(session_factory, monkeypatch, services, _pick_qf(2), "2", "zzt-md-b2-2")
+    n = len(captured)
+    reply = _turn(session_factory, monkeypatch, services, _pick_qf(1), "1", "zzt-md-b2-1")
+    fetches = [a for name, a in captured[n:] if name == PROMO_TOOL]
+    assert fetches and all(a.get("access_levels") == ["Sorento Office"] for a in fetches), captured[n:]
+    assert "Couldn't find" not in reply and "Did you mean" not in reply, reply
+    assert reply.strip() == "No Office promotion for basin cabinet.", reply
+
+
+# (B) "which cabinet?" is an open question ------------------------------------------------------
+
+
+@pytest.mark.parametrize("answer", ["typed", "digit"])
+def test_the_which_question_is_an_open_question_and_its_answer_narrows_by_brand(session_factory, monkeypatch, answer):
+    brand_id = _world(session_factory)
+    captured = _mcp(monkeypatch, session_factory)
+    services = _brand_services(brand_id)
+    which = _turn(session_factory, monkeypatch, services, _ask_qf("cabinet", brand="Sorento"), "Pls send sorento cabinet promotion", f"zzt-md-w-ask-{answer}")
+    assert which.splitlines()[0] == "Which cabinet do you mean?", which
+    question = _session_of(session_factory).get("open_question") or {}
+    options = question.get("options") or []
+    assert len(options) == 3, question
+    if answer == "typed":
+        reply_qf = _ask_qf("basin cabinet")
+        text = "basin cabinet"
+    else:
+        position = next(o["position"] for o in options if "basin" in str(o.get("label")).lower())
+        reply_qf = _pick_qf(position)
+        text = str(position)
+    menu = _turn(session_factory, monkeypatch, services, reply_qf, text, f"zzt-md-w-menu-{answer}")
+    assert menu.startswith("Which access level"), menu
+    assert "2. Dealer - has promotion" in menu.splitlines(), menu
+    probes = [a for name, a in captured if name == PROMO_TOOL]
+    assert probes and all(a.get("brand_ids") == [brand_id] and [t.lower() for t in a.get("scope_terms") or []] == ["basin cabinet"] for a in probes), probes
+    n = len(captured)
+    reply = _turn(session_factory, monkeypatch, services, _pick_qf(2), "2", f"zzt-md-w-pick-{answer}")
+    fetch = [a for name, a in captured[n:] if name == PROMO_TOOL]
+    assert fetch, captured
+    stamp, pick = probes[0], fetch[0]
+    for key in ("brand_ids", "scope_terms", "promotion_types"):  # stamp and pick never disagree
+        assert stamp.get(key) == pick.get(key), (key, stamp, pick)
+    assert "ZZT PROMO BASIN_CABINET" in reply, reply
+
+
+# (D) one line per promotion ---------------------------------------------------------------------
+
+
+def test_a_promotion_returned_under_two_companies_is_listed_once(session_factory, monkeypatch):
+    _seed_contact(session_factory, variables={})
+
+    def _call(name: str, args: dict[str, Any]) -> Any:
+        row = {
+            "description": "ZZT MOCHA A3 FLYER", "start_date": "2026-10-01", "end_date": "2026-12-31",
+            "is_expired": False, "attachments": [],
+        }
+        data = [
+            {**row, "id": "00000000-0000-0000-0000-000000000011", "company_name": "Sorento"},
+            {**row, "id": "00000000-0000-0000-0000-000000000012", "company_name": "Mocha"},
+        ]
+        body = {"data": data, "pagination": {"total": 2, "page": 1, "limit": 10}, "empty": False, "fallback_used": False}
+        return lane_harness._present_response()(name, json.dumps(body))
+
+    monkeypatch.setattr(lane_harness, "_capturing_mcp", lambda response=None: (_call, []))
+    pid = str(uuid.uuid4())
+
+    def _resolve(body: dict[str, Any]) -> dict[str, Any]:
+        asked = list(body.get("tokens") or [])
+        match = {"uuid": pid, "entity_type": "product", "canonical_code": "ZZTFLY1", "match_tier": "exact"}
+        return {"tokens": asked, "resolutions": [{"raw": r, "token": r, "matches": [match]} for r in asked], "unresolved_tokens": []}
+
+    services = ResolveGateServices(
+        access_types=lambda **_: [{"name": "Sorento Dealer"}], resolve_entity=_resolve, probe=lambda **_: None
+    )
+    qf = _parser_output(
+        domain_hint="promotion", intent_hint="check_promotion",
+        entities=[{"raw": "ZZTFLY1", "hint": "product", "canonical_code": None, "current_message": True, "confident": True}],
+    )
+    reply = _turn(session_factory, monkeypatch, services, qf, "promo for ZZTFLY1", "zzt-md-d")
+    assert reply.count("ZZT MOCHA A3 FLYER") == 1, reply
