@@ -238,6 +238,16 @@ def test_reset_auto_parks_and_writes_nothing_until_the_window_lapses(db, pair, m
     )
     assert parked.status_code == 202, parked.text
     assert len(client.get(_base(old)).json()["data"]["alternatives"]) == 2
+    view_only = _client(db, {VIEW}, monkeypatch).post(
+        "/api/v1/pending-actions",
+        json={
+            "action_key": "product_alternative.reset_auto",
+            "entity_type": "product_alternatives",
+            "entity_id": old.id,
+            "payload": {},
+        },
+    )
+    assert view_only.status_code == 403
 
 
 def test_reset_route_is_gone():
