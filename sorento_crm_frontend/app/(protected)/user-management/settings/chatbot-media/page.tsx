@@ -72,6 +72,8 @@ type Draft = {
   extractionTimeoutSeconds: string;
   maxEntities: string;
   lowStockWaitSeconds: string;
+  reportRateLimit: string;
+  reportRateWindowMinutes: string;
 };
 
 function toDraft(settings: ChatbotMediaSettings): Draft {
@@ -94,6 +96,8 @@ function toDraft(settings: ChatbotMediaSettings): Draft {
     extractionTimeoutSeconds: String(settings.media_extraction_timeout_seconds),
     maxEntities: String(settings.media_max_entities),
     lowStockWaitSeconds: String(settings.low_stock_sync_wait_seconds),
+    reportRateLimit: String(settings.report_ask_rate_limit),
+    reportRateWindowMinutes: String(settings.report_ask_rate_window_minutes),
   };
 }
 
@@ -117,6 +121,9 @@ function fromDraft(draft: Draft): ChatbotMediaSettings {
     media_extraction_timeout_seconds: Number(draft.extractionTimeoutSeconds.trim()),
     media_max_entities: Number(draft.maxEntities.trim()),
     low_stock_sync_wait_seconds: Number(draft.lowStockWaitSeconds.trim()),
+    // Blank is "no limit", stored as 0 (`Number('')` is 0).
+    report_ask_rate_limit: Number(draft.reportRateLimit.trim()),
+    report_ask_rate_window_minutes: Number(draft.reportRateWindowMinutes.trim()),
   };
 }
 
@@ -139,9 +146,14 @@ const NUMBER_BOUNDS = {
   // The same bounds the media wait carries: both hold a chat turn open, and neither
   // may outlast the queue-wait budget on the other side of it (AC-7/AC-43).
   lowStockWaitSeconds: [5, 90],
+  reportRateLimit: [0, 1000],
+  reportRateWindowMinutes: [1, 1440],
 } as const satisfies Record<string, readonly [number, number]>;
 
 type NumberKey = keyof typeof NUMBER_BOUNDS;
+
+/** Fields where blank is a real value: a blank report limit means no limit. */
+const BLANK_ALLOWED: ReadonlySet<NumberKey> = new Set(['reportRateLimit']);
 
 /**
  * Every numeric field is bounded, and the two waits are additionally validated
@@ -154,7 +166,9 @@ function numberErrors(draft: Draft): Partial<Record<NumberKey, string>> {
   const errors: Partial<Record<NumberKey, string>> = {};
   for (const key of Object.keys(NUMBER_BOUNDS) as NumberKey[]) {
     const [min, max] = NUMBER_BOUNDS[key];
-    const error = wholeNumberRangeError(draft[key], min, max);
+    const error = wholeNumberRangeError(draft[key], min, max, {
+      allowBlank: BLANK_ALLOWED.has(key),
+    });
     if (error) errors[key] = error;
   }
   if (!errors.syncWaitSeconds && !errors.extractionTimeoutSeconds) {
@@ -324,6 +338,21 @@ export default function ChatbotMediaSettingsPage() {
             value={draft.lowStockWaitSeconds}
             error={numberError.lowStockWaitSeconds}
             onChange={(v) => set('lowStockWaitSeconds', v)}
+          />
+          <NumberField
+            id="report-ask-rate-limit"
+            label="Reports per contact"
+            hint="Most chatbot reports one contact can ask for in the report window. 0 or blank means no limit."
+            value={draft.reportRateLimit}
+            error={numberError.reportRateLimit}
+            onChange={(v) => set('reportRateLimit', v)}
+          />
+          <NumberField
+            id="report-ask-rate-window"
+            label="Report window (minutes)"
+            value={draft.reportRateWindowMinutes}
+            error={numberError.reportRateWindowMinutes}
+            onChange={(v) => set('reportRateWindowMinutes', v)}
           />
         </CardContent>
       </Card>

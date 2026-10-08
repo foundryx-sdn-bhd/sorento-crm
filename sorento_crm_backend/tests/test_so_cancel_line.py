@@ -27,6 +27,8 @@ from app.models.project_so import (
     ACK_AWAITING,
     ACK_CHANGED,
     DECISION_ACTIVE,
+    INQUIRY_CANCELLED,
+    INQUIRY_RAISED,
     SOSupplyDecision,
     SOSupplyDecisionDraft,
 )
@@ -209,8 +211,9 @@ def test_c6_the_saved_draft_of_a_cancelled_line_is_deleted(api):
     assert left == {str(core_b.id)}
 
 
-def test_c7_acknowledged_inquiry_rows_flip_to_changed_others_untouched(api):
-    """AC-C7."""
+def test_c7_acknowledged_inquiry_rows_are_cancelled_others_untouched(api):
+    """AC-C7, updated by SO-CANCEL-HANDOVER AC-H14: the acknowledged row on the cancelled
+    line is now cancelled (handed over), not flipped to changed."""
     client, world = api
     w = _cb_world(world)
     core_a, mirror_a, product_a = w["a"]
@@ -230,10 +233,11 @@ def test_c7_acknowledged_inquiry_rows_flip_to_changed_others_untouched(api):
     db.expire_all()
     for row in (ack_a, awaiting_a, ack_b):
         db.refresh(row)
-    assert ack_a.ack_state == ACK_CHANGED
-    assert ack_a.changed_at is not None
-    assert awaiting_a.ack_state == ACK_AWAITING
-    assert awaiting_a.changed_at is None
+    assert ack_a.state == INQUIRY_CANCELLED
+    assert ack_a.ack_state != ACK_CHANGED
+    assert ack_a.changed_at is None
+    assert awaiting_a.state == INQUIRY_CANCELLED
+    assert ack_b.state == INQUIRY_RAISED
     assert ack_b.ack_state == ACK_ACKNOWLEDGED
     assert ack_b.changed_at is None
 
@@ -446,7 +450,7 @@ def test_c23_a_cancel_of_a_line_the_batch_does_not_name_rides_along_with_the_bat
     assert raw.cancel_reason == REASON
     db.expire_all()
     db.refresh(ack_a)
-    assert ack_a.ack_state == ACK_CHANGED
+    assert ack_a.state == INQUIRY_CANCELLED
     # The batch applied exactly as it would without the cancel.
     rows = db.query(PlanningChangeRow).filter(PlanningChangeRow.batch_id == batch_id).all()
     assert rows and all(r.applied_state == "applied" for r in rows)
@@ -525,7 +529,7 @@ def test_c26_a_cancel_only_press_with_a_batch_id_cancels_and_leaves_the_batch_pe
     assert raw.cancel_reason == REASON
     db.expire_all()
     db.refresh(ack_a)
-    assert ack_a.ack_state == ACK_CHANGED
+    assert ack_a.state == INQUIRY_CANCELLED
     rows = db.query(PlanningChangeRow).filter(PlanningChangeRow.batch_id == batch_id).all()
     assert rows and all(r.applied_state != "applied" for r in rows)
     assert db.get(PlanningChangeBatch, batch_id).applied_at is None
