@@ -1488,3 +1488,45 @@ describe('boardOrderInquiryWord: the Product cell chip ladder (AC-A1 to AC-A7)',
     expect(word?.word).toBe('PO');
   });
 });
+
+/**
+ * BORROW-LOCATION-ONLY (D3): a borrow that names no donor SO is a LOCATION borrow, whatever
+ * its rung. Under the switch OFF the engine still walks step 2 (`order_borrow`), step 4b
+ * (`pool`) and the frozen `group_borrow`, but blanks the donor fields, so those must read
+ * "Borrow other location". With a donor SO named (switch ON) they keep reading "Borrow from
+ * another order".
+ */
+describe('rowOf: a borrow that names no donor is a location borrow (BORROW-LOCATION-ONLY D3)', () => {
+  it.each(['order_borrow', 'group_borrow', 'pool'])(
+    'reads a donor-less %s borrow as borrow_other',
+    (rung) => {
+      expect(
+        rowOf({
+          kind: 'borrow',
+          rung,
+          qty: '30',
+          location: 'MWH-IB',
+          donor_so_number: null,
+        }),
+      ).toBe('borrow_other');
+      expect(
+        rowOf({ kind: 'borrow', rung, qty: '30', location: 'MWH-IB' }),
+      ).toBe('borrow_other');
+    },
+  );
+
+  it.each(['order_borrow', 'group_borrow', 'pool'])(
+    'still reads a %s borrow that names a donor SO as borrow_order (ON pinned)',
+    (rung) => {
+      expect(
+        rowOf({
+          kind: 'borrow',
+          rung,
+          qty: '30',
+          location: 'MWH-IB',
+          donor_so_number: 'SO397450',
+        }),
+      ).toBe('borrow_order');
+    },
+  );
+});

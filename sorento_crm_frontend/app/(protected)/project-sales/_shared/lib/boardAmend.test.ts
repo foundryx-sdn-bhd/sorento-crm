@@ -1135,3 +1135,73 @@ describe('decideComposition: the six Decide items (D1, AC-5 to AC-9, AC-51)', ()
     expect(result.reserve).toEqual([{ warehouse_id: 'wh-own', location: 'BRW-BB', qty: '100' }]);
   });
 });
+
+/**
+ * BORROW-LOCATION-ONLY (D3, K8): "Borrow other location" never resolves to a candidate that
+ * NAMES a donor SO, so the location picker cannot leak a donor-named order borrow under the
+ * wrong label (the rung leak, `pickerOptions` / `decideComposition` do not filter by rung).
+ */
+describe('decideComposition: borrow_other never resolves to a donor-named candidate (K8)', () => {
+  const impact = { free_before: '100', free_after_full_borrow: '60', committed_qty: '0' };
+  const donorNamed = {
+    source: 'other_location' as const,
+    warehouse_code: 'MWH-IB',
+    warehouse_id: 'wh-mwh',
+    free_qty: '100',
+    donor_impact: impact,
+    rung: 'order_borrow',
+    donor_so_number: 'SO397450',
+    donor_line_no: 446,
+    donor_core_line_id: 'core-donor-1',
+  };
+  const donorless = {
+    source: 'other_location' as const,
+    warehouse_code: 'DC1-IR',
+    warehouse_id: 'wh-dc1',
+    free_qty: '100',
+    donor_impact: impact,
+    rung: 'order_borrow',
+    donor_so_number: null,
+    donor_core_line_id: 'core-donor-2',
+  };
+
+  it('skips a location that is only reachable through a donor-named candidate', () => {
+    const result = decideComposition(
+      decideRow({ borrow_candidates: [donorNamed] }),
+      'borrow_other',
+      'MWH-IB',
+    );
+
+    expect(result.borrow ?? []).toEqual([]);
+    expect(result.skip).toBeTruthy();
+  });
+
+  it('resolves a donor-less order_borrow candidate and carries no donor SO', () => {
+    const result = decideComposition(
+      decideRow({ borrow_candidates: [donorNamed, donorless] }),
+      'borrow_other',
+      'DC1-IR',
+    );
+
+    expect(result.skip).toBeUndefined();
+    expect(result.borrow).toHaveLength(1);
+    expect(result.borrow?.[0]).toMatchObject({
+      warehouse_id: 'wh-dc1',
+      donor_core_line_id: 'core-donor-2',
+    });
+    expect(result.borrow?.[0].donor_so_number ?? null).toBeNull();
+  });
+
+  it('at a location with both, takes the donor-less candidate, never the named one', () => {
+    const sameBin = { ...donorless, warehouse_code: 'MWH-IB', warehouse_id: 'wh-mwh' };
+    const result = decideComposition(
+      decideRow({ borrow_candidates: [donorNamed, sameBin] }),
+      'borrow_other',
+      'MWH-IB',
+    );
+
+    expect(result.borrow).toHaveLength(1);
+    expect(result.borrow?.[0].donor_core_line_id).toBe('core-donor-2');
+    expect(result.borrow?.[0].donor_so_number ?? null).toBeNull();
+  });
+});
