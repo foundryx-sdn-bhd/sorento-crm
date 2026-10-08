@@ -11,7 +11,7 @@ label is never moved; promoting is one label move in the Chatbot Console. Idempo
 already published publishes nothing.
 
 Revision ID: pk_0001_parser_promo_kind
-Revises: prod_alt_0001_tables
+Revises: bflo_0001_borrow_order_toggle
 """
 import logging
 
@@ -20,7 +20,7 @@ from alembic import op
 from sqlalchemy.orm import Session
 
 revision = "pk_0001_parser_promo_kind"
-down_revision = "prod_alt_0001_tables"
+down_revision = "bflo_0001_borrow_order_toggle"
 branch_labels = None
 depends_on = None
 
