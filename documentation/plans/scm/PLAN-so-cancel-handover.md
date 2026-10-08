@@ -1,6 +1,6 @@
 # PLAN: Transfer to Cancel SO hands over to purchasing like cancel balance
 
-Status: building (owner card answered 8 Oct 2026 via crew: Q1a Q2a Q3a Q4a Q5a, no backfill). Track: feature lane, size M (behaviour change on an
+Status: in review (PR #1530; owner card answered 8 Oct 2026 via crew: Q1a Q2a Q3a Q4a Q5a, no backfill; reviewer READY on c4859d403). Track: feature lane, size M (behaviour change on an
 existing flow, no migration, no screen change), LEAD pattern (tester -> coder -> reviewer).
 Domain: scm (fulfilment board confirm, order inquiries, handover email)
 UAC: `so-cancel-handover-acceptance-criteria.md`
