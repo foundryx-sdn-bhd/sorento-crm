@@ -5,11 +5,11 @@ also why don't behave the same ... SRTWC286-SH-P is discontinued already, but wh
 alterantives SRTWC286-SH-NEW-P which i understand also no phto, but atl eat we need to show
 that we have tried to search for it".
 
-Every call here goes the way production goes: `business.run_fetch` -> the MCP package's own
-tool code (`sorento_crm_mcp.server._execute_tool_request`, the catalog's path and query
-params) -> the REAL FastAPI endpoint (so a `response_model` that drops a key drops it here
-too, the round A bug) -> the MCP presenter -> the WhatsApp render. Only the HTTP hop between
-the MCP process and the backend is replaced by an in-process client.
+Every call here goes the way production goes: `business.run_fetch` -> the tool's path and
+query params from the MCP catalog -> the REAL FastAPI endpoint (so a `response_model` that
+drops a key drops it here too, the round A bug) -> the MCP presenter -> the WhatsApp render.
+The MCP server module itself is not imported (it needs the `mcp` library, absent from the
+backend's CI env); its catalog and presenter are pure and are.
 
     1. dealer "eta" on SRTBF11821 (discontinued, no shipment), SRTBF11821-NEW incoming
        -> the dealer line plus `Alternative: SRTBF11821-NEW: ✅ ETA dd/mm/yyyy`
@@ -20,7 +20,6 @@ the MCP process and the backend is replaced by an in-process client.
 """
 from __future__ import annotations
 
-import asyncio
 import json
 import sys
 import uuid
@@ -94,20 +93,12 @@ def http(db, monkeypatch):
 
 
 def _mcp_call(http):
-    """`mcp_call(name, args)` running the MCP package's own tool code against `http`."""
+    """`mcp_call(name, args)` as the MCP process makes it: the catalog's own path and query
+    params for the tool (`sorento_crm_mcp.catalog`), the REAL endpoint (its `response_model`
+    applied), then the MCP presenter. Only pure modules of the MCP package are imported;
+    its server needs the `mcp` library, which the backend's CI env does not install."""
     from sorento_crm_mcp.catalog import CATALOG
     from sorento_crm_mcp.presenters import present_response
-    from sorento_crm_mcp.server import _execute_tool_request
-
-    class _InProcess:
-        async def request(self, method, path, *, path_params=None, query=None, body=None, tool_name=None):
-            for key, value in (path_params or {}).items():
-                path = path.replace("{" + key + "}", str(value))
-            params = {k: v for k, v in (query or {}).items() if v not in (None, "")}
-            return http.request(method, path, params=params).text
-
-        async def get(self, path, *, path_params=None, query=None, tool_name=None):
-            return await self.request("GET", path, path_params=path_params, query=query)
 
     calls: list[tuple[str, dict]] = []
 
@@ -116,11 +107,11 @@ def _mcp_call(http):
         query = {}
         for key in spec.query_params:
             value = args.get(key)
-            if value is None:
+            if value in (None, "", []):
                 continue
             query[key] = ",".join(str(v) for v in value) if isinstance(value, list) else value
         calls.append((name, dict(query)))
-        raw = asyncio.run(_execute_tool_request(spec, _InProcess(), {}, query))
+        raw = http.request(spec.method, spec.path, params=query).text
         return present_response(name, raw)
 
     call.calls = calls  # type: ignore[attr-defined]
