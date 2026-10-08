@@ -177,7 +177,9 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # PROMO-SUBJECT-FILTER owner review round 2 (AC-26): the PROMOTION SUBJECT section (seat cover is
 # a toilet seat) inside PROMOTION_KIND_ADDENDUM: 50,742 est. tokens without MEMORY_ADDENDUM, so
 # CEILING is 50,746 (+4).
-CEILING = 50_746
+# PROMO-SUBJECT-FILTER v73 live: the PROMOTION SUBJECT example puts the catalogue name in
+# canonical_code: 50,750 est. tokens without MEMORY_ADDENDUM, so CEILING is 50,754 (+4).
+CEILING = 50_754
 # The memory addendum on its own, bounded separately so this PR's growth stays bounded.
 # 26 Sep baseline (lane d89110c0): 339 est. tokens. Round 4 (baf4c813, 28 Sep: the history
 # question in any wording, the number re-run, commercial_request) took it to 512, which is

@@ -799,9 +799,9 @@ kind's code. A bare word that names no listed kind ("flyer", "brochure"), or no 
 "promotion_kind": null. Never invent a code.
 
 == PROMOTION SUBJECT ==
-The product type a promotion ask is about is a category entity in the catalogue's own name for
-that type. When the customer uses another everyday name for it, emit the catalogue's name as
-the raw: "seat cover" is a toilet seat -> {"raw": "toilet seat", "hint": "category"}.
+The product type a promotion ask is about is a category entity. When the customer uses another
+everyday name for a type, keep raw as typed and set canonical_code to the catalogue's name:
+"seat cover" is a toilet seat -> {"raw": "seat cover", "hint": "category", "canonical_code": "toilet seat"}.
 """
 
 # SO-PO-REF (owner, 7 Oct 2026): a customer's own PO number, read HERE and nowhere else. The

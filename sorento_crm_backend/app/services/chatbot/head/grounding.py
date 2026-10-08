@@ -703,6 +703,13 @@ def ground(
             entity = {**entity, "hint": "category"}
             hint = "category"
             notes.append({"from": _PRODUCT_HINT, "raw": raw, "to": "category"})
+        canonical = str(entity.get("canonical_code") or "").strip()
+        if hint in _CLASS_HINTS and canonical and _words(canonical) != _words(raw):
+            # The parser named the catalogue's own name for what the customer typed ("seat
+            # cover" -> "toilet seat"): that name is what grounds, read like any typed one.
+            notes.append({"from": hint, "raw": raw, "to": canonical})
+            entity = {**entity, "raw": canonical, "canonical_code": None}
+            raw = canonical
         if hint in _SPEC_HINTS:
             others = [
                 str(e.get("raw") or "")
