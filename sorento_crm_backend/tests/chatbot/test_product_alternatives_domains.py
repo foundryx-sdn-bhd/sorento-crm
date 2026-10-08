@@ -71,7 +71,7 @@ def _envelope(items, *, result_type, attachments=None, intro="Here are the resul
     )
 
 
-def _run(db, *, domain, entities, answers, fail_second=False):
+def _run(db, *, domain, entities, answers, fail_second=False, requested=None):
     """`answers(product_ids) -> raw envelope`; returns (response text, structured, calls)."""
     calls: list[tuple[str, list]] = []
 
@@ -90,7 +90,7 @@ def _run(db, *, domain, entities, answers, fail_second=False):
                 "output": {
                     "message_type": "business_query",
                     "domain_hint": domain,
-                    "requested_attributes": [],
+                    "requested_attributes": requested or [],
                 }
             },
             "contact": {},
@@ -327,3 +327,46 @@ def test_a_failed_alternative_call_leaves_the_reply_as_it_was(db, pair):
     assert len(calls) == 2
     assert "Alternative" not in said
     assert f"{old.product_code}: No ETA" in said
+
+
+# --------------------------------------------------------------------------- DISCONTINUED-ASK (#1535)
+
+
+def _product_envelope(old, new):
+    def answers(name, ids):
+        code = old.product_code if ids == [old.id] else new.product_code
+        return _envelope(
+            [_field_item(code, [("Product Code", code), ("List Price", "MYR 1.00")], discontinued=ids == [old.id])],
+            result_type="products",
+        )
+
+    return answers
+
+
+def test_is_it_discontinued_names_the_alternative_once_and_no_extra_status_line(db, pair):
+    """#1535 answers a status-only ask with one line per product and names the item's
+    `alternatives`; the resolver feeds that key, and the alternative's own block (which would
+    print "X-NEW: Not discontinued.") is not added to a status-only answer."""
+    old, new = pair
+    said, _f, calls = _run(
+        db,
+        domain="master_products",
+        entities=[_entity(old)],
+        answers=_product_envelope(old, new),
+        requested=["discontinued"],
+    )
+    assert len(calls) == 2
+    assert said == f"{old.product_code}: \u26a0\ufe0f Discontinued.\nAlternative: {new.product_code}", said
+
+
+def test_status_beside_another_property_keeps_the_alternatives_block(db, pair):
+    old, new = pair
+    said, _f, _c = _run(
+        db,
+        domain="master_products",
+        entities=[_entity(old)],
+        answers=_product_envelope(old, new),
+        requested=["discontinued", "price"],
+    )
+    assert said.count(f"Alternative: {new.product_code}") + said.count(f"*Alternative:* {new.product_code}") == 1, said
+    assert new.product_code in said.split(f"Alternative: {new.product_code}", 1)[-1], said
