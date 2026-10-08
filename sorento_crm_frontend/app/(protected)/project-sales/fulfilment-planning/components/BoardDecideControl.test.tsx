@@ -85,6 +85,8 @@ function renderControl(overrides: {
   onSave?: (
     entries: { key: string; decision: unknown }[],
   ) => Promise<{ savedKeys: string[]; failed: { key: string; why: string }[] }>;
+  /** The board's "Borrow from another order" switch; on unless a test says otherwise. */
+  borrowFromOrderEnabled?: boolean;
 } = {}) {
   const contributions = overrides.contributions ?? [row()];
   const onSave =
@@ -103,6 +105,7 @@ function renderControl(overrides: {
       onSave={onSave as never}
       onSaved={onSaved}
       onClear={onClear}
+      borrowFromOrderEnabled={overrides.borrowFromOrderEnabled ?? true}
     />,
   );
   return { ...utils, onSave, onSaved, onClear };
@@ -128,27 +131,7 @@ describe('BoardDecideControl: the button (AC-1, AC-54)', () => {
 
 describe('BoardDecideControl: the menu (AC-4)', () => {
   it('opens with exactly these items in this order, no Reserve/incoming items', () => {
-    // A ticked row with a donor-named candidate (the setting on), so every item shows;
-    // without one "Borrow from another order" is not offered (BORROW-LOCATION-ONLY D3).
-    renderControl({
-      contributions: [
-        row({
-          borrow_candidates: [
-            {
-              source: 'other_location',
-              warehouse_code: 'MWH-IB',
-              warehouse_id: 'wh-mwh',
-              free_qty: '100',
-              donor_impact: { free_before: '100', free_after_full_borrow: '60', committed_qty: '0' },
-              rung: 'order_borrow',
-              donor_so_number: 'SO397450',
-              donor_line_no: 446,
-              donor_core_line_id: 'core-1',
-            },
-          ],
-        }),
-      ],
-    });
+    renderControl();
     openMenu();
 
     const items = screen.getAllByRole('menuitem').map((item) => item.textContent);
@@ -432,12 +415,12 @@ describe('BoardDecideControl: a covered row already decided exactly this way is 
 });
 
 /**
- * BORROW-LOCATION-ONLY (D3, K8). The menu offers "Borrow from another order" only when a
- * TICKED row has a candidate that names a donor SO (switch ON); with the switch OFF the
- * server blanks every donor, so the item is never offered. The "Borrow other location"
- * picker never lists a location reachable only through a donor-NAMED candidate.
+ * BORROW-LOCATION-ONLY (BR1, K8). The menu offers "Borrow from another order" exactly when
+ * the board says the switch is on, as it always did before the switch existed. The "Borrow
+ * other location" picker never lists a location reachable only through a donor-NAMED
+ * candidate.
  */
-describe('BoardDecideControl: Borrow from another order only where a donor is named (D3)', () => {
+describe('BoardDecideControl: Borrow from another order follows the switch (BR1)', () => {
   const impact = { free_before: '100', free_after_full_borrow: '60', committed_qty: '0' };
   const named = {
     source: 'other_location' as const,
@@ -461,32 +444,22 @@ describe('BoardDecideControl: Borrow from another order only where a donor is na
     donor_core_line_id: 'core-2',
   };
 
-  it('does not offer it when no ticked row has a donor-named candidate', () => {
+  it('offers it when the switch is on, whatever the candidates name', () => {
     renderControl({ contributions: [row({ borrow_candidates: [nameless] })] });
     openMenu();
 
-    expect(screen.queryByRole('menuitem', { name: 'Borrow from another order' })).not.toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: 'Borrow other location' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Borrow from another order' })).toBeInTheDocument();
   });
 
-  it('does not offer it when only an UNTICKED row has a donor-named candidate', () => {
+  it('does not offer it when the switch is off, even beside a donor-named candidate', () => {
     renderControl({
-      contributions: [
-        row({ key: 'so-1:line-10', borrow_candidates: [nameless] }),
-        row({ key: 'so-2:line-20', so_number: 'SO000002', borrow_candidates: [named] }),
-      ],
-      selectedKeys: ['so-1:line-10'],
+      contributions: [row({ borrow_candidates: [named] })],
+      borrowFromOrderEnabled: false,
     });
     openMenu();
 
     expect(screen.queryByRole('menuitem', { name: 'Borrow from another order' })).not.toBeInTheDocument();
-  });
-
-  it('offers it when a ticked row has a donor-named candidate', () => {
-    renderControl({ contributions: [row({ borrow_candidates: [named] })] });
-    openMenu();
-
-    expect(screen.getByRole('menuitem', { name: 'Borrow from another order' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Borrow other location' })).toBeInTheDocument();
   });
 
   it('keeps a donor-named location out of the Borrow other location picker (K8)', async () => {

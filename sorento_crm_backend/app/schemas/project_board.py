@@ -1304,3 +1304,6 @@ class PlanningBoard(BaseModel):
     #: pool SUBTOTAL applies the same rule with, over the pool's own net - a figure that
     #: belongs to the SET and so appears on no row.
     pool_share_pct: int = 50
+    #: "Borrow from another order" (`PLAN-borrow-location-only-8oct.md`, BR1). The Decide
+    #: menu offers that item exactly when this is true.
+    borrow_from_order_enabled: bool = False

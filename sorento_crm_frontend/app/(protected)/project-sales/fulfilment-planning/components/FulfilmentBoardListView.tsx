@@ -147,6 +147,8 @@ export interface FulfilmentBoardListViewProps {
    * can carry a site-pool row as readily as a cell's can.
    */
   poolSharePct?: number;
+  /** The board's "Borrow from another order" switch, for the Decide menu (BR1). */
+  borrowFromOrderEnabled?: boolean;
   /**
    * #1312: whether the signed-in reader may upload/remove a line's own attachments
    * (`projects.projects.edit`) - resolved by the caller (`FulfilmentBoardPanel`, which
@@ -201,6 +203,7 @@ export function FulfilmentBoardListView({
   focusKey,
   onFocusHandled,
   poolSharePct,
+  borrowFromOrderEnabled = false,
   canEditAttachments = false,
   attachmentsByLine = {},
   search,
@@ -1082,6 +1085,7 @@ export function FulfilmentBoardListView({
               onSaved={untickSaved}
               onClear={() => setRowSelection({})}
               embedded
+              borrowFromOrderEnabled={borrowFromOrderEnabled}
             />
           }
         />

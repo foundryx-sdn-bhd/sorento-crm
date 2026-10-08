@@ -1985,6 +1985,9 @@ export interface PlanningBoard {
    * no row.
    */
   pool_share_pct?: number;
+  /** "Borrow from another order" (BORROW-LOCATION-ONLY BR1): the Decide menu offers it
+   *  exactly when this is true. */
+  borrow_from_order_enabled?: boolean;
   dateBuckets: BoardDateBucket[];
   productRows: BoardProductRow[];
   cells: BoardCell[];

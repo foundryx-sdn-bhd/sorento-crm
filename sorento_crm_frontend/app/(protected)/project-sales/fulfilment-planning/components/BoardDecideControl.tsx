@@ -189,6 +189,7 @@ export function BoardDecideControl({
   onSaved,
   onClear,
   embedded = false,
+  borrowFromOrderEnabled = false,
 }: {
   /** Every row on screen, in the list's current sort order (R9). */
   contributions: BoardContribution[];
@@ -206,6 +207,8 @@ export function BoardDecideControl({
    * Clear: this control then draws only the Decide button.
    */
   embedded?: boolean;
+  /** The board's "Borrow from another order" switch (BORROW-LOCATION-ONLY BR1). */
+  borrowFromOrderEnabled?: boolean;
 }) {
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [way, setWay] = React.useState<DecideWay | null>(null);
@@ -220,14 +223,13 @@ export function BoardDecideControl({
     [contributions, selectedKeys],
   );
 
-  // "Borrow from another order" is offered only where a ticked row can name a donor: with the
-  // setting off the server names none (BORROW-LOCATION-ONLY D3).
-  const menu = React.useMemo(() => {
-    const donorNamed = tickedRows.some((row) =>
-      borrowCandidatesOf(row).some((candidate) => candidate.donor_so_number),
-    );
-    return MENU_ORDER.filter((entry) => entry.way !== 'borrow_order' || donorNamed);
-  }, [tickedRows]);
+  // "Borrow from another order" is offered exactly when the setting is on (BORROW-LOCATION-
+  // ONLY BR1); off, every borrow is a location's.
+  const menu = React.useMemo(
+    () =>
+      MENU_ORDER.filter((entry) => entry.way !== 'borrow_order' || borrowFromOrderEnabled),
+    [borrowFromOrderEnabled],
+  );
 
   const isBorrow = way === 'borrow_order' || way === 'borrow_other';
   const options = React.useMemo(

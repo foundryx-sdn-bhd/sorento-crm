@@ -2699,6 +2699,7 @@ export function FulfilmentBoardPanel({
                 // so a line's Stock button reads the site-pool subtotal the tenant actually
                 // runs rather than the component's own constant default.
                 poolSharePct={board.data?.pool_share_pct}
+                borrowFromOrderEnabled={Boolean(board.data?.borrow_from_order_enabled)}
                 // #1312: gates the paperclip's own upload/remove (Q6).
                 canEditAttachments={canEditAttachments}
                 // #1312: the ONE lookup call's own result, computed above over

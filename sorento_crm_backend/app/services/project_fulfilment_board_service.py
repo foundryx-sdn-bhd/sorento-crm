@@ -898,6 +898,9 @@ class FulfilmentBoardService:
             # Every pool ROW already arrives with its own `available_for_project` computed
             # here; this is the one number the client still has to apply the rule with.
             "pool_share_pct": self._pool_share_pct(),
+            # "Borrow from another order" (PLAN-borrow-location-only-8oct.md, BR1): the Decide
+            # menu offers it exactly when this is on, read once with the walk's own switch.
+            "borrow_from_order_enabled": self.supply.borrow_from_order,
         }
 
     # ----------------------------------------------------- the stock drill-down

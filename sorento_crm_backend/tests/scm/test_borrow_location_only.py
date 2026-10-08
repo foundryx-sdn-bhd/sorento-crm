@@ -682,3 +682,41 @@ def test_s4_off_the_pool_borrow_half_is_a_location_borrow_owed_back_on_this_line
             rows[0], line=asker_line, order=asker, code=pool.warehouse_code, qty="60",
         )
         assert superseded == 0
+
+
+# --------------------------------------------------------------------------- BR1
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_br1_the_board_route_carries_the_switch_for_the_decide_menu(enabled):
+    """BR1: the Decide menu offers "Borrow from another order" exactly when the switch is
+    on, so the board payload states it. Through the ROUTE, because a field the response
+    model does not declare is dropped silently."""
+    from app.models.base import company_scope
+
+    from tests.test_fulfilment_board import (
+        BASE, TODAY, VIEW, _board_world, _client, _restore, _sorento, _user,
+    )
+
+    with blank_session() as db:
+        company_id = _sorento(db)
+        actor = _user(db, "zzt borrow switch planner")
+        order, _product = _board_world(db)
+        _set_borrow_order(db, enabled)
+        db.commit()
+        client, originals = _client(db, actor, [VIEW])
+        try:
+            with company_scope(db, frozenset({company_id})):
+                response = client.get(
+                    f"{BASE}/fulfilment-planning/board",
+                    params={
+                        "orders": order.so_number,
+                        "granularity": "week",
+                        "as_of": TODAY.isoformat(),
+                    },
+                )
+        finally:
+            _restore(originals)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["borrow_from_order_enabled"] is enabled
