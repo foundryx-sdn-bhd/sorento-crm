@@ -172,14 +172,17 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # without MEMORY_ADDENDUM, so CEILING is 50,185 (+4).
 # Merge of main (#1528 SO-PO-REF, PO_REFS_ADDENDUM) with PR #1447 (report engine): 50,469 est. tokens
 # without MEMORY_ADDENDUM, so CEILING is 50,473 (+4).
-# Merge of main (#1447 REPORT-ENGINE) with PROMO-SUBJECT-FILTER (PROMOTION_KIND_ADDENDUM after
-# CANONICAL_CODE_ADDENDUM): 50,643 est. tokens without MEMORY_ADDENDUM, so CEILING is 50,647 (+4).
-# PROMO-SUBJECT-FILTER owner review round 2 (AC-26): the PROMOTION SUBJECT section (seat cover is
-# a toilet seat) inside PROMOTION_KIND_ADDENDUM: 50,742 est. tokens without MEMORY_ADDENDUM, so
-# CEILING is 50,746 (+4).
-# PROMO-SUBJECT-FILTER v73 live: the PROMOTION SUBJECT example puts the catalogue name in
-# canonical_code: 50,750 est. tokens without MEMORY_ADDENDUM, so CEILING is 50,754 (+4).
-CEILING = 50_754
+# REPORT-DRILLDOWN (PR #1531, card rev 3, owner 8 Oct 2026): the `ranking_drill` reading in
+# REPORT_ASK_ADDENDUM (scoped / global / unsure, the reply to the unsure question): 50,759 est.
+# tokens without MEMORY_ADDENDUM (+290), so CEILING is 50,763 (+4). Nothing else grew.
+# Review round 1 (same PR): products and categories reach the drill (the top_selling exception)
+# and the unsure reply's count exception: 50,863 (+100), so CEILING is 50,867 (+4).
+# Crew live-pass round (same PR): a different ranked noun is never a refine, "global" only when
+# said, doubt is "unsure": 51,040 (+177), so CEILING is 51,044 (+4).
+# Merge of main (#1531 REPORT-DRILLDOWN) with PROMO-SUBJECT-FILTER (PROMOTION_KIND_ADDENDUM with its
+# PROMOTION SUBJECT section, after CANONICAL_CODE_ADDENDUM): 51,321 est. tokens without MEMORY_ADDENDUM,
+# so CEILING is 51,325 (+4).
+CEILING = 51_325
 # The memory addendum on its own, bounded separately so this PR's growth stays bounded.
 # 26 Sep baseline (lane d89110c0): 339 est. tokens. Round 4 (baf4c813, 28 Sep: the history
 # question in any wording, the number re-run, commercial_request) took it to 512, which is

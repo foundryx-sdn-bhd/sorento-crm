@@ -2757,8 +2757,16 @@ def _report_ask_output(result: Any, ctx: dict[str, Any] | None = None) -> dict[s
     note = semantic_input.get("report_ask_note") if isinstance(semantic_input, dict) else None
     if note and text:
         text = f"{note}\n\n{text}"
+    # REPORT-DRILLDOWN: the rows the ranking printed, with their keys, ride on the frame
+    # (`shown`), so "these agents" next turn means exactly them. Never a route param.
+    drill = envelope.get("drill_rows")
+    frame = dict(args) if text and isinstance(args, dict) else None
+    if frame is not None:
+        frame.pop("shown", None)
+        if isinstance(drill, dict) and drill.get("group_by") == frame.get("group_by") and drill.get("rows"):
+            frame["shown"] = drill
     return {
-        "sales_ranking_frame": dict(args) if text and isinstance(args, dict) else None,
+        "sales_ranking_frame": frame,
         "response": text or _REPORT_ASK_ERROR_TEXT,
         "response_intro": None,
         "answers": [],

@@ -1806,11 +1806,12 @@ def lane_parse_output(
         and focus.top_selling
     ):
         out["top_selling"] = dict(focus.top_selling)
-    # REPORT-ENGINE: the held sales ranking frame rides only on a verdict the parser says
-    # refines it; any other verdict never sees it (a new intent wins).
+    # REPORT-ENGINE: the held sales ranking frame rides on a sales ranking verdict the parser
+    # did not read as its own global ask (REPORT-DRILLDOWN: a refine, a drill, or no reading,
+    # which the lane asks about rather than guess); any other verdict never sees it.
     if (
         jsc.js_string(out.get("order_status") or "").strip() == "sales_ranking"
-        and out.get("ranking_refine") is True
+        and out.get("ranking_drill") != "global"
         and focus is not None
         and focus.sales_ranking_frame
     ):
