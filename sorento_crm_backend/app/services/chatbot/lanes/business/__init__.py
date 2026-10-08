@@ -2343,6 +2343,14 @@ def run_fetch(
                     render=_render,
                     status_only=status_only,
                     loc=trigger.get("localizer") if tool_name in fetch_mod._LOCALIZED_TOOLS else None,
+                    subject_label=next(
+                        (
+                            jsc.nullish_str(e.get("display_name") or e.get("code")).strip() or None
+                            for e in jsc.array(entities)
+                            if isinstance(e, dict) and e.get("entity_type") == "attachment_type"
+                        ),
+                        None,
+                    ),
                 )
                 envelope = folded
         except Exception as exc:  # noqa: BLE001 - the alternative never costs the asked answer
@@ -2370,6 +2378,10 @@ def run_fetch(
                 # Only an alternative that actually had rows turns a miss into an answer;
                 # a bare "No promotion." keeps the miss handling (rerun, escalation offer).
                 structured["has_result"] = True
+            else:
+                # Still a miss: the miss reply (`answer_bridge.answer_for`) replaces this
+                # text, and prints these lines before its escalate offer (owner, 9 Oct).
+                structured["alternative_lines"] = list(alternative_tail)
         else:
             structured["response"] = response + "\n\n" + "\n".join(alternative_tail)
     # LOWSTOCK-FILTER-ASK (owner hand test, 3 Oct 2026): EVERY low stock reply - ready,

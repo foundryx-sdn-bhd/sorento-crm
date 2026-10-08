@@ -18,8 +18,9 @@ Delivery (orders) is deliberately absent (owner: a delivery history of the old c
 was delivered), as are the stock tool (it has its own, `inventory_service`), the outstanding
 report and counted sets. A product the contact also asked for in its own right is never
 offered again as an alternative. An alternative is named only when its own call returned
-rows for it (a promotion's "No promotion." aside), so a code the output guard dropped is
-never said.
+rows for it; an alternative whose own call came back empty is still named with what was
+not found ("No ETA", "no Product Photos.", "No promotion."), owner 9 Oct 2026: the reply
+shows the search was made.
 """
 from __future__ import annotations
 
@@ -149,6 +150,7 @@ def fold(
     render: Callable[[Any, list, Any], str],
     status_only: bool = False,
     loc: Any = None,
+    subject_label: str | None = None,
 ) -> tuple[list[str], bool]:
     """Put each alternative's answer into `envelope` (mutated) and return `(tail lines,
     found)`. `answers` is `[(old_code, alternative, its envelope or None)]`. The tail is
@@ -203,7 +205,20 @@ def fold(
 
         own = [it for it in alt_items if _code_of(it) == alt_code.upper()]
         if not own:
-            # Nothing came back for it (or the guard dropped it): never named.
+            # Owner (9 Oct 2026): "at least we need to show that we have tried to search for
+            # it". Its own call came back empty, so the line says so. (`plan` already kept
+            # only alternatives inside the contact's brand scope.)
+            if kind == "incoming":
+                dealer_anchor = anchor is not None and jsc.truthy(jsc.get(anchor.get("flags"), "dealer_view"))
+                empty = f"{alt_code}: No ETA" if dealer_anchor else f"{alt_code}: {loc.text('No incoming stock.')}"
+            elif kind == "attachment":
+                empty = f"{alt_code}: no {subject_label}." if subject_label else f"{alt_code}: {loc.text('no files.')}"
+            else:
+                empty = f"{alt_code}: {loc.text('Nothing found.')}"
+            if anchor is not None:
+                _flags(anchor).setdefault("alternative_lines", []).append(empty)
+            else:
+                tail.append(f"{label}: {loc.tail(empty)}")
             continue
         found = True
 

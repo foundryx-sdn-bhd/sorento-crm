@@ -110,6 +110,9 @@ LABELS: dict[str, dict[str, str]] = {
         "ms": "Tiada stok dan tiada stok masuk.",
         "zh": "没有库存，也没有到货。",
     },
+    # PRODUCT-ALTERNATIVES round B (owner, 9 Oct 2026): what an alternative's own search
+    # found when it found nothing, on the incoming line (the one localised tool it reaches).
+    "No incoming stock.": {"ms": "Tiada stok masuk.", "zh": "没有到货。"},
     "the quantity is more than what I can confirm here.": {
         "ms": "kuantiti ini melebihi apa yang boleh saya sahkan di sini.",
         "zh": "这个数量超出我在这里可以确认的范围。",

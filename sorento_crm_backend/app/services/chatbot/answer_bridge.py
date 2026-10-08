@@ -2020,7 +2020,32 @@ def answer_for(
         dealer = _dealer_did_you_mean(offer, parser, asked_at_turn)
         if dealer is not None:
             return turn_compose.Answer(text=dealer[0], question=dealer[1])
+    alternative_lines = fetch_item.get("alternative_lines") if isinstance(fetch_item, Mapping) else None
+    if alternative_lines:
+        text = with_alternative_lines(text, alternative_lines)
     return turn_compose.Answer(text=text, question=question)
+
+
+def with_alternative_lines(text: str, lines: Any) -> str:
+    """PRODUCT-ALTERNATIVES (owner, 9 Oct 2026): a miss on a discontinued code still names
+    its alternative and what the search for it found, BEFORE any escalate offer. The lines
+    come from the fetch (`lanes/business/__init__.py::run_fetch`, `alternative_lines`); the
+    offer is the sentence carrying "would you like me to escalate", which they are put in
+    front of. With no offer they close the reply."""
+    block = "\n".join(str(line) for line in (lines or []) if line)
+    if not block:
+        return text
+    lowered = text.lower()
+    at = lowered.find("would you like me to escalate")
+    if at < 0:
+        return f"{text.rstrip()}\n{block}"
+    # The offer's sentence starts after the last sentence end (or line break) before it.
+    start = max(text.rfind(". ", 0, at), text.rfind("? ", 0, at), text.rfind("\n", 0, at))
+    if start < 0:
+        return f"{block}\n{text}"
+    cut = start + (1 if text[start] == "\n" else 2)
+    head = text[:cut].rstrip()
+    return f"{head}\n{block}\n{text[cut:].lstrip()}"
 
 
 def _dealer_did_you_mean(
