@@ -107,3 +107,58 @@ def test_a_code_beside_a_class_keeps_product_ids_and_sends_no_subject(session_fa
         assert not a.get("scope_terms"), a
     assert "ZZT PROMO P1 FOR THE CODE" in reply, reply
     assert "ZZT PROMO P2 OTHER SINK" not in reply, reply
+
+
+def test_a_stray_unresolved_word_beside_a_class_keeps_the_class_filter(session_factory, monkeypatch):
+    """"latest kitchen sink promo": "latest" (hint None) resolves to nothing, so the class is still
+    the subject: probe and pick send `scope_terms ["kitchen sink"]`, no `product_ids`; Dealer has
+    no sink promotion ("- no promotion"); the pick returns the sink promotion, not the WC one."""
+    _seed_contact(session_factory, variables={})
+    _class(session_factory, "Kitchen Sink")
+    _class(session_factory, "Water Closet")
+    db = session_factory()
+    brand = Brand(id=str(uuid.uuid4()), brand_code=f"ZZT{uuid.uuid4().hex[:6]}", brand_name="Sorento", company_id=DEFAULT_COMPANY_ID)
+    db.add(brand)
+    std = PromotionType(type_code="standard", type_name="Standard Promo", show_expired=True, match_markers=[], match_priority=90, is_default=True)
+    db.add(std)
+    db.add_all([ContactAccessType(code="sorento_office", name="Sorento Office"), ContactAccessType(code="sorento_dealer", name="Sorento Dealer")])
+    db.flush()
+    sink = _sink(db, brand, "ZZTKS1111")
+    wc = product(db, company_id=DEFAULT_COMPANY_ID, code="ZZTWC2222")
+    wc.brand_id = brand.id
+    db.add(ProductSpecifications(id=str(uuid.uuid4()), product_id=wc.id, values={"class": {"value": "Water Closet"}}))
+    db.flush()
+    _promo(db, "ZZT PROMO SINK OFFICE ONLY", std, sink, levels=["sorento_office"])
+    _promo(db, "ZZT PROMO UNRELATED WC", std, wc, levels=["sorento_office", "sorento_dealer"])
+    db.commit()
+
+    def _none(body: dict[str, Any]) -> dict[str, Any]:
+        asked = list(body.get("tokens") or [])
+        return {"tokens": asked, "resolutions": [], "unresolved_tokens": asked}
+
+    services = ResolveGateServices(
+        access_types=lambda **_: [{"name": n} for n in LEVELS], resolve_entity=_none, probe=lambda **_: None
+    )
+    ents = [
+        {"raw": "latest", "hint": None, "canonical_code": None, "current_message": True, "confident": True},
+        {"raw": "kitchen sink", "hint": "category", "canonical_code": None, "current_message": True, "confident": True},
+    ]
+    qf = _parser_output(domain_hint="promotion", intent_hint="check_promotion", entities=ents)
+    captured = _mcp(monkeypatch, session_factory)
+
+    def turn(q, text, msg_id):
+        result, _ = _run_turn(session_factory, monkeypatch, qf=q, text_body=text, msg_id=msg_id, resolve_services=services)
+        return (result.reply or {}).get("text") or ""
+
+    menu = turn(qf, "latest kitchen sink promo", "zzt-cb-stray-ask")
+    n = len(captured)
+    reply = turn(_pick_qf(1), "1", "zzt-cb-stray-pick")
+    calls = [a for name, a in captured if name == PROMO_TOOL]
+    assert calls and len(captured) > n, captured
+    for a in calls:
+        assert [t.lower() for t in a.get("scope_terms") or []] == ["kitchen sink"], a
+        assert not a.get("product_ids"), a
+    assert "1. Office - has promotion" in menu.splitlines(), menu
+    assert "2. Dealer - no promotion" in menu.splitlines(), menu
+    assert "ZZT PROMO SINK OFFICE ONLY" in reply, reply
+    assert "ZZT PROMO UNRELATED WC" not in reply, reply
