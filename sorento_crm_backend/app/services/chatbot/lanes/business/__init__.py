@@ -601,20 +601,6 @@ def _nothing_live_of_kind(
     return {**_fixed_reply(text), "kind_none": True} if text else None
 
 
-def _live_rows_only(result: Any) -> Any:
-    """A probe answer without its expired rows (`is_expired`), `has_result` re-derived."""
-    if not isinstance(result, dict):
-        return result
-    out = dict(result)
-    for key in ("data", "items", "answers"):
-        rows = out.get(key)
-        if isinstance(rows, list):
-            out[key] = [r for r in rows if not (isinstance(r, dict) and r.get("is_expired"))]
-    if all(not out.get(k) for k in ("data", "items", "answers")):
-        out["has_result"] = False
-    return out
-
-
 def _fixed_reply(
     text: str, *, top_selling_asked: str | None = None, required_ask: dict[str, Any] | None = None
 ) -> dict[str, Any]:
@@ -1655,11 +1641,6 @@ def run_fetch(
             except Exception:  # noqa: BLE001 - an unprobed tier is "unknown", never "none"
                 logger.warning("chatbot: tier probe did not run", exc_info=True)
                 probe_results.append(None)
-        kind_ask = bool(semantic_input.get("promotion_types"))
-        if kind_ask:
-            # A kind ask counts only what is live right now (active, inside its window):
-            # a row the serving policy keeps after its end date (`is_expired`) is not.
-            probe_results = [_live_rows_only(r) for r in probe_results]
         collected = fetch_mod.tier_probe_collect(
             tier_gate or payload, plan_items=plan_items, probe_results=probe_results
         )
@@ -2279,8 +2260,7 @@ def run_fetch(
         tool_name, fetch_mod.parse_mcp_content(raw), semantic_input.get("scope_brand_ids"), db
     )
     if tool_name == fetch_mod.TIER_PROBE_TOOL and semantic_input.get("promotion_types"):
-        # A kind ask serves only what is live right now, the same rule the tier probe stamped by.
-        envelope = _live_rows_only(envelope)
+        # A kind ask is served by the same serving rule as every promotion (AC-22).
         if (
             isinstance(envelope, dict)
             and envelope.get("has_result") is False

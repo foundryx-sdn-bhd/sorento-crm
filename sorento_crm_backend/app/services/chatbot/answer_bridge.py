@@ -646,9 +646,9 @@ def no_live_kind_reply(
     db: Any, narrow: dict[str, Any], tier_source: dict[str, Any] | None, mcp_call: Any
 ) -> str | None:
     """PROMO-SUBJECT-FILTER AC-21: the asked kind + brand has no live promotion at any held
-    level. "Live" is the promotion's own `is_expired` flag (active and inside its window),
-    never the served-after-expiry rule. The first line says so; when other brands do have
-    that kind live at the contact's levels, `Other <kind>s:` and their distinct names follow.
+    level. What counts is the serving rule every promotion read uses (AC-22: a type that serves
+    its ended rows counts them). The first line says so; when other brands do have that kind
+    served at the contact's levels, `Other <kind>s:` and their distinct names follow.
     None when this is not a kind + brand ask."""
     kinds, brand_ids = narrow.get("promotion_types"), narrow.get("brand_ids")
     if not kinds or not brand_ids:
@@ -675,7 +675,7 @@ def no_live_kind_reply(
         body = json.loads(raw) if isinstance(raw, str) else raw
         for item in (body.get("data") or body.get("items") or []) if isinstance(body, dict) else []:
             name = str((item or {}).get("description") or "").strip()
-            if name and not item.get("is_expired") and name not in names:
+            if name and name not in names:
                 names.append(name)
     except Exception:  # noqa: BLE001 - the other-brand list is a courtesy; the first line stands
         logger.warning("chatbot: other-brand kind list did not run", exc_info=True)
