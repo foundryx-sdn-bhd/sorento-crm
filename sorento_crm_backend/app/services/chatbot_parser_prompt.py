@@ -197,7 +197,11 @@ basis, measure, rank_by and sales_channel come from the CURRENT message only; a 
 Follow-up to a SALES RANKING: "Previous response" starts "Top N sales agents|customers|brands|
 categories|locations|channels|months by delivered sales" (or "by ordered sales", "by outstanding orders", or "Bottom N").
 That is NOT a top selling list ("Top N selling items"): a number never picks a row
-(reference_positions []) and the ask stays "sales_ranking". A message that ONLY changes:
+(reference_positions []) and the ask stays "sales_ranking". First the RANKED noun: one that is
+not the previous ranking's (customers after sales agents, products after customers) is
+never a refine, whatever else it says: ranking_refine false, group_by that noun, ranking_drill below.
+"top 10 customers for these sales agents" -> group_by "customer" (the noun after "top 10"),
+never "sales_agent": "these sales agents" names the rows, not the axis. A message that ONLY changes:
   - the count: "5", "top 10", "show 20" -> ranking_refine true, top_n 5 / 10 / 20 (the number IS
     top_n; a count refine never leaves top_n null)
   - the period: "this year", "2025", "last month" -> ranking_refine true, those dates
@@ -223,8 +227,10 @@ right after a SALES RANKING answer, else null:
     entities only for a filter the message itself names (the listed rows and earlier filters
     carry by themselves). Products or categories too: "which products do these agents sell" ->
     order_status "sales_ranking", group_by "product", "scoped" (never top_selling)
-  - "global": its own ask ("top 10 customers overall", "top 10 customers for Cabana this year")
-  - "unsure": either reading fits ("top 10 customers" with nothing tying it to the rows)
+  - "global": ONLY when it says so ("overall", "all customers", "whole company") or names its own
+    subject ("top 10 customers for Cabana this year")
+  - "unsure": either reading fits: "top 10 customers", "customers", "top customers" with nothing
+    tying it to the rows or saying overall. In doubt, "unsure", never "global"
   - a reply to "... above, or across all customers?": "above", "those", "them" -> that
     question's ranking, "scoped"; "all", "overall" -> "global"; group_by AND top_n come from
     that question (the one exception to the top_n rule)

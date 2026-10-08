@@ -177,7 +177,9 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # tokens without MEMORY_ADDENDUM (+290), so CEILING is 50,763 (+4). Nothing else grew.
 # Review round 1 (same PR): products and categories reach the drill (the top_selling exception)
 # and the unsure reply's count exception: 50,863 (+100), so CEILING is 50,867 (+4).
-CEILING = 50_867
+# Crew live-pass round (same PR): a different ranked noun is never a refine, "global" only when
+# said, doubt is "unsure": 51,040 (+177), so CEILING is 51,044 (+4).
+CEILING = 51_044
 # The memory addendum on its own, bounded separately so this PR's growth stays bounded.
 # 26 Sep baseline (lane d89110c0): 339 est. tokens. Round 4 (baf4c813, 28 Sep: the history
 # question in any wording, the number re-run, commercial_request) took it to 512, which is

@@ -99,6 +99,10 @@ DRILL_MAX_KEYS = 50
 TOO_MANY_LINE = "That is more than {max} {plural} to narrow by. Ask for the top {max} or fewer first."
 NO_KEYS_LINE = "I can't narrow by {name} above. Ask again naming the {plural} you want."
 NOT_IN_ROWS_LINE = "{name} is not one of the {plural} above."
+SCOPE_GIVE_UP = (
+    "I still can't tell which you meant. Ask again in one message, "
+    "e.g. top 10 customers of these agents, or top 10 customers overall."
+)
 #: The frame keys that are not route params.
 _FRAME_ONLY = ("date_from", "date_to", "top_n", "shown")
 
@@ -291,7 +295,13 @@ def names_its_own_ask(verdict: dict[str, Any], open_slot: dict[str, Any] | None 
     raw_group = jsc.js_string(verdict.get("group_by") or "").strip().lower()
     if not raw_group:
         return False
-    held = _dict(_dict(_dict(open_slot).get("extras")).get("args")).get("group_by")
+    extras = _dict(_dict(open_slot).get("extras"))
+    scope = _dict(extras.get("scope"))
+    if scope:
+        # The scope question names two axes ("customers of the sales agents above"): a reply
+        # echoing either is its answer, not a new ask.
+        return GROUP_BY.get(raw_group, raw_group) not in (scope.get("source"), _dict(scope.get("scoped")).get("args", {}).get("group_by"))
+    held = _dict(extras.get("args")).get("group_by")
     return GROUP_BY.get(raw_group, raw_group) != held
 
 
@@ -549,6 +559,8 @@ def settle(
     The slot's extras carry the first message's args and its number (`top_n`), so an
     answering turn runs the first message's ask; the period question is asked first."""
     slot = parse_output.get("required_ask")
+    if isinstance(slot, dict) and slot.get("ask") == ASK_NAME and slot.get("asking") == "scope":
+        return _scope_answer(db, parse_output, slot), None
     if isinstance(slot, dict) and slot.get("ask") == ASK_NAME:
         extras = _dict(slot.get("extras"))
         args = _dict(extras.get("args"))
@@ -574,10 +586,18 @@ def settle(
         return outcome, None
 
     frame = parse_output.get("sales_ranking_frame")
-    if parse_output.get("ranking_refine") is True and isinstance(frame, dict) and frame:
+    frame = frame if isinstance(frame, dict) else {}
+    drill = parse_output.get("ranking_drill")
+    raw_group = jsc.js_string(parse_output.get("group_by") or "").strip().lower()
+    # A refine never changes the axis: a verdict naming another axis than the held ranking's
+    # is not one, whatever its `ranking_refine` says (crew live pass, 8 Oct 2026).
+    new_axis = bool(frame) and bool(raw_group) and GROUP_BY.get(raw_group, raw_group) != frame.get("group_by")
+    if parse_output.get("ranking_refine") is True and frame and not new_axis:
         return _refine(db, parse_output, frame, dealer=dealer)
-    if parse_output.get("ranking_refine") is not True and parse_output.get("ranking_drill") in ("scoped", "unsure"):
-        drilled = _drill(db, parse_output, frame if isinstance(frame, dict) else {}, entities, dealer=dealer)
+    if drill in ("scoped", "unsure") or (new_axis and drill != "global" and _dict(frame.get("shown"))):
+        # No reading on a new axis right after a ranking is asked, never guessed (owner rule).
+        reading = drill if drill in ("scoped", "unsure") else "unsure"
+        drilled = _drill(db, parse_output, frame, entities, reading=reading, dealer=dealer)
         if drilled is not None:
             return drilled
         # Unsure with nothing above to narrow by: the global reading is the only one left.
@@ -673,7 +693,8 @@ def _unsure_line(group_by: str, top_n: Any, source: str, count: int) -> str:
 
 
 def _drill(
-    db: Any, parse_output: dict[str, Any], frame: dict[str, Any], entities: Any, *, dealer: bool = False
+    db: Any, parse_output: dict[str, Any], frame: dict[str, Any], entities: Any, *, reading: str,
+    dealer: bool = False,
 ) -> tuple[rf.Outcome | None, str | None] | None:
     """The parser read this ranking as about the rows the last ranking printed
     (`ranking_drill` scoped), or maybe so (unsure, asked; nothing runs). Scoped keeps every
@@ -687,7 +708,7 @@ def _drill(
     shown = _dict(frame.get("shown"))
     rows = [r for r in jsc.array(shown.get("rows")) if isinstance(r, dict)]
     source = jsc.js_string(shown.get("group_by") or "")
-    unsure = parse_output.get("ranking_drill") == "unsure"
+    unsure = reading == "unsure"
     drillable = bool(rows) and source in AXIS_NOUNS and drill_param(source, source) is not None
     if unsure and not drillable:
         return None
@@ -704,16 +725,18 @@ def _drill(
     param = drill_param(source, group_by)
     if param is None:
         return None, NOT_A_SOURCE_LINES.get(source, CATALOGUE_LINE)
-    if unsure:
-        return None, _unsure_line(group_by, parse_output.get("top_n"), source, len(rows))
     keys: list[str] = []
     for row in rows:
         row_keys = [k for k in (jsc.js_string(v) for v in jsc.array(row.get("keys"))) if k]
         if not row_keys:
             # A printed row naming nothing to narrow by ("(blank)"): said, never dropped.
+            if unsure:
+                return None  # nothing to scope to: the global reading is the only one left
             return None, NO_KEYS_LINE.format(name=jsc.js_string(row.get("name")), plural=AXIS_NOUNS[source][1])
         keys.extend(k for k in row_keys if k not in keys)
     if len(keys) > DRILL_MAX_KEYS:
+        if unsure:
+            return None
         return None, TOO_MANY_LINE.format(max=DRILL_MAX_KEYS, plural=AXIS_NOUNS[source][1])
 
     held = {k: v for k, v in frame.items() if k not in _FRAME_ONLY}
@@ -737,20 +760,63 @@ def _drill(
     for key in ("basis", "measure"):
         if own.get(key):
             args[key] = own[key]
-    period = period_from(parse_output.get("date_filter_start"), parse_output.get("date_filter_end")) or period_from(
-        frame.get("date_from"), frame.get("date_to")
-    )
+    own_period = period_from(parse_output.get("date_filter_start"), parse_output.get("date_filter_end"))
+    period = own_period or period_from(frame.get("date_from"), frame.get("date_to"))
     top_n = parse_output.get("top_n")
     if top_n is None and same_axis:
         top_n = frame.get("top_n")
-    # A drill has both choices (the held args ran); only the count is asked when not named.
+    scoped = _branch(args, top_n, period, held=True)
+    if unsure:
+        # One question, nothing runs. The slot holds BOTH readings, so the reply only has to
+        # say which ("the agents above" / "all"); its axis, count and period are the slot's.
+        question = _unsure_line(group_by, parse_output.get("top_n"), source, len(rows))
+        scope = {
+            "question": question,
+            "source": source,
+            "scoped": scoped,
+            "global": _branch(own, parse_output.get("top_n"), own_period, held=False),
+        }
+        slot = {"ask": ASK_NAME, "values": {}, "asking": "scope", "options": [], "misses": 0,
+                "extras": {"scope": scope}}
+        return rf.Outcome(values={}, reply=question, slot=slot), None
+    return _collect_branch(db, scoped), None
+
+
+def _branch(args: dict[str, Any], top_n: Any, period: rf.Resolved | None, *, held: bool) -> dict[str, Any]:
+    """One reading of a ranking, kept as plain data (it may wait in a slot): its args, count,
+    period, and whether its metric and basis are the held ranking's (never asked again)."""
+    return {
+        "args": args,
+        "top_n": top_n,
+        "period": {"value": period.value, "label": period.label} if period is not None else None,
+        "held": held,
+    }
+
+
+def _collect_branch(db: Any, branch: dict[str, Any]) -> rf.Outcome:
+    args, top_n = _dict(branch.get("args")), branch.get("top_n")
     given = {**_given_choices(args), **_given_top_n(args, top_n)}
-    for name, key in (("metric", "measure"), ("basis", "basis")):
-        if name not in given:
-            given[name] = rf.Resolved("ok", value=args.get(key), label=args.get(key) or "")
-    if period is not None:
-        given["period"] = period
-    return rf.collect(db, SALES_RANKING_ASK, given=given, extras={"args": args, "top_n": top_n}), None
+    if branch.get("held"):
+        # A drill has both choices (the held args ran); only the count is asked when not named.
+        for name, key in (("metric", "measure"), ("basis", "basis")):
+            if name not in given:
+                given[name] = rf.Resolved("ok", value=args.get(key), label=args.get(key) or "")
+    period = _dict(branch.get("period"))
+    if period:
+        given["period"] = rf.Resolved("ok", value=period.get("value"), label=period.get("label") or "")
+    return rf.collect(db, SALES_RANKING_ASK, given=given, extras={"args": args, "top_n": top_n})
+
+
+def _scope_answer(db: Any, parse_output: dict[str, Any], slot: dict[str, Any]) -> rf.Outcome:
+    """The reply to the scope question: the PARSER's reading of it (`ranking_drill` scoped or
+    global) picks the reading the slot holds. Anything else asks once more, then gives up."""
+    scope = _dict(_dict(slot.get("extras")).get("scope"))
+    reading = parse_output.get("ranking_drill")
+    if reading in ("scoped", "global") and isinstance(scope.get(reading), dict):
+        return _collect_branch(db, scope[reading])
+    if int(slot.get("misses") or 0) >= 1:
+        return rf.Outcome(reply=SCOPE_GIVE_UP, slot=None)
+    return rf.Outcome(reply=jsc.js_string(scope.get("question") or ""), slot={**slot, "misses": 1})
 
 
 def route_args(outcome: rf.Outcome) -> dict[str, Any]:
