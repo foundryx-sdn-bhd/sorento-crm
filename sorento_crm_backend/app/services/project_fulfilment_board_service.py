@@ -5224,6 +5224,19 @@ class FulfilmentBoardService:
                     # facts for this donor, so the manual Borrow modal renders `CellStockTable`
                     # instead of a second, narrower table of its own.
                     "location": candidate.get("location"),
+                    # The rung and the donor line (BORROW-LOCATION-ONLY defect A): a Decide or
+                    # Amend borrow posts `donor_core_line_id` back, which is what keeps the
+                    # re-borrow guard (K6) and gives each line at one bin its own running
+                    # claim. The donor's name fields are whatever the service left on them -
+                    # blank with "Borrow from another order" off.
+                    "rung": candidate.get("rung"),
+                    "donor_core_line_id": candidate.get("donor_core_line_id"),
+                    "donor_so_number": candidate.get("donor_so_number"),
+                    "donor_line_no": candidate.get("donor_line_no"),
+                    "donor_agent_code": candidate.get("donor_agent_code"),
+                    "donor_required_date": candidate.get("donor_required_date"),
+                    "same_agent": bool(candidate.get("same_agent")),
+                    "lower_ranked": bool(candidate.get("lower_ranked")),
                 }
                 for candidate in row.borrow_candidates
             ],

@@ -1255,3 +1255,64 @@ describe('decideComposition: borrow_other sums a location across its donor-less 
     expect(second.skip).toBe('only 2 free at BRW-BB');
   });
 });
+
+/**
+ * BORROW-LOCATION-ONLY defect A, the payload the browser measured: three rows at one bin, all
+ * with a null `donor_core_line_id` - two step-2 lines of 4 whose ids the board had dropped,
+ * and the donor project's hold of 8, which is the SAME stock again. A bin's capacity is
+ * never counted twice: rows that cannot be told apart are one pile, and the project hold is
+ * not a location row.
+ */
+describe('decideComposition: the measured null-id payload never double counts a bin', () => {
+  const impact = { free_before: '4', free_after_full_borrow: '0', committed_qty: '0' };
+  const stepTwo = {
+    source: 'other_location' as const,
+    warehouse_code: 'X',
+    warehouse_id: 'wh-x',
+    free_qty: '4',
+    donor_impact: impact,
+    rung: null,
+    donor_so_number: null,
+    donor_core_line_id: null,
+  };
+  const hold = {
+    source: 'other_project' as const,
+    warehouse_code: 'X',
+    warehouse_id: 'wh-x',
+    free_qty: '8',
+    donor_impact: impact,
+    donor_project_id: 'prj-1',
+    donor_project_ref: null,
+    donor_core_line_id: null,
+  };
+
+  it('reads the two indistinguishable rows as one pile of 4 and leaves the hold alone', () => {
+    const result = decideComposition(
+      decideRow({ qty: '6', borrow_candidates: [stepTwo, stepTwo, hold] }),
+      'borrow_other',
+      'X',
+    );
+
+    expect(result.skip).toBe('only 4 free at X');
+  });
+
+  it('with the donor lines the board now carries, covers 6 as 4 + 2 off the two lines', () => {
+    const result = decideComposition(
+      decideRow({
+        qty: '6',
+        borrow_candidates: [
+          { ...stepTwo, rung: 'order_borrow', donor_core_line_id: 'core-a' },
+          { ...stepTwo, rung: 'order_borrow', donor_core_line_id: 'core-b' },
+          hold,
+        ],
+      }),
+      'borrow_other',
+      'X',
+    );
+
+    expect((result.borrow ?? []).map((b) => [b.donor_core_line_id, b.qty])).toEqual([
+      ['core-a', '4'],
+      ['core-b', '2'],
+    ]);
+  });
+});

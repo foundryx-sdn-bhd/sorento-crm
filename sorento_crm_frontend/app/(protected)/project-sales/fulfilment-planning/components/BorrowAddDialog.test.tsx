@@ -414,6 +414,44 @@ describe('BorrowAddDialog', () => {
     ]);
   });
 
+  // Defect A: the donor project's hold at the bin is the SAME stock as the bin's later-order
+  // lines, so a merged bin offers the lines' 4 + 4, never 4 + 4 + 8.
+  it('never adds a project hold to the lines it holds when it merges a bin', () => {
+    const line = (core: string): BorrowCandidate => ({
+      ...OTHER_PROJECT,
+      source: 'other_location',
+      rung: 'order_borrow',
+      donor_project_ref: null,
+      donor_project_id: null,
+      donor_core_line_id: core,
+      donor_so_number: null,
+      free_qty: '4',
+      need_qty: null,
+    });
+    const hold: BorrowCandidate = {
+      ...OTHER_PROJECT,
+      warehouse_code: 'JB',
+      donor_project_ref: null,
+      free_qty: '8',
+      need_qty: null,
+    };
+    renderDialog([line('core-a'), line('core-b'), hold]);
+
+    expect(screen.getByLabelText('Quantity')).toHaveValue(8);
+    fireEvent.change(screen.getByLabelText('Quantity'), { target: { value: '6' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add the borrow' }));
+    const [parts] = onAddMany.mock.calls[0];
+    expect(
+      (parts as { candidate: BorrowCandidate; qty: string }[]).map((p) => [
+        p.candidate.donor_core_line_id,
+        p.qty,
+      ]),
+    ).toEqual([
+      ['core-a', '4'],
+      ['core-b', '2'],
+    ]);
+  });
+
   // -------------------------------------------------------------- AC-1.7 (fix round)
   it('renders the empty state when every candidate lacks a location, never the table', () => {
     renderDialog([{ ...OTHER_LOCATION, location: undefined }]);

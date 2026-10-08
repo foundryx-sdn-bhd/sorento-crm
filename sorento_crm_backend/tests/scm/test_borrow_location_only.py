@@ -779,3 +779,74 @@ def test_r2_an_over_asked_project_hold_is_refused_by_location_under_off(enabled)
         assert code not in reason, reason
         assert reason.startswith(f"Stock held at {bin_code} now has "), reason
         assert reason.endswith("and 40 was asked for."), reason
+
+
+# --------------------------------------------------------------------------- defect A
+
+
+def _two_lines_at_one_bin(db):
+    """The browser repro: the asker needs 6, two later decided orders hold 4 + 4 at one bin."""
+    from .test_ladder_v7_borrow import _decide
+
+    company_id, eling, project, product = _world(db)
+    _group, sites = _group_sites(db)
+    own, _pool = sites["BRW"]
+    bin_ = _warehouse(db, f"ZZTMWH-IB{_uid()[:3]}")
+    _stock(db, product, bin_, on_hand=8)
+    _lead_time(db, product, LEAD_DAYS)
+    _policy(db)
+    for n in (2, 3):
+        order, line, _cso, _cline = _seed_line(
+            db, company_id, project, product, bin_, qty_ordered="4",
+            required_date=date.today() + timedelta(days=WINDOW_DAY + 20 + n), line_no=n,
+            so_number=f"ZZT-SO-D{n}{_uid()[:4]}",
+        )
+        _decide(db, order, line, bin_, "4", eling)
+    _asker, _line, asker_cso, _cline = _seed_line(
+        db, company_id, project, product, own, qty_ordered="6", line_no=1,
+        so_number=f"ZZT-SO-ASK{_uid()[:5]}",
+    )
+    return company_id, eling, asker_cso, bin_
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_defect_a_the_board_route_carries_each_step_two_donor_line_id(enabled):
+    """Defect A: the board narrowed every candidate to a fixed field list that left out the
+    rung and the donor line, so a Decide-made borrow posted no `donor_core_line_id` (K6 could
+    not hold) and two lines at one bin shared one running claim. Through the ROUTE, because
+    the response model drops what it does not declare."""
+    from app.models.base import company_scope
+
+    from tests.test_fulfilment_board import BASE, VIEW, _client, _restore
+
+    with blank_session() as db:
+        company_id, eling, asker_cso, bin_ = _two_lines_at_one_bin(db)
+        _set_borrow_order(db, enabled)
+        db.commit()
+        client, originals = _client(db, eling, [VIEW])
+        try:
+            with company_scope(db, frozenset({company_id})):
+                response = client.get(
+                    f"{BASE}/fulfilment-planning/board",
+                    params={
+                        "orders": asker_cso.so_number,
+                        "granularity": "week",
+                        "as_of": date.today().isoformat(),
+                    },
+                )
+        finally:
+            _restore(originals)
+
+    assert response.status_code == 200, response.text
+    candidates = [
+        candidate
+        for cell in response.json()["cells"]
+        for contribution in cell["contributions"]
+        for candidate in contribution["borrow_candidates"]
+    ]
+    step_two = [c for c in candidates if c.get("rung") == "order_borrow"]
+    assert len(step_two) == 2, candidates
+    assert len({c["donor_core_line_id"] for c in step_two}) == 2, step_two
+    assert all(c["donor_core_line_id"] for c in step_two), step_two
+    for c in step_two:
+        assert bool(c.get("donor_so_number")) is enabled, c

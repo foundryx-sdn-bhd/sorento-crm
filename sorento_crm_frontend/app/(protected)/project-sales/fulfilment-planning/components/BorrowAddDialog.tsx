@@ -109,11 +109,11 @@ export function BorrowAddDialog({
     }
     return byKey;
   }, [candidates]);
-  /** The row as the dialog offers it: a merged bin reads its members' summed free. */
+  /** The row as the dialog offers it: a merged bin reads its stock's summed free. */
   const offered = (candidate: BorrowCandidate | undefined): BorrowCandidate | undefined => {
     const members = candidate ? bins.get(candidateKey(candidate)) : undefined;
     if (!candidate || !members || members.length < 2) return candidate;
-    const free = members.reduce((sum, c) => sum + toMinor(c.free_qty), 0);
+    const free = binStock(members).reduce((sum, c) => sum + toMinor(c.free_qty), 0);
     return { ...candidate, free_qty: fromMinor(free) };
   };
   // S4/review B2: keyed by CANDIDATE, not by warehouse - two donors can share one bin (a
@@ -182,9 +182,9 @@ export function BorrowAddDialog({
             event.preventDefault();
             if (!valid || !selected) return;
             const reason = storedReason(selected, authorised);
-            const members = bins.get(candidateKey(selected)) ?? [];
+            const members = binStock(bins.get(candidateKey(selected)) ?? []);
             if (members.length < 2) {
-              onAdd(selected, qty.trim(), reason);
+              onAdd(members[0] ?? selected, qty.trim(), reason);
               onDone();
               return;
             }
@@ -192,7 +192,7 @@ export function BorrowAddDialog({
             // each within its own free. Anything typed beyond the bin's free rides on the
             // last part, exactly as an over-ask on a single row does.
             const wanted = toMinor(qty.trim());
-            const drawn = drawAcross(members, wanted, candidateKey, (c) => toMinor(c.free_qty));
+            const drawn = drawAcross(members, wanted, stockKey, (c) => toMinor(c.free_qty));
             const parts = drawn.length ? drawn : [{ item: members[0], minor: 0 }];
             const over = wanted - parts.reduce((sum, part) => sum + part.minor, 0);
             parts[parts.length - 1] = {
@@ -406,6 +406,33 @@ function candidateKey(candidate: BorrowCandidate): string {
     candidate.donor_core_line_id ?? '',
     candidate.donor_project_ref ?? '',
   ].join('|');
+}
+
+/** One pile of stock: a donor line, else the source at the bin (and the project it is held
+ *  for). Two rows with one key are the same stock. */
+function stockKey(candidate: BorrowCandidate): string {
+  return (
+    candidate.donor_core_line_id ??
+    `${candidate.source}|${candidate.warehouse_id ?? candidate.warehouse_code}|${candidate.donor_project_id ?? ''}`
+  );
+}
+
+/**
+ * A merged bin's rows as STOCK (BORROW-LOCATION-ONLY defect A): never counted twice. A
+ * project's hold beside the later-order lines it holds is the same stock as those lines, so
+ * it drops out when the bin has donor lines; rows that cannot be told apart are one pile.
+ */
+function binStock(members: BorrowCandidate[]): BorrowCandidate[] {
+  const lines = members.some((c) => c.donor_core_line_id)
+    ? members.filter((c) => c.source !== 'other_project')
+    : members;
+  const seen = new Set<string>();
+  return lines.filter((c) => {
+    const key = stockKey(c);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 /**
