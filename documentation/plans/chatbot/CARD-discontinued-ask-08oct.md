@@ -1,6 +1,6 @@
 # CARD - the chatbot answers "is X discontinued?" directly (DISCONTINUED-ASK)
 
-Status: CARD POSTED (8 Oct 2026). Q5 ruled (a) by crew; awaiting owner answers on Q1-Q4 before code. Track: small fix
+Status: RULED (8 Oct 2026): Q1 (a), Q2 (a), Q3 (a), Q4 (a) by the owner, Q5 (a) by crew. Building (red-first). See "Rulings". Track: small fix
 (expected diff well under 300 lines, no migration unless Q5 needs a prompt version, no auth/RBAC).
 Lane PR #1535 carries `crew-lane: DISCONTINUED-ASK`. Plan: `PLAN-discontinued-ask-08oct.md`.
 
@@ -107,8 +107,9 @@ Shown with the Q1 (a) / Q4 (a) recommendation and Q5 (a) as ruled.
    `Alternative: SRTWC286-SH-NEW-P`. Codes known from #1533's table: `-SH-150`, `-SH-200`, `-SH-P`,
    `-SH-NEW-150`, `-SH-NEW-200`, `-SH-NEW-P` (the other four still to be listed from crew data).
 7. Status plus another property. "SRTBF11821 price and discontinued?": today's card for the
-   price, with the item's `⚠️ (PRODUCT DISCONTINUED)` marker replaced by the same status line
-   `SRTBF11821: Discontinued.` (a live item gets `Not discontinued.` where it had nothing).
+   price, with a `*Discontinued:* Yes` field line in place of the item's `⚠️ (PRODUCT DISCONTINUED)`
+   marker (a live item gets `*Discontinued:* No` where it had nothing), then `Alternative: <code>`
+   under a discontinued item that has one.
 
 ## Edge cases
 
@@ -124,9 +125,9 @@ Shown with the Q1 (a) / Q4 (a) recommendation and Q5 (a) as ruled.
 
 **Q1. Shape of the reply when ONLY the discontinued status is asked.**
 (a) the status lines only (examples above), the card dropped; when another property is asked too,
-the card stays and each item carries the same status line in place of the marker (example 7);
+the card stays and each item gains a `*Discontinued:* Yes / No` field line (example 7);
 (b) the status line first, then the full card as today;
-(c) always the card, with the status line in place of the marker.
+(c) always the card, with a `*Discontinued:* Yes / No` field line.
 **Recommend (a)**: it is the direct answer the owner asked for. (b) and (c) bury it in the dump the
 owner called confusing.
 
@@ -163,7 +164,22 @@ line, plain code, no stock figure.
 
 - Engine-level, stubbed parser `requested_attributes ["discontinued"]`: live product -> `Not
   discontinued.`; discontinued -> `Discontinued.`; mixed family -> one line each; with `price`
-  too -> card + status line in place of the marker; ms / zh labels; dealer with a quoted quantity is NOT rewritten to stock.
+  too -> card + `*Discontinued:* Yes/No` field line; ms / zh labels; dealer with a quoted quantity is NOT rewritten to stock.
 - Opt-in live parser (`CHATBOT_LIVE_LLM=1`, console_cases yaml): "9613-bl is discon or?",
   quoted "mean discontinued model?", "dah discontinue ke SRTBF11821", "SRTBF11821 停产了吗",
   "BMC6067 still selling?" -> `master_products` + `requested_attributes` contains `discontinued`.
+
+## Rulings (8 Oct 2026)
+
+Owner, verbatim: "Q1 - (a), Q2 a, Q3, correct a, Q4 a okay". Crew: Q5 (a).
+
+- Q1 (a): status lines only when the status alone is asked; with another property, the card plus a
+  `*Discontinued:* Yes / No` field line (it replaces the marker on that item).
+- Q2 (a): the status only, no second stock fetch.
+- Q3 (a): one line per matched product for staff; dealers keep the exact-code picker first.
+- Q4 (a): `CODE: Not discontinued.` / `CODE: Discontinued.`, ms `Tidak dihentikan.` / `Dihentikan.`,
+  zh `未停产。` / `已停产。`.
+- Q5 (a): the alternative hook. Owner (8 Oct): the alternative capability applies in ALL domains,
+  this discontinued answer included: a discontinued code with an alternative gets
+  `Alternative: <code>` from #1533's lookup. This lane reads the item's `alternatives` key; #1533
+  fills it (for `crm_master_products_list` items too) when it merges.
