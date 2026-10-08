@@ -1,6 +1,6 @@
 # PLAN: borrow = location only (BORROW-LOCATION-ONLY)
 
-Status: Plan, behaviour card posted for the owner (8 Oct 2026). Feature track, size L (engine +
+Status: Build (answers in, 8 Oct 2026). Feature track, size L (engine +
 confirm write + Decide UI + guarded data script). Cloud lane, PR #1534. No code before the
 card's answers.
 
@@ -127,6 +127,56 @@ Backend paths are under `sorento_crm_backend/`.
   own location (or its group) that later orders hold. It is offered as a location row, never
   as an order, and raises the ORDER_BACK on this line at that location (B3).
 
+## Crew's rules (8 Oct, from origin/main code facts)
+
+- Free stock at the line's own location (`fact.warehouse`, `fact.pool`, site pools) is
+  excluded from borrow (`_reserve_location_ids`, `project_supply_service.py:6288`). That stock
+  is a RESERVE.
+- The own location reaches the Borrow picker only through order-donor rows
+  (`_order_borrow_offer_rows`, `:10297`, tagged `source=other_location`,
+  `rung=RUNG_ORDER_BORROW`), i.e. stock earmarked for another SO at the same bin.
+- Same-group siblings are offered as free-stock borrows, but raise NO order-back
+  (`:7748-7760`).
+- **Switch OFF (the default):**
+  - Borrowing at the own location means taking on hand earmarked for other orders there, as a
+    LOCATION borrow. No donor is named and the donor is untouched. It raises an order-back on
+    the borrowing line.
+  - A same-group sibling borrow also raises an order-back on the borrowing line.
+  - `borrow_other` never resolves to a donor-NAMED row.
+- **Switch ON:** today's behaviour.
+
+## Build design (simplest that meets the rules)
+
+- **D1. Setting.** `system_settings.borrow_from_order_enabled` (bool, default false),
+  additive migration. The flag reaches GET/PUT `/settings` beside `local_buy_routing_enabled`
+  (`app/api/v1/user_management/settings.py:167,432,832`), and System Settings General shows a
+  toggle beside "Local supplier Buys skip Order Inquiries".
+- **D2. Same stock, different story (OFF).** The engine picks exactly the stock it picks today:
+  step 2's later-order on hand, ranked the same. Only the presentation and the write change:
+  - Every step-2 / group-donor candidate and component has `donor_so_number`,
+    `donor_line_no` and `donor_agent_code` blanked and `same_agent=false`.
+  - `donor_core_line_id` stays INTERNAL, so the re-borrow guard keeps counting (K6).
+  - The reason reads "Borrow 6 on hand at BRW-BB; ordered back to BRW-BB on this line".
+- **D3. FE needs no flag.** One rule in `supplyVocabulary`: a borrow that names no donor SO is a
+  location borrow ("Borrow other location"), whatever its rung. The Decide menu offers "Borrow
+  from another order" only when a ticked row has a donor-named candidate, so under OFF it is
+  never offered. The `borrow_other` picker and Amend matcher skip donor-named rows, which fixes
+  the leak under ON (K8).
+- **D4. Confirm (OFF).**
+  - `_borrow_shortfalls` raises ONE ORDER_BACK per (borrowing line, borrowed location) for every
+    borrow that is not a supply document. That covers other location, own location, own group
+    and the pool borrow half. Each row carries the line's own date and the note "Order-back:
+    <loc> lent <q> to <SO> line <n>".
+  - `_supersede_borrowed_donors` is skipped.
+  - The switch is read once per confirm.
+  - A stale tab posting donor fields under OFF is treated as a location borrow (K5): the write
+    keys on the switch, never on the payload.
+- **D5. Step 3 (borrow incoming) is unchanged in both states** (K9). It already writes its row
+  on the borrowing line (`:7224-7251`). Its donor-line remainder row (`:7665-7695`) is the
+  donor's own document hole, and the owner has not asked about it.
+- **D6. Data script** `scripts/fix_borrow_order_back_rows.py`, per B6 (dry-run default,
+  `--apply`, idempotent).
+
 ## Risks of keeping the switch (what to guard when someone turns it ON later)
 
 - **K1. Rows move when the switch flips.** ON writes the order-back on the donor line at the
@@ -165,6 +215,15 @@ Backend paths are under `sorento_crm_backend/`.
   - Guard: a red test for a line with Borrow 6 + Buy 4 that is confirmed and then re-confirmed.
     It must end with exactly one live ORDER_BACK of 6 at the borrowed location and one ORDER of
     4, never a cancelled-and-lost or a doubled row.
+- **K8. Rung leak (today, both states).**
+  - `pickerOptions` (`BoardDecideControl.tsx:130-148`) and the Amend matcher
+    (`boardAmend.ts:849-853`) do not filter by rung. So "Borrow other location" can resolve to an
+    order-donor row and become a donor-named borrow under the wrong label.
+  - Under OFF that row is a location borrow by D2, which is the intended outcome.
+  - Under ON the picker must skip donor-named rows.
+- **K9. Step 3 is unchanged.** "Borrow incoming" still names the donor SO and keeps its
+  donor-side remainder row in both states (D5). If the owner wants it location-only too, that
+  is a follow-up.
 
 ## Data (6 Oct prod snapshot, read-only, via crew; names masked)
 
