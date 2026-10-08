@@ -144,11 +144,24 @@ CUSTOMER_NAMES_SQL = (
 )
 
 
-def outerjoin_customer_by_order_name(query, order_cls):
-    """`query.outerjoin(Customer)` on the order's debtor name, matched against the customer's
-    name or an alias, within the order's own company (an order names a customer of its own
-    company only)."""
-    from sqlalchemy import and_, func, select, union_all
+def outerjoin_customer_of_order(query, order_cls):
+    """`query.outerjoin(Customer)` onto the customer an order belongs to, by its explicit
+    links, in this order: the order's own `customer_id`, then its debtor code, then its
+    debtor name matched against the customer's name or an alias. The code and name links
+    stay within the order's own company (an order names a customer of its own company only).
+
+    The code link is taken only where exactly ONE customer of the company holds that code:
+    the code-only unique index exists only once the merge has cleared every duplicate
+    (`customer_merge`), so until then a duplicated code names nobody here and the order
+    falls through to the name link, as before. A blank code never links.
+
+    The keys come first because a document's buyer name is free text typed per document
+    (DELIVERY-DEBTOR-GROUP, owner 8 Oct 2026): "<NAME> (<DO-LEVEL SUFFIX>)" on one DO under
+    the customer's own code is that customer, whatever the name says. An order none of the
+    three links reach stays unlinked; nothing here compares names by similarity.
+    """
+    from sqlalchemy import Text, and_, cast, func, select, union_all
+    from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
     names = union_all(
         select(
@@ -162,10 +175,37 @@ def outerjoin_customer_by_order_name(query, order_cls):
             func.lower(func.btrim(CustomerAlias.alias_name)).label("name_key"),
         ),
     ).subquery("customer_names")
-    return query.outerjoin(
-        names,
-        and_(
-            names.c.company_id == order_cls.company_id,
-            names.c.name_key == func.lower(func.btrim(order_cls.debtor_name)),
-        ),
-    ).outerjoin(Customer, Customer.id == names.c.customer_id)
+    # A subquery, not `aliased(Customer)`: the company-scope listener's loader criteria
+    # name the `customers` table itself and do not follow an alias into a join.
+    code_key = func.lower(func.btrim(Customer.customer_code))
+    codes = (
+        select(
+            cast(func.min(cast(Customer.id, Text)), PG_UUID(as_uuid=False)).label("customer_id"),
+            Customer.company_id.label("company_id"),
+            code_key.label("code_key"),
+        )
+        .where(func.btrim(Customer.customer_code) != "")
+        .group_by(Customer.company_id, code_key)
+        .having(func.count() == 1)
+        .subquery("customer_codes")
+    )
+    return (
+        query.outerjoin(
+            codes,
+            and_(
+                codes.c.company_id == order_cls.company_id,
+                codes.c.code_key == func.lower(func.btrim(order_cls.debtor_code)),
+            ),
+        )
+        .outerjoin(
+            names,
+            and_(
+                names.c.company_id == order_cls.company_id,
+                names.c.name_key == func.lower(func.btrim(order_cls.debtor_name)),
+            ),
+        )
+        .outerjoin(
+            Customer,
+            Customer.id == func.coalesce(order_cls.customer_id, codes.c.customer_id, names.c.customer_id),
+        )
+    )
