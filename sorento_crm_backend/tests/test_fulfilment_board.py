@@ -39,6 +39,7 @@ from app.models.user import User
 from app.services.scm import priority
 
 from ._pg_fixture import blank_session
+from ._borrow_mode import borrow_from_order_on
 
 MARKER = "zzt-board"
 BASE = "/api/v1/project-sales"
@@ -4209,6 +4210,7 @@ def test_a_dealer_hot_selling_line_still_reads_the_pools_own_later_order_in_the_
     the step has to be made from the same donor list rather than from an empty one.
     """
     with blank_session() as db:
+        borrow_from_order_on(db)
         product = _product(db, f"ZZT-{_uid()[:6]}")
         own, pool = _dealer_pool(db, product, abc_class_retail="A")
         _stock(db, product, own, on_hand=0)

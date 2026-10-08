@@ -29,6 +29,7 @@ from app.services.project_supply_service import ProjectSupplyService
 from app.services.scm import priority
 
 from .._pg_fixture import blank_session
+from .._borrow_mode import borrow_from_order_on
 from ..test_so_supply_confirmation import (  # noqa: F401  (helpers, not fixtures)
     _core_line,
     _core_so,
@@ -652,6 +653,7 @@ def test_a_line_inside_the_window_is_offered_the_donor_the_far_line_is_not():
     borrowing another sales order's committed quantity is a person's pick (AC-L3), so the
     near line reads Buy with the donor beside it, waiting in Amend."""
     with blank_session() as db:
+        borrow_from_order_on(db)
         company_id, _eling, project, product = _world(db)
         _group, sites = _group_sites(db)
         own, _pool = sites["BRW"]
@@ -718,6 +720,7 @@ def test_group_borrow_is_offered_not_proposed_and_a_manual_pick_raises_the_order
     from app.schemas.project_supply import ConfirmLine, ConfirmSupplyBody
 
     with blank_session() as db:
+        borrow_from_order_on(db)
         company_id, eling, project, product = _world(db)
         _group, sites = _group_sites(db)
         own, _pool = sites["BRW"]
@@ -793,6 +796,7 @@ def test_group_borrow_is_offered_not_proposed_and_a_manual_pick_raises_the_order
 
 def test_a_same_agent_donor_is_offered_even_when_ranked_above_but_never_auto_proposed():
     with blank_session() as db:
+        borrow_from_order_on(db)
         company_id, _eling, project, product = _world(db)
         _group, sites = _group_sites(db)
         own, _pool = sites["BRW"]
@@ -835,6 +839,7 @@ def test_a_higher_ranked_donor_of_ANOTHER_agent_is_not_offered_at_all():
     says it is for.
     """
     with blank_session() as db:
+        borrow_from_order_on(db)
         company_id, _eling, project, product = _world(db)
         _group, sites = _group_sites(db)
         own, _pool = sites["BRW"]
@@ -937,6 +942,7 @@ def test_group_borrow_from_a_sibling_location_raises_the_order_back_only_once():
     from app.schemas.project_supply import ConfirmLine, ConfirmSupplyBody
 
     with blank_session() as db:
+        borrow_from_order_on(db)
         company_id, eling, project, product = _world(db)
         _group, sites = _group_sites(db)
         own, _pool = sites["BRW"]

@@ -849,7 +849,10 @@ export function decideComposition(
   const candidates = borrowCandidatesOf(contribution).filter((candidate) =>
     way === 'borrow_order'
       ? candidate.donor_so_number === pick
-      : candidate.source === 'other_location' && candidate.warehouse_code === pick,
+      : candidate.source === 'other_location' &&
+        candidate.warehouse_code === pick &&
+        // K8: a location borrow never resolves to a candidate that names a donor SO.
+        !candidate.donor_so_number,
   );
   const donorLabel = pick ?? (way === 'borrow_order' ? 'the donor' : 'the location');
   if (candidates.length === 0) {

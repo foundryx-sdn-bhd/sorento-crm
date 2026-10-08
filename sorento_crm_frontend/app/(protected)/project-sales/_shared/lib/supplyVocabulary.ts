@@ -308,11 +308,10 @@ export function rowOf(
       // is a draw nobody is owed back ("Use BRW"); step 4b takes a LATER POOL ORDER's on
       // hand and raises an ORDER_BACK against it (R34), which is a Borrow and has to read
       // as one - it rendered as the free "Use BRW" label, so the debt was invisible on
-      // every composition surface. The donor SO is what tells them apart, because it is
-      // what the borrow half has and the free half never does.
-      return part.kind === 'borrow' && part.donor_so_number
-        ? 'borrow_order'
-        : 'shared';
+      // every composition surface. The kind tells them apart; the borrow half names a donor
+      // only with "Borrow from another order" on, and is a location borrow otherwise.
+      if (part.kind !== 'borrow') return 'shared';
+      return part.donor_so_number ? 'borrow_order' : 'borrow_other';
     case 'group_take':
       // ONE RUNG, TWO PROMISES (the captain, 30 Aug 2026). Step 1 draws the group's floor
       // stock as a Reserve and its share still on the water as a `timely_spo`, both under
@@ -320,16 +319,20 @@ export function rowOf(
       // Neither half is a borrow - free stock owes nobody a thing, wherever it is.
       return part.kind === 'timely_spo' ? 'incoming' : 'own';
     // Step 2: ON HAND held by a LATER order. The pool's borrow half lands here too (see the
-    // `pool` case above) - the same debt, against a different pile.
+    // `pool` case above) - the same debt, against a different pile. With "Borrow from another
+    // order" off the engine names no donor, and the same stock is a LOCATION's borrow
+    // (BORROW-LOCATION-ONLY D3); the frozen `group_borrow` reads the same way. A part whose
+    // kind is already a word (`cellSupply`'s summed segments) keeps it.
     case 'order_borrow':
-      return 'borrow_order';
+    case 'group_borrow':
+      return part.kind === 'borrow' && !part.donor_so_number
+        ? 'borrow_other'
+        : 'borrow_order';
     // Step 3 (S4): the DOCUMENT a later order is waiting on. Its own word, because what is
     // being taken is not stock anybody can pick - the donor waits longer for a ship, and the
     // asker waits for that same ship. Folding it into step 2 hid a whole rung of the walk.
     case 'supply_borrow':
       return 'borrow_incoming';
-    case 'group_borrow':
-      return 'borrow_order';
     case 'cross_group_borrow':
       return 'borrow_other';
     default:
@@ -532,6 +535,8 @@ export function partsBreakdown(
         rung: rungFor(kind),
         qty: source.qty,
         location: at,
+        // A borrow's rung says "from another order" only beside a named donor (D3).
+        donor_so_number: source.donor_so_number ?? null,
       });
       // WHOSE STOCK IT IS (R-M, 3 Sep 2026). Resolved here, per entry, because it is the
       // CONTRIBUTING LINE's own group that decides it - `DC1-BB` is somebody else's stock
@@ -778,6 +783,7 @@ export function decisionParts(
       rung,
       qty: row.qty,
       location: row.location ?? row.warehouse_code ?? null,
+      donor_so_number: row.donor_so_number ?? null,
     });
   }
 

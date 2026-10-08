@@ -94,8 +94,13 @@ describe('rowOf reads the rung, never the warehouse code', () => {
     expect(rowOf({ kind: 'reserve', rung: 'group_take', qty: '1' })).toBe(
       'own',
     );
+    // A group borrow names its donor SO only with "Borrow from another order" on
+    // (BORROW-LOCATION-ONLY D3); with none named it is a location borrow.
+    expect(
+      rowOf({ kind: 'borrow', rung: 'group_borrow', qty: '1', donor_so_number: 'SO1' }),
+    ).toBe('borrow_order');
     expect(rowOf({ kind: 'borrow', rung: 'group_borrow', qty: '1' })).toBe(
-      'borrow_order',
+      'borrow_other',
     );
     expect(
       rowOf({ kind: 'borrow', rung: 'cross_group_borrow', qty: '1' }),
@@ -289,6 +294,8 @@ describe('rowOf reads the rung, never the warehouse code', () => {
     });
 
     it('reads a borrow that names a donor order as a borrow from another order', () => {
+      // The donor SO is named: with none, the same rung is a location borrow
+      // (BORROW-LOCATION-ONLY D3).
       expect(
         rowOf(
           {
@@ -296,6 +303,7 @@ describe('rowOf reads the rung, never the warehouse code', () => {
             rung: 'group_borrow',
             qty: '3',
             location: 'BRW-BB',
+            donor_so_number: 'SO415472',
           },
           'BRW-BB',
         ),
@@ -512,11 +520,14 @@ describe('suggestionBreakdown', () => {
       cell([
         line({
           sources: [
+            // Names its donor SO: a donor-less one reads as a location borrow
+            // (BORROW-LOCATION-ONLY D3).
             source({
               kind: 'borrow',
               rung: 'group_borrow',
               qty: '3',
               location: 'BRW-BB',
+              donor_so_number: 'SO415472',
             }),
             source({
               kind: 'borrow',

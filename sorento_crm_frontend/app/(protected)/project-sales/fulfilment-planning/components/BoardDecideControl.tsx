@@ -137,7 +137,8 @@ function pickerOptions(
     for (const candidate of borrowCandidatesOf(row)) {
       if (way === 'borrow_order') {
         if (candidate.donor_so_number) seen.add(candidate.donor_so_number);
-      } else if (candidate.source === 'other_location') {
+      } else if (candidate.source === 'other_location' && !candidate.donor_so_number) {
+        // K8: a donor-named candidate is an order borrow, never a location's.
         seen.add(candidate.warehouse_code);
       }
     }
@@ -218,6 +219,15 @@ export function BoardDecideControl({
     () => contributions.filter((row) => selectedKeys.includes(row.key)),
     [contributions, selectedKeys],
   );
+
+  // "Borrow from another order" is offered only where a ticked row can name a donor: with the
+  // setting off the server names none (BORROW-LOCATION-ONLY D3).
+  const menu = React.useMemo(() => {
+    const donorNamed = tickedRows.some((row) =>
+      borrowCandidatesOf(row).some((candidate) => candidate.donor_so_number),
+    );
+    return MENU_ORDER.filter((entry) => entry.way !== 'borrow_order' || donorNamed);
+  }, [tickedRows]);
 
   const isBorrow = way === 'borrow_order' || way === 'borrow_other';
   const options = React.useMemo(
@@ -498,7 +508,7 @@ export function BoardDecideControl({
           </DropdownMenuTrigger>
         )}
         <DropdownMenuContent align="end">
-          {MENU_ORDER.map((entry) => (
+          {menu.map((entry) => (
             <React.Fragment key={entry.way}>
               <DropdownMenuItem onSelect={() => chooseWay(entry.way)}>
                 {labelOf(entry.way)}

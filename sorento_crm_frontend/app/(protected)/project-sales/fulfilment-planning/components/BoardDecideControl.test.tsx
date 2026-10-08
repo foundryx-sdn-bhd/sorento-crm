@@ -128,7 +128,27 @@ describe('BoardDecideControl: the button (AC-1, AC-54)', () => {
 
 describe('BoardDecideControl: the menu (AC-4)', () => {
   it('opens with exactly these items in this order, no Reserve/incoming items', () => {
-    renderControl();
+    // A ticked row with a donor-named candidate (the setting on), so every item shows;
+    // without one "Borrow from another order" is not offered (BORROW-LOCATION-ONLY D3).
+    renderControl({
+      contributions: [
+        row({
+          borrow_candidates: [
+            {
+              source: 'other_location',
+              warehouse_code: 'MWH-IB',
+              warehouse_id: 'wh-mwh',
+              free_qty: '100',
+              donor_impact: { free_before: '100', free_after_full_borrow: '60', committed_qty: '0' },
+              rung: 'order_borrow',
+              donor_so_number: 'SO397450',
+              donor_line_no: 446,
+              donor_core_line_id: 'core-1',
+            },
+          ],
+        }),
+      ],
+    });
     openMenu();
 
     const items = screen.getAllByRole('menuitem').map((item) => item.textContent);
