@@ -213,6 +213,20 @@ def test_disagreeing_rows_without_a_company_each_say_it_on_their_own_card():
     assert "*Discontinued:* No" in reply and "*Discontinued:* Yes" in reply
 
 
+def test_one_disagreeing_row_without_a_company_puts_every_row_of_that_code_on_its_card():
+    """Reviewer round 3, kill test K15: one missing company is enough to fall back for the
+    whole code, never a half-labelled mix."""
+    reply = _answer(
+        _product("X1", discontinued=False, company="Sorento"),
+        _product("X1", discontinued=True),
+        _product("X2", discontinued=False, company="Sorento"),
+        attrs=["discontinued"],
+    )
+    assert "X1 (Sorento)" not in reply
+    assert reply.count("*Product Code:* X1") == 2
+    assert "X2: Not discontinued." in reply
+
+
 def test_companies_that_agree_are_one_line_without_a_company():
     reply = _answer(
         _product("X1", discontinued=True, company="Sorento"),
