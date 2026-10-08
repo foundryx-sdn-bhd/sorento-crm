@@ -1070,11 +1070,13 @@ def _states_an_authorisation(reason: Optional[str]) -> bool:
 
 def _location_only(candidate: Mapping[str, Any]) -> Dict[str, Any]:
     """A later order's on hand told as a LOCATION's ("Borrow from another order" OFF,
-    `PLAN-borrow-location-only-8oct.md` D2). The donor's name, line and agent are blanked;
-    `donor_core_line_id` and `donor_required_date` stay, never shown, so the re-borrow guard
+    `PLAN-borrow-location-only-8oct.md` D2). The donor's name, line, agent and project code
+    are blanked (BR2); `donor_core_line_id`, `donor_project_id` and `donor_required_date`
+    stay, never shown, so confirm still knows whose stock it is and the re-borrow guard
     still counts what one later order has lent (K6)."""
     return {
         **candidate,
+        "donor_project_ref": None,
         "donor_so_number": None,
         "donor_line_no": None,
         "donor_agent_code": None,
@@ -8017,7 +8019,10 @@ class ProjectSupplyService:
                     "source": item.source,
                     "source_location": warehouse.warehouse_code if warehouse else None,
                     "source_warehouse_id": str(item.warehouse_id),
-                    "donor_project_ref": donor.project_code if donor else None,
+                    # BR2: under OFF the project stays an id, never a shown code.
+                    "donor_project_ref": (
+                        donor.project_code if donor and self.borrow_from_order else None
+                    ),
                     "donor_project_id": str(donor.id) if donor else None,
                     "reason": (
                         # Step 3's sentence is the ENGINE's own, rebuilt from what was
@@ -8260,6 +8265,9 @@ class ProjectSupplyService:
     ) -> str:
         where = warehouse.warehouse_code if warehouse else "another location"
         if item.source == ALLOC_SOURCE_OTHER_PROJECT and donor is not None:
+            if not self.borrow_from_order:
+                # BR2: a location's stock, the project it was held for not named.
+                return f"borrowed from stock held at {where}"
             return f"borrowed from {donor.project_code} at {where}"
         return f"borrowed from free stock at {where}"
 
@@ -10229,12 +10237,16 @@ class ProjectSupplyService:
                 row["recommended"] = False
         candidates = step_two + ranked
         if not self.borrow_from_order:
-            # D2: the manual group-borrow rows name a donor too; under OFF they are offered
-            # as the location they sit at. Step 2's rows are already blank.
+            # D2: the manual group-borrow rows name a donor too, and another project's hold
+            # names that project (BR2); under OFF both are offered as the location they sit
+            # at. Step 2's rows are already blank.
             # B1: a row ranked ahead of this line is offered only so its agent can
             # authorise it, and a location borrow asks nobody, so it is left out.
             candidates = [
-                _location_only(c) if c.get("rung") == RUNG_GROUP_BORROW else c
+                _location_only(c)
+                if c.get("rung") == RUNG_GROUP_BORROW
+                or c.get("source") == ALLOC_SOURCE_OTHER_PROJECT
+                else c
                 for c in candidates
                 if not (c.get("rung") == RUNG_GROUP_BORROW and not c.get("lower_ranked"))
             ]

@@ -333,6 +333,29 @@ describe('BorrowAddDialog', () => {
     expect(within(table).queryByText(/line /)).not.toBeInTheDocument();
   });
 
+  // BORROW-LOCATION-ONLY BR2: with the switch off the server names neither the donor order
+  // nor the donor project, so two rows at one bin have nothing to tell them apart and are
+  // shown as the one location they are.
+  it('shows one row for a bin whose donor-less rows nothing tells apart, with no project tag', () => {
+    const stepTwo: BorrowCandidate = {
+      ...OTHER_PROJECT,
+      source: 'other_location',
+      rung: 'order_borrow',
+      donor_project_ref: null,
+      donor_project_id: null,
+      donor_core_line_id: 'core-9',
+      donor_so_number: null,
+      recommended: true,
+    };
+    const held: BorrowCandidate = { ...OTHER_PROJECT, donor_project_ref: null };
+    renderDialog([stepTwo, held]);
+
+    const table = screen.getByTestId('borrow-donor-table');
+    const rows = within(table).getAllByRole('row').slice(1);
+    expect(rows).toHaveLength(1);
+    expect(within(table).queryByText(/Another project|PRJ-/)).not.toBeInTheDocument();
+  });
+
   // -------------------------------------------------------------- AC-1.7 (fix round)
   it('renders the empty state when every candidate lacks a location, never the table', () => {
     renderDialog([{ ...OTHER_LOCATION, location: undefined }]);

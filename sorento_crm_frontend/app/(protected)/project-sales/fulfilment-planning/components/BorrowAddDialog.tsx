@@ -93,17 +93,26 @@ export function BorrowAddDialog({
   // S4/review S3: `rowKey`/`label` are CellStockTable's own opt-in fields for a donor
   // picker - every OTHER caller (the Grid Location table) sets neither and keys/labels
   // itself off the location alone, unchanged.
-  const locations = React.useMemo<DonorLocationRow[]>(
-    () =>
-      candidates
-        .filter((c) => c.location)
-        .map((c) => ({
-          ...(c.location as NonNullable<BorrowCandidate['location']>),
-          rowKey: candidateKey(c),
-          label: donorLabel(c),
-        })),
-    [candidates],
-  );
+  const locations = React.useMemo<DonorLocationRow[]>(() => {
+    // BORROW-LOCATION-ONLY BR2: a row that names no donor is its location, so a second
+    // nameless row at the same bin is the same choice and is shown once, as the server's
+    // first (ranked) row for it.
+    const nameless = new Set<string>();
+    return candidates
+      .filter((c) => c.location)
+      .filter((c) => {
+        if (donorLabel(c) !== undefined) return true;
+        const bin = c.warehouse_id ?? c.warehouse_code;
+        if (nameless.has(bin)) return false;
+        nameless.add(bin);
+        return true;
+      })
+      .map((c) => ({
+        ...(c.location as NonNullable<BorrowCandidate['location']>),
+        rowKey: candidateKey(c),
+        label: donorLabel(c),
+      }));
+  }, [candidates]);
   // Every candidate lacks a `location` (a server that has not wired S4) reads the same as
   // no candidates at all: the DIALOG's own empty state, never `CellStockTable`'s "No stock
   // position for this cell" - that message is about a CELL with several products, and is
@@ -357,7 +366,8 @@ function donorLabel(candidate: BorrowCandidate): string | undefined {
     return candidate.donor_so_number ? donorSoLabel(candidate) : undefined;
   }
   if (candidate.source === 'other_project') {
-    return candidate.donor_project_ref ?? 'Another project';
+    // Unnamed with the switch off (BR2): the location is the row.
+    return candidate.donor_project_ref ?? undefined;
   }
   return undefined;
 }

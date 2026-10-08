@@ -720,3 +720,21 @@ def test_br1_the_board_route_carries_the_switch_for_the_decide_menu(enabled):
 
     assert response.status_code == 200, response.text
     assert response.json()["borrow_from_order_enabled"] is enabled
+
+
+# --------------------------------------------------------------------------- BR2
+
+
+def test_br2_off_no_offered_candidate_names_a_donor_project():
+    """BR2: under OFF a borrow is a location's, so the dialog's rows carry no donor project
+    either - the decided donor's hold showed a second row at the same bin tagged with its
+    project code. The id stays, since confirm needs it."""
+    with blank_session() as db:
+        world = _borrow_world(db)
+        proposal = ProjectSupplyService(db).proposal_for(world["asker"])
+        candidates = proposal["lines"][0]["borrow_candidates"]
+
+    assert candidates, "the donor's bin is offered"
+    for candidate in candidates:
+        assert candidate.get("donor_project_ref") is None, candidate
+        assert candidate.get("donor_so_number") is None, candidate
