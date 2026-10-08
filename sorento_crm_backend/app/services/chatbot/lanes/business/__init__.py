@@ -2277,8 +2277,15 @@ def run_fetch(
             if isinstance(alternative_envelope, dict) and not isinstance(
                 alternative_envelope.get("error"), str
             ):
+                requested = jsc.array(semantic_input.get("requested_attributes"))
                 alternative_tail = alternatives_mod.fold(
-                    tool_name, envelope, alternative_envelope, alternative_pairs, fetch_mod._fmt_value
+                    tool_name,
+                    envelope,
+                    alternative_envelope,
+                    alternative_pairs,
+                    fetch_mod._fmt_value,
+                    status_only=bool(requested)
+                    and all(fetch_mod._asks_discontinued([a]) for a in requested),
                 )
                 if trace is not None:
                     trace.add(

@@ -135,6 +135,8 @@ def fold(
     alternative_envelope: Any,
     pairs: list[tuple[str, Any]],
     fmt_value: Any,
+    *,
+    status_only: bool = False,
 ) -> list[str]:
     """Put the alternatives' answers into `envelope` (mutated) and return the tail lines
     to print after the rendered reply (promotion, or an old code with no row to hang a
@@ -185,6 +187,14 @@ def fold(
                 files = jsc.array(jsc.get(alternative_envelope, "attachments"))
                 envelope["attachments"] = jsc.array(envelope.get("attachments")) + list(files)
             continue
+
+        if kind == "product" and anchor is not None:
+            # DISCONTINUED-ASK (#1535) names the item's top-level `alternatives` on its
+            # status line; feed it. A status-only answer is one line per product, so the
+            # alternative's own block (its own "Not discontinued." line) is not added.
+            anchor["alternatives"] = jsc.array(anchor.get("alternatives")) + [alt_code]
+            if status_only:
+                continue
 
         # Staff incoming and product info: the code under the old row(s), then the
         # alternative's own rows right after them.
