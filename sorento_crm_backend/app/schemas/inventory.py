@@ -262,6 +262,15 @@ class StockAvailabilityEntry(BaseModel):
     # AVAIL-RENDER (owner, 5 Oct 2026): the product's `is_discontinued`, so the dealer's
     # line carries the marker compact/detailed already print. Not a quantity.
     is_discontinued: bool = False
+    # PRODUCT-ALTERNATIVES (card Q2/Q4): the stored alternatives, each judged with the same
+    # asked quantity on the same locations (same shape, no figure beyond `available_qty`).
+    # Declared here or `response_model` drops them off the wire (owner hand test, 9 Oct
+    # 2026: the dealer read the marker and no Alternative line).
+    alternatives: List["StockAvailabilityEntry"] = []
+
+
+# `alternatives` names this model inside itself.
+StockAvailabilityEntry.model_rebuild()
 
 
 class StockBalanceListResponse(ListResponse[StockResponse]):

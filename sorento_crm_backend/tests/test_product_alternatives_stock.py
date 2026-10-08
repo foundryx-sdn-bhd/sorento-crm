@@ -17,6 +17,8 @@ from __future__ import annotations
 
 from datetime import date
 
+import pytest
+
 from app.main import app  # noqa: F401  (first app import)
 from app.models.product import ProductAlternative
 from app.services.company_scope import DEFAULT_COMPANY_ID
@@ -336,7 +338,8 @@ def test_compact_catalogue_page_does_not_append_alternative_blocks(db):
 # --------------------------------------------------------------------------- owner hand test, 9 Oct
 
 
-def test_owner_case_srtbf11821_x5_through_the_real_route_presenter_and_render(client, db):
+@pytest.mark.parametrize("include_sellable", [None, "true"])
+def test_owner_case_srtbf11821_x5_through_the_real_route_presenter_and_render(client, db, include_sellable):
     """Owner hand test round A FAIL (9 Oct 2026): dealer asks "SRTBF11821 x 5", SRTBF11821 is
     discontinued with nothing in the dealer's warehouse, SRTBF11821-NEW has 16 in BRW, the
     category cap is 100. The reply had the marker and NO Alternative line.
@@ -362,6 +365,9 @@ def test_owner_case_srtbf11821_x5_through_the_real_route_presenter_and_render(cl
             "contact_id": contact.id,
             "space_id": "364817",
             "requested_quantities": _json.dumps({old.id: 5}),
+            # `_with_sellable` re-validates the whole payload through the same model
+            # (`stock.py`), the second place `alternatives` was dropped.
+            **({"include_sellable": include_sellable} if include_sellable else {}),
         },
     )
     assert response.status_code == 200, response.text
