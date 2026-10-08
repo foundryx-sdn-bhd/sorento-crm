@@ -601,6 +601,9 @@ def promo_filter(parse_output: dict[str, Any], db: Any, gate: Any = None) -> dic
     if terms:
         out["scope_terms"] = terms
     kind = parse_output.get("promotion_kind")
+    if parse_output.get("reference_target") or jsc.array(parse_output.get("reference_positions")):
+        # A message the parser reads as a reference (a pick off a list) names no kind.
+        kind = None
     if isinstance(kind, str) and kind.strip() and (
         db is None or kind.strip() in {r["type_code"] for r in promotion_kind_rows(db)}
     ):
