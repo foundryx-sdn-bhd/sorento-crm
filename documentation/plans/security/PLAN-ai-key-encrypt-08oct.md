@@ -19,17 +19,38 @@ reader uses the attribute as the key:
   extraction, media, translation and the chatbot lanes)
 - `app/services/ai_assistant_service.py:475-477` (masking for the settings API)
 
-## Existing mechanism
+## Key source: FIELD_ENCRYPTION_KEY (crew review, 8 Oct)
 
-`app/utils/field_encryption.py` (`encrypt_secret` / `decrypt_secret`, Fernet keyed by
-SHA-256 of `JWT_SECRET`) already encrypts `respond_workspaces.api_key_ciphertext` and the other
-`respond_workspaces.*_ciphertext` columns (`app/services/respond_workspace_service.py:76,129-145,185-201`).
-This lane reuses it, so there is **no new env var**: `JWT_SECRET` is already required and already
-must stay stable for the Respond.io keys to decrypt.
+`app/utils/field_encryption.py` used to derive its one Fernet key from SHA-256 of `JWT_SECRET`.
+`JWT_SECRET` is on the owner's rotate list (leaked in public git history,
+PII-SCRUB-CREDENTIALS.md item 3), so rotating it would have made every stored secret
+unreadable. The helper already encrypted, before this lane:
+
+- `respond_workspaces.api_key_ciphertext` (`app/models/respond_workspace.py:29`; written
+  `app/services/respond_workspace_service.py:129,185`, read `:21`,
+  `app/services/respond_template_service.py:191`, `app/services/integration_service.py:167`)
+- `respond_workspaces.ideation_intake_api_key_ciphertext` (`app/models/respond_workspace.py:44`;
+  written `respond_workspace_service.py:133,191`, read `:274`)
+- `respond_workspaces.ideation_embed_signing_secret_ciphertext` (`app/models/respond_workspace.py:52`;
+  written `respond_workspace_service.py:142,201`, read `:286`)
+- `respond_workspaces.chatbot_retry_ingress_key_ciphertext` (`app/models/respond_workspace.py:67`;
+  written `respond_workspace_service.py:76,146`, read `:298`)
+- `integrations.credentials_json` (`app/models/integration.py:53`; written
+  `app/services/integration_admin_service.py:221`, read `:233`)
+
+Now: `FIELD_ENCRYPTION_KEY` is a comma-separated list of Fernet keys, current first, read by a
+`MultiFernet`. The first key encrypts; every listed key decrypts; the JWT_SECRET-derived key is
+appended as the last decrypt-only fallback so tokens written before the switch keep working
+during rollout. Unset `FIELD_ENCRYPTION_KEY` (dev, CI) falls back to the JWT-derived key alone,
+the old behaviour. A malformed entry raises naming its position, never its value.
+
+Generate a key:
+
+    python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 
 ## Design
 
-One `TypeDecorator` (`EncryptedText`, impl `Text`) on the three columns. Bind encrypts, result
+One `TypeDecorator` (`EncryptedText`, impl `Text`, same helper) on the three columns. Bind encrypts, result
 decrypts. Every existing reader keeps getting the plain key from the attribute, so no call site
 changes and a future reader cannot forget to decrypt. No schema change, no migration.
 
@@ -52,31 +73,51 @@ the schema (`app/schemas/ai_assistant.py:27-41`) has no raw-key field. Unchanged
 
 ## Backfill
 
-`scripts/encrypt_ai_assistant_keys.py`: dry run by default (counts per column of plaintext /
-encrypted / empty, never values), `--apply` encrypts plaintext values in one transaction.
-Idempotent; each UPDATE is a compare-and-set on the value it read, so a key saved meanwhile is never overwritten.
+`scripts/reencrypt_field_secrets.py` covers every column above plus the three
+`ai_assistant_configs` key columns. Per value: `current` (the current key opens it, left alone),
+`old_key` (an older listed key or the JWT-derived key opens it, re-encrypted under the current
+key), `plaintext` (encrypted for the `ai_assistant_configs` columns, which held plain text
+before; reported and left alone elsewhere), `unreadable` (no configured key opens it; reported,
+left alone, must be re-entered), `empty`. Dry run by default, counts only, never a value.
+`--apply` refuses unless `FIELD_ENCRYPTION_KEY` is set, writes in one transaction, and each
+UPDATE is a compare-and-set on the value it read. Re-running is a no-op.
 
-## Rollout
+## Rollout (deploy order)
 
-1. Confirm `JWT_SECRET` in the target env is the one it will keep (it already is for Respond.io).
-2. Deploy the code. Reads tolerate plaintext, new saves write ciphertext.
-3. Run `python scripts/encrypt_ai_assistant_keys.py` (dry run), then `--apply`. Prod run is the owner's call.
+Prod compose (`/opt/sorento-crm2/docker-compose.yml`) is edited by hand on the server.
+
+1. **Env var.** Generate a key (above) and add `FIELD_ENCRYPTION_KEY=<key>` to the **backend and
+   worker** services. Keep `JWT_SECRET` unchanged for now: it still opens every existing token.
+2. **Deploy** this code. New saves are encrypted under `FIELD_ENCRYPTION_KEY`; existing tokens
+   read through the JWT-derived fallback; legacy plaintext AI keys read as is.
+3. **Dry run:** `cd sorento_crm_backend && python scripts/reencrypt_field_secrets.py` inside the
+   backend container. Expect `old_key` counts on the Respond.io / integration columns and
+   `plaintext` on the AI key columns; `unreadable` should be 0.
+4. **Apply:** `python scripts/reencrypt_field_secrets.py --apply`, then the dry run again: every
+   column should read `old_key=0`, AI columns `plaintext=0`. Prod run is the owner's call.
+5. **Now JWT_SECRET rotation is safe** for stored secrets: nothing at rest depends on it. (Rotating
+   it still signs everyone's short-lived link tokens anew, which is the point.)
+
+Rotating `FIELD_ENCRYPTION_KEY` itself later: prepend the new key (`new,old`), deploy, run
+`--apply` (moves `old_key` values onto `new`), then drop `old`.
 
 ## Tests (red first)
 
-`tests/test_ai_key_encrypt.py`: saved key column holds a Fernet token, not the key; the ORM
-attribute reads back the key; legacy plaintext rows read as is; the config API never returns
-the key; backfill dry run changes nothing, `--apply` encrypts, re-run is a no-op.
+- `tests/test_ai_key_encrypt.py`: the AI key columns hold a token, not the key; the attribute
+  reads the key; legacy plaintext reads as is; an undecryptable token reads as None; the config
+  API never returns a key; format detection; the 422 log.
+- `tests/test_field_encryption_key.py`: new writes use `FIELD_ENCRYPTION_KEY` and survive a
+  `JWT_SECRET` rotation; first key encrypts, older listed keys decrypt; JWT-derived tokens
+  decrypt during rollout; unset var keeps the old behaviour; malformed key fails loudly; the
+  backfill re-encrypts every column onto the current key, after which rotating `JWT_SECRET`
+  loses nothing; `--apply` refuses without the var; no value is ever printed.
 
 ## Follow-ups (not in this lane)
 
 - **Remove the plaintext pass-through** in `EncryptedText.process_result_value` once
-  `--apply` has run in prod (trigger: owner confirms the prod run printed `plaintext=0`).
-- **Owner decision: dedicated `FIELD_ENCRYPTION_KEY`.** Every `field_encryption` user
-  (respond_workspaces, integrations.credentials_json, now ai_assistant_configs) derives its key
-  from `JWT_SECRET`: rotating it silently unsets every stored secret, and anyone holding it
-  (including the FE if `NEXTAUTH_SECRET` shares the value) can decrypt them. A `MultiFernet`
-  ([new key, JWT-derived]) migration fixes both, in its own lane.
+  `--apply` has run in prod (trigger: owner confirms the prod run printed `plaintext=0` on the AI columns).
+- **Drop the JWT-derived decrypt fallback** once every env has run `--apply` with
+  `unreadable=0` and `old_key=0` (trigger: owner confirms on prod).
 - **Same plaintext pattern elsewhere:** `system_settings.smtp_password` (`app/models/user.py:409`);
   token columns that should be stored hashed: `user_sessions.token`
   (`app/models/user_session.py:36`), `portal_tokens.token` (`app/models/portal.py:30`), share-link

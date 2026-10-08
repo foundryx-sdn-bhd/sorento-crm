@@ -34,7 +34,7 @@ class AIAssistantConfig(Base):
     temperature: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     system_prompt: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
     # The three *_ciphertext columns hold Fernet tokens (EncryptedText); the attribute
-    # reads back the plain key. scripts/encrypt_ai_assistant_keys.py encrypts legacy rows.
+    # reads back the plain key. scripts/reencrypt_field_secrets.py encrypts legacy rows.
     api_key_ciphertext: Mapped[str | None] = mapped_column(
         EncryptedText("ai_assistant_configs.api_key_ciphertext"), nullable=True
     )
