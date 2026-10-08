@@ -94,6 +94,14 @@ LABELS: dict[str, dict[str, str]] = {
     },
     "Here are the results.": {"ms": "Berikut ialah hasilnya.", "zh": "以下是结果。"},
     "PRODUCT DISCONTINUED": {"ms": "PRODUK DIHENTIKAN", "zh": "产品已停产"},
+    # DISCONTINUED-ASK (owner Q4 a, 8 Oct 2026): the status line both ways, the card's field
+    # line beside another property (Q1 a), and the stored alternative (Q5 a, #1533).
+    "{code}: ⚠️ Discontinued.": {"ms": "{code}: ⚠️ Dihentikan.", "zh": "{code}：⚠️ 已停产。"},
+    "{code}: ✅ Not discontinued.": {"ms": "{code}: ✅ Tidak dihentikan.", "zh": "{code}：✅ 未停产。"},
+    # Whole lines, so no other "Yes" / "No" in any reply is touched.
+    "*Discontinued:* ⚠️ Yes": {"ms": "*Dihentikan:* ⚠️ Ya", "zh": "*已停产:* ⚠️ 是"},
+    "*Discontinued:* ✅ No": {"ms": "*Dihentikan:* ✅ Tidak", "zh": "*已停产:* ✅ 否"},
+    "Alternative": {"ms": "Alternatif", "zh": "替代型号"},
     # Slice 2: PO / SO / SPO / orders rows. PO, SO, SPO and GR stay as printed (owner Q3).
     "Order Number": {"ms": "No. Pesanan", "zh": "订单号"},
     "Customer": {"ms": "Pelanggan", "zh": "客户"},
@@ -185,6 +193,9 @@ LABELS: dict[str, dict[str, str]] = {
     "DO Qty": {"ms": "Kuantiti DO", "zh": "DO 数量"},
     "Category": {"ms": "Kategori", "zh": "类别"},
     "Sales agent": {"ms": "Ejen jualan", "zh": "销售代理"},
+    # REPORT-DRILLDOWN: the sales ranking header's own labels (one fact per line).
+    "Period": {"ms": "Tempoh", "zh": "期间"},
+    "Customers assigned to": {"ms": "Pelanggan di bawah", "zh": "所属客户的业务员"},
     "Channel": {"ms": "Saluran", "zh": "渠道"},
     "Delivery date": {"ms": "Tarikh penghantaran", "zh": "送货日期"},
     "Ranked by": {"ms": "Disusun mengikut", "zh": "排名依据"},
