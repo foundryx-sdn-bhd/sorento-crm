@@ -97,11 +97,74 @@ Backend paths are under `sorento_crm_backend/`.
 
 ## Open questions (posted as crew-ask on PR #1534)
 
-- Q1, remove vs setting: pending with the owner.
+- Q1, remove vs setting: **(b) keep it behind a switch, default OFF** (owner, 8 Oct). The
+  setting sits on an existing settings screen. When OFF, the option is not offered and no donor
+  is picked. When ON, today's behaviour holds.
 - Q2, the donor's decision: **(a) leave the donor alone** (crew, from the owner's words, 8 Oct).
-- Q3, own-location borrow raises an order-back: pending with the owner.
+- Q3, own-location borrow raises an order-back: **(a) yes**, own location and own group alike
+  (owner, 8 Oct). The owner asked how "own location" is detected; see "Q3: how own location is
+  known" below.
 - Q4, the OI row's date: **(a) the borrowing line's date** (crew, from the owner's words, 8 Oct).
-- Q5, data fix scope: pending with the owner.
+- Q5, data fix scope: **(a) guarded script re-points the 4 open rows**, which the owner runs
+  on prod (owner, 8 Oct).
+
+## Q3: how own location is known (code facts, for crew's answer to the owner)
+
+- **Detection.** Every borrow row carries the warehouse it takes from (`warehouse_id`).
+  Confirm compares it with the line's own fulfilment location, `fact.warehouse`, which is the
+  SO line's location (`project_supply_service.py:7738-7743`, `str(item.warehouse_id) == own_id`).
+  "Own group" is the same location suffix (BRW-BB, MWH-BB, ...), read by `netting().group_of`
+  (`:7752-7756`). Nothing is guessed: both are ids on the decision.
+- **Can the borrow picker choose the own location today?** Mostly no.
+  - FREE stock at the line's own location (or anywhere its Reserve can reach) is a **Reserve**,
+    not a borrow. The location picker leaves those locations out (`_borrow_candidates`,
+    `:10009-10024`, `warehouse_id not in inside`).
+  - The exception is a dealer hot-selling product, whose own dealer location Reserve may not
+    touch (`:10006-10008`).
+  - Stock at the own location that is HELD by a later order reaches the line today only
+    through "Borrow from another order", as a donor with `same_warehouse`.
+- **With the switch OFF**, "borrow own location" therefore means: take on hand at the line's
+  own location (or its group) that later orders hold. It is offered as a location row, never
+  as an order, and raises the ORDER_BACK on this line at that location (B3).
+
+## Risks of keeping the switch (what to guard when someone turns it ON later)
+
+- **K1. Rows move when the switch flips.** ON writes the order-back on the donor line at the
+  donor's date (today). OFF writes it on the borrowing line at its own date. A re-confirm of an
+  order cancels its still-`raised` ORDER_BACK rows and re-raises them
+  (`project_order_inquiry_service.py:4006-4014`). So re-confirming after a flip MOVES an open row
+  between lines, and its Stock Debt month moves with it.
+  - Guard: the switch is read at confirm time, every row is written by one rule per confirm,
+    and a test covers an ON-made row re-confirmed under OFF. It must end as one row on the
+    borrowing line, never two.
+- **K2. Placed rows keep the old shape.** A row purchasing already placed or linked is netted,
+  never moved (`:4021-4024`). An ON-era placed row on a donor line therefore stays there after
+  OFF. This is correct, since its PO is real, but the OI shows mixed shapes for that order.
+- **K3. The old problem returns while ON.** ON reproduces the owner's complaint by design: the
+  donor-line row cannot find a PO bought for the borrowing line. The setting's help text must
+  say so.
+- **K4. The donor's decision.** ON supersedes it ("Borrowed by SO... line ...", `:7258+`); OFF
+  leaves it (Q2). A line confirmed while ON stays superseded after OFF. That is history, not a
+  bug, but the donor order shows a re-plan nobody made under OFF.
+- **K5. A stale screen still posts a donor.** A tab opened while ON can post a donor-named
+  borrow after the switch goes OFF. The server must enforce the switch rather than only hiding
+  the menu item. OFF + a donor-named borrow must end in a clear state: the donor fields are
+  ignored and it is treated as a location borrow (recommended), or a 422 with a message. It must
+  never silently follow the ON rule.
+- **K6. Double lending.** The re-borrow guard `_group_borrow_held_qty` counts what is already
+  lent by `donor_impact_snapshot.donor_core_line_id` (`project_supply_service.py:8448-8492`).
+  OFF still draws step-2 stock from later orders, so the donor id stays RECORDED internally, but
+  is never shown. Otherwise two location borrows could lend the same later order's stock twice.
+  This holds in both switch states.
+- **K7. Buy + borrow on one line (applies to OFF, the new default).** Borrow order-backs are
+  cancelled and re-raised per OI header, EXCEPT rows on a line that also has a Buy, which
+  `refresh_for_decision` handles as the Amend "Order back" Buy row (`:3975-3993`). Under OFF the
+  borrow row hangs on the borrowing line. If that line is also part Buy, its borrow order-back
+  falls into the Buy-line path. Today's cross-group location borrow already has this shape
+  (`project_supply_service.py:7736-7790`).
+  - Guard: a red test for a line with Borrow 6 + Buy 4 that is confirmed and then re-confirmed.
+    It must end with exactly one live ORDER_BACK of 6 at the borrowed location and one ORDER of
+    4, never a cancelled-and-lost or a doubled row.
 
 ## Data (6 Oct prod snapshot, read-only, via crew; names masked)
 
