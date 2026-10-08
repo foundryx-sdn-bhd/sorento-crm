@@ -22,6 +22,10 @@ class ReportAskRow(BaseModel):
     name: str
     qty: int
     amount: float
+    # REPORT-DRILLDOWN: the ids the row's name stands for (a location's code; "none" for the
+    # "(no agent)" row), so a follow-up can rank within exactly the rows printed. Empty for a
+    # channel or month row (not a drill source).
+    keys: List[str] = []
 
 
 class ReportAskTotal(BaseModel):

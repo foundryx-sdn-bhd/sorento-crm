@@ -833,6 +833,8 @@ CATALOG: tuple[ToolSpec, ...] = (
             "case-insensitive, at least 3 characters; no match is 404), `product_ids` (ANDed "
             "with `product_code` when both are given), `brand_ids`, "
             "`category_ids`, `sales_agent_ids`, `customer_ids` (repeated or csv UUIDs), "
+            "`customer_agent_ids` (customers whose assigned agent on the customer card is one "
+            "of these; `none` in either agent list = no agent), "
             "`warehouse_codes` (exact codes; a location outside the contact's visibility "
             "answers `status: refused`), `channel` dealer | project. OMIT a filter you do not "
             "use: an empty value is 422 `empty_filter` (it never reads as 'no filter'), and an "
@@ -849,6 +851,7 @@ CATALOG: tuple[ToolSpec, ...] = (
             "date_from", "date_to", "basis", "measure", "group_by", "top_n", "sort",
             "product_code", "product_ids", "brand_ids", "category_ids", "sales_agent_ids",
             "customer_ids", "warehouse_codes", "channel", "contact_id", "space_id",
+            "customer_agent_ids",
         ),
         domain="orders",
         related_tools=("crm_sales_report", "crm_top_selling_report"),
