@@ -558,12 +558,17 @@ def brand_entity_rows(entities: Any, live: list[dict[str, Any]]) -> list[tuple[d
 
 def promo_filter(parse_output: dict[str, Any], db: Any) -> dict[str, list[str]]:
     """PROMO-SUBJECT-FILTER: what narrows a promotions read besides the access level, off the
-    parser's own answer. `scope_terms`: the class words it named. `promotion_types`: its
-    `promotion_kind` code. `brand_ids`: the brand it named, only on a kind ask (a plain brand
-    ask is narrowed by the tier gate), resolved by the one brand-word rule the order lane uses.
-    Empty keys are left out."""
+    parser's own answer. `scope_terms`: the class words it named, unless it also named a
+    product (a typed code is the narrower ask and keeps the `product_ids` path, AC-17).
+    `promotion_types`: its `promotion_kind` code. `brand_ids`: the brand it named, only beside
+    a subject or a kind (a plain brand ask is narrowed by the tier gate), resolved by the one
+    brand-word rule the order lane uses. Empty keys are left out."""
     out: dict[str, list[str]] = {}
-    terms = [t.lower() for t in class_scope_terms(parse_output)]
+    entities = parse_output.get("entities")
+    typed_product = any(
+        isinstance(e, dict) and jsc.nullish_str(e.get("hint")).strip().lower() == "product" for e in entities or []
+    )
+    terms = [] if typed_product else [t.lower() for t in class_scope_terms(parse_output)]
     if terms:
         out["scope_terms"] = terms
     kind = parse_output.get("promotion_kind")
@@ -572,10 +577,10 @@ def promo_filter(parse_output: dict[str, Any], db: Any) -> dict[str, list[str]]:
     ):
         # A code the table does not list is the parser guessing: it behaves as no kind.
         out["promotion_types"] = [kind.strip()]
-        if db is not None:
-            ids = [row["id"] for _e, row in brand_entity_rows(parse_output.get("entities"), active_brands(db))]
-            if ids:
-                out["brand_ids"] = ids
+    if out and db is not None:
+        ids = [row["id"] for _e, row in brand_entity_rows(entities, active_brands(db))]
+        if ids:
+            out["brand_ids"] = ids
     return out
 
 

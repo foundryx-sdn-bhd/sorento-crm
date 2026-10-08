@@ -733,8 +733,12 @@ def entity_ids_transformer(
             out[key] = semantic_input[key]
 
     # PROMO-SUBJECT-FILTER AC-4: the class the parser named narrows a promotion ask to
-    # promotions LINKED to products of that class. A resolved product id is the narrower
-    # ask and keeps the product_ids path alone.
+    # promotions LINKED to products of that class. `scope_terms` is set only when the parser
+    # named no product (`turn_runtime.promo_filter`), so any product ids here are the set the
+    # resolver described from the brand / class words, never the subject: they are dropped.
+    # A typed product code carries no `scope_terms` and keeps the product_ids path alone.
+    if tool_name == TIER_PROBE_TOOL and jsc.array(jsc.get(semantic_input, "scope_terms")):
+        out.pop("product_ids", None)
     if tool_name == TIER_PROBE_TOOL and not out.get("product_ids"):
         for key in ("scope_terms", "promotion_types", "brand_ids"):
             narrowed = jsc.get(semantic_input, key)
