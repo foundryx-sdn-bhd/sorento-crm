@@ -51,6 +51,30 @@ def field_encryption_key_configured() -> bool:
     return bool(_field_keys())
 
 
+# Where FIELD_ENCRYPTION_KEY may be unset (the JWT-derived key alone is used). Mirrors
+# app.services.dev_login.ALLOWED_ENVIRONMENTS plus "ci".
+_KEYLESS_ENVIRONMENTS = frozenset({"development", "dev", "local", "test", "ci"})
+
+
+def assert_field_encryption_ready(environment: str | None) -> None:
+    """Boot check for the API (app/main.py) and the worker (worker.py).
+
+    A malformed FIELD_ENCRYPTION_KEY raises here rather than reading every stored secret
+    as unset at runtime. Outside a dev environment an unset key refuses to start: new
+    secrets would otherwise be encrypted under the JWT_SECRET-derived key, and rotating
+    JWT_SECRET would then destroy them.
+    """
+    if _field_keys():
+        return
+    if (environment or "").strip().lower() not in _KEYLESS_ENVIRONMENTS:
+        raise RuntimeError(
+            f"FIELD_ENCRYPTION_KEY is not set and ENVIRONMENT={environment!r} is not a dev "
+            f"environment ({sorted(_KEYLESS_ENVIRONMENTS)}). Refusing to start: stored secrets "
+            "would be encrypted under the JWT_SECRET-derived key. See "
+            "documentation/plans/security/PLAN-ai-key-encrypt-08oct.md."
+        )
+
+
 def _keys() -> list[Fernet]:
     """Current key first, then older FIELD_ENCRYPTION_KEY entries, then the JWT-derived key."""
     keys = _field_keys()
@@ -120,8 +144,8 @@ class EncryptedText(TypeDecorator):
 
     Writes always encrypt. Reads decrypt a Fernet-format value and pass any other
     value through unchanged, so rows written before the column was encrypted keep
-    working until a backfill encrypts them. A Fernet-format value this deployment
-    cannot open (``JWT_SECRET`` changed) reads as None, never as the token itself.
+    working until a backfill encrypts them. A Fernet-format value no configured key
+    opens reads as None, never as the token itself.
     """
 
     impl = Text
@@ -144,7 +168,8 @@ class EncryptedText(TypeDecorator):
             return decrypt_secret(value)
         except ValueError:
             logger.error(
-                "Could not decrypt %s; reading it as unset. Was it written under a different JWT_SECRET?",
+                "Could not decrypt %s; reading it as unset. No FIELD_ENCRYPTION_KEY entry (nor the "
+                "JWT_SECRET-derived fallback) opens it.",
                 self.label or "an encrypted column",
             )
             return None

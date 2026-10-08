@@ -87,6 +87,10 @@ _assert_dev_login_safe(
     in_container=_running_in_container(),
 )
 
+from app.utils.field_encryption import assert_field_encryption_ready
+
+assert_field_encryption_ready(settings.environment)
+
 # Create FastAPI app
 app = FastAPI(
     title="Sorento CRM API",

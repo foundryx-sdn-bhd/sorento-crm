@@ -109,7 +109,15 @@ def main() -> None:
     parser.add_argument("--apply", action="store_true", help="Re-encrypt (default: dry run).")
     args = parser.parse_args()
 
-    from app.database import SessionLocal
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from app.config import settings
+
+    # Its own engine: never echo, and keep bound values (a legacy plaintext AI key is the
+    # `:old` of its UPDATE) out of any DBAPIError message.
+    engine = create_engine(settings.database_url, echo=False, hide_parameters=True)
+    SessionLocal = sessionmaker(bind=engine)
 
     print(f"Mode: {'APPLY' if args.apply else 'DRY RUN'}")
     print(f"FIELD_ENCRYPTION_KEY set: {field_encryption_key_configured()}")

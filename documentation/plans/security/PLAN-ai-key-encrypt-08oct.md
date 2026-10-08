@@ -42,7 +42,11 @@ Now: `FIELD_ENCRYPTION_KEY` is a comma-separated list of Fernet keys, current fi
 `MultiFernet`. The first key encrypts; every listed key decrypts; the JWT_SECRET-derived key is
 appended as the last decrypt-only fallback so tokens written before the switch keep working
 during rollout. Unset `FIELD_ENCRYPTION_KEY` (dev, CI) falls back to the JWT-derived key alone,
-the old behaviour. A malformed entry raises naming its position, never its value.
+the old behaviour, but only where `ENVIRONMENT` is a dev one (`development`, `dev`, `local`,
+`test`, `ci`): `assert_field_encryption_ready` runs at boot in the API (`app/main.py`) and the
+worker (`worker.py`, which never imports `app.main`) and refuses to start anywhere else without
+the key. A malformed entry fails that same boot check, naming its position, never its value, so
+a typo cannot quietly read every stored secret as unset.
 
 Generate a key:
 
@@ -80,7 +84,9 @@ key), `plaintext` (encrypted for the `ai_assistant_configs` columns, which held 
 before; reported and left alone elsewhere), `unreadable` (no configured key opens it; reported,
 left alone, must be re-entered), `empty`. Dry run by default, counts only, never a value.
 `--apply` refuses unless `FIELD_ENCRYPTION_KEY` is set, writes in one transaction, and each
-UPDATE is a compare-and-set on the value it read. Re-running is a no-op.
+UPDATE is a compare-and-set on the value it read. The script's engine never echoes and hides
+bound parameters, so a legacy plaintext key cannot reach a log or an error message. Re-running
+is a no-op.
 
 ## Rollout (deploy order)
 
@@ -89,14 +95,23 @@ Prod compose (`/opt/sorento-crm2/docker-compose.yml`) is edited by hand on the s
 1. **Env var.** Generate a key (above) and add `FIELD_ENCRYPTION_KEY=<key>` to the **backend and
    worker** services. Keep `JWT_SECRET` unchanged for now: it still opens every existing token.
 2. **Deploy** this code. New saves are encrypted under `FIELD_ENCRYPTION_KEY`; existing tokens
-   read through the JWT-derived fallback; legacy plaintext AI keys read as is.
+   read through the JWT-derived fallback; legacy plaintext AI keys read as is. A backend or
+   worker container without the var (and `ENVIRONMENT` not a dev value) refuses to start, by
+   design: fix the env, do not unset `ENVIRONMENT`.
+   **Rollback** past this release cannot read anything saved after it (the old image knows only
+   the JWT-derived key): those secrets must be re-entered.
 3. **Dry run:** `cd sorento_crm_backend && python scripts/reencrypt_field_secrets.py` inside the
    backend container. Expect `old_key` counts on the Respond.io / integration columns and
    `plaintext` on the AI key columns; `unreadable` should be 0.
 4. **Apply:** `python scripts/reencrypt_field_secrets.py --apply`, then the dry run again: every
    column should read `old_key=0`, AI columns `plaintext=0`. Prod run is the owner's call.
-5. **Now JWT_SECRET rotation is safe** for stored secrets: nothing at rest depends on it. (Rotating
-   it still signs everyone's short-lived link tokens anew, which is the point.)
+5. **Rotate JWT_SECRET** as soon as step 4 reads clean. Nothing in the live database depends on it
+   any more, and because the decrypt fallback is derived from the *current* `JWT_SECRET`, rotating
+   it also stops the leaked value opening anything through the code. It does NOT un-leak what was
+   already exposed: **database backups or dumps taken before step 4** still hold tokens the leaked
+   `JWT_SECRET` opens. If any such backup could have been exposed alongside the leak, rotate the
+   upstream credentials too (Respond.io workspace API keys, ideation intake key and embed signing
+   secret, chatbot retry ingress key, `integrations.credentials_json`, the AI provider keys).
 
 Rotating `FIELD_ENCRYPTION_KEY` itself later: prepend the new key (`new,old`), deploy, run
 `--apply` (moves `old_key` values onto `new`), then drop `old`.
@@ -110,14 +125,17 @@ Rotating `FIELD_ENCRYPTION_KEY` itself later: prepend the new key (`new,old`), d
   `JWT_SECRET` rotation; first key encrypts, older listed keys decrypt; JWT-derived tokens
   decrypt during rollout; unset var keeps the old behaviour; malformed key fails loudly; the
   backfill re-encrypts every column onto the current key, after which rotating `JWT_SECRET`
-  loses nothing; `--apply` refuses without the var; no value is ever printed.
+  loses nothing; `--apply` refuses without the var; no value is ever printed; the boot check
+  refuses a non-dev environment without the key and a malformed key anywhere, and both the API
+  and the worker run it.
 
 ## Follow-ups (not in this lane)
 
 - **Remove the plaintext pass-through** in `EncryptedText.process_result_value` once
   `--apply` has run in prod (trigger: owner confirms the prod run printed `plaintext=0` on the AI columns).
-- **Drop the JWT-derived decrypt fallback** once every env has run `--apply` with
-  `unreadable=0` and `old_key=0` (trigger: owner confirms on prod).
+- **Drop the JWT-derived decrypt fallback** in the release after `JWT_SECRET` is rotated (trigger:
+  prod `--apply` read `old_key=0 unreadable=0` and the rotation is done). Dev and CI then need
+  either a required key or a fixed dev-only derivation, decided in that lane.
 - **Same plaintext pattern elsewhere:** `system_settings.smtp_password` (`app/models/user.py:409`);
   token columns that should be stored hashed: `user_sessions.token`
   (`app/models/user_session.py:36`), `portal_tokens.token` (`app/models/portal.py:30`), share-link

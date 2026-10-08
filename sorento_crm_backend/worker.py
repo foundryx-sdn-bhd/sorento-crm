@@ -246,6 +246,11 @@ def register_worker_listeners():
 
 
 if __name__ == '__main__':
+    # The worker decrypts stored secrets too and never imports app.main.
+    from app.config import settings as _settings
+    from app.utils.field_encryption import assert_field_encryption_ready
+    assert_field_encryption_ready(_settings.environment)
+
     register_worker_listeners()
     _maybe_start_scheduler()
     _warn_if_vapid_missing()
