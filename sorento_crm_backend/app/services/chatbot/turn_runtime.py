@@ -1681,10 +1681,11 @@ def lane_parse_output(
     ):
         out["top_selling"] = dict(focus.top_selling)
     # REPORT-ENGINE: the held sales ranking frame rides only on a verdict the parser says
-    # refines it; any other verdict never sees it (a new intent wins).
+    # refines it, or (REPORT-DRILLDOWN) reads as about the rows it printed or maybe so
+    # (`ranking_drill` scoped / unsure); any other verdict never sees it (a new intent wins).
     if (
         jsc.js_string(out.get("order_status") or "").strip() == "sales_ranking"
-        and out.get("ranking_refine") is True
+        and (out.get("ranking_refine") is True or out.get("ranking_drill") in ("scoped", "unsure"))
         and focus is not None
         and focus.sales_ranking_frame
     ):
