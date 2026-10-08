@@ -3288,6 +3288,15 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
                 return field_lines
         if jsc.truthy(flags) and jsc.truthy(jsc.get(flags, "discontinued")):
             line += f"\n⚠️  *({loc.text('PRODUCT DISCONTINUED')})*"
+        # PRODUCT-ALTERNATIVES (card Q4 (a), owner 8 Oct 2026): the stored alternatives,
+        # under the marker. A dealer line carries each alternative's own judged verdict
+        # (`alternative_lines`, the presenter's "<code> x <Q>: <verdict>"); a staff block
+        # names the code (`alternatives`), its own block following in the list.
+        if jsc.truthy(flags):
+            for alternative_line in jsc.array(jsc.get(flags, "alternative_lines")):
+                line += f"\n{loc.text('Alternative')}: {loc.tail(jsc.nullish_str(alternative_line))}"
+            for alternative_code in jsc.array(jsc.get(flags, "alternatives")):
+                line += f"\n*{loc.text('Alternative')}:* {jsc.nullish_str(alternative_code)}"
         if jsc.truthy(flags) and jsc.truthy(jsc.get(flags, "expired")):
             line += f"\n⚠️  *({loc.text('EXPIRED')})*"
         if jsc.truthy(flags) and jsc.truthy(jsc.get(flags, "unallocated")):

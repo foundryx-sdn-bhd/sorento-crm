@@ -1529,8 +1529,37 @@ def _availability_line(entry: dict) -> str:
     return f"{code} x {qty}: {_availability_tail(entry)}"
 
 
+def _printed_alternatives(entry: dict) -> list[dict]:
+    """The alternatives that print a line under `entry` - the one filter the line builder
+    and the referral stamp both read, so a stamp never counts a line nobody saw."""
+    return [
+        a
+        for a in (entry.get("alternatives") or [])
+        if isinstance(a, dict) and a.get("branch") and _availability_label(a)
+    ]
+
+
+def _alternative_has_stock(entry: dict) -> bool:
+    """PRODUCT-ALTERNATIVES (card Q4, owner 8 Oct 2026): a stored alternative of this
+    entry, judged by the backend with the same asked quantity, got stock (full or
+    partial)."""
+    return any(
+        isinstance(a, dict) and a.get("branch") == "in_stock"
+        for a in (entry.get("alternatives") or [])
+    )
+
+
 def _availability_tail(entry: dict) -> str:
-    """The sentence after "<code> x <Q>:" for one answered entry."""
+    """The sentence after "<code> x <Q>:" for one answered entry. PRODUCT-ALTERNATIVES
+    (card Q4): the refer drops when an alternative printed under it has stock - the dealer
+    has their answer on the next line."""
+    tail = _verdict_tail(entry)
+    if _alternative_has_stock(entry):
+        tail = tail.replace(f" {REFER_TO_SALESMAN}", "")
+    return tail
+
+
+def _verdict_tail(entry: dict) -> str:
     branch = entry.get("branch")
     if branch == "incoming":
         # AVAIL-RENDER fix round (owner hand test, 6 Oct 2026): the cross says the stock
@@ -1570,8 +1599,17 @@ def _stamp_refers(entries: Any) -> Any:
         return entries
     # AVAIL-MODE-REPLIES rule 5: an answered line is printed even while another product
     # still owes its quantity, so it is stamped on that turn too.
+    # PRODUCT-ALTERNATIVES: an `Alternative:` line printed under an entry that ends in the
+    # refer referred the dealer too, so the entry is stamped when ITS line or any of its
+    # printed alternative lines refers.
+    def _refers(e: dict) -> bool:
+        return _availability_tail(e).endswith(REFER_TO_SALESMAN) or any(
+            _availability_tail(a).endswith(REFER_TO_SALESMAN)
+            for a in _printed_alternatives(e)
+        )
+
     return [
-        {**e, "refers_to_salesman": _availability_tail(e).endswith(REFER_TO_SALESMAN)}
+        {**e, "refers_to_salesman": _refers(e)}
         if isinstance(e, dict) and e.get("branch")
         else e
         for e in entries
@@ -1597,17 +1635,21 @@ def _stock_availability(payload: dict, b: _Builder) -> None:
         # (a branch) prints that answer even while another product still owes its
         # quantity; one still owed stays its bare code for the question to name.
         title = _availability_line(entry) if entry.get("branch") and not entry.get("needs_quantity") else label
-        b.raw_item(
-            title,
-            [],
-            {
-                "needs_quantity": bool(entry.get("needs_quantity")),
-                "branch": entry.get("branch"),
-                # AVAIL-RENDER (owner, 5 Oct 2026): the marker compact/detailed print
-                # (`fetch.py::_item_line` reads `flags.discontinued`) on this mode's line too.
-                "discontinued": entry.get("is_discontinued") is True,
-            },
-        )
+        flags = {
+            "needs_quantity": bool(entry.get("needs_quantity")),
+            "branch": entry.get("branch"),
+            # AVAIL-RENDER (owner, 5 Oct 2026): the marker compact/detailed print
+            # (`fetch.py::_item_line` reads `flags.discontinued`) on this mode's line too.
+            "discontinued": entry.get("is_discontinued") is True,
+        }
+        # PRODUCT-ALTERNATIVES (card Q4 (a)): each stored alternative's own
+        # "<code> x <Q>: <verdict>" line, printed under this one after the marker
+        # (`fetch.py::_item_line`). The backend attaches them to answered entries only,
+        # judged with the same asked quantity; no alternative, no key (flags unchanged).
+        alternative_lines = [_availability_line(a) for a in _printed_alternatives(entry)]
+        if alternative_lines:
+            flags["alternative_lines"] = alternative_lines
+        b.raw_item(title, [], flags)
 
 
 def _availability_intro(payload: dict) -> str:
