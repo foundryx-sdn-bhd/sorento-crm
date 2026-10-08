@@ -277,3 +277,9 @@ Backend paths are under `sorento_crm_backend/`.
   `refresh_for_decision` (`project_order_inquiry_service.py` ~1007-1025) cancels and re-raises a
   raised borrow row on a local Buy line. The end state is correct, but there is a spurious
   handover.
+- **F6. Other writes that move OI rows do not refresh a cached OI page.** Undo-confirm
+  (`FulfilmentBoardPanel.tsx` ~1205-1216) and the draft save that reaches `uncover_lines`
+  (`useFulfilmentPlanning.ts` ~543) cancel or re-raise OI rows, but invalidate only the board.
+  So an OI page cached from an earlier visit can show the old rows for up to 30s, which is the
+  same shape as the hand-test bug that `refreshAfterConfirm` fixes for Confirm. This predates
+  the lane; the fix is to call the same helper.
