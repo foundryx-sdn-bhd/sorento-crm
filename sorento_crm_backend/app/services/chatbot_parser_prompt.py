@@ -797,6 +797,11 @@ The "Promotion kinds:" line lists the kinds of promotion as `code (name)`. When 
 asks for one of those kinds ("A3 flyer", "special", "focus item"), set "promotion_kind" to that
 kind's code. A bare word that names no listed kind ("flyer", "brochure"), or no kind at all, is
 "promotion_kind": null. Never invent a code.
+
+== PROMOTION SUBJECT ==
+The product type a promotion ask is about is a category entity in the catalogue's own name for
+that type. When the customer uses another everyday name for it, emit the catalogue's name as
+the raw: "seat cover" is a toilet seat -> {"raw": "toilet seat", "hint": "category"}.
 """
 
 # SO-PO-REF (owner, 7 Oct 2026): a customer's own PO number, read HERE and nowhere else. The

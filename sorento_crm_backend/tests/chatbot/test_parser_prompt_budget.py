@@ -174,7 +174,10 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # without MEMORY_ADDENDUM, so CEILING is 50,473 (+4).
 # Merge of main (#1447 REPORT-ENGINE) with PROMO-SUBJECT-FILTER (PROMOTION_KIND_ADDENDUM after
 # CANONICAL_CODE_ADDENDUM): 50,643 est. tokens without MEMORY_ADDENDUM, so CEILING is 50,647 (+4).
-CEILING = 50_647
+# PROMO-SUBJECT-FILTER owner review round 2 (AC-26): the PROMOTION SUBJECT section (seat cover is
+# a toilet seat) inside PROMOTION_KIND_ADDENDUM: 50,742 est. tokens without MEMORY_ADDENDUM, so
+# CEILING is 50,746 (+4).
+CEILING = 50_746
 # The memory addendum on its own, bounded separately so this PR's growth stays bounded.
 # 26 Sep baseline (lane d89110c0): 339 est. tokens. Round 4 (baf4c813, 28 Sep: the history
 # question in any wording, the number re-run, commercial_request) took it to 512, which is

@@ -1,20 +1,22 @@
-"""Teach the parser the `promotion_kind` output key as a NEW prompt version, label unmoved
-(PROMO-SUBJECT-FILTER R5, documentation/plans/chatbot/PLAN-promo-subject-filter-07oct.md).
+"""Publish ONE consolidated chatbot parser version built from the code constant, label unmoved
+(PROMO-SUBJECT-FILTER R5 and owner review round 2, AC-26 / AC-27,
+documentation/plans/chatbot/PLAN-promo-subject-filter-07oct.md).
 
-One exact wording edit applied to the production text through
-`chatbot_prompt_vars.publish_wording_edit`, so the owner's edits and variables are kept. The
-kinds themselves are not in the wording: the parser reads them each turn from the
-`Promotion kinds:` line, built from `promotion_types`. The production label is never moved;
-promoting is one label move in the Chatbot Console. Data only, idempotent (a text that no
-longer carries the anchor publishes nothing).
+The body is `SEMANTIC_PARSER_PROMPT` as the code builds it, so it carries every current
+addendum: the `promotion_kind` output key (the PROMOTION KIND section, kinds read each turn
+from the `Promotion kinds:` line) and the PROMOTION SUBJECT grounding (a "seat cover" is a
+toilet seat). Same publish as `report_engine_0001_prompt`; the helper is repeated, not
+imported, because a migration must not depend on another migration's module. The production
+label is never moved; promoting is one label move in the Chatbot Console. Idempotent: a body
+already published publishes nothing.
 
 Revision ID: pk_0001_parser_promo_kind
 Revises: rrl_0001_report_rate_limit
 """
 import logging
 
+import sqlalchemy as sa
 from alembic import op
-from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 revision = "pk_0001_parser_promo_kind"
@@ -24,31 +26,54 @@ depends_on = None
 
 logger = logging.getLogger("alembic.runtime.migration")
 
-MESSAGE = "pk_0001_parser_promo_kind: promotion_kind output key"
-ANCHOR = "Otherwise false. Do NOT emit flyer as an entity; downstream handles it.\n"
-ADDENDUM = (
-    "\n== PROMOTION KIND ==\n"
-    'The "Promotion kinds:" line lists the kinds of promotion as `code (name)`. When the current message\n'
-    'asks for one of those kinds ("A3 flyer", "special", "focus item"), set top-level "promotion_kind"\n'
-    "to that kind's code. A bare word that names no listed kind (\"flyer\", \"brochure\"), or no kind at all,\n"
-    'is "promotion_kind": null. Never invent a code.\n'
-)
+PROMPT_NAME = "chatbot_semantic_parser"
+MESSAGE = "pk_0001_parser_promo_kind: promotion kind + promotion subject (seat cover -> toilet seat)"
+#: The sections this version exists to carry; the constant must hold both.
+REQUIRED = ("== PROMOTION KIND ==", "== PROMOTION SUBJECT ==", '"seat cover" is a toilet seat')
+
+
+def publish(session: Session) -> int | None:
+    from app.models.ai_prompt import AIPromptVersion
+    from app.services.ai_prompt_registry import PROMPT_KEYS
+    from app.services.chatbot_parser_prompt import SEMANTIC_PARSER_PROMPT
+
+    template = SEMANTIC_PARSER_PROMPT
+    missing = [marker for marker in REQUIRED if marker not in template]
+    if missing:
+        raise RuntimeError(f"pk_0001: the parser constant lacks {missing}")
+    existing = (
+        session.query(AIPromptVersion)
+        .filter(AIPromptVersion.name == PROMPT_NAME, AIPromptVersion.template == template)
+        .first()
+    )
+    if existing is not None:
+        logger.info("pk_0001: parser body already published as v%s", existing.version)
+        return None
+    versions = session.query(AIPromptVersion.version).filter(AIPromptVersion.name == PROMPT_NAME).all()
+    next_version = max((int(v[0]) for v in versions), default=0) + 1
+    session.add(
+        AIPromptVersion(
+            name=PROMPT_NAME,
+            version=next_version,
+            type="text",
+            template=template,
+            variables=list(PROMPT_KEYS[PROMPT_NAME].variables),
+            commit_message=MESSAGE,
+        )
+    )
+    session.flush()
+    logger.info("pk_0001: published chatbot_semantic_parser v%s, label unmoved", next_version)
+    return next_version
 
 
 def upgrade() -> None:
-    from app.services.chatbot_prompt_vars import publish_wording_edit
-
     session = Session(bind=op.get_bind())
-    version = publish_wording_edit(session, old=ANCHOR, new=ANCHOR + ADDENDUM, message=MESSAGE)
-    if version is None:
-        logger.info("pk_0001: anchor not in the production parser text; nothing published")
-    else:
-        logger.info("pk_0001: published chatbot_semantic_parser v%s, label unmoved", version)
+    publish(session)
 
 
 def downgrade() -> None:
     op.get_bind().execute(
-        text(
+        sa.text(
             "DELETE FROM ai_prompt_versions WHERE name = 'chatbot_semantic_parser' "
             "AND commit_message = :m "
             "AND id NOT IN (SELECT version_id FROM ai_prompt_labels)"
