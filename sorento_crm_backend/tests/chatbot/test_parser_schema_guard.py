@@ -141,10 +141,14 @@ MEASURED_VERDICT_READS: dict[str, str] = {
     # 7 Oct 2026 (SO-PO-REF): the customer's PO number(s), read by the business lane's
     # `po_refs` arm for non-staff profiles (`so_status.lookup_po_refs`). 49 -> 50.
     "po_refs": "app/services/chatbot/lanes/business/__init__.py",
+    # 8 Oct 2026 (REPORT-DRILLDOWN): the parser's reading of a follow-up ranking on a new axis
+    # ("scoped" to the rows above, "global", "unsure"), read by `turn_runtime` (frame carry)
+    # and `lanes/business/report_ask.settle`. 50 -> 51.
+    "ranking_drill": "app/services/chatbot/lanes/business/report_ask.py",
 }
 
 
-def test_measured_read_set_matches_the_50_declared_keys():
+def test_measured_read_set_matches_the_51_declared_keys():
     """The table above is complete and has no typo - every declared key is measured read
     exactly once, and the table names nothing DECLARED_KEYS does not also carry. Catches a
     stale table before it can hide a real drift in the two tests below."""

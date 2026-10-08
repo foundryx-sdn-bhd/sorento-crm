@@ -3235,38 +3235,31 @@ def _ask_pcs(value: Any) -> str:
 
 
 def _report_ask(body: dict) -> str:
-    """The whole reply for `crm_report_ask`: a header echoing the interpreted ask, the ranked
-    rows, `and N more`, the whole set's total; or one line for the number shape."""
+    """The whole reply for `crm_report_ask`: a head line, then one fact per line (`Label: value`
+    per filter, then the period; owner rule, REPORT-DRILLDOWN), the ranked rows, `and N more`,
+    the whole set's total; for the number shape the total alone."""
     if body.get("status") in ("refused", "busy"):
         return str(body.get("message") or "")
-    filters = "; ".join(
-        f"{f.get('label')} {', '.join(str(v) for v in f.get('values') or [])}"
+    facts = [
+        f"{f.get('label')}: {', '.join(str(v) for v in f.get('values') or [])}"
         for f in body.get("filters") or []
-    )
-    scope = ", ".join(
-        part
-        for part in (
-            body.get("basis_label"),
-            filters,
-            f"{body.get('date_from')} to {body.get('date_to')}",
-        )
-        if part
-    )
+    ]
+    facts.append(f"Period: {body.get('date_from')} to {body.get('date_to')}")
     total = body.get("total") or {}
     figures = f"{_ask_rm(total.get('amount'))}, {_ask_pcs(total.get('qty'))}"
+    basis = body.get("basis_label")
     group_by = body.get("group_by")
     if not group_by:
-        return f"Sales by {scope}: {figures}"
+        return "\n".join([f"Sales by {basis}", *facts, f"Total {figures}"])
     rows = body.get("rows") or []
     if not rows:
-        return f"No sales found for {scope}."
+        return "\n".join([f"No {basis} found", *facts])
     plural = _REPORT_ASK_PLURALS.get(group_by, str(body.get("group_label") or group_by).lower())
     if len(rows) == 1:
         # One row printed reads singular: "Top 1 product", never "Top 1 products".
         plural = str(body.get("group_label") or group_by).lower()
     lead = "Bottom" if body.get("sort") == "asc" else "Top"
-    # "by" sits between the plural and the basis; `scope` starts with the basis label.
-    lines = [f"{lead} {len(rows)} {plural} by {scope}"]
+    lines = [f"{lead} {len(rows)} {plural} by {basis}", *facts]
     for row in rows:
         lines.append(
             f"{row.get('rank')}. {row.get('name')} {_ask_rm(row.get('amount'))}, {_ask_pcs(row.get('qty'))}"
@@ -3280,11 +3273,22 @@ def _report_ask(body: dict) -> str:
 
 def _report_ask_envelope(body: dict) -> dict:
     """Minimal envelope (`response` + `has_result`), like the other report tools: the rendered
-    header is never empty, so the text alone cannot tell a miss from a hit."""
+    header is never empty, so the text alone cannot tell a miss from a hit. A ranking that
+    printed rows also hands them on with their keys (`drill_rows`, REPORT-DRILLDOWN), so the
+    chatbot can rank within exactly those rows next."""
     answered = body.get("status") in ("ok", "refused", "busy") and (
         body.get("status") != "ok" or bool(body.get("rows")) or not body.get("group_by")
     )
-    return {"result_type": "report_ask", "response": _report_ask(body), "has_result": answered}
+    rows = body.get("rows") or [] if body.get("status") == "ok" and body.get("group_by") else []
+    drill = (
+        {
+            "group_by": body.get("group_by"),
+            "rows": [{"name": r.get("name"), "keys": list(r.get("keys") or [])} for r in rows],
+        }
+        if rows
+        else None
+    )
+    return {"result_type": "report_ask", "response": _report_ask(body), "has_result": answered, "drill_rows": drill}
 
 
 def _sales_analysis_envelope(payload: dict) -> dict:

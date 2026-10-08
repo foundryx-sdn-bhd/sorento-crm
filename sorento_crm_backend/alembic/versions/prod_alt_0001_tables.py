@@ -9,13 +9,13 @@ Idempotent (`IF NOT EXISTS`) so the shared dev DB, which converges through `crea
 take it in any order. Card: documentation/plans/chatbot/CARD-product-alternatives-08oct.md.
 
 Revision ID: prod_alt_0001_tables
-Revises: rrl_0001_report_rate_limit
+Revises: report_drill_0001_prompt
 """
 import sqlalchemy as sa
 from alembic import op
 
 revision = "prod_alt_0001_tables"
-down_revision = "rrl_0001_report_rate_limit"
+down_revision = "report_drill_0001_prompt"
 branch_labels = None
 depends_on = None
 
