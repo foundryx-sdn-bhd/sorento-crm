@@ -310,3 +310,37 @@ def test_the_frame_keeps_shown_rows_only_for_its_own_axis() -> None:
     same = {**rows, "group_by": "sales_agent"}
     out = _report_ask_output({"response": "Top 1 sales agent", "drill_rows": same}, {"semantic_input": {"report_ask_args": args}})
     assert out["sales_ranking_frame"]["shown"] == same, out
+
+
+# ============================================================================ review round 2
+
+
+def test_the_same_axis_keeps_the_held_count_and_direction(console) -> None:
+    _turn1(console, rank_direction="bottom")
+    _text, calls = console.say(_drill(group_by="sales_agent", top_n=None, rank_direction=None, measure="qty"),
+                               "these agents by quantity")
+    (args,) = calls
+    assert args["top_n"] == 3 and args["sort"] == "asc" and args["measure"] == "qty", args
+    assert args["sales_agent_ids"] == [AG1, AG2, "none"], args
+
+
+def test_a_message_filter_on_the_link_param_narrows_within_the_rows(console, monkeypatch) -> None:
+    """Review round 2: "top brands of these agents, AGENT A only" keeps AGENT A when listed,
+    never silently drops it."""
+    monkeypatch.setitem(ROWS, "sales_agent", [
+        {"rank": 1, "name": "AGENT A", "qty": 5, "amount": 500.0, "keys": [console.ids["agent"]]},
+        {"rank": 2, "name": "AGENT TWO", "qty": 4, "amount": 400.0, "keys": [AG2]},
+    ])
+    _turn1(console)
+    _text, calls = console.say(_drill(group_by="brand", top_n=5, entities=[_e("AGENT A", "sales_agent")]),
+                               "top 5 brands of these agents, AGENT A only")
+    (args,) = calls
+    assert args["sales_agent_ids"] == [console.ids["agent"]], args
+
+
+def test_a_message_filter_outside_the_rows_is_said(console) -> None:
+    _turn1(console)
+    text, calls = console.say(_drill(group_by="brand", top_n=5, entities=[_e("AGENT A", "sales_agent")]),
+                              "top 5 brands of these agents, AGENT A only")
+    assert calls == [], calls
+    assert text.strip() == "AGENT A is not one of the sales agents above.", text

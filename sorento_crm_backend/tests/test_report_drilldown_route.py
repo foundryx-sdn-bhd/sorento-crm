@@ -238,3 +238,15 @@ def test_row_keys_stay_inside_the_contact_companies(client, db):
     db.commit()
     body = _ok(client, _full(db), group_by="sales_agent", top_n=10, product_code="ZZTDD")
     assert _keys(body)["ZZT-DG-1"] == [w.g1.id], body["rows"]
+
+
+# ======================================================================== review round 2
+
+
+def test_a_blank_location_row_carries_no_key(client, db):
+    """Lines with no warehouse print as "(blank)": nothing to narrow by (the lane says so)."""
+    w = _world(db)
+    seed_so_line(db, cust=w.c1, prod=w.p, qty=1, total="1.00", agent=w.g1, wh=None)
+    db.commit()
+    body = _ok(client, _full(db), group_by="location", top_n=10, product_code="ZZTDD")
+    assert _keys(body)["(blank)"] == [] and _keys(body)[w.wh.warehouse_code] == [w.wh.warehouse_code], body["rows"]
