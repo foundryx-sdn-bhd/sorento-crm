@@ -352,7 +352,9 @@ function candidateKey(candidate: BorrowCandidate): string {
  */
 function donorLabel(candidate: BorrowCandidate): string | undefined {
   if (candidate.rung === 'group_borrow') {
-    return donorSoLabel(candidate);
+    // With "Borrow from another order" off no donor is named: the location is the row
+    // (BORROW-LOCATION-ONLY S5).
+    return candidate.donor_so_number ? donorSoLabel(candidate) : undefined;
   }
   if (candidate.source === 'other_project') {
     return candidate.donor_project_ref ?? 'Another project';
@@ -362,7 +364,7 @@ function donorLabel(candidate: BorrowCandidate): string | undefined {
 
 /** "SO371334 line 2" - a group-borrow donor's own identity, never a bare warehouse code. */
 function donorSoLabel(candidate: BorrowCandidate): string {
-  const so = candidate.donor_so_number ?? 'An unnamed sales order';
+  const so = candidate.donor_so_number;
   const line =
     candidate.donor_line_no !== null && candidate.donor_line_no !== undefined
       ? ` line ${candidate.donor_line_no}`

@@ -17,6 +17,7 @@ earned them there.
 """
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import date, timedelta
 from decimal import Decimal
@@ -27,7 +28,9 @@ from sqlalchemy import text
 from app.models.project_so import (
     DECISION_ACTIVE,
     DECISION_SUPERSEDED,
+    INQUIRY_ACTIONED,
     INQUIRY_CANCELLED,
+    INQUIRY_RAISED,
     IV_ORDER,
     IV_ORDER_BACK,
     OrderInquiryRow,
@@ -35,6 +38,7 @@ from app.models.project_so import (
 )
 from app.models.user import SystemSetting
 from app.schemas.project_supply import ConfirmLine, ConfirmSupplyBody
+from app.services.error_handler import AppException
 from app.services.project_supply_service import ProjectSupplyService
 
 from .._pg_fixture import blank_session
@@ -284,6 +288,32 @@ def test_off_confirm_ignores_donor_fields_from_a_stale_tab():
         assert "ZZT-STALE" not in (rows[0].note or "")
         assert [d.state for d in donor_decisions] == [DECISION_ACTIVE]
 
+        # S1 (K5): the frozen snapshot keeps no donor name either, only the internal id.
+        decision = (
+            db.query(SOSupplyDecision)
+            .filter(
+                SOSupplyDecision.project_sales_order_id == world["asker"].id,
+                SOSupplyDecision.state == DECISION_ACTIVE,
+            )
+            .one()
+        )
+        frozen = json.dumps(decision.line_snapshots, default=str)
+        assert "ZZT-STALE" not in frozen, frozen
+        borrows = [
+            c
+            for snap in decision.line_snapshots
+            for c in (snap.get("components") or [])
+            if c.get("kind") == "borrow"
+        ]
+        assert borrows, frozen
+        for c in borrows:
+            for field in DONOR_FIELDS:
+                assert c.get(field) is None, (field, c)
+            assert not c.get("same_agent")
+            assert c.get("donor_core_line_id"), "K6: the internal id stays"
+        after = json.dumps(ProjectSupplyService(db).proposal_for(world["asker"]), default=str)
+        assert "ZZT-STALE" not in after
+
 
 # --------------------------------------------------------------------------- T6
 
@@ -431,39 +461,51 @@ def component_date(component):
 # --------------------------------------------------------------------------- T10
 
 
-def test_k7_a_line_with_borrow_and_buy_keeps_one_live_order_back_and_one_order_on_reconfirm():
-    """Ask 40, donor holds 30: the engine will not mix steps, so the composition is built
-    by hand (borrow 30 + buy_qty 10). Confirmed, then re-confirmed, under OFF."""
+def test_k7_an_order_back_buy_beside_a_borrow_keeps_the_actioned_borrow_row_and_never_doubles_it():
+    """K7: ask 40, the donor holds 30, so the composition is built by hand: Borrow 30 plus
+    an Amend "Order back" Buy of 10 on the SAME line. Purchasing actions the borrow's
+    order-back, then the line is re-confirmed under OFF. The Buy-line path must not take
+    the borrow row as its own (netting 30 off a Buy of 10), and the borrow path must not
+    skip it (raising a second 30)."""
     with blank_session() as db:
         world = _borrow_world(db, ask="40")
-        payload = {
-            "source": "other_location",
-            "warehouse_id": str(world["donor_bin"].id),
-            "qty": "30",
-            "reason": "Ladder v7.1 step 2.",
-            "donor_core_line_id": str(world["donor_cline"].id),
-        }
-        _confirm_borrow(db, world, payload, buy_qty=10)
-        _confirm_borrow(db, world, payload, buy_qty=10)
-
-        asker_id = str(world["asker_line"].id)
-        back = [r for r in _order_backs(db) if r.verb == IV_ORDER_BACK]
-        orders = (
-            db.query(OrderInquiryRow)
-            .filter(
-                OrderInquiryRow.verb == IV_ORDER,
-                OrderInquiryRow.state != INQUIRY_CANCELLED,
-                OrderInquiryRow.so_line_id == asker_id,
-            )
-            .all()
+        line = ConfirmLine(
+            project_line_id=world["asker_line"].id,
+            borrow=[{
+                "source": "other_location",
+                "warehouse_id": str(world["donor_bin"].id),
+                "qty": "30",
+                "reason": "Ladder v7.1 step 2.",
+                "donor_core_line_id": str(world["donor_cline"].id),
+            }],
+            buy_qty=Decimal("10"),
+            order_back=True,
+            amend_reason="Borrow what the later order can spare and order the rest back.",
         )
 
-        assert len(back) == 1, [(r.so_line_id, r.qty, r.note, r.state) for r in back]
-        assert back[0].qty == Decimal("30")
-        assert back[0].stock_location == world["donor_bin"].warehouse_code
-        assert str(back[0].so_line_id) == asker_id
-        assert len(orders) == 1, [(r.qty, r.state) for r in orders]
-        assert orders[0].qty == Decimal("10")
+        def confirm():
+            ProjectSupplyService(db).confirm(
+                world["asker"], ConfirmSupplyBody(lines=[line]), actor_user_id=world["eling"]
+            )
+            db.commit()
+
+        confirm()
+        first = _order_backs(db)
+        borrow_rows = [r for r in first if (r.note or "").startswith("Order-back:")]
+        assert len(borrow_rows) == 1, [(r.qty, r.note) for r in first]
+        borrow_rows[0].state = INQUIRY_ACTIONED
+        db.commit()
+
+        confirm()
+        asker_id = str(world["asker_line"].id)
+        live = sorted(
+            (r.qty, r.state)
+            for r in _order_backs(db)
+            if str(r.so_line_id) == asker_id
+        )
+        assert live == [(Decimal("10"), INQUIRY_RAISED), (Decimal("30"), INQUIRY_ACTIONED)], [
+            (r.qty, r.state, r.note) for r in _order_backs(db, live=False)
+        ]
 
 
 # --------------------------------------------------------------------------- T11
@@ -520,3 +562,123 @@ def test_settings_api_reads_false_by_default_and_a_put_persists_true(api, api_db
 
     again = api.get(SETTINGS_ENDPOINT)
     assert again.json()["settings"]["borrow_from_order_enabled"] is True
+
+
+# --------------------------------------------------------------------------- fix round 1
+
+
+def test_b1_off_a_donor_needing_authorisation_is_not_offered_and_a_crafted_confirm_names_no_so():
+    """B1: under OFF nobody can be asked "who authorised it", so a same-agent donor ranked
+    above this line is not offered, and a confirm naming it anyway is refused in the
+    location's words (S2), authorisation or not."""
+    from .test_project_supply_service_ladder import _borrow_body, _same_agent_world
+
+    with blank_session() as db:
+        _company_id, eling, order, line, donor_cline, own = _same_agent_world(db)
+        proposal = ProjectSupplyService(db).proposal_for(order)
+        offered = [
+            c
+            for c in proposal["lines"][0]["borrow_candidates"]
+            if str(c.get("donor_core_line_id") or "") == str(donor_cline.id)
+        ]
+        assert offered == [], offered
+
+        with pytest.raises(AppException) as refused:
+            ProjectSupplyService(db).confirm(
+                order,
+                _borrow_body(
+                    line, own, donor_cline, "Authorised by agent CYNDI: on the phone."
+                ),
+                actor_user_id=eling,
+            )
+
+    reason = refused.value.detail["failing_lines"][0]["reason"]
+    assert "SO920001" not in reason, reason
+    assert own.warehouse_code in reason, reason
+
+
+def _second_asker(db, world, *, line_no=1):
+    from app.models.projects import Project
+
+    project = db.get(Project, world["asker"].project_id)
+    asker, asker_line, _cso, _cline = _seed_line(
+        db, world["company_id"], project, world["product"], world["own"],
+        qty_ordered="30", line_no=line_no, so_number=f"ZZT-SO-TWO{_uid()[:5]}",
+    )
+    return asker, asker_line
+
+
+def test_s4_k6_off_a_second_asker_cannot_borrow_what_a_first_already_lent_and_no_so_is_named():
+    """K6 under OFF: the donor id stays recorded, so the re-borrow guard still counts the
+    first location borrow. The refusal names the location, never the donor SO (S2)."""
+    with blank_session() as db:
+        world = _borrow_world(db)
+        component = _step_two_borrow(db, world)
+        _confirm_borrow(db, world, _component_to_payload(component, warehouse=world["donor_bin"]))
+
+        asker, asker_line = _second_asker(db, world)
+        db.commit()
+        donor_numbers = {
+            world["donor_order"].provisional_ref,
+            world["donor_order"].autocount_doc_no,
+            db.execute(
+                text("select so_number from sales_orders where id = :i"),
+                {"i": world["donor_cline"].sales_order_id},
+            ).scalar(),
+        }
+        with pytest.raises(AppException) as refused:
+            ProjectSupplyService(db).confirm(
+                asker,
+                ConfirmSupplyBody(lines=[ConfirmLine(
+                    project_line_id=asker_line.id,
+                    borrow=[_component_to_payload(component, warehouse=world["donor_bin"])],
+                )]),
+                actor_user_id=world["eling"],
+            )
+
+    reason = refused.value.detail["failing_lines"][0]["reason"]
+    assert world["donor_bin"].warehouse_code in reason, reason
+    for number in donor_numbers:
+        if number:
+            assert number not in reason, reason
+
+
+def test_s4_off_the_pool_borrow_half_is_a_location_borrow_owed_back_on_this_line():
+    with blank_session() as db:
+        company_id, eling, project, product = _world(db)
+        _group, sites = _group_sites(db)
+        own, pool = sites["BRW"]
+        _stock(db, product, pool, on_hand=60)
+        _lead_time(db, product, LEAD_DAYS)
+        _policy(db)
+        _seed_line(
+            db, company_id, project, product, pool, qty_ordered="60",
+            required_date=date.today() + timedelta(days=WINDOW_DAY + 60), line_no=9,
+            so_number=f"ZZTSO-POOL{_uid()[:4]}",
+        )
+        asker, asker_line, _cso, _cline = _seed_line(
+            db, company_id, project, product, own, qty_ordered="60", line_no=1,
+            so_number=f"ZZTSO-ASK{_uid()[:5]}",
+        )
+        components = _components(ProjectSupplyService(db).proposal_for(asker))
+        assert [(c["kind"], c["rung"]) for c in components] == [("borrow", "pool")]
+        component = components[0]
+        for field in DONOR_FIELDS:
+            assert component[field] is None, (field, component)
+        assert f"ordered back to {pool.warehouse_code} on this line" in component["reason"]
+        assert "debt lands in" not in component["reason"]
+
+        world = {"asker": asker, "asker_line": asker_line, "eling": eling}
+        _confirm_borrow(db, world, _component_to_payload(component, warehouse=pool))
+
+        rows = _order_backs(db)
+        superseded = (
+            db.query(SOSupplyDecision)
+            .filter(SOSupplyDecision.state == DECISION_SUPERSEDED)
+            .count()
+        )
+        assert len(rows) == 1, [(r.so_line_id, r.qty, r.note) for r in rows]
+        _assert_location_order_back(
+            rows[0], line=asker_line, order=asker, code=pool.warehouse_code, qty="60",
+        )
+        assert superseded == 0

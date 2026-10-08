@@ -861,13 +861,56 @@ export function decideComposition(
         way === 'borrow_order' ? `${donorLabel} holds none` : `only 0 free at ${donorLabel}`,
     };
   }
-  // Should fix 2 (review round 1): ONE candidate LINE has to cover the whole open quantity
-  // by itself - the server posts one component per `donor_core_line_id`, so summing several
-  // donor lines' free stock together and posting the total against only the first of them is
-  // a claim `_check_borrow` refuses at Confirm, far from this press. Each candidate line keeps
-  // its OWN running claim (never the pick's aggregate), so two ticked rows drawing on the same
-  // donor line still cannot over-claim it between them.
+  // Should fix 2 (review round 1), Borrow from another order: ONE candidate LINE has to
+  // cover the whole open quantity by itself - the server posts one component per
+  // `donor_core_line_id`, so summing several donor lines' free stock together and posting
+  // the total against only the first of them is a claim `_check_borrow` refuses at
+  // Confirm, far from this press. Each candidate line keeps its OWN running claim (never the
+  // pick's aggregate), so two ticked rows drawing on the same donor line still cannot
+  // over-claim it between them.
   const pickKey = `${way}|${contribution.item_code ?? ''}|${pick ?? ''}`;
+  const claimKeyOf = (candidate: BorrowCandidate) =>
+    `${pickKey}|${candidate.donor_core_line_id ?? candidate.warehouse_id}`;
+  if (way === 'borrow_other') {
+    // BORROW-LOCATION-ONLY S6: a location borrow names no donor, so the location's lines
+    // are summed in the server's order - one row per line, each within what that line has
+    // left. The server still checks each line on its own, so no row over-claims one.
+    const taken = new Map<string, number>();
+    const rows: { candidate: BorrowCandidate; minor: number }[] = [];
+    let remaining = openMinor;
+    for (const candidate of candidates) {
+      if (remaining <= 0) break;
+      const key = claimKeyOf(candidate);
+      const left = Math.max(
+        toMinor(candidate.free_qty) - (claimed?.get(key) ?? 0) - (taken.get(key) ?? 0),
+        0,
+      );
+      const take = Math.min(left, remaining);
+      if (take <= 0) continue;
+      taken.set(key, (taken.get(key) ?? 0) + take);
+      rows.push({ candidate, minor: take });
+      remaining -= take;
+    }
+    if (remaining > 0) {
+      return { skip: `only ${fromMinor(openMinor - remaining)} free at ${donorLabel}` };
+    }
+    for (const [key, minor] of taken) claimed?.set(key, (claimed.get(key) ?? 0) + minor);
+    return {
+      reserve: [],
+      borrow: rows.map(({ candidate, minor }) => ({
+        source: candidate.source,
+        warehouse_id: candidate.warehouse_id,
+        warehouse_code: candidate.warehouse_code,
+        donor_project_ref: candidate.donor_project_ref ?? null,
+        donor_project_id: candidate.donor_project_id ?? null,
+        qty: fromMinor(minor),
+        reason: '',
+        ...borrowPassThrough(candidate),
+      })),
+      timely_spo_qty: '0',
+      buy_qty: '0',
+    };
+  }
   let donor: BorrowCandidate | undefined;
   let bestLeft = 0;
   for (const candidate of candidates) {

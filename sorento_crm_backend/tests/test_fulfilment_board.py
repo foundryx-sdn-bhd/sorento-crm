@@ -4971,6 +4971,7 @@ def test_a_confirmed_group_borrow_round_trips_through_the_board_decision_dict():
     dropped.
     """
     with blank_session() as db:
+        borrow_from_order_on(db)
         actor = _user(db, f"{MARKER} planner")
         product = _product(db, f"ZZT-{_uid()[:6]}")
         # A hyphenated code, so it carries an ownership group (`group_of_warehouse_code`):

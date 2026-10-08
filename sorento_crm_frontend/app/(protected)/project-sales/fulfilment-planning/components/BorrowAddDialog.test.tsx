@@ -315,6 +315,24 @@ describe('BorrowAddDialog', () => {
     });
   });
 
+  // BORROW-LOCATION-ONLY S5: with "Borrow from another order" off the server names no
+  // donor, so a group-borrow row reads as its location alone, never "An unnamed sales order".
+  it('labels a donor-less group-borrow row by its location alone', () => {
+    renderDialog([
+      {
+        ...OTHER_LOCATION,
+        rung: 'group_borrow',
+        donor_core_line_id: 'core-9',
+        donor_so_number: null,
+        donor_line_no: null,
+      },
+    ]);
+
+    const table = screen.getByTestId('borrow-donor-table');
+    expect(within(table).queryByText(/unnamed sales order/i)).not.toBeInTheDocument();
+    expect(within(table).queryByText(/line /)).not.toBeInTheDocument();
+  });
+
   // -------------------------------------------------------------- AC-1.7 (fix round)
   it('renders the empty state when every candidate lacks a location, never the table', () => {
     renderDialog([{ ...OTHER_LOCATION, location: undefined }]);

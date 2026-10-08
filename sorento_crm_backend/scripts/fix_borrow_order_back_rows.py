@@ -19,10 +19,18 @@ Selects, structurally and never by a note regex, every ORDER_BACK row that is:
 * hung on a line of a DIFFERENT project sales order than its own OI header's.
 
 The borrowing line is the header's sales order's line whose `line_no` is the note's
-"to <ref> line <m>". `--apply` moves the row to that line, gives it that line's delivery
-date, and rewrites the note to the location form ("Order-back: <loc> lent <q> to <ref>
-line <m>"). A row whose line cannot be resolved is reported and left alone. `placed`,
-`actioned` and `cancelled` rows are never touched, and nothing is deleted.
+"to <ref> line <m>". A row is moved only when that line holds a borrow allocation naming
+the row's own line as its donor (`donor_impact_snapshot.donor_core_line_id`), which is
+what a step-2 / group borrow confirm writes; a step-3 document borrow writes none, so its
+donor-side remainder row is reported and left. The line must also carry the row's item,
+and row, order and line must share one company.
+
+`--apply` moves the row to that line, gives it the date confirm uses (the core line's
+required date, else the line's delivery date), rewrites the note to the location form
+("Order-back: <loc> lent <q> to <ref> line <m>"), and writes one audit row per move with
+the old and new line, date and note, so it can be reversed. Every other row is reported
+with why and left alone. `placed`, `actioned` and `cancelled` rows are never touched, and
+nothing is deleted.
 
 SAFETY / IDEMPOTENCY
 ---------------------
@@ -48,6 +56,8 @@ from sqlalchemy.orm import Session  # noqa: E402
 
 from app.database import SessionLocal  # noqa: E402
 from app.models.base import set_company_scope  # noqa: E402
+from app.models.order import SalesOrderLine  # noqa: E402
+from app.models.product import Product  # noqa: E402
 from app.models.project_so import (  # noqa: E402
     INQUIRY_PARTLY_LINKED,
     INQUIRY_RAISED,
@@ -57,17 +67,26 @@ from app.models.project_so import (  # noqa: E402
     OrderInquiryRow,
     ProjectSalesOrder,
     ProjectSalesOrderLine,
+    SOLineAllocation,
 )
+from app.services.audit_service import log_audit  # noqa: E402
 from app.services.project_order_inquiry_service import _dec, _qty_str  # noqa: E402
 
-#: The borrowing line, as every borrow order-back note names it ("... to <ref> line <m>").
-#: Read only to find WHICH line of the header's own order; the selection never uses it.
-_TARGET_LINE_RE = re.compile(r" to .+ line (\d+)")
+#: The borrowing line, as every borrow order-back note names it ("... lent <q> to <ref>
+#: line <m>"), read off the note's FIRST segment only: before an " (agent X)" tail and
+#: before any "; ..." a later pass appended. Read only to find WHICH line of the header's
+#: own order; the selection never uses it.
+_TARGET_LINE_RE = re.compile(r" lent \S+ to .+ line (\d+)\s*$")
 
 
 def _target_line_no(note: Optional[str]) -> Optional[int]:
-    match = _TARGET_LINE_RE.search(note or "")
+    head = (note or "").split(";", 1)[0].split(" (agent", 1)[0]
+    match = _TARGET_LINE_RE.search(head)
     return int(match.group(1)) if match else None
+
+
+def _reference(order: Any) -> str:
+    return (order.autocount_doc_no or order.provisional_ref or "") if order else ""
 
 
 def _candidates(
@@ -105,6 +124,22 @@ def _resolve(
     fixes: List[Dict[str, Any]] = []
     skipped: List[Dict[str, Any]] = []
     for row, order in _candidates(db):
+        donor_line = db.get(ProjectSalesOrderLine, row.so_line_id)
+        donor_order = db.get(ProjectSalesOrder, donor_line.project_sales_order_id)
+        report = {
+            "row_id": str(row.id),
+            "item_code": row.item_code,
+            "qty": _qty_str(_dec(row.qty)),
+            "stock_location": row.stock_location,
+            "from_so": _reference(donor_order),
+            "from_line_no": donor_line.line_no,
+            "to_so": _reference(order),
+            "note": row.note,
+        }
+
+        def skip(reason: str) -> None:
+            skipped.append({**report, "reason": reason})
+
         line_no = _target_line_no(row.note)
         target = (
             db.query(ProjectSalesOrderLine)
@@ -117,33 +152,58 @@ def _resolve(
             else None
         )
         if target is None:
-            skipped.append(
-                {
-                    "row_id": str(row.id),
-                    "note": row.note,
-                    "reason": "the borrowing line cannot be resolved from the note",
-                }
+            skip("the borrowing line cannot be resolved from the note")
+            continue
+        if not (str(row.company_id) == str(order.company_id) == str(target.company_id)):
+            skip("the row, its order and the borrowing line are not one company")
+            continue
+        item = db.get(Product, target.product_id) if target.product_id else None
+        if item is None or (item.product_code or "") != (row.item_code or ""):
+            skip("the borrowing line carries a different item")
+            continue
+        borrowed = (
+            db.query(SOLineAllocation.id)
+            .filter(
+                SOLineAllocation.so_line_id == target.id,
+                SOLineAllocation.donor_impact_snapshot["donor_core_line_id"].astext
+                == str(donor_line.core_sales_order_line_id or ""),
+            )
+            .first()
+        )
+        if borrowed is None:
+            skip(
+                "no borrow on the borrowing line names this donor line (a step-3 "
+                "document borrow's remainder, or not a borrow at all)"
             )
             continue
-        reference = order.autocount_doc_no or order.provisional_ref or ""
+        core = (
+            db.get(SalesOrderLine, target.core_sales_order_line_id)
+            if target.core_sales_order_line_id
+            else None
+        )
         fixes.append(
             {
-                "row_id": str(row.id),
-                "item_code": row.item_code,
-                "qty": _qty_str(_dec(row.qty)),
-                "stock_location": row.stock_location,
+                **report,
+                "to_line_no": target.line_no,
                 "from_so_line_id": str(row.so_line_id),
                 "to_so_line_id": str(target.id),
                 "old_delivery_date": row.delivery_date,
-                "new_delivery_date": target.delivery_date,
+                # The date confirm gives a location order-back (`_location_order_backs`).
+                "new_delivery_date": (
+                    getattr(core, "required_date", None) or target.delivery_date
+                ),
                 "old_note": row.note,
                 "new_note": (
                     f"Order-back: {row.stock_location or ''} lent {_qty_str(_dec(row.qty))} "
-                    f"to {reference} line {target.line_no}"
+                    f"to {_reference(order)} line {target.line_no}"
                 ),
             }
         )
     return fixes, skipped
+
+
+def _iso(value: Any) -> Optional[str]:
+    return value.isoformat() if value is not None else None
 
 
 def plan(db: Session) -> List[Dict[str, Any]]:
@@ -166,6 +226,26 @@ def _apply(db: Session, fixes: Sequence[Dict[str, Any]]) -> int:
         row.so_line_id = fix["to_so_line_id"]
         row.delivery_date = fix["new_delivery_date"]
         row.note = fix["new_note"]
+        # One audit row per move, carrying everything needed to put it back.
+        log_audit(
+            db,
+            "project_order_inquiry_rows",
+            str(row.id),
+            "UPDATE",
+            old_values={
+                "so_line_id": fix["from_so_line_id"],
+                "delivery_date": _iso(fix["old_delivery_date"]),
+                "note": fix["old_note"],
+            },
+            new_values={
+                "so_line_id": fix["to_so_line_id"],
+                "delivery_date": _iso(fix["new_delivery_date"]),
+                "note": fix["new_note"],
+            },
+            company_id=row.company_id,
+            description="Borrow order-back moved from the donor's line to the borrowing line",
+            reason="PLAN-borrow-location-only-8oct.md B6",
+        )
         applied += 1
     db.flush()
     return applied
@@ -176,13 +256,17 @@ def run(db: Session, apply: bool = False) -> Dict[str, Any]:
     fixes, skipped = _resolve(db)
     for fix in fixes:
         print(
-            f"  {fix['row_id']} {fix['item_code']} qty {fix['qty']} at "
-            f"{fix['stock_location']}: line {fix['from_so_line_id']} "
-            f"({fix['old_delivery_date']}) -> line {fix['to_so_line_id']} "
-            f"({fix['new_delivery_date']}); note {fix['new_note']!r}"
+            f"  {fix['item_code']} qty {fix['qty']} at {fix['stock_location']}: "
+            f"{fix['from_so']} line {fix['from_line_no']} ({_iso(fix['old_delivery_date'])}) "
+            f"-> {fix['to_so']} line {fix['to_line_no']} ({_iso(fix['new_delivery_date'])}); "
+            f"note {fix['new_note']!r} [row {fix['row_id']}]"
         )
     for skip in skipped:
-        print(f"  SKIPPED ({skip['reason']}): {skip['row_id']} - note: {skip['note']!r}")
+        print(
+            f"  SKIPPED ({skip['reason']}): {skip['item_code']} qty {skip['qty']} at "
+            f"{skip['stock_location']} on {skip['from_so']} line {skip['from_line_no']}, "
+            f"OI of {skip['to_so']} - note: {skip['note']!r} [row {skip['row_id']}]"
+        )
     applied = _apply(db, fixes) if apply and fixes else 0
     return {"fixes": fixes, "applied": applied, "skipped": skipped}
 

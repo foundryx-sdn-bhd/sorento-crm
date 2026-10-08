@@ -1205,3 +1205,53 @@ describe('decideComposition: borrow_other never resolves to a donor-named candid
     expect(result.borrow?.[0].donor_so_number ?? null).toBeNull();
   });
 });
+
+/**
+ * BORROW-LOCATION-ONLY S6 (B1, "summed per location"): with "Borrow from another order" off,
+ * the candidates at a location name no donor SO, and "Borrow other location" draws across
+ * that location's candidate lines in order - one borrow row per donor line, each within what
+ * that line has left - rather than needing ONE line to cover the whole quantity.
+ */
+describe('decideComposition: borrow_other sums a location across its donor-less lines (S6)', () => {
+  const impact = { free_before: '4', free_after_full_borrow: '0', committed_qty: '0' };
+  const line = (core: string) => ({
+    source: 'other_location' as const,
+    warehouse_code: 'BRW-BB',
+    warehouse_id: 'wh-brw-bb',
+    free_qty: '4',
+    donor_impact: impact,
+    rung: 'order_borrow',
+    donor_so_number: null,
+    donor_core_line_id: core,
+  });
+
+  it('covers a need of 6 with 4 + 2 off two lines at BRW-BB', () => {
+    const result = decideComposition(
+      decideRow({ qty: '6', borrow_candidates: [line('core-a'), line('core-b')] }),
+      'borrow_other',
+      'BRW-BB',
+    );
+
+    expect(result.skip).toBeUndefined();
+    expect(
+      (result.borrow ?? []).map((b) => [b.donor_core_line_id, b.qty, b.warehouse_id]),
+    ).toEqual([
+      ['core-a', '4', 'wh-brw-bb'],
+      ['core-b', '2', 'wh-brw-bb'],
+    ]);
+  });
+
+  it('keeps a running claim per line, so a second row draws what the first left', () => {
+    const claimed = new Map<string, number>();
+    const candidates = [line('core-a'), line('core-b')];
+    decideComposition(decideRow({ qty: '6', borrow_candidates: candidates }), 'borrow_other', 'BRW-BB', claimed);
+    const second = decideComposition(
+      decideRow({ key: 'so-2|1', qty: '3', borrow_candidates: candidates }),
+      'borrow_other',
+      'BRW-BB',
+      claimed,
+    );
+
+    expect(second.skip).toBe('only 2 free at BRW-BB');
+  });
+});

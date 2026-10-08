@@ -1627,6 +1627,7 @@ def test_a_same_agent_donor_ranked_above_this_line_is_refused_without_an_authori
     flag is a client claim, and the rule it gates is a permission.
     """
     with blank_session() as db:
+        borrow_from_order_on(db)
         company_id, eling, order, line, donor_cline, own = _same_agent_world(db)
 
         with pytest.raises(AppException) as refused:
@@ -1647,6 +1648,7 @@ def test_a_same_agent_donor_ranked_above_this_line_is_refused_without_an_authori
 
 def test_the_same_borrow_confirms_once_the_reason_names_who_authorised_it():
     with blank_session() as db:
+        borrow_from_order_on(db)
         company_id, eling, order, line, donor_cline, own = _same_agent_world(db)
 
         result = ProjectSupplyService(db).confirm(
