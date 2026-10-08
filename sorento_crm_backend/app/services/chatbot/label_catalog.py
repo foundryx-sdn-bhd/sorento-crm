@@ -94,6 +94,19 @@ LABELS: dict[str, dict[str, str]] = {
     },
     "Here are the results.": {"ms": "Berikut ialah hasilnya.", "zh": "以下是结果。"},
     "PRODUCT DISCONTINUED": {"ms": "PRODUK DIHENTIKAN", "zh": "产品已停产"},
+    # PRODUCT-ALTERNATIVES (card Q4, owner 8 Oct 2026): the label of the line naming a stored
+    # alternative, and the two refer-bearing verdicts without their refer (it drops when an
+    # alternative printed under the line has stock). The ms and zh are the lane's rendering,
+    # flagged on PR #1533 for the owner to confirm.
+    "Alternative": {"ms": "Alternatif", "zh": "替代产品"},
+    "No stock and no incoming.": {
+        "ms": "Tiada stok dan tiada stok masuk.",
+        "zh": "没有库存，也没有到货。",
+    },
+    "the quantity is more than what I can confirm here.": {
+        "ms": "kuantiti ini melebihi apa yang boleh saya sahkan di sini.",
+        "zh": "这个数量超出我在这里可以确认的范围。",
+    },
     # Slice 2: PO / SO / SPO / orders rows. PO, SO, SPO and GR stay as printed (owner Q3).
     "Order Number": {"ms": "No. Pesanan", "zh": "订单号"},
     "Customer": {"ms": "Pelanggan", "zh": "客户"},
