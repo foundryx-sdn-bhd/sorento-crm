@@ -378,6 +378,10 @@ describe('BorrowAddDialog', () => {
     expect(rows).toHaveLength(2);
     fireEvent.click(within(rows[1]).getByRole('radio'));
     expect(within(rows[1]).getByRole('radio')).toBeChecked();
+    // Browser re-check (d77b15fbc): with the switch on, the two rows at one bin are told
+    // apart by the order each one names, as the user guide says ("SO371334 line 2").
+    expect(within(rows[0]).getByText('SO371334 line 2')).toBeInTheDocument();
+    expect(within(rows[1]).getByText('SO371335 line 7')).toBeInTheDocument();
   });
 
   // R2: the merged nameless row is the BIN, so it offers the bin's summed free stock and

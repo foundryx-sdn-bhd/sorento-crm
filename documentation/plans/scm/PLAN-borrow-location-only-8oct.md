@@ -1,6 +1,6 @@
 # PLAN: borrow = location only (BORROW-LOCATION-ONLY)
 
-Status: Review (built, fix round 1 + browser findings in, second review pass running; hand-test posted; 8 Oct 2026). Feature track, size L (engine +
+Status: Merge-ready pending CI and owner hand test (reviewer READY, security READY, browser pass on the built head; 8 Oct 2026). Feature track, size L (engine +
 confirm write + Decide UI + guarded data script). Cloud lane, PR #1534. No code before the
 card's answers.
 
@@ -259,3 +259,21 @@ Backend paths are under `sorento_crm_backend/`.
 - Data script: the dry-run reports and writes nothing. `--apply` re-points only open, unlinked,
   donor-form rows and is idempotent on a second run.
 - FE: the Decide menu has no "Borrow from another order"; the strip label reads "Borrow".
+
+## Follow-ups (not in this lane)
+
+- **F1. Add-a-borrow default quantity.** The dialog opens on the row's free stock when the
+  server states no residual need (`openingQty`, unchanged from main). A merged nameless bin now
+  shows the bin total, so a 6-unit line can open on 8. It is a suggested value only; confirm
+  refuses an over-borrow. Fix: pass the line's open qty into the dialog.
+- **F2. Step 3 "borrow incoming"** still names the donor SO and keeps its donor-side remainder
+  row in both switch states (K9). It becomes location-only too only if the owner asks.
+- **F3. OI detail Lines tab** does not render the row's note ("Order-back: ..."). It is in the
+  DB and in the handover email REMARK, as before this lane.
+- **F4. Location ledger in Add a borrow.** Expanding a bin lists the SO documents holding stock
+  there in both states. This is the location's own stock ledger. Owner decision whether to hide
+  it under OFF.
+- **F5. Local-buy routing nit.** With local routing on, the `order_back` branch of
+  `refresh_for_decision` (`project_order_inquiry_service.py` ~1007-1025) cancels and re-raises a
+  raised borrow row on a local Buy line. The end state is correct, but there is a spurious
+  handover.

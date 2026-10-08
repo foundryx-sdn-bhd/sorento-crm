@@ -441,9 +441,10 @@ function binStock(members: BorrowCandidate[]): BorrowCandidate[] {
  * `undefined` for a plain free-stock donor: the code alone already fully identifies it.
  */
 function donorLabel(candidate: BorrowCandidate): string | undefined {
-  if (candidate.rung === 'group_borrow') {
+  if (candidate.rung === 'group_borrow' || candidate.rung === 'order_borrow') {
     // With "Borrow from another order" off no donor is named: the location is the row
-    // (BORROW-LOCATION-ONLY S5).
+    // (BORROW-LOCATION-ONLY S5). On, a step-2 row names its order too, so two donors at one
+    // bin read apart.
     return candidate.donor_so_number ? donorSoLabel(candidate) : undefined;
   }
   if (candidate.source === 'other_project') {
