@@ -578,7 +578,11 @@ def promo_filter(parse_output: dict[str, Any], db: Any) -> dict[str, list[str]]:
         # A code the table does not list is the parser guessing: it behaves as no kind.
         out["promotion_types"] = [kind.strip()]
     if out and db is not None:
-        ids = [row["id"] for _e, row in brand_entity_rows(entities, active_brands(db))]
+        # Every live row the brand name names: one brand can carry a row per company.
+        live = active_brands(db)
+        ids: list[str] = []
+        for e, _row in brand_entity_rows(entities, live):
+            ids += [r["id"] for r in exact_brand_rows(live, brand_identity_word(e)) if r["id"] not in ids]
         if ids:
             out["brand_ids"] = ids
     return out
