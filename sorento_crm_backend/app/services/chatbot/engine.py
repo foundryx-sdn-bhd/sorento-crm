@@ -5778,10 +5778,43 @@ def _run_stages_body(  # noqa: PLR0915
                 answer_parse_output or {}, db, resolver_payload.get("gate")
             )
             if ask_back:
+                from app.services.chatbot.turn import pending as pending_mod
+
+                text_back, choices = ask_back
                 stage[0] = "replied"
-                answer = turn_compose.Answer(text=ask_back)
+                # The which-question is an open question: its options answer by number or
+                # by their own words, and the pick is the promotion subject (a category).
+                question = (
+                    pending_mod.ask(
+                        "category_pick",
+                        [
+                            {
+                                "position": i + 1,
+                                "label": choice,
+                                "code": choice.lower(),
+                                "entity_type": "category",
+                                "payload": {"value": choice.lower()},
+                            }
+                            for i, choice in enumerate(choices)
+                        ],
+                        asked_at_turn=turn_no,
+                        expects="pick",
+                        payload={"domain": "promotion"},
+                    )
+                    if choices
+                    else None
+                )
+                answer = turn_compose.Answer(text=text_back, question=question)
                 bridge_answered = True
 
+        plan_tier_ask = bool(
+            plan.ask is not None
+            and plan.ask.kind == "tier_pick"
+            and "promotion" in plan.domains
+            and isinstance(resolver_payload, dict)
+            and isinstance(resolver_payload.get("tier_gate"), dict)
+            and len(resolver_payload["tier_gate"].get("entitled_tiers") or []) > 1
+        )
         if (
             answer is None
             and branch_kind in ("business_query", "check_promotion")
@@ -5810,11 +5843,26 @@ def _run_stages_body(  # noqa: PLR0915
                     and resolver_payload["tier_gate"].get("tier_ask") is True
                     and resolver_payload.get("_exit_kind") == "not_found"
                 )
+                # PROMO-SUBJECT-FILTER (owner hand test): the plan's own promotion tier ask
+                # (`turn/apply.py`) is the same menu, probed and stamped here, never the
+                # generic unstamped roster.
+                or plan_tier_ask
             )
         ):
             from app.services.chatbot import answer_bridge
             from app.services.chatbot import copy as copy_mod
+            from app.services.chatbot.lanes.business import tier_gate as tier_gate_mod
 
+            # The brand the conversation settled rides the menu turn too (a which-question's
+            # answer names no brand), so the stamps and the pick narrow by the same brand.
+            menu_entities = list((answer_parse_output or {}).get("entities") or [])
+            if not any(isinstance(e, dict) and e.get("hint") == "brand" for e in menu_entities):
+                menu_entities += [
+                    {"raw": b, "hint": "brand", "canonical_code": b, "current_message": False, "confident": True}
+                    for b in state_out.focus.brands or []
+                    if isinstance(b, str) and b.strip()
+                ]
+                answer_parse_output = {**(answer_parse_output or {}), "entities": menu_entities}
             # PROMO-SUBJECT-FILTER AC-9: this menu is probed like every other, with the
             # same subject, so each level line is stamped and an all-empty or failed
             # probe never shows one.
@@ -5824,6 +5872,8 @@ def _run_stages_body(  # noqa: PLR0915
                     "tier_gate": (
                         resolver_payload
                         if resolver_payload.get("_exit_kind") == "access_ask"
+                        else tier_gate_mod.as_tier_ask(resolver_payload["tier_gate"])
+                        if plan_tier_ask and not resolver_payload["tier_gate"].get("tier_ask")
                         else resolver_payload.get("tier_gate")
                     ),
                     "ctx": {
@@ -5853,6 +5903,7 @@ def _run_stages_body(  # noqa: PLR0915
             if answer is None:
                 answer = answer_bridge.question_for(
                     bridge_payload,
+                    fetch=probed.get("fetch") if plan_tier_ask else None,
                     parser=answer_parse_output,
                     ctx=ctx,
                     canned=copy_mod.resolve(db),

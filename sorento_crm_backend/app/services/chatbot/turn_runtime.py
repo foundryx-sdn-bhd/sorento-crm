@@ -620,21 +620,30 @@ def promo_filter(parse_output: dict[str, Any], db: Any, gate: Any = None) -> dic
     return out
 
 
-def promo_subject_ask_back(parse_output: dict[str, Any], db: Any, gate: Any = None) -> str | None:
+def promo_subject_ask_back(
+    parse_output: dict[str, Any], db: Any, gate: Any = None
+) -> tuple[str, list[str]] | None:
     """PROMO-SUBJECT-FILTER AC-7, AC-23, AC-25: the ask-back for a promotion subject the
-    catalogue cannot hold as one thing, else None. A product type the grounding could not
-    place, or a subject term the membership read (`filter_specs`, the one the promotions
-    route filters by) binds to nothing, is said back as typed; one word that heads several
-    values of a registry key ("cabinet") asks which, listing them."""
+    catalogue cannot hold as one thing, as `(text, options)`, else None. A product type the
+    grounding could not place, or a subject term the membership read (`filter_specs`, the one
+    the promotions route filters by) binds to nothing, is said back as typed (no options);
+    one word that heads several values of a registry key ("cabinet") asks which, the values
+    its options. Only what THIS message named counts (a carried subject was already asked
+    about), and a message that answers an open numbered question is never asked back."""
+    if jsc.array(parse_output.get("reference_positions")):
+        return None
+    own = {
+        **parse_output,
+        "entities": [
+            e for e in parse_output.get("entities") or [] if isinstance(e, dict) and e.get("current_message") is not False
+        ],
+    }
     unknown = [
         str(e.get("raw") or "").strip()
-        for e in parse_output.get("entities") or []
-        if isinstance(e, dict)
-        and e.get("spec_key") == "product_type"
-        and e.get("spec_value") is None
-        and str(e.get("raw") or "").strip()
+        for e in own["entities"]
+        if e.get("spec_key") == "product_type" and e.get("spec_value") is None and str(e.get("raw") or "").strip()
     ]
-    terms = promo_filter(parse_output, db, gate).get("scope_terms") or [] if db is not None else []
+    terms = promo_filter(own, db, gate).get("scope_terms") or [] if db is not None else []
     if not unknown and terms:
         from app.services.chatbot.head import grounding
         from app.services.product_spec_search import filter_specs
@@ -645,14 +654,14 @@ def promo_subject_ask_back(parse_output: dict[str, Any], db: Any, gate: Any = No
             # which of a registry key's values it means.
             options = [] if grounding.names_a_class_label(db, term) else grounding.several_values(term, vocab)
             if options:
-                return "\n".join([f"Which {term} do you mean?", *options])
+                return "\n".join([f"Which {term} do you mean?", *options]), options
         for term in terms:
             found = filter_specs(db, scope_terms=[term])
             if found["clause"] is None or term in found["unrecognized_terms"]:
                 unknown.append(term)
     if not unknown:
         return None
-    return f'I could not match "{", ".join(unknown)}" to a product type.\nWhich product or brand do you mean?'
+    return f'I could not match "{", ".join(unknown)}" to a product type.\nWhich product or brand do you mean?', []
 
 
 def promotion_kind_rows(db: Session) -> list[dict[str, Any]]:

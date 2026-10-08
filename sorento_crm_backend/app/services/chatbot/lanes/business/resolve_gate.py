@@ -655,7 +655,9 @@ def resolve_entity_body(
         tier_gate_dict.get("access_levels_recomposed") if tier_gate_dict is not None else None
     )
     body: dict[str, Any] = {
-        "query": _query_text(ctx),
+        # A message that answers an open numbered question ("3") is a position, not words to
+        # search: its text never reaches the resolver as a query (owner hand test, 8 Oct 2026).
+        "query": "" if jsc.array(parse_output.get("reference_positions")) else _query_text(ctx),
         "match_mode": match_mode,
         "tokens": [_token_of(x) for x in entities],
         # RESOLVE-SEMANTIC-FALLBACK: the pre-fold text behind each token, positionally

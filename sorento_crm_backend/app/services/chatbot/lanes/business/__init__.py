@@ -2277,6 +2277,35 @@ def run_fetch(
             none_live = _nothing_live_of_kind(semantic_input, db, services, tier_gate)
             if none_live is not None:
                 return none_live
+    if tool_name == fetch_mod.TIER_PROBE_TOOL and isinstance(envelope, dict) and isinstance(envelope.get("items"), list):
+        # One line per promotion: the same promotion file copied under two companies is one
+        # promotion to the customer (owner hand test, 8 Oct 2026).
+        seen_titles: set[str] = set()
+        kept: list[Any] = []
+        for it in envelope["items"]:
+            title = jsc.nullish_str(jsc.get(it, "title")).strip().casefold() if isinstance(it, dict) else ""
+            if title and title in seen_titles:
+                continue
+            if title:
+                seen_titles.add(title)
+            kept.append(it)
+        envelope = {**envelope, "items": kept}
+    picked_tier = (tier_gate or {}).get("tier_pick")
+    if (
+        tool_name == fetch_mod.TIER_PROBE_TOOL
+        and picked_tier
+        and semantic_input.get("scope_terms")
+        and isinstance(envelope, dict)
+        and envelope.get("has_result") is False
+    ):
+        # PROMO-SUBJECT-FILTER owner hand test: a picked level with nothing for the subject is
+        # one line, the same fact the menu stamped ("- no promotion"); never a miss sentence.
+        from app.services.chatbot.lanes.business.answer import TIER_DISPLAY
+
+        tiers = picked_tier if isinstance(picked_tier, list) else [picked_tier]
+        levels = " or ".join(TIER_DISPLAY.get(str(t), str(t).replace("_", " ")) for t in tiers)
+        subject = ", ".join(str(t) for t in semantic_input["scope_terms"])
+        return _fixed_reply(f"No {levels} promotion for {subject}.")
     if trace is not None:
         # A9: ONE call, ONE tool, ONE envelope this turn - the same "the read" this
         # whole function is named for. `envelope` rides through `trace.add`'s own

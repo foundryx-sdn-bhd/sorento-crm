@@ -148,6 +148,24 @@ def needs_tier_ask(
     return len(jsc.array(entitled_tiers)) > 1
 
 
+def probe_plan(tiers: Any, query_brands: Any, names: Any) -> list[dict[str, Any]]:
+    """One probe per entitled tier, its access levels from the same `recompose` the answer
+    lane uses, so the availability probe asks exactly what the customer's pick would ask."""
+    return [{"tier": t, "access_levels": recompose([t], query_brands, names)["access_levels"]} for t in tiers]
+
+
+def as_tier_ask(gate: dict[str, Any]) -> dict[str, Any]:
+    """`gate` (this function's own output) turned into the ask it would be with no tier
+    stated: the plan's own tier question (`turn/apply.py`) is asked over every held tier."""
+    return {
+        **gate,
+        "tier_stated": [],
+        "tier_ask": True,
+        "tier_proceed": False,
+        "tier_probe_plan": probe_plan(gate.get("entitled_tiers") or [], gate.get("query_brands") or [], gate.get("name") or []),
+    }
+
+
 def tier_gate(
     aggregate_item: dict[str, Any],
     *,
@@ -273,14 +291,7 @@ def tier_gate(
     # D14: the per-tier probe plan, from the SAME `recompose` the answer lane uses, so the
     # availability probe asks exactly the question the customer's pick would ask. Empty
     # off the ask lane, so every other turn is byte-inert.
-    tier_probe_plan = (
-        [
-            {"tier": t, "access_levels": recompose([t], query_brands, names)["access_levels"]}
-            for t in ent_map["tiers"]
-        ]
-        if tier_ask
-        else []
-    )
+    tier_probe_plan = probe_plan(ent_map["tiers"], query_brands, names) if tier_ask else []
 
     return {
         **j,
