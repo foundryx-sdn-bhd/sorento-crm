@@ -6,7 +6,6 @@ import { useDeferredRowAction } from '@/hooks/useDeferredRowAction';
 import {
   addProductAlternative,
   getProductAlternatives,
-  resetProductAlternativesAuto,
 } from '../services/productAlternativeService';
 
 const alternativesKey = (productId: string | undefined) => ['product-alternatives', productId];
@@ -32,15 +31,17 @@ export function useAddProductAlternative(productId: string) {
   });
 }
 
+/**
+ * Reset to auto is a server-deferred action on the product (hand-added links go with it),
+ * with the same Cancel window as unlink.
+ */
 export function useResetProductAlternativesAuto(productId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: () => resetProductAlternativesAuto(productId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: alternativesKey(productId) });
-      toast.success('Alternatives reset to auto');
-    },
-    onError: (error: Error) => toast.error(error.message || 'Failed to reset alternatives'),
+  return useDeferredRowAction({
+    actionKey: 'product_alternative.reset_auto',
+    entityType: 'product_alternatives',
+    verb: 'Resetting',
+    successMessage: 'Alternatives reset to auto',
+    invalidateKeys: [alternativesKey(productId)],
   });
 }
 

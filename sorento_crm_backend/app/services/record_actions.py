@@ -77,6 +77,12 @@ def _unlink_product_alternative(db: Session, payload: dict):
     return unlink(db, _entity_id(payload))
 
 
+def _reset_product_alternatives(db: Session, payload: dict):
+    from app.services.product_alternative_service import reset_auto
+
+    return reset_auto(db, _entity_id(payload))
+
+
 def _delete_product_combo(db: Session, payload: dict):
     from app.services.product_combo_service import ProductComboService
 
@@ -317,6 +323,21 @@ register(
         window=WINDOW_REVERSIBLE,
         permission="master_data.products.edit",
         label="Unlink alternative",
+    )
+)
+
+# Reset to auto (reviewer round 1): every link of the product goes - hand-added ones
+# included, which nothing can bring back - and the -NEW rule derives it again. Parked on
+# the PRODUCT (entity type `product_alternatives`, so it never collides with a pending
+# product delete), destructive window.
+register(
+    FormAction(
+        key="product_alternative.reset_auto",
+        entity_types=("product_alternatives",),
+        execute=_reset_product_alternatives,
+        window=WINDOW_DESTRUCTIVE,
+        permission="master_data.products.edit",
+        label="Reset alternatives",
     )
 )
 

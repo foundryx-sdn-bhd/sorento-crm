@@ -1567,8 +1567,15 @@ class StockService:
                     summary_block["flags"]["alternatives"] = [
                         a.product_code for a in alternatives
                     ]
+                    # Its own block only when the caller NAMED products: a catalogue
+                    # page ("what stock do you have?") already pages every product, and
+                    # appending would grow each page past its limit.
                     for alternative in alternatives:
-                        if alternative.id not in listed and alternative.id not in appended:
+                        if (
+                            named_ids
+                            and alternative.id not in listed
+                            and alternative.id not in appended
+                        ):
                             appended.append(alternative.id)
                 summary.append(summary_block)
             summary.extend(_summary_block(pid) for pid in appended)
@@ -1714,7 +1721,7 @@ class StockService:
             key = code.strip().lower() if code else "\x00" + pid
             merged_ids.setdefault(key, []).append(pid)
 
-        def _judge(group_ids: list[str], ask: Optional[int]) -> dict:
+        def _judge(group_ids: list[str], ask: Optional[int], *, nested: bool = False) -> dict:
             # `ordered_ids` is already in page order, so the first id of a group is the
             # first row of it on this page. That id is what the entry, the task's slot
             # and the next fetch's `requested_quantities` key all carry - and, below,
@@ -1780,7 +1787,10 @@ class StockService:
                     _shipment_id, eta_date, attachment_id = shipment
                     # Issue #1328: `+ y` only when this contact's ETA offset switch is on.
                     entry["eta"] = visible_eta(eta_date, y, contact_rules).strftime("%d/%m/%Y")
-                    if contact_rules.packing_list_allowed:
+                    # PRODUCT-ALTERNATIVES: a nested alternative names its ETA only; the
+                    # packing list file goes out for the product asked about, never for
+                    # an `Alternative:` line (the engine sends top-level entries' files).
+                    if contact_rules.packing_list_allowed and not nested:
                         attachment = (
                             self.db.query(Attachment)
                             .filter(Attachment.id == attachment_id)
@@ -1789,6 +1799,7 @@ class StockService:
                         entry["packing_list"] = _attachment_payload(attachment)
             return entry
 
+        page_entry_ids = {pid for group in merged_ids.values() for pid in group}
         entries = []
         for group_ids in merged_ids.values():
             # D20, across the merge: a quantity given for ANY of the merged ids is a
@@ -1812,12 +1823,16 @@ class StockService:
                 alternative_groups: dict[str, list[str]] = {}
                 for gid in group_ids:
                     for alternative in alternatives_by_pid.get(gid) or []:
+                        # Asked for in its own right on this page: it already has its own
+                        # line, a second one under the old code would say it twice.
+                        if alternative.id in page_entry_ids:
+                            continue
                         key = (alternative.product_code or "").strip().lower() or "\x00" + alternative.id
                         group = alternative_groups.setdefault(key, [])
                         if alternative.id not in group:
                             group.append(alternative.id)
                 entry["alternatives"] = [
-                    _judge(alternative_group, ask)
+                    _judge(alternative_group, ask, nested=True)
                     for alternative_group in alternative_groups.values()
                 ]
             entries.append(entry)

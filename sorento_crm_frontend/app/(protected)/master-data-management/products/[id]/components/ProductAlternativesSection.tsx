@@ -38,7 +38,7 @@ export default function ProductAlternativesSection({ productId }: { productId: s
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => reset.mutate()}
+                onClick={() => reset.run({ id: productId, subject: 'alternatives' })}
                 disabled={reset.isPending}
               >
                 <RotateCcw className="size-4" />
@@ -129,7 +129,7 @@ export default function ProductAlternativesSection({ productId }: { productId: s
         open={pickerOpen}
         onOpenChange={setPickerOpen}
         title="Add alternative"
-        description="Pick a product to offer as an alternative."
+        description="Pick a product."
         confirmLabel="Add alternative"
         excludeIds={excludeIds}
         submitting={add.isPending}

@@ -355,6 +355,13 @@ class Product(Base, CompanyScopedMixin):
         Index("ix_products_product_code", "product_code"),
         Index("ix_products_barcode", "barcode"),
         Index("ix_products_variant_of_id", "variant_of_id"),
+        # PRODUCT-ALTERNATIVES: the -NEW rule's per-company normalised-code probe
+        # (`product_alternative_service._norm_sql`, migration prod_alt_0001_tables).
+        Index(
+            "ix_products_company_norm_code",
+            "company_id",
+            text("btrim(upper(regexp_replace(product_code, '\\s*-\\s*', '-', 'g')))"),
+        ),
         Index(
             "ix_products_variant_link_manual",
             "variant_link_manual",

@@ -3,9 +3,10 @@
     GET    /api/v1/master-data/products/{id}/alternatives
            -> {"data": {"alternatives_manual": bool, "alternatives": [row]}}
     POST   /api/v1/master-data/products/{id}/alternatives  {"alternative_product_id"} -> 201 row
-    POST   /api/v1/master-data/products/{id}/alternatives/reset-auto -> 200 (same shape as GET)
     Unlink = server-deferred pending action `product_alternative.unlink` on the link row
     (`/api/v1/pending-actions`), reversible window.
+    Reset to auto = server-deferred `product_alternative.reset_auto` on the product
+    (entity type `product_alternatives`), destructive window (reviewer round 1).
 
 row = {id, alternative_product_id, product_code, product_name, source, is_discontinued}.
 Read gated on `master_data.products.view`, writes on `master_data.products.edit` (the
@@ -34,7 +35,7 @@ from app.services.product_alternative_service import (
     SOURCE_MANUAL,
     reconcile_new_alternatives,
 )
-from app.services.record_actions import _unlink_product_alternative
+from app.services.record_actions import _reset_product_alternatives, _unlink_product_alternative
 from app.services.user_service import UserPermissionService
 
 from tests._mc_lookup_seed import MOCHA_ID, product, seed_mocha
@@ -202,13 +203,58 @@ def test_reset_auto_clears_manual_and_rederives(db, pair, monkeypatch):
     _unlink_product_alternative(db, {"entity_id": link.id})
     db.flush()
 
-    response = client.post(f"{_base(old)}/reset-auto")
-    assert response.status_code == 200, response.text
-    data = response.json()["data"]
+    _reset_product_alternatives(db, {"entity_id": old.id})
+
+    data = client.get(_base(old)).json()["data"]
     assert data["alternatives_manual"] is False
     assert [(r["alternative_product_id"], r["source"]) for r in data["alternatives"]] == [
         (new.id, SOURCE_AUTO_NEW)
     ]
+
+
+def test_reset_auto_is_a_registered_destructive_record_action():
+    from app.services.form_action_grace import WINDOW_DESTRUCTIVE
+    from app.services.form_action_registry import get_action
+
+    action = get_action("product_alternative.reset_auto")
+    assert action.permission == EDIT
+    assert action.window == WINDOW_DESTRUCTIVE
+    assert action.entity_types == ("product_alternatives",)
+
+
+def test_reset_auto_parks_and_writes_nothing_until_the_window_lapses(db, pair, monkeypatch):
+    old, new = pair
+    client = _client(db, {VIEW, EDIT}, monkeypatch)
+    other = product(db, company_id=DEFAULT_COMPANY_ID, code=unique_code("ZZALTX"))
+    client.post(_base(old), json={"alternative_product_id": other.id})
+    parked = client.post(
+        "/api/v1/pending-actions",
+        json={
+            "action_key": "product_alternative.reset_auto",
+            "entity_type": "product_alternatives",
+            "entity_id": old.id,
+            "payload": {},
+        },
+    )
+    assert parked.status_code == 202, parked.text
+    assert len(client.get(_base(old)).json()["data"]["alternatives"]) == 2
+
+
+def test_reset_route_is_gone():
+    from app.api.v1.master_data import product_alternatives as routes
+
+    assert not any("reset-auto" in getattr(r, "path", "") for r in routes.router.routes)
+
+
+def test_add_refuses_an_inactive_product(db, pair, monkeypatch):
+    old, _ = pair
+    inactive = product(db, company_id=DEFAULT_COMPANY_ID, code=unique_code("ZZALTI"))
+    inactive.is_active = False
+    db.flush()
+    response = _client(db, {VIEW, EDIT}, monkeypatch).post(
+        _base(old), json={"alternative_product_id": inactive.id}
+    )
+    assert response.status_code == 400
 
 
 def test_unlink_parks_through_pending_actions_and_refuses_unknown_link(db, pair, monkeypatch):
@@ -262,7 +308,16 @@ def test_another_companys_product_and_link_are_404_everywhere(db, pair, monkeypa
 
     client = _client(db, {VIEW, EDIT}, monkeypatch)  # scoped to Sorento only
     assert client.get(_base(foreign_old)).status_code == 404
-    assert client.post(f"{_base(foreign_old)}/reset-auto").status_code == 404
+    reset = client.post(
+        "/api/v1/pending-actions",
+        json={
+            "action_key": "product_alternative.reset_auto",
+            "entity_type": "product_alternatives",
+            "entity_id": foreign_old.id,
+            "payload": {},
+        },
+    )
+    assert reset.status_code == 404
     parked = client.post(
         "/api/v1/pending-actions",
         json={
@@ -290,7 +345,7 @@ def test_write_routes_are_session_only():
     so they never take an integration key (`require_permission`, not `_with_api_key`)."""
     from app.api.v1.master_data import product_alternatives as routes
 
-    for endpoint in (routes.add_product_alternative, routes.reset_product_alternatives):
+    for endpoint in (routes.add_product_alternative,):
         import inspect
 
         default = inspect.signature(endpoint).parameters["current_user"].default

@@ -42,6 +42,12 @@ UPGRADE_SQL = (
     "ON product_alternatives (alternative_product_id)",
     "CREATE INDEX IF NOT EXISTS ix_product_alternatives_company_id "
     "ON product_alternatives (company_id)",
+    # The -NEW rule looks a written product's counterpart up by normalised code, per
+    # company, on every sync/import row: this makes that an index probe instead of a
+    # scan of the company's catalogue (`product_alternative_service._norm_sql`, same
+    # expression).
+    "CREATE INDEX IF NOT EXISTS ix_products_company_norm_code ON products "
+    "(company_id, btrim(upper(regexp_replace(product_code, '\\s*-\\s*', '-', 'g'))))",
 )
 
 
@@ -52,5 +58,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.execute("DROP INDEX IF EXISTS ix_products_company_norm_code")
     op.execute("DROP TABLE IF EXISTS product_alternatives")
     op.execute("ALTER TABLE products DROP COLUMN IF EXISTS alternatives_manual")

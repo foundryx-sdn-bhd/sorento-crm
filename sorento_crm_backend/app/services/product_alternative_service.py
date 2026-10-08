@@ -18,9 +18,11 @@ Card: documentation/plans/chatbot/CARD-product-alternatives-08oct.md.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Iterable, Optional
 
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.product import Product, ProductAlternative, chat_searchable_products
@@ -38,15 +40,22 @@ SOURCE_MANUAL = "manual"
 _NEW = "NEW"
 
 
+_DASH_RE = re.compile(r"\s*-\s*")
+
+
 def normalize_code(code: Optional[str]) -> str:
-    """Upper-cased, whitespace trimmed around every `-` segment: `SRT1000-CR - NEW` and
-    `srt1000-cr-new` compare equal. Matches `_norm_sql` below."""
+    """Upper-cased, whitespace removed around every `-`, spaces trimmed at the ends:
+    `SRT1000-CR - NEW` and `srt1000-cr-new` compare equal. The exact Python twin of
+    `_norm_sql` (regexp `\\s*-\\s*`, then `btrim`, which trims spaces only)."""
     if not code:
         return ""
-    return "-".join(segment.strip() for segment in code.upper().split("-")).strip()
+    return _DASH_RE.sub("-", code.upper()).strip(" ")
 
 
 def _norm_sql(column):
+    """The SQL normaliser. `prod_alt_0001_tables` indexes exactly this expression per
+    company (`ix_products_company_norm_code`), so the rule's per-product lookup is an
+    index probe, not a catalogue scan; keep the two in step."""
     return func.btrim(func.upper(func.regexp_replace(column, r"\s*-\s*", "-", "g")))
 
 
@@ -282,6 +291,8 @@ def add_manual(db: Session, product_id: str, alternative_product_id: str, user_i
     )
     if alternative is None:
         raise handle_not_found("Product", alternative_product_id)
+    if not alternative.is_active:
+        raise handle_validation_error(f"{alternative.product_code} is not active.")
     exists = (
         db.query(ProductAlternative.id)
         .filter(
@@ -301,7 +312,12 @@ def add_manual(db: Session, product_id: str, alternative_product_id: str, user_i
     )
     db.add(link)
     product.alternatives_manual = True
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # Two adds of the same pair racing: the unique pair index is the arbiter.
+        db.rollback()
+        raise handle_conflict(f"{alternative.product_code} is already an alternative.")
     db.refresh(link)
     return _row(link, alternative)
 
@@ -327,9 +343,10 @@ def reset_auto(db: Session, product_id: str) -> dict:
     """Back to the rule: every link of this product goes, the manual mark clears, and the
     -NEW rule derives it again."""
     product = _product_or_404(db, product_id)
-    db.query(ProductAlternative).filter(ProductAlternative.product_id == product.id).delete(
-        synchronize_session=False
-    )
+    # Row by row, not a bulk delete: each removed link goes through the ORM so the
+    # `__audit_track__` listeners record it.
+    for link in db.query(ProductAlternative).filter(ProductAlternative.product_id == product.id):
+        db.delete(link)
     product.alternatives_manual = False
     db.flush()
     reconcile_new_alternatives(db, product)

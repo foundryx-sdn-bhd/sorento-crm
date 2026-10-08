@@ -1,6 +1,7 @@
 # CARD - product alternatives (-NEW) + availability Alternative line (PRODUCT-ALTERNATIVES)
 
-Status: ANSWERED (8 Oct 2026), build in progress. Track: L (migration, chatbot reply change,
+Status: BUILT, review fix round 1 applied (8 Oct 2026); awaiting reviewer re-run and owner
+wording for Addendum 1 domains (not in this lane's diff). Track: L (migration, chatbot reply change,
 product screen section). Lane PR #1533 carries `crew-lane: PRODUCT-ALTERNATIVES`. Real-data
 counts measured by crew (8 Oct), see "Measured on real data".
 
@@ -104,11 +105,11 @@ told "no stock" while the replacement sits in BRW is the exact miss being fixed.
 reverses AC-B14 ("never name other in-stock products to a dealer") for STORED alternatives only;
 the neighbour probe stays off for dealers.
 Measured case for the alternative WITHOUT stock: `BMC6067` (discontinued, 18 on hand) ->
-`BMC6067-NEW` (0 on hand). Under (b) the dealer asking 5 reads `BMC6067 x 5: ✅ Got stock.`
-plus the marker and NO Alternative line (full verdict); asking 30 reads the old line's own
-verdict plus `Alternative: BMC6067-NEW x 30: ❌ No stock and no incoming. Please refer to your
-salesman.` (or its ETA). Under (a) every BMC6067 answer carries that line. An alternative with
-no stock is still shown (it is the true answer about the replacement).
+`BMC6067-NEW` (0 on hand). As ruled (b), discontinued ALONE triggers the line (owner via crew,
+8 Oct, confirming the table over this card's earlier wrong example): asking 5 reads
+`BMC6067 x 5: ✅ Got stock.`, the marker, then `Alternative: BMC6067-NEW x 5: ❌ No stock and
+no incoming. Please refer to your salesman.` An alternative with no stock is still shown (it
+is the true answer about the replacement).
 
 **Q3. The "SRTWC286 matches N products. Which one?" picker.** (a) keep every code, unchanged;
 (b) hide an old code from the picker when it is discontinued AND has an alternative in the same
@@ -214,3 +215,19 @@ the marker. Non-stock domains show the line only when the asked code is DISCONTI
 
 Not covered by the seam (stated, not built): `crm_outstanding_report` and the other text-returning
 bypasses at `fetch.py:2721-2738`, and the cross-domain block's own render (`answer.py:991-1007`).
+
+## Review round 1 decisions (8 Oct 2026)
+
+- Reset to auto is a server-deferred record action `product_alternative.reset_auto` on the
+  product (entity type `product_alternatives`, destructive window), deleting row by row so
+  the audit listeners record each link; the immediate `reset-auto` route is gone.
+- The add route is session-only; an inactive product cannot be added (400); a racing
+  duplicate add answers 409.
+- An `Alternative:` line that refers marks the entry `refers_to_salesman` (Customer asks log).
+- A nested alternative carries its ETA but never a packing list file.
+- An alternative the dealer also asked for in its own right is not repeated under the old code.
+- Compact: an alternative's own block is appended only when the caller named products, never
+  on a catalogue page.
+- The rule's per-company code probe is an expression index (`ix_products_company_norm_code`).
+- The API update path cannot rename a product (`ProductUpdate` has no `product_code`), so
+  the rule runs on create, AutoCount ingest (create and update), Excel import and the backfill.

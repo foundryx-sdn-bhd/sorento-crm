@@ -225,3 +225,108 @@ def test_compact_live_block_with_zero_on_hand_names_alternative(db):
     wh, old, new = _pair(db, old_on_hand=0, new_on_hand=16, old_discontinued=False)
     result = StockService(db).list_stock(product_ids=[old.id], contact_id=_staff(db, wh).id)
     assert _summary(result, old.id)["flags"]["alternatives"] == [new.product_code]
+
+
+# --------------------------------------------------------------------------- reviewer round 1
+
+
+def test_alternative_respects_the_callers_own_warehouse_narrowing(db):
+    other = _wh(db, unique_code("ZZOTH")[:20])
+    wh, old, new = _pair(db, old_on_hand=0, new_on_hand=500, new_wh=other)
+    contact = _contact(db)
+    _policy_row(db, mode="availability", warehouse_ids=[wh.id, other.id], contact=contact)
+    db.flush()
+    result = StockService(db).list_stock(
+        product_ids=[old.id],
+        contact_id=contact.id,
+        requested_quantities={old.id: 5},
+        warehouse_ids=[wh.id],
+    )
+    [alt] = _entry(result, old.id)["alternatives"]
+    assert alt["branch"] == "no_incoming"
+
+
+def test_alternative_stock_in_an_inactive_warehouse_does_not_count(db):
+    closed = _wh(db, unique_code("ZZCLS")[:20])
+    wh, old, new = _pair(db, old_on_hand=0, new_on_hand=500, new_wh=closed)
+    closed.is_active = False
+    contact = _contact(db)
+    _policy_row(db, mode="availability", warehouse_ids=[wh.id, closed.id], contact=contact)
+    db.flush()
+    [alt] = _entry(_ask(db, contact, old, 5), old.id)["alternatives"]
+    assert alt["branch"] == "no_incoming"
+
+
+def test_merged_code_takes_the_alternative_of_any_companys_row(db):
+    from app.models.base import set_company_scope
+    from tests._mc_lookup_seed import MOCHA_ID, seed_mocha, warehouse
+
+    seed_mocha(db)
+    set_company_scope(db, frozenset({DEFAULT_COMPANY_ID, MOCHA_ID}))
+    wh = _wh(db, unique_code("ZZSW")[:20])
+    mocha_wh = warehouse(db, company_id=MOCHA_ID, code=unique_code("ZZMW")[:20])
+    code = unique_code("ZZALTM")[:30].upper()
+    sorento_old = product(db, company_id=DEFAULT_COMPANY_ID, code=code)
+    mocha_old = product(db, company_id=MOCHA_ID, code=code)
+    mocha_new = product(db, company_id=MOCHA_ID, code=f"{code}-NEW")
+    for p in (sorento_old, mocha_old, mocha_new):
+        p.is_discontinued = p is not mocha_new
+        _category_of(db, p).chatbot_max_qty = X
+    stock(db, company_id=MOCHA_ID, product_id=mocha_new.id, warehouse_id=mocha_wh.id, on_hand=16)
+    db.add(
+        ProductAlternative(
+            product_id=mocha_old.id,
+            alternative_product_id=mocha_new.id,
+            source="auto_new",
+            company_id=MOCHA_ID,
+        )
+    )
+    contact = _contact(db)
+    _policy_row(db, mode="availability", warehouse_ids=[wh.id, mocha_wh.id], contact=contact)
+    db.flush()
+
+    result = StockService(db).list_stock(
+        product_ids=[sorento_old.id, mocha_old.id],
+        contact_id=contact.id,
+        requested_quantities={sorento_old.id: 5},
+    )
+    [entry] = result["stock_availability"]
+    assert [a["product_code"] for a in entry["alternatives"]] == [mocha_new.product_code]
+    assert entry["alternatives"][0]["branch"] == "in_stock"
+
+
+def test_nested_alternative_never_carries_a_packing_list(db):
+    wh, old, new = _pair(db, old_on_hand=0, new_on_hand=0)
+    shipment = _incoming_shipment(db, eta=date(2026, 10, 20), attachment_id=_attachment(db).id)
+    _incoming_line(db, shipment_id=shipment.id, product_id=new.id)
+    contact = _contact(db, packing_list_allowed=True)
+    _policy_row(db, mode="availability", warehouse_ids=[wh.id], contact=contact)
+    db.flush()
+    [alt] = _entry(_ask(db, contact, old, 2), old.id)["alternatives"]
+    assert alt["branch"] == "incoming"
+    assert alt["packing_list"] is None
+
+
+def test_alternative_asked_in_its_own_right_is_not_repeated_under_the_old_code(db):
+    wh, old, new = _pair(db, old_on_hand=0, new_on_hand=16)
+    contact = _dealer(db, wh)
+    result = StockService(db).list_stock(
+        product_ids=[old.id, new.id],
+        contact_id=contact.id,
+        requested_quantities={old.id: 5, new.id: 5},
+    )
+    assert _entry(result, old.id)["alternatives"] == []
+    assert _entry(result, new.id)["branch"] == "in_stock"
+
+
+def test_compact_catalogue_page_does_not_append_alternative_blocks(db):
+    from app.models.inventory import Stock
+
+    wh, old, new = _pair(db, old_on_hand=5, new_on_hand=0)
+    # No stock row at all: the -NEW product is not on the catalogue page by itself.
+    db.query(Stock).filter(Stock.product_id == new.id).delete()
+    db.flush()
+    result = StockService(db).list_stock(contact_id=_staff(db, wh).id)
+    ids = [r["product_id"] for r in result["stock_summary"]]
+    assert old.id in ids and new.id not in ids
+    assert _summary(result, old.id)["flags"]["alternatives"] == [new.product_code]

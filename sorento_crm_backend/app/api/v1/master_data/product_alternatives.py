@@ -2,15 +2,15 @@
 
     GET  /products/{product_id}/alternatives              (master_data.products.view)
     POST /products/{product_id}/alternatives              (master_data.products.edit)
-    POST /products/{product_id}/alternatives/reset-auto   (master_data.products.edit)
 
-Reads take a session or an `X-API-Key`; the writes are session-only (`require_permission`):
-they rewrite what dealers are offered and are not deferred, so an integration key never
-reaches them (`require_permission_with_api_key`'s own rule for write endpoints).
+Reads take a session or an `X-API-Key`; the add is session-only (`require_permission`): it
+rewrites what dealers are offered and is not deferred, so an integration key never reaches
+it (`require_permission_with_api_key`'s own rule for write endpoints).
 
-Unlink is not a route here: it is the server-deferred record action
-`product_alternative.unlink` (`app/services/record_actions.py`), parked through
-`/api/v1/pending-actions` like every other detach. Gated the companions way: the
+Unlink and Reset to auto are not routes here: they are the server-deferred record
+actions `product_alternative.unlink` and `product_alternative.reset_auto`
+(`app/services/record_actions.py`), parked through `/api/v1/pending-actions` like every
+other detach. Gated the companions way: the
 products permission, since the links are configured on the product page itself.
 """
 from __future__ import annotations
@@ -59,13 +59,3 @@ def add_product_alternative(
     alternative_product_id = validate_uuid_path(payload.alternative_product_id, resource="Product")
     row = alternatives.add_manual(db, product_id, alternative_product_id, current_user.get("id"))
     return {"data": row}
-
-
-@router.post("/{product_id}/alternatives/reset-auto", response_model=ProductAlternativeListOut)
-def reset_product_alternatives(
-    product_id: str,
-    current_user: dict = Depends(require_permission(EDIT)),
-    db: Session = Depends(get_db),
-):
-    product_id = validate_uuid_path(product_id, resource="Product")
-    return {"data": alternatives.reset_auto(db, product_id)}

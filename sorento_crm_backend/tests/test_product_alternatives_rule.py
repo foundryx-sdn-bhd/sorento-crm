@@ -282,3 +282,84 @@ def test_product_api_create_links_new_code(db):
     )
 
     assert _links(db, base.id) == [(created.id, SOURCE_AUTO_NEW)]
+
+
+# --------------------------------------------------------------------------- reviewer round 1
+
+
+def test_normalize_code_is_the_twin_of_the_sql_normaliser(db):
+    from sqlalchemy import literal, select
+
+    from app.services.product_alternative_service import _norm_sql, normalize_code
+
+    for raw in ["srt1000-cr - new", "  SRTUB6503-BACK INLET - NEW ", "A -\tNEW", "x--new", "AB"]:
+        sql = db.execute(select(_norm_sql(literal(raw)))).scalar()
+        assert normalize_code(raw) == sql, raw
+
+
+def test_manual_base_keeps_its_auto_link_when_the_new_code_is_renamed(db):
+    base_code = _code("BF")
+    base = product(db, company_id=DEFAULT_COMPANY_ID, code=base_code)
+    new = product(db, company_id=DEFAULT_COMPANY_ID, code=f"{base_code}-NEW")
+    reconcile_new_alternatives(db, new)
+    base.alternatives_manual = True
+    db.flush()
+
+    new.product_code = f"{_code('ELSE')}-NEW"
+    db.flush()
+    reconcile_new_alternatives(db, new)
+
+    assert _links(db, base.id) == [(new.id, SOURCE_AUTO_NEW)]
+
+
+def test_renamed_base_drops_its_stale_auto_link(db):
+    base_code = _code("BF")
+    base = product(db, company_id=DEFAULT_COMPANY_ID, code=base_code)
+    new = product(db, company_id=DEFAULT_COMPANY_ID, code=f"{base_code}-NEW")
+    reconcile_new_alternatives(db, new)
+
+    base.product_code = _code("RENAMED")
+    db.flush()
+    reconcile_new_alternatives(db, base)
+
+    assert _links(db, base.id) == []
+
+
+def test_excel_bulk_import_links_new_code(db, monkeypatch):
+    from app.models.product import ProductCategory, UnitOfMeasure
+    from app.services import product_service as product_service_mod
+
+    for name in ("_bulk_publish_product_embedding_events",):
+        monkeypatch.setattr(product_service_mod.ProductService, name, lambda self, *a, **kw: None)
+    monkeypatch.setattr(
+        product_service_mod.ProductService, "_resolve_default_supplier_for_new_product", lambda self: None
+    )
+    monkeypatch.setattr(
+        product_service_mod.ProductService, "_default_standard_lead_time_days", lambda self: None
+    )
+    set_company_scope(db, frozenset({DEFAULT_COMPANY_ID}))
+    cat_code = _code("CAT")[:40]
+    db.add(ProductCategory(id=str(uuid.uuid4()), category_code=cat_code, category_name="Cat"))
+    db.add(UnitOfMeasure(id=str(uuid.uuid4()), uom_code=_code("U")[:40], uom_name="Each"))
+    db.commit()
+    base_code = _code("XL")
+    rows = [
+        {"product_code": base_code, "product_name": "Old", "item_group": cat_code, "list_price": "1"},
+        {"product_code": f"{base_code}-NEW", "product_name": "New", "item_group": cat_code, "list_price": "1"},
+    ]
+
+    product_service_mod.ProductService(db).bulk_import_products(rows, user_id=None)
+
+    base = db.query(Product).filter(Product.product_code == base_code).one()
+    new = db.query(Product).filter(Product.product_code == f"{base_code}-NEW").one()
+    assert _links(db, base.id) == [(new.id, SOURCE_AUTO_NEW)]
+
+
+def test_alternatives_for_excludes_a_non_searchable_alternative(db):
+    base_code = _code("BF")
+    base = product(db, company_id=DEFAULT_COMPANY_ID, code=base_code)
+    new = product(db, company_id=DEFAULT_COMPANY_ID, code=f"{base_code}-NEW")
+    reconcile_new_alternatives(db, new)
+    new.is_searchable = False
+    db.flush()
+    assert alternatives_for(db, [base.id]) == {}

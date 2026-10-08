@@ -169,3 +169,48 @@ def test_compact_block_prints_alternative_code_under_marker():
     reply = fetch.output_structurer(envelope, {"semantic_input": {}})["response"]
     assert "⚠️  *(PRODUCT DISCONTINUED)*\n*Alternative:* SRTBF11821-NEW" in reply
     assert reply.count("*Alternative:*") == 1
+
+
+def _stamped(entries: list) -> list:
+    envelope = _present(
+        {
+            "data": [],
+            "pagination": {"total": len(entries), "page": 1, "limit": 50},
+            "empty": False,
+            "stock_visibility": {"mode": "availability", "source": "contact"},
+            "stock_availability": entries,
+        }
+    )
+    return envelope["stock_availability"]
+
+
+def test_a_refer_printed_on_an_alternative_line_is_logged_as_a_referral():
+    """Reviewer round 1: CUSTOMER-ASKS-REFER-ONLY logs exactly the entries whose printed
+    lines referred the dealer; an Alternative line that refers counts."""
+    [entry] = _stamped(
+        [
+            _avail(
+                "BMC6067",
+                5,
+                "in_stock",
+                discontinued=True,
+                alternatives=[_avail("BMC6067-NEW", 5, "no_incoming")],
+            )
+        ]
+    )
+    assert entry["refers_to_salesman"] is True
+
+
+def test_an_in_stock_alternative_clears_the_old_lines_referral():
+    [entry] = _stamped(
+        [
+            _avail(
+                "SRTBF11821",
+                5,
+                "no_incoming",
+                discontinued=True,
+                alternatives=[_avail("SRTBF11821-NEW", 5, "in_stock")],
+            )
+        ]
+    )
+    assert entry["refers_to_salesman"] is False

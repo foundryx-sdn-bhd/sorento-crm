@@ -27,7 +27,7 @@ let queryData: unknown;
 vi.mock('../../hooks/useProductAlternatives', () => ({
   useProductAlternatives: () => ({ data: queryData, isLoading: false, isError: false }),
   useAddProductAlternative: () => ({ mutate: addMutate, isPending: false }),
-  useResetProductAlternativesAuto: () => ({ mutate: resetMutate, isPending: false }),
+  useResetProductAlternativesAuto: () => ({ run: resetMutate, isPending: false, targetId: null }),
   useProductAlternativeUnlink: () => ({ run: unlinkRun, targetId: null, isPending: false }),
 }));
 
@@ -110,7 +110,7 @@ describe('ProductAlternativesSection', () => {
   it('shows Reset to auto only when manual, and runs it', () => {
     const { unmount } = render(<ProductAlternativesSection productId="me" />);
     fireEvent.click(screen.getByRole('button', { name: /Reset to auto/ }));
-    expect(resetMutate).toHaveBeenCalled();
+    expect(resetMutate).toHaveBeenCalledWith({ id: 'me', subject: 'alternatives' });
     unmount();
     queryData = { alternatives_manual: false, alternatives: ROWS };
     render(<ProductAlternativesSection productId="me" />);

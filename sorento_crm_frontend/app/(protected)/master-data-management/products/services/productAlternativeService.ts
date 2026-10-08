@@ -5,7 +5,6 @@
  *  GET  /api/v1/master-data/products/{id}/alternatives
  *    -> { data: { alternatives_manual, alternatives: ProductAlternativeRow[] } }
  *  POST /api/v1/master-data/products/{id}/alternatives  { alternative_product_id } -> 201 { data: Row }
- *  POST /api/v1/master-data/products/{id}/alternatives/reset-auto -> same shape as GET
  *
  * Unlink is a deferred action (`product_alternative.unlink`), not called from here.
  */
@@ -47,12 +46,4 @@ export async function addProductAlternative(
   if (!res.ok) throw new Error(await extractApiError(res, 'Failed to add the alternative'));
   const body = (await res.json()) as { data: ProductAlternativeRow };
   return body.data;
-}
-
-export async function resetProductAlternativesAuto(
-  productId: string,
-): Promise<ProductAlternativesResult> {
-  const res = await apiFetch(`${base(productId)}/reset-auto`, { method: 'POST' });
-  if (!res.ok) throw new Error(await extractApiError(res, 'Failed to reset alternatives'));
-  return readResult(res);
 }

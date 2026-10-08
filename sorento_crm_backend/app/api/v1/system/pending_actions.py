@@ -136,6 +136,7 @@ _UUID_ENTITY_ACTIONS = (
     "idea.delete",
     "idea_comment.delete",
     "product_alternative.unlink",
+    "product_alternative.reset_auto",
 )
 
 
@@ -158,7 +159,11 @@ def _assert_entity_visible(db: Session, action_key: str, entity_id: str) -> None
     another company (or one that does not exist) refuses 404 before anything is parked -
     the same answer either way, and no countdown for a record the caller cannot see.
     Deliberately just these keys: no other action asked for it."""
-    if action_key == "product_alternative.unlink":
+    if action_key == "product_alternative.reset_auto":
+        from app.services.product_alternative_service import list_for_product
+
+        list_for_product(db, entity_id)  # 404 for a product outside the caller's scope
+    elif action_key == "product_alternative.unlink":
         from app.services.product_alternative_service import get_link
 
         if get_link(db, entity_id) is None:

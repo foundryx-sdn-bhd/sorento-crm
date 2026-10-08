@@ -1184,7 +1184,6 @@ class ProductService:
                 self._reconcile_variant_links(product.id)
                 for child_id in ex_children:
                     self._reconcile_variant_links(child_id)
-                self._reconcile_alternatives([product.id])
 
         return product
 

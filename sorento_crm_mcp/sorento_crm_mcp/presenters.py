@@ -1589,8 +1589,17 @@ def _stamp_refers(entries: Any) -> Any:
         return entries
     # AVAIL-MODE-REPLIES rule 5: an answered line is printed even while another product
     # still owes its quantity, so it is stamped on that turn too.
+    # PRODUCT-ALTERNATIVES: an `Alternative:` line printed under an entry that ends in the
+    # refer referred the dealer too, so the entry is stamped when ITS line or any of its
+    # printed alternative lines refers.
+    def _refers(e: dict) -> bool:
+        return _availability_tail(e).endswith(REFER_TO_SALESMAN) or any(
+            isinstance(a, dict) and a.get("branch") and _availability_tail(a).endswith(REFER_TO_SALESMAN)
+            for a in (e.get("alternatives") or [])
+        )
+
     return [
-        {**e, "refers_to_salesman": _availability_tail(e).endswith(REFER_TO_SALESMAN)}
+        {**e, "refers_to_salesman": _refers(e)}
         if isinstance(e, dict) and e.get("branch")
         else e
         for e in entries
