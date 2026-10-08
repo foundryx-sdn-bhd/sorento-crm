@@ -1,9 +1,23 @@
 # CARD - product alternatives (-NEW) + availability Alternative line (PRODUCT-ALTERNATIVES)
 
-Status: CARD POSTED (8 Oct 2026), awaiting owner answers on Q1-Q5 before code. Track: L
-(migration, chatbot reply change, product screen section). Lane PR #1533 carries
-`crew-lane: PRODUCT-ALTERNATIVES`. Real-data counts measured by crew (8 Oct), see
-"Measured on real data".
+Status: ANSWERED (8 Oct 2026), build in progress. Track: L (migration, chatbot reply change,
+product screen section). Lane PR #1533 carries `crew-lane: PRODUCT-ALTERNATIVES`. Real-data
+counts measured by crew (8 Oct), see "Measured on real data".
+
+## Owner answers (8 Oct 2026, verbatim)
+
+"1 - yeah a, 2 - yeah b, 3 - yeah that one can keep, so a, Q4 - yeah ok, this is simple,
+good, Q5 - yeah okay a, corect"
+
+| Q | Ruling | What it means in the build |
+| --- | --- | --- |
+| Q1 | (a) | The -NEW rule writes `auto_new` links, visible and removable on the product page; any hand edit sets `products.alternatives_manual` and the rule never touches that product again until Reset to auto. Whitespace around each segment is trimmed (crew). |
+| Q2 | (b) | Dealer: the Alternative line shows when the asked code is discontinued OR its verdict is not a full `✅ Got stock.` (no stock, incoming, partial, over cap). Staff summary: when discontinued OR the total on hand is 0. |
+| Q3 | (a) | The "matches N products. Which one?" picker is UNCHANGED; no code is hidden. |
+| Q4 | (a) | One extra line `Alternative: <code> x <N>: <verdict>` under the old line (after its marker). The old line keeps its wording, except that `Please refer to your salesman.` drops from it when an alternative line has stock (crew reads "yeah ok" as accepting that recommendation). Staff summary: `*Alternative:* <code>` under the old block, plus the alternative's own block when the ask did not already list it. |
+| Q5 | (a) | Alternatives section now, on the existing product Variants tab: list, Add (existing product picker), Unlink (deferred), Reset to auto. Existing components only, no mock. |
+
+Live-parser checks run on crew's machine (the cloud sandbox has no OpenAI).
 
 ## The journey (owner, 8 Oct 2026)
 
