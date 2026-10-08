@@ -27,6 +27,7 @@ from app.models.project_so import (
     ACK_AWAITING,
     ACK_CHANGED,
     DECISION_ACTIVE,
+    INQUIRY_CANCELLED,
     SOSupplyDecision,
     SOSupplyDecisionDraft,
 )
@@ -209,8 +210,9 @@ def test_c6_the_saved_draft_of_a_cancelled_line_is_deleted(api):
     assert left == {str(core_b.id)}
 
 
-def test_c7_acknowledged_inquiry_rows_flip_to_changed_others_untouched(api):
-    """AC-C7."""
+def test_c7_acknowledged_inquiry_rows_are_cancelled_others_untouched(api):
+    """AC-C7, updated by SO-CANCEL-HANDOVER AC-H14: the acknowledged row on the cancelled
+    line is now cancelled (handed over), not flipped to changed."""
     client, world = api
     w = _cb_world(world)
     core_a, mirror_a, product_a = w["a"]
@@ -230,10 +232,9 @@ def test_c7_acknowledged_inquiry_rows_flip_to_changed_others_untouched(api):
     db.expire_all()
     for row in (ack_a, awaiting_a, ack_b):
         db.refresh(row)
-    assert ack_a.ack_state == ACK_CHANGED
-    assert ack_a.changed_at is not None
-    assert awaiting_a.ack_state == ACK_AWAITING
-    assert awaiting_a.changed_at is None
+    assert ack_a.state == INQUIRY_CANCELLED
+    assert ack_a.ack_state != ACK_CHANGED
+    assert ack_a.changed_at is None
     assert ack_b.ack_state == ACK_ACKNOWLEDGED
     assert ack_b.changed_at is None
 
