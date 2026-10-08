@@ -2343,6 +2343,10 @@ def run_fetch(
                     render=_render,
                     status_only=status_only,
                     loc=trigger.get("localizer") if tool_name in fetch_mod._LOCALIZED_TOOLS else None,
+                    dealer=any(
+                        isinstance(env, dict) and env.get("result_type") == "incoming_dealer"
+                        for env in [envelope] + [a[2] for a in answers]
+                    ),
                     subject_label=next(
                         (
                             jsc.nullish_str(e.get("display_name") or e.get("code")).strip() or None

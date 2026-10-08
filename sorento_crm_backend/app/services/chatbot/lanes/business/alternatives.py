@@ -151,6 +151,7 @@ def fold(
     status_only: bool = False,
     loc: Any = None,
     subject_label: str | None = None,
+    dealer: bool = False,
 ) -> tuple[list[str], bool]:
     """Put each alternative's answer into `envelope` (mutated) and return `(tail lines,
     found)`. `answers` is `[(old_code, alternative, its envelope or None)]`. The tail is
@@ -209,10 +210,18 @@ def fold(
             # it". Its own call came back empty, so the line says so. (`plan` already kept
             # only alternatives inside the contact's brand scope.)
             if kind == "incoming":
-                dealer_anchor = anchor is not None and jsc.truthy(jsc.get(anchor.get("flags"), "dealer_view"))
-                empty = f"{alt_code}: No ETA" if dealer_anchor else f"{alt_code}: {loc.text('No incoming stock.')}"
+                # The dealer view (`result_type` "incoming_dealer", set by the backend even
+                # when nothing came back) words it as the dealer's own ETA line does.
+                dealer_line = dealer or (
+                    anchor is not None and jsc.truthy(jsc.get(anchor.get("flags"), "dealer_view"))
+                )
+                empty = f"{alt_code}: No ETA" if dealer_line else f"{alt_code}: {loc.text('No incoming stock.')}"
             elif kind == "attachment":
-                empty = f"{alt_code}: no {subject_label}." if subject_label else f"{alt_code}: {loc.text('no files.')}"
+                empty = (
+                    f"{alt_code}: {loc.text(f'no {subject_label}.')}"
+                    if subject_label
+                    else f"{alt_code}: {loc.text('no files.')}"
+                )
             else:
                 empty = f"{alt_code}: {loc.text('Nothing found.')}"
             if anchor is not None:

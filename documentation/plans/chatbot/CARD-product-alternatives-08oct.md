@@ -253,3 +253,8 @@ Round A's hand test exposed a route-schema drop (`StockAvailabilityEntry` lacked
 - Round B endpoints: the resolver reads only fields the incoming, promotion, attachment and
   product endpoints already return; it adds no key to any route payload, so the round A
   schema drop cannot recur there (the e2e tests go through the real endpoints).
+- Where the miss lines go (`answer_bridge.with_alternative_lines`): before a "Related
+  products:" picker; else before the sentence carrying the escalate offer (incl. a picker's
+  "reply 'yes' to escalate to") or the dealer's "Please refer to your salesman."; else last.
+  Known gap, out of scope: a multi-domain turn's miss is composed by `turn/compose.py`, not
+  `answer_for`, so its legs do not carry the Alternative line.

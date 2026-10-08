@@ -2029,23 +2029,37 @@ def answer_for(
 def with_alternative_lines(text: str, lines: Any) -> str:
     """PRODUCT-ALTERNATIVES (owner, 9 Oct 2026): a miss on a discontinued code still names
     its alternative and what the search for it found, BEFORE any escalate offer. The lines
-    come from the fetch (`lanes/business/__init__.py::run_fetch`, `alternative_lines`); the
-    offer is the sentence carrying "would you like me to escalate", which they are put in
-    front of. With no offer they close the reply."""
+    come from the fetch (`lanes/business/__init__.py::run_fetch`, `alternative_lines`).
+
+    Where they go, first match wins: before a "Related products:" picker (its last line is
+    the offer, and it lists the alternative itself); else before the sentence carrying the
+    offer ("would you like me to escalate", or a picker's "reply 'yes' to escalate to"), or
+    the dealer's "Please refer to your salesman."; else at the end."""
     block = "\n".join(str(line) for line in (lines or []) if line)
     if not block:
         return text
+    picker = text.find("Related products:")
+    if picker >= 0:
+        return f"{text[:picker].rstrip()}\n{block}\n\n{text[picker:]}"
     lowered = text.lower()
-    at = lowered.find("would you like me to escalate")
-    if at < 0:
+    found = [
+        i
+        for i in (
+            lowered.find("would you like me to escalate"),
+            lowered.find("to escalate to"),
+            lowered.find("please refer to your salesman"),
+        )
+        if i >= 0
+    ]
+    if not found:
         return f"{text.rstrip()}\n{block}"
-    # The offer's sentence starts after the last sentence end (or line break) before it.
+    at = min(found)
+    # The sentence carrying it starts after the last sentence end (or line break) before it.
     start = max(text.rfind(". ", 0, at), text.rfind("? ", 0, at), text.rfind("\n", 0, at))
     if start < 0:
         return f"{block}\n{text}"
     cut = start + (1 if text[start] == "\n" else 2)
-    head = text[:cut].rstrip()
-    return f"{head}\n{block}\n{text[cut:].lstrip()}"
+    return f"{text[:cut].rstrip()}\n{block}\n{text[cut:].lstrip()}"
 
 
 def _dealer_did_you_mean(
