@@ -1,6 +1,6 @@
 # PLAN: OI supplier always from the PO, not the SPO (OI-SUPPLIER-FROM-PO)
 
-Status: in progress (small fix track, cloud lane)
+Status: in review (small fix track, cloud lane): fix, tests, review round 1 and cloud browser pass done; awaiting owner hand test and CI
 
 ## Owner rule (9 Oct 2026)
 
@@ -38,3 +38,14 @@ draws down (`po_line_id`), else of the PO its `from_po_number` names in the same
 
 No chatbot, MCP, n8n, OI email or PDF surface shows an OI supplier. FE needs no change (every cell renders
 the API value).
+
+Out of scope: the Procurement SPO Allocations register (`/procurement-management/spo-allocations/<spo>`, reached
+from the Related SPO tab's link) shows the SPO document's own supplier field. It is the SPO's own record, not an
+order-inquiry surface, so it is unchanged.
+
+## Evidence (cloud browser pass, seeded demo data, 9 Oct)
+
+OI-2610-0001 reached by sidebar (Procurement > Supply Chain > Order Inquiries). The via-SPO row naming PO
+202510-S0040 reads the PO's supplier (DEMO PO SUPPLIER SDN BHD), not its SPO's (DEMO CHAOZHOU SPO SUPPLIER), on the
+Lines tab, the Related SPO tab and the SPO popover; a row naming a PO the CRM does not hold keeps its SPO's
+supplier. 375px: the grid scrolls inside its card, no page-level horizontal scroll. Screenshots in `evidence/`.
