@@ -29,6 +29,7 @@ from app.services.chatbot import copy as reply_copy
 from app.services.chatbot import jsc
 from app.services.chatbot.lanes.business import brand_guard
 from app.services.chatbot import do_ask
+from app.services.chatbot.lanes.business import alternatives as alternatives_mod
 from app.services.chatbot.lanes.business import fetch as fetch_mod
 from app.services.chatbot.lanes.business import low_stock_ask
 from app.services.chatbot.lanes.business import report_ask
@@ -2248,7 +2249,57 @@ def run_fetch(
             return _fixed_reply(refusal)
         return _error_fragment(envelope["error"])
 
+    # PRODUCT-ALTERNATIVES round B (card Addendum 1, owner 8 Oct 2026): an asked product
+    # that is discontinued and has a stored alternative gets the SAME tool's answer for the
+    # alternative folded in (`alternatives.py`). The second call goes through the same
+    # seam and brand guard as the first; it is best-effort, so a failure leaves the reply
+    # exactly as the first call made it.
+    alternative_tail: list[str] = []
+    main_missed = not jsc.array(envelope.get("items")) if isinstance(envelope, dict) else True
+    alternative_pairs = (
+        alternatives_mod.plan(db, tool_name, entities)
+        if isinstance(envelope, dict) and not jsc.array(envelope.get("groups"))
+        else []
+    )
+    if alternative_pairs:
+        try:
+            alternative_args = fetch_mod.entity_ids_transformer(
+                alternatives_mod.alternative_trigger(trigger, alternative_pairs), space_id=space_id
+            )
+            alternative_envelope = brand_guard.guard_result(
+                tool_name,
+                fetch_mod.parse_mcp_content(
+                    fetch_mod.call_tool(tool_name, alternative_args, mcp=_McpSeam(services.mcp_call))
+                ),
+                semantic_input.get("scope_brand_ids"),
+                db,
+            )
+            if isinstance(alternative_envelope, dict) and not isinstance(
+                alternative_envelope.get("error"), str
+            ):
+                alternative_tail = alternatives_mod.fold(
+                    tool_name, envelope, alternative_envelope, alternative_pairs, fetch_mod._fmt_value
+                )
+                if trace is not None:
+                    trace.add(
+                        "alternatives",
+                        {"tool": tool_name, "pairs": [[o, a.product_code] for o, a in alternative_pairs]},
+                    )
+        except Exception:  # noqa: BLE001 - the alternative never costs the asked answer
+            logger.warning("chatbot: alternative fetch for %s failed", tool_name, exc_info=True)
+            alternative_tail = []
+
     structured = fetch_mod.output_structurer(envelope, trigger)
+    if alternative_tail and isinstance(structured, dict):
+        response = jsc.js_string(structured.get("response") or "").strip()
+        if main_missed:
+            old_codes = list(dict.fromkeys(old for old, _alt in alternative_pairs))
+            structured["response"] = (
+                alternatives_mod.miss_sentence(tool_name, old_codes) + "\n" + "\n".join(alternative_tail)
+            )
+            structured["has_result"] = True
+        else:
+            structured["response"] = response + "\n\n" + "\n".join(alternative_tail)
     # LOWSTOCK-FILTER-ASK (owner hand test, 3 Oct 2026): EVERY low stock reply - ready,
     # pending, busy, empty, error - opens with the filters it was built with, "Low stock
     # report (water closet, supplier X, by supplier)", so a narrowed file never reads as
