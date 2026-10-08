@@ -418,3 +418,33 @@ def test_a_refine_flagged_new_axis_with_nothing_to_drill_keeps_its_own_period(co
     )
     (args,) = calls
     assert args["group_by"] == "customer" and args["date_from"] == SEP["date_filter_start"], args
+
+
+# ============================================================================ crew live rerun (card rule 2 refinement)
+
+
+def test_a_carried_filter_on_the_target_dimension_does_not_carry(console) -> None:
+    """Crew decision 8 Oct: "top 5 products these customers buy" after a ranking for one
+    product asks ACROSS products, so the held product filter is not carried; every other one is."""
+    _turn1(console, group_by="customer", entities=[_e(PRODUCT_CODE, "product"), _e("Sorento", "brand")])
+    _text, calls = console.say(_drill(group_by="product", top_n=5), "top 5 products these customers buy")
+    (args,) = calls
+    assert args["group_by"] == "product" and args["customer_ids"] == [CU1, CU2], args
+    assert "product_code" not in args and "product_ids" not in args, args
+    assert args["brand_ids"] == [console.ids["brand"]], args
+    assert args["date_from"] == SEP["date_filter_start"] and args["basis"] == "delivered", args
+
+
+def test_a_carried_filter_on_another_dimension_still_carries(console) -> None:
+    _turn1(console, entities=[_e(PRODUCT_CODE, "product")])
+    _text, calls = console.say(_drill(), "top 10 customers for these sales agents")
+    (args,) = calls
+    assert args["product_code"] == PRODUCT_CODE, args
+
+
+def test_the_message_own_filter_on_the_target_dimension_stays(console) -> None:
+    _turn1(console, group_by="customer", entities=[_e("Sorento", "brand")])
+    _text, calls = console.say(_drill(group_by="product", top_n=5, entities=[_e(PRODUCT_CODE, "product")]),
+                               f"top 5 {PRODUCT_CODE} products these customers buy")
+    (args,) = calls
+    assert args["product_code"] == PRODUCT_CODE, args

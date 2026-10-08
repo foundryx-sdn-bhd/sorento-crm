@@ -257,3 +257,7 @@ def test_non_agent_drill_customers_to_their_products(live, run) -> None:
     assert calls, text
     args = calls[-1]
     assert args["group_by"] == "product" and len(args.get("customer_ids") or []) == 3, args
+    # Crew decision 8 Oct: the drill asks ACROSS products, so turn 1's product does not carry;
+    # MEGAH and KLANG also bought the other product.
+    assert "product_code" not in args, args
+    assert OTHER in text and PRODUCT in text, text
