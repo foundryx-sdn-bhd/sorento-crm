@@ -1,7 +1,8 @@
 # PLAN: Report engine drill-down follow-up (agents -> their customers, filters kept)
 
-Status: Plan (investigation + behaviour card in progress; no code yet). Track: to be named once
-the card is answered.
+Status: Plan. Behaviour card posted, waiting on the owner (`report-drilldown-behaviour-card.md`).
+No code until answered. Track: to be named once the card is answered (expected FULL: data-only
+prompt migration).
 Lane: REPORT-DRILLDOWN.
 
 ## Owner's words (8 Oct 2026)
@@ -12,4 +13,4 @@ existing customer <-> sales agent link.
 
 ## Investigation
 
-(in progress)
+Recorded in the card's "What happens today" section (file:line for every claim).
