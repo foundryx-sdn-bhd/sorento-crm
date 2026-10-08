@@ -242,3 +242,56 @@ def test_unlink_parks_through_pending_actions_and_refuses_unknown_link(db, pair,
             "payload": {},
         },
     ).status_code == 403
+
+
+def test_another_companys_product_and_link_are_404_everywhere(db, pair, monkeypatch):
+    """Security review: GET, reset-auto and parking the unlink never reach a product or a
+    link of a company outside the caller's scope."""
+    seed_mocha(db)
+    set_company_scope(db, frozenset({DEFAULT_COMPANY_ID, MOCHA_ID}))
+    stem = unique_code("ZZALTMC")[:30].upper()
+    foreign_old = product(db, company_id=MOCHA_ID, code=stem)
+    foreign_new = product(db, company_id=MOCHA_ID, code=f"{stem}-NEW")
+    reconcile_new_alternatives(db, foreign_new)
+    link = (
+        db.query(ProductAlternative)
+        .filter(ProductAlternative.product_id == foreign_old.id)
+        .one()
+    )
+    db.flush()
+
+    client = _client(db, {VIEW, EDIT}, monkeypatch)  # scoped to Sorento only
+    assert client.get(_base(foreign_old)).status_code == 404
+    assert client.post(f"{_base(foreign_old)}/reset-auto").status_code == 404
+    parked = client.post(
+        "/api/v1/pending-actions",
+        json={
+            "action_key": "product_alternative.unlink",
+            "entity_type": "product_alternative",
+            "entity_id": link.id,
+            "payload": {},
+        },
+    )
+    assert parked.status_code == 404
+    set_company_scope(db, frozenset({DEFAULT_COMPANY_ID, MOCHA_ID}))
+    assert db.query(ProductAlternative).filter(ProductAlternative.id == link.id).count() == 1
+
+
+def test_add_with_uppercase_self_id_is_refused_not_500(db, pair, monkeypatch):
+    old, _ = pair
+    response = _client(db, {VIEW, EDIT}, monkeypatch).post(
+        _base(old), json={"alternative_product_id": old.id.upper()}
+    )
+    assert response.status_code == 400
+
+
+def test_write_routes_are_session_only():
+    """Security review: the writes rewrite what dealers are offered and are not deferred,
+    so they never take an integration key (`require_permission`, not `_with_api_key`)."""
+    from app.api.v1.master_data import product_alternatives as routes
+
+    for endpoint in (routes.add_product_alternative, routes.reset_product_alternatives):
+        import inspect
+
+        default = inspect.signature(endpoint).parameters["current_user"].default
+        assert "_with_api_key" not in getattr(default.dependency, "__qualname__", "")

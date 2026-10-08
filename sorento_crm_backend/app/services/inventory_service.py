@@ -1803,8 +1803,8 @@ class StockService:
             # entry that is discontinued, or whose verdict is not a full "Got stock"
             # (no stock, incoming, partial, over the cap), carries its stored
             # alternatives, each judged by `_judge` with the SAME asked quantity: the
-            # alternative can only ever say one of the four sentences, never a figure of
-            # ours. One entry per alternative CODE, merged across companies the way the
+            # alternative can only ever say one of the four sentences, with no figure
+            # beyond what this mode already allows (the partial "Only N got stock"). One entry per alternative CODE, merged across companies the way the
             # page's own codes are. An entry still owed its quantity carries none yet.
             entry["alternatives"] = []
             full_stock = entry["branch"] == "in_stock" and entry["available_qty"] is None

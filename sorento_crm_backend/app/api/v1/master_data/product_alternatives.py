@@ -4,6 +4,10 @@
     POST /products/{product_id}/alternatives              (master_data.products.edit)
     POST /products/{product_id}/alternatives/reset-auto   (master_data.products.edit)
 
+Reads take a session or an `X-API-Key`; the writes are session-only (`require_permission`):
+they rewrite what dealers are offered and are not deferred, so an integration key never
+reaches them (`require_permission_with_api_key`'s own rule for write endpoints).
+
 Unlink is not a route here: it is the server-deferred record action
 `product_alternative.unlink` (`app/services/record_actions.py`), parked through
 `/api/v1/pending-actions` like every other detach. Gated the companions way: the
@@ -15,7 +19,7 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import require_permission_with_api_key
+from app.dependencies import require_permission, require_permission_with_api_key
 from app.schemas.product_alternative import (
     ProductAlternativeCreate,
     ProductAlternativeListOut,
@@ -36,7 +40,7 @@ def list_product_alternatives(
     current_user: dict = Depends(require_permission_with_api_key(VIEW)),
     db: Session = Depends(get_db),
 ):
-    validate_uuid_path(product_id, resource="Product")
+    product_id = validate_uuid_path(product_id, resource="Product")
     return {"data": alternatives.list_for_product(db, product_id)}
 
 
@@ -48,22 +52,20 @@ def list_product_alternatives(
 def add_product_alternative(
     product_id: str,
     payload: ProductAlternativeCreate,
-    current_user: dict = Depends(require_permission_with_api_key(EDIT)),
+    current_user: dict = Depends(require_permission(EDIT)),
     db: Session = Depends(get_db),
 ):
-    validate_uuid_path(product_id, resource="Product")
-    validate_uuid_path(payload.alternative_product_id, resource="Product")
-    row = alternatives.add_manual(
-        db, product_id, payload.alternative_product_id, current_user.get("id")
-    )
+    product_id = validate_uuid_path(product_id, resource="Product")
+    alternative_product_id = validate_uuid_path(payload.alternative_product_id, resource="Product")
+    row = alternatives.add_manual(db, product_id, alternative_product_id, current_user.get("id"))
     return {"data": row}
 
 
 @router.post("/{product_id}/alternatives/reset-auto", response_model=ProductAlternativeListOut)
 def reset_product_alternatives(
     product_id: str,
-    current_user: dict = Depends(require_permission_with_api_key(EDIT)),
+    current_user: dict = Depends(require_permission(EDIT)),
     db: Session = Depends(get_db),
 ):
-    validate_uuid_path(product_id, resource="Product")
+    product_id = validate_uuid_path(product_id, resource="Product")
     return {"data": alternatives.reset_auto(db, product_id)}
