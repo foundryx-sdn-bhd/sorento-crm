@@ -152,12 +152,13 @@ def test_continue_exit_kind_and_brand_with_nothing_live_gives_the_ac21_reply(ses
     _assert_ac21(reply, session_factory)
 
 
-def test_expired_but_usable_flyer_is_not_right_now_and_stamps_nothing(session_factory, monkeypatch):
-    """AC-21 liveness: the serving policy returns the ended Sorento flyer (expired_but_usable);
-    the kind ask treats it as not live: AC-21 reply, no "has promotion" for it."""
+def test_expired_but_usable_flyer_is_served_and_stamps_has_promotion(session_factory, monkeypatch):
+    """AC-22 (supersedes the live-only AC-21 liveness): the serving policy returns the ended
+    Sorento flyer (expired_but_usable); it counts: no "There is no ..." reply, Dealer stamped
+    "has promotion"."""
     ids = _seed(session_factory, sorento="expired_usable")
     captured = _mcp(monkeypatch, session_factory)
     reply = _ask(session_factory, monkeypatch, ids, "zzt-kp-expired-usable")
-    _assert_ac21(reply, session_factory)
-    assert "ZZT SORENTO A3 FLYER ENDED" not in reply, reply
+    assert "There is no Sorento A3 flyer right now." not in reply, reply
+    assert "2. Dealer - has promotion" in reply.splitlines(), reply
     assert any(n == PROMO_TOOL for n, _a in captured), captured

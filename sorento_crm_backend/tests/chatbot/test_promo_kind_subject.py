@@ -69,7 +69,7 @@ def _seed_world(session_factory, *, sorento_live_flyer: bool, other_brands_live:
     _seed_contact(session_factory, variables={})
     db = session_factory()
     srt, mocha = _brand(db, "Sorento"), _brand(db, "Mocha")
-    flyer = PromotionType(type_code="a3_flyer", type_name="A3 Flyer", show_expired=True, match_markers=["a3"], match_priority=40, is_default=False)
+    flyer = PromotionType(type_code="a3_flyer", type_name="A3 Flyer", show_expired=True, expired_max_age_days=7, match_markers=["a3"], match_priority=40, is_default=False)
     standard = PromotionType(type_code="standard", type_name="Standard Promo", show_expired=True, match_markers=[], match_priority=90, is_default=True)
     db.add_all([flyer, standard])
     db.add_all(

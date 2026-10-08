@@ -45,7 +45,7 @@ def _ask(session_factory, monkeypatch, ids, msg_id):
 def test_single_level_kind_and_brand_with_nothing_live_gives_the_ac21_reply(session_factory, monkeypatch):
     """AC-21: one entitled level, Sorento's only A3 flyer ended: the AC-21 lines, not the
     generic "Could not find promotion" offer."""
-    ids = _seed(session_factory, sorento="expired_usable")
+    ids = _seed(session_factory, sorento="none")  # AC-22: an ended-but-served flyer would count
     _mcp(monkeypatch, session_factory)
     reply = _ask(session_factory, monkeypatch, ids, "zzt-sl-none")
     lines = reply.splitlines()

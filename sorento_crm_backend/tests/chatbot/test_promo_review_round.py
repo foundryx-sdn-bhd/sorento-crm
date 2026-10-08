@@ -42,9 +42,9 @@ def test_a_kind_code_not_in_promotion_types_behaves_as_no_kind(session_factory, 
     assert calls and all(not a.get("promotion_types") for a in calls), captured
 
 
-def test_post_pick_fetch_does_not_serve_an_expired_but_usable_flyer(session_factory, monkeypatch):
-    """SF-a: Sorento's Dealer flyer is live, its Office flyer ended (expired-but-usable). The
-    probe stamps Office "no promotion"; picking Office must not then hand over the ended flyer."""
+def test_post_pick_fetch_serves_the_expired_but_usable_flyer(session_factory, monkeypatch):
+    """SF-a, updated to AC-22: Sorento's Dealer flyer is live, its Office flyer ended (expired-but-usable,
+    still served by the type). The probe stamps Office "has promotion" and the pick hands it over."""
     ids = _seed_paths(session_factory, sorento="none")
     db = session_factory()
     flyer = db.query(PromotionType).filter_by(type_code="a3_flyer").one()
@@ -55,7 +55,7 @@ def test_post_pick_fetch_does_not_serve_an_expired_but_usable_flyer(session_fact
     db.commit()
     captured = _serving_mcp(monkeypatch, session_factory)
     reply, _ = _say_world(session_factory, monkeypatch, _qf(kind="a3_flyer"), "sroento a3 flyer", "zzt-rr-sfa-ask")
-    assert "1. Office - no promotion" in reply and "2. Dealer - has promotion" in reply, reply
+    assert "1. Office - has promotion" in reply and "2. Dealer - has promotion" in reply, reply
     from app.services.chatbot.lanes.business.services import ResolveGateServices  # noqa: F401
     from tests.chatbot.test_promo_kind_subject import _parser_output
 
@@ -64,9 +64,8 @@ def test_post_pick_fetch_does_not_serve_an_expired_but_usable_flyer(session_fact
     pick_reply, _ = _say_world(session_factory, monkeypatch, pick, "1", "zzt-rr-sfa-pick")
     fetched = [a for n, a in captured[before:] if n == PROMO_TOOL]
     assert fetched, captured
-    # the ended flyer is not a "right now" answer at Office: no result row is handed over
-    # (the double's rows render as a numbered "Here are the results." list when served)
-    assert "Here are the results" not in pick_reply, pick_reply
+    # AC-22: the ended flyer is served at Office (the double's rows render as "Here are the results.")
+    assert "Here are the results" in pick_reply, pick_reply
 
 
 def test_a_scope_refusal_on_the_bridge_probe_never_shows_an_unstamped_menu(session_factory, monkeypatch):
