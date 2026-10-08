@@ -506,6 +506,19 @@ def several_values(raw: str, vocab: Vocabulary) -> list[str]:
     return []
 
 
+def _names_a_type(db: "Session", text: str, vocab: Vocabulary) -> bool:
+    """Does `text`, word for word, name a class, a product type or one registry value?"""
+    from app.services.product_class_signal import resolve_classes_for_term
+
+    said = " ".join(_words(text))
+    return bool(said) and (
+        said in vocab.class_phrases
+        or said in vocab.type_phrases
+        or _whole_spec_value(text, vocab) is not None
+        or bool(resolve_classes_for_term(db, text))
+    )
+
+
 def names_a_class_label(db: "Session", raw: str) -> bool:
     """Is `raw`, word for word, the name of a class (a class label staff or products carry, or
     a class of the built-in vocabulary), never one of its synonyms?"""
@@ -695,6 +708,14 @@ def ground(
             continue
         hint = str(entity.get("hint") or "").strip().lower()
         raw = str(entity.get("raw") or "").strip()
+        canonical = str(entity.get("canonical_code") or "").strip()
+        if hint in _CLASS_HINTS and canonical and _words(canonical) != _words(raw) and _names_a_type(db, canonical, vocab):
+            # The parser hinted a class and named the catalogue's own name for what the
+            # customer typed ("seat cover" -> "toilet seat"): that name grounds, read like any
+            # typed one. A canonical that names nothing leaves the raw to ground as before.
+            notes.append({"from": hint, "raw": raw, "to": canonical})
+            entity = {**entity, "raw": canonical, "canonical_code": None}
+            raw = canonical
         if hint == _PRODUCT_HINT and _names_a_class_not_a_code(raw, vocab):
             # Fix round 10 on PR #833 (owner, 28 Sep 2026: "i tried to search like gunmetal
             # basin, there is no such thing and it gives me flexible trap"): words with no
@@ -703,13 +724,6 @@ def ground(
             entity = {**entity, "hint": "category"}
             hint = "category"
             notes.append({"from": _PRODUCT_HINT, "raw": raw, "to": "category"})
-        canonical = str(entity.get("canonical_code") or "").strip()
-        if hint in _CLASS_HINTS and canonical and _words(canonical) != _words(raw):
-            # The parser named the catalogue's own name for what the customer typed ("seat
-            # cover" -> "toilet seat"): that name is what grounds, read like any typed one.
-            notes.append({"from": hint, "raw": raw, "to": canonical})
-            entity = {**entity, "raw": canonical, "canonical_code": None}
-            raw = canonical
         if hint in _SPEC_HINTS:
             others = [
                 str(e.get("raw") or "")

@@ -1392,10 +1392,12 @@ def run_fetch(
     # (probe and main call alike); carried across a tier pick by the parse output.
     from app.services.chatbot import turn_runtime as _turn_runtime
 
-    # On a tier pick the menu turn's filter is the base; the pick turn's own reads only fill
-    # the keys it actually has (it re-reads the kind but names no brand).
+    # On a turn that ANSWERED the tier pick the menu turn's filter is the base; the pick
+    # turn's own reads only fill the keys it actually has (it re-reads the kind but names no
+    # brand). A new ask that states its own level while the menu is open inherits nothing.
+    picked = bool((tier_gate or {}).get("tier_pick"))
     narrow = {
-        **{k: v for k, v in (parse_output.get("promo_filter") or {}).items() if v},
+        **{k: v for k, v in (parse_output.get("promo_filter") or {}).items() if v and picked},
         **{k: v for k, v in _turn_runtime.promo_filter(parse_output, db, gate).items() if v},
     }
     for key, values in narrow.items():
