@@ -424,6 +424,7 @@ export function BoardLineDecisionPanel({
         donor_line_no: candidate.donor_line_no,
         donor_agent_code: candidate.donor_agent_code,
         same_agent: candidate.same_agent,
+        donor_required_date: candidate.donor_required_date,
       })),
     ]);
 

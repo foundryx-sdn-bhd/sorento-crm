@@ -815,6 +815,10 @@ class BorrowCandidate(BaseModel):
     donor_line_no: Optional[int] = None
     donor_agent_code: Optional[str] = None
     donor_core_line_id: Optional[str] = None
+    #: BORROW-LOCATION-ONLY: the donor's own date, posted back by a Decide-made borrow so an
+    #: order borrow (switch ON) raises its order-back at it; undeclared, the response model
+    #: dropped it and the row fell back to the borrowing line's date.
+    donor_required_date: Optional[date] = None
     lower_ranked: bool = False
     same_agent: bool = False
     #: S4 (`PLAN-local-supplier-oi-routing.md`): the SAME location facts the Grid Location

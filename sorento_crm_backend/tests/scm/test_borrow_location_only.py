@@ -850,3 +850,14 @@ def test_defect_a_the_board_route_carries_each_step_two_donor_line_id(enabled):
     assert all(c["donor_core_line_id"] for c in step_two), step_two
     for c in step_two:
         assert bool(c.get("donor_so_number")) is enabled, c
+        # The donor's own date travels in BOTH states (reviewer final pass): under ON a
+        # Decide-made order borrow posts it back, and `_borrow_shortfalls` raises the
+        # donor's order-back at it; dropped by the response model, the row fell back to
+        # the borrowing line's date.
+        assert c.get("donor_required_date"), c
+    if not enabled:
+        # Security final pass, nit 1: no donor NAME of any kind on any rung under OFF.
+        for c in candidates:
+            for field in ("donor_so_number", "donor_line_no", "donor_agent_code",
+                          "donor_project_ref"):
+                assert c.get(field) is None, (field, c)
