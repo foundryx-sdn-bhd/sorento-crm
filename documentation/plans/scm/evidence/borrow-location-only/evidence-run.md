@@ -100,3 +100,41 @@ shows which donor SO it is, short of expanding it (screenshot 38).
 
 Chromium crashed once while navigating at 375; re-login done. Servers and browser session closed after
 the run.
+
+# Re-check on head 9ed59d2fc, after the owner's hand test (1280 and 375)
+
+Same stack, `sorento_browse`, fresh seeded askers (a bin holding 8 as two later-order lines, asker needs 6;
+fake `ZZT-*` names). Switch toggled through the Settings screen. Screenshots 50 to 63.
+
+## 1. Wording
+
+| Check | Result | Evidence |
+| --- | --- | --- |
+| OFF, Decide menu item reads "Borrow" | PASS at 1280 and 375. Menu: As suggested, Use own location, Borrow, Use BRW, Buy, Transfer to Cancel SO. | 51, 59 |
+| OFF, strip tile and Suggested/Decided columns read "Borrow 6 (ZZTMWH-IB9c2)" | PASS at 1280 and 375. No "Borrow (other)" and no "Borrow other location" anywhere on the board. | 50, 58 |
+| OFF, decision card names it "Borrow" | PASS. Card DECISION reads `Borrow 4 ZZTMWH-IB9c2 + 2 ZZTMWH-IB9c2`; the Decided cell reads `Borrow 6 (ZZTMWH-IB9c2)`. | 52, 60 |
+| ON, "Borrow from another order" and "Borrow (order)" unchanged | PASS at 1280 and 375. Row reads `Borrow (order) 6 (ZZTMWH-IBaf7)`; menu has seven items with "Borrow from another order" above "Borrow". | 61, 62, 63 |
+
+Observation: with the switch ON the location item also reads plain "Borrow", next to "Borrow from another
+order". Only the order item carries "from another order", so the two are distinguishable, but the bare word
+is the shorter of the pair.
+
+## 2. Timing bug, switch OFF
+
+Method: a line first confirmed as Buy (one ORDER row), its OI opened so the page is cached in the open
+session, back to the board by sidebar clicks (no reload), Decide > Borrow > bin > Save, then Confirm
+followed straight away by a click on the line's OI link. The viewport was 1280 x 1500 so Confirm and the
+link are both on screen with no scrolling.
+
+| Run | What happened | Result |
+| --- | --- | --- |
+| Run 1 (ZZT-SO-ASK2F70C) | The Confirm click returned after about 1.2 s. The link click came about 1.3 s later and opened the OI. Every sample from 2.4 s to 9.5 s showed the NEW line: `1 ZZT-JTOL, SO Qty 6, delivery 07/11/2026, ZZTMWH-IBf54, ORDER BACK`. No "not here", never the old ORDER at the donor or the Buy location. DB: old ORDER and ORDER_BACK rows cancelled, one new ORDER_BACK raised. | PASS (56) |
+| Run 2 (ZZT-SO-ASK81E4F) | The immediate link click errored with "could not compute box model": the link was not on the page while Confirm was still working, so it could not be clicked into a stale state. Once the board showed the new state the link click opened the OI on the new line: `1 ZZT-JTOC, SO Qty 6, delivery 07/11/2026, ZZTMWH-IBc46, ORDER BACK`. No "not here", no old line at any sample. | PASS (57) |
+
+Confirm time: from the click to the board showing "confirmed as revision N" was between 1.2 s and 5.7 s
+in the samples (the banner was absent at 1.2 s and present at 5.7 s, polled every 4 s). The Confirm click
+itself returns in about 1.2 s. A first try on another line (no scrolling, so the link click did not fire) is
+not counted. I could not time the transition more finely than the poll interval.
+
+Chromium crashed or hung four times in this run (one needed a restart of my own session); logins redone.
+Servers and the browser session were closed afterwards.
