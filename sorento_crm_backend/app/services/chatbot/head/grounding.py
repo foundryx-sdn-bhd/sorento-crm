@@ -701,15 +701,15 @@ def ground(
             add(grounded, entity)
             notes.append({"from": hint, "raw": raw, "to": [g.__dict__ for g in grounded]})
             continue
-        whole = _whole_spec_value(raw, vocab) if hint in _CLASS_HINTS and raw else None
-        if whole is not None:
-            # PROMO-SUBJECT-FILTER AC-24: the whole phrase is one value of a registry key, said
-            # word for word ("basin cabinet", furniture_type basin_cabinet): that value is the
-            # subject, before any reading of its words as two types.
-            add([whole], entity)
-            notes.append({"from": hint, "raw": raw, "to": [whole.__dict__]})
-            continue
         if hint in _CLASS_HINTS and raw and _names_two_types(db, raw, vocab):
+            whole = _whole_spec_value(raw, vocab)
+            if whole is not None:
+                # PROMO-SUBJECT-FILTER AC-24: the words name two types, but the whole phrase
+                # is one value of a registry key, said word for word ("basin cabinet",
+                # furniture_type basin_cabinet): that value is what was asked for.
+                add([whole], entity)
+                notes.append({"from": hint, "raw": raw, "to": [whole.__dict__]})
+                continue
             # Fix round 10 on PR #833: "water tap basin" holds two product types word for
             # word ("water tap", a tap, and "basin", a wash basin). No one product is
             # both, and reading it as either or as both would be a guess at what was
