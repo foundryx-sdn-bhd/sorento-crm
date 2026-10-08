@@ -15,9 +15,9 @@ from __future__ import annotations
 
 from sqlalchemy import text
 
-from app.api.v1.system.ai_assistant import get_ai_assistant_config, update_ai_assistant_config
+from app.api.v1.system.ai_assistant import get_ai_assistant_config
 from app.models.ai_assistant import AIAssistantConfig
-from app.schemas.ai_assistant import AIAssistantConfigUpdate
+from app.schemas.ai_assistant import AIAssistantConfigResponse, AIAssistantConfigUpdate
 from app.services.ai_assistant_service import AIAssistantConfigService
 from app.utils.field_encryption import decrypt_secret, encrypt_secret
 from tests._pg_fixture import blank_session
@@ -120,11 +120,10 @@ def test_a_token_under_another_secret_reads_as_no_key(monkeypatch):
 
 def test_the_config_api_never_returns_a_key():
     with blank_session() as db:
-        put = update_ai_assistant_config(
-            _payload(api_key=OPENAI, anthropic_api_key=ANTHROPIC, gemini_api_key=GEMINI),
-            user={"id": None},
-            db=db,
-        )
+        # PUT's body is exactly this (`update_ai_assistant_config`); the route itself
+        # needs a real user row for updated_by_user_id.
+        svc = AIAssistantConfigService(db)
+        put = AIAssistantConfigResponse(**svc.to_response_dict(_save_all_three(db)))
         got = get_ai_assistant_config(_user={}, db=db)
         raw = _raw(db, put.id)
 
