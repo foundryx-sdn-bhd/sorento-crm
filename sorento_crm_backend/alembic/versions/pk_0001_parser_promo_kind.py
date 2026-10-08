@@ -40,7 +40,8 @@ def publish(session: Session) -> int | None:
     template = SEMANTIC_PARSER_PROMPT
     missing = [marker for marker in REQUIRED if marker not in template]
     if missing:
-        raise RuntimeError(f"pk_0001: the parser constant lacks {missing}")
+        logger.warning("pk_0001: the parser constant lacks %s; nothing published", missing)
+        return None
     existing = (
         session.query(AIPromptVersion)
         .filter(AIPromptVersion.name == PROMPT_NAME, AIPromptVersion.template == template)

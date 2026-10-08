@@ -742,9 +742,14 @@ def entity_ids_transformer(
     if tool_name == TIER_PROBE_TOOL and (
         jsc.array(jsc.get(semantic_input, "scope_terms")) or jsc.array(jsc.get(semantic_input, "promotion_types"))
     ):
-        # Promotions the resolver matched by NAME are never the subject either: a subject or
-        # kind ask is answered by explicit links and the kind alone (AC-22, owner rule).
-        out.pop("promotion_ids", None)
+        # Promotions the resolver matched by NAME off other words are never the subject: a
+        # subject or kind ask is answered by explicit links and the kind (AC-22, owner rule).
+        # A promotion the customer named and the resolver placed (`promo_filter`) stays.
+        named = [p for p in jsc.array(jsc.get(semantic_input, "promotion_ids")) if is_uuid(p)]
+        if named:
+            out["promotion_ids"] = named
+        else:
+            out.pop("promotion_ids", None)
     if tool_name == TIER_PROBE_TOOL and not out.get("product_ids"):
         for key in ("scope_terms", "promotion_types", "brand_ids"):
             narrowed = jsc.get(semantic_input, key)

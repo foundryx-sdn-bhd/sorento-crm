@@ -489,9 +489,9 @@ def several_values(raw: str, vocab: Vocabulary) -> list[str]:
     `raw` is one word that heads two or more of them ("cabinet": basin cabinet, side
     cabinet, ...), shown the way the registry shows them. Empty otherwise."""
     words = _words(raw)
-    if len(words) != 1:
+    if len(words) != 1 or _whole_spec_value(raw, vocab) is not None:
         return []
-    head = _singular(words[0])
+    head = words[0]
     for entry in vocab.keys:
         if head not in entry.heads:
             continue
@@ -504,6 +504,18 @@ def several_values(raw: str, vocab: Vocabulary) -> list[str]:
         if len(shown) >= 2:
             return shown
     return []
+
+
+def names_a_class_label(db: "Session", raw: str) -> bool:
+    """Is `raw`, word for word, the name of a class (a class label staff or products carry, or
+    a class of the built-in vocabulary), never one of its synonyms?"""
+    from app.models.product import ProductCategory
+    from app.services.product_class_signal import CLASS_SYNONYMS, stored_class_labels
+
+    said = " ".join(_words(raw))
+    labels = [*CLASS_SYNONYMS, *stored_class_labels(db)]
+    labels += [r[0] for r in db.query(ProductCategory.class_label).filter(ProductCategory.class_label.isnot(None))]
+    return any(" ".join(_words(label)) == said for label in labels)
 
 
 def _names_two_types(db: "Session", raw: str, vocab: Vocabulary) -> bool:

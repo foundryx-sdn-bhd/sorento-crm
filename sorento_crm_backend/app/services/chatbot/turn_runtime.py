@@ -569,6 +569,14 @@ def promo_filter(parse_output: dict[str, Any], db: Any, gate: Any = None) -> dic
 
     out: dict[str, list[str]] = {}
     entities = parse_output.get("entities")
+    named_promotions = set(_typed_by_token([e for e in entities or [] if isinstance(e, dict) and e.get("hint") == "promotion"]))
+    promotion_ids: list[str] = []
+    for r in jsc.array(jsc.get(gate, "resolutions")):
+        if isinstance(r, dict) and _token_key(jsc.nullish_str(r.get("token") or r.get("raw"))) in named_promotions:
+            for m in jsc.array(r.get("matches")):
+                if isinstance(m, dict) and m.get("entity_type") == "promotion" and _is_uuid(m.get("uuid")):
+                    if m["uuid"] not in promotion_ids:
+                        promotion_ids.append(m["uuid"])
     placed = {
         _token_key(jsc.nullish_str(r.get("token") or r.get("raw")))
         for r in jsc.array(jsc.get(gate, "resolutions"))
@@ -598,6 +606,9 @@ def promo_filter(parse_output: dict[str, Any], db: Any, gate: Any = None) -> dic
     ):
         # A code the table does not list is the parser guessing: it behaves as no kind.
         out["promotion_types"] = [kind.strip()]
+    if out and promotion_ids:
+        # A promotion the customer NAMED and the resolver placed by id stays the subject.
+        out["promotion_ids"] = promotion_ids
     if out and db is not None:
         # Every live row the brand name names: one brand can carry a row per company.
         live = active_brands(db)
@@ -630,7 +641,9 @@ def promo_subject_ask_back(parse_output: dict[str, Any], db: Any, gate: Any = No
 
         vocab = grounding.load_vocabulary(db)
         for term in terms:
-            options = grounding.several_values(term, vocab)
+            # A class name is the subject as it stands; only a word that names no class asks
+            # which of a registry key's values it means.
+            options = [] if grounding.names_a_class_label(db, term) else grounding.several_values(term, vocab)
             if options:
                 return "\n".join([f"Which {term} do you mean?", *options])
         for term in terms:
