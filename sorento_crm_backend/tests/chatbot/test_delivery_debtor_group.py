@@ -2,7 +2,7 @@
 
 PLAN ``documentation/plans/chatbot/PLAN-delivery-debtor-group-08oct.md``.
 
-"check today delivery to hanlim" offered two options: the customer, and the free-text debtor
+"check today delivery to <customer>" offered two options: the customer, and the free-text debtor
 name one DO carried ("<NAME> (QUARTZ & ONYX)", typed at DO level). That DO's debtor code is
 the same customer, and the customer sits in one customer group, so there is nothing to choose.
 

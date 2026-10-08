@@ -4,8 +4,8 @@ Status: in review, PR #1536 (small fix track: no migration, no auth/RBAC, no new
 
 ## Owner's case (8 Oct 2026)
 
-"check today delivery to hanlim" offered two options, "HANLIM TRADING SDN BHD - has DO" and
-"HANLIM TRADING SDN BHD (CERAMIC & ELLECI) - has DO". The second name was typed on one DO at DO
+"check today delivery to <customer>" offered two options, "<CUSTOMER> - has DO" and
+"<CUSTOMER> (<DO-LEVEL SUFFIX>) - has DO". The second name was typed on one DO at DO
 level; the DO's debtor code is the same customer. Only one customer (group) exists, so no picker
 should appear.
 
@@ -22,7 +22,7 @@ should appear.
   `display.debtor_name` (`lanes/business/gate.py:328` `_cust_name`, :339 `_display_name`); one
   entity per uuid, last match wins (:434). So a DO-name hit linked through an alias (the
   debtor-code merge records DO-level names as aliases) replaced the customer's master name
-  with "<NAME> (CERAMIC & ELLECI)".
+  with "<NAME> (<DO-LEVEL SUFFIX>)".
 - Customer groups reach the chatbot as an exact-name map (`customer_group_service.family_overrides`,
   `app/services/customer_group_service.py:268`; `ledger_family.customer_group_of`, `app/services/ledger_family.py:112`).
   The DO-level name is no customer's name, so it is ungrouped, and an ungrouped key equal to a
@@ -34,11 +34,11 @@ should appear.
 
 ## Prod shape (crew snapshot, 6 Oct)
 
-HANLIM is four accounts in company 0001 (300-H030 [A/C I], 300-H070 [A/C II], 300-H118 [A/C III],
-300-H119 [A/C IV]); the 5 Oct debtor merge recorded "HANLIM TRADING SDN BHD" as an alias of H030
-and the DO-level name as an alias of H118. Groups are stored as `customers.customer_group_id`
+<CUSTOMER> is four accounts in one company (<code 1> [A/C I], <code 2> [A/C II], <code 3> [A/C III],
+<code 4> [A/C IV]); the 5 Oct debtor merge recorded "<CUSTOMER>" as an alias of <code 1>
+and the DO-level name as an alias of <code 3>. Groups are stored as `customers.customer_group_id`
 (`app/models/order.py:184`) onto `customer_groups` (:64), and reach the chatbot only as the
-exact customer-name map above. So the two lines were two ACCOUNTS of one group. H118's
+exact customer-name map above. So the two lines were two ACCOUNTS of one group. <code 3>'s
 DO-name hit printed the DO name instead of its master name "... [A/C III]", which the group map
 could not place. With each hit carrying its account's master name, all four accounts fall in
 the group and the roster is one choice: no ask, and the pick covers every account (the DO
@@ -61,7 +61,7 @@ ungrouped account, still asks.
 - One hit per (debtor name, customer) (`entity_resolver._one_hit_per_customer`): linking per
   DO lets one buyer name ("CASH SALES") belong to several customers, and each stays a hit so
   the gate asks, never the one the database returned first (review B1).
-- Scope note (review S2): the display change alone fixes the reported prod case (H118 is
+- Scope note (review S2): the display change alone fixes the reported prod case (<code 3> is
   reached through its merge alias). The FK and code links are the owner's "group by debtor
   code" rule for DOs no alias reaches (likely the dev DB, which may lack the 5 Oct aliases).
 - A DO no link reaches stays `uuid = None`, as before: never guessed, no name similarity. The
