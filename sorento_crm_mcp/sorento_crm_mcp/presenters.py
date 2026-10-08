@@ -1529,6 +1529,16 @@ def _availability_line(entry: dict) -> str:
     return f"{code} x {qty}: {_availability_tail(entry)}"
 
 
+def _printed_alternatives(entry: dict) -> list[dict]:
+    """The alternatives that print a line under `entry` - the one filter the line builder
+    and the referral stamp both read, so a stamp never counts a line nobody saw."""
+    return [
+        a
+        for a in (entry.get("alternatives") or [])
+        if isinstance(a, dict) and a.get("branch") and _availability_label(a)
+    ]
+
+
 def _alternative_has_stock(entry: dict) -> bool:
     """PRODUCT-ALTERNATIVES (card Q4, owner 8 Oct 2026): a stored alternative of this
     entry, judged by the backend with the same asked quantity, got stock (full or
@@ -1594,8 +1604,8 @@ def _stamp_refers(entries: Any) -> Any:
     # printed alternative lines refers.
     def _refers(e: dict) -> bool:
         return _availability_tail(e).endswith(REFER_TO_SALESMAN) or any(
-            isinstance(a, dict) and a.get("branch") and _availability_tail(a).endswith(REFER_TO_SALESMAN)
-            for a in (e.get("alternatives") or [])
+            _availability_tail(a).endswith(REFER_TO_SALESMAN)
+            for a in _printed_alternatives(e)
         )
 
     return [
@@ -1636,11 +1646,7 @@ def _stock_availability(payload: dict, b: _Builder) -> None:
         # "<code> x <Q>: <verdict>" line, printed under this one after the marker
         # (`fetch.py::_item_line`). The backend attaches them to answered entries only,
         # judged with the same asked quantity; no alternative, no key (flags unchanged).
-        alternative_lines = [
-            _availability_line(a)
-            for a in (entry.get("alternatives") or [])
-            if isinstance(a, dict) and a.get("branch") and _availability_label(a)
-        ]
+        alternative_lines = [_availability_line(a) for a in _printed_alternatives(entry)]
         if alternative_lines:
             flags["alternative_lines"] = alternative_lines
         b.raw_item(title, [], flags)

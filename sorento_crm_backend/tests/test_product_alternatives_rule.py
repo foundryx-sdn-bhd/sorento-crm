@@ -292,7 +292,7 @@ def test_normalize_code_is_the_twin_of_the_sql_normaliser(db):
 
     from app.services.product_alternative_service import _norm_sql, normalize_code
 
-    for raw in ["srt1000-cr - new", "  SRTUB6503-BACK INLET - NEW ", "A -\tNEW", "x--new", "AB"]:
+    for raw in ["srt1000-cr - new", "  SRTUB6503-BACK INLET - NEW ", "A -\tNEW", "x--new", "AB", "AB\t", "\nAB"]:
         sql = db.execute(select(_norm_sql(literal(raw)))).scalar()
         assert normalize_code(raw) == sql, raw
 

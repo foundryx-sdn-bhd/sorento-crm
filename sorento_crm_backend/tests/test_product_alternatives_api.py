@@ -360,3 +360,14 @@ def test_write_routes_are_session_only():
 
         default = inspect.signature(endpoint).parameters["current_user"].default
         assert "_with_api_key" not in getattr(default.dependency, "__qualname__", "")
+
+
+def test_unlink_committing_after_a_reset_removed_the_link_ends_quietly(db, pair):
+    """Reviewer round 2 nit: a reset that commits first leaves the parked unlink nothing to
+    do; it must not end as a failed action."""
+    old, _ = pair
+    link = db.query(ProductAlternative).filter(ProductAlternative.product_id == old.id).one()
+    link_id = link.id
+    db.delete(link)
+    db.flush()
+    assert _unlink_product_alternative(db, {"entity_id": link_id}) is None
