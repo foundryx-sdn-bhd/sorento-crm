@@ -94,11 +94,18 @@ LABELS: dict[str, dict[str, str]] = {
     },
     "Here are the results.": {"ms": "Berikut ialah hasilnya.", "zh": "以下是结果。"},
     "PRODUCT DISCONTINUED": {"ms": "PRODUK DIHENTIKAN", "zh": "产品已停产"},
-    # PRODUCT-ALTERNATIVES (card Q4, owner 8 Oct 2026): the label of the line naming a stored
-    # alternative, and the two refer-bearing verdicts without their refer (it drops when an
-    # alternative printed under the line has stock). The ms and zh are the lane's rendering,
-    # flagged on PR #1533 for the owner to confirm.
-    "Alternative": {"ms": "Alternatif", "zh": "替代产品"},
+    # DISCONTINUED-ASK (owner Q4 a, 8 Oct 2026): the status line both ways, the card's field
+    # line beside another property (Q1 a), and the stored alternative (Q5 a, #1533).
+    "{code}: ⚠️ Discontinued.": {"ms": "{code}: ⚠️ Dihentikan.", "zh": "{code}：⚠️ 已停产。"},
+    "{code}: ✅ Not discontinued.": {"ms": "{code}: ✅ Tidak dihentikan.", "zh": "{code}：✅ 未停产。"},
+    # Whole lines, so no other "Yes" / "No" in any reply is touched.
+    "*Discontinued:* ⚠️ Yes": {"ms": "*Dihentikan:* ⚠️ Ya", "zh": "*已停产:* ⚠️ 是"},
+    "*Discontinued:* ✅ No": {"ms": "*Dihentikan:* ✅ Tidak", "zh": "*已停产:* ✅ 否"},
+    "Alternative": {"ms": "Alternatif", "zh": "替代型号"},
+    # PRODUCT-ALTERNATIVES (card Q4, owner 8 Oct 2026): the two refer-bearing verdicts without
+    # their refer (it drops when an alternative printed under the line has stock); the
+    # `Alternative` label itself is DISCONTINUED-ASK's entry above. The ms and zh are the
+    # lane's rendering, flagged on PR #1533 for the owner to confirm.
     "No stock and no incoming.": {
         "ms": "Tiada stok dan tiada stok masuk.",
         "zh": "没有库存，也没有到货。",
