@@ -171,3 +171,34 @@ def test_backfill_dry_run_counts_without_writing_then_apply_encrypts(capsys):
     out = capsys.readouterr()
     for secret in (OPENAI, ANTHROPIC, legacy_anthropic):
         assert secret not in out.out + out.err
+
+
+def test_fernet_format_detection_rejects_non_tokens():
+    from app.utils.field_encryption import is_fernet_token
+
+    assert is_fernet_token(encrypt_secret(OPENAI))
+    for value in (OPENAI, ANTHROPIC, GEMINI, "", None, "=", "====", "\n", "gAAAAA", "not base64!"):
+        assert not is_fernet_token(value), repr(value)
+
+
+def test_a_422_on_the_config_put_does_not_log_the_key(caplog):
+    """Pydantic puts the whole body in a missing-field error's `input`; the global 422
+    handler logged it, so a PUT missing `provider` wrote the plain key to the app log."""
+    import asyncio
+    from types import SimpleNamespace
+
+    from fastapi.exceptions import RequestValidationError
+
+    from app.main import validation_exception_handler
+
+    exc = RequestValidationError(
+        [{"type": "missing", "loc": ("body", "provider"), "msg": "Field required",
+          "input": {"api_key": OPENAI, "gemini_api_key": GEMINI}}]
+    )
+    request = SimpleNamespace(url="http://test/api/v1/system/ai-assistant/config", method="PUT")
+    with caplog.at_level("DEBUG"):
+        asyncio.run(validation_exception_handler(request, exc))
+
+    assert "provider" in caplog.text
+    assert OPENAI not in caplog.text
+    assert GEMINI not in caplog.text
