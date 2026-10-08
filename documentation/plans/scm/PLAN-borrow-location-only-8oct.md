@@ -1,6 +1,6 @@
 # PLAN: borrow = location only (BORROW-LOCATION-ONLY)
 
-Status: Build (answers in, 8 Oct 2026). Feature track, size L (engine +
+Status: Review (built, fix round 1 + browser findings in, second review pass running; hand-test posted; 8 Oct 2026). Feature track, size L (engine +
 confirm write + Decide UI + guarded data script). Cloud lane, PR #1534. No code before the
 card's answers.
 
