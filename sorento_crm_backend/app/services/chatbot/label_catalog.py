@@ -96,11 +96,11 @@ LABELS: dict[str, dict[str, str]] = {
     "PRODUCT DISCONTINUED": {"ms": "PRODUK DIHENTIKAN", "zh": "产品已停产"},
     # DISCONTINUED-ASK (owner Q4 a, 8 Oct 2026): the status line both ways, the card's field
     # line beside another property (Q1 a), and the stored alternative (Q5 a, #1533).
-    "{code}: Discontinued.": {"ms": "{code}: Dihentikan.", "zh": "{code}：已停产。"},
-    "{code}: Not discontinued.": {"ms": "{code}: Tidak dihentikan.", "zh": "{code}：未停产。"},
+    "{code}: ⚠️ Discontinued.": {"ms": "{code}: ⚠️ Dihentikan.", "zh": "{code}：⚠️ 已停产。"},
+    "{code}: ✅ Not discontinued.": {"ms": "{code}: ✅ Tidak dihentikan.", "zh": "{code}：✅ 未停产。"},
     # Whole lines, so no other "Yes" / "No" in any reply is touched.
-    "*Discontinued:* Yes": {"ms": "*Dihentikan:* Ya", "zh": "*已停产:* 是"},
-    "*Discontinued:* No": {"ms": "*Dihentikan:* Tidak", "zh": "*已停产:* 否"},
+    "*Discontinued:* ⚠️ Yes": {"ms": "*Dihentikan:* ⚠️ Ya", "zh": "*已停产:* ⚠️ 是"},
+    "*Discontinued:* ✅ No": {"ms": "*Dihentikan:* ✅ Tidak", "zh": "*已停产:* ✅ 否"},
     "Alternative": {"ms": "Alternatif", "zh": "替代型号"},
     # Slice 2: PO / SO / SPO / orders rows. PO, SO, SPO and GR stay as printed (owner Q3).
     "Order Number": {"ms": "No. Pesanan", "zh": "订单号"},

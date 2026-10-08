@@ -1851,9 +1851,9 @@ def _discontinued_status_lines(
     loc: Any, it: Any, *, card: str | None = None, label: str | None = None
 ) -> str | None:
     """The item's status from its own `flags.discontinued` (`products.is_discontinued`,
-    the field the marker always read). With no `card`: `<label>: Discontinued.` or
-    `<label>: Not discontinued.` (owner Q4 a; `label` defaults to the code). With the
-    item's `card` text: that card plus `*Discontinued:* Yes` / `No` (owner Q1 a). A
+    the field the marker always read). With no `card`: `<label>: ⚠️ Discontinued.` or
+    `<label>: ✅ Not discontinued.` (owner Q4 a; `label` defaults to the code). With the
+    item's `card` text: that card plus `*Discontinued:* ⚠️ Yes` / `✅ No` (owner Q1 a). A
     discontinued item then names each stored alternative the presenter put on it
     (`alternatives`, PRODUCT-ALTERNATIVES #1533's link): one `Alternative: <code>` line
     each, none when the key is absent.
@@ -1866,10 +1866,11 @@ def _discontinued_status_lines(
     code = _item_code(it)
     if card is None:
         name = label or code
-        line = loc.text(f"{name}: Discontinued." if gone else f"{name}: Not discontinued.")
+        # Owner hand test (8 Oct): the warning sign for discontinued, the tick for not.
+        line = loc.text(f"{name}: ⚠️ Discontinued." if gone else f"{name}: ✅ Not discontinued.")
     else:
         # One whole catalogued line, so its translation cannot reach any other Yes / No.
-        line = f"{card}\n{loc.text('*Discontinued:* Yes' if gone else '*Discontinued:* No')}"
+        line = f"{card}\n{loc.text('*Discontinued:* ⚠️ Yes' if gone else '*Discontinued:* ✅ No')}"
     if gone:
         seen = {code}
         for alt in jsc.array(jsc.get(it, "alternatives")):
