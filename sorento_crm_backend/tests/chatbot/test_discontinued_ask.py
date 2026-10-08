@@ -200,6 +200,19 @@ def test_a_code_whose_companies_disagree_names_the_company_on_each_line():
     assert _body(reply) == "X1 (Sorento): Not discontinued.\n\nX1 (Mocha): Discontinued."
 
 
+def test_disagreeing_rows_without_a_company_each_say_it_on_their_own_card():
+    """Reviewer round 2: with no Company field to tell the rows apart, each row prints its
+    card with `*Discontinued:* Yes / No`, never two bare contradicting lines."""
+    reply = _answer(
+        _product("X1", discontinued=False),
+        _product("X1", discontinued=True),
+        attrs=["discontinued"],
+    )
+    assert "X1: Not discontinued." not in reply and "X1: Discontinued." not in reply
+    assert reply.count("*Product Code:* X1") == 2
+    assert "*Discontinued:* No" in reply and "*Discontinued:* Yes" in reply
+
+
 def test_companies_that_agree_are_one_line_without_a_company():
     reply = _answer(
         _product("X1", discontinued=True, company="Sorento"),

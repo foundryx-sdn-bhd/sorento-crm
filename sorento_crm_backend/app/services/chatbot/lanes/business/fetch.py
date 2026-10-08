@@ -3158,10 +3158,10 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
                 for r in rows
             }
             if len(facts) > 1:
-                for r in rows:
-                    company = _item_company(r)
-                    if company:
-                        status_labels[id(r)] = f"{code} ({company})"
+                companies = [_item_company(r) for r in rows]
+                for r, company in zip(rows, companies):
+                    # No company to tell them apart: each row says it on its own card.
+                    status_labels[id(r)] = f"{code} ({company})" if all(companies) else ""
 
     msg = (
         ""
@@ -3238,8 +3238,10 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
         if status_ask:
             # Q1 (a): the status alone is the status line; beside another property it is a
             # field of the card, in place of the marker it supersedes.
+            label = status_labels.get(id(it))
+            as_card = not status_only or label == ""
             status = _discontinued_status_lines(
-                loc, it, card=None if status_only else line, label=status_labels.get(id(it))
+                loc, it, card=(line if not status_only else field_lines) if as_card else None, label=label
             )
             if status is not None:
                 return status
