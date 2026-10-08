@@ -56,7 +56,7 @@ Backend paths are under `sorento_crm_backend/`.
    - A borrow from the line's own location, or from its own group, raises nothing today
      (`:7742-7760`). The docstring's reason, "its demand is still inside that location's SO
      qty" (`:7604-7608`), no longer holds for project lines: a project line is demand ONLY
-     through its OI rows (`app/services/scm/demand.py:488-541`, where the book leg excludes
+     through its OI rows (`app/services/scm/demand.py:479-541`, where the book leg at `:501` excludes
      `demand_class = 'project'`).
 7. **Step 3 (`supply_borrow`)** already writes its order-back on the BORROWING line at the
    borrowing line's date (`project_supply_service.py:7224-7251`). Only its reason names the
