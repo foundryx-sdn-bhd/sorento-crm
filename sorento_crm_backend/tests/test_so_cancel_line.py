@@ -447,7 +447,7 @@ def test_c23_a_cancel_of_a_line_the_batch_does_not_name_rides_along_with_the_bat
     assert raw.cancel_reason == REASON
     db.expire_all()
     db.refresh(ack_a)
-    assert ack_a.ack_state == ACK_CHANGED
+    assert ack_a.state == INQUIRY_CANCELLED
     # The batch applied exactly as it would without the cancel.
     rows = db.query(PlanningChangeRow).filter(PlanningChangeRow.batch_id == batch_id).all()
     assert rows and all(r.applied_state == "applied" for r in rows)
@@ -526,7 +526,7 @@ def test_c26_a_cancel_only_press_with_a_batch_id_cancels_and_leaves_the_batch_pe
     assert raw.cancel_reason == REASON
     db.expire_all()
     db.refresh(ack_a)
-    assert ack_a.ack_state == ACK_CHANGED
+    assert ack_a.state == INQUIRY_CANCELLED
     rows = db.query(PlanningChangeRow).filter(PlanningChangeRow.batch_id == batch_id).all()
     assert rows and all(r.applied_state != "applied" for r in rows)
     assert db.get(PlanningChangeBatch, batch_id).applied_at is None

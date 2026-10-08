@@ -82,6 +82,8 @@ def _world_with_row(api, monkeypatch, **row_kwargs):
     w = _cb_world(world)
     core_a, mirror_a, product_a = w["a"]
     db = world.db
+    # The handover prints the project SO's own `autocount_doc_no`, as in prod.
+    w["order"].autocount_doc_no = w["core_so"].so_number
     inquiry = _inquiry(db, world.company_id, w["order"].id)
     row = _oi_row(
         db, world.company_id, inquiry.id, mirror_a.id, product_a.product_code, "36",
