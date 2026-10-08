@@ -49,9 +49,10 @@ def db():
         yield session
 
 
-def _customer(db, name: str = MASTER, *, company_id: str = DEFAULT_COMPANY_ID, group_id: str | None = None):
+def _customer(db, name: str = MASTER, *, company_id: str = DEFAULT_COMPANY_ID, group_id: str | None = None,
+              id: str | None = None):
     row = Customer(
-        id=str(uuid.uuid4()),
+        id=id or str(uuid.uuid4()),
         customer_code=unique_code(f"300-{MARKER}")[:30],
         customer_name=name,
         company_id=company_id,
@@ -178,6 +179,113 @@ class TestDebtorNameProbeLinksByExplicitKey:
         assert _hits_by_name(hits) == {DO_NAME: (cust.id, MASTER)}
 
 
+    def test_the_customer_fk_wins_over_the_debtor_code(self, db):
+        from app.services.entity_resolver import _probe_customer_debtor_name
+
+        owner = _customer(db)
+        coded = _customer(db, f"{MARKER} OTHER SDN BHD")
+        _do(db, DO_NAME, code=coded.customer_code, customer_id=owner.id)
+
+        hits = _probe_customer_debtor_name(db, [DO_NAME])[DO_NAME]
+
+        assert _hits_by_name(hits) == {DO_NAME: (owner.id, MASTER)}
+
+    def test_the_debtor_code_wins_over_a_name_that_matches_another_customer(self, db):
+        from app.services.entity_resolver import _probe_customer_debtor_name
+
+        owner = _customer(db)
+        _customer(db, DO_NAME)
+        _do(db, DO_NAME, code=owner.customer_code)
+
+        hits = _probe_customer_debtor_name(db, [DO_NAME])[DO_NAME]
+
+        assert _hits_by_name(hits) == {DO_NAME: (owner.id, MASTER)}
+
+    def test_a_code_two_customers_hold_links_nobody_and_the_name_link_stands(self, db):
+        """Before the merge has run a code can hold several rows (the code-only unique index
+        is created only once none remain), so a duplicated code is no link."""
+        from app.services.entity_resolver import _probe_customer_debtor_name
+
+        # `a` sorts first, so a code link that took any one holder would land on it.
+        a = _customer(db, id="00000000" + str(uuid.uuid4())[8:])
+        b = _customer(db, DO_NAME, id="ffffffff" + str(uuid.uuid4())[8:])
+        b.customer_code = a.customer_code
+        db.flush()
+        _do(db, DO_NAME, code=a.customer_code)
+
+        hits = _probe_customer_debtor_name(db, [DO_NAME])[DO_NAME]
+
+        assert _hits_by_name(hits) == {DO_NAME: (b.id, DO_NAME)}
+
+    def test_a_blank_debtor_code_never_links(self, db):
+        from app.services.entity_resolver import _probe_customer_debtor_name
+
+        blank = _customer(db)
+        blank.customer_code = " "
+        db.flush()
+        _do(db, DO_NAME, code="")
+
+        hits = _probe_customer_debtor_name(db, [DO_NAME])[DO_NAME]
+
+        assert _hits_by_name(hits) == {DO_NAME: (None, None)}
+
+    def test_and_mode_reads_the_customer_name_too(self, db):
+        from app.services.entity_resolver import _and_probe_customer
+
+        cust = _customer(db, f"{MARKER} ANDMODE SDN BHD")
+        _do(db, DO_NAME, code=cust.customer_code, customer_id=cust.id)
+
+        hits = [h for h in _and_probe_customer(db, ["ceramic", "elleci"]) if h.match_field == "debtor_name"]
+
+        assert [(h.canonical_code, h.uuid, h.display.get("customer_name")) for h in hits] == [
+            (DO_NAME, cust.id, cust.customer_name)
+        ]
+
+
+class TestOneDebtorNameOfSeveralCustomers:
+    """Review B1: linking per document lets one buyer name belong to several customers
+    ("CASH SALES" typed on DOs of two shops). Every customer stays a hit, never the one the
+    database happened to return first."""
+
+    SHARED = f"{MARKER} CASH SALES"
+
+    def _seed(self, db):
+        alpha = _customer(db, f"{MARKER} ALPHA SDN BHD")
+        beta = _customer(db, f"{MARKER} BETA SDN BHD")
+        _do(db, self.SHARED, code=alpha.customer_code, customer_id=alpha.id)
+        _do(db, self.SHARED, code=beta.customer_code, customer_id=beta.id)
+        _do(db, self.SHARED)  # an unlinked one beside them adds nothing to choose from
+        return alpha, beta
+
+    def test_exact_tier_keeps_one_hit_per_customer(self, db):
+        from app.services.entity_resolver import _probe_customer_debtor_name
+
+        alpha, beta = self._seed(db)
+        hits = _probe_customer_debtor_name(db, [self.SHARED])[self.SHARED]
+        assert sorted(h.uuid for h in hits) == sorted([alpha.id, beta.id])
+
+    def test_substring_tier_keeps_one_hit_per_customer(self, db):
+        from app.services.entity_resolver import _probe_customer_debtor_name
+
+        alpha, beta = self._seed(db)
+        token = f"{MARKER} CASH"
+        hits = _probe_customer_debtor_name(db, [token])[token]
+        assert sorted(h.uuid for h in hits) == sorted([alpha.id, beta.id])
+
+    def test_prefix_probe_keeps_one_hit_per_customer(self, db):
+        from app.services.entity_resolver import _prefix_probe_customer_debtor_name
+
+        alpha, beta = self._seed(db)
+        hits = _prefix_probe_customer_debtor_name(db, self.SHARED)
+        assert sorted(h.uuid for h in hits) == sorted([alpha.id, beta.id])
+
+    def test_the_roster_asks_between_them(self, db):
+        alpha, beta = self._seed(db)
+        gate, options = _roster(db, self.SHARED)
+        assert gate.get("require_specific") is True
+        assert sorted(o["label"] for o in options) == sorted([alpha.customer_name, beta.customer_name])
+
+
 # ============================================================ the roster
 
 
@@ -211,13 +319,14 @@ def _roster(db, token: str):
     from app.services import customer_group_service
     from app.services.chatbot.lanes.business.gate import run_gate
     from app.services.chatbot.turn.narrow import _options
-    from app.services.chatbot.turn_runtime import candidates_by_kind
+    from app.services.chatbot.turn_runtime import candidates_by_kind, fill_customer_names
     from app.services.ledger_family import customer_groups
 
     resolver = _resolver_payload(db, token)
     with customer_groups(customer_group_service.family_overrides(db)):
         gate = run_gate(dict(resolver), parser=_parser(token), resolver=resolver)
         compatible = [e for e in gate.get("compatible_entities") or [] if isinstance(e, dict)]
+        fill_customer_names(db, compatible)  # what `turn_runtime.resolve_kinds` does next
         grouped = candidates_by_kind(gate, compatible)
         options = _options(grouped.get("customer", []), "customer", "ledger_family")
     return gate, options

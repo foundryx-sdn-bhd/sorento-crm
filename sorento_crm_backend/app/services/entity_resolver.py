@@ -1187,6 +1187,38 @@ def _debtor_display(debtor_name: Any, debtor_code: Any, customer_name: Any) -> d
     return display
 
 
+def _one_hit_per_customer(rows: list[Any], *, fold: bool = False) -> list[Any]:
+    """`(debtor_name, debtor_code, customer_id, customer_name)` rows, one per (name, customer).
+
+    An order is linked per DOCUMENT (`customer_identity.outerjoin_customer_of_order`), so one
+    debtor name ("CASH SALES") can belong to several customers; keeping one row per name
+    would answer for whichever customer the database returned first and hide the rest. Each
+    customer stays a hit of its own, so the gate sees them all and asks. A name's unlinked
+    row is dropped only when the same name also reached a customer: it is the same buyer
+    name, and a uuid-less hit beside it adds nothing to choose from.
+    """
+    def _key(name: Any) -> str:
+        text_ = str(name or "")
+        return text_.lower() if fold else text_
+
+    linked = {_key(r[0]) for r in rows if r[0] and r[2]}
+    seen: set[tuple[str, str]] = set()
+    out: list[Any] = []
+    for row in rows:
+        name, _code, customer_id, _cname = row
+        key = _key(name)
+        if not key:
+            continue
+        if not customer_id and key in linked:
+            continue
+        pair = (key, str(customer_id or ""))
+        if pair in seen:
+            continue
+        seen.add(pair)
+        out.append(row)
+    return out
+
+
 def _probe_customer_debtor_name(db: Session, tokens: list[str]) -> dict[str, list[ResolvedEntity]]:
     """Resolve a token against the unique `Order.debtor_name` set.
 
@@ -1220,13 +1252,11 @@ def _probe_customer_debtor_name(db: Session, tokens: list[str]) -> dict[str, lis
         .distinct()
         .all()
     )
-    for debtor_name, debtor_code, customer_id, customer_name in rows:
+    for debtor_name, debtor_code, customer_id, customer_name in _one_hit_per_customer(rows):
         token = name_to_token.get(str(debtor_name).lower()) or norm_to_token.get(
             _strip_all_ws(str(debtor_name)).lower()
         )
         if not token:
-            continue
-        if any(m.canonical_code == debtor_name for m in result[token]):
             continue
         result[token].append(
             ResolvedEntity(
@@ -1274,9 +1304,7 @@ def _probe_customer_debtor_name(db: Session, tokens: list[str]) -> dict[str, lis
         )
         truncated = len(rows) > _DEBTOR_FUZZY_LIMIT
         rows = rows[:_DEBTOR_FUZZY_LIMIT]
-        for debtor_name, debtor_code, customer_id, customer_name in rows:
-            if any(m.canonical_code == debtor_name for m in result[token]):
-                continue
+        for debtor_name, debtor_code, customer_id, customer_name in _one_hit_per_customer(rows):
             display = _debtor_display(debtor_name, debtor_code, customer_name)
             if truncated:
                 display["truncated_more_available"] = True
@@ -2102,13 +2130,8 @@ def _prefix_probe_customer_debtor_name(db: Session, token: str) -> list[Resolved
                 q = q.filter(_norm_contains(Order.debtor_name, w))
             rows = q.distinct().limit(PREFIX_LIMIT).all()
             tier = "word"
-    seen: set[str] = set()
     out: list[ResolvedEntity] = []
-    for debtor_name, debtor_code, customer_id, customer_name in rows:
-        key = (debtor_name or "").lower()
-        if not key or key in seen:
-            continue
-        seen.add(key)
+    for debtor_name, debtor_code, customer_id, customer_name in _one_hit_per_customer(rows, fold=True):
         out.append(
             ResolvedEntity(
                 entity_type="customer",

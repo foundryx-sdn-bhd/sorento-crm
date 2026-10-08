@@ -55,6 +55,15 @@ ungrouped account, still asks.
 - The four probe sites select the linked customer's `customer_name` and carry it as
   `display.customer_name` (`entity_resolver._debtor_display`, :1175). The DO's own name stays
   on `debtor_name` and on the DO lines of the answer.
+- The code link counts only where exactly one customer of the company holds the code (the
+  code-only unique index exists only after the merge clears duplicates); a blank code never
+  links. Otherwise the order falls through to the name link, as before.
+- One hit per (debtor name, customer) (`entity_resolver._one_hit_per_customer`): linking per
+  DO lets one buyer name ("CASH SALES") belong to several customers, and each stays a hit so
+  the gate asks, never the one the database returned first (review B1).
+- Scope note (review S2): the display change alone fixes the reported prod case (H118 is
+  reached through its merge alias). The FK and code links are the owner's "group by debtor
+  code" rule for DOs no alias reaches (likely the dev DB, which may lack the 5 Oct aliases).
 - A DO no link reaches stays `uuid = None`, as before: never guessed, no name similarity. The
   gate drops uuid-less customer matches from its roster, as it already did.
 
