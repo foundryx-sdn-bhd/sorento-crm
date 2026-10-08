@@ -18,6 +18,7 @@ from app.api.v1.master_data import (
     product_specifications,
     product_sets,
     product_companions,
+    product_alternatives,
     product_combos,
     sales_agents,
 )
@@ -25,6 +26,7 @@ from app.api.v1.master_data import (
 router = APIRouter()
 
 router.include_router(products_select.router, prefix="/products", tags=["products"])
+router.include_router(product_alternatives.router, prefix="/products", tags=["products"])
 router.include_router(products.router, prefix="/products", tags=["products"])
 router.include_router(brands.router, prefix="/brands", tags=["brands"])
 router.include_router(categories.router, prefix="/product-categories", tags=["product-categories"])

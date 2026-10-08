@@ -4,7 +4,7 @@
 from app.models.company import Company, UserCompany, RespondContactCompany
 from app.models.user import User, UserRole, UserRoleAssignment, UserPermission, UserRolePermission, SystemLog, SystemSetting, UserQuickAccess, UserListColumnConfig
 from app.models.auth import VerificationToken
-from app.models.product import Product, ProductCategory, Brand, UnitOfMeasure
+from app.models.product import Product, ProductAlternative, ProductCategory, Brand, UnitOfMeasure
 from app.models.country import Country
 from app.models.product_set import ProductSet, ProductSetMember
 from app.models.product_companion import ProductCompanionRule, ProductCompanionRuleHost
@@ -199,6 +199,7 @@ __all__ = [
     "UserQuickAccess",
     "UserListColumnConfig",
     "Product",
+    "ProductAlternative",
     "ProductSet",
     "ProductSetMember",
     "ProductSetProposalBatch",

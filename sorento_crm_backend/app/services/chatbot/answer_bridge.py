@@ -2020,7 +2020,46 @@ def answer_for(
         dealer = _dealer_did_you_mean(offer, parser, asked_at_turn)
         if dealer is not None:
             return turn_compose.Answer(text=dealer[0], question=dealer[1])
+    alternative_lines = fetch_item.get("alternative_lines") if isinstance(fetch_item, Mapping) else None
+    if alternative_lines:
+        text = with_alternative_lines(text, alternative_lines)
     return turn_compose.Answer(text=text, question=question)
+
+
+def with_alternative_lines(text: str, lines: Any) -> str:
+    """PRODUCT-ALTERNATIVES (owner, 9 Oct 2026): a miss on a discontinued code still names
+    its alternative and what the search for it found, BEFORE any escalate offer. The lines
+    come from the fetch (`lanes/business/__init__.py::run_fetch`, `alternative_lines`).
+
+    Where they go, first match wins: before a "Related products:" picker (its last line is
+    the offer, and it lists the alternative itself); else before the sentence carrying the
+    offer ("would you like me to escalate", or a picker's "reply 'yes' to escalate to"), or
+    the dealer's "Please refer to your salesman."; else at the end."""
+    block = "\n".join(str(line) for line in (lines or []) if line)
+    if not block:
+        return text
+    picker = text.find("Related products:")
+    if picker >= 0:
+        return f"{text[:picker].rstrip()}\n{block}\n\n{text[picker:]}"
+    lowered = text.lower()
+    found = [
+        i
+        for i in (
+            lowered.find("would you like me to escalate"),
+            lowered.find("to escalate to"),
+            lowered.find("please refer to your salesman"),
+        )
+        if i >= 0
+    ]
+    if not found:
+        return f"{text.rstrip()}\n{block}"
+    at = min(found)
+    # The sentence carrying it starts after the last sentence end (or line break) before it.
+    start = max(text.rfind(". ", 0, at), text.rfind("? ", 0, at), text.rfind("\n", 0, at))
+    if start < 0:
+        return f"{block}\n{text}"
+    cut = start + (1 if text[start] == "\n" else 2)
+    return f"{text[:cut].rstrip()}\n{block}\n{text[cut:].lstrip()}"
 
 
 def _dealer_did_you_mean(
