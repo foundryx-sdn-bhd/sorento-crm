@@ -33,6 +33,7 @@ from tests.test_stock_availability_block import (  # noqa: F401  (fixtures)
     _incoming_shipment,
     _policy_row,
     _wh,
+    client,
     db,
 )
 from tests._pg_fixture import unique_code
@@ -330,3 +331,109 @@ def test_compact_catalogue_page_does_not_append_alternative_blocks(db):
     ids = [r["product_id"] for r in result["stock_summary"]]
     assert old.id in ids and new.id not in ids
     assert _summary(result, old.id)["flags"]["alternatives"] == [new.product_code]
+
+
+# --------------------------------------------------------------------------- owner hand test, 9 Oct
+
+
+def test_owner_case_srtbf11821_x5_through_the_real_route_presenter_and_render(client, db):
+    """Owner hand test round A FAIL (9 Oct 2026): dealer asks "SRTBF11821 x 5", SRTBF11821 is
+    discontinued with nothing in the dealer's warehouse, SRTBF11821-NEW has 16 in BRW, the
+    category cap is 100. The reply had the marker and NO Alternative line.
+
+    Cause: `StockAvailabilityEntry` (the route's `response_model`) did not declare
+    `alternatives`, so `GET /inventory/stock/balance` dropped them off the wire. The service
+    tests above call `StockService` directly and never saw it. This test goes the way the
+    chatbot goes: route -> MCP presenter -> `fetch.output_structurer`."""
+    import json as _json
+    import sys
+    from pathlib import Path
+
+    from app.services.chatbot.lanes.business import fetch
+
+    brw = _wh(db, unique_code("ZZBRW")[:20])
+    wh, old, new = _pair(db, old_on_hand=0, new_on_hand=16, wh=brw)
+    contact = _dealer(db, brw)
+
+    response = client.get(
+        "/api/v1/inventory/stock/balance",
+        params={
+            "product_ids": old.id,
+            "contact_id": contact.id,
+            "space_id": "364817",
+            "requested_quantities": _json.dumps({old.id: 5}),
+        },
+    )
+    assert response.status_code == 200, response.text
+    [entry] = response.json()["stock_availability"]
+    assert entry["branch"] == "no_incoming"
+    [alt] = entry["alternatives"]
+    assert alt["product_code"] == new.product_code
+    assert alt["branch"] == "in_stock"
+
+    mcp_root = Path(__file__).resolve().parents[2] / "sorento_crm_mcp"
+    if str(mcp_root) not in sys.path:
+        sys.path.append(str(mcp_root))
+    from sorento_crm_mcp.presenters import present_response
+
+    envelope = _json.loads(present_response("crm_inventory_stock_balance_list", response.text))
+    said = fetch.output_structurer(envelope, {"semantic_input": {}})["response"]
+    assert said == (
+        f"{old.product_code} x 5: ❌ No stock and no incoming.\n"
+        "⚠️  *(PRODUCT DISCONTINUED)*\n"
+        f"Alternative: {new.product_code} x 5: ✅ Got stock."
+    ), said
+
+
+def test_owner_case_srtwc286_sh_p_partial_stock_mid_code_pair(client, db):
+    """Owner hand test round A FAIL, second case (9 Oct 2026): "SRTWC286-SH-P x 5", the old
+    code is discontinued with 1 on hand (partial "Only 1 got stock."), its mid-code
+    alternative SRTWC286-SH-NEW-P has 23. Discontinued alone shows the line (Q2 (b))."""
+    import json as _json
+    import sys
+    from pathlib import Path
+
+    from app.services.chatbot.lanes.business import fetch
+    from app.services.product_alternative_service import reconcile_new_alternatives
+
+    brw = _wh(db, unique_code("ZZBRW")[:20])
+    stem = unique_code("ZZWC")[:24].upper()
+    old = product(db, company_id=DEFAULT_COMPANY_ID, code=f"{stem}-SH-P")
+    new = product(db, company_id=DEFAULT_COMPANY_ID, code=f"{stem}-SH-NEW-P")
+    old.is_discontinued = True
+    for p in (old, new):
+        _category_of(db, p).chatbot_max_qty = X
+    stock(db, company_id=DEFAULT_COMPANY_ID, product_id=old.id, warehouse_id=brw.id, on_hand=1)
+    stock(db, company_id=DEFAULT_COMPANY_ID, product_id=new.id, warehouse_id=brw.id, on_hand=23)
+    reconcile_new_alternatives(db, new)  # the mid-code -NEW rule makes the link
+    contact = _dealer(db, brw)
+
+    response = client.get(
+        "/api/v1/inventory/stock/balance",
+        params={
+            "product_ids": old.id,
+            "contact_id": contact.id,
+            "space_id": "364817",
+            "requested_quantities": _json.dumps({old.id: 5}),
+        },
+    )
+    assert response.status_code == 200, response.text
+
+    mcp_root = Path(__file__).resolve().parents[2] / "sorento_crm_mcp"
+    if str(mcp_root) not in sys.path:
+        sys.path.append(str(mcp_root))
+    from sorento_crm_mcp.presenters import present_response
+
+    envelope = _json.loads(present_response("crm_inventory_stock_balance_list", response.text))
+    said = fetch.output_structurer(envelope, {"semantic_input": {}})["response"]
+    assert said == (
+        f"{old.product_code} x 5: \u2705 Only 1 got stock.\n"
+        "\u26a0\ufe0f  *(PRODUCT DISCONTINUED)*\n"
+        f"Alternative: {new.product_code} x 5: \u2705 Got stock."
+    ), said
+
+
+def test_the_route_schema_declares_alternatives():
+    from app.schemas.inventory import StockAvailabilityEntry
+
+    assert "alternatives" in StockAvailabilityEntry.model_fields
