@@ -32,7 +32,7 @@ def _clear_overrides():
     app.dependency_overrides.clear()
 
 
-def _world(session_factory):
+def _world(session_factory, *, basin_promo: bool = True):
     """basin cabinet promo only at Dealer; side cabinet only at Office; tall cabinet only at End user."""
     _seed_contact(session_factory, variables={})
     _class(session_factory, "Bathroom Furniture")
@@ -62,6 +62,8 @@ def _world(session_factory):
         p.brand_id = brand.id
         db.add(ProductSpecifications(id=str(uuid.uuid4()), product_id=p.id, values={"class": {"value": "Bathroom Furniture"}, "furniture_type": {"value": value}}))
         db.flush()
+        if value == "basin_cabinet" and not basin_promo:
+            continue
         _promo(db, f"ZZT PROMO {value.upper()}", std, p, levels=[level])
     db.commit()
     return str(brand.id)
@@ -319,3 +321,36 @@ def test_the_resolver_route_with_an_empty_query_and_grounded_specs_does_not_rais
     }
     out = _resolve_entity(session_factory())(body)
     assert isinstance(out, dict), out
+
+
+def test_answering_the_which_question_closes_it_and_a_later_digit_never_merges_subjects(session_factory, monkeypatch):
+    """Sorento has no basin cabinet promotion: which-question -> "basin cabinet" -> "No current
+    promotion for basin cabinet, ..." (no menu) -> "2". The which-question is closed by its answer,
+    so "2" is not read against it: no "tall cabinet", never a merged "tall cabinet, basin cabinet"."""
+    from app.services.chatbot.lanes.business.services import _resolve_entity
+
+    _world(session_factory, basin_promo=False)
+    _mcp(monkeypatch, session_factory)
+    names = ["Sorento Office", "Sorento Dealer", "End User"]
+    services = ResolveGateServices(
+        access_types=lambda **_: [{"name": n} for n in names],
+        resolve_entity=_resolve_entity(session_factory()), probe=lambda **_: None,
+    )
+    which = _turn(session_factory, monkeypatch, services, _ask_qf("cabinet", brand="Sorento"), "Pls send sorento cabinet promotion", "zzt-md-close-ask")
+    assert which.splitlines()[0] == "Which cabinet do you mean?", which
+
+    def pick(position, raw=None):
+        ents = [{"raw": raw, "hint": "category", "canonical_code": raw, "confident": True, "current_message": True}] if raw else []
+        return _parser_output(
+            message_type="business_query", domain_hint="promotion", intent_hint="check_promotion", access_levels=[],
+            entity_op="replace_combine", reference_positions=[position], reference_target="result", entities=ents,
+            open_question_answer={"mode": "pick", "items": [], "picked": [position], "qty_for_all": None},
+        )
+
+    empty = _turn(session_factory, monkeypatch, services, pick(3, "basin cabinet"), "basin cabinet", "zzt-md-close-answer")
+    assert empty.startswith("No current promotion for basin cabinet"), empty
+    assert "Which access level" not in empty, empty
+    question = _session_of(session_factory).get("open_question")
+    assert not question or question.get("kind") != "category_pick", question
+    after = _turn(session_factory, monkeypatch, services, pick(2), "2", "zzt-md-close-2")
+    assert "tall cabinet" not in after.lower(), after
