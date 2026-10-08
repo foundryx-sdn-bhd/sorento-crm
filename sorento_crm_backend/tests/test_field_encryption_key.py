@@ -199,7 +199,7 @@ def test_boot_accepts_production_with_a_key_and_rejects_a_malformed_one(monkeypa
     """A typo must crash at boot, not read every stored secret as unset at runtime."""
     from app.utils.field_encryption import assert_field_encryption_ready
 
-    assert_field_encryption_ready("production")
+    assert_field_encryption_ready("production")  # KEY_A, from the autouse _keys fixture
     monkeypatch.setattr(app_settings, "field_encryption_key", f"{KEY_A},not-a-fernet-key")
     with pytest.raises(ValueError, match="entry 2"):
         assert_field_encryption_ready("development")
@@ -209,9 +209,28 @@ def test_api_and_worker_both_run_the_boot_check():
     """The worker never imports app.main, so a guard there alone would not cover it."""
     from pathlib import Path
 
+    import re
+
     root = Path(__file__).resolve().parents[1]
     for entrypoint in ("app/main.py", "worker.py"):
-        assert "assert_field_encryption_ready(" in (root / entrypoint).read_text(), entrypoint
+        source = (root / entrypoint).read_text()
+        # A real call on its own line, not a comment mentioning it.
+        assert re.search(r"^\s*assert_field_encryption_ready\(", source, re.M), entrypoint
+
+
+def test_backfill_script_exits_cleanly_on_a_malformed_key(monkeypatch, capsys):
+    """Exit code 2 with one ERROR line naming the entry position; no traceback, no key."""
+    import scripts.reencrypt_field_secrets as script
+
+    monkeypatch.setattr(app_settings, "field_encryption_key", "ZZT-malformed-key-value")
+    monkeypatch.setattr("sys.argv", ["reencrypt_field_secrets.py"])
+    with pytest.raises(SystemExit) as exited:
+        script.main()
+
+    assert exited.value.code == 2
+    err = capsys.readouterr().err
+    assert "FIELD_ENCRYPTION_KEY entry 1 is not a valid Fernet key" in err
+    assert "Traceback" not in err and "ZZT-malformed-key-value" not in err
 
 
 def test_backfill_never_overwrites_a_secret_saved_while_it_ran(monkeypatch):
