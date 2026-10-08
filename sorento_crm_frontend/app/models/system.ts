@@ -95,6 +95,12 @@ export interface SystemSetting {
    */
   localBuyRoutingEnabled?: boolean;
 
+  /**
+   * "Borrow from another order" (PLAN-borrow-location-only-8oct.md D1), off by default.
+   * Off borrows a location's stock and orders it back on the borrowing line.
+   */
+  borrowFromOrderEnabled?: boolean;
+
   /** System default approver for procurement "Send for approval" (skips chooser when set). */
   purchaseRequestDefaultApproverUserId?: string | null;
   purchaseRequestDefaultApproverName?: string | null;

@@ -40,7 +40,7 @@ function annotation(overrides: Partial<BoardChangeAnnotation> = {}): BoardChange
     now: {
       qty: '25',
       date: '2026-08-19',
-      decision: 'Use BRW 5 from BRW, 10 from WH3 . Borrow other location 10 from WH3-NTC',
+      decision: 'Use BRW 5 from BRW, 10 from WH3 . Borrow 10 from WH3-NTC',
     },
     suggestionLines: ['Keep 10', 'Buy 15 for 19 Aug'],
     lateDays: null,

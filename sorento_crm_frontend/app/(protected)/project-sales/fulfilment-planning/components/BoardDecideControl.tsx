@@ -137,7 +137,8 @@ function pickerOptions(
     for (const candidate of borrowCandidatesOf(row)) {
       if (way === 'borrow_order') {
         if (candidate.donor_so_number) seen.add(candidate.donor_so_number);
-      } else if (candidate.source === 'other_location') {
+      } else if (candidate.source === 'other_location' && !candidate.donor_so_number) {
+        // K8: a donor-named candidate is an order borrow, never a location's.
         seen.add(candidate.warehouse_code);
       }
     }
@@ -188,6 +189,7 @@ export function BoardDecideControl({
   onSaved,
   onClear,
   embedded = false,
+  borrowFromOrderEnabled = false,
 }: {
   /** Every row on screen, in the list's current sort order (R9). */
   contributions: BoardContribution[];
@@ -205,6 +207,8 @@ export function BoardDecideControl({
    * Clear: this control then draws only the Decide button.
    */
   embedded?: boolean;
+  /** The board's "Borrow from another order" switch (BORROW-LOCATION-ONLY BR1). */
+  borrowFromOrderEnabled?: boolean;
 }) {
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [way, setWay] = React.useState<DecideWay | null>(null);
@@ -217,6 +221,14 @@ export function BoardDecideControl({
   const tickedRows = React.useMemo(
     () => contributions.filter((row) => selectedKeys.includes(row.key)),
     [contributions, selectedKeys],
+  );
+
+  // "Borrow from another order" is offered exactly when the setting is on (BORROW-LOCATION-
+  // ONLY BR1); off, every borrow is a location's.
+  const menu = React.useMemo(
+    () =>
+      MENU_ORDER.filter((entry) => entry.way !== 'borrow_order' || borrowFromOrderEnabled),
+    [borrowFromOrderEnabled],
   );
 
   const isBorrow = way === 'borrow_order' || way === 'borrow_other';
@@ -498,7 +510,7 @@ export function BoardDecideControl({
           </DropdownMenuTrigger>
         )}
         <DropdownMenuContent align="end">
-          {MENU_ORDER.map((entry) => (
+          {menu.map((entry) => (
             <React.Fragment key={entry.way}>
               <DropdownMenuItem onSelect={() => chooseWay(entry.way)}>
                 {labelOf(entry.way)}
