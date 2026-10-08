@@ -739,6 +739,12 @@ def entity_ids_transformer(
     # A typed product code carries no `scope_terms` and keeps the product_ids path alone.
     if tool_name == TIER_PROBE_TOOL and jsc.array(jsc.get(semantic_input, "scope_terms")):
         out.pop("product_ids", None)
+    if tool_name == TIER_PROBE_TOOL and (
+        jsc.array(jsc.get(semantic_input, "scope_terms")) or jsc.array(jsc.get(semantic_input, "promotion_types"))
+    ):
+        # Promotions the resolver matched by NAME are never the subject either: a subject or
+        # kind ask is answered by explicit links and the kind alone (AC-22, owner rule).
+        out.pop("promotion_ids", None)
     if tool_name == TIER_PROBE_TOOL and not out.get("product_ids"):
         for key in ("scope_terms", "promotion_types", "brand_ids"):
             narrowed = jsc.get(semantic_input, key)
