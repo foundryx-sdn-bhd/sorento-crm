@@ -57,6 +57,20 @@ describe('getChatbotMediaSettings', () => {
     expect(settings.media_sync_wait_seconds).toBe(30);
     expect(settings.media_extraction_timeout_seconds).toBe(45);
     expect(settings.media_max_entities).toBe(10);
+    // Lane REPORT-RATE-LIMIT-CONFIG: the report cap's own defaults, 10 per 10 minutes.
+    expect(settings.report_ask_rate_limit).toBe(10);
+    expect(settings.report_ask_rate_window_minutes).toBe(10);
+  });
+
+  it('reads the stored report rate limit, a stored 0 included (0 means no limit)', async () => {
+    apiFetch.mockResolvedValue(
+      ok({ settings: { ...ALL_NULL, report_ask_rate_limit: 0, report_ask_rate_window_minutes: 3 } }),
+    );
+
+    const settings = await getChatbotMediaSettings();
+
+    expect(settings.report_ask_rate_limit).toBe(0);
+    expect(settings.report_ask_rate_window_minutes).toBe(3);
   });
 
   it('keeps null as a real value on the four nullable model columns', async () => {
