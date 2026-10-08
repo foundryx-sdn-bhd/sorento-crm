@@ -1,7 +1,7 @@
 # PLAN: Report engine drill-down follow-up (any axis to any axis, filters kept)
 
-Status: Review. Card approved 8 Oct 2026 (`report-drilldown-behaviour-card.md` revision 3);
-reviewer round 1 fixed; waiting on CI and the owner's hand test.
+Status: Merge-ready (owner hand test PASS 8 Oct 2026; reviewer READY; live parser 12/12).
+Waiting on the owner's merge go. Prod prompt hand-merge: `PROMPT-MERGE-1531.md`.
 Track: FULL (parser prompt change as a data-only migration publishing a new dev version; MCP
 tool param added). Lane: REPORT-DRILLDOWN, PR #1531.
 
