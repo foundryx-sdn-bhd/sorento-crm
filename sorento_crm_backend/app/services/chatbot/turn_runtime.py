@@ -556,18 +556,30 @@ def brand_entity_rows(entities: Any, live: list[dict[str, Any]]) -> list[tuple[d
     return out
 
 
-def promo_filter(parse_output: dict[str, Any], db: Any) -> dict[str, list[str]]:
+def promo_filter(parse_output: dict[str, Any], db: Any, gate: Any = None) -> dict[str, list[str]]:
     """PROMO-SUBJECT-FILTER: what narrows a promotions read besides the access level, off the
-    parser's own answer. `scope_terms`: the class words it named, unless it also named a
-    product (a typed code is the narrower ask and keeps the `product_ids` path, AC-17).
+    parser's own answer. `scope_terms`: the class words it named, unless the resolver placed
+    one of its product tokens on a product id this turn (`gate["resolutions"]`): a typed code
+    is the narrower ask and keeps the `product_ids` path (AC-17). A stray word nothing placed
+    leaves the class as the subject.
     `promotion_types`: its `promotion_kind` code. `brand_ids`: the brand it named, only beside
     a subject or a kind (a plain brand ask is narrowed by the tier gate), resolved by the one
     brand-word rule the order lane uses. Empty keys are left out."""
+    from app.services.chatbot.lanes.business.fetch import is_uuid as _is_uuid
+
     out: dict[str, list[str]] = {}
     entities = parse_output.get("entities")
-    # A product token is an entity hinted None, "" or "product", the set `engine._with_read_codes`
-    # reads codes from.
-    typed_product = any(isinstance(e, dict) and e.get("hint") in (None, "", "product") for e in entities or [])
+    placed = {
+        _token_key(jsc.nullish_str(r.get("token") or r.get("raw")))
+        for r in jsc.array(jsc.get(gate, "resolutions"))
+        if isinstance(r, dict)
+        and any(
+            isinstance(m, dict) and m.get("entity_type") == "product" and _is_uuid(m.get("uuid"))
+            for m in jsc.array(r.get("matches"))
+        )
+    }
+    product_tokens = [e for e in entities or [] if isinstance(e, dict) and e.get("hint") in (None, "", "product")]
+    typed_product = bool(placed & set(_typed_by_token(product_tokens)))
     terms = [] if typed_product else [t.lower() for t in class_scope_terms(parse_output)]
     if terms:
         out["scope_terms"] = terms

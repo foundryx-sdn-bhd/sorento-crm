@@ -729,7 +729,9 @@ def _access_ask_answer(
     from app.services.chatbot import turn_runtime
 
     question = _tier_options(
-        rows, asked_at_turn=asked_at_turn, promo_filter=turn_runtime.promo_filter(parser or {}, db)
+        rows, asked_at_turn=asked_at_turn, promo_filter=turn_runtime.promo_filter(
+            parser or {}, db, (fetch or {}).get("gate") or (payload or {}).get("gate")
+        )
     )
     return turn_compose.Answer(text=text, question=question)
 

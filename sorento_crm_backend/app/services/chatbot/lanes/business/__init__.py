@@ -1406,7 +1406,7 @@ def run_fetch(
     # (probe and main call alike); carried across a tier pick by the parse output.
     from app.services.chatbot import turn_runtime as _turn_runtime
 
-    narrow = _turn_runtime.promo_filter(parse_output, db) or {
+    narrow = _turn_runtime.promo_filter(parse_output, db, gate) or {
         k: v for k, v in (parse_output.get("promo_filter") or {}).items() if v
     }
     for key, values in narrow.items():
