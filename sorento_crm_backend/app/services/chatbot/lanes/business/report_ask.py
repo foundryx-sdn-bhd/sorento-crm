@@ -601,6 +601,9 @@ def settle(
         if drilled is not None:
             return drilled
         # Unsure with nothing above to narrow by: the global reading is the only one left.
+    if new_axis and parse_output.get("ranking_refine") is True:
+        # Not a refine (it names another axis): the fresh ask reads it whole, its dates included.
+        parse_output = {**parse_output, "ranking_refine": False}
 
     args, line = _fresh_args(db, parse_output, entities, dealer=dealer)
     if args is None:
