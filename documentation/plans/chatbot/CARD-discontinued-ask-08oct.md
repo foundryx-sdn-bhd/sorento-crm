@@ -1,6 +1,6 @@
 # CARD - the chatbot answers "is X discontinued?" directly (DISCONTINUED-ASK)
 
-Status: CARD POSTED (8 Oct 2026), awaiting owner answers on Q1-Q5 before code. Track: small fix
+Status: CARD POSTED (8 Oct 2026). Q5 ruled (a) by crew; awaiting owner answers on Q1-Q4 before code. Track: small fix
 (expected diff well under 300 lines, no migration unless Q5 needs a prompt version, no auth/RBAC).
 Lane PR #1535 carries `crew-lane: DISCONTINUED-ASK`. Plan: `PLAN-discontinued-ask-08oct.md`.
 
@@ -54,9 +54,24 @@ say "Not discontinued" for a product we did not find.
 
 R5. Translated like every other label (catalogue entries for ms / zh).
 
-## Examples (real codes; figures from the PRODUCT-ALTERNATIVES card's measured table, prod 6 Oct)
+## Measured on real data (crew, prod snapshot 6 Oct 2026, read-only)
 
-Shown with the Q1 (a) / Q4 (a) recommendation.
+| Case | Codes |
+| --- | --- |
+| The screenshot | `SRTWT9613-BL`: NOT discontinued; 0 in BRW/MWH, 2 in MKT-D; no open PO (last PO received) |
+| Discontinued with stock | `CSK13` (355 in BRW/MWH), `SRT7106` (207), `BMC6067` (18, 9 in BRW/MWH) |
+| Discontinued, no stock | `AB3306`, `AP8050A`; `SRTBF11821` (0 in BRW/MWH, 3 elsewhere) |
+| Live, no stock | `ZP1019`, `ZGL B5`, `BMC6067-NEW` |
+| Mixed family | `SRTWC286`: 10 codes, only `SRTWC286-SH-P` discontinued, the other 9 live |
+| Size | 2,536 of 14,931 active searchable products are discontinued (17%) |
+
+Which warehouses a dealer "sees" comes from the stock-visibility config (`segment='dealer'`
+rows), not a fixed BRW + MWH list. That matters only to a stock answer (Q2), never to the status
+line, which reads `is_discontinued` alone.
+
+## Examples
+
+Shown with the Q1 (a) / Q4 (a) recommendation and Q5 (a) as ruled.
 
 1. Live product, no stock (the screenshot). "9613-bl is discon or?"
    ```
@@ -66,30 +81,34 @@ Shown with the Q1 (a) / Q4 (a) recommendation.
    ```
    SRTWT9613-BL: Not discontinued.
    ```
-   (Q2 (b) would add the stock verdict as its own line.)
-2. Discontinued, nothing in dealer-visible warehouses. "SRTBF11821 discontinued?"
+   (Q2 (b) would add the stock verdict as its own line. Note the staff and dealer stock answers
+   differ here: 2 units sit in MKT-D.)
+2. Discontinued, no stock where dealers look, with a -NEW alternative. "SRTBF11821 discontinued?"
    ```
    SRTBF11821: Discontinued.
    Alternative: SRTBF11821-NEW
    ```
-   (the Alternative line only once #1533 has stored the link, Q5)
-3. Discontinued but still holding stock (`BMC6067`, 18 on hand). "BMC6067 still selling?"
+   (the Alternative line appears once #1533 merges and its lookup is plugged in, Q5)
+3. Discontinued, still holding plenty of stock. "CSK13 discon already?"
    ```
-   BMC6067: Discontinued.
-   Alternative: BMC6067-NEW
+   CSK13: Discontinued.
    ```
-4. Ambiguous typed code, mixed status (`SRTWC286`: `-SH-200` live, `-SH-P` discontinued, `-SH-NEW-200`
-   and `-SH-NEW-P` live). Staff, "srtwc286 discontinued?"
+   (the status is the fact asked; that 355 remain is a stock question)
+4. Discontinued, no stock, no alternative. "AP8050A still have or discontinued?"
    ```
-   SRTWC286-SH-200: Not discontinued.
-   SRTWC286-SH-NEW-200: Not discontinued.
-   SRTWC286-SH-NEW-P: Not discontinued.
-   SRTWC286-SH-P: Discontinued.
-   Alternative: SRTWC286-SH-NEW-P
+   AP8050A: Discontinued.
    ```
-   (the real family may hold more codes, e.g. `-SH-150`, `-SH-NEW-150`; each gets its line)
-5. Discontinued plus another property. "SRTBF11821 price and discontinued?" -> today's card for
-   the price, with `*Discontinued:* Yes` as one more field line in the card (Q1).
+5. Live, no stock. "ZP1019 discontinued?"
+   ```
+   ZP1019: Not discontinued.
+   ```
+6. Mixed family, staff, "srtwc286 discontinued?" (Q3 (a)): one line per code, 9 of them
+   `Not discontinued.` and one `SRTWC286-SH-P: Discontinued.` followed by
+   `Alternative: SRTWC286-SH-NEW-P`. Codes known from #1533's table: `-SH-150`, `-SH-200`, `-SH-P`,
+   `-SH-NEW-150`, `-SH-NEW-200`, `-SH-NEW-P` (the other four still to be listed from crew data).
+7. Status plus another property. "SRTBF11821 price and discontinued?": today's card for the
+   price, with the item's `⚠️ (PRODUCT DISCONTINUED)` marker replaced by the same status line
+   `SRTBF11821: Discontinued.` (a live item gets `Not discontinued.` where it had nothing).
 
 ## Edge cases
 
@@ -105,9 +124,9 @@ Shown with the Q1 (a) / Q4 (a) recommendation.
 
 **Q1. Shape of the reply when ONLY the discontinued status is asked.**
 (a) the status lines only (examples above), the card dropped; when another property is asked too,
-the card stays and gains a `*Discontinued:* Yes / No` field line;
+the card stays and each item carries the same status line in place of the marker (example 7);
 (b) the status line first, then the full card as today;
-(c) always the card, with a `*Discontinued:* Yes / No` field line.
+(c) always the card, with the status line in place of the marker.
 **Recommend (a)**: it is the direct answer the owner asked for. (b) and (c) bury it in the dump the
 owner called confusing.
 
@@ -134,17 +153,17 @@ salesman needs to see which code is the live one.
 **Recommend (a)**: one fact per line, `Label: value` with the code as the label, the shortest
 unambiguous form, same in staff and dealer replies.
 
-**Q5. The Alternative line (PRODUCT-ALTERNATIVES #1533 is still at its card).**
-(a) ship this lane now WITHOUT the line, behind one small seam that #1533's `alternatives_for`
-plugs into (the line appears when #1533 merges; no second lookup); (b) wait for #1533 to merge
-first. On a discontinued line only, plain code, no stock figure (stock stays a stock question).
-**Recommend (a)**: the yes/no answer is useful on its own today, and the seam keeps one lookup.
+**Q5. The Alternative line. RULED (a) by crew, 8 Oct 2026:** #1533 is approved and in build
+(owner: auto -NEW links; its availability reply shows the Alternative line when discontinued or not
+full stock). This lane ships with the hook: a discontinued status line names each alternative
+the item carries, and #1533's lookup is plugged in when it merges. Here only on a discontinued
+line, plain code, no stock figure.
 
 ## Tests (red first)
 
 - Engine-level, stubbed parser `requested_attributes ["discontinued"]`: live product -> `Not
   discontinued.`; discontinued -> `Discontinued.`; mixed family -> one line each; with `price`
-  too -> card + field line; ms / zh labels; dealer with a quoted quantity is NOT rewritten to stock.
+  too -> card + status line in place of the marker; ms / zh labels; dealer with a quoted quantity is NOT rewritten to stock.
 - Opt-in live parser (`CHATBOT_LIVE_LLM=1`, console_cases yaml): "9613-bl is discon or?",
   quoted "mean discontinued model?", "dah discontinue ke SRTBF11821", "SRTBF11821 停产了吗",
   "BMC6067 still selling?" -> `master_products` + `requested_attributes` contains `discontinued`.
