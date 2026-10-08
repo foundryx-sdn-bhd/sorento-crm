@@ -118,6 +118,7 @@ from app.services.error_handler import AppException
 from app.services.scm import priority, spo_supply
 from app.services.scm.history_sources import SPO_HISTORY_SOURCE
 from app.services.scm.supply_origin import buy_origin_by_product
+from app.services.scm.borrow_mode import borrow_from_order_enabled
 from app.services.scm.container_request_service import OPEN_PO_STATUSES
 #: `purchase_orders.source_system` for a CRM-minted SPO document. Imported under a
 #: name that says whose stamp it is, so `_po_rows`' exclusion reads as "not a shipping
@@ -1067,6 +1068,21 @@ def _states_an_authorisation(reason: Optional[str]) -> bool:
     return _AUTHORISATION_PHRASE in (reason or "").strip().lower()
 
 
+def _location_only(candidate: Mapping[str, Any]) -> Dict[str, Any]:
+    """A later order's on hand told as a LOCATION's ("Borrow from another order" OFF,
+    `PLAN-borrow-location-only-8oct.md` D2). The donor's name, line and agent are blanked;
+    `donor_core_line_id` and `donor_required_date` stay, never shown, so the re-borrow guard
+    still counts what one later order has lent (K6)."""
+    return {
+        **candidate,
+        "donor_so_number": None,
+        "donor_line_no": None,
+        "donor_agent_code": None,
+        "same_agent": False,
+        "location_only": True,
+    }
+
+
 class ProjectSupplyService:
     """The supply sheet (`proposal_for`) and the atomic commit (`confirm`)."""
 
@@ -1160,6 +1176,9 @@ class ProjectSupplyService:
         # is itself deciding - never offered as a group-borrow donor (S2): a line whose own
         # state is moving in this same request is not a stable, pre-existing donor.
         self._current_selection_core_ids: Set[str] = set()
+        # "Borrow from another order" (`borrow_from_order`), read once per instance so one
+        # confirm or one board writes every row by the same rule (K1). `None` = not read.
+        self._borrow_from_order_value: Optional[bool] = None
         # Ladder v7.1: `supply_assignment.assign()` per product, per `as_of`, read once for
         # the whole request (`planning_assignments`), plus its line index by CORE line id.
         # One board walks hundreds of lines over a handful of products, and the assignment
@@ -3779,6 +3798,13 @@ class ProjectSupplyService:
             candidate["free_at"] = free_at
         return own, other, sum((_dec(c["qty"]) for c in own), _ZERO), other_short
 
+    @property
+    def borrow_from_order(self) -> bool:
+        """The "Borrow from another order" switch (`PLAN-borrow-location-only-8oct.md` D1)."""
+        if self._borrow_from_order_value is None:
+            self._borrow_from_order_value = borrow_from_order_enabled(self.db)
+        return self._borrow_from_order_value
+
     def _eligible_donor(
         self,
         row: Any,
@@ -3914,6 +3940,9 @@ class ProjectSupplyService:
                     }
                 )
         out.sort(key=self._donor_order)
+        if not self.borrow_from_order:
+            # Same stock, same ranking (sorted above), told as a location (D2).
+            return [_location_only(candidate) for candidate in out]
         return out
 
     def supply_borrow_candidates_for(
@@ -7291,6 +7320,11 @@ class ProjectSupplyService:
                 donor_core_line_id = getattr(item, "donor_core_line_id", None)
                 if not donor_core_line_id or _dec(item.qty) <= _ZERO:
                     continue
+                if not self.borrow_from_order and not getattr(item, "supply_key", None):
+                    # "Borrow from another order" OFF borrows a location, so the donor's
+                    # own decision is left alone (Q2). A step-3 document borrow is
+                    # unchanged in both states (D5).
+                    continue
                 by_donor.setdefault(str(donor_core_line_id), line)
         if not by_donor:
             return
@@ -7652,6 +7686,11 @@ class ProjectSupplyService:
             for item in (entry.borrow or [])
             if getattr(item, "donor_core_line_id", None) and _dec(item.qty) > _ZERO
         }
+        # "Borrow from another order" OFF (`PLAN-borrow-location-only-8oct.md` D4): only a
+        # step-3 DOCUMENT borrow keeps its donor-line row (D5); every other borrow is a
+        # location's, owed back on the borrowing line below. Keyed on the switch, never on
+        # the payload's donor fields, so a stale tab cannot bring the ON rule back (K5).
+        by_order = self.borrow_from_order
         donor_project_line_by_core: Dict[str, ProjectSalesOrderLine] = {}
         if donor_core_line_ids:
             for donor_line in (
@@ -7669,6 +7708,8 @@ class ProjectSupplyService:
                 if qty <= _ZERO or not donor_core_line_id:
                     continue
                 supply_key = getattr(item, "supply_key", None)
+                if not by_order and not supply_key:
+                    continue
                 if supply_key:
                     # STEP 3, AND THE DONOR'S OWN ROW SAYS IT FIRST (S4, fixed 30 Aug).
                     # A donor holding a document through a PLACEMENT of its own gets that
@@ -7733,6 +7774,8 @@ class ProjectSupplyService:
         # only within the donor group's own net, so neither can push a pile below zero and
         # the negativity test would raise nothing at all, ever. What is left to record is
         # the fact itself: the `-IR` group lent 40 to a `-BB` line and is owed 40 back.
+        if not by_order:
+            return order_backs + self._location_order_backs(checked, reference)
         for line, entry, fact in checked:
             if not fact.product_id:
                 continue
@@ -7790,6 +7833,42 @@ class ProjectSupplyService:
                 }
             )
         return out
+
+    def _location_order_backs(
+        self,
+        checked: Sequence[Tuple[ProjectSalesOrderLine, Any, _LineFacts]],
+        reference: str,
+    ) -> List[Dict[str, Any]]:
+        """"Borrow from another order" OFF (D4, B3): every borrow that is not a document is
+        owed back on the BORROWING line, at its own date, at the location it left from. The
+        line's own location and its own group included (Q3): a project line is demand only
+        through its OI rows, so nothing else would replace what it took. One row per (line,
+        location)."""
+        backs: Dict[Tuple[str, str], Dict[str, Any]] = {}
+        for line, entry, fact in checked:
+            for item in entry.borrow or []:
+                qty = _dec(item.qty)
+                if qty <= _ZERO or not item.warehouse_id:
+                    continue
+                if getattr(item, "supply_key", None):
+                    continue
+                back = backs.get((str(line.id), str(item.warehouse_id)))
+                if back is None:
+                    warehouse = self._warehouse_row(str(item.warehouse_id))
+                    back = backs[(str(line.id), str(item.warehouse_id))] = {
+                        "line": line,
+                        "item_code": fact.item_code,
+                        "qty": _ZERO,
+                        "required_date": fact.required_date or line.delivery_date,
+                        "stock_location": warehouse.warehouse_code if warehouse else "",
+                    }
+                back["qty"] += qty
+        for back in backs.values():
+            back["note"] = (
+                f"Order-back: {back['stock_location']} lent {qty_text(back['qty'])} to "
+                f"{reference} line {back['line'].line_no}"
+            )
+        return list(backs.values())
 
     def _snapshot(
         self,
@@ -10106,6 +10185,13 @@ class ProjectSupplyService:
             for row in ranked:
                 row["recommended"] = False
         candidates = step_two + ranked
+        if not self.borrow_from_order:
+            # D2: the manual group-borrow rows name a donor too; under OFF they are offered
+            # as the location they sit at. Step 2's rows are already blank.
+            candidates = [
+                _location_only(c) if c.get("rung") == RUNG_GROUP_BORROW else c
+                for c in candidates
+            ]
         # S4 (`PLAN-local-supplier-oi-routing.md`, AC-2.20): the per-order sheet's own
         # `BorrowCandidate.location`, the board's `_donors_for` wrapper is not on this call
         # path at all - `SupplyLineCard`'s Borrow modal reads THIS list directly. Built by

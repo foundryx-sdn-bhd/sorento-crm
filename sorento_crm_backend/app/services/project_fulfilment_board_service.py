@@ -3607,7 +3607,10 @@ class FulfilmentBoardService:
         if not donors:
             return None
         shown = " · ".join(
-            f"{c.get('donor_so_number') or 'an unnamed order'}"
+            # "Borrow from another order" OFF: the location is the whole story (D2).
+            f"{qty_text(_dec(c.get('qty')))} on hand at {c.get('location')}"
+            if c.get("location_only")
+            else f"{c.get('donor_so_number') or 'an unnamed order'}"
             + (f" line {c['donor_line_no']}" if c.get("donor_line_no") is not None else "")
             + f" {qty_text(_dec(c.get('qty')))} at {c.get('location')}"
             for c in donors[:3]
@@ -3690,7 +3693,9 @@ class FulfilmentBoardService:
             return "This unit was already covered before a borrow was needed."
         if donors:
             named = ", ".join(
-                f"{c.get('donor_so_number') or 'an unnamed order'} {qty_text(_dec(c.get('qty')))}"
+                f"{qty_text(_dec(c.get('qty')))} on hand at {c.get('location')}"
+                if c.get("location_only")
+                else f"{c.get('donor_so_number') or 'an unnamed order'} {qty_text(_dec(c.get('qty')))}"
                 for c in donors[:3]
             )
             return (
@@ -3866,7 +3871,9 @@ class FulfilmentBoardService:
             component
             for component in components
             if getattr(component, "rung", None) == RUNG_POOL
-            and getattr(component, "donor_so_number", None)
+            # The borrow half, not the free share. Read off `kind` rather than the donor's
+            # name: "Borrow from another order" OFF borrows the same stock nameless (D2).
+            and getattr(component, "kind", None) == BORROW
         ]
         if drawn:
             return " ".join(component.reason for component in drawn)
@@ -3887,7 +3894,9 @@ class FulfilmentBoardService:
         if not pool_chain:
             if borrow_donors:
                 named = ", ".join(
-                    f"{c.get('donor_so_number') or 'an unnamed pool order'} "
+                    f"{qty_text(_dec(c.get('qty')))} on hand at {c.get('location')}"
+                    if c.get("location_only")
+                    else f"{c.get('donor_so_number') or 'an unnamed pool order'} "
                     f"{qty_text(_dec(c.get('qty')))}"
                     for c in borrow_donors[:3]
                 )
