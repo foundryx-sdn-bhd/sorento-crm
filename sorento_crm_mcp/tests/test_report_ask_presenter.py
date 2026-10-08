@@ -54,7 +54,7 @@ def test_catalog_declares_the_spec_params():
     params = set(_spec().query_params)
     wanted = {"date_from", "date_to", "basis", "measure", "group_by", "top_n", "sort", "product_code",
               "brand_ids", "category_ids", "sales_agent_ids", "customer_ids", "warehouse_codes",
-              "channel", "contact_id", "space_id"}
+              "channel", "contact_id", "space_id", "customer_agent_ids"}
     assert wanted <= params, sorted(wanted - params)
 
 
@@ -63,7 +63,8 @@ def test_catalog_declares_the_spec_params():
 
 def test_ranking_reply_lines():
     lines = _report_ask(_body()).split("\n")
-    assert lines[0] == "Top 3 sales agents by delivered sales, Brand SORENTO, 2026-09-01 to 2026-09-30", lines
+    # REPORT-DRILLDOWN: one fact per line, `Label: value` (owner rule).
+    assert lines[:3] == ["Top 3 sales agents by delivered sales", "Brand: SORENTO", "Period: 2026-09-01 to 2026-09-30"], lines
     assert "1. SA01 RM 1,200.00, 30 pcs" in lines, lines
     assert "2. SA02 RM 600.00, 15 pcs" in lines, lines
     assert "and 2 more" in lines, lines
@@ -78,18 +79,25 @@ def test_no_more_line_when_nothing_is_cut():
 
 def test_sort_asc_reads_bottom():
     first = _report_ask(_body(sort="asc")).split("\n")[0]
-    assert first == "Bottom 3 sales agents by delivered sales, Brand SORENTO, 2026-09-01 to 2026-09-30", first
+    assert first == "Bottom 3 sales agents by delivered sales", first
 
 
 def test_ordered_basis_is_named_in_the_header():
     first = _report_ask(_body(basis="ordered", basis_label="ordered sales")).split("\n")[0]
-    assert first == "Top 3 sales agents by ordered sales, Brand SORENTO, 2026-09-01 to 2026-09-30", first
+    assert first == "Top 3 sales agents by ordered sales", first
 
 
 def test_number_shape():
     body = _body(group_by=None, group_label=None, rows=[], more=0, total_count=0)
     assert _report_ask(body) == (
-        "Sales by delivered sales, Brand SORENTO, 2026-09-01 to 2026-09-30: RM 2,100.00, 55 pcs"
+        "Sales by delivered sales\nBrand: SORENTO\nPeriod: 2026-09-01 to 2026-09-30\nTotal RM 2,100.00, 55 pcs"
+    )
+
+
+def test_no_rows_names_its_scope_one_fact_per_line():
+    body = _body(rows=[], more=0, total_count=0)
+    assert _report_ask(body) == (
+        "No sales found by delivered sales\nBrand: SORENTO\nPeriod: 2026-09-01 to 2026-09-30"
     )
 
 
@@ -116,14 +124,36 @@ def test_group_label_plurals(group_by, label, plural):
     assert first.startswith(f"Top 3 {plural} by delivered sales"), first
 
 
-def test_filters_join_values_with_commas_and_filters_with_semicolons():
+def test_each_filter_is_its_own_line_values_joined_with_commas():
     filters = [
         {"key": "brand", "label": "Brand", "values": ["SORENTO", "MOCHA"]},
         {"key": "category", "label": "Category", "values": ["Chairs"]},
     ]
-    first = _report_ask(_body(filters=filters)).split("\n")[0]
-    assert first == ("Top 3 sales agents by delivered sales, Brand SORENTO, MOCHA; Category Chairs, "
-                     "2026-09-01 to 2026-09-30"), first
+    lines = _report_ask(_body(filters=filters)).split("\n")
+    assert lines[:4] == ["Top 3 sales agents by delivered sales", "Brand: SORENTO, MOCHA", "Category: Chairs",
+                         "Period: 2026-09-01 to 2026-09-30"], lines
+
+
+def test_the_card_link_is_named_in_the_header():
+    """REPORT-DRILLDOWN: the header names the link a drill used (owner Q1)."""
+    filters = [{"key": "customer_agent", "label": "Customers assigned to", "values": ["SA01", "SA02"]}]
+    lines = _report_ask(_body(group_by="customer", group_label="Customer", filters=filters)).split("\n")
+    assert lines[:2] == ["Top 3 customers by delivered sales", "Customers assigned to: SA01, SA02"], lines
+
+
+def test_the_envelope_hands_the_shown_rows_and_their_keys_on():
+    """REPORT-DRILLDOWN: the chatbot holds exactly the rows printed, with their keys."""
+    from sorento_crm_mcp.presenters import _report_ask_envelope
+
+    rows = [{"rank": 1, "name": "SA01", "qty": 30, "amount": 1200.0, "keys": ["a1"]},
+            {"rank": 2, "name": "(no agent)", "qty": 1, "amount": 10.0, "keys": ["none"]}]
+    env = _report_ask_envelope(_body(rows=rows))
+    assert env["drill_rows"] == {"group_by": "sales_agent",
+                                 "rows": [{"name": "SA01", "keys": ["a1"]}, {"name": "(no agent)", "keys": ["none"]}]}
+    total = _report_ask_envelope(_body(group_by=None, rows=[]))
+    assert total.get("drill_rows") is None, total
+    refused = _report_ask_envelope(_body(status="refused", message="no", rows=[]))
+    assert refused.get("drill_rows") is None, refused
 
 
 def test_required_query_hints_force_the_contact_pair_and_the_period():

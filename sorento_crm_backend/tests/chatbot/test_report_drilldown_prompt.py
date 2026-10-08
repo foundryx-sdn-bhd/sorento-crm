@@ -1,0 +1,93 @@
+"""Phase 2 RED tests - REPORT-DRILLDOWN, the parser half.
+
+`documentation/plans/chatbot/PLAN-report-drilldown-08oct.md` design 5 and card rule 1: after a
+ranking, a ranking on a new axis is read by the PARSER as `ranking_drill` "scoped" (the rows
+above), "global" (its own ask) or "unsure" (ask). Never a keyword rule in code.
+
+The prompt ships as a NEW dev version (migration `report_drill_0001_prompt`, the
+`report_engine_0001_prompt` pattern): the `production` label never moves; the owner hand-merges
+into the prod prompt after the hand test.
+"""
+from __future__ import annotations
+
+import importlib.util
+from pathlib import Path
+
+from app.models.ai_prompt import AIPromptLabel, AIPromptVersion
+from app.services.chatbot.head.parser import DECLARED_KEYS, PARSE_OUTPUT_JSON_SCHEMA, TOLERATED_ABSENT
+
+from tests._pg_fixture import blank_session
+
+VERSIONS = Path(__file__).resolve().parents[2] / "alembic" / "versions"
+PROMPT_NAME = "chatbot_semantic_parser"
+MIGRATION = "report_drill_0001_prompt"
+
+
+def test_ranking_drill_is_a_declared_tolerated_key_with_three_readings() -> None:
+    prop = PARSE_OUTPUT_JSON_SCHEMA["properties"]["ranking_drill"]
+    assert set(prop["enum"]) == {"scoped", "global", "unsure", None}, prop
+    assert "ranking_drill" in DECLARED_KEYS
+    assert "ranking_drill" in TOLERATED_ABSENT
+
+
+def test_the_addendum_teaches_the_three_readings_with_the_owner_examples() -> None:
+    from app.services.chatbot_parser_prompt import REPORT_ASK_ADDENDUM, SEMANTIC_PARSER_PROMPT
+
+    assert REPORT_ASK_ADDENDUM in SEMANTIC_PARSER_PROMPT
+    for word in ('"ranking_drill"', '"scoped"', '"global"', '"unsure"'):
+        assert word in REPORT_ASK_ADDENDUM, word
+    assert "customers for these sales agent" in REPORT_ASK_ADDENDUM
+    assert "or across all customers?" in REPORT_ASK_ADDENDUM, "the reply to the unsure question"
+
+
+def _load(alias: str):
+    path = VERSIONS / f"{MIGRATION}.py"
+    assert path.exists(), f"{MIGRATION}.py does not exist"
+    spec = importlib.util.spec_from_file_location(alias, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_migration_revision_chains_onto_the_report_engine_prompt() -> None:
+    module = _load("mig_report_drill_0001")
+    assert module.revision == MIGRATION and len(module.revision) <= 32
+    assert callable(module.publish)
+
+
+def _production(session):
+    return (
+        session.query(AIPromptLabel)
+        .filter(AIPromptLabel.name == PROMPT_NAME, AIPromptLabel.label == "production")
+        .first()
+    )
+
+
+def test_migration_publishes_a_new_version_label_unmoved_and_idempotent() -> None:
+    module = _load("mig_report_drill_0001_publish")
+    with blank_session() as session:
+        from app.services.ai_prompt_registry import PROMPT_KEYS
+        from app.services.ai_prompt_seed import seed_prompt_registry
+
+        session.add(
+            AIPromptVersion(
+                name=PROMPT_NAME, version=1, type="text", template="STALE PROMPT TEXT (before drill down)",
+                variables=list(PROMPT_KEYS[PROMPT_NAME].variables),
+            )
+        )
+        session.commit()
+        seed_prompt_registry(session.get_bind())
+        before = _production(session).version_id
+
+        first = module.publish(session)
+        assert isinstance(first, int) and first >= 2, first
+        assert module.publish(session) is None
+
+        published = (
+            session.query(AIPromptVersion)
+            .filter(AIPromptVersion.name == PROMPT_NAME, AIPromptVersion.version == first)
+            .one()
+        )
+        assert '"ranking_drill"' in published.template
+        session.expire_all()
+        assert _production(session).version_id == before
