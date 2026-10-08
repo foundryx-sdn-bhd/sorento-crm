@@ -1,6 +1,6 @@
 # BORROW-LOCATION-ONLY: agent-browser evidence run (1280 and 375)
 
-Head under test: aab68212f (includes fix round 1, BR1 and BR2). Rerun of the first pass, which was
+Head under test (first section): aab68212f (includes fix round 1, BR1 and BR2). Rerun of the first pass, which was
 on 891e1e716. Sandbox only: DB `sorento_browse`, backend :8000, `npm run dev` :3000, headless
 Chromium 153 through `agent-browser@0.27.0` (own session, closed at the end). All names are fake
 (`ZZT-*` fixtures, "Browse Admin"). Every UI navigation started at `/` and went through the sidebar
@@ -75,3 +75,28 @@ folder, so 24 are committed, each under 200 KB.
 
 `POST /api/v1/user-management/settings/general` 200; `GET /api/v1/project-sales/fulfilment-planning/board`
 200; `POST /api/v1/project-sales/fulfilment-planning/confirm-all` 200. `errors` and `console` clean.
+
+# Re-check on head d77b15fbc (1280 and 375)
+
+Same stack, `sorento_browse` DB, fresh seeded askers (a bin holding 8 as two later-order lines of 4 + 4,
+asker needs 6, built from the red tests' fixtures; fake `ZZT-*` names). Switch toggled through the
+Settings screen (1280 and 375). Screenshots 30 to 43.
+
+| Item | Result | Evidence |
+| --- | --- | --- |
+| 1. Defect A / S6, OFF: Decide > Borrow other location > pick the bin | PASS. The dialog now reads "Save 1 line" (it was "only 4 free ... Save 0 lines"). Saved: two borrow rows 4 and 2 (DB allocations 4 and 2, both `other_location`). Confirm: one ORDER_BACK of 6 at the bin on the asker's line, note `Order-back: ZZTMWH-IBc8d lent 6 to ZZT-PSO-TFXI line 1`. | 31, 32, 33 |
+| 2. R2, OFF: Add a borrow lists the bin once showing the summed stock; adding 6 gives 4 + 2; default quantity never exceeds the need | PARTIAL. One row for the bin, no project tag, summed On hand 8 and SO qty 8 (not 16 or 4): PASS at 1280 and 375. Quantity set to 6, "Add the borrow" gives rows 4 + 2: PASS at 1280 and 375. **The default quantity is 8 for a line that needs 6: FAIL** (see below). | 34, 35, 42, 43 |
+| 3. R1, ON: two donor-named step-2 donors at one bin are two selectable rows; the Decide picker lists the donor SOs | PARTIAL. The Decide "Borrow from another order" picker lists both donor SOs (two options) at 1280 and 375: PASS. In Add a borrow the bin appears as **three** selectable rows, not two: two untagged rows plus a third tagged with a project code (`PRJ-000013`), each showing the bin's 8 on hand, and no row names its donor SO (see below). | 37, 38, 40 |
+| 4. Spot check: OFF strip and reason are location-worded; the menu follows the switch | PASS. OFF: `Borrow (other) 6 (ZZTMWH-IBc8d)`, menu has six items without "Borrow from another order" (1280 and 375). ON: `Borrow (order) 6 (ZZTMWH-IBf22)`, menu has seven items including it (1280 and 375). | 30, 36, 39, 41 |
+
+**R2 default quantity (open).** Repro: switch OFF, board for a line that needs 6 against a bin holding 8,
+remove any borrow rows, then Add a borrow. The Quantity box opens at 8 and the note reads "After
+borrowing 8: ... goes short by 8" (screenshots 34 at 1280, 42 at 375). It should open at the line's need,
+6. With an existing borrow row of 2 left on the line it still opened at 8.
+
+**R1 rows (open).** Repro: switch ON, a line whose step 2 takes two later orders at one bin; Decide
+picker lists both SOs, but Add a borrow shows three rows (the third is the project-tagged one) and none
+shows which donor SO it is, short of expanding it (screenshot 38).
+
+Chromium crashed once while navigating at 375; re-login done. Servers and browser session closed after
+the run.
