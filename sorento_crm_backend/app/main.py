@@ -201,7 +201,10 @@ def _cors_headers_for(request: Request) -> dict:
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     validation_logger = logging.getLogger(__name__)
-    validation_logger.error(f"Validation error: {exc.errors()}")
+    # `input` can be the whole request body (a missing-field error carries it), and a body can
+    # hold a secret such as an AI provider key, so it never reaches the log.
+    logged_errors = [{k: v for k, v in e.items() if k != "input"} for e in exc.errors()]
+    validation_logger.error(f"Validation error: {logged_errors}")
     validation_logger.error(f"Request URL: {request.url}")
     validation_logger.error(f"Request method: {request.method}")
     return JSONResponse(

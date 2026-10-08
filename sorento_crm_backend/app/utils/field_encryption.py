@@ -57,7 +57,7 @@ def is_fernet_token(value: str | None) -> bool:
     except (binascii.Error, UnicodeEncodeError, ValueError):
         return False
     body = len(raw) - _FERNET_OVERHEAD
-    return raw[0] == _FERNET_VERSION and body >= 16 and body % 16 == 0
+    return body >= 16 and body % 16 == 0 and raw[0] == _FERNET_VERSION
 
 
 class EncryptedText(TypeDecorator):
@@ -72,6 +72,11 @@ class EncryptedText(TypeDecorator):
     impl = Text
     cache_ok = True
 
+    def __init__(self, label: str = "", *args, **kwargs):
+        # Names the column in the decrypt-failure log; never the value.
+        self.label = label
+        super().__init__(*args, **kwargs)
+
     def process_bind_param(self, value, dialect):
         if value is None:
             return None
@@ -83,5 +88,8 @@ class EncryptedText(TypeDecorator):
         try:
             return decrypt_secret(value)
         except ValueError:
-            logger.error("An encrypted column could not be decrypted; is JWT_SECRET the one it was written with?")
+            logger.error(
+                "Could not decrypt %s; reading it as unset. Was it written under a different JWT_SECRET?",
+                self.label or "an encrypted column",
+            )
             return None
