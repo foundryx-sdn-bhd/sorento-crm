@@ -8,7 +8,7 @@ rewrites what dealers are offered and is not deferred, so an integration key nev
 it (`require_permission_with_api_key`'s own rule for write endpoints).
 
 Unlink and Reset to auto are not routes here: they are the server-deferred record
-actions `product_alternative.unlink` and `product_alternative.reset_auto`
+actions `product_alternative.unlink` and `product_alternatives.reset_auto`
 (`app/services/record_actions.py`), parked through `/api/v1/pending-actions` like every
 other detach. Gated the companions way: the
 products permission, since the links are configured on the product page itself.

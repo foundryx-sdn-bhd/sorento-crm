@@ -332,7 +332,7 @@ register(
 # product delete), destructive window.
 register(
     FormAction(
-        key="product_alternative.reset_auto",
+        key="product_alternatives.reset_auto",
         entity_types=("product_alternatives",),
         execute=_reset_product_alternatives,
         window=WINDOW_DESTRUCTIVE,

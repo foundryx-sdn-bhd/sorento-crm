@@ -37,7 +37,7 @@ export function useAddProductAlternative(productId: string) {
  */
 export function useResetProductAlternativesAuto(productId: string) {
   return useDeferredRowAction({
-    actionKey: 'product_alternative.reset_auto',
+    actionKey: 'product_alternatives.reset_auto',
     entityType: 'product_alternatives',
     verb: 'Resetting',
     successMessage: 'Alternatives reset to auto',
