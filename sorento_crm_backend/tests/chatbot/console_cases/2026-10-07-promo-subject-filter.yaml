@@ -106,3 +106,26 @@ cases:
             - "Promotion"
           reply_not_contains:
             - "Couldn't pin down"
+
+  - name: "6. owner hand test 8 Oct: brand + category narrows by both, never a product list"
+    live_only: true
+    cold: true
+    turns:
+      - text: "only sorento kitchen sink promo"
+        expect:
+          no_uuid: true
+          reply_contains:
+            - "Which access level"
+            - "kitchen sink"
+      - text: "1"
+        expect:
+          no_uuid: true
+          reply_contains:
+            - "SORENTO"
+            - "KITCHEN SINK"
+          reply_not_contains:
+            - "Here's what you want"
+            - "no promotion matched"
+            - "A611"
+            - "CABANA"
+            - "MOCHA"
