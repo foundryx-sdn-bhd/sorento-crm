@@ -144,10 +144,18 @@ CUSTOMER_NAMES_SQL = (
 )
 
 
-def outerjoin_customer_by_order_name(query, order_cls):
-    """`query.outerjoin(Customer)` on the order's debtor name, matched against the customer's
-    name or an alias, within the order's own company (an order names a customer of its own
-    company only)."""
+def outerjoin_customer_of_order(query, order_cls):
+    """`query.outerjoin(Customer)` onto the customer an order belongs to, by its explicit
+    links, in this order: the order's own `customer_id`, then its debtor code (one customer
+    per code per company), then its debtor name matched against the customer's name or an
+    alias. The code and name links stay within the order's own company (an order names a
+    customer of its own company only).
+
+    The keys come first because a document's buyer name is free text typed per document
+    (DELIVERY-DEBTOR-GROUP, owner 8 Oct 2026): "<NAME> (CERAMIC & ELLECI)" on one DO under
+    the customer's own code is that customer, whatever the name says. An order none of the
+    three links reach stays unlinked; nothing here compares names by similarity.
+    """
     from sqlalchemy import and_, func, select, union_all
 
     names = union_all(
@@ -162,10 +170,30 @@ def outerjoin_customer_by_order_name(query, order_cls):
             func.lower(func.btrim(CustomerAlias.alias_name)).label("name_key"),
         ),
     ).subquery("customer_names")
-    return query.outerjoin(
-        names,
-        and_(
-            names.c.company_id == order_cls.company_id,
-            names.c.name_key == func.lower(func.btrim(order_cls.debtor_name)),
-        ),
-    ).outerjoin(Customer, Customer.id == names.c.customer_id)
+    # A subquery, not `aliased(Customer)`: the company-scope listener's loader criteria
+    # name the `customers` table itself and do not follow an alias into a join.
+    codes = select(
+        Customer.id.label("customer_id"),
+        Customer.company_id.label("company_id"),
+        func.lower(func.btrim(Customer.customer_code)).label("code_key"),
+    ).subquery("customer_codes")
+    return (
+        query.outerjoin(
+            codes,
+            and_(
+                codes.c.company_id == order_cls.company_id,
+                codes.c.code_key == func.lower(func.btrim(order_cls.debtor_code)),
+            ),
+        )
+        .outerjoin(
+            names,
+            and_(
+                names.c.company_id == order_cls.company_id,
+                names.c.name_key == func.lower(func.btrim(order_cls.debtor_name)),
+            ),
+        )
+        .outerjoin(
+            Customer,
+            Customer.id == func.coalesce(order_cls.customer_id, codes.c.customer_id, names.c.customer_id),
+        )
+    )
