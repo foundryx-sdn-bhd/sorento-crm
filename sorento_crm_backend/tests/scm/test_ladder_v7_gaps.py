@@ -40,6 +40,7 @@ from app.services.scm.supply_assignment import (
 )
 
 from .._pg_fixture import blank_session
+from .._borrow_mode import borrow_from_order_on
 from ..test_so_supply_confirmation import (  # noqa: F401  (helpers, not fixtures)
     _core_line,
     _core_so,
@@ -175,6 +176,7 @@ def test_reissue_without_line_carries_a_survivors_claim_id_onto_the_new_revision
     same `claim_id`.
     """
     with blank_session() as db:
+        borrow_from_order_on(db)
         company_id, eling, project, product = _world(db)
         _group, sites = _group_sites(db)
         own, _pool = sites["BRW"]

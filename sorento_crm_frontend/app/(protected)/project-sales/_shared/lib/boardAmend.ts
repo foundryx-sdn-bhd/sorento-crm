@@ -752,6 +752,33 @@ export interface DecideComposition {
 }
 
 /**
+ * `needMinor` drawn across `items` in the order given, each within its own `freeOf` less what
+ * this same draw already took under its `keyOf` (BORROW-LOCATION-ONLY S6, R2). Short when the
+ * items hold less than the need; the caller decides what that means.
+ */
+export function drawAcross<T>(
+  items: readonly T[],
+  needMinor: number,
+  keyOf: (item: T) => string,
+  freeOf: (item: T) => number,
+): { item: T; minor: number }[] {
+  const taken = new Map<string, number>();
+  const parts: { item: T; minor: number }[] = [];
+  let remaining = needMinor;
+  for (const item of items) {
+    if (remaining <= 0) break;
+    const key = keyOf(item);
+    const left = Math.max(freeOf(item) - (taken.get(key) ?? 0), 0);
+    const take = Math.min(left, remaining);
+    if (take <= 0) continue;
+    taken.set(key, (taken.get(key) ?? 0) + take);
+    parts.push({ item, minor: take });
+    remaining -= take;
+  }
+  return parts;
+}
+
+/**
  * R9/AC-10: several ticked rows can contest the SAME pile (one location, one donor order, one
  * donor location) - the list's current sort order claims it, top first. `claimed` is that
  * running tally, in minor units, kept by the CALLER (the strip's save loop walks ticked rows in
@@ -849,7 +876,10 @@ export function decideComposition(
   const candidates = borrowCandidatesOf(contribution).filter((candidate) =>
     way === 'borrow_order'
       ? candidate.donor_so_number === pick
-      : candidate.source === 'other_location' && candidate.warehouse_code === pick,
+      : candidate.source === 'other_location' &&
+        candidate.warehouse_code === pick &&
+        // K8: a location borrow never resolves to a candidate that names a donor SO.
+        !candidate.donor_so_number,
   );
   const donorLabel = pick ?? (way === 'borrow_order' ? 'the donor' : 'the location');
   if (candidates.length === 0) {
@@ -858,13 +888,50 @@ export function decideComposition(
         way === 'borrow_order' ? `${donorLabel} holds none` : `only 0 free at ${donorLabel}`,
     };
   }
-  // Should fix 2 (review round 1): ONE candidate LINE has to cover the whole open quantity
-  // by itself - the server posts one component per `donor_core_line_id`, so summing several
-  // donor lines' free stock together and posting the total against only the first of them is
-  // a claim `_check_borrow` refuses at Confirm, far from this press. Each candidate line keeps
-  // its OWN running claim (never the pick's aggregate), so two ticked rows drawing on the same
-  // donor line still cannot over-claim it between them.
+  // Should fix 2 (review round 1), Borrow from another order: ONE candidate LINE has to
+  // cover the whole open quantity by itself - the server posts one component per
+  // `donor_core_line_id`, so summing several donor lines' free stock together and posting
+  // the total against only the first of them is a claim `_check_borrow` refuses at
+  // Confirm, far from this press. Each candidate line keeps its OWN running claim (never the
+  // pick's aggregate), so two ticked rows drawing on the same donor line still cannot
+  // over-claim it between them.
   const pickKey = `${way}|${contribution.item_code ?? ''}|${pick ?? ''}`;
+  const claimKeyOf = (candidate: BorrowCandidate) =>
+    `${pickKey}|${candidate.donor_core_line_id ?? candidate.warehouse_id}`;
+  if (way === 'borrow_other') {
+    // BORROW-LOCATION-ONLY S6: a location borrow names no donor, so the location's lines
+    // are summed in the server's order - one row per line, each within what that line has
+    // left. The server still checks each line on its own, so no row over-claims one.
+    const rows = drawAcross(
+      candidates,
+      openMinor,
+      claimKeyOf,
+      (candidate) => toMinor(candidate.free_qty) - (claimed?.get(claimKeyOf(candidate)) ?? 0),
+    );
+    const drawn = rows.reduce((sum, row) => sum + row.minor, 0);
+    if (drawn < openMinor) {
+      return { skip: `only ${fromMinor(drawn)} free at ${donorLabel}` };
+    }
+    for (const { item, minor } of rows) {
+      const key = claimKeyOf(item);
+      claimed?.set(key, (claimed.get(key) ?? 0) + minor);
+    }
+    return {
+      reserve: [],
+      borrow: rows.map(({ item: candidate, minor }) => ({
+        source: candidate.source,
+        warehouse_id: candidate.warehouse_id,
+        warehouse_code: candidate.warehouse_code,
+        donor_project_ref: candidate.donor_project_ref ?? null,
+        donor_project_id: candidate.donor_project_id ?? null,
+        qty: fromMinor(minor),
+        reason: '',
+        ...borrowPassThrough(candidate),
+      })),
+      timely_spo_qty: '0',
+      buy_qty: '0',
+    };
+  }
   let donor: BorrowCandidate | undefined;
   let bestLeft = 0;
   for (const candidate of candidates) {

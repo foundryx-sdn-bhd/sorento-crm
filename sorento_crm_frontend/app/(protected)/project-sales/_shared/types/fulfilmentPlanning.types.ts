@@ -381,6 +381,9 @@ export interface BorrowCandidate {
   donor_agent_code?: string | null;
   /** Addressing only, never rendered: re-identifies the donor's own line at confirm. */
   donor_core_line_id?: string | null;
+  /** The donor's own date, posted back so an order borrow (switch ON) raises its order-back
+   * at it. Never rendered. */
+  donor_required_date?: string | null;
   /** Ranked below this line, so the ladder proposes it automatically. `false` on a
    * same-agent donor ranked above this line: offered, never auto-composed. */
   lower_ranked?: boolean;
@@ -1638,6 +1641,9 @@ export interface BoardBorrowCandidate {
   donor_agent_code?: string | null;
   /** Addressing only, never rendered: re-identifies the donor's own line at confirm. */
   donor_core_line_id?: string | null;
+  /** The donor's own date, posted back so an order borrow (switch ON) raises its order-back
+   * at it. Never rendered. */
+  donor_required_date?: string | null;
   /** Ranked below this line, so the ladder proposes it automatically. */
   lower_ranked?: boolean;
   /** The donor shares this line's own sales agent (section 8) - offered at any rank. */
@@ -1985,6 +1991,9 @@ export interface PlanningBoard {
    * no row.
    */
   pool_share_pct?: number;
+  /** "Borrow from another order" (BORROW-LOCATION-ONLY BR1): the Decide menu offers it
+   *  exactly when this is true. */
+  borrow_from_order_enabled?: boolean;
   dateBuckets: BoardDateBucket[];
   productRows: BoardProductRow[];
   cells: BoardCell[];
