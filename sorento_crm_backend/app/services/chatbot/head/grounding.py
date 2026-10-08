@@ -473,6 +473,39 @@ def _names_a_class_not_a_code(raw: str, vocab: Vocabulary) -> bool:
     return bool(_covered_by_class(tokens, vocab))
 
 
+def _whole_spec_value(raw: str, vocab: Vocabulary) -> Grounded | None:
+    """The one registry value whose phrase IS `raw`, word for word, else None (no key, or
+    several keys, say it)."""
+    phrase = " ".join(_words(raw))
+    hits = [(entry, entry.phrases[phrase]) for entry in vocab.keys if phrase in entry.phrases]
+    if len(hits) != 1:
+        return None
+    entry, value = hits[0]
+    return Grounded(entry.key, entry.label, raw, value, entry.unit if entry.data_type == "numeric" else None, words=phrase)
+
+
+def several_values(raw: str, vocab: Vocabulary) -> list[str]:
+    """PROMO-SUBJECT-FILTER AC-25: the values a registry key's phrases END with `raw`, when
+    `raw` is one word that heads two or more of them ("cabinet": basin cabinet, side
+    cabinet, ...), shown the way the registry shows them. Empty otherwise."""
+    words = _words(raw)
+    if len(words) != 1:
+        return []
+    head = _singular(words[0])
+    for entry in vocab.keys:
+        if head not in entry.heads:
+            continue
+        shown: list[str] = []
+        for phrase, value in entry.phrases.items():
+            if phrase.split()[-1] == head and len(phrase.split()) >= 2:
+                label = _display(entry, value)
+                if label not in shown:
+                    shown.append(label)
+        if len(shown) >= 2:
+            return shown
+    return []
+
+
 def _names_two_types(db: "Session", raw: str, vocab: Vocabulary) -> bool:
     """Does `raw` name two different product types word for word, and no type phrase of
     the registry as a whole (`product_spec_search._exact_classes` is None)?"""
@@ -667,6 +700,14 @@ def ground(
             grounded = _as_typed(_validate(entity, vocab), entity, message, vocab, others)
             add(grounded, entity)
             notes.append({"from": hint, "raw": raw, "to": [g.__dict__ for g in grounded]})
+            continue
+        whole = _whole_spec_value(raw, vocab) if hint in _CLASS_HINTS and raw else None
+        if whole is not None:
+            # PROMO-SUBJECT-FILTER AC-24: the whole phrase is one value of a registry key, said
+            # word for word ("basin cabinet", furniture_type basin_cabinet): that value is the
+            # subject, before any reading of its words as two types.
+            add([whole], entity)
+            notes.append({"from": hint, "raw": raw, "to": [whole.__dict__]})
             continue
         if hint in _CLASS_HINTS and raw and _names_two_types(db, raw, vocab):
             # Fix round 10 on PR #833: "water tap basin" holds two product types word for

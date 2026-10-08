@@ -5753,10 +5753,10 @@ def _run_stages_body(  # noqa: PLR0915
             stage[0] = "replied"
             answer = turn_compose.Answer(text=plan.trace.task_question)
 
-        # PROMO-SUBJECT-FILTER AC-7/AC-8: a promotion ask whose subject grounded to an
-        # UNKNOWN product type (the parser named a type, the registry has none that fits)
-        # asks back before any menu or tool call. The parser's grounding decides; nothing
-        # here reads the words.
+        # PROMO-SUBJECT-FILTER AC-7/AC-8/AC-23/AC-25: a promotion ask whose subject the
+        # catalogue cannot hold as one thing asks back before any menu or tool call
+        # (`turn_runtime.promo_subject_ask_back`). The parser's grounding and the registry
+        # decide; nothing here reads the words.
         if (
             answer is None
             and branch_kind in ("business_query", "check_promotion")
@@ -5766,22 +5766,12 @@ def _run_stages_body(  # noqa: PLR0915
             and isinstance(resolver_payload, dict)
             and (answer_parse_output or {}).get("domain_hint") == "promotion"
         ):
-            unknown_types = [
-                str(e.get("raw") or "").strip()
-                for e in (answer_parse_output or {}).get("entities") or []
-                if isinstance(e, dict)
-                and e.get("spec_key") == "product_type"
-                and e.get("spec_value") is None
-                and str(e.get("raw") or "").strip()
-            ]
-            if unknown_types:
+            ask_back = turn_runtime.promo_subject_ask_back(
+                answer_parse_output or {}, db, resolver_payload.get("gate")
+            )
+            if ask_back:
                 stage[0] = "replied"
-                answer = turn_compose.Answer(
-                    text=(
-                        f'I could not match "{", ".join(unknown_types)}" to a product type.\n'
-                        "Which product or brand do you mean?"
-                    )
-                )
+                answer = turn_compose.Answer(text=ask_back)
                 bridge_answered = True
 
         if (

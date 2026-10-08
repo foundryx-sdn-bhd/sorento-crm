@@ -581,6 +581,15 @@ def promo_filter(parse_output: dict[str, Any], db: Any, gate: Any = None) -> dic
     product_tokens = [e for e in entities or [] if isinstance(e, dict) and e.get("hint") in (None, "", "product")]
     typed_product = bool(placed & set(_typed_by_token(product_tokens)))
     terms = [] if typed_product else [t.lower() for t in class_scope_terms(parse_output)]
+    if not typed_product:
+        # A registry value the grounding placed ("basin cabinet", "gunmetal") narrows too,
+        # in the registry's own words, read by the same membership as a class word (AC-24).
+        from app.services.chatbot.head.grounding import scope_word, specification_entities
+
+        for e in specification_entities(entities):
+            word = scope_word(e)
+            if word and word.lower() not in terms:
+                terms.append(word.lower())
     if terms:
         out["scope_terms"] = terms
     kind = parse_output.get("promotion_kind")
@@ -598,6 +607,39 @@ def promo_filter(parse_output: dict[str, Any], db: Any, gate: Any = None) -> dic
         if ids:
             out["brand_ids"] = ids
     return out
+
+
+def promo_subject_ask_back(parse_output: dict[str, Any], db: Any, gate: Any = None) -> str | None:
+    """PROMO-SUBJECT-FILTER AC-7, AC-23, AC-25: the ask-back for a promotion subject the
+    catalogue cannot hold as one thing, else None. A product type the grounding could not
+    place, or a subject term the membership read (`filter_specs`, the one the promotions
+    route filters by) binds to nothing, is said back as typed; one word that heads several
+    values of a registry key ("cabinet") asks which, listing them."""
+    unknown = [
+        str(e.get("raw") or "").strip()
+        for e in parse_output.get("entities") or []
+        if isinstance(e, dict)
+        and e.get("spec_key") == "product_type"
+        and e.get("spec_value") is None
+        and str(e.get("raw") or "").strip()
+    ]
+    terms = promo_filter(parse_output, db, gate).get("scope_terms") or [] if db is not None else []
+    if not unknown and terms:
+        from app.services.chatbot.head import grounding
+        from app.services.product_spec_search import filter_specs
+
+        vocab = grounding.load_vocabulary(db)
+        for term in terms:
+            options = grounding.several_values(term, vocab)
+            if options:
+                return "\n".join([f"Which {term} do you mean?", *options])
+        for term in terms:
+            found = filter_specs(db, scope_terms=[term])
+            if found["clause"] is None or term in found["unrecognized_terms"]:
+                unknown.append(term)
+    if not unknown:
+        return None
+    return f'I could not match "{", ".join(unknown)}" to a product type.\nWhich product or brand do you mean?'
 
 
 def promotion_kind_rows(db: Session) -> list[dict[str, Any]]:
