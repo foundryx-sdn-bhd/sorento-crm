@@ -78,8 +78,27 @@ def category_condition(ctx: Any, values: List[str]) -> Optional[Any]:
     return Product.category_id.in_(values)
 
 
+#: The key of the "(no agent)" row (REPORT-DRILLDOWN): an agent filter value meaning "no agent".
+NO_AGENT_KEY = "none"
+
+
+def _agent_in(column: Any, values: List[str]) -> Any:
+    """`column` in the agent ids, or NULL when `NO_AGENT_KEY` is one of the values."""
+    ids = [v for v in values if v != NO_AGENT_KEY]
+    parts = [column.in_(ids)] if ids else []
+    if NO_AGENT_KEY in values:
+        parts.append(column.is_(None))
+    return sa.or_(*parts)
+
+
 def sales_agent_condition(ctx: Any, values: List[str]) -> Optional[Any]:
-    return SalesOrder.sales_agent_id.in_(values)
+    return _agent_in(SalesOrder.sales_agent_id, values)
+
+
+def customer_agent_condition(ctx: Any, values: List[str]) -> Optional[Any]:
+    """The customer CARD link (REPORT-DRILLDOWN, owner 8 Oct 2026): lines of customers whose
+    assigned agent (`customers.sales_agent_id`) is one of the values, whoever sold the order."""
+    return _agent_in(Customer.sales_agent_id, values)
 
 
 def location_condition(ctx: Any, values: List[str]) -> Optional[Any]:
@@ -151,6 +170,7 @@ def _definition(basis: str) -> reg.ReportDefinition:
             reg.SelectParam("brand", "Brand", True, (), _no_options, brand_condition),
             reg.SelectParam("category", "Category", True, (), _no_options, category_condition),
             reg.SelectParam("sales_agent", "Sales agent", True, (), _no_options, sales_agent_condition),
+            reg.SelectParam("customer_agent", "Customers assigned to", True, (), _no_options, customer_agent_condition),
             reg.SelectParam("location", "Location", True, (), _no_options, location_condition),
             reg.SelectParam("channel", "Channel", True, (), _no_options, channel_condition),
         ),

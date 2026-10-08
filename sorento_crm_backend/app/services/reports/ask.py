@@ -25,7 +25,7 @@ from app.services.sales_report_service import _money_edge, _qty
 #: param key behind it, so one list each serves every basis (a word that differs from its key
 #: earns a mapping then).
 DIMENSIONS = ("customer", "product", "brand", "category", "sales_agent", "location", "channel", "month")
-FILTERS = ("customer", "product", "brand", "category", "sales_agent", "location", "channel")
+FILTERS = ("customer", "product", "brand", "category", "sales_agent", "customer_agent", "location", "channel")
 
 #: One entry per basis, every one over sales order lines.
 CATALOGUE: dict[str, dict[str, Any]] = {
@@ -55,6 +55,79 @@ GROUP_LABELS = {
     "channel": "Channel",
     "month": "Month",
 }
+
+#: The filter words' labels, as the route echoes them: the dimensions' own, plus the customer
+#: card link a drill down uses (REPORT-DRILLDOWN, owner 8 Oct 2026), named so the reply says it.
+FILTER_LABELS = {**GROUP_LABELS, "customer_agent": "Customers assigned to"}
+
+NO_AGENT_KEY = sales_order_lines_ask.NO_AGENT_KEY
+
+# ----------------------------------------------------------------------- drill down
+#
+# REPORT-DRILLDOWN (`documentation/plans/chatbot/PLAN-report-drilldown-08oct.md`): a follow-up
+# ranking of the rows a ranking printed. Each printed row carries `keys`, the ids its name
+# stands for, and a declared link per axis pair turns those keys into the follow-up's filter.
+
+#: The route param each drill source's keys go to: the source row's own filter on the sales
+#: order line. Channel and month are not sources (a channel or a month is named in words).
+DRILL_PARAMS = {
+    "sales_agent": "sales_agent_ids",
+    "customer": "customer_ids",
+    "product": "product_ids",
+    "brand": "brand_ids",
+    "category": "category_ids",
+    "location": "warehouse_codes",
+}
+
+#: The pairs whose link is NOT the source's own filter. Agent -> customer is the customer card
+#: (owner Q1, 8 Oct 2026): the customers assigned to those agents, whoever sold the order.
+DRILL_LINKS = {("sales_agent", "customer"): "customer_agent_ids"}
+
+
+def drill_param(source: str, target: str) -> Optional[str]:
+    """The route param a drill from `source` rows to a `target` ranking filters by; None when
+    `source` is not a drill source."""
+    return DRILL_LINKS.get((source, target)) or DRILL_PARAMS.get(source)
+
+
+def _row_keys(db: Session, group_by: str, names: list[str], company_grants: Any) -> dict[str, list[str]]:
+    """The ids each printed name stands for, inside the contact's companies (a name shared by
+    several rows, one brand per company, is one row and the union of their ids). The
+    "(no agent)" row is `NO_AGENT_KEY`; a location's key is its code."""
+    from app.models.base import company_scope
+    from app.models.order import Customer
+    from app.models.product import Brand, Product, ProductCategory
+    from app.models.sales_agent import SalesAgent
+    from app.services.reports.datasets.delivery_order_lines import NO_AGENT
+
+    if group_by == "location":
+        return {n: [n] for n in names}
+    lookups = {
+        "sales_agent": (SalesAgent, SalesAgent.sales_agent),
+        "customer": (Customer, Customer.customer_name),
+        "product": (Product, Product.product_code),
+        "brand": (Brand, Brand.brand_name),
+        "category": (ProductCategory, ProductCategory.category_name),
+    }
+    if group_by not in lookups:
+        return {}
+    model, name_column = lookups[group_by]
+    out: dict[str, list[str]] = {n: [] for n in names}
+    if group_by == "sales_agent" and NO_AGENT in out:
+        out[NO_AGENT] = [NO_AGENT_KEY]
+    grants = sorted(str(c) for c in company_grants or ())
+    wanted = [n for n in names if not out[n]]
+    if wanted and grants:
+        with company_scope(db, None):
+            rows = (
+                db.query(model.id, name_column)
+                .filter(name_column.in_(wanted), (model.company_id.in_(grants)) | (model.company_id.is_(None)))
+                .all()
+            )
+        for row_id, name in rows:
+            out[name].append(str(row_id))
+    return {n: sorted(set(ids)) for n, ids in out.items()}
+
 
 #: The delivered dataset's raw channel values, as the ordered dataset already prints them.
 _CHANNEL_NAMES = {"retail": "Dealer", "project": "Project team"}
@@ -150,8 +223,9 @@ def run_ask(
     ranked.sort(key=lambda r: (sign * r[first], sign * r[second], r[0]))
 
     shown = ranked[:top_n] if top_n else ranked
+    keys = _row_keys(db, group_by, [name for name, _q, _a in shown], company_grants)
     body["rows"] = [
-        {"rank": i, "name": name, "qty": _qty(qty), "amount": _money_edge(amount)}
+        {"rank": i, "name": name, "qty": _qty(qty), "amount": _money_edge(amount), "keys": keys.get(name, [])}
         for i, (name, qty, amount) in enumerate(shown, start=1)
     ]
     body["total_count"] = len(ranked)

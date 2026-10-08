@@ -55,14 +55,28 @@ _PARAMS = frozenset(
     {
         "date_from", "date_to", "basis", "measure", "group_by", "top_n", "sort", "product_code",
         "product_ids", "brand_ids", "category_ids", "sales_agent_ids", "customer_ids", "warehouse_codes",
-        "channel", "contact_id", "space_id",
+        "channel", "contact_id", "space_id", "customer_agent_ids",
     }
 )
 #: The filter params: present but resolving to nothing is 422 `empty_filter`, never "no filter".
 _FILTER_PARAMS = (
     "product_code", "product_ids", "brand_ids", "category_ids", "sales_agent_ids", "customer_ids",
-    "warehouse_codes", "channel",
+    "warehouse_codes", "channel", "customer_agent_ids",
 )
+#: The echo's name for the "(no agent)" key in an agent filter (REPORT-DRILLDOWN).
+_NO_AGENT_NAME = "(no agent)"
+
+
+def _agent_values(raw: Optional[list[str]], param_name: str) -> Optional[list[str]]:
+    """An agent id list that may also name `ask.NO_AGENT_KEY` ("no agent", the drill down of a
+    "(no agent)" row): the parsed ids, plus the key when named. None when nothing is given."""
+    if raw is None:
+        return None
+    pieces = [p.strip() for item in raw for p in str(item or "").split(",") if p.strip()]
+    none = any(p.lower() == ask.NO_AGENT_KEY for p in pieces)
+    ids = parse_uuid_list([p for p in pieces if p.lower() != ask.NO_AGENT_KEY], param_name=param_name) or []
+    out = ids + ([ask.NO_AGENT_KEY] if none else [])
+    return out or None
 
 
 def _unprocessable(message: str, code: str, detail: Optional[str] = None) -> AppException:
@@ -112,6 +126,7 @@ def _echo(
     agents: Optional[list[str]],
     warehouse_codes: list[str],
     channel: Optional[str],
+    card_agents: Optional[list[str]] = None,
 ) -> list[dict[str, Any]]:
     """The filters the caller named, by name, in the catalogue's word order. Looks every id
     up, so an id naming no row is 404 here."""
@@ -128,15 +143,16 @@ def _echo(
         out.append(
             ("category", _lookup(db, ProductCategory, ProductCategory.category_name, categories, grants, "Category"))
         )
-    if agents:
-        out.append(
-            ("sales_agent", _lookup(db, SalesAgent, SalesAgent.sales_agent, agents, grants, "Sales agent", shared=True))
-        )
+    for key, values in (("sales_agent", agents), ("customer_agent", card_agents)):
+        if values:
+            ids = [v for v in values if v != ask.NO_AGENT_KEY]
+            names = _lookup(db, SalesAgent, SalesAgent.sales_agent, ids, grants, "Sales agent", shared=True) if ids else []
+            out.append((key, sorted(names + ([_NO_AGENT_NAME] if ask.NO_AGENT_KEY in values else []))))
     if warehouse_codes:
         out.append(("location", list(warehouse_codes)))
     if channel:
         out.append(("channel", [_CHANNELS[channel]]))
-    return [{"key": key, "label": ask.GROUP_LABELS[key], "values": values} for key, values in out if values]
+    return [{"key": key, "label": ask.FILTER_LABELS[key], "values": values} for key, values in out if values]
 
 
 def _response(data: dict) -> JSONResponse:
@@ -166,6 +182,10 @@ def report_ask(
     category_ids: Optional[list[str]] = Query(None),
     sales_agent_ids: Optional[list[str]] = Query(None),
     customer_ids: Optional[list[str]] = Query(None),
+    customer_agent_ids: Optional[list[str]] = Query(
+        None,
+        description="Customers whose assigned agent (the customer card) is one of these; 'none' = no agent.",
+    ),
     warehouse_codes: Optional[list[str]] = Query(None),
     channel: Optional[str] = Query(None, description="dealer | project"),
     contact_id: Optional[str] = Query(None, description="Respond.io contact id. Required with space_id."),
@@ -228,7 +248,8 @@ def report_ask(
     named_products = parse_uuid_list(product_ids, param_name="product_ids")
     brands = parse_uuid_list(brand_ids, param_name="brand_ids")
     categories = parse_uuid_list(category_ids, param_name="category_ids")
-    agents = parse_uuid_list(sales_agent_ids, param_name="sales_agent_ids")
+    agents = _agent_values(sales_agent_ids, "sales_agent_ids")
+    card_agents = _agent_values(customer_agent_ids, "customer_agent_ids")
     codes = _normalize_entities(warehouse_codes) or []
     resolved_filters = {
         "product_code": code,
@@ -239,11 +260,15 @@ def report_ask(
         "customer_ids": named_customers,
         "warehouse_codes": codes,
         "channel": channel_norm,
+        "customer_agent_ids": card_agents,
     }
     for name in _FILTER_PARAMS:
         if name in request.query_params.keys() and not resolved_filters[name]:
             raise _unprocessable(f"'{name}' was given but names nothing", "empty_filter", name)
-    for name in ("product_ids", "brand_ids", "category_ids", "sales_agent_ids", "customer_ids", "warehouse_codes"):
+    for name in (
+        "product_ids", "brand_ids", "category_ids", "sales_agent_ids", "customer_ids", "warehouse_codes",
+        "customer_agent_ids",
+    ):
         if len(resolved_filters[name] or []) > _MAX_VALUES:
             raise _unprocessable(f"Too many values for '{name}' (max {_MAX_VALUES})", "too_many_values", name)
 
@@ -296,6 +321,7 @@ def report_ask(
         outside = (
             (group_norm is not None and group_norm not in ask.DEALER_KEYS)
             or bool(agents)
+            or bool(card_agents)
             or bool(codes)
             or channel_norm is not None
         )
@@ -352,6 +378,7 @@ def report_ask(
         agents=agents,
         warehouse_codes=codes,
         channel=channel_norm,
+        card_agents=card_agents,
     )
 
     filters: dict[str, list[str]] = {}
@@ -366,6 +393,8 @@ def report_ask(
         filters["category"] = categories
     if agents:
         filters["sales_agent"] = agents
+    if card_agents:
+        filters["customer_agent"] = card_agents
     if channel_norm:
         filters["channel"] = [channel_norm]
 
