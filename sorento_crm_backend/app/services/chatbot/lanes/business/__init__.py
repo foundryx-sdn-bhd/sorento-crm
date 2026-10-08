@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import copy as _copy
 import logging
 import time
 
@@ -2251,50 +2252,91 @@ def run_fetch(
 
     # PRODUCT-ALTERNATIVES round B (card Addendum 1, owner 8 Oct 2026): an asked product
     # that is discontinued and has a stored alternative gets the SAME tool's answer for the
-    # alternative folded in (`alternatives.py`). The second call goes through the same
-    # seam and brand guard as the first; it is best-effort, so a failure leaves the reply
-    # exactly as the first call made it.
+    # alternative folded in (`alternatives.py`), one call per alternative through the same
+    # seam and brand guard. Best-effort end to end: any failure (the lookup included) leaves
+    # the reply exactly as the first call made it.
     alternative_tail: list[str] = []
+    alternative_found = False
+    alternative_pairs: list[Any] = []
     main_missed = not jsc.array(envelope.get("items")) if isinstance(envelope, dict) else True
-    alternative_pairs = (
-        alternatives_mod.plan(db, tool_name, entities)
-        if isinstance(envelope, dict) and not jsc.array(envelope.get("groups"))
-        else []
-    )
-    if alternative_pairs:
+    if isinstance(envelope, dict) and not jsc.array(envelope.get("groups")) and db is not None:
         try:
-            alternative_args = fetch_mod.entity_ids_transformer(
-                alternatives_mod.alternative_trigger(trigger, alternative_pairs), space_id=space_id
-            )
-            alternative_envelope = brand_guard.guard_result(
-                tool_name,
-                fetch_mod.parse_mcp_content(
-                    fetch_mod.call_tool(tool_name, alternative_args, mcp=_McpSeam(services.mcp_call))
-                ),
-                semantic_input.get("scope_brand_ids"),
-                db,
-            )
-            if isinstance(alternative_envelope, dict) and not isinstance(
-                alternative_envelope.get("error"), str
-            ):
-                requested = jsc.array(semantic_input.get("requested_attributes"))
-                alternative_tail = alternatives_mod.fold(
+            with db.begin_nested():
+                alternative_pairs = alternatives_mod.plan(
+                    db,
                     tool_name,
-                    envelope,
-                    alternative_envelope,
-                    alternative_pairs,
-                    fetch_mod._fmt_value,
-                    status_only=bool(requested)
-                    and all(fetch_mod._asks_discontinued([a]) for a in requested),
+                    entities,
+                    predicate=trigger.get("predicate"),
+                    scope_brand_ids=semantic_input.get("scope_brand_ids"),
+                )
+            requested = jsc.array(semantic_input.get("requested_attributes"))
+            status_only = (
+                alternatives_mod.TOOL_KINDS.get(tool_name) == "product"
+                and bool(requested)
+                and all(fetch_mod._asks_discontinued([a]) for a in requested)
+            )
+            answers: list[tuple[str, Any, Any]] = []
+            for old_code, alternative in alternative_pairs:
+                if status_only:
+                    # The status line names the code alone; nothing to fetch for it.
+                    answers.append((old_code, alternative, None))
+                    continue
+                alternative_args = fetch_mod.entity_ids_transformer(
+                    alternatives_mod.alternative_trigger(trigger, alternative), space_id=space_id
+                )
+                if (
+                    tool_name in policy_rows.ENTITY_FILTER_REQUIRED_TOOLS
+                    and not fetch_mod.has_narrowing_filter(alternative_args, tool_name=tool_name)
+                ):
+                    continue
+                _alt_started = time.perf_counter()
+                alternative_envelope = brand_guard.guard_result(
+                    tool_name,
+                    fetch_mod.parse_mcp_content(
+                        fetch_mod.call_tool(tool_name, alternative_args, mcp=_McpSeam(services.mcp_call))
+                    ),
+                    semantic_input.get("scope_brand_ids"),
+                    db,
                 )
                 if trace is not None:
                     trace.add(
-                        "alternatives",
-                        {"tool": tool_name, "pairs": [[o, a.product_code] for o, a in alternative_pairs]},
+                        "tool",
+                        {
+                            "name": tool_name,
+                            "args": alternative_args,
+                            "envelope": alternative_envelope,
+                            "ms": int((time.perf_counter() - _alt_started) * 1000),
+                            "alternative_of": old_code,
+                        },
                     )
-        except Exception:  # noqa: BLE001 - the alternative never costs the asked answer
+                if isinstance(alternative_envelope, dict) and not isinstance(
+                    alternative_envelope.get("error"), str
+                ):
+                    answers.append((old_code, alternative, alternative_envelope))
+            if answers:
+                folded = _copy.deepcopy(envelope)
+
+                def _render(alt_envelope: Any, rows: list) -> str:
+                    rendered = fetch_mod.output_structurer(
+                        {**alt_envelope, "items": rows, "intro": ""},
+                        alternatives_mod.alternative_trigger(trigger, alternative_pairs[0][1]),
+                    )
+                    return jsc.js_string(rendered.get("response") or "")
+
+                alternative_tail, alternative_found = alternatives_mod.fold(
+                    tool_name,
+                    folded,
+                    answers,
+                    fmt_value=fetch_mod._fmt_value,
+                    render=_render,
+                    status_only=status_only,
+                )
+                envelope = folded
+        except Exception as exc:  # noqa: BLE001 - the alternative never costs the asked answer
             logger.warning("chatbot: alternative fetch for %s failed", tool_name, exc_info=True)
-            alternative_tail = []
+            if trace is not None:
+                trace.add("alternatives", {"tool": tool_name, "failed": str(exc)[:200]})
+            alternative_tail, alternative_found = [], False
 
     structured = fetch_mod.output_structurer(envelope, trigger)
     if alternative_tail and isinstance(structured, dict):
@@ -2304,7 +2346,10 @@ def run_fetch(
             structured["response"] = (
                 alternatives_mod.miss_sentence(tool_name, old_codes) + "\n" + "\n".join(alternative_tail)
             )
-            structured["has_result"] = True
+            if alternative_found:
+                # Only an alternative that actually had rows turns a miss into an answer;
+                # a bare "No promotion." keeps the miss handling (rerun, escalation offer).
+                structured["has_result"] = True
         else:
             structured["response"] = response + "\n\n" + "\n".join(alternative_tail)
     # LOWSTOCK-FILTER-ASK (owner hand test, 3 Oct 2026): EVERY low stock reply - ready,
