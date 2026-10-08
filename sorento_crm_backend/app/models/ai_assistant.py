@@ -11,6 +11,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
 from app.database import Base
+from app.utils.field_encryption import EncryptedText
 
 try:
     from pgvector.sqlalchemy import Vector  # type: ignore
@@ -32,13 +33,15 @@ class AIAssistantConfig(Base):
     model: Mapped[str] = mapped_column(String(128), nullable=False, server_default="gpt-4o-mini")
     temperature: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     system_prompt: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
-    api_key_ciphertext: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The three *_ciphertext columns hold Fernet tokens (EncryptedText); the attribute
+    # reads back the plain key. scripts/encrypt_ai_assistant_keys.py encrypts legacy rows.
+    api_key_ciphertext: Mapped[str | None] = mapped_column(EncryptedText, nullable=True)
     # Dedicated Anthropic key - the SCM M5 market web search needs Anthropic while
     # the assistant/explainer runs on the primary (OpenAI) key. DB-configurable.
-    anthropic_api_key_ciphertext: Mapped[str | None] = mapped_column(Text, nullable=True)
+    anthropic_api_key_ciphertext: Mapped[str | None] = mapped_column(EncryptedText, nullable=True)
     # Dedicated Gemini key - the chatbot media image lane can run on Gemini while
     # the assistant stays on the primary provider. DB-configurable.
-    gemini_api_key_ciphertext: Mapped[str | None] = mapped_column(Text, nullable=True)
+    gemini_api_key_ciphertext: Mapped[str | None] = mapped_column(EncryptedText, nullable=True)
     enabled_tools: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, server_default="[]")
     rag_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     is_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
