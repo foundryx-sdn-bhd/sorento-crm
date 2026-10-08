@@ -2260,15 +2260,18 @@ def run_fetch(
     alternative_pairs: list[Any] = []
     main_missed = not jsc.array(envelope.get("items")) if isinstance(envelope, dict) else True
     if isinstance(envelope, dict) and not jsc.array(envelope.get("groups")) and db is not None:
+        savepoint = None
         try:
-            with db.begin_nested():
-                alternative_pairs = alternatives_mod.plan(
-                    db,
-                    tool_name,
-                    entities,
-                    predicate=trigger.get("predicate"),
-                    scope_brand_ids=semantic_input.get("scope_brand_ids"),
-                )
+            # One savepoint around the lookup AND the second calls' brand guard, so a failed
+            # statement in either is rolled back here and never aborts the turn.
+            savepoint = db.begin_nested()
+            alternative_pairs = alternatives_mod.plan(
+                db,
+                tool_name,
+                entities,
+                predicate=trigger.get("predicate"),
+                scope_brand_ids=semantic_input.get("scope_brand_ids"),
+            )
             requested = jsc.array(semantic_input.get("requested_attributes"))
             status_only = (
                 alternatives_mod.TOOL_KINDS.get(tool_name) == "product"
@@ -2313,13 +2316,22 @@ def run_fetch(
                     alternative_envelope.get("error"), str
                 ):
                     answers.append((old_code, alternative, alternative_envelope))
+            savepoint.commit()
             if answers:
                 folded = _copy.deepcopy(envelope)
+                # An alternative's rows placed in this envelope are filtered by ITS
+                # restricted fields too, not only the asked product's.
+                restricted = dict(folded.get("restricted_fields") or {})
+                for _old, _alt, alt_envelope in answers:
+                    if isinstance(alt_envelope, dict) and isinstance(alt_envelope.get("restricted_fields"), dict):
+                        restricted = {**alt_envelope["restricted_fields"], **restricted}
+                if restricted:
+                    folded["restricted_fields"] = restricted
 
-                def _render(alt_envelope: Any, rows: list) -> str:
+                def _render(alt_envelope: Any, rows: list, alternative: Any) -> str:
                     rendered = fetch_mod.output_structurer(
                         {**alt_envelope, "items": rows, "intro": ""},
-                        alternatives_mod.alternative_trigger(trigger, alternative_pairs[0][1]),
+                        alternatives_mod.alternative_trigger(trigger, alternative),
                     )
                     return jsc.js_string(rendered.get("response") or "")
 
@@ -2330,9 +2342,12 @@ def run_fetch(
                     fmt_value=fetch_mod._fmt_value,
                     render=_render,
                     status_only=status_only,
+                    loc=trigger.get("localizer") if tool_name in fetch_mod._LOCALIZED_TOOLS else None,
                 )
                 envelope = folded
         except Exception as exc:  # noqa: BLE001 - the alternative never costs the asked answer
+            if savepoint is not None and savepoint.is_active:
+                savepoint.rollback()
             logger.warning("chatbot: alternative fetch for %s failed", tool_name, exc_info=True)
             if trace is not None:
                 trace.add("alternatives", {"tool": tool_name, "failed": str(exc)[:200]})
@@ -2343,8 +2358,13 @@ def run_fetch(
         response = jsc.js_string(structured.get("response") or "").strip()
         if main_missed:
             old_codes = list(dict.fromkeys(old for old, _alt in alternative_pairs))
+            # The same miss sentence compose would print, in the contact's language.
+            miss = alternatives_mod.miss_sentence(tool_name, old_codes)
+            localizer = trigger.get("localizer")
             structured["response"] = (
-                alternatives_mod.miss_sentence(tool_name, old_codes) + "\n" + "\n".join(alternative_tail)
+                (localizer.sentence(miss) if localizer is not None else miss)
+                + "\n"
+                + "\n".join(alternative_tail)
             )
             if alternative_found:
                 # Only an alternative that actually had rows turns a miss into an answer;

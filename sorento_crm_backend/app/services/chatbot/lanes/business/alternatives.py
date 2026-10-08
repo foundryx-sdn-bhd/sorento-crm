@@ -146,15 +146,22 @@ def fold(
     answers: list[tuple[str, Any, Any]],
     *,
     fmt_value: Callable[[Any], Any],
-    render: Callable[[Any, list], str],
+    render: Callable[[Any, list, Any], str],
     status_only: bool = False,
+    loc: Any = None,
 ) -> tuple[list[str], bool]:
     """Put each alternative's answer into `envelope` (mutated) and return `(tail lines,
     found)`. `answers` is `[(old_code, alternative, its envelope or None)]`. The tail is
     printed after the rendered reply (promotion, or an old code with no row of its own to
     hang a line under); `found` says some alternative actually had rows. `fmt_value` is
     `fetch._fmt_value`, so dates read as the reply's own; `render(alt_envelope, items)` is
-    the reply's own item renderer, for an alternative's rows with no old row to follow."""
+    the reply's own item renderer, for an alternative's rows with no old row to follow.
+    `loc` is the reply's localizer (the same one `output_structurer` uses for this tool), so
+    a tail line reads in the contact's language like the lines rendered in place."""
+    from app.services.chatbot.label_catalog import IDENTITY
+
+    loc = loc or IDENTITY
+    label = loc.text("Alternative")
     kind = TOOL_KINDS[tool_name]
     items = envelope.get("items") if isinstance(envelope.get("items"), list) else None
     if items is None:
@@ -182,15 +189,15 @@ def fold(
 
         if kind == "promotion":
             if not alt_items:
-                tail.append(f"Alternative: {alt_code}: No promotion.")
+                tail.append(f"{label}: {alt_code}: {loc.text('No promotion.')}")
             for it in alt_items:
                 found = True
                 name = jsc.nullish_str(_field(it, "Promotion") or jsc.get(it, "title"))
                 start = fmt_value(_field(it, "Start Date"))
                 end = fmt_value(_field(it, "End Date"))
-                line = f"Alternative: {alt_code}: {name} ({start} to {end})"
+                line = f"{label}: {alt_code}: {name} ({start} to {end})"
                 if jsc.truthy(jsc.get(jsc.get(it, "flags"), "expired")):
-                    line += "\n⚠️  *(EXPIRED)*"
+                    line += f"\n⚠️  *({loc.text('EXPIRED')})*"
                 tail.append(line)
             continue
 
@@ -207,7 +214,7 @@ def fold(
             if anchor is not None:
                 _flags(anchor).setdefault("alternative_lines", []).append(line)
             else:
-                tail.append(f"Alternative: {line}")
+                tail.append(f"{label}: {loc.tail(line)}")
             continue
 
         if kind == "attachment":
@@ -215,7 +222,7 @@ def fold(
             if anchor is not None:
                 _flags(anchor).setdefault("alternative_lines", []).extend(lines)
             else:
-                tail.extend(f"Alternative: {line}" for line in lines)
+                tail.extend(f"{label}: {line}" for line in lines)
             envelope["attachments"] = jsc.array(envelope.get("attachments")) + list(
                 jsc.array(jsc.get(alt_envelope, "attachments"))
             )
@@ -226,8 +233,8 @@ def fold(
         # placed there, so several read in order). With no old row to follow, the code
         # and the alternative's rows go after the reply.
         if anchor is None:
-            rows = render(alt_envelope, own).strip()
-            tail.append(f"*Alternative:* {alt_code}" + (f"\n{rows}" if rows else ""))
+            rows = render(alt_envelope, own, alternative).strip()
+            tail.append(f"*{label}:* {alt_code}" + (f"\n{rows}" if rows else ""))
             continue
         if kind == "product":
             # DISCONTINUED-ASK (#1535) reads the top-level key when the status is asked
