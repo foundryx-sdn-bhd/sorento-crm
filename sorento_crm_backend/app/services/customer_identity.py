@@ -156,7 +156,7 @@ def outerjoin_customer_of_order(query, order_cls):
     falls through to the name link, as before. A blank code never links.
 
     The keys come first because a document's buyer name is free text typed per document
-    (DELIVERY-DEBTOR-GROUP, owner 8 Oct 2026): "<NAME> (CERAMIC & ELLECI)" on one DO under
+    (DELIVERY-DEBTOR-GROUP, owner 8 Oct 2026): "<NAME> (<DO-LEVEL SUFFIX>)" on one DO under
     the customer's own code is that customer, whatever the name says. An order none of the
     three links reach stays unlinked; nothing here compares names by similarity.
     """

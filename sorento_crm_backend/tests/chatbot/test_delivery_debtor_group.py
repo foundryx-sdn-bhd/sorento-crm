@@ -3,7 +3,7 @@
 PLAN ``documentation/plans/chatbot/PLAN-delivery-debtor-group-08oct.md``.
 
 "check today delivery to hanlim" offered two options: the customer, and the free-text debtor
-name one DO carried ("<NAME> (CERAMIC & ELLECI)", typed at DO level). That DO's debtor code is
+name one DO carried ("<NAME> (QUARTZ & ONYX)", typed at DO level). That DO's debtor code is
 the same customer, and the customer sits in one customer group, so there is nothing to choose.
 
 Cause: the resolver's DO debtor-name probes (`entity_resolver._probe_customer_debtor_name`,
@@ -34,7 +34,7 @@ from tests._pg_fixture import blank_session, unique_code
 
 MARKER = "ZZDDG"
 MASTER = f"{MARKER} TRADING SDN BHD"
-DO_NAME = f"{MARKER} TRADING SDN BHD (CERAMIC & ELLECI)"
+DO_NAME = f"{MARKER} TRADING SDN BHD (QUARTZ & ONYX)"
 TOKEN = f"{MARKER} TRADING"
 
 
@@ -235,7 +235,7 @@ class TestDebtorNameProbeLinksByExplicitKey:
         cust = _customer(db, f"{MARKER} ANDMODE SDN BHD")
         _do(db, DO_NAME, code=cust.customer_code, customer_id=cust.id)
 
-        hits = [h for h in _and_probe_customer(db, ["ceramic", "elleci"]) if h.match_field == "debtor_name"]
+        hits = [h for h in _and_probe_customer(db, ["quartz", "onyx"]) if h.match_field == "debtor_name"]
 
         assert [(h.canonical_code, h.uuid, h.display.get("customer_name")) for h in hits] == [
             (DO_NAME, cust.id, cust.customer_name)
