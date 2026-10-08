@@ -656,3 +656,32 @@ def test_an_expired_promotion_of_the_alternative_says_so(db, pair):
     assert said.endswith(
         f"Alternative: {new.product_code}: Old Raya (01/04/2026 to 30/04/2026)\n\u26a0\ufe0f  *(EXPIRED)*"
     ), said
+
+
+def test_dealer_window_miss_says_no_eta_for_the_alternative(db, pair):
+    """Reviewer round B should-fix 3: a dealer's date-window ask returns no rows at all;
+    the dealer wording ("No ETA") follows the dealer view, not the old code's row."""
+    old, new = pair
+    said, fetch, _c = _run(
+        db,
+        domain="incoming",
+        entities=[_entity(old)],
+        answers=lambda name, ids: _envelope([], result_type="incoming_dealer"),
+    )
+    assert fetch.get("alternative_lines") == [f"Alternative: {new.product_code}: No ETA"], fetch
+
+
+def test_an_inactive_alternative_is_not_named_even_on_the_empty_path(db, pair):
+    """Security nit: the empty-result naming rests on `alternatives_for`; pin it here too."""
+    old, new = pair
+    new.is_active = False
+    db.flush()
+    said, fetch, calls = _run(
+        db,
+        domain="incoming",
+        entities=[_entity(old)],
+        answers=lambda name, ids: _envelope([], result_type="incoming"),
+    )
+    assert len(calls) == 1
+    assert new.product_code not in said
+    assert not fetch.get("alternative_lines")

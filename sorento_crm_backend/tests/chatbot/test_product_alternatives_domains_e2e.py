@@ -248,3 +248,36 @@ def test_the_miss_reply_carries_the_alternative_lines_before_the_escalate_offer(
         "No Product Photos for X.\nAlternative: X-NEW: no Product Photos."
     )
     assert with_alternative_lines("anything", []) == "anything"
+
+
+def test_the_alternative_lines_go_before_a_related_products_picker_and_its_offer():
+    """Reviewer round B blocker: the incoming sibling picker ends "reply 'yes' to escalate to
+    ... team." and lists X-NEW itself; the lines go before the picker block."""
+    from app.services.chatbot.answer_bridge import with_alternative_lines
+
+    lines = ["Alternative: X-NEW: No incoming stock."]
+    miss = (
+        "No incoming stock (ETA) found for X.\nNo incoming and no stock for X.\n\n"
+        "Related products:\n1. X - no incoming\n2. X-NEW - no incoming\n"
+        "Reply with a number to check its incoming, or reply 'yes' to escalate to purchasing team."
+    )
+    assert with_alternative_lines(miss, lines) == (
+        "No incoming stock (ETA) found for X.\nNo incoming and no stock for X.\n"
+        "Alternative: X-NEW: No incoming stock.\n\n"
+        "Related products:\n1. X - no incoming\n2. X-NEW - no incoming\n"
+        "Reply with a number to check its incoming, or reply 'yes' to escalate to purchasing team."
+    )
+    offer_only = "No incoming for X. Reply 'yes' to escalate to purchasing team."
+    assert with_alternative_lines(offer_only, lines) == (
+        "No incoming for X.\nAlternative: X-NEW: No incoming stock.\n"
+        "Reply 'yes' to escalate to purchasing team."
+    )
+
+
+def test_with_no_offer_the_lines_go_before_the_refer_sentence():
+    from app.services.chatbot.answer_bridge import with_alternative_lines
+
+    lines = ["Alternative: X-NEW: No ETA"]
+    assert with_alternative_lines("X: No ETA\nPlease refer to your salesman.", lines) == (
+        "X: No ETA\nAlternative: X-NEW: No ETA\nPlease refer to your salesman."
+    )
