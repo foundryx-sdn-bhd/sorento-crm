@@ -1,10 +1,35 @@
-# REPORT-DRILLDOWN behaviour card, revision 2 (8 Oct 2026): waiting on the owner (Q1, Q3)
+# REPORT-DRILLDOWN behaviour card, revision 3 (8 Oct 2026): APPROVED
 
 Plan: `PLAN-report-drilldown-08oct.md`. Lane: REPORT-DRILLDOWN. PR #1531.
 
-Revision 2: today's behaviour reproduced (not only read), examples from dev data (masked: this
-repo is public, so agents are "Agent NN", customers "Customer A..", amounts rounded), cites
-fixed, and the questions crew answered from your standing rules recorded as decided.
+## Owner answers (8 Oct 2026), binding; they win over everything below
+
+- **Q1: the customer card link.** Verbatim: "the customer of these agents should be the
+  customer with sales agent id = these answered agent, and go find the sales order". So
+  "customers of these agents" = customers whose `customers.sales_agent_id` is one of the agents
+  turn 1 listed; then THEIR sales order lines, filtered by every carried turn-1 filter (product,
+  period, basis, measure). The customer totals need NOT add up to turn 1's agent totals (prod:
+  346 active customers have 2026 orders sold by another agent); no reconcile claim anywhere,
+  and the header names the link used ("Customers assigned to: ...").
+- **Q2 (directions): (a), generic.** Any axis to any axis, built on a DECLARED link per axis
+  pair (table below).
+- Crew-decided: ask "How many?" when no count is named; keep "(no agent)"; new dev prompt
+  version, prod label unmoved, owner hand-merges.
+
+## Declared links (Q2 (a))
+
+| From (turn 1 rows) | To | Link |
+| --- | --- | --- |
+| sales agent | customer | the customer card: `customers.sales_agent_id` in the listed agents (owner Q1) |
+| sales agent | any other axis | the agent on the sales order (turn 1's own lines) |
+| customer, product, brand, category, location | any axis | that row's own filter on the sales order line |
+| channel, month | - | not a drill source: a channel or a month is named in words ("dealer only", "in September"), which a refine already does |
+
+"(no agent)" in turn 1 drills as "no agent": for agent to customer, customers with no agent on
+the card; for any other axis, orders with no agent.
+
+Revision 2 text below is kept for the record; where it differs (Q1 recommendation (a), the
+"totals reconcile" lines in the examples), the answers above win.
 
 ## In one paragraph
 
