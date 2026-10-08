@@ -1,4 +1,12 @@
-"""Symmetric encryption for stored secrets (e.g. Respond workspace API keys) using Fernet + JWT secret."""
+"""Symmetric encryption for stored secrets (Respond workspace keys, integration credentials,
+AI assistant provider keys).
+
+Keys: FIELD_ENCRYPTION_KEY, comma-separated Fernet keys with the current one first. The
+first encrypts; every listed key decrypts, and so does the key derived from JWT_SECRET,
+which is what encrypted everything before FIELD_ENCRYPTION_KEY existed. Once
+`scripts/reencrypt_field_secrets.py --apply` has moved every stored token onto the
+current key, JWT_SECRET can rotate without losing a stored secret.
+"""
 from __future__ import annotations
 
 import base64
@@ -6,7 +14,7 @@ import binascii
 import hashlib
 import logging
 
-from cryptography.fernet import Fernet, InvalidToken
+from cryptography.fernet import Fernet, InvalidToken, MultiFernet
 from sqlalchemy import Text
 from sqlalchemy.types import TypeDecorator
 
@@ -20,12 +28,59 @@ _FERNET_VERSION = 0x80
 _FERNET_OVERHEAD = 1 + 8 + 16 + 32
 
 
-def _fernet() -> Fernet:
+def _field_keys() -> list[Fernet]:
+    raw = (getattr(settings, "field_encryption_key", "") or "").split(",")
+    keys = []
+    for position, key in enumerate((k.strip() for k in raw if k.strip()), start=1):
+        try:
+            keys.append(Fernet(key.encode("ascii")))
+        except (ValueError, binascii.Error, UnicodeEncodeError) as e:
+            # The key itself never goes into the message.
+            raise ValueError(f"FIELD_ENCRYPTION_KEY entry {position} is not a valid Fernet key") from e
+    return keys
+
+
+def _jwt_derived_key() -> Fernet | None:
     secret = (settings.jwt_secret or "").encode()
     if not secret:
-        raise ValueError("JWT_SECRET is required for field encryption")
-    key = base64.urlsafe_b64encode(hashlib.sha256(secret).digest())
-    return Fernet(key)
+        return None
+    return Fernet(base64.urlsafe_b64encode(hashlib.sha256(secret).digest()))
+
+
+def field_encryption_key_configured() -> bool:
+    return bool(_field_keys())
+
+
+def _keys() -> list[Fernet]:
+    """Current key first, then older FIELD_ENCRYPTION_KEY entries, then the JWT-derived key."""
+    keys = _field_keys()
+    legacy = _jwt_derived_key()
+    if legacy is not None:
+        keys.append(legacy)
+    if not keys:
+        raise ValueError("FIELD_ENCRYPTION_KEY (or JWT_SECRET) is required for field encryption")
+    return keys
+
+
+def _fernet() -> MultiFernet:
+    return MultiFernet(_keys())
+
+
+def opens_with_current_key(ciphertext: str) -> bool:
+    """True when the key that encrypts new values also opens ``ciphertext``."""
+    try:
+        _keys()[0].decrypt(ciphertext.encode("ascii"))
+        return True
+    except (InvalidToken, UnicodeEncodeError):
+        return False
+
+
+def reencrypt_secret(ciphertext: str) -> str:
+    """``ciphertext`` re-encrypted under the current key. Raises ValueError if no key opens it."""
+    try:
+        return _fernet().rotate(ciphertext.encode("ascii")).decode("ascii")
+    except InvalidToken as e:
+        raise ValueError("Could not decrypt secret (wrong key or corrupted data)") from e
 
 
 def encrypt_secret(plain: str) -> str:
