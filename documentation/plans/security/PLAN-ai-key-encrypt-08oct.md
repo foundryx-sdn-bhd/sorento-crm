@@ -1,6 +1,6 @@
 # PLAN: encrypt AI assistant provider keys at rest (AI-KEY-ENCRYPT)
 
-Status: in progress (small fix track: no migration, no auth/RBAC change, no new ingest surface; security review still runs because it touches stored secrets)
+Status: built, in review (small fix track: no migration, no auth/RBAC change, no new ingest surface; security review ran because it touches stored secrets)
 
 ## Finding
 
@@ -41,11 +41,20 @@ legacy plaintext and is returned as is. A Fernet-shaped value that fails to decr
 API: `GET/PUT /api/v1/system/ai-assistant/config` returns only `*_masked` (`****` + last 4);
 the schema (`app/schemas/ai_assistant.py:27-41`) has no raw-key field. Unchanged.
 
+## Other leaks of the same keys (found in security review, fixed here)
+
+- The global 422 handler (`app/main.py`, `validation_exception_handler`) logged `exc.errors()`,
+  whose `input` is the whole request body on a missing-field error, so a malformed settings PUT
+  wrote the plain key to the app log. `input` is now dropped before logging.
+- `api_call_logs` redaction (`app/services/api_call_log_service.py`) matched exact key names
+  only, so `anthropic_api_key` / `gemini_api_key` in the settings PUT body were stored. It now
+  also matches the suffixes `_api_key`, `_password`, `_secret`, `_token`.
+
 ## Backfill
 
 `scripts/encrypt_ai_assistant_keys.py`: dry run by default (counts per column of plaintext /
 encrypted / empty, never values), `--apply` encrypts plaintext values in one transaction.
-Idempotent.
+Idempotent; each UPDATE is a compare-and-set on the value it read, so a key saved meanwhile is never overwritten.
 
 ## Rollout
 
@@ -58,3 +67,18 @@ Idempotent.
 `tests/test_ai_key_encrypt.py`: saved key column holds a Fernet token, not the key; the ORM
 attribute reads back the key; legacy plaintext rows read as is; the config API never returns
 the key; backfill dry run changes nothing, `--apply` encrypts, re-run is a no-op.
+
+## Follow-ups (not in this lane)
+
+- **Remove the plaintext pass-through** in `EncryptedText.process_result_value` once
+  `--apply` has run in prod (trigger: owner confirms the prod run printed `plaintext=0`).
+- **Owner decision: dedicated `FIELD_ENCRYPTION_KEY`.** Every `field_encryption` user
+  (respond_workspaces, integrations.credentials_json, now ai_assistant_configs) derives its key
+  from `JWT_SECRET`: rotating it silently unsets every stored secret, and anyone holding it
+  (including the FE if `NEXTAUTH_SECRET` shares the value) can decrypt them. A `MultiFernet`
+  ([new key, JWT-derived]) migration fixes both, in its own lane.
+- **Same plaintext pattern elsewhere:** `system_settings.smtp_password` (`app/models/user.py:409`);
+  token columns that should be stored hashed: `user_sessions.token`
+  (`app/models/user_session.py:36`), `portal_tokens.token` (`app/models/portal.py:30`), share-link
+  tokens (`app/models/procurement.py:1212,1229`, `app/models/supplier_notice.py:126`,
+  `app/models/projects.py:1184`).

@@ -44,9 +44,10 @@ def backfill(db: Session, *, apply: bool) -> dict[str, dict[str, int]]:
             else:
                 counts[column]["plaintext"] += 1
                 if apply:
+                    # `= :old` so a key an admin saved since the SELECT is never overwritten.
                     db.execute(
-                        text(f"UPDATE ai_assistant_configs SET {column} = :v WHERE id = :i"),
-                        {"v": encrypt_secret(value), "i": row.id},
+                        text(f"UPDATE ai_assistant_configs SET {column} = :v WHERE id = :i AND {column} = :old"),
+                        {"v": encrypt_secret(value), "i": row.id, "old": value},
                     )
     if apply:
         db.commit()
