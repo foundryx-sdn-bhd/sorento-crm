@@ -120,13 +120,18 @@ def test_a_class_word_that_is_also_a_registry_head_filters_to_the_class(session_
 # (3) no word-shape step: a plural is not a registry head ---------------------------------------
 
 
-def test_a_plural_of_a_registry_head_is_not_stripped_into_a_which_question(session_factory, monkeypatch):
+def test_new_head_lookup_does_no_plural_stripping(session_factory):
+    """Owner rule (no word-shape step in new code): the new head helpers read the registry's own
+    phrases word for word. "cabinets" is not "cabinet": no match, no which-question; "cabinet"
+    heads the three furniture_type values. (Main's older `_corrected_class` is out of scope.)"""
+    from app.services.chatbot.head import grounding
+
     _furniture_world(session_factory)
-    _mcp(monkeypatch, session_factory)
-    reply = _turn(session_factory, monkeypatch, _unresolved(LEVELS), _subject_qf("cabinets"), "cabinets promo", "zzt-r2r-plural")
-    lines = reply.splitlines()
-    assert 'I could not match "cabinets" to a product type.' in lines, reply
-    assert "Which cabinet" not in reply, reply
+    vocab = grounding.load_vocabulary(session_factory())
+    assert grounding.several_values("cabinets", vocab) == []
+    assert grounding._whole_spec_value("cabinets", vocab) is None
+    options = [o.lower() for o in grounding.several_values("cabinet", vocab)]
+    assert sorted(options) == ["basin cabinet", "side cabinet", "tall cabinet"], options
 
 
 # (4) the migration never raises on a constant without its markers -------------------------------
