@@ -77,3 +77,11 @@ owner's alias shape, which reproduced the two-line picker before the fix. Fake n
 ## Data check (crew-data-request, not run from the cloud lane)
 
 SQL for the dev and prod snapshots is posted on the PR as a `crew-note`.
+
+## Review
+
+Reviewer verdict on fb37ef76: ready. Kill matrix of 12 mutations, every one red. Open, out of
+this lane: the exact-name group map (`family_overrides`) drops a name held both in and
+outside a group, so a group can still split or absorb a stray same-name account; keying on
+`customers.customer_group_id` would close it but needs an owner decision against ruling (b)
+of 2 Oct.

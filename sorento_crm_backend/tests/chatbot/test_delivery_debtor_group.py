@@ -262,6 +262,7 @@ class TestOneDebtorNameOfSeveralCustomers:
 
         alpha, beta = self._seed(db)
         hits = _probe_customer_debtor_name(db, [self.SHARED])[self.SHARED]
+        assert all(h.uuid for h in hits), "the unlinked row beside linked ones is dropped"
         assert sorted(h.uuid for h in hits) == sorted([alpha.id, beta.id])
 
     def test_substring_tier_keeps_one_hit_per_customer(self, db):
