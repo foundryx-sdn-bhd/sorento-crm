@@ -22,7 +22,7 @@
 contact: "900000039"
 
 cases:
-  - name: "1. owner turn 1: unknown subject asks back, no menu, no files (AC-7, AC-14)"
+  - name: "1. owner turn 1 (AC-24, round 2): basin cabinet grounds to the furniture_type value, stamped menu"
     live_only: true
     cold: true
     turns:
@@ -30,13 +30,27 @@ cases:
         expect:
           no_uuid: true
           reply_contains:
-            - "I could not match"
+            - "Which access level"
             - "basin cabinet"
           reply_not_contains:
-            - "Which access level"
+            - "I could not match"
             - "KITCHEN SINK"
 
-  - name: "2. owner turn 2: typo brand + A3 flyer with nothing live for Sorento (AC-15, AC-21, AC-16)"
+  - name: "1b. unknown subject asks back, never No current promotion (AC-23)"
+    live_only: true
+    cold: true
+    turns:
+      - text: "kitchen cabinet promo"
+        expect:
+          no_uuid: true
+          reply_contains:
+            - "I could not match"
+            - "kitchen cabinet"
+          reply_not_contains:
+            - "Which access level"
+            - "No current promotion"
+
+  - name: "2. owner turn 2 (AC-22, round 2): Sorento A3 flyers served by the type rule, real brand named"
     live_only: true
     cold: true
     turns:
@@ -44,12 +58,18 @@ cases:
         expect:
           no_uuid: true
           reply_contains:
-            - "There is no Sorento A3 flyer right now."
-            - "Other A3 flyers:"
-            - "MOCHA A3"
+            - "Which access level"
+            - "SORENTO"
           reply_not_contains:
             - "sroento"
-            - "Which access level"
+            - "There is no"
+      - text: "2"
+        expect:
+          no_uuid: true
+          reply_contains:
+            - "SORENTO A3 FLYER"
+          reply_not_contains:
+            - "MOCHA"
             - "WALL HUNG"
 
   - name: "3. owner check: promo for a product code still works (AC-17)"
@@ -129,3 +149,29 @@ cases:
             - "A611"
             - "CABANA"
             - "MOCHA"
+
+  - name: "7. owner round 2: seat cover grounds to toilet seat through the parser prompt (AC-26)"
+    live_only: true
+    cold: true
+    turns:
+      - text: "seat cover promo"
+        expect:
+          no_uuid: true
+          reply_contains:
+            - "Which access level"
+          reply_not_contains:
+            - "I could not match"
+
+  - name: "8. owner round 2: cabinet alone asks which (AC-25)"
+    live_only: true
+    cold: true
+    turns:
+      - text: "sorento cabinet promo"
+        expect:
+          no_uuid: true
+          reply_contains:
+            - "Which cabinet do you mean?"
+            - "Basin cabinet"
+          reply_not_contains:
+            - "Which access level"
+
