@@ -895,6 +895,13 @@ class StockService:
                 return payload
             q = q.filter(Stock.warehouse_id.in_(resolved_wh_ids))
 
+        # PRODUCT-ALTERNATIVES: every LOCATION narrowing (active warehouses, the caller's
+        # warehouses, the visibility policy) and none of the product/search ones. A stored
+        # alternative is not one of the products asked for, so `policy_q` (which carries the
+        # product filter) would read it as holding nothing; it is judged on exactly the
+        # locations the asked product was.
+        location_q = q
+
         # Both narrowings filter the rows (ANDed), so the Total's O/S answers the same set.
         if warehouse_ids:
             self.requested_warehouse_ids = {str(w) for w in warehouse_ids}
@@ -1100,6 +1107,7 @@ class StockService:
                 payload,
                 policy=policy,
                 policy_q=policy_q,
+                location_q=location_q,
                 last_import_at=last_import_at,
                 requested_qty=requested_qty,
                 requested_quantities=requested_quantities,
@@ -1359,6 +1367,7 @@ class StockService:
         policy,
         policy_q,
         last_import_at,
+        location_q=None,
         requested_qty: Optional[int],
         requested_product_ids: set[str],
         page: int,
@@ -1451,27 +1460,47 @@ class StockService:
             .all()
         ]
 
-        rows = (
-            policy_q.with_entities(
-                Stock.product_id.label("product_id"),
-                Warehouse.warehouse_code.label("warehouse_code"),
-                func.sum(Stock.quantity_on_hand).label("on_hand"),
+        # PRODUCT-ALTERNATIVES (card Q2/Q4): the stored alternatives of this page's
+        # products, read ONCE for both modes below. Their figures are read through the
+        # same `policy_q` (the caller's allowed locations) as the page's own, so an
+        # alternative is judged exactly like any other product; they are never a page
+        # row of their own (`ordered_ids` stays the page).
+        from app.services.product_alternative_service import alternatives_for
+
+        alternatives_by_pid = alternatives_for(self.db, page_ids)
+        alternative_ids: list[str] = []
+        for alternatives in alternatives_by_pid.values():
+            for alternative in alternatives:
+                if alternative.id not in page_ids and alternative.id not in alternative_ids:
+                    alternative_ids.append(alternative.id)
+        query_ids = page_ids + alternative_ids
+
+        def _on_hand_rows(base_q, ids: list[str]) -> list:
+            if not ids:
+                return []
+            return (
+                base_q.with_entities(
+                    Stock.product_id.label("product_id"),
+                    Warehouse.warehouse_code.label("warehouse_code"),
+                    func.sum(Stock.quantity_on_hand).label("on_hand"),
+                )
+                .join(Warehouse, Warehouse.id == Stock.warehouse_id)
+                .filter(Stock.product_id.in_(ids))
+                .group_by(Stock.product_id, Warehouse.warehouse_code)
+                .all()
             )
-            .join(Warehouse, Warehouse.id == Stock.warehouse_id)
-            .filter(Stock.product_id.in_(page_ids))
-            .group_by(Stock.product_id, Warehouse.warehouse_code)
-            .all()
-            if page_ids
-            else []
+
+        rows = _on_hand_rows(policy_q, page_ids) + _on_hand_rows(
+            location_q if location_q is not None else policy_q, alternative_ids
         )
         products = (
-            self.db.query(Product).filter(Product.id.in_(page_ids)).all()
-            if page_ids
+            self.db.query(Product).filter(Product.id.in_(query_ids)).all()
+            if query_ids
             else []
         )
         products_by_id = {str(p.id): p for p in products}
 
-        per_product: dict[str, list] = {pid: [] for pid in page_ids}
+        per_product: dict[str, list] = {pid: [] for pid in query_ids}
         for row in rows:
             per_product.setdefault(str(row.product_id), []).append(row)
 
@@ -1487,8 +1516,9 @@ class StockService:
         payload["empty"] = total_products == 0
 
         if policy.mode == "compact":
-            payload["stock_summary"] = [
-                {
+
+            def _summary_block(pid: str) -> dict:
+                return {
                     "product_id": pid,
                     "product_code": getattr(products_by_id.get(pid), "product_code", None),
                     "product_name": getattr(products_by_id.get(pid), "product_name", None),
@@ -1520,8 +1550,29 @@ class StockService:
                         )
                     },
                 }
-                for pid in ordered_ids
-            ]
+
+            # PRODUCT-ALTERNATIVES (card Q2/Q4, staff): a block that is discontinued or
+            # holds nothing names its alternatives under the marker, and an alternative
+            # the ask did not list gets its own block after the page, once.
+            summary = []
+            listed = set(ordered_ids)
+            appended: list[str] = []
+            for pid in ordered_ids:
+                summary_block = _summary_block(pid)
+                alternatives = alternatives_by_pid.get(pid) or []
+                if alternatives and (
+                    summary_block["flags"]["discontinued"]
+                    or summary_block["total_on_hand"] <= 0
+                ):
+                    summary_block["flags"]["alternatives"] = [
+                        a.product_code for a in alternatives
+                    ]
+                    for alternative in alternatives:
+                        if alternative.id not in listed and alternative.id not in appended:
+                            appended.append(alternative.id)
+                summary.append(summary_block)
+            summary.extend(_summary_block(pid) for pid in appended)
+            payload["stock_summary"] = summary
             return
 
         # Ported from PR #1118 (not merged), review round 6, finding B: when the
@@ -1613,7 +1664,7 @@ class StockService:
         # R2: X and Y resolved per product against its OWN category - one query for
         # every category referenced on this page, no parent walk (R12).
         category_ids = {
-            getattr(products_by_id.get(pid), "category_id", None) for pid in page_ids
+            getattr(products_by_id.get(pid), "category_id", None) for pid in query_ids
         }
         category_ids.discard(None)
         categories_by_id = (
@@ -1631,7 +1682,7 @@ class StockService:
         # location, per product on this page.
         contact_rules = rules_for_contact(self.db, resolved_contact_id)
         eta_by_product = earliest_packing_list_shipment(
-            self.db, page_ids, regions=contact_rules.regions
+            self.db, query_ids, regions=contact_rules.regions
         )
 
         # R7: the asking contact's own "Packing list allowed" toggle, resolved once
@@ -1663,20 +1714,12 @@ class StockService:
             key = code.strip().lower() if code else "\x00" + pid
             merged_ids.setdefault(key, []).append(pid)
 
-        entries = []
-        for group_ids in merged_ids.values():
+        def _judge(group_ids: list[str], ask: Optional[int]) -> dict:
             # `ordered_ids` is already in page order, so the first id of a group is the
             # first row of it on this page. That id is what the entry, the task's slot
             # and the next fetch's `requested_quantities` key all carry - and, below,
             # what X/Y/category are resolved against.
             pid = group_ids[0]
-            # D20, across the merge: a quantity given for ANY of the merged ids is a
-            # quantity for the merged product. The scalar `requested_qty` fallback
-            # resolves the same for every id, so the first answer found is the answer.
-            ask = next(
-                (a for a in (_resolve_ask(gid) for gid in group_ids) if a is not None),
-                None,
-            )
             product = products_by_id.get(pid)
             category = categories_by_id.get(str(getattr(product, "category_id", None)))
             entry = {
@@ -1744,6 +1787,39 @@ class StockService:
                             .first()
                         )
                         entry["packing_list"] = _attachment_payload(attachment)
+            return entry
+
+        entries = []
+        for group_ids in merged_ids.values():
+            # D20, across the merge: a quantity given for ANY of the merged ids is a
+            # quantity for the merged product. The scalar `requested_qty` fallback
+            # resolves the same for every id, so the first answer found is the answer.
+            ask = next(
+                (a for a in (_resolve_ask(gid) for gid in group_ids) if a is not None),
+                None,
+            )
+            entry = _judge(group_ids, ask)
+            # PRODUCT-ALTERNATIVES (card Q2 (b), Q4 (a), owner 8 Oct 2026): an ANSWERED
+            # entry that is discontinued, or whose verdict is not a full "Got stock"
+            # (no stock, incoming, partial, over the cap), carries its stored
+            # alternatives, each judged by `_judge` with the SAME asked quantity: the
+            # alternative can only ever say one of the four sentences, never a figure of
+            # ours. One entry per alternative CODE, merged across companies the way the
+            # page's own codes are. An entry still owed its quantity carries none yet.
+            entry["alternatives"] = []
+            full_stock = entry["branch"] == "in_stock" and entry["available_qty"] is None
+            if ask is not None and entry["branch"] and (entry["is_discontinued"] or not full_stock):
+                alternative_groups: dict[str, list[str]] = {}
+                for gid in group_ids:
+                    for alternative in alternatives_by_pid.get(gid) or []:
+                        key = (alternative.product_code or "").strip().lower() or "\x00" + alternative.id
+                        group = alternative_groups.setdefault(key, [])
+                        if alternative.id not in group:
+                            group.append(alternative.id)
+                entry["alternatives"] = [
+                    _judge(alternative_group, ask)
+                    for alternative_group in alternative_groups.values()
+                ]
             entries.append(entry)
 
         payload["stock_availability"] = entries
