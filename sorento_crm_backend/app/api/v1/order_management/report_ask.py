@@ -40,8 +40,10 @@ from app.services.uuid_list_param import parse_uuid_list
 router = APIRouter()
 
 GRANT = "sales_orders.sales_report"
-_RATE_LIMIT = 10
-_RATE_WINDOW_SECONDS = 600
+#: The cap's defaults, used only when the settings row is missing: the live numbers are
+#: `system_settings.report_ask_rate_limit` / `report_ask_rate_window_minutes`.
+_DEFAULT_RATE_LIMIT = 10
+_DEFAULT_RATE_WINDOW_MINUTES = 10
 _DEALER_MESSAGE = "That breakdown is not available for your account."
 _CHANNELS = {"dealer": "Dealer", "project": "Project team"}
 #: The route's default basis for a direct API caller that names none. The chatbot lane never
@@ -77,6 +79,20 @@ def _agent_values(raw: Optional[list[str]], param_name: str) -> Optional[list[st
     ids = parse_uuid_list([p for p in pieces if p.lower() != ask.NO_AGENT_KEY], param_name=param_name) or []
     out = ids + ([ask.NO_AGENT_KEY] if none else [])
     return out or None
+
+
+def _rate_limit_setting(db: Session) -> tuple[int, int]:
+    """`(limit, window_minutes)` from System Settings, read per request so a change on the
+    Chatbot media page applies on the next report with no restart. A limit of 0 means no limit."""
+    from app.models.user import SystemSetting
+
+    row = db.query(SystemSetting).first()
+    limit = getattr(row, "report_ask_rate_limit", None) if row else None
+    window = getattr(row, "report_ask_rate_window_minutes", None) if row else None
+    return (
+        _DEFAULT_RATE_LIMIT if limit is None else int(limit),
+        int(window) if window else _DEFAULT_RATE_WINDOW_MINUTES,
+    )
 
 
 def _unprocessable(message: str, code: str, detail: Optional[str] = None) -> AppException:
@@ -301,11 +317,13 @@ def report_ask(
 
     from app.services import rate_limit
 
+    limit, window_minutes = _rate_limit_setting(db)
     if not rate_limit.hit(
-        "report_ask", str(resolved), limit=_RATE_LIMIT, window_seconds=_RATE_WINDOW_SECONDS
+        "report_ask", str(resolved), limit=limit, window_seconds=window_minutes * 60
     ).allowed:
+        unit = "1 minute" if window_minutes == 1 else f"{window_minutes} minutes"
         return _response(
-            {**ask._empty("busy", "Too many reports in the last 10 minutes."), **common, "filters": []}
+            {**ask._empty("busy", f"Too many reports in the last {unit}."), **common, "filters": []}
         )
 
     # Audience: a customer-scoped contact is a DEALER, forced to its own customers (a named

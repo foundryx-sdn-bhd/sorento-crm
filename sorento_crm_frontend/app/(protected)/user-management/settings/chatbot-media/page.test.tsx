@@ -72,6 +72,8 @@ function settings(overrides: Partial<ChatbotMediaSettings> = {}): ChatbotMediaSe
     media_extraction_timeout_seconds: 45,
     media_max_entities: 10,
     low_stock_sync_wait_seconds: 40,
+    report_ask_rate_limit: 10,
+    report_ask_rate_window_minutes: 10,
     ...overrides,
   };
 }
@@ -616,5 +618,83 @@ describe('ChatbotMediaSettingsPage model probe', () => {
     expect(
       screen.getAllByText(/no longer available to new users/i).length,
     ).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * Lane REPORT-RATE-LIMIT-CONFIG (owner, 8 Oct 2026): the chatbot report engine's
+ * "too many reports" cap is two numbers on this page, so the owner moves them
+ * without a deploy. Reports 0..1000 where 0 or blank means no limit; window 1..1440
+ * minutes.
+ */
+describe('ChatbotMediaSettingsPage report rate limit', () => {
+  function mutationSpy() {
+    const mutate = vi.fn();
+    mockMutation.mockReturnValue({ isPending: false, mutate });
+    return mutate;
+  }
+
+  const limitInput = () => document.getElementById('report-ask-rate-limit') as HTMLInputElement;
+  const windowInput = () =>
+    document.getElementById('report-ask-rate-window') as HTMLInputElement;
+
+  it('seeds both numbers from the settings row', () => {
+    mockQuery.mockReturnValue({
+      data: settings({ report_ask_rate_limit: 4, report_ask_rate_window_minutes: 30 }),
+      isLoading: false,
+      isError: false,
+    });
+    renderWithClient();
+
+    expect(screen.getByText('Reports per contact')).toBeInTheDocument();
+    expect(screen.getByText('Report window (minutes)')).toBeInTheDocument();
+    expect(limitInput().value).toBe('4');
+    expect(windowInput().value).toBe('30');
+  });
+
+  it('saves both numbers', () => {
+    const mutate = mutationSpy();
+    mockQuery.mockReturnValue({ data: settings(), isLoading: false, isError: false });
+    renderWithClient();
+
+    fireEvent.change(limitInput(), { target: { value: '2' } });
+    fireEvent.change(windowInput(), { target: { value: '5' } });
+    fireEvent.click(saveButton());
+
+    expect(mutate).toHaveBeenLastCalledWith(
+      expect.objectContaining({ report_ask_rate_limit: 2, report_ask_rate_window_minutes: 5 }),
+      expect.anything(),
+    );
+  });
+
+  it('treats a blank limit as no limit and saves 0', () => {
+    const mutate = mutationSpy();
+    mockQuery.mockReturnValue({ data: settings(), isLoading: false, isError: false });
+    renderWithClient();
+
+    fireEvent.change(limitInput(), { target: { value: '' } });
+    expect(saveButton()).toBeEnabled();
+    fireEvent.click(saveButton());
+
+    expect(mutate).toHaveBeenLastCalledWith(
+      expect.objectContaining({ report_ask_rate_limit: 0 }),
+      expect.anything(),
+    );
+  });
+
+  it('refuses a limit above 1000 and a window outside 1..1440', () => {
+    mockQuery.mockReturnValue({ data: settings(), isLoading: false, isError: false });
+    renderWithClient();
+
+    fireEvent.change(limitInput(), { target: { value: '1001' } });
+    expect(
+      screen.getByText('Enter a whole number between 0 and 1000, or leave it blank.'),
+    ).toBeInTheDocument();
+    expect(saveButton()).toBeDisabled();
+
+    fireEvent.change(limitInput(), { target: { value: '10' } });
+    fireEvent.change(windowInput(), { target: { value: '0' } });
+    expect(screen.getByText('Enter a whole number between 1 and 1440.')).toBeInTheDocument();
+    expect(saveButton()).toBeDisabled();
   });
 });
