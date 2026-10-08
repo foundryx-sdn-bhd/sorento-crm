@@ -1,6 +1,7 @@
 # PLAN: Report engine drill-down follow-up (any axis to any axis, filters kept)
 
-Status: Build. Card approved 8 Oct 2026 (`report-drilldown-behaviour-card.md` revision 3).
+Status: Review. Card approved 8 Oct 2026 (`report-drilldown-behaviour-card.md` revision 3);
+reviewer round 1 fixed; waiting on CI and the owner's hand test.
 Track: FULL (parser prompt change as a data-only migration publishing a new dev version; MCP
 tool param added). Lane: REPORT-DRILLDOWN, PR #1531.
 

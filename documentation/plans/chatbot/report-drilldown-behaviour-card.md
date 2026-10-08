@@ -190,3 +190,19 @@ Agent 03 RM 207k, 575 pcs (2 customers)
   (b) agent -> customer only now, the rest when asked.
   **Recommendation: (b)**, the simplest thing that answers your example; the parser reading and
   the held frame are built axis-neutral, so (a) later is a small change.
+
+## Build notes (review round 1, 8 Oct 2026)
+
+- "Top 5 of these agents" (same axis) ranks within exactly the agents printed (rule 3), not a
+  plain refine.
+- A printed row with nothing to narrow by ("(blank)": no brand, no category, no location) is
+  said in one line ("I can't narrow by (blank) above. Ask again naming the brands you want."),
+  never dropped.
+- "Unsure" with nothing above to narrow by (no ranking held, a total, a month or channel list)
+  is the ordinary fresh ask: the global reading is the only one left.
+- Products and categories drill too ("which products do these agents sell"): the parser keeps
+  them a sales ranking right after a ranking, never top selling.
+- The drill message's own filters (product, brand, category, agent, location, channel), basis,
+  measure, period and direction replace the held ones; the link to the printed rows always
+  applies.
+- The ranking header is one fact per line: head line, `Label: value` per filter, `Period:`.
