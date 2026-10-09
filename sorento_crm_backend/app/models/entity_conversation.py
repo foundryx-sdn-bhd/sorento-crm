@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, String, Text
+from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, Index, String, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -44,4 +44,16 @@ class EntityConversationMessage(Base):
             "created_at",
         ),
         Index("ix_entity_conversation_messages_author", "author_user_id"),
+        # Mirrors migrations 150 + fcom_0002, so a schema built by create_all (tests, CI
+        # bootstrap) refuses what the migrated database refuses. Widen both together.
+        CheckConstraint(
+            "entity_type IN ('commercial_project','commercial_master_quotation',"
+            "'commercial_project_task','commercial_master_quotation_task','commercial_lead',"
+            "'complaint','stock_inquiry','purchase_request','sponsorship_form')",
+            name="ck_entity_conversation_messages_entity_type",
+        ),
+        CheckConstraint(
+            "scope IN ('activity','internal_note','form_comment')",
+            name="ck_entity_conversation_messages_scope",
+        ),
     )
