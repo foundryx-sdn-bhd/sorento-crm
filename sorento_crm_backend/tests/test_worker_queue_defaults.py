@@ -263,6 +263,7 @@ def test_queues_for_role_batch(monkeypatch):
         "catalogue_render",
         "project_docs",
         "flyer_read",
+        "analytics",
     ]
 
 
