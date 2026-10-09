@@ -270,11 +270,13 @@ class Caller:
     def __init__(self, client, user):
         self.client, self.user = client, user
 
-    def get(self, path, params=None, tool="zzt_tool"):
+    def get(self, path, params=None, tool=None):
         from urllib.parse import urlencode
 
         url = f"{path}?{urlencode(params)}" if params else path
-        return signed(self.client, "GET", url, self.user.id, tool=tool)
+        # tool=None lets the helper name the tool whose manifest route this is (contract 9.2).
+        claims = {} if tool is None else {"tool": tool}
+        return signed(self.client, "GET", url, self.user.id, **claims)
 
     def query(self, tool="chat_query", **body):
         return signed(self.client, "POST", f"{BASE}/query", self.user.id, json_body=body, tool=tool)
