@@ -156,20 +156,21 @@ beforeEach(() => {
 });
 
 describe('SubmissionForm - staff reply (FORM-COMMENTS round 2)', () => {
-  // Owner ruling (9 Oct): the purchasing reply is the comment thread's first entry, served by the
-  // comments API, so the separate green box and its "N attachments from purchasing" button are gone.
-  it('renders no separate reply box or staff-attachment button, even with a reply and staff files', async () => {
+  // Round 3 (rule 5): Details wears the green purchasing banner again with a "Reply in Comments"
+  // link, including its "N attachment from purchasing" button.
+  it('renders the reply banner with a Reply in Comments link, and the staff-attachment button', async () => {
     (fetchSubmission as ReturnType<typeof vi.fn>).mockResolvedValue(
       detail({ attachments: [contactFile(), staffFile({ link_id: 's-1' })] }),
     );
     render(<SubmissionForm kind="stock_inquiry" submissionId="si-1" />);
     await waitForSectionLoaded();
 
-    expect(screen.queryByText('Comment / reply by purchasing')).toBeNull();
-    expect(screen.queryByText(/attachments? from purchasing/i)).toBeNull();
+    expect(screen.getByText('Comment / reply by purchasing')).toBeInTheDocument();
+    expect(screen.getByText('Reply in Comments')).toBeInTheDocument();
+    expect(screen.getByText(/attachments? from purchasing/i)).toBeInTheDocument();
     expect(
-      screen.queryByRole('button', { name: /View attachments? \(/i }),
-    ).toBeNull();
+      screen.getByRole('button', { name: /View attachments? \(/i }),
+    ).toBeInTheDocument();
   });
 });
 

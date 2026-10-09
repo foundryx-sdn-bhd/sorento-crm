@@ -105,7 +105,6 @@ describe('Comments tab on the complaint shell (FormDetailWithSLATabs)', () => {
       <FormDetailWithSLATabs
         sourceEntityType="complaint"
         sourceEntityId="c-1"
-        // @ts-expect-error assumed new prop, see header
         commentsKind="complaint"
         extraTabs={[{ value: 'fulfilment', label: 'Fulfilment DOs', content: <div>dos</div> }]}
       >
@@ -155,7 +154,6 @@ describe.each([
         sourceEntityType={kind}
         sourceEntityId="f-1"
         revisionsKind={revisionsKind}
-        // @ts-expect-error assumed new prop, see header
         commentsKind={kind}
       >
         <div>Details content</div>
