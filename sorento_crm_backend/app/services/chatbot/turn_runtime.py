@@ -540,6 +540,233 @@ def active_brands(db: Session) -> list[dict[str, Any]]:
     ]
 
 
+def brand_entity_rows(entities: Any, live: list[dict[str, Any]]) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    """The parser's confident brand entities that name a live brand, paired with its row. Brand
+    identity is the parser's own canonical name (else the typed word) read through
+    `exact_brand_rows`, the owner's one brand-identity rule (6 Oct 2026): exact name or code,
+    never spelling or containment, so a misspelt word the parser did not canonicalise names nothing."""
+    out: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    for e in entities or []:
+        if (
+            isinstance(e, dict)
+            and jsc.nullish_str(e.get("hint")).strip().lower() == "brand"
+            and e.get("confident") is not False
+        ):
+            rows = exact_brand_rows(live, brand_identity_word(e))
+            if rows:
+                out.append((e, rows[0]))
+    return out
+
+
+def _promotion_words_naming_no_promotion(db: Session, entities: Any) -> list[dict[str, Any]]:
+    """The promotion-hinted entities whose typed words are not a promotion's name exactly
+    (case and surrounding whitespace aside)."""
+    from app.models.marketing import Promotion
+
+    out: list[dict[str, Any]] = []
+    for e in entities or []:
+        if not (isinstance(e, dict) and jsc.nullish_str(e.get("hint")).strip().lower() == "promotion"):
+            continue
+        folded = " ".join(jsc.nullish_str(e.get("raw")).casefold().split())
+        if not folded or db.query(Promotion.id).filter(func.lower(func.trim(Promotion.description)) == folded).first() is None:
+            out.append(e)
+    return out
+
+
+def promo_filter(parse_output: dict[str, Any], db: Any, gate: Any = None) -> dict[str, list[str]]:
+    """PROMO-SUBJECT-FILTER: what narrows a promotions read besides the access level, off the
+    parser's own answer. `scope_terms`: the class words it named, unless the resolver placed
+    one of its product tokens on a product id this turn (`gate["resolutions"]`): a typed code
+    is the narrower ask and keeps the `product_ids` path (AC-17). A stray word nothing placed
+    leaves the class as the subject.
+    `promotion_types`: its `promotion_kind` code. `brand_ids`: the brand it named, only beside
+    a subject or a kind (a plain brand ask is narrowed by the tier gate), resolved by the one
+    brand-word rule the order lane uses. Empty keys are left out."""
+    from app.services.chatbot.lanes.business.fetch import is_uuid as _is_uuid
+
+    out: dict[str, list[str]] = {}
+    entities = parse_output.get("entities")
+    named_promotions = set(_typed_by_token([e for e in entities or [] if isinstance(e, dict) and e.get("hint") == "promotion"]))
+    promotion_ids: list[str] = []
+    for r in jsc.array(jsc.get(gate, "resolutions")):
+        if isinstance(r, dict) and _token_key(jsc.nullish_str(r.get("token") or r.get("raw"))) in named_promotions:
+            for m in jsc.array(r.get("matches")):
+                if isinstance(m, dict) and m.get("entity_type") == "promotion" and _is_uuid(m.get("uuid")):
+                    if m["uuid"] not in promotion_ids:
+                        promotion_ids.append(m["uuid"])
+    placed = {
+        _token_key(jsc.nullish_str(r.get("token") or r.get("raw")))
+        for r in jsc.array(jsc.get(gate, "resolutions"))
+        if isinstance(r, dict)
+        and any(
+            isinstance(m, dict) and m.get("entity_type") == "product" and _is_uuid(m.get("uuid"))
+            for m in jsc.array(r.get("matches"))
+        )
+    }
+    product_tokens = [e for e in entities or [] if isinstance(e, dict) and e.get("hint") in (None, "", "product")]
+    typed_product = bool(placed & set(_typed_by_token(product_tokens)))
+    terms = [] if typed_product else [t.lower() for t in class_scope_terms(parse_output)]
+    if not typed_product:
+        # A registry value the grounding placed ("basin cabinet", "gunmetal") narrows too,
+        # in the registry's own words, read by the same membership as a class word (AC-24).
+        from app.services.chatbot.head.grounding import scope_word, specification_entities
+
+        for e in specification_entities(entities):
+            word = scope_word(e)
+            if word and word.lower() not in terms:
+                terms.append(word.lower())
+    if terms:
+        out["scope_terms"] = terms
+    kind = parse_output.get("promotion_kind")
+    if parse_output.get("reference_target") or jsc.array(parse_output.get("reference_positions")):
+        # A message the parser reads as a reference (a pick off a list) names no kind.
+        kind = None
+    if isinstance(kind, str) and kind.strip() and (
+        db is None or kind.strip() in {r["type_code"] for r in promotion_kind_rows(db)}
+    ):
+        # A code the table does not list is the parser guessing: it behaves as no kind.
+        out["promotion_types"] = [kind.strip()]
+    if out and promotion_ids:
+        # A promotion the customer NAMED and the resolver placed by id stays the subject.
+        out["promotion_ids"] = promotion_ids
+    if out and db is not None:
+        # Every live row the brand name names: one brand can carry a row per company.
+        live = active_brands(db)
+        ids: list[str] = []
+        for e, _row in brand_entity_rows(entities, live):
+            ids += [r["id"] for r in exact_brand_rows(live, brand_identity_word(e)) if r["id"] not in ids]
+        if ids:
+            out["brand_ids"] = ids
+    return out
+
+
+def promo_subject_ask_back(
+    parse_output: dict[str, Any], db: Any, gate: Any = None
+) -> tuple[str, list[str]] | None:
+    """PROMO-SUBJECT-FILTER AC-7, AC-23, AC-25: the ask-back for a promotion subject the
+    catalogue cannot hold as one thing, as `(text, options)`, else None. A product type the
+    grounding could not place, or a subject term the membership read (`filter_specs`, the one
+    the promotions route filters by) binds to nothing, is said back as typed (no options);
+    one word that heads several values of a registry key ("cabinet") asks which, the values
+    its options. Only what THIS message named counts (a carried subject was already asked
+    about), and a message that answers an open numbered question is never asked back."""
+    if jsc.array(parse_output.get("reference_positions")):
+        return None
+    own = {
+        **parse_output,
+        "entities": [
+            e for e in parse_output.get("entities") or [] if isinstance(e, dict) and e.get("current_message") is not False
+        ],
+    }
+    if db is not None:
+        # AC-30/31: a brand word the parser could not place on the Known brands list (exact
+        # name or code only), confident or not, asks back, echoed as typed (AC-16); it never
+        # widens to every brand.
+        live = active_brands(db)
+        unplaced = [
+            jsc.nullish_str(e.get("raw")).strip() or brand_identity_word(e)
+            for e in own["entities"]
+            if jsc.nullish_str(e.get("hint")).strip().lower() == "brand"
+            and brand_identity_word(e)
+            and not exact_brand_rows(live, brand_identity_word(e))
+        ]
+        if unplaced:
+            return f'I could not match "{", ".join(unplaced)}" to a brand.\nWhich brand do you mean?', []
+    from app.services.chatbot.head.grounding import specification_entities
+
+    # AC-38: a qualifier the grounding could not place on a listed spec value asks back; it is
+    # never dropped and never widens the read.
+    # An unplaced product type has its own ask-back below.
+    loose = [
+        e
+        for e in specification_entities(own["entities"])
+        if e.get("spec_value") is None and e.get("spec_key") != "product_type" and str(e.get("raw") or "").strip()
+    ]
+    if loose:
+        said = ", ".join(str(e.get("raw")).strip() for e in loose)
+        labels = {str(e.get("spec_label") or "").strip().lower() for e in loose} - {""}
+        which = labels.pop() if len(labels) == 1 else "product detail"
+        return f'I could not match "{said}" to a product detail.\nWhich {which} do you mean?', []
+    unknown = [
+        str(e.get("raw") or "").strip()
+        for e in own["entities"]
+        if e.get("spec_key") == "product_type" and e.get("spec_value") is None and str(e.get("raw") or "").strip()
+    ]
+    terms = promo_filter(own, db, gate).get("scope_terms") or [] if db is not None else []
+    if not unknown and terms:
+        from app.services.chatbot.head import grounding
+        from app.services.product_spec_search import filter_specs
+
+        vocab = grounding.load_vocabulary(db)
+        for term in terms:
+            # A class name is the subject as it stands; only a word that names no class asks
+            # which of a registry key's values it means.
+            options = [] if grounding.names_a_class_label(db, term) else grounding.several_values(term, vocab)
+            if options:
+                return "\n".join([f"Which {term} do you mean?", *options]), options
+        for term in terms:
+            found = filter_specs(db, scope_terms=[term])
+            if found["clause"] is None or term in found["unrecognized_terms"]:
+                unknown.append(term)
+    if not unknown:
+        return None
+    return f'I could not match "{", ".join(unknown)}" to a product type.\nWhich product or brand do you mean?', []
+
+
+def promotion_kind_rows(db: Session) -> list[dict[str, Any]]:
+    """PROMO-SUBJECT-FILTER R5: `{type_code, type_name}` for every promotion type, read fresh
+    each turn; the parser is shown these and answers `promotion_kind` with one code."""
+    from app.models.marketing import PromotionType
+
+    rows = db.query(PromotionType).order_by(PromotionType.match_priority, PromotionType.type_code).all()
+    return [{"type_code": r.type_code, "type_name": r.type_name} for r in rows]
+
+
+def product_type_names(db: Session) -> list[str]:
+    """PROMO-SUBJECT-FILTER round 3 (AC-29): the names the parser's `Product types:` line lists:
+    the `product_type` registry values as a customer reads them, then the class names
+    (`grounding.class_label_names`), one entry per name whatever its case."""
+    from app.services.chatbot.head import grounding
+    from app.services.product_spec_registry import active_registry, display_spec_value, merged_allowed_values
+
+    names: list[str] = []
+    for row in active_registry(db):
+        if row.spec_key == "product_type":
+            labels = dict(getattr(row, "value_labels", None) or {})
+            names += sorted(display_spec_value(v, labels) for v in merged_allowed_values(row))
+    names += sorted(set(grounding.class_label_names(db)))
+    seen: set[str] = set()
+    out: list[str] = []
+    for name in names:
+        key = " ".join(str(name or "").casefold().split())
+        if key and key not in seen:
+            seen.add(key)
+            out.append(name)
+    return out
+
+
+def product_detail_values(db: Session) -> list[tuple[str, list[str]]]:
+    """PROMO-SUBJECT-FILTER AC-36: `(spec_key, value names)` for every active enum key of the
+    registry that describes a product (not its class, type or brand), the values as a customer
+    reads them; the parser's `Product details:` line. A key with more than
+    `_PRODUCT_DETAIL_VALUE_CAP` values is a list of codes, not words ("seat_cover" holds 29
+    product codes on the prod copy), and is left off to keep the line compact."""
+    from app.services.product_spec_registry import active_registry, display_spec_value, merged_allowed_values
+
+    out: list[tuple[str, list[str]]] = []
+    for row in active_registry(db):
+        if row.spec_key in ("class", "product_type", "brand") or (row.data_type or "").lower() != "enum":
+            continue
+        labels = dict(getattr(row, "value_labels", None) or {})
+        values = list(dict.fromkeys(display_spec_value(v, labels).lower() for v in merged_allowed_values(row)))
+        if values and len(values) <= _PRODUCT_DETAIL_VALUE_CAP:
+            out.append((row.spec_key, values))
+    return out
+
+
+_PRODUCT_DETAIL_VALUE_CAP = 15
+
+
 _BRAND_WORD_RE = re.compile(r"[0-9a-z]+")
 
 
@@ -2216,9 +2443,13 @@ def resolve_kinds(
         # unchanged, exactly as it did before this slice.
         matched_brands = []
         live_brands_read = False
-    resolver_excluded_entity_ids = (
-        frozenset(id(e) for e in matched_brands) if matched_brands else None
-    )
+    excluded = [id(e) for e in matched_brands]
+    if jsc.nullish_str(output_block_for_domain.get("domain_hint")).strip().lower() == "promotion":
+        # PROMO-SUBJECT-FILTER AC-30: on a promotion ask a promotion-hinted word reaches the
+        # resolver only when it IS a promotion's name (exact); any other word ("flyer") is
+        # never matched against promotion names. The kind comes from `promotion_kind` alone.
+        excluded += [id(e) for e in _promotion_words_naming_no_promotion(db, entities)]
+    resolver_excluded_entity_ids = frozenset(excluded) if excluded else None
     # CLASS-HINT-KIND-PICK: every confident entity whose canonical_code (else raw) names a
     # live brand exactly, whatever its hint and whatever the domain, IS that brand. The
     # `{id: brand name}` map reaches `resolve_entity_body` (which sends the tokens as
@@ -2993,6 +3224,7 @@ def make_tool_runner(
     localizer: Any = None,
     unplaced_suggestions: dict[str, list[dict[str, Any]]] | None = None,
     not_checked: list[str] | None = None,
+    asked_promo_filter: dict[str, list[str]] | None = None,
     profile: Any = None,
 ) -> Callable[[str, FetchSpec], dict[str, Any]]:
     """The ONE seam that reaches a tool: `run_fetch` calls it once per `FetchSpec`.
@@ -3068,6 +3300,10 @@ def make_tool_runner(
         # instead. Flagged here so the next reader does not assume parity.
         lane_out = lane_parse_output(verdict, focus=focus, domain=domain, policy=policy)
         lane_out = _spec_window(lane_out, spec)
+        if asked_promo_filter and domain == "promotion":
+            # PROMO-SUBJECT-FILTER AC-6: the tier pick's own turn names no subject; the
+            # one the menu was asked for rides the open pick's payload.
+            lane_out = {**lane_out, "promo_filter": dict(asked_promo_filter)}
         answered = spec.filters.get("outstanding")
         if isinstance(answered, dict):
             lane_out = outstanding_carry(lane_out, focus, answered)

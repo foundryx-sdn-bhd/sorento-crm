@@ -4443,6 +4443,9 @@ def _run_stages_body(  # noqa: PLR0915
         # contact's companies, `_scoped_factory` at the top of this function) -
         # no cache, so an operator's table edit reaches the very next turn.
         brands = turn_runtime.active_brands(db)
+        promotion_kinds = turn_runtime.promotion_kind_rows(db)
+        product_types = turn_runtime.product_type_names(db)
+        product_details = turn_runtime.product_detail_values(db)
 
     # -- B PARSER (NO DB SESSION IS OPEN HERE) ------------------------------ #
     # One call, one schema. What comes back IS the verdict - a plain dict, validated once
@@ -4480,6 +4483,9 @@ def _run_stages_body(  # noqa: PLR0915
         task_lines=parser.open_task_lines(state_in.focus, open_question),
         open_question_line=parser.open_question_line(open_question),
         brands=brands,
+        promotion_kinds=promotion_kinds,
+        product_types=product_types,
+        product_details=product_details,
         recent_exchanges=recent,
     )
     user_block, context_report = context_mod.assemble(context_layers)
@@ -5988,6 +5994,60 @@ def _run_stages_body(  # noqa: PLR0915
             stage[0] = "replied"
             answer = turn_compose.Answer(text=plan.trace.task_question)
 
+        # PROMO-SUBJECT-FILTER AC-7/AC-8/AC-23/AC-25: a promotion ask whose subject the
+        # catalogue cannot hold as one thing asks back before any menu or tool call
+        # (`turn_runtime.promo_subject_ask_back`). The parser's grounding and the registry
+        # decide; nothing here reads the words.
+        if (
+            answer is None
+            and branch_kind in ("business_query", "check_promotion")
+            and completes_here
+            and not sales_report_grant_refused
+            and not customer_scope_refused
+            and isinstance(resolver_payload, dict)
+            and (answer_parse_output or {}).get("domain_hint") == "promotion"
+        ):
+            ask_back = turn_runtime.promo_subject_ask_back(
+                answer_parse_output or {}, db, resolver_payload.get("gate")
+            )
+            if ask_back:
+                from app.services.chatbot.turn import pending as pending_mod
+
+                text_back, choices = ask_back
+                stage[0] = "replied"
+                # The which-question is an open question: its options answer by number or
+                # by their own words, and the pick is the promotion subject (a category).
+                question = (
+                    pending_mod.ask(
+                        "category_pick",
+                        [
+                            {
+                                "position": i + 1,
+                                "label": choice,
+                                "code": choice.lower(),
+                                "entity_type": "category",
+                                "payload": {"value": choice.lower()},
+                            }
+                            for i, choice in enumerate(choices)
+                        ],
+                        asked_at_turn=turn_no,
+                        expects="pick",
+                        payload={"domain": "promotion"},
+                    )
+                    if choices
+                    else None
+                )
+                answer = turn_compose.Answer(text=text_back, question=question)
+                bridge_answered = True
+
+        plan_tier_ask = bool(
+            plan.ask is not None
+            and plan.ask.kind == "tier_pick"
+            and "promotion" in plan.domains
+            and isinstance(resolver_payload, dict)
+            and isinstance(resolver_payload.get("tier_gate"), dict)
+            and len(resolver_payload["tier_gate"].get("entitled_tiers") or []) > 1
+        )
         if (
             answer is None
             and branch_kind in ("business_query", "check_promotion")
@@ -6016,19 +6076,73 @@ def _run_stages_body(  # noqa: PLR0915
                     and resolver_payload["tier_gate"].get("tier_ask") is True
                     and resolver_payload.get("_exit_kind") == "not_found"
                 )
+                # PROMO-SUBJECT-FILTER (owner hand test): the plan's own promotion tier ask
+                # (`turn/apply.py`) is the same menu, probed and stamped here, never the
+                # generic unstamped roster.
+                or plan_tier_ask
             )
         ):
             from app.services.chatbot import answer_bridge
             from app.services.chatbot import copy as copy_mod
+            from app.services.chatbot.lanes.business import tier_gate as tier_gate_mod
 
-            answer = answer_bridge.question_for(
-                resolver_payload,
-                parser=answer_parse_output,
-                ctx=ctx,
-                canned=copy_mod.resolve(db),
+            # The brand the conversation settled rides the menu turn too (a which-question's
+            # answer names no brand), so the stamps and the pick narrow by the same brand.
+            menu_entities = list((answer_parse_output or {}).get("entities") or [])
+            if not any(isinstance(e, dict) and e.get("hint") == "brand" for e in menu_entities):
+                menu_entities += [
+                    {"raw": b, "hint": "brand", "canonical_code": b, "current_message": False, "confident": True}
+                    for b in state_out.focus.brands or []
+                    if isinstance(b, str) and b.strip()
+                ]
+                answer_parse_output = {**(answer_parse_output or {}), "entities": menu_entities}
+            # PROMO-SUBJECT-FILTER AC-9: this menu is probed like every other, with the
+            # same subject, so each level line is stamped and an all-empty or failed
+            # probe never shows one.
+            probed = business.run_fetch(
+                {
+                    "gate": resolver_payload.get("gate") or {},
+                    "tier_gate": (
+                        resolver_payload
+                        if resolver_payload.get("_exit_kind") == "access_ask"
+                        else tier_gate_mod.as_tier_ask(resolver_payload["tier_gate"])
+                        if plan_tier_ask and not resolver_payload["tier_gate"].get("tier_ask")
+                        else resolver_payload.get("tier_gate")
+                    ),
+                    "ctx": {
+                        **ctx,
+                        "parse": {**(ctx.get("parse") or {}), "output": answer_parse_output},
+                        "customer_scope": customer_scope,
+                    },
+                    "tier_ask": True,
+                },
+                services=business_services.fetch_services(db),
+                dry_run=dry_run,
+                space_id=space_id_for_turn,
+                trace=turn_trace,
                 db=db,
-                asked_at_turn=turn_no,
             )
+            bridge_payload = resolver_payload
+            if isinstance(probed.get("tier_probe"), dict):
+                if resolver_payload.get("_exit_kind") == "access_ask":
+                    bridge_payload = {**resolver_payload, **probed["tier_probe"]}
+                else:
+                    bridge_payload = {**resolver_payload, "tier_gate": probed["tier_probe"]}
+            # AC-21: the probe's own decision (run_fetch), a kind + brand ask with nothing live.
+            if probed.get("kind_none") or not isinstance(probed.get("tier_probe"), dict):
+                # AC-21, or the probe was refused (customer scope): its own words, never a
+                # menu that nobody probed.
+                answer = turn_compose.Answer(text=(probed.get("fetch") or {}).get("response") or "")
+            if answer is None:
+                answer = answer_bridge.question_for(
+                    bridge_payload,
+                    fetch=probed.get("fetch") if plan_tier_ask else None,
+                    parser=answer_parse_output,
+                    ctx=ctx,
+                    canned=copy_mod.resolve(db),
+                    db=db,
+                    asked_at_turn=turn_no,
+                )
             bridge_answered = True
 
         # A resolver `not_found` exit is answered by the SAME `answer_bridge.answer_for`
@@ -6147,6 +6261,11 @@ def _run_stages_body(  # noqa: PLR0915
                     dry_run=dry_run,
                     turn_trace=turn_trace,
                     counted_set=spec_tier and bool(turn_runtime.class_scope_terms(verdict)),
+                    asked_promo_filter=(
+                        dict((state_in.pending.payload or {}).get("promo_filter") or {})
+                        if state_in.pending is not None and state_in.pending.kind == "tier_pick"
+                        else None
+                    ),
                     profile=state_out.profile,
                     resolver_gate=(
                         resolver_payload.get("gate")

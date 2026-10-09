@@ -96,6 +96,9 @@ MEASURED_VERDICT_READS: dict[str, str] = {
     # are structured parser fields, read into the fetch's semantic input. 36 -> 38.
     "sales_basis": "app/services/chatbot/lanes/business/__init__.py",
     "sales_company": "app/services/chatbot/lanes/business/__init__.py",
+    # PROMO-SUBJECT-FILTER R5: the promotion kind the message names, read into the
+    # promotions fetch's `promotion_types` filter. 49 -> 50.
+    "promotion_kind": "app/services/chatbot/turn_runtime.py",
     # Ported from PR #1118 (feat/chatbot-dealer-stock-verdict, not merged, owner
     # ruling 24 Sep 2026) for chatbot-stock-ask-v2 S3, D13: "go ahead without
     # answering the open question", read by `turn/task.py::StockQtyTask.claims`/

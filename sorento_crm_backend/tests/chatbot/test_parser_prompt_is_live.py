@@ -38,6 +38,7 @@ from app.services.chatbot_parser_prompt import (
     REPORT_ASK_ADDENDUM,
     TRAP_SPECS_FALLBACK_BLOCK,
     LOW_STOCK_FILTERS_ADDENDUM,
+    PROMOTION_KIND_ADDENDUM,
     PO_REFS_ADDENDUM,
     SUB_ASKS_ADDENDUM,
     PO_SPO_WAREHOUSE_ADDENDUM,
@@ -262,6 +263,8 @@ def _without_growth_r1_addendum(text: str) -> str:
     # RESOLVE-SEMANTIC-FALLBACK: CANONICAL_CODE_ADDENDUM sits beneath it, after LOW_STOCK.
     if text.endswith(TRAP_SPECS_FALLBACK_BLOCK):
         text = text[: -len(TRAP_SPECS_FALLBACK_BLOCK)]
+    if text.endswith(PROMOTION_KIND_ADDENDUM):
+        text = text[: -len(PROMOTION_KIND_ADDENDUM)]
     if text.endswith(CANONICAL_CODE_ADDENDUM):
         text = text[: -len(CANONICAL_CODE_ADDENDUM)]
     # MULTI-ASK-PLAN S2: SUB_ASKS_ADDENDUM sits between PO_REFS_ADDENDUM and CANONICAL_CODE_ADDENDUM.

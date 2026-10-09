@@ -324,6 +324,7 @@ class TestPrompt:
             MEMORY_ADDENDUM,
             REPORT_ASK_ADDENDUM,
             PO_SPO_WAREHOUSE_ADDENDUM,
+            PROMOTION_KIND_ADDENDUM,
             SEMANTIC_PARSER_PROMPT,
         )
 
@@ -334,6 +335,7 @@ class TestPrompt:
         # REPORT_ASK_ADDENDUM (REPORT-ENGINE) then TRAP_SPECS_FALLBACK_BLOCK (STOCK-QTY-PARTIAL-FILL,
         # #1513) sit between LOW_STOCK_FILTERS_ADDENDUM and MEMORY_ADDENDUM; MEMORY stays the tail.
         # CANONICAL_CODE_ADDENDUM (#1511) follows REPORT_ASK_ADDENDUM.
+        # PROMO-SUBJECT-FILTER: PROMOTION_KIND_ADDENDUM follows CANONICAL_CODE_ADDENDUM.
         from app.services.chatbot_parser_prompt import TRAP_SPECS_FALLBACK_BLOCK
 
         assert tail == (
@@ -344,6 +346,7 @@ class TestPrompt:
             + PO_REFS_ADDENDUM
             + SUB_ASKS_ADDENDUM
             + CANONICAL_CODE_ADDENDUM
+            + PROMOTION_KIND_ADDENDUM
             + TRAP_SPECS_FALLBACK_BLOCK
             + MEMORY_ADDENDUM
         )

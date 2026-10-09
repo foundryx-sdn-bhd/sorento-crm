@@ -302,20 +302,45 @@ def access_level_choice_message(
             out.get("tier_availability") if tier_availability is _UNSET else tier_availability
         )
         avail = resolved_avail if jsc.truthy(resolved_avail) else None
+        probe_failed = out.get("tier_probe_failed") is True
+        every_level_empty = (
+            isinstance(avail, dict)
+            and len(avail) > 0
+            and not any(jsc.get(avail, t) for t in held)
+        )
         # D16: name the thing being asked about, so the question cannot read as being
         # about nothing. Echo what the customer TYPED, never a canonical code - one raw
         # token can resolve to two products, and naming one would claim we searched
         # something they did not ask for. Past 60 chars the echo is DROPPED rather than
         # truncated, because half a promotion name reads like a different promotion.
+        # AC-16: a brand entity that names a live brand (the parser's canonical name, exact) is
+        # echoed by that row's real brand_name, bound to ITS entity; any other word stays as typed.
+        from app.services.chatbot.turn_runtime import brand_entity_rows
+
+        named = {
+            id(e): row["brand_name"]
+            for e, row in brand_entity_rows(q.get("entities"), jsc.array(out.get("live_brands")))
+        }
         raws: list[str] = []
         for e in jsc.array(q.get("entities")):
-            v = jsc.js_string(jsc.get(e, "raw") or "").strip()
+            v = named.get(id(e)) or jsc.js_string(jsc.get(e, "raw") or "").strip()
             if v and not any(x.lower() == v.lower() for x in raws):
                 raws.append(v)
         scope_label = ", ".join(raws[:3])
         if len(scope_label) > 60:
             scope_label = ""
         scope_suffix = f" for {scope_label}" if scope_label else ""
+        if probe_failed or every_level_empty:
+            # PROMO-SUBJECT-FILTER AC-10/AC-11: never a menu over a probe that failed or
+            # found nothing at any level; no pick is armed.
+            out["escalate_message"] = (
+                "I could not check promotions right now.\nPlease try again in a moment."
+                if probe_failed
+                else f"No current promotion for {scope_label}." if scope_label else "No current promotion."
+            )
+            out["is_clarification"] = False
+            out["quick_reply"] = ""
+            return out
         lines = "\n".join(
             f"{i + 1}. {TIER_DISPLAY[t]}"
             + ("" if avail is None else (" - has promotion" if jsc.get(avail, t) else " - no promotion"))
