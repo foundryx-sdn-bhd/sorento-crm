@@ -518,3 +518,48 @@ def test_other_widths_unchanged():
     assert (_CARD_WIDTH["standard"], _SIDE_GUTTER["standard"]) == (600, 40)
     assert (_CARD_WIDTH["wide"], _SIDE_GUTTER["wide"]) == (900, 24)
     assert (_CARD_WIDTH["print"], _SIDE_GUTTER["print"]) == (672, 12)
+
+
+def _line_header_widths(out) -> list[tuple[str, int]]:
+    tables = re.findall(r"<table.*?</table>", _authored(out["body_html"]), re.S)
+    head = re.search(r"<thead.*?</thead>", tables[1], re.S).group(0)
+    widths = []
+    for tag, text in re.findall(r"(<th(?:\s[^>]*)?>)(.*?)</th>", head, re.S):
+        attr = re.search(r'\swidth="(\d+)%"', tag)
+        style = re.search(r"[;\"]width:(\d+)%", tag)
+        assert attr and style and attr.group(1) == style.group(1), tag
+        widths.append((re.sub(r"<[^>]+>", "", text).strip(), int(attr.group(1))))
+    return widths
+
+
+def test_line_table_columns_share_the_width_in_every_variant():
+    """AC-P14 (owner hand test, 9 Oct, SO421287): with short remarks REMARK soaked up all the
+    leftover width and left a big empty area on its right. Every line-table column now
+    carries an explicit percentage (a `width` attribute Outlook honours, mirrored in the
+    style), summing to 100 in each of the four column variants, with ITEM CODE the widest
+    fixed column and REMARK a moderate share, never the whole slack."""
+    orders = [{"so_number": "SO421287", "so_date": "02/10/2026", "customer": "C", "project": "P"}]
+    variants = {
+        5: [_line("SO421287", "KL-WH", "SRT382-6-DIY", "12", "06/11/2026", "ORDER, NEW ITEM CODE")],
+        "qty": [_line("SO421287", "KL-WH", "SRT382-6-DIY", "30", "06/11/2026", "ORDER 6", {"qty": "24"})],
+        "date": [_line("SO421287", "KL-WH", "SRT382-6-DIY", "30", "13/11/2026", "DELAY",
+                       {"delivery_date": "06/11/2026"})],
+        7: [_line("SO421287", "KL-WH", "SRT382-6-DIY", "30", "13/11/2026", "DELAY, ORDER 6, NEW ITEM CODE",
+                  {"qty": "24", "delivery_date": "06/11/2026"})],
+    }
+    expected_headers = {
+        5: ["LOCATION", "ITEM CODE", "QTY", "DELIVERY", "REMARK"],
+        "qty": ["LOCATION", "ITEM CODE", "QTY", "NEW QTY", "DELIVERY", "REMARK"],
+        "date": ["LOCATION", "ITEM CODE", "QTY", "DELIVERY", "NEW DATE", "REMARK"],
+        7: ["LOCATION", "ITEM CODE", "QTY", "NEW QTY", "DELIVERY", "NEW DATE", "REMARK"],
+    }
+    for key, lines in variants.items():
+        widths = _line_header_widths(_render(_ctx(orders, lines)))
+        names = [name for name, _ in widths]
+        assert names == expected_headers[key], (key, names)
+        values = dict(widths)
+        assert sum(values.values()) == 100, (key, widths)
+        fixed = {k: v for k, v in values.items() if k != "REMARK"}
+        assert max(fixed, key=fixed.get) == "ITEM CODE", (key, widths)
+        assert 20 <= values["REMARK"] <= 40, (key, widths)
+
