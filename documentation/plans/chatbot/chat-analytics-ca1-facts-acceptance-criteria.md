@@ -50,7 +50,8 @@ section 8, lane CA-1. Behaviour card: PR #1546 comment 6073678534.
 
 - **CA1-20** When an episode closes, one `chat_episode_facts` row is written in the same
   transaction, before older episodes are trimmed: turn count, asks (non-noise), failed turns, last
-  outcome, handover, domain, intent, close reason. The closed turns' fact rows get its
+  outcome, handover (the thread went to staff, including off topic), domain, intent, close
+  reason. The closed turns' fact rows get its
   `episode_id`.
 - **CA1-21** An episode trimmed from `conversation_frames` keeps its `chat_episode_facts` row.
 - **CA1-22** If the snapshot fails, the episode itself is still written.
@@ -68,8 +69,9 @@ section 8, lane CA-1. Behaviour card: PR #1546 comment 6073678534.
 - **CA1-25** It opens on a summary of outcome by week (Malaysia time), measures Asks and Failed,
   from 5 Sep 2026 to today, the office (contact type) and noise excluded by default. Failed counts only technical,
   cannot do and missed.
-- **CA1-26** Count by Products switches to one row per ask and product, measures Named and Shown,
-  product shown by its code.
+- **CA1-26** Count by Products switches to one row per ask and product; choosing Product as the
+  summary row and Named / Shown as the measures shows each product by its code. The default
+  layout stays outcome by week (one default view per report).
 - **CA1-27** Labels read as words (Answered, Off topic, Cannot do, Dealer, Not allowed), never raw
   codes or ids, in the summary and in the detail table. The filter is Contact type (Dealer,
   Office, Not allowed, Unknown), and it also applies to Count by Products; audience is shown as a

@@ -94,7 +94,17 @@ def _names_a_business(turn: dict[str, Any]) -> bool:
     """The ask points at something the CRM knows: a domain the parser hinted or the plan
     acted on, or an intent."""
     verdict = _verdict(turn)
-    return bool(verdict.get("domain_hint") or _plan(turn).get("domains") or verdict.get("intent_hint"))
+    return bool(
+        _present(verdict.get("domain_hint"))
+        or _plan(turn).get("domains")
+        or _present(verdict.get("intent_hint"))
+    )
+
+
+def _present(hint: Any) -> bool:
+    """A hint the parser really gave. It sometimes writes the literal string "null" (or
+    leaves it blank) for "nothing", and that names no business."""
+    return bool(hint) and str(hint).strip().lower() not in ("", "null")
 
 
 def _still_asking(turn: dict[str, Any]) -> bool:

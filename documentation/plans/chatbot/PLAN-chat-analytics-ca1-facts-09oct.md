@@ -78,7 +78,10 @@ No column holds customer words, an episode summary or `last_user_message`.
 - Report: `app/services/reports/datasets/chat_asks.py` (ask grain) and `chat_ask_items.py`
   (item grain), `app/services/reports/definitions/chat_overview.py` (key `chat_overview`,
   title "Chat overview", module `chatbot`, permission `chatbot.analytics.view`, scope `none`
-  justified in the docstring, `datasets_by` on the `count_by` param).
+  justified in the docstring, `datasets_by` on the `count_by` param). Count by Products switches
+  to one row per ask and product; choosing Product as the summary row and Named / Shown as the
+  measures shows each product by its code. The default layout stays outcome by week (one
+  default view per report).
 - Permission `chatbot.analytics.view` in `app/rbac/permission_registry.py` and seeded by the
   migration onto every role holding `system.chat_history.view`.
 

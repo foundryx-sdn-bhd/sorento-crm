@@ -423,7 +423,8 @@ def snapshot_episode(db: Session, frame_id: str, turn_rows: list[ChatbotTurn]) -
             ask_count=sum(1 for o in outcomes if o != "noise"),
             failed_turns=sum(1 for o in outcomes if o in outcome_mod.FAILED_OUTCOMES),
             last_outcome=outcomes[-1],
-            handover=any(o == "handover" for o in outcomes),
+            # Off topic hands the thread to staff just as a handover does.
+            handover=any(o in ("handover", "off_topic") for o in outcomes),
             close_reason=frame.close_reason,
         )
         .on_conflict_do_nothing(index_elements=[_EPISODES.c.frame_id])
