@@ -14,6 +14,7 @@ import pytest
 from app.models.user_session import UserSession
 from tests._pg_fixture import blank_session
 from tests.analytics_connector._helpers import (
+    grant_permission,
     BASE,
     INTERNAL,
     USE,
@@ -61,10 +62,16 @@ def test_connector_token_with_a_wrong_internal_key_is_refused(signed_in):
 
 
 def test_connector_token_reads_ordinary_get_routes_as_the_user(signed_in):
-    _db, client, _user, token = signed_in
+    db, client, user, token = signed_in
+    from app.models.user import UserRoleAssignment
+    from app.services.user_service import invalidate_rbac_cache
+
+    role_id = db.query(UserRoleAssignment).filter(UserRoleAssignment.user_id == user.id).first().role_id
+    grant_permission(db, role_id, "master_data.brands.view")
+    db.commit()
+    invalidate_rbac_cache()
     resp = client.get(ALLOWED_GET, headers=connector_headers(token))
-    assert resp.status_code != 403 or resp.json().get("detail") != "connector_path_not_allowed", resp.text
-    assert resp.status_code not in (401, 405), resp.text
+    assert resp.status_code == 200, resp.text
 
 
 @pytest.mark.parametrize(
