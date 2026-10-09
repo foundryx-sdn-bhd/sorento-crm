@@ -1,0 +1,13 @@
+FAILED tests/test_oi_email_print.py::test_planning_note_never_reaches_remark
+FAILED tests/test_oi_email_print.py::test_no_internal_note_reaches_remark - A...
+FAILED tests/test_oi_email_print.py::test_change_so_names_the_order_it_moves_to
+FAILED tests/test_oi_email_print.py::test_orders_carry_the_so_date_once - Key...
+FAILED tests/test_oi_email_print.py::test_migration_is_the_single_head - Asse...
+FAILED tests/test_oi_email_print.py::test_upgrade_converts_0004_document_in_place_idempotent_and_reversible
+FAILED tests/test_oi_email_print.py::test_admin_edited_document_is_left_alone
+FAILED tests/test_oi_email_print.py::test_admin_edited_text_part_is_left_alone
+FAILED tests/test_oi_email_print.py::test_upgrade_inserts_when_the_row_is_absent
+FAILED tests/test_oi_email_print.py::test_one_order_renders_print_width_header_so_date_and_no_repeated_columns
+FAILED tests/test_oi_email_print.py::test_two_orders_group_their_lines_under_one_row_each
+FAILED tests/test_oi_email_print.py::test_other_widths_unchanged - KeyError: ...
+12 failed, 17 warnings in 5.90s
