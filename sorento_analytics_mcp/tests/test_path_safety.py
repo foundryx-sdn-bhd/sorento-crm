@@ -54,3 +54,32 @@ def test_a_normal_project_id_still_reaches_the_template(client, backend):
     out = call_tool(client, "crm_project_detail", {"project_id": pid})
     assert out["isError"] is False
     assert len(backend.calls("GET", f"{PROJECTS}/{pid}")) == 1
+
+
+@pytest.mark.parametrize("value", ["../../users/me", "a/b", "x?y=1", "%2e%2e"])
+def test_user_bearer_client_percent_encodes_every_path_param(env, backend, value):
+    """Third line behind the dataset-key check and the UUID guards: the client itself never lets a
+    path param add a segment, a dot segment or a query string (card 4.1, security round)."""
+    import asyncio
+
+    from sorento_analytics_mcp.client import UserBearerClient, current_bearer
+    from sorento_analytics_mcp.settings import AnalyticsSettings
+
+    backend.on("GET", "/api/v1/project-sales/projects/x", json_body={})
+
+    async def go():
+        c = UserBearerClient(AnalyticsSettings.from_env())
+        token = current_bearer.set("tok-A")
+        try:
+            await c.request("GET", "/api/v1/project-sales/projects/{id}", path_params={"id": value})
+        finally:
+            current_bearer.reset(token)
+
+    asyncio.run(go())
+    assert backend.requests, "no request was sent"
+    for r in backend.requests:
+        # raw_path is what goes on the wire; the decoded path would show %2F as "/".
+        assert r.raw_path.startswith("/api/v1/project-sales/projects/"), r.raw_path
+        assert r.raw_path.count("/") == "/api/v1/project-sales/projects/x".count("/"), r.raw_path
+        assert "/../" not in r.raw_path and not r.raw_path.endswith("/.."), r.raw_path
+        assert not r.query, r.query
