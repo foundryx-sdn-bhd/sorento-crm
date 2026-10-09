@@ -1,7 +1,7 @@
 # CARD - per-ask planning, exact codes, compact replies (MULTI-ASK-PLAN)
 
-Status: card SETTLED by the owner (9 Oct 2026, two rounds). Build in progress: S1 partial
-(R5 date line, R8 count label) in d9f8321b; red-first tests next, then S2-S4. Track: L
+Status: card SETTLED by the owner (9 Oct 2026, two rounds). Built: S1 (d9f8321b), red-first
+tests (f6fc7adf), S3 (b482cfdb), S2 (3f9d878c), S4 (b6daddb0); in review. Track: L
 (chatbot core: parser prompt migration, per-ask runner in the engine, one new read endpoint +
 MCP tool). Lane PR #1542 carries `crew-lane: MULTI-ASK-PLAN`. Measured on origin/main
 bf07eff8b.
@@ -93,7 +93,10 @@ d9f8321b; a new catalog key, so the stored `translation_memory` row for the old 
 
 ## Scope
 
-- The per-ask path runs when the parser emits TWO OR MORE sub-asks. A one-ask message keeps
+- The per-ask path runs when the parser emits TWO OR MORE sub-asks and at least one is a
+  measure only it answers (received, last receipt, supplier, last cost, sold, other). A
+  message of stock / incoming asks only ("Incoming and stock for 7445") keeps today's
+  multi-domain answer, which already handles it. A one-ask message keeps
   today's reply byte for byte (crew reading of Q1: "just stock -> 1 line" describes a stock
   ask inside a multi-ask; say so if every single ask should go compact too).
 - Staff contacts. A dealer (availability-only) contact keeps today's path: its replies have
@@ -105,7 +108,7 @@ d9f8321b; a new catalog key, so the stored `translation_memory` row for the old 
 | --- | --- | --- | --- | --- | --- |
 | `stock` | 库存 / stock | `crm_inventory_stock_balance_list` | no | `inventory.sellable` domain reveal, as today | `Stock: 120` / `库存: 120` |
 | `incoming` | 到货 / incoming | `crm_incoming_stock_by_product` | yes | none | `Incoming: 300, ETA 15/10/2026` / `到货: 300，ETA 15/10/2026` |
-| `received_qty` | 入库了多少 / received | NEW `GET /api/v1/procurement/goods-received/summary` via NEW `crm_procurement_grn_summary`: sum `picking_lines.quantity_picked`, `picking_type='goods_received'`, `picking_status='approved'`, `picking_date` in window (precedent `procurement_service.py:1068-1080`) | yes | `purchase_orders.placed` | `Received 2026: 1,200` / `2026 入库数量: 1,200` |
+| `received_qty` | 入库了多少 / received | NEW `GET /api/v1/procurement/grn/summary` via NEW `crm_procurement_grn_summary`: sum `picking_lines.quantity_picked`, `picking_type='goods_received'`, `picking_status='approved'`, `picking_date` in window (precedent `procurement_service.py:1068-1080`) | yes | `purchase_orders.placed` | `Received 2026: 1,200` / `2026 入库数量: 1,200` |
 | `last_receipt` | 最后一次进库 / last in | the same new endpoint's `last_receipt` {date, qty}: the newest approved GRN for the product, all time | no | `purchase_orders.placed` | `Last received: 18/09/2026 (300)` / `最后一次进库: 18/09/2026（300）` |
 | `supplier` | 供应商 / supplier | `crm_procurement_po_last_cost_list top_n=1`, the newest row across locations (Q3) | no | `purchase_orders.supplier` | `Supplier: ABC SDN BHD (PO-2026-0412, 03/06/2026)` |
 | `last_cost` | 采购价 / purchase price | the same row as `supplier` (one call serves both) | no | `purchase_orders.cost` | `Last cost: RM 45.00 / unit (PO-2026-0412, 03/06/2026)` / `采购价: RM 45.00 / 件（PO-2026-0412，03/06/2026）` |
@@ -124,7 +127,8 @@ Known data gap (crew to measure): a receipt booked through the ESB-stated path h
 
 ```json
 {
-  "entities": [{"raw": "SRTWT7445", "hint": "product", "canonical_code": "SRTWT7445", "family": null}],
+  "entities": [{"raw": "SRTWT7445", "hint": "product", "canonical_code": "SRTWT7445"}],
+  "family": null,
   "sub_asks": [
     {"measure": "received_qty", "group_by": null, "date_from": "2026-01-01", "date_to": "2026-12-31", "basis": null, "label": "入库了多少数量"},
     {"measure": "supplier", "group_by": null, "date_from": null, "date_to": null, "basis": null, "label": "供应商是谁"},
@@ -136,9 +140,11 @@ Known data gap (crew to measure): a receipt booked through the ESB-stated path h
 }
 ```
 
-`sub_asks` is a NEW top-level key, null for an ordinary one-ask message; today's `asks[]`
-(second domain onward) is untouched, so every existing reader keeps working. `family` is a new
-entity key. Both are exempt from the required-key check, so a captured emission that predates
+`sub_asks` and `family` are NEW top-level keys, null for an ordinary message; today's `asks[]`
+(second domain onward) is untouched, so every existing reader keeps working. The reply to the
+variant or basis question is NOT a new key: both questions are numbered options, so the
+parser's existing `open_question_answer` pick reads the reply (1 = just the code / delivered,
+2 = all variants / ordered). Both are exempt from the required-key check, so a captured emission that predates
 them still post-processes (`output_exchange`, the `group_by` precedent at `head/parser.py:212`).
 
 ## The SRTWT7445 turn, expected replies
@@ -203,7 +209,10 @@ message, one line per ask.
 | No GRN ever | `最后一次进库: 没有记录` / `Last received: none on record`. |
 | No PO line ever | `供应商: 没有记录`, `采购价: 没有记录`. |
 | Two products, six asks | One block per product in typed order, the same line order in each. |
-| `family: true` | One summed line per sub-ask, label marked `（8 款）` / `(8 variants)`; supplier / last cost / last receipt answer the newest row across the family and name its code. |
+| `family: true` | The code line reads `SRTWT7445（全部 8 款）`; one summed line per sub-ask; supplier / last cost / last receipt answer the newest row across the family. |
+| Two typed codes, both with variants, `family` null | ONE variant question, about the first; the answer applies to every typed code. |
+| A typed code with no exact hit | Today's path (which-one picker); the runner steps aside. |
+| A reply to the variant / basis question that is not a pick | Today's path reads it as a new message. |
 | `measure: other` ("margin?") | `<asker's words>: not available yet`. |
 | `sold_by` axis the report does not have (`transporter`) | `<label>: not available yet`. |
 | A query fails (HTTP error) | That line `<label>: couldn't check right now`; the others answer. |
@@ -216,8 +225,8 @@ message, one line per ask.
   (`head/parser.py`), the prompt addendum (a migration publishing a new UNLABELLED version
   under `chatbot_semantic_parser`, the `report_engine_0001_prompt` precedent), carried
   through the verdict.
-- **S3 data**: `GET /api/v1/procurement/goods-received/summary` (product_ids, date_from,
-  date_to -> `{received_qty, grn_count, last_receipt: {date, qty}}`) + MCP
+- **S3 data**: `GET /api/v1/procurement/grn/summary` (product_ids, date_from, date_to ->
+  per product `{received_qty, grn_count, last_receipt_date, last_receipt_qty}`) + MCP
   `crm_procurement_grn_summary` + the chatbot read-only tool allow-list.
 - **S4 runner + reply**: `app/services/chatbot/turn/sub_asks.py`: engine hook after the
   resolver (product candidates known) and before `turn_apply`'s fetch, when the verdict
