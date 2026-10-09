@@ -211,3 +211,52 @@ def test_a_forwarded_value_that_is_not_an_ip_never_becomes_a_key(env, monkeypatc
     client.get(f"{BASE}/PHOTO00007", headers={"X-Forwarded-For": "x" * 4000})
     assert idents and idents[0] != "x" * 4000
     assert len(idents[0] or "") < 64
+
+
+# --------------------------------------------------------------------------- #
+# Hand-test fix: a file on an allowlisted public host (cdn-sorento.com, the R2 custom
+# domain the stored rows name) that this deployment's signer does not own.
+# --------------------------------------------------------------------------- #
+
+
+def test_a_public_listed_host_hands_out_its_stored_url_unsigned(env, monkeypatch):
+    """No signer owns cdn-sorento.com on the test copy (its env names other CDN hosts),
+    so the stored url (the same one attachment mode sends) is the redirect target."""
+    from app.config import settings as app_settings
+
+    client, db, signed = env
+    monkeypatch.setattr(app_settings, "chatbot_link_cdn_hosts", "cdn-sorento.com")
+    _link(db, "PROMO00000000001", "https://cdn-sorento.com/promotion/7e5155f1/Vixx Loo A.pdf", "Vixx Loo A.pdf", "application/pdf")
+    resp = client.get(f"{BASE}/PROMO00000000001")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["url"] == "https://cdn-sorento.com/promotion/7e5155f1/Vixx Loo A.pdf"
+    assert signed == []
+
+
+def test_a_public_listed_host_sheet_is_fetched_over_https(env, monkeypatch):
+    from app.config import settings as app_settings
+    from app.services import file_link_service
+
+    client, db, _ = env
+    monkeypatch.setattr(app_settings, "chatbot_link_cdn_hosts", "cdn-sorento.com")
+    monkeypatch.setattr("app.api.v1.public.file_links.download_bytes", file_link_service.download_bytes)
+    fetched: list[str] = []
+    monkeypatch.setattr(
+        file_link_service, "_fetch_public", lambda url: fetched.append(url) or b"a,b\n1,2\n"
+    )
+    _link(db, "SHEET00000000003", "https://cdn-sorento.com/reports/r.csv", "r.csv")
+    resp = client.get(f"{BASE}/SHEET00000000003/content")
+    assert resp.status_code == 200
+    assert resp.content == b"a,b\n1,2\n"
+    assert fetched == ["https://cdn-sorento.com/reports/r.csv"]
+
+
+def test_a_stored_url_off_the_list_is_never_handed_out(env, monkeypatch):
+    from app.config import settings as app_settings
+
+    client, db, _ = env
+    monkeypatch.setattr(app_settings, "chatbot_link_cdn_hosts", "")
+    _link(db, "PROMO00000000002", "https://cdn-sorento.com/promotion/x.pdf", "x.pdf", "application/pdf")
+    resp = client.get(f"{BASE}/PROMO00000000002")
+    assert resp.status_code == 502
+    assert "cdn-sorento.com" not in resp.text
