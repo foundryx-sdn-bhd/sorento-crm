@@ -93,3 +93,34 @@ Two limits worth knowing before reading a red line as a defect:
   If you do set the variable, point it at the CAPTURES worktree
   (`sorento_crm_n8n/.claude/worktrees/captures-rs1a-parser/n8n-workflows-init/tests/fixtures`),
   which is what auto-discovery would have chosen.
+
+## Generalisation eval (CHATBOT-EVAL)
+
+The console check proves named cases still pass. The eval measures how well the chatbot
+generalises: ~320 real, masked conversations from a prod snapshot, each with a rubric (facts from
+the DB, clarify options, must-not), plus 5 rewordings per case (typo, language mix, reorder, extra
+words, follow-up phrasing). Plan and contract: `documentation/plans/chatbot/PLAN-chatbot-eval-10oct.md`,
+`CONTRACT-chatbot-eval-runner.md`.
+
+- The cases are NOT in this repo (it is public). They live in the crew-only state dir; the runner
+  refuses a data dir or `--out` inside the work tree.
+- Split: `dev` (a third; lanes may read and run it) and `hidden` (two thirds; crew only).
+- A lane runs the dev split against its own stack (backend on an eval clone named `sorento_eval_*`):
+
+```bash
+cd sorento_crm_backend
+EXTERNAL_API_KEY=<lane key> EVAL_TRACE_DB_URL=<eval clone dsn> EVAL_RESET_DB_URL=<same dsn> \
+  venv/bin/python -m scripts.chatbot_eval --data-dir "$EVAL_DATA_DIR" --split dev --variants one \
+  --engine http --base-url http://localhost:<be port> --budget-usd 3 --out <dir outside the repo>
+# --prompt-version <ai_prompt_versions.id> pins an unpromoted parser prompt (dry run only)
+# --engine pkg.module:Class runs the same cases through another engine
+```
+
+- The PR gate is crew's: it runs the hidden split (200+ originals, one variant each, ~10 min) with
+  the runner from a trusted checkout and posts `crew-note: eval hidden ...` with the delta against
+  the main baseline. Only aggregates leave the crew dir.
+- Verdicts: correct, good_clarify, wrong, stuck, error. Underfit = pass rate on originals; overfit
+  gaps = dev minus hidden, originals minus variants. A fix that only passes the reported phrasing
+  shows up as a variant gap.
+- Known gaps (v1): media (photo) turns and ideation turns are excluded; relative-date asks ("this
+  month") carry no period numbers because the replay date is not the ask date.
