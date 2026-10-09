@@ -36,7 +36,10 @@ SPACE = "zzt-fcom-space"
 # A ':' in the last segment passes straight through resolve_send_identifier (no contact row needed).
 INBOX_URL = "https://app.respond.io/space/364817/inbox/id:60123"
 SCOPE = "form_comment"
-SERIALIZED_KEYS = {"id", "body", "author_name", "author_kind", "posted_by_name", "created_at", "attachments"}
+SERIALIZED_KEYS = {
+    "id", "kind", "body", "author_name", "author_kind", "posted_by_name", "created_at", "attachments",
+    "parent_id", "edited_at", "deleted", "can_edit", "can_delete", "can_reply",
+}
 ATTACHMENT_KEYS = {"attachment_id", "filename", "size", "content_type"}
 
 
@@ -1227,3 +1230,471 @@ def test_portal_cannot_delete_a_comment_file_link(portal, db, storage):
     assert resp.status_code in (403, 404)
     assert db.query(EntityAttachmentLink).filter(EntityAttachmentLink.id == link.id).count() == 1
     assert db.query(Attachment).filter(Attachment.id == comment["attachments"][0]["attachment_id"]).count() == 1
+
+
+# --------------------------------------------------------------------------- #
+# Round 2 (9 Oct): the reply as the first entry, reply / edit / delete
+# Spec: PLAN-form-comments-09oct.md, "Owner hand test round 2" (the Contract is binding).
+# Ambiguities pinned here: PATCH takes a JSON body {"body": ...}; the pending-action executor
+# is `get_action("form_comment.delete").execute(db, {"entity_id": <comment id>,
+# "requested_by_id": <user id>})` (the comment row itself says which form it is on); the
+# portal DELETE answers 200 or 204.
+# --------------------------------------------------------------------------- #
+
+INQ_VIEW = "procurement.stock_inquiries.view"
+COMPLAINT_VIEW = "complaint_management.complaints.view"
+
+
+def _staff_url(kind, form_id, comment_id=None):
+    base = f"/api/v1/form-comments/{kind}/{form_id}"
+    return base + (f"/comments/{comment_id}" if comment_id else "")
+
+
+def _portal_url(kind, form_id, comment_id=None):
+    base = f"/api/v1/public/portal/submissions/{kind}/{form_id}/comments"
+    return base + (f"/{comment_id}" if comment_id else "")
+
+
+def _staff_says(db, kind, form_id, user, body, **kw):
+    return _unpack(_svc(db).add_staff_comment(kind, form_id, user, body, **kw))[0]
+
+
+def _contact_says(db, kind, form_id, contact_id, body, **kw):
+    return _unpack(_svc(db).add_contact_comment(kind, form_id, contact_id, SPACE, body, **kw))[0]
+
+
+def _roles(monkeypatch, admins=()):
+    from app.services.user_service import UserPermissionService
+
+    monkeypatch.setattr(
+        UserPermissionService, "get_user_role_slugs", lambda self, uid: {"admin"} if str(uid) in set(admins) else set()
+    )
+
+
+def _as_staff_list(staff_client, kind, form_id, slug=INQ_VIEW):
+    staff_client.granted.add(slug)
+    resp = staff_client.get(_staff_url(kind, form_id))
+    assert resp.status_code == 200, resp.text
+    return resp.json()["items"]
+
+
+def _row(db, comment_id):
+    db.expire_all()
+    return db.query(EntityConversationMessage).filter(EntityConversationMessage.id == comment_id).first()
+
+
+def _mark_deleted(db, comment_id):
+    db.execute(text("UPDATE entity_conversation_messages SET deleted_at = now() WHERE id = :i"), {"i": comment_id})
+    db.commit()
+
+
+def _with_reply(db, inquiry, responder, text_="brand?"):
+    inquiry.purchasing_response = text_
+    inquiry.last_responded_by = responder.respond_user_id
+    inquiry.last_responded_at = datetime(2026, 10, 2, 8, 30, 0)
+    db.commit()
+
+
+# ---- the response entry ------------------------------------------------------------------
+
+
+def test_list_starts_with_the_purchasing_reply_as_a_synthetic_entry(staff_client, db, enqueued):
+    responder = _user(db, "Responder", responder_id=f"resp-{uuid.uuid4().hex[:8]}")
+    inquiry = _inquiry(db)
+    _with_reply(db, inquiry, responder)
+    _staff_says(db, "stock_inquiry", inquiry.id, _user(db, "Later"), "a later comment")
+
+    items = _as_staff_list(staff_client, "stock_inquiry", inquiry.id)
+
+    first = items[0]
+    assert (first["id"], first["kind"]) == ("response", "response")
+    assert first["author_name"] == responder.name
+    assert first["author_kind"] == "staff"
+    assert first["body"] == "brand?"
+    assert first["created_at"].startswith("2026-10-02T08:30:00")
+    assert (first["can_edit"], first["can_delete"], first["can_reply"]) == (False, False, False)
+    assert [i["kind"] for i in items] == ["response", "comment"]
+
+
+def test_response_entry_falls_back_to_the_team_name_for_an_unknown_responder(staff_client, db, enqueued):
+    inquiry = _inquiry(db)
+    inquiry.purchasing_response = "no idea who"
+    inquiry.last_responded_by = "resp-nobody"
+    inquiry.last_responded_at = datetime(2026, 10, 2, 8, 30, 0)
+    db.commit()
+    assert _as_staff_list(staff_client, "stock_inquiry", inquiry.id)[0]["author_name"] == "Sorento team"
+
+
+def test_complaint_response_entry_uses_the_technical_team_response(staff_client, db, enqueued):
+    responder = _user(db, "Tech", responder_id=f"resp-{uuid.uuid4().hex[:8]}")
+    complaint = _complaint(db)
+    complaint.technical_team_response = "replace the unit"
+    complaint.last_responded_by = responder.respond_user_id
+    complaint.last_responded_at = datetime(2026, 10, 3, 9, 0, 0)
+    db.commit()
+
+    first = _as_staff_list(staff_client, "complaint", complaint.id, COMPLAINT_VIEW)[0]
+
+    assert (first["id"], first["body"], first["author_name"]) == ("response", "replace the unit", responder.name)
+
+
+@pytest.mark.parametrize("reply", [None, "", "   \n"], ids=["none", "empty", "whitespace"])
+def test_no_response_entry_when_the_reply_is_blank(staff_client, db, enqueued, reply):
+    inquiry = _inquiry(db)
+    inquiry.purchasing_response = reply
+    db.commit()
+    assert _as_staff_list(staff_client, "stock_inquiry", inquiry.id) == []
+
+
+@pytest.mark.parametrize("request_type", ["purchase_request", "sponsorship_form"])
+def test_request_kinds_have_no_response_entry(staff_client, db, enqueued, request_type):
+    row = _request(db, request_type=request_type)
+    slug = "procurement.purchase_requests.view" if request_type == "purchase_request" else "procurement.sponsorship_forms.view"
+    assert _as_staff_list(staff_client, request_type, row.id, slug) == []
+
+
+def test_response_entry_carries_the_forms_response_attachment_files(staff_client, db, enqueued, storage):
+    from app.services.entity_attachment_service import create_response_attachment
+
+    responder = _user(db, "Responder", responder_id=f"resp-{uuid.uuid4().hex[:8]}")
+    inquiry = _inquiry(db)
+    _with_reply(db, inquiry, responder)
+    create_response_attachment(
+        db, entity_type="stock_inquiry", entity_id=inquiry.id, contents=PDF[1], filename=PDF[0],
+        content_type=PDF[2], uploaded_by=responder.id,
+    )
+
+    first = _as_staff_list(staff_client, "stock_inquiry", inquiry.id)[0]
+
+    assert [set(a) for a in first["attachments"]] == [ATTACHMENT_KEYS]
+    assert first["attachments"][0]["filename"] == PDF[0]
+
+
+def test_every_comment_entry_carries_the_thread_fields(staff_client, db, enqueued):
+    inquiry = _inquiry(db)
+    _staff_says(db, "stock_inquiry", inquiry.id, staff_client.actor, "plain")
+
+    item = _as_staff_list(staff_client, "stock_inquiry", inquiry.id)[0]
+
+    assert set(item) == SERIALIZED_KEYS
+    assert (item["kind"], item["parent_id"], item["edited_at"], item["deleted"]) == ("comment", None, None, False)
+
+
+# ---- reply -------------------------------------------------------------------------------
+
+
+def test_staff_reply_is_201_with_parent_id_and_notifies_like_a_comment(staff_client, db, enqueued):
+    inquiry = _inquiry(db)
+    top = _staff_says(db, "stock_inquiry", inquiry.id, _user(db, "Other"), "top level")
+    enqueued.clear()
+    staff_client.granted.add(INQ_VIEW)
+
+    resp = staff_client.post(_staff_url("stock_inquiry", inquiry.id), data={"body": "a reply", "parent_id": top["id"]})
+
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["comment"]["parent_id"] == top["id"]
+    assert len(_by_queue(enqueued, "respond_io")) == 1
+
+
+def test_submitter_reply_emails_the_handler(portal, db, enqueued):
+    owner = _contact(db, "Owner")
+    handler = _user(db, "Handler")
+    inquiry = _inquiry(db, contact_id=owner)
+    _tracker(db, "stock_inquiry", inquiry.id, handler)
+    top = _staff_says(db, "stock_inquiry", inquiry.id, _user(db, "Staffer"), "question")
+    enqueued.clear()
+
+    resp = portal(owner).post(_portal_url("stock_inquiry", inquiry.id), data={"body": "answer", "parent_id": top["id"]})
+
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["comment"]["parent_id"] == top["id"]
+    assert _recipients(db) == [handler.email]
+    assert _by_queue(enqueued, "respond_io") == []
+
+
+def test_reply_to_an_unacceptable_parent_is_422_and_saves_nothing(staff_client, db, enqueued):
+    inquiry = _inquiry(db)
+    other_form = _inquiry(db)
+    staff = _user(db, "Other")
+    top = _staff_says(db, "stock_inquiry", inquiry.id, staff, "top")
+    nested = _staff_says(db, "stock_inquiry", inquiry.id, staff, "reply", parent_id=top["id"])
+    foreign = _staff_says(db, "stock_inquiry", other_form.id, staff, "elsewhere")
+    gone = _staff_says(db, "stock_inquiry", inquiry.id, staff, "to be deleted")
+    _mark_deleted(db, gone["id"])
+    staff_client.granted.add(INQ_VIEW)
+    before = len(_comment_rows(db))
+    enqueued.clear()
+
+    for bad in (foreign["id"], nested["id"], gone["id"], "response", _uid()):
+        resp = staff_client.post(_staff_url("stock_inquiry", inquiry.id), data={"body": "x", "parent_id": bad})
+        assert resp.status_code == 422, (bad, resp.text)
+
+    assert len(_comment_rows(db)) == before
+    assert enqueued == []
+
+
+# ---- edit --------------------------------------------------------------------------------
+
+
+def _patch(client, url, body):
+    return client.patch(url, json={"body": body})
+
+
+def test_staff_author_edits_own_comment_without_any_notification(staff_client, db, enqueued):
+    inquiry = _inquiry(db)
+    mine = _staff_says(db, "stock_inquiry", inquiry.id, staff_client.actor, "before")
+    staff_client.granted.add(INQ_VIEW)
+    enqueued.clear()
+
+    resp = _patch(staff_client, _staff_url("stock_inquiry", inquiry.id, mine["id"]), "  after  ")
+
+    assert resp.status_code == 200, resp.text
+    edited = resp.json().get("comment", resp.json())
+    assert edited["body"] == "after"
+    assert edited["edited_at"]
+    assert enqueued == []
+    assert db.query(Notification).count() == 0
+    assert _row(db, mine["id"]).edited_at is not None
+
+
+def test_another_staff_users_comment_cannot_be_edited(staff_client, db, enqueued):
+    inquiry = _inquiry(db)
+    theirs = _staff_says(db, "stock_inquiry", inquiry.id, _user(db, "Other"), "theirs")
+    staff_client.granted.add(INQ_VIEW)
+
+    resp = _patch(staff_client, _staff_url("stock_inquiry", inquiry.id, theirs["id"]), "hijack")
+
+    assert resp.status_code == 403, resp.text
+    assert _row(db, theirs["id"]).body_html == "theirs"
+
+
+def test_a_crm_admin_can_edit_anyones_staff_comment(staff_client, db, enqueued, monkeypatch):
+    inquiry = _inquiry(db)
+    theirs = _staff_says(db, "stock_inquiry", inquiry.id, _user(db, "Other"), "theirs")
+    staff_client.granted.add(INQ_VIEW)
+    _roles(monkeypatch, admins=[staff_client.actor.id])
+
+    resp = _patch(staff_client, _staff_url("stock_inquiry", inquiry.id, theirs["id"]), "moderated")
+
+    assert resp.status_code == 200, resp.text
+    assert _row(db, theirs["id"]).body_html == "moderated"
+
+
+def test_blank_or_deleted_edit_is_422(staff_client, db, enqueued):
+    inquiry = _inquiry(db)
+    mine = _staff_says(db, "stock_inquiry", inquiry.id, staff_client.actor, "keep")
+    gone = _staff_says(db, "stock_inquiry", inquiry.id, staff_client.actor, "gone")
+    _mark_deleted(db, gone["id"])
+    staff_client.granted.add(INQ_VIEW)
+
+    assert _patch(staff_client, _staff_url("stock_inquiry", inquiry.id, mine["id"]), "   ").status_code == 422
+    assert _patch(staff_client, _staff_url("stock_inquiry", inquiry.id, mine["id"]), "x" * 4001).status_code == 422
+    assert _patch(staff_client, _staff_url("stock_inquiry", inquiry.id, gone["id"]), "revive").status_code == 422
+    assert _row(db, mine["id"]).body_html == "keep"
+
+
+def test_staff_edit_needs_the_kinds_view_permission(staff_client, db, enqueued):
+    inquiry = _inquiry(db)
+    mine = _staff_says(db, "stock_inquiry", inquiry.id, staff_client.actor, "mine")
+    assert _patch(staff_client, _staff_url("stock_inquiry", inquiry.id, mine["id"]), "x").status_code == 403
+
+
+def test_contact_edits_own_portal_comment(portal, db, enqueued):
+    owner = _contact(db, "Owner")
+    inquiry = _inquiry(db, contact_id=owner)
+    mine = _contact_says(db, "stock_inquiry", inquiry.id, owner, "before")
+    enqueued.clear()
+
+    resp = _patch(portal(owner), _portal_url("stock_inquiry", inquiry.id, mine["id"]), "after")
+
+    assert resp.status_code == 200, resp.text
+    assert _row(db, mine["id"]).body_html == "after"
+    assert _row(db, mine["id"]).edited_at is not None
+    assert enqueued == []
+
+
+def test_contact_cannot_edit_a_staff_comment_and_a_stranger_gets_404(portal, db, enqueued):
+    owner = _contact(db, "Owner")
+    stranger = _contact(db, "Stranger")
+    inquiry = _inquiry(db, contact_id=owner)
+    staff_says = _staff_says(db, "stock_inquiry", inquiry.id, _user(db), "from staff")
+    url = _portal_url("stock_inquiry", inquiry.id, staff_says["id"])
+
+    assert _patch(portal(owner), url, "rewrite").status_code == 403
+    assert _patch(portal(stranger), url, "rewrite").status_code == 404
+    assert _row(db, staff_says["id"]).body_html == "from staff"
+
+
+def test_impersonating_admin_edits_the_contacts_comment_through_the_portal(db, enqueued, monkeypatch):
+    owner = _contact(db, "Owner")
+    inquiry = _inquiry(db, contact_id=owner)
+    mine = _contact_says(db, "stock_inquiry", inquiry.id, owner, "before")
+    _impersonation(db, monkeypatch, contact_id=owner)
+    try:
+        resp = _patch(TestClient(app, raise_server_exceptions=False), _portal_url("stock_inquiry", inquiry.id, mine["id"]), "fixed")
+    finally:
+        app.dependency_overrides.clear()
+    assert resp.status_code == 200, resp.text
+    assert _row(db, mine["id"]).body_html == "fixed"
+
+
+# ---- delete ------------------------------------------------------------------------------
+
+
+def _execute_delete(db, comment_id, requested_by):
+    import app.services.record_actions  # noqa: F401  registers the actions
+    from app.services.form_action_registry import get_action
+
+    return get_action("form_comment.delete").execute(db, {"entity_id": comment_id, "requested_by_id": requested_by})
+
+
+def test_form_comment_delete_is_a_registered_destructive_record_action():
+    import app.services.record_actions  # noqa: F401
+    from app.services.form_action_grace import WINDOW_DESTRUCTIVE
+    from app.services.form_action_registry import get_action
+
+    action = get_action("form_comment.delete")
+    assert action is not None
+    assert action.entity_types == ("form_comment",)
+    assert action.window == WINDOW_DESTRUCTIVE
+
+
+def test_delete_without_replies_removes_the_row_and_its_comment_links(db, enqueued, storage):
+    from app.models.entity_attachment import EntityAttachmentLink
+
+    staff = _user(db)
+    inquiry = _inquiry(db)
+    comment = _staff_says(db, "stock_inquiry", inquiry.id, staff, "bye", files=[PDF])
+    att_id = comment["attachments"][0]["attachment_id"]
+    enqueued.clear()
+
+    _execute_delete(db, comment["id"], staff.id)
+
+    assert _row(db, comment["id"]) is None
+    remaining = {(r.entity_type, str(r.entity_id)) for r in db.query(EntityAttachmentLink).filter(EntityAttachmentLink.attachment_id == att_id)}
+    assert ("form_comment", comment["id"]) not in remaining
+    assert enqueued == []
+    assert db.query(Notification).count() == 0
+
+
+def test_delete_with_live_replies_keeps_a_placeholder(staff_client, db, enqueued, storage):
+    staff = staff_client.actor
+    inquiry = _inquiry(db)
+    top = _staff_says(db, "stock_inquiry", inquiry.id, staff, "parent", files=[PDF])
+    _staff_says(db, "stock_inquiry", inquiry.id, _user(db, "Replier"), "child", parent_id=top["id"])
+
+    _execute_delete(db, top["id"], staff.id)
+
+    assert _row(db, top["id"]).deleted_at is not None
+    items = _as_staff_list(staff_client, "stock_inquiry", inquiry.id)
+    placeholder = next(i for i in items if i["id"] == top["id"])
+    assert placeholder["deleted"] is True and placeholder["body"] == "" and placeholder["attachments"] == []
+    assert any(i["parent_id"] == top["id"] and i["body"] == "child" for i in items)
+
+
+def test_delete_by_a_non_author_non_admin_is_403_and_an_admin_may(db, enqueued, monkeypatch):
+    author = _user(db, "Author")
+    intruder = _user(db, "Intruder")
+    boss = _user(db, "Boss")
+    inquiry = _inquiry(db)
+    comment = _staff_says(db, "stock_inquiry", inquiry.id, author, "mine")
+    _roles(monkeypatch, admins=[boss.id])
+
+    with pytest.raises(HTTPException) as exc:
+        _execute_delete(db, comment["id"], intruder.id)
+    assert exc.value.status_code == 403
+    assert _row(db, comment["id"]) is not None
+
+    _execute_delete(db, comment["id"], boss.id)
+    assert _row(db, comment["id"]) is None
+
+
+def test_portal_delete_without_replies_removes_the_row(portal, db, enqueued):
+    owner = _contact(db, "Owner")
+    inquiry = _inquiry(db, contact_id=owner)
+    mine = _contact_says(db, "stock_inquiry", inquiry.id, owner, "bye")
+    enqueued.clear()
+
+    resp = portal(owner).delete(_portal_url("stock_inquiry", inquiry.id, mine["id"]))
+
+    assert resp.status_code in (200, 204), resp.text
+    assert _row(db, mine["id"]) is None
+    assert enqueued == []
+
+
+def test_portal_delete_with_replies_keeps_a_placeholder(portal, db, enqueued):
+    owner = _contact(db, "Owner")
+    inquiry = _inquiry(db, contact_id=owner)
+    mine = _contact_says(db, "stock_inquiry", inquiry.id, owner, "parent")
+    _staff_says(db, "stock_inquiry", inquiry.id, _user(db), "child", parent_id=mine["id"])
+    client = portal(owner)
+
+    assert client.delete(_portal_url("stock_inquiry", inquiry.id, mine["id"])).status_code in (200, 204)
+
+    items = client.get(_portal_url("stock_inquiry", inquiry.id)).json()["items"]
+    placeholder = next(i for i in items if i["id"] == mine["id"])
+    assert (placeholder["deleted"], placeholder["body"], placeholder["attachments"]) == (True, "", [])
+    assert any(i["parent_id"] == mine["id"] for i in items)
+
+
+def test_portal_cannot_delete_a_staff_comment_or_a_strangers_row(portal, db, enqueued):
+    owner = _contact(db, "Owner")
+    stranger = _contact(db, "Stranger")
+    inquiry = _inquiry(db, contact_id=owner)
+    theirs = _staff_says(db, "stock_inquiry", inquiry.id, _user(db), "staff words")
+    url = _portal_url("stock_inquiry", inquiry.id, theirs["id"])
+
+    assert portal(owner).delete(url).status_code == 403
+    assert portal(stranger).delete(url).status_code == 404
+    assert _row(db, theirs["id"]) is not None
+
+
+# ---- can_edit / can_delete / can_reply per viewer -----------------------------------------
+
+
+def _flags(item):
+    return (item["can_edit"], item["can_delete"], item["can_reply"])
+
+
+def test_staff_viewer_flags_own_versus_others_and_replies(staff_client, db, enqueued):
+    inquiry = _inquiry(db)
+    mine = _staff_says(db, "stock_inquiry", inquiry.id, staff_client.actor, "mine")
+    theirs = _staff_says(db, "stock_inquiry", inquiry.id, _user(db, "Other"), "theirs")
+    reply = _staff_says(db, "stock_inquiry", inquiry.id, staff_client.actor, "reply", parent_id=mine["id"])
+    gone = _staff_says(db, "stock_inquiry", inquiry.id, staff_client.actor, "gone")
+    _mark_deleted(db, gone["id"])
+
+    by_id = {i["id"]: i for i in _as_staff_list(staff_client, "stock_inquiry", inquiry.id)}
+
+    assert _flags(by_id[mine["id"]]) == (True, True, True)
+    assert _flags(by_id[theirs["id"]]) == (False, False, True)
+    assert _flags(by_id[reply["id"]]) == (True, True, False)  # one level only
+    assert by_id[gone["id"]]["can_reply"] is False
+    assert by_id[gone["id"]]["can_edit"] is False
+
+
+def test_admin_viewer_may_edit_and_delete_everything(staff_client, db, enqueued, monkeypatch):
+    inquiry = _inquiry(db)
+    theirs = _staff_says(db, "stock_inquiry", inquiry.id, _user(db, "Other"), "theirs")
+    _roles(monkeypatch, admins=[staff_client.actor.id])
+
+    by_id = {i["id"]: i for i in _as_staff_list(staff_client, "stock_inquiry", inquiry.id)}
+
+    assert _flags(by_id[theirs["id"]]) == (True, True, True)
+
+
+def test_portal_viewer_may_edit_and_delete_only_contact_authored_comments(portal, db, enqueued):
+    owner = _contact(db, "Owner")
+    inquiry = _inquiry(db, contact_id=owner)
+    mine = _contact_says(db, "stock_inquiry", inquiry.id, owner, "mine")
+    staff_says = _staff_says(db, "stock_inquiry", inquiry.id, _user(db), "staff")
+
+    by_id = {i["id"]: i for i in portal(owner).get(_portal_url("stock_inquiry", inquiry.id)).json()["items"]}
+
+    assert _flags(by_id[mine["id"]]) == (True, True, True)
+    assert _flags(by_id[staff_says["id"]]) == (False, False, True)
+
+
+# --------------------------------------------------------------------------- #
+# Migration fcom_0003_conv_thread is covered in tests/test_migration_fcom_0003_conv_thread.py
+# --------------------------------------------------------------------------- #
