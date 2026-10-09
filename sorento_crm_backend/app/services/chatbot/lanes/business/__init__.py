@@ -2119,6 +2119,8 @@ def run_fetch(
         # always None, so every restricted field stays hidden by construction.
         "access": ctx.get("access"),
         "localizer": ctx.get("localizer"),
+        # PHOTO-SEND-CAP: the contact's link mode (`turn_runtime.make_tool_runner`).
+        "files_as_links": bool(ctx.get("files_as_links")),
         # E2 (attribute-first asks): the resolver's `predicate` block, carried
         # through the gate untouched (`resolved`/`gate` are the same mutated dict,
         # `gate.py`'s own C4 bypass reads it off `resolver.get("predicate")` the

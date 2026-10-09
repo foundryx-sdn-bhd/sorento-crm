@@ -828,6 +828,8 @@ class ContactService:
             # AI-ALLOWED-GATE: may the chatbot answer this contact at all. Listed by hand.
             "chatbot_allowed": bool(getattr(contact, "chatbot_allowed", False)),
             "chatbot_skip_period_questions": bool(getattr(contact, "chatbot_skip_period_questions", False)),
+            # PHOTO-SEND-CAP: the A/B switch, default OFF (attachment mode). Listed by hand.
+            "chatbot_files_as_links": bool(getattr(contact, "chatbot_files_as_links", False)),
             # CONTACT-BRAND-SCOPE: listed by hand like every field above. The list endpoint
             # fills it for a whole page in one query; here, one contact when a session is given.
             "brands": brands,

@@ -276,6 +276,7 @@ export default function Page() {
     deferredActionSeconds: settings?.deferredActionSeconds ?? 5,
     priceTagAutoCollectDays:
       settings?.priceTagAutoCollectDays ?? AUTO_COLLECT_DAYS_DEFAULT,
+    chatbotFileLinkExpiryDays: settings?.chatbotFileLinkExpiryDays ?? null,
     // The rollout default (plan 5.1) when the blob carries no value yet.
     planGrain: settings?.planGrain ?? 'product',
     // Off is the shipped state (PLAN-local-buy-routing-toggle.md).
@@ -348,6 +349,7 @@ export default function Page() {
       deferredActionSeconds: settings.deferredActionSeconds ?? 5,
       priceTagAutoCollectDays:
         settings.priceTagAutoCollectDays ?? AUTO_COLLECT_DAYS_DEFAULT,
+      chatbotFileLinkExpiryDays: settings.chatbotFileLinkExpiryDays ?? null,
       planGrain: settings.planGrain ?? 'product',
       localBuyRoutingEnabled: Boolean(settings.localBuyRoutingEnabled),
       borrowFromOrderEnabled: Boolean(settings.borrowFromOrderEnabled),
@@ -399,6 +401,7 @@ export default function Page() {
         deferred_action_seconds: values.deferredActionSeconds,
         // r9 D10.
         price_tag_auto_collect_days: values.priceTagAutoCollectDays,
+        chatbot_file_link_expiry_days: values.chatbotFileLinkExpiryDays,
         plan_grain: values.planGrain,
         local_buy_routing_enabled: values.localBuyRoutingEnabled,
         borrow_from_order_enabled: values.borrowFromOrderEnabled,
@@ -977,6 +980,35 @@ export default function Page() {
                     An office-printed request waiting to be picked up closes
                     itself after this many days. 0 leaves it open.
                   </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="chatbotFileLinkExpiryDays"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Chatbot file link expiry (days)</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={3650}
+                      placeholder="Never expires"
+                      value={field.value ?? ''}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v === '') {
+                          field.onChange(null);
+                          return;
+                        }
+                        const n = parseInt(v, 10);
+                        if (!Number.isNaN(n)) field.onChange(n);
+                      }}
+                    />
+                  </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
