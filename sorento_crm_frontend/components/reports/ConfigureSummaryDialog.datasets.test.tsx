@@ -89,7 +89,6 @@ function open(
       value={value}
       onApply={onApply}
       datasetValue={datasetValue}
-      // @ts-expect-error new prop, the contract under test
       datasetLabel={datasetLabel}
     />,
   );
