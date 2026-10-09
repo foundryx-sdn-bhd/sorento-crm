@@ -17,10 +17,12 @@ of the report apply to this grain exactly as to the ask grain: they are conditio
 ask table, which this base joins. The registry also validates the report's default view
 (outcome by week, asks and failed) against EVERY dataset, so those four are carried here.
 
-**`asks` and `failed` here count an ask once per product it carries.** An ask naming three
-products is three rows. They are carried only because the registry needs them to validate
-the default view; on this grain the measures to read are `named` (asks that named the
-product) and `shown` (replies that showed it), and a true ask count is the Asks view's.
+**`asks` and `failed` here count ITEM ROWS, not asks.** An ask naming three products is three
+rows, so the measure is labelled "Item rows" while keeping the key `asks`: the registry
+validates the report's one default view (outcome by week, asks and failed) against every
+dataset, so the key must exist here. On this grain the measures to read are `named` (asks
+that named the product) and `shown` (replies that showed it); a true ask count is the Asks
+view's.
 """
 from __future__ import annotations
 
@@ -50,7 +52,7 @@ COLUMNS: Tuple[reg.Column, ...] = (
     reg.Column("asked_at", "Asked on", "date", "date", lambda c: ASKS.c.asked_at, size=120),
     *asks_ds.ask_dimensions(),
     reg.Column("product", "Product", "text", "dimension", lambda c: _PRODUCTS.c.product_code, size=160),
-    reg.Column("asks", "Asks", "integer", "measure", lambda c: sa.literal_column("1"), size=80),
+    reg.Column("asks", "Item rows", "integer", "measure", lambda c: sa.literal_column("1"), size=80),
     reg.Column("failed", "Failed", "integer", "measure", lambda c: _FAILED, size=80),
     reg.Column("named", "Named", "integer", "measure", lambda c: _NAMED, size=80),
     reg.Column("shown", "Shown", "integer", "measure", lambda c: _SHOWN, size=80),

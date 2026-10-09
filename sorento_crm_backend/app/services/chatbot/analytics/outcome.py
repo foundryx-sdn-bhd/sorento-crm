@@ -77,6 +77,15 @@ def _looked_up_facts(turn: dict[str, Any]) -> dict[str, Any] | None:
     return None if record is None else _dict(record.get("facts"))
 
 
+def _still_asking(turn: dict[str, Any]) -> bool:
+    """A `required_ask` event that actually asked this turn. The low-stock and report lanes
+    write `done: False` while they still need a slot filled (and `done: True` once settled);
+    the engine writes `{verdict_rule, ask}` on the turn AFTER the question, when the
+    customer answered it or it was dropped. Only the first is a question put to the
+    customer."""
+    return any(e.get("done") is False for e in _events(turn, "required_ask"))
+
+
 def turn_outcome(turn: dict[str, Any]) -> tuple[str, str | None]:
     """`(outcome, failure_reason)` for one closed turn. First matching rule wins.
 
@@ -109,12 +118,12 @@ def turn_outcome(turn: dict[str, Any]) -> tuple[str, str | None]:
     if branch == "not_supported":
         return "cannot_do", "cannot_do"
 
-    if branch in _CLARIFY_BRANCHES or plan.get("ask") or _events(turn, "required_ask"):
+    if branch in _CLARIFY_BRANCHES or plan.get("ask") or _still_asking(turn):
         return "clarified", None
 
     looked_up = _looked_up_facts(turn)
     if (looked_up or {}).get("missed") or any(
-        not e.get("answered") for e in _events(turn, "crossdomain")
+        "answered" in e and e["answered"] is None for e in _events(turn, "crossdomain")
     ):
         return "missed", "missed"
 

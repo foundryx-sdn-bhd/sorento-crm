@@ -282,6 +282,60 @@ def test_a_console_test_world_frame_writes_no_snapshot(session_factory):
     assert episode_rows(session_factory, contact_respond_id=cid) == []
 
 
+# --------------------------------------------------------------------------- fix round 1
+
+
+def test_a_superseded_retry_attempt_is_not_counted_in_the_episode(session_factory):
+    """Only the latest attempt of a respond message counts: a failed first try that was
+    retried successfully is one answered turn, not a failure plus an answer."""
+    cid = _cid("retry")
+    seed_contact(session_factory, cid)
+    first = seed_turn(
+        session_factory, cid, created_at=_minute(0), message_id="ZZT-ep-retry", attempt=1,
+        records=_inventory_answer(), status="failed", stage_name="replied",
+    )
+    second = seed_turn(
+        session_factory, cid, created_at=_minute(1), message_id="ZZT-ep-retry", attempt=2, records=_inventory_answer()
+    )
+    other = seed_turn(session_factory, cid, created_at=_minute(2), records=_inventory_answer())
+    reset = seed_turn(session_factory, cid, created_at=_minute(10), records=[apply_event(topic_reset=True)])
+    _record_all(session_factory, [second, other])
+    assert first and reset
+
+    frame = _close_episode(session_factory, cid, reset)
+
+    row = episode_rows(session_factory, frame_id=frame.id)[0]
+    assert (row.turn_count, row.ask_count, row.failed_turns, row.last_outcome) == (2, 2, 0, "answered")
+
+
+def test_the_snapshot_exists_even_when_the_inserted_frame_is_itself_trimmed(session_factory):
+    """A backfill-shaped close: the contact already holds 20 frames that are all newer, so
+    the retention trim drops the frame just written. The snapshot is taken first."""
+    cid = _cid("selftrim")
+    seed_contact(session_factory, cid)
+    writer = session_factory()
+    for i in range(memory_mod.KEEP_EPISODES):
+        writer.add(
+            ConversationFrame(
+                id=str(uuid.uuid4()), contact_id=cid, contact_respond_id=cid, space_id="0", channel="whatsapp",
+                domain="inventory", status="closed", close_reason="topic_switch", turn_ids=[f"ZZT-synthetic-{cid}-{i}"],
+                started_at=datetime(2026, 9, 1), opened_at=datetime(2026, 9, 1),
+                last_activity_at=datetime(2026, 9, 30, 0, i), closed_at=datetime(2026, 9, 30, 1, i), is_test=False,
+            )
+        )
+    writer.commit()
+    t1 = seed_turn(session_factory, cid, created_at=_minute(0), records=_inventory_answer())
+    reset = seed_turn(session_factory, cid, created_at=_minute(5), records=[apply_event(topic_reset=True)])
+    _record_all(session_factory, [t1])
+
+    frame = _close_episode(session_factory, cid, reset)
+
+    assert frame is None, "the trim removed the new frame, so the writer reads nothing back"
+    rows = episode_rows(session_factory, contact_respond_id=cid)
+    assert len(rows) == 1 and rows[0].turn_count == 1
+    assert str(fact_rows(session_factory, turn_id=t1)[0].episode_id) == str(rows[0].frame_id)
+
+
 # --------------------------------------------------------------------------- schema privacy
 
 

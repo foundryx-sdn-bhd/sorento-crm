@@ -577,3 +577,113 @@ def test_model_classes_are_exported(session_factory):
     for name in ("ChatAskFact", "ChatAskItem", "ChatEpisodeFact"):
         assert hasattr(models, name), name
         assert models.__dict__[name].__table__.schema == "chatbot", name
+
+
+# --------------------------------------------------------------------------- fix round 1
+
+
+def _set_envelope(session_factory, turn_id: str, envelope: dict) -> None:
+    from app.models.chatbot_turn import ChatbotTurn
+
+    db = session_factory()
+    db.query(ChatbotTurn).filter(ChatbotTurn.id == turn_id).update({ChatbotTurn.envelope: envelope})
+    db.commit()
+
+
+def test_an_image_attachment_marks_the_ask_as_media(session_factory):
+    """The stored envelope is `Envelope.model_dump()`: the attachment sits on the inner
+    respond message, `message.message.message.attachment`."""
+    cid = _cid("media")
+    seed_contact(session_factory, cid)
+    turn_id = seed_turn(session_factory, cid)
+    _set_envelope(
+        session_factory,
+        turn_id,
+        {"contact": {"id": "ZZT"}, "message": {"message": {"message": {"type": "attachment", "attachment": {"type": "image", "url": "https://zzt.test/a.jpg"}}}}},
+    )
+    _record(session_factory, turn_id)
+    assert fact_rows(session_factory, turn_id=turn_id)[0].is_media is True
+
+
+def test_a_text_message_is_not_media(session_factory):
+    cid = _cid("nomedia")
+    seed_contact(session_factory, cid)
+    turn_id = seed_turn(session_factory, cid)
+    _record(session_factory, turn_id)
+    assert fact_rows(session_factory, turn_id=turn_id)[0].is_media is False
+
+
+def test_shown_rows_are_products_only_a_brand_code_is_not_shown(session_factory):
+    cid = _cid("shownbrand")
+    seed_catalogue(session_factory, brand_codes=("ZZTSHOWBR",))
+    seed_contact(session_factory, cid)
+    turn_id = seed_turn(session_factory, cid, records=answered_trace(shown=(("brand", "ZZTSHOWBR"),)))
+    _record(session_factory, turn_id)
+    assert item_rows(session_factory, fact_rows(session_factory, turn_id=turn_id)[0].id) == []
+
+
+def test_a_code_in_two_companies_resolves_to_the_facts_own_company(session_factory):
+    import uuid
+
+    from app.models.base import set_company_scope
+    from app.models.company import Company
+    from app.models.product import Product, ProductCategory, UnitOfMeasure
+
+    cid = _cid("twoco")
+    sorento = seed_catalogue(session_factory, product_codes=("ZZTTWOCO",))["products"]["ZZTTWOCO"]
+    other_company = str(uuid.uuid4())
+    db = session_factory()
+    set_company_scope(db, None)
+    db.add(Company(id=other_company, name="ZZT Other Co", code=f"ZZ{uuid.uuid4().hex[:6]}"))
+    db.flush()
+    category, uom = str(uuid.uuid4()), str(uuid.uuid4())
+    db.add(ProductCategory(id=category, category_code=f"ZZTC{uuid.uuid4().hex[:6]}", category_name="ZZT", company_id=other_company))
+    db.add(UnitOfMeasure(id=uom, uom_code=f"ZZTU{uuid.uuid4().hex[:6]}", uom_name="ZZT", company_id=other_company))
+    db.flush()
+    foreign = str(uuid.uuid4())
+    db.add(
+        Product(id=foreign, product_code="ZZTTWOCO", product_name="ZZT twin", category_id=category,
+                base_uom_id=uom, list_price=1, is_active=True, company_id=other_company)
+    )
+    db.commit()
+
+    seed_contact(session_factory, cid, customer=True)  # a Sorento dealer
+    named = seed_turn(session_factory, cid, records=answered_trace(named=(("product", "ZZTTWOCO"),)))
+    _record(session_factory, named)
+    items = item_rows(session_factory, fact_rows(session_factory, turn_id=named)[0].id)
+    assert [i.ref_id for i in items] == [sorento]
+
+    stranger = _cid("twoco2")
+    seed_contact(session_factory, stranger)  # no company: two matches, so no item
+    blind = seed_turn(session_factory, stranger, records=answered_trace(named=(("product", "ZZTTWOCO"),)))
+    _record(session_factory, blind)
+    assert item_rows(session_factory, fact_rows(session_factory, turn_id=blind)[0].id) == []
+
+
+def test_the_sweep_isolates_one_bad_turn(session_factory, monkeypatch):
+    cid = _cid("badturn")
+    seed_contact(session_factory, cid)
+    day = lambda h: datetime(2026, 9, 12, h, 0, tzinfo=UTC)  # noqa: E731
+    good_a = seed_turn(session_factory, cid, created_at=day(1))
+    bad = seed_turn(
+        session_factory, cid, created_at=day(2),
+        records=[apply_event(domain_hint="zztboom", domains=["zztboom"]), looked_up(sections=1)],
+    )
+    good_b = seed_turn(session_factory, cid, created_at=day(3))
+
+    module = facts_mod()
+    real_items = module._items
+
+    def flaky(db, flat, company_id):
+        if flat["domain"] == "zztboom":
+            raise RuntimeError("ZZT bad turn")
+        return real_items(db, flat, company_id)
+
+    monkeypatch.setattr(module, "_items", flaky)
+
+    written = module.sweep(session_factory(), since=datetime(2026, 9, 5, tzinfo=UTC))
+
+    assert written == 2
+    have = {r.turn_id for r in fact_rows(session_factory, contact_respond_id=cid)}
+    assert have == {good_a, good_b}
+    assert bad not in have

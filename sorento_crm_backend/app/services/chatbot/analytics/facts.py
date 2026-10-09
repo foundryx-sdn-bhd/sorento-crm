@@ -97,7 +97,10 @@ def _who(db: Session, contact_respond_id: str) -> dict[str, Any]:
     for two accounts; the partial unique index allows one primary), else the first by id.
     """
     contact_id = db.execute(
-        select(_CONTACTS.c.id).where(_CONTACTS.c.respond_io_id == contact_respond_id).limit(1)
+        select(_CONTACTS.c.id)
+        .where(_CONTACTS.c.respond_io_id == contact_respond_id)
+        .order_by(_CONTACTS.c.created_at.asc(), _CONTACTS.c.id.asc())
+        .limit(1)
     ).scalar()
     if contact_id is None:
         return {"contact_id": None, "customer_id": None, "company_id": None, "audience": "unknown"}
@@ -161,7 +164,7 @@ def _items(db: Session, flat: dict[str, Any], company_id: str | None) -> list[di
     products = _lookup(
         db, _PRODUCTS, _PRODUCTS.c.product_code, [*named.get("product", []), *shown]
     )
-    brands = _lookup(db, _BRANDS, _BRANDS.c.brand_code, [*named.get("brand", []), *shown])
+    brands = _lookup(db, _BRANDS, _BRANDS.c.brand_code, named.get("brand", []))
 
     out: dict[tuple[str, str, str], str] = {}
 
@@ -174,11 +177,7 @@ def _items(db: Session, flat: dict[str, Any], company_id: str | None) -> list[di
     for code in named.get("brand", []):
         add("brand", _pick(brands.get(code.lower(), []), company_id), "named", "parser")
     for code in shown:
-        ref = _pick(products.get(code.lower(), []), company_id)
-        if ref is not None:
-            add("product", ref, "shown", "reply")
-        else:
-            add("brand", _pick(brands.get(code.lower(), []), company_id), "shown", "reply")
+        add("product", _pick(products.get(code.lower(), []), company_id), "shown", "reply")
     return [
         {"kind": kind, "ref_id": ref, "role": role, "resolved_by": by}
         for (kind, ref, role), by in out.items()
@@ -189,9 +188,13 @@ def _items(db: Session, flat: dict[str, Any], company_id: str | None) -> list[di
 
 
 def _is_media(envelope: Any) -> bool:
-    """An attachment rides on the envelope's inner message; its words are not read."""
-    inner = ((envelope or {}).get("message") or {}).get("message") if isinstance(envelope, dict) else None
-    return bool(isinstance(inner, dict) and inner.get("attachment"))
+    """An attachment rides on the inner respond message. The stored envelope is
+    `Envelope.model_dump()`, so that message is `message.message.message` (the engine's
+    `_inner_message`). Its words are not read."""
+    node: Any = envelope
+    for key in ("message", "message", "message"):
+        node = node.get(key) if isinstance(node, dict) else None
+    return bool(isinstance(node, dict) and node.get("attachment"))
 
 
 def _reply_ms(row: ChatbotTurn) -> int | None:
@@ -350,6 +353,16 @@ def _as_utc(when: datetime) -> datetime:
     return when.replace(tzinfo=timezone.utc) if when.tzinfo is None else when
 
 
+def _latest_attempts(rows: list[ChatbotTurn]) -> list[ChatbotTurn]:
+    """Only the latest attempt of a respond message counts toward an episode, as it does
+    toward the facts: a failed first try that was retried is one turn, not two."""
+    newest: dict[str, int] = {}
+    for r in rows:
+        if r.message_id is not None:
+            newest[r.message_id] = max(newest.get(r.message_id, 0), r.attempt)
+    return [r for r in rows if r.message_id is None or r.attempt == newest[r.message_id]]
+
+
 def snapshot_episode(db: Session, frame_id: str, turn_rows: list[ChatbotTurn]) -> None:
     """Write the analytic row of a closed episode and stamp `episode_id` on its asks.
 
@@ -377,7 +390,7 @@ def snapshot_episode(db: Session, frame_id: str, turn_rows: list[ChatbotTurn]) -
     if frame is None or not turn_rows:
         return
 
-    ordered = sorted(turn_rows, key=lambda r: r.created_at)
+    ordered = _latest_attempts(sorted(turn_rows, key=lambda r: r.created_at))
     outcomes = [outcome_mod.turn_outcome(_turn_dict(r))[0] for r in ordered]
     opened = frame.opened_at or frame.started_at
     closed = frame.closed_at or frame.last_activity_at
@@ -402,6 +415,6 @@ def snapshot_episode(db: Session, frame_id: str, turn_rows: list[ChatbotTurn]) -
     )
     db.execute(
         update(_FACTS)
-        .where(_FACTS.c.turn_id.in_([r.id for r in ordered]))
+        .where(_FACTS.c.turn_id.in_([r.id for r in turn_rows]))
         .values(episode_id=frame_id)
     )

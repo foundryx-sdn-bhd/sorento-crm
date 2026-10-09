@@ -74,10 +74,9 @@ def _fact(db, *, outcome: str, when: datetime, audience: str = "dealer", **extra
         asked_at=when,
         channel="whatsapp",
         outcome=outcome,
-        tools=[],
         is_media=False,
         phantom_dropped=False,
-        **extra,
+        **{"tools": [], **extra},
     )
     db.add(row)
     db.flush()
@@ -199,18 +198,18 @@ def test_the_pivot_counts_asks_by_outcome_and_failed_only_the_failure_outcomes(d
 
     asks = {outcome: _dec(totals.get("asks")) for outcome, totals in summary.row_totals.items()}
     assert asks == {
-        "answered": 4,  # 8 Sep, 9 Sep (unknown), 19 Sep, and the 13 Sep UTC edge that is Monday in Malaysia
-        "technical": 1,
-        "refused_policy": 1,
-        "cannot_do": 1,
-        "missed": 1,
-        "clarified": 1,
-        "answered_empty": 1,
-        "handover": 1,
+        "Answered": 4,  # 8 Sep, 9 Sep (unknown), 19 Sep, and the 13 Sep UTC edge that is Monday in Malaysia
+        "Technical failure": 1,
+        "Refused by policy": 1,
+        "Cannot do": 1,
+        "Missed": 1,
+        "Asked back": 1,
+        "Answered, nothing found": 1,
+        "Handed over": 1,
     }
     failed = {outcome: _dec(totals.get("failed")) for outcome, totals in summary.row_totals.items()}
-    assert failed["technical"] == failed["cannot_do"] == failed["missed"] == 1
-    for not_failed in ("answered", "refused_policy", "clarified", "answered_empty", "handover"):
+    assert failed["Technical failure"] == failed["Cannot do"] == failed["Missed"] == 1
+    for not_failed in ("Answered", "Refused by policy", "Asked back", "Answered, nothing found", "Handed over"):
         assert failed[not_failed] == 0, not_failed
     assert _dec(summary.grand_total["asks"]) == 11
     assert _dec(summary.grand_total["failed"]) == 3
@@ -219,8 +218,8 @@ def test_the_pivot_counts_asks_by_outcome_and_failed_only_the_failure_outcomes(d
 def test_noise_is_not_counted_by_default(db):
     _seed_overview(db)
     summary = _run(db).layouts.summary
-    assert "noise" not in summary.row_values
-    assert "noise" not in summary.row_totals
+    assert "Noise" not in summary.row_values
+    assert "Noise" not in summary.row_totals
 
 
 def test_the_weeks_follow_the_malaysia_clock(db):
@@ -228,7 +227,7 @@ def test_the_weeks_follow_the_malaysia_clock(db):
 
     summary = _run(db).layouts.summary
 
-    by_week = sorted(summary.cells["answered"].items())
+    by_week = sorted(summary.cells["Answered"].items())
     assert [_dec(cell["asks"]) for _week, cell in by_week] == [2, 2], (
         "week 1 holds 8 and 9 Sep; week 2 holds 19 Sep and the 13 Sep 17:00 UTC ask (Mon 01:00 in Kuala Lumpur)"
     )
@@ -244,6 +243,43 @@ def test_staff_are_excluded_by_default_and_included_when_chosen(db):
     assert _dec(default.grand_total["asks"]) == 11
     assert _dec(staff_only.grand_total["asks"]) == 1
     assert _dec(everyone.grand_total["asks"]) == 12
+
+
+def test_the_default_period_opens_on_the_first_day_of_the_traces(db):
+    param = next(p for p in _definition().params if p.key == "period")
+    assert param.resolved_default()["from"] == "2026-09-05"
+
+
+def test_the_pivot_rows_and_the_detail_cells_read_words_not_codes(db):
+    _fact(db, outcome="technical", when=_day(9, 10), failure_reason="technical", audience="dealer", branch_kind="not_supported")
+    _fact(db, outcome="refused_policy", when=_day(9, 11), audience="unknown", branch_kind="access_denied")
+
+    result = _run(db)
+
+    assert set(result.layouts.summary.row_values) == {"Technical failure", "Refused by policy"}
+    detail = result.layouts.detail
+    keys = {c.key for c in detail.columns}
+    assert {"outcome", "audience", "failure_reason", "branch_kind"} <= keys
+    by_outcome = {row["outcome"]: row for row in detail.rows}
+    technical = by_outcome["Technical failure"]
+    assert technical["audience"] == "Dealers"
+    assert technical["failure_reason"] == "Technical failure"
+    assert technical["branch_kind"] == "Not supported"
+    assert by_outcome["Refused by policy"]["audience"] == "Unknown contacts"
+    assert by_outcome["Refused by policy"]["branch_kind"] == "Access refused"
+
+
+def test_the_detail_carries_rows_offered_reply_seconds_and_tools(db):
+    _fact(db, outcome="answered", when=_day(9, 10), rows_offered=3, reply_ms=2400)
+    _fact(db, outcome="answered", when=_day(9, 11), tools=["crm_stock", "crm_price"])
+
+    detail = _run(db).layouts.detail
+
+    assert {"rows_offered", "reply_seconds", "tools"} <= {c.key for c in detail.columns}
+    rows = detail.rows
+    first = next(r for r in rows if r["rows_offered"] == 3)
+    assert first["reply_seconds"] == 2
+    assert next(r for r in rows if r["tools"]) ["tools"] == "crm_stock, crm_price"
 
 
 def test_the_row_count_is_the_filtered_ask_count(db):
@@ -435,6 +471,19 @@ def test_meta_and_run_are_403_without_the_permission(api):
     assert client.get(f"/api/v1/reports/{KEY}").status_code == 403
     body = {"params": {"period": SEPTEMBER}, "view": None}
     assert client.post(f"/api/v1/reports/{KEY}/run", json=body).status_code == 403
+
+
+def test_export_and_view_creation_are_403_without_the_permission(api):
+    client, allow = api
+    allow.clear()
+    allow.add("system.chat_history.view")
+    body = {"params": {"period": SEPTEMBER}, "view": None}
+    assert client.post(f"/api/v1/reports/{KEY}/export", json=body).status_code == 403
+    view = {
+        "params": {}, "detail": {"columns": [], "order": []},
+        "pivot": {"rows": "outcome", "cols": "week", "measures": ["asks"]},
+    }
+    assert client.post(f"/api/v1/reports/{KEY}/views", json={"name": "ZZT mine", "view": view}).status_code == 403
 
 
 def test_run_returns_the_pivot_to_a_holder(api, db):

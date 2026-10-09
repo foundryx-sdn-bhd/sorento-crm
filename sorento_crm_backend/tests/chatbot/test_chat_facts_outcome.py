@@ -153,8 +153,22 @@ def test_plan_ask_is_clarified():
     assert _outcome(turn_dict(apply_event(ask="which size?"))) == ("clarified", None)
 
 
-def test_required_ask_event_is_clarified():
-    assert _outcome(turn_dict(event("required_ask", ask="which size?"))) == ("clarified", None)
+def test_required_ask_event_still_asking_is_clarified():
+    # The low-stock and report lanes write `done: False` while they are still asking.
+    assert _outcome(turn_dict(event("required_ask", ask="low_stock_report", done=False))) == ("clarified", None)
+
+
+def test_required_ask_event_that_is_done_is_not_clarified():
+    turn = turn_dict(event("required_ask", ask="low_stock_report", done=True), looked_up(sections=2))
+    assert _outcome(turn) == ("answered", None)
+
+
+def test_a_required_ask_answered_or_dropped_does_not_hide_a_miss():
+    """The engine writes `{verdict_rule, ask}` on the turn AFTER the question: the customer
+    answered it (or it was dropped), so nothing was asked on this turn."""
+    for rule in ("required_ask_answer", "required_ask_dropped"):
+        turn = turn_dict(event("required_ask", verdict_rule=rule, ask="low_stock_report"), looked_up(missed=["stock"]))
+        assert _outcome(turn) == ("missed", "missed"), rule
 
 
 def test_clarified_beats_missed():
@@ -179,6 +193,13 @@ def test_crossdomain_that_answered_is_not_a_miss():
         event("crossdomain", domain="inventory", rungs_tried=["incoming_po"], answered="incoming_po"),
         looked_up(sections=1),
     )
+    assert _outcome(turn) == ("answered", None)
+
+
+def test_a_crossdomain_event_of_the_skipped_shape_is_not_a_miss():
+    """Only an event that reports `answered: null` found nothing; a skipped ladder
+    writes no `answered` key at all."""
+    turn = turn_dict(event("crossdomain", domain="inventory", skipped="no_ladder"), looked_up(sections=1))
     assert _outcome(turn) == ("answered", None)
 
 

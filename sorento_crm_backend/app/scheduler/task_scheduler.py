@@ -2,6 +2,7 @@
 import logging
 from contextlib import contextmanager
 from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from app.database import SessionLocal
 from app.models.base import set_company_scope
@@ -769,11 +770,12 @@ def start_scheduler():
         replace_existing=True,
     )
 
-    # Chat facts sweep (CA-1): daily. The close hook writes each turn's fact and never fails
-    # a turn, so a fault leaves a gap; the last three days are re-swept to refill it.
+    # Chat facts sweep (CA-1): nightly at 02:15 Malaysia time, when the dealers are asleep.
+    # The close hook writes each turn's fact and never fails a turn, so a fault leaves a
+    # gap; the last three days are re-swept to refill it.
     scheduler.add_job(
         _chat_facts_sweep_tick,
-        trigger=IntervalTrigger(hours=24),
+        trigger=CronTrigger(hour=2, minute=15, timezone="Asia/Kuala_Lumpur"),
         id="chat_facts_sweep",
         name="Chat analytics facts sweep",
         replace_existing=True,

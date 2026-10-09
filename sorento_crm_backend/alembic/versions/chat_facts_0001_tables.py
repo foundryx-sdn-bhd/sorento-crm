@@ -33,7 +33,10 @@ depends_on = None
 _SCHEMA = "chatbot"
 _SLUG = "chatbot.analytics.view"
 _NAME = "View Chat Overview"
-_DESCRIPTION = "Permission to open the Chat overview report: how the chatbot answered, by outcome, week and product."
+_DESCRIPTION = (
+    "Permission to open the Chat overview report: how the chatbot answered, by outcome, week and product. "
+    "Covers every company's customers."
+)
 _SOURCE_SLUG = "system.chat_history.view"
 
 
@@ -93,6 +96,21 @@ def upgrade() -> None:
     )
     op.create_index(
         "ix_chat_ask_facts_outcome", "chat_ask_facts", ["outcome"], schema=_SCHEMA, if_not_exists=True
+    )
+
+    # The writer matches a named code with `lower(code) IN (...)`; without these the match is
+    # a scan of the catalogue per ask. Public-schema tables, so plain names.
+    op.create_index(
+        "ix_products_lower_product_code",
+        "products",
+        [sa.text("lower(product_code)")],
+        if_not_exists=True,
+    )
+    op.create_index(
+        "ix_brands_lower_brand_code",
+        "brands",
+        [sa.text("lower(brand_code)")],
+        if_not_exists=True,
     )
 
     op.create_table(
@@ -183,6 +201,8 @@ def downgrade() -> None:
     )
     bind.execute(sa.text("DELETE FROM user_permissions WHERE slug = :slug"), {"slug": _SLUG})
 
+    op.drop_index("ix_brands_lower_brand_code", table_name="brands", if_exists=True)
+    op.drop_index("ix_products_lower_product_code", table_name="products", if_exists=True)
     op.drop_table("chat_episode_facts", schema=_SCHEMA, if_exists=True)
     op.drop_table("chat_ask_items", schema=_SCHEMA, if_exists=True)
     op.drop_table("chat_ask_facts", schema=_SCHEMA, if_exists=True)

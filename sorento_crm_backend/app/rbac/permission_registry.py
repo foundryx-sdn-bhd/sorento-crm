@@ -829,7 +829,7 @@ PERMISSION_REGISTRY.extend([
     {
         "slug": "chatbot.analytics.view",
         "name": "View Chat Overview",
-        "description": "Permission to open the Chat overview report: how the chatbot answered, by outcome, week and product.",
+        "description": "Permission to open the Chat overview report: how the chatbot answered, by outcome, week and product. Covers every company's customers.",
     },
 ])
 
