@@ -140,6 +140,21 @@ def test_the_share_read_never_reads_over_100(db):
     assert "17 Apr to 21 Jul: from message text (estimated), 100% of 2 messages read." in _run(db).note
 
 
+def test_a_text_era_line_carries_the_reply_rules_once(db):
+    """Crew rulings Q1 and Q3: the notes say how a text-era reply was found."""
+    note = _run(db, params={"period": {"kind": "custom", "from": "2026-07-01", "to": "2026-08-31"}}).note
+    assert note.count(chat_asks().TEXT_ERA_CAVEAT) == 1
+    assert "24 hours" in chat_asks().TEXT_ERA_CAVEAT
+    assert "no sender" in chat_asks().TEXT_ERA_CAVEAT
+    assert chat_asks().TEXT_ERA_CAVEAT not in _run(db, params={"period": OCTOBER}).note
+
+
+def chat_asks():
+    from app.services.reports.datasets import chat_asks as module
+
+    return module
+
+
 # --------------------------------------------------------------------------- default period
 
 

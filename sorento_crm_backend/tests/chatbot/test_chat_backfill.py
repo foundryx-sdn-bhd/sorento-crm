@@ -311,6 +311,25 @@ def test_bot_api_workflow_and_unknown_senders_are_the_bots_reply(session_factory
     assert facts(session_factory, h)[0].outcome == "clarified"
 
 
+@pytest.mark.parametrize("hours,outcome", [(23, "answered"), (25, "no_reply")])
+def test_the_fallback_reply_window_closes_after_24_hours(session_factory, taxonomy, hours, outcome):
+    # Crew ruling Q3 (b): with no later incoming row, a send more than 24 h later is not a reply.
+    c = contact_id()
+    h = seed_history(session_factory, c)
+    seed_history(session_factory, c, kind="outgoing", words=REPLY_WORDS, at=A_TIME + timedelta(hours=hours))
+    run(session_factory, answered(outcome="answered"))
+    assert facts(session_factory, h)[0].outcome == outcome
+
+
+def test_the_window_cap_holds_even_before_the_next_incoming_row(session_factory, taxonomy):
+    c = contact_id()
+    h = seed_history(session_factory, c)
+    seed_history(session_factory, c, kind="outgoing", words=REPLY_WORDS, at=A_TIME + timedelta(hours=30))
+    seed_history(session_factory, c, at=A_TIME + timedelta(hours=31), words="ZZT next")
+    run(session_factory, answered(outcome="answered"))
+    assert facts(session_factory, h)[0].outcome == "no_reply"
+
+
 def test_the_reply_the_model_sees_is_cut_to_300_characters(session_factory, taxonomy):
     c = contact_id()
     seed_history(session_factory, c)
