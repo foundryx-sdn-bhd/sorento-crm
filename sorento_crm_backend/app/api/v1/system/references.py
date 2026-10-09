@@ -3356,7 +3356,13 @@ def resolve_reference_post(
         # every bound phrase out of the remainder before anything reads it
         # again. Digits are already dropped by `_content_words` downstream,
         # so "250mm" needs no handling here.
-        bound_words = [phrase for phrases in understanding.bound_phrases.values() for phrase in phrases]
+        # An empty phrase beside grounded specs has no understanding to read (the specs alone
+        # describe the set).
+        bound_words = [
+            phrase
+            for phrases in (understanding.bound_phrases if understanding else {}).values()
+            for phrase in phrases
+        ]
         if bound_words:
             query_text = _strip_predicate_words(query_text, bound_words)
 

@@ -299,6 +299,11 @@ def _build_json_schema() -> dict[str, Any]:
             # `sales_channel` above (no recorded emission carries them).
             "sales_basis": {"type": ["string", "null"], "enum": ["ordered", "delivered", "invoiced", None]},
             "sales_company": string_or_null,
+            # PROMO-SUBJECT-FILTER R5: the promotion KIND the message names (a
+            # `promotion_types.type_code` the prompt lists at runtime), null for none or
+            # for a word that fits no listed kind. Required for strict mode, tolerated
+            # absent (no recorded emission carries it).
+            "promotion_kind": string_or_null,
             "correction": {"type": ["boolean", "null"]},
             # PLAN-chatbot-customer-scope-29sep D2: "my" / "me" / "our" as the asker's own
             # account. Required for strict mode, tolerated absent (older prompt versions).
@@ -551,6 +556,7 @@ def _build_json_schema() -> dict[str, Any]:
             "measure",
             "sales_basis",
             "sales_company",
+            "promotion_kind",
             "correction",
             "self_reference",
             "routing",
@@ -615,6 +621,7 @@ TOLERATED_ABSENT: frozenset[str] = frozenset(
         "measure",
         "sales_basis",
         "sales_company",
+        "promotion_kind",
         "proceed_anyway",
         "open_question_answer",
         "self_reference",
