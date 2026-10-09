@@ -25,6 +25,7 @@ export function toFormComment(raw: Raw): FormComment {
     body: String(raw.body ?? ''),
     authorName: String(raw.author_name ?? ''),
     authorKind: raw.author_kind === 'submitter' ? 'submitter' : 'staff',
+    postedByName: (raw.posted_by_name as string | null | undefined) || null,
     createdAt: String(raw.created_at ?? ''),
     attachments: ((raw.attachments as Raw[] | undefined) ?? []).map((a) => ({
       attachmentId: String(a.attachment_id),

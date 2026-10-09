@@ -17,6 +17,8 @@ export interface FormComment {
   body: string;
   authorName: string;
   authorKind: 'staff' | 'submitter';
+  /** Set when an admin viewing as the contact posted it on the contact's behalf. */
+  postedByName: string | null;
   createdAt: string;
   attachments: FormCommentAttachment[];
 }

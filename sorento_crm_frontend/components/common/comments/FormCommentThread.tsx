@@ -94,6 +94,11 @@ export function FormCommentThread({
                     {formatDateTime(comment.createdAt)}
                   </span>
                 </div>
+                {comment.postedByName ? (
+                  <span className="text-xs text-muted-foreground">
+                    Posted by {comment.postedByName} on behalf
+                  </span>
+                ) : null}
                 {comment.body ? (
                   <p className="whitespace-pre-wrap break-words text-sm">
                     {comment.body}

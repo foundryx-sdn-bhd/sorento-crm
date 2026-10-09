@@ -22,7 +22,10 @@ vi.mock('@/components/common/AttachmentPreviewModal', () => ({
   default: () => null,
 }));
 
-import { fetchSubmissionComments, postSubmissionComment } from '../lib/portal-client';
+import {
+  fetchSubmissionComments,
+  postSubmissionComment,
+} from '../lib/portal-client';
 import { PortalSubmissionComments } from './PortalSubmissionComments';
 import type { FormComment } from '@/types/formComments';
 
@@ -34,6 +37,7 @@ const existing: FormComment = {
   body: 'We need the PDF.',
   authorName: 'Alice Staff',
   authorKind: 'staff',
+  postedByName: null,
   createdAt: '2026-10-01T09:00:00',
   attachments: [],
 };
@@ -42,6 +46,7 @@ const mine: FormComment = {
   body: 'Here you go',
   authorName: 'Dan Dealer',
   authorKind: 'submitter',
+  postedByName: null,
   createdAt: '2026-10-01T10:00:00',
   attachments: [],
 };
@@ -76,7 +81,9 @@ describe('PortalSubmissionComments', () => {
   it('shows an inline error with Retry, not a toast, when the load fails', async () => {
     fetchMock.mockRejectedValueOnce(new Error('Failed to load comments.'));
     mount();
-    expect(await screen.findByText('Comments could not be loaded')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Comments could not be loaded'),
+    ).toBeInTheDocument();
     expect(screen.queryByText('No comments yet')).not.toBeInTheDocument();
     expect(toastError).not.toHaveBeenCalled();
     fetchMock.mockResolvedValueOnce([]);
@@ -89,12 +96,19 @@ describe('PortalSubmissionComments', () => {
     postMock.mockResolvedValue({ comment: mine, delivery: 'queued' });
     mount();
     await screen.findByText('We need the PDF.');
-    const box = screen.getByPlaceholderText('Write a comment') as HTMLTextAreaElement;
+    const box = screen.getByPlaceholderText(
+      'Write a comment',
+    ) as HTMLTextAreaElement;
     fireEvent.change(box, { target: { value: 'Here you go' } });
     fireEvent.click(screen.getByRole('button', { name: 'Comment' }));
 
     expect(await screen.findByText('Dan Dealer')).toBeInTheDocument();
-    expect(postMock).toHaveBeenCalledWith('stock_inquiry', 'si-1', 'Here you go', []);
+    expect(postMock).toHaveBeenCalledWith(
+      'stock_inquiry',
+      'si-1',
+      'Here you go',
+      [],
+    );
     expect(screen.getByText('Submitter')).toBeInTheDocument();
     expect(toastSuccess).toHaveBeenCalled();
     await waitFor(() => expect(box.value).toBe(''));
@@ -105,11 +119,15 @@ describe('PortalSubmissionComments', () => {
     postMock.mockRejectedValue(new Error('Server said no'));
     mount();
     await screen.findByText('No comments yet');
-    const box = screen.getByPlaceholderText('Write a comment') as HTMLTextAreaElement;
+    const box = screen.getByPlaceholderText(
+      'Write a comment',
+    ) as HTMLTextAreaElement;
     fireEvent.change(box, { target: { value: 'Do not lose me' } });
     fireEvent.click(screen.getByRole('button', { name: 'Comment' }));
 
-    await waitFor(() => expect(toastError).toHaveBeenCalledWith('Server said no'));
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith('Server said no'),
+    );
     expect(box.value).toBe('Do not lose me');
     expect(screen.getByText('No comments yet')).toBeInTheDocument();
   });

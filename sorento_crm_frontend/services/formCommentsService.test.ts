@@ -17,7 +17,12 @@ const raw = {
   author_kind: 'submitter',
   created_at: '2026-10-01T09:00:00',
   attachments: [
-    { attachment_id: 'a1', filename: 'x.pdf', size: 12, content_type: 'application/pdf' },
+    {
+      attachment_id: 'a1',
+      filename: 'x.pdf',
+      size: 12,
+      content_type: 'application/pdf',
+    },
   ],
 };
 
@@ -34,15 +39,32 @@ describe('toFormComment', () => {
       body: 'hi',
       authorName: 'Alice',
       authorKind: 'submitter',
+      postedByName: null,
       createdAt: '2026-10-01T09:00:00',
       attachments: [
-        { attachmentId: 'a1', filename: 'x.pdf', size: 12, contentType: 'application/pdf' },
+        {
+          attachmentId: 'a1',
+          filename: 'x.pdf',
+          size: 12,
+          contentType: 'application/pdf',
+        },
       ],
     });
   });
 
+  it("maps posted_by_name for a comment an admin posted on the contact's behalf", () => {
+    expect(
+      toFormComment({ ...raw, posted_by_name: 'Admin Ann' }).postedByName,
+    ).toBe('Admin Ann');
+  });
+
   it('defaults a missing kind to staff and missing attachments to []', () => {
-    const c = toFormComment({ id: 'c2', body: 'b', author_name: 'A', created_at: 't' });
+    const c = toFormComment({
+      id: 'c2',
+      body: 'b',
+      author_name: 'A',
+      created_at: 't',
+    });
     expect(c.authorKind).toBe('staff');
     expect(c.attachments).toEqual([]);
   });
@@ -63,13 +85,19 @@ describe('listFormComments / addFormComment', () => {
   it('lists from GET /api/v1/form-comments/{kind}/{id} and maps items', async () => {
     apiFetch.mockResolvedValue(ok({ items: [raw] }));
     const items = await listFormComments('stock_inquiry', 'abc');
-    expect(apiFetch).toHaveBeenCalledWith('/api/v1/form-comments/stock_inquiry/abc');
+    expect(apiFetch).toHaveBeenCalledWith(
+      '/api/v1/form-comments/stock_inquiry/abc',
+    );
     expect(items.map((c) => c.id)).toEqual(['c1']);
   });
 
   it('posts multipart FormData (no JSON body) and maps {comment, delivery}', async () => {
-    apiFetch.mockResolvedValue(ok({ comment: raw, delivery: 'no_whatsapp' }, 201));
-    const result = await addFormComment('complaint', 'z', 'hello', [new File(['x'], 'x.pdf')]);
+    apiFetch.mockResolvedValue(
+      ok({ comment: raw, delivery: 'no_whatsapp' }, 201),
+    );
+    const result = await addFormComment('complaint', 'z', 'hello', [
+      new File(['x'], 'x.pdf'),
+    ]);
     const [url, init] = apiFetch.mock.calls[0];
     expect(url).toBe('/api/v1/form-comments/complaint/z');
     expect(init.method).toBe('POST');

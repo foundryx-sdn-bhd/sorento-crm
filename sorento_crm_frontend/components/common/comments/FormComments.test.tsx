@@ -43,6 +43,7 @@ const comment = {
   body: 'Which brand?',
   authorName: 'Pat Buyer',
   authorKind: 'staff' as const,
+  postedByName: null,
   createdAt: '2026-10-09T01:00:00',
   attachments: [],
 };
