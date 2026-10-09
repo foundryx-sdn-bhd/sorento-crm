@@ -422,3 +422,75 @@ def test_a_blank_or_null_string_hint_names_no_business():
     for hint in ("null", " NULL ", "", "   "):
         turn = turn_dict(_escalating(message_type="request_for_help", domain_hint=hint, intent_hint=hint), branch_kind="out_of_scope")
         assert _outcome(turn) == ("off_topic", None), repr(hint)
+
+
+# ------------------------------------------------------------------ turns before the apply event (5 to 24 Sep)
+
+
+def _understood(*, domain=None, intent=None, message_type="business_query", entities=0):
+    """The `understood` STAGE record the engine wrote before the `apply` kind event existed:
+    the parser verdict as facts, `entities` an integer COUNT."""
+    return stage(
+        "understood",
+        facts={
+            "domain": domain,
+            "intent": intent,
+            "message_type": message_type,
+            "entities": entities,
+            "parser_bypassed": False,
+            "prompt_version": "zzt-v1",
+            "tokens": 123,
+        },
+    )
+
+
+def test_no_apply_event_domain_and_intent_come_from_the_understood_stage():
+    turn = turn_dict(
+        _understood(domain="inventory", intent="stock_check"), branch_kind="business_query"
+    )
+    flat = outcome_mod().flatten(turn)
+    assert flat["domain"] == "inventory"
+    assert flat["intent"] == "stock_check"
+
+
+def test_no_apply_event_out_of_scope_naming_a_domain_is_handover():
+    turn = turn_dict(
+        _understood(domain="order", message_type="request_for_help"), branch_kind="out_of_scope"
+    )
+    assert _outcome(turn) == ("handover", None)
+
+
+@pytest.mark.parametrize("domain", [None, "null", "", "NULL"])
+@pytest.mark.parametrize("message_type", ["casual", "request_for_help"])
+def test_no_apply_event_out_of_scope_naming_no_domain_is_off_topic(domain, message_type):
+    turn = turn_dict(
+        _understood(domain=domain, intent=domain, message_type=message_type),
+        branch_kind="out_of_scope",
+    )
+    assert _outcome(turn) == ("off_topic", None)
+
+
+def test_no_apply_event_escalation_message_type_is_handover():
+    turn = turn_dict(_understood(message_type="escalation"), branch_kind="out_of_scope")
+    assert _outcome(turn) == ("handover", None)
+
+
+def test_no_apply_event_integer_entity_count_names_no_items():
+    turn = turn_dict(
+        _understood(domain="inventory", intent="stock_check", entities=3),
+        branch_kind="business_query",
+    )
+    flat = outcome_mod().flatten(turn)
+    assert flat["named_codes"] == {"product": [], "brand": []}
+    assert flat["domain"] == "inventory"
+
+
+def test_the_apply_verdict_wins_over_the_understood_stage():
+    turn = turn_dict(
+        _understood(domain="order", intent="order_status"),
+        apply_event(domain_hint="inventory", intent_hint="stock"),
+        branch_kind="business_query",
+    )
+    flat = outcome_mod().flatten(turn)
+    assert flat["domain"] == "inventory"
+    assert flat["intent"] == "stock"
