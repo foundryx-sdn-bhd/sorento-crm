@@ -189,7 +189,11 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # Crew live checks round 2 (same PR): the date AND quantity of one event is one ask
 # ("last in date and quantity"): 52,165 est. tokens without MEMORY_ADDENDUM (+46), so
 # CEILING is 52,169 (+4). Nothing else grew.
-CEILING = 52_169
+# R-LASTIN (owner ruling 9 Oct 2026, same PR): the last_receipt measure is the last SPO
+# line's delivery date, a lone "last in date and quantity" example, and a plain "sold" is
+# null whatever an earlier turn said: 52,226 est. tokens without MEMORY_ADDENDUM (+57), so
+# CEILING is 52,230 (+4). Nothing else grew.
+CEILING = 52_230
 # The memory addendum on its own, bounded separately so this PR's growth stays bounded.
 # 26 Sep baseline (lane d89110c0): 339 est. tokens. Round 4 (baf4c813, 28 Sep: the history
 # question in any wording, the number re-run, commercial_request) took it to 512, which is

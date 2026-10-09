@@ -51,6 +51,8 @@ RUNNER_MEASURES = frozenset(
 SOLD = frozenset({"sold_total", "sold_by"})
 
 GRN_TOOL = "crm_procurement_grn_summary"
+#: "Last in" is the last SPO line's delivery date everywhere (owner ruling R-LASTIN, 9 Oct 2026).
+SPO_TOOL = "crm_procurement_spo_allocations_last_receipt_list"
 COST_TOOL = "crm_procurement_po_last_cost_list"
 REPORT_TOOL = "crm_report_ask"
 STOCK_TOOL = "crm_inventory_stock_balance_list"
@@ -80,7 +82,7 @@ LABEL = {
     "stock": "Stock",
     "incoming": "Incoming {window}",
     "received_qty": "Received {window}",
-    "last_receipt": "Last received",
+    "last_receipt": "Last in",
     "supplier": "Supplier",
     "last_cost": "Last cost",
     "sold_total": "Sold {window} ({basis})",
@@ -114,7 +116,7 @@ AS_DELIVERED = "As delivered"
 AS_ORDERED = "As ordered"
 SUPPLIER_VALUE = "{supplier} ({po}, {date})"
 COST_VALUE = "{currency} {cost} / unit ({po}, {date})"
-RECEIPT_VALUE = "{date} ({qty})"
+RECEIPT_VALUE = "{date} ({qty}, {spo})"
 INCOMING_VALUE = "{qty}, ETA {date}"
 
 #: Every catalog key this file fills, so `label_catalog` can keep them out of the
@@ -448,9 +450,6 @@ def _answer(
         and _window(a)
     ]
     calls = _Calls(run)
-    # The GRN summary's last receipt is all time whatever window it is sent, so a last
-    # receipt asked beside a received quantity rides the SAME call (card: one call each).
-    calls.grn_window = next((_window(a) for a in asks if a.get("measure") == "received_qty"), None)
     for a in asks:
         if a.get("measure") == "sold_by" and a.get("group_by") in AXIS:
             key = (_window(a), a.get("basis") if a.get("basis") in BASIS_WORD else basis)
@@ -504,16 +503,22 @@ def _lines(run: Run, calls: "_Calls", ask: dict[str, Any], ids: list[str], basis
     if measure in SOLD and window is None:
         return [f"{_own_label(ask)}: {loc.fill(WHICH_PERIOD)}"]
     try:
-        if measure in ("received_qty", "last_receipt"):
-            rows = calls.rows(GRN_TOOL, {"product_ids": ids, **_dates(window if measure == "received_qty" else calls.grn_window)})
-            if measure == "received_qty":
-                return [f"{label}: {_qty(sum(_num(r.get('received_qty')) for r in rows))}"]
-            dated = [r for r in rows if r.get("last_receipt_date")]
-            if not dated:
+        if measure == "received_qty":
+            rows = calls.rows(GRN_TOOL, {"product_ids": ids, **_dates(window)})
+            return [f"{label}: {_qty(sum(_num(r.get('received_qty')) for r in rows))}"]
+        if measure == "last_receipt":
+            # The single newest SPO line of the family; a tie takes the first returned.
+            rows = [r for r in calls.rows(SPO_TOOL, {"product_ids": ids, "top_n": 1}) if r.get("spo_date")]
+            if not rows:
                 return [f"{label}: {loc.fill(NONE_ON_RECORD)}"]
-            newest = max(r["last_receipt_date"] for r in dated)
-            qty = sum(_num(r.get("last_receipt_qty")) for r in dated if r["last_receipt_date"] == newest)
-            return [f"{label}: {loc.fill(RECEIPT_VALUE, date=_date(newest), qty=_qty(qty))}"]
+            last = max(rows, key=lambda r: str(r.get("spo_date")))
+            value = loc.fill(
+                RECEIPT_VALUE,
+                date=_date(last.get("spo_date")),
+                qty=_qty(_num(last.get("spo_quantity"))),
+                spo=str(last.get("spo_number") or ""),
+            )
+            return [f"{label}: {value}"]
         if measure in ("supplier", "last_cost"):
             rows = [r for r in calls.rows(COST_TOOL, {"product_ids": ids, "top_n": 1}) if r.get("po_date")]
             if not rows:
@@ -675,7 +680,6 @@ class _Calls:
     def __init__(self, run: Run) -> None:
         self.run = run
         self.made: list[tuple[str, dict[str, Any]]] = []
-        self.grn_window: tuple[str, str] | None = None
         #: (window, basis) -> the group_by of a sold_by ask with that window and basis.
         #: A sold_total asked beside it reads the grouped call's own `total` (the whole
         #: set), so the message makes ONE report call, not two: `crm_report_ask` is rate

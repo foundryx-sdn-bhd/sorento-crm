@@ -2689,6 +2689,9 @@ def not_understood_line(words: Any) -> str:
 #: rows under it show (stock figures, incoming lines, files); the opener is the same.
 SET_OPENER = "Here's what you want:"
 
+#: The empty reply of a lone "last in" (the last SPO line's delivery date); a `label_catalog` key.
+LAST_IN_NONE = "Last in: none on record"
+
 #: What "But no ... matched these" names per leg: the product-code miss's own words
 #: ("But no incoming matched these.").
 _MISS_NOUN: dict[str, str] = {
@@ -4246,6 +4249,11 @@ def not_found_error_message(
                     if esc:
                         order_lines[-1] = f"{order_lines[-1]} {esc}"
                     escalate_message = "\n".join(order_lines)
+                elif use_breakdown and jsc.js_string(domain_hint) == "spo_allocation":
+                    # Owner ruling R-LASTIN (9 Oct 2026): a lone "last in" with no SPO line
+                    # says so in the multi-ask's own words, never "no spo allocation matched
+                    # these". A whole-line catalog key, so the reply pass localizes it.
+                    escalate_message = LAST_IN_NONE
                 elif use_breakdown:
                     escalate_message = build_breakdown_msg(
                         f"{status_label}{jsc.js_string(domain_hint)}"

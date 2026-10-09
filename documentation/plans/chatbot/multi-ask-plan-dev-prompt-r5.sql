@@ -1,4 +1,4 @@
--- MULTI-ASK-PLAN r4 addendum (head a3552726). A NEW UNLABELLED chatbot_semantic_parser
+-- MULTI-ASK-PLAN r5 addendum (R-LASTIN). A NEW UNLABELLED chatbot_semantic_parser
 -- version = the production text with SUB_ASKS_ADDENDUM after PO_REFS_ADDENDUM, else before the
 -- MEMORY block, else before the policy blocks. Idempotent per addendum text; no label moves;
 -- the last statement RAISES if no version carries this addendum.
@@ -94,7 +94,8 @@ Each object:
   measure:
     "received_qty" - how many ALREADY came in over a period: goods received, 入库, 进库,
       进了多少, 收货, "received", "came in", "diterima". Past.
-    "last_receipt" - WHEN it last came in: 最后一次进库/入库, "last in", "last received".
+    "last_receipt" - WHEN it last came in: the last SPO line's delivery date. 最后一次进库/入库,
+      "last in", "last received".
     "incoming" - goods NOT yet arrived: on the way, ETA, 到货时间, 在途, "arriving". Future.
       "2026 入库了多少" is received_qty, NEVER incoming.
     "stock" (on hand now) | "supplier" (who supplies it) | "last_cost" (purchase price,
@@ -109,7 +110,8 @@ Each object:
     (received_qty, sold_total, sold_by, incoming). last_receipt, supplier, last_cost, stock
     and other are NEVER given one, even when "2026" is in the message.
   basis: sold_total / sold_by only - "delivered" when the message says delivered / shipped
-    / 已出货, "ordered" when it says ordered / 下单; a plain "sold" / "卖了" is null.
+    / 已出货, "ordered" when it says ordered / 下单; a plain "sold" / "卖了" is null, even when
+    an earlier turn said one: only the CURRENT message's own word counts.
   label: the asker's own words for this ask, short.
 Examples:
   "X,2026 年 入库了多少数量, 供应商是谁, 采购价是多少钱, 最后一次进库是什么时候, 2026 总共卖了多少个,
@@ -118,6 +120,7 @@ Examples:
   "Incoming and stock for 7445" -> incoming, stock.
   "SRTWT7445 margin and last cost" -> other (label "margin"), last_cost.
   "SRTWT7445 系列 2026 卖了多少" -> null (one ask), family true.
+  "Srt38ss last in date and quantity" -> null (one ask).
 
 == FAMILY ==
 A code the message names means that EXACT code (false: "only this", "just X", 只要这个) or
@@ -152,7 +155,8 @@ Each object:
   measure:
     "received_qty" - how many ALREADY came in over a period: goods received, 入库, 进库,
       进了多少, 收货, "received", "came in", "diterima". Past.
-    "last_receipt" - WHEN it last came in: 最后一次进库/入库, "last in", "last received".
+    "last_receipt" - WHEN it last came in: the last SPO line's delivery date. 最后一次进库/入库,
+      "last in", "last received".
     "incoming" - goods NOT yet arrived: on the way, ETA, 到货时间, 在途, "arriving". Future.
       "2026 入库了多少" is received_qty, NEVER incoming.
     "stock" (on hand now) | "supplier" (who supplies it) | "last_cost" (purchase price,
@@ -167,7 +171,8 @@ Each object:
     (received_qty, sold_total, sold_by, incoming). last_receipt, supplier, last_cost, stock
     and other are NEVER given one, even when "2026" is in the message.
   basis: sold_total / sold_by only - "delivered" when the message says delivered / shipped
-    / 已出货, "ordered" when it says ordered / 下单; a plain "sold" / "卖了" is null.
+    / 已出货, "ordered" when it says ordered / 下单; a plain "sold" / "卖了" is null, even when
+    an earlier turn said one: only the CURRENT message's own word counts.
   label: the asker's own words for this ask, short.
 Examples:
   "X,2026 年 入库了多少数量, 供应商是谁, 采购价是多少钱, 最后一次进库是什么时候, 2026 总共卖了多少个,
@@ -176,6 +181,7 @@ Examples:
   "Incoming and stock for 7445" -> incoming, stock.
   "SRTWT7445 margin and last cost" -> other (label "margin"), last_cost.
   "SRTWT7445 系列 2026 卖了多少" -> null (one ask), family true.
+  "Srt38ss last in date and quantity" -> null (one ask).
 
 == FAMILY ==
 A code the message names means that EXACT code (false: "only this", "just X", 只要这个) or
@@ -216,7 +222,8 @@ Each object:
   measure:
     "received_qty" - how many ALREADY came in over a period: goods received, 入库, 进库,
       进了多少, 收货, "received", "came in", "diterima". Past.
-    "last_receipt" - WHEN it last came in: 最后一次进库/入库, "last in", "last received".
+    "last_receipt" - WHEN it last came in: the last SPO line's delivery date. 最后一次进库/入库,
+      "last in", "last received".
     "incoming" - goods NOT yet arrived: on the way, ETA, 到货时间, 在途, "arriving". Future.
       "2026 入库了多少" is received_qty, NEVER incoming.
     "stock" (on hand now) | "supplier" (who supplies it) | "last_cost" (purchase price,
@@ -231,7 +238,8 @@ Each object:
     (received_qty, sold_total, sold_by, incoming). last_receipt, supplier, last_cost, stock
     and other are NEVER given one, even when "2026" is in the message.
   basis: sold_total / sold_by only - "delivered" when the message says delivered / shipped
-    / 已出货, "ordered" when it says ordered / 下单; a plain "sold" / "卖了" is null.
+    / 已出货, "ordered" when it says ordered / 下单; a plain "sold" / "卖了" is null, even when
+    an earlier turn said one: only the CURRENT message's own word counts.
   label: the asker's own words for this ask, short.
 Examples:
   "X,2026 年 入库了多少数量, 供应商是谁, 采购价是多少钱, 最后一次进库是什么时候, 2026 总共卖了多少个,
@@ -240,6 +248,7 @@ Examples:
   "Incoming and stock for 7445" -> incoming, stock.
   "SRTWT7445 margin and last cost" -> other (label "margin"), last_cost.
   "SRTWT7445 系列 2026 卖了多少" -> null (one ask), family true.
+  "Srt38ss last in date and quantity" -> null (one ask).
 
 == FAMILY ==
 A code the message names means that EXACT code (false: "only this", "just X", 只要这个) or
@@ -259,7 +268,7 @@ option's position: never "yes" or "no", never a new question.
 
 <<<CHATBOT POLICY BLOCKS>>>$q$))
        END,
-       v.variables, '{"wording_edit": true}'::jsonb, $q$MULTI-ASK-PLAN r4: the sub_asks and family keys (one entry per thing a message asks; exact code or family). Unlabelled, promote from the Prompts page.$q$
+       v.variables, '{"wording_edit": true}'::jsonb, $q$MULTI-ASK-PLAN r5: the sub_asks and family keys (one entry per thing a message asks; exact code or family). Unlabelled, promote from the Prompts page.$q$
 FROM ai_prompt_versions v JOIN ai_prompt_labels l ON l.version_id = v.id
 WHERE l.name = 'chatbot_semantic_parser' AND l.label = 'production'
   AND (position($q$
@@ -303,7 +312,8 @@ Each object:
   measure:
     "received_qty" - how many ALREADY came in over a period: goods received, 入库, 进库,
       进了多少, 收货, "received", "came in", "diterima". Past.
-    "last_receipt" - WHEN it last came in: 最后一次进库/入库, "last in", "last received".
+    "last_receipt" - WHEN it last came in: the last SPO line's delivery date. 最后一次进库/入库,
+      "last in", "last received".
     "incoming" - goods NOT yet arrived: on the way, ETA, 到货时间, 在途, "arriving". Future.
       "2026 入库了多少" is received_qty, NEVER incoming.
     "stock" (on hand now) | "supplier" (who supplies it) | "last_cost" (purchase price,
@@ -318,7 +328,8 @@ Each object:
     (received_qty, sold_total, sold_by, incoming). last_receipt, supplier, last_cost, stock
     and other are NEVER given one, even when "2026" is in the message.
   basis: sold_total / sold_by only - "delivered" when the message says delivered / shipped
-    / 已出货, "ordered" when it says ordered / 下单; a plain "sold" / "卖了" is null.
+    / 已出货, "ordered" when it says ordered / 下单; a plain "sold" / "卖了" is null, even when
+    an earlier turn said one: only the CURRENT message's own word counts.
   label: the asker's own words for this ask, short.
 Examples:
   "X,2026 年 入库了多少数量, 供应商是谁, 采购价是多少钱, 最后一次进库是什么时候, 2026 总共卖了多少个,
@@ -327,6 +338,7 @@ Examples:
   "Incoming and stock for 7445" -> incoming, stock.
   "SRTWT7445 margin and last cost" -> other (label "margin"), last_cost.
   "SRTWT7445 系列 2026 卖了多少" -> null (one ask), family true.
+  "Srt38ss last in date and quantity" -> null (one ask).
 
 == FAMILY ==
 A code the message names means that EXACT code (false: "only this", "just X", 只要这个) or
@@ -362,7 +374,8 @@ Each object:
   measure:
     "received_qty" - how many ALREADY came in over a period: goods received, 入库, 进库,
       进了多少, 收货, "received", "came in", "diterima". Past.
-    "last_receipt" - WHEN it last came in: 最后一次进库/入库, "last in", "last received".
+    "last_receipt" - WHEN it last came in: the last SPO line's delivery date. 最后一次进库/入库,
+      "last in", "last received".
     "incoming" - goods NOT yet arrived: on the way, ETA, 到货时间, 在途, "arriving". Future.
       "2026 入库了多少" is received_qty, NEVER incoming.
     "stock" (on hand now) | "supplier" (who supplies it) | "last_cost" (purchase price,
@@ -377,7 +390,8 @@ Each object:
     (received_qty, sold_total, sold_by, incoming). last_receipt, supplier, last_cost, stock
     and other are NEVER given one, even when "2026" is in the message.
   basis: sold_total / sold_by only - "delivered" when the message says delivered / shipped
-    / 已出货, "ordered" when it says ordered / 下单; a plain "sold" / "卖了" is null.
+    / 已出货, "ordered" when it says ordered / 下单; a plain "sold" / "卖了" is null, even when
+    an earlier turn said one: only the CURRENT message's own word counts.
   label: the asker's own words for this ask, short.
 Examples:
   "X,2026 年 入库了多少数量, 供应商是谁, 采购价是多少钱, 最后一次进库是什么时候, 2026 总共卖了多少个,
@@ -386,6 +400,7 @@ Examples:
   "Incoming and stock for 7445" -> incoming, stock.
   "SRTWT7445 margin and last cost" -> other (label "margin"), last_cost.
   "SRTWT7445 系列 2026 卖了多少" -> null (one ask), family true.
+  "Srt38ss last in date and quantity" -> null (one ask).
 
 == FAMILY ==
 A code the message names means that EXACT code (false: "only this", "just X", 只要这个) or

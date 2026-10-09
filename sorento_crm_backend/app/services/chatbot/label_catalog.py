@@ -637,7 +637,8 @@ LABELS.update(
     {
         "Received {window}": {"ms": "Diterima {window}", "zh": "{window} 入库数量"},
         "Received": {"ms": "Diterima", "zh": "入库数量"},
-        "Last received": {"ms": "Terakhir diterima", "zh": "最后一次进库"},
+        "Last in": {"ms": "Terakhir masuk", "zh": "最后一次进库"},
+        "Last in: none on record": {"ms": "Terakhir masuk: tiada rekod", "zh": "最后一次进库: 没有记录"},
         "Last cost": {"ms": "Kos terakhir", "zh": "采购价"},
         "Stock": {"ms": "Stok", "zh": "库存"},
         "Incoming": {"ms": "Barang masuk", "zh": "到货"},
@@ -681,7 +682,7 @@ LABELS.update(
             "ms": "{currency} {cost} / unit ({po}, {date})",
             "zh": "{currency} {cost} / 件（{po}，{date}）",
         },
-        "{date} ({qty})": {"ms": "{date} ({qty})", "zh": "{date}（{qty}）"},
+        "{date} ({qty}, {spo})": {"ms": "{date} ({qty}, {spo})", "zh": "{date}（{qty}，{spo}）"},
         "{qty}, ETA {date}": {"ms": "{qty}, ETA {date}", "zh": "{qty}，ETA {date}"},
     }
 )
@@ -690,7 +691,7 @@ LABELS.update(
 #: "delivered" inside a stock or order answer must stay exactly as that answer wrote it.
 _SUB_ASK_KEYS = frozenset(
     {
-        "Received {window}", "Received", "Last received", "Last cost", "Stock", "Incoming", "Incoming {window}",
+        "Received {window}", "Received", "Last in", "Last cost", "Stock", "Incoming", "Incoming {window}",
         "Sold {window} ({basis})", "Sold {axis} {window} ({basis})", "per salesman",
         "per customer", "per product", "per brand", "per category", "per location",
         "per channel", "per month", "delivered", "ordered", "not shared with you",
@@ -699,7 +700,7 @@ _SUB_ASK_KEYS = frozenset(
         "{code} has {n} variants. Just {code}, or all {n}?", "Just {code}", "All {n}",
         "{code} (all {n} variants)", "Sold as delivered or as ordered?", "As delivered",
         "As ordered", "{supplier} ({po}, {date})", "{currency} {cost} / unit ({po}, {date})",
-        "{date} ({qty})", "{qty}, ETA {date}",
+        "{date} ({qty}, {spo})", "{qty}, ETA {date}",
     }
 )
 DIRECT_ONLY = frozenset({"I have {names}.", "{code} has no {types}."}) | _SUB_ASK_KEYS
