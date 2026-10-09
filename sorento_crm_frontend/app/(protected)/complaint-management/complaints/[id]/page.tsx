@@ -56,6 +56,7 @@ async function ComplaintDetailWrapper({
     <FormDetailWithSLATabs
       sourceEntityType="complaint"
       sourceEntityId={id}
+      commentsKind="complaint"
       extraTabs={[
         {
           value: 'fulfilment',

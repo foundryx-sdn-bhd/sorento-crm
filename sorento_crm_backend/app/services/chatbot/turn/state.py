@@ -220,6 +220,9 @@ class Profile:
     # switch (`turn_runtime._escalation_allowed`). Default ON: an unresolved contact keeps
     # today's behaviour.
     escalation_allowed: bool = True
+    # PHOTO-SEND-CAP round 2 (owner, 9 Oct 2026): `respond_contacts.chatbot_files_as_links`,
+    # the A/B switch. Default OFF: an unresolved contact gets files as attachments (today).
+    files_as_links: bool = False
 
 
 def offers_escalation(profile: "Profile | None") -> bool:

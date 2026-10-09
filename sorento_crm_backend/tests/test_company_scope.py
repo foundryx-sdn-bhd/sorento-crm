@@ -281,6 +281,11 @@ _COMPANY_ID_ALLOWLIST = {
     # written by the global audit listener for whichever company's write lost its trail,
     # counted company-wide on the system health page, like audit_logs.
     "audit_trail_gaps",
+    # Chat analytics facts (CA-1): `company_id` is a SNAPSHOT of the contact's primary
+    # customer link when the turn closed, NULL for an unlinked contact. One bot serves
+    # every company, so the row is not owned by one; the Chat overview report is gated by
+    # its own staff permission (`chatbot.analytics.view`) and declares scope "none".
+    "chat_ask_facts",
     # Conversation / form SLA trackers carry the company that decides WHICH escalation
     # ladder the tracker climbs, not who may read the row. Scoping it would break the
     # two readers that have no company: the overdue scan (a scheduler tick with no

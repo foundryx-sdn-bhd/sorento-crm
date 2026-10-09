@@ -6,6 +6,7 @@ from app.api.v1.public import (
     branding,
     catalogue,
     dealer_kit_fonts,
+    file_links,
     geo,
     onboarding,
     portal,
@@ -24,6 +25,8 @@ from app.api.v1.public import (
 router = APIRouter()
 router.include_router(approval.router, prefix="/approval", tags=["public-approval"])
 router.include_router(view.router, prefix="/view", tags=["public-view"])
+# PHOTO-SEND-CAP: the chatbot's short file links (`/f/{code}` on the frontend).
+router.include_router(file_links.router, prefix="/file-links", tags=["public-file-links"])
 # BEFORE portal.router, and that ordering is the fix, not a preference (D49).
 # Both are mounted at /portal and Starlette serves the FIRST route whose path
 # matches, and portal.py declares POST/PUT/GET/DELETE `/submissions/{kind}...`.

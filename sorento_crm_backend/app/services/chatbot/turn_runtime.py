@@ -169,7 +169,7 @@ def contact_phone(db: Session, contact_respond_id: str) -> str | None:
 
 _PROFILE_COLUMNS = (
     "c.chatbot_profile, c.chatbot_stock_allowed, "
-    "c.notify_salesman, c.packing_list_allowed, c.escalation_allowed "
+    "c.notify_salesman, c.packing_list_allowed, c.escalation_allowed, c.chatbot_files_as_links "
     "FROM respond_contacts c"
 )
 
@@ -493,6 +493,8 @@ def load_profile(
                 db, contact_respond_id, space_id
             ),
             escalation_allowed=_escalation_allowed(row),
+            # PHOTO-SEND-CAP: default OFF, so `is True` keeps attachment mode on a NULL.
+            files_as_links=len(row) > 5 and row[5] is True,
         ),
         False,
     )
@@ -3108,6 +3110,9 @@ def make_tool_runner(
             "customer_scope": customer_scope,
             # CHAT-LANGUAGE: read by `output_structurer` (render-only).
             "localizer": localizer,
+            # PHOTO-SEND-CAP: link mode prints each file's link under its row
+            # (`fetch.output_structurer`); the engine turns it into a short link.
+            "files_as_links": bool(getattr(profile, "files_as_links", False)),
         }
         if page_predicate is not None:
             entities = [

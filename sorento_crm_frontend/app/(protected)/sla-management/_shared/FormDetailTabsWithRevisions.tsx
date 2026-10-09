@@ -8,6 +8,7 @@ import { useRevisionEnabledMap } from './useRevisionEnabledMap';
 import { useStockInquiry } from '@/app/(protected)/procurement-management/stock-inquiries/hooks/useStockInquiries';
 import { usePurchaseRequest } from '@/app/(protected)/procurement-management/purchase-requests/hooks/usePurchaseRequests';
 import type { FormSLASourceType } from './formSLAService';
+import type { FormCommentKind } from '@/types/formComments';
 
 interface FormDetailTabsWithRevisionsProps {
   sourceEntityType: FormSLASourceType;
@@ -17,6 +18,8 @@ interface FormDetailTabsWithRevisionsProps {
   extraTabs?: FormDetailExtraTab[];
   /** Which revision lineage this form reads (PR and SF share one route). */
   revisionsKind: FormRevisionsKind;
+  /** Adds the "Comments (N)" tab right after Details. */
+  commentsKind?: FormCommentKind;
 }
 
 /**
@@ -55,6 +58,7 @@ export default function FormDetailTabsWithRevisions({
   children,
   extraTabs = [],
   revisionsKind,
+  commentsKind,
 }: FormDetailTabsWithRevisionsProps) {
   const { data: enabledMap } = useRevisionEnabledMap();
   const revisionsEnabled = enabledMap?.[revisionsKind] === true;
@@ -86,6 +90,7 @@ export default function FormDetailTabsWithRevisions({
       sourceEntityType={sourceEntityType}
       sourceEntityId={sourceEntityId}
       extraTabs={tabs}
+      commentsKind={commentsKind}
     >
       {children}
     </FormDetailWithSLATabs>
