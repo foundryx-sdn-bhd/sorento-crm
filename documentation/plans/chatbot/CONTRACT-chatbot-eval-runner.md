@@ -165,3 +165,5 @@ Measured on `sorento_ai_automation_20261006` `chatbot.turns.trace` (a JSON array
   it is kept on the result as `lane_notes` and the reply is graded by the rubric. It IS a tool error when the
   envelope has a `tool`, or the text contains `returned HTTP` (a real API failure, e.g. sales-report 422).
   Failed stages and the `Error executing tool` marker stay tool errors. GRADER_VERSION 7.
+- `--regrade` of a run made before round 7 re-applies the rule to stored `tool_errors`: an entry
+  `"None: <text>"` (no tool) without `returned HTTP` moves to `lane_notes`.
