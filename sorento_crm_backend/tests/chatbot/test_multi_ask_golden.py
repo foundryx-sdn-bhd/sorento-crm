@@ -136,43 +136,43 @@ def test_g1b_pick_one_variant_scopes_to_it(session_factory, monkeypatch, stub_ac
         assert pids(args) == [c.uuid_of["SRTWC286-SH-150"]], name
 
 
-def test_g1c_one_ask_legacy_turn_asks_scope_en(session_factory, monkeypatch, stub_access):
+def _legacy(c, domain="inventory", intent="check_stock", message="stock SRTWT165"):
+    return c.say(
+        message,
+        verdict(domain_hint=domain, intent_hint=intent, entities=[entity("SRTWT165", hint="product")], sub_asks=None, family=None),
+    )
+
+
+def test_g1c_one_ask_stock_keeps_todays_path_no_question(session_factory, monkeypatch, stub_access):
+    c = con(session_factory, monkeypatch, stub_access)
+    text = _legacy(c)
+    assert "variants" not in text and "个款式" not in text
+    stock = c.tools.args(STOCK_TOOL)
+    assert stock, "today's stock call runs on turn 1"
+    assert sorted(pids(stock[0])) == sorted(c.uuid_of[x] for x in WT)
+
+
+def test_g1_one_ask_incoming_keeps_the_gate_picker_no_scope_question(session_factory, monkeypatch, stub_access):
+    c = con(session_factory, monkeypatch, stub_access)
+    text = _legacy(c, domain="incoming", intent="check_incoming", message="incoming SRTWT165")
+    assert "variants" not in text and "个款式" not in text
+    assert "Which product do you mean" in text
+
+
+def test_g1b_over_twenty_codes_offers_all_n_and_type_the_code(session_factory, monkeypatch, stub_access):
+    big = [f"ZZTBIG-{i:02d}" for i in range(21)]
+    monkeypatch.setattr(r9, "OTHER_CODES", WT + SS + ["ELP3754"] + big)
     c = con(session_factory, monkeypatch, stub_access)
     text = c.say(
-        "stock SRTWT165",
-        verdict(domain_hint="inventory", intent_hint="check_stock", entities=[entity("SRTWT165", hint="product")], sub_asks=None, family=None),
+        "ZZTBIG stock and last cost",
+        v("ZZTBIG", [sub("stock", "stock"), sub("last_cost", "last cost")]),
     )
-    assert text.splitlines()[0] == "SRTWT165 has 3 variants. Just SRTWT165, or all 3?"
+    lines = text.splitlines()
+    assert "1. All 21" in lines
+    assert any("full code" in ln for ln in lines)
+    assert not any("ZZTBIG-05" in ln for ln in lines)
+    assert len(lines) <= 4
     assert no_tools(c)
-
-
-def _legacy(c):
-    text = c.say(
-        "stock SRTWT165",
-        verdict(domain_hint="inventory", intent_hint="check_stock", entities=[entity("SRTWT165", hint="product")], sub_asks=None, family=None),
-    )
-    assert text.splitlines()[0] == "SRTWT165 has 3 variants. Just SRTWT165, or all 3?"
-    return text
-
-
-def test_g1c_legacy_pick_exact_row_only(session_factory, monkeypatch, stub_access):
-    c = con(session_factory, monkeypatch, stub_access)
-    _legacy(c)
-    text = c.say("just that one", pick(1))
-    assert text and "variants" not in text
-    stock = c.tools.args(STOCK_TOOL)
-    assert stock, "the stock tool must run after the pick"
-    for args in stock:
-        assert pids(args) == [c.uuid_of["SRTWT165"]]
-
-
-def test_g1c_legacy_pick_all_three(session_factory, monkeypatch, stub_access):
-    c = con(session_factory, monkeypatch, stub_access)
-    _legacy(c)
-    c.say("all of them", pick(2))
-    stock = c.tools.args(STOCK_TOOL)
-    assert stock
-    assert sorted(pids(stock[-1])) == sorted(c.uuid_of[x] for x in WT)
 
 
 @pytest.mark.parametrize("family", [True, False])
@@ -407,19 +407,6 @@ def test_g4_guard_a_real_follow_up_is_not_the_vague_question(session_factory, mo
     )
     assert "What would you like to know about" not in text
     assert "你想了解" not in text
-
-
-def test_g1_incoming_scope_then_all_is_not_a_second_picker(session_factory, monkeypatch, stub_access):
-    c = con(session_factory, monkeypatch, stub_access)
-    t1 = c.say(
-        "incoming SRTWT165",
-        verdict(domain_hint="incoming", intent_hint="check_incoming", entities=[entity("SRTWT165", hint="product")], sub_asks=None, family=None),
-    )
-    assert t1.splitlines()[0] == "SRTWT165 has 3 variants. Just SRTWT165, or all 3?"
-    t2 = c.say("all of them", pick(2))
-    assert "Which product do you mean" not in t2
-    calls = c.tools.args("crm_incoming_stock_by_product")
-    assert calls and sorted(pids(calls[-1])) == sorted(c.uuid_of[x] for x in WT)
 
 
 # ------------------------------------------------------------------ G4b moving on
