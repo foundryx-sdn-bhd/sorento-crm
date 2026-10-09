@@ -792,11 +792,6 @@ export const MENU_SIDEBAR: MenuConfig = [
             permission: 'user_management.roles.view',
           },
           {
-            title: 'Claude Connector',
-            path: '/user-management/claude-connector',
-            permission: 'analytics.connector.manage',
-          },
-          {
             title: 'Permissions',
             path: '/user-management/permissions',
             permission: 'user_management.permissions.view',

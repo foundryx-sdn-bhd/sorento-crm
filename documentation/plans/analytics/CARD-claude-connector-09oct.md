@@ -1,9 +1,21 @@
 # CARD - claude.ai analytics connector (CLAUDE-CONNECTOR)
 
-Status: Build. The card was approved by the owner on 9 Oct 2026 with Q1-Q5 all (a) and the
-defaults accepted; slices S1-S4 are in build. Nothing deploys from this lane. Track: L (new
-public service, OAuth, migration, new permissions, prod infra). The lane PR carries
-`crew-lane: CLAUDE-CONNECTOR`.
+Status: Build, round 3 (sorento side built; SS side is SS-CONNECTOR, foundryx-shared-service
+#117). The card was approved by the owner on 9 Oct 2026 with Q1-Q5 all (a) and the defaults
+accepted. Nothing deploys from this lane. Track: L (migration, new permission, auth surface). The
+lane PR carries `crew-lane: CLAUDE-CONNECTOR`.
+
+**r3 split (owner ruling 9 Oct 2026).** The connector lives in the shared service (SS):
+OAuth server, grants admin, MCP endpoint, output cap and its own audit. The binding contract is
+`CONTRACT-claude-connector-ss-09oct.md` (sections 0-7). sorento keeps: the consent hop
+(`/connect/claude?req=`, `POST /api/v1/connector/consent/{inspect,approve,deny}`, signed user
+assertion), verification of SS-signed calls (`Authorization: Connector <JWT>`,
+`app/services/analytics_connector/access.py`), the manifest (`GET /api/v1/connector/manifest`),
+the chat data routes under `/api/v1/connector/*`, the views, the RO role, OTP masking, phone
+exclusion and one `connector.tool_call` audit row per call. Removed from this lane: sorento's OAuth
+routes and tables, the grants admin page, the connector `user_sessions` token, the internal key
+and `sorento_analytics_mcp/`. Sections 2, 3, 4.1, 6 (container rows), 8 (container) and slices
+S2/S3-grants below describe r2 and are superseded where they disagree with the contract.
 
 Code facts are cited from `origin/main` 4ee6f643, paths relative to the repo root. This repo is
 public, so the card holds no real names, numbers or message text.
@@ -240,7 +252,7 @@ All 6 write tools are excluded by construction: `crm_order_cancel`, `crm_purchas
 `crm_purchase_request_reject`, `crm_complaint_close`, `crm_it_support_ticket_create` and
 `crm_ideation_turn` are not in the allow-list, and the backend refuses their methods anyway.
 
-### 4.3 New chat tools (backend `/api/v1/analytics-connector/*`, gated per Q2)
+### 4.3 New chat tools (backend `/api/v1/connector/*` since r3, gated per Q2)
 
 | Tool | Input | Output |
 | --- | --- | --- |
@@ -316,6 +328,11 @@ Basis: 53,895 messages, 17 Apr to 6 Oct, about 3,000 a week. Measure on the prod
 
 ## 6. Audit
 
+r3: sorento writes one `audit_logs` EVENT `connector.tool_call` per SS-signed call it serves
+(`actor_type='user'`, `auth_method='connector'`, `source='connector'`,
+`new_values={tool, grant_id, status, ms}`), reused and chat routes alike; SS keeps the per-MCP-call
+row and the grant lifecycle. The r2 rows below are superseded.
+
 - One `audit_logs` EVENT per tool call (R3), written by `audit_service.record(...)` with:
   `event='analytics_connector.tool_call'`, `actor_type='user'`, `user_id` = the signed-in user,
   `auth_method='claude_connector'`, `session_id`, `source='mcp'`, and `new_values = {tool, args, status, ms, rows, chars}`.
@@ -353,8 +370,9 @@ Basis: 53,895 messages, 17 Apr to 6 Oct, about 3,000 a week. Measure on the prod
 ## 8. Ops (prod change: owner approves; nothing deploys from this lane)
 
 1. **Env (server only, never committed).**
-   - Backend: `ANALYTICS_CONNECTOR_INTERNAL_KEY`, `ANALYTICS_RO_DATABASE_URL`,
-     `ANALYTICS_CONNECTOR_PUBLIC_BASE_URL=https://<crm-domain>/analytics`.
+   - Backend (r3): `CONNECTOR_SS_TO_PRODUCT_SECRET`, `CONNECTOR_PRODUCT_TO_SS_SECRET`,
+     `CONNECTOR_CONNECTION_ID`, `CONNECTOR_SS_CALLBACK_URL`, `ANALYTICS_RO_DATABASE_URL`. Any of the
+     first four unset = the connector answers a clean 503.
    - Container: `CRM_BASE_URL=http://backend:8000` (internal network), the same internal key and the
      same public base URL.
 2. **DB.** `CREATE ROLE sorento_analytics_ro ...` (section 5.1), then `alembic upgrade head`,
@@ -401,6 +419,7 @@ Defaults applied unless the owner says otherwise:
 | S1 Backend | Migration (`acc_0001_...`): permissions `analytics.connector.use` / `.manage` (granted to no role; Q1), the `claude_connector` auth_method, tables `analytics_oauth_clients` / `analytics_oauth_requests` / `analytics_connector_grants`, schema + views, conditional grants. OAuth service + routes, session guard, RO engine, dataset catalog + query builder, chat routes, audit. Pytest written red-first. |
 | S2 Container | `sorento_analytics_mcp/`: well-known docs, register/token/authorize forwarders, auth gate, `UserBearerClient`, reused tool registration with the escalation call neutralised, chat tools, output cap, audit post, Dockerfile, pytest, CI validate job. |
 | S3 Frontend | `/connect/claude` consent page; `/user-management/claude-connector` grants list + detail + deferred Revoke; nav entry gated by `.manage`. Vitest. |
+| r3 | Sorento side of the SS contract: consent assertion, signed-call verification (req_hash, jti replay cache in redis, lifetime, `users.connector_revoked_at`), 39-tool manifest, chat routes moved to `/api/v1/connector/*`; OAuth tables, grants admin and the container removed. |
 | S4 Verify | Local end-to-end: backend + container + FE in this sandbox, the full OAuth dance driven by a scripted client (DCR, PKCE, token, refresh, reuse detection, revoke) and MCP calls. Then reviewer + security-reviewer, and a hand-test script for a real claude.ai connection (needs a public URL, so it runs on prod after the owner's deploy, or through a tunnel from the owner's machine). |
 
 Estimated size: ~2,500-3,500 changed lines including tests.

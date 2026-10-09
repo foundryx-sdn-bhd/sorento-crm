@@ -1,6 +1,6 @@
 # CONTRACT - claude.ai connector: shared service <-> sorento (CLAUDE-CONNECTOR r3 / SS-CONNECTOR)
 
-Status: PROPOSAL from the sorento lane (PR #1547), for agreement with SS-CONNECTOR before code.
+Status: sorento side BUILT against sections 0-8 (PR #1547, r3); SS side is SS-CONNECTOR (foundryx-shared-service #117).
 Owner rulings 9 Oct 2026: the connector lives in foundryx-shared-service (SS); one connector per
 product; identity = product login with a signed user assertion (the ideation embed pattern,
 `sorento_crm_backend/app/services/ideation_embed_service.py:161`). All earlier owner rulings stand:
@@ -122,3 +122,16 @@ Consent endpoints add `request_expired`, `request_used`, `impersonation_not_allo
    is ISO 8601 UTC.
 7. `/api/v1/connector/*` data routes accept only `Authorization: Connector`; a staff Bearer session gets 401.
 8. `revoke_all_for_user` stamps `users.connector_revoked_at` on every call, including "log out other devices".
+
+## 8. Notes from sorento's build (9 Oct 2026)
+
+1. Manifest `input_schema` lists every argument; for a POST tool, the arguments that are neither
+   `path_params` nor `query_params` are the JSON body (`chat_query`; `crm_lookup_resolve` takes
+   `set_key`, `raw`, `locale`). Reused tools take every argument as a string.
+2. The reused tools drop the n8n chatbot's `contact_id` / `space_id` and `resolve_signed_urls`: a
+   call already acts as the staff user, and presigned URLs are credentials.
+3. Before a call is verified, refusals use the codes above. A call refused by sorento's own checks
+   writes no audit row; a call that reached the route writes one with its status (`ok` or the HTTP
+   status).
+4. A sorento-side outage of the replay cache (redis) or an unconfigured connection answers 503
+   `upstream_error`.

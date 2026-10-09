@@ -33,7 +33,7 @@ from app.api.v1 import (
     reports,
     sales,
     scm,
-    analytics_connector,
+    connector,
     form_comments,
 )
 from app.api.v1.system import (
@@ -53,12 +53,9 @@ api_router = APIRouter()
 
 # Include all module routers
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
-# claude.ai analytics connector (CLAUDE-CONNECTOR). No module guard on purpose: the OAuth routes
-# the container forwards carry no user; each route declares its own auth (internal key, staff
-# session, or connector session + analytics.connector.use).
-api_router.include_router(
-    analytics_connector.router, prefix="/analytics-connector", tags=["analytics-connector"]
-)
+# claude.ai connector (CLAUDE-CONNECTOR r3). No module guard on purpose: the consent routes take
+# the staff session, every other route only an SS-signed `Authorization: Connector` call.
+api_router.include_router(connector.router, prefix="/connector", tags=["connector"])
 # DEV-LOGIN-BYPASS: 404 unless every guard in app/services/dev_login.py holds.
 api_router.include_router(dev_login.router, prefix="/auth", tags=["auth"])
 # Auth endpoints: /login, /signup, /reset-password, /change-password, /verify-email

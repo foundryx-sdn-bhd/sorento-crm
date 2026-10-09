@@ -503,10 +503,6 @@ def revoke_one_session(session_id: str, request: Request, current_user: dict = D
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found.")
     user_session_service.revoke_session(db, session_id=session_id)
-    if row.auth_method == "claude_connector":
-        from app.services.analytics_connector.oauth import revoke_grant_for_session
-
-        revoke_grant_for_session(db, session_id)
     return MessageResponse(message="Device signed out.")
 
 

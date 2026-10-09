@@ -1,52 +1,54 @@
 /**
- * Claude connector consent - feature service.
+ * Claude connector consent - feature service (CLAUDE-CONNECTOR r3, contract section 2).
  *
- * Layering: ConsentCard -> THIS service -> lib/api.
- *   GET  /api/v1/analytics-connector/authorize/{request_id}
- *   POST /api/v1/analytics-connector/authorize/{request_id}/approve | /deny -> { redirect_to }
- * A failure throws an Error carrying `code` (the backend `detail`, e.g. "expired") and `status`.
+ * Layering: ConsentCard -> hooks/useConsent -> THIS service -> lib/api.
+ *   POST /api/v1/connector/consent/inspect | approve | deny   body { req }
+ * `req` is the shared service's signed consent request; it travels in the body, never in a URL.
+ * A failure throws an Error carrying `code` (the backend's error.code, e.g. "request_expired")
+ * and `status`.
  */
 import { apiFetch } from '@/lib/api';
-import { extractApiError } from '@/lib/api-client';
+import { codedError } from '@/lib/api-client';
 
-const BASE = '/api/v1/analytics-connector/authorize';
+const BASE = '/api/v1/connector/consent';
 
 export interface ConsentDetails {
   request_id: string;
   client_name: string;
   redirect_host: string;
   user_name: string;
-  scope?: string;
-  /** Naive UTC. */
+  /** ISO 8601 UTC. */
   expires_at?: string;
   allowed: boolean;
 }
 
-export class ConsentError extends Error {
-  constructor(
-    public code: string,
-    public status: number,
-  ) {
-    super(code);
+export interface ConsentApproval {
+  request_id: string;
+  return_url: string;
+  assertion: string;
+}
+
+export interface ConsentDenial {
+  request_id: string;
+  return_url: string;
+}
+
+export type ConsentFailure = Error & { code: string | null; status: number };
+
+async function post<T>(verb: 'inspect' | 'approve' | 'deny', req: string): Promise<T> {
+  const response = await apiFetch(`${BASE}/${verb}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ req }),
+  });
+  if (!response.ok) {
+    const error = (await codedError(response, 'request_unavailable')) as ConsentFailure;
+    error.status = response.status;
+    throw error;
   }
-}
-
-async function failure(response: Response, fallback: string): Promise<never> {
-  const code = await extractApiError(response, fallback);
-  throw new ConsentError(code, response.status);
-}
-
-export async function getConsent(requestId: string): Promise<ConsentDetails> {
-  const response = await apiFetch(`${BASE}/${encodeURIComponent(requestId)}`);
-  if (!response.ok) return failure(response, 'request_unavailable');
   return response.json();
 }
 
-async function answer(requestId: string, verb: 'approve' | 'deny'): Promise<{ redirect_to: string }> {
-  const response = await apiFetch(`${BASE}/${encodeURIComponent(requestId)}/${verb}`, { method: 'POST' });
-  if (!response.ok) return failure(response, 'request_unavailable');
-  return response.json();
-}
-
-export const approveConsent = (requestId: string) => answer(requestId, 'approve');
-export const denyConsent = (requestId: string) => answer(requestId, 'deny');
+export const inspectConsent = (req: string) => post<ConsentDetails>('inspect', req);
+export const approveConsent = (req: string) => post<ConsentApproval>('approve', req);
+export const denyConsent = (req: string) => post<ConsentDenial>('deny', req);

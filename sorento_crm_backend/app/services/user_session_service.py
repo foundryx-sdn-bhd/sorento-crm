@@ -57,15 +57,11 @@ def mint_session(
     user_agent: Optional[str] = None,
     ip_address: Optional[str] = None,
     auth_method: str = "password",
-    ttl: Optional[timedelta] = None,
-    rolling: bool = True,
 ) -> UserSession:
     """Create a new session row and return it. Caller commits via this function.
 
     ``auth_method`` records how the person signed in; the audit actor of every
     request on this session carries it. Raises ValueError for an unknown method.
-    ``ttl`` / ``rolling`` override the staff default (30 days, sliding); the claude.ai
-    connector mints 1 hour, non-sliding.
     """
     if auth_method not in AUTH_METHODS:
         raise ValueError(f"Unknown session auth_method: {auth_method!r}")
@@ -73,8 +69,8 @@ def mint_session(
     row = UserSession(
         token=secrets.token_urlsafe(48),
         user_id=user_id,
-        rolling=rolling,
-        expires_at=now + (ttl or REMEMBER_TTL),
+        rolling=True,
+        expires_at=now + REMEMBER_TTL,
         last_seen_at=now,
         user_agent=(user_agent or None),
         ip_address=(ip_address or None),
@@ -167,10 +163,13 @@ def revoke_all_for_user(
         q = q.filter(UserSession.id != except_session_id)
     now = _utcnow()
     count = q.update({UserSession.revoked_at: now}, synchronize_session=False)
-    # The claude.ai connector's grants too, or its refresh token would mint a new session.
-    from app.services.analytics_connector.oauth import revoke_user_grants
+    # The claude.ai connector: a call whose consent predates this is refused with
+    # `reconsent_required` (CLAUDE-CONNECTOR contract section 3), on every revoke-all.
+    from app.models.user import User
 
-    revoke_user_grants(db, user_id)
+    db.query(User).filter(User.id == user_id).update(
+        {User.connector_revoked_at: now}, synchronize_session=False
+    )
     db.commit()
     return count
 

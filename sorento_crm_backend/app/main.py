@@ -49,7 +49,6 @@ from app.config import settings
 from app.api.v1 import api_router
 from app.services.error_handler import AppException
 from app.middleware.logging_middleware import LoggingMiddleware
-from app.middleware.connector_read_only_middleware import ConnectorReadOnlyMiddleware
 from app.middleware.idempotency_middleware import IdempotencyMiddleware
 from app.middleware.api_call_log_middleware import ApiCallLogMiddleware
 from app.middleware.impersonation_ended_middleware import (
@@ -99,9 +98,6 @@ app = FastAPI(
 
 # Add logging middleware
 app.add_middleware(LoggingMiddleware)
-
-# claude.ai connector: writes carrying the container's internal key are refused before routing.
-app.add_middleware(ConnectorReadOnlyMiddleware)
 
 # A view-as header the auth dependency could not honour gets X-Impersonation-Ended: 1,
 # so the client drops its banner instead of labelling the admin's own data as the
@@ -299,8 +295,16 @@ _register_activities_adapters()
 # company / X-API-Key contact / system) and stamps it onto the request DB session so
 # the do_orm_execute filter enforces isolation without editing each route. It shares
 # the route's session (get_db is cached per-request) and never 500s (fail-closed).
+# The claude.ai connector gate goes first: an `Authorization: Connector` call (CLAUDE-CONNECTOR,
+# signed by the shared service) is verified and its user stamped before the scope resolves, and
+# it is a no-op for every other request.
 from app.services.company_scope_resolver import apply_company_scope
-app.include_router(api_router, prefix="/api/v1", dependencies=[Depends(apply_company_scope)])
+from app.services.analytics_connector.access import connector_call_gate
+app.include_router(
+    api_router,
+    prefix="/api/v1",
+    dependencies=[Depends(connector_call_gate, scope="function"), Depends(apply_company_scope)],
+)
 
 # Initialize scheduler for background tasks
 scheduler = None

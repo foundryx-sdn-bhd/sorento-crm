@@ -46,6 +46,8 @@ class User(Base):
     created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=False), server_default=func.now(), onupdate=func.now(), nullable=False)
     last_sign_in_at = Column(DateTime(timezone=False), nullable=True)
+    # claude.ai connector: consents older than this are refused (set by revoke_all_for_user).
+    connector_revoked_at = Column(DateTime(timezone=False), nullable=True)
     email_verified_at = Column(DateTime(timezone=False), nullable=True)
     is_trashed = Column(Boolean, default=False, nullable=False)
     avatar = Column(String, nullable=True)

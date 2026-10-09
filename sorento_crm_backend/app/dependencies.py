@@ -170,12 +170,6 @@ def _resolve_session_to_user(token: str, request: Request, db: Session) -> dict:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"code": REASON_REVOKED, "message": "Account is not active"},
         )
-    if getattr(session_row, "auth_method", None) == "claude_connector":
-        # claude.ai connector sessions: internal key, reads only, permission re-checked
-        # (CLAUDE-CONNECTOR card section 3 step 6). Staff sessions never reach this.
-        from app.services.analytics_connector.access import enforce_connector_guard
-
-        enforce_connector_guard(request, db, user)
     # Expose the current session for "this device" / revoke-others / logout.
     request.state.session_id = str(session_row.id)
     request.state.session_token = token
@@ -197,8 +191,6 @@ def _maybe_apply_impersonation(
     ``ImpersonationEndedMiddleware`` tells the client its view-as is over.
     """
     request.state.real_user = real_user
-    if getattr(request.state, "session_auth_method", None) == "claude_connector":
-        return real_user  # a connector session never acts as anyone else (card step 6d)
     target_id = request.headers.get(IMPERSONATE_HEADER)
     if not target_id:
         return real_user
@@ -258,6 +250,17 @@ def get_actor_user_id(request: Request, current_user: dict) -> str:
     return str(current_user["id"])
 
 
+def _connector_user(request: Request) -> Optional[dict]:
+    """The user of an SS-signed connector call, already verified by ``connector_call_gate``
+    (``app/services/analytics_connector/access.py``): no session row, no impersonation."""
+    call = getattr(request.state, "connector_call", None)
+    if call is None:
+        return None
+    if call.user is None:  # the manifest token names no user
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+    return dict(call.user)
+
+
 def extract_token_from_request(request: Request) -> Optional[str]:
     """Extract JWT token from Authorization header or cookies."""
     # Try Authorization header first
@@ -289,7 +292,11 @@ async def get_current_user(
     """
     import logging
     logger = logging.getLogger(__name__)
-    
+
+    connector = _connector_user(request)
+    if connector is not None:
+        return connector
+
     # Try to get token from request if not in header
     if not token:
         token = extract_token_from_request(request)
@@ -351,6 +358,11 @@ async def get_current_user_optional(
     Same as get_current_user but returns None instead of raising.
     Use for read-only endpoints where we want to avoid 500 on auth issues.
     """
+    if getattr(request.state, "connector_call", None) is not None:
+        try:
+            return _connector_user(request)
+        except HTTPException:
+            return None
     if not token:
         token = extract_token_from_request(request)
     if not token:
@@ -382,6 +394,9 @@ async def get_real_user(
     X-Impersonate-User-Id header. Use for impersonation start/stop endpoints so
     an impersonated session cannot end its own impersonation.
     """
+    connector = _connector_user(request)
+    if connector is not None:
+        return connector
     if not token:
         token = extract_token_from_request(request)
     if not token:
@@ -650,6 +665,10 @@ async def get_current_user_or_api_key(
     auth_mode = "unknown"
 
     logger.info("auth.get_current_user_or_api_key start has_api_key=%s has_token=%s", bool(api_key), bool(token))
+
+    connector = _connector_user(request)
+    if connector is not None:
+        return connector
 
     # If API key is provided, validate it
     if api_key:

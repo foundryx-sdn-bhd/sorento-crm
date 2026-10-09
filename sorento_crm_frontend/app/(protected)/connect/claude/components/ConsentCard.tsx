@@ -1,14 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { approveConsent, denyConsent, getConsent } from '../services/consentService';
+import { useConsentMutations, useConsentQuery } from '../hooks/useConsent';
 
 function useRemaining(expiresAt?: string) {
-  const target = expiresAt ? Date.parse(expiresAt.endsWith('Z') ? expiresAt : `${expiresAt}Z`) : NaN;
+  const target = expiresAt ? Date.parse(expiresAt) : NaN;
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (Number.isNaN(target)) return;
@@ -18,6 +17,23 @@ function useRemaining(expiresAt?: string) {
   if (Number.isNaN(target)) return null;
   const secs = Math.max(0, Math.floor((target - now) / 1000));
   return `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+}
+
+/** Hands the answer back to the shared service as a form POST, so the assertion never sits in a URL. */
+function postTo(action: string, fields: Record<string, string>) {
+  const form = document.createElement('form');
+  form.method = 'POST';
+  form.action = action;
+  form.style.display = 'none';
+  for (const [name, value] of Object.entries(fields)) {
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = name;
+    input.value = value;
+    form.appendChild(input);
+  }
+  document.body.appendChild(form);
+  form.submit();
 }
 
 function Shell({ children }: { children: React.ReactNode }) {
@@ -37,17 +53,22 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-/** The consent step of the claude.ai sign-in: names the app, the person and where the code goes. */
-export default function ConsentCard({ requestId }: { requestId: string }) {
-  const { data, error, isLoading } = useQuery({
-    queryKey: ['claude-connector-consent', requestId],
-    queryFn: () => getConsent(requestId),
-    retry: false,
-  });
+function Ended({ title, hint }: { title: string; hint: string }) {
+  return (
+    <Shell>
+      <h3 className="text-base font-semibold">{title}</h3>
+      <p className="text-sm text-muted-foreground">{hint}</p>
+    </Shell>
+  );
+}
+
+const codeOf = (error: unknown) => (error as { code?: string | null } | null)?.code ?? null;
+
+/** The consent step of the claude.ai sign-in: names the app, the person and where the answer goes. */
+export default function ConsentCard({ req }: { req: string }) {
+  const { data, error, isLoading } = useConsentQuery(req);
+  const { approve, deny } = useConsentMutations(req);
   const remaining = useRemaining(data?.expires_at);
-  const go = (url: string) => window.location.assign(url);
-  const approve = useMutation({ mutationFn: () => approveConsent(requestId), onSuccess: (r) => go(r.redirect_to) });
-  const deny = useMutation({ mutationFn: () => denyConsent(requestId), onSuccess: (r) => go(r.redirect_to) });
   const busy = approve.isPending || deny.isPending;
 
   if (isLoading) {
@@ -59,35 +80,39 @@ export default function ConsentCard({ requestId }: { requestId: string }) {
     );
   }
 
-  if (error || !data) {
-    const code = (error as { code?: string } | null)?.code;
-    if (code === 'impersonation_not_allowed') {
-      return (
-        <Shell>
-          <h3 className="text-base font-semibold">Access cannot be granted</h3>
-          <p className="text-sm text-muted-foreground">
-            You are signed in as another user. Access cannot be granted on someone else&apos;s behalf.
-          </p>
-        </Shell>
-      );
-    }
+  const code = codeOf(error) ?? codeOf(approve.error) ?? codeOf(deny.error);
+  if (code === 'impersonation_not_allowed') {
     return (
-      <Shell>
-        <h3 className="text-base font-semibold">This request has expired</h3>
-        <p className="text-sm text-muted-foreground">Return to Claude and connect again.</p>
-      </Shell>
+      <Ended
+        title="Access cannot be granted"
+        hint="You are signed in as another user. Access cannot be granted on someone else's behalf."
+      />
     );
   }
+  if (code === 'request_used') {
+    return <Ended title="This request has already been used" hint="Return to Claude and connect again." />;
+  }
+  if (error || !data || code === 'request_expired' || code === 'bad_request') {
+    return <Ended title="This request has expired" hint="Return to Claude and connect again." />;
+  }
 
+  const allow = () =>
+    approve.mutate(undefined, {
+      onSuccess: (r) => postTo(r.return_url, { request_id: r.request_id, assertion: r.assertion }),
+    });
+  const refuse = () =>
+    deny.mutate(undefined, {
+      onSuccess: (r) => postTo(r.return_url, { request_id: r.request_id, error: 'access_denied' }),
+    });
   const failed = approve.error || deny.error;
 
   return (
     <Shell>
       <h3 className="text-base font-semibold leading-snug">
-        {`${data.client_name} (claude.ai) wants read-only access to CRM data as ${data.user_name}`}
+        {`${data.client_name} wants read-only access to CRM data as ${data.user_name}`}
       </h3>
       <div className="space-y-2">
-        <Row label="Redirects to" value={data.redirect_host} />
+        <Row label="Returns to" value={data.redirect_host} />
         <Row label="Access" value="Read only" />
         {remaining ? <Row label="Request expires in" value={remaining} /> : null}
       </div>
@@ -96,16 +121,14 @@ export default function ConsentCard({ requestId }: { requestId: string }) {
           Your account does not have access to the Claude connector. Ask an administrator.
         </p>
       ) : null}
-      {failed ? (
-        <p className="text-sm text-destructive">That did not go through. Try again.</p>
-      ) : null}
+      {failed ? <p className="text-sm text-destructive">That did not go through. Try again.</p> : null}
       <div className="flex flex-wrap gap-2">
         {data.allowed ? (
-          <Button variant="primary" disabled={busy} onClick={() => approve.mutate()}>
+          <Button variant="primary" disabled={busy} onClick={allow}>
             Allow
           </Button>
         ) : null}
-        <Button variant="outline" disabled={busy} onClick={() => deny.mutate()}>
+        <Button variant="outline" disabled={busy} onClick={refuse}>
           Deny
         </Button>
       </div>

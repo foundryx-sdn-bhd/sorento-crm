@@ -172,11 +172,15 @@ class Settings(BaseSettings):
     # When set, X-API-Key auth resolves RBAC as this users row (required for MCP/n8n read tools).
     external_api_key_act_as_user_id: str | None = None  # EXTERNAL_API_KEY_ACT_AS_USER_ID
 
-    # claude.ai analytics connector (CLAUDE-CONNECTOR, card documentation/plans/analytics/).
-    # Env only: the internal key is the shared secret between the public container and this
-    # backend, the RO url holds the read-only role's password. Unset RO url = main engine.
-    analytics_connector_internal_key: str | None = None  # ANALYTICS_CONNECTOR_INTERNAL_KEY
-    analytics_connector_public_base_url: str | None = None  # https://<crm-domain>/analytics
+    # claude.ai connector (CLAUDE-CONNECTOR r3; contract
+    # documentation/plans/analytics/CONTRACT-claude-connector-ss-09oct.md). The OAuth server and MCP
+    # endpoint live in the shared service (SS); these pin the one product connection. Env only,
+    # never committed. Any of the first four unset = the connector is dormant (clean 503).
+    connector_ss_to_product_secret: str | None = None  # CONNECTOR_SS_TO_PRODUCT_SECRET (SS signs)
+    connector_product_to_ss_secret: str | None = None  # CONNECTOR_PRODUCT_TO_SS_SECRET (sorento signs)
+    connector_connection_id: str | None = None  # CONNECTOR_CONNECTION_ID
+    connector_ss_callback_url: str | None = None  # CONNECTOR_SS_CALLBACK_URL (exact match)
+    # The read-only role's DSN for the chat datasets. Unset = main engine.
     analytics_ro_database_url: str | None = None  # ANALYTICS_RO_DATABASE_URL
 
     # AutoCount pull + review: the FoundryX gateway base URL and key are NOT env vars
