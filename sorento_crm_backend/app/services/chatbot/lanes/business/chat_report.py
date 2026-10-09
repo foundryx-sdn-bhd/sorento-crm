@@ -17,9 +17,12 @@ resolvers (the engine's entity gate), never by matching strings here.
 """
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from app.services.chatbot import jsc
+from app.services.chatbot.analytics import chat_report_extractor
 from app.services.chatbot import required_fields as rf
 from app.services.chatbot.lanes.business import report_ask
 from app.services.chatbot.lanes.business import services as business_services
@@ -36,6 +39,7 @@ GIVE_UP = (
     "I still can't read '{word}'. Ask again in one message, "
     "e.g. top 5 questions this week."
 )
+COULDNT_READ = "I couldn't read that report request. Try: top 5 questions this week."
 NOT_ENABLED = "Chat analytics is not enabled for your account."
 CATALOGUE_LINE = (
     "I can rank questions by topic, subject, product, customer, outcome, failure reason, week, month, "
@@ -182,8 +186,25 @@ def _args(
     return args, None
 
 
+def _read_fresh(db: Any, parse_output: dict[str, Any], message_text: str) -> dict[str, Any] | None:
+    """The parse output with the extractor's reading in place of the parser's chat_report, top_n
+    and dates, or None when the extractor could not read the message."""
+    today = datetime.now(ZoneInfo("Asia/Kuala_Lumpur")).date()
+    got = chat_report_extractor.extract_chat_report(db, message_text, today=today)
+    if got is None:
+        return None
+    return {
+        **parse_output,
+        "chat_report": {k: got.get(k) for k in ("group_by", "measure", "subject")},
+        "top_n": got.get("top_n"),
+        "date_filter_start": got.get("date_from"),
+        "date_filter_end": got.get("date_to"),
+    }
+
+
 def settle(
-    db: Any, parse_output: dict[str, Any], entities: Any, *, dealer: bool = False, own_ids: Any = None
+    db: Any, parse_output: dict[str, Any], entities: Any, *, dealer: bool = False, own_ids: Any = None,
+    message_text: str = "",
 ) -> tuple[rf.Outcome | None, str | None]:
     """Every required field settled, or the line to send instead of running. `(outcome, None)`
     (send `outcome.reply` with `outcome.slot` unless `outcome.done`), or `(None, line)` for a
@@ -192,6 +213,11 @@ def settle(
     if isinstance(slot, dict) and slot.get("ask") == ASK_NAME:
         return _answer(db, parse_output, slot), None
 
+    # A fresh report: the focused extractor reads it, not the parser (revision 10 Oct 2026).
+    read = _read_fresh(db, parse_output, message_text)
+    if read is None:
+        return None, COULDNT_READ
+    parse_output = read
     args, line = _args(db, parse_output, entities, dealer=dealer, own_ids=own_ids)
     if args is None:
         return None, line

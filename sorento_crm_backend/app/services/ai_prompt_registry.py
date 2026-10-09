@@ -118,6 +118,45 @@ def _semantic_parser_fallback() -> str:
     )
 
 
+def _chat_report_extractor_fallback() -> str:
+    """System prompt for the chat report extractor (CA-3, `chat_report_extractor`). `{today}` and
+    `{domains}` are filled by `chatbot/analytics/chat_report_extractor.py`, not by `render`."""
+    return (
+        "You read ONE staff message asking for statistics about the WhatsApp chatbot's "
+        "conversations (what customers asked the bot, how it answered) and fill a report "
+        "request. Any language or mix (English, Chinese, Malay). Today is {today}, Malaysia; "
+        "weeks run Monday to Sunday.\n"
+        "Fields:\n"
+        "- group_by: the axis the answer is split or ranked by, or null for one total.\n"
+        "  topic = question type (\"what do people ask\", \"most common questions\", "
+        "\"问什么\", \"tanya apa\"); subject = broad area above topics (\"which "
+        "area/subject\"); product; customer (the dealer account); outcome = how the bot ended "
+        "(answered, asked back, failed...); failure_reason = why it failed; week / month / day = "
+        "a trend over time (\"per week\", \"每天\", \"setiap bulan\"); language.\n"
+        "- measure: asks = number of questions (default); failed = questions the bot could not "
+        "answer; failure_rate = share that failed; contacts = number of distinct people/dealers "
+        "who chatted.\n"
+        "- subject: only when the message limits the questions to one business area, using these "
+        "codes: {domains}. Otherwise null. Products, customers, failures are never a subject.\n"
+        "- top_n: the count asked for (\"top 5\", \"前3\", \"5 teratas\"), else null. A "
+        "superlative with no number (\"most asked\", \"最多人问\", \"paling banyak\") is "
+        "null, never 1.\n"
+        "- date_from / date_to: ISO dates of the period the message names, else both null. "
+        "\"since X\" ends today.\n"
+        "Key distinctions:\n"
+        "1. The people DOING the asking (customers, dealers, buyers, pelanggan, 客户, 经销商) are "
+        "the population being counted, not an axis. \"How many X asked/chatted\" -> measure "
+        "contacts, group_by null. \"What do X ask about\" -> group_by topic. group_by customer "
+        "ONLY when the answer is a list of customers: \"by customer\", \"per dealer\", "
+        "\"which dealers\", \"top N dealers\", \"哪个客户\".\n"
+        "2. Ranking customers by how much they ask -> group_by customer, measure asks (not "
+        "contacts).\n"
+        "3. Ranking or splitting failure reasons -> measure failed. \"fail rate / share failed / "
+        "失败率 / kadar gagal\" -> failure_rate.\n"
+        "Return JSON only."
+    )
+
+
 def _ideate_extractor_fallback() -> str:
     """System prompt for the ideation brain extractor (D-CONFIRM, S2 payload/title/
     duplicate-ask/semantic-review redesign). Reads a WhatsApp ``ideate`` turn in the
@@ -1016,6 +1055,14 @@ PROMPT_KEYS: dict[str, PromptKeySpec] = {
     # written out one PromptKeySpec at a time so this dict and the copy table can never
     # list different keys - the same single-declaration rule H28 imposed on the enums.
     # Appended below the literal entries by `_register_chatbot_reply_keys()`.
+    "chat_report_extractor": PromptKeySpec(
+        name="chat_report_extractor",
+        role="Chat report extractor - a staff chat-statistics request to group_by/measure/subject/top_n/dates (JSON)",
+        active=True,
+        activates_in=None,
+        variables=[],
+        fallback=_chat_report_extractor_fallback,
+    ),
     "ideate_extractor": PromptKeySpec(
         name="ideate_extractor",
         role="Ideate extractor - NLU for ideation turns (fields/remove/confirm)",

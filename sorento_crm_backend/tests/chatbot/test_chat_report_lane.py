@@ -595,3 +595,32 @@ def test_extractor_topic_without_a_count_asks_how_many_and_keeps_the_period(cons
     assert len(seen) == 1, seen
     (args,) = _chat_calls(calls)
     assert args["top_n"] == 5 and args["date_from"] == "2026-10-05" and args["date_to"] == "2026-10-11", args
+
+
+# --------------------------------------------------------------------------- extractor stand-in for the older tests
+
+
+@pytest.fixture(autouse=True)
+def _extractor_reads_the_parser_verdict(request, monkeypatch):
+    """The pre-extractor tests drive the lane through the parser verdict alone. The lane now asks
+    the focused extractor for a fresh report, and the test DB has no API key, so the real one
+    would answer None. Stand in with the values the test's verdict carries; `test_extractor_*`
+    install their own fake and this steps aside for them."""
+    if request.node.name.startswith("test_extractor_"):
+        return
+    from app.services.chatbot.analytics import chat_report_extractor
+    from app.services.chatbot.head import parser as parser_mod
+
+    def fake(db, text, *args, **kwargs):
+        verdict = parser_mod.parse(None, "")  # Console.say patched it to return this turn's verdict
+        report = verdict.get("chat_report") or {}
+        return {
+            "group_by": report.get("group_by"),
+            "measure": report.get("measure") or "asks",
+            "subject": report.get("subject"),
+            "top_n": verdict.get("top_n"),
+            "date_from": verdict.get("date_filter_start"),
+            "date_to": verdict.get("date_filter_end"),
+        }
+
+    monkeypatch.setattr(chat_report_extractor, "extract_chat_report", fake)

@@ -2115,6 +2115,9 @@ def run_fetch(
         settled, line = chat_report.settle(
             db, parse_output, entities, dealer=bool(customer_scope.get("enforced")),
             own_ids=customer_scope.get("ids"),
+            message_text=jsc.js_string(
+                jsc.get(jsc.get(jsc.get(jsc.get(ctx, "text"), "message"), "message"), "text") or ""
+            ),
         )
         if trace is not None:
             trace.add(
