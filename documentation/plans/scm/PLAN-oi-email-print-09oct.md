@@ -1,6 +1,6 @@
 # PLAN: OI handover email - no multi-line cells, fits one printed page (OI-EMAIL-PRINT)
 
-Status: Build, on review fixes (feature track, abbreviated per the crew brief: card + mock, red tests, one PR; carries one data migration on `email_templates`, so not the small fix track). Q1 to Q5 are built on their recommendations; the owner's rulings are pending on PR #1543 and none is recorded yet.
+Status: Review passed (round 2, head f5d120c5), on hand test (feature track, abbreviated per the crew brief: card + mock, red tests, one PR; carries one data migration on `email_templates`, so not the small fix track). Q1 to Q5 are built on their recommendations; the owner's rulings are pending on PR #1543 and none is recorded yet.
 Lane: OI-EMAIL-PRINT, branch `claude/oi-email-print-ucrsgl`, PR #1543
 Domain: scm (order inquiry handover email, `order_inquiry_handover` automation) + email layout shell
 UAC: `oi-email-print-09oct-acceptance-criteria.md` alongside
@@ -76,7 +76,9 @@ and S/O NO repeat on every row.
    `print` width: 672px card, 12px gutters (648px of table); card + the shell's 12px outer
    padding = 696px, inside Outlook's 698px and Chrome's 718px printable width. The shell also
    gains a `@media print` rule (card fluid, outer padding 0, `@page { size: A4 portrait;
-   margin: 10mm }`) for clients that honour it. A long order flows onto page 2 with the column
+   margin: 10mm }`) for clients that honour it (these rules sit in the shared shell on purpose: any email printed
+   from such a client gets 10mm margins and a full-width card; on screen nothing else changes).
+   A long order flows onto page 2 with the column
    header row repeated (`<thead>` with `display: table-header-group`); each line row carries
    `page-break-inside:avoid` inline (a global `tr` rule also held the shell's own block rows
    together and pushed the whole table to page 2, caught in the print pass).
