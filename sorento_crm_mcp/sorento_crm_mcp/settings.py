@@ -42,6 +42,14 @@ class Settings(BaseSettings):
             "Required to serve HTTP: the server refuses to start without one (32+ chars)."
         ),
     )
+    mcp_auth_enforce: bool = Field(
+        True,
+        validation_alias=AliasChoices("MCP_AUTH_ENFORCE", "mcp_auth_enforce"),
+        description=(
+            "Rollout switch. true (default) = 401 without the token. false = let the request "
+            "through and log it, only while callers are being given the token."
+        ),
+    )
     mcp_allowed_hosts: str = Field(
         "",
         validation_alias=AliasChoices("CRM_MCP_ALLOWED_HOSTS", "mcp_allowed_hosts"),
