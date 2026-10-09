@@ -139,6 +139,14 @@ def _other(subject: str) -> str:
     return f"{subject}.other"
 
 
+def _fallback(subject: str, taxonomy: "Taxonomy") -> str:
+    """Where an ask lands when no leaf fits: `<subject>.other`, or the subject itself when it
+    has no `.other` leaf (a one-leaf subject, or `sales`, which has none in v1), so every
+    `topic_code` is a row of `chatbot.chat_topics`."""
+    other = _other(subject)
+    return other if other in taxonomy.leaf_codes(subject) else subject
+
+
 def _confidence(value: Any) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return 0.0
@@ -146,7 +154,7 @@ def _confidence(value: Any) -> float:
 
 
 def _leaf(subject: str, leaf: Any, taxonomy: Taxonomy) -> str:
-    return leaf if isinstance(leaf, str) and leaf in taxonomy.leaf_codes(subject) else _other(subject)
+    return leaf if isinstance(leaf, str) and leaf in taxonomy.leaf_codes(subject) else _fallback(subject, taxonomy)
 
 
 def _product_words(value: Any) -> tuple[ProductWord, ...]:
@@ -247,9 +255,9 @@ the start of the bot's reply.
 
 For every row return one label with the row's key:
 - asks: the distinct questions in the message, in order. The FIRST ask keeps the row's subject; \
-pick its leaf from that subject's leaves below. Add a further ask only when the message plainly \
+pick its leaf from that subject's codes below. Add a further ask only when the message plainly \
 asks a second, different thing; give it the subject it belongs to (a subject code below) and a \
-leaf under that subject. If no leaf fits, use "<subject>.other".
+leaf under that subject. If no leaf fits, use the "none of the above" code of that subject.
 - confidence: 0 to 1, how sure you are of the leaf.
 - product_words: the words in the message that name one product (a code or a product's name), \
 each with how sure you are that it names a product. Never invent one.
@@ -266,7 +274,8 @@ def _taxonomy_block(taxonomy: Taxonomy) -> str:
         lines.append(f"{subject} ({label}):")
         for code, leaf_label, definition in taxonomy.leaves.get(subject, []):
             lines.append(f"  - {code}: {definition or leaf_label}")
-        lines.append(f"  - {_other(subject)}: none of the above")
+        if _fallback(subject, taxonomy) == subject:
+            lines.append(f"  - {subject}: none of the above")
     return "\n".join(lines)
 
 

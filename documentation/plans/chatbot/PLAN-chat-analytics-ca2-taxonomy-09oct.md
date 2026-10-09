@@ -1,8 +1,9 @@
 # PLAN: Chat analytics CA-2, topic taxonomy + topic labelling
 
-Status: Build. Labelling ruled HYBRID by the owner (9 Oct 2026); behaviour card answered by
-crew (9 Oct, see "Card answers"). Building the schema now; leaves wait for taxonomy v1
-approval. Track: full (migration + new queue + new report definitions).
+Status: Build. Labelling ruled HYBRID; taxonomy v1 APPROVED by the owner (9 Oct 2026) and
+seeded as version 1; monthly bumps approved by the owner until he names a delegate. Labeller,
+resolver pass and migration built and green; next: Top asks + audit review mocks, then build.
+Labelling runs on dev only (nightly tick off unless CHAT_TOPIC_LABELLER_ENABLED). Track: full (migration + new queue + new report definitions).
 
 Design (binding): `documentation/plans/chatbot/DESIGN-chat-analytics-09oct.md` (PR #1545, branch
 `claude/chat-analytics-design-cvrxu8`, approved 9 Oct 2026), section 8 lane CA-2. Builds on CA-1
@@ -36,9 +37,8 @@ Design (binding): `documentation/plans/chatbot/DESIGN-chat-analytics-09oct.md` (
    masked asks with their parser fields.
 3. Leaves are drafted from those asks. A leaf holding under 0.5% of asks folds into
    `<subject>.other`.
-4. `taxonomy_v1.md` (tree, counts per leaf, 2 real masked examples per leaf) goes to the owner
-   as a crew-ask. The leaves are seeded by a second migration only after approval, and nothing
-   is labelled before then.
+4. `taxonomy_v1.md` (tree, counts per leaf, 2 real masked examples per leaf) went to the owner
+   as a crew-ask and was approved as drawn; the same migration seeds it.
 
 ## Schema (migration `chat_topics_0001_taxonomy`, additive)
 
@@ -49,7 +49,8 @@ Design (binding): `documentation/plans/chatbot/DESIGN-chat-analytics-09oct.md` (
 - `chatbot.chat_ask_facts.language` text null (`en` / `ms` / `zh` / `mixed` / `other`).
 - `chatbot.chat_ask_items.confidence` real null (the labeller's own score for a
   `resolver_pass` item).
-- Seed: the 16 subjects (15 parser domains + `general`) at version 1.
+- Seed: the 16 subjects (15 parser domains + `general`) and the 31 approved leaves, all at
+  version 1 (`taxonomy_v1.md`).
 
 ## Q5 (staff replies in chat_histories), as measured by CA-1
 
@@ -132,3 +133,17 @@ opts in (`spec_fallback`, default false, `references.py:1378`).
 Rule for the resolver pass: call it without `spec_fallback`, keep only product matches whose
 `match_tier == "exact"`, and write an item only when exactly one product remains (and the
 labeller's confidence is >= 0.8). Every other tier counts as unresolved.
+
+## Built (code map)
+
+- Migration `alembic/versions/chat_topics_0001_taxonomy.py`; model `ChatTopic` + the two new
+  columns in `app/models/chat_facts.py`.
+- `app/services/chatbot/analytics/labeller.py`: `subject_for`, `parse_labels`, `build_messages`,
+  `json_schema`, `run`, `production_chat`, `production_resolve`. `outcome.message_type` added.
+- `app/tasks/chat_turns.py`: `ANALYTICS_QUEUE`, `label_chat_topics_job`,
+  `enqueue_chat_topic_labeller`; `worker.py` QUEUES gains `analytics` (batch);
+  `app/scheduler/task_scheduler.py` tick `chat_topic_labeller` at 02:15 Malaysia, gated by
+  `settings.chat_topic_labeller_enabled` (default off).
+- `scripts/chat_topic_label.py [--limit N]`: run now, in process.
+- Tests: `tests/chatbot/test_chat_topic_labeller.py`, `tests/chatbot/test_migration_chat_topics_0001.py`,
+  `tests/test_chat_topic_label_script.py`.

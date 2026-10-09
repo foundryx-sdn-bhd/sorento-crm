@@ -1,8 +1,9 @@
-# Chat topic taxonomy v1 (DRAFT, awaiting owner approval)
+# Chat topic taxonomy v1 (APPROVED by the owner, 9 Oct 2026, frozen as version 1)
 
-Lane CA-2 (`PLAN-chat-analytics-ca2-taxonomy-09oct.md`). Nothing is labelled before the owner
-approves this list. After approval the leaves are seeded by migration at `version = 2` rows
-under the subjects already seeded (`chat_topics_0001_taxonomy`).
+Lane CA-2 (`PLAN-chat-analytics-ca2-taxonomy-09oct.md`). Approved as drawn (rules 1 and 2 under
+"What the data says" included) and seeded, subjects and leaves, at `version = 1` by migration
+`chat_topics_0001_taxonomy`. A change is a new version, approved by the owner until he names a
+delegate.
 
 Source: crew extract from the local 6 Oct prod snapshot, live turns 24 Sep to 5 Oct 2026 (MYT),
 3,809 turns. Counts are aggregates. Examples are real asks, masked: `<product>` for a product
@@ -19,7 +20,7 @@ code, `<brand>` for a brand, `<dealer>` for a customer company. No other text wa
 - A leaf under 0.5% of asks (about 19 of the 3,809) folds into `<subject>.other`. Subjects
   this small get one leaf.
 
-## The tree (30 leaves under 16 subjects)
+## The tree (31 leaves under 16 subjects)
 
 Share of asks per subject is measured. The leaf split inside a subject is ESTIMATED from the 60
 sampled asks and is confirmed or corrected by the audit sample after the first labelling run.
@@ -57,6 +58,7 @@ sampled asks and is confirmed or corrected by the audit sample after the first l
 | purchase_order (15, 0.4%) | `purchase_order.outstanding` | Outstanding purchase orders | "any PO" | "Purchase order `<product>`" |
 | spo_allocation (0) | `spo_allocation.last_in` | The shipment a product last came in on | (none in the window) | |
 | goods_receive (0, not supported) | `goods_receive.request` | Goods received | (none in the window) | |
+| sales (0) | (no leaf in v1) | Sales asks were routed to `order` in this window; a `sales` ask is labelled at the subject itself | | |
 
 Where the master_products leaves are under 0.5% each (80 asks in the subject), the first
 labelling run will show it, and they fold into `master_products.other` in v2 if the owner wants.
@@ -72,3 +74,9 @@ labelling run will show it, and they fold into `master_products.other` in v2 if 
    figures" is visible without a parser change.
 3. **Language**: the bot's own reply language is set on only 16% of these turns, which confirms
    the labeller decides language for every row (card answer 4).
+
+## How a leaf falls back
+
+A leaf the model names that is not under the ask's subject becomes `<subject>.other`. A subject
+with no `.other` leaf (one-leaf subjects, and `sales`) falls back to the subject itself, so every
+`topic_code` is a row of `chatbot.chat_topics`.

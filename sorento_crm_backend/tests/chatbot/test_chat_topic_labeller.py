@@ -204,6 +204,26 @@ def test_an_unknown_leaf_becomes_the_subjects_other():
     assert out["k1"].asks[0].leaf == "inventory.other"
 
 
+def test_a_subject_with_no_other_leaf_falls_back_to_the_subject_itself():
+    lab = labeller()
+    taxonomy = lab.Taxonomy(
+        version=1,
+        subjects={"inventory": "Stock", "purchase_cost": "Cost", "sales": "Sales"},
+        leaves={
+            "inventory": [("inventory.availability", "A", "A"), ("inventory.other", "O", "O")],
+            "purchase_cost": [("purchase_cost.last_cost", "L", "L")],
+            "sales": [],
+        },
+    )
+    out = lab.parse_labels(
+        answer_for({"k1": [ask("purchase_cost", "purchase_cost.zzt")], "k2": [ask("sales", "sales.figures")]}),
+        [_row(key="k1", subject="purchase_cost"), _row(key="k2", subject="sales")],
+        taxonomy,
+    )
+    assert out["k1"].asks[0].leaf == "purchase_cost"
+    assert out["k2"].asks[0].leaf == "sales"
+
+
 def test_ask_one_keeps_the_rows_subject_whatever_the_model_says():
     out = labeller().parse_labels(
         answer_for({"k1": [ask("incoming", "incoming.product_eta")]}), [_row(subject="inventory")], _taxonomy()
@@ -569,3 +589,20 @@ def test_the_scheduler_queues_the_labeller_at_0215_malaysia(monkeypatch):
     fields = {f.name: str(f) for f in trigger.fields}
     assert fields["hour"] == "2" and fields["minute"] == "15"
     assert str(trigger.timezone) == "Asia/Kuala_Lumpur"
+
+
+@pytest.mark.parametrize("enabled, expect_enqueued", [(False, 0), (True, 1)])
+def test_the_tick_queues_the_job_only_when_switched_on(monkeypatch, enabled, expect_enqueued):
+    # Owner, 9 Oct 2026: labelling runs on dev only until he says otherwise, so the nightly
+    # tick is off unless CHAT_TOPIC_LABELLER_ENABLED is set.
+    from app.config import settings
+    from app.scheduler import task_scheduler
+    from app.tasks import chat_turns
+
+    calls = []
+    monkeypatch.setattr(settings, "chat_topic_labeller_enabled", enabled, raising=False)
+    monkeypatch.setattr(chat_turns, "enqueue_chat_topic_labeller", lambda: calls.append(1))
+
+    task_scheduler._chat_topic_labeller_tick()
+
+    assert len(calls) == expect_enqueued

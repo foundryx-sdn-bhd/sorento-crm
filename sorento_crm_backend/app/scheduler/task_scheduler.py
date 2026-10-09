@@ -581,11 +581,15 @@ def _chat_facts_sweep_tick():
 
 def _chat_topic_labeller_tick():
     """APScheduler tick: queue the nightly chat topic labeller on `analytics` (CA-2). The job
-    runs on the worker (minutes of model calls); this only enqueues. Never raises."""
+    runs on the worker (minutes of model calls); this only enqueues. Off unless
+    CHAT_TOPIC_LABELLER_ENABLED is set (owner: labelling on dev only for now). Never raises."""
     try:
-        from app.tasks.chat_turns import enqueue_chat_topic_labeller
+        from app.config import settings
+        from app.tasks import chat_turns
 
-        enqueue_chat_topic_labeller()
+        if not settings.chat_topic_labeller_enabled:
+            return
+        chat_turns.enqueue_chat_topic_labeller()
     except Exception as e:
         logger.error("Chat topic labeller tick failed: %s", e, exc_info=True)
 

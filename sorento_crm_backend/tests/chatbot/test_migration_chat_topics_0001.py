@@ -6,8 +6,9 @@ Plan: documentation/plans/chatbot/PLAN-chat-analytics-ca2-taxonomy-09oct.md, "Sc
 * static: the revision id fits `alembic_version.version_num` (<= 32 chars), it chains onto
   CA-1's tables, and `upgrade()` only adds;
 * functional: `upgrade()` runs against the blank scratch schema inside a rolled-back
-  transaction, seeds the 15 subjects (the 14 parser domains plus `general`) at version 1,
-  and is idempotent.
+  transaction, seeds the 16 subjects (the 15 parser domains plus `general`) and the 31
+  leaves of taxonomy v1 (owner approved, 9 Oct 2026, frozen as version 1), and is
+  idempotent.
 
 Run: pytest tests/chatbot/test_migration_chat_topics_0001.py -q (under tests/chatbot/: it reads the
 parser domains from `turn/policy_rows.py`, and only this folder may import the chatbot package)
@@ -125,13 +126,35 @@ def test_upgrade_creates_the_topics_table_and_the_two_columns(db):
 def test_the_subjects_are_the_parser_domains_plus_general_at_version_1(db):
     _run(db)
     rows = db.execute(
-        text(f'SELECT code, parent_code, version, status, label FROM "{_schema()}".chat_topics')
+        text(
+            f'SELECT code, parent_code, version, status, label FROM "{_schema()}".chat_topics '
+            "WHERE parent_code IS NULL"
+        )
     ).all()
     assert {r.code for r in rows} == set(DOMAINS) | {"general"}
     assert all(r.parent_code is None for r in rows), "a subject has no parent"
     assert {r.version for r in rows} == {1}
     assert {r.status for r in rows} == {"active"}
     assert all(r.label for r in rows), "every subject has words to print"
+
+
+def test_taxonomy_v1_is_seeded_as_approved(db):
+    _run(db)
+    rows = db.execute(
+        text(f'SELECT code, parent_code, version FROM "{_schema()}".chat_topics WHERE parent_code IS NOT NULL')
+    ).all()
+    assert len(rows) == 31
+    assert {r.version for r in rows} == {1}
+    assert all(r.code.startswith(f"{r.parent_code}.") for r in rows), "a leaf code names its subject"
+    codes = {r.code for r in rows}
+    assert {"inventory.availability", "order.sales_figures", "general.noise", "purchase_cost.last_cost"} <= codes
+    by_subject = {}
+    for r in rows:
+        by_subject.setdefault(r.parent_code, 0)
+        by_subject[r.parent_code] += 1
+    # `sales` has no leaf in v1 as approved (its asks were routed to `order` in the window
+    # the tree was drawn from); its asks are labelled at the subject itself.
+    assert set(by_subject) == (set(DOMAINS) | {"general"}) - {"sales"}
 
 
 def test_a_leaf_nests_under_an_existing_subject_only(db):
@@ -157,4 +180,4 @@ def test_upgrade_is_idempotent(db):
     _run(db)
     _run(db)
     count = db.execute(text(f'SELECT count(*) FROM "{_schema()}".chat_topics')).scalar()
-    assert count == len(DOMAINS) + 1
+    assert count == len(DOMAINS) + 1 + 31

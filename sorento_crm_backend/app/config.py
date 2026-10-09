@@ -158,6 +158,10 @@ class Settings(BaseSettings):
     # not arrived. When true the request enqueues on the `chat` queue and waits for the
     # result, the pattern `/external/media` already uses. CHATBOT_TURN_ON_WORKER.
     chatbot_turn_on_worker: bool = False
+    # Chat analytics CA-2: the nightly topic labeller (02:15 Malaysia, `analytics` queue) calls
+    # the LLM, so it is off until switched on. Owner, 9 Oct 2026: labelling on dev only for now.
+    # CHAT_TOPIC_LABELLER_ENABLED.
+    chat_topic_labeller_enabled: bool = False
     # How long the request waits for the offloaded turn before giving up on it.
     # CHATBOT_TURN_WAIT_SECONDS.
     chatbot_turn_wait_seconds: int = 60

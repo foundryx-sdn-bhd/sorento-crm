@@ -7,7 +7,9 @@ domains, plus `general` for an ask with none (owner ruling HYBRID, 9 Oct 2026: t
 of a topic IS the parser's domain). A leaf nests under a subject through `parent_code`, a
 foreign key, so a leaf under a subject that does not exist cannot be written. `version` is
 the taxonomy version that introduced the row; the current version is the highest one among
-active rows. Leaves arrive in a later migration, once the owner has approved taxonomy v1.
+active rows. The leaves are taxonomy v1 exactly as the owner approved it on 9 Oct 2026
+(`documentation/plans/chatbot/taxonomy_v1.md`, 47ae92ec), frozen as version 1. A change is
+a new version in a new migration, approved by the owner until he names a delegate.
 
 The subject list is frozen here rather than read from `turn/policy_rows.py`: a migration
 must replay the same rows forever, whatever the code says later. A domain added to the
@@ -55,6 +57,42 @@ _SUBJECTS = (
 )
 
 
+#: (code, parent, label, definition): taxonomy v1 as approved, in reading order.
+_LEAVES = (
+    ("inventory.availability", "inventory", "Availability", "Is a product in stock."),
+    ("inventory.quantity_check", "inventory", "Quantity check", "Is there enough of a product for a stated quantity."),
+    ("inventory.other", "inventory", "Other stock", "Any other stock question, low-stock lists included."),
+    ("incoming.product_eta", "incoming", "Product ETA", "When a product will arrive."),
+    ("incoming.other", "incoming", "Other incoming", "Any other question about stock on its way."),
+    ("order.delivery_status", "order", "Delivery status", "The status or delivery of a customer's order."),
+    ("order.sales_figures", "order", "Sales figures", "Sales totals or rankings asked through orders."),
+    ("order.customer_ordered_product", "order", "Ordered a product", "Whether a customer ordered a given product."),
+    ("order.other", "order", "Other orders", "Any other question about orders."),
+    ("general.noise", "general", "Noise", "Small talk, thanks and acknowledgements."),
+    ("general.ask_for_person", "general", "Ask for a person", "Asks to be put through to staff."),
+    ("general.document", "general", "Document", "An invoice, statement or other document, with no business domain."),
+    ("general.other", "general", "Other", "Anything else with no business domain, unparsed messages included."),
+    ("product_attachment.photo_drawing", "product_attachment", "Photo or drawing", "A photo, image or drawing of a product."),
+    ("product_attachment.certificate", "product_attachment", "Certificate", "A product's certificate."),
+    ("product_attachment.other", "product_attachment", "Other product files", "Any other product file."),
+    ("promotion.product_promotion", "promotion", "Product promotion", "The promotion on a product."),
+    ("promotion.other", "promotion", "Other promotions", "Any other promotion question."),
+    ("purchase_cost.last_cost", "purchase_cost", "Last cost", "The last purchase cost of a product."),
+    ("master_products.specification", "master_products", "Specification", "A size, thickness or other specification."),
+    ("master_products.installation", "master_products", "Installation", "How to install a product."),
+    ("master_products.discontinued", "master_products", "Discontinued", "Whether a product is discontinued."),
+    ("master_products.compatibility", "master_products", "Compatibility", "Which product fits with which."),
+    ("master_products.other", "master_products", "Other product information", "Any other question about a product."),
+    ("portal_link.request", "portal_link", "Portal request", "A portal link or a portal task: sponsorship, price tag, complaint."),
+    ("resource_attachment.document", "resource_attachment", "Document", "A catalogue, guide or report."),
+    ("ideate.suggestion", "ideate", "Suggestion", "An idea for the company or the bot."),
+    ("forms.request", "forms", "Form request", "A form to fill in."),
+    ("purchase_order.outstanding", "purchase_order", "Outstanding", "Outstanding purchase orders."),
+    ("spo_allocation.last_in", "spo_allocation", "Last in", "The shipment a product last came in on."),
+    ("goods_receive.request", "goods_receive", "Goods receive", "Goods received into the warehouse."),
+)
+
+
 def _schema(bind) -> str:
     """Where the chatbot tables live, for raw SQL: the scratch copy under the test suite
     (`<default>_chatbot`, `tests/_pg_fixture.py`), `chatbot` everywhere else."""
@@ -98,6 +136,7 @@ def upgrade() -> None:
         "chat_topics",
         sa.MetaData(),
         sa.Column("code", sa.Text(), primary_key=True),
+        sa.Column("parent_code", sa.Text()),
         sa.Column("label", sa.Text()),
         sa.Column("definition", sa.Text()),
         sa.Column("version", sa.SmallInteger()),
@@ -109,6 +148,20 @@ def upgrade() -> None:
         bind.execute(
             postgresql.insert(topics)
             .values(code=code, label=label, definition=definition, version=1, status="active", sort_order=order)
+            .on_conflict_do_nothing(index_elements=["code"])
+        )
+    for order, (code, parent, label, definition) in enumerate(_LEAVES):
+        bind.execute(
+            postgresql.insert(topics)
+            .values(
+                code=code,
+                parent_code=parent,
+                label=label,
+                definition=definition,
+                version=1,
+                status="active",
+                sort_order=order,
+            )
             .on_conflict_do_nothing(index_elements=["code"])
         )
 
