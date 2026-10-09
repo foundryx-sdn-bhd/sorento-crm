@@ -185,3 +185,36 @@ class ChatTopic(Base):
     status = Column(Text, nullable=False, server_default=text("'active'"), default="active")
     sort_order = Column(Integer, nullable=False, server_default=text("0"), default=0)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class ChatLabelAudit(Base):
+    """One ask drawn into the topic audit sample for a taxonomy version, and the verdict a
+    person gave it (chat analytics CA-2).
+
+    There is no column for the customer's words: the audit screen reads the message from the
+    turn envelope at request time and never stores it.
+    """
+
+    __tablename__ = "chat_label_audits"
+    __audit_skip__ = "the audit table is itself the review record"
+    __table_args__ = (
+        UniqueConstraint("ask_id", "taxonomy_version", name="uq_chat_label_audits_ask_version"),
+        {"schema": "chatbot"},
+    )
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=_uuid_str)
+    ask_id = Column(
+        UUID(as_uuid=False),
+        ForeignKey("chatbot.chat_ask_facts.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    taxonomy_version = Column(SmallInteger, nullable=False)
+    drawn_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    # right | wrong_topic | wrong_subject
+    verdict = Column(Text, nullable=True)
+    corrected_topic = Column(Text, ForeignKey("chatbot.chat_topics.code"), nullable=True)
+    # right | wrong
+    products_verdict = Column(Text, nullable=True)
+    # The reviewer's user id as text.
+    reviewed_by = Column(Text, nullable=True)
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)

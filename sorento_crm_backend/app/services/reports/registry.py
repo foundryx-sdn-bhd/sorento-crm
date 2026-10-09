@@ -284,7 +284,7 @@ class DetailLayout:
 
 
 PIVOT_VARIANCES = frozenset({"last_two_rows"})
-PIVOT_CHARTS = frozenset({"line"})
+PIVOT_CHARTS = frozenset({"line", "bar"})
 
 
 @dataclass(frozen=True)
@@ -295,7 +295,8 @@ class PivotLayout:
     #: columns the last row has (a year to date against the same months a year earlier).
     variance: Optional[str] = None
     #: "line": the screen draws the pivot as a line chart under the table, and the
-    #: workbook writes a native chart under the block.
+    #: workbook writes a native chart under the block. "bar": the screen draws grouped
+    #: bars (one per column value for each row value); the workbook writes no chart.
     chart: Optional[str] = None
     #: The screen prints whole ringgit; the workbook keeps the sen.
     whole_units: bool = False

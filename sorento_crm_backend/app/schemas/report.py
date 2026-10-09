@@ -96,7 +96,7 @@ class ReportPivotLayout(BaseModel):
     # Display label per ROW value when the row axis names its values ("01" -> "JAN");
     # absent otherwise, and the raw value is the label.
     row_value_labels: Optional[Dict[str, str]] = None
-    # "line" when the screen draws this table as a chart under it.
+    # "line" or "bar" when the screen draws this table as a chart under it.
     chart: Optional[str] = None
     # The screen prints whole ringgit; the workbook keeps the sen.
     whole_units: bool = False
