@@ -20,7 +20,7 @@ Design (binding): `documentation/plans/chatbot/DESIGN-chat-analytics-09oct.md` (
   CA-2" (`chat_asks.py` `COVERAGE_NOTE`).
 - Parser output per turn, strict JSON (`app/services/chatbot/head/parser.py:84`
   `_build_json_schema`): `message_type` (5 values, `contracts.py:160`), `intent_hint` /
-  `domain_hint` (closed lists from `turn/policy_rows.py`, 14 domains, 15 intents),
+  `domain_hint` (closed lists from `turn/policy_rows.py`, 15 domains, 16 intents),
   `entities[].hint` (entity kind), `requested_attributes`, `order_status`, `group_by`,
   `date_mode`, `top_n`, `user_goal` (free text). CA-1 already copies domain + intent into
   facts.
@@ -29,7 +29,7 @@ Design (binding): `documentation/plans/chatbot/DESIGN-chat-analytics-09oct.md` (
 
 ## Taxonomy discovery
 
-1. Subjects are exactly the 14 parser domains (`turn/policy_rows.py`) plus `general` (no
+1. Subjects are exactly the 15 parser domains (`turn/policy_rows.py`) plus `general` (no
    domain). Ruled, so the migration seeds them now.
 2. Leaves nest under a subject. Crew sends, from the local 6 Oct prod snapshot (no prod DB
    access, ever): counts per (domain, intent, message type, outcome) since 5 Sep, and about 60
@@ -49,7 +49,7 @@ Design (binding): `documentation/plans/chatbot/DESIGN-chat-analytics-09oct.md` (
 - `chatbot.chat_ask_facts.language` text null (`en` / `ms` / `zh` / `mixed` / `other`).
 - `chatbot.chat_ask_items.confidence` real null (the labeller's own score for a
   `resolver_pass` item).
-- Seed: the 15 subjects at version 1.
+- Seed: the 16 subjects (15 parser domains + `general`) at version 1.
 
 ## Q5 (staff replies in chat_histories), as measured by CA-1
 
@@ -74,7 +74,7 @@ turn id. The prod-latest data request raised there has no answer on the PR yet.
 
 ### Rules
 
-- R1 Subject. `subject = fact.domain` (one of the 14 parser domains). Null domain: `casual`
+- R1 Subject. `subject = fact.domain` (one of the 15 parser domains). Null domain: `casual`
   message type -> `general.noise`; anything else -> `general` (the labeller picks its leaf).
   The labeller never changes the subject of ask 1.
 - R2 Leaf. The labeller picks one leaf code from the active leaves UNDER that subject (the
@@ -105,25 +105,10 @@ model list prices (USD 0.4 to 1 per M in, 1.6 to 5 per M out) that is about USD 
 day, USD 1.5 to 4 a month. One-time label of the live era (5 Sep on, ~11K asks): ~2.2M in /
 0.45M out, USD 1 to 4.
 
-### Draft taxonomy v1 (subjects = parser domains; leaves pending counts)
+### Taxonomy v1
 
-| Subject (parser domain) | Draft leaves |
-|---|---|
-| inventory | availability, quantity_for_need, by_warehouse, low_stock_list, other |
-| incoming | product_eta, container_contents, other |
-| order | status, delivery_eta, outstanding_list, document_copy, other |
-| master_products | price, specification, alternative, discontinued, find_by_description, other |
-| product_attachment | photo, catalogue, other |
-| promotion | current_promotions, tier_terms, other |
-| sales | ranking_report, own_figures, other |
-| purchase_order | outstanding, other |
-| purchase_cost | last_cost |
-| spo_allocation | last_in |
-| forms / portal_link / resource_attachment / ideate / goods_receive | one leaf each + other |
-| general (no domain) | noise, ask_for_person, account_statement, complaint, other |
-
-About 45 leaves. Final leaves keep only those holding >= 0.5% of asks; the counts come from the
-data request.
+Drafted from crew's data in `taxonomy_v1.md` (30 leaves under 16 subjects, real masked
+examples). Awaiting owner approval.
 
 ## Card answers (crew, 9 Oct 2026)
 
