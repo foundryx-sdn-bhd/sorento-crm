@@ -1,6 +1,6 @@
 # CARD - per-ask planning, exact codes, compact replies (MULTI-ASK-PLAN)
 
-Status: card SETTLED by the owner (9 Oct 2026, two rounds). Built: S1 (d9f8321b), red-first
+Status: card SETTLED by the owner (9 Oct 2026, two rounds; round 3 ruling R-LASTIN 9 Oct, fix round in progress on a2). Built: S1 (d9f8321b), red-first
 tests (f6fc7adf), S3 (b482cfdb), S2 (3f9d878c), S4 (b6daddb0); reviewer + security-reviewer
 findings fixed (4040609f, 25e6781a). Waiting on CI, crew's live parser checks and the owner's
 hand test (PR #1542). Track: L
@@ -19,6 +19,7 @@ DB): both are listed at the bottom for crew to run locally.
 | Q2 | Clarify, parser-driven | The parser says per product code whether the asker meant the exact code, the family, or did not say (`family: true / false / null`). `null` and the code has variants -> ONE short question naming the variant count, and nothing else runs that turn: `SRTWT7445 有 8 个款式。只要 SRTWT7445，还是全部 8 款？` / `SRTWT7445 has 8 variants. Just SRTWT7445, or all 8?`. The reply to it is parsed as `family`, and the original sub-asks run. No code rule picks exact or family. |
 | Q3 | (b) current behaviour, labelled | Supplier = the supplier of the LAST PO line for the product (newest PO date across every location), the same row `crm_procurement_po_last_cost_list` answers today; the line names that PO: `供应商: ABC SDN BHD（PO-2026-0412，03/06/2026）`. No date window. |
 | Q4 | Clarify | `sold_*` with no basis the parser can read -> ONE short question `卖出按已出货还是按下单算？` / `Sold as delivered or as ordered?`. Only the sold lines wait on it: every other asked line answers in the same reply and the question is the last line. |
+| R-LASTIN (9 Oct, round 3) | (a) | "Last in" / 最后一次进库 / last receipt DATE is the last SPO line's delivery date EVERYWHERE (the 8 Sep ruling, `PLAN-chatbot-warehouse-entity-and-last-in.md`, tool `crm_procurement_spo_allocations_last_receipt_list`), inside a multi-ask too. The `last_receipt` line names the SPO: `Last in: 18/09/2026 (300, SPO-2026-0101)`. `received_qty` totals stay on GRN. A lone last-in ask that finds no SPO line reads `Last in: none on record` / `最后一次进库: 没有记录`, never "But no spo allocation matched these". The prompt carries `"Srt38ss last in date and quantity" -> null` as an example so the lone ask is stable. |
 | Q5 | (b), text, no Excel | The reply goes as TEXT packed into the fewest WhatsApp messages: lines fill each message up to the per-message limit (`WHATSAPP_MESSAGE_MAX_CHARS` 3,900), never a short part when the next line would have fitted, never one message per section. |
 
 Question order when both are needed: the variant question (Q2) goes ALONE, since every line
@@ -111,15 +112,15 @@ d9f8321b; a new catalog key, so the stored `translation_memory` row for the old 
 | `stock` | 库存 / stock | `crm_inventory_stock_balance_list` | no | `inventory.sellable` domain reveal, as today | `Stock: 120` / `库存: 120` |
 | `incoming` | 到货 / incoming | `crm_incoming_stock_by_product` | yes | none | `Incoming: 300, ETA 15/10/2026` / `到货: 300，ETA 15/10/2026` |
 | `received_qty` | 入库了多少 / received | NEW `GET /api/v1/procurement/grn/summary` via NEW `crm_procurement_grn_summary`: sum `picking_lines.quantity_picked`, `picking_type='goods_received'`, `picking_status='approved'`, `picking_date` in window (precedent `procurement_service.py:1068-1080`) | yes | `purchase_orders.placed` | `Received 2026: 1,200` / `2026 入库数量: 1,200` |
-| `last_receipt` | 最后一次进库 / last in | the same new endpoint's `last_receipt` {date, qty}: the newest approved GRN for the product, all time | no | `purchase_orders.placed` | `Last received: 18/09/2026 (300)` / `最后一次进库: 18/09/2026（300）` |
+| `last_receipt` | 最后一次进库 / last in | `crm_procurement_spo_allocations_last_receipt_list top_n=1` (R-LASTIN): the last SPO line by its delivery date; newest across members for a family | no | `purchase_orders.placed` | `Last in: 18/09/2026 (300, SPO-2026-0101)` / `最后一次进库: 18/09/2026（300，SPO-2026-0101）` |
 | `supplier` | 供应商 / supplier | `crm_procurement_po_last_cost_list top_n=1`, the newest row across locations (Q3) | no | `purchase_orders.supplier` | `Supplier: ABC SDN BHD (PO-2026-0412, 03/06/2026)` |
 | `last_cost` | 采购价 / purchase price | the same row as `supplier` (one call serves both) | no | `purchase_orders.cost` | `Last cost: RM 45.00 / unit (PO-2026-0412, 03/06/2026)` / `采购价: RM 45.00 / 件（PO-2026-0412，03/06/2026）` |
 | `sold_total` | 总共卖了多少 / total sold | `crm_report_ask` no `group_by` (asked beside a `sold_by` of the same period and basis: that grouped call's own `total`, ONE call, since the route is rate limited per contact), `measure=qty`, `basis`, `product_ids` (never `product_code`, a PREFIX filter) | yes, required | `sales_orders.sales_report` | `Sold 2026 (delivered): 860` / `2026 总共卖出（已出货）: 860` |
 | `sold_by` | 每位业务员 / per salesman / per customer | `crm_report_ask group_by=<axis> measure=qty top_n=1000` | yes, required | `sales_orders.sales_report` | header line, then `1. Ali: 300` per row |
 | `other` | anything else | none | - | - | `<asker's words>: not available yet` |
 
-`supplier` and `last_cost` in one message make ONE call. `received_qty` and `last_receipt` in
-one message make ONE call.
+`supplier` and `last_cost` in one message make ONE call. `received_qty` (GRN) and
+`last_receipt` (SPO) are two calls since R-LASTIN.
 
 Known data gap (crew to measure): a receipt booked through the ESB-stated path has a
 `gr_quantity` and no GRN (`catalog.py:1386-1395`), so it is not counted by `received_qty` or
@@ -193,8 +194,8 @@ message, one line per ask.
 
 1. `Last purchase cost and stock for srtwc286` (no exact hit) -> today's which-one picker
    first, then `SRTWC286-SH` / `Last cost: RM ... / unit (PO..., dd/mm/yyyy)` / `Stock: <qty>`.
-2. `Srt38ss last in date and quantity` -> ONE sub-ask (`last_receipt`), so today's path,
-   unchanged.
+2. `Srt38ss last in date and quantity` -> ONE ask, today's last-in path (last SPO line).
+   SRT38-SS has no SPO line on dev, so `Last in: none on record` every run (R-LASTIN).
 3. `Incoming and stock for 7445` -> the bare number ladder is unchanged
    (`turn.task.code_or_number`); then `Incoming: <qty>, ETA dd/mm/yyyy` / `Stock: <qty>`.
 4. `Incoming and PO srtkt1871ss,srtkt1866ss,srtkt1865ss` -> `po_placed` is not in the
@@ -215,7 +216,7 @@ is `CNY`).
 | `sold_*` with no window anywhere | That line asks `<label>: which period?`; the others answer. |
 | Contact lacks a grant (cost, supplier, sales) | That line `<label>: not shared with you` (localised); others answer. |
 | Zero received / never sold in window | `2026 入库数量: 0`, `2026 总共卖出（已出货）: 0`. |
-| No GRN ever | `最后一次进库: 没有记录` / `Last received: none on record`. |
+| No SPO line ever | `最后一次进库: 没有记录` / `Last in: none on record`, in the runner and on the lone last-in path alike (R-LASTIN). |
 | No PO line ever | `供应商: 没有记录`, `采购价: 没有记录`. |
 | Two products, six asks | One block per product in typed order, the same line order in each. |
 | `family: true` | The code line reads `SRTWT7445（全部 8 款）`; one summed line per sub-ask; supplier / last cost / last receipt answer the newest row across the family. |
@@ -283,8 +284,10 @@ the default; `mode` must not be `availability`). Field reveals on the contact's 
    mode `pick`, picked [1]; `全部` / `all of them` -> pick [2] (or mode `all`).
 3. `已出货` / `delivered`, replying to the basis question -> mode `pick`, picked [1] (an item
    naming the option code `delivered` is read the same); `下单` / `ordered` -> picked [2].
-4. `Srt38ss last in date and quantity` -> `sub_asks: null` (the date and quantity of one event
-   is ONE ask), so today's last-in path answers, the same way every run.
+4. `Srt38ss last in date and quantity` -> ONE ask (`sub_asks` null, or one `last_receipt`), so
+   today's last-in path answers `Last in: none on record` every run (SRT38-SS has no SPO line on
+   dev). Staff patch must reach the stock route's `stock_visibility.resolve_policy` too: the dev
+   test contact 487555417 is `availability` (round-3 T4 "需要多少件" came from that, not the code).
 5. `Incoming and stock for 7445` -> `sub_asks` [incoming, stock] OR null; either way the reply
    is today's multi-domain answer (`asks[]` carries the second domain), since neither is a
    runner-only measure.
