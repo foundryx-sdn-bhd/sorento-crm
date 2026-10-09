@@ -76,6 +76,25 @@ async def get_promotions(
             "is in `promotion_ids` OR contains any product in `product_ids`."
         ),
     ),
+    scope_terms: Optional[list[str]] = Query(
+        None,
+        description=(
+            "Subject filter: class phrases (the resolver's scope terms). Returns only "
+            "promotions with a linked product in that class; never falls back to "
+            "inactive rows. csv / JSON list / repeated."
+        ),
+    ),
+    promotion_types: Optional[list[str]] = Query(
+        None,
+        description="Filter by promotion type codes (`promotion_types.type_code`). csv / JSON list / repeated.",
+    ),
+    brand_ids: Optional[list[str]] = Query(
+        None,
+        description=(
+            "Filter to promotions with a linked product (promotion_products) of these brand "
+            "UUIDs. Never falls back to inactive rows. csv / JSON list / repeated."
+        ),
+    ),
     user_type: Optional[str] = Query(None, description="Filter by a single access level code (FE listing)."),
     access_levels: Optional[list[str]] = Query(
         None,
@@ -157,6 +176,9 @@ async def get_promotions(
         from app.services.contact_access_type_service import ContactAccessTypeService
         from app.services.entity_filter_helpers import normalize_list_query_param
         access_levels = normalize_list_query_param(access_levels)
+        scope_terms = normalize_list_query_param(scope_terms)
+        promotion_types = normalize_list_query_param(promotion_types)
+        brand_ids = parse_uuid_list(brand_ids, param_name="brand_ids")
         contact_codes = ContactAccessTypeService(db).translate_names_to_codes(access_levels)
         service = PromotionService(db)
         # Strip domain-noise tokens ("promotion", "promo", ...) from caller-supplied
@@ -208,6 +230,9 @@ async def get_promotions(
             attachment_state=attachment_state,
             expiry_notify_batch_id=(expiry_notify_batch_id or None),
             serving_policy=serving_policy,
+            scope_terms=scope_terms,
+            promotion_types=promotion_types,
+            brand_ids=brand_ids,
         )
         # Data-miss path (§3.3): when the service attached `alternatives` /
         # `relaxed_axis` (empty result only), bypass the strict `ListResponse`

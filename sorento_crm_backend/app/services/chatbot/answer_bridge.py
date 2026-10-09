@@ -87,10 +87,12 @@ live caller on this branch before R4).
 """
 from __future__ import annotations
 
+import json
 import logging
 import re
 from typing import Any, Mapping
 
+from app.services.chatbot import turn_runtime as _turn_runtime
 from app.services.chatbot.lanes.business import answer as answer_mod
 from app.services.chatbot.lanes.business import miss_suggest as miss_mod
 from app.services.chatbot.lanes.business import services as business_services
@@ -610,7 +612,9 @@ def _roster_option(row: dict[str, Any], *, kind: str, position: int) -> dict[str
     return option
 
 
-def _tier_options(rows: list[dict[str, Any]], *, asked_at_turn: int | None) -> pending.Pending | None:
+def _tier_options(
+    rows: list[dict[str, Any]], *, asked_at_turn: int | None, promo_filter: dict[str, Any] | None = None
+) -> pending.Pending | None:
     """`tier_last_result_set` rows -> a `tier_pick` `Pending`, or `None` when fewer than
     two tiers are on offer (AC-1691) - the caller then has a text-only `Answer`, settling
     the single tier outright rather than asking about it."""
@@ -631,7 +635,55 @@ def _tier_options(rows: list[dict[str, Any]], *, asked_at_turn: int | None) -> p
     # own "promotion" against, so a pick whose verdict kept `domain_hint: promotion`
     # read as a pick in ANOTHER domain. The tier ask is the promotion lane's alone
     # (`tier_gate.needs_tier_ask`).
-    return pending.ask("tier_pick", options, asked_at_turn=asked_at_turn, payload={"domain": "promotion"})
+    # PROMO-SUBJECT-FILTER AC-6: the subject the menu was probed with rides the open pick,
+    # so the answering turn (which names none) fetches with the same filter.
+    payload: dict[str, Any] = {"domain": "promotion"}
+    if promo_filter:
+        payload["promo_filter"] = dict(promo_filter)
+    return pending.ask("tier_pick", options, asked_at_turn=asked_at_turn, payload=payload)
+
+
+def no_live_kind_reply(
+    db: Any, narrow: dict[str, Any], tier_source: dict[str, Any] | None, mcp_call: Any
+) -> str | None:
+    """PROMO-SUBJECT-FILTER AC-21: the asked kind + brand has no live promotion at any held
+    level. What counts is the serving rule every promotion read uses (AC-22: a type that serves
+    its ended rows counts them). The first line says so; when other brands do have that kind
+    served at the contact's levels, `Other <kind>s:` and their distinct names follow.
+    None when this is not a kind + brand ask."""
+    kinds, brand_ids = narrow.get("promotion_types"), narrow.get("brand_ids")
+    if not kinds or not brand_ids:
+        return None
+    from app.models.marketing import PromotionType
+    from app.services.chatbot import turn_runtime
+
+    row = db.query(PromotionType).filter(PromotionType.type_code == kinds[0]).first()
+    brand = next((b for b in turn_runtime.active_brands(db) if b["id"] in brand_ids), None)
+    if row is None or brand is None:
+        return None
+    first, *rest = str(row.type_name).split()
+    kind = " ".join([first, *[w.lower() for w in rest]])
+    lines = [f"There is no {brand['brand_name']} {kind} right now."]
+    names: list[str] = []
+    try:
+        raw = mcp_call(
+            "crm_marketing_promotions_list",
+            {
+                "promotion_types": list(kinds),
+                "access_levels": list((tier_source or {}).get("name") or []),
+            },
+        )
+        body = json.loads(raw) if isinstance(raw, str) else raw
+        for item in (body.get("data") or body.get("items") or []) if isinstance(body, dict) else []:
+            name = str((item or {}).get("description") or "").strip()
+            if name and name not in names:
+                names.append(name)
+    except Exception:  # noqa: BLE001 - the other-brand list is a courtesy; the first line stands
+        logger.warning("chatbot: other-brand kind list did not run", exc_info=True)
+    if names:
+        lines.append(f"Other {kind}s:")
+        lines.extend(names)
+    return "\n".join(lines)
 
 
 def _access_ask_answer(
@@ -666,13 +718,22 @@ def _access_ask_answer(
         # this composer.
         tier_source = payload.get("tier_gate") if isinstance(payload, dict) else None
     lane_item = {
-        **answer_mod.access_level_choice_message(tier_source, parser=parser),
+        **answer_mod.access_level_choice_message(
+            tier_source,
+            parser=parser,
+        ),
         "branch_kind": "access_choice",
     }
     text = _compose_text(lane_item, ctx=ctx, canned=canned, db=db, access_choice=lane_item)
     rows = lane_item.get("tier_last_result_set")
     rows = rows if isinstance(rows, list) else []
-    question = _tier_options(rows, asked_at_turn=asked_at_turn)
+    from app.services.chatbot import turn_runtime
+
+    question = _tier_options(
+        rows, asked_at_turn=asked_at_turn, promo_filter=turn_runtime.promo_filter(
+            parser or {}, db, (fetch or {}).get("gate") or (payload or {}).get("gate")
+        )
+    )
     return turn_compose.Answer(text=text, question=question)
 
 
@@ -1606,7 +1667,12 @@ def _miss_triggers(
     # report ran and said its own line; a word the resolver missed on the same turn
     # never turns that reply into "Could not find inventory".
     low_stock_answered = isinstance(fetch_item, Mapping) and fetch_item.get("low_stock_report") is True
-    via_resolver_exit = payload.get("_exit_kind") == "not_found" and not (so_status_answered or low_stock_answered)
+    # PROMO-SUBJECT-FILTER: a subject word the fetch applied as a filter and answered rows for
+    # is satisfied; the resolver having no entity for it is no miss.
+    subject_filtered = isinstance(fetch_item, Mapping) and fetch_item.get("subject_filtered") is True
+    via_resolver_exit = payload.get("_exit_kind") == "not_found" and not (
+        so_status_answered or low_stock_answered or subject_filtered
+    )
     via_error_fragment = fragment_outcome == "not_found"
     # R5 (AC-1699, AC-1702): a THIRD trigger - the resolver settled a real subject,
     # the fetch genuinely ran for it, and the tool came back with zero rows. This
