@@ -1,10 +1,8 @@
 # PLAN: Chat analytics CA-2, topic taxonomy + topic labelling
 
-Status: Build. Labelling ruled HYBRID; taxonomy v1 APPROVED by the owner (9 Oct 2026) and
-seeded as version 1; monthly bumps approved by the owner until he names a delegate. Labeller,
-resolver pass and migration built and green; Top asks + audit mock v1 (real masked data) at
-`documentation/mockups/CA-2-TAXONOMY/index.html`, awaiting owner approval; then build red-first.
-Labelling runs on dev only (nightly tick off unless CHAT_TOPIC_LABELLER_ENABLED). Track: full (migration + new queue + new report definitions).
+Status: Hand test (10 Oct 2026). Built red-first, reviewer READY + security-reviewer clean,
+browser pass on head chat_topics_0002_audit; labelling ran on dev only (399 asks). Track: full
+(migrations + new queue + new report definitions + new audit routes).
 
 Design (binding): `documentation/plans/chatbot/DESIGN-chat-analytics-09oct.md` (PR #1545, branch
 `claude/chat-analytics-design-cvrxu8`, approved 9 Oct 2026), section 8 lane CA-2. Builds on CA-1
