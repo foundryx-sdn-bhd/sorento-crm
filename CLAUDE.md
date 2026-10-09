@@ -189,7 +189,7 @@ Storage routing: each `attachments` row carries a `storage_provider` (`s3` or `r
 
 Frontend (`sorento_crm_frontend/.env` or `.env.local`): `NEXTAUTH_SECRET` (must align with backend `JWT_SECRET` if sharing tokens), `NEXTAUTH_URL`, `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_BASE_PATH`, `GOOGLE_CLIENT_*`, `EXTERNAL_API_KEY`, `SMTP_*`, `STORAGE_*`, `RECAPTCHA_*`, `FRONTEND_BASE_URL`.
 
-MCP (`sorento_crm_mcp/`): `CRM_BASE_URL`, `EXTERNAL_API_KEY`, `MCP_AUTH_TOKEN` (required; every caller sends it as a Bearer token, the backend from its own `MCP_AUTH_TOKEN`), optional `MCP_AUTH_ENFORCE`, `CRM_MCP_ALLOWED_HOSTS`, `CRM_MCP_HOST/PORT/TIMEOUT/MAX_RESPONSE_BYTES/LOG_LEVEL`.
+MCP (`sorento_crm_mcp/`): `CRM_BASE_URL`, `EXTERNAL_API_KEY`, `MCP_AUTH_TOKEN` (required; every caller sends it as a Bearer token, the backend from its own `MCP_AUTH_TOKEN`), optional `CRM_MCP_ALLOWED_HOSTS`, `CRM_MCP_HOST/PORT/TIMEOUT/MAX_RESPONSE_BYTES/LOG_LEVEL`.
 
 ## Simplest thing that works (governing)
 

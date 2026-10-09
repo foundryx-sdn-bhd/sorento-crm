@@ -1807,11 +1807,7 @@ def create_http_app(settings: Settings) -> ASGIApp:
             f"MCP_AUTH_TOKEN must be set to a random value of at least {MIN_TOKEN_LENGTH} characters "
             "(e.g. `openssl rand -hex 32`); the MCP server will not serve without it."
         )
-    if not settings.mcp_auth_enforce:
-        logger.warning("MCP_AUTH_ENFORCE=false: requests without the bearer token are ALLOWED (rollout phase 1)")
-    return BearerAuthMiddleware(
-        create_mcp_app(settings).streamable_http_app(), token, enforce=settings.mcp_auth_enforce
-    )
+    return BearerAuthMiddleware(create_mcp_app(settings).streamable_http_app(), token)
 
 
 def create_mcp_app(settings: Settings) -> FastMCP:
