@@ -1,6 +1,6 @@
 # PLAN: Centre the full-page Sorento loader (LOADER-CENTER)
 
-Status: in progress (Track: small fix). Plan created: 2026-10-09.
+Status: in review (Track: small fix). PR #1540. Plan created: 2026-10-09.
 
 ## Journey
 
