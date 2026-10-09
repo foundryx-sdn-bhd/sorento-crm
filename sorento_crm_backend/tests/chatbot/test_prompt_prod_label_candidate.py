@@ -67,7 +67,7 @@ def test_candidate_file_has_marker_and_migration_lists_it(marker: str) -> None:
 
 
 OWNER_EDITS = [
-    '  - "installation guide", "installation manual" → attachment_type "installation_guide"',
+    '  - "installation guide", "installation manual" → attachment_type "installation guide"',
     "photo|technical drawing|3D model|certificate|installation guide",
     "(photo/drawing/installation guide)",
     "forwarder, consignee, warehouse, free days",
@@ -79,6 +79,14 @@ OWNER_EDITS = [
 @pytest.mark.parametrize("snippet", OWNER_EDITS)
 def test_owner_edits_present_verbatim(snippet: str) -> None:
     assert snippet in _text()
+
+
+def test_attachment_type_codes_use_the_grounding_spelling() -> None:
+    # app/services/chatbot/head/grounding.py DOCUMENT_TYPE_CODES accepts only "installation guide";
+    # on the replay copy the underscore form made the bot ask "Which kind of file?".
+    text = _text()
+    assert 'attachment_type "installation_guide"' not in text
+    assert "installation_guide" not in text
 
 
 def test_candidate_keeps_the_constant_line_and_gains_the_owner_word() -> None:
