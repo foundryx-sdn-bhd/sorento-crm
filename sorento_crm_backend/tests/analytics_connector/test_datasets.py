@@ -193,14 +193,24 @@ def test_read_only_role_reads_views_only():
             "SELECT 1 FROM public.users LIMIT 1",
             "SELECT 1 FROM chatbot.turns LIMIT 1",
             "DELETE FROM analytics_connector.episodes",
-            "INSERT INTO analytics_connector.episodes (id) VALUES ('x')",
+            "INSERT INTO analytics_connector.episodes (id) VALUES (gen_random_uuid())",
         ):
             db.execute(text("SAVEPOINT probe"))
             with pytest.raises(Exception) as err:
                 db.execute(text(stmt))
-            assert "permission denied" in str(err.value).lower(), stmt
+            # A view that is not auto-updatable is refused before the privilege check.
+            msg = str(err.value).lower()
+            assert "permission denied" in msg or "cannot delete from view" in msg \
+                or "cannot insert into view" in msg, stmt
             db.execute(text("ROLLBACK TO SAVEPOINT probe"))
         db.execute(text("ROLLBACK TO SAVEPOINT ro"))
+        for view in ("messages", "contacts", "bot_turns", "episodes"):
+            for priv in ("INSERT", "UPDATE", "DELETE", "TRUNCATE"):
+                held = db.execute(
+                    text("SELECT has_table_privilege(:r, :v, :p)"),
+                    {"r": role, "v": f"analytics_connector.{view}", "p": priv},
+                ).scalar()
+                assert held is False, (view, priv)
 
 
 def test_ensure_views_is_idempotent():

@@ -125,7 +125,7 @@ def register(client: TestClient, redirect_uris=(CLAUDE_CALLBACK,)) -> str:
     return resp.json()["client_id"]
 
 
-def start_authorize(client: TestClient, client_id: str, challenge: str, **overrides) -> dict:
+def start_authorize(client: TestClient, client_id: str, challenge: str, /, **overrides) -> dict:
     params = {
         "response_type": "code",
         "client_id": client_id,

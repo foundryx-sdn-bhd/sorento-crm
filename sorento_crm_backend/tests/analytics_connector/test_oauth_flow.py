@@ -305,7 +305,7 @@ def _code_for(client, db, user):
     return client_id, verifier, parse_redirect(approved.json()["redirect_to"])["code"]
 
 
-def _exchange(client, client_id, verifier, code, **over):
+def _exchange(client, client_id, verifier, code, /, **over):
     data = {"grant_type": "authorization_code", "code": code, "code_verifier": verifier,
             "client_id": client_id, "redirect_uri": CLAUDE_CALLBACK, "resource": RESOURCE}
     data.update(over)
