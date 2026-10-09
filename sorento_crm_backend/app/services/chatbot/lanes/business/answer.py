@@ -44,6 +44,8 @@ from app.services.ledger_family import customer_group_of, customer_header_words
 from app.services.product_spec_registry import SPEC_ACRONYMS
 from app.services.chatbot.tail.scope_block import live_brand_words
 from app.services.chatbot.turn import refer
+from app.services.chatbot.turn.state import token_key
+from app.services.chatbot.turn_runtime import SPEC_TIER
 
 # The did-you-mean helpers the JS carries in BOTH bodies with a "keep in lockstep" note.
 # `miss_suggest` owns them because that is where their node lives; this file imports them
@@ -307,20 +309,45 @@ def access_level_choice_message(
             out.get("tier_availability") if tier_availability is _UNSET else tier_availability
         )
         avail = resolved_avail if jsc.truthy(resolved_avail) else None
+        probe_failed = out.get("tier_probe_failed") is True
+        every_level_empty = (
+            isinstance(avail, dict)
+            and len(avail) > 0
+            and not any(jsc.get(avail, t) for t in held)
+        )
         # D16: name the thing being asked about, so the question cannot read as being
         # about nothing. Echo what the customer TYPED, never a canonical code - one raw
         # token can resolve to two products, and naming one would claim we searched
         # something they did not ask for. Past 60 chars the echo is DROPPED rather than
         # truncated, because half a promotion name reads like a different promotion.
+        # AC-16: a brand entity that names a live brand (the parser's canonical name, exact) is
+        # echoed by that row's real brand_name, bound to ITS entity; any other word stays as typed.
+        from app.services.chatbot.turn_runtime import brand_entity_rows
+
+        named = {
+            id(e): row["brand_name"]
+            for e, row in brand_entity_rows(q.get("entities"), jsc.array(out.get("live_brands")))
+        }
         raws: list[str] = []
         for e in jsc.array(q.get("entities")):
-            v = jsc.js_string(jsc.get(e, "raw") or "").strip()
+            v = named.get(id(e)) or jsc.js_string(jsc.get(e, "raw") or "").strip()
             if v and not any(x.lower() == v.lower() for x in raws):
                 raws.append(v)
         scope_label = ", ".join(raws[:3])
         if len(scope_label) > 60:
             scope_label = ""
         scope_suffix = f" for {scope_label}" if scope_label else ""
+        if probe_failed or every_level_empty:
+            # PROMO-SUBJECT-FILTER AC-10/AC-11: never a menu over a probe that failed or
+            # found nothing at any level; no pick is armed.
+            out["escalate_message"] = (
+                "I could not check promotions right now.\nPlease try again in a moment."
+                if probe_failed
+                else f"No current promotion for {scope_label}." if scope_label else "No current promotion."
+            )
+            out["is_clarification"] = False
+            out["quick_reply"] = ""
+            return out
         lines = "\n".join(
             f"{i + 1}. {TIER_DISPLAY[t]}"
             + ("" if avail is None else (" - has promotion" if jsc.get(avail, t) else " - no promotion"))
@@ -2265,7 +2292,6 @@ def promo_picker(
 # not-found-error-message (667 lines, the LIVE SPINE's copy)
 # --------------------------------------------------------------------------- #
 
-_TYPE_NORM_RE = re.compile(r"[-\s]+")
 _SNAKE_OR_KEBAB_RE = re.compile(r"[_-]")
 _SNAKE_OR_KEBAB_RUN_RE = re.compile(r"[_-]+")
 _TRAILING_PAREN_RE = re.compile(r"\s+\([^)]*\)\Z")
@@ -2426,13 +2452,17 @@ def _nf_norm_raw(value: Any) -> str:
 
 
 def _type_norm(value: Any) -> str:
-    """`String(s ?? '').replace(/[-\\s]+/g, '').toLowerCase()`.
+    """`String(s ?? '')`, then the ONE token fold (`turn.state.token_key`).
 
     The resolver strips dashes and spaces off product-hint tokens before it resolves them,
     so the customer's "SRT 2405-CR" reaches us as "srt2405cr" while the code reads
-    "SRT2405-CR". This is the key both sides are compared through.
+    "SRT2405-CR". This is the key both sides are compared through. ROGUE-CONVO-REVIEW-R2
+    (crew review on PR #1506): this used to be its own `[-\\s]+` regex, which kept the
+    unicode dashes the resolver folds (`resolve_gate._UNICODE_DASH_FOLD`), so an en-dash
+    code was listed by the resolver as "srthp" and joined here as "srt\u2013hp" - rule C
+    never fired on it. One fold now, the same one the engine keys `unplaced_tokens` by.
     """
-    return _TYPE_NORM_RE.sub("", jsc.nullish_str(value)).lower()
+    return token_key(jsc.nullish_str(value))
 
 
 # A token shorter than this never PREFIX-matches (D4/AC-7): "SRT" would otherwise request
@@ -3035,8 +3065,19 @@ def not_found_error_message(
     entitlement_levels: Any = None,
     profile: Any = None,
     granted_keys: Any = None,
+    product_token_missed: bool = False,
 ) -> dict[str, Any]:
     """`not-found-error-message`: the miss reply, its search-scope header and its bullets.
+
+    `product_token_missed` (ROGUE-CONVO-REVIEW-R2): did THIS message name a product
+    token the resolver could not place? Computed ONCE per turn by the engine
+    (`turn_runtime.typed_product_unplaced` over its own `unplaced_tokens` map, the
+    same read that decides the `set_page` carry) and handed down through
+    `answer_bridge.answer_for` / `complete_answer`; this function no longer folds the
+    question a second way. It drives rule C below (a spec-tier set member read off the
+    words around the missed token is not "what you want", and the miss line quotes the
+    token as typed). `False` (the default every caller that predates it gets) is the
+    rule standing down, never a guess.
 
     `granted_keys` (DO-ASK-SIMPLIFY security B1): the contact's `contact_field_reveals`
     grants (`ctx["access"]["attributes"]`). The "hasn't been delivered yet" line names the
@@ -3360,12 +3401,35 @@ def not_found_error_message(
             if jsc.truthy(uuid) and jsc.truthy(name) and uuid not in disp_by_uuid:
                 disp_by_uuid[uuid] = name
 
+        # ROGUE-CONVO-REVIEW (owner ruling Q4, 6 Oct 2026): "Here's what you want" lists
+        # only what the customer named and the resolver placed. When THIS message's own
+        # product token is unplaced, a product every match of which is the SPEC tier (a set
+        # member the resolver read off the words AROUND that token) is not something the
+        # customer named: 35 water closets printed as "product: SRTWC200-S-UF-RL (+34
+        # more)" over an unplaced description line (prod turn 4). Code-tier rows stay: a
+        # code the customer typed or carried beside a second token that missed is still
+        # what they want. A described-set ask names no product token, so its members stay.
+        # Whether the token missed is the caller's `product_token_missed` (one computation
+        # per turn, the engine's). `unresolved_keys` is the resolver's own listing through
+        # the ONE fold: it lists a token the way it was SENT, separators and unicode dashes
+        # folded (`resolve_gate._token_of`: "Srt-hp" is "srthp"), so a raw-to-raw
+        # comparison never met a hyphenated or spaced line (prod turns 4 and 11).
+        unresolved_keys = {_type_norm(t) for t in unresolved}
+        set_member_uuids: set = set()
+        if product_token_missed:
+            tiers_by_uuid: dict[Any, set] = {}
+            for m in all_matches:
+                if jsc.truthy(m) and jsc.get(m, "entity_type") == "product" and jsc.truthy(jsc.get(m, "uuid")):
+                    tiers_by_uuid.setdefault(jsc.get(m, "uuid"), set()).add(jsc.get(m, "match_tier"))
+            set_member_uuids = {u for u, tiers in tiers_by_uuid.items() if tiers == {SPEC_TIER}}
+
         # tokens that ACTUALLY produced a compatible entity must NOT be listed as "not found"
         # even if the resolver kept them in `unresolved_tokens` (a fallback-tier match stays
-        # there yet resolves).
+        # there yet resolves). A set member read off the words around an unplaced product
+        # token (`set_member_uuids`) places nothing: the token stays "not found".
         resolved_toks: set[str] = set()
         for match in all_matches:
-            if jsc.truthy(match) and jsc.get(match, "uuid") in compat_uuids:
+            if jsc.truthy(match) and jsc.get(match, "uuid") in compat_uuids and jsc.get(match, "uuid") not in set_member_uuids:
                 via_token = jsc.get(jsc.get(match, "display"), "via_token")
                 if jsc.truthy(via_token):
                     resolved_toks.add(_nf_norm_raw(via_token))
@@ -3375,7 +3439,7 @@ def not_found_error_message(
         for res in jsc.array(jsc.get(r, "resolutions")):
             matches = jsc.get(res, "matches")
             matches = matches if isinstance(matches, list) else []
-            if any(jsc.get(m, "uuid") in compat_uuids for m in matches):
+            if any(jsc.get(m, "uuid") in compat_uuids and jsc.get(m, "uuid") not in set_member_uuids for m in matches):
                 resolved_toks.add(_nf_norm_raw(jsc.get(res, "token")))
 
         # multi-company: which company each resolved entity belongs to. One typed code can
@@ -3399,6 +3463,8 @@ def not_found_error_message(
 
         by_type: dict[Any, list] = {}
         for c in compat:
+            if jsc.get(c, "uuid") in set_member_uuids:
+                continue
             entity_type = jsc.get(c, "entity_type")
             entity_type = entity_type if jsc.truthy(entity_type) else "item"
             base = disp_by_uuid.get(jsc.get(c, "uuid"))
@@ -3902,6 +3968,29 @@ def not_found_error_message(
                 # as lines either; a word said as the product type is named with its kind
                 # ("Couldn't find: water tap basin (product type)").
                 terms = [jsc.js_string(t) for t in jsc.array(jsc.get(predicate, "unrecognized_terms")) if jsc.truthy(t)]
+                # ROGUE-CONVO-REVIEW (owner ruling, 6 Oct 2026: the miss line prints the
+                # TYPED text, never a folded token or a word derived from it): when THIS
+                # message's own product token is what missed, the reader's unrecognised
+                # words are fragments of that token ("Srt-hp" has no digit, so it was read
+                # as a description, split into content words, and came back as "Here's
+                # what you want: srt / Couldn't find: "srt"", prod turn 11; a pasted
+                # catalogue line the same way over its class words). The structure stays
+                # (fix round 9/10 on PR #833: "I want that structure to stay", and a typed
+                # phrase such as "water tap" IS its own term); only the words are the
+                # dealer's own. RESOLVE-SEMANTIC-FALLBACK: the resolver's token is
+                # canonical_code first, raw second (`resolve_gate._token_of`), so the
+                # join folds that value; the raw is still what the line quotes.
+                if product_token_missed:
+                    typed_misses = [
+                        jsc.js_string(jsc.get(e, "raw")).strip()
+                        for e in entities_list
+                        if jsc.get(e, "hint") in (None, "product")
+                        and jsc.truthy(jsc.get(e, "raw"))
+                        and _type_norm(jsc.nullish_str(jsc.get(e, "canonical_code")).strip() or jsc.get(e, "raw"))
+                        in unresolved_keys
+                    ]
+                    if typed_misses:
+                        terms = list(dict.fromkeys(typed_misses))
                 type_raws = [
                     jsc.js_string(jsc.get(e, "raw")).strip()
                     for e in entities_list

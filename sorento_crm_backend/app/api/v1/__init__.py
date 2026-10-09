@@ -33,6 +33,8 @@ from app.api.v1 import (
     reports,
     sales,
     scm,
+    connector,
+    form_comments,
 )
 from app.api.v1.system import (
     modules_runtime,
@@ -51,6 +53,9 @@ api_router = APIRouter()
 
 # Include all module routers
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
+# claude.ai connector (CLAUDE-CONNECTOR r3). No module guard on purpose: the consent routes take
+# the staff session, every other route only an SS-signed `Authorization: Connector` call.
+api_router.include_router(connector.router, prefix="/connector", tags=["connector"])
 # DEV-LOGIN-BYPASS: 404 unless every guard in app/services/dev_login.py holds.
 api_router.include_router(dev_login.router, prefix="/auth", tags=["auth"])
 # Auth endpoints: /login, /signup, /reset-password, /change-password, /verify-email
@@ -263,6 +268,16 @@ api_router.include_router(
     tags=["list-query"],
 )
 api_router.include_router(lookup.router, prefix="/lookup", tags=["lookup"])
+
+# Form comments span four kinds in two modules (complaints, procurement), so the module guard is
+# "either enabled" and the kind's own view permission is the real gate (see form_comments.py).
+# JWT-only guard on purpose: posting a comment is a staff-session action, no API key.
+api_router.include_router(
+    form_comments.router,
+    prefix="/form-comments",
+    tags=["form-comments"],
+    dependencies=[Depends(require_any_module_enabled("procurement", "complaints"))],
+)
 
 # Activities & Notes - generic per-entity panel (consumed by tickets et al.).
 api_router.include_router(

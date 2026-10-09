@@ -73,6 +73,23 @@ class ChatHistory(Base):
     # conversation_variables_service.get_referenced_state for why the withheld keys
     # are withheld.
     state_trace = Column(JSONB, nullable=True)
+    # OUTGOING rows only: the `chatbot.turns.id` whose reply this message carried (QUOTED-REPLY
+    # R1, owner ruling 7 Oct 2026). Lets a quote-reply resolve the quoted engine turn by id.
+    # NULL = a reply n8n composed alone, a proactive send, or any incoming row.
+    chatbot_turn_id = Column(String(36), nullable=True)
+
+    # --- Local-first thread fidelity (lane CHAT-LOCAL-FIRST, R5) -----------
+    # What the thread could only ever get from a live Respond read: the attachment
+    # behind a media message and who sent an outgoing one. `sender_source` is
+    # Respond's own vocabulary (contact | user | bot | api | workflow ...);
+    # `sender_user_id` is the Respond user id behind a `user` send, which
+    # `users.respond_user_id` names. All nullable: a row written before this lane
+    # fills in the next time the delta / reconcile path re-reads that message.
+    media_url = Column(Text, nullable=True)
+    media_type = Column(String(32), nullable=True)
+    media_file_name = Column(String(512), nullable=True)
+    sender_source = Column(String(32), nullable=True)
+    sender_user_id = Column(String(64), nullable=True)
 
     __table_args__ = (
         Index("ix_chat_histories_channel_contact_sent_id", "channel", "contact_id", "sent_at", "id"),

@@ -306,6 +306,15 @@ class RespondClient:
         base["Authorization"] = f"Bearer {self.api_key}"
         return base
 
+    @staticmethod
+    def _http(timeout: float = 15) -> httpx.Client:
+        """The ONE place a Respond.io HTTP client is built (lane CHAT-LOCAL-FIRST, R6):
+        every request passes through `respond_call_counter.httpx_request_hook`, so the
+        per-minute call count is a fact rather than a log grep."""
+        from app.services.respond_call_counter import httpx_request_hook
+
+        return httpx.Client(timeout=timeout, event_hooks={"request": [httpx_request_hook]})
+
     def _contact_api_identifier(self, identifier: str) -> str:
         """Format contact identifier for API path: use id:xxxx for plain IDs, keep phone: etc. as-is."""
         if not identifier or ":" in identifier:
@@ -338,7 +347,7 @@ class RespondClient:
         assert_outbound_enabled(identifier)
         api_id = self._contact_api_identifier(identifier)
         url = f"{self.base_url}/v2/contact/{api_id}/message"
-        with httpx.Client(timeout=timeout) as client:
+        with self._http(timeout=timeout) as client:
             response = client.post(url, headers=self._headers(), json=payload)
             try:
                 response.raise_for_status()
@@ -351,7 +360,7 @@ class RespondClient:
         if not self.api_key:
             raise ValueError("Respond API key is not configured.")
         url = f"{self.base_url}/v2/space/user/{user_id}"
-        with httpx.Client(timeout=15) as client:
+        with self._http(timeout=15) as client:
             response = client.get(url, headers=self._headers())
             response.raise_for_status()
             return response.json()
@@ -361,7 +370,7 @@ class RespondClient:
             raise ValueError("Respond API key is not configured.")
         api_id = self._contact_api_identifier(identifier)
         url = f"{self.base_url}/v2/contact/{api_id}"
-        with httpx.Client(timeout=15) as client:
+        with self._http(timeout=15) as client:
             response = client.get(url, headers=self._headers())
             # Check status and raise with response attached for error handling
             try:
@@ -388,7 +397,7 @@ class RespondClient:
             raise ValueError("Respond API key is not configured.")
         url = f"{self.base_url}/v2/space/users"
         params = {"limit": limit}
-        with httpx.Client(timeout=15) as client:
+        with self._http(timeout=15) as client:
             response = client.get(url, headers=self._headers(), params=params)
             response.raise_for_status()
             data = response.json()
@@ -451,7 +460,7 @@ class RespondClient:
             payload["category"] = category
         if summary:
             payload["summary"] = summary
-        with httpx.Client(timeout=15) as client:
+        with self._http(timeout=15) as client:
             response = client.post(url, headers=self._headers(), json=payload)
             try:
                 response.raise_for_status()
@@ -479,7 +488,7 @@ class RespondClient:
             raise ValueError("Respond API key is not configured.")
         api_id = self._contact_api_identifier(identifier)
         url = f"{self.base_url}/v2/contact/{api_id}/comment"
-        with httpx.Client(timeout=15) as client:
+        with self._http(timeout=15) as client:
             response = client.post(url, headers=self._headers(), json={"text": text})
             try:
                 response.raise_for_status()
@@ -507,7 +516,7 @@ class RespondClient:
         params: dict = {"limit": min(limit, 50)}
         if cursor:
             params["cursorId"] = cursor
-        with httpx.Client(timeout=15) as client:
+        with self._http(timeout=15) as client:
             response = client.get(url, headers=self._headers(), params=params)
             response.raise_for_status()
             payload = response.json() if response.content else {"items": [], "pagination": {}}
@@ -563,7 +572,7 @@ class RespondClient:
         api_id = self._contact_api_identifier(identifier)
         # Quoted with no safe characters: a message id is one path segment, never a path.
         url = f"{self.base_url}/v2/contact/{api_id}/message/{quote(str(message_id), safe='')}"
-        with httpx.Client(timeout=15) as client:
+        with self._http(timeout=15) as client:
             response = client.get(url, headers=self._headers())
             response.raise_for_status()
             item = response.json() if response.content else {}
@@ -582,7 +591,7 @@ class RespondClient:
         api_id = self._contact_api_identifier(identifier)
         url = f"{self.base_url}/v2/contact/{api_id}/conversation/assignee"
         payload = {"assigneeId": assignee_id} if assignee_id else {}
-        with httpx.Client(timeout=15) as client:
+        with self._http(timeout=15) as client:
             response = client.post(url, headers=self._headers(), json=payload)
             response.raise_for_status()
             return response.json() if response.content else {}
@@ -612,7 +621,7 @@ class RespondClient:
                 payload["limit"] = limit
             if cursor:
                 payload["cursor"] = cursor
-        with httpx.Client(timeout=30) as client:
+        with self._http(timeout=30) as client:
             response = client.post(url, headers=self._headers(), json=payload)
             response.raise_for_status()
             return response.json() if response.content else {}
@@ -625,7 +634,7 @@ class RespondClient:
         if not self.api_key:
             raise ValueError("Respond API key is not configured.")
         url = f"{self.base_url}/v2/space/channel"
-        with httpx.Client(timeout=15) as client:
+        with self._http(timeout=15) as client:
             response = client.get(url, headers=self._headers())
             response.raise_for_status()
             data = response.json() if response.content else {}
@@ -649,7 +658,7 @@ class RespondClient:
         items: list[dict] = []
         cursor: Optional[str] = None
         seen_cursors: set[str] = set()
-        with httpx.Client(timeout=15) as client:
+        with self._http(timeout=15) as client:
             for _ in range(100):  # hard page cap - guards against a cursor loop
                 params: dict = {"limit": 100}
                 if cursor:
@@ -732,7 +741,7 @@ class RespondClient:
             raise ValueError("Respond API key is not configured.")
         api_id = self._contact_api_identifier(identifier)
         url = f"{self.base_url}/v2/contact/{api_id}"
-        with httpx.Client(timeout=15) as client:
+        with self._http(timeout=15) as client:
             response = client.put(url, headers=self._headers(), json=payload)
             response.raise_for_status()
             return response.json() if response.content else {}

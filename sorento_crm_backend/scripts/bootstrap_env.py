@@ -161,6 +161,24 @@ def create_views() -> None:
     _fix_committed_v()
 
 
+def create_analytics_connector() -> None:
+    """Lay down migration `acc_0001_connector`'s non-table work (it has no ORM model).
+
+    `users.connector_revoked_at` comes from `create_all` (added here too for an older database); the
+    `analytics_connector` schema + views exist only in the migration body, so a bootstrapped
+    database needs them replayed (same gap as the scm views above). Idempotent.
+    """
+    from sqlalchemy import text
+
+    from app.database import engine
+    from app.services.analytics_connector import views
+
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS connector_revoked_at TIMESTAMP"))
+        views.ensure_views(conn)
+    log.info("analytics_connector views created")
+
+
 def _fix_committed_v() -> None:
     """Bring ``scm.committed_v`` current past migration 337.
 
@@ -740,6 +758,7 @@ def seed_chatbot_policy() -> None:
     pdyn4 = _load("_pdyn_0004_prompt_lists", "pdyn_0004_prompt_lists.py")
     pdyn5 = _load("_pdyn_0005_access_level_order", "pdyn_0005_access_level_order.py")
     pdyn6 = _load("_pdyn_0006_agents_in_prompt", "pdyn_0006_agents_in_prompt.py")
+    report_engine = _load("_report_engine_0001_prompt", "report_engine_0001_prompt.py")
 
     with engine.begin() as conn:
         domains_inserted, kinds_inserted = s0.seed_domains_and_kinds(conn)
@@ -760,6 +779,7 @@ def seed_chatbot_policy() -> None:
     with engine.begin() as conn:
         top_selling.apply_tools(conn)
         sales_s1.apply_tools(conn)
+        report_engine.apply_tools(conn)
     with engine.begin() as conn:
         s11.apply_narrowing(conn)
     with engine.begin() as conn:
@@ -957,6 +977,7 @@ def main() -> int:
     create_schema()
     apply_migration_only_ddl()
     create_views()
+    create_analytics_connector()
     if not args.skip_seed:
         seed_reference_data()
         seed_n8n_sales_reports_grant()

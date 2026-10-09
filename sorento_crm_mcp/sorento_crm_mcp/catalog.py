@@ -274,6 +274,10 @@ CATALOG: tuple[ToolSpec, ...] = (
             "  When BOTH `promotion_ids` and `product_ids` are supplied, they combine\n"
             "  via OR: a promotion is returned if it is in `promotion_ids` OR contains\n"
             "  any product in `product_ids` (no AND option).\n\n"
+            "  • `scope_terms` (class phrases, e.g. \"bathroom furniture\") - only promotions with a linked "
+            "product of that class; an empty match returns no promotions.\n"
+            "  • `promotion_types` (promotion type codes, e.g. a3_flyer) and `brand_ids` (brand UUIDs of a linked "
+            "product); both AND with every other filter.\n\n"
             "Unfiltered MCP calls are auto-capped to limit=10 newest-first so open questions like "
             "\"what is sorento's latest promo\" return a bounded page instead of the full catalog.\n\n"
             "ACCESS LEVELS: `access_levels` filters promotions whose `access_levels` JSONB overlaps the "
@@ -284,7 +288,7 @@ CATALOG: tuple[ToolSpec, ...] = (
         ),
         "/api/v1/marketing/promotions",
         (),
-        ("page", "limit", "promotion_ids", "product_ids", "active", "period_from", "period_to", "date_mode", "sort", "dir", "access_levels", "contact_id", "space_id"),
+        ("page", "limit", "promotion_ids", "product_ids", "active", "period_from", "period_to", "date_mode", "sort", "dir", "access_levels", "scope_terms", "promotion_types", "brand_ids", "contact_id", "space_id"),
         domain="promotions",
         related_tools=("crm_marketing_promotion_products_list", "crm_marketing_promotion_attachments_list"),
         escalation_team="sales",
@@ -803,6 +807,58 @@ CATALOG: tuple[ToolSpec, ...] = (
         ),
         domain="orders",
         related_tools=("crm_outstanding_report",),
+        escalation_team="sales",
+        restricted_fields=(("sales_orders.sales_report", "Sales report"),),
+    ),
+    ToolSpec(
+        "crm_report_ask",
+        (
+            "ONE flexible sales report: rank or total sales by any one dimension, for a REQUIRED "
+            "period, with the common filters. Use it for 'top 3 sales agents for brand X last "
+            "month', 'which location sold most of product Y in September', 'sales by month for "
+            "agent Z', 'bottom 10 products by quantity this year', 'total sales of brand X in "
+            "August'. Returns `rows[]` (rank, name, qty, amount), `more` (ranked rows not "
+            "printed), `total_count` (every ranked row) and `total` {qty, amount} over the WHOLE "
+            "set, the resolved period, `basis` and the applied `filters` by name "
+            "(`view=render` prints it).\n\n"
+            "REQUIRED: `date_from` and `date_to` (ISO dates; 422 `period_required` otherwise - "
+            "ask the person which period, never guess one) and `contact_id` + `space_id`. "
+            "`group_by` = customer | product | brand | category | sales_agent | location | "
+            "channel | month; absent = ONE total. With `group_by`, `top_n` (1 to 1,000) is REQUIRED "
+            "(422 `top_n_required`): the number the person named, or ask. `sort` desc (top, "
+            "default) | asc (bottom). `measure` amount (RM) | qty (what the ranking "
+            "sorts by); ask the person which measure when they did not say, as for top_n. `basis` "
+            "delivered | ordered | outstanding; ask the person which basis when they did not say. "
+            "Every basis is sales "
+            "order lines, each dated by its required date, else its SO date: delivered = the "
+            "quantity transferred to a DO, capped at ordered; ordered = the whole line; "
+            "outstanding = open and not yet delivered. The reply names the basis.\n\n"
+            "FILTERS (all optional, ANDed, RESOLVED ids, never names): `product_code` (PREFIX, "
+            "case-insensitive, at least 3 characters; no match is 404), `product_ids` (ANDed "
+            "with `product_code` when both are given), `brand_ids`, "
+            "`category_ids`, `sales_agent_ids`, `customer_ids` (repeated or csv UUIDs), "
+            "`customer_agent_ids` (customers whose assigned agent on the customer card is one "
+            "of these; `none` in either agent list = no agent), "
+            "`warehouse_codes` (exact codes; a location outside the contact's visibility "
+            "answers `status: refused`), `channel` dealer | project. OMIT a filter you do not "
+            "use: an empty value is 422 `empty_filter` (it never reads as 'no filter'), and an "
+            "id naming nothing is 404.\n\n"
+            "ACCESS: the contact needs the Sales report reveal (403 `sales_report_not_enabled`). "
+            "A customer-linked dealer sees only its own customers' sales and may group or "
+            "filter by product, brand, category and month ONLY; anything else is 403 "
+            "`report_dimension_not_allowed` - say 'That breakdown is not available for your "
+            "account.' Ten asks per contact per 10 minutes (`status: busy`)."
+        ),
+        "/api/v1/order-management/report-ask",
+        (),
+        (
+            "date_from", "date_to", "basis", "measure", "group_by", "top_n", "sort",
+            "product_code", "product_ids", "brand_ids", "category_ids", "sales_agent_ids",
+            "customer_ids", "warehouse_codes", "channel", "contact_id", "space_id",
+            "customer_agent_ids",
+        ),
+        domain="orders",
+        related_tools=("crm_sales_report", "crm_top_selling_report"),
         escalation_team="sales",
         restricted_fields=(("sales_orders.sales_report", "Sales report"),),
     ),

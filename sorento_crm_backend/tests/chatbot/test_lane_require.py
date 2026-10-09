@@ -2523,7 +2523,7 @@ def _s4_cert_parser_output(**overrides: Any):
             {
                 "raw": "cert",
                 "hint": "attachment_type",
-                "canonical_code": None,
+                "canonical_code": "certificate",
                 "current_message": True,
                 "confident": True,
             }
@@ -2614,7 +2614,7 @@ def test_scheme_narrowed_certificate_predicate_passes_certificate_ids_to_the_too
                 {
                     "raw": "PPS cert",
                     "hint": "attachment_type",
-                    "canonical_code": None,
+                    "canonical_code": "certificate",
                     "current_message": True,
                     "confident": True,
                 }

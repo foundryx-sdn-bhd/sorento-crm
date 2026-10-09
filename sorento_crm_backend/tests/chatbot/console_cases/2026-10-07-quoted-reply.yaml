@@ -1,0 +1,326 @@
+# Console replay for QUOTED-REPLY (PR #1523; owner report 7 Oct 2026, production): a WhatsApp
+# quote-reply answers the QUOTED bot message, not the newest question. Graded LIVE: the real
+# parser, resolver, presenter and compose; every turn a dry run. The pytest twin, parser
+# stubbed, is `tests/chatbot/test_quoted_reply_engine.py`.
+#
+# NOT collected by pytest. `live_only: true` on every case: the run needs `--live`.
+#
+#   cd sorento_crm_backend
+#   venv/bin/python scripts/chatbot_console_check.py \
+#       tests/chatbot/console_cases/2026-10-07-quoted-reply.yaml \
+#       --base-url http://localhost:<backend port> --contact <dealer contact> --live
+#
+# `quote: <text>` on a turn puts a bot-sourced `replyTo` with that text on the envelope. The
+# engine resolves it against the dry-run turn of the SAME run that said those words (same
+# contact, same test world, created earlier), through the stored-reply text route, exactly as
+# an unstamped production row resolves. The id route (chat_histories.chatbot_turn_id) is
+# covered by `tests/test_chat_history_quoted_link.py`; a dry run writes no chat row.
+#
+# What the database must hold (the shared dev copy does):
+# - `--contact`: a Respond contact on the "Availability only" stock policy with at least one
+#   stored chatbot turn; the quantity question ("How many units of ...?") is asked only on
+#   that view. The `contact:` below is a placeholder, not a real contact.
+# - Products WDI-K5130, WDI-K301-D, SRTBF11841, SRTWC201, SRTKS2433-BL (all present on the
+#   shared dev copy, measured 7 Oct 2026).
+
+contact: "900000039"
+
+_shapes:
+  never: &never
+    - "*stock* for"
+    - "Here's what you want"
+    - "Data last updated"
+
+cases:
+  - name: "1. owner case: two questions asked, each answered by quoting it"
+    live_only: true
+    cold: true
+    turns:
+      - text: "check stock WDI-K5130"
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "How many units of WDI-K5130?"
+      - text: "check stock WDI-K301-D"
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "How many units of WDI-K301-D?"
+      - text: "1 unit"
+        quote: "How many units of WDI-K5130?"
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "WDI-K5130 x 1:"
+          reply_not_contains:
+            - "WDI-K301-D x 1"
+            - "How many units of WDI-K301-D?"
+            - "SRTBF11840"
+      - text: "1 unit"
+        quote: "How many units of WDI-K301-D?"
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "WDI-K301-D x 1:"
+          reply_not_contains:
+            - "WDI-K5130 x 1"
+            - "How many units of WDI-K5130?"
+
+  - name: "2. E2 shape (6 Oct, live turn 6207c208): quoting an older NON-question message makes it the subject"
+    # The prod dealer quoted "I have SRTBF11841. What would you like me to know?"; on the
+    # availability view a bare code asks the quantity instead, so the older non-question
+    # message here is the ETA answer for SRTBF11841 (measured on the copy, 7 Oct 2026).
+    live_only: true
+    cold: true
+    turns:
+      - text: "SRTBF11841 eta"
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "SRTBF11841: No ETA"
+      - text: "Do you have stock of SRTWC201"
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "How many units of SRTWC201?"
+      - text: "have stock?"
+        quote: |
+          SRTBF11841: No ETA
+
+          Please refer to your salesman.
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "SRTBF11841"
+          reply_not_contains:
+            - "How many units of SRTWC201?"
+            - "SRTWC201"
+
+  - name: "3. control: quoting the newest question changes nothing"
+    live_only: true
+    cold: true
+    turns:
+      - text: "check stock SRTKS2433-BL"
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "How many units of SRTKS2433-BL?"
+      - text: "1"
+        quote: "How many units of SRTKS2433-BL?"
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "SRTKS2433-BL x 1:"
+          reply_not_contains: *never
+
+  - name: "4. E1 (6 Oct, 266b6326): quoting the newest quantity ask with '10 unit'"
+    live_only: true
+    cold: true
+    turns:
+      - text: "check stock SRTWC201"
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "How many units of SRTWC201?"
+      - text: "10 unit"
+        quote: "How many units of SRTWC201?"
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "SRTWC201 x 10:"
+          reply_not_contains: *never
+
+  - name: "5. E3 (7 Oct, 534e55aa): quoting an OLDER access-level pick with 'dealer' while a quantity ask is live"
+    live_only: true
+    cold: true
+    turns:
+      - text: "promo for SRTWT9612-GM"
+        expect:
+          branch_kind: check_promotion
+          no_uuid: true
+          reply_contains:
+            - "Which access level do you need for SRTWT9612-GM?"
+      - text: "check stock WDI-K5130"
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "How many units of WDI-K5130?"
+      - text: "dealer"
+        # A slice of this run's own pick reply (the "has / no promotion" suffixes follow the
+        # promo data of the day, so a literal went stale on 7 Oct).
+        quote_slice:
+          of: "promo for SRTWT9612-GM"
+          start: 0
+          length: 120
+        expect:
+          branch_kind: check_promotion
+          no_uuid: true
+          reply_contains:
+            - "I have attached the file(s) below."
+            - "DEALER"
+          reply_not_contains:
+            - "How many units of WDI-K5130?"
+            - "WDI-K5130"
+
+  - name: "6. E4 (6 Oct, 409e9ee0): quoting an OLDER did-you-mean list with the code while a quantity ask is live"
+    live_only: true
+    cold: true
+    turns:
+      - text: "check stock SRTS07"
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "Couldn't find SRTS07. Did you mean:"
+            - "1. SRTSC07"
+      - text: "check stock WDI-K301-D"
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "How many units of WDI-K301-D?"
+      - text: "SRTSC07"
+        quote: |
+          Couldn't find SRTS07. Did you mean:
+          1. SRTSC07
+          2. SRTSA
+          3. SRTSB
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "How many units of SRTSC07?"
+          reply_not_contains:
+            - "WDI-K301-D"
+
+  - name: "7. E5 (5 Oct, e772884d): quoting a message no engine turn produced (a human relay) falls back to today's behaviour"
+    live_only: true
+    cold: true
+    turns:
+      - text: "check stock WDI-K5130"
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "How many units of WDI-K5130?"
+      - text: "Can check estimated loading date?"
+        quote: "SRT112 still in production"
+        expect:
+          no_uuid: true
+          reply_contains:
+            - "WDI-K5130"
+          reply_not_contains:
+            - "SRT112"
+
+  - name: "8. Own-message quote: quoting the dealer's own earlier message runs on that message's state"
+    live_only: true
+    cold: true
+    turns:
+      - text: "SRTBF11841 have stock?"
+        expect:
+          no_uuid: true
+          reply_contains:
+            - "SRTBF11841"
+      - text: "check stock WDI-K301-D"
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "How many units of WDI-K301-D?"
+      - text: "and eta?"
+        quote_own: "SRTBF11841 have stock?"
+        expect:
+          no_uuid: true
+          reply_contains:
+            - "SRTBF11841"
+          reply_not_contains:
+            - "WDI-K301-D"
+
+  - name: "9. Chunk quote: quoting a middle slice of a long reply (a stand-in for n8n's 2nd chunk) resolves to that turn"
+    # "which basins have stock" on the availability view answers "How many units for each?" over the
+    # set's members (443 chars measured on the shared dev copy, 7 Oct 2026). The quote is a 200-char
+    # slice from its middle, never the whole text: the matcher must find the turn by substring and
+    # the turn then runs on THAT list's state (a bare "1" over the six-line list is read against
+    # those lines and the list is asked again), not on the live WDI-K5130 question.
+    live_only: true
+    cold: true
+    turns:
+      - text: "which basins have stock"
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "How many units for each?"
+      - text: "check stock WDI-K5130"
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "How many units of WDI-K5130?"
+      - text: "1"
+        quote_slice:
+          of: "which basins have stock"
+          start: 100
+          length: 200
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "BRBC22102W"
+          reply_not_contains:
+            - "WDI-K5130"
+
+  - name: "10. AC-QR-26: picker A live, quote the older picker B, pick, then a bare number fills B's product"
+    # Owner on the hand test (7 Oct, turns cc159fb4 / c24bba32): with the CKS105 picker live, quoting the
+    # older SRTWC286 picker and picking 4 asked "How many units of SRTWC286-SH-NEW?", but "10" then hit
+    # the retained CKS105 picker ("CKS105 x 10: which one?"). The follow-up question must replace it.
+    live_only: true
+    cold: true
+    turns:
+      - text: "check stock srtwc286"
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "SRTWC286 matches"
+            - "Which one?"
+      - text: "check stock cks105"
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "CKS105 matches"
+            - "Which one?"
+      - text: "4"
+        quote_slice:
+          of: "check stock srtwc286"
+          start: 0
+          length: 120
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "How many units of SRTWC286-SH-NEW?"
+          reply_not_contains:
+            - "CKS105"
+      - text: "10"
+        expect:
+          branch_kind: business_query
+          no_uuid: true
+          reply_contains:
+            - "SRTWC286-SH-NEW x 10:"
+          reply_not_contains:
+            - "CKS105"
+            - "which one?"

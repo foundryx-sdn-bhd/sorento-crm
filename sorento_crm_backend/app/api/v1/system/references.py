@@ -29,6 +29,7 @@ from app.models.product import Brand, Product
 from app.models.resources import Attachment, AttachmentType
 from app.services.entity_resolver import (
     _CODE_RE,
+    FREE_TEXT_CANDIDATES,
     EntityPinMismatch,
     _canonical_entity_type,
     _with_resolve_memo,
@@ -37,6 +38,7 @@ from app.services.entity_resolver import (
     resolve_references_intersection,
     token_word_coverage_for_rows,
 )
+from app.services import resolver_code_reader as _resolver_code_reader
 from app.services.error_handler import AppException
 
 
@@ -1262,11 +1264,13 @@ class ResolveReferenceRequest(BaseModel):
             "raw text (with spaces) that produced `tokens[i]` - e.g. "
             "tokens=['SRTWB8004BASINTAP'], raw_tokens=['SRTWB8004 BASIN TAP']. "
             "Ignored unless `tokens` is also given and both lists have equal "
-            "length. Used only by the server-side product head-code retry - "
-            "when a folded token exact-misses, the resolver re-probes the "
-            "leading code-shaped word of its raw text (e.g. n8n folds a "
-            "spoken/typed 'code + description' into one token before calling "
-            "resolve). Absent or null = response byte-identical to today."
+            "length. Read by two server-side steps for a product token that "
+            "exact-misses: the head-code retry (the leading code-shaped word of "
+            "the raw text is re-probed, e.g. n8n folds a typed 'code + "
+            "description' into one token) and, since RESOLVE-SEMANTIC-FALLBACK, "
+            "the code reader, which is shown the raw text and may only read a "
+            "code out of it. Absent or null: the folded token is all the "
+            "resolver has, so neither step has anything beyond it."
         ),
     )
     match_mode: str = Field(
@@ -1295,7 +1299,13 @@ class ResolveReferenceRequest(BaseModel):
             "class label (e.g. 'catalogue', 'brochure', 'spec sheet') to the "
             "AttachmentType UUID for downstream `attachment_type_ids` filters; "
             "pure-alpha labels bypass the code-token regex so callers may pass "
-            "them via `query` (auto-split on whitespace) or `tokens` explicitly."
+            "them via `query` (auto-split on whitespace) or `tokens` explicitly.\n\n"
+            "One reader of this list IS positional: when it has exactly one entry per "
+            "`tokens` entry, the code reader (`semantic_fallback`) treats entry i as "
+            "token i's own hint and asks only about tokens hinted `product` (or left "
+            "unhinted). A set that happens to equal the token count therefore only ever "
+            "skips a reader call on a token whose entry is another type; resolution "
+            "itself still treats the list as a set."
         ),
     )
     access_levels: list[str] | None = Field(
@@ -1318,6 +1328,31 @@ class ResolveReferenceRequest(BaseModel):
             "the response with `fallback_applied: true` + `fallback_types_found` "
             "(the entity types of the recovered matches). Lets the agent recover "
             "from picking 'order' when the user actually meant 'customer'."
+        ),
+    )
+    hint_locked_tokens: list[str] | None = Field(
+        default=None,
+        description=(
+            "Tokens whose entity kind the caller has already decided (CLASS-HINT-KIND-PICK, "
+            "owner ruling 6 Oct 2026): a confident class, product or brand hint from the "
+            "parser, or a word the catalogue knows as a brand. Such a token is never "
+            "answered with a promotion, customer, attachment, transporter or form by a "
+            "name match (prefix, substring or neighbour) in any pass, and it is left out "
+            "of the `fallback_to_all_types` rerun, so it stays in `unresolved_tokens` "
+            "and the spec/class fallback reads it. The request domain's own kind is "
+            "never stripped (a promotion question is answered by promotions). Omit / "
+            "null / [] = today's behaviour, byte-identical."
+        ),
+    )
+    brand_tokens: dict[str, str] | None = Field(
+        default=None,
+        description=(
+            "Tokens the caller already knows to be BRANDS, `{token: brand name}` (CLASS-"
+            "HINT-KIND-PICK, owner ruling 6 Oct 2026: the parser's canonical_code names "
+            "the brand and the catalogue knows it). Each is resolved as one `brand` match "
+            "(exact tier, the name as its code) with no probe, so it is never an "
+            "unanswered search term and never opens the spec fallback; it is also locked "
+            "like `hint_locked_tokens`. Omit / null / {} = today's behaviour."
         ),
     )
     limit: int | None = Field(
@@ -1495,6 +1530,25 @@ class ResolveReferenceRequest(BaseModel):
             "one, or the shadow comparison it exists for compares two behaviours."
         ),
     )
+    semantic_fallback: bool = Field(
+        default=True,
+        description=(
+            "RESOLVE-SEMANTIC-FALLBACK (owner ruling, 6 Oct 2026: the same behaviour in "
+            "every place that resolves). On by default: a pre-extracted product token that "
+            "matched no code tier is put to the code reader ONCE (`app/services/"
+            "resolver_code_reader.py`, one model call per request, at most 5 tokens, 3 s), "
+            "which may only read a code or a code-family fragment out of the text the "
+            "caller typed for it, i.e. its `raw_tokens` entry; the catalogue then decides. "
+            "A token sent with no `raw_tokens` entry is not asked (`fallback.reason` "
+            "`no_typed_text`): the folded token is all there is, and the code tiers already "
+            "missed on it. A `code` answer resolves the token on the exact tier (the product "
+            "row, else a product set; the exact row alone, never its variant siblings), a "
+            "`family` answer is the usual prefix / substring picker, `none` leaves it in "
+            "`unresolved_tokens`. The verdict rides each affected resolution's `fallback` "
+            "key (absent everywhere else). `false` opts this request out: no model call, "
+            "response byte-identical to before the feature."
+        ),
+    )
     domain_hint: str | None = Field(
         default=None,
         validation_alias=AliasChoices("domain_hint", "domain"),
@@ -1589,7 +1643,16 @@ def _code_matched(result: dict[str, Any], tokens: list[str] | None = None) -> bo
 
     for resolution in result.get("resolutions") or []:
         token = (resolution or {}).get("token")
-        if any(_hit(token, m) for m in (resolution or {}).get("matches") or []):
+        # RESOLVE-SEMANTIC-FALLBACK: a token the code reader read a code (or a family
+        # fragment) out of IS that code here: the resolver's own verdict, confirmed by the
+        # catalogue on its exact / prefix probe. The folded token ("TAPSRTWT5608") never
+        # contains the code read out of it ("SRTWT5608"), so without this the HAS /
+        # counted-set branch ran over a token the resolver had already placed by code and
+        # a dealer read "Couldn't find a TAP SRTWT5608 with stock (checked SRTWT5608)"
+        # (console pass on a1eae3bb) instead of the code's availability line.
+        read = ((resolution or {}).get("fallback") or {}).get("value")
+        matches = (resolution or {}).get("matches") or []
+        if any(_hit(token, m) or (read and _hit(read, m)) for m in matches):
             return True
     return any(
         _hit(token, match)
@@ -1865,6 +1928,181 @@ def _has_turn_free_terms(
     return [" ".join(words)] if words else []
 
 
+#: CLASS-HINT-KIND-PICK (owner, 6 Oct 2026): the kinds a WORD can only ever reach through
+#: a match on a name - a promotion's description, a customer's name, an attachment's
+#: filename, a transporter's or a form's name. A token whose kind the caller has locked
+#: (`hint_locked_tokens`) is never given one of these; the resolver's product rows (code
+#: tiers and the spec tier) and every other kind are untouched.
+_NAME_MATCHED_KINDS: frozenset[str] = frozenset(
+    {"promotion", "customer", "attachment", "transporter", "form"}
+)
+
+
+def _norm_locked_token(value: Any) -> str:
+    """The resolver echoes a token stopword-stripped (`_strip_entity_stopwords`: "basin
+    items" comes back as "basin") and the chatbot sends a product token folded, so a lock
+    entry takes the route's own trim first and the two sides then meet on letters and
+    digits alone. The route's own transform, not a word rule of this lane's (reviewer S1)."""
+    return re.sub(r"[^0-9a-z]", "", _strip_entity_stopwords(str(value or "")).lower())
+
+
+def _name_kinds_dropped_for(domain_hint: str | None) -> frozenset[str]:
+    """The name-matched kinds a locked token may not be given under this request's domain:
+    all of them but the domain's own. "cabana promo" under the promotion domain is still
+    answered by the promotions whose description carries the brand, and "cabana catalog"
+    under resource_attachment is still narrowed to the Cabana catalogue by filename
+    coverage - that match IS the question's answer, not a re-type of the word."""
+    domain = (domain_hint or "").strip().lower()
+    canonical = _canonical_entity_type(domain) if domain else ""
+    own: set[str] = {canonical} if canonical else set()
+    if domain in {"resource_attachment", "attachment"}:
+        own.add("attachment")
+    if canonical == "customer_order":
+        # Order / sales (crew ruling Q4 on the lane card, 6 Oct 2026: out of scope): the
+        # resolver's own domain expansion reads a brand or category word there as the
+        # customer or transporter it names ("super ceramic" is a debtor,
+        # `_DOMAIN_HINT_EXPANSIONS["order"]`), and #1504 pins that reading. Those two kinds
+        # are the order domain's own answer, kept like promotion under promotion.
+        own.update({"customer", "transporter"})
+    return _NAME_MATCHED_KINDS - own
+
+
+def _strip_name_kinds_for_locked(
+    result: dict[str, Any], locked_tokens: list[str] | None, domain_hint: str | None
+) -> dict[str, Any]:
+    """Drop every name-matched kind from a locked token's matches, in place.
+
+    OR shape: per token, the locked tokens only; `resolved` and `unresolved_tokens` are
+    recomputed from what is left. AND shape: a row in the intersection covered EVERY
+    token, the locked one included, so the rows of those kinds go whatever the other
+    tokens were; an emptied intersection reads as the zero-intersection AND the caller
+    already degrades to OR-mode. `alternatives` (did-you-mean neighbours) are offers, not
+    assignments, and stay (AC-1703). Runs on the primary result and, since R2 (7 Oct 2026),
+    on the per-token fallback result too, so a locked token's rerun keeps no name kind
+    while an exact record key it names still resolves there."""
+    if not locked_tokens:
+        return result
+    locked = {_norm_locked_token(t) for t in locked_tokens} - {""}
+    if not locked:
+        return result
+    dropped = _name_kinds_dropped_for(domain_hint)
+    if "intersection" in result:
+        rows = result.get("intersection") or []
+        kept = [m for m in rows if (m or {}).get("entity_type") not in dropped]
+        if len(kept) != len(rows):
+            result["intersection"] = kept
+            by_type = result.get("by_entity_type")
+            if isinstance(by_type, dict):
+                result["by_entity_type"] = {k: v for k, v in by_type.items() if k not in dropped}
+            result["empty"] = not kept
+            if not kept:
+                result["unresolved_tokens"] = list(result.get("tokens") or [])
+        return result
+    resolutions = result.get("resolutions")
+    if not isinstance(resolutions, list):
+        return result
+    changed = False
+    ambiguous = list(result.get("ambiguous_tokens") or [])
+    for tr in resolutions:
+        if not isinstance(tr, dict) or _norm_locked_token(tr.get("token")) not in locked:
+            continue
+        matches = tr.get("matches") or []
+        kept_matches = [m for m in matches if (m or {}).get("entity_type") not in dropped]
+        if len(kept_matches) == len(matches):
+            continue
+        # The resolver's own meaning of the two flags (`_suppress_brand_prefix_junk`):
+        # resolved = exactly one match, ambiguous = more than one.
+        tr["matches"] = kept_matches
+        tr["resolved"] = len(kept_matches) == 1
+        tr["ambiguous"] = len(kept_matches) > 1
+        if not tr["ambiguous"]:
+            ambiguous = [t for t in ambiguous if t != tr.get("token")]
+        changed = True
+    if changed:
+        result["unresolved_tokens"] = [
+            tr["token"] for tr in resolutions if isinstance(tr, dict) and not (tr.get("matches") or [])
+        ]
+        if "ambiguous_tokens" in result:
+            result["ambiguous_tokens"] = ambiguous
+    return result
+
+
+def _resolve_brand_tokens(result: dict[str, Any], brand_tokens: dict[str, str] | None) -> dict[str, Any]:
+    """A token the caller already knows to be a brand (`brand_tokens`, owner ruling 6 Oct
+    2026: "the brand word is a brand because the parser said so and the catalogue knows
+    it, so it must not count as an unanswered search term") is RESOLVED as that brand, no
+    probe needed: one `brand` match, exact tier, the brand's name as its code. The resolver
+    has no brand probe, so without this the word stayed in `unresolved_tokens` and opened
+    the spec fallback beside a code it was only scoping ("SORENTO ZZWC8318" listed every
+    Sorento product). OR shape only, in place: an AND intersection has no row for a brand to
+    join, and an empty one degrades to OR where this runs. Absent = untouched."""
+    if not brand_tokens:
+        return result
+    resolutions = result.get("resolutions")
+    if not isinstance(resolutions, list):
+        return result
+    by_norm = {_norm_locked_token(t): str(name or "").strip() for t, name in brand_tokens.items()}
+    by_norm.pop("", None)
+    changed = False
+    ambiguous = list(result.get("ambiguous_tokens") or [])
+    for tr in resolutions:
+        if not isinstance(tr, dict):
+            continue
+        name = by_norm.get(_norm_locked_token(tr.get("token")))
+        if not name:
+            continue
+        tr["matches"] = [
+            {
+                "entity_type": "brand",
+                "canonical_code": name,
+                "uuid": None,
+                "match_field": "brand",
+                "match_tier": "exact",
+                "similarity": None,
+                "company_id": None,
+                "company_name": None,
+                "company_code": None,
+                "display": {"brand_name": name},
+            }
+        ]
+        tr["resolved"] = True
+        tr["ambiguous"] = False
+        ambiguous = [t for t in ambiguous if t != tr.get("token")]
+        changed = True
+    if changed:
+        result["unresolved_tokens"] = [
+            tr["token"] for tr in resolutions if isinstance(tr, dict) and not (tr.get("matches") or [])
+        ]
+        if "ambiguous_tokens" in result:
+            result["ambiguous_tokens"] = ambiguous
+    return result
+
+
+
+def _with_parser_brand(specs: list[dict], brand_tokens: dict[str, str] | None) -> list[dict]:
+    """The brand the caller's parser already named (`brand_tokens`, one brand) scopes the
+    described set when the sentence reader bound none: brand identity is semantic (owner,
+    6 Oct 2026, "what if typo, what if SRT people type"), so "Sorrento basin" and "srt basin"
+    are Sorento basins because the parser's canonical_code says so, never because the typed
+    word happens to spell a brand name. The same `{"key": "brand", "value": name}` shape the
+    reader itself emits; two different brands in one message bind nothing here (the reader's
+    own call). Absent field = untouched."""
+    if not brand_tokens:
+        return specs
+    if any(str((e or {}).get("key")) == "brand" for e in specs):
+        return specs
+    # Only entries keyed by a real token count (security review, nit): an empty key names
+    # no token, exactly as `_resolve_brand_tokens` drops it.
+    names = {
+        str(n).strip()
+        for t, n in brand_tokens.items()
+        if _norm_locked_token(t) and str(n or "").strip()
+    }
+    if len(names) != 1:
+        return specs
+    name = next(iter(names))
+    return [*specs, {"key": "brand", "value": name, "evidence": name, "grounded": True}]
+
 def _result_has_zero_matches(result: dict[str, Any]) -> bool:
     """True when neither OR-mode nor AND-mode produced any match."""
     if "intersection" in result:
@@ -1874,6 +2112,27 @@ def _result_has_zero_matches(result: dict[str, Any]) -> bool:
             return False
     return True
 
+
+
+def _brand_scoping(tr: Any) -> bool:
+    """A resolution whose every match is the `brand` kind: the caller's own brand token
+    (`_resolve_brand_tokens`). A brand SCOPES a question, it does not answer it, so the
+    spec gates below neither count it as a token that was answered nor as a product
+    question left open (reviewer B1 on the owner's mechanism: "cabana products" must still
+    open the brand-scoped set, "SORENTO SRTWC8318" must still not). Never true for a caller
+    without `brand_tokens`: the resolver has no brand probe of its own."""
+    matches = (tr.get("matches") or []) if isinstance(tr, dict) else []
+    return bool(matches) and all((m or {}).get("entity_type") == "brand" for m in matches)
+
+
+def _only_brand_scoping(result: dict[str, Any]) -> bool:
+    """Every token the caller sent is a brand token and nothing else was asked of the
+    resolver: the described set is "that brand's products", which only the spec path can
+    list."""
+    resolutions = result.get("resolutions")
+    if "intersection" in result or not isinstance(resolutions, list) or not resolutions:
+        return False
+    return all(_brand_scoping(tr) for tr in resolutions)
 
 def _every_caller_token_resolved(result: dict[str, Any]) -> bool:
     """D13 (owner turn, 8 Sep 2026, "CB6622-PP?"): every token the caller supplied
@@ -1898,7 +2157,12 @@ def _every_caller_token_resolved(result: dict[str, Any]) -> bool:
     resolutions = result.get("resolutions")
     if not isinstance(resolutions, list) or not resolutions:
         return False
-    return all(bool(tr.get("matches")) for tr in resolutions if isinstance(tr, dict))
+    # A brand token scopes, it does not answer (`_brand_scoping`): left out here, so a
+    # brand beside a resolved code still closes the fallback and a brand alone never does.
+    considered = [tr for tr in resolutions if isinstance(tr, dict) and not _brand_scoping(tr)]
+    if not considered:
+        return False
+    return all(bool(tr.get("matches")) for tr in considered)
 
 
 def _product_words_unanswered(result: dict[str, Any]) -> bool:
@@ -1976,7 +2240,8 @@ def _no_product_row_answered(result: dict[str, Any], domain_hint: str | None) ->
         resolutions = result.get("resolutions")
         if not isinstance(resolutions, list):
             return False
-        shown = [tr.get("matches") or [] for tr in resolutions]
+        # A brand token is not an open product question either (`_brand_scoping`).
+        shown = [tr.get("matches") or [] for tr in resolutions if not _brand_scoping(tr)]
     return any(
         not any(m.get("entity_type") in _PRODUCT_ROW_TYPES for m in matches)
         for matches in shown
@@ -2077,8 +2342,23 @@ def _resolve_input(
     limit: int | None = None,
     raw_tokens: list[str] | None = None,
     regions: frozenset[str] | None = None,
+    code_reader: Any = None,
+    hint_locked_tokens: list[str] | None = None,
+    brand_tokens: dict[str, str] | None = None,
 ):
+    # RESOLVE-SEMANTIC-FALLBACK: the one code reader for this REQUEST, wrapped here so the
+    # per-token memo and the per-request cap hold whatever reader a caller hands in (a
+    # test double, a future caller) and across the two passes that share it (AND, then the
+    # OR retry on a zero intersection). The `fallback_to_all_types` cross-type re-run below
+    # carries no reader at all. A `resolver_code_reader.CodeReader`, or None.
+    if code_reader is not None:
+        from app.services.resolver_code_reader import per_request
+
+        code_reader = per_request(code_reader)
     mode = (match_mode or "or").strip().lower()
+    # A brand token is locked as well: its kind is final and it is never rerun.
+    if brand_tokens:
+        hint_locked_tokens = list(hint_locked_tokens or []) + [t for t in brand_tokens if t]
     if mode not in _ALLOWED_MATCH_MODES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -2177,7 +2457,8 @@ def _resolve_input(
         filtered = [_strip_entity_stopwords(t) for t in filtered]
         prepared_tokens: list[str] = filtered
         input_for_or: list[str] | str = filtered
-    else:
+    synthesized_from_query = False
+    if not filtered:
         # AND-mode is per-row intersection, undefined without explicit tokens.
         # Silently degrade to empty result so callers that always send
         # `match_mode='and'` regardless of token shape don't hit a 400 - they
@@ -2206,6 +2487,10 @@ def _resolve_input(
                 if alpha_tokens:
                     prepared_tokens = alpha_tokens
                     input_for_or = alpha_tokens
+                    # RESOLVER-TOKEN-CAP: these are words split out of a sentence,
+                    # not codes the caller chose, so they keep the free-text count
+                    # rather than the pre-extracted ceiling.
+                    synthesized_from_query = True
 
     def _run(
         allowed: list[str] | None,
@@ -2235,13 +2520,27 @@ def _resolve_input(
                 cross_type_expand=cross_type_expand,
                 domain_hint=hint,
                 entity_pins=entity_pins,
+                max_candidates=(
+                    FREE_TEXT_CANDIDATES
+                    if synthesized_from_query and tokens_override is None
+                    else None
+                ),
                 # Only the primary (non-overridden) pass carries raw_tokens: a
                 # fallback re-run passes `tokens_override` (a different,
                 # unresolved-only token list) so raw_tokens no longer aligns
                 # positionally with it - see PLAN-resolver-head-code-retry.
                 raw_tokens=raw_tokens if tokens_override is None else None,
                 regions=regions,
+                # The reader answers a token a PARSER chose: words this route split out of
+                # a sentence for an alpha-only type (`_synthesize_alpha_tokens`) are not
+                # that, so they are never put to it (security review, final head item 5).
+                code_reader=None if synthesized_from_query else code_reader,
             ).as_dict()
+        # CLASS-HINT-KIND-PICK: a locked token's name-matched kinds go before anything
+        # downstream can read them as an answer - the AND exit, the OR degrade and the
+        # spec fallback all judge "resolved" off what is left here.
+        raw = _strip_name_kinds_for_locked(raw, hint_locked_tokens, hint)
+        raw = _resolve_brand_tokens(raw, brand_tokens)
         raw = _apply_promotion_access_levels_filter(db, raw, access_levels)
         # Promotion-domain hint: run the expander. It owns the dispatch:
         # - promo matches found → return promotion entries only
@@ -2297,6 +2596,13 @@ def _resolve_input(
             "the whitelist so per-token fallback can apply only to unresolved tokens."
         )
 
+    # CLASS-HINT-KIND-PICK R2 (7 Oct 2026): a locked token IS rerun like any other. What
+    # the rerun may not do is hand it a promotion / customer / attachment / transporter /
+    # form row by name (`_strip_name_kinds_for_locked` on the fallback result below); an
+    # EXACT record key it names under a wrong hint still finds itself there - a container
+    # number the parser hinted `product` is the inbound shipment it is (owner ruling 5,
+    # hand pass 12, `test_rearch_r12_handpass12_d.py`). A class word nothing else names
+    # is left in `unresolved_tokens` and reaches the spec/class fallback as before.
     unresolved = [
         r["token"]
         for r in result.get("resolutions", []) or []
@@ -2342,6 +2648,7 @@ def _resolve_input(
         regions=regions,
     ).as_dict()
     fb = _apply_promotion_access_levels_filter(db, fb_raw, access_levels)
+    fb = _strip_name_kinds_for_locked(fb, hint_locked_tokens, domain_hint)
     # Per-token fallback bypasses `_run`, so the promotion-domain product
     # expansion / brand-access rescue must be applied here too.
     if domain_hint and _canonical_entity_type(domain_hint.strip()) == "promotion":
@@ -2363,7 +2670,9 @@ def _resolve_input(
         has_matches = bool(r.get("matches") or [])
         fb_entry = fb_by_token.get(tok) if tok else None
         if not has_matches and fb_entry and (fb_entry.get("matches") or []):
-            merged.append(fb_entry)
+            # The primary pass's code-reader verdict stays on the trace (it is the pass
+            # that asked); the cross-type entry carries none of its own.
+            merged.append({**fb_entry, "fallback": r["fallback"]} if r.get("fallback") is not None else fb_entry)
             found_any_fallback = True
         elif (
             not has_matches
@@ -2465,6 +2774,19 @@ def resolve_reference(
         ),
     ),
     domain: str | None = Query(None, description="Alias for `domain_hint`."),
+    semantic_fallback: bool = Query(
+        True,
+        description=(
+            "RESOLVE-SEMANTIC-FALLBACK: the code reader (see the POST body's field of the "
+            "same name) reads a code out of the text the caller TYPED for a token, which "
+            "is the POST body's `raw_tokens`. This GET variant carries no `raw_tokens`, so "
+            "the reader is never asked here: a product-typed `tokens` entry that matched no code tier "
+            "gains `fallback: {asked: false, kind: not_asked, reason: no_typed_text}` and "
+            "stays unresolved (a free-text `query` is never put to the reader at all). Use "
+            "POST with `raw_tokens` to have the token read. `false` "
+            "drops the key; the response is then byte-identical to before the feature."
+        ),
+    ),
     limit: int | None = Query(
         None,
         ge=1,
@@ -2486,6 +2808,16 @@ def resolve_reference(
     Entity pinning (`entity_pins`) is POST-only - see `ResolveReferenceRequest`; this GET variant
     has no equivalent parameter.
     """
+    code_reader = (
+        _resolver_code_reader.reader_for(
+            db,
+            message_text=query,
+            user_id=current_user.get("id") if isinstance(current_user, dict) else None,
+            dry_run=False,
+        )
+        if semantic_fallback
+        else None
+    )
     return _stamp_brand_on_products(
         db,
         _resolve_input(
@@ -2498,6 +2830,7 @@ def resolve_reference(
             fallback_to_all_types=fallback_to_all_types,
             domain_hint=domain_hint or domain,
             limit=limit,
+            code_reader=code_reader,
         ),
     )
 
@@ -2596,13 +2929,21 @@ def _strip_word_token_product_matches(result: dict[str, Any]) -> None:
             return True
         if match.get("entity_type") != "product":
             return True
-        return match.get("match_tier") == "spec_search"
+        return match.get("match_tier") == SPEC_TIER_NAME
 
     for resolution in result.get("resolutions") or []:
         if isinstance(resolution, dict) and isinstance(resolution.get("matches"), list):
             resolution["matches"] = [m for m in resolution["matches"] if _keep(m)]
     if isinstance(result.get("intersection"), list):
         result["intersection"] = [m for m in result["intersection"] if _keep(m)]
+
+
+#: The tier name this route stamps on a spec-search match. A COPY of the chatbot's
+#: `turn_runtime.SPEC_TIER`, never an import of it: this module is core, outside the
+#: AC-002 module boundary (`tests/chatbot/test_import_boundary.py`), the same reason
+#: `_CERT_WORD_RE` and `_SET_ID_CAP` below are copies. The two names are pinned equal by
+#: `tests/chatbot/test_miss_says_what_it_could_not_find.py::TestRuleCReadsTheResolversOwnTierName`.
+SPEC_TIER_NAME = "spec_search"
 
 
 def _emit_spec_matches(
@@ -2638,7 +2979,7 @@ def _emit_spec_matches(
             "canonical_code": candidate["product_code"],
             "uuid": candidate["product_id"],
             "match_field": "specifications",
-            "match_tier": "spec_search",
+            "match_tier": SPEC_TIER_NAME,
             # The ranker's score, so a caller can see how well each one answered
             # rather than treating an ordered list as equally good.
             "similarity": candidate["score"],
@@ -2774,6 +3115,38 @@ def _emit_spec_matches(
     ]
 
 
+def _typed_text_after_narrowing(
+    payload: "ResolveReferenceRequest", narrowed: list[str]
+) -> list[str] | None:
+    """The `raw_tokens` list for a token list a narrowing step produced.
+
+    RESOLVE-SEMANTIC-FALLBACK (reviewer on 9b6a09f2): a token narrowing left as it was
+    keeps its typed text, so the code reader can still read a code out of it; dropping
+    the whole `raw_tokens` list made every other token of a mixed multi-line turn
+    `not_asked / no_typed_text`. A token narrowing replaced (the variant codes its words
+    or specs picked) has no typed text of its own and is not asked; a token typed twice
+    keeps its last line's text, the resolver's own rule.
+
+    Narrowing that changes the token COUNT also turns off the resolver's per-token hint
+    pairing (`allowed_entity_types` keeps its old length), so the only hint gate left is
+    this carry: a token the caller typed as a customer or a brand keeps no typed text and
+    is never put to the reader as a product question (security-reviewer on 5839705b).
+    Shared by `narrow_code_tokens` and `narrow_code_tokens_by_specs` (#1513).
+    """
+    if not (payload.tokens and payload.raw_tokens and len(payload.raw_tokens) == len(payload.tokens)):
+        return None
+    hinted = (
+        list(payload.allowed_entity_types)
+        if payload.allowed_entity_types and len(payload.allowed_entity_types) == len(payload.tokens)
+        else None
+    )
+    typed_by_token = {
+        tok: (raw if hinted is None or _canonical_entity_type(hinted[idx] or "") in ("", "product") else "")
+        for idx, (tok, raw) in enumerate(zip(payload.tokens, payload.raw_tokens))
+    }
+    return [typed_by_token.get(tok, "") for tok in narrowed]
+
+
 @router.post("/resolve")
 def resolve_reference_post(
     payload: ResolveReferenceRequest,
@@ -2791,7 +3164,41 @@ def resolve_reference_post(
         db, query=payload.query or "", tokens=payload.tokens, allowed_types=payload.allowed_entity_types
     )
     if narrowed is not None:
-        payload = payload.model_copy(update={"tokens": narrowed, "raw_tokens": None})
+        payload = payload.model_copy(
+            update={"tokens": narrowed, "raw_tokens": _typed_text_after_narrowing(payload, narrowed)}
+        )
+    # STOCK-QTY-PARTIAL-FILL, owner ruling Q4 (a) (6 Oct 2026): a spec said right after a
+    # product answer ("How about p trap" after SRTWC286-SH) is that product's variant. The
+    # parser carries the product (`entity_op "reuse"`) and the grounded spec arrives as
+    # `extracted_specs`; the code's family is narrowed by those VALUES, since the words are
+    # not beside the code in the message for `narrow_code_tokens` to read. A token the
+    # narrowing replaced loses its pin (the pin named the typed token, not its variant);
+    # every other pin is kept. Pin keys are matched the way the resolver matches them
+    # (`_pin_key_norm`: stripped, case-blind), so a pin on an untouched token whose key
+    # differs from the token only in case survives (security review note 1, 6 Oct 2026).
+    if payload.extracted_specs and payload.tokens:
+        from app.services.entity_resolver import _pin_key_norm
+        from app.services.product_code_family import narrow_code_tokens_by_specs
+
+        by_specs = narrow_code_tokens_by_specs(
+            db,
+            tokens=payload.tokens,
+            allowed_types=payload.allowed_entity_types,
+            specs=payload.extracted_specs,
+        )
+        if by_specs is not None:
+            kept = {_pin_key_norm(t) for t in by_specs}
+            replaced = {_pin_key_norm(t) for t in payload.tokens} - kept
+            pins = {
+                k: v for k, v in (payload.entity_pins or {}).items() if _pin_key_norm(k) not in replaced
+            } or None
+            payload = payload.model_copy(
+                update={
+                    "tokens": by_specs,
+                    "raw_tokens": _typed_text_after_narrowing(payload, by_specs),
+                    "entity_pins": pins,
+                }
+            )
     # A contact's packing list regions (unresolved = West) bound the shipments it can be
     # shown; no contact_id = no filter.
     regions = None
@@ -2801,6 +3208,18 @@ def resolve_reference_post(
         regions = rules_for_contact(
             db, resolve_request_contact(db, payload.contact_id, payload.space_id)
         ).regions
+    # RESOLVE-SEMANTIC-FALLBACK: the code reader for this request (see the field's own
+    # description); `dry_run` keeps its usage row out, exactly as the spec reader's.
+    code_reader = (
+        _resolver_code_reader.reader_for(
+            db,
+            message_text=payload.query,
+            user_id=current_user.get("id") if isinstance(current_user, dict) else None,
+            dry_run=payload.dry_run,
+        )
+        if payload.semantic_fallback
+        else None
+    )
     try:
         result = _resolve_input(
             db,
@@ -2815,6 +3234,9 @@ def resolve_reference_post(
             limit=payload.limit,
             raw_tokens=payload.raw_tokens,
             regions=regions,
+            code_reader=code_reader,
+            hint_locked_tokens=payload.hint_locked_tokens,
+            brand_tokens=payload.brand_tokens,
         )
     except EntityPinMismatch as exc:
         raise AppException(
@@ -2915,6 +3337,7 @@ def resolve_reference_post(
             user_id=current_user.get("id"),
             log_usage=not payload.dry_run,
         )
+        specs = _with_parser_brand(specs, payload.brand_tokens)
         # D3: a brand scopes the WHOLE set - kept OUT of `specs`' union-membership
         # role (a brand binding there would union in every OTHER certified product
         # of that brand, not just the described ones) and applied only as the
@@ -2933,7 +3356,13 @@ def resolve_reference_post(
         # every bound phrase out of the remainder before anything reads it
         # again. Digits are already dropped by `_content_words` downstream,
         # so "250mm" needs no handling here.
-        bound_words = [phrase for phrases in understanding.bound_phrases.values() for phrase in phrases]
+        # An empty phrase beside grounded specs has no understanding to read (the specs alone
+        # describe the set).
+        bound_words = [
+            phrase
+            for phrases in (understanding.bound_phrases if understanding else {}).values()
+            for phrase in phrases
+        ]
         if bound_words:
             query_text = _strip_predicate_words(query_text, bound_words)
 
@@ -3095,6 +3524,7 @@ def resolve_reference_post(
             or _product_words_unanswered(result)
             or _has_unresolved_tokens(result)
             or _no_product_row_answered(result, payload.domain_hint)
+            or _only_brand_scoping(result)
         )
     ):
         import time
@@ -3156,6 +3586,7 @@ def resolve_reference_post(
                 log_usage=not payload.dry_run,
             )
         )
+        specs = _with_parser_brand(specs, payload.brand_tokens)
         semantic_used = bool(understanding and understanding.source == "semantic")
         semantic_ms = (
             int((time.monotonic() - started) * 1000) if understanding is not None else None

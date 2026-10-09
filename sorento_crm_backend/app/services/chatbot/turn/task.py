@@ -313,6 +313,33 @@ class StockQtyTask:
             slots = [replace(slot, value=bare) if slot.value is None else slot for slot in slots]
         return replace(task, slots=tuple(slots))
 
+    def answered_now(self, prior: Task, filled: Task, verdict: dict[str, Any]) -> tuple[Slot, ...]:
+        """The slots THIS message gave or restated a quantity for, in task order: a slot
+        whose value changed in the fill, or one the message named beside a quantity
+        (`SLOT_QUANTITIES` by key, `entities[].quantity` by code) even when the number is
+        the one already noted.
+
+        STOCK-QTY-PARTIAL-FILL (owner ruling R1, 6 Oct 2026): these are the lines the
+        reply answers NOW. A line answered on an earlier turn and not named again is not
+        fetched again; a line restated ("8152 x 6" a second time) is answered again rather
+        than met with the list.
+        """
+        named: set[str] = {key.strip().casefold() for key in _slot_quantities(verdict)}
+        for entity in verdict.get("entities") or []:
+            if isinstance(entity, dict) and _number(entity.get("quantity")) is not None:
+                named |= _entity_codes(entity)
+        was = {slot.key: slot.value for slot in prior.slots}
+        return tuple(
+            slot
+            for slot in filled.slots
+            if slot.value is not None
+            and (
+                was.get(slot.key) != slot.value
+                or slot.key.strip().casefold() in named
+                or slot.label.strip().casefold() in named
+            )
+        )
+
     def to_fetch(self, task: Task) -> FetchSpec | None:
         if not task.slots:
             # "just proceed" with nothing noted leaves no product to ask about.
@@ -591,12 +618,29 @@ def run(
             )
             moved = filled.slots != task.slots
             # The fill MERGES into the slots the task already has, so a quantity for
-            # one product leaves the others exactly as they were - and while any of
-            # them is still owed there is nothing to answer yet. A fetch happens when
-            # NO slot is missing, or on a `proceed_anyway`, which drops the missing
-            # ones and so leaves none behind either.
+            # one product leaves the others exactly as they were. A `proceed_anyway`
+            # drops the missing ones and fetches what is noted (naming the rest).
+            # STOCK-QTY-PARTIAL-FILL (owner ruling R1, 6 Oct 2026, prod contact
+            # 550337739: "I need 8152 6 unit" over a five-line list was met with the
+            # same five lines, three times): otherwise the lines this message gave a
+            # quantity for are answered NOW - the fetch carries those slots alone - and
+            # the lines still owed stay on the task, open, never re-listed. The dealer
+            # may fill another line next, say one number for the rest, or ask about
+            # something else.
             still_missing = impl.missing(filled) if hasattr(impl, "missing") else ()
-            spec = impl.to_fetch(filled) if (moved and not still_missing) else None
+            spec = None
+            if verdict.get("proceed_anyway") is True:
+                spec = impl.to_fetch(filled) if moved else None
+            else:
+                answered_now = (
+                    impl.answered_now(task, filled, verdict)
+                    if hasattr(impl, "answered_now")
+                    else (filled.slots if moved and not still_missing else ())
+                )
+                if answered_now:
+                    spec = impl.to_fetch(replace(filled, slots=tuple(answered_now)))
+                    if still_missing:
+                        rules.append(f"task_partial_answered_{task.kind}")
             if spec is None and moved and not filled.slots:
                 # The fill emptied the task (a "just proceed" with nothing noted). It
                 # is finished - it does not ride on as an empty task - and its own
@@ -783,18 +827,29 @@ def code_like(token: str) -> bool:
     return any(ch.isdigit() for ch in token) and any(ch.isalpha() for ch in token)
 
 
+def code_or_number(token: str) -> bool:
+    """A typed token that reads against product codes: a code-like token OR a bare number
+    ("8066"). ROGUE-CONVO-REVIEW (owner ruling, 6 Oct 2026, "why couldn't we match? when I
+    type in compact mode it works, it gives a picker"): a bare number the parser tagged as
+    a product matches its code family through the resolver's own substring probe, the
+    way compact mode already does, and is offered the same picker. A WORD ("xx", "new",
+    "basin") is still never a code: product resolution is code-only by design. ONE copy,
+    read by the same three seams as `code_like`."""
+    return code_like(token) or (bool(token) and token.isdigit())
+
+
 def _group(rows: list[dict[str, Any]], token: str) -> list[dict[str, Any]]:
     """The rows one typed token placed: its own code, or the family it is a prefix of
     (the same link `apply._in_family_of` reads, D29), else (AVAIL-PICKER, owner trace
     5 Oct 2026, "wc286") the family it is a substring of, the rows the resolver's own
     substring probe on product_code placed and `engine._exact_codes_only` kept.
 
-    The substring reading is for a code-like token only (reviewer finding 1): the parser
-    does tag a word or a bare number as a product ("2 srtwc286", "new srtwc286"), and
-    "2" or "new" sits inside half the family's codes without naming any of them."""
+    The substring reading is for a code-like token or a bare number (`code_or_number`,
+    owner ruling 6 Oct 2026): the parser does tag a word as a product ("new srtwc286"),
+    and "new" sits inside half the family's codes without naming any of them."""
     labelled = [(row, (_row_label(row) or "").casefold()) for row in rows]
     prefixed = [row for row, label in labelled if label.startswith(token)]
-    if prefixed or not code_like(token):
+    if prefixed or not code_or_number(token):
         return prefixed
     return [row for row, label in labelled if token in label]
 
@@ -1128,6 +1183,26 @@ def _rebuilt(
     if answered and any(slot.value is None for slot in slots):
         # An answered entry with no quantity on it has nothing to revise.
         return others
+    if (
+        answered
+        and existing is not None
+        and existing.status == OPEN
+        and len(existing.slots) > 1
+        and {slot.key for slot in slots} < {slot.key for slot in existing.slots}
+    ):
+        # STOCK-QTY-PARTIAL-FILL (owner ruling R1, 6 Oct 2026): the block ANSWERS SOME
+        # of the open list's own lines (a partial fetch, `run`'s
+        # `task_partial_answered_*`, no row still needing a quantity). Merge rather than
+        # rebuild: the covered lines take the tool's own `requested_qty`, the uncovered
+        # ones keep their position and stay owed, and the task is answered only once no
+        # line is owed. The reply itself is the answered lines (`after_reply` returns no
+        # text for a block with nothing still needing a quantity), so the list is never
+        # printed again. A block that still needs a quantity for one of those lines is
+        # not a partial answer and rebuilds from the block as before (reviewer, 6 Oct:
+        # merging it wiped the noted quantity and printed the whole list again).
+        covered = {slot.key: slot for slot in slots}
+        slots = [covered.get(slot.key, slot) for slot in existing.slots]
+        answered = answered and all(slot.value is not None for slot in slots)
     opened = existing.opened_at_turn if existing is not None else turn_no
     return others + (
         Task(

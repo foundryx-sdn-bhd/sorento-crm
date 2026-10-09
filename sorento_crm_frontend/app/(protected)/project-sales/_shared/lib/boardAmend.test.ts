@@ -751,7 +751,7 @@ describe('amendSummary: what the decided row reads', () => {
         },
         'BRW-BB',
       ),
-    ).toBe('Own 20 BRW-BB · Borrow (other) 10 BRW-IB · Buy 13');
+    ).toBe('Own 20 BRW-BB · Borrow 10 BRW-IB · Buy 13');
   });
 
   it('splits a reserve that draws on two different kinds of stock', () => {
@@ -1033,7 +1033,7 @@ describe('decideComposition: the six Decide items (D1, AC-5 to AC-9, AC-51)', ()
     expect(result.borrow).toBeUndefined();
   });
 
-  it('AC-9: Borrow other location takes the whole line off the picked location', () => {
+  it('AC-9: Borrow takes the whole line off the picked location', () => {
     const row = decideRow({
       borrow_candidates: [
         {
@@ -1133,5 +1133,186 @@ describe('decideComposition: the six Decide items (D1, AC-5 to AC-9, AC-51)', ()
     });
     const result = decideComposition(row, 'own');
     expect(result.reserve).toEqual([{ warehouse_id: 'wh-own', location: 'BRW-BB', qty: '100' }]);
+  });
+});
+
+/**
+ * BORROW-LOCATION-ONLY (D3, K8): "Borrow" never resolves to a candidate that
+ * NAMES a donor SO, so the location picker cannot leak a donor-named order borrow under the
+ * wrong label (the rung leak, `pickerOptions` / `decideComposition` do not filter by rung).
+ */
+describe('decideComposition: borrow_other never resolves to a donor-named candidate (K8)', () => {
+  const impact = { free_before: '100', free_after_full_borrow: '60', committed_qty: '0' };
+  const donorNamed = {
+    source: 'other_location' as const,
+    warehouse_code: 'MWH-IB',
+    warehouse_id: 'wh-mwh',
+    free_qty: '100',
+    donor_impact: impact,
+    rung: 'order_borrow',
+    donor_so_number: 'SO397450',
+    donor_line_no: 446,
+    donor_core_line_id: 'core-donor-1',
+  };
+  const donorless = {
+    source: 'other_location' as const,
+    warehouse_code: 'DC1-IR',
+    warehouse_id: 'wh-dc1',
+    free_qty: '100',
+    donor_impact: impact,
+    rung: 'order_borrow',
+    donor_so_number: null,
+    donor_core_line_id: 'core-donor-2',
+  };
+
+  it('skips a location that is only reachable through a donor-named candidate', () => {
+    const result = decideComposition(
+      decideRow({ borrow_candidates: [donorNamed] }),
+      'borrow_other',
+      'MWH-IB',
+    );
+
+    expect(result.borrow ?? []).toEqual([]);
+    expect(result.skip).toBeTruthy();
+  });
+
+  it('resolves a donor-less order_borrow candidate and carries no donor SO', () => {
+    const result = decideComposition(
+      decideRow({ borrow_candidates: [donorNamed, donorless] }),
+      'borrow_other',
+      'DC1-IR',
+    );
+
+    expect(result.skip).toBeUndefined();
+    expect(result.borrow).toHaveLength(1);
+    expect(result.borrow?.[0]).toMatchObject({
+      warehouse_id: 'wh-dc1',
+      donor_core_line_id: 'core-donor-2',
+    });
+    expect(result.borrow?.[0].donor_so_number ?? null).toBeNull();
+  });
+
+  it('at a location with both, takes the donor-less candidate, never the named one', () => {
+    const sameBin = { ...donorless, warehouse_code: 'MWH-IB', warehouse_id: 'wh-mwh' };
+    const result = decideComposition(
+      decideRow({ borrow_candidates: [donorNamed, sameBin] }),
+      'borrow_other',
+      'MWH-IB',
+    );
+
+    expect(result.borrow).toHaveLength(1);
+    expect(result.borrow?.[0].donor_core_line_id).toBe('core-donor-2');
+    expect(result.borrow?.[0].donor_so_number ?? null).toBeNull();
+  });
+});
+
+/**
+ * BORROW-LOCATION-ONLY S6 (B1, "summed per location"): with "Borrow from another order" off,
+ * the candidates at a location name no donor SO, and "Borrow" draws across
+ * that location's candidate lines in order - one borrow row per donor line, each within what
+ * that line has left - rather than needing ONE line to cover the whole quantity.
+ */
+describe('decideComposition: borrow_other sums a location across its donor-less lines (S6)', () => {
+  const impact = { free_before: '4', free_after_full_borrow: '0', committed_qty: '0' };
+  const line = (core: string) => ({
+    source: 'other_location' as const,
+    warehouse_code: 'BRW-BB',
+    warehouse_id: 'wh-brw-bb',
+    free_qty: '4',
+    donor_impact: impact,
+    rung: 'order_borrow',
+    donor_so_number: null,
+    donor_core_line_id: core,
+  });
+
+  it('covers a need of 6 with 4 + 2 off two lines at BRW-BB', () => {
+    const result = decideComposition(
+      decideRow({ qty: '6', borrow_candidates: [line('core-a'), line('core-b')] }),
+      'borrow_other',
+      'BRW-BB',
+    );
+
+    expect(result.skip).toBeUndefined();
+    expect(
+      (result.borrow ?? []).map((b) => [b.donor_core_line_id, b.qty, b.warehouse_id]),
+    ).toEqual([
+      ['core-a', '4', 'wh-brw-bb'],
+      ['core-b', '2', 'wh-brw-bb'],
+    ]);
+  });
+
+  it('keeps a running claim per line, so a second row draws what the first left', () => {
+    const claimed = new Map<string, number>();
+    const candidates = [line('core-a'), line('core-b')];
+    decideComposition(decideRow({ qty: '6', borrow_candidates: candidates }), 'borrow_other', 'BRW-BB', claimed);
+    const second = decideComposition(
+      decideRow({ key: 'so-2|1', qty: '3', borrow_candidates: candidates }),
+      'borrow_other',
+      'BRW-BB',
+      claimed,
+    );
+
+    expect(second.skip).toBe('only 2 free at BRW-BB');
+  });
+});
+
+/**
+ * BORROW-LOCATION-ONLY defect A, the payload the browser measured: three rows at one bin, all
+ * with a null `donor_core_line_id` - two step-2 lines of 4 whose ids the board had dropped,
+ * and the donor project's hold of 8, which is the SAME stock again. A bin's capacity is
+ * never counted twice: rows that cannot be told apart are one pile, and the project hold is
+ * not a location row.
+ */
+describe('decideComposition: the measured null-id payload never double counts a bin', () => {
+  const impact = { free_before: '4', free_after_full_borrow: '0', committed_qty: '0' };
+  const stepTwo = {
+    source: 'other_location' as const,
+    warehouse_code: 'X',
+    warehouse_id: 'wh-x',
+    free_qty: '4',
+    donor_impact: impact,
+    rung: null,
+    donor_so_number: null,
+    donor_core_line_id: null,
+  };
+  const hold = {
+    source: 'other_project' as const,
+    warehouse_code: 'X',
+    warehouse_id: 'wh-x',
+    free_qty: '8',
+    donor_impact: impact,
+    donor_project_id: 'prj-1',
+    donor_project_ref: null,
+    donor_core_line_id: null,
+  };
+
+  it('reads the two indistinguishable rows as one pile of 4 and leaves the hold alone', () => {
+    const result = decideComposition(
+      decideRow({ qty: '6', borrow_candidates: [stepTwo, stepTwo, hold] }),
+      'borrow_other',
+      'X',
+    );
+
+    expect(result.skip).toBe('only 4 free at X');
+  });
+
+  it('with the donor lines the board now carries, covers 6 as 4 + 2 off the two lines', () => {
+    const result = decideComposition(
+      decideRow({
+        qty: '6',
+        borrow_candidates: [
+          { ...stepTwo, rung: 'order_borrow', donor_core_line_id: 'core-a' },
+          { ...stepTwo, rung: 'order_borrow', donor_core_line_id: 'core-b' },
+          hold,
+        ],
+      }),
+      'borrow_other',
+      'X',
+    );
+
+    expect((result.borrow ?? []).map((b) => [b.donor_core_line_id, b.qty])).toEqual([
+      ['core-a', '4'],
+      ['core-b', '2'],
+    ]);
   });
 });

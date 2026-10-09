@@ -16,8 +16,10 @@ import json
 import pytest
 
 from app.services.api_call_log_service import (
+    MAX_ERROR_MESSAGE_CHARS,
     MAX_PAYLOAD_CHARS,
     sanitize_body,
+    summarize_validation_errors,
     REDACTED,
     TRUNCATION_MARKER,
     classify_outcome,
@@ -183,3 +185,46 @@ def test_missing_status_is_a_server_error():
     """No status means the request died before producing one - that is our fault,
     not the caller's, and it must not land in the success bucket."""
     assert classify_outcome(None) == "server_error"
+
+
+# --------------------------------------------------------------------------- #
+# 422 summary (CHAT-HISTORY-SCHEMA)                                            #
+# --------------------------------------------------------------------------- #
+def test_a_422_body_is_summarised_to_its_offending_fields():
+    """A validation refusal never reaches the handler, so this summary is the
+    only CRM-side evidence naming what was wrong."""
+    body = json.dumps(
+        {
+            "detail": [
+                {"type": "missing", "loc": ["body", "message"], "msg": "Field required"},
+                {
+                    "type": "string_type",
+                    "loc": ["body", "reply_to_message_id"],
+                    "msg": "Input should be a valid string",
+                    "input": 1791283416935171,
+                },
+            ]
+        }
+    )
+    out = summarize_validation_errors(422, body.encode())
+    assert out is not None
+    assert "body.message: Field required" in out
+    assert "body.reply_to_message_id: Input should be a valid string" in out
+
+
+def test_only_a_422_with_the_validation_shape_is_summarised():
+    assert summarize_validation_errors(201, b'{"id": 1}') is None
+    assert summarize_validation_errors(422, None) is None
+    assert summarize_validation_errors(422, b"not json") is None
+    # A hand-rolled 422 carrying a plain string detail is stored exactly as before.
+    assert summarize_validation_errors(422, b'{"detail": "nope"}') is None
+
+
+def test_a_422_summary_is_bounded():
+    detail = [
+        {"type": "missing", "loc": ["body", f"field_{i}"], "msg": "Field required"}
+        for i in range(400)
+    ]
+    out = summarize_validation_errors(422, json.dumps({"detail": detail}))
+    assert out is not None
+    assert len(out) <= MAX_ERROR_MESSAGE_CHARS + len(TRUNCATION_MARKER)

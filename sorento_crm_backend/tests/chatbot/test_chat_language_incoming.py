@@ -193,11 +193,11 @@ def test_a_dealer_eta_line_translates_its_verdict_and_keeps_the_mark():
     )
     assert _loc("zh").tail(no_incoming) == "SRT5674 x 5: \u274c 没有库存，也没有到货。请联系您的销售员。"
     # AVAIL-RENDER (owner, 5 Oct 2026): the tick says got stock and does not refer.
-    assert _loc("zh").tail("SRT5674 x 50: \u2705 Got stock, 30 available.") == (
-        "SRT5674 x 50: \u2705 有库存，可供 30 件。"
+    assert _loc("zh").tail("SRT5674 x 50: \u2705 Only 30 got stock.") == (
+        "SRT5674 x 50: \u2705 只有 30 件有库存。"
     )
-    assert _loc("ms").tail("SRT5674 x 50: \u2705 Got stock, 30 available.") == (
-        "SRT5674 x 50: \u2705 Stok ada, 30 tersedia."
+    assert _loc("ms").tail("SRT5674 x 50: \u2705 Only 30 got stock.") == (
+        "SRT5674 x 50: \u2705 Hanya 30 ada stok."
     )
     assert _loc("ms").tail("SRT5674 x 50: \u2705 Got stock.") == "SRT5674 x 50: \u2705 Stok ada."
     assert _loc("zh").tail("SRT5674 x 50: \u2705 Got stock.") == "SRT5674 x 50: \u2705 有库存。"
@@ -412,9 +412,9 @@ def test_a_malay_dealer_eta_ask_names_the_miss_before_the_refer_line(session_fac
 
 def test_the_available_count_token_never_swallows_the_code_prefix():
     """`{available}` matches a number only (`_NUMERIC_TOKENS`), so neither `tail` nor the
-    final pass reads "SRT5674 x 50: ✅ Got stock, 30" as anything but the count."""
-    line = "SRT5674 x 50: ✅ Got stock, 30 available."
+    final pass reads "SRT5674 x 50: ✅ Only 30" as anything but the count."""
+    line = "SRT5674 x 50: ✅ Only 30 got stock."
     for lang in ("ms", "zh"):
         assert _loc(lang).tail(line).startswith("SRT5674 x 50: ✅ ")
         assert _loc(lang).reply(line).startswith("SRT5674 x 50: ✅ ")
-    assert _loc("ms").text("Got stock, 30 available.") == "Stok ada, 30 tersedia."
+    assert _loc("ms").text("Only 30 got stock.") == "Hanya 30 ada stok."

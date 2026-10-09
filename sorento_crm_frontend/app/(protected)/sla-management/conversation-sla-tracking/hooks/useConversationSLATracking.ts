@@ -164,8 +164,9 @@ export function useConversationSLATestOverrides(trackingId: string) {
 /**
  * The shared contact thread. `refetchIntervalMs` opts a surface into polling so
  * an open, idle chat shows the contact's next message without a manual refresh;
- * it is opt-in because every poll is a live Respond.io call, and the surfaces
- * that merely display the thread should not pay for one. Polling stops while
+ * it is opt-in so surfaces that merely display the thread do not poll. A poll
+ * reads `chat_histories`; at most one throttled background delta read per
+ * contact per 30 s reaches Respond.io. Polling stops while
  * the tab is in the background and whenever the query is disabled.
  */
 export function useSlaTrackingConversation(

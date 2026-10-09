@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, Literal, Optional, Tuple
 
 from fastapi import APIRouter, Depends, Query
@@ -494,7 +494,11 @@ def confirm_all(
                 confirm_batch=lambda: _confirm_a_planning_change(
                     db,
                     order,
-                    _BatchedEntry(list(entry.lines), resolved_batch_id),
+                    _BatchedEntry(
+                        list(entry.lines),
+                        resolved_batch_id,
+                        list(getattr(entry, "cancelled_lines", None) or []),
+                    ),
                     actor_id,
                     preview=payload.preview,
                 ),
@@ -934,14 +938,58 @@ def _confirm_with_possible_rejects(
             ),
             code="board_reject_not_supported_in_batch",
         )
+    # SO-CANCEL-LINE: whole lines transferred to Cancel SO. Refused beside a batch BEFORE
+    # anything is looked up, for the same reason as the withdrawal above.
+    cancelled_lines = list(getattr(payload, "cancelled_lines", None) or [])
+    if batch_id and cancelled_lines:
+        # A cancel rides along with a pending change unless the batch NAMES that line.
+        from app.models.planning_change import PlanningChangeRow
+
+        named_by_batch = (
+            db.query(PlanningChangeRow.project_line_id)
+            .filter(
+                PlanningChangeRow.batch_id == batch_id,
+                # A superseded row is retired (the board's `isRetiredChangeRow`): it names nothing.
+                PlanningChangeRow.applied_state != "superseded",
+                PlanningChangeRow.project_line_id.in_(
+                    [str(x.project_line_id) for x in cancelled_lines]
+                ),
+            )
+            .first()
+        )
+        if named_by_batch is not None:
+            raise AppException(
+                status_code=422,
+                message=(
+                    "A pending planning change names this line, so it cannot also be "
+                    "transferred to Cancel SO. Apply the change first, then transfer the "
+                    "line and confirm again."
+                ),
+                code="board_cancel_not_supported_in_batch",
+            )
+    both = named & {str(x.project_line_id) for x in cancelled_lines}
+    if both:
+        raise AppException(
+            status_code=422,
+            message="A line cannot be composed and transferred to Cancel SO in the same press.",
+            code="supply_cancel_line_also_composed",
+        )
     reasons, joined_reason = _reasons_for_rejected_lines(
         db, order, rejected_line_ids, named_lines=named
     )
     before_id = _active_decision_id(db, order)
+    lines_cancelled = (
+        service.cancel_lines(order, cancelled_lines, actor_user_id=actor_user_id)
+        if cancelled_lines
+        else []
+    )
     if batch_id:
         with UndoJournal(db) as journal:
             body = confirm_batch()
-        _attach_undo_journal(db, order, journal, before_id)
+        if body is None:
+            body = _withdrawal_only_result(db, service, order, [])
+        else:
+            _attach_undo_journal(db, order, journal, before_id)
     elif getattr(payload, "lines", None):
         with UndoJournal(db) as journal:
             body = service.confirm(
@@ -991,10 +1039,15 @@ def _confirm_with_possible_rejects(
             )
         body = _withdrawal_only_result(db, service, order, rejected_line_ids)
         body["lines_withdrawn"] = _withdrawn_entries(db, service, order, rejected_line_ids)
+    elif cancelled_lines:
+        # Only Cancel SO lines: nothing to confirm, so no revision is written.
+        body = _withdrawal_only_result(db, service, order, [])
     else:
         with UndoJournal(db) as journal:
             body = service.confirm(order, payload, actor_user_id=actor_user_id)
         _attach_undo_journal(db, order, journal, before_id)
+    if lines_cancelled:
+        body["lines_cancelled"] = lines_cancelled
     return body
 
 
@@ -1057,6 +1110,7 @@ class _BatchedEntry:
 
     lines: list
     batch_id: str
+    cancelled_lines: list = field(default_factory=list)
 
 
 def _confirm_a_planning_change(
@@ -1141,6 +1195,10 @@ def _confirm_a_planning_change(
     ]
     outcome = (result.get("outcomes") or {}).get(str(order.id))
     confirmed = (outcome or {}).get("confirm_result")
+    if confirmed is None and not failed and getattr(payload, "cancelled_lines", None):
+        # The batch press simply had nothing to confirm and the press carried Cancel SO
+        # lines: the caller answers with the cancel-only result (no revision).
+        return None
     if confirmed is None:
         message = (
             failed[0]["reason"]

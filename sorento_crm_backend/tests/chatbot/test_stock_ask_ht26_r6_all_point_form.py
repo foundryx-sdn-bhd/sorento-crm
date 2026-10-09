@@ -197,19 +197,19 @@ def test_one_number_read_by_the_parser_applies_to_all_too(parsed):
 # --------------------------------------------------------------------------- #
 
 
-def test_per_line_reply_fills_those_lines_and_asks_the_rest_in_point_form():
+def test_per_line_reply_answers_those_lines_now_and_keeps_the_rest_open():
+    """STOCK-QTY-PARTIAL-FILL (owner ruling R1, 6 Oct 2026): the lines a message fills
+    are answered at once and the rest stay open, never re-listed. Before this ruling the
+    reply was the point-form list again with lines 1 and 2 filled in."""
     console = _after_all()
     text = _say_parsed(console, "1. 10, 2. 5")
-    lines = text.splitlines()
-    assert lines[0] == "How many units for each?"
-    assert lines[1] == "1. SRTWC286-SH - 10"
-    assert lines[2] == "2. SRTWC286-SH-150 - 5"
-    assert lines[3:] == [f"{i}. {code} - " for i, code in enumerate(OWNER_FAMILY[2:], 3)]
-    # The rest then take one number.
+    assert text == _answered({OWNER_FAMILY[0]: 10, OWNER_FAMILY[1]: 5})
+    (task,) = [t for t in console.state.focus.tasks if t.kind == "stock_qty"]
+    assert task.status == task_mod.OPEN
+    assert [s.value for s in task.slots] == [10, 5] + [None] * 8
+    # The rest then take one number (F2), and only the rest are answered.
     text = _say_parsed(console, "8")
-    assert text == _answered(
-        {code: (10 if i == 0 else 5 if i == 1 else 8) for i, code in enumerate(OWNER_FAMILY)}
-    )
+    assert text == _answered({code: 8 for code in OWNER_FAMILY[2:]})
 
 
 def test_every_line_answered_at_once_answers_the_check():
@@ -221,14 +221,16 @@ def test_every_line_answered_at_once_answers_the_check():
 
 
 def test_the_dealer_may_paste_the_lines_back_filled_in():
+    """R1 (6 Oct 2026): the two pasted lines are answered now; the eight others stay open."""
     console = _after_all()
     message = "1. SRTWC286-SH - 10\n2. SRTWC286-SH-150 - 5"
     text = _say_parsed(console, message)
-    assert text.splitlines()[1:3] == ["1. SRTWC286-SH - 10", "2. SRTWC286-SH-150 - 5"]
+    assert text == _answered({OWNER_FAMILY[0]: 10, OWNER_FAMILY[1]: 5})
 
 
 def test_a_code_and_a_quantity_from_the_parser_fills_that_line():
-    """"SRTWC286-SH 10": the parser's own per-product reading (`entities[].quantity`)."""
+    """"SRTWC286-SH 10": the parser's own per-product reading (`entities[].quantity`).
+    R1 (6 Oct 2026): that line is answered now, the list is not printed again."""
     console = _after_all()
     parsed = verdict(
         entities=[
@@ -243,23 +245,21 @@ def test_a_code_and_a_quantity_from_the_parser_fills_that_line():
         ]
     )
     text = console.say("SRTWC286-SH 10", parsed)
-    assert text.splitlines()[:3] == [
-        "How many units for each?",
-        "1. SRTWC286-SH - 10",
-        "2. SRTWC286-SH-150 - ",
-    ]
+    assert text == _answered({"SRTWC286-SH": 10})
+    (task,) = [t for t in console.state.focus.tasks if t.kind == "stock_qty"]
+    assert task.status == task_mod.OPEN and [s.value for s in task.slots][:2] == [10, None]
 
 
 def test_the_full_owner_transcript_after_the_fix():
+    """R1 (6 Oct 2026): "1. 10, 2. 5" answers lines 1 and 2; "10" answers the other eight."""
     console = _after_all()
     _say_parsed(console, "1. 10, 2. 5")
     _say_parsed(console, "10")
     assert console.transcript[:4] == ["check stock srtwc286", f"-> {LIST}", "all", f"-> {POINT_FORM}"]
     assert console.transcript[4] == "1. 10, 2. 5"
+    assert console.transcript[5] == "-> " + _answered({OWNER_FAMILY[0]: 10, OWNER_FAMILY[1]: 5})
     assert console.transcript[6] == "10"
-    assert console.transcript[7] == "-> " + _answered(
-        {code: (10 if i == 0 else 5 if i == 1 else 10) for i, code in enumerate(OWNER_FAMILY)}
-    )
+    assert console.transcript[7] == "-> " + _answered({code: 10 for code in OWNER_FAMILY[2:]})
 
 
 # --------------------------------------------------------------------------- #

@@ -130,6 +130,9 @@ class TestResolveKindsReturnsAResolveOutcome:
             "unplaced_tokens",
             "spec_tier",
             "payload",
+            # RESOLVER-TOKEN-CAP: the tokens the resolver cut at its ceiling, as
+            # typed, defaulted so the two early returns stay seven-positional.
+            "not_checked",
         ], f"ResolveOutcome field order/names do not match the contract: {field_names!r}"
 
     @pytest.mark.parametrize("domain", _seeded_supported_domains())

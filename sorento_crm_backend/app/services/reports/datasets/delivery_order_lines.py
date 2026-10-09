@@ -37,7 +37,7 @@ import sqlalchemy as sa
 
 from app.models.inventory import Warehouse
 from app.models.order import Customer, Order, OrderLine, SalesOrder
-from app.models.product import Product
+from app.models.product import Brand, Product, ProductCategory
 from app.models.sales_agent import SalesAgent
 from app.services.reports import registry as reg
 from app.services.scm.demand_class import PROJECT_SEGMENTS
@@ -171,6 +171,8 @@ def _base(ctx: Any) -> sa.Select:
         .join(amounts, amounts.c.line_id == OrderLine.id)
         .outerjoin(Customer, Customer.id == Order.customer_id)
         .outerjoin(Product, Product.id == OrderLine.product_id)
+        .outerjoin(Brand, Brand.id == Product.brand_id)
+        .outerjoin(ProductCategory, ProductCategory.id == Product.category_id)
         .outerjoin(Warehouse, Warehouse.id == OrderLine.warehouse_id)
         .outerjoin(SalesOrder, SalesOrder.id == Order.sales_order_id)
         .outerjoin(SalesAgent, SalesAgent.id == SalesOrder.sales_agent_id)
@@ -187,6 +189,19 @@ def customer_condition(ctx: Any, values: List[str]) -> Optional[Any]:
 
 def product_condition(ctx: Any, values: List[str]) -> Optional[Any]:
     return OrderLine.product_id.in_(values)
+
+
+def brand_condition(ctx: Any, values: List[str]) -> Optional[Any]:
+    """Per line (the product's brand), so it stays out of `_do_level_filters`."""
+    return Product.brand_id.in_(values)
+
+
+def category_condition(ctx: Any, values: List[str]) -> Optional[Any]:
+    return Product.category_id.in_(values)
+
+
+def sales_agent_condition(ctx: Any, values: List[str]) -> Optional[Any]:
+    return SalesOrder.sales_agent_id.in_(values)
 
 
 def location_condition(ctx: Any, values: List[str]) -> Optional[Any]:
@@ -206,8 +221,10 @@ def _text_date(expr: Any) -> Any:
 
 
 COLUMNS = (
-    reg.Column("customer", "Customer", "text", "dimension", lambda c: Customer.customer_name, size=220),
+    reg.Column("customer", "Customer", "text", "dimension", lambda c: sa.func.coalesce(Customer.customer_name, sa.func.nullif(sa.func.btrim(Order.debtor_name), "")), size=220),
     reg.Column("product", "Product", "text", "dimension", lambda c: Product.product_code, size=160),
+    reg.Column("brand", "Brand", "text", "dimension", lambda c: Brand.brand_name, size=160),
+    reg.Column("category", "Category", "text", "dimension", lambda c: ProductCategory.category_name, size=160),
     reg.Column(
         "sales_agent",
         "Sales agent",
@@ -262,6 +279,9 @@ DEFINITION = reg.ReportDefinition(
         reg.PeriodParam(key="period", label="Period", default=reg.current_year_period),
         reg.SelectParam("customer", "Customer", True, (), _no_options, customer_condition),
         reg.SelectParam("product", "Product", True, (), _no_options, product_condition),
+        reg.SelectParam("brand", "Brand", True, (), _no_options, brand_condition),
+        reg.SelectParam("category", "Category", True, (), _no_options, category_condition),
+        reg.SelectParam("sales_agent", "Sales agent", True, (), _no_options, sales_agent_condition),
         reg.SelectParam("location", "Location", True, (), _no_options, location_condition),
         reg.SelectParam("channel", "Channel", True, (), _no_options, channel_condition),
     ),

@@ -381,6 +381,9 @@ export interface BorrowCandidate {
   donor_agent_code?: string | null;
   /** Addressing only, never rendered: re-identifies the donor's own line at confirm. */
   donor_core_line_id?: string | null;
+  /** The donor's own date, posted back so an order borrow (switch ON) raises its order-back
+   * at it. Never rendered. */
+  donor_required_date?: string | null;
   /** Ranked below this line, so the ladder proposes it automatically. `false` on a
    * same-agent donor ranked above this line: offered, never auto-composed. */
   lower_ranked?: boolean;
@@ -636,6 +639,20 @@ export interface ConfirmSupplyBody {
    * on every ordinary Confirm; may not travel alongside `batch_id`.
    */
   rejected_line_ids?: string[];
+  /** Whole lines CS transferred to Cancel SO (SO-CANCEL-LINE). May not travel with `batch_id`. */
+  cancelled_lines?: CancelledLineBody[];
+}
+
+/** One whole line transferred to Cancel SO, with the mandatory reason. */
+export interface CancelledLineBody {
+  project_line_id: string;
+  reason: string;
+}
+
+/** A line a press transferred to Cancel SO, as the server echoes it. */
+export interface CancelledLineEcho {
+  line_no?: number | null;
+  item_code?: string | null;
 }
 
 export interface ConfirmException {
@@ -679,6 +696,8 @@ export interface ConfirmResult {
   lines_confirmed?: ConfirmedLine[] | null;
   lines_carried?: number | null;
   lines_withdrawn?: ConfirmedLine[] | null;
+  /** The lines this press transferred to Cancel SO. */
+  lines_cancelled?: CancelledLineEcho[] | null;
   /** How many of the confirmed lines were flagged as a suspected system problem (R10). */
   suspected_issues?: number | null;
   /**
@@ -1285,6 +1304,10 @@ export interface BoardContribution {
    * path, which is why it counts toward Confirm (N) while carrying no decision of its own.
    */
   cancelled?: boolean;
+  /** SO-CANCEL-LINE: set when CS transferred the line to Cancel SO. `cancelled_by` is a name. */
+  cancelled_at?: string | null;
+  cancelled_by?: string | null;
+  cancel_reason?: string | null;
   /** `sales_order_lines.priority`, when anybody stated one. Almost nobody does. */
   priority?: 'high' | 'medium' | 'low' | null;
   /**
@@ -1618,6 +1641,9 @@ export interface BoardBorrowCandidate {
   donor_agent_code?: string | null;
   /** Addressing only, never rendered: re-identifies the donor's own line at confirm. */
   donor_core_line_id?: string | null;
+  /** The donor's own date, posted back so an order borrow (switch ON) raises its order-back
+   * at it. Never rendered. */
+  donor_required_date?: string | null;
   /** Ranked below this line, so the ladder proposes it automatically. */
   lower_ranked?: boolean;
   /** The donor shares this line's own sales agent (section 8) - offered at any rank. */
@@ -1965,6 +1991,9 @@ export interface PlanningBoard {
    * no row.
    */
   pool_share_pct?: number;
+  /** "Borrow from another order" (BORROW-LOCATION-ONLY BR1): the Decide menu offers it
+   *  exactly when this is true. */
+  borrow_from_order_enabled?: boolean;
   dateBuckets: BoardDateBucket[];
   productRows: BoardProductRow[];
   cells: BoardCell[];
@@ -1984,7 +2013,7 @@ export interface PlanningBoard {
 }
 
 /** What CS did to one contributing row. The board's working draft, persisted nowhere yet. */
-export type BoardVerdict = 'approved' | 'amended' | 'rejected';
+export type BoardVerdict = 'approved' | 'amended' | 'rejected' | 'cancelled';
 
 /** One warehouse's share of an amended Reserve. Addressed by id, labelled by code. */
 export interface BoardReserveComponent {
@@ -2520,6 +2549,8 @@ export interface ConfirmManyOrderBody {
   /** This order's own half of `ConfirmSupplyBody.rejected_line_ids` (owner ruling 23 Sep
    * 2026). Same rule, same refusal alongside a batch. */
   rejected_line_ids?: string[];
+  /** This order's own half of `ConfirmSupplyBody.cancelled_lines` (SO-CANCEL-LINE). */
+  cancelled_lines?: CancelledLineBody[];
   /** Scope this order's press to exactly these mirror line ids (what a Preview showed). */
   only_line_ids?: string[];
 }
@@ -2567,6 +2598,8 @@ export interface ConfirmManyOrderResult {
   inquiry_rows?: PreviewInquiryRow[] | null;
   /** The covered lines this press took out of the confirmation. */
   lines_withdrawn?: ConfirmedLine[] | null;
+  /** The lines this press transferred to Cancel SO. */
+  lines_cancelled?: CancelledLineEcho[] | null;
   transfers?: PreviewTransfer[] | null;
   pso_id: string;
   ok: boolean;

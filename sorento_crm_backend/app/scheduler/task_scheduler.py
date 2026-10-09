@@ -2,6 +2,7 @@
 import logging
 from contextlib import contextmanager
 from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from app.database import SessionLocal
 from app.models.base import set_company_scope
@@ -294,6 +295,20 @@ def _handler_chat_message_resolver(db, task):
     return resolve_pending(db, limit=limit)
 
 
+def _handler_chat_history_reconcile(db, task):
+    """One Respond.io delta read per recently active contact (lane CHAT-LOCAL-FIRST, R4).
+
+    The thread renders from `chat_histories`; this is what keeps that table honest when
+    the n8n or webhook feed missed a message. Enqueued on the `respond_io` RQ queue rather
+    than run inline: this heartbeat runs handlers one after another, and a few hundred
+    Respond calls here would stall every scheduled task behind them (review B5). Knobs on
+    the task's `metadata`: `activity_days` (7), `concurrency` per workspace key (2),
+    `batch_limit` (500). The run's own counts are in the worker log."""
+    from app.tasks.chat_reconcile_tasks import enqueue_reconcile
+
+    return enqueue_reconcile(getattr(task, "metadata_", None))
+
+
 def _handler_chat_latency_watchdog(db, task):
     """Evaluate the WhatsApp round-trip p99 and the per-turn hard ceiling."""
     from app.services.system_health_alert_service import run_chat_latency_watchdog
@@ -560,6 +575,24 @@ def _ai_trace_sweep_tick():
         logger.error("AI trace sweep tick failed: %s", e, exc_info=True)
 
 
+def _chat_facts_sweep_tick():
+    """APScheduler tick: backfill chat analytics facts the live hook missed (CA-1).
+    The hook writes a fact as each turn closes and never fails a turn, so a fault leaves a
+    gap; this refills the last three days (idempotent, so overlap costs nothing). Owns its
+    own DB session; best-effort and never raises."""
+    try:
+        from datetime import timezone
+
+        from app.tasks.chat_turns import sweep_chat_facts
+
+        with scheduler_session("chat_facts_sweep") as db:
+            written = sweep_chat_facts(db, since=datetime.now(timezone.utc) - timedelta(days=3))
+        if written:
+            logger.info("Chat facts sweep: wrote %s missing rows", written)
+    except Exception as e:
+        logger.error("Chat facts sweep tick failed: %s", e, exc_info=True)
+
+
 def _spo_container_relink_sweep_tick():
     """APScheduler tick: relink SPO allocations whose shipment arrived after
     they did (S5, review re-check, 2026-09-06). Owns its own DB session;
@@ -697,6 +730,7 @@ def register_task_handlers():
     register_handler("api_call_log_prune", _handler_api_call_log_prune)
     register_handler("import_job_rows_prune", _handler_import_job_rows_prune)
     register_handler("chat_latency_watchdog", _handler_chat_latency_watchdog)
+    register_handler("chat_history_reconcile", _handler_chat_history_reconcile)
     register_handler("project_staleness_sweep", _handler_project_staleness_sweep)
     register_handler("scm_analytics", _handler_scm_analytics)
     register_handler("scm_reorder_run", _handler_scm_reorder_run)
@@ -748,6 +782,17 @@ def start_scheduler():
         trigger=IntervalTrigger(hours=24),
         id="ai_trace_sweep",
         name="AI assistant trace retention sweep",
+        replace_existing=True,
+    )
+
+    # Chat facts sweep (CA-1): nightly at 02:15 Malaysia time, when the dealers are asleep.
+    # The close hook writes each turn's fact and never fails a turn, so a fault leaves a
+    # gap; the last three days are re-swept to refill it.
+    scheduler.add_job(
+        _chat_facts_sweep_tick,
+        trigger=CronTrigger(hour=2, minute=15, timezone="Asia/Kuala_Lumpur"),
+        id="chat_facts_sweep",
+        name="Chat analytics facts sweep",
         replace_existing=True,
     )
 
