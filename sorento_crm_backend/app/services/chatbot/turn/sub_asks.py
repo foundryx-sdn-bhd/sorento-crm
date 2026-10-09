@@ -198,6 +198,11 @@ class Result:
 # --------------------------------------------------------------------------- #
 
 
+def resumes(verdict: Any, pending: Any) -> bool:
+    """Is this turn the reply to one of the runner's own questions?"""
+    return _resumed(verdict, pending) is not None
+
+
 def wants(verdict: Any, pending: Any) -> bool:
     """Is this turn the runner's? A fresh multi-ask, or the reply to one of its questions."""
     if _resumed(verdict, pending) is not None:
@@ -291,7 +296,8 @@ def _answered_position(reply: dict[str, Any], kind: str, options: list[Any]) -> 
     if reply.get("mode") == "all" and kind == SCOPE_KIND:
         return 2
     items = [i for i in reply.get("items") or [] if isinstance(i, dict)]
-    if len(items) == 1:
+    # A reply the parser read as no answer, a cancel or a no never resumes (review N2).
+    if len(items) == 1 and reply.get("mode") not in (None, "cancel", "no"):
         item = items[0]
         if item.get("position") in (1, 2):
             return int(item["position"])

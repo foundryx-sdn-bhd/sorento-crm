@@ -701,8 +701,9 @@ def test_a_basis_reply_the_parser_reads_as_an_option_item_resumes(session_factor
     """Live check 3: "已出货" came back naming the option, not as a pick."""
     c = _console(session_factory, monkeypatch, stub_access, "+60000009529")
     c.say(OWNER_MESSAGE, owner_verdict(basis=None))
-    text = c.say("已出货", _reply(items=[{"position": None, "code": "delivered", "qty": None}]))
+    text = c.say("已出货", _reply(mode="fill", items=[{"position": None, "code": "delivered", "qty": None}]))
     assert "2026 总共卖出（已出货）: 860" in text.splitlines()
+    assert c.stored_question is None  # answered, so closed (review F1)
 
 
 def test_all_to_the_variant_question_is_the_family(session_factory, monkeypatch, stub_access):
@@ -710,6 +711,15 @@ def test_all_to_the_variant_question_is_the_family(session_factory, monkeypatch,
     c.say(OWNER_MESSAGE, owner_verdict(family=None))
     text = c.say("全部", _reply(mode="all"))
     assert text.splitlines()[0] == f"SRTWC286-SH（全部 {len(OWNER_FAMILY)} 款）"
+    assert c.stored_question is None  # answered, so closed (review F1)
+
+
+def test_a_cancel_that_echoes_an_option_never_resumes(session_factory, monkeypatch, stub_access):
+    c = _console(session_factory, monkeypatch, stub_access, "+60000009532")
+    c.say(OWNER_MESSAGE, owner_verdict(basis=None))
+    c.tools.calls.clear()
+    c.say("cancel", _reply(mode="cancel", items=[{"position": 1, "code": "delivered", "qty": None}]))
+    assert "crm_report_ask" not in c.tools.names()
 
 
 def test_after_just_this_one_the_focus_is_the_exact_code(session_factory, monkeypatch, stub_access):

@@ -5864,6 +5864,11 @@ def _run_stages_body(  # noqa: PLR0915
                 turn_trace.add("sub_asks", sub_result.trace)
                 answer = turn_compose.Answer(text=pack_parts(sub_result.text), question=sub_result.question)
                 bridge_answered = True
+                if turn_sub_asks.resumes(verdict, state_in.pending):
+                    # The runner's own question is answered: closed here, whatever form the
+                    # parser's reply took (apply clears only a `pick`; review F1). A new
+                    # question the answer asks (the basis one) rides on `answer.question`.
+                    state_out = dataclasses_replace(state_out, pending=None)
                 if sub_result.focus_products:
                     # The answered products are the conversation's product focus, so a
                     # follow-up reads them, not the family the resolver placed.
