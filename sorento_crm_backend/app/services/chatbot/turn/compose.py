@@ -7,7 +7,6 @@
 # composer (kept, unchanged per the plan) has somewhere familiar to write into.
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field, replace
 from typing import Any
 
@@ -775,7 +774,10 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
                 (footers if line.startswith(starts) else kept).append(line)
             # A footer line sat alone or under another line of its paragraph: what was
             # beside it stays, and the blank lines it leaves behind close up.
-            text_parts[i] = re.sub(r"\n{3,}", "\n\n", "\n".join(kept)).strip("\n")
+            joined = "\n".join(kept)
+            while "\n\n\n" in joined:
+                joined = joined.replace("\n\n\n", "\n\n")
+            text_parts[i] = joined.strip("\n")
         text_parts = [part for part in text_parts if part]
         if footers:
             text_parts.append(footers[0])
