@@ -111,3 +111,9 @@ Measured on `sorento_ai_automation_20261006` `chatbot.turns.trace` (a JSON array
 - Delegated turn (reply null) -> error, reason `delegated`.
 - `--out` inside the git work tree -> exit 2.
 - Data egress: `--judge` sends case message + reply to the judge provider; off by default.
+
+## Round 2 (labelling finding, 10 Oct)
+- New `expect.outcome` value `silent` (contact not allowed AI answers: the right behaviour is no reply).
+  Grade: tool errors -> `error`; blank or delegated reply -> `correct`; any non-blank reply -> `wrong`,
+  reason `reply_when_silent_expected`. For every other outcome a blank or delegated reply stays `error`.
+  `load_cases` accepts `silent`.
