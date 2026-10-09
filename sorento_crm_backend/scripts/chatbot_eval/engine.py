@@ -10,6 +10,8 @@ from typing import Any, Protocol
 
 import httpx
 
+from .trace import parse_trace
+
 MAX_TRIES = 5
 RETRY_STATUS = (429, 503)
 
@@ -36,7 +38,8 @@ def _is_final_text(case: Any, text: str) -> bool:
 
 
 class HttpTurnEngine:
-    def __init__(self, base_url: str, api_key: str, timeout: float = 60):
+    def __init__(self, base_url: str, api_key: str, timeout: float = 60, trace_reader: Any = None):
+        self.trace_reader = trace_reader
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.timeout = timeout
@@ -67,8 +70,11 @@ class HttpTurnEngine:
         return env
 
     def fetch_trace(self, turn_id: str) -> dict | None:
-        """Hook for reading tokens and tool errors from the turns row; none by default."""
-        return None
+        """Tokens and tool errors from the turns row when a trace reader is set, else None."""
+        if self.trace_reader is None or not turn_id:
+            return None
+        tokens, errors = parse_trace(self.trace_reader.fetch(turn_id))
+        return {"tokens": tokens, "tool_errors": errors}
 
     def _post(self, client: httpx.Client, url: str, env: dict) -> httpx.Response:
         for attempt in range(MAX_TRIES):
@@ -96,11 +102,12 @@ class HttpTurnEngine:
         dry = body.get("is_test") is True and all(a.get("dry_run") is True for a in actions)
         trace = self.fetch_trace(body.get("turn_id", "")) or {}
         tokens = body.get("tokens") or trace.get("tokens") or {}
+        tool_errors = list(body.get("tool_errors") or []) + list(trace.get("tool_errors") or [])
         return Outcome(
             reply_text=((body.get("reply") or {}).get("text") or ""),
             branch_kind=body.get("branch_kind"),
             dry_run=dry,
-            tool_errors=list(body.get("tool_errors") or trace.get("tool_errors") or []),
+            tool_errors=tool_errors,
             tokens={k: int(tokens.get(k, 0) or 0) for k in ("prompt", "cached", "output")},
             latency_ms=latency_ms,
             state=body.get("session_patch"),

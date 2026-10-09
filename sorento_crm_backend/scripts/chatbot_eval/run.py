@@ -15,6 +15,7 @@ from .cases import DataDirInRepoError, load_cases
 from .engine import load_engine
 from .judge import load_judge
 from .report import build_report, render_summary
+from .trace import DbTraceReader
 from .runner import NotDryRunError, run_all
 
 
@@ -69,9 +70,10 @@ def main(argv: list[str] | None = None) -> int:
         for path, reason in loaded.invalid:
             print(f"invalid case: {path}: {reason}", file=sys.stderr)
         return 2
-    engine = load_engine(
-        args.engine, base_url=args.base_url, api_key=os.environ.get("EXTERNAL_API_KEY", ""), timeout=120
-    )
+    kw = {"base_url": args.base_url, "api_key": os.environ.get("EXTERNAL_API_KEY", ""), "timeout": 120}
+    if args.engine == "http" and os.environ.get("EVAL_TRACE_DB_URL"):
+        kw["trace_reader"] = DbTraceReader(os.environ["EVAL_TRACE_DB_URL"])
+    engine = load_engine(args.engine, **kw)
     budget = Budget(args.budget_usd, args.budget_model) if args.budget_usd is not None else None
     baseline = json.loads(Path(args.baseline).read_text()) if args.baseline else None
     try:
