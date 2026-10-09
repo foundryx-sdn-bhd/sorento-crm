@@ -158,8 +158,11 @@ ASCII `(, )` (the catalog templates in `label_catalog.py`, pinned by `test_multi
 Turn 1 (the owner's message; SRTWT7445 has variants, the message did not say which):
 
 ```
-SRTWT7445 有 8 个款式。只要 SRTWT7445，还是全部 8 款？
+SRTWT7445 有 N 个款式。只要 SRTWT7445，还是全部 N 款？
 ```
+
+N is the number of chat-searchable codes starting with SRTWT7445 in the contact's companies
+and brands (dev data 9 Oct: 9; the owner's "8" was his own count).
 
 Turn 2 (`只要这个` -> `family: false`), the six asks run; basis not said:
 
@@ -167,7 +170,7 @@ Turn 2 (`只要这个` -> `family: false`), the six asks run; basis not said:
 SRTWT7445
 2026 入库数量: <received_2026>
 供应商: <supplier>（<po_number>，<po_date>）
-采购价: RM <cost_after_discount> / 件（<po_number>，<po_date>）
+采购价: <currency> <cost_after_discount> / 件（<po_number>，<po_date>）
 最后一次进库: <gr_date>（<gr_qty>）
 卖出按已出货还是按下单算？
 ```
@@ -200,6 +203,9 @@ message, one line per ask.
 5. `SRTWT7445 2026 sold per customer and last cost` (shape from the owner's turn) ->
    `sold_by group_by=customer` (every customer, one line each) + `Last cost: ...`.
 
+`<currency>` is the PO line's own currency (`RM` for MYR or none; SRTWT7445's last PO on dev
+is `CNY`).
+
 ## Edge cases
 
 | Case | Behaviour |
@@ -215,7 +221,8 @@ message, one line per ask.
 | `family: true` | The code line reads `SRTWT7445（全部 8 款）`; one summed line per sub-ask; supplier / last cost / last receipt answer the newest row across the family. |
 | Two typed codes, both with variants, `family` null | ONE variant question, about the first; the answer applies to every typed code. |
 | A typed code with no exact hit | Today's path (which-one picker); the runner steps aside. |
-| A reply to the variant / basis question that is not a pick | Today's path reads it as a new message. |
+| A reply to the variant / basis question that is not a pick | The parser's reading decides: a pick, an item naming an option's code, or `all` (variant question) resumes; anything else is today's path, read as a new message. |
+| After "just this one" | The conversation's product focus is the exact code, so a follow-up never reaches back to the family. |
 | `measure: other` ("margin?") | `<asker's words>: not available yet`. |
 | `sold_by` axis the report does not have (`transporter`) | `<label>: not available yet`. |
 | A query fails (HTTP error) | That line `<label>: couldn't check right now`; the others answer. |
@@ -258,19 +265,30 @@ message, one line per ask.
 9. The GRN summary route: approved `goods_received` only, window on `picking_date`, a draft or
    a non-GRN picking excluded, last receipt all-time.
 
+## Who the runner answers (hand-test setup)
+
+A staff contact: `respond_contacts.chatbot_profile.tier = "office"` (`turn_state.is_staff_profile`),
+whose stock visibility policy is NOT "Availability only" (`stock_visibility.resolve_policy`: a
+`stock_visibility_policies` row with that contact's `contact_id`, else its access types', else
+the default; `mode` must not be `availability`). Field reveals on the contact's Access tab:
+`purchase_orders.cost`, `purchase_orders.supplier`, `purchase_orders.placed`,
+`sales_orders.sales_report`.
+
 ## Live checks for crew (local only, after S2's prompt version is published unlabelled)
 
 1. The SRTWT7445 message above -> six sub-asks in that order: `received_qty`, `supplier`,
    `last_cost`, `last_receipt`, `sold_total`, `sold_by(sales_agent)`; window
    2026-01-01..2026-12-31 on 1, 5, 6 only; `family: null`; `basis: null`.
-2. `只要这个` / `just this one`, replying to the variant question -> `family: false`;
-   `全部` / `all of them` -> `family: true`.
-3. `已出货` / `delivered`, replying to the basis question -> `basis: delivered`; `下单` /
-   `ordered` -> `basis: ordered`.
+2. `只要这个` / `just this one`, replying to the variant question -> `open_question_answer`
+   mode `pick`, picked [1]; `全部` / `all of them` -> pick [2] (or mode `all`).
+3. `已出货` / `delivered`, replying to the basis question -> mode `pick`, picked [1] (an item
+   naming the option code `delivered` is read the same); `下单` / `ordered` -> picked [2].
 4. `Srt38ss last in date and quantity` -> ONE sub-ask (`last_receipt`) or `sub_asks: null`.
 5. `Incoming and stock for 7445` -> two sub-asks, `incoming` and `stock`.
 6. `stock 7445` -> `sub_asks: null` (single-ask path untouched).
-7. `SRTWT7445 系列 2026 卖了多少，按已出货` -> `sold_total`, `family: true`, `basis: delivered`.
+7. `SRTWT7445 系列 2026 卖了多少，按已出货` -> `sub_asks: null` (ONE ask: today's sales path, by
+   the one-ask rule), `family: true`. The two-ask form `SRTWT7445 系列 2026 卖了多少，按已出货，
+   还有采购价` -> `sold_total` (2026, delivered) + `last_cost`, `family: true`.
 8. `SRTWT7445 margin and last cost` -> `other` ("margin") + `last_cost`.
 
 ## Dev-data values for the expected reply (shared dev DB, read-only)

@@ -3,8 +3,9 @@
 * production carries PO_REFS_ADDENDUM and no literal registry list -> a new UNLABELLED
   version: the production text with SUB_ASKS_ADDENDUM right after PO_REFS_ADDENDUM;
 * run again -> nothing (idempotent);
-* production still carries a literal registry list (it predates the wording layer) or
-  lacks PO_REFS_ADDENDUM -> nothing, the label never moves.
+* no PO_REFS_ADDENDUM -> the addendum goes right before the MEMORY block;
+* production older than the wording layer's own version (a fresh database) -> nothing;
+  neither anchor -> RuntimeError. The label never moves.
 
 Postgres only, blank schema.
 """
@@ -57,17 +58,54 @@ def test_it_publishes_an_unlabelled_edit_of_production_once():
         assert len(_versions(db)) == 2
 
 
-def test_a_production_text_from_before_the_wording_layer_publishes_nothing():
+def test_a_production_version_older_than_the_wording_layer_publishes_nothing():
     m = _migration()
     with blank_session() as db:
         _production(db, "domain_hint = ONE of: order | inventory | incoming" + PO_REFS_ADDENDUM)
+        db.add(
+            AIPromptVersion(
+                id=str(uuid.uuid4()), name=NAME, version=9, type="text", template="LAYER", variables=[],
+                config_json={"wording_layer_report": []},
+            )
+        )
+        db.flush()
         assert m.publish(db) is None
-        assert len(_versions(db)) == 1
+        assert len(_versions(db)) == 2
 
 
-def test_a_production_text_without_po_refs_publishes_nothing():
+def test_a_production_newer_than_the_wording_layer_publishes_even_with_a_kept_literal_list():
+    """`pdyn_0003_prod_identical` keeps a list literal where the registry differs, so a
+    literal list alone never stops the publish (crew live check on dev v60)."""
+    m = _migration()
+    with blank_session() as db:
+        db.add(
+            AIPromptVersion(
+                id=str(uuid.uuid4()), name=NAME, version=4, type="text", template="LAYER", variables=[],
+                config_json={"wording_layer_report": []},
+            )
+        )
+        db.flush()
+        _production(db, "domain_hint = ONE of: order | inventory | incoming" + m.MEMORY_ANCHOR + "m")
+        assert m.publish(db) == 8
+
+
+def test_a_production_text_without_po_refs_gets_the_addendum_before_the_memory_block():
+    """Crew live check, 9 Oct 2026: dev's production text (v60) has no PO_REFS_ADDENDUM;
+    the addendum then goes right before the MEMORY block, which stays the tail."""
+    m = _migration()
+    with blank_session() as db:
+        _production(db, "HEAD {{domains}}" + m.MEMORY_ANCHOR + "memory body")
+        assert m.publish(db) == 8
+        new = _versions(db)[-1]
+        assert new.template == "HEAD {{domains}}" + SUB_ASKS_ADDENDUM + m.MEMORY_ANCHOR + "memory body"
+
+
+def test_a_production_text_with_no_anchor_fails_loudly():
+    import pytest
+
     m = _migration()
     with blank_session() as db:
         _production(db, "HEAD {{domains}} TAIL")
-        assert m.publish(db) is None
+        with pytest.raises(RuntimeError, match="no place to go"):
+            m.publish(db)
         assert len(_versions(db)) == 1

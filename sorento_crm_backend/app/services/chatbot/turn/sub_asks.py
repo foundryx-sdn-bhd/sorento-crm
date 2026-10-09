@@ -38,6 +38,8 @@ from app.services.chatbot.turn import state as turn_state
 logger = logging.getLogger(__name__)
 
 SCOPE_KIND = "sub_ask_scope"
+OPTION_JUST = "just this code"
+OPTION_ALL = "all variants"
 BASIS_KIND = "sub_ask_basis"
 KINDS = frozenset({SCOPE_KIND, BASIS_KIND})
 
@@ -185,6 +187,10 @@ class Result:
     text: str
     question: Any = None
     trace: dict[str, Any] = field(default_factory=dict)
+    #: The products the answer was ABOUT (`[{uuid, code}]`), the next turn's focus: the
+    #: exact code after "just this one", never the whole family the resolver placed
+    #: (crew live check 6). None when the turn only asked.
+    focus_products: list[dict[str, str]] | None = None
 
 
 # --------------------------------------------------------------------------- #
@@ -266,12 +272,35 @@ def _resumed(verdict: Any, pending: Any) -> tuple[str, int, dict[str, Any]] | No
     if kind not in KINDS or not isinstance(verdict, dict):
         return None
     reply = verdict.get("open_question_answer")
-    if not isinstance(reply, dict) or reply.get("mode") != "pick":
+    if not isinstance(reply, dict):
         return None
-    picked = [p for p in reply.get("picked") or [] if isinstance(p, int)]
-    if len(picked) != 1 or picked[0] not in (1, 2):
+    position = _answered_position(reply, kind, getattr(pending, "options", None) or [])
+    if position is None:
         return None
-    return kind, picked[0], dict(getattr(pending, "payload", None) or {})
+    return kind, position, dict(getattr(pending, "payload", None) or {})
+
+
+def _answered_position(reply: dict[str, Any], kind: str, options: list[Any]) -> int | None:
+    """Which option the PARSER read the reply as (crew live check 3: "已出货" to the basis
+    question came back as an item naming the option, not a `pick`). Every reading is the
+    parser's own: a pick of one position, one item naming a position or an option's code,
+    or "all" to the variant question. No word of the message is read here."""
+    picked = [p for p in reply.get("picked") or [] if isinstance(p, int) and not isinstance(p, bool)]
+    if reply.get("mode") == "pick" and len(picked) == 1 and picked[0] in (1, 2):
+        return picked[0]
+    if reply.get("mode") == "all" and kind == SCOPE_KIND:
+        return 2
+    items = [i for i in reply.get("items") or [] if isinstance(i, dict)]
+    if len(items) == 1:
+        item = items[0]
+        if item.get("position") in (1, 2):
+            return int(item["position"])
+        code = str(item.get("code") or "").strip().casefold()
+        for option in options:
+            if isinstance(option, dict) and str(option.get("code") or "").casefold() == code and code:
+                position = option.get("position")
+                return position if position in (1, 2) else None
+    return None
 
 
 def _has_other_filters(verdict: dict[str, Any]) -> bool:
@@ -339,9 +368,12 @@ def _ask_scope(
     loc = run.localizer
     n = str(len(product.family))
     text = loc.fill(VARIANT_QUESTION, code=product.code, n=n)
+    # The option CODE is what the parser matches a reply against (`turn/question._options`
+    # shows it, with the printed label beside it): a meaning, never the label's wording,
+    # so "只要这个" or "all of them" read as a pick (crew live check 3).
     options = [
-        {"label": loc.fill(JUST_CODE, code=product.code), "position": 1},
-        {"label": loc.fill(ALL_N, n=n), "position": 2},
+        {"code": OPTION_JUST, "label": loc.fill(JUST_CODE, code=product.code), "position": 1},
+        {"code": OPTION_ALL, "label": loc.fill(ALL_N, n=n), "position": 2},
     ]
     question = turn_pending.ask(
         SCOPE_KIND,
@@ -363,8 +395,8 @@ def _ask_scope(
 def _basis_question(run: Run, products: list[Product], asks: list[dict[str, Any]], family: bool) -> tuple[str, Any]:
     loc = run.localizer
     options = [
-        {"label": loc.fill(AS_DELIVERED), "position": 1},
-        {"label": loc.fill(AS_ORDERED), "position": 2},
+        {"code": "delivered", "label": loc.fill(AS_DELIVERED), "position": 1},
+        {"code": "ordered", "label": loc.fill(AS_ORDERED), "position": 2},
     ]
     question = turn_pending.ask(
         BASIS_KIND,
@@ -430,10 +462,12 @@ def _answer(
     if sold_waiting:
         line, question = _basis_question(run, products, sold_waiting, family)
         text = text + "\n" + line
+    answered = [r for p in products for r in (p.family if family and p.family else [p.exact])]
     return Result(
         text=text,
         question=question,
         trace={"family": family, "basis": basis, "calls": [name for name, _ in calls.made]},
+        focus_products=answered,
     )
 
 

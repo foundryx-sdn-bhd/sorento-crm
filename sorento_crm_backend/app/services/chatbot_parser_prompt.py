@@ -842,29 +842,46 @@ Two more OUTPUT keys, on every object:
 
 == SUB_ASKS ==
 When the CURRENT message asks TWO OR MORE different things, list each, in the order asked.
-ONE thing asked: null (every other key as usual). Each object:
-  measure: "stock" (on hand) | "incoming" (arriving, ETA) | "received_qty" (how many CAME
-    IN over a period, 入库了多少) | "last_receipt" (WHEN it last came in, 最后一次进库) |
-    "supplier" (who supplies it) | "last_cost" (purchase price, 采购价) | "sold_total" (how
-    many SOLD in all) | "sold_by" (sold broken down per salesman / customer / ...) |
-    "other" (anything else).
+ONE thing asked: null (every other key as usual), even with a period, family or basis word.
+Each object:
+  measure:
+    "received_qty" - how many ALREADY came in over a period: goods received, 入库, 进库,
+      进了多少, 收货, "received", "came in", "diterima". Past.
+    "last_receipt" - WHEN it last came in: 最后一次进库/入库, "last in", "last received".
+    "incoming" - goods NOT yet arrived: on the way, ETA, 到货时间, 在途, "arriving". Future.
+      "2026 入库了多少" is received_qty, NEVER incoming.
+    "stock" (on hand now) | "supplier" (who supplies it) | "last_cost" (purchase price,
+    采购价) | "sold_total" (how many SOLD in all) | "sold_by" (sold per salesman / customer
+    / ...).
+    "other" - anything else asked (margin, profit, 毛利, lead time): still an ask, label
+      says what.
   group_by: sold_by only - "sales_agent" (salesman, 业务员) | "customer" | "product" |
     "brand" | "category" | "location" | "channel" | "month"; else null.
-  date_from / date_to: YYYY-MM-DD, the period this ask is about ("2026" -> 2026-01-01 /
-    2026-12-31). A period named once covers every ask that has one (received_qty,
-    sold_total, sold_by, incoming); never on last_receipt, supplier, last_cost, stock.
+  date_from / date_to: YYYY-MM-DD, the period THIS ask is about ("2026" -> 2026-01-01 /
+    2026-12-31). A period named once covers each ask that is about a period
+    (received_qty, sold_total, sold_by, incoming). last_receipt, supplier, last_cost, stock
+    and other are NEVER given one, even when "2026" is in the message.
   basis: sold_total / sold_by only - "delivered" when the message says delivered / shipped
     / 已出货, "ordered" when it says ordered / 下单; a plain "sold" / "卖了" is null.
   label: the asker's own words for this ask, short.
-"X,2026 入库了多少, 供应商是谁, 采购价, 最后一次进库, 2026 总共卖了多少, 2026 每位业务员卖了多少" ->
-received_qty, supplier, last_cost, last_receipt, sold_total, sold_by(sales_agent), 2026 on
-the first, fifth and sixth, basis null. "Incoming and stock for 7445" -> incoming, stock.
+Examples:
+  "X,2026 年 入库了多少数量, 供应商是谁, 采购价是多少钱, 最后一次进库是什么时候, 2026 总共卖了多少个,
+  2026年每位业务员共卖了多少个" -> received_qty (2026), supplier, last_cost, last_receipt (no
+  period), sold_total (2026, basis null), sold_by (sales_agent, 2026, basis null).
+  "Incoming and stock for 7445" -> incoming, stock.
+  "SRTWT7445 margin and last cost" -> other (label "margin"), last_cost.
+  "SRTWT7445 系列 2026 卖了多少" -> null (one ask), family true.
 
 == FAMILY ==
 A code the message names means that EXACT code (false: "only this", "just X", 只要这个) or
 every code starting with it (true: "all variants", 全部, 系列), from the message's own words;
-not said: null (nearly always). A reply to "has N variants. Just X, or all N?" is an
-open_question_answer pick (1 = just X, 2 = all), as for any numbered question.
+not said: null (nearly always).
+
+== REPLYING TO THE VARIANT OR SOLD-BASIS QUESTION ==
+Its Open question options have the codes "just this code" / "all variants" or "delivered" /
+"ordered". A reply that chooses one, in any words ("只要这个", "just that one", "全部",
+"all", "已出货", "按下单", "delivered"), is open_question_answer mode "pick" with that
+option's position: never "yes" or "no", never a new question.
 """
 
 

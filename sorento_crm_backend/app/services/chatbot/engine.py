@@ -5864,6 +5864,25 @@ def _run_stages_body(  # noqa: PLR0915
                 turn_trace.add("sub_asks", sub_result.trace)
                 answer = turn_compose.Answer(text=pack_parts(sub_result.text), question=sub_result.question)
                 bridge_answered = True
+                if sub_result.focus_products:
+                    # The answered products are the conversation's product focus, so a
+                    # follow-up reads them, not the family the resolver placed.
+                    state_out = dataclasses_replace(
+                        state_out,
+                        focus=dataclasses_replace(
+                            state_out.focus,
+                            products=[
+                                {
+                                    "uuid": r["uuid"],
+                                    "canonical_code": r["code"],
+                                    "raw": r["code"],
+                                    "entity_type": "product",
+                                    "hint": "product",
+                                }
+                                for r in sub_result.focus_products
+                            ],
+                        ),
+                    )
 
         # Ported from PR #1118 (feat/chatbot-dealer-stock-verdict, not merged, owner
         # ruling 24 Sep 2026) for chatbot-stock-ask-v2 S3. -- the OPEN TASK's own

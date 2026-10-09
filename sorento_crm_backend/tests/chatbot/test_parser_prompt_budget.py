@@ -183,7 +183,10 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # `family` keys, one entry per thing a message asks) between PO_REFS_ADDENDUM and
 # CANONICAL_CODE_ADDENDUM: 51,809 est. tokens without MEMORY_ADDENDUM (+769), so CEILING is
 # 51,813 (+4). Nothing else grew.
-CEILING = 51_813
+# Crew live parser checks (same PR, 9 Oct 2026): received vs incoming, no period on a "last"
+# ask, `other` still an ask, and replies to the two questions read as picks: 52,119 est.
+# tokens without MEMORY_ADDENDUM (+310), so CEILING is 52,123 (+4). Nothing else grew.
+CEILING = 52_123
 # The memory addendum on its own, bounded separately so this PR's growth stays bounded.
 # 26 Sep baseline (lane d89110c0): 339 est. tokens. Round 4 (baf4c813, 28 Sep: the history
 # question in any wording, the number re-run, commercial_request) took it to 512, which is

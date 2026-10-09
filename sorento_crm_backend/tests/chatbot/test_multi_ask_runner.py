@@ -673,3 +673,50 @@ def test_a_code_with_an_underscore_is_matched_as_typed(session_factory):
         assert [f["code"] for f in _product_family(db, "ZZTUS_A")] == ["ZZTUS_A-1"]
     finally:
         db.close()
+
+
+# ---------------------------------------------------------------- crew live checks, 9 Oct
+
+
+def _reply(**answer) -> dict:
+    base = {"mode": None, "picked": [], "items": [], "qty_for_all": None}
+    base.update(answer)
+    return verdict(domain_hint=None, intent_hint=None, entities=[], open_question_answer=base)
+
+
+def test_the_questions_offer_their_meaning_as_the_option_code(session_factory, monkeypatch, stub_access):
+    c = _console(session_factory, monkeypatch, stub_access, "+60000009527")
+    c.say(OWNER_MESSAGE, owner_verdict(family=None))
+    codes = [o.get("code") for o in c.stored_question.get("options") or []]
+    assert codes == ["just this code", "all variants"]
+
+
+def test_the_basis_question_offers_delivered_and_ordered(session_factory, monkeypatch, stub_access):
+    c = _console(session_factory, monkeypatch, stub_access, "+60000009528")
+    c.say(OWNER_MESSAGE, owner_verdict(basis=None))
+    assert [o.get("code") for o in c.stored_question.get("options") or []] == ["delivered", "ordered"]
+
+
+def test_a_basis_reply_the_parser_reads_as_an_option_item_resumes(session_factory, monkeypatch, stub_access):
+    """Live check 3: "已出货" came back naming the option, not as a pick."""
+    c = _console(session_factory, monkeypatch, stub_access, "+60000009529")
+    c.say(OWNER_MESSAGE, owner_verdict(basis=None))
+    text = c.say("已出货", _reply(items=[{"position": None, "code": "delivered", "qty": None}]))
+    assert "2026 总共卖出（已出货）: 860" in text.splitlines()
+
+
+def test_all_to_the_variant_question_is_the_family(session_factory, monkeypatch, stub_access):
+    c = _console(session_factory, monkeypatch, stub_access, "+60000009530")
+    c.say(OWNER_MESSAGE, owner_verdict(family=None))
+    text = c.say("全部", _reply(mode="all"))
+    assert text.splitlines()[0] == f"SRTWC286-SH（全部 {len(OWNER_FAMILY)} 款）"
+
+
+def test_after_just_this_one_the_focus_is_the_exact_code(session_factory, monkeypatch, stub_access):
+    """Live check 6: the focus still listed every variant after "只要这个"."""
+    c = _console(session_factory, monkeypatch, stub_access, "+60000009531")
+    c.say(OWNER_MESSAGE, owner_verdict(family=None))
+    c.say("只要这个", pick(1))
+    focus = (c.state or {}).get("focus") or {}
+    codes = [p.get("canonical_code") or p.get("code") for p in focus.get("products") or []]
+    assert codes == ["SRTWC286-SH"], focus

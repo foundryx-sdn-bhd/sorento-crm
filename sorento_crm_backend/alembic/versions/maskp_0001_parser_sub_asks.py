@@ -8,13 +8,15 @@ two-or-more-ask message from them.
 
 Published with `chatbot_prompt_vars.publish_wording_edit`, the way a migration after the
 wording layer changes the parser (the drift test refuses a version rebuilt from the code
-constant): one exact edit to the PRODUCTION text, the addendum placed right after
-`PO_REFS_ADDENDUM` (its place in the constant too), owner edits and variables kept, as a new
-UNLABELLED version. Nothing is published, and the log says so, when the production text no
-longer carries `PO_REFS_ADDENDUM` verbatim or still predates the wording layer (a freshly
-bootstrapped database, where an edit of it would carry the registry lists as literal text).
-Promoting is one label move in the admin UI, after crew's live parser checks; rolling back is the reverse move. Until then the strict output
-schema already carries both keys (absent on the old prompt, tolerated), so nothing changes.
+constant): one exact edit to the PRODUCTION text, owner edits and variables kept, as a new
+UNLABELLED version. The addendum goes right after `PO_REFS_ADDENDUM` when production carries
+it, else right before the MEMORY block (the tail). A production text with neither fails the
+migration loudly. The one silent case is a freshly bootstrapped database, whose production
+text predates the wording layer (an edit of it would carry the registry lists as literal
+text, which the drift test refuses): it is skipped with a warning.
+Promoting is one label move in the admin UI, after crew's live parser checks; rolling back
+is the reverse move. Until then the strict output schema already carries both keys (absent
+on the old prompt, tolerated), so nothing changes.
 
 Idempotent: skipped when a version already carries the addendum.
 
@@ -36,6 +38,8 @@ depends_on = None
 logger = logging.getLogger("alembic.runtime.migration")
 
 PROMPT_NAME = "chatbot_semantic_parser"
+#: The head of MEMORY_ADDENDUM, the production text's tail block.
+MEMORY_ANCHOR = "\n\n== MEMORY ==\n"
 MESSAGE = (
     "MULTI-ASK-PLAN: the sub_asks and family keys (one entry per thing a message asks; "
     "exact code or family). Unlabelled, promote from the Prompts page."
@@ -56,33 +60,52 @@ def publish(session: Session) -> int | None:
         return None
     from sqlalchemy import text as sql
 
-    from app.services.chatbot_prompt_vars import literal_lists
-
-    production = session.execute(
+    row = session.execute(
         sql(
-            "SELECT v.template FROM ai_prompt_versions v JOIN ai_prompt_labels l ON l.version_id = v.id "
+            "SELECT v.template, v.version FROM ai_prompt_versions v JOIN ai_prompt_labels l ON l.version_id = v.id "
             "WHERE l.name = :n AND l.label = 'production'"
         ),
         {"n": PROMPT_NAME},
+    ).first()
+    production, production_version = (row[0], int(row[1])) if row else (None, None)
+    layer = session.execute(
+        sql(
+            "SELECT min(version) FROM ai_prompt_versions "
+            "WHERE name = :n AND (config_json::jsonb) ? 'wording_layer_report'"
+        ),
+        {"n": PROMPT_NAME},
     ).scalar()
-    if production is not None and set(literal_lists(production)) - {"access_levels"}:
-        # A production text from before the wording layer (a freshly bootstrapped database:
-        # the wording layer's own version is published unlabelled). An edit of it would
-        # carry the registry lists as literal text, which the drift test refuses.
+    if production_version is not None and layer is not None and production_version < int(layer):
+        # Production predates the wording layer (a freshly bootstrapped database, where the
+        # wording layer's own version is published unlabelled). An edit of it would carry
+        # the registry lists as literal text, which the drift test refuses.
         logger.warning(
-            "chatbot parser sub asks prompt NOT published: production predates the wording "
-            "layer; promote the wording layer version first, then re-run this publish"
+            "chatbot parser sub asks prompt NOT published: production v%s predates the "
+            "wording layer v%s; promote that first, then re-run this publish",
+            production_version,
+            layer,
         )
         return None
-    version = publish_wording_edit(
-        session, old=PO_REFS_ADDENDUM, new=PO_REFS_ADDENDUM + SUB_ASKS_ADDENDUM, message=MESSAGE
-    )
+    # The anchor (crew live check, 9 Oct 2026: dev's production text, v60, had no
+    # PO_REFS_ADDENDUM, so the first form of this publish wrote nothing and said so only
+    # in a warning). After PO_REFS_ADDENDUM when the production text carries it (its place
+    # in the code constant), else right before the MEMORY block, which every production
+    # text since `mem_0002_parser_memory` carries and which stays the tail. Neither: the
+    # deploy fails here, loudly, rather than shipping a runner the parser never feeds.
+    if production is None:
+        raise RuntimeError("maskp_0001: no production-labelled chatbot_semantic_parser version")
+    if PO_REFS_ADDENDUM in production:
+        old, new = PO_REFS_ADDENDUM, PO_REFS_ADDENDUM + SUB_ASKS_ADDENDUM
+    elif MEMORY_ANCHOR in production:
+        old, new = MEMORY_ANCHOR, SUB_ASKS_ADDENDUM + MEMORY_ANCHOR
+    else:
+        raise RuntimeError(
+            "maskp_0001: the production parser text carries neither PO_REFS_ADDENDUM nor the "
+            "MEMORY block, so the sub asks addendum has no place to go; publish it by hand"
+        )
+    version = publish_wording_edit(session, old=old, new=new, message=MESSAGE)
     if version is None:
-        logger.warning(
-            "chatbot parser sub asks prompt NOT published: the production text does not carry "
-            "PO_REFS_ADDENDUM verbatim; publish it by hand from the Prompts page"
-        )
-        return None
+        raise RuntimeError("maskp_0001: publish_wording_edit found no production text to edit")
     session.commit()
     logger.info("published chatbot parser sub asks prompt as v%s; production label unmoved", version)
     return version
