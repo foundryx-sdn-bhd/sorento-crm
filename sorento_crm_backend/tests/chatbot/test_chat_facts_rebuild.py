@@ -133,3 +133,33 @@ def test_the_task_doorway_passes_rebuild_through(session_factory):
 
     assert sweep_chat_facts(session_factory(), since=SINCE, until=_day(30), rebuild=True) == 1
     assert fact_rows(session_factory, turn_id=tid)[0].outcome != "ZZT-old-rule"
+
+
+def test_an_interrupted_rebuild_keeps_the_old_fact_rows_and_their_episodes(
+    session_factory, monkeypatch
+):
+    first, second = _swept(session_factory, _cid("h"), _day(10), _day(11))
+    episodes = {first: str(uuid.uuid4()), second: str(uuid.uuid4())}
+    for tid, episode_id in episodes.items():
+        _tamper(session_factory, tid, episode_id=episode_id)
+
+    facts = facts_mod()
+    real_write = facts._write
+    calls = {"n": 0}
+
+    def interrupted(db, row):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise KeyboardInterrupt
+        return real_write(db, row)
+
+    monkeypatch.setattr(facts, "_write", interrupted)
+    db = session_factory()
+    with pytest.raises(KeyboardInterrupt):
+        facts.sweep(db, since=SINCE, until=_day(30), rebuild=True)
+    db.rollback()
+
+    for tid, episode_id in episodes.items():
+        rows = fact_rows(session_factory, turn_id=tid)
+        assert len(rows) == 1
+        assert str(rows[0].episode_id) == episode_id
