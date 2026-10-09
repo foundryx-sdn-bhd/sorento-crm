@@ -8,6 +8,7 @@ storage url never reaches the customer.
 from __future__ import annotations
 
 import pytest
+from sqlalchemy import text
 
 import app.main  # noqa: F401  isort:skip
 from app.services.chatbot import engine, file_links
@@ -108,3 +109,39 @@ def test_the_fallback_drops_every_stored_url(monkeypatch):
         turn_id="T1",
     )
     assert "cdn.test" not in text
+
+
+def test_run_tail_links_survive_a_caller_that_never_commits(monkeypatch):
+    """Crew audit item 4 / review R1: a console dry run's tail session is never committed,
+    so `run_tail`'s links are minted on their OWN connection. Real engine sessions here
+    (the chatbot fixture shares one connection and could not tell the difference)."""
+    import uuid
+
+    from sqlalchemy.orm import Session
+
+    from app.config import settings as app_settings
+    from app.models.chatbot_file_link import ChatbotFileLink
+    from tests._pg_fixture import blank_schema_engine
+
+    monkeypatch.setattr(app_settings, "frontend_base_url", "https://crm.test")
+    engine_ = blank_schema_engine()
+    turn_id = str(uuid.uuid4())
+    caller = Session(bind=engine_)
+    try:
+        caller.execute(text("SELECT 1"))
+        out, files, mode = engine._apply_file_mode(
+            TEXT, FILES, profile=Profile(files_as_links=True), contact_respond_id="C1", turn_id=turn_id, db=caller
+        )
+        assert mode == "links" and files == []
+    finally:
+        caller.rollback()
+        caller.close()
+    fresh = Session(bind=engine_)
+    try:
+        rows = fresh.query(ChatbotFileLink).filter(ChatbotFileLink.turn_id == turn_id).all()
+        assert len(rows) == 1
+        assert rows[0].code in out
+    finally:
+        fresh.query(ChatbotFileLink).filter(ChatbotFileLink.turn_id == turn_id).delete()
+        fresh.commit()
+        fresh.close()

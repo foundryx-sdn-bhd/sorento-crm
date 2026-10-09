@@ -241,7 +241,9 @@ def record_click(db: Session, row: ChatbotFileLink, *, now: datetime | None = No
         {
             ChatbotFileLink.click_count: case((fresh, ChatbotFileLink.click_count + 1), else_=ChatbotFileLink.click_count),
             ChatbotFileLink.first_clicked_at: sa_func.coalesce(ChatbotFileLink.first_clicked_at, at),
-            ChatbotFileLink.last_clicked_at: at,
+            # Moves only with a counted click, so the window is fixed, never sliding
+            # (review N-a): reopening every 9 s still counts every 10 s.
+            ChatbotFileLink.last_clicked_at: case((fresh, at), else_=ChatbotFileLink.last_clicked_at),
         },
         synchronize_session=False,
     )
