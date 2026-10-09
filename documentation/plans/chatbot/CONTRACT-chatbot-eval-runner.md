@@ -144,3 +144,14 @@ Measured on `sorento_ai_automation_20261006` `chatbot.turns.trace` (a JSON array
   reason `harness: <ExcName>`; the run continues.
 - Whatever stops a run (NotDryRunError, budget, Ctrl-C), `--out` still gets the report + results of the cases
   that finished, with `stopped_reason` set (`not_dry_run`, `budget`, `interrupted`).
+
+## Round 6 (second review, 10 Oct)
+- Round 4 rule narrowed: only criteria-less ALTERNATES are skipped while another kind has criteria. A
+  criteria-less PRIMARY still passes deterministically with `needs_judge` (counted unverified, not strict).
+- Report: `grader_version` (int, bump on any grading-rule change; this round = 6) and `delta.strict_total`
+  next to `delta.total`; a baseline with a different grader_version gives `delta.comparable: false`.
+- `results.jsonl` stores everything needed to grade again: `reply_text`, `branch_kind`, `delegated`,
+  `tool_errors`, `previous_bot_reply`, plus the existing fields.
+- `--regrade RUN_DIR`: no engine calls; re-loads the cases from `--data-dir`, re-grades every stored result
+  with the current grader + labels, writes a new report (to `--out`). Reason: label corrections (owner spot
+  check) and grader fixes must not cost a new paid run. Rows whose case id is gone are dropped and counted.
