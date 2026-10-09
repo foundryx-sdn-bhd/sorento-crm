@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional, Sequence
 
 from sqlalchemy.orm import Session
@@ -89,6 +89,13 @@ def _contact_display_name(contact: Optional[RespondContact]) -> str:
         or (contact.phone_number or "").strip()
         or "Unknown"
     )
+
+
+def _iso_utc(value: Optional[datetime]) -> Optional[str]:
+    """The columns hold naive UTC; stamp the offset so no reader takes it for local time."""
+    if value is None:
+        return None
+    return (value if value.tzinfo else value.replace(tzinfo=timezone.utc)).isoformat()
 
 
 class FormCommentService:
@@ -218,7 +225,7 @@ class FormCommentService:
             "author_name": self._staff_name(responder),
             "author_kind": "staff",
             "posted_by_name": None,
-            "created_at": row.last_responded_at.isoformat() if row.last_responded_at else None,
+            "created_at": _iso_utc(row.last_responded_at),
             "attachments": [self._file_dict(a) for a in files],
             "parent_id": None,
             "edited_at": None,
@@ -296,10 +303,10 @@ class FormCommentService:
                     "author_name": name,
                     "author_kind": kind_label,
                     "posted_by_name": posted_by,
-                    "created_at": r.created_at.isoformat() if r.created_at else None,
+                    "created_at": _iso_utc(r.created_at),
                     "attachments": [] if deleted else files.get(r.id, []),
                     "parent_id": r.parent_id,
-                    "edited_at": r.edited_at.isoformat() if r.edited_at else None,
+                    "edited_at": _iso_utc(r.edited_at),
                     "deleted": deleted,
                     "can_edit": can,
                     "can_delete": can,
