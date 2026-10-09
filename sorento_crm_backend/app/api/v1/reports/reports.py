@@ -199,6 +199,7 @@ def get_report_meta(
         permission=definition.permission,
         opens_on=definition.opens_on,
         dataset_param=definition.datasets_by[0] if definition.datasets_by else None,
+        pivot_rows_by=definition.pivot_rows_by,
         params=_params_meta(db, definition, grants),
         catalog=[
             ReportCatalogColumn(

@@ -947,6 +947,21 @@ export const MENU_SIDEBAR: MenuConfig = [
             permission: 'chatbot.analytics.view',
           },
           {
+            title: 'Top Asks',
+            path: '/system-management/top-asks',
+            permission: 'chatbot.analytics.view',
+          },
+          {
+            title: 'Bot Failures',
+            path: '/system-management/bot-failures',
+            permission: 'chatbot.analytics.view',
+          },
+          {
+            title: 'Topic Audit',
+            path: '/system-management/topic-audit',
+            permission: 'system.chat_history.view',
+          },
+          {
             title: 'Chatbot Console',
             path: '/system-management/chatbot-console',
             permission: 'system.chat_history.view',
@@ -2250,6 +2265,21 @@ export const MENU_SIDEBAR_COMPACT: MenuConfig = [
         title: 'Chat Overview',
         path: '/system-management/chat-overview',
         permission: 'chatbot.analytics.view',
+      },
+      {
+        title: 'Top Asks',
+        path: '/system-management/top-asks',
+        permission: 'chatbot.analytics.view',
+      },
+      {
+        title: 'Bot Failures',
+        path: '/system-management/bot-failures',
+        permission: 'chatbot.analytics.view',
+      },
+      {
+        title: 'Topic Audit',
+        path: '/system-management/topic-audit',
+        permission: 'system.chat_history.view',
       },
       {
         title: 'Chatbot Console',

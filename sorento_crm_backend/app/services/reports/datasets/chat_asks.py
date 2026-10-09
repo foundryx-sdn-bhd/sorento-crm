@@ -40,12 +40,14 @@ blanking the name for a session with no company set.
 """
 from __future__ import annotations
 
+import dataclasses
 from datetime import date
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, List, Sequence, Tuple
 
 import sqlalchemy as sa
 
-from app.models.chat_facts import ChatAskFact
+from app.models.chat_facts import ChatAskFact, ChatTopic
 from app.models.order import Customer
 from app.services.reports import registry as reg
 from app.services.reports.engine import month_label
@@ -53,14 +55,16 @@ from app.services.reports.engine import month_label
 # Core tables, not mapped entities (see the module docstring).
 ASKS = ChatAskFact.__table__
 _CUSTOMERS = Customer.__table__
+_TOPICS = ChatTopic.__table__
 
 #: The first day the bot's traces exist (the one-time load starts here). The period opens on
 #: it, and the coverage note says so; before it there is nothing to count (CA-4 may add it).
 TRACES_BEGIN = date(2026, 9, 5)
 
+TRACES_NOTE = "From bot traces, 5 Sep 2026 on."
 COVERAGE_NOTE = (
-    "From bot traces, 5 Sep 2026 on. Most asked products: Count by Products, measure Asked "
-    "(products the bot looked up). Topics arrive with CA-2."
+    f"{TRACES_NOTE} Most asked products: Count by Products, measure Asked "
+    "(products the bot looked up)."
 )
 
 #: (value, label) in the order a reader meets them. Values are `outcome.turn_outcome`'s.
@@ -117,6 +121,30 @@ CONTACT_TYPE_LABELS: Tuple[Tuple[str, str], ...] = (
 DEFAULT_CONTACT_TYPES: Tuple[str, ...] = ("dealer", "not_allowed", "unknown")
 
 
+def topics_note(ctx, *, skip: Tuple[str, ...] = ()) -> str:
+    """`Topics labelled: 71% of asks (taxonomy v2).` plus the coverage line.
+
+    The share is over the asks the run counts: the period and the ask-level filters (a
+    param named in `skip` filters another table and is left out). No asks reads 0%.
+    """
+    preds = [ctx.date_basis >= ctx.period.start, ctx.date_basis < ctx.period.end_exclusive]
+    for param in ctx.definition.params:
+        chosen = ctx.values.get(param.key) or []
+        if isinstance(param, reg.SelectParam) and chosen and param.key not in skip:
+            condition = param.condition(ctx, chosen)
+            if condition is not None:
+                preds.append(condition)
+    counted, labelled = ctx.db.execute(
+        sa.select(sa.func.count(), sa.func.count(ASKS.c.topic_code)).select_from(ASKS).where(*preds)
+    ).one()
+    percent = int((Decimal(labelled) * 100 / Decimal(counted)).quantize(Decimal(1), rounding=ROUND_HALF_UP)) if counted else 0
+    version = ctx.db.execute(
+        sa.select(sa.func.max(_TOPICS.c.version)).where(_TOPICS.c.status == "active")
+    ).scalar()
+    tail = f" (taxonomy v{version})" if version is not None else ""
+    return f"Topics labelled: {percent}% of asks{tail}. {TRACES_NOTE}"
+
+
 def default_period() -> dict:
     """The traces' first day to today in Malaysia, resolved when ASKED FOR."""
     today = reg.today_malaysia()
@@ -153,6 +181,23 @@ def _words(column: Any, pairs: Tuple[Tuple[str, str], ...]) -> Any:
     return sa.case({value: label for value, label in pairs}, value=column, else_=column)
 
 
+#: A subject the taxonomy has no row for prints as its code; no domain is the `general` subject.
+SUBJECT_CODE = sa.func.coalesce(ASKS.c.domain, sa.literal("general"))
+NOT_LABELLED = "(not labelled yet)"
+
+
+def _topic_label(code: Any, fallback: Any) -> Any:
+    """The taxonomy's words for `code`, else `fallback`. A scalar subquery on the Core
+    table (code is the primary key, so at most one row)."""
+    label = sa.select(_TOPICS.c.label).where(_TOPICS.c.code == code).correlate(ASKS).scalar_subquery()
+    return sa.func.coalesce(label, fallback)
+
+
+_SUBJECT = _topic_label(SUBJECT_CODE, SUBJECT_CODE)
+_TOPIC = sa.case(
+    (ASKS.c.topic_code.is_(None), sa.literal(NOT_LABELLED)),
+    else_=_topic_label(ASKS.c.topic_code, ASKS.c.topic_code),
+)
 _OUTCOME = _words(ASKS.c.outcome, OUTCOME_LABELS)
 _AUDIENCE = _words(ASKS.c.audience, AUDIENCE_LABELS)
 _CONTACT_TYPE = _words(ASKS.c.contact_type, CONTACT_TYPE_LABELS)
@@ -184,6 +229,20 @@ def contact_type_condition(ctx, values: List[str]) -> Any:
     return ASKS.c.contact_type.in_(values)
 
 
+def subject_options(db) -> Sequence[Tuple[str, str]]:
+    """The subject rows of the taxonomy, in its own order."""
+    rows = db.execute(
+        sa.select(_TOPICS.c.code, _TOPICS.c.label)
+        .where(_TOPICS.c.parent_code.is_(None), _TOPICS.c.status == "active")
+        .order_by(_TOPICS.c.sort_order, _TOPICS.c.code)
+    ).all()
+    return [(code, label) for code, label in rows]
+
+
+def subject_condition(ctx, values: List[str]) -> Any:
+    return SUBJECT_CODE.in_(values)
+
+
 # ---------------------------------------------------------------------- the catalog
 
 
@@ -194,6 +253,9 @@ def ask_dimensions() -> Tuple[reg.Column, ...]:
         reg.Column("outcome", "Outcome", "text", "dimension", lambda c: _OUTCOME, size=150),
         reg.Column("week", "Week", "text", "dimension", week, size=100, value_label=week_label),
         reg.Column("month", "Month", "text", "dimension", month, size=110, period_months=True, value_label=month_label),
+        reg.Column("subject", "Subject", "text", "dimension", lambda c: _SUBJECT, size=140),
+        reg.Column("topic", "Topic", "text", "dimension", lambda c: _TOPIC, size=200),
+        reg.Column("language", "Language", "text", "dimension", lambda c: ASKS.c.language, size=100),
         reg.Column("domain", "Domain", "text", "dimension", lambda c: ASKS.c.domain, size=120),
         reg.Column("contact_type", "Contact type", "text", "dimension", lambda c: _CONTACT_TYPE, size=120),
         reg.Column("audience", "Audience", "text", "dimension", lambda c: _AUDIENCE, size=110),
@@ -225,6 +287,16 @@ DATASET = reg.Dataset(
     date_bases=(reg.DateBasis("asked_at", "Asked on", ASKS.c.asked_at),),
     base=_base,
 )
+
+
+def turn_only(dataset: reg.Dataset) -> reg.Dataset:
+    """`dataset` counting each TURN once: only ask 1 of a split message, so a turn measure
+    (asks, failed) does not double on the labeller's extra asks. Top asks keeps every ask."""
+    return dataclasses.replace(
+        dataset,
+        key=f"{dataset.key}_turns",
+        base=lambda ctx: dataset.base(ctx).where(ASKS.c.ask_seq == 1),
+    )
 
 
 def order_by(ctx) -> Sequence[Any]:
