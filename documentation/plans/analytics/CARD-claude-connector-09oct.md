@@ -1,7 +1,8 @@
 # CARD - claude.ai analytics connector (CLAUDE-CONNECTOR)
 
-Status: Plan. This card waits for the owner's answers to section 9. Track: L (new public
-service, OAuth, migration, new permissions, prod infra). The lane PR carries
+Status: Build. The card was approved by the owner on 9 Oct 2026 with Q1-Q5 all (a) and the
+defaults accepted; slices S1-S4 are in build. Nothing deploys from this lane. Track: L (new
+public service, OAuth, migration, new permissions, prod infra). The lane PR carries
 `crew-lane: CLAUDE-CONNECTOR`.
 
 Code facts are cited from `origin/main` 4ee6f643, paths relative to the repo root. This repo is
@@ -342,7 +343,7 @@ Basis: 53,895 messages, 17 Apr to 6 Oct, about 3,000 a week. Measure on the prod
    `https://<crm-domain>/analytics/mcp` (Settings > Connectors). Each authorized staff member then
    clicks Connect and signs in with their CRM account.
 
-## 9. Questions (with recommendations)
+## 9. Questions (owner, 9 Oct 2026: Q1-Q5 all (a), defaults accepted)
 
 | # | Question | Options | Recommendation |
 | --- | --- | --- | --- |
