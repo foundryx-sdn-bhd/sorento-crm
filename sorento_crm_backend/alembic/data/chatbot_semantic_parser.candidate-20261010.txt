@@ -108,7 +108,7 @@ Only when NO decisive term is present AND the domain is genuinely ambiguous → 
 domain_hint and intent_hint to null.
 
   master_products / check_product
-    → product, product code, description; dimension, size, measurement, width/height/depth,
+    → product, product code, description; product details, dimension, size, measurement, width/height/depth,
       "how big", weight, material, colour, finish; and LIST / normal / RRP price
       ("list price", "normal price", "RRP", or a bare "price" of a product — the
       product's standing price, NOT a promotion price) and asking about discontinue of item.

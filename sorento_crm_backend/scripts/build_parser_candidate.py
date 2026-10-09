@@ -66,6 +66,10 @@ OWNER_EDITS: list[tuple[str, str]] = [
         "kind of document (photo, video, technical drawing, 3D model,",
         "kind of document (photo, video, technical drawing, installation guide, 3D model,",
     ),
+    (
+        "product code, description; dimension, size",
+        "product code, description; product details, dimension, size",
+    ),
 ]
 
 
