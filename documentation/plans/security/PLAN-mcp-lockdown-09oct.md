@@ -1,6 +1,6 @@
 # PLAN: MCP lockdown (bearer token on the CRM MCP server)
 
-Status: Build (small fix track: ~200 changed lines, no migration; touches auth on the MCP
+Status: Review (small fix track: ~200 changed lines, no migration; touches auth on the MCP
 surface, so reviewer + security-reviewer both run). Lane MCP-LOCKDOWN, owner approval 9 Oct 2026.
 
 ## Problem
@@ -97,7 +97,8 @@ else. The deploy post-check accepts 401 from `GET /mcp`.
   `Authorization: Bearer <token>`.
 - Open each of `sub-get-results` (`Fss5aAaXthJSWpZCgKiKR`), `sub-get-results TEST`
   (`rysSPgUssLDf6xJc`), `sub-get-results CS-BUILD` (`t4QvrtrPnTwRU6br`); in BOTH `MCP Client`
-  and `MCP Client1`: Authentication = **Bearer Auth**, Credential = `sorento-mcp-bearer`, save.
+  and `MCP Client1`: Authentication = **Bearer Auth**, Credential = `sorento-mcp-bearer`, and (once the nginx
+  step below is done) URL = `https://fe-sorento.foundryx.my:8765/mcp`; save.
   (If a node version lists only Header Auth: type **Header Auth** / `httpHeaderAuth`, Name
   `Authorization`, Value `Bearer <token>`, with the space.)
 - Until then those 3 workflows (and anything that calls them by hand: `sorento-consume-main`,
@@ -113,19 +114,55 @@ ungated MCP behind nginx shows up red.
 
 **Rotate:** the leaked values listed under "Committed secrets".
 
-## nginx (prod host, not in the repo)
+## nginx (prod host, not in the repo): owner step after the deploy
 
-Only the upstream file is written from the repo (`blue_green_deploy.sh` step 4); the `:8765`
-server block is hand-edited on the host. Until TLS, the bearer token crosses the internet in
-clear text on every n8n call over `http://72.62.195.20:8765`, and anyone on the path can replay it.
+Owner ruling 9 Oct (Q1 b): n8n runs on a DIFFERENT server and the `sub-get-results` backups stay,
+so the public `:8765` listener stays but only n8n's server may reach it, over TLS, so the bearer
+token never crosses the internet in clear. Only the upstream file is written from the repo
+(`blue_green_deploy.sh` step 4, `upstream sorento_mcp`); the `:8765` server block is hand-edited.
 
-- **Default: drop the public listener.** Bind the `:8765` block to `127.0.0.1` only (the deploy
-  post-check curls `127.0.0.1:8765`). If n8n runs on this host or its docker network, point the
-  6 nodes at the internal URL. The backend already uses the compose-internal URL.
-- Only if n8n must come in over the internet and its egress IP is static: `allow <n8n IP>; deny
-  all;` in the block, AND TLS. A cert for a hostname does not validate against the raw IP, so
-  the 6 n8n nodes must move to a hostname as part of that step (never "skip verification").
-- Never add `$http_authorization` to any nginx `log_format`.
+1. **n8n's IP.** On the CRM host: `dig +short automate-sorento.foundryx.my`. If that answers a
+   proxy/CDN address rather than the n8n server itself, use the n8n server's egress IP instead
+   (on the n8n server: `curl -s https://ifconfig.me`). Call it `N8N_IP`. It must be static.
+2. **Cert: reuse the CRM's existing one, no new DNS.** A certificate validates the hostname, not
+   the port, so the `fe-sorento.foundryx.my` cert already serves `https://fe-sorento.foundryx.my:8765`.
+   Find its paths: `sudo nginx -T | grep -A2 "server_name fe-sorento.foundryx.my" ; sudo nginx -T | grep ssl_certificate`.
+   (certbot renewals keep working; nginx picks up the renewed file on its next reload.)
+3. **Replace the `:8765` server block** with (paths from step 2):
+
+```nginx
+server {
+    listen 8765 ssl;
+    server_name fe-sorento.foundryx.my;
+    ssl_certificate     /etc/letsencrypt/live/fe-sorento.foundryx.my/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/fe-sorento.foundryx.my/privkey.pem;
+
+    allow N8N_IP;      # from step 1
+    allow 127.0.0.1;   # deploy.yml post-check
+    deny  all;
+
+    location /mcp {
+        proxy_pass http://sorento_mcp;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_buffering off;        # streamable HTTP may answer as SSE
+        proxy_read_timeout 120s;
+    }
+    location / { return 404; }
+}
+```
+
+   Then `sudo nginx -t && sudo nginx -s reload`. Never add `$http_authorization` to a
+   `log_format`.
+4. **Check** (from the CRM host): `curl -s -o /dev/null -w "%{http_code}\n" https://fe-sorento.foundryx.my:8765/mcp`
+   gives `403` (the host's public IP is not in the allow list) and
+   `curl -sk -o /dev/null -w "%{http_code}\n" https://127.0.0.1:8765/mcp` gives `401`. From
+   your laptop the port gives `403` or times out. The deploy post-check tries https then http,
+   so it passes before and after this step.
+5. **n8n**: in the 6 MCP nodes (Rollout above) change the URL to
+   `https://fe-sorento.foundryx.my:8765/mcp` at the same time as adding the Bearer Auth
+   credential.
 
 ## Tests
 
