@@ -36,7 +36,8 @@ SPACE = "zzt-fcom-space"
 # A ':' in the last segment passes straight through resolve_send_identifier (no contact row needed).
 INBOX_URL = "https://app.respond.io/space/364817/inbox/id:60123"
 SCOPE = "form_comment"
-SERIALIZED_KEYS = {"id", "body", "author_name", "author_kind", "created_at"}
+SERIALIZED_KEYS = {"id", "body", "author_name", "author_kind", "created_at", "attachments"}
+ATTACHMENT_KEYS = {"attachment_id", "filename", "size", "content_type"}
 
 
 def _uid() -> str:
@@ -237,10 +238,32 @@ def _emails_of_notifications(db) -> list[list[str]]:
     ]
 
 
-def test_contact_add_emails_the_last_responder_and_never_whatsapps(db, enqueued):
+def _tracker(db, kind: str, form_id: str, handler: User | None) -> None:
+    """A form SLA tracker for (kind, form id) handled by ``handler`` (the only email recipient)."""
+    from app.models.sla import ConversationSLATracking, SLAPolicy
+
+    policy = SLAPolicy(id=_uid(), code=f"{MARKER}-{uuid.uuid4().hex[:6]}", name=f"{MARKER} policy", company_id=SORENTO)
+    db.add(policy)
+    db.flush()
+    db.add(
+        ConversationSLATracking(
+            id=_uid(),
+            policy_id=policy.id,
+            current_tier=1,
+            due_at=datetime(2026, 10, 20, 9, 0, 0),
+            source_entity_type=kind,
+            source_entity_id=form_id,
+            handled_by_id=handler.id if handler else None,
+        )
+    )
+    db.commit()
+
+
+def test_contact_add_emails_only_the_sla_handler_and_never_whatsapps(db, enqueued):
     contact_id = _contact(db, "Dealer Dan")
-    responder = _user(db, "Responder", responder_id=f"resp-{uuid.uuid4().hex[:8]}")
-    inquiry = _inquiry(db, contact_id=contact_id, last_responded_by=responder.respond_user_id)
+    handler = _user(db, "Handler")
+    inquiry = _inquiry(db, contact_id=contact_id)
+    _tracker(db, "stock_inquiry", inquiry.id, handler)
 
     comment, delivery = _unpack(
         _svc(db).add_contact_comment("stock_inquiry", inquiry.id, contact_id, SPACE, "Need it sooner")
@@ -253,38 +276,68 @@ def test_contact_add_emails_the_last_responder_and_never_whatsapps(db, enqueued)
     mails = _by_queue(enqueued, "notifications")
     assert len(mails) == 1
     assert mails[0]["func"].__name__ == "send_notification_deliveries"
-    assert any(responder.email in emails for emails in _emails_of_notifications(db))
+    assert _emails_of_notifications(db) == [[handler.email]]
 
 
-def test_contact_add_recipients_include_earlier_staff_commenters_once_each(db, enqueued):
+def test_contact_add_does_not_email_the_last_responder_who_is_not_the_handler(db, enqueued):
     contact_id = _contact(db)
+    handler = _user(db, "Handler")
     responder = _user(db, "Responder", responder_id=f"resp-{uuid.uuid4().hex[:8]}")
-    commenter = _user(db, "Earlier")
     inquiry = _inquiry(db, contact_id=contact_id, last_responded_by=responder.respond_user_id)
+    _tracker(db, "stock_inquiry", inquiry.id, handler)
+
+    _svc(db).add_contact_comment("stock_inquiry", inquiry.id, contact_id, SPACE, "hello")
+
+    recipients = [e for emails in _emails_of_notifications(db) for e in emails]
+    assert recipients == [handler.email]
+    assert responder.email not in recipients
+
+
+def test_contact_add_does_not_email_an_earlier_staff_commenter_who_is_not_the_handler(db, enqueued):
+    contact_id = _contact(db)
+    handler = _user(db, "Handler")
+    commenter = _user(db, "Earlier")
+    inquiry = _inquiry(db, contact_id=contact_id)
+    _tracker(db, "stock_inquiry", inquiry.id, handler)
     svc = _svc(db)
     svc.add_staff_comment("stock_inquiry", inquiry.id, commenter, "first")
-    svc.add_staff_comment("stock_inquiry", inquiry.id, commenter, "second")
-    svc.add_staff_comment("stock_inquiry", inquiry.id, responder, "third")  # also the last responder
     enqueued.clear()
 
     svc.add_contact_comment("stock_inquiry", inquiry.id, contact_id, SPACE, "thanks")
 
     recipients = [e for emails in _emails_of_notifications(db) for e in emails]
-    assert recipients.count(commenter.email) == 1
-    assert recipients.count(responder.email) == 1
+    assert recipients == [handler.email]
     assert len(_by_queue(enqueued, "notifications")) == 1
 
 
-def test_contact_add_with_no_participants_on_complaint_reports_no_recipients(db, enqueued):
+def test_contact_add_with_no_tracker_reports_no_recipients(db, enqueued):
     contact_id = _contact(db)
-    complaint = _complaint(db, contact_id=contact_id)
+    inquiry = _inquiry(db, contact_id=contact_id)
 
     comment, delivery = _unpack(
-        _svc(db).add_contact_comment("complaint", complaint.id, contact_id, SPACE, "Anyone there?")
+        _svc(db).add_contact_comment("stock_inquiry", inquiry.id, contact_id, SPACE, "Anyone there?")
     )
 
     assert delivery == "no_recipients"
     assert comment["body"] == "Anyone there?"
+    assert enqueued == []
+    assert _emails_of_notifications(db) == []
+    assert db.query(EntityConversationMessage).filter(EntityConversationMessage.id == comment["id"]).count() == 1
+
+
+def test_contact_add_with_a_handler_without_email_reports_no_recipients(db, enqueued):
+    contact_id = _contact(db)
+    handler = _user(db, "Mute")
+    handler.email = "   "
+    db.commit()
+    complaint = _complaint(db, contact_id=contact_id)
+    _tracker(db, "complaint", complaint.id, handler)
+
+    comment, delivery = _unpack(
+        _svc(db).add_contact_comment("complaint", complaint.id, contact_id, SPACE, "Hello?")
+    )
+
+    assert delivery == "no_recipients"
     assert enqueued == []
     assert db.query(EntityConversationMessage).filter(EntityConversationMessage.id == comment["id"]).count() == 1
 
@@ -434,7 +487,7 @@ def test_staff_routes_are_403_without_the_kind_view_permission(staff_client, db)
     staff_client.granted.add("complaint_management.complaints.view")  # a different kind's slug does not help
 
     assert staff_client.get(url).status_code == 403
-    assert staff_client.post(url, json={"body": "hi"}).status_code == 403
+    assert staff_client.post(url, data={"body": "hi"}).status_code == 403
 
 
 def test_staff_routes_with_permission_list_and_post(staff_client, db, enqueued):
@@ -442,7 +495,7 @@ def test_staff_routes_with_permission_list_and_post(staff_client, db, enqueued):
     url = f"/api/v1/form-comments/stock_inquiry/{inquiry.id}"
     staff_client.granted.add("procurement.stock_inquiries.view")
 
-    posted = staff_client.post(url, json={"body": "From the API"})
+    posted = staff_client.post(url, data={"body": "From the API"})
     assert posted.status_code in (200, 201), posted.text
     payload = posted.json()
     assert set(payload) == {"comment", "delivery"}
@@ -466,13 +519,13 @@ def test_unknown_kind_is_422_and_unknown_row_is_404(staff_client, db):
     )
     assert staff_client.get(f"/api/v1/form-comments/not_a_kind/{_uid()}").status_code == 422
     assert staff_client.get(f"/api/v1/form-comments/stock_inquiry/{_uid()}").status_code == 404
-    assert staff_client.post(f"/api/v1/form-comments/stock_inquiry/{_uid()}", json={"body": "x"}).status_code == 404
+    assert staff_client.post(f"/api/v1/form-comments/stock_inquiry/{_uid()}", data={"body": "x"}).status_code == 404
 
 
 def test_staff_post_with_blank_body_is_422(staff_client, db):
     inquiry = _inquiry(db)
     staff_client.granted.add("procurement.stock_inquiries.view")
-    resp = staff_client.post(f"/api/v1/form-comments/stock_inquiry/{inquiry.id}", json={"body": "   "})
+    resp = staff_client.post(f"/api/v1/form-comments/stock_inquiry/{inquiry.id}", data={"body": "   "})
     assert resp.status_code == 422
 
 
@@ -480,7 +533,7 @@ def test_serialized_comment_carries_no_user_or_contact_ids(staff_client, db):
     inquiry = _inquiry(db)
     staff_client.granted.add("procurement.stock_inquiries.view")
     url = f"/api/v1/form-comments/stock_inquiry/{inquiry.id}"
-    posted = staff_client.post(url, json={"body": "ids stay home"}).json()
+    posted = staff_client.post(url, data={"body": "ids stay home"}).json()
 
     assert set(posted["comment"]) == SERIALIZED_KEYS
     listed = staff_client.get(url).json()["items"]
@@ -529,7 +582,7 @@ def test_portal_owner_can_list_and_post_a_comment(portal, db, enqueued):
     client = portal(owner)
     url = f"/api/v1/public/portal/submissions/stock_inquiry/{inquiry.id}/comments"
 
-    posted = client.post(url, json={"body": "from the portal"})
+    posted = client.post(url, data={"body": "from the portal"})
     assert posted.status_code in (200, 201), posted.text
     payload = posted.json()
     assert payload["comment"]["author_kind"] == "submitter"
@@ -553,5 +606,200 @@ def test_portal_other_contact_gets_404_on_both_verbs(portal, db, enqueued):
 
     other = portal(stranger)
     assert other.get(url).status_code == 404
-    assert other.post(url, json={"body": "not mine"}).status_code == 404
+    assert other.post(url, data={"body": "not mine"}).status_code == 404
     assert db.query(EntityConversationMessage).filter(EntityConversationMessage.scope == SCOPE).count() == 0
+
+
+# --------------------------------------------------------------------------- #
+# Attachments (owner answer Q5 b)
+# --------------------------------------------------------------------------- #
+
+PDF = ("quote.pdf", b"%PDF-1.4 zzt fixture", "application/pdf")
+
+
+class _FakeBackend:
+    def __init__(self) -> None:
+        self.uploads: list[str] = []
+
+    def upload_file(self, *args, **kwargs):
+        key = args[1] if args else kwargs.get("file_path")
+        self.uploads.append(key)
+        return key, f"https://cdn.test/{key}"
+
+
+@pytest.fixture
+def storage(db, monkeypatch):
+    """Both attachment types seeded, storage and thumbnails faked: no byte leaves the sandbox."""
+    import app.services.storage_router as storage_router
+    from app.models.resources import AttachmentType
+
+    for code in ("response_attachment", "portal_submission"):
+        if not db.query(AttachmentType).filter(AttachmentType.code == code).first():
+            db.add(
+                AttachmentType(
+                    id=_uid(),
+                    code=code,
+                    type_name=f"{MARKER} {code}",
+                    allowed_extensions="jpg,jpeg,png,pdf,xlsx",
+                    max_file_size_mb=10,
+                )
+            )
+    db.commit()
+    backend = _FakeBackend()
+    monkeypatch.setattr(storage_router, "default_provider", lambda: "s3")
+    monkeypatch.setattr(storage_router, "get_backend", lambda provider: backend)
+    monkeypatch.setattr(storage_router, "cdn_base_url", lambda provider, key: f"https://cdn.test/{key}")
+    monkeypatch.setattr("app.services.image_thumbnailer.store_thumbnail", lambda *a, **k: None)
+    return backend
+
+
+def _links(db, attachment_id: str) -> set[tuple[str, str]]:
+    from app.models.entity_attachment import EntityAttachmentLink
+
+    rows = db.query(EntityAttachmentLink).filter(EntityAttachmentLink.attachment_id == attachment_id).all()
+    return {(r.entity_type, str(r.entity_id)) for r in rows}
+
+
+def test_staff_comment_with_a_pdf_links_the_file_to_the_form_and_the_comment(db, enqueued, storage):
+    staff = _user(db)
+    inquiry = _inquiry(db)
+
+    comment, _ = _unpack(_svc(db).add_staff_comment("stock_inquiry", inquiry.id, staff, "see attached", files=[PDF]))
+
+    assert len(comment["attachments"]) == 1
+    att = comment["attachments"][0]
+    assert set(att) == ATTACHMENT_KEYS
+    assert (att["filename"], att["size"], att["content_type"]) == (PDF[0], len(PDF[1]), PDF[2])
+    assert _links(db, att["attachment_id"]) == {("stock_inquiry", inquiry.id), ("form_comment", comment["id"])}
+    assert len(storage.uploads) == 1
+
+
+def test_contact_comment_with_a_file_is_a_contact_upload_with_two_links(db, enqueued, storage):
+    from app.models.resources import Attachment
+
+    contact_id = _contact(db)
+    inquiry = _inquiry(db, contact_id=contact_id)
+
+    comment, _ = _unpack(
+        _svc(db).add_contact_comment("stock_inquiry", inquiry.id, contact_id, SPACE, "my file", files=[PDF])
+    )
+
+    att = comment["attachments"][0]
+    row = db.query(Attachment).filter(Attachment.id == att["attachment_id"]).one()
+    assert row.uploader_kind == "contact"
+    assert row.uploaded_by_contact_id == contact_id
+    assert _links(db, att["attachment_id"]) == {("stock_inquiry", inquiry.id), ("form_comment", comment["id"])}
+
+
+def test_sponsorship_comment_file_links_the_form_side_as_purchase_request(db, enqueued, storage):
+    staff = _user(db)
+    row = _request(db, request_type="sponsorship_form")
+
+    comment, _ = _unpack(_svc(db).add_staff_comment("sponsorship_form", row.id, staff, "sponsor file", files=[PDF]))
+
+    att = comment["attachments"][0]
+    assert _links(db, att["attachment_id"]) == {("purchase_request", row.id), ("form_comment", comment["id"])}
+
+
+def test_empty_body_with_one_file_is_accepted(db, enqueued, storage):
+    staff = _user(db)
+    inquiry = _inquiry(db)
+
+    comment, _ = _unpack(_svc(db).add_staff_comment("stock_inquiry", inquiry.id, staff, "", files=[PDF]))
+
+    assert comment["body"] == ""
+    assert len(comment["attachments"]) == 1
+
+
+def test_empty_body_without_files_is_422(db, enqueued, storage):
+    staff = _user(db)
+    inquiry = _inquiry(db)
+    with pytest.raises(HTTPException) as exc:
+        _svc(db).add_staff_comment("stock_inquiry", inquiry.id, staff, "  ", files=[])
+    assert _status_of(exc.value) == 422
+
+
+def test_six_files_is_422_and_five_is_accepted(db, enqueued, storage):
+    staff = _user(db)
+    inquiry = _inquiry(db)
+    svc = _svc(db)
+    with pytest.raises(HTTPException) as exc:
+        svc.add_staff_comment("stock_inquiry", inquiry.id, staff, "too many", files=[PDF] * 6)
+    assert _status_of(exc.value) == 422
+    comment, _ = _unpack(svc.add_staff_comment("stock_inquiry", inquiry.id, staff, "five", files=[PDF] * 5))
+    assert len(comment["attachments"]) == 5
+
+
+def test_whatsapp_text_names_the_attached_files(db, enqueued, storage):
+    staff = _user(db)
+    inquiry = _inquiry(db)
+
+    _svc(db).add_staff_comment("stock_inquiry", inquiry.id, staff, "see attached", files=[PDF])
+
+    sends = _by_queue(enqueued, "respond_io")
+    assert len(sends) == 1
+    assert any(f"Attachments: {PDF[0]}" in t for t in _strings(sends[0]))
+
+
+def test_list_comments_returns_each_comments_attachments(db, enqueued, storage):
+    staff = _user(db)
+    inquiry = _inquiry(db)
+    svc = _svc(db)
+    svc.add_staff_comment("stock_inquiry", inquiry.id, staff, "with file", files=[PDF])
+
+    items = svc.list_comments("stock_inquiry", inquiry.id)
+
+    assert len(items) == 1
+    assert [set(a) for a in items[0]["attachments"]] == [ATTACHMENT_KEYS]
+    assert items[0]["attachments"][0]["filename"] == PDF[0]
+
+
+def test_comment_without_files_has_an_empty_attachments_list(db, enqueued, storage):
+    staff = _user(db)
+    inquiry = _inquiry(db)
+    comment, _ = _unpack(_svc(db).add_staff_comment("stock_inquiry", inquiry.id, staff, "plain"))
+    assert comment["attachments"] == []
+
+
+def test_staff_api_multipart_post_returns_201_with_one_attachment(staff_client, db, storage):
+    inquiry = _inquiry(db)
+    staff_client.granted.add("procurement.stock_inquiries.view")
+
+    resp = staff_client.post(
+        f"/api/v1/form-comments/stock_inquiry/{inquiry.id}",
+        data={"body": "with file"},
+        files=[("files", PDF)],
+    )
+
+    assert resp.status_code == 201, resp.text
+    assert len(resp.json()["comment"]["attachments"]) == 1
+
+
+def test_portal_api_multipart_post_returns_201_with_one_attachment(portal, db, storage):
+    owner = _contact(db, "Owner")
+    inquiry = _inquiry(db, contact_id=owner)
+
+    resp = portal(owner).post(
+        f"/api/v1/public/portal/submissions/stock_inquiry/{inquiry.id}/comments",
+        data={"body": "with file"},
+        files=[("files", PDF)],
+    )
+
+    assert resp.status_code == 201, resp.text
+    assert len(resp.json()["comment"]["attachments"]) == 1
+
+
+def test_portal_download_of_a_comment_file_works_for_the_owner_and_404s_for_others(portal, db, storage, monkeypatch):
+    owner = _contact(db, "Owner")
+    stranger = _contact(db, "Stranger")
+    inquiry = _inquiry(db, contact_id=owner)
+    staff = _user(db)
+    comment, _ = _unpack(_svc(db).add_staff_comment("stock_inquiry", inquiry.id, staff, "for you", files=[PDF]))
+    attachment_id = comment["attachments"][0]["attachment_id"]
+    monkeypatch.setattr("app.services.resources_service.AttachmentService.get_file_content", lambda self, aid: PDF[1])
+    url = f"/api/v1/public/portal/attachments/{attachment_id}/download"
+
+    ok = portal(owner).get(url)
+    assert ok.status_code == 200, ok.text
+    assert ok.content == PDF[1]
+    assert portal(stranger).get(url).status_code == 404
