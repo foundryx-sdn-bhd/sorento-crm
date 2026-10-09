@@ -38,9 +38,11 @@ OWNER_EDITS: list[tuple[str, str]] = [
         "← delivery warehouse, which warehouse it goes to",
         "← warehouse, which warehouse it goes to",
     ),
+    # The code token must match DOCUMENT_TYPE_CODES in app/services/chatbot/head/grounding.py (space
+    # form); the owner's console line had an underscore, which grounding rejects (replay: prod v52 1/4, fixed 6/6).
     (
         _CERT_LINE,
-        _CERT_LINE + '\n  - "installation guide", "installation manual" → attachment_type "installation_guide"',
+        _CERT_LINE + '\n  - "installation guide", "installation manual" → attachment_type "installation guide"',
     ),
     (
         "taxonomy value (photo, video, technical drawing, 3D model, certificate), never",

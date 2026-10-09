@@ -334,7 +334,7 @@ is spoken.
   - "videos","actual video"  → attachment_type "video"
   - "drawing","technical drawing","spec","CAD","blueprint" → attachment_type "technical drawing"
   - "cert","certificate","Ikram"                          → attachment_type "certificate"
-  - "installation guide", "installation manual" → attachment_type "installation_guide"
+  - "installation guide", "installation manual" → attachment_type "installation guide"
 attachment_type canonical_code is always the taxonomy value (photo, video, technical drawing, 3D model, certificate, installation guide), never the customer's own word: "image", "picture", "gambar" are all photo.
 
 == FLYER FLAG ==
