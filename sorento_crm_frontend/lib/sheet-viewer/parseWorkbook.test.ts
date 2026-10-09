@@ -324,3 +324,17 @@ describe('hidden rows with merges and a freeze pane', () => {
     expect(s.pinnedRows).toEqual([0, 1]);
   });
 });
+
+describe('alpha-00 colours (openpyxl style)', () => {
+  it('reads a 00-alpha fill and font colour as opaque', async () => {
+    const s = await single((ws) => {
+      const a = ws.getCell('A1');
+      a.value = 'tinted';
+      a.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '00FFFF00' } };
+      a.font = { color: { argb: '00FF0000' } };
+    });
+    const st = s.cells?.[0]?.[0];
+    expect(String(st?.fill)).toMatch(/ffff00/i);
+    expect(String(st?.color)).toMatch(/ff0000/i);
+  });
+});
