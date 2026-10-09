@@ -7,6 +7,7 @@
 # composer (kept, unchanged per the plan) has somewhere familiar to write into.
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field, replace
 from typing import Any
 
@@ -769,9 +770,12 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
         starts = tuple("_" + lead for lead in label_catalog.footer_leads(localizer))
         footers: list[str] = []
         for i, part in enumerate(text_parts):
-            paras = part.split("\n\n")
-            footers += [p for p in paras if p.startswith(starts)]
-            text_parts[i] = "\n\n".join(p for p in paras if not p.startswith(starts))
+            kept: list[str] = []
+            for line in part.split("\n"):
+                (footers if line.startswith(starts) else kept).append(line)
+            # A footer line sat alone or under another line of its paragraph: what was
+            # beside it stays, and the blank lines it leaves behind close up.
+            text_parts[i] = re.sub(r"\n{3,}", "\n\n", "\n".join(kept)).strip("\n")
         text_parts = [part for part in text_parts if part]
         if footers:
             text_parts.append(footers[0])
