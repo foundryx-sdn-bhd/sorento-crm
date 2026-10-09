@@ -1,10 +1,9 @@
 """PHOTO-SEND-CAP hand-test fix (owner, 9 Oct 2026): promo PDFs on https://cdn-sorento.com
 were sent as attachments in link mode, with nothing said and `chatbot_file_links` empty.
 
-The link-able hosts are ONE explicit list (`file_link_service.link_hosts`): the configured
-CloudFront and R2 CDN hosts plus `CHATBOT_LINK_CDN_HOSTS` (default `cdn-sorento.com`, the
-production R2 custom domain every stored url names). Minting and the public route read the
-same list. A file whose host is not on it goes as an attachment ON ITS OWN, says so under
+The link-able hosts are ONLY the hosts this environment can sign (`signer_hosts`: the
+configured CloudFront and R2 CDN hosts; prod names cdn-sorento.com as its R2 domain).
+There is no extra host setting. Minting and the public route read the same list. A file whose host is not on it goes as an attachment ON ITS OWN, says so under
 its row, and the turn records why; the other files still go as links.
 """
 from __future__ import annotations
@@ -43,7 +42,6 @@ def copy_env(monkeypatch):
     for key, value in COPY_ENV.items():
         monkeypatch.setenv(key, value)
     monkeypatch.setattr(app_settings, "frontend_base_url", BASE_URL)
-    monkeypatch.setattr(app_settings, "chatbot_link_cdn_hosts", "cdn-sorento.com")
 
 
 @pytest.fixture()
@@ -56,33 +54,54 @@ def _codes(text: str) -> list[str]:
     return re.findall(re.escape(BASE_URL) + r"/f/([0-9A-Z]+)", text)
 
 
-def test_the_list_is_the_cdn_hosts_plus_the_setting(copy_env, monkeypatch):
-    assert file_link_service.link_hosts() == {"d1k6example.cloudfront.net", "pub-example.r2.dev", "cdn-sorento.com"}
-    monkeypatch.setattr(app_settings, "chatbot_link_cdn_hosts", " CDN-Sorento.com , files.example.com ,")
-    assert file_link_service.link_hosts() == {
-        "d1k6example.cloudfront.net",
-        "pub-example.r2.dev",
-        "cdn-sorento.com",
-        "files.example.com",
-    }
-
-
-def test_the_default_setting_names_the_production_custom_domain():
+def test_the_list_is_the_signer_hosts_and_nothing_else(copy_env, monkeypatch):
     from app.config import Settings
 
-    assert Settings.model_fields["chatbot_link_cdn_hosts"].default == "cdn-sorento.com"
+    assert "chatbot_link_cdn_hosts" not in Settings.model_fields
+    assert file_link_service.link_hosts() == file_link_service.signer_hosts()
+    assert file_link_service.link_hosts() == {"d1k6example.cloudfront.net", "pub-example.r2.dev"}
+    monkeypatch.setenv("R2_CDN_DOMAIN", "https://Pub-Example.r2.dev/")
+    assert file_link_service.link_hosts() == {"d1k6example.cloudfront.net", "pub-example.r2.dev"}
 
 
-def test_the_owners_promo_case_links_all_three_pdfs(db):
-    """Turn 85e162ca (check_promotion, contact 477071884): 3 PDFs on cdn-sorento.com."""
+def test_a_signer_less_host_is_not_linkable_on_the_copy(copy_env):
+    assert file_link_service.is_linkable("https://cdn-sorento.com/promotion/x.pdf") is False
+    assert file_link_service.is_linkable("https://pub-example.r2.dev/promotion/x.pdf") is True
+
+
+def test_no_public_fetch_helper_remains():
+    assert not hasattr(file_link_service, "_fetch_public")
+    assert not hasattr(file_link_service, "PUBLIC_FETCH_MAX_BYTES")
+
+
+def test_the_owners_promo_case_on_the_copy_goes_as_attachments(db):
+    """Turn 85e162ca: 3 PDFs on cdn-sorento.com, a host the copy cannot sign: all three
+    are refused per file (host_not_linkable), never redirected to the unsigned url."""
     out, minted, skipped = file_links.links_for(db, PROMO_TEXT, PROMO_FILES, contact_respond_id="477071884", turn_id=None)
-    assert minted == 3 and skipped == []
-    assert len(set(_codes(out))) == 3
-    assert "cdn-sorento.com" not in out
-    assert db.query(ChatbotFileLink).count() == 3
+    assert minted == 0 and skipped == PROMO_FILES
+    assert db.query(ChatbotFileLink).count() == 0
 
 
-def test_a_file_off_the_list_goes_alone_and_says_so(db):
+def test_the_owners_promo_case_in_prod_links_all_three_pdfs(monkeypatch):
+    monkeypatch.setenv("R2_CDN_DOMAIN", "cdn-sorento.com")
+    monkeypatch.delenv("CLOUDFRONT_DOMAIN", raising=False)
+    monkeypatch.setattr(app_settings, "frontend_base_url", BASE_URL)
+    with blank_session() as db:
+        out, minted, skipped = file_links.links_for(db, PROMO_TEXT, PROMO_FILES, contact_respond_id="477071884", turn_id=None)
+        assert minted == 3 and skipped == []
+        assert len(set(_codes(out))) == 3
+        assert "cdn-sorento.com" not in out
+        assert db.query(ChatbotFileLink).count() == 3
+
+
+def test_a_file_off_the_list_goes_alone_and_says_so(monkeypatch):
+    monkeypatch.setenv("R2_CDN_DOMAIN", "cdn-sorento.com")
+    monkeypatch.setattr(app_settings, "frontend_base_url", BASE_URL)
+    with blank_session() as db:
+        _off_the_list_body(db)
+
+
+def _off_the_list_body(db):
     off = {"url": "https://files.elsewhere.test/x.pdf", "filename": "x.pdf", "mimeType": "application/pdf"}
     text = PROMO_TEXT + "\n*File Name:* x.pdf\n*Link:* https://files.elsewhere.test/x.pdf"
     out, minted, skipped = file_links.links_for(db, text, [*PROMO_FILES, off], contact_respond_id="C1", turn_id=None)
@@ -159,8 +178,9 @@ class _Db:
         "https://[::1]@cdn-sorento.com/x.pdf",
     ],
 )
-def test_only_a_plain_https_url_on_a_listed_host_is_linkable(copy_env, url):
+def test_only_a_plain_https_url_on_a_listed_host_is_linkable(monkeypatch, url):
     """Security review S2/N3/N4: no port, no userinfo, no encoded `..`, no malformed netloc."""
+    monkeypatch.setenv("R2_CDN_DOMAIN", "cdn-sorento.com")
     assert file_link_service.is_linkable(url) is False
 
 
