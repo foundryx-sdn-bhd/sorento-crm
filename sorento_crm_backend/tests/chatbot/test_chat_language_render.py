@@ -195,7 +195,11 @@ def test_ac_cl08_a_missing_intro_prints_the_translated_fallback():
     env = _compact_envelope()
     env.pop("intro")
     ms = fetch.output_structurer(env, _ctx("ms"))["response"]
-    assert ms.startswith("Berikut ialah hasilnya.")
+    # WA-CONCISE: the generic opener goes whenever a row prints; it stays for zero rows.
+    assert "Berikut ialah hasilnya." not in ms
+    env["items"] = []
+    empty = fetch.output_structurer(env, _ctx("ms"))["response"]
+    assert empty.startswith("Berikut ialah hasilnya.")
 
 
 def test_ac_cl08_the_state_keeps_english_labels_and_the_input_is_not_translated_in_place():
