@@ -531,3 +531,66 @@ def test_g2_filters_are_this_messages_customer_never_the_focus_one(session_facto
     [report] = c.tools.args("crm_report_ask")
     assert _ids(report.get("customer_ids")) == [b_id]
     assert "Stock: 120" in text.splitlines()
+
+
+# ------------------------------------------------------------------ round 7, the parser prompt
+
+
+def _addendum() -> str:
+    from app.services.chatbot_parser_prompt import SUB_ASKS_ADDENDUM
+
+    return SUB_ASKS_ADDENDUM
+
+
+def _block(text: str, start: str, stop: str) -> str:
+    a = text.index(start)
+    b = text.find(stop, a + len(start))
+    return text[a : b if b != -1 else len(text)]
+
+
+def test_p1_period_only_from_the_current_messages_own_words():
+    block = _block(_addendum(), "date_from / date_to", "basis:")
+    assert "calendar year" in block and "null" in block
+
+
+def test_p2_basis_only_from_a_delivered_or_ordered_word_never_the_default():
+    block = _block(_addendum(), "basis:", "label:")
+    assert "default" in block and "null" in block
+
+
+def test_p3_jin_cang_ku_is_received_never_incoming():
+    lines = [ln for ln in _addendum().splitlines() if "进仓库" in ln]
+    assert lines
+    assert any("never incoming" in ln.lower() for ln in lines)
+
+
+def test_p4_malay_jual_is_sold_in_the_sold_total_definition():
+    text = _addendum()
+    start = text.index('"sold_total"')
+    assert "jual" in text[start : start + 160].lower()
+
+
+def test_p5_a_bare_product_mention_is_no_domain_and_no_asks():
+    text = _addendum()
+    assert "我想问" in text and "domain_hint null" in text
+
+
+def test_p6_no_live_string_appears_verbatim_in_the_prompt():
+    live = [
+        "srtwc286采购价、进仓库多少、卖了多少、业务员各卖多少",
+        "SRT384 last cost, supplier and how many received this year?",
+        "CB1178A berapa stok, harga beli last, dan jual berapa 2025?",
+        "CB6633 2025 sold per salesman and total, last in bila?",
+        "供应商是谁？SRTSV310 最后一次进库几时，今年卖了多少",
+        "how many CWCX605 came in last month and incoming ETA, and margin",
+        "SRTWT165 stock + 采购价",
+        "我想问s r t",
+        "SRTWT7445,2026 年 入库了多少数量 , 供应商是谁 ， 采购价是多少钱。 最后一次进库是什么时候 ，2026 总共卖了多少个，2026年每位业务员共卖了多少个",
+        "我想问srtwc286的采购价，还要他进仓库了多少，我们卖了多少啊，然后业务员卖了多少啊这些你都给我知道",
+        "SRTWT165 berapa stok dan harga beli terakhir?",
+        "CB6633 incoming and stock, plus who is the supplier",
+        "SRTSV310 今年 sold per customer 和 last cost",
+    ]
+    text = _addendum()
+    for s in live:
+        assert s not in text, s
