@@ -17,6 +17,12 @@ def _rate(results: list[CaseResult]) -> float | None:
     return sum(1 for r in results if r.verdict.label in PASS) / len(results)
 
 
+def _strict(results: list[CaseResult]) -> float | None:
+    if not results:
+        return None
+    return sum(1 for r in results if r.verdict.label in PASS and not r.verdict.needs_judge) / len(results)
+
+
 def _pct(values: list[int], q: float) -> int:
     if not values:
         return 0
@@ -55,6 +61,8 @@ def build_report(
         ),
         "gap_original_variant": _diff(_rate(originals), _rate(variants)),
         "pass_rate": _rate(res),
+        "strict_pass_rate": _strict(res),
+        "strict_underfit": _strict(originals),
         "judge_status": judge_status,
         "unverified": sum(1 for r in res if r.verdict.needs_judge),
         "pass_rate_by_topic": by_topic_rate,
@@ -94,7 +102,8 @@ def render_summary(report: dict, split: str) -> str:
         f"## Chatbot eval ({split})",
         "",
         f"- pass rate: {_fmt(report.get('pass_rate'))}",
-        f"- underfit (originals pass rate): {_fmt(report['underfit'])}",
+        f"- strict pass rate (judge-free passes only): {_fmt(report.get('strict_pass_rate'))}",
+        f"- underfit (originals pass rate): {_fmt(report['underfit'])}; strict {_fmt(report.get('strict_underfit'))}",
         f"- gap dev minus hidden: {_fmt(report['gap_dev_hidden'])}",
         f"- gap originals minus variants: {_fmt(report['gap_original_variant'])}",
         f"- judge: {report.get('judge_status', 'uncalibrated')}; unverified: {report.get('unverified', 0)}",
