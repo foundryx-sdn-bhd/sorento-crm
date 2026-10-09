@@ -282,37 +282,6 @@ def test_contact_add_emails_only_the_sla_handler_and_never_whatsapps(db, enqueue
     assert _emails_of_notifications(db) == [[handler.email]]
 
 
-def test_contact_add_does_not_email_the_last_responder_who_is_not_the_handler(db, enqueued):
-    contact_id = _contact(db)
-    handler = _user(db, "Handler")
-    responder = _user(db, "Responder", responder_id=f"resp-{uuid.uuid4().hex[:8]}")
-    inquiry = _inquiry(db, contact_id=contact_id, last_responded_by=responder.respond_user_id)
-    _tracker(db, "stock_inquiry", inquiry.id, handler)
-
-    _svc(db).add_contact_comment("stock_inquiry", inquiry.id, contact_id, SPACE, "hello")
-
-    recipients = [e for emails in _emails_of_notifications(db) for e in emails]
-    assert recipients == [handler.email]
-    assert responder.email not in recipients
-
-
-def test_contact_add_does_not_email_an_earlier_staff_commenter_who_is_not_the_handler(db, enqueued):
-    contact_id = _contact(db)
-    handler = _user(db, "Handler")
-    commenter = _user(db, "Earlier")
-    inquiry = _inquiry(db, contact_id=contact_id)
-    _tracker(db, "stock_inquiry", inquiry.id, handler)
-    svc = _svc(db)
-    svc.add_staff_comment("stock_inquiry", inquiry.id, commenter, "first")
-    enqueued.clear()
-
-    svc.add_contact_comment("stock_inquiry", inquiry.id, contact_id, SPACE, "thanks")
-
-    recipients = [e for emails in _emails_of_notifications(db) for e in emails]
-    assert recipients == [handler.email]
-    assert len(_by_queue(enqueued, "notifications")) == 1
-
-
 def test_contact_add_with_no_tracker_reports_no_recipients(db, enqueued):
     contact_id = _contact(db)
     inquiry = _inquiry(db, contact_id=contact_id)
@@ -1401,14 +1370,16 @@ def test_submitter_reply_emails_the_handler(portal, db, enqueued):
     handler = _user(db, "Handler")
     inquiry = _inquiry(db, contact_id=owner)
     _tracker(db, "stock_inquiry", inquiry.id, handler)
-    top = _staff_says(db, "stock_inquiry", inquiry.id, _user(db, "Staffer"), "question")
+    staffer = _user(db, "Staffer")
+    top = _staff_says(db, "stock_inquiry", inquiry.id, staffer, "question")
     enqueued.clear()
 
     resp = portal(owner).post(_portal_url("stock_inquiry", inquiry.id), data={"body": "answer", "parent_id": top["id"]})
 
     assert resp.status_code == 201, resp.text
     assert resp.json()["comment"]["parent_id"] == top["id"]
-    assert _recipients(db) == [handler.email]
+    # Round 3: the staff author of the parent joins the handler.
+    assert sorted(_recipients(db)) == sorted([handler.email, staffer.email])
     assert _by_queue(enqueued, "respond_io") == []
 
 
@@ -1849,3 +1820,186 @@ def test_b5_response_entry_without_last_responded_at_is_listed_with_null_created
     first = items[0]
     assert first["kind"] == "response" and first["body"] == "brand?"
     assert first["created_at"] is None
+
+
+# --------------------------------------------------------------------------- #
+# Round 3: recipients union + team fallback + never silent
+# (PLAN-form-comments-09oct.md, "Owner hand test round 3")
+# Replaced two round-1 tests that pinned handler-only mail (last responder / earlier staff
+# commenter must NOT be emailed): they contradict rule 1 and are rewritten below.
+# --------------------------------------------------------------------------- #
+
+
+def _mail_sets(db):
+    """One entry per form_comment_notification: the set of recipient emails."""
+    rows = db.query(Notification).filter(Notification.type == "form_comment_notification").all()
+    return [set((n.data or {}).get("recipient_emails") or []) for n in rows]
+
+
+def _prior_notification(db, kind, form_id, user, type_="sla_breach"):
+    db.add(
+        Notification(
+            id=_uid(), user_id=user.id, type=type_, title=f"{MARKER} earlier",
+            source_entity_type=kind, source_entity_id=form_id,
+        )
+    )
+    db.commit()
+
+
+def test_r1_recipients_are_handler_plus_staff_commenters_plus_responder_deduplicated(db, enqueued):
+    contact_id = _contact(db)
+    handler = _user(db, "Handler")
+    commenter = _user(db, "Commenter")
+    responder = _user(db, "Responder", responder_id=f"resp-{uuid.uuid4().hex[:8]}")
+    inquiry = _inquiry(db, contact_id=contact_id)
+    _with_reply(db, inquiry, responder)
+    _tracker(db, "stock_inquiry", inquiry.id, handler)
+    svc = _svc(db)
+    svc.add_staff_comment("stock_inquiry", inquiry.id, commenter, "first")
+    svc.add_staff_comment("stock_inquiry", inquiry.id, handler, "handler also comments")
+    enqueued.clear()
+
+    _, delivery = _unpack(svc.add_contact_comment("stock_inquiry", inquiry.id, contact_id, SPACE, "thanks"))
+
+    assert delivery == "queued"
+    assert len(_by_queue(enqueued, "notifications")) == 1
+    assert _mail_sets(db) == [{handler.email, commenter.email, responder.email}]
+    notif = db.query(Notification).filter(Notification.type == "form_comment_notification").one()
+    assert len(notif.data["recipient_emails"]) == 3  # handler is both handler and commenter: once
+
+
+def test_r1_responder_resolves_by_users_id_too(db, enqueued):
+    contact_id = _contact(db)
+    handler = _user(db, "Handler")
+    responder = _user(db, "ById")
+    inquiry = _inquiry(db, contact_id=contact_id)
+    inquiry.purchasing_response = "brand?"
+    inquiry.last_responded_by = responder.id
+    inquiry.last_responded_at = datetime(2026, 10, 2, 8, 30, 0)
+    db.commit()
+    _tracker(db, "stock_inquiry", inquiry.id, handler)
+
+    _svc(db).add_contact_comment("stock_inquiry", inquiry.id, contact_id, SPACE, "hi")
+
+    assert _mail_sets(db) == [{handler.email, responder.email}]
+
+
+def test_r1_contact_authored_comments_do_not_add_their_user(db, enqueued, monkeypatch):
+    owner = _contact(db, "Owner")
+    handler = _user(db, "Handler")
+    inquiry = _inquiry(db, contact_id=owner)
+    _tracker(db, "stock_inquiry", inquiry.id, handler)
+    admin = _user(db, "Impersonator")
+    svc = _svc(db)
+    # a plain contact comment, and one posted by an impersonating admin (both author ids set)
+    svc.add_contact_comment("stock_inquiry", inquiry.id, owner, SPACE, "plain")
+    svc.add_contact_comment("stock_inquiry", inquiry.id, owner, SPACE, "on behalf", acting_user_id=admin.id)
+    row = [r for r in _comment_rows(db) if r.author_user_id == admin.id][0]
+    assert row.author_contact_id == owner
+    db.query(Notification).delete()
+    db.commit()
+    enqueued.clear()
+
+    svc.add_contact_comment("stock_inquiry", inquiry.id, owner, SPACE, "again")
+
+    assert _mail_sets(db) == [{handler.email}]
+
+
+def test_r1_inactive_and_blank_email_staff_are_excluded(db, enqueued):
+    contact_id = _contact(db)
+    handler = _user(db, "Handler")
+    gone = _user(db, "Gone")
+    mute = _user(db, "Mute")
+    inquiry = _inquiry(db, contact_id=contact_id)
+    _tracker(db, "stock_inquiry", inquiry.id, handler)
+    svc = _svc(db)
+    svc.add_staff_comment("stock_inquiry", inquiry.id, gone, "a")
+    svc.add_staff_comment("stock_inquiry", inquiry.id, mute, "b")
+    gone.status = "INACTIVE"
+    mute.email = "   "
+    db.commit()
+    enqueued.clear()
+
+    svc.add_contact_comment("stock_inquiry", inquiry.id, contact_id, SPACE, "hi")
+
+    assert _mail_sets(db) == [{handler.email}]
+
+
+def test_r1_acting_impersonating_admin_is_excluded_even_as_staff_commenter(db, enqueued):
+    contact_id = _contact(db)
+    handler = _user(db, "Handler")
+    admin = _user(db, "Admin")
+    inquiry = _inquiry(db, contact_id=contact_id)
+    _tracker(db, "stock_inquiry", inquiry.id, handler)
+    svc = _svc(db)
+    svc.add_staff_comment("stock_inquiry", inquiry.id, admin, "earlier as staff")
+    enqueued.clear()
+
+    svc.add_contact_comment("stock_inquiry", inquiry.id, contact_id, SPACE, "on behalf", acting_user_id=admin.id)
+
+    assert _mail_sets(db) == [{handler.email}]
+
+
+def test_r2_no_handler_still_emails_staff_commenters_and_responder(db, enqueued):
+    contact_id = _contact(db)
+    commenter = _user(db, "Commenter")
+    responder = _user(db, "Responder", responder_id=f"resp-{uuid.uuid4().hex[:8]}")
+    inquiry = _inquiry(db, contact_id=contact_id)
+    _with_reply(db, inquiry, responder)
+    _tracker(db, "stock_inquiry", inquiry.id, None)
+    svc = _svc(db)
+    svc.add_staff_comment("stock_inquiry", inquiry.id, commenter, "first")
+    enqueued.clear()
+
+    _, delivery = _unpack(svc.add_contact_comment("stock_inquiry", inquiry.id, contact_id, SPACE, "hi"))
+
+    assert delivery == "queued"
+    assert _mail_sets(db) == [{commenter.email, responder.email}]
+    assert len(_by_queue(enqueued, "notifications")) == 1
+
+
+def test_r3_empty_set_falls_back_to_users_who_got_this_forms_earlier_notifications(db, enqueued):
+    contact_id = _contact(db)
+    a, b, other_form_user, inactive = _user(db, "A"), _user(db, "B"), _user(db, "Elsewhere"), _user(db, "Inactive")
+    inquiry = _inquiry(db, contact_id=contact_id)
+    other = _inquiry(db)
+    _prior_notification(db, "stock_inquiry", inquiry.id, a)
+    _prior_notification(db, "stock_inquiry", inquiry.id, b)
+    _prior_notification(db, "stock_inquiry", inquiry.id, a, type_="another_type")  # a once
+    _prior_notification(db, "stock_inquiry", inquiry.id, inactive)
+    _prior_notification(db, "stock_inquiry", other.id, other_form_user)
+    inactive.status = "INACTIVE"
+    db.commit()
+
+    _, delivery = _unpack(_svc(db).add_contact_comment("stock_inquiry", inquiry.id, contact_id, SPACE, "anyone?"))
+
+    assert delivery == "queued"
+    assert _mail_sets(db) == [{a.email, b.email}]
+    assert len(_by_queue(enqueued, "notifications")) == 1
+
+
+def test_r3_earlier_form_comment_notifications_do_not_feed_the_fallback(db, enqueued):
+    contact_id = _contact(db)
+    a = _user(db, "A")
+    inquiry = _inquiry(db, contact_id=contact_id)
+    _prior_notification(db, "stock_inquiry", inquiry.id, a, type_="form_comment_notification")
+
+    _, delivery = _unpack(_svc(db).add_contact_comment("stock_inquiry", inquiry.id, contact_id, SPACE, "anyone?"))
+
+    assert delivery == "no_recipients"
+    assert _by_queue(enqueued, "notifications") == []
+
+
+def test_r4_nothing_at_all_is_no_recipients_with_a_warning_naming_the_form(db, enqueued, caplog):
+    import logging
+
+    contact_id = _contact(db)
+    inquiry = _inquiry(db, contact_id=contact_id)
+
+    with caplog.at_level(logging.DEBUG):
+        _, delivery = _unpack(_svc(db).add_contact_comment("stock_inquiry", inquiry.id, contact_id, SPACE, "hello?"))
+
+    assert delivery == "no_recipients"
+    assert enqueued == []
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING and str(inquiry.id) in r.getMessage()]
+    assert warnings, [r.getMessage() for r in caplog.records]

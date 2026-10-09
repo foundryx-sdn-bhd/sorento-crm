@@ -158,52 +158,122 @@ async function renderWith(over: Partial<PortalSubmissionDetail> = {}) {
   await waitForSectionLoaded();
 }
 
-describe('SubmissionForm - comment thread placement', () => {
-  it('shows the thread with its composer on a submitted inquiry', async () => {
-    await renderWith();
+// Round 3 (PLAN-form-comments-09oct.md rule 5): the thread lives in a "Comments (N)" tab next to
+// Details / Revisions; Details wears the green "Comment / reply by purchasing" banner again with a
+// "Reply in Comments" link that switches to the Comments tab. N counts live comments and replies
+// only (not the purchasing reply entry, not deleted placeholders) and shows while Details is
+// active. Replaced the round 2 "thread above the form in Details" cases, which contradict this.
+const REPLY = {
+  id: 'response',
+  kind: 'response',
+  parentId: null,
+  body: 'brand?',
+  authorName: 'Pat Purchasing',
+  authorKind: 'staff',
+  postedByName: null,
+  createdAt: '2026-10-02T08:30:00',
+  editedAt: null,
+  deleted: false,
+  canEdit: false,
+  canDelete: false,
+  canReply: false,
+  attachments: [],
+};
+const mkComment = (id: string, over: Record<string, unknown> = {}) => ({
+  ...REPLY,
+  id,
+  kind: 'comment',
+  body: `body ${id}`,
+  authorName: 'CONTACT X Lee',
+  authorKind: 'submitter',
+  ...over,
+});
+
+const mockThread = (items: unknown[]) =>
+  (fetchSubmissionComments as ReturnType<typeof vi.fn>).mockResolvedValue(
+    items,
+  );
+
+describe('SubmissionForm - comments tab', () => {
+  it('adds a "Comments (N)" tab next to Details and Revisions, counting live comments only', async () => {
+    mockThread([
+      REPLY,
+      mkComment('c1'),
+      mkComment('c2', { parentId: 'c1' }),
+      mkComment('c3', { deleted: true, body: '' }),
+    ]);
+    await renderWith({ purchasing_response: 'brand?' });
+    expect(
+      await screen.findByRole('tab', { name: 'Comments (2)' }),
+    ).toBeInTheDocument();
+    const names = screen.getAllByRole('tab').map((t) => t.textContent);
+    expect(names).toContain('Details');
+    expect(names).toContain('Revisions');
+    expect(fetchSubmissionComments).toHaveBeenCalledWith('stock_inquiry', 'si-1');
+  });
+
+  it('keeps the thread out of Details and shows it, with its composer, in the Comments tab', async () => {
+    mockThread([REPLY, mkComment('c1')]);
+    await renderWith({ purchasing_response: 'brand?' });
+    await screen.findByRole('tab', { name: 'Comments (1)' });
+    expect(screen.queryByRole('region', { name: 'Comments' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Comments (1)' }));
+
     expect(
       await screen.findByRole('region', { name: 'Comments' }),
     ).toBeInTheDocument();
     expect(screen.getByPlaceholderText('Write a comment')).toBeInTheDocument();
-    expect(fetchSubmissionComments).toHaveBeenCalledWith(
-      'stock_inquiry',
-      'si-1',
-    );
   });
 
-  it("shows no separate reply box: the reply is the thread's first entry, and the thread sits above the form", async () => {
+  it('starts the thread with the purchasing reply entry, then the comments oldest first', async () => {
+    mockThread([REPLY, mkComment('c1')]);
     await renderWith({ purchasing_response: 'brand?' });
-    const thread = await screen.findByRole('region', { name: 'Comments' });
+    fireEvent.click(await screen.findByRole('tab', { name: 'Comments (1)' }));
+    const reply = await screen.findByText('brand?');
+    const first = await screen.findByText('body c1');
+    expect(
+      reply.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('shows the green purchasing banner in Details with a Reply in Comments link that opens the tab', async () => {
+    mockThread([REPLY]);
+    await renderWith({ purchasing_response: 'brand?' });
+    expect(screen.getByText('Comment / reply by purchasing')).toBeInTheDocument();
+    expect(screen.getByText('brand?')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Reply in Comments'));
+
+    expect(
+      await screen.findByRole('region', { name: 'Comments' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /^Comments/ })).toHaveAttribute(
+      'data-state',
+      'active',
+    );
     expect(screen.queryByText('Comment / reply by purchasing')).toBeNull();
-    const attachments = screen.getByText('Attachments');
-    expect(
-      thread.compareDocumentPosition(attachments) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
   });
 
-  it('keeps the thread in the same top spot before any purchasing reply', async () => {
+  it('shows no banner and no link in Details before any purchasing reply', async () => {
+    mockThread([]);
     await renderWith({ purchasing_response: null });
-    const thread = await screen.findByRole('region', { name: 'Comments' });
-    expect(
-      screen.queryByText('Comment / reply by purchasing'),
-    ).not.toBeInTheDocument();
-    const attachments = screen.getByText('Attachments');
-    expect(
-      thread.compareDocumentPosition(attachments) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    await screen.findByRole('tab', { name: 'Comments (0)' });
+    expect(screen.queryByText('Comment / reply by purchasing')).toBeNull();
+    expect(screen.queryByText('Reply in Comments')).toBeNull();
   });
 
-  it('hides the thread entirely on a draft', async () => {
+  it('has no Comments tab and fetches nothing on a draft', async () => {
     await renderWith({ status: 'draft', is_draft: true, is_editable: true });
     await screen.findByText('Draft');
-    expect(screen.queryByRole('region', { name: 'Comments' })).toBeNull();
+    expect(screen.queryByRole('tab', { name: /^Comments/ })).toBeNull();
     expect(fetchSubmissionComments).not.toHaveBeenCalled();
   });
 
   it('keeps the thread but hides the composer on a voided inquiry', async () => {
+    mockThread([]);
     await renderWith({ status: 'voided' });
+    fireEvent.click(await screen.findByRole('tab', { name: /^Comments/ }));
     expect(
       await screen.findByRole('region', { name: 'Comments' }),
     ).toBeInTheDocument();
