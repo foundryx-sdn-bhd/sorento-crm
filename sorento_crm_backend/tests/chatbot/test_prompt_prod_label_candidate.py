@@ -72,6 +72,7 @@ OWNER_EDITS = [
     "(photo/drawing/installation guide)",
     "forwarder, consignee, warehouse, free days",
     "← warehouse, which warehouse it goes to",
+    "product code, description; product details, dimension, size",
 ]
 
 
